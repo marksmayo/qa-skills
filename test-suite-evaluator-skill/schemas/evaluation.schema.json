@@ -1,0 +1,344 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Test Suite Evaluation",
+  "type": "object",
+  "required": [
+    "metadata",
+    "headline",
+    "dimensions",
+    "critical_findings",
+    "recommendations",
+    "evidence_inventory"
+  ],
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": [
+        "repository",
+        "assessment_mode",
+        "generated_at"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string"
+        },
+        "assessment_mode": {
+          "enum": [
+            "black_box",
+            "grey_box",
+            "white_box"
+          ]
+        },
+        "generated_at": {
+          "type": "string"
+        },
+        "provisional": {
+          "type": "boolean"
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "headline": {
+      "type": "object",
+      "required": [
+        "raw_weighted_score",
+        "overall_score",
+        "rating_band",
+        "evidence_completeness",
+        "overall_confidence"
+      ],
+      "properties": {
+        "raw_weighted_score": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "overall_score": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "rating_band": {
+          "type": "string"
+        },
+        "testing_effectiveness": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "suite_trustworthiness": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "engineering_quality": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "operational_health": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "evidence_completeness": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "overall_confidence": {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ]
+        },
+        "applied_caps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "dimensions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "weight",
+          "score",
+          "confidence",
+          "evidence_level",
+          "finding"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "weight": {
+            "type": "number"
+          },
+          "score": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 10
+          },
+          "confidence": {
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "evidence_level": {
+            "enum": [
+              "verified",
+              "specification_derived",
+              "test_derived",
+              "unknown"
+            ]
+          },
+          "finding": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "risks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "recommendations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "critical_findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "title",
+          "severity",
+          "evidence"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "critical",
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "impact": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "recommendations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "title",
+          "priority",
+          "impact",
+          "effort",
+          "action",
+          "acceptance_criteria"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "impact": {
+            "enum": [
+              "critical",
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "effort": {
+            "enum": [
+              "small",
+              "medium",
+              "large"
+            ]
+          },
+          "action": {
+            "type": "string"
+          },
+          "dimensions_affected": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "acceptance_criteria": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "evidence_inventory": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "status"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "available",
+              "partial",
+              "missing",
+              "not_applicable"
+            ]
+          },
+          "details": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "behavioural_coverage": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "feature": {
+            "type": "string"
+          },
+          "happy_path": {
+            "type": "string"
+          },
+          "negative": {
+            "type": "string"
+          },
+          "boundary": {
+            "type": "string"
+          },
+          "permissions": {
+            "type": "string"
+          },
+          "dependency_failure": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "exit_code": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

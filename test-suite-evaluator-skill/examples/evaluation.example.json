@@ -1,0 +1,183 @@
+{
+  "metadata": {
+    "repository": "example-tests",
+    "assessment_mode": "black_box",
+    "generated_at": "2026-07-16T00:00:00Z",
+    "provisional": true,
+    "notes": [
+      "Application source was unavailable."
+    ]
+  },
+  "headline": {
+    "raw_weighted_score": 6.2,
+    "overall_score": 5.0,
+    "rating_band": "Serviceable",
+    "testing_effectiveness": 5.0,
+    "suite_trustworthiness": 4.0,
+    "engineering_quality": 7.1,
+    "operational_health": null,
+    "evidence_completeness": 42,
+    "overall_confidence": "medium",
+    "applied_caps": [
+      "Reliability below 4 caps overall score at 5"
+    ]
+  },
+  "dimensions": [
+    {
+      "id": "effectiveness",
+      "name": "Test effectiveness",
+      "weight": 16,
+      "score": 5,
+      "confidence": "medium",
+      "evidence_level": "test_derived",
+      "finding": "Core happy paths are represented, but failure-path depth is limited.",
+      "evidence": [
+        "tests/checkout.spec.ts contains successful checkout coverage"
+      ],
+      "risks": [
+        "Payment rejection regressions may pass unnoticed"
+      ],
+      "recommendations": [
+        "Add rejection, timeout, duplicate-submit, and recovery scenarios"
+      ]
+    },
+    {
+      "id": "trust",
+      "name": "Suite trustworthiness",
+      "weight": 14,
+      "score": 4,
+      "confidence": "medium",
+      "evidence_level": "test_derived",
+      "finding": "Global retries and weak assertions create material false-pass risk.",
+      "evidence": [
+        "playwright.config.ts sets retries to 3"
+      ],
+      "risks": [
+        "Intermittent defects may be reported as passing"
+      ],
+      "recommendations": [
+        "Track first-run failures separately and remove broad retries"
+      ]
+    },
+    {
+      "id": "reliability",
+      "name": "Reliability and determinism",
+      "weight": 10,
+      "score": 3,
+      "confidence": "high",
+      "evidence_level": "test_derived",
+      "finding": "Fixed sleeps and a shared test user make execution order-sensitive.",
+      "evidence": [
+        "27 occurrences of waitForTimeout",
+        "Shared credentials in fixtures/user.ts"
+      ],
+      "risks": [
+        "Parallel CI runs may interfere"
+      ],
+      "recommendations": [
+        "Use condition waits and per-test users"
+      ]
+    },
+    {
+      "id": "coverage",
+      "name": "Test scope and coverage",
+      "weight": 8,
+      "score": 5,
+      "confidence": "low",
+      "evidence_level": "test_derived",
+      "finding": "Behavioural breadth is moderate; instrumented code coverage was not measurable.",
+      "evidence": [
+        "No application source or coverage report supplied"
+      ],
+      "risks": [
+        "Implementation gaps remain unknown"
+      ],
+      "recommendations": [
+        "Publish source-linked coverage or an API specification"
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "title": "Retries can mask first-run failures",
+      "severity": "high",
+      "evidence": [
+        "Global retry count is 3",
+        "No first-attempt failure metric found"
+      ],
+      "impact": "A green build may not represent deterministic behaviour."
+    }
+  ],
+  "recommendations": [
+    {
+      "title": "Eliminate shared mutable test state",
+      "priority": 1,
+      "impact": "high",
+      "effort": "medium",
+      "action": "Create unique users and order data per test, then enable parallel execution in CI.",
+      "dimensions_affected": [
+        "reliability",
+        "trust"
+      ],
+      "acceptance_criteria": [
+        "Tests pass in random order",
+        "Four parallel workers complete without collisions"
+      ]
+    },
+    {
+      "title": "Strengthen negative-path assertions",
+      "priority": 2,
+      "impact": "high",
+      "effort": "medium",
+      "action": "Add explicit rejection, timeout, and recovery scenarios with state and side-effect assertions.",
+      "dimensions_affected": [
+        "effectiveness",
+        "coverage"
+      ],
+      "acceptance_criteria": [
+        "Each critical flow has positive and negative scenarios",
+        "Failures identify the incorrect business outcome"
+      ]
+    }
+  ],
+  "evidence_inventory": [
+    {
+      "name": "Test source",
+      "status": "available",
+      "details": "Repository inspected"
+    },
+    {
+      "name": "Application source",
+      "status": "missing",
+      "details": "Standalone test repository"
+    },
+    {
+      "name": "Historical CI outcomes",
+      "status": "missing",
+      "details": "No run history supplied"
+    },
+    {
+      "name": "Runtime coverage",
+      "status": "missing",
+      "details": "No source-linked report supplied"
+    }
+  ],
+  "behavioural_coverage": [
+    {
+      "feature": "Checkout",
+      "happy_path": "covered",
+      "negative": "partial",
+      "boundary": "missing",
+      "permissions": "missing",
+      "dependency_failure": "missing",
+      "notes": "Test-derived only"
+    }
+  ],
+  "commands": [
+    {
+      "command": "npm test -- --list",
+      "exit_code": 0,
+      "summary": "84 tests discovered"
+    }
+  ]
+}
