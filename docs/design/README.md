@@ -13,8 +13,32 @@ anatomy described in the root `CLAUDE.md` (`SKILL.md`, `RUBRIC.md`, `schemas/`, 
 | 4 | [UI crash hunter](ui-crash-hunter.md) | `ui-crash-hunter-skill/` | Built (v1.0.0) |
 | 5 | [Code security auditor](code-security-auditor.md) | `code-security-auditor-skill/` | Built (v1.0.0) |
 | 6 | [WCAG auditor](wcag-auditor.md) | `wcag-auditor-skill/` | Built (v1.0.0) |
+| 7 | [Ticket readiness reviewer](ticket-readiness-reviewer.md) | `ticket-readiness-reviewer-skill/` | Built (v1.0.0) |
+| 8 | [Flaky test hunter](flaky-test-hunter.md) | `flaky-test-hunter-skill/` | Designed |
+| 9 | [Mutation tester](mutation-tester.md) | `mutation-tester-skill/` | Designed |
+| 10 | [Test impact selector](test-impact-selector.md) | `test-impact-selector-skill/` | Designed |
+| 11 | [Test data auditor](test-data-auditor.md) | `test-data-auditor-skill/` | Designed |
+| 12 | [Dead test finder](dead-test-finder.md) | `dead-test-finder-skill/` | Designed |
+| 13 | [Risk-based test planner](risk-based-test-planner.md) | `risk-based-test-planner-skill/` | Designed |
+| 14 | [Exploratory charter writer](exploratory-charter-writer.md) | `exploratory-charter-writer-skill/` | Designed |
+| 15 | [Bug reproducer](bug-reproducer.md) | `bug-reproducer-skill/` | Designed |
+| 16 | [API contract tester](api-contract-tester.md) | `api-contract-tester-skill/` | Designed |
+| 17 | [Performance budget auditor](performance-budget-auditor.md) | `performance-budget-auditor-skill/` | Designed |
+| 18 | [Visual regression reviewer](visual-regression-reviewer.md) | `visual-regression-reviewer-skill/` | Designed |
+| 19 | [Cross-browser checker](cross-browser-checker.md) | `cross-browser-checker-skill/` | Designed |
+| 20 | [Internationalisation checker](i18n-checker.md) | `i18n-checker-skill/` | Designed |
+| 21 | [Resilience prober](resilience-prober.md) | `resilience-prober-skill/` | Designed |
+| 22 | [Database migration reviewer](db-migration-reviewer.md) | `db-migration-reviewer-skill/` | Designed |
+| 23 | [Privacy flow auditor](privacy-flow-auditor.md) | `privacy-flow-auditor-skill/` | Designed |
+| 24 | [Mobile app auditor](mobile-app-auditor.md) | `mobile-app-auditor-skill/` | Designed |
+| 25 | [Release readiness gate](release-readiness-gate.md) | `release-readiness-gate-skill/` | Designed |
 
-The table order is the agreed build order.
+The table order is the agreed build order. Skills 7–24 are ordered so that each shared script
+is built by the first skill that needs it: `fetch_ticket.py` moves to `shared/` with 7,
+`run_tests.py` arrives with 8, `diff_scope.py` with 9, and `browser_harness.py` with 15. The
+mobile app auditor comes late because it needs emulators and simulators and reuses the WCAG and
+crash-hunter rating models. The release readiness gate is last because it reads every other
+skill's report.
 
 ## How the skills fit together
 
@@ -28,6 +52,26 @@ ui-crash-hunter ───────┼──► repro steps ──► regressi
 wcag-auditor ──────────┘
 
 test-suite-evaluator ◄── grades the suite that all of the above produce
+```
+
+Skills 7–24 add to this:
+
+```text
+ticket-readiness-reviewer ──► ticket-to-tdd
+bug-reproducer ──► regression test (ticket-to-tdd conventions)
+
+journey-mapper ──► risk-based-test-planner ──► exploratory-charter-writer
+      │                    ▲
+      │                    └── churn and defects (diff_scope), findings from every auditor
+      └──► journeys for performance, visual, cross-browser, i18n, resilience, privacy
+
+flaky-test-hunter, mutation-tester, dead-test-finder, test-data-auditor
+      └──► evidence for test-suite-evaluator
+test-impact-selector ◄── diff_scope + coverage maps
+
+wcag-auditor + ui-crash-hunter ──► mobile-app-auditor (same rating models, native apps)
+
+every skill's report + CI results ──► release-readiness-gate ──► go / no_go / not_established
 ```
 
 ## Decisions that apply to every skill

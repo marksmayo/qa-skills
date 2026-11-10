@@ -1,0 +1,187 @@
+{
+  "key": "SHOP-204",
+  "names": {
+    "customfield_10034": "Acceptance Criteria"
+  },
+  "fields": {
+    "summary": "Checkout crashes when the postcode has a space",
+    "issuetype": {
+      "name": "Bug"
+    },
+    "status": {
+      "name": "Triage"
+    },
+    "priority": {
+      "name": "Medium"
+    },
+    "labels": [
+      "checkout"
+    ],
+    "components": [
+      {
+        "name": "checkout"
+      }
+    ],
+    "fixVersions": [
+      {
+        "name": "2026.12"
+      }
+    ],
+    "description": {
+      "type": "doc",
+      "version": 1,
+      "content": [
+        {
+          "type": "heading",
+          "attrs": {
+            "level": 3
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "Steps to reproduce"
+            }
+          ]
+        },
+        {
+          "type": "orderedList",
+          "content": [
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Add any item to the cart."
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Go to checkout."
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Enter the postcode \"20 00\" (with a space)."
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Select Continue to payment."
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "attrs": {
+            "level": 3
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "Expected result"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "The space is removed, or the message \"Enter a 4-digit postcode\" is shown."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "attrs": {
+            "level": 3
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "Actual result"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "The page goes blank and the cart is emptied. Happens every time for me on the mobile app."
+            }
+          ]
+        }
+      ]
+    },
+    "subtasks": [],
+    "issuelinks": [],
+    "attachment": [
+      {
+        "filename": "blank-checkout.png",
+        "mimeType": "image/png",
+        "size": 48211
+      }
+    ],
+    "comment": {
+      "comments": [
+        {
+          "author": {
+            "displayName": "Jordan (Support)"
+          },
+          "created": "2026-11-05T05:30:00.000+0000",
+          "body": {
+            "type": "doc",
+            "version": 1,
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Three customers reported this on Monday."
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "total": 1
+    }
+  }
+}

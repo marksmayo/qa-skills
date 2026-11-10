@@ -21,6 +21,7 @@ SHARED = {
     'scripts/detect_conventions.py': ['journey-to-tests-skill', 'ticket-to-tdd-skill'],
     'scripts/parse_results.py': ['journey-to-tests-skill', 'ticket-to-tdd-skill'],
     'scripts/sarif.py': ['ui-crash-hunter-skill', 'code-security-auditor-skill'],
+    'scripts/fetch_ticket.py': ['ticket-to-tdd-skill', 'ticket-readiness-reviewer-skill'],
 }
 
 def normalised(path: Path) -> bytes:

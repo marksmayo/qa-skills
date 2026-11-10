@@ -1,0 +1,120 @@
+{
+  "key": "SHOP-202",
+  "names": {
+    "customfield_10034": "Acceptance Criteria"
+  },
+  "fields": {
+    "summary": "Faster search",
+    "issuetype": {
+      "name": "Story"
+    },
+    "status": {
+      "name": "Backlog"
+    },
+    "priority": {
+      "name": "Medium"
+    },
+    "labels": [
+      "search"
+    ],
+    "components": [
+      {
+        "name": "storefront"
+      }
+    ],
+    "fixVersions": [
+      {
+        "name": "2026.12"
+      }
+    ],
+    "description": {
+      "type": "doc",
+      "version": 1,
+      "content": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "Customers say search is slow and the results aren't great. Make it better."
+            }
+          ]
+        }
+      ]
+    },
+    "subtasks": [],
+    "issuelinks": [],
+    "attachment": [],
+    "comment": {
+      "comments": [],
+      "total": 0
+    },
+    "customfield_10034": {
+      "type": "doc",
+      "version": 1,
+      "content": [
+        {
+          "type": "bulletList",
+          "content": [
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Search should be fast and user-friendly."
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Results show products, categories, brands etc."
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Typos are handled appropriately."
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Search works on mobile."
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

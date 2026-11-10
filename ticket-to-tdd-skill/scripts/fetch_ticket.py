@@ -11,10 +11,15 @@
     python fetch_ticket.py --from-file issue.json --source connector --out ticket.json
     python fetch_ticket.py --from-file pasted.md --key PROJ-123 --out ticket.json
 
+    # Several tickets (read-only search): a JQL query, a saved search result, or a directory
+    python fetch_ticket.py --jql "project = SHOP AND sprint in openSprints()" --out tickets.json
+    python fetch_ticket.py --from-file search.json --source connector --out tickets.json
+    python fetch_ticket.py --from-file issues/ --source connector --out tickets.json
+
 Output (ticket.json): key, type, summary, description_md (Atlassian Document Format and wiki
 markup converted to Markdown), acceptance_criteria[{id, text, source}], bug sections, subtasks,
 links, parent, recent comments, attachments (listed, never downloaded), suspicious_instructions
-and content_sha256.
+and content_sha256. Several tickets give tickets.json: {query, source, fetched_at, tickets[]}.
 
 The acceptance-criteria field is a custom field, so it is found by name (default "Acceptance
 Criteria", see --ac-field-name). Without one, criteria are extracted from the description:
@@ -406,7 +411,8 @@ def http_get(url: str, headers: dict) -> dict:
     except urllib.error.URLError as exc:
         raise JiraError(f'cannot reach Jira: {exc.reason}') from None
 
-def fetch(key: str, base_url: str, ac_field_name: str, ac_field_id: str | None, max_comments: int) -> dict:
+def _session(base_url: str, ac_field_name: str, ac_field_id: str | None):
+    """Headers, API path, field names and the fields to request, for one Jira site."""
     email, token, pat = os.environ.get('JIRA_EMAIL'), os.environ.get('JIRA_API_TOKEN'), os.environ.get('JIRA_PAT')
     if pat:
         headers, api = {'Authorization': f'Bearer {pat}'}, 'rest/api/2'
@@ -426,8 +432,56 @@ def fetch(key: str, base_url: str, ac_field_name: str, ac_field_id: str | None, 
         ac_field_id = next((fid for fid, n in names.items() if (n or '').strip().lower() in wanted), None)
     fields = ['summary', 'issuetype', 'description', 'status', 'priority', 'labels', 'components', 'fixVersions',
               'parent', 'subtasks', 'issuelinks', 'attachment', 'comment'] + ([ac_field_id] if ac_field_id else [])
-    issue = http_get(f'{base}/{api}/issue/{urllib.parse.quote(key)}?fields={",".join(fields)}', headers)
-    return normalise_issue(issue, 'rest', base, ac_field_name, ac_field_id, names, max_comments)
+    return headers, f'{base}/{api}', names, ac_field_id, fields
+
+def fetch(key: str, base_url: str, ac_field_name: str, ac_field_id: str | None, max_comments: int) -> dict:
+    headers, api, names, ac_field_id, fields = _session(base_url, ac_field_name, ac_field_id)
+    issue = http_get(f'{api}/issue/{urllib.parse.quote(key)}?fields={",".join(fields)}', headers)
+    return normalise_issue(issue, 'rest', base_url, ac_field_name, ac_field_id, names, max_comments)
+
+def search(jql: str, base_url: str, ac_field_name: str, ac_field_id: str | None, max_comments: int,
+           limit: int) -> list[dict]:
+    """Read-only JQL search: Cloud uses /search/jql (token paging), Data Center /search (startAt paging)."""
+    headers, api, names, ac_field_id, fields = _session(base_url, ac_field_name, ac_field_id)
+    issues, token, start = [], None, 0
+    while len(issues) < limit:
+        q = {'jql': jql, 'fields': ','.join(fields), 'maxResults': str(min(50, limit - len(issues)))}
+        if api.endswith('/3'):
+            if token:
+                q['nextPageToken'] = token
+            page = http_get(f'{api}/search/jql?{urllib.parse.urlencode(q)}', headers)
+        else:
+            q['startAt'] = str(start)
+            page = http_get(f'{api}/search?{urllib.parse.urlencode(q)}', headers)
+        batch = page.get('issues') or []
+        issues += batch
+        start += len(batch)
+        token = page.get('nextPageToken')
+        if not batch or page.get('isLast') or (not api.endswith('/3') and start >= page.get('total', 0)) or \
+                (api.endswith('/3') and not token):
+            break
+    return [normalise_issue(i, 'rest', base_url, ac_field_name, ac_field_id, names, max_comments) for i in issues[:limit]]
+
+def from_files(path: Path, source: str, base_url: str | None, ac_field_name: str, ac_field_id: str | None,
+               max_comments: int) -> list[dict] | dict:
+    """One ticket from an issue file or pasted text; several from a search result or a directory of issue files."""
+    if path.is_dir():
+        files = sorted(p for p in path.iterdir() if p.suffix == '.json')
+        return [t for p in files for t in _as_list(from_files(p, source, base_url, ac_field_name, ac_field_id, max_comments))]
+    raw = path.read_text(encoding='utf-8')
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        data = None
+    if isinstance(data, dict) and isinstance(data.get('issues'), list):
+        names = data.get('names')
+        return [normalise_issue(i, source, base_url, ac_field_name, ac_field_id, names, max_comments) for i in data['issues']]
+    if isinstance(data, dict) and 'fields' in data:
+        return normalise_issue(data, source, base_url, ac_field_name, ac_field_id, None, max_comments)
+    return from_text(raw, None, source)
+
+def _as_list(x) -> list[dict]:
+    return x if isinstance(x, list) else [x]
 
 def parse_ref(ref: str) -> tuple[str | None, str | None]:
     """(key, base_url) from a key or a browse/board URL."""
@@ -441,8 +495,11 @@ def parse_ref(ref: str) -> tuple[str | None, str | None]:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description='Fetch or normalise a Jira ticket into ticket.json.')
-    ap.add_argument('ticket', nargs='?', help='issue key or URL (omit with --from-file)')
-    ap.add_argument('--from-file', help='Jira issue JSON (REST or connector output) or pasted text/Markdown')
+    ap.add_argument('ticket', nargs='?', help='issue key or URL (omit with --from-file or --jql)')
+    ap.add_argument('--from-file', help='Jira issue JSON (REST or connector output), a search result, a directory '
+                                        'of issue JSON files, or pasted text/Markdown')
+    ap.add_argument('--jql', help='read-only search; writes tickets.json with every matching ticket')
+    ap.add_argument('--limit', type=int, default=50, help='maximum tickets for --jql (default 50)')
     ap.add_argument('--source', choices=['connector', 'rest', 'pasted'], help='how the --from-file content was obtained')
     ap.add_argument('--key', help='issue key, when pasted text does not include it')
     ap.add_argument('--base-url', default=os.environ.get('JIRA_BASE_URL'))
@@ -452,17 +509,16 @@ def main(argv=None) -> int:
     ap.add_argument('--out', help='write ticket.json here (default: stdout)')
     args = ap.parse_args(argv)
     try:
-        if args.from_file:
-            raw = Path(args.from_file).read_text(encoding='utf-8')
-            try:
-                data = json.loads(raw)
-            except ValueError:
-                data = None
-            if isinstance(data, dict) and 'fields' in data:
-                t = normalise_issue(data, args.source or 'connector', args.base_url, args.ac_field_name,
-                                    args.ac_field_id, None, args.max_comments)
-            else:
-                t = from_text(raw, args.key, args.source or 'pasted')
+        if args.jql:
+            if not args.base_url:
+                raise JiraError('set JIRA_BASE_URL or pass --base-url')
+            t = search(args.jql, args.base_url, args.ac_field_name, args.ac_field_id, args.max_comments, args.limit)
+        elif args.from_file:
+            path = Path(args.from_file)
+            is_text = path.is_file() and not path.read_text(encoding='utf-8').lstrip().startswith('{')
+            t = from_text(path.read_text(encoding='utf-8'), args.key, args.source or 'pasted') if is_text else \
+                from_files(path, args.source or 'connector', args.base_url, args.ac_field_name, args.ac_field_id,
+                           args.max_comments)
         else:
             if not args.ticket:
                 ap.error('give an issue key or URL, or --from-file')
@@ -476,6 +532,19 @@ def main(argv=None) -> int:
     except (JiraError, OSError) as exc:
         print(f'ERROR: {exc}', file=sys.stderr)
         return 1
+    if isinstance(t, list):
+        batch = {'query': args.jql, 'source': 'rest' if args.jql else (args.source or 'connector'),
+                 'fetched_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), 'tickets': t}
+        text = json.dumps(batch, indent=2, ensure_ascii=False) + '\n'
+        if args.out:
+            Path(args.out).write_text(text, encoding='utf-8')
+        else:
+            sys.stdout.write(text)
+        for x in t:
+            flag = f"  WARN: {len(x['suspicious_instructions'])} instruction-like passage(s)" if x['suspicious_instructions'] else ''
+            print(f"{x['key'] or '(no key)'} [{x['type']}] {len(x['acceptance_criteria'])} criteria{flag}",
+                  file=sys.stderr if not args.out else sys.stdout)
+        return 0
     text = json.dumps(t, indent=2, ensure_ascii=False) + '\n'
     if args.out:
         Path(args.out).write_text(text, encoding='utf-8')

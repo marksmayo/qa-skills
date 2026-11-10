@@ -1,0 +1,209 @@
+# Design: `api-contract-tester-skill`
+
+Status: Designed; not built. Build order: 16.
+
+## Mission
+
+The skill checks that a running HTTP API behaves the way its contract says. It reads an OpenAPI
+3.x document or a GraphQL schema, generates requests from it (examples, boundary values and
+property-based cases), sends them to a test instance, and compares every response with the
+contract. With two versions of a contract it also reports breaking changes between them.
+
+How it differs from the existing skills:
+
+- **code-security-auditor** looks for exploitable weaknesses in source code. This skill looks for
+  the API not doing what it promised: undocumented status codes, responses that don't match the
+  schema, wrong content types. Server errors it finds may be security-relevant, and the report
+  says so, but it doesn't rate them with CVSS.
+- **journey-to-tests** writes tests for user journeys. This skill writes no tests by default; it
+  produces findings, each with a recorded request and response that reproduces it, and can emit a
+  regression-test sketch in the repo's framework (ticket-to-tdd conventions) per finding.
+- It needs only the contract and a base URL. Source code is optional and used only to point a
+  finding at a handler.
+
+## Decisions
+
+- **Safe mode is the default:** only `GET`, `HEAD` and `OPTIONS` are sent. Other methods need
+  `allow_writes: true`, `authorised_by` and a target the user confirms is not production, even
+  for operations a spec marks as safe. The skill never
+  sends writes to a host on the `production_hosts` list, even when allowed.
+- **Schemathesis is optional.** When it's installed (MIT), the skill uses it for property-based
+  generation and stateful links. Without it, `scripts/gen_cases.py` generates cases from the
+  schema with stdlib Python: examples, `enum` values, boundaries (`minLength-1`, `maximum+1`),
+  wrong types, missing required fields, and a seeded random sample. The fallback is weaker, and the
+  report says which generator ran.
+- **Breaking-change diff is stdlib-first.** `scripts/spec_diff.py` covers the common breaking
+  changes. oasdiff (Apache-2.0) is used when installed, and the two are merged per change.
+- **GraphQL in v1:** schema checks, introspection comparison, and generated queries against the
+  schema's types. Mutations are writes, so the same rules apply.
+- **No numeric score.** The headline is the finding counts, the share of operations exercised,
+  and the verdict.
+
+## Non-negotiable rules
+
+- **No findings doesn't mean the API conforms.** The best verdict is "No contract violations
+  found in N requests over M of K operations; conformance not established". Operations that were
+  never called are `untested`.
+- **Every finding is reproduced.** A finding needs the exact request sent and the response
+  received, saved under `exchanges/`. A finding that didn't happen again on a second send is
+  `flaky`, not dismissed.
+- **Secrets are redacted** in every saved exchange: `Authorization`, cookies, API-key headers and
+  query parameters, and any field the schema marks `format: password` or `writeOnly`. Redaction
+  happens before writing to disk, and the validator scans the saved exchanges for the
+  configured secret values (read from the environment) to check none leaked.
+- **Rate limits are respected.** Requests are rate-limited by default (5 per second), and the
+  skill backs off on `429` and `Retry-After`. A run stopped by limits is `incomplete`.
+- **The contract is the oracle, not the implementation.** When the two disagree, the finding
+  says which way to fix it (`fix_contract` or `fix_api`), and the agent's choice is
+  `agent_judgment`.
+- **Tools are recorded** as `ran`, `not_run` or `errored`, with versions.
+
+## Inputs
+
+| Input | Default | Notes |
+|---|---|---|
+| `contract` | required | OpenAPI 3.0/3.1 (JSON or YAML) or GraphQL SDL, as a file or URL. Swagger 2.0 is converted when Schemathesis is present; otherwise `not_assessed` |
+| `base_url` | required | The test instance |
+| `authorised_by` | required for non-loopback | Who authorised testing this host |
+| `auth` | optional | Header or bearer token from an env var, or an OAuth client-credentials recipe from env |
+| `allow_writes` | `false` | Also needs a confirmed non-production target |
+| `production_hosts` | `[]` | Hosts that never receive writes |
+| `operations` | all | Include or exclude by `operationId`, tag or path |
+| `max_cases_per_operation` | 50 | |
+| `seed` | random, recorded | Makes generated cases repeatable |
+| `previous_contract` | optional | Turns on the breaking-change diff |
+| `repo` | optional | Used to locate the handler for each finding |
+
+## Workflow
+
+1. **Load and lint the contract.** Resolve `$ref`s (local and same-host remote), and report
+   contract problems (missing schemas for responses, examples that don't match their own
+   schemas). Contract problems are a separate section: they aren't API failures.
+2. **Plan.** List every operation with whether it will be exercised (`planned`, `excluded`,
+   `skipped_write`, `skipped_auth`). This plan is the coverage denominator.
+3. **Check tooling.** Schemathesis and oasdiff versions, or `not_run`.
+4. **Probe the instance.** A single `GET` to a health or docs endpoint, then stop if it's down.
+5. **Generate and send cases.** Per operation: documented examples first, then boundary and
+   negative cases, then the property-based sample. Stateful links (OpenAPI `links`) only with
+   writes allowed.
+6. **Check every response** (see checks below), saving each exchange that fails a check.
+7. **Re-send** each failing case once, to separate repeatable from flaky.
+8. **Diff contracts** when `previous_contract` is given.
+9. **Normalise and merge** into candidates: one per (operation, check, cause). Every candidate is
+   triaged: promoted, `needs_review`, or dismissed with a checkable reason.
+10. **Output, validate and render.**
+
+## Checks
+
+| Check | Fails when |
+|---|---|
+| `status_documented` | The status code isn't in the operation's responses and there's no `default` |
+| `server_error` | Any `5xx` on any input. Rated higher on valid input |
+| `schema_conformance` | The body doesn't validate against the response schema (JSON Schema 2020-12 for 3.1, the 3.0 dialect for 3.0) |
+| `content_type` | The `Content-Type` isn't one documented for that status |
+| `required_headers` | A documented response header is missing |
+| `negative_accepted` | A request that violates the request schema got a `2xx` |
+| `positive_rejected` | A valid request (from a documented example) got a `4xx` other than `401`/`403`/`429` |
+| `auth_enforced` | An operation with a security requirement answered `2xx` without credentials |
+| `graphql_errors` | A valid query returned `errors`, or `data` that doesn't match the field types |
+
+The validator for JSON Schema is a stdlib subset in `scripts/jsonschema_lite.py` covering the
+keywords OpenAPI uses (`type`, `properties`, `required`, `items`, `enum`, `format` for common
+formats, `oneOf`/`anyOf`/`allOf`, `nullable`, `additionalProperties`, numeric and string bounds).
+A keyword it doesn't support makes that check `cantTell` for the operation, never a pass.
+
+## Breaking changes (contract diff)
+
+Breaking: removed operation or response status; new required request parameter or property;
+narrowed type or enum; removed response property; changed `operationId` used in links; tightened
+bounds. Non-breaking changes are listed but not rated. Each is rated `breaking`, `potentially
+breaking` (for example an added enum value in a response, which strict clients reject) or
+`compatible`.
+
+## Rating
+
+| Severity | Examples |
+|---|---|
+| **Critical** | `auth_enforced` failure; `5xx` on a documented example |
+| **High** | `schema_conformance` on a `2xx` (clients will break); `positive_rejected`; a breaking change without a version bump |
+| **Medium** | Undocumented status code; `negative_accepted`; `5xx` on invalid input |
+| **Low** | Wrong content type with a parseable body; missing documented header |
+
+- **Confidence:** `high` when the failure repeated on the re-send and the check is
+  deterministic; `medium` when it repeated but depends on server state; `low` when flaky.
+- **Priority:** severity weight (4/3/2/1) x reach (operations affected: 1, 2 for 2–4, 3 for 5 or
+  more) x confidence (high 3, medium 2, low 1). P0 >= 24, P1 >= 12, P2 >= 6, else P3. Every
+  Critical is at least P1.
+
+## Output (`api_contract_report.schema.json`)
+
+```text
+scope:        contract{kind, version, sha256}, base_url, authorised_by, writes_allowed, seed
+metadata:     tools[{name, version, status}], generator: schemathesis|stdlib, requests_sent,
+              rate_limited{events, backoff_seconds}
+headline:     verdict: violations_found|not_established, severity_counts,
+              operation_coverage{total, exercised, excluded, skipped_write, skipped_auth, untested},
+              evidence_completeness, overall_confidence
+operations[]: {operation_id, method, path, status, cases_sent, checks{name: passed|failed|cantTell|untested}}
+findings[]:   {id, check, operation_ids[], severity, confidence, priority, repeatable,
+               exchanges[{path, request_summary, status}], expected, actual, fix_direction,
+               handler?{file, line}, remediation, verification_step, regression_test_sketch}
+contract_issues[], breaking_changes[], needs_review[], triage[], limitations[]
+```
+
+## Validator fails when
+
+- A finding has no saved exchange, or an exchange file contains a configured secret value.
+- A write request appears in the exchanges with `writes_allowed: false`, or any write targets a
+  `production_hosts` entry.
+- An operation is marked `passed` with zero cases sent, or a check used an unsupported schema
+  keyword and still reports `passed`.
+- The verdict claims conformance, or coverage numbers don't add up to the plan.
+- A candidate is missing from `triage`.
+
+## Edge cases
+
+- **Pagination and huge responses:** bodies over 2 MB are truncated in the exchange file, with
+  the hash of the full body kept.
+- **Non-deterministic fields** (timestamps, ids) are validated by schema only, never compared
+  between sends.
+- **Rate limits on login:** the OAuth token is fetched once per run.
+- **Spec served by the API itself:** the fetched copy is hashed and recorded so the report says
+  which contract it judged.
+- **Mobile backends:** the same skill applies to the APIs mobile apps call; there is no separate
+  mobile mode.
+
+## Files
+
+```text
+api-contract-tester-skill/
+  SKILL.md  RUBRIC.md  README.md
+  schemas/api_contract_report.schema.json
+  scripts/load_contract.py     # OpenAPI/GraphQL loading, $ref resolution, contract lint
+          gen_cases.py         # stdlib case generator (examples, boundaries, negatives, seeded random)
+          send_cases.py        # rate-limited sender, safe mode, redaction, exchanges/
+          jsonschema_lite.py   # stdlib JSON Schema subset
+          spec_diff.py         # stdlib breaking-change diff; merges oasdiff output when present
+          run_schemathesis.py  # optional wrapper, records version or not_run
+          merge_findings.py  validate_report.py  render_report.py
+          sarif.py             # shared copy
+  examples/
+```
+
+## Example
+
+`examples/clinic-api/` is a tiny stdlib `http.server` API (an appointment booking service, about
+200 lines) with `openapi.yaml` and an older `openapi.v1.yaml`, served on `127.0.0.1:8140`. Planted
+problems, with an answer key in its README: a `500` on an unknown `date` format, an
+undocumented `404` body shape, a `2xx` response missing a required field, `text/html` on an error
+response, an endpoint that ignores its bearer requirement, a request accepted with a too-long
+name, and between versions a removed response property and a new required parameter.
+`examples/run/` is a real run, and `examples/report.example.json` the triaged report.
+
+## Resolved questions
+
+Agreed with the user before the build.
+
+1. **Allow `POST` to operations marked safe in safe mode?** No: write methods need `authorised_by` and a non-production target.
+2. **Regression-test sketch per finding in v1?** Yes.
+3. **gRPC or AsyncAPI?** Later, not v1.

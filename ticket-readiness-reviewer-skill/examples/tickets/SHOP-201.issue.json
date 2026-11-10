@@ -1,0 +1,252 @@
+{
+  "key": "SHOP-201",
+  "names": {
+    "customfield_10034": "Acceptance Criteria"
+  },
+  "fields": {
+    "summary": "Customers can check a gift card balance",
+    "issuetype": {
+      "name": "Story"
+    },
+    "status": {
+      "name": "Ready for Refinement"
+    },
+    "priority": {
+      "name": "Medium"
+    },
+    "labels": [
+      "gift-cards"
+    ],
+    "components": [
+      {
+        "name": "storefront"
+      }
+    ],
+    "fixVersions": [
+      {
+        "name": "2026.12"
+      }
+    ],
+    "description": {
+      "type": "doc",
+      "version": 1,
+      "content": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "Customers ask support for their gift card balance about 40 times a week. Add a balance check to the Gift cards page so they can look it up themselves. Balances come from the GiftCo API (GET /v2/cards/{number})."
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "attrs": {
+            "level": 3
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "Out of scope"
+            }
+          ]
+        },
+        {
+          "type": "bulletList",
+          "content": [
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Topping up a card."
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Checking a balance from the checkout page."
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "subtasks": [],
+    "issuelinks": [
+      {
+        "type": {
+          "name": "Blocks",
+          "inward": "is blocked by",
+          "outward": "blocks"
+        },
+        "inwardIssue": {
+          "key": "SHOP-190",
+          "fields": {
+            "summary": "GiftCo API credentials for staging"
+          }
+        }
+      }
+    ],
+    "attachment": [],
+    "comment": {
+      "comments": [
+        {
+          "author": {
+            "displayName": "Priya (Product)"
+          },
+          "created": "2026-11-02T03:10:00.000+0000",
+          "body": {
+            "type": "doc",
+            "version": 1,
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Designs are in Figma (Gift cards / Balance). Copy above is final from the content team."
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "total": 1
+    },
+    "parent": {
+      "key": "SHOP-150",
+      "fields": {
+        "summary": "Checkout improvements",
+        "issuetype": {
+          "name": "Epic"
+        }
+      }
+    },
+    "customfield_10034": {
+      "type": "doc",
+      "version": 1,
+      "content": [
+        {
+          "type": "orderedList",
+          "content": [
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Given a valid 16-digit card number and its 4-digit PIN, when the customer selects Check balance, then the balance is shown in AUD with two decimal places and the card's expiry date."
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Given a card number that isn't 16 digits, when the customer selects Check balance, then the message \"Enter the 16-digit number on the back of your card\" is shown and no request is sent to GiftCo."
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Given a valid card number and a wrong PIN, when the customer selects Check balance, then the message \"The card number or PIN is wrong\" is shown and the balance is not shown."
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Given 5 wrong PINs for the same card within 15 minutes, when the customer tries again, then balance checks for that card are refused for 15 minutes with the message \"Too many attempts. Try again in 15 minutes.\""
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Given GiftCo returns an error or takes longer than 3 seconds, when the customer selects Check balance, then the message \"We can't check balances right now. Try again later.\" is shown."
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Given a card with a zero balance, when its balance is checked, then $0.00 is shown with the expiry date."
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "The balance check returns within 500 ms at p95, measured at our API, excluding GiftCo's response time."
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
