@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="2" time="1.181" timestamp="2026-11-11T09:35:07.544609+13:00" hostname="MM-Terem"><testcase classname="tests.test_notifier" name="test_confirmation_is_sent" time="0.109"><failure message="assert ([])&#10; +  where [] = &lt;ferry_booking.notifier.Notifier object at 0x000002876AA4F380&gt;.sent">def test_confirmation_is_sent():
+        n = Notifier()
+        n.send_async("FB-1042")
+        time.sleep(0.05)
+&gt;       assert n.sent and n.sent[0].startswith("Booking FB-1042 confirmed")
+E       assert ([])
+E        +  where [] = &lt;ferry_booking.notifier.Notifier object at 0x000002876AA4F380&gt;.sent
+
+tests\test_notifier.py:10: AssertionError</failure></testcase><testcase classname="tests.test_notifier" name="test_confirmation_after_flush" time="0.552" /></testsuite></testsuites>

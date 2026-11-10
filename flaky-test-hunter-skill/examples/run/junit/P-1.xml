@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="2" time="2.293" timestamp="2026-11-11T09:33:37.952888+13:00" hostname="MM-Terem"><testcase classname="tests.test_status_server" name="test_health_endpoint_answers" time="0.931" /><testcase classname="tests.test_status_server" name="test_health_endpoint_status_code" time="0.001"><failure message="OSError: [WinError 10048] Only one usage of each socket address (protocol/network address/port) is normally permitted">def test_health_endpoint_status_code():
+&gt;       srv = start(8765)
+              ^^^^^^^^^^^
+
+tests\test_status_server.py:18: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+ferry_booking\status_server.py:22: in start
+    srv = StatusServer(("127.0.0.1", port), _Handler)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+~\AppData\Local\Programs\Python\Python314\Lib\socketserver.py:457: in __init__
+    self.server_bind()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;ferry_booking.status_server.StatusServer object at 0x0000017665C2C1A0&gt;
+
+    def server_bind(self):
+        """Called by constructor to bind the socket.
+    
+        May be overridden.
+    
+        """
+        if self.allow_reuse_address and hasattr(socket, "SO_REUSEADDR"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # Since Linux 6.12.9, SO_REUSEPORT is not allowed
+        # on other address families than AF_INET/AF_INET6.
+        if (
+            self.allow_reuse_port and hasattr(socket, "SO_REUSEPORT")
+            and self.address_family in (socket.AF_INET, socket.AF_INET6)
+        ):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+&gt;       self.socket.bind(self.server_address)
+E       OSError: [WinError 10048] Only one usage of each socket address (protocol/network address/port) is normally permitted
+
+~\AppData\Local\Programs\Python\Python314\Lib\socketserver.py:478: OSError</failure></testcase></testsuite></testsuites>

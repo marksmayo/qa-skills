@@ -18,8 +18,10 @@ SHARED = {
     'JOURNEY_FORMAT.md': ['journey-mapper-skill', 'journey-to-tests-skill'],
     'schemas/journey.schema.json': ['journey-mapper-skill', 'journey-to-tests-skill'],
     'scripts/journey_md.py': ['journey-mapper-skill', 'journey-to-tests-skill'],
-    'scripts/detect_conventions.py': ['journey-to-tests-skill', 'ticket-to-tdd-skill'],
-    'scripts/parse_results.py': ['journey-to-tests-skill', 'ticket-to-tdd-skill'],
+    'scripts/detect_conventions.py': ['journey-to-tests-skill', 'ticket-to-tdd-skill', 'flaky-test-hunter-skill'],
+    'scripts/parse_results.py': ['journey-to-tests-skill', 'ticket-to-tdd-skill', 'flaky-test-hunter-skill'],
+    'scripts/run_tests.py': ['flaky-test-hunter-skill'],
+    'scripts/stats.py': ['flaky-test-hunter-skill'],
     'scripts/sarif.py': ['ui-crash-hunter-skill', 'code-security-auditor-skill'],
     'scripts/fetch_ticket.py': ['ticket-to-tdd-skill', 'ticket-readiness-reviewer-skill'],
 }

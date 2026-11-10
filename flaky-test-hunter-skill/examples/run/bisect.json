@@ -1,0 +1,121 @@
+{
+  "victim": "tests.test_fares::test_cache_starts_empty",
+  "from_run": "O-1",
+  "candidates": 15,
+  "polluter": "tests/test_quotes.py::test_quote_is_case_insensitive",
+  "outcome": "minimal_pair",
+  "steps": [
+    {
+      "run_id": "B-1",
+      "why": "victim alone",
+      "tests": [
+        "tests/test_fares.py::test_cache_starts_empty"
+      ],
+      "victim_status": "passed"
+    },
+    {
+      "run_id": "B-2",
+      "why": "all earlier tests then victim",
+      "tests": [
+        "tests/test_status_server.py::test_health_endpoint_status_code",
+        "tests/test_status_server.py::test_health_endpoint_answers",
+        "tests/test_seats.py::test_seat_count_matches_passengers",
+        "tests/test_seats.py::test_family_of_four_gets_two_rows",
+        "tests/test_schedule.py::test_minutes_until_never_negative",
+        "tests/test_schedule.py::test_minutes_until_departure",
+        "tests/test_schedule.py::test_departs_today",
+        "tests/test_refunds.py::test_full_credit",
+        "tests/test_refunds.py::test_one_third_refund_rounds_to_nearest_cent",
+        "tests/test_quotes.py::test_quote_is_case_insensitive",
+        "tests/test_quotes.py::test_manly_quote",
+        "tests/test_notifier.py::test_confirmation_after_flush",
+        "tests/test_notifier.py::test_confirmation_is_sent",
+        "tests/test_fares.py::test_unknown_route_is_rejected",
+        "tests/test_fares.py::test_concession_is_half_price",
+        "tests/test_fares.py::test_cache_starts_empty"
+      ],
+      "victim_status": "failed"
+    },
+    {
+      "run_id": "B-3",
+      "why": "first 7 of 15 then victim",
+      "tests": [
+        "tests/test_status_server.py::test_health_endpoint_status_code",
+        "tests/test_status_server.py::test_health_endpoint_answers",
+        "tests/test_seats.py::test_seat_count_matches_passengers",
+        "tests/test_seats.py::test_family_of_four_gets_two_rows",
+        "tests/test_schedule.py::test_minutes_until_never_negative",
+        "tests/test_schedule.py::test_minutes_until_departure",
+        "tests/test_schedule.py::test_departs_today",
+        "tests/test_fares.py::test_cache_starts_empty"
+      ],
+      "victim_status": "passed"
+    },
+    {
+      "run_id": "B-4",
+      "why": "last 8 of 15 then victim",
+      "tests": [
+        "tests/test_refunds.py::test_full_credit",
+        "tests/test_refunds.py::test_one_third_refund_rounds_to_nearest_cent",
+        "tests/test_quotes.py::test_quote_is_case_insensitive",
+        "tests/test_quotes.py::test_manly_quote",
+        "tests/test_notifier.py::test_confirmation_after_flush",
+        "tests/test_notifier.py::test_confirmation_is_sent",
+        "tests/test_fares.py::test_unknown_route_is_rejected",
+        "tests/test_fares.py::test_concession_is_half_price",
+        "tests/test_fares.py::test_cache_starts_empty"
+      ],
+      "victim_status": "failed"
+    },
+    {
+      "run_id": "B-5",
+      "why": "first 4 of 8 then victim",
+      "tests": [
+        "tests/test_refunds.py::test_full_credit",
+        "tests/test_refunds.py::test_one_third_refund_rounds_to_nearest_cent",
+        "tests/test_quotes.py::test_quote_is_case_insensitive",
+        "tests/test_quotes.py::test_manly_quote",
+        "tests/test_fares.py::test_cache_starts_empty"
+      ],
+      "victim_status": "failed"
+    },
+    {
+      "run_id": "B-6",
+      "why": "first 2 of 4 then victim",
+      "tests": [
+        "tests/test_refunds.py::test_full_credit",
+        "tests/test_refunds.py::test_one_third_refund_rounds_to_nearest_cent",
+        "tests/test_fares.py::test_cache_starts_empty"
+      ],
+      "victim_status": "passed"
+    },
+    {
+      "run_id": "B-7",
+      "why": "last 2 of 4 then victim",
+      "tests": [
+        "tests/test_quotes.py::test_quote_is_case_insensitive",
+        "tests/test_quotes.py::test_manly_quote",
+        "tests/test_fares.py::test_cache_starts_empty"
+      ],
+      "victim_status": "failed"
+    },
+    {
+      "run_id": "B-8",
+      "why": "first 1 of 2 then victim",
+      "tests": [
+        "tests/test_quotes.py::test_quote_is_case_insensitive",
+        "tests/test_fares.py::test_cache_starts_empty"
+      ],
+      "victim_status": "failed"
+    },
+    {
+      "run_id": "B-9",
+      "why": "polluter then victim",
+      "tests": [
+        "tests/test_quotes.py::test_quote_is_case_insensitive",
+        "tests/test_fares.py::test_cache_starts_empty"
+      ],
+      "victim_status": "failed"
+    }
+  ]
+}

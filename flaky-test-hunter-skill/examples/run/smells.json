@@ -1,0 +1,137 @@
+{
+  "pitfalls_version": "1.0.0",
+  "smells": [
+    {
+      "id": "SM-1",
+      "smell": "module-global-state",
+      "file": "ferry_booking/fares.py",
+      "line": 4,
+      "excerpt": "_CACHE: dict[str, float] = {}",
+      "cause": "shared_state",
+      "message": "Module-level mutable state",
+      "fix": "Reset it in a fixture (autouse) or inject it, so tests don't depend on order.",
+      "test": null,
+      "in_test_file": false
+    },
+    {
+      "id": "SM-2",
+      "smell": "fixed-sleep",
+      "file": "tests/test_notifier.py",
+      "line": 9,
+      "excerpt": "time.sleep(0.05)",
+      "cause": "async_wait",
+      "message": "Fixed sleep in a test",
+      "fix": "Wait on the condition with a deadline (an Event, thread.join(timeout), or a polling helper), not on time.",
+      "test": "test_confirmation_is_sent",
+      "in_test_file": true
+    },
+    {
+      "id": "SM-3",
+      "smell": "fixed-sleep",
+      "file": "tests/test_notifier.py",
+      "line": 16,
+      "excerpt": "time.sleep(0.5)",
+      "cause": "async_wait",
+      "message": "Fixed sleep in a test",
+      "fix": "Wait on the condition with a deadline (an Event, thread.join(timeout), or a polling helper), not on time.",
+      "test": "test_confirmation_after_flush",
+      "in_test_file": true
+    },
+    {
+      "id": "SM-4",
+      "smell": "wall-clock-today",
+      "file": "tests/test_schedule.py",
+      "line": 9,
+      "excerpt": "assert departure_date(now) == date.today()",
+      "cause": "time_and_locale",
+      "message": "Local wall-clock read in a test",
+      "fix": "Freeze the clock (the repo's clock helper, freezegun or time-machine) or compare in UTC on both sides.",
+      "test": "test_departs_today",
+      "in_test_file": true
+    },
+    {
+      "id": "SM-5",
+      "smell": "set-order",
+      "file": "tests/test_seats.py",
+      "line": 5,
+      "excerpt": "assert list(allocate(4)) == [\"A1\", \"A2\", \"B1\", \"B2\"]",
+      "cause": "randomness",
+      "message": "Assertion on the order of a set",
+      "fix": "Compare sets, or sort both sides.",
+      "test": "test_family_of_four_gets_two_rows",
+      "in_test_file": true
+    },
+    {
+      "id": "SM-6",
+      "smell": "fixed-port",
+      "file": "tests/test_status_server.py",
+      "line": 8,
+      "excerpt": "srv = start(8765)",
+      "cause": "resource_contention",
+      "message": "Fixed network port",
+      "fix": "Bind port 0 and read the port the OS assigned.",
+      "test": "test_health_endpoint_answers",
+      "in_test_file": true
+    },
+    {
+      "id": "SM-7",
+      "smell": "fixed-sleep",
+      "file": "tests/test_status_server.py",
+      "line": 10,
+      "excerpt": "time.sleep(0.4)",
+      "cause": "async_wait",
+      "message": "Fixed sleep in a test",
+      "fix": "Wait on the condition with a deadline (an Event, thread.join(timeout), or a polling helper), not on time.",
+      "test": "test_health_endpoint_answers",
+      "in_test_file": true
+    },
+    {
+      "id": "SM-8",
+      "smell": "fixed-port",
+      "file": "tests/test_status_server.py",
+      "line": 11,
+      "excerpt": "assert urllib.request.urlopen(\"http://127.0.0.1:8765/\").read() == b\"ok\"",
+      "cause": "resource_contention",
+      "message": "Fixed network port",
+      "fix": "Bind port 0 and read the port the OS assigned.",
+      "test": "test_health_endpoint_answers",
+      "in_test_file": true
+    },
+    {
+      "id": "SM-9",
+      "smell": "fixed-port",
+      "file": "tests/test_status_server.py",
+      "line": 18,
+      "excerpt": "srv = start(8765)",
+      "cause": "resource_contention",
+      "message": "Fixed network port",
+      "fix": "Bind port 0 and read the port the OS assigned.",
+      "test": "test_health_endpoint_status_code",
+      "in_test_file": true
+    },
+    {
+      "id": "SM-10",
+      "smell": "fixed-sleep",
+      "file": "tests/test_status_server.py",
+      "line": 20,
+      "excerpt": "time.sleep(0.4)",
+      "cause": "async_wait",
+      "message": "Fixed sleep in a test",
+      "fix": "Wait on the condition with a deadline (an Event, thread.join(timeout), or a polling helper), not on time.",
+      "test": "test_health_endpoint_status_code",
+      "in_test_file": true
+    },
+    {
+      "id": "SM-11",
+      "smell": "fixed-port",
+      "file": "tests/test_status_server.py",
+      "line": 21,
+      "excerpt": "assert urllib.request.urlopen(\"http://127.0.0.1:8765/\").status == 200",
+      "cause": "resource_contention",
+      "message": "Fixed network port",
+      "fix": "Bind port 0 and read the port the OS assigned.",
+      "test": "test_health_endpoint_status_code",
+      "in_test_file": true
+    }
+  ]
+}

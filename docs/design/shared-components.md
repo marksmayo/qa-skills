@@ -1,6 +1,6 @@
 # Shared components and the Journey Markdown format
 
-Status: Partly built; skills 7–25 add more shared files (see "Planned for skills 7–24"). Done: the Journey Markdown format, `journey_md.py`, `fetch_ticket.py` (shared since skill 7),
+Status: Partly built; skills 7–25 add more shared files (see "Planned for skills 7–24"). Done: the Journey Markdown format, `journey_md.py`, `fetch_ticket.py` (shared since skill 7), `run_tests.py` and `stats.py` (since skill 8),
 `detect_conventions.py`, `parse_results.py`, `sarif.py` and `tools/check_shared.py`. The
 rendering helpers were not shared: each skill's renderer is small and report-specific, so each keeps
 its own.

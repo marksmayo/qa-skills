@@ -1,0 +1,10 @@
+[project]
+name = "ferry-booking"
+version = "0.3.0"
+requires-python = ">=3.9"
+
+[project.optional-dependencies]
+test = ["pytest>=8", "pytest-xdist>=3"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

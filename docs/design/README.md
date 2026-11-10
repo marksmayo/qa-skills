@@ -14,7 +14,7 @@ anatomy described in the root `CLAUDE.md` (`SKILL.md`, `RUBRIC.md`, `schemas/`, 
 | 5 | [Code security auditor](code-security-auditor.md) | `code-security-auditor-skill/` | Built (v1.0.0) |
 | 6 | [WCAG auditor](wcag-auditor.md) | `wcag-auditor-skill/` | Built (v1.0.0) |
 | 7 | [Ticket readiness reviewer](ticket-readiness-reviewer.md) | `ticket-readiness-reviewer-skill/` | Built (v1.0.0) |
-| 8 | [Flaky test hunter](flaky-test-hunter.md) | `flaky-test-hunter-skill/` | Designed |
+| 8 | [Flaky test hunter](flaky-test-hunter.md) | `flaky-test-hunter-skill/` | Built (v1.0.0) |
 | 9 | [Mutation tester](mutation-tester.md) | `mutation-tester-skill/` | Designed |
 | 10 | [Test impact selector](test-impact-selector.md) | `test-impact-selector-skill/` | Designed |
 | 11 | [Test data auditor](test-data-auditor.md) | `test-data-auditor-skill/` | Designed |

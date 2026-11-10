@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.057" timestamp="2026-11-11T09:33:10.239674+13:00" hostname="MM-Terem"><testcase classname="tests.test_schedule" name="test_departs_today" time="0.001"><failure message="assert datetime.date(2026, 11, 10) == datetime.date(2026, 11, 11)&#10; +  where datetime.date(2026, 11, 10) = departure_date(1794342790.2546375)&#10; +  and   datetime.date(2026, 11, 11) = &lt;built-in method today of type object at 0x00007FFF411F05E0&gt;()&#10; +    where &lt;built-in method today of type object at 0x00007FFF411F05E0&gt; = date.today">def test_departs_today():
+        now = time.time()
+&gt;       assert departure_date(now) == date.today()
+E       assert datetime.date(2026, 11, 10) == datetime.date(2026, 11, 11)
+E        +  where datetime.date(2026, 11, 10) = departure_date(1794342790.2546375)
+E        +  and   datetime.date(2026, 11, 11) = &lt;built-in method today of type object at 0x00007FFF411F05E0&gt;()
+E        +    where &lt;built-in method today of type object at 0x00007FFF411F05E0&gt; = date.today
+
+tests\test_schedule.py:9: AssertionError</failure></testcase></testsuite></testsuites>

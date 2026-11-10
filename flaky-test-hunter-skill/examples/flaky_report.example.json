@@ -1,0 +1,1767 @@
+{
+  "schema_version": "1.0.0",
+  "skill": {
+    "name": "flaky-test-hunter",
+    "version": "1.0.0"
+  },
+  "generated_at": "2026-11-11T11:00:00Z",
+  "metadata": {
+    "repo": "examples/ferry-booking",
+    "commit": null,
+    "code_hash": "389ec8eb584d2f7fedfaae7ebd204ddcaa2e74e0a734604f79fdb906ccbc9786",
+    "framework": "pytest 9.2.0",
+    "run_command": "python -m pytest -q -p no:cacheprovider --junitxml=<run>.xml",
+    "runs_file": "run/runs.json",
+    "platform": "Windows 11, Python 3.14.10, 20 logical CPUs, local time zone NZDT (UTC+13)",
+    "budget": {
+      "repeats": 20,
+      "minutes": 60,
+      "stopped_early": false
+    },
+    "gate": {
+      "level": "required",
+      "evidence": "The user said the pytest check is required before merge; .github/workflows/ci.yml runs python -m pytest -n auto."
+    },
+    "critical_tests": [
+      "tests.test_notifier::test_confirmation_is_sent"
+    ],
+    "history": {
+      "status": "not_given",
+      "source": null
+    }
+  },
+  "tools": [
+    {
+      "name": "pytest",
+      "version": "9.2.0",
+      "status": "ran",
+      "reason": "The repo's runner."
+    },
+    {
+      "name": "pytest-xdist",
+      "version": "3.8.0",
+      "status": "ran",
+      "reason": "Parallel variation."
+    },
+    {
+      "name": "pytest-randomly",
+      "version": null,
+      "status": "not_run",
+      "reason": "Not installed; order variations used run_tests.py reordering of explicit test ids instead."
+    },
+    {
+      "name": "libfaketime",
+      "version": null,
+      "status": "not_run",
+      "reason": "Not available on Windows; time variations used TZ only, so midnight and month-end runs were not done."
+    },
+    {
+      "name": "detect-test-pollution",
+      "version": null,
+      "status": "not_run",
+      "reason": "Not installed; bisect_polluter.py did the bisection."
+    },
+    {
+      "name": "gh",
+      "version": null,
+      "status": "not_run",
+      "reason": "No CI history was given or requested."
+    }
+  ],
+  "variations": [
+    {
+      "kind": "repeat",
+      "status": "ran",
+      "labels": [
+        "baseline",
+        "repeat",
+        "confirm_failing"
+      ],
+      "scope": "whole suite",
+      "reason": "One baseline, 20 repeats, and 3 reruns of each baseline failure."
+    },
+    {
+      "kind": "order",
+      "status": "ran",
+      "labels": [
+        "order_reverse",
+        "order_shuffle",
+        "bisect"
+      ],
+      "scope": "whole suite",
+      "reason": "Reverse once, shuffled with seeds 11, 22 and 33, then bisection."
+    },
+    {
+      "kind": "isolate",
+      "status": "ran",
+      "labels": [
+        "isolate"
+      ],
+      "scope": "whole suite",
+      "reason": "Every test alone in its own process."
+    },
+    {
+      "kind": "seed",
+      "status": "ran",
+      "labels": [
+        "hash_seed_0",
+        "hash_seed_1"
+      ],
+      "scope": "tests/test_seats.py",
+      "reason": "PYTHONHASHSEED 0 and 1, three runs each."
+    },
+    {
+      "kind": "parallel",
+      "status": "ran",
+      "labels": [
+        "serial_port_tests",
+        "parallel_2"
+      ],
+      "tool": "pytest-xdist",
+      "scope": "tests/test_status_server.py",
+      "reason": "The fixed-port suspects, serially and with 2 workers, five runs each."
+    },
+    {
+      "kind": "tz",
+      "status": "ran",
+      "labels": [
+        "tz_utc_suite",
+        "tz_utc",
+        "tz_kiritimati"
+      ],
+      "scope": "whole suite, then tests/test_schedule.py",
+      "reason": "UTC and UTC+14 (fixed offsets: the Windows C runtime has no DST rules)."
+    },
+    {
+      "kind": "locale",
+      "status": "ran",
+      "labels": [
+        "locale_tr"
+      ],
+      "scope": "whole suite",
+      "reason": "LANG/LC_ALL tr_TR.UTF-8 once. Windows runtimes largely ignore these, so this is weak evidence."
+    },
+    {
+      "kind": "cpu_load",
+      "status": "ran",
+      "labels": [
+        "serial_notifier",
+        "cpu_load_20"
+      ],
+      "scope": "tests/test_notifier.py",
+      "reason": "Five runs as normal and five with 20 busy sibling processes."
+    },
+    {
+      "kind": "latency",
+      "status": "not_applicable",
+      "labels": [],
+      "reason": "No end-to-end or network-client tests."
+    }
+  ],
+  "tests": [
+    {
+      "id": "tests.test_fares::test_cache_starts_empty",
+      "file": "tests/test_fares.py",
+      "runs": 37,
+      "passes": 28,
+      "fails": 9,
+      "normal": {
+        "runs": 21,
+        "fails": 0,
+        "rate": 0.0,
+        "wilson_low": 0.0,
+        "wilson_high": 0.1546
+      },
+      "worst": {
+        "label": "order_shuffle",
+        "runs": 3,
+        "fails": 2,
+        "wilson_low": 0.2077
+      },
+      "by_label": [
+        {
+          "label": "baseline",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "bisect",
+          "runs": 9,
+          "fails": 6
+        },
+        {
+          "label": "isolate",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "locale_tr",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "order_reverse",
+          "runs": 1,
+          "fails": 1
+        },
+        {
+          "label": "order_shuffle",
+          "runs": 3,
+          "fails": 2
+        },
+        {
+          "label": "repeat",
+          "runs": 20,
+          "fails": 0
+        },
+        {
+          "label": "tz_utc_suite",
+          "runs": 1,
+          "fails": 0
+        }
+      ],
+      "status": "flaky"
+    },
+    {
+      "id": "tests.test_fares::test_concession_is_half_price",
+      "file": "tests/test_fares.py",
+      "runs": 30,
+      "passes": 30,
+      "fails": 0,
+      "normal": {
+        "runs": 21,
+        "fails": 0,
+        "rate": 0.0,
+        "wilson_low": 0.0,
+        "wilson_high": 0.1546
+      },
+      "worst": {
+        "label": null,
+        "runs": 0,
+        "fails": 0,
+        "wilson_low": 0.0
+      },
+      "by_label": [
+        {
+          "label": "baseline",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "bisect",
+          "runs": 2,
+          "fails": 0
+        },
+        {
+          "label": "isolate",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "locale_tr",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "order_reverse",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "order_shuffle",
+          "runs": 3,
+          "fails": 0
+        },
+        {
+          "label": "repeat",
+          "runs": 20,
+          "fails": 0
+        },
+        {
+          "label": "tz_utc_suite",
+          "runs": 1,
+          "fails": 0
+        }
+      ],
+      "status": "not_observed_flaky"
+    },
+    {
+      "id": "tests.test_fares::test_unknown_route_is_rejected",
+      "file": "tests/test_fares.py",
+      "runs": 30,
+      "passes": 30,
+      "fails": 0,
+      "normal": {
+        "runs": 21,
+        "fails": 0,
+        "rate": 0.0,
+        "wilson_low": 0.0,
+        "wilson_high": 0.1546
+      },
+      "worst": {
+        "label": null,
+        "runs": 0,
+        "fails": 0,
+        "wilson_low": 0.0
+      },
+      "by_label": [
+        {
+          "label": "baseline",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "bisect",
+          "runs": 2,
+          "fails": 0
+        },
+        {
+          "label": "isolate",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "locale_tr",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "order_reverse",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "order_shuffle",
+          "runs": 3,
+          "fails": 0
+        },
+        {
+          "label": "repeat",
+          "runs": 20,
+          "fails": 0
+        },
+        {
+          "label": "tz_utc_suite",
+          "runs": 1,
+          "fails": 0
+        }
+      ],
+      "status": "not_observed_flaky"
+    },
+    {
+      "id": "tests.test_notifier::test_confirmation_after_flush",
+      "file": "tests/test_notifier.py",
+      "runs": 40,
+      "passes": 40,
+      "fails": 0,
+      "normal": {
+        "runs": 21,
+        "fails": 0,
+        "rate": 0.0,
+        "wilson_low": 0.0,
+        "wilson_high": 0.1546
+      },
+      "worst": {
+        "label": null,
+        "runs": 0,
+        "fails": 0,
+        "wilson_low": 0.0
+      },
+      "by_label": [
+        {
+          "label": "baseline",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "bisect",
+          "runs": 2,
+          "fails": 0
+        },
+        {
+          "label": "cpu_load_20",
+          "runs": 5,
+          "fails": 0
+        },
+        {
+          "label": "isolate",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "locale_tr",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "order_reverse",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "order_shuffle",
+          "runs": 3,
+          "fails": 0
+        },
+        {
+          "label": "repeat",
+          "runs": 20,
+          "fails": 0
+        },
+        {
+          "label": "serial_notifier",
+          "runs": 5,
+          "fails": 0
+        },
+        {
+          "label": "tz_utc_suite",
+          "runs": 1,
+          "fails": 0
+        }
+      ],
+      "status": "not_observed_flaky"
+    },
+    {
+      "id": "tests.test_notifier::test_confirmation_is_sent",
+      "file": "tests/test_notifier.py",
+      "runs": 40,
+      "passes": 35,
+      "fails": 5,
+      "normal": {
+        "runs": 21,
+        "fails": 0,
+        "rate": 0.0,
+        "wilson_low": 0.0,
+        "wilson_high": 0.1546
+      },
+      "worst": {
+        "label": "cpu_load_20",
+        "runs": 5,
+        "fails": 5,
+        "wilson_low": 0.5655
+      },
+      "by_label": [
+        {
+          "label": "baseline",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "bisect",
+          "runs": 2,
+          "fails": 0
+        },
+        {
+          "label": "cpu_load_20",
+          "runs": 5,
+          "fails": 5
+        },
+        {
+          "label": "isolate",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "locale_tr",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "order_reverse",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "order_shuffle",
+          "runs": 3,
+          "fails": 0
+        },
+        {
+          "label": "repeat",
+          "runs": 20,
+          "fails": 0
+        },
+        {
+          "label": "serial_notifier",
+          "runs": 5,
+          "fails": 0
+        },
+        {
+          "label": "tz_utc_suite",
+          "runs": 1,
+          "fails": 0
+        }
+      ],
+      "status": "flaky"
+    },
+    {
+      "id": "tests.test_quotes::test_manly_quote",
+      "file": "tests/test_quotes.py",
+      "runs": 32,
+      "passes": 32,
+      "fails": 0,
+      "normal": {
+        "runs": 21,
+        "fails": 0,
+        "rate": 0.0,
+        "wilson_low": 0.0,
+        "wilson_high": 0.1546
+      },
+      "worst": {
+        "label": null,
+        "runs": 0,
+        "fails": 0,
+        "wilson_low": 0.0
+      },
+      "by_label": [
+        {
+          "label": "baseline",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "bisect",
+          "runs": 4,
+          "fails": 0
+        },
+        {
+          "label": "isolate",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "locale_tr",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "order_reverse",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "order_shuffle",
+          "runs": 3,
+          "fails": 0
+        },
+        {
+          "label": "repeat",
+          "runs": 20,
+          "fails": 0
+        },
+        {
+          "label": "tz_utc_suite",
+          "runs": 1,
+          "fails": 0
+        }
+      ],
+      "status": "not_observed_flaky"
+    },
+    {
+      "id": "tests.test_quotes::test_quote_is_case_insensitive",
+      "file": "tests/test_quotes.py",
+      "runs": 34,
+      "passes": 34,
+      "fails": 0,
+      "normal": {
+        "runs": 21,
+        "fails": 0,
+        "rate": 0.0,
+        "wilson_low": 0.0,
+        "wilson_high": 0.1546
+      },
+      "worst": {
+        "label": null,
+        "runs": 0,
+        "fails": 0,
+        "wilson_low": 0.0
+      },
+      "by_label": [
+        {
+          "label": "baseline",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "bisect",
+          "runs": 6,
+          "fails": 0
+        },
+        {
+          "label": "isolate",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "locale_tr",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "order_reverse",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "order_shuffle",
+          "runs": 3,
+          "fails": 0
+        },
+        {
+          "label": "repeat",
+          "runs": 20,
+          "fails": 0
+        },
+        {
+          "label": "tz_utc_suite",
+          "runs": 1,
+          "fails": 0
+        }
+      ],
+      "status": "not_observed_flaky"
+    },
+    {
+      "id": "tests.test_refunds::test_full_credit",
+      "file": "tests/test_refunds.py",
+      "runs": 32,
+      "passes": 32,
+      "fails": 0,
+      "normal": {
+        "runs": 21,
+        "fails": 0,
+        "rate": 0.0,
+        "wilson_low": 0.0,
+        "wilson_high": 0.1546
+      },
+      "worst": {
+        "label": null,
+        "runs": 0,
+        "fails": 0,
+        "wilson_low": 0.0
+      },
+      "by_label": [
+        {
+          "label": "baseline",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "bisect",
+          "runs": 4,
+          "fails": 0
+        },
+        {
+          "label": "isolate",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "locale_tr",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "order_reverse",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "order_shuffle",
+          "runs": 3,
+          "fails": 0
+        },
+        {
+          "label": "repeat",
+          "runs": 20,
+          "fails": 0
+        },
+        {
+          "label": "tz_utc_suite",
+          "runs": 1,
+          "fails": 0
+        }
+      ],
+      "status": "not_observed_flaky"
+    },
+    {
+      "id": "tests.test_refunds::test_one_third_refund_rounds_to_nearest_cent",
+      "file": "tests/test_refunds.py",
+      "runs": 35,
+      "passes": 0,
+      "fails": 35,
+      "normal": {
+        "runs": 21,
+        "fails": 21,
+        "rate": 1.0,
+        "wilson_low": 0.8454,
+        "wilson_high": 1.0
+      },
+      "worst": {
+        "label": "repeat",
+        "runs": 20,
+        "fails": 20,
+        "wilson_low": 0.8389
+      },
+      "by_label": [
+        {
+          "label": "baseline",
+          "runs": 1,
+          "fails": 1
+        },
+        {
+          "label": "bisect",
+          "runs": 4,
+          "fails": 4
+        },
+        {
+          "label": "confirm_failing",
+          "runs": 3,
+          "fails": 3
+        },
+        {
+          "label": "isolate",
+          "runs": 1,
+          "fails": 1
+        },
+        {
+          "label": "locale_tr",
+          "runs": 1,
+          "fails": 1
+        },
+        {
+          "label": "order_reverse",
+          "runs": 1,
+          "fails": 1
+        },
+        {
+          "label": "order_shuffle",
+          "runs": 3,
+          "fails": 3
+        },
+        {
+          "label": "repeat",
+          "runs": 20,
+          "fails": 20
+        },
+        {
+          "label": "tz_utc_suite",
+          "runs": 1,
+          "fails": 1
+        }
+      ],
+      "status": "consistently_failing"
+    },
+    {
+      "id": "tests.test_schedule::test_departs_today",
+      "file": "tests/test_schedule.py",
+      "runs": 39,
+      "passes": 4,
+      "fails": 35,
+      "normal": {
+        "runs": 21,
+        "fails": 21,
+        "rate": 1.0,
+        "wilson_low": 0.8454,
+        "wilson_high": 1.0
+      },
+      "worst": {
+        "label": "repeat",
+        "runs": 20,
+        "fails": 20,
+        "wilson_low": 0.8389
+      },
+      "by_label": [
+        {
+          "label": "baseline",
+          "runs": 1,
+          "fails": 1
+        },
+        {
+          "label": "bisect",
+          "runs": 2,
+          "fails": 2
+        },
+        {
+          "label": "confirm_failing",
+          "runs": 3,
+          "fails": 3
+        },
+        {
+          "label": "isolate",
+          "runs": 1,
+          "fails": 1
+        },
+        {
+          "label": "locale_tr",
+          "runs": 1,
+          "fails": 1
+        },
+        {
+          "label": "order_reverse",
+          "runs": 1,
+          "fails": 1
+        },
+        {
+          "label": "order_shuffle",
+          "runs": 3,
+          "fails": 3
+        },
+        {
+          "label": "repeat",
+          "runs": 20,
+          "fails": 20
+        },
+        {
+          "label": "tz_kiritimati",
+          "runs": 3,
+          "fails": 3
+        },
+        {
+          "label": "tz_utc",
+          "runs": 3,
+          "fails": 0
+        },
+        {
+          "label": "tz_utc_suite",
+          "runs": 1,
+          "fails": 0
+        }
+      ],
+      "status": "flaky"
+    },
+    {
+      "id": "tests.test_schedule::test_minutes_until_departure",
+      "file": "tests/test_schedule.py",
+      "runs": 36,
+      "passes": 36,
+      "fails": 0,
+      "normal": {
+        "runs": 21,
+        "fails": 0,
+        "rate": 0.0,
+        "wilson_low": 0.0,
+        "wilson_high": 0.1546
+      },
+      "worst": {
+        "label": null,
+        "runs": 0,
+        "fails": 0,
+        "wilson_low": 0.0
+      },
+      "by_label": [
+        {
+          "label": "baseline",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "bisect",
+          "runs": 2,
+          "fails": 0
+        },
+        {
+          "label": "isolate",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "locale_tr",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "order_reverse",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "order_shuffle",
+          "runs": 3,
+          "fails": 0
+        },
+        {
+          "label": "repeat",
+          "runs": 20,
+          "fails": 0
+        },
+        {
+          "label": "tz_kiritimati",
+          "runs": 3,
+          "fails": 0
+        },
+        {
+          "label": "tz_utc",
+          "runs": 3,
+          "fails": 0
+        },
+        {
+          "label": "tz_utc_suite",
+          "runs": 1,
+          "fails": 0
+        }
+      ],
+      "status": "not_observed_flaky"
+    },
+    {
+      "id": "tests.test_schedule::test_minutes_until_never_negative",
+      "file": "tests/test_schedule.py",
+      "runs": 36,
+      "passes": 36,
+      "fails": 0,
+      "normal": {
+        "runs": 21,
+        "fails": 0,
+        "rate": 0.0,
+        "wilson_low": 0.0,
+        "wilson_high": 0.1546
+      },
+      "worst": {
+        "label": null,
+        "runs": 0,
+        "fails": 0,
+        "wilson_low": 0.0
+      },
+      "by_label": [
+        {
+          "label": "baseline",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "bisect",
+          "runs": 2,
+          "fails": 0
+        },
+        {
+          "label": "isolate",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "locale_tr",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "order_reverse",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "order_shuffle",
+          "runs": 3,
+          "fails": 0
+        },
+        {
+          "label": "repeat",
+          "runs": 20,
+          "fails": 0
+        },
+        {
+          "label": "tz_kiritimati",
+          "runs": 3,
+          "fails": 0
+        },
+        {
+          "label": "tz_utc",
+          "runs": 3,
+          "fails": 0
+        },
+        {
+          "label": "tz_utc_suite",
+          "runs": 1,
+          "fails": 0
+        }
+      ],
+      "status": "not_observed_flaky"
+    },
+    {
+      "id": "tests.test_seats::test_family_of_four_gets_two_rows",
+      "file": "tests/test_seats.py",
+      "runs": 39,
+      "passes": 4,
+      "fails": 35,
+      "normal": {
+        "runs": 21,
+        "fails": 21,
+        "rate": 1.0,
+        "wilson_low": 0.8454,
+        "wilson_high": 1.0
+      },
+      "worst": {
+        "label": "repeat",
+        "runs": 20,
+        "fails": 20,
+        "wilson_low": 0.8389
+      },
+      "by_label": [
+        {
+          "label": "baseline",
+          "runs": 1,
+          "fails": 1
+        },
+        {
+          "label": "bisect",
+          "runs": 2,
+          "fails": 1
+        },
+        {
+          "label": "confirm_failing",
+          "runs": 3,
+          "fails": 3
+        },
+        {
+          "label": "hash_seed_0",
+          "runs": 3,
+          "fails": 3
+        },
+        {
+          "label": "hash_seed_1",
+          "runs": 3,
+          "fails": 0
+        },
+        {
+          "label": "isolate",
+          "runs": 1,
+          "fails": 1
+        },
+        {
+          "label": "locale_tr",
+          "runs": 1,
+          "fails": 1
+        },
+        {
+          "label": "order_reverse",
+          "runs": 1,
+          "fails": 1
+        },
+        {
+          "label": "order_shuffle",
+          "runs": 3,
+          "fails": 3
+        },
+        {
+          "label": "repeat",
+          "runs": 20,
+          "fails": 20
+        },
+        {
+          "label": "tz_utc_suite",
+          "runs": 1,
+          "fails": 1
+        }
+      ],
+      "status": "flaky"
+    },
+    {
+      "id": "tests.test_seats::test_seat_count_matches_passengers",
+      "file": "tests/test_seats.py",
+      "runs": 36,
+      "passes": 36,
+      "fails": 0,
+      "normal": {
+        "runs": 21,
+        "fails": 0,
+        "rate": 0.0,
+        "wilson_low": 0.0,
+        "wilson_high": 0.1546
+      },
+      "worst": {
+        "label": null,
+        "runs": 0,
+        "fails": 0,
+        "wilson_low": 0.0
+      },
+      "by_label": [
+        {
+          "label": "baseline",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "bisect",
+          "runs": 2,
+          "fails": 0
+        },
+        {
+          "label": "hash_seed_0",
+          "runs": 3,
+          "fails": 0
+        },
+        {
+          "label": "hash_seed_1",
+          "runs": 3,
+          "fails": 0
+        },
+        {
+          "label": "isolate",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "locale_tr",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "order_reverse",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "order_shuffle",
+          "runs": 3,
+          "fails": 0
+        },
+        {
+          "label": "repeat",
+          "runs": 20,
+          "fails": 0
+        },
+        {
+          "label": "tz_utc_suite",
+          "runs": 1,
+          "fails": 0
+        }
+      ],
+      "status": "not_observed_flaky"
+    },
+    {
+      "id": "tests.test_status_server::test_health_endpoint_answers",
+      "file": "tests/test_status_server.py",
+      "runs": 40,
+      "passes": 37,
+      "fails": 3,
+      "normal": {
+        "runs": 21,
+        "fails": 0,
+        "rate": 0.0,
+        "wilson_low": 0.0,
+        "wilson_high": 0.1546
+      },
+      "worst": {
+        "label": "parallel_2",
+        "runs": 5,
+        "fails": 3,
+        "wilson_low": 0.2307
+      },
+      "by_label": [
+        {
+          "label": "baseline",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "bisect",
+          "runs": 2,
+          "fails": 0
+        },
+        {
+          "label": "isolate",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "locale_tr",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "order_reverse",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "order_shuffle",
+          "runs": 3,
+          "fails": 0
+        },
+        {
+          "label": "parallel_2",
+          "runs": 5,
+          "fails": 3
+        },
+        {
+          "label": "repeat",
+          "runs": 20,
+          "fails": 0
+        },
+        {
+          "label": "serial_port_tests",
+          "runs": 5,
+          "fails": 0
+        },
+        {
+          "label": "tz_utc_suite",
+          "runs": 1,
+          "fails": 0
+        }
+      ],
+      "status": "flaky"
+    },
+    {
+      "id": "tests.test_status_server::test_health_endpoint_status_code",
+      "file": "tests/test_status_server.py",
+      "runs": 40,
+      "passes": 38,
+      "fails": 2,
+      "normal": {
+        "runs": 21,
+        "fails": 0,
+        "rate": 0.0,
+        "wilson_low": 0.0,
+        "wilson_high": 0.1546
+      },
+      "worst": {
+        "label": "parallel_2",
+        "runs": 5,
+        "fails": 2,
+        "wilson_low": 0.1176
+      },
+      "by_label": [
+        {
+          "label": "baseline",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "bisect",
+          "runs": 2,
+          "fails": 0
+        },
+        {
+          "label": "isolate",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "locale_tr",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "order_reverse",
+          "runs": 1,
+          "fails": 0
+        },
+        {
+          "label": "order_shuffle",
+          "runs": 3,
+          "fails": 0
+        },
+        {
+          "label": "parallel_2",
+          "runs": 5,
+          "fails": 2
+        },
+        {
+          "label": "repeat",
+          "runs": 20,
+          "fails": 0
+        },
+        {
+          "label": "serial_port_tests",
+          "runs": 5,
+          "fails": 0
+        },
+        {
+          "label": "tz_utc_suite",
+          "runs": 1,
+          "fails": 0
+        }
+      ],
+      "status": "flaky"
+    }
+  ],
+  "flakes": [
+    {
+      "id": "FL-4",
+      "test_id": "tests.test_notifier::test_confirmation_is_sent",
+      "cause": "async_wait",
+      "cause_confidence": "confirmed",
+      "experiment": {
+        "run_ids": [
+          "CN-1",
+          "CN-2",
+          "CN-3",
+          "CN-4",
+          "CN-5",
+          "C-1",
+          "C-2",
+          "C-3",
+          "C-4",
+          "C-5"
+        ],
+        "what_changed": "Ran test_notifier.py five times as normal and five times with 20 busy sibling processes.",
+        "result": "Passes all five normal runs and fails under CPU load. Rendering the confirmation takes about 30 ms on its own thread; the test sleeps 50 ms and then asserts, so a busy machine makes the thread finish after the assertion."
+      },
+      "evidence_runs": {
+        "passing": [
+          "R-1",
+          "N-1",
+          "N-2",
+          "N-3",
+          "N-4"
+        ],
+        "failing": [
+          "C-1",
+          "C-2",
+          "C-3",
+          "C-4",
+          "C-5"
+        ]
+      },
+      "polluter": null,
+      "failure_excerpts": [
+        "assert ([])\nE        +  where [] = <ferry_booking.notifier.Notifier object at 0x0000015905FCF380>.sent"
+      ],
+      "fix": {
+        "diff": "--- a/tests/test_notifier.py\n+++ b/tests/test_notifier.py\n@@ -5,8 +5,8 @@\n \n def test_confirmation_is_sent():\n     n = Notifier()\n-    n.send_async(\"FB-1042\")\n-    time.sleep(0.05)\n+    thread = n.send_async(\"FB-1042\")\n+    thread.join(timeout=5)\n     assert n.sent and n.sent[0].startswith(\"Booking FB-1042 confirmed\")\n \n \n",
+        "rationale": "Wait for the sending thread to finish (with a 5-second deadline) instead of for a fixed 50 ms. The test then waits exactly as long as the work takes.",
+        "applied": false,
+        "verification_run_ids": []
+      },
+      "quarantine": {
+        "how": "Skip test_confirmation_is_sent with a reason naming the ticket until the fix is merged",
+        "owner": "Bookings team",
+        "ticket": "FERRY-88 (to be raised)",
+        "applied": false
+      },
+      "rate_factor": 4,
+      "gate": 3,
+      "masking": 2,
+      "score": 24,
+      "priority": "P0",
+      "priority_note": "4 (worst Wilson low 56.5%) x gate 3 x masking 2 = 24"
+    },
+    {
+      "id": "FL-1",
+      "test_id": "tests.test_fares::test_cache_starts_empty",
+      "cause": "shared_state",
+      "cause_confidence": "confirmed",
+      "experiment": {
+        "run_ids": [
+          "B-1",
+          "B-9"
+        ],
+        "what_changed": "Bisected the 15 tests that ran before it in reverse order (run O-1).",
+        "result": "tests/test_quotes.py::test_quote_is_case_insensitive then the victim fails; the victim alone passes. fare() fills the module-level _CACHE in ferry_booking/fares.py and nothing empties it between tests."
+      },
+      "evidence_runs": {
+        "passing": [
+          "R-1",
+          "N-1",
+          "N-2",
+          "N-3",
+          "N-4"
+        ],
+        "failing": [
+          "O-1",
+          "S-1",
+          "S-2",
+          "B-2",
+          "B-4"
+        ]
+      },
+      "polluter": {
+        "test_id": "tests.test_quotes::test_quote_is_case_insensitive",
+        "bisect_run_ids": [
+          "B-1",
+          "B-2",
+          "B-3",
+          "B-4",
+          "B-5",
+          "B-6",
+          "B-7",
+          "B-8",
+          "B-9"
+        ],
+        "pair_run_id": "B-9",
+        "alone_run_id": "B-1"
+      },
+      "failure_excerpts": [
+        "AssertionError: assert ['MANLY', 'PA...A', 'TARONGA'] == []\nE         Use -v to get more diff"
+      ],
+      "fix": {
+        "diff": "--- /dev/null\n+++ b/tests/conftest.py\n@@ -0,0 +1,9 @@\n+import pytest\n+\n+from ferry_booking import fares\n+\n+\n+@pytest.fixture(autouse=True)\n+def empty_fare_cache():\n+    fares._CACHE.clear()\n+    yield\n",
+        "rationale": "An autouse fixture empties the fare cache before every test, so no test sees fares cached by another. The product cache is unchanged.",
+        "applied": false,
+        "verification_run_ids": []
+      },
+      "quarantine": null,
+      "rate_factor": 4,
+      "gate": 3,
+      "masking": 1,
+      "score": 12,
+      "priority": "P1",
+      "priority_note": "4 (worst Wilson low 20.8%) x gate 3 x masking 1 = 12"
+    },
+    {
+      "id": "FL-2",
+      "test_id": "tests.test_schedule::test_departs_today",
+      "cause": "time_and_locale",
+      "cause_confidence": "confirmed",
+      "experiment": {
+        "run_ids": [
+          "TU-1",
+          "TU-2",
+          "TU-3",
+          "TK-1",
+          "TK-2",
+          "TK-3"
+        ],
+        "what_changed": "Ran it with TZ=UTC and TZ=Pacific/Kiritimati (UTC+14).",
+        "result": "Passes every run in UTC and fails every run at UTC+14. departure_date() returns the UTC date and the test compares it with the local date.today(), so it fails whenever the local date differs from the UTC date."
+      },
+      "evidence_runs": {
+        "passing": [
+          "TS-1",
+          "TU-1",
+          "TU-2",
+          "TU-3"
+        ],
+        "failing": [
+          "R-1",
+          "N-1",
+          "N-2",
+          "N-3",
+          "N-4"
+        ]
+      },
+      "polluter": null,
+      "failure_excerpts": [
+        "assert datetime.date(2026, 11, 10) == datetime.date(2026, 11, 11)\nE        + …"
+      ],
+      "fix": {
+        "diff": "--- a/tests/test_schedule.py\n+++ b/tests/test_schedule.py\n@@ -1,12 +1,12 @@\n import time\n-from datetime import date\n+from datetime import datetime, timezone\n \n from ferry_booking.schedule import departure_date, minutes_until\n \n \n def test_departs_today():\n     now = time.time()\n-    assert departure_date(now) == date.today()\n+    assert departure_date(now) == datetime.fromtimestamp(now, timezone.utc).date()\n \n \n def test_minutes_until_departure():\n",
+        "rationale": "Compare against the UTC date of the same instant, which is what departure_date() promises. Both sides then use one clock reading and one zone.",
+        "applied": false,
+        "verification_run_ids": []
+      },
+      "quarantine": null,
+      "rate_factor": 4,
+      "gate": 3,
+      "masking": 1,
+      "score": 12,
+      "priority": "P1",
+      "priority_note": "4 (worst Wilson low 83.9%) x gate 3 x masking 1 = 12"
+    },
+    {
+      "id": "FL-3",
+      "test_id": "tests.test_seats::test_family_of_four_gets_two_rows",
+      "cause": "randomness",
+      "cause_confidence": "confirmed",
+      "experiment": {
+        "run_ids": [
+          "H0-1",
+          "H0-2",
+          "H0-3",
+          "H1-1",
+          "H1-2",
+          "H1-3"
+        ],
+        "what_changed": "Fixed PYTHONHASHSEED to 0 and to 1, three runs each.",
+        "result": "Seed 0 fails every run and seed 1 passes every run. allocate() returns a set, and the test compares list(set) with a fixed order; string hashing, and so set order, changes with the seed."
+      },
+      "evidence_runs": {
+        "passing": [
+          "H1-1",
+          "H1-2",
+          "H1-3"
+        ],
+        "failing": [
+          "R-1",
+          "N-1",
+          "N-2",
+          "N-3",
+          "N-4"
+        ]
+      },
+      "polluter": null,
+      "failure_excerpts": [
+        "AssertionError: assert ['B2', 'A2', 'A1', 'B1'] == ['A1', 'A2', 'B1', 'B2']\nE         Use -v to get more diff"
+      ],
+      "fix": {
+        "diff": "--- a/tests/test_seats.py\n+++ b/tests/test_seats.py\n@@ -2,7 +2,7 @@\n \n \n def test_family_of_four_gets_two_rows():\n-    assert list(allocate(4)) == [\"A1\", \"A2\", \"B1\", \"B2\"]\n+    assert allocate(4) == {\"A1\", \"A2\", \"B1\", \"B2\"}\n \n \n def test_seat_count_matches_passengers():\n",
+        "rationale": "Compare sets: the seats allocated matter, not the order a set happens to iterate in.",
+        "applied": false,
+        "verification_run_ids": []
+      },
+      "quarantine": null,
+      "rate_factor": 4,
+      "gate": 3,
+      "masking": 1,
+      "score": 12,
+      "priority": "P1",
+      "priority_note": "4 (worst Wilson low 83.9%) x gate 3 x masking 1 = 12"
+    },
+    {
+      "id": "FL-5",
+      "test_id": "tests.test_status_server::test_health_endpoint_answers",
+      "cause": "resource_contention",
+      "cause_confidence": "confirmed",
+      "experiment": {
+        "run_ids": [
+          "PS-1",
+          "PS-2",
+          "PS-3",
+          "PS-4",
+          "PS-5",
+          "P-1",
+          "P-2",
+          "P-3",
+          "P-4",
+          "P-5"
+        ],
+        "what_changed": "Ran test_status_server.py five times serially and five times with two pytest-xdist workers.",
+        "result": "Passes every serial run; with two workers one of the pair fails with WinError 10048 (address already in use), because both tests bind port 8765 at the same time. CI runs pytest -n auto, so this happens there."
+      },
+      "evidence_runs": {
+        "passing": [
+          "R-1",
+          "N-1",
+          "N-2",
+          "N-3",
+          "N-4"
+        ],
+        "failing": [
+          "P-2",
+          "P-3",
+          "P-5"
+        ]
+      },
+      "polluter": null,
+      "failure_excerpts": [
+        "OSError: [WinError 10048] Only one usage of each socket address (protocol/network address/port) is normally permitted"
+      ],
+      "fix": {
+        "diff": "--- a/tests/test_status_server.py\n+++ b/tests/test_status_server.py\n@@ -1,24 +1,23 @@\n-import time\n import urllib.request\n \n from ferry_booking.status_server import start\n \n \n def test_health_endpoint_answers():\n-    srv = start(8765)\n+    srv = start(0)\n+    port = srv.server_address[1]\n     try:\n-        time.sleep(0.4)\n-        assert urllib.request.urlopen(\"http://127.0.0.1:8765/\").read() == b\"ok\"\n+        assert urllib.request.urlopen(f\"http://127.0.0.1:{port}/\", timeout=5).read() == b\"ok\"\n     finally:\n         srv.shutdown()\n         srv.server_close()\n \n \n def test_health_endpoint_status_code():\n-    srv = start(8765)\n+    srv = start(0)\n+    port = srv.server_address[1]\n     try:\n-        time.sleep(0.4)\n-        assert urllib.request.urlopen(\"http://127.0.0.1:8765/\").status == 200\n+        assert urllib.request.urlopen(f\"http://127.0.0.1:{port}/\", timeout=5).status == 200\n     finally:\n         srv.shutdown()\n         srv.server_close()\n",
+        "rationale": "Bind port 0 so the OS picks a free port, and read it back. The fixed 0.4 s sleep goes too: start() returns once the socket is listening, and urlopen has its own timeout. One change fixes both tests (test_health_endpoint_status_code has the same pattern).",
+        "applied": false,
+        "verification_run_ids": []
+      },
+      "quarantine": null,
+      "rate_factor": 4,
+      "gate": 3,
+      "masking": 1,
+      "score": 12,
+      "priority": "P1",
+      "priority_note": "4 (worst Wilson low 23.1%) x gate 3 x masking 1 = 12"
+    },
+    {
+      "id": "FL-6",
+      "test_id": "tests.test_status_server::test_health_endpoint_status_code",
+      "cause": "resource_contention",
+      "cause_confidence": "confirmed",
+      "experiment": {
+        "run_ids": [
+          "PS-1",
+          "PS-2",
+          "PS-3",
+          "PS-4",
+          "PS-5",
+          "P-1",
+          "P-2",
+          "P-3",
+          "P-4",
+          "P-5"
+        ],
+        "what_changed": "Ran test_status_server.py five times serially and five times with two pytest-xdist workers.",
+        "result": "Passes every serial run; with two workers one of the pair fails with WinError 10048 (address already in use), because both tests bind port 8765 at the same time. CI runs pytest -n auto, so this happens there."
+      },
+      "evidence_runs": {
+        "passing": [
+          "R-1",
+          "N-1",
+          "N-2",
+          "N-3",
+          "N-4"
+        ],
+        "failing": [
+          "P-1",
+          "P-4"
+        ]
+      },
+      "polluter": null,
+      "failure_excerpts": [
+        "OSError: [WinError 10048] Only one usage of each socket address (protocol/network address/port) is normally permitted"
+      ],
+      "fix": {
+        "diff": "--- a/tests/test_status_server.py\n+++ b/tests/test_status_server.py\n@@ -1,24 +1,23 @@\n-import time\n import urllib.request\n \n from ferry_booking.status_server import start\n \n \n def test_health_endpoint_answers():\n-    srv = start(8765)\n+    srv = start(0)\n+    port = srv.server_address[1]\n     try:\n-        time.sleep(0.4)\n-        assert urllib.request.urlopen(\"http://127.0.0.1:8765/\").read() == b\"ok\"\n+        assert urllib.request.urlopen(f\"http://127.0.0.1:{port}/\", timeout=5).read() == b\"ok\"\n     finally:\n         srv.shutdown()\n         srv.server_close()\n \n \n def test_health_endpoint_status_code():\n-    srv = start(8765)\n+    srv = start(0)\n+    port = srv.server_address[1]\n     try:\n-        time.sleep(0.4)\n-        assert urllib.request.urlopen(\"http://127.0.0.1:8765/\").status == 200\n+        assert urllib.request.urlopen(f\"http://127.0.0.1:{port}/\", timeout=5).status == 200\n     finally:\n         srv.shutdown()\n         srv.server_close()\n",
+        "rationale": "Bind port 0 so the OS picks a free port, and read it back. The fixed 0.4 s sleep goes too: start() returns once the socket is listening, and urlopen has its own timeout. One change fixes both tests (test_health_endpoint_answers has the same pattern).",
+        "applied": false,
+        "verification_run_ids": []
+      },
+      "quarantine": null,
+      "rate_factor": 3,
+      "gate": 3,
+      "masking": 1,
+      "score": 9,
+      "priority": "P1",
+      "priority_note": "3 (worst Wilson low 11.8%) x gate 3 x masking 1 = 9"
+    }
+  ],
+  "consistently_failing": [
+    {
+      "test_id": "tests.test_refunds::test_one_third_refund_rounds_to_nearest_cent",
+      "runs": 35,
+      "failure_excerpt": "assert 3.34 == 3.33\nE        +  where 3.34 = refund(10.0, (1 / 3))",
+      "note": "Fails in every run under every variation: refund() rounds 3.333 up to 3.34 (ROUND_CEILING) where the test expects the nearest cent. A real bug in ferry_booking/refunds.py, not a flake; fix the product, not the test."
+    }
+  ],
+  "static_smells": [
+    {
+      "smell_id": "SM-1",
+      "smell": "module-global-state",
+      "file": "ferry_booking/fares.py",
+      "line": 4,
+      "test": null,
+      "cause": "shared_state",
+      "status": "linked_to_flake",
+      "flake_id": "FL-1",
+      "note": "The cache the polluter fills; see FL-1."
+    },
+    {
+      "smell_id": "SM-2",
+      "smell": "fixed-sleep",
+      "file": "tests/test_notifier.py",
+      "line": 9,
+      "test": "test_confirmation_is_sent",
+      "cause": "async_wait",
+      "status": "linked_to_flake",
+      "flake_id": "FL-4",
+      "note": "Behind FL-4."
+    },
+    {
+      "smell_id": "SM-3",
+      "smell": "fixed-sleep",
+      "file": "tests/test_notifier.py",
+      "line": 16,
+      "test": "test_confirmation_after_flush",
+      "cause": "async_wait",
+      "status": "not_observed",
+      "flake_id": null,
+      "note": "test_confirmation_after_flush passed all 40 runs; the 0.5 s sleep is longer than the work it waits for, so it is slow rather than racy. Worth the same join() fix."
+    },
+    {
+      "smell_id": "SM-4",
+      "smell": "wall-clock-today",
+      "file": "tests/test_schedule.py",
+      "line": 9,
+      "test": "test_departs_today",
+      "cause": "time_and_locale",
+      "status": "linked_to_flake",
+      "flake_id": "FL-2",
+      "note": "Behind FL-2."
+    },
+    {
+      "smell_id": "SM-5",
+      "smell": "set-order",
+      "file": "tests/test_seats.py",
+      "line": 5,
+      "test": "test_family_of_four_gets_two_rows",
+      "cause": "randomness",
+      "status": "linked_to_flake",
+      "flake_id": "FL-3",
+      "note": "Behind FL-3."
+    },
+    {
+      "smell_id": "SM-6",
+      "smell": "fixed-port",
+      "file": "tests/test_status_server.py",
+      "line": 8,
+      "test": "test_health_endpoint_answers",
+      "cause": "resource_contention",
+      "status": "linked_to_flake",
+      "flake_id": "FL-5",
+      "note": "Behind FL-5."
+    },
+    {
+      "smell_id": "SM-7",
+      "smell": "fixed-sleep",
+      "file": "tests/test_status_server.py",
+      "line": 10,
+      "test": "test_health_endpoint_answers",
+      "cause": "async_wait",
+      "status": "linked_to_flake",
+      "flake_id": "FL-5",
+      "note": "Behind FL-5."
+    },
+    {
+      "smell_id": "SM-8",
+      "smell": "fixed-port",
+      "file": "tests/test_status_server.py",
+      "line": 11,
+      "test": "test_health_endpoint_answers",
+      "cause": "resource_contention",
+      "status": "linked_to_flake",
+      "flake_id": "FL-5",
+      "note": "Behind FL-5."
+    },
+    {
+      "smell_id": "SM-9",
+      "smell": "fixed-port",
+      "file": "tests/test_status_server.py",
+      "line": 18,
+      "test": "test_health_endpoint_status_code",
+      "cause": "resource_contention",
+      "status": "linked_to_flake",
+      "flake_id": "FL-6",
+      "note": "Behind FL-6."
+    },
+    {
+      "smell_id": "SM-10",
+      "smell": "fixed-sleep",
+      "file": "tests/test_status_server.py",
+      "line": 20,
+      "test": "test_health_endpoint_status_code",
+      "cause": "async_wait",
+      "status": "linked_to_flake",
+      "flake_id": "FL-6",
+      "note": "Behind FL-6."
+    },
+    {
+      "smell_id": "SM-11",
+      "smell": "fixed-port",
+      "file": "tests/test_status_server.py",
+      "line": 21,
+      "test": "test_health_endpoint_status_code",
+      "cause": "resource_contention",
+      "status": "linked_to_flake",
+      "flake_id": "FL-6",
+      "note": "Behind FL-6."
+    }
+  ],
+  "summary": {
+    "headline": "6 tests passed and failed on the same code across 87 runs, each with a cause confirmed by experiment; 1 test fails every run (a real rounding bug). The other 9 were not observed flaky in 21 normal runs (upper bound 15.5% each).",
+    "tests_run": 16,
+    "flaky": 6,
+    "consistently_failing": 1,
+    "not_observed_flaky": 9,
+    "not_run": 0,
+    "by_cause": {
+      "async_wait": 1,
+      "randomness": 1,
+      "resource_contention": 2,
+      "shared_state": 1,
+      "time_and_locale": 1
+    },
+    "by_priority": {
+      "P0": 1,
+      "P1": 5,
+      "P2": 0,
+      "P3": 0
+    },
+    "total_runs": 87,
+    "wall_minutes": 4.5,
+    "evidence_completeness": 1.0
+  },
+  "limitations": [
+    "Runs are from one Windows machine. Time zones were fixed offsets and the locale run is weak evidence, because the Windows runtime ignores LANG; Linux CI may behave differently.",
+    "No CI history was used, so flakes that appear only on CI hardware would not show here.",
+    "The time-zone flake depends on the time of day: these runs were made while the local (NZDT) date was a day ahead of the UTC date, so the normal runs failed every time. Run at another hour, they would pass.",
+    "Not-observed-flaky tests passed their runs; that bounds their failure rate, it doesn't rule failures out.",
+    "The proposed fixes were applied to a scratch copy and the failing variations rerun (reverse order, hash seed 0, UTC+14, 2 workers, CPU load): every fixed test passed. Those runs were on different code, so they are not evidence in this report; apply the fixes and rerun the budget to verify them here."
+  ],
+  "files_changed": []
+}

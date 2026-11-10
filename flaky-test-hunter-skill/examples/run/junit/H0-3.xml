@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="2" time="0.061" timestamp="2026-11-11T09:33:20.249947+13:00" hostname="MM-Terem"><testcase classname="tests.test_seats" name="test_family_of_four_gets_two_rows" time="0.001"><failure message="AssertionError: assert ['B2', 'A2', 'A1', 'B1'] == ['A1', 'A2', 'B1', 'B2']&#10;  &#10;  At index 0 diff: 'B2' != 'A1'&#10;  Use -v to get more diff">def test_family_of_four_gets_two_rows():
+&gt;       assert list(allocate(4)) == ["A1", "A2", "B1", "B2"]
+E       AssertionError: assert ['B2', 'A2', 'A1', 'B1'] == ['A1', 'A2', 'B1', 'B2']
+E         
+E         At index 0 diff: 'B2' != 'A1'
+E         Use -v to get more diff
+
+tests\test_seats.py:5: AssertionError</failure></testcase><testcase classname="tests.test_seats" name="test_seat_count_matches_passengers" time="0.000" /></testsuite></testsuites>

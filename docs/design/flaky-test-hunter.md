@@ -1,6 +1,6 @@
 # Design: `flaky-test-hunter-skill`
 
-Status: Designed; not built. Build order: 8.
+Status: Built (v1.0.0), see "As built" at the end. Build order: 8.
 
 ## Mission
 
@@ -217,3 +217,47 @@ Agreed with the user before the build.
 1. **Default: 20 repeats or a time box?** 20 repeats, with a time cap that stops early and records the runs completed.
 2. **Offer quarantine as a stopgap?** Yes, as a proposal only (skip with an owner and a ticket); the skill never applies it.
 3. **Fetch CI history with `gh`?** Only when the user provides JUnit files or allows `gh`.
+
+## As built (v1.0.0)
+
+- **Shared files.** `run_tests.py` and `stats.py` are new in `shared/`, alongside
+  `parse_results.py` and `detect_conventions.py`.
+- **`run_tests.py`:**
+  - Has presets for pytest, Jest, Vitest, Playwright and gotestsum, plus a `custom` preset with
+    `{junit}`, `{tests}`, `{seed}` and `{n}` placeholders.
+  - pytest order variations reorder explicit node ids, so no plugin is needed. pytest-randomly
+    is disabled when present, so the order is the recorded one.
+  - A variation a preset can't apply is an error, never silently skipped.
+  - Every run records a `code_hash` of the source tree, the variation, its duration, and
+    whether it timed out.
+  - The timeout kills the whole process tree.
+  - `--check-tree` exits 3 if the working tree changed.
+  - Recorded commands show `python` for the interpreter and JUnit paths relative to
+    `runs.json`.
+- **Windows time zones:** the C runtime only reads `XXX-hh:mm` (a three-letter name, no DST
+  rules). IANA names map to fixed standard offsets (`Pacific/Kiritimati` → `LIN-14`), and the
+  run notes say so. The first example run used `LINT-14`, which the runtime silently treated as
+  UTC; it was regenerated.
+- **Status and rates are computed, not written.** `validate_flaky_report.py --runs` rebuilds
+  `tests[]` from the runs:
+  - the normal rate covers the `baseline` and `repeat` labels;
+  - the worst rate is the label with the highest Wilson lower bound, leaving out `bisect`.
+
+  `--write-summary` writes those, plus each flake's score and priority and the summary.
+- **Confirmed** means one of:
+  - a polluter pair (the pair fails and the victim alone passes); or
+  - among the experiment's runs, one label with 3 or more runs that all pass and another with 2
+    or more failures.
+- **Fix diffs must apply.** `--repo` applies each unapplied fix's hunks to the files with a
+  stdlib checker. The example's first, hand-written diffs had wrong hunk counts and were caught
+  this way; the example now generates its diffs with `difflib`. Each fix was also applied to a
+  scratch copy and the failing variation rerun, and every fixed test passed (noted in the
+  report's limitations).
+- **Example results** (87 real runs on Windows, about 4.5 minutes):
+  - 6 flakes, all confirmed: the notifier at P0, because it is a critical test, and five at P1;
+  - one consistently failing test (the refund rounding bug);
+  - 9 tests not observed flaky in 21 normal runs, with an upper bound of 15.5%.
+
+  The time-zone test failed every normal run because the runs were made while the local NZ date
+  was ahead of the UTC date.
+- **Validator:** 37 of 37 seeded violations are caught.
