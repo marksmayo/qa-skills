@@ -1,0 +1,25 @@
+{
+  "name": "pantry-web",
+  "private": true,
+  "version": "0.3.0",
+  "description": "Sample recipe app for the UI crash hunter example. It contains deliberate crash bugs.",
+  "scripts": {
+    "build": "esbuild src/main.tsx --bundle --outfile=public/app.js --jsx=automatic --sourcemap --define:process.env.NODE_ENV=\\\"development\\\"",
+    "typecheck": "tsc --noEmit",
+    "serve": "python -m http.server 4173 --directory public"
+  },
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "esbuild": "^0.25.0",
+    "typescript": "~5.9.3"
+  },
+  "browserslist": [
+    "defaults",
+    "iOS >= 16"
+  ]
+}

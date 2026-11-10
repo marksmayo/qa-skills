@@ -1,0 +1,43 @@
+{
+  "scenario": "C-3: recipe with no ratings yet (rating null)",
+  "base_url": "http://localhost:4173",
+  "final_url": "http://localhost:4173/#/recipes/r-5",
+  "browser": "chromium 156.0.8078.4",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "locale": "en-AU",
+  "timezone": "Australia/Sydney",
+  "captured_at": "2026-11-10T02:31:04Z",
+  "steps": [
+    {
+      "step": 1,
+      "action": "goto",
+      "arg": "/#/recipes/r-5"
+    }
+  ],
+  "step_error": null,
+  "page_errors": [],
+  "console_errors": [
+    {
+      "after_step": 1,
+      "type": "error",
+      "text": "%o\n\n%s\n\n%s\n TypeError: Cannot read properties of null (reading 'toFixed')\n    at RecipeDetail (http://localhost:4173/app.js:23974:23)\n    at Object.react_stack_bottom_frame (http://localhost:4173/app.js:21553:22)\n    at renderWithHooks (http://localhost:4173/app.js:7212:26)\n    at updateFunctionComponent (http://localhost:4173/app.js:9057:24)\n    at beginWork (http://localhost:4173/app.js:10137:22)\n    at runWithFiberInDEV (http://localhost:4173/app.js:2427:74)\n    at performUnitOfWork (http://localhost:4173/app.js:14892:100)\n    at workLoopSync (http://localhost:4173/app.js:14755:45)\n    at renderRootSync (http://localhost:4173/app.js:14739:15)\n    at performWorkOnRoot (http://localhost:4173/app.js:14155:39) The above error occurred in the <RecipeDetail> component. React will try to recreate this component tree from scratch using the error boundary you provided, RouteBoundary."
+    },
+    {
+      "after_step": 1,
+      "type": "error",
+      "text": "[RouteBoundary] TypeError: Cannot read properties of null (reading 'toFixed')\n    at RecipeDetail (http://localhost:4173/app.js:23974:23)\n    at Object.react_stack_bottom_frame (http://localhost:4173/app.js:21553:22)\n    at renderWithHooks (http://localhost:4173/app.js:7212:26)\n    at updateFunctionComponent (http://localhost:4173/app.js:9057:24)\n    at beginWork (http://localhost:4173/app.js:10137:22)\n    at runWithFiberInDEV (http://localhost:4173/app.js:2427:74)\n    at performUnitOfWork (http://localhost:4173/app.js:14892:100)\n    at workLoopSync (http://localhost:4173/app.js:14755:45)\n    at renderRootSync (http://localhost:4173/app.js:14739:15)\n    at performWorkOnRoot (http://localhost:4173/app.js:14155:39)"
+    }
+  ],
+  "failed_requests": [],
+  "root_found": true,
+  "root_empty": false,
+  "fallback_visible": [
+    "Something went wrong"
+  ],
+  "body_text": "Pantry\nSettings\nSomething went wrong\n\nThis page couldn't be shown.\n\nBack to recipes",
+  "screenshot": "screenshot.png",
+  "reproduced": true
+}

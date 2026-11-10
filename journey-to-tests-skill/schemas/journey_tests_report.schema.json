@@ -1,0 +1,244 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/qa-skills/journey-to-tests-skill/schemas/journey_tests_report.schema.json",
+  "title": "Journey to Tests report",
+  "type": "object",
+  "required": ["metadata", "journeys", "mapping", "step_coverage", "testability_gaps", "runs", "cases", "results",
+               "suspected_bugs", "files_changed", "lint", "summary"],
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": ["repository", "generated_at", "skill_version", "frameworks", "platforms", "target", "repeat", "approval"],
+      "properties": {
+        "repository": {"type": "string"},
+        "generated_at": {"type": "string"},
+        "skill_version": {"type": "string"},
+        "journeys_source": {"type": "array", "items": {"type": "string"}},
+        "frameworks": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "platforms": {"type": "array", "items": {"enum": ["web", "ios", "android", "desktop", "api", "cli"]}},
+        "target": {
+          "type": "object", "required": ["kind", "value"],
+          "properties": {
+            "kind": {"enum": ["base_url", "dev_server", "simulator", "emulator", "device", "build", "api_base_url"]},
+            "value": {"type": "string"},
+            "notes": {"type": "string"}
+          }
+        },
+        "repeat": {"type": "integer", "minimum": 1},
+        "approval": {
+          "type": "object", "required": ["gate", "plan_approved"],
+          "properties": {
+            "gate": {"enum": ["on", "off"]},
+            "plan_approved": {"type": "boolean"},
+            "approved_at": {"type": "string"},
+            "note": {"type": "string"}
+          }
+        },
+        "filters": {"type": "object"},
+        "conventions_source": {"type": "string", "description": "Where the conventions fingerprint came from, e.g. detect_conventions.py output path"},
+        "notes": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "journeys": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "path", "expect_sha256", "in_scope"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^JRN-[A-Z0-9]+-\\d{3}$"},
+          "path": {"type": "string"},
+          "title": {"type": ["string", "null"]},
+          "priority": {"type": ["string", "null"]},
+          "platforms": {"type": "array", "items": {"type": "string"}},
+          "status": {"type": ["string", "null"]},
+          "automation_before": {"type": "string"},
+          "tests_before": {"type": "array", "items": {"type": "string"}},
+          "expect_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "in_scope": {"type": "boolean"},
+          "scope_reason": {"type": "string"}
+        }
+      }
+    },
+    "mapping": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["journey_id", "test_path", "tests"],
+        "properties": {
+          "journey_id": {"type": "string"},
+          "test_path": {"type": "string"},
+          "describe": {"type": "string"},
+          "tests": {
+            "type": "array", "minItems": 1,
+            "items": {
+              "type": "object", "required": ["test_id", "name", "variant", "tags"],
+              "properties": {
+                "test_id": {"type": "string"},
+                "name": {"type": "string"},
+                "variant": {"type": ["string", "null"], "pattern": "^V\\d+$"},
+                "tags": {"type": "array", "items": {"type": "string"}}
+              }
+            }
+          }
+        }
+      }
+    },
+    "step_coverage": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["journey_id", "ref", "expect", "coverage", "assertions", "test_ids"],
+        "properties": {
+          "journey_id": {"type": "string"},
+          "ref": {"type": "string", "pattern": "^(step \\d+|V\\d+)$"},
+          "expect": {"type": "string"},
+          "coverage": {"enum": ["asserted", "not_automatable", "blocked_by_gap", "deferred", "pending"]},
+          "assertions": {
+            "type": "array",
+            "items": {"type": "object", "required": ["file", "line"],
+                      "properties": {"file": {"type": "string"}, "line": {"type": "integer", "minimum": 1},
+                                     "excerpt": {"type": "string"}}}
+          },
+          "test_ids": {"type": "array", "items": {"type": "string"}},
+          "reason": {"type": "string"},
+          "gap_id": {"type": "string"},
+          "journey_lists_not_automatable": {"type": "boolean"}
+        }
+      }
+    },
+    "testability_gaps": {
+      "type": "array",
+      "items": {
+        "type": "object", "required": ["id", "journey_id", "ref", "element", "problem", "suggestion"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^GAP-\\d{3}$"},
+          "journey_id": {"type": "string"},
+          "ref": {"type": "string"},
+          "element": {"type": "string"},
+          "problem": {"type": "string"},
+          "suggestion": {"type": "string"},
+          "file": {"type": "string"},
+          "line": {"type": "integer"}
+        }
+      }
+    },
+    "runs": {
+      "type": "array",
+      "description": "Shared run format written by parse_results.py",
+      "items": {
+        "type": "object", "required": ["id", "command", "exit_code", "totals"],
+        "properties": {
+          "id": {"type": "string"}, "command": {"type": "string"}, "exit_code": {"type": "integer"},
+          "junit_paths": {"type": "array", "items": {"type": "string"}}, "started_at": {"type": "string"},
+          "totals": {"type": "object"}, "file_hashes": {"type": "object", "additionalProperties": {"type": ["string", "null"]}},
+          "notes": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "cases": {
+      "type": "array",
+      "items": {
+        "type": "object", "required": ["run_id", "id", "name", "status"],
+        "properties": {
+          "run_id": {"type": "string"}, "id": {"type": "string"}, "name": {"type": "string"},
+          "classname": {"type": "string"}, "file": {"type": ["string", "null"]},
+          "status": {"enum": ["passed", "failed", "error", "skipped"]},
+          "failure_type": {"enum": ["assertion", "error", null]},
+          "signals": {"type": "array", "items": {"type": "string"}},
+          "message_excerpt": {"type": "string"}, "time": {"type": ["number", "null"]}
+        }
+      }
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object", "required": ["test_id", "journey_id", "test_path", "status", "attempts"],
+        "properties": {
+          "test_id": {"type": "string"},
+          "journey_id": {"type": "string"},
+          "variant": {"type": ["string", "null"]},
+          "test_path": {"type": "string"},
+          "status": {"enum": ["pass", "fail_product", "fail_test", "blocked_env", "flaky", "not_run"]},
+          "attempts": {
+            "type": "array",
+            "items": {
+              "type": "object", "required": ["run_id", "case_id", "outcome"],
+              "properties": {
+                "run_id": {"type": "string"},
+                "case_id": {"type": "string"},
+                "outcome": {"enum": ["passed", "failed", "error", "skipped"]},
+                "classification": {"enum": ["fail_product", "fail_test", "blocked_env"]},
+                "change": {
+                  "type": "object", "required": ["category", "detail"],
+                  "description": "Why the test file changed since the previous attempt. Changing what the test expects is not an allowed category.",
+                  "properties": {
+                    "category": {"enum": ["selector", "timing", "setup", "test_data", "navigation", "structure"]},
+                    "detail": {"type": "string"}
+                  }
+                }
+              }
+            }
+          },
+          "evidence": {"type": "array", "items": {"type": "object", "required": ["kind", "path_or_excerpt"],
+                                                  "properties": {"kind": {"type": "string"}, "path_or_excerpt": {"type": "string"}}}},
+          "notes": {"type": "string"}
+        }
+      }
+    },
+    "suspected_bugs": {
+      "type": "array",
+      "items": {
+        "type": "object", "required": ["id", "journey_id", "ref", "test_id", "expected", "actual", "likely", "evidence"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^BUG-\\d{3}$"},
+          "journey_id": {"type": "string"}, "ref": {"type": "string"}, "test_id": {"type": "string"},
+          "expected": {"type": "string"}, "actual": {"type": "string"},
+          "likely": {"enum": ["product", "journey", "unclear"]},
+          "evidence": {"type": "array", "minItems": 1, "items": {"type": "object"}}
+        }
+      }
+    },
+    "files_changed": {
+      "type": "array",
+      "items": {
+        "type": "object", "required": ["path", "change", "kind"],
+        "properties": {
+          "path": {"type": "string"},
+          "change": {"enum": ["added", "modified"]},
+          "kind": {"enum": ["test", "page_object", "fixture", "helper", "step_definitions", "config", "journey", "manifest"]},
+          "approved_by_user": {"type": "boolean"},
+          "note": {"type": "string"}
+        }
+      }
+    },
+    "lint": {
+      "type": "object", "required": ["ran"],
+      "properties": {"ran": {"type": "boolean"}, "errors": {"type": "integer"}, "warnings": {"type": "integer"},
+                     "findings": {"type": "array"}}
+    },
+    "journey_updates": {
+      "type": "array",
+      "items": {"type": "object", "required": ["journey_id", "path", "automation", "tests"],
+                "properties": {"journey_id": {"type": "string"}, "path": {"type": "string"},
+                               "automation": {"enum": ["none", "partial", "automated"]},
+                               "tests": {"type": "array", "items": {"type": "string"}}}}
+    },
+    "open_questions": {"type": "array", "items": {"type": "string"}},
+    "summary": {
+      "type": "object",
+      "required": ["journeys_in_scope", "tests_written", "expects_total", "expects_asserted", "expects_verified",
+                   "expects_not_automatable", "expects_blocked_by_gap", "expects_deferred", "results", "headline"],
+      "properties": {
+        "journeys_in_scope": {"type": "integer"}, "tests_written": {"type": "integer"},
+        "expects_total": {"type": "integer"}, "expects_asserted": {"type": "integer"},
+        "expects_verified": {"type": "integer", "description": "Asserted in at least one test whose final status is pass"},
+        "expects_not_automatable": {"type": "integer"}, "expects_blocked_by_gap": {"type": "integer"},
+        "expects_deferred": {"type": "integer"},
+        "results": {"type": "object", "properties": {"pass": {"type": "integer"}, "fail_product": {"type": "integer"},
+                    "fail_test": {"type": "integer"}, "blocked_env": {"type": "integer"}, "flaky": {"type": "integer"},
+                    "not_run": {"type": "integer"}}},
+        "headline": {"type": "string"}
+      }
+    }
+  }
+}

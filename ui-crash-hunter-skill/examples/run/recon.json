@@ -1,0 +1,109 @@
+{
+  "generated_at": "2026-11-10T02:34:02Z",
+  "repository": "pantry",
+  "platforms": [
+    "react"
+  ],
+  "targets": {
+    "browserslist": {
+      "value": [
+        "defaults",
+        "iOS >= 16"
+      ],
+      "file": "package.json"
+    }
+  },
+  "routes_screens": [
+    {
+      "kind": "route",
+      "path": "/",
+      "file": "src/routes.ts",
+      "line": 14,
+      "detector": "route-object",
+      "id": "RT-1"
+    },
+    {
+      "kind": "route",
+      "path": "/recipes/:id",
+      "file": "src/routes.ts",
+      "line": 15,
+      "detector": "route-object",
+      "id": "RT-2"
+    },
+    {
+      "kind": "route",
+      "path": "/settings",
+      "file": "src/routes.ts",
+      "line": 16,
+      "detector": "route-object",
+      "id": "RT-3"
+    }
+  ],
+  "boundaries": [
+    {
+      "framework": "react",
+      "kind": "usage",
+      "name": "RouteBoundary",
+      "file": "src/App.tsx",
+      "line": 22,
+      "id": "BND-1"
+    },
+    {
+      "framework": "react",
+      "kind": "usage",
+      "name": "PanelBoundary",
+      "file": "src/screens/RecipeDetail.tsx",
+      "line": 38,
+      "id": "BND-2"
+    },
+    {
+      "framework": "react",
+      "kind": "definition",
+      "name": "PanelBoundary",
+      "file": "src/components/PanelBoundary.tsx",
+      "line": 7,
+      "id": "BND-3"
+    },
+    {
+      "framework": "react",
+      "kind": "definition",
+      "name": "RouteBoundary",
+      "file": "src/components/RouteBoundary.tsx",
+      "line": 11,
+      "id": "BND-4"
+    }
+  ],
+  "data_layer": [
+    {
+      "library": "fetch",
+      "uses": 1,
+      "files": [
+        "src/api.ts"
+      ]
+    }
+  ],
+  "contracts": [
+    {
+      "kind": "openapi",
+      "file": "openapi.json"
+    }
+  ],
+  "persisted_state": [
+    {
+      "store": "localStorage",
+      "file": "src/prefs.ts",
+      "line": 10,
+      "snippet": "const raw = localStorage.getItem(KEY);"
+    },
+    {
+      "store": "localStorage",
+      "file": "src/prefs.ts",
+      "line": 15,
+      "snippet": "localStorage.setItem(KEY, JSON.stringify({ ...loadPrefs(), ...change }));"
+    }
+  ],
+  "source_files": 14,
+  "notes": [
+    "Heuristic: confirm which boundary wraps each finding by reading the render tree."
+  ]
+}

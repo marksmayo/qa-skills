@@ -1,0 +1,90 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "Pantry API", "version": "0.3.0" },
+  "paths": {
+    "/api/recipes": {
+      "get": {
+        "summary": "List recipes",
+        "responses": {
+          "200": {
+            "description": "Recipes",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/RecipeSummary" } } } }
+          }
+        }
+      }
+    },
+    "/api/recipes/{id}": {
+      "get": {
+        "summary": "Get a recipe",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Recipe", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Recipe" } } } },
+          "404": { "description": "Not found" }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Author": {
+        "type": "object",
+        "required": ["id", "displayName"],
+        "properties": {
+          "id": { "type": "string" },
+          "displayName": { "type": "string" },
+          "avatarUrl": { "type": "string" }
+        }
+      },
+      "RecipeSummary": {
+        "type": "object",
+        "required": ["id", "title", "author", "rating", "ratingCount", "tags"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "author": {
+            "allOf": [{ "$ref": "#/components/schemas/Author" }],
+            "nullable": true,
+            "description": "null for recipes imported from a URL"
+          },
+          "rating": { "type": "number", "nullable": true, "description": "null until the recipe has at least one rating" },
+          "ratingCount": { "type": "integer" },
+          "tags": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "Ingredient": {
+        "type": "object",
+        "required": ["name", "quantity"],
+        "properties": {
+          "name": { "type": "string" },
+          "quantity": { "type": "number", "nullable": true, "description": "null for \"to taste\"" },
+          "unit": { "type": "string" },
+          "aisle": { "type": "string" }
+        }
+      },
+      "Nutrition": {
+        "type": "object",
+        "required": ["calories", "protein", "servings"],
+        "properties": {
+          "calories": { "type": "number" },
+          "protein": { "type": "number" },
+          "servings": { "type": "integer" }
+        }
+      },
+      "Recipe": {
+        "allOf": [
+          { "$ref": "#/components/schemas/RecipeSummary" },
+          {
+            "type": "object",
+            "required": ["ingredients", "steps", "publishedAt"],
+            "properties": {
+              "ingredients": { "type": "array", "items": { "$ref": "#/components/schemas/Ingredient" } },
+              "steps": { "type": "array", "items": { "type": "string" } },
+              "publishedAt": { "type": "string", "format": "date-time" },
+              "nutrition": { "$ref": "#/components/schemas/Nutrition", "description": "only present once the nutrition job has run" }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

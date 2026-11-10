@@ -1,0 +1,37 @@
+{
+  "scenario": "C-4: malformed percent-encoding in a shared recipe link",
+  "base_url": "http://localhost:4173",
+  "final_url": "http://localhost:4173/#/recipes/%E0%A4%A",
+  "browser": "chromium 156.0.8078.4",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "locale": "en-AU",
+  "timezone": "Australia/Sydney",
+  "captured_at": "2026-11-10T02:31:06Z",
+  "steps": [
+    {
+      "step": 1,
+      "action": "goto",
+      "arg": "/#/recipes/%E0%A4%A"
+    }
+  ],
+  "step_error": null,
+  "page_errors": [
+    {
+      "after_step": 1,
+      "name": "URIError",
+      "message": "URI malformed",
+      "stack": "URIError: URI malformed\n    at decodeURIComponent (<anonymous>)\n    at http://localhost:4173/app.js:24038:32\n    at Array.every (<anonymous>)\n    at match (http://localhost:4173/app.js:24036:26)\n    at App (http://localhost:4173/app.js:24057:31)\n    at Object.react_stack_bottom_frame (http://localhost:4173/app.js:21553:22)\n    at renderWithHooks (http://localhost:4173/app.js:7212:26)\n    at updateFunctionComponent (http://localhost:4173/app.js:9057:24)\n    at beginWork (http://localhost:4173/app.js:10137:22)\n    at runWithFiberInDEV (http://localhost:4173/app.js:2427:74)"
+    }
+  ],
+  "console_errors": [],
+  "failed_requests": [],
+  "root_found": true,
+  "root_empty": true,
+  "fallback_visible": [],
+  "body_text": "",
+  "screenshot": "screenshot.png",
+  "reproduced": true
+}

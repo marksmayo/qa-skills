@@ -1,0 +1,102 @@
+{
+  "nodes": [
+    {
+      "id": "home",
+      "label": "Home",
+      "kind": "entry",
+      "domain": "checkout",
+      "surface_item": "R-001"
+    },
+    {
+      "id": "deeplink",
+      "label": "acme://product/",
+      "kind": "entry",
+      "domain": "checkout",
+      "surface_item": "N-001"
+    },
+    {
+      "id": "product",
+      "label": "Product page",
+      "kind": "screen",
+      "domain": "checkout",
+      "surface_item": "R-002"
+    },
+    {
+      "id": "cart",
+      "label": "Cart",
+      "kind": "screen",
+      "domain": "checkout",
+      "surface_item": "S-003"
+    },
+    {
+      "id": "checkout",
+      "label": "Checkout",
+      "kind": "screen",
+      "domain": "checkout",
+      "surface_item": "R-003"
+    },
+    {
+      "id": "confirmation",
+      "label": "Order confirmed",
+      "kind": "goal",
+      "domain": "checkout",
+      "surface_item": "R-004"
+    },
+    {
+      "id": "login",
+      "label": "Login",
+      "kind": "entry",
+      "domain": "account",
+      "surface_item": "R-005"
+    },
+    {
+      "id": "account",
+      "label": "Account",
+      "kind": "goal",
+      "domain": "account",
+      "surface_item": "R-006"
+    }
+  ],
+  "edges": [
+    {
+      "from": "home",
+      "to": "product",
+      "action": "select product"
+    },
+    {
+      "from": "deeplink",
+      "to": "product",
+      "action": "open link"
+    },
+    {
+      "from": "product",
+      "to": "cart",
+      "action": "add to cart",
+      "guards": [
+        "in stock"
+      ]
+    },
+    {
+      "from": "cart",
+      "to": "checkout",
+      "action": "checkout"
+    },
+    {
+      "from": "checkout",
+      "to": "confirmation",
+      "action": "pay now",
+      "guards": [
+        "form valid",
+        "payment accepted"
+      ]
+    },
+    {
+      "from": "login",
+      "to": "account",
+      "action": "sign in",
+      "guards": [
+        "valid credentials"
+      ]
+    }
+  ]
+}

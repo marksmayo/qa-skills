@@ -1,0 +1,1101 @@
+{
+  "metadata": {
+    "repository": "pantry-web",
+    "generated_at": "2026-11-10T09:30:00Z",
+    "skill_version": "1.0.0",
+    "platforms": [
+      "web"
+    ],
+    "frameworks": [
+      "react 19",
+      "typescript 5.9",
+      "esbuild"
+    ],
+    "scope": {
+      "paths": [
+        "src/"
+      ],
+      "excluded": [
+        "public/app.js (build output)",
+        "node_modules/"
+      ]
+    },
+    "app_run": {
+      "attempted": true,
+      "status": "ran",
+      "target": "http://localhost:4173 (python -m http.server over public/)",
+      "build_command": "npm run build",
+      "note": "API responses mocked per probe with page.route; no backend was run."
+    }
+  },
+  "recon": {
+    "routes_screens": [
+      {
+        "id": "RT-1",
+        "kind": "route",
+        "path": "/",
+        "file": "src/routes.ts",
+        "line": 14,
+        "reach": "critical_path",
+        "reach_basis": "Landing screen and the only way into recipes",
+        "analysed": true
+      },
+      {
+        "id": "RT-2",
+        "kind": "route",
+        "path": "/recipes/:id",
+        "file": "src/routes.ts",
+        "line": 15,
+        "reach": "high_traffic",
+        "reach_basis": "Every recipe view and every shared recipe link",
+        "analysed": true
+      },
+      {
+        "id": "RT-3",
+        "kind": "route",
+        "path": "/settings",
+        "file": "src/routes.ts",
+        "line": 16,
+        "reach": "rare",
+        "reach_basis": "Visited to change theme or units",
+        "analysed": true
+      },
+      {
+        "id": "SH-1",
+        "kind": "shell",
+        "path": "(app shell: Header)",
+        "file": "src/App.tsx",
+        "line": 20,
+        "reach": "critical_path",
+        "reach_basis": "Rendered on every route, outside the route boundary (added by the agent; not a route)",
+        "analysed": true
+      }
+    ],
+    "boundaries": [
+      {
+        "id": "BND-1",
+        "framework": "react",
+        "kind": "usage",
+        "name": "RouteBoundary",
+        "file": "src/App.tsx",
+        "line": 22,
+        "scope": "route",
+        "covers": [
+          "RT-1",
+          "RT-2",
+          "RT-3"
+        ]
+      },
+      {
+        "id": "BND-2",
+        "framework": "react",
+        "kind": "usage",
+        "name": "PanelBoundary",
+        "file": "src/screens/RecipeDetail.tsx",
+        "line": 38,
+        "scope": "component",
+        "covers": [
+          "NutritionPanel"
+        ]
+      },
+      {
+        "id": "BND-3",
+        "framework": "react",
+        "kind": "definition",
+        "name": "PanelBoundary",
+        "file": "src/components/PanelBoundary.tsx",
+        "line": 7,
+        "scope": "component"
+      },
+      {
+        "id": "BND-4",
+        "framework": "react",
+        "kind": "definition",
+        "name": "RouteBoundary",
+        "file": "src/components/RouteBoundary.tsx",
+        "line": 11,
+        "scope": "route"
+      }
+    ],
+    "data_layer": [
+      {
+        "library": "fetch",
+        "uses": 1,
+        "files": [
+          "src/api.ts"
+        ]
+      }
+    ],
+    "contracts": [
+      {
+        "kind": "openapi",
+        "file": "openapi.json"
+      }
+    ],
+    "persisted_state": [
+      {
+        "store": "localStorage",
+        "file": "src/prefs.ts",
+        "line": 10,
+        "snippet": "const raw = localStorage.getItem(KEY);"
+      },
+      {
+        "store": "localStorage",
+        "file": "src/prefs.ts",
+        "line": 15,
+        "snippet": "localStorage.setItem(KEY, JSON.stringify({ ...loadPrefs(), ...change }));"
+      }
+    ],
+    "targets": {
+      "browserslist": {
+        "value": [
+          "defaults",
+          "iOS >= 16"
+        ],
+        "file": "package.json"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "recon.py",
+      "status": "ran",
+      "command": "python scripts/recon.py pantry --out run/recon.json",
+      "note": "3 routes, 4 boundary entries, 1 contract, 2 storage uses"
+    },
+    {
+      "name": "scan_pitfalls.py",
+      "status": "ran",
+      "command": "python scripts/scan_pitfalls.py pantry --extra run/tsc.json run/contract.json run/eslint.json --out run/candidates.json",
+      "results": 8
+    },
+    {
+      "name": "tsc (strict overlay)",
+      "version": "5.9.3",
+      "status": "ran",
+      "command": "python scripts/strict_overlay.py tsc pantry --scratch <scratch>",
+      "results": 9,
+      "note": "0 errors with the repo config, 9 with strictNullChecks + noUncheckedIndexedAccess"
+    },
+    {
+      "name": "contract_diff.py",
+      "status": "ran",
+      "command": "python scripts/contract_diff.py pantry --out run/contract.json",
+      "results": 2
+    },
+    {
+      "name": "eslint (strict overlay)",
+      "status": "not_run",
+      "note": "No ESLint configuration in the repository; not added by the skill"
+    },
+    {
+      "name": "semgrep",
+      "status": "not_run",
+      "note": "Not installed; the user did not ask for it to be installed"
+    },
+    {
+      "name": "probe_web.py (Playwright)",
+      "version": "chromium 156.0.8078.4",
+      "status": "ran",
+      "command": "python scripts/probe_web.py probes/<id>.json --out-dir evidence/<id> --emit-spec repro/repro_<id>.py",
+      "results": 6
+    },
+    {
+      "name": "Android Lint / detekt",
+      "status": "not_applicable",
+      "note": "No Android code"
+    },
+    {
+      "name": "SwiftLint",
+      "status": "not_applicable",
+      "note": "No iOS code"
+    },
+    {
+      "name": "dart analyze",
+      "status": "not_applicable",
+      "note": "No Flutter code"
+    }
+  ],
+  "triage": {
+    "candidates_file": "run/candidates.json",
+    "total": 16,
+    "promoted": [
+      {
+        "candidate": "CAND-005",
+        "finding": "C-1"
+      },
+      {
+        "candidate": "CAND-006",
+        "finding": "C-1"
+      },
+      {
+        "candidate": "CAND-016",
+        "finding": "C-2"
+      },
+      {
+        "candidate": "CAND-013",
+        "finding": "C-3"
+      },
+      {
+        "candidate": "CAND-014",
+        "finding": "C-3"
+      },
+      {
+        "candidate": "CAND-009",
+        "finding": "C-4"
+      },
+      {
+        "candidate": "CAND-001",
+        "finding": "D-1"
+      },
+      {
+        "candidate": "CAND-002",
+        "finding": "D-1"
+      },
+      {
+        "candidate": "CAND-012",
+        "finding": "D-2"
+      },
+      {
+        "candidate": "CAND-007",
+        "finding": "D-3"
+      }
+    ],
+    "dismissed": [
+      {
+        "candidate": "CAND-003",
+        "reason": "Guarded: Stars returns early when rating === null (Stars.tsx:2)."
+      },
+      {
+        "candidate": "CAND-004",
+        "reason": "public/index.html always contains <div id=\"root\">, so getElementById('root') cannot be null."
+      },
+      {
+        "candidate": "CAND-008",
+        "reason": "parts[i] is always defined: the loop skips patterns whose length differs from parts (routes.ts:23)."
+      },
+      {
+        "candidate": "CAND-010",
+        "reason": "routes is a non-empty constant array, so routes[0] is always defined."
+      },
+      {
+        "candidate": "CAND-011",
+        "reason": "RecipeDetail is only matched by '/recipes/:id', which always sets params.id."
+      },
+      {
+        "candidate": "CAND-015",
+        "reason": "Object.entries over a groupBy result never yields undefined values; the type is Partial only in TypeScript's lib."
+      }
+    ]
+  },
+  "probes": [
+    {
+      "id": "P-0",
+      "scenario_file": "probes/baseline.json",
+      "evidence_file": "evidence/baseline/evidence.json",
+      "findings": [],
+      "outcome": "baseline_clean",
+      "environment": "chromium 156.0.8078.4"
+    },
+    {
+      "id": "P-C1",
+      "scenario_file": "probes/C-1.json",
+      "evidence_file": "evidence/C-1/evidence.json",
+      "findings": [
+        "C-1"
+      ],
+      "outcome": "reproduced",
+      "environment": "chromium 156.0.8078.4"
+    },
+    {
+      "id": "P-C2",
+      "scenario_file": "probes/C-2.json",
+      "evidence_file": "evidence/C-2/evidence.json",
+      "findings": [
+        "C-2"
+      ],
+      "outcome": "reproduced",
+      "environment": "chromium 156.0.8078.4"
+    },
+    {
+      "id": "P-C3",
+      "scenario_file": "probes/C-3.json",
+      "evidence_file": "evidence/C-3/evidence.json",
+      "findings": [
+        "C-3"
+      ],
+      "outcome": "reproduced",
+      "environment": "chromium 156.0.8078.4"
+    },
+    {
+      "id": "P-C4",
+      "scenario_file": "probes/C-4.json",
+      "evidence_file": "evidence/C-4/evidence.json",
+      "findings": [
+        "C-4"
+      ],
+      "outcome": "reproduced",
+      "environment": "chromium 156.0.8078.4"
+    },
+    {
+      "id": "P-D1",
+      "scenario_file": "probes/D-1.json",
+      "evidence_file": "evidence/D-1/evidence.json",
+      "findings": [
+        "D-1"
+      ],
+      "outcome": "reproduced",
+      "environment": "chromium 156.0.8078.4"
+    }
+  ],
+  "crashes": [
+    {
+      "id": "C-1",
+      "rank": 1,
+      "title": "Theme saved by version 0.2.0 crashes the app on every launch",
+      "tier": "B1",
+      "pitfall_id": "WEB-JSON-PARSE",
+      "confidence": "reproduced",
+      "evidence_type": "reproduced",
+      "locations": [
+        {
+          "file": "src/prefs.ts",
+          "line": 11,
+          "snippet": "return raw ? { ...DEFAULTS, ...JSON.parse(raw) } : DEFAULTS;",
+          "role": "throws"
+        },
+        {
+          "file": "src/prefs.ts",
+          "line": 10,
+          "snippet": "const raw = localStorage.getItem(KEY);",
+          "role": "same unguarded read; also throws SecurityError where the browser blocks storage"
+        },
+        {
+          "file": "src/components/Header.tsx",
+          "line": 4,
+          "snippet": "const prefs = loadPrefs();",
+          "role": "called during render, outside any boundary"
+        }
+      ],
+      "trigger": {
+        "kind": "persisted_state",
+        "description": "localStorage 'pantry.prefs' holds the plain string 'dark' (or 'light'), as written by 0.2.0; JSON.parse throws SyntaxError while Header renders.",
+        "data": {
+          "localStorage": {
+            "pantry.prefs": "dark"
+          }
+        },
+        "basis": "CHANGELOG.md:9: 0.2.0 saved the theme name in pantry.prefs; 0.3.0 reads the same key as JSON with no migration. Every user who chose a theme in 0.2.0 has this value."
+      },
+      "boundary": {
+        "caught_by": null,
+        "effect": "crash_loop",
+        "note": "Header renders outside RouteBoundary and there is no root boundary, so React unmounts the whole tree; the stored value survives reloads."
+      },
+      "trace": [
+        {
+          "file": "CHANGELOG.md",
+          "line": 9,
+          "note": "0.2.0 stored the theme name, not JSON, under pantry.prefs"
+        },
+        {
+          "file": "src/prefs.ts",
+          "line": 10,
+          "note": "reads 'dark' from storage"
+        },
+        {
+          "file": "src/prefs.ts",
+          "line": 11,
+          "note": "JSON.parse('dark') throws SyntaxError"
+        },
+        {
+          "file": "src/components/Header.tsx",
+          "line": 4,
+          "note": "loadPrefs() runs during Header render"
+        },
+        {
+          "file": "src/App.tsx",
+          "line": 20,
+          "note": "<Header /> sits outside <RouteBoundary>; main.tsx has no root boundary"
+        }
+      ],
+      "ranking": {
+        "reach": "critical_path",
+        "reach_basis": "Header renders on every route (SH-1)",
+        "likelihood": "normal_data",
+        "likelihood_basis": "Real stored data for every upgraded user who picked a theme in 0.2.0",
+        "recoverability": "crash_loop",
+        "score": 108,
+        "priority": "P0"
+      },
+      "repro": {
+        "probe_id": "P-C1",
+        "environment": {
+          "browser": "chromium 156.0.8078.4",
+          "viewport": "1280x800",
+          "locale": "en-AU",
+          "timezone": "Australia/Sydney",
+          "storage": "localStorage pantry.prefs = 'dark'",
+          "url": "http://localhost:4173/#/"
+        },
+        "preconditions": [
+          "A browser profile that used Pantry 0.2.0 and chose the dark theme (or seed the value below)"
+        ],
+        "trigger_data": {
+          "localStorage": {
+            "pantry.prefs": "dark"
+          }
+        },
+        "steps": [
+          "Set localStorage 'pantry.prefs' to 'dark' for the app's origin",
+          "Open /#/",
+          "Reload the page"
+        ],
+        "expected": "The app loads with the dark theme, or falls back to defaults",
+        "actual": "Blank page on first load and after every reload; SyntaxError: Unexpected token 'd', \"dark\" is not valid JSON",
+        "stack_trace": "SyntaxError: Unexpected token 'd', \"dark\" is not valid JSON\n    at JSON.parse (<anonymous>)\n    at loadPrefs (http://localhost:4173/app.js:23844:41)\n    at Header (http://localhost:4173/app.js:23853:19)\n    at Object.react_stack_bottom_frame (http://localhost:4173/app.js:21553:22)\n    at renderWithHooks (http://localhost:4173/app.js:7212:26)\n    at updateFunctionComponent (http://localhost:4173/app.js:9057:24)",
+        "screenshot": "evidence/C-1/screenshot.png",
+        "evidence_file": "evidence/C-1/evidence.json",
+        "repro_spec": "repro/repro_C-1.py"
+      },
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "WEB-JSON-PARSE"
+        },
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "WEB-STORAGE-ACCESS"
+        }
+      ],
+      "candidate_ids": [
+        "CAND-005",
+        "CAND-006"
+      ],
+      "remediation": "Read preferences through a safe loader: wrap storage access and JSON.parse in try/catch, migrate a bare theme name to {theme}, and fall back to defaults. Add a root error boundary so a shell error cannot blank the whole app.",
+      "verification_step": "python repro/repro_C-1.py exits 0 (no uncaught error, app renders) with pantry.prefs = 'dark', 'light' and '{'"
+    },
+    {
+      "id": "C-2",
+      "rank": 2,
+      "title": "An imported recipe (no author) breaks the recipe list",
+      "tier": "B2",
+      "pitfall_id": "WEB-UNGUARDED-OPTIONAL",
+      "confidence": "reproduced",
+      "evidence_type": "reproduced",
+      "locations": [
+        {
+          "file": "src/screens/RecipeList.tsx",
+          "line": 21,
+          "snippet": "by {r.author.displayName}",
+          "role": "throws"
+        }
+      ],
+      "trigger": {
+        "kind": "data",
+        "description": "GET /api/recipes returns any item with \"author\": null; r.author.displayName throws TypeError during render.",
+        "data": {
+          "id": "r-9",
+          "title": "Weeknight dal",
+          "author": null,
+          "rating": 4.8,
+          "ratingCount": 7,
+          "tags": [
+            "imported"
+          ]
+        },
+        "basis": "openapi.json:46 marks RecipeSummary.author nullable (\"null for recipes imported from a URL\"); src/types.ts:13 says the same, but tsconfig has strict off so the compiler never flags it."
+      },
+      "boundary": {
+        "caught_by": "BND-1",
+        "effect": "screen_replaced",
+        "note": "RouteBoundary shows \"Something went wrong\"; the header still works."
+      },
+      "trace": [
+        {
+          "file": "openapi.json",
+          "line": 46,
+          "note": "author: nullable"
+        },
+        {
+          "file": "src/api.ts",
+          "line": 9,
+          "note": "listRecipes() passes the response through unvalidated"
+        },
+        {
+          "file": "src/screens/RecipeList.tsx",
+          "line": 21,
+          "note": "r.author.displayName with author null"
+        },
+        {
+          "file": "src/App.tsx",
+          "line": 22,
+          "note": "caught by RouteBoundary (BND-1)"
+        }
+      ],
+      "ranking": {
+        "reach": "critical_path",
+        "reach_basis": "Landing screen (RT-1)",
+        "likelihood": "edge_data",
+        "likelihood_basis": "Contract-valid; happens as soon as one imported recipe is in the list",
+        "recoverability": "restart_or_navigate",
+        "score": 36,
+        "priority": "P1"
+      },
+      "repro": {
+        "probe_id": "P-C2",
+        "environment": {
+          "browser": "chromium 156.0.8078.4",
+          "viewport": "1280x800",
+          "locale": "en-AU",
+          "timezone": "Australia/Sydney",
+          "storage": "empty",
+          "url": "http://localhost:4173/#/"
+        },
+        "preconditions": [
+          "At least one recipe imported from a URL"
+        ],
+        "trigger_data": {
+          "GET /api/recipes": "[..., {\"id\": \"r-9\", \"title\": \"Weeknight dal\", \"author\": null, ...}]"
+        },
+        "steps": [
+          "Mock GET /api/recipes to include an item with \"author\": null",
+          "Open /#/"
+        ],
+        "expected": "The list shows the imported recipe (e.g. \"Imported recipe\" instead of an author)",
+        "actual": "The whole list is replaced by \"Something went wrong\"",
+        "stack_trace": "TypeError: Cannot read properties of null (reading 'displayName')\n    at http://localhost:4173/app.js:23922:18\n    at Array.map (<anonymous>)\n    at RecipeList (http://localhost:4173/app.js:23917:105)\n    at Object.react_stack_bottom_frame (http://localhost:4173/app.js:21553:22)\n    at renderWithHooks (http://localhost:4173/app.js:7212:26)\n    at updateFunctionComponent (http://localhost:4173/app.js:9057:24)",
+        "screenshot": "evidence/C-2/screenshot.png",
+        "evidence_file": "evidence/C-2/evidence.json",
+        "repro_spec": "repro/repro_C-2.py"
+      },
+      "sources": [
+        {
+          "tool": "tsc-strict",
+          "version": "5.9.3",
+          "rule_id": "TS18047"
+        },
+        {
+          "tool": "contract_diff",
+          "rule_id": "nullable-access"
+        }
+      ],
+      "candidate_ids": [
+        "CAND-016"
+      ],
+      "remediation": "Render r.author?.displayName ?? 'Imported recipe' (as RecipeDetail already does), and turn on strictNullChecks so the compiler catches the rest.",
+      "verification_step": "python repro/repro_C-2.py exits 0; the list renders the imported recipe"
+    },
+    {
+      "id": "C-3",
+      "rank": 3,
+      "title": "A recipe with no ratings yet cannot be opened",
+      "tier": "B2",
+      "pitfall_id": "WEB-NUMBER-FORMAT-ON-NULL",
+      "confidence": "reproduced",
+      "evidence_type": "reproduced",
+      "locations": [
+        {
+          "file": "src/screens/RecipeDetail.tsx",
+          "line": 23,
+          "snippet": "{recipe.rating.toFixed(1)}",
+          "role": "throws"
+        }
+      ],
+      "trigger": {
+        "kind": "data",
+        "description": "GET /api/recipes/{id} returns \"rating\": null (ratingCount 0); recipe.rating.toFixed(1) throws TypeError during render.",
+        "data": {
+          "rating": null,
+          "ratingCount": 0
+        },
+        "basis": "openapi.json:49: rating is \"null until the recipe has at least one rating\", so every newly published recipe has it. The list guards it (Stars.tsx:2); the detail page does not."
+      },
+      "boundary": {
+        "caught_by": "BND-1",
+        "effect": "screen_replaced"
+      },
+      "trace": [
+        {
+          "file": "openapi.json",
+          "line": 49,
+          "note": "rating: nullable"
+        },
+        {
+          "file": "src/screens/RecipeDetail.tsx",
+          "line": 12,
+          "note": "getRecipe() result stored unvalidated"
+        },
+        {
+          "file": "src/screens/RecipeDetail.tsx",
+          "line": 23,
+          "note": "recipe.rating.toFixed(1) with rating null"
+        },
+        {
+          "file": "src/App.tsx",
+          "line": 22,
+          "note": "caught by RouteBoundary (BND-1)"
+        }
+      ],
+      "ranking": {
+        "reach": "high_traffic",
+        "reach_basis": "Recipe page (RT-2)",
+        "likelihood": "normal_data",
+        "likelihood_basis": "Every new recipe starts unrated",
+        "recoverability": "restart_or_navigate",
+        "score": 32,
+        "priority": "P1"
+      },
+      "repro": {
+        "probe_id": "P-C3",
+        "environment": {
+          "browser": "chromium 156.0.8078.4",
+          "viewport": "1280x800",
+          "locale": "en-AU",
+          "timezone": "Australia/Sydney",
+          "storage": "empty",
+          "url": "http://localhost:4173/#/recipes/r-5"
+        },
+        "preconditions": [
+          "A published recipe with no ratings"
+        ],
+        "trigger_data": {
+          "GET /api/recipes/r-5": "{\"id\": \"r-5\", \"title\": \"Miso greens\", \"rating\": null, \"ratingCount\": 0, ...}"
+        },
+        "steps": [
+          "Mock GET /api/recipes/r-5 with \"rating\": null",
+          "Open /#/recipes/r-5"
+        ],
+        "expected": "The recipe shows \"No ratings yet\"",
+        "actual": "The recipe page is replaced by \"Something went wrong\"",
+        "stack_trace": "TypeError: Cannot read properties of null (reading 'toFixed')\n    at RecipeDetail (http://localhost:4173/app.js:23974:23)\n    at Object.react_stack_bottom_frame (http://localhost:4173/app.js:21553:22)\n    at renderWithHooks (http://localhost:4173/app.js:7212:26)\n    at updateFunctionComponent (http://localhost:4173/app.js:9057:24)\n    at beginWork (http://localhost:4173/app.js:10137:22)\n    at runWithFiberInDEV (http://localhost:4173/app.js:2427:74)",
+        "screenshot": "evidence/C-3/screenshot.png",
+        "evidence_file": "evidence/C-3/evidence.json",
+        "repro_spec": "repro/repro_C-3.py"
+      },
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "WEB-NUMBER-FORMAT-ON-NULL"
+        },
+        {
+          "tool": "tsc-strict",
+          "version": "5.9.3",
+          "rule_id": "TS18047"
+        },
+        {
+          "tool": "contract_diff",
+          "rule_id": "nullable-access"
+        }
+      ],
+      "candidate_ids": [
+        "CAND-013",
+        "CAND-014"
+      ],
+      "remediation": "Reuse <Stars rating={recipe.rating} count={recipe.ratingCount} />, which already handles null.",
+      "verification_step": "python repro/repro_C-3.py exits 0; the page shows \"No ratings yet\""
+    },
+    {
+      "id": "C-5",
+      "rank": 4,
+      "title": "Recipe page crashes on iOS 16 and Safari before 17.4 (Object.groupBy missing)",
+      "tier": "B2",
+      "pitfall_id": "WEB-UNSUPPORTED-API",
+      "confidence": "traced",
+      "evidence_type": "trace",
+      "locations": [
+        {
+          "file": "src/screens/RecipeDetail.tsx",
+          "line": 17,
+          "snippet": "Object.groupBy(recipe.ingredients",
+          "role": "throws"
+        }
+      ],
+      "trigger": {
+        "kind": "environment",
+        "description": "Open any recipe in Safari on iOS 16 to 17.3 or macOS Safari before 17.4: Object.groupBy is undefined, so the call throws TypeError during render.",
+        "basis": "package.json:23 declares \"iOS >= 16\" as a supported target; Object.groupBy shipped in Safari 17.4 (and Chrome 117, Firefox 119). esbuild does not polyfill it."
+      },
+      "boundary": {
+        "caught_by": "BND-1",
+        "effect": "screen_replaced"
+      },
+      "trace": [
+        {
+          "file": "package.json",
+          "line": 23,
+          "note": "browserslist includes iOS >= 16"
+        },
+        {
+          "file": "src/screens/RecipeDetail.tsx",
+          "line": 17,
+          "note": "Object.groupBy called on every recipe render"
+        },
+        {
+          "file": "src/App.tsx",
+          "line": 22,
+          "note": "caught by RouteBoundary (BND-1)"
+        }
+      ],
+      "ranking": {
+        "reach": "high_traffic",
+        "reach_basis": "Recipe page (RT-2)",
+        "likelihood": "rare_environment",
+        "likelihood_basis": "Only browsers within the declared targets that predate Safari 17.4",
+        "recoverability": "restart_or_navigate",
+        "score": 16,
+        "priority": "P2"
+      },
+      "repro": {
+        "environment": {
+          "browser": "Safari 17.3 or earlier (iOS 16 device or simulator)"
+        },
+        "steps": [
+          "On an iOS 16 device, open the app",
+          "Open any recipe"
+        ],
+        "expected": "The recipe page renders",
+        "actual": "Not observed. By the trace, the page is replaced by \"Something went wrong\" (TypeError: Object.groupBy is not a function)",
+        "not_reproduced_reason": "Playwright WebKit ships a current Safari engine that has Object.groupBy; no iOS 16 device was available."
+      },
+      "sources": [
+        {
+          "tool": "agent",
+          "rule_id": "WEB-UNSUPPORTED-API"
+        }
+      ],
+      "candidate_ids": [],
+      "remediation": "Group with a small reduce() helper (or add a core-js polyfill), or deliberately raise the declared iOS target to 17.4.",
+      "verification_step": "Open a recipe in Safari 17.3 (or with Object.groupBy deleted in an init script) and confirm it renders"
+    },
+    {
+      "id": "C-4",
+      "rank": 5,
+      "title": "A malformed recipe link blanks the whole app",
+      "tier": "B1",
+      "pitfall_id": "WEB-THROWING-PARSER",
+      "confidence": "reproduced",
+      "evidence_type": "reproduced",
+      "locations": [
+        {
+          "file": "src/routes.ts",
+          "line": 27,
+          "snippet": "decodeURIComponent(parts[i])",
+          "role": "throws"
+        },
+        {
+          "file": "src/App.tsx",
+          "line": 15,
+          "snippet": "match(hash.slice(1))",
+          "role": "called during App render, outside any boundary"
+        }
+      ],
+      "trigger": {
+        "kind": "navigation",
+        "description": "Open a recipe link whose id has a broken percent-escape, e.g. /#/recipes/%E0%A4%A (a truncated link pasted from a chat app); decodeURIComponent throws URIError.",
+        "basis": "Recipe links are shared (RT-2), and truncated or hand-edited links are common; the hash is decoded in App render before any boundary."
+      },
+      "boundary": {
+        "caught_by": null,
+        "effect": "white_screen",
+        "note": "match() runs in App itself, so nothing can catch it; the hashchange listener is gone after the unmount, so Back does not recover."
+      },
+      "trace": [
+        {
+          "file": "src/App.tsx",
+          "line": 15,
+          "note": "match(hash.slice(1)) during App render"
+        },
+        {
+          "file": "src/routes.ts",
+          "line": 27,
+          "note": "decodeURIComponent throws URIError: URI malformed"
+        },
+        {
+          "file": "src/main.tsx",
+          "line": 4,
+          "note": "no root boundary; React unmounts the app"
+        }
+      ],
+      "ranking": {
+        "reach": "high_traffic",
+        "reach_basis": "Shared recipe links (RT-2)",
+        "likelihood": "adversarial",
+        "likelihood_basis": "Needs a malformed link; happens by accident but rarely",
+        "recoverability": "restart_or_navigate",
+        "score": 12,
+        "priority": "P2"
+      },
+      "repro": {
+        "probe_id": "P-C4",
+        "environment": {
+          "browser": "chromium 156.0.8078.4",
+          "viewport": "1280x800",
+          "locale": "en-AU",
+          "timezone": "Australia/Sydney",
+          "storage": "empty",
+          "url": "http://localhost:4173/#/recipes/%E0%A4%A"
+        },
+        "preconditions": [],
+        "trigger_data": "/#/recipes/%E0%A4%A",
+        "steps": [
+          "Open /#/recipes/%E0%A4%A"
+        ],
+        "expected": "A \"recipe not found\" message",
+        "actual": "Blank page (URIError: URI malformed)",
+        "stack_trace": "URIError: URI malformed\n    at decodeURIComponent (<anonymous>)\n    at http://localhost:4173/app.js:24038:32\n    at Array.every (<anonymous>)\n    at match (http://localhost:4173/app.js:24036:26)\n    at App (http://localhost:4173/app.js:24057:31)\n    at Object.react_stack_bottom_frame (http://localhost:4173/app.js:21553:22)",
+        "screenshot": "evidence/C-4/screenshot.png",
+        "evidence_file": "evidence/C-4/evidence.json",
+        "repro_spec": "repro/repro_C-4.py"
+      },
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "WEB-THROWING-PARSER"
+        }
+      ],
+      "candidate_ids": [
+        "CAND-009"
+      ],
+      "remediation": "Decode inside try/catch and treat a malformed segment as no match; add a root error boundary.",
+      "verification_step": "python repro/repro_C-4.py exits 0"
+    }
+  ],
+  "degradations": [
+    {
+      "id": "D-1",
+      "title": "Nutrition panel fails for recipes the nutrition job has not processed",
+      "tier": "B3",
+      "pitfall_id": "WEB-UNGUARDED-OPTIONAL",
+      "confidence": "reproduced",
+      "evidence_type": "reproduced",
+      "locations": [
+        {
+          "file": "src/components/NutritionPanel.tsx",
+          "line": 4,
+          "snippet": "nutrition.calories / nutrition.servings"
+        }
+      ],
+      "trigger": {
+        "kind": "data",
+        "description": "GET /api/recipes/{id} without a \"nutrition\" key; nutrition.calories throws TypeError.",
+        "data": {
+          "nutrition": "(absent)"
+        },
+        "basis": "openapi.json:83: nutrition is optional, \"only present once the nutrition job has run\"."
+      },
+      "boundary": {
+        "caught_by": "BND-2",
+        "effect": "component_replaced",
+        "note": "PanelBoundary shows \"Not available right now.\"; the rest of the recipe works."
+      },
+      "trace": [
+        {
+          "file": "openapi.json",
+          "line": 83,
+          "note": "nutrition optional"
+        },
+        {
+          "file": "src/screens/RecipeDetail.tsx",
+          "line": 39,
+          "note": "passed through as undefined"
+        },
+        {
+          "file": "src/components/NutritionPanel.tsx",
+          "line": 4,
+          "note": "nutrition.calories on undefined"
+        }
+      ],
+      "repro": {
+        "probe_id": "P-D1",
+        "steps": [
+          "Mock GET /api/recipes/r-6 without \"nutrition\"",
+          "Open /#/recipes/r-6"
+        ],
+        "actual": "Panel shows \"Not available right now.\" for a recipe that simply has no data yet",
+        "stack_trace": "TypeError: Cannot read properties of undefined (reading 'calories')\n    at NutritionPanel (http://localhost:4173/app.js:23935:45)\n    at Object.react_stack_bottom_frame (http://localhost:4173/app.js:21553:22)\n    at renderWithHooks (http://localhost:4173/app.js:7212:26)\n    at updateFunctionComponent (http://localhost:4173/app.js:9057:24)\n    at beginWork (http://localhost:4173/app.js:10137:22)\n    at runWithFiberInDEV (http://localhost:4173/app.js:2427:74)",
+        "screenshot": "evidence/D-1/screenshot.png",
+        "evidence_file": "evidence/D-1/evidence.json"
+      },
+      "sources": [
+        {
+          "tool": "tsc-strict",
+          "version": "5.9.3",
+          "rule_id": "TS18048"
+        }
+      ],
+      "candidate_ids": [
+        "CAND-001",
+        "CAND-002"
+      ],
+      "remediation": "Render nothing (or \"Nutrition coming soon\") when nutrition is undefined.",
+      "verification_step": "Open a recipe without nutrition: no console error, no fallback text"
+    },
+    {
+      "id": "D-2",
+      "title": "Recipe page stays on \"Loading…\" forever when the request fails",
+      "tier": "B3",
+      "pitfall_id": "WEB-PROMISE-NO-CATCH",
+      "confidence": "traced",
+      "evidence_type": "trace",
+      "locations": [
+        {
+          "file": "src/screens/RecipeDetail.tsx",
+          "line": 12,
+          "snippet": "getRecipe(params.id).then(setRecipe);"
+        }
+      ],
+      "trigger": {
+        "kind": "data",
+        "description": "GET /api/recipes/{id} returns 404 or 500 (deleted recipe, server error) or the device is offline.",
+        "data": {
+          "status": 404
+        },
+        "basis": "openapi.json declares a 404 response; api.ts:5 throws on any non-2xx."
+      },
+      "boundary": {
+        "caught_by": null,
+        "effect": "component_broken",
+        "note": "Unhandled promise rejection; the article area never leaves the loading state."
+      },
+      "trace": [
+        {
+          "file": "src/api.ts",
+          "line": 5,
+          "note": "throws on non-2xx"
+        },
+        {
+          "file": "src/screens/RecipeDetail.tsx",
+          "line": 12,
+          "note": "no rejection handler; recipe stays null"
+        }
+      ],
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "WEB-PROMISE-NO-CATCH"
+        }
+      ],
+      "candidate_ids": [
+        "CAND-012"
+      ],
+      "remediation": "Handle the rejection like RecipeList does: show \"Recipe not found\" or \"Couldn't load recipe\" with a retry.",
+      "verification_step": "Mock a 404 for the recipe: an error message appears instead of an endless \"Loading…\""
+    },
+    {
+      "id": "D-3",
+      "title": "Changing a setting throws when storage is full or blocked",
+      "tier": "B4",
+      "pitfall_id": "WEB-STORAGE-ACCESS",
+      "confidence": "pattern",
+      "evidence_type": "tool",
+      "locations": [
+        {
+          "file": "src/prefs.ts",
+          "line": 15,
+          "snippet": "localStorage.setItem(KEY"
+        }
+      ],
+      "trigger": {
+        "kind": "environment",
+        "description": "localStorage.setItem throws QuotaExceededError (storage full) or SecurityError (storage blocked) when the user changes theme or units.",
+        "basis": "Called from the select onChange handler (Settings.tsx:8); not traced further."
+      },
+      "boundary": {
+        "caught_by": null,
+        "effect": "console_only",
+        "note": "Thrown in an event handler, which error boundaries do not catch; React keeps the screen, the setting is not saved."
+      },
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "WEB-STORAGE-ACCESS"
+        }
+      ],
+      "candidate_ids": [
+        "CAND-007"
+      ],
+      "remediation": "Save through the same safe storage wrapper as the C-1 fix, and tell the user if the setting could not be saved.",
+      "verification_step": "Stub setItem to throw: the select still changes and a message explains the setting was not saved"
+    }
+  ],
+  "coverage": {
+    "routes_total": 4,
+    "routes_analysed": 4,
+    "not_analysed": [],
+    "platforms_not_covered": []
+  },
+  "limitations": [
+    "Probes ran in one browser engine (Chromium 156) with mocked API responses; no real backend, device or older Safari was used.",
+    "ESLint and Semgrep did not run (not configured / not installed), so hook-dependency loops and floating promises were only checked by pattern.",
+    "Field-name matching in the contract diff can miss accesses after destructuring; the strict tsc overlay covered those here.",
+    "No production telemetry was provided, so likelihoods come from the contract, the changelog and the declared targets."
+  ],
+  "files_written": [
+    "run/recon.json",
+    "run/contract.json",
+    "run/tsc.json",
+    "run/eslint.json",
+    "run/candidates.json",
+    "probes/baseline.json",
+    "probes/C-1.json",
+    "probes/C-2.json",
+    "probes/C-3.json",
+    "probes/C-4.json",
+    "probes/D-1.json",
+    "evidence/baseline/evidence.json",
+    "evidence/C-1/evidence.json",
+    "evidence/C-2/evidence.json",
+    "evidence/C-3/evidence.json",
+    "evidence/C-4/evidence.json",
+    "evidence/D-1/evidence.json",
+    "evidence/baseline/screenshot.png",
+    "evidence/C-1/screenshot.png",
+    "evidence/C-2/screenshot.png",
+    "evidence/C-3/screenshot.png",
+    "evidence/C-4/screenshot.png",
+    "evidence/D-1/screenshot.png",
+    "repro/repro_baseline.py",
+    "repro/repro_C-1.py",
+    "repro/repro_C-2.py",
+    "repro/repro_C-3.py",
+    "repro/repro_C-4.py",
+    "repro/repro_D-1.py",
+    "crash_report.example.json"
+  ],
+  "next_steps": [
+    "Fix C-1 first: it blanks the app for every upgraded user who chose a theme, on every launch.",
+    "Add a root error boundary in main.tsx; C-1 and C-4 would then become screen-level instead of white screens.",
+    "Turn on strictNullChecks: the strict overlay found the C-2, C-3 and D-1 accesses mechanically.",
+    "Keep the repro specs as regression checks once the fixes land (each exits 0 when fixed)."
+  ],
+  "summary": {
+    "crashes": 5,
+    "by_tier": {
+      "B1": 2,
+      "B2": 3,
+      "B3": 2,
+      "B4": 1
+    },
+    "by_priority": {
+      "P0": 1,
+      "P1": 2,
+      "P2": 2,
+      "P3": 0
+    },
+    "by_confidence": {
+      "reproduced": 4,
+      "traced": 1,
+      "pattern": 0
+    },
+    "degradations": 3,
+    "candidates_total": 16,
+    "candidates_promoted": 10,
+    "candidates_dismissed": 6,
+    "tools_ran": 5,
+    "tools_applicable": 7,
+    "evidence_completeness": 0.71,
+    "surface_coverage": 1.0,
+    "headline": "5 likely crashes, 4 of them reproduced: a P0 crash loop for users upgrading from 0.2.0, and two contract-valid responses that break the recipe list and recipe page."
+  }
+}

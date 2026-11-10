@@ -1,0 +1,705 @@
+{
+  "metadata": {
+    "repository": "acme-shop",
+    "generated_at": "2026-11-09T10:00:00+00:00",
+    "platforms": [
+      "web",
+      "ios",
+      "android",
+      "api"
+    ],
+    "frameworks": [
+      "nextjs",
+      "expo-router",
+      "playwright"
+    ],
+    "run_scope": {
+      "domains": "all",
+      "max_journeys": 50
+    },
+    "extractor": {
+      "files_scanned": 412,
+      "truncated": false
+    },
+    "notes": [
+      "Example output for a fictional repository."
+    ]
+  },
+  "surface": {
+    "routes": [
+      {
+        "id": "R-001",
+        "kind": "route",
+        "name": "/",
+        "file": "web/src/app/page.tsx",
+        "line": 1,
+        "detector": "next-app-router",
+        "confidence": "high",
+        "source": "extractor",
+        "framework": "nextjs",
+        "platform": "web"
+      },
+      {
+        "id": "R-002",
+        "kind": "route",
+        "name": "/products/:slug",
+        "file": "web/src/app/products/[slug]/page.tsx",
+        "line": 1,
+        "detector": "next-app-router",
+        "confidence": "high",
+        "source": "extractor",
+        "framework": "nextjs",
+        "platform": "web"
+      },
+      {
+        "id": "R-003",
+        "kind": "route",
+        "name": "/checkout",
+        "file": "web/src/app/(shop)/checkout/page.tsx",
+        "line": 1,
+        "detector": "next-app-router",
+        "confidence": "high",
+        "source": "extractor",
+        "framework": "nextjs",
+        "platform": "web"
+      },
+      {
+        "id": "R-004",
+        "kind": "route",
+        "name": "/checkout/confirmation",
+        "file": "web/src/app/(shop)/checkout/confirmation/page.tsx",
+        "line": 1,
+        "detector": "next-app-router",
+        "confidence": "high",
+        "source": "extractor",
+        "framework": "nextjs",
+        "platform": "web"
+      },
+      {
+        "id": "R-005",
+        "kind": "route",
+        "name": "/login",
+        "file": "web/src/app/login/page.tsx",
+        "line": 1,
+        "detector": "next-app-router",
+        "confidence": "high",
+        "source": "extractor",
+        "framework": "nextjs",
+        "platform": "web"
+      },
+      {
+        "id": "R-006",
+        "kind": "route",
+        "name": "/account",
+        "file": "web/src/app/account/page.tsx",
+        "line": 1,
+        "detector": "next-app-router",
+        "confidence": "high",
+        "source": "extractor",
+        "framework": "nextjs",
+        "platform": "web"
+      },
+      {
+        "id": "R-007",
+        "kind": "route",
+        "name": "/admin/reports",
+        "file": "web/src/app/admin/reports/page.tsx",
+        "line": 1,
+        "detector": "next-app-router",
+        "confidence": "high",
+        "source": "extractor",
+        "framework": "nextjs",
+        "platform": "web"
+      },
+      {
+        "id": "R-008",
+        "kind": "route",
+        "name": "/legacy-cart",
+        "file": "web/src/app/legacy-cart/page.tsx",
+        "line": 1,
+        "detector": "next-app-router",
+        "confidence": "high",
+        "source": "extractor",
+        "framework": "nextjs",
+        "platform": "web"
+      }
+    ],
+    "screens": [
+      {
+        "id": "S-001",
+        "kind": "screen",
+        "name": "/login",
+        "file": "mobile/app/login.tsx",
+        "line": 1,
+        "detector": "expo-router-file",
+        "confidence": "high",
+        "source": "extractor",
+        "framework": "expo-router",
+        "platform": "mobile"
+      },
+      {
+        "id": "S-002",
+        "kind": "screen",
+        "name": "/product/:id",
+        "file": "mobile/app/product/[id].tsx",
+        "line": 1,
+        "detector": "expo-router-file",
+        "confidence": "high",
+        "source": "extractor",
+        "framework": "expo-router",
+        "platform": "mobile"
+      },
+      {
+        "id": "S-003",
+        "kind": "screen",
+        "name": "/cart",
+        "file": "mobile/app/cart.tsx",
+        "line": 1,
+        "detector": "expo-router-file",
+        "confidence": "high",
+        "source": "extractor",
+        "framework": "expo-router",
+        "platform": "mobile"
+      }
+    ],
+    "endpoints": [
+      {
+        "id": "E-001",
+        "kind": "endpoint",
+        "name": "POST /api/cart",
+        "file": "web/src/app/api/cart/route.ts",
+        "line": 12,
+        "detector": "next-route-handler",
+        "confidence": "high",
+        "source": "extractor",
+        "framework": "nextjs",
+        "platform": "api"
+      },
+      {
+        "id": "E-002",
+        "kind": "endpoint",
+        "name": "POST /api/orders",
+        "file": "web/src/app/api/orders/route.ts",
+        "line": 9,
+        "detector": "next-route-handler",
+        "confidence": "high",
+        "source": "extractor",
+        "framework": "nextjs",
+        "platform": "api"
+      },
+      {
+        "id": "E-003",
+        "kind": "endpoint",
+        "name": "POST /api/session",
+        "file": "web/src/app/api/session/route.ts",
+        "line": 7,
+        "detector": "next-route-handler",
+        "confidence": "high",
+        "source": "extractor",
+        "framework": "nextjs",
+        "platform": "api"
+      },
+      {
+        "id": "E-004",
+        "kind": "endpoint",
+        "name": "GET /api/health",
+        "file": "web/src/app/api/health/route.ts",
+        "line": 3,
+        "detector": "next-route-handler",
+        "confidence": "high",
+        "source": "extractor",
+        "framework": "nextjs",
+        "platform": "api"
+      },
+      {
+        "id": "E-005",
+        "kind": "endpoint",
+        "name": "POST /api/webhooks/stripe",
+        "file": "web/src/app/api/webhooks/stripe/route.ts",
+        "line": 15,
+        "detector": "next-route-handler",
+        "confidence": "high",
+        "source": "extractor",
+        "framework": "nextjs",
+        "platform": "api"
+      }
+    ],
+    "entry_points": [
+      {
+        "id": "N-001",
+        "kind": "entry_point",
+        "name": "acme://product/",
+        "file": "mobile/app.json",
+        "line": 14,
+        "detector": "agent",
+        "confidence": "high",
+        "source": "agent",
+        "platform": "mobile",
+        "note": "Expo linking scheme; extractor does not parse app.json"
+      }
+    ],
+    "goals": [
+      {
+        "id": "G-001",
+        "kind": "goal",
+        "name": "order_completed",
+        "file": "web/src/app/(shop)/checkout/confirmation/page.tsx",
+        "line": 21,
+        "detector": "analytics-call",
+        "confidence": "medium",
+        "source": "extractor"
+      },
+      {
+        "id": "G-002",
+        "kind": "goal",
+        "name": "login_succeeded",
+        "file": "web/src/features/auth/useLogin.ts",
+        "line": 34,
+        "detector": "analytics-call",
+        "confidence": "medium",
+        "source": "extractor"
+      },
+      {
+        "id": "G-003",
+        "kind": "goal",
+        "name": "newsletter_subscribed",
+        "file": "web/src/components/NewsletterForm.tsx",
+        "line": 18,
+        "detector": "analytics-call",
+        "confidence": "medium",
+        "source": "extractor"
+      }
+    ]
+  },
+  "coverage": {
+    "surface_items_total": 20,
+    "in_journey": 15,
+    "orphans": [
+      {
+        "item": "E-004",
+        "reason": "not_user_facing",
+        "note": "Load balancer health check"
+      },
+      {
+        "item": "E-005",
+        "reason": "not_user_facing",
+        "note": "Payment provider webhook; covered indirectly by order confirmation"
+      },
+      {
+        "item": "G-003",
+        "reason": "needs_review",
+        "note": "NewsletterForm is defined but no page renders it"
+      }
+    ],
+    "unreachable": [
+      {
+        "item": "R-007",
+        "reason": "flag_off",
+        "evidence": {
+          "file": "web/src/flags.ts",
+          "line": 8,
+          "note": "admin_reports defaults to false in every environment"
+        }
+      },
+      {
+        "item": "R-008",
+        "reason": "dead",
+        "evidence": {
+          "file": "web/src/app/legacy-cart/page.tsx",
+          "line": 1,
+          "note": "No links, redirects or navigation calls reference /legacy-cart"
+        }
+      }
+    ]
+  },
+  "journeys": [
+    {
+      "id": "JRN-CHK-001",
+      "title": "Guest completes checkout with card",
+      "domain": "checkout",
+      "platforms": [
+        "web",
+        "ios",
+        "android"
+      ],
+      "persona": "guest",
+      "priority": "P1",
+      "priority_reason": "Revenue path; ends in the primary goal event order_completed",
+      "status": "inferred",
+      "entry_point": "/",
+      "goal": "Confirmation page shows an order number and an order is created",
+      "flags": [],
+      "automation": "none",
+      "tests": [],
+      "covers": [
+        "R-001",
+        "R-002",
+        "R-003",
+        "R-004",
+        "S-002",
+        "S-003",
+        "E-001",
+        "E-002",
+        "N-001",
+        "G-001"
+      ],
+      "preconditions": [
+        "At least one product has stock > 0",
+        "User is not signed in"
+      ],
+      "steps": [
+        {
+          "action": "Open the home page and select a product",
+          "expect": "Product page shows title, price and an enabled \"Add to cart\" button",
+          "evidence": [
+            {
+              "file": "web/src/app/page.tsx",
+              "line": 22,
+              "note": "ProductCard links to /products/[slug]"
+            },
+            {
+              "file": "mobile/app/product/[id].tsx",
+              "line": 1
+            }
+          ]
+        },
+        {
+          "action": "Click \"Add to cart\"",
+          "expect": "Cart badge shows 1",
+          "evidence": [
+            {
+              "file": "web/src/features/cart/useAddToCart.ts",
+              "line": 30,
+              "note": "POST /api/cart then updates badge count"
+            }
+          ]
+        },
+        {
+          "action": "Open the cart and continue to checkout",
+          "expect": "Checkout form shows shipping and card fields; \"Pay now\" is disabled",
+          "evidence": [
+            {
+              "file": "web/src/app/(shop)/checkout/page.tsx",
+              "line": 40
+            },
+            {
+              "file": "mobile/app/cart.tsx",
+              "line": 55
+            }
+          ]
+        },
+        {
+          "action": "Fill in valid shipping and card details",
+          "expect": "\"Pay now\" becomes enabled",
+          "evidence": [
+            {
+              "file": "web/src/features/checkout/CheckoutForm.tsx",
+              "line": 88,
+              "note": "isValid gates the submit button"
+            }
+          ]
+        },
+        {
+          "action": "Click \"Pay now\"",
+          "expect": "Confirmation page shows an order number",
+          "evidence": [
+            {
+              "file": "web/src/features/checkout/CheckoutForm.tsx",
+              "line": 112,
+              "note": "POST /api/orders"
+            },
+            {
+              "file": "web/src/app/(shop)/checkout/confirmation/page.tsx",
+              "line": 21,
+              "note": "track('order_completed')"
+            }
+          ]
+        }
+      ],
+      "variants": [
+        {
+          "id": "V1",
+          "name": "card declined",
+          "from_step": 5,
+          "action": "Pay with a card the provider declines",
+          "expect": "Inline \"Your card was declined\" error; user stays on the checkout page",
+          "evidence": [
+            {
+              "file": "web/src/features/checkout/CheckoutForm.tsx",
+              "line": 120
+            }
+          ]
+        },
+        {
+          "id": "V2",
+          "name": "out of stock",
+          "from_step": 1,
+          "expect": "\"Add to cart\" is disabled and shows \"Out of stock\"",
+          "evidence": [
+            {
+              "file": "web/src/components/AddToCartButton.tsx",
+              "line": 14
+            }
+          ]
+        },
+        {
+          "id": "V3",
+          "name": "deep link on mobile",
+          "from_step": 1,
+          "action": "Open acme://product/<id> on a device",
+          "expect": "App opens directly on the product screen",
+          "evidence": [
+            {
+              "file": "mobile/app.json",
+              "line": 14
+            }
+          ]
+        }
+      ],
+      "test_data": [
+        "Stripe test cards: 4242 4242 4242 4242 (success), 4000 0000 0000 0002 (declined)"
+      ],
+      "not_automatable": [],
+      "open_questions": [
+        "Confirmation page does not clear the cart badge until reload (CheckoutForm.tsx:130). Intended?"
+      ]
+    },
+    {
+      "id": "JRN-ACC-001",
+      "title": "Member signs in and views their account",
+      "domain": "account",
+      "platforms": [
+        "web",
+        "ios",
+        "android"
+      ],
+      "persona": "member",
+      "priority": "P1",
+      "priority_reason": "Authentication gates every member feature",
+      "status": "inferred",
+      "entry_point": "/login",
+      "goal": "Account page shows the member's name and order history",
+      "flags": [],
+      "automation": "partial",
+      "tests": [
+        "web/e2e/login.spec.ts"
+      ],
+      "covers": [
+        "R-005",
+        "R-006",
+        "S-001",
+        "E-003",
+        "G-002"
+      ],
+      "preconditions": [
+        "A member account exists with at least one past order"
+      ],
+      "steps": [
+        {
+          "action": "Open the login page",
+          "expect": "Email and password fields and a \"Sign in\" button are visible",
+          "evidence": [
+            {
+              "file": "web/src/app/login/page.tsx",
+              "line": 10
+            },
+            {
+              "file": "mobile/app/login.tsx",
+              "line": 1
+            }
+          ]
+        },
+        {
+          "action": "Enter valid credentials and click \"Sign in\"",
+          "expect": "User is redirected to /account",
+          "evidence": [
+            {
+              "file": "web/src/features/auth/useLogin.ts",
+              "line": 34,
+              "note": "POST /api/session; router.push('/account'); track('login_succeeded')"
+            }
+          ]
+        },
+        {
+          "action": "View the account page",
+          "expect": "Member's name and a list of past orders are shown",
+          "evidence": [
+            {
+              "file": "web/src/app/account/page.tsx",
+              "line": 18
+            }
+          ]
+        }
+      ],
+      "variants": [
+        {
+          "id": "V1",
+          "name": "wrong password",
+          "from_step": 2,
+          "action": "Enter a wrong password",
+          "expect": "\"Email or password is incorrect\" error; user stays on /login",
+          "evidence": [
+            {
+              "file": "web/src/features/auth/useLogin.ts",
+              "line": 41
+            }
+          ]
+        },
+        {
+          "id": "V2",
+          "name": "account locked",
+          "from_step": 2,
+          "action": "Sign in to an account locked after 5 failed attempts",
+          "expect": "Locked-account message with a reset-password link",
+          "evidence": [
+            {
+              "file": "web/src/app/api/session/route.ts",
+              "line": 29,
+              "note": "423 when failed_attempts >= 5"
+            }
+          ]
+        }
+      ],
+      "test_data": [
+        "Seeded member: member@example.test (password from TEST_MEMBER_PASSWORD)"
+      ],
+      "not_automatable": [],
+      "open_questions": []
+    }
+  ],
+  "graph": {
+    "nodes": [
+      {
+        "id": "home",
+        "label": "Home",
+        "kind": "entry",
+        "domain": "checkout",
+        "surface_item": "R-001"
+      },
+      {
+        "id": "deeplink",
+        "label": "acme://product/",
+        "kind": "entry",
+        "domain": "checkout",
+        "surface_item": "N-001"
+      },
+      {
+        "id": "product",
+        "label": "Product page",
+        "kind": "screen",
+        "domain": "checkout",
+        "surface_item": "R-002"
+      },
+      {
+        "id": "cart",
+        "label": "Cart",
+        "kind": "screen",
+        "domain": "checkout",
+        "surface_item": "S-003"
+      },
+      {
+        "id": "checkout",
+        "label": "Checkout",
+        "kind": "screen",
+        "domain": "checkout",
+        "surface_item": "R-003"
+      },
+      {
+        "id": "confirmation",
+        "label": "Order confirmed",
+        "kind": "goal",
+        "domain": "checkout",
+        "surface_item": "R-004"
+      },
+      {
+        "id": "login",
+        "label": "Login",
+        "kind": "entry",
+        "domain": "account",
+        "surface_item": "R-005"
+      },
+      {
+        "id": "account",
+        "label": "Account",
+        "kind": "goal",
+        "domain": "account",
+        "surface_item": "R-006"
+      }
+    ],
+    "edges": [
+      {
+        "from": "home",
+        "to": "product",
+        "action": "select product"
+      },
+      {
+        "from": "deeplink",
+        "to": "product",
+        "action": "open link"
+      },
+      {
+        "from": "product",
+        "to": "cart",
+        "action": "add to cart",
+        "guards": [
+          "in stock"
+        ]
+      },
+      {
+        "from": "cart",
+        "to": "checkout",
+        "action": "checkout"
+      },
+      {
+        "from": "checkout",
+        "to": "confirmation",
+        "action": "pay now",
+        "guards": [
+          "form valid",
+          "payment accepted"
+        ]
+      },
+      {
+        "from": "login",
+        "to": "account",
+        "action": "sign in",
+        "guards": [
+          "valid credentials"
+        ]
+      }
+    ]
+  },
+  "open_questions": [
+    {
+      "id": "Q-001",
+      "question": "Is the admin reports page (R-007) expected to ship? It is behind admin_reports, which is off everywhere.",
+      "related": [
+        "R-007"
+      ]
+    }
+  ],
+  "files": [
+    {
+      "path": "journey-mapper-skill/examples/journeys/checkout/JRN-CHK-001-guest-completes-checkout-with-card.md",
+      "journey": "JRN-CHK-001",
+      "action": "unchanged"
+    },
+    {
+      "path": "journey-mapper-skill/examples/journeys/account/JRN-ACC-001-member-signs-in-and-views-their-account.md",
+      "journey": "JRN-ACC-001",
+      "action": "unchanged"
+    },
+    {
+      "path": "journey-mapper-skill/examples/journeys/journey-graph.json",
+      "action": "generated"
+    },
+    {
+      "path": "journey-mapper-skill/examples/journeys/index.md",
+      "action": "generated"
+    },
+    {
+      "path": "journey-mapper-skill/examples/journeys/coverage.md",
+      "action": "generated"
+    }
+  ]
+}

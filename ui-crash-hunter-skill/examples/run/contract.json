@@ -1,0 +1,180 @@
+{
+  "tool": "contract_diff",
+  "status": "ran",
+  "generated_at": "2026-11-10T02:34:02Z",
+  "contracts": [
+    {
+      "kind": "openapi",
+      "file": "openapi.json"
+    },
+    {
+      "kind": "typescript",
+      "file": "src/api.ts"
+    },
+    {
+      "kind": "typescript",
+      "file": "src/types.ts"
+    }
+  ],
+  "read_errors": [],
+  "nullable_fields": [
+    {
+      "type": "Author",
+      "field": "avatarUrl",
+      "nullable": true,
+      "reason": "optional",
+      "ref": "openapi.json#/Author/avatarUrl",
+      "contract_kind": "openapi"
+    },
+    {
+      "type": "Author",
+      "field": "avatarUrl",
+      "nullable": true,
+      "ref": "src/types.ts#Author.avatarUrl",
+      "reason": "optional",
+      "contract_kind": "typescript"
+    },
+    {
+      "type": "RecipeSummary",
+      "field": "author",
+      "nullable": true,
+      "reason": "nullable",
+      "ref": "openapi.json#/RecipeSummary/author",
+      "contract_kind": "openapi"
+    },
+    {
+      "type": "RecipeSummary",
+      "field": "author",
+      "nullable": true,
+      "ref": "src/types.ts#RecipeSummary.author",
+      "reason": "nullable",
+      "contract_kind": "typescript"
+    },
+    {
+      "type": "RecipeSummary",
+      "field": "rating",
+      "nullable": true,
+      "reason": "nullable",
+      "ref": "openapi.json#/RecipeSummary/rating",
+      "contract_kind": "openapi"
+    },
+    {
+      "type": "RecipeSummary",
+      "field": "rating",
+      "nullable": true,
+      "ref": "src/types.ts#RecipeSummary.rating",
+      "reason": "nullable",
+      "contract_kind": "typescript"
+    },
+    {
+      "type": "Ingredient",
+      "field": "quantity",
+      "nullable": true,
+      "reason": "nullable",
+      "ref": "openapi.json#/Ingredient/quantity",
+      "contract_kind": "openapi"
+    },
+    {
+      "type": "Ingredient",
+      "field": "quantity",
+      "nullable": true,
+      "ref": "src/types.ts#Ingredient.quantity",
+      "reason": "nullable",
+      "contract_kind": "typescript"
+    },
+    {
+      "type": "Ingredient",
+      "field": "unit",
+      "nullable": true,
+      "reason": "optional",
+      "ref": "openapi.json#/Ingredient/unit",
+      "contract_kind": "openapi"
+    },
+    {
+      "type": "Ingredient",
+      "field": "unit",
+      "nullable": true,
+      "ref": "src/types.ts#Ingredient.unit",
+      "reason": "optional",
+      "contract_kind": "typescript"
+    },
+    {
+      "type": "Ingredient",
+      "field": "aisle",
+      "nullable": true,
+      "reason": "optional",
+      "ref": "openapi.json#/Ingredient/aisle",
+      "contract_kind": "openapi"
+    },
+    {
+      "type": "Ingredient",
+      "field": "aisle",
+      "nullable": true,
+      "ref": "src/types.ts#Ingredient.aisle",
+      "reason": "optional",
+      "contract_kind": "typescript"
+    },
+    {
+      "type": "Recipe",
+      "field": "nutrition",
+      "nullable": true,
+      "reason": "optional",
+      "ref": "openapi.json#/Recipe/nutrition",
+      "contract_kind": "openapi"
+    },
+    {
+      "type": "Recipe",
+      "field": "nutrition",
+      "nullable": true,
+      "ref": "src/types.ts#Recipe.nutrition",
+      "reason": "optional",
+      "contract_kind": "typescript"
+    }
+  ],
+  "candidates": [
+    {
+      "pitfall_id": "WEB-UNGUARDED-OPTIONAL",
+      "file": "src/screens/RecipeDetail.tsx",
+      "line": 23,
+      "column": 68,
+      "snippet": "{recipe.author?.displayName ?? 'Imported recipe'} · {recipe.rating.toFixed(1)} ★ ({recipe.ratingCount})",
+      "message": "'rating' is nullable in openapi.json#/RecipeSummary/rating and is dereferenced without a guard",
+      "field": "rating",
+      "schema_ref": [
+        "openapi.json#/RecipeSummary/rating",
+        "src/types.ts#RecipeSummary.rating"
+      ],
+      "nullable_reason": "nullable",
+      "name_collision": false,
+      "guard_nearby": false,
+      "sources": [
+        {
+          "tool": "contract_diff",
+          "rule_id": "nullable-access"
+        }
+      ]
+    },
+    {
+      "pitfall_id": "WEB-UNGUARDED-OPTIONAL",
+      "file": "src/screens/RecipeList.tsx",
+      "line": 21,
+      "column": 81,
+      "snippet": "<a href={`#/recipes/${r.id}`}>{r.title}</a> <span className=\"by\">by {r.author.displayName}</span>{' '}",
+      "message": "'author' is nullable in openapi.json#/RecipeSummary/author and is dereferenced without a guard",
+      "field": "author",
+      "schema_ref": [
+        "openapi.json#/RecipeSummary/author",
+        "src/types.ts#RecipeSummary.author"
+      ],
+      "nullable_reason": "nullable",
+      "name_collision": false,
+      "guard_nearby": false,
+      "sources": [
+        {
+          "tool": "contract_diff",
+          "rule_id": "nullable-access"
+        }
+      ]
+    }
+  ]
+}

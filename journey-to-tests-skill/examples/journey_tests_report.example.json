@@ -1,0 +1,1026 @@
+{
+  "metadata": {
+    "repository": "acme-shop",
+    "generated_at": "2026-11-09T08:51:13Z",
+    "skill_version": "1.0.0",
+    "journeys_source": [
+      "acme-shop/journeys"
+    ],
+    "frameworks": [
+      "playwright"
+    ],
+    "platforms": [
+      "web"
+    ],
+    "target": {
+      "kind": "dev_server",
+      "value": "http://localhost:3000",
+      "notes": "npm run dev with ENABLE_TEST_SEED unset (the default .env.local)"
+    },
+    "repeat": 3,
+    "approval": {
+      "gate": "on",
+      "plan_approved": true,
+      "approved_at": "2026-11-09T09:20:00Z",
+      "note": "Plan approved as proposed; V3 (mobile deep link) deferred by agreement."
+    },
+    "filters": {},
+    "conventions_source": "detect_conventions.py web --target web/e2e/checkout",
+    "notes": [
+      "Followed web/e2e conventions: Playwright test runner, page objects in web/e2e/pages, seeding through web/e2e/support/seed.ts, role and label selectors."
+    ]
+  },
+  "journeys": [
+    {
+      "id": "JRN-ACC-001",
+      "path": "journeys/account/JRN-ACC-001-member-signs-in-and-views-their-account.md",
+      "title": "Member signs in and views their account",
+      "priority": "P1",
+      "platforms": [
+        "web",
+        "ios",
+        "android"
+      ],
+      "status": "inferred",
+      "automation_before": "partial",
+      "tests_before": [
+        "web/e2e/login.spec.ts"
+      ],
+      "expect_sha256": "c9f35cf90a3b1bed74a445f99beb4cd7dad72a8b21b24518218150fbaf640c57",
+      "in_scope": true
+    },
+    {
+      "id": "JRN-CHK-001",
+      "path": "journeys/checkout/JRN-CHK-001-guest-completes-checkout-with-card.md",
+      "title": "Guest completes checkout with card",
+      "priority": "P1",
+      "platforms": [
+        "web",
+        "ios",
+        "android"
+      ],
+      "status": "inferred",
+      "automation_before": "none",
+      "tests_before": [],
+      "expect_sha256": "e199249a42668456503b48960352227071ce51b32b5155adc371698b0d45594b",
+      "in_scope": true
+    }
+  ],
+  "mapping": [
+    {
+      "journey_id": "JRN-CHK-001",
+      "test_path": "web/e2e/checkout/JRN-CHK-001-guest-checkout.spec.ts",
+      "describe": "JRN-CHK-001 Guest completes checkout with card",
+      "tests": [
+        {
+          "test_id": "CHK-main",
+          "name": "JRN-CHK-001 main path: guest pays by card and sees an order number",
+          "variant": null,
+          "tags": [
+            "@JRN-CHK-001",
+            "@P1"
+          ]
+        },
+        {
+          "test_id": "CHK-V1",
+          "name": "JRN-CHK-001 V1 card declined: inline error, user stays on checkout",
+          "variant": "V1",
+          "tags": [
+            "@JRN-CHK-001",
+            "@P1"
+          ]
+        },
+        {
+          "test_id": "CHK-V2",
+          "name": "JRN-CHK-001 V2 out of stock: Add to cart is disabled",
+          "variant": "V2",
+          "tags": [
+            "@JRN-CHK-001",
+            "@P1"
+          ]
+        }
+      ]
+    },
+    {
+      "journey_id": "JRN-ACC-001",
+      "test_path": "web/e2e/login.spec.ts",
+      "describe": "JRN-ACC-001 Member signs in and views their account",
+      "tests": [
+        {
+          "test_id": "ACC-main",
+          "name": "JRN-ACC-001 main path: member sees their name and past orders",
+          "variant": null,
+          "tags": [
+            "@JRN-ACC-001",
+            "@P1"
+          ]
+        },
+        {
+          "test_id": "ACC-V1",
+          "name": "JRN-ACC-001 V1 wrong password: error shown, user stays on /login",
+          "variant": "V1",
+          "tags": [
+            "@JRN-ACC-001",
+            "@P1"
+          ]
+        },
+        {
+          "test_id": "ACC-V2",
+          "name": "JRN-ACC-001 V2 account locked: locked message with reset link",
+          "variant": "V2",
+          "tags": [
+            "@JRN-ACC-001",
+            "@P1"
+          ]
+        }
+      ]
+    }
+  ],
+  "step_coverage": [
+    {
+      "journey_id": "JRN-ACC-001",
+      "ref": "step 1",
+      "expect": "Email and password fields and a \"Sign in\" button are visible",
+      "coverage": "asserted",
+      "assertions": [
+        {
+          "file": "web/e2e/login.spec.ts",
+          "line": 19
+        },
+        {
+          "file": "web/e2e/login.spec.ts",
+          "line": 20
+        },
+        {
+          "file": "web/e2e/login.spec.ts",
+          "line": 21
+        }
+      ],
+      "test_ids": [
+        "ACC-main"
+      ]
+    },
+    {
+      "journey_id": "JRN-ACC-001",
+      "ref": "step 2",
+      "expect": "User is redirected to /account",
+      "coverage": "asserted",
+      "assertions": [
+        {
+          "file": "web/e2e/login.spec.ts",
+          "line": 27
+        }
+      ],
+      "test_ids": [
+        "ACC-main"
+      ]
+    },
+    {
+      "journey_id": "JRN-ACC-001",
+      "ref": "step 3",
+      "expect": "Member's name and a list of past orders are shown",
+      "coverage": "blocked_by_gap",
+      "assertions": [
+        {
+          "file": "web/e2e/login.spec.ts",
+          "line": 30
+        }
+      ],
+      "test_ids": [
+        "ACC-main"
+      ],
+      "reason": "Member's name is asserted; the past-orders list has no stable selector (GAP-001)",
+      "gap_id": "GAP-001"
+    },
+    {
+      "journey_id": "JRN-ACC-001",
+      "ref": "V1",
+      "expect": "\"Email or password is incorrect\" error; user stays on /login",
+      "coverage": "asserted",
+      "assertions": [
+        {
+          "file": "web/e2e/login.spec.ts",
+          "line": 40
+        },
+        {
+          "file": "web/e2e/login.spec.ts",
+          "line": 41
+        }
+      ],
+      "test_ids": [
+        "ACC-V1"
+      ]
+    },
+    {
+      "journey_id": "JRN-ACC-001",
+      "ref": "V2",
+      "expect": "Locked-account message with a reset-password link",
+      "coverage": "asserted",
+      "assertions": [
+        {
+          "file": "web/e2e/login.spec.ts",
+          "line": 51
+        },
+        {
+          "file": "web/e2e/login.spec.ts",
+          "line": 52
+        }
+      ],
+      "test_ids": [
+        "ACC-V2"
+      ]
+    },
+    {
+      "journey_id": "JRN-CHK-001",
+      "ref": "step 1",
+      "expect": "Product page shows title, price and an enabled \"Add to cart\" button",
+      "coverage": "asserted",
+      "assertions": [
+        {
+          "file": "web/e2e/checkout/JRN-CHK-001-guest-checkout.spec.ts",
+          "line": 17
+        },
+        {
+          "file": "web/e2e/checkout/JRN-CHK-001-guest-checkout.spec.ts",
+          "line": 18
+        },
+        {
+          "file": "web/e2e/checkout/JRN-CHK-001-guest-checkout.spec.ts",
+          "line": 19
+        }
+      ],
+      "test_ids": [
+        "CHK-main"
+      ]
+    },
+    {
+      "journey_id": "JRN-CHK-001",
+      "ref": "step 2",
+      "expect": "Cart badge shows 1",
+      "coverage": "asserted",
+      "assertions": [
+        {
+          "file": "web/e2e/checkout/JRN-CHK-001-guest-checkout.spec.ts",
+          "line": 23
+        }
+      ],
+      "test_ids": [
+        "CHK-main"
+      ]
+    },
+    {
+      "journey_id": "JRN-CHK-001",
+      "ref": "step 3",
+      "expect": "Checkout form shows shipping and card fields; \"Pay now\" is disabled",
+      "coverage": "asserted",
+      "assertions": [
+        {
+          "file": "web/e2e/checkout/JRN-CHK-001-guest-checkout.spec.ts",
+          "line": 28
+        },
+        {
+          "file": "web/e2e/checkout/JRN-CHK-001-guest-checkout.spec.ts",
+          "line": 29
+        },
+        {
+          "file": "web/e2e/checkout/JRN-CHK-001-guest-checkout.spec.ts",
+          "line": 30
+        }
+      ],
+      "test_ids": [
+        "CHK-main"
+      ]
+    },
+    {
+      "journey_id": "JRN-CHK-001",
+      "ref": "step 4",
+      "expect": "\"Pay now\" becomes enabled",
+      "coverage": "asserted",
+      "assertions": [
+        {
+          "file": "web/e2e/checkout/JRN-CHK-001-guest-checkout.spec.ts",
+          "line": 35
+        }
+      ],
+      "test_ids": [
+        "CHK-main"
+      ]
+    },
+    {
+      "journey_id": "JRN-CHK-001",
+      "ref": "step 5",
+      "expect": "Confirmation page shows an order number",
+      "coverage": "asserted",
+      "assertions": [
+        {
+          "file": "web/e2e/checkout/JRN-CHK-001-guest-checkout.spec.ts",
+          "line": 39
+        },
+        {
+          "file": "web/e2e/checkout/JRN-CHK-001-guest-checkout.spec.ts",
+          "line": 40
+        }
+      ],
+      "test_ids": [
+        "CHK-main"
+      ]
+    },
+    {
+      "journey_id": "JRN-CHK-001",
+      "ref": "V1",
+      "expect": "Inline \"Your card was declined\" error; user stays on the checkout page",
+      "coverage": "asserted",
+      "assertions": [
+        {
+          "file": "web/e2e/checkout/JRN-CHK-001-guest-checkout.spec.ts",
+          "line": 53
+        },
+        {
+          "file": "web/e2e/checkout/JRN-CHK-001-guest-checkout.spec.ts",
+          "line": 54
+        }
+      ],
+      "test_ids": [
+        "CHK-V1"
+      ]
+    },
+    {
+      "journey_id": "JRN-CHK-001",
+      "ref": "V2",
+      "expect": "\"Add to cart\" is disabled and shows \"Out of stock\"",
+      "coverage": "asserted",
+      "assertions": [
+        {
+          "file": "web/e2e/checkout/JRN-CHK-001-guest-checkout.spec.ts",
+          "line": 62
+        },
+        {
+          "file": "web/e2e/checkout/JRN-CHK-001-guest-checkout.spec.ts",
+          "line": 63
+        }
+      ],
+      "test_ids": [
+        "CHK-V2"
+      ]
+    },
+    {
+      "journey_id": "JRN-CHK-001",
+      "ref": "V3",
+      "expect": "App opens directly on the product screen",
+      "coverage": "deferred",
+      "assertions": [],
+      "test_ids": [],
+      "reason": "Mobile deep link (ios, android): the repository has no mobile UI test framework. Proposed Maestro or Detox; not installed without agreement."
+    }
+  ],
+  "testability_gaps": [
+    {
+      "id": "GAP-001",
+      "journey_id": "JRN-ACC-001",
+      "ref": "step 3",
+      "element": "Past orders list on /account",
+      "problem": "Rendered as nested <div class=\"row\"> elements with no list role, heading or test id; only CSS classes identify it.",
+      "suggestion": "Render the orders as <ul aria-label=\"Past orders\"> (or add data-testid=\"order-history\"), then assert the list has at least one item.",
+      "file": "web/src/app/account/page.tsx",
+      "line": 31
+    }
+  ],
+  "runs": [
+    {
+      "id": "R1",
+      "command": "npx playwright test e2e/checkout/JRN-CHK-001-guest-checkout.spec.ts --reporter=junit",
+      "exit_code": 1,
+      "junit_paths": [
+        "C:/Users/markm/AppData/Local/Temp/claude/C--Users-markm-Github-qa-skills/843e2eaf-b7ed-42d5-b8ac-d28bfb241683/scratchpad/ex/r1.xml"
+      ],
+      "started_at": "2026-11-09T08:52:04Z",
+      "totals": {
+        "tests": 3,
+        "passed": 0,
+        "failed": 3,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {
+        "web/e2e/checkout/JRN-CHK-001-guest-checkout.spec.ts": "0a828d4b49d1b78fa98038a9c3286949b6670e91482aae0109823c19ea5b7b2f",
+        "web/e2e/pages/CheckoutPage.ts": "cf8e7dc98a5722f72d9c750ac8c95ab7c7f1b28fbabe1faf549e717453e2f271"
+      },
+      "notes": []
+    },
+    {
+      "id": "R2",
+      "command": "npx playwright test e2e/checkout/JRN-CHK-001-guest-checkout.spec.ts --repeat-each=3 --reporter=junit",
+      "exit_code": 1,
+      "junit_paths": [
+        "C:/Users/markm/AppData/Local/Temp/claude/C--Users-markm-Github-qa-skills/843e2eaf-b7ed-42d5-b8ac-d28bfb241683/scratchpad/ex/r2.xml"
+      ],
+      "started_at": "2026-11-09T08:52:04Z",
+      "totals": {
+        "tests": 9,
+        "passed": 6,
+        "failed": 3,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {
+        "web/e2e/checkout/JRN-CHK-001-guest-checkout.spec.ts": "0a828d4b49d1b78fa98038a9c3286949b6670e91482aae0109823c19ea5b7b2f",
+        "web/e2e/pages/CheckoutPage.ts": "9fc9176235dd4e3a2f213fda811106961ae28c01e0a60f98af479aadbd33aece"
+      },
+      "notes": []
+    },
+    {
+      "id": "R3",
+      "command": "npx playwright test e2e/login.spec.ts --grep @JRN-ACC-001 --repeat-each=3 --reporter=junit",
+      "exit_code": 1,
+      "junit_paths": [
+        "C:/Users/markm/AppData/Local/Temp/claude/C--Users-markm-Github-qa-skills/843e2eaf-b7ed-42d5-b8ac-d28bfb241683/scratchpad/ex/r3.xml"
+      ],
+      "started_at": "2026-11-09T08:52:04Z",
+      "totals": {
+        "tests": 9,
+        "passed": 5,
+        "failed": 4,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {
+        "web/e2e/login.spec.ts": "66443474d39f151378ad0be318a1401c520e497c80293f868e8de2c6e555f4c6",
+        "web/e2e/pages/CheckoutPage.ts": "9fc9176235dd4e3a2f213fda811106961ae28c01e0a60f98af479aadbd33aece"
+      },
+      "notes": []
+    }
+  ],
+  "cases": [
+    {
+      "run_id": "R1",
+      "id": "checkout/JRN-CHK-001-guest-checkout.spec.ts::JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 main path: guest pays by card and sees an order number",
+      "name": "JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 main path: guest pays by card and sees an order number",
+      "classname": "checkout/JRN-CHK-001-guest-checkout.spec.ts",
+      "file": "checkout/JRN-CHK-001-guest-checkout.spec.ts",
+      "status": "failed",
+      "failure_type": "error",
+      "signals": [
+        "timeout",
+        "selector_not_found"
+      ],
+      "message_excerpt": "locator.fill: Timeout 10000ms exceeded.\nlocator.fill: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByPlaceholder('Card number')\n    at CheckoutPage.fillCard (web/e2e/pages/CheckoutPage.ts:38)",
+      "time": 11.2
+    },
+    {
+      "run_id": "R1",
+      "id": "checkout/JRN-CHK-001-guest-checkout.spec.ts::JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 V1 card declined: inline error, user stays on checkout",
+      "name": "JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 V1 card declined: inline error, user stays on checkout",
+      "classname": "checkout/JRN-CHK-001-guest-checkout.spec.ts",
+      "file": "checkout/JRN-CHK-001-guest-checkout.spec.ts",
+      "status": "failed",
+      "failure_type": "error",
+      "signals": [
+        "timeout",
+        "selector_not_found"
+      ],
+      "message_excerpt": "locator.fill: Timeout 10000ms exceeded.\nlocator.fill: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByPlaceholder('Card number')",
+      "time": 10.9
+    },
+    {
+      "run_id": "R1",
+      "id": "checkout/JRN-CHK-001-guest-checkout.spec.ts::JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 V2 out of stock: Add to cart is disabled",
+      "name": "JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 V2 out of stock: Add to cart is disabled",
+      "classname": "checkout/JRN-CHK-001-guest-checkout.spec.ts",
+      "file": "checkout/JRN-CHK-001-guest-checkout.spec.ts",
+      "status": "failed",
+      "failure_type": "assertion",
+      "signals": [
+        "timeout"
+      ],
+      "message_excerpt": "Timed out 5000ms waiting for expect(locator).toHaveText(expected)\nError: Timed out 5000ms waiting for expect(locator).toHaveText(expected)\nLocator: getByRole('button', { name: /Add to cart|Out of stock/ })\nExpected string: \"Out of stock\"\nReceived string: \"Sold out\"",
+      "time": 5.4
+    },
+    {
+      "run_id": "R2",
+      "id": "checkout/JRN-CHK-001-guest-checkout.spec.ts::JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 main path: guest pays by card and sees an order number",
+      "name": "JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 main path: guest pays by card and sees an order number",
+      "classname": "checkout/JRN-CHK-001-guest-checkout.spec.ts",
+      "file": "checkout/JRN-CHK-001-guest-checkout.spec.ts",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 6.1
+    },
+    {
+      "run_id": "R2",
+      "id": "checkout/JRN-CHK-001-guest-checkout.spec.ts::JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 V1 card declined: inline error, user stays on checkout",
+      "name": "JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 V1 card declined: inline error, user stays on checkout",
+      "classname": "checkout/JRN-CHK-001-guest-checkout.spec.ts",
+      "file": "checkout/JRN-CHK-001-guest-checkout.spec.ts",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 4.1
+    },
+    {
+      "run_id": "R2",
+      "id": "checkout/JRN-CHK-001-guest-checkout.spec.ts::JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 V2 out of stock: Add to cart is disabled",
+      "name": "JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 V2 out of stock: Add to cart is disabled",
+      "classname": "checkout/JRN-CHK-001-guest-checkout.spec.ts",
+      "file": "checkout/JRN-CHK-001-guest-checkout.spec.ts",
+      "status": "failed",
+      "failure_type": "assertion",
+      "signals": [
+        "timeout"
+      ],
+      "message_excerpt": "Timed out 5000ms waiting for expect(locator).toHaveText(expected)\nError: Timed out 5000ms waiting for expect(locator).toHaveText(expected)\nExpected string: \"Out of stock\"\nReceived string: \"Sold out\"",
+      "time": 5.1
+    },
+    {
+      "run_id": "R2",
+      "id": "checkout/JRN-CHK-001-guest-checkout.spec.ts::JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 main path: guest pays by card and sees an order number#2",
+      "name": "JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 main path: guest pays by card and sees an order number",
+      "classname": "checkout/JRN-CHK-001-guest-checkout.spec.ts",
+      "file": "checkout/JRN-CHK-001-guest-checkout.spec.ts",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 6.2
+    },
+    {
+      "run_id": "R2",
+      "id": "checkout/JRN-CHK-001-guest-checkout.spec.ts::JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 V1 card declined: inline error, user stays on checkout#2",
+      "name": "JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 V1 card declined: inline error, user stays on checkout",
+      "classname": "checkout/JRN-CHK-001-guest-checkout.spec.ts",
+      "file": "checkout/JRN-CHK-001-guest-checkout.spec.ts",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 4.2
+    },
+    {
+      "run_id": "R2",
+      "id": "checkout/JRN-CHK-001-guest-checkout.spec.ts::JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 V2 out of stock: Add to cart is disabled#2",
+      "name": "JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 V2 out of stock: Add to cart is disabled",
+      "classname": "checkout/JRN-CHK-001-guest-checkout.spec.ts",
+      "file": "checkout/JRN-CHK-001-guest-checkout.spec.ts",
+      "status": "failed",
+      "failure_type": "assertion",
+      "signals": [
+        "timeout"
+      ],
+      "message_excerpt": "Timed out 5000ms waiting for expect(locator).toHaveText(expected)\nError: Timed out 5000ms waiting for expect(locator).toHaveText(expected)\nExpected string: \"Out of stock\"\nReceived string: \"Sold out\"",
+      "time": 5.2
+    },
+    {
+      "run_id": "R2",
+      "id": "checkout/JRN-CHK-001-guest-checkout.spec.ts::JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 main path: guest pays by card and sees an order number#3",
+      "name": "JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 main path: guest pays by card and sees an order number",
+      "classname": "checkout/JRN-CHK-001-guest-checkout.spec.ts",
+      "file": "checkout/JRN-CHK-001-guest-checkout.spec.ts",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 6.3
+    },
+    {
+      "run_id": "R2",
+      "id": "checkout/JRN-CHK-001-guest-checkout.spec.ts::JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 V1 card declined: inline error, user stays on checkout#3",
+      "name": "JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 V1 card declined: inline error, user stays on checkout",
+      "classname": "checkout/JRN-CHK-001-guest-checkout.spec.ts",
+      "file": "checkout/JRN-CHK-001-guest-checkout.spec.ts",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 4.3
+    },
+    {
+      "run_id": "R2",
+      "id": "checkout/JRN-CHK-001-guest-checkout.spec.ts::JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 V2 out of stock: Add to cart is disabled#3",
+      "name": "JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 V2 out of stock: Add to cart is disabled",
+      "classname": "checkout/JRN-CHK-001-guest-checkout.spec.ts",
+      "file": "checkout/JRN-CHK-001-guest-checkout.spec.ts",
+      "status": "failed",
+      "failure_type": "assertion",
+      "signals": [
+        "timeout"
+      ],
+      "message_excerpt": "Timed out 5000ms waiting for expect(locator).toHaveText(expected)\nError: Timed out 5000ms waiting for expect(locator).toHaveText(expected)\nExpected string: \"Out of stock\"\nReceived string: \"Sold out\"",
+      "time": 5.3
+    },
+    {
+      "run_id": "R3",
+      "id": "login.spec.ts::JRN-ACC-001 Member signs in and views their account › JRN-ACC-001 main path: member sees their name and past orders",
+      "name": "JRN-ACC-001 Member signs in and views their account › JRN-ACC-001 main path: member sees their name and past orders",
+      "classname": "login.spec.ts",
+      "file": "login.spec.ts",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 3.1
+    },
+    {
+      "run_id": "R3",
+      "id": "login.spec.ts::JRN-ACC-001 Member signs in and views their account › JRN-ACC-001 V1 wrong password: error shown, user stays on /login",
+      "name": "JRN-ACC-001 Member signs in and views their account › JRN-ACC-001 V1 wrong password: error shown, user stays on /login",
+      "classname": "login.spec.ts",
+      "file": "login.spec.ts",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 2.1
+    },
+    {
+      "run_id": "R3",
+      "id": "login.spec.ts::JRN-ACC-001 Member signs in and views their account › JRN-ACC-001 V2 account locked: locked message with reset link",
+      "name": "JRN-ACC-001 Member signs in and views their account › JRN-ACC-001 V2 account locked: locked message with reset link",
+      "classname": "login.spec.ts",
+      "file": "login.spec.ts",
+      "status": "failed",
+      "failure_type": "error",
+      "signals": [],
+      "message_excerpt": "apiRequestContext: 404 Not Found\nTypeError: Cannot read properties of undefined (reading 'email')\n    at web/e2e/login.spec.ts:44\nPOST /api/test/seed/member returned 404 Not Found (test seeding disabled: ENABLE_TEST_SEED is not set)",
+      "time": 0.1
+    },
+    {
+      "run_id": "R3",
+      "id": "login.spec.ts::JRN-ACC-001 Member signs in and views their account › JRN-ACC-001 main path: member sees their name and past orders#2",
+      "name": "JRN-ACC-001 Member signs in and views their account › JRN-ACC-001 main path: member sees their name and past orders",
+      "classname": "login.spec.ts",
+      "file": "login.spec.ts",
+      "status": "failed",
+      "failure_type": "assertion",
+      "signals": [
+        "timeout"
+      ],
+      "message_excerpt": "Timed out 5000ms waiting for expect(page).toHaveURL(expected)\nError: Timed out 5000ms waiting for expect(page).toHaveURL(expected)\nExpected string: \"http://localhost:3000/account\"\nReceived string: \"http://localhost:3000/login\"",
+      "time": 7.0
+    },
+    {
+      "run_id": "R3",
+      "id": "login.spec.ts::JRN-ACC-001 Member signs in and views their account › JRN-ACC-001 V1 wrong password: error shown, user stays on /login#2",
+      "name": "JRN-ACC-001 Member signs in and views their account › JRN-ACC-001 V1 wrong password: error shown, user stays on /login",
+      "classname": "login.spec.ts",
+      "file": "login.spec.ts",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 2.2
+    },
+    {
+      "run_id": "R3",
+      "id": "login.spec.ts::JRN-ACC-001 Member signs in and views their account › JRN-ACC-001 V2 account locked: locked message with reset link#2",
+      "name": "JRN-ACC-001 Member signs in and views their account › JRN-ACC-001 V2 account locked: locked message with reset link",
+      "classname": "login.spec.ts",
+      "file": "login.spec.ts",
+      "status": "failed",
+      "failure_type": "error",
+      "signals": [],
+      "message_excerpt": "apiRequestContext: 404 Not Found\nTypeError: Cannot read properties of undefined (reading 'email')\n    at web/e2e/login.spec.ts:44\nPOST /api/test/seed/member returned 404 Not Found (test seeding disabled: ENABLE_TEST_SEED is not set)",
+      "time": 0.2
+    },
+    {
+      "run_id": "R3",
+      "id": "login.spec.ts::JRN-ACC-001 Member signs in and views their account › JRN-ACC-001 main path: member sees their name and past orders#3",
+      "name": "JRN-ACC-001 Member signs in and views their account › JRN-ACC-001 main path: member sees their name and past orders",
+      "classname": "login.spec.ts",
+      "file": "login.spec.ts",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 3.3
+    },
+    {
+      "run_id": "R3",
+      "id": "login.spec.ts::JRN-ACC-001 Member signs in and views their account › JRN-ACC-001 V1 wrong password: error shown, user stays on /login#3",
+      "name": "JRN-ACC-001 Member signs in and views their account › JRN-ACC-001 V1 wrong password: error shown, user stays on /login",
+      "classname": "login.spec.ts",
+      "file": "login.spec.ts",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 2.3
+    },
+    {
+      "run_id": "R3",
+      "id": "login.spec.ts::JRN-ACC-001 Member signs in and views their account › JRN-ACC-001 V2 account locked: locked message with reset link#3",
+      "name": "JRN-ACC-001 Member signs in and views their account › JRN-ACC-001 V2 account locked: locked message with reset link",
+      "classname": "login.spec.ts",
+      "file": "login.spec.ts",
+      "status": "failed",
+      "failure_type": "error",
+      "signals": [],
+      "message_excerpt": "apiRequestContext: 404 Not Found\nTypeError: Cannot read properties of undefined (reading 'email')\n    at web/e2e/login.spec.ts:44\nPOST /api/test/seed/member returned 404 Not Found (test seeding disabled: ENABLE_TEST_SEED is not set)",
+      "time": 0.3
+    }
+  ],
+  "results": [
+    {
+      "test_id": "CHK-main",
+      "journey_id": "JRN-CHK-001",
+      "variant": null,
+      "test_path": "web/e2e/checkout/JRN-CHK-001-guest-checkout.spec.ts",
+      "status": "pass",
+      "attempts": [
+        {
+          "run_id": "R1",
+          "case_id": "checkout/JRN-CHK-001-guest-checkout.spec.ts::JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 main path: guest pays by card and sees an order number",
+          "outcome": "failed",
+          "classification": "fail_test"
+        },
+        {
+          "run_id": "R2",
+          "case_id": "checkout/JRN-CHK-001-guest-checkout.spec.ts::JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 main path: guest pays by card and sees an order number",
+          "outcome": "passed",
+          "change": {
+            "category": "selector",
+            "detail": "Card fields are inside the payment provider's iframe; CheckoutPage.fillCard now uses frameLocator. No assertion changed."
+          }
+        },
+        {
+          "run_id": "R2",
+          "case_id": "checkout/JRN-CHK-001-guest-checkout.spec.ts::JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 main path: guest pays by card and sees an order number#2",
+          "outcome": "passed"
+        },
+        {
+          "run_id": "R2",
+          "case_id": "checkout/JRN-CHK-001-guest-checkout.spec.ts::JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 main path: guest pays by card and sees an order number#3",
+          "outcome": "passed"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "junit",
+          "path_or_excerpt": "R1: locator.fill timeout waiting for getByPlaceholder('Card number')"
+        }
+      ]
+    },
+    {
+      "test_id": "CHK-V1",
+      "journey_id": "JRN-CHK-001",
+      "variant": "V1",
+      "test_path": "web/e2e/checkout/JRN-CHK-001-guest-checkout.spec.ts",
+      "status": "pass",
+      "attempts": [
+        {
+          "run_id": "R1",
+          "case_id": "checkout/JRN-CHK-001-guest-checkout.spec.ts::JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 V1 card declined: inline error, user stays on checkout",
+          "outcome": "failed",
+          "classification": "fail_test"
+        },
+        {
+          "run_id": "R2",
+          "case_id": "checkout/JRN-CHK-001-guest-checkout.spec.ts::JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 V1 card declined: inline error, user stays on checkout",
+          "outcome": "passed",
+          "change": {
+            "category": "selector",
+            "detail": "Card fields are inside the payment provider's iframe; CheckoutPage.fillCard now uses frameLocator. No assertion changed."
+          }
+        },
+        {
+          "run_id": "R2",
+          "case_id": "checkout/JRN-CHK-001-guest-checkout.spec.ts::JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 V1 card declined: inline error, user stays on checkout#2",
+          "outcome": "passed"
+        },
+        {
+          "run_id": "R2",
+          "case_id": "checkout/JRN-CHK-001-guest-checkout.spec.ts::JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 V1 card declined: inline error, user stays on checkout#3",
+          "outcome": "passed"
+        }
+      ],
+      "evidence": []
+    },
+    {
+      "test_id": "CHK-V2",
+      "journey_id": "JRN-CHK-001",
+      "variant": "V2",
+      "test_path": "web/e2e/checkout/JRN-CHK-001-guest-checkout.spec.ts",
+      "status": "fail_product",
+      "attempts": [
+        {
+          "run_id": "R1",
+          "case_id": "checkout/JRN-CHK-001-guest-checkout.spec.ts::JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 V2 out of stock: Add to cart is disabled",
+          "outcome": "failed",
+          "classification": "fail_product"
+        },
+        {
+          "run_id": "R2",
+          "case_id": "checkout/JRN-CHK-001-guest-checkout.spec.ts::JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 V2 out of stock: Add to cart is disabled",
+          "outcome": "failed",
+          "classification": "fail_product"
+        },
+        {
+          "run_id": "R2",
+          "case_id": "checkout/JRN-CHK-001-guest-checkout.spec.ts::JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 V2 out of stock: Add to cart is disabled#2",
+          "outcome": "failed",
+          "classification": "fail_product"
+        },
+        {
+          "run_id": "R2",
+          "case_id": "checkout/JRN-CHK-001-guest-checkout.spec.ts::JRN-CHK-001 Guest completes checkout with card › JRN-CHK-001 V2 out of stock: Add to cart is disabled#3",
+          "outcome": "failed",
+          "classification": "fail_product"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "junit",
+          "path_or_excerpt": "Expected string: \"Out of stock\" / Received string: \"Sold out\""
+        },
+        {
+          "kind": "trace",
+          "path_or_excerpt": "web/test-results/JRN-CHK-001-V2/trace.zip"
+        },
+        {
+          "kind": "code",
+          "path_or_excerpt": "web/src/components/AddToCartButton.tsx:14 renders \"Sold out\""
+        }
+      ],
+      "notes": "Disabled state is correct; only the label differs from the journey."
+    },
+    {
+      "test_id": "ACC-main",
+      "journey_id": "JRN-ACC-001",
+      "variant": null,
+      "test_path": "web/e2e/login.spec.ts",
+      "status": "flaky",
+      "attempts": [
+        {
+          "run_id": "R3",
+          "case_id": "login.spec.ts::JRN-ACC-001 Member signs in and views their account › JRN-ACC-001 main path: member sees their name and past orders",
+          "outcome": "passed"
+        },
+        {
+          "run_id": "R3",
+          "case_id": "login.spec.ts::JRN-ACC-001 Member signs in and views their account › JRN-ACC-001 main path: member sees their name and past orders#2",
+          "outcome": "failed",
+          "classification": "fail_test"
+        },
+        {
+          "run_id": "R3",
+          "case_id": "login.spec.ts::JRN-ACC-001 Member signs in and views their account › JRN-ACC-001 main path: member sees their name and past orders#3",
+          "outcome": "passed"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "junit",
+          "path_or_excerpt": "R3 repeat 2: expected URL /account, received /login after 5s"
+        },
+        {
+          "kind": "trace",
+          "path_or_excerpt": "web/test-results/JRN-ACC-001-main-repeat1/trace.zip"
+        }
+      ],
+      "notes": "Redirect after sign-in sometimes lands on /login; looks like a race between the session cookie and router.push (useLogin.ts:34). Not fixed by adding waits; needs investigation."
+    },
+    {
+      "test_id": "ACC-V1",
+      "journey_id": "JRN-ACC-001",
+      "variant": "V1",
+      "test_path": "web/e2e/login.spec.ts",
+      "status": "pass",
+      "attempts": [
+        {
+          "run_id": "R3",
+          "case_id": "login.spec.ts::JRN-ACC-001 Member signs in and views their account › JRN-ACC-001 V1 wrong password: error shown, user stays on /login",
+          "outcome": "passed"
+        },
+        {
+          "run_id": "R3",
+          "case_id": "login.spec.ts::JRN-ACC-001 Member signs in and views their account › JRN-ACC-001 V1 wrong password: error shown, user stays on /login#2",
+          "outcome": "passed"
+        },
+        {
+          "run_id": "R3",
+          "case_id": "login.spec.ts::JRN-ACC-001 Member signs in and views their account › JRN-ACC-001 V1 wrong password: error shown, user stays on /login#3",
+          "outcome": "passed"
+        }
+      ],
+      "evidence": []
+    },
+    {
+      "test_id": "ACC-V2",
+      "journey_id": "JRN-ACC-001",
+      "variant": "V2",
+      "test_path": "web/e2e/login.spec.ts",
+      "status": "blocked_env",
+      "attempts": [
+        {
+          "run_id": "R3",
+          "case_id": "login.spec.ts::JRN-ACC-001 Member signs in and views their account › JRN-ACC-001 V2 account locked: locked message with reset link",
+          "outcome": "failed",
+          "classification": "blocked_env"
+        },
+        {
+          "run_id": "R3",
+          "case_id": "login.spec.ts::JRN-ACC-001 Member signs in and views their account › JRN-ACC-001 V2 account locked: locked message with reset link#2",
+          "outcome": "failed",
+          "classification": "blocked_env"
+        },
+        {
+          "run_id": "R3",
+          "case_id": "login.spec.ts::JRN-ACC-001 Member signs in and views their account › JRN-ACC-001 V2 account locked: locked message with reset link#3",
+          "outcome": "failed",
+          "classification": "blocked_env"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "junit",
+          "path_or_excerpt": "POST /api/test/seed/member returned 404 Not Found (ENABLE_TEST_SEED is not set)"
+        }
+      ],
+      "notes": "Re-run with ENABLE_TEST_SEED=1 on the dev server to seed a locked account."
+    }
+  ],
+  "suspected_bugs": [
+    {
+      "id": "BUG-001",
+      "journey_id": "JRN-CHK-001",
+      "ref": "V2",
+      "test_id": "CHK-V2",
+      "expected": "\"Add to cart\" is disabled and shows \"Out of stock\"",
+      "actual": "Button is disabled but shows \"Sold out\"",
+      "likely": "unclear",
+      "evidence": [
+        {
+          "kind": "junit",
+          "path_or_excerpt": "Received string: \"Sold out\""
+        },
+        {
+          "kind": "code",
+          "path_or_excerpt": "web/src/components/AddToCartButton.tsx:14"
+        }
+      ]
+    }
+  ],
+  "files_changed": [
+    {
+      "path": "web/e2e/checkout/JRN-CHK-001-guest-checkout.spec.ts",
+      "change": "added",
+      "kind": "test"
+    },
+    {
+      "path": "web/e2e/pages/CheckoutPage.ts",
+      "change": "added",
+      "kind": "page_object"
+    },
+    {
+      "path": "web/e2e/login.spec.ts",
+      "change": "modified",
+      "kind": "test",
+      "note": "Added the JRN-ACC-001 describe block; existing test untouched."
+    },
+    {
+      "path": "journeys/checkout/JRN-CHK-001-guest-completes-checkout-with-card.md",
+      "change": "modified",
+      "kind": "journey"
+    }
+  ],
+  "lint": {
+    "ran": true,
+    "errors": 0,
+    "warnings": 0,
+    "findings": []
+  },
+  "journey_updates": [
+    {
+      "journey_id": "JRN-CHK-001",
+      "path": "journeys/checkout/JRN-CHK-001-guest-completes-checkout-with-card.md",
+      "automation": "partial",
+      "tests": [
+        "web/e2e/checkout/JRN-CHK-001-guest-checkout.spec.ts"
+      ]
+    }
+  ],
+  "open_questions": [
+    "BUG-001: is \"Sold out\" the intended label? If so, update JRN-CHK-001 V2; otherwise fix AddToCartButton.tsx.",
+    "JRN-ACC-001 step 2 is flaky: sign-in sometimes stays on /login. Investigate useLogin.ts before trusting this test."
+  ],
+  "summary": {
+    "headline": "6 tests written for 2 P1 journeys; 7 of 13 Expects verified by passing, stable tests. 1 suspected bug (out-of-stock label), 1 flaky sign-in redirect, 1 test blocked by test seeding being off, 1 testability gap, 1 mobile variant deferred.",
+    "journeys_in_scope": 2,
+    "tests_written": 6,
+    "expects_total": 13,
+    "expects_asserted": 12,
+    "expects_verified": 7,
+    "expects_not_automatable": 0,
+    "expects_blocked_by_gap": 1,
+    "expects_deferred": 1,
+    "results": {
+      "pass": 3,
+      "fail_product": 1,
+      "fail_test": 0,
+      "blocked_env": 1,
+      "flaky": 1,
+      "not_run": 0
+    }
+  }
+}

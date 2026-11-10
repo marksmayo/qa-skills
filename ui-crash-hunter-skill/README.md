@@ -1,0 +1,156 @@
+# UI Crash Hunter Skill
+
+A portable skill for Claude Code, OpenAI Codex, Gemini CLI, and other coding agents.
+
+It hunts web and mobile UI code (React, Next.js, Vue, Angular, React Native, Android, iOS,
+Flutter) for code paths that are likely to crash the app or a whole screen, ranks them by
+real-world severity, and writes reproduction steps for each. If the app can run, it forces each
+trigger in the running app to confirm the crash, with a stack trace and a screenshot.
+
+It doesn't bluff about the result:
+
+- Every finding has a file and line, the exact trigger (data, stored value, environment or action)
+  and why that trigger is realistic. "This could be null" isn't a finding.
+- Each finding says how sure it is: `reproduced` (forced in the running app), `traced` (followed
+  through the code) or `pattern` (a rule matched). Pattern-only findings can't be P0.
+- The tier comes from the error-boundary map: the same throw is app-fatal (B1) with nothing above
+  it and screen-fatal (B2) under a route boundary. Smaller failures (B3, B4) are listed separately
+  and never ranked as crashes.
+- Every lead from every tool is either promoted to a finding or dismissed with a reason.
+- The report says which routes, screens and tools were covered. It never calls an app
+  "crash-free".
+- The source is never modified, nothing is installed without asking, and nothing is committed.
+  Strict compiler configs, evidence and repro specs go outside the repository.
+
+## Install
+
+### Claude Code
+Copy this directory into a project or user-level skills directory, e.g.
+`.claude/skills/ui-crash-hunter/`.
+
+### OpenAI Codex
+Place this directory in the repository, for example `.agents/skills/ui-crash-hunter/`, or include
+`SKILL.md` in the task context.
+
+### Gemini CLI
+Place the directory in the repository, for example `.gemini/skills/ui-crash-hunter/`, and
+reference `SKILL.md` from the project's Gemini instructions.
+
+Exact skill discovery paths can vary by client version. The scripts are stdlib-only Python (3.9+),
+except `probe_web.py`, which needs Playwright for Python (`requirements.txt`) and is only used to
+confirm web crashes in a running app. The static analysers (TypeScript, ESLint, Semgrep, detekt,
+SwiftLint, Android Lint, `dart analyze`) are used when the repository already has them, or when you
+agree to install them.
+
+## Usage
+
+Ask the agent:
+
+> Hunt for likely crashes in this app with the UI Crash Hunter skill.
+
+or
+
+> Use UI Crash Hunter on the checkout screens. The app runs with `npm run dev` on port 5173.
+
+| Severity | Meaning |
+|---|---|
+| **B1** crash | The app terminates, the whole web app goes blank, or it crashes on every launch (crash loop) |
+| **B2** crash | An error boundary replaces the whole screen, or the screen freezes |
+| B3 degradation | One component is broken; the rest of the screen works |
+| B4 degradation | A console error with no visible effect |
+
+Crashes are ranked by blast radius × reach × likelihood × recoverability into P0–P3.
+
+Scripts, in the order the skill runs them:
+
+```bash
+python scripts/recon.py <repo> --out recon.json                          # routes, boundaries, contracts, stored state
+python scripts/strict_overlay.py tsc <repo> --scratch <tmp> --out tsc.json  # strict tsc in a scratch config
+python scripts/strict_overlay.py eslint <repo> --scratch <tmp> --out eslint.json
+python scripts/contract_diff.py <repo> --out contract.json               # nullable contract fields vs unguarded access
+python scripts/scan_pitfalls.py <repo> --sarif semgrep.sarif --extra tsc.json eslint.json contract.json --out candidates.json
+python scripts/probe_web.py probes/C-1.json --out-dir evidence/C-1 --emit-spec repro/repro_C-1.py
+python scripts/validate_crash_report.py crash_report.json --repo <repo> --candidates candidates.json --write-summary
+python scripts/render_report.py crash_report.json --sarif crashes.sarif  # --color always|never
+python scripts/sarif.py read detekt.sarif swiftlint.sarif                 # normalise any SARIF file
+```
+
+## Output
+
+- `crash_report.json`, described by `schemas/crash_report.schema.json`:
+
+| Section | Content |
+|---|---|
+| `recon` | Routes and screens with their reach, the error-boundary map, data layer, contracts, stored state, targets |
+| `tools` | Every analyser and probe: ran, not run, errored or not applicable, and why |
+| `triage` | Every candidate from every tool, promoted to a finding or dismissed with a reason |
+| `probes` | Each dynamic confirmation, including a clean baseline run |
+| `crashes` | B1/B2 findings, ranked: location, trigger, boundary, trace, score, repro steps, fix |
+| `degradations` | B3/B4 findings, unranked |
+| `coverage`, `limitations` | What was and wasn't analysed |
+
+- Evidence (`evidence.json` and a screenshot per probe) and repro specs, which exit 1 while the
+  crash reproduces and 0 once it is fixed.
+- Optionally, SARIF for code-scanning dashboards.
+
+See `examples/` for a complete sample run against `examples/pantry/`, a small React and TypeScript
+recipe app with deliberate crash bugs. The tool outputs in `examples/run/`, the evidence and the
+screenshots are real:
+
+- a P0 crash loop: a theme saved by version 0.2.0 isn't valid JSON for 0.3.0, so the app is blank on
+  every launch;
+- two contract-valid responses (`author: null`, `rating: null`) that break the recipe list and the
+  recipe page;
+- a malformed recipe link that blanks the app;
+- a traced-only crash on iOS 16 (`Object.groupBy`), which the available browsers couldn't reproduce;
+- three degradations, and six dismissed candidates with their reasons.
+
+```bash
+python scripts/validate_crash_report.py examples/crash_report.example.json \
+    --repo examples/pantry --candidates examples/run/candidates.json
+python scripts/render_report.py examples/crash_report.example.json
+```
+
+To rerun the probes: `cd examples/pantry && npm install && npm run build && npm run serve`, then
+`python scripts/probe_web.py examples/probes/C-1.json --out-dir <tmp>`.
+
+## What the validator enforces
+
+- Every finding has a file and line (and with `--repo`, the quoted snippet is on that line), a
+  concrete trigger with its basis, exact trigger data for data and stored-state triggers, sources,
+  a fix and a verification step.
+- The effect matches the tier, and the boundary that caught it exists in the boundary map; screen
+  and component fallbacks must name their boundary.
+- `reproduced` needs a reproducing probe that lists the finding, a stack trace and a screenshot on
+  disk; `traced` needs a trace of at least two hops.
+- Crashes are B1/B2 and degradations B3/B4; scores, priorities and ranks are recomputed; a crash
+  loop needs a stored-state trigger; pattern findings are capped at P1.
+- Every candidate is triaged; every route is analysed or listed with a reason; every tool that
+  didn't run says why.
+- Nothing the run wrote is inside the repository.
+- Summary counts are recomputed, and headlines such as "crash-free" are rejected.
+
+## Files
+
+- `SKILL.md`: complete agent instructions
+- `RUBRIC.md`: tiers, boundary map per framework, confidence, ranking anchors, triage, pitfall catalogue
+- `data/pitfalls.json`: per-platform pitfall packs (patterns, triggers, fixes, matching tool rules)
+- `schemas/crash_report.schema.json`: output contract
+- `scripts/recon.py`: platforms, routes, boundaries, data layer, contracts, stored state, targets
+- `scripts/scan_pitfalls.py`: pattern scan, and merging of SARIF and other candidates
+- `scripts/strict_overlay.py`: strict `tsc` and ESLint runs from scratch configs
+- `scripts/contract_diff.py`: nullable contract fields against unguarded access (OpenAPI, GraphQL, TypeScript, Kotlin, Swift, Dart)
+- `scripts/probe_web.py`: Playwright crash probes and standalone repro specs
+- `scripts/validate_crash_report.py`: structure and honesty checks
+- `scripts/render_report.py`: coloured terminal/Markdown report and SARIF export
+- `scripts/sarif.py`: SARIF reader and writer (shared with Code Security Auditor)
+- `requirements.txt`: Playwright, for `probe_web.py` only
+- `examples/`: sample app, tool outputs, probes, evidence, repro specs and report
+
+## Design principles
+
+1. A likely crash is not a crash: say how sure you are, and prove it when the app can run.
+2. A finding without a concrete trigger is not a finding.
+3. The boundary map, not the throw, decides how bad it is.
+4. Account for every lead, every route and every tool.
+5. Look, don't touch: no source changes, no installs without asking, no commits.

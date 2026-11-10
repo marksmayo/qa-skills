@@ -1,0 +1,5 @@
+# Only needed for dynamic confirmation of web crashes (scripts/probe_web.py).
+# Every other script is stdlib-only. Install with the user's agreement:
+#   pip install -r requirements.txt
+#   python -m playwright install chromium
+playwright>=1.49,<2

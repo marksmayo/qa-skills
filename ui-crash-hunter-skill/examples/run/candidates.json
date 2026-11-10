@@ -1,0 +1,309 @@
+{
+  "generated_at": "2026-11-10T02:34:13Z",
+  "repository": "pantry",
+  "files_scanned": {
+    "web": 14
+  },
+  "ssr_frameworks": [],
+  "tools": [
+    {
+      "tool": "scan_pitfalls",
+      "status": "ran",
+      "results": 8,
+      "packs": [
+        "web"
+      ]
+    },
+    {
+      "tool": "tsc-strict",
+      "status": "ran",
+      "results": 9,
+      "input": "run\\tsc.json"
+    },
+    {
+      "tool": "contract_diff",
+      "status": "ran",
+      "results": 2,
+      "input": "run\\contract.json"
+    },
+    {
+      "tool": "eslint-strict",
+      "status": "not_run",
+      "results": 0,
+      "input": "run\\eslint.json"
+    }
+  ],
+  "note": "Candidates are pattern-level leads, not findings. Trace each one to a realistic trigger or dismiss it.",
+  "candidates": [
+    {
+      "pitfall_id": "WEB-UNGUARDED-OPTIONAL",
+      "file": "src/components/NutritionPanel.tsx",
+      "line": 4,
+      "column": 33,
+      "snippet": "const perServing = Math.round(nutrition.calories / nutrition.servings);",
+      "message": "TS18048: 'nutrition' is possibly 'undefined'.",
+      "sources": [
+        {
+          "tool": "tsc-strict",
+          "version": "Version 5.9.3",
+          "rule_id": "TS18048"
+        }
+      ],
+      "id": "CAND-001"
+    },
+    {
+      "pitfall_id": "WEB-UNGUARDED-OPTIONAL",
+      "file": "src/components/NutritionPanel.tsx",
+      "line": 9,
+      "column": 32,
+      "snippet": "{perServing} kcal and {nutrition.protein} g protein per serving",
+      "message": "TS18048: 'nutrition' is possibly 'undefined'.",
+      "sources": [
+        {
+          "tool": "tsc-strict",
+          "version": "Version 5.9.3",
+          "rule_id": "TS18048"
+        }
+      ],
+      "id": "CAND-002"
+    },
+    {
+      "pitfall_id": "WEB-NUMBER-FORMAT-ON-NULL",
+      "file": "src/components/Stars.tsx",
+      "line": 5,
+      "column": 14,
+      "snippet": "{rating.toFixed(1)} ★ ({count})",
+      "message": "Number or string method called on a value that can be null",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "WEB-NUMBER-FORMAT-ON-NULL"
+        }
+      ],
+      "id": "CAND-003"
+    },
+    {
+      "pitfall_id": "WEB-NON-NULL-ASSERTION",
+      "file": "src/main.tsx",
+      "line": 4,
+      "column": 42,
+      "snippet": "createRoot(document.getElementById('root')!).render(<App />);",
+      "message": "TypeScript non-null assertion hides a null",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "WEB-NON-NULL-ASSERTION"
+        }
+      ],
+      "id": "CAND-004"
+    },
+    {
+      "pitfall_id": "WEB-STORAGE-ACCESS",
+      "file": "src/prefs.ts",
+      "line": 10,
+      "column": 15,
+      "snippet": "const raw = localStorage.getItem(KEY);",
+      "message": "Web storage used without handling failure",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "WEB-STORAGE-ACCESS"
+        }
+      ],
+      "id": "CAND-005"
+    },
+    {
+      "pitfall_id": "WEB-JSON-PARSE",
+      "file": "src/prefs.ts",
+      "line": 11,
+      "column": 34,
+      "snippet": "return raw ? { ...DEFAULTS, ...JSON.parse(raw) } : DEFAULTS;",
+      "message": "JSON.parse without try/catch",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "WEB-JSON-PARSE"
+        }
+      ],
+      "id": "CAND-006"
+    },
+    {
+      "pitfall_id": "WEB-STORAGE-ACCESS",
+      "file": "src/prefs.ts",
+      "line": 15,
+      "column": 3,
+      "snippet": "localStorage.setItem(KEY, JSON.stringify({ ...loadPrefs(), ...change }));",
+      "message": "Web storage used without handling failure",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "WEB-STORAGE-ACCESS"
+        }
+      ],
+      "id": "CAND-007"
+    },
+    {
+      "pitfall_id": null,
+      "file": "src/routes.ts",
+      "line": 27,
+      "column": 49,
+      "snippet": "params[p.slice(1)] = decodeURIComponent(parts[i]);",
+      "message": "TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.",
+      "sources": [
+        {
+          "tool": "tsc-strict",
+          "version": "Version 5.9.3",
+          "rule_id": "TS2345"
+        }
+      ],
+      "id": "CAND-008"
+    },
+    {
+      "pitfall_id": "WEB-THROWING-PARSER",
+      "file": "src/routes.ts",
+      "line": 27,
+      "column": 30,
+      "snippet": "params[p.slice(1)] = decodeURIComponent(parts[i]);",
+      "message": "Throwing parser fed with untrusted input",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "WEB-THROWING-PARSER"
+        }
+      ],
+      "id": "CAND-009"
+    },
+    {
+      "pitfall_id": null,
+      "file": "src/routes.ts",
+      "line": 34,
+      "column": 12,
+      "snippet": "return { route: routes[0], params: {} };",
+      "message": "TS2322: Type 'Route | undefined' is not assignable to type 'Route'.",
+      "sources": [
+        {
+          "tool": "tsc-strict",
+          "version": "Version 5.9.3",
+          "rule_id": "TS2322"
+        }
+      ],
+      "id": "CAND-010"
+    },
+    {
+      "pitfall_id": null,
+      "file": "src/screens/RecipeDetail.tsx",
+      "line": 12,
+      "column": 15,
+      "snippet": "getRecipe(params.id).then(setRecipe);",
+      "message": "TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.",
+      "sources": [
+        {
+          "tool": "tsc-strict",
+          "version": "Version 5.9.3",
+          "rule_id": "TS2345"
+        }
+      ],
+      "id": "CAND-011"
+    },
+    {
+      "pitfall_id": "WEB-PROMISE-NO-CATCH",
+      "file": "src/screens/RecipeDetail.tsx",
+      "line": 12,
+      "column": 25,
+      "snippet": "getRecipe(params.id).then(setRecipe);",
+      "message": "Promise chain without a rejection handler",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "WEB-PROMISE-NO-CATCH"
+        }
+      ],
+      "id": "CAND-012"
+    },
+    {
+      "pitfall_id": "WEB-NUMBER-FORMAT-ON-NULL",
+      "file": "src/screens/RecipeDetail.tsx",
+      "line": 23,
+      "column": 75,
+      "snippet": "{recipe.author?.displayName ?? 'Imported recipe'} · {recipe.rating.toFixed(1)} ★ ({recipe.ratingCount})",
+      "message": "Number or string method called on a value that can be null",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "WEB-NUMBER-FORMAT-ON-NULL"
+        }
+      ],
+      "id": "CAND-013"
+    },
+    {
+      "pitfall_id": "WEB-UNGUARDED-OPTIONAL",
+      "file": "src/screens/RecipeDetail.tsx",
+      "line": 23,
+      "column": 62,
+      "snippet": "{recipe.author?.displayName ?? 'Imported recipe'} · {recipe.rating.toFixed(1)} ★ ({recipe.ratingCount})",
+      "message": "TS18047: 'recipe.rating' is possibly 'null'.",
+      "sources": [
+        {
+          "tool": "tsc-strict",
+          "version": "Version 5.9.3",
+          "rule_id": "TS18047"
+        },
+        {
+          "tool": "contract_diff",
+          "rule_id": "nullable-access"
+        }
+      ],
+      "field": "rating",
+      "schema_ref": [
+        "openapi.json#/RecipeSummary/rating",
+        "src/types.ts#RecipeSummary.rating"
+      ],
+      "nullable_reason": "nullable",
+      "guard_nearby": false,
+      "id": "CAND-014"
+    },
+    {
+      "pitfall_id": "WEB-UNGUARDED-OPTIONAL",
+      "file": "src/screens/RecipeDetail.tsx",
+      "line": 30,
+      "column": 14,
+      "snippet": "{items.map((i) => (",
+      "message": "TS18048: 'items' is possibly 'undefined'.",
+      "sources": [
+        {
+          "tool": "tsc-strict",
+          "version": "Version 5.9.3",
+          "rule_id": "TS18048"
+        }
+      ],
+      "id": "CAND-015"
+    },
+    {
+      "pitfall_id": "WEB-UNGUARDED-OPTIONAL",
+      "file": "src/screens/RecipeList.tsx",
+      "line": 21,
+      "column": 80,
+      "snippet": "<a href={`#/recipes/${r.id}`}>{r.title}</a> <span className=\"by\">by {r.author.displayName}</span>{' '}",
+      "message": "TS18047: 'r.author' is possibly 'null'.",
+      "sources": [
+        {
+          "tool": "tsc-strict",
+          "version": "Version 5.9.3",
+          "rule_id": "TS18047"
+        },
+        {
+          "tool": "contract_diff",
+          "rule_id": "nullable-access"
+        }
+      ],
+      "field": "author",
+      "schema_ref": [
+        "openapi.json#/RecipeSummary/author",
+        "src/types.ts#RecipeSummary.author"
+      ],
+      "nullable_reason": "nullable",
+      "guard_nearby": false,
+      "id": "CAND-016"
+    }
+  ]
+}

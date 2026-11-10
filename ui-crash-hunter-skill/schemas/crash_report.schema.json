@@ -1,0 +1,236 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/qa-skills/ui-crash-hunter-skill/schemas/crash_report.schema.json",
+  "title": "UI crash hunter report",
+  "type": "object",
+  "required": ["metadata", "recon", "tools", "triage", "probes", "crashes", "degradations", "coverage", "limitations",
+               "files_written", "summary"],
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": ["repository", "generated_at", "skill_version", "platforms", "app_run"],
+      "properties": {
+        "repository": {"type": "string"},
+        "generated_at": {"type": "string"},
+        "skill_version": {"type": "string"},
+        "platforms": {"type": "array", "items": {"enum": ["web", "android", "ios", "flutter", "react-native"]}, "minItems": 1},
+        "frameworks": {"type": "array", "items": {"type": "string"}},
+        "scope": {"type": "object", "properties": {"paths": {"type": "array", "items": {"type": "string"}},
+                                                   "excluded": {"type": "array", "items": {"type": "string"}}}},
+        "app_run": {
+          "type": "object", "required": ["attempted", "status"],
+          "properties": {
+            "attempted": {"type": "boolean"},
+            "status": {"enum": ["ran", "not_run", "failed"]},
+            "target": {"type": "string", "description": "URL, emulator or device the probes ran against"},
+            "build_command": {"type": "string"},
+            "note": {"type": "string"}
+          }
+        }
+      }
+    },
+    "recon": {
+      "type": "object",
+      "required": ["routes_screens", "boundaries"],
+      "properties": {
+        "routes_screens": {
+          "type": "array",
+          "items": {
+            "type": "object", "required": ["id", "kind", "path", "reach", "analysed"],
+            "properties": {
+              "id": {"type": "string"},
+              "kind": {"enum": ["route", "screen", "shell"]},
+              "path": {"type": "string"},
+              "file": {"type": "string"},
+              "line": {"type": "integer"},
+              "reach": {"$ref": "#/$defs/reach"},
+              "reach_basis": {"type": "string", "description": "Why this reach: journey priority, analytics, or the agent's reading"},
+              "analysed": {"type": "boolean"},
+              "not_analysed_reason": {"type": "string"}
+            }
+          }
+        },
+        "boundaries": {
+          "type": "array",
+          "items": {
+            "type": "object", "required": ["id", "kind", "file", "line", "scope"],
+            "properties": {
+              "id": {"type": "string"},
+              "framework": {"type": "string"},
+              "kind": {"enum": ["definition", "usage", "route_file", "global_handler"]},
+              "name": {"type": ["string", "null"]},
+              "file": {"type": "string"},
+              "line": {"type": "integer"},
+              "scope": {"enum": ["app", "route", "screen", "component", "global"]},
+              "covers": {"type": "array", "items": {"type": "string"}, "description": "Route/screen ids or component names it wraps"}
+            }
+          }
+        },
+        "data_layer": {"type": "array"},
+        "contracts": {"type": "array"},
+        "persisted_state": {"type": "array"},
+        "targets": {"type": "object"}
+      }
+    },
+    "tools": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "required": ["name", "status"],
+        "properties": {
+          "name": {"type": "string"},
+          "version": {"type": ["string", "null"]},
+          "status": {"enum": ["ran", "not_run", "errored", "not_applicable"]},
+          "command": {"type": "string"},
+          "results": {"type": "integer"},
+          "note": {"type": "string"}
+        }
+      }
+    },
+    "triage": {
+      "type": "object", "required": ["total", "promoted", "dismissed"],
+      "properties": {
+        "candidates_file": {"type": "string"},
+        "total": {"type": "integer"},
+        "promoted": {"type": "array", "items": {"type": "object", "required": ["candidate", "finding"],
+                                                "properties": {"candidate": {"type": "string"}, "finding": {"type": "string"}}}},
+        "dismissed": {"type": "array", "items": {"type": "object", "required": ["candidate", "reason"],
+                                                 "properties": {"candidate": {"type": "string"}, "reason": {"type": "string"},
+                                                                "location": {"type": "string"}}}}
+      }
+    },
+    "probes": {
+      "type": "array",
+      "items": {
+        "type": "object", "required": ["id", "outcome"],
+        "properties": {
+          "id": {"type": "string"},
+          "scenario_file": {"type": "string"},
+          "evidence_file": {"type": "string"},
+          "findings": {"type": "array", "items": {"type": "string"}},
+          "outcome": {"enum": ["reproduced", "not_reproduced", "baseline_clean", "errored"]},
+          "environment": {"type": "string"}
+        }
+      }
+    },
+    "crashes": {"type": "array", "items": {"$ref": "#/$defs/finding"}},
+    "degradations": {"type": "array", "items": {"$ref": "#/$defs/finding"}},
+    "coverage": {
+      "type": "object", "required": ["routes_total", "routes_analysed", "not_analysed"],
+      "properties": {
+        "routes_total": {"type": "integer"},
+        "routes_analysed": {"type": "integer"},
+        "not_analysed": {"type": "array", "items": {"type": "object", "required": ["item", "reason"],
+                                                    "properties": {"item": {"type": "string"}, "reason": {"type": "string"}}}},
+        "platforms_not_covered": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "limitations": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "files_written": {"type": "array", "items": {"type": "string"}, "description": "Every file the run wrote; all outside the repository"},
+    "next_steps": {"type": "array", "items": {"type": "string"}},
+    "summary": {
+      "type": "object",
+      "required": ["crashes", "by_priority", "by_confidence", "degradations", "candidates_total", "candidates_promoted",
+                   "candidates_dismissed", "tools_ran", "tools_applicable", "evidence_completeness", "surface_coverage"],
+      "properties": {
+        "crashes": {"type": "integer"},
+        "by_tier": {"type": "object"},
+        "by_priority": {"type": "object"},
+        "by_confidence": {"type": "object"},
+        "degradations": {"type": "integer"},
+        "candidates_total": {"type": "integer"},
+        "candidates_promoted": {"type": "integer"},
+        "candidates_dismissed": {"type": "integer"},
+        "tools_ran": {"type": "integer"},
+        "tools_applicable": {"type": "integer"},
+        "evidence_completeness": {"type": "number", "description": "tools_ran / tools_applicable"},
+        "surface_coverage": {"type": "number", "description": "routes_analysed / routes_total"},
+        "headline": {"type": "string"}
+      }
+    }
+  },
+  "$defs": {
+    "reach": {"enum": ["critical_path", "high_traffic", "rare", "unknown"]},
+    "finding": {
+      "type": "object",
+      "required": ["id", "title", "tier", "confidence", "evidence_type", "locations", "trigger", "boundary", "sources",
+                   "remediation", "verification_step"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[CD]-\\d+$"},
+        "rank": {"type": "integer", "minimum": 1, "description": "Crashes only: position in the ranking"},
+        "title": {"type": "string"},
+        "tier": {"enum": ["B1", "B2", "B3", "B4"]},
+        "pitfall_id": {"type": ["string", "null"]},
+        "confidence": {"enum": ["reproduced", "traced", "pattern"]},
+        "evidence_type": {"enum": ["reproduced", "trace", "tool", "agent_judgment"]},
+        "locations": {
+          "type": "array", "minItems": 1,
+          "items": {"type": "object", "required": ["file", "line"],
+                    "properties": {"file": {"type": "string"}, "line": {"type": "integer", "minimum": 1},
+                                   "snippet": {"type": "string"}, "role": {"type": "string"}}}
+        },
+        "trigger": {
+          "type": "object", "required": ["kind", "description", "basis"],
+          "properties": {
+            "kind": {"enum": ["data", "persisted_state", "environment", "user_action", "lifecycle", "navigation"]},
+            "description": {"type": "string"},
+            "data": {"description": "Exact response, stored value or input that causes it"},
+            "basis": {"type": "string", "description": "Why the trigger is realistic: contract, changelog, telemetry, targets"}
+          }
+        },
+        "boundary": {
+          "type": "object", "required": ["caught_by", "effect"],
+          "properties": {
+            "caught_by": {"type": ["string", "null"], "description": "recon.boundaries id, or null if nothing catches it"},
+            "effect": {"enum": ["app_terminated", "white_screen", "crash_loop", "screen_replaced", "screen_frozen",
+                                "component_replaced", "component_broken", "console_only"]},
+            "note": {"type": "string"}
+          }
+        },
+        "trace": {
+          "type": "array",
+          "items": {"type": "object", "required": ["file", "line", "note"],
+                    "properties": {"file": {"type": "string"}, "line": {"type": "integer"}, "note": {"type": "string"}}}
+        },
+        "ranking": {
+          "type": "object", "required": ["reach", "likelihood", "recoverability", "score", "priority"],
+          "properties": {
+            "reach": {"$ref": "#/$defs/reach"},
+            "reach_basis": {"type": "string"},
+            "likelihood": {"enum": ["normal_data", "edge_data", "rare_environment", "adversarial"]},
+            "likelihood_basis": {"type": "string"},
+            "recoverability": {"enum": ["crash_loop", "restart_or_navigate", "retry_fixes"]},
+            "score": {"type": "integer"},
+            "priority": {"enum": ["P0", "P1", "P2", "P3"]},
+            "capped": {"type": "string"}
+          }
+        },
+        "repro": {
+          "type": "object",
+          "properties": {
+            "probe_id": {"type": "string"},
+            "environment": {"type": "object"},
+            "preconditions": {"type": "array", "items": {"type": "string"}},
+            "trigger_data": {},
+            "steps": {"type": "array", "items": {"type": "string"}},
+            "expected": {"type": "string"},
+            "actual": {"type": "string"},
+            "stack_trace": {"type": "string"},
+            "screenshot": {"type": "string"},
+            "evidence_file": {"type": "string"},
+            "repro_spec": {"type": "string"},
+            "not_reproduced_reason": {"type": "string"}
+          }
+        },
+        "telemetry": {"type": "object", "properties": {"source": {"type": "string"}, "events": {"type": "integer"},
+                                                       "users": {"type": "integer"}, "issue": {"type": "string"}}},
+        "sources": {"type": "array", "minItems": 1,
+                    "items": {"type": "object", "required": ["tool"],
+                              "properties": {"tool": {"type": "string"}, "version": {"type": ["string", "null"]},
+                                             "rule_id": {"type": ["string", "null"]}}}},
+        "candidate_ids": {"type": "array", "items": {"type": "string"}},
+        "remediation": {"type": "string"},
+        "verification_step": {"type": "string"}
+      }
+    }
+  }
+}

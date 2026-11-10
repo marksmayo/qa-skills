@@ -1,0 +1,232 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/qa-skills/ticket-to-tdd-skill/schemas/tdd_report.schema.json",
+  "title": "Ticket to TDD report",
+  "type": "object",
+  "required": ["metadata", "conventions", "requirements", "open_questions", "manual_checks", "traceability", "runs",
+               "cases", "integrity", "regressions", "files_changed", "summary"],
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": ["repository", "generated_at", "skill_version", "mode", "ticket", "approval"],
+      "properties": {
+        "repository": {"type": "string"},
+        "generated_at": {"type": "string"},
+        "skill_version": {"type": "string"},
+        "mode": {"enum": ["red_only", "red_green", "full"]},
+        "slice": {"enum": ["vertical", "horizontal"], "description": "red_green/full only: one test at a time (vertical) or all reds first"},
+        "ticket": {
+          "type": "object",
+          "required": ["key", "type", "summary", "source", "content_sha256"],
+          "properties": {
+            "key": {"type": "string"},
+            "type": {"type": "string"},
+            "summary": {"type": "string"},
+            "source": {"enum": ["connector", "rest", "pasted"]},
+            "url": {"type": ["string", "null"]},
+            "content_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "From fetch_ticket.py; fingerprints the ticket text the requirements came from"},
+            "acceptance_criteria_source": {"type": "string"},
+            "suspicious_instructions_ignored": {
+              "type": "array",
+              "items": {"type": "object", "required": ["field", "excerpt"],
+                        "properties": {"field": {"type": "string"}, "excerpt": {"type": "string"}, "action": {"type": "string"}}}
+            }
+          }
+        },
+        "approval": {
+          "type": "object", "required": ["gate", "plan_approved"],
+          "properties": {"gate": {"enum": ["on", "off"]}, "plan_approved": {"type": "boolean"},
+                         "approved_at": {"type": "string"}, "note": {"type": "string"}}
+        },
+        "scope_hint": {"type": "string"},
+        "notes": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "conventions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["area", "framework", "run_command", "exemplars", "confidence"],
+        "properties": {
+          "area": {"type": "string"},
+          "framework": {"type": "string"},
+          "run_command": {"type": "object", "required": ["command", "source"],
+                          "properties": {"command": {"type": "string"}, "source": {"type": "string"}}},
+          "junit_option": {"type": "string"},
+          "layout": {"type": "string"},
+          "fixtures": {"type": "array", "items": {"type": "string"}},
+          "mocking": {"type": "string"},
+          "assertion_style": {"type": "string"},
+          "levels": {"type": "array", "items": {"type": "string"}},
+          "exemplars": {"type": "array", "items": {"type": "object", "required": ["path", "why_chosen"],
+                        "properties": {"path": {"type": "string"}, "why_chosen": {"type": "string"}}}},
+          "confidence": {"enum": ["high", "medium", "low"]}
+        }
+      }
+    },
+    "requirements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "text", "source_field", "source_excerpt", "type", "testability"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^REQ-\\d+$"},
+          "text": {"type": "string"},
+          "source_field": {"type": "string"},
+          "source_excerpt": {"type": "string", "description": "Quoted verbatim from the ticket; the validator checks it with --ticket"},
+          "type": {"enum": ["functional", "validation", "error", "permission", "state", "non_functional", "regression"]},
+          "testability": {"enum": ["testable", "needs_clarification", "not_unit_testable"]},
+          "notes": {"type": "string"}
+        }
+      }
+    },
+    "open_questions": {
+      "type": "array",
+      "items": {
+        "type": "object", "required": ["id", "question", "blocking", "related_reqs"],
+        "properties": {"id": {"type": "string"}, "question": {"type": "string"}, "blocking": {"type": "boolean"},
+                       "related_reqs": {"type": "array", "items": {"type": "string"}},
+                       "answer": {"type": "string"}, "answered_by": {"type": "string"}}
+      }
+    },
+    "manual_checks": {
+      "type": "array",
+      "items": {"type": "object", "required": ["req_id", "check", "reason"],
+                "properties": {"req_id": {"type": "string"}, "check": {"type": "string"}, "reason": {"type": "string"}}}
+    },
+    "traceability": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["req_id", "test_id", "test_path", "test_name", "level", "kind", "red", "green"],
+        "properties": {
+          "req_id": {"type": "string"},
+          "test_id": {"type": "string"},
+          "test_path": {"type": "string"},
+          "test_name": {"type": "string"},
+          "level": {"enum": ["unit", "component", "integration", "api", "contract", "e2e"]},
+          "kind": {"enum": ["happy", "boundary", "negative", "error", "permission", "state", "reproduction"]},
+          "red": {
+            "type": "object", "required": ["status"],
+            "properties": {
+              "status": {"enum": ["valid_red", "invalid_red", "unexpected_green", "not_run"]},
+              "run_id": {"type": "string"}, "case_id": {"type": "string"},
+              "failure_type": {"enum": ["assertion", "error", null]},
+              "failure_excerpt": {"type": "string"},
+              "reason": {"type": "string", "description": "Why this failure is the missing behaviour (valid_red), or why the test was not run"},
+              "investigation": {
+                "type": "object", "required": ["finding", "detail"],
+                "properties": {"finding": {"enum": ["already_implemented", "test_ineffective", "other"]},
+                               "detail": {"type": "string"}, "evidence": {"type": "string"}}
+              },
+              "history": {
+                "type": "array",
+                "items": {"type": "object", "required": ["run_id", "case_id", "status"],
+                          "properties": {"run_id": {"type": "string"}, "case_id": {"type": "string"},
+                                         "status": {"enum": ["valid_red", "invalid_red", "unexpected_green"]},
+                                         "note": {"type": "string"}}}
+              }
+            }
+          },
+          "green": {
+            "type": "object", "required": ["status"],
+            "properties": {"status": {"enum": ["passed", "failed", "not_run"]},
+                           "run_id": {"type": "string"}, "case_id": {"type": "string"}}
+          }
+        }
+      }
+    },
+    "runs": {
+      "type": "array",
+      "description": "Shared run format written by parse_results.py, with --phase",
+      "items": {
+        "type": "object", "required": ["id", "command", "exit_code", "totals", "phase"],
+        "properties": {
+          "id": {"type": "string"}, "command": {"type": "string"}, "exit_code": {"type": "integer"},
+          "phase": {"enum": ["red", "green", "regression", "re_red", "refactor", "baseline"]},
+          "junit_paths": {"type": "array", "items": {"type": "string"}}, "started_at": {"type": "string"},
+          "totals": {"type": "object"}, "file_hashes": {"type": "object", "additionalProperties": {"type": ["string", "null"]}},
+          "notes": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "cases": {
+      "type": "array",
+      "items": {
+        "type": "object", "required": ["run_id", "id", "name", "status"],
+        "properties": {
+          "run_id": {"type": "string"}, "id": {"type": "string"}, "name": {"type": "string"},
+          "classname": {"type": "string"}, "file": {"type": ["string", "null"]},
+          "status": {"enum": ["passed", "failed", "error", "skipped"]},
+          "failure_type": {"enum": ["assertion", "error", null]},
+          "signals": {"type": "array", "items": {"type": "string"}},
+          "message_excerpt": {"type": "string"}, "time": {"type": ["number", "null"]}
+        }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "required": ["locked_tests_modified", "existing_tests_modified", "stubs_added"],
+      "properties": {
+        "test_files": {"type": "array", "items": {"type": "string"}},
+        "test_hashes_at_red": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Written by hash_tests.py lock"},
+        "red_lock_run": {"type": ["string", "null"]},
+        "locked_tests_modified": {"type": "boolean"},
+        "locked_tests_modified_justification": {"type": "string"},
+        "locked_tests_modified_approved_by_user": {"type": "boolean"},
+        "existing_tests_modified": {
+          "type": "array",
+          "items": {"type": "object", "required": ["path", "justification_req", "detail"],
+                    "properties": {"path": {"type": "string"}, "justification_req": {"type": "string"}, "detail": {"type": "string"}}}
+        },
+        "stubs_added": {
+          "type": "array",
+          "items": {"type": "object", "required": ["path", "symbol"],
+                    "properties": {"path": {"type": "string"}, "symbol": {"type": "string"},
+                                   "line": {"type": "integer"}, "note": {"type": "string"}}}
+        },
+        "re_red": {
+          "type": ["object", "null"],
+          "properties": {"run_id": {"type": "string"}, "confirmed": {"type": "boolean"}, "how": {"type": "string"}}
+        },
+        "mutation": {"type": ["object", "null"], "description": "Optional: tool, command, killed, survived, for the changed lines"}
+      }
+    },
+    "regressions": {
+      "type": "array",
+      "items": {
+        "type": "object", "required": ["test", "run_id", "pre_existing", "evidence"],
+        "properties": {"test": {"type": "string"}, "run_id": {"type": "string"}, "pre_existing": {"type": "boolean"},
+                       "pre_existing_evidence": {"type": "string"}, "evidence": {"type": "string"}}
+      }
+    },
+    "files_changed": {
+      "type": "array",
+      "items": {
+        "type": "object", "required": ["path", "change", "kind"],
+        "properties": {
+          "path": {"type": "string"},
+          "change": {"enum": ["added", "modified"]},
+          "kind": {"enum": ["test", "fixture", "stub", "source", "config", "manifest"]},
+          "approved_by_user": {"type": "boolean"}
+        }
+      }
+    },
+    "next_steps": {"type": "array", "items": {"type": "string"}},
+    "summary": {
+      "type": "object",
+      "required": ["headline", "reqs_total", "reqs_covered", "reqs_already_implemented", "reqs_blocked",
+                   "reqs_not_unit_testable", "reqs_not_run", "tests_written", "valid_reds", "unexpected_greens",
+                   "tests_not_run", "greens", "regressions", "re_red_confirmed", "stubs_added"],
+      "properties": {
+        "headline": {"type": "string"},
+        "reqs_total": {"type": "integer"}, "reqs_covered": {"type": "integer", "description": "Requirements with at least one valid red"},
+        "reqs_already_implemented": {"type": "integer"}, "reqs_blocked": {"type": "integer"},
+        "reqs_not_unit_testable": {"type": "integer"}, "reqs_not_run": {"type": "integer"},
+        "tests_written": {"type": "integer"}, "valid_reds": {"type": "integer"}, "unexpected_greens": {"type": "integer"},
+        "tests_not_run": {"type": "integer"}, "greens": {"type": "integer"}, "regressions": {"type": "integer"},
+        "re_red_confirmed": {"type": "boolean"}, "stubs_added": {"type": "integer"}
+      }
+    }
+  }
+}

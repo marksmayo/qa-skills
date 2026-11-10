@@ -76,4 +76,7 @@ def main():
         for item in missing: print(f"- {item['name']}: {item['status']} — {item.get('details','')}")
     return 0
 
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
 if __name__=='__main__': raise SystemExit(main())

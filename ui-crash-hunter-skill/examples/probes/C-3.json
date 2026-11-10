@@ -1,0 +1,71 @@
+{
+  "base_url": "http://localhost:4173",
+  "browser": "chromium",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "locale": "en-AU",
+  "timezone": "Australia/Sydney",
+  "observe": {
+    "root_selector": "#root",
+    "fallback_text": [
+      "Something went wrong",
+      "Not available right now."
+    ]
+  },
+  "settle_ms": 800,
+  "name": "C-3: recipe with no ratings yet (rating null)",
+  "routes": [
+    {
+      "url": "**/api/recipes/r-5",
+      "status": 200,
+      "json": {
+        "id": "r-5",
+        "title": "Miso greens",
+        "author": {
+          "id": "u-1",
+          "displayName": "Mia Chen"
+        },
+        "rating": null,
+        "ratingCount": 0,
+        "tags": [
+          "dinner"
+        ],
+        "ingredients": [
+          {
+            "name": "arborio rice",
+            "quantity": 300,
+            "unit": "g",
+            "aisle": "Pantry"
+          },
+          {
+            "name": "lemon",
+            "quantity": 1,
+            "aisle": "Produce"
+          },
+          {
+            "name": "salt",
+            "quantity": null
+          }
+        ],
+        "steps": [
+          "Toast the rice.",
+          "Add stock a ladle at a time.",
+          "Finish with lemon and butter."
+        ],
+        "publishedAt": "2026-09-14T08:00:00Z",
+        "nutrition": {
+          "calories": 1840,
+          "protein": 44,
+          "servings": 4
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "goto": "/#/recipes/r-5"
+    }
+  ]
+}

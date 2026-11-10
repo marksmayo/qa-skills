@@ -1,0 +1,148 @@
+{
+  "tool": "tsc-strict",
+  "status": "ran",
+  "generated_at": "2026-11-10T02:34:05Z",
+  "candidates": [
+    {
+      "pitfall_id": "WEB-UNGUARDED-OPTIONAL",
+      "file": "src/components/NutritionPanel.tsx",
+      "line": 4,
+      "column": 33,
+      "snippet": "const perServing = Math.round(nutrition.calories / nutrition.servings);",
+      "message": "TS18048: 'nutrition' is possibly 'undefined'.",
+      "sources": [
+        {
+          "tool": "tsc-strict",
+          "version": "Version 5.9.3",
+          "rule_id": "TS18048"
+        }
+      ]
+    },
+    {
+      "pitfall_id": "WEB-UNGUARDED-OPTIONAL",
+      "file": "src/components/NutritionPanel.tsx",
+      "line": 4,
+      "column": 54,
+      "snippet": "const perServing = Math.round(nutrition.calories / nutrition.servings);",
+      "message": "TS18048: 'nutrition' is possibly 'undefined'.",
+      "sources": [
+        {
+          "tool": "tsc-strict",
+          "version": "Version 5.9.3",
+          "rule_id": "TS18048"
+        }
+      ]
+    },
+    {
+      "pitfall_id": "WEB-UNGUARDED-OPTIONAL",
+      "file": "src/components/NutritionPanel.tsx",
+      "line": 9,
+      "column": 32,
+      "snippet": "{perServing} kcal and {nutrition.protein} g protein per serving",
+      "message": "TS18048: 'nutrition' is possibly 'undefined'.",
+      "sources": [
+        {
+          "tool": "tsc-strict",
+          "version": "Version 5.9.3",
+          "rule_id": "TS18048"
+        }
+      ]
+    },
+    {
+      "pitfall_id": null,
+      "file": "src/routes.ts",
+      "line": 27,
+      "column": 49,
+      "snippet": "params[p.slice(1)] = decodeURIComponent(parts[i]);",
+      "message": "TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.",
+      "sources": [
+        {
+          "tool": "tsc-strict",
+          "version": "Version 5.9.3",
+          "rule_id": "TS2345"
+        }
+      ]
+    },
+    {
+      "pitfall_id": null,
+      "file": "src/routes.ts",
+      "line": 34,
+      "column": 12,
+      "snippet": "return { route: routes[0], params: {} };",
+      "message": "TS2322: Type 'Route | undefined' is not assignable to type 'Route'.",
+      "sources": [
+        {
+          "tool": "tsc-strict",
+          "version": "Version 5.9.3",
+          "rule_id": "TS2322"
+        }
+      ]
+    },
+    {
+      "pitfall_id": null,
+      "file": "src/screens/RecipeDetail.tsx",
+      "line": 12,
+      "column": 15,
+      "snippet": "getRecipe(params.id).then(setRecipe);",
+      "message": "TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.",
+      "sources": [
+        {
+          "tool": "tsc-strict",
+          "version": "Version 5.9.3",
+          "rule_id": "TS2345"
+        }
+      ]
+    },
+    {
+      "pitfall_id": "WEB-UNGUARDED-OPTIONAL",
+      "file": "src/screens/RecipeDetail.tsx",
+      "line": 23,
+      "column": 62,
+      "snippet": "{recipe.author?.displayName ?? 'Imported recipe'} · {recipe.rating.toFixed(1)} ★ ({recipe.ratingCount})",
+      "message": "TS18047: 'recipe.rating' is possibly 'null'.",
+      "sources": [
+        {
+          "tool": "tsc-strict",
+          "version": "Version 5.9.3",
+          "rule_id": "TS18047"
+        }
+      ]
+    },
+    {
+      "pitfall_id": "WEB-UNGUARDED-OPTIONAL",
+      "file": "src/screens/RecipeDetail.tsx",
+      "line": 30,
+      "column": 14,
+      "snippet": "{items.map((i) => (",
+      "message": "TS18048: 'items' is possibly 'undefined'.",
+      "sources": [
+        {
+          "tool": "tsc-strict",
+          "version": "Version 5.9.3",
+          "rule_id": "TS18048"
+        }
+      ]
+    },
+    {
+      "pitfall_id": "WEB-UNGUARDED-OPTIONAL",
+      "file": "src/screens/RecipeList.tsx",
+      "line": 21,
+      "column": 80,
+      "snippet": "<a href={`#/recipes/${r.id}`}>{r.title}</a> <span className=\"by\">by {r.author.displayName}</span>{' '}",
+      "message": "TS18047: 'r.author' is possibly 'null'.",
+      "sources": [
+        {
+          "tool": "tsc-strict",
+          "version": "Version 5.9.3",
+          "rule_id": "TS18047"
+        }
+      ]
+    }
+  ],
+  "version": "Version 5.9.3",
+  "scratch_config": "<scratch>/tsconfig.strict.json",
+  "command": "C:\\Program Files\\nodejs\\npx.CMD --no-install tsc -p <scratch>/tsconfig.strict.json",
+  "baseline_errors": 0,
+  "strict_errors": 9,
+  "new_errors": 9
+}

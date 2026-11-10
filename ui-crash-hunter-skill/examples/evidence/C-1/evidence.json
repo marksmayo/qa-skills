@@ -1,0 +1,48 @@
+{
+  "scenario": "C-1: theme saved by 0.2.0 crashes every launch",
+  "base_url": "http://localhost:4173",
+  "final_url": "http://localhost:4173/#/",
+  "browser": "chromium 156.0.8078.4",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "locale": "en-AU",
+  "timezone": "Australia/Sydney",
+  "captured_at": "2026-11-10T02:30:59Z",
+  "steps": [
+    {
+      "step": 1,
+      "action": "goto",
+      "arg": "/#/"
+    },
+    {
+      "step": 2,
+      "action": "reload",
+      "arg": true
+    }
+  ],
+  "step_error": null,
+  "page_errors": [
+    {
+      "after_step": 1,
+      "name": "SyntaxError",
+      "message": "Unexpected token 'd', \"dark\" is not valid JSON",
+      "stack": "SyntaxError: Unexpected token 'd', \"dark\" is not valid JSON\n    at JSON.parse (<anonymous>)\n    at loadPrefs (http://localhost:4173/app.js:23844:41)\n    at Header (http://localhost:4173/app.js:23853:19)\n    at Object.react_stack_bottom_frame (http://localhost:4173/app.js:21553:22)\n    at renderWithHooks (http://localhost:4173/app.js:7212:26)\n    at updateFunctionComponent (http://localhost:4173/app.js:9057:24)\n    at beginWork (http://localhost:4173/app.js:10137:22)\n    at runWithFiberInDEV (http://localhost:4173/app.js:2427:74)\n    at performUnitOfWork (http://localhost:4173/app.js:14892:100)\n    at workLoopSync (http://localhost:4173/app.js:14755:45)"
+    },
+    {
+      "after_step": 2,
+      "name": "SyntaxError",
+      "message": "Unexpected token 'd', \"dark\" is not valid JSON",
+      "stack": "SyntaxError: Unexpected token 'd', \"dark\" is not valid JSON\n    at JSON.parse (<anonymous>)\n    at loadPrefs (http://localhost:4173/app.js:23844:41)\n    at Header (http://localhost:4173/app.js:23853:19)\n    at Object.react_stack_bottom_frame (http://localhost:4173/app.js:21553:22)\n    at renderWithHooks (http://localhost:4173/app.js:7212:26)\n    at updateFunctionComponent (http://localhost:4173/app.js:9057:24)\n    at beginWork (http://localhost:4173/app.js:10137:22)\n    at runWithFiberInDEV (http://localhost:4173/app.js:2427:74)\n    at performUnitOfWork (http://localhost:4173/app.js:14892:100)\n    at workLoopSync (http://localhost:4173/app.js:14755:45)"
+    }
+  ],
+  "console_errors": [],
+  "failed_requests": [],
+  "root_found": true,
+  "root_empty": true,
+  "fallback_visible": [],
+  "body_text": "",
+  "screenshot": "screenshot.png",
+  "reproduced": true
+}

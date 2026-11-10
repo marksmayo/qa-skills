@@ -1,0 +1,66 @@
+{
+  "base_url": "http://localhost:4173",
+  "browser": "chromium",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "locale": "en-AU",
+  "timezone": "Australia/Sydney",
+  "observe": {
+    "root_selector": "#root",
+    "fallback_text": [
+      "Something went wrong",
+      "Not available right now."
+    ]
+  },
+  "settle_ms": 800,
+  "name": "C-1: theme saved by 0.2.0 crashes every launch",
+  "routes": [
+    {
+      "url": "**/api/recipes",
+      "status": 200,
+      "json": [
+        {
+          "id": "r-1",
+          "title": "Lemon risotto",
+          "author": {
+            "id": "u-1",
+            "displayName": "Mia Chen"
+          },
+          "rating": 4.6,
+          "ratingCount": 31,
+          "tags": [
+            "dinner"
+          ]
+        },
+        {
+          "id": "r-2",
+          "title": "Charred corn salad",
+          "author": {
+            "id": "u-2",
+            "displayName": "Sam Okafor"
+          },
+          "rating": 4.1,
+          "ratingCount": 12,
+          "tags": [
+            "salad"
+          ]
+        }
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "goto": "/#/"
+    },
+    {
+      "reload": true
+    }
+  ],
+  "storage": {
+    "localStorage": {
+      "pantry.prefs": "dark"
+    }
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "base_url": "http://localhost:4173",
+  "browser": "chromium",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "locale": "en-AU",
+  "timezone": "Australia/Sydney",
+  "observe": {
+    "root_selector": "#root",
+    "fallback_text": [
+      "Something went wrong",
+      "Not available right now."
+    ]
+  },
+  "settle_ms": 800,
+  "name": "D-1: recipe before the nutrition job has run (nutrition missing)",
+  "routes": [
+    {
+      "url": "**/api/recipes/r-6",
+      "status": 200,
+      "json": {
+        "id": "r-6",
+        "title": "Lemon risotto",
+        "author": {
+          "id": "u-1",
+          "displayName": "Mia Chen"
+        },
+        "rating": 4.6,
+        "ratingCount": 31,
+        "tags": [
+          "dinner"
+        ],
+        "ingredients": [
+          {
+            "name": "arborio rice",
+            "quantity": 300,
+            "unit": "g",
+            "aisle": "Pantry"
+          },
+          {
+            "name": "lemon",
+            "quantity": 1,
+            "aisle": "Produce"
+          },
+          {
+            "name": "salt",
+            "quantity": null
+          }
+        ],
+        "steps": [
+          "Toast the rice.",
+          "Add stock a ladle at a time.",
+          "Finish with lemon and butter."
+        ],
+        "publishedAt": "2026-09-14T08:00:00Z"
+      }
+    }
+  ],
+  "steps": [
+    {
+      "goto": "/#/recipes/r-6"
+    }
+  ]
+}

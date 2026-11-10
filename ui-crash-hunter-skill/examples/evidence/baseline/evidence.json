@@ -1,0 +1,55 @@
+{
+  "scenario": "Baseline: contract-valid data renders without errors",
+  "base_url": "http://localhost:4173",
+  "final_url": "http://localhost:4173/#/settings",
+  "browser": "chromium 156.0.8078.4",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "locale": "en-AU",
+  "timezone": "Australia/Sydney",
+  "captured_at": "2026-11-10T02:30:57Z",
+  "steps": [
+    {
+      "step": 1,
+      "action": "goto",
+      "arg": "/#/"
+    },
+    {
+      "step": 2,
+      "action": "wait_for",
+      "arg": "text=Lemon risotto"
+    },
+    {
+      "step": 3,
+      "action": "click",
+      "arg": "text=Lemon risotto"
+    },
+    {
+      "step": 4,
+      "action": "wait_for",
+      "arg": "text=Method"
+    },
+    {
+      "step": 5,
+      "action": "goto",
+      "arg": "/#/settings"
+    },
+    {
+      "step": 6,
+      "action": "wait_for",
+      "arg": "text=Theme"
+    }
+  ],
+  "step_error": null,
+  "page_errors": [],
+  "console_errors": [],
+  "failed_requests": [],
+  "root_found": true,
+  "root_empty": false,
+  "fallback_visible": [],
+  "body_text": "Pantry\nSettings\nSettings\nTheme \nLight\nDark\nUnits \nMetric\nImperial",
+  "screenshot": "screenshot.png",
+  "reproduced": false
+}
