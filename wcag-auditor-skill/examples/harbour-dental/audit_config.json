@@ -1,0 +1,26 @@
+{
+  "targets": ["http://127.0.0.1:8137/index.html"],
+  "crawl": {"max_pages": 25, "same_origin": true},
+  "wcag_version": "2.2",
+  "level": "AA",
+  "viewports": ["1280x800", "320x640"],
+  "engines": ["axe-core", "ibm-equal-access", "htmlcs", "vnu"],
+  "allow_form_submission": false,
+  "rate_limit_seconds": 0.5,
+  "consent": {"dismiss": "#cookie-accept"},
+  "states": [
+    {"url": "http://127.0.0.1:8137/index.html", "name": "menu-open", "viewport": "320x640",
+     "actions": [{"click": ".menu-toggle"}], "probes": ["keyboard", "target_size"]},
+    {"url": "http://127.0.0.1:8137/book.html", "name": "errors",
+     "actions": [{"click": "button[type=submit]"}], "probes": ["keyboard"]}
+  ],
+  "critical_paths": [
+    {"name": "Book an appointment", "steps": [
+      {"url": "http://127.0.0.1:8137/index.html", "label": "Home page, choose Book"},
+      {"url": "http://127.0.0.1:8137/book.html", "label": "Fill in the booking form"},
+      {"url": "http://127.0.0.1:8137/book.html", "state": "errors", "label": "Correct errors and submit"}
+    ]}
+  ],
+  "random_sample": 0.1,
+  "seed": 7
+}

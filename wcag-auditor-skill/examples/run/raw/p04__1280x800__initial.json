@@ -1,0 +1,1922 @@
+{
+ "page": "p04",
+ "url": "http://127.0.0.1:8137/contact.html",
+ "final_url": "http://127.0.0.1:8137/contact.html",
+ "viewport": "1280x800",
+ "state": "initial",
+ "page_info": {
+  "title": "",
+  "lang": "en",
+  "viewport_meta": "width=device-width, initial-scale=1",
+  "template": {
+   "landmarks": "header+nav+main+footer",
+   "main_shape": "h1,p,h2,video,h2,p"
+  },
+  "landmarks": [
+   {
+    "role": "header",
+    "label": null,
+    "xpath": "/html[1]/body[1]/header[1]"
+   },
+   {
+    "role": "nav",
+    "label": null,
+    "xpath": "/html[1]/body[1]/header[1]/nav[1]"
+   },
+   {
+    "role": "main",
+    "label": null,
+    "xpath": "/html[1]/body[1]/main[1]"
+   },
+   {
+    "role": "footer",
+    "label": null,
+    "xpath": "/html[1]/body[1]/footer[1]"
+   }
+  ],
+  "headings": [
+   {
+    "level": 1,
+    "text": "Contact us",
+    "xpath": "/html[1]/body[1]/main[1]/h1[1]"
+   },
+   {
+    "level": 2,
+    "text": "Take a tour of the clinic",
+    "xpath": "/html[1]/body[1]/main[1]/h2[1]"
+   },
+   {
+    "level": 2,
+    "text": "Finding us",
+    "xpath": "/html[1]/body[1]/main[1]/h2[2]"
+   },
+   {
+    "level": 2,
+    "text": "Privacy",
+    "xpath": "/html[1]/body[1]/main[1]/h2[3]"
+   }
+  ],
+  "frames": [],
+  "captcha": false
+ },
+ "screenshot": "p04__1280x800.png",
+ "engines": {
+  "axe-core": {
+   "version": "4.14.0",
+   "violations": [
+    {
+     "id": "color-contrast-enhanced",
+     "impact": "serious",
+     "tags": [
+      "cat.color",
+      "wcag2aaa",
+      "wcag146",
+      "ACT"
+     ],
+     "help": "Elements must meet enhanced color contrast ratio thresholds",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast-enhanced?application=axeAPI",
+     "nodes": [
+      {
+       "target": [
+        "p:nth-child(2) > a[href$=\"contact.html\"]"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Element has insufficient color contrast of 5.28 (foreground color: #0b6e8a, background color: #f4f4f4, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 7:1",
+       "html": "<a href=\"contact.html\">Contact</a>",
+       "el": {
+        "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[1]",
+        "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(1)",
+        "sig": "footer p > a",
+        "html": "<a href=\"contact.html\">Contact",
+        "rect": {
+         "x": 24,
+         "y": 915,
+         "w": 55,
+         "h": 17
+        }
+       }
+      },
+      {
+       "target": [
+        "a[href$=\"services.html#fees\"]"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Element has insufficient color contrast of 5.28 (foreground color: #0b6e8a, background color: #f4f4f4, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 7:1",
+       "html": "<a href=\"services.html#fees\">Fees</a>",
+       "el": {
+        "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[2]",
+        "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(2)",
+        "sig": "footer p > a",
+        "html": "<a href=\"services.html#fees\">Fees",
+        "rect": {
+         "x": 95,
+         "y": 915,
+         "w": 36,
+         "h": 17
+        }
+       }
+      },
+      {
+       "target": [
+        "a[href$=\"contact.html#privacy\"]"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Element has insufficient color contrast of 5.28 (foreground color: #0b6e8a, background color: #f4f4f4, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 7:1",
+       "html": "<a href=\"contact.html#privacy\">Privacy</a>",
+       "el": {
+        "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[3]",
+        "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(3)",
+        "sig": "footer p > a",
+        "html": "<a href=\"contact.html#privacy\">Privacy",
+        "rect": {
+         "x": 147,
+         "y": 915,
+         "w": 52,
+         "h": 17
+        }
+       }
+      },
+      {
+       "target": [
+        ".callbar"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Element has insufficient color contrast of 5.81 (foreground color: #ffffff, background color: #0b6e8a, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 7:1",
+       "html": "<div class=\"callbar\">Emergency? <a href=\"tel:+61290000000\">Call 02 9000 0000</a></div>",
+       "el": {
+        "xpath": "/html[1]/body[1]/div[1]",
+        "selector": "body > div:nth-of-type(1)",
+        "sig": "body body > div.callbar",
+        "html": "<div class=\"callbar\">",
+        "rect": {
+         "x": 0,
+         "y": 736,
+         "w": 1280,
+         "h": 64
+        }
+       }
+      },
+      {
+       "target": [
+        "a[href=\"tel:+61290000000\"]"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Element has insufficient color contrast of 5.81 (foreground color: #ffffff, background color: #0b6e8a, font size: 12.0pt (16px), font weight: bold). Expected contrast ratio of 7:1",
+       "html": "<a href=\"tel:+61290000000\">Call 02 9000 0000</a>",
+       "el": {
+        "xpath": "/html[1]/body[1]/div[1]/a[1]",
+        "selector": "body > div:nth-of-type(1) > a",
+        "sig": "body div.callbar > a",
+        "html": "<a href=\"tel:+61290000000\">Call 02 9000 0000",
+        "rect": {
+         "x": 627,
+         "y": 757,
+         "w": 132,
+         "h": 22
+        }
+       }
+      }
+     ],
+     "node_count": 5
+    },
+    {
+     "id": "color-contrast",
+     "impact": "serious",
+     "tags": [
+      "cat.color",
+      "wcag2aa",
+      "wcag143",
+      "TTv5",
+      "TT13.c",
+      "EN-301-549",
+      "EN-9.1.4.3",
+      "ACT",
+      "RGAAv4",
+      "RGAA-3.2.1"
+     ],
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+     "nodes": [
+      {
+       "target": [
+        "nav > a[href=\"index.html\"]"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.88 (foreground color: #8c9aa6, background color: #ffffff, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1",
+       "html": "<a href=\"index.html\">Home</a>",
+       "el": {
+        "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[1]",
+        "selector": "body > header > nav > a:nth-of-type(1)",
+        "sig": "nav nav > a",
+        "html": "<a href=\"index.html\">Home",
+        "rect": {
+         "x": 1000,
+         "y": 26,
+         "w": 43,
+         "h": 17
+        }
+       }
+      },
+      {
+       "target": [
+        "a[href$=\"services.html\"]"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.88 (foreground color: #8c9aa6, background color: #ffffff, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1",
+       "html": "<a href=\"services.html\">Services</a>",
+       "el": {
+        "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[2]",
+        "selector": "body > header > nav > a:nth-of-type(2)",
+        "sig": "nav nav > a",
+        "html": "<a href=\"services.html\">Services",
+        "rect": {
+         "x": 1063,
+         "y": 26,
+         "w": 61,
+         "h": 17
+        }
+       }
+      },
+      {
+       "target": [
+        "a[href$=\"book.html\"]"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.88 (foreground color: #8c9aa6, background color: #ffffff, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1",
+       "html": "<a href=\"book.html\">Book</a>",
+       "el": {
+        "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[3]",
+        "selector": "body > header > nav > a:nth-of-type(3)",
+        "sig": "nav nav > a",
+        "html": "<a href=\"book.html\">Book",
+        "rect": {
+         "x": 1144,
+         "y": 26,
+         "w": 36,
+         "h": 17
+        }
+       }
+      },
+      {
+       "target": [
+        "nav > a[href$=\"contact.html\"]"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.88 (foreground color: #8c9aa6, background color: #ffffff, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1",
+       "html": "<a href=\"contact.html\">Contact</a>",
+       "el": {
+        "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[4]",
+        "selector": "body > header > nav > a:nth-of-type(4)",
+        "sig": "nav nav > a",
+        "html": "<a href=\"contact.html\">Contact",
+        "rect": {
+         "x": 1201,
+         "y": 26,
+         "w": 55,
+         "h": 17
+        }
+       }
+      },
+      {
+       "target": [
+        "p:nth-child(1)"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.59 (foreground color: #999999, background color: #f4f4f4, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1",
+       "html": "<p>Harbour Dental, 12 Wharf Street, Sydney NSW 2000. Open Monday to Saturday.</p>",
+       "el": {
+        "xpath": "/html[1]/body[1]/footer[1]/p[1]",
+        "selector": "body > footer > p:nth-of-type(1)",
+        "sig": "footer footer > p",
+        "html": "<p>Harbour Dental, 12 Wharf Street, Sydney NSW 2000. Open Monda…",
+        "rect": {
+         "x": 24,
+         "y": 875,
+         "w": 1232,
+         "h": 22
+        }
+       }
+      }
+     ],
+     "node_count": 5
+    },
+    {
+     "id": "document-title",
+     "impact": "serious",
+     "tags": [
+      "cat.text-alternatives",
+      "wcag2a",
+      "wcag242",
+      "TTv5",
+      "TT12.a",
+      "EN-301-549",
+      "EN-9.2.4.2",
+      "ACT",
+      "RGAAv4",
+      "RGAA-8.5.1"
+     ],
+     "help": "Documents must have <title> element to aid in navigation",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/document-title?application=axeAPI",
+     "nodes": [
+      {
+       "target": [
+        "html"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Document does not have a non-empty <title> element",
+       "html": "<html lang=\"en\">",
+       "el": {
+        "xpath": "/html[1]",
+        "selector": "",
+        "sig": "body > html",
+        "html": "<html lang=\"en\">",
+        "rect": {
+         "x": 0,
+         "y": 0,
+         "w": 1280,
+         "h": 976
+        }
+       }
+      }
+     ],
+     "node_count": 1
+    },
+    {
+     "id": "image-alt",
+     "impact": "critical",
+     "tags": [
+      "cat.text-alternatives",
+      "wcag2a",
+      "wcag111",
+      "section508",
+      "section508.22.a",
+      "TTv5",
+      "TT7.a",
+      "TT7.b",
+      "EN-301-549",
+      "EN-9.1.1.1",
+      "ACT",
+      "RGAAv4",
+      "RGAA-1.1.1"
+     ],
+     "help": "Images must have alternative text",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/image-alt?application=axeAPI",
+     "nodes": [
+      {
+       "target": [
+        "img"
+       ],
+       "impact": "critical",
+       "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty\n  Element has no title attribute\n  Element's default semantics were not overridden with role=\"none\" or role=\"presentation\"",
+       "html": "<img src=\"logo.svg\" width=\"160\" height=\"40\">",
+       "el": {
+        "xpath": "/html[1]/body[1]/header[1]/a[1]/img[1]",
+        "selector": "body > header > a > img",
+        "sig": "header a > img",
+        "html": "<img src=\"logo.svg\" width=\"160\" height=\"40\">",
+        "rect": {
+         "x": 24,
+         "y": 12,
+         "w": 160,
+         "h": 40
+        }
+       }
+      }
+     ],
+     "node_count": 1
+    },
+    {
+     "id": "link-name",
+     "impact": "serious",
+     "tags": [
+      "cat.name-role-value",
+      "wcag2a",
+      "wcag244",
+      "wcag412",
+      "section508",
+      "section508.22.a",
+      "TTv5",
+      "TT6.a",
+      "EN-301-549",
+      "EN-9.2.4.4",
+      "EN-9.4.1.2",
+      "ACT",
+      "RGAAv4",
+      "RGAA-6.2.1"
+     ],
+     "help": "Links must have discernible text",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/link-name?application=axeAPI",
+     "nodes": [
+      {
+       "target": [
+        "header > a[href=\"index.html\"]"
+       ],
+       "impact": "serious",
+       "summary": "Fix all of the following:\n  Element is in tab order and does not have accessible text\n\nFix any of the following:\n  Element does not have text that is visible to screen readers\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty\n  Element has no title attribute",
+       "html": "<a href=\"index.html\"><img src=\"logo.svg\" width=\"160\" height=\"40\"></a>",
+       "el": {
+        "xpath": "/html[1]/body[1]/header[1]/a[1]",
+        "selector": "body > header > a",
+        "sig": "header header > a",
+        "html": "<a href=\"index.html\">",
+        "rect": {
+         "x": 24,
+         "y": 12,
+         "w": 160,
+         "h": 46
+        }
+       }
+      }
+     ],
+     "node_count": 1
+    },
+    {
+     "id": "region",
+     "impact": "moderate",
+     "tags": [
+      "cat.keyboard",
+      "best-practice",
+      "RGAAv4",
+      "RGAA-9.2.1"
+     ],
+     "help": "All page content should be contained by landmarks",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/region?application=axeAPI",
+     "nodes": [
+      {
+       "target": [
+        ".callbar"
+       ],
+       "impact": "moderate",
+       "summary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+       "html": "<div class=\"callbar\">Emergency? <a href=\"tel:+61290000000\">Call 02 9000 0000</a></div>",
+       "el": {
+        "xpath": "/html[1]/body[1]/div[1]",
+        "selector": "body > div:nth-of-type(1)",
+        "sig": "body body > div.callbar",
+        "html": "<div class=\"callbar\">",
+        "rect": {
+         "x": 0,
+         "y": 736,
+         "w": 1280,
+         "h": 64
+        }
+       }
+      },
+      {
+       "target": [
+        ".cookie"
+       ],
+       "impact": "moderate",
+       "summary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+       "html": "<div class=\"cookie\">We use cookies to remember your preferences. <button id=\"cookie-accept\">Accept</button></div>",
+       "el": {
+        "xpath": "/html[1]/body[1]/div[2]",
+        "selector": "body > div:nth-of-type(2)",
+        "sig": "body body > div.cookie",
+        "html": "<div class=\"cookie\">",
+        "rect": {
+         "x": 16,
+         "y": 672,
+         "w": 1248,
+         "h": 48
+        }
+       }
+      }
+     ],
+     "node_count": 2
+    }
+   ],
+   "incomplete": [
+    {
+     "id": "video-caption",
+     "impact": "critical",
+     "tags": [
+      "cat.text-alternatives",
+      "wcag2a",
+      "wcag122",
+      "section508",
+      "section508.22.a",
+      "TTv5",
+      "TT17.a",
+      "EN-301-549",
+      "EN-9.1.2.2",
+      "RGAAv4",
+      "RGAA-4.3.1"
+     ],
+     "help": "<video> elements must have captions",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/video-caption?application=axeAPI",
+     "nodes": [
+      {
+       "target": [
+        "video"
+       ],
+       "impact": "critical",
+       "summary": "Fix all of the following:\n  Check that captions are available for the element",
+       "html": "<video controls=\"\" preload=\"none\" width=\"480\" height=\"270\" src=\"media/clinic-tour.mp4\"></video>",
+       "el": {
+        "xpath": "/html[1]/body[1]/main[1]/video[1]",
+        "selector": "body > main > video",
+        "sig": "main main > video",
+        "html": "<video controls=\"\" preload=\"none\" width=\"480\" height=\"270\" src=\"media/clinic-tour.mp4\">",
+        "rect": {
+         "x": 184,
+         "y": 279,
+         "w": 480,
+         "h": 270
+        }
+       }
+      }
+     ],
+     "node_count": 1
+    }
+   ],
+   "passes": [
+    {
+     "id": "aria-hidden-body",
+     "nodes": 1
+    },
+    {
+     "id": "button-name",
+     "nodes": 1
+    },
+    {
+     "id": "bypass",
+     "nodes": 1
+    },
+    {
+     "id": "color-contrast-enhanced",
+     "nodes": 1
+    },
+    {
+     "id": "color-contrast",
+     "nodes": 1
+    },
+    {
+     "id": "empty-heading",
+     "nodes": 1
+    },
+    {
+     "id": "heading-order",
+     "nodes": 1
+    },
+    {
+     "id": "html-has-lang",
+     "nodes": 1
+    },
+    {
+     "id": "html-lang-valid",
+     "nodes": 1
+    },
+    {
+     "id": "identical-links-same-purpose",
+     "nodes": 1
+    },
+    {
+     "id": "image-redundant-alt",
+     "nodes": 1
+    },
+    {
+     "id": "landmark-banner-is-top-level",
+     "nodes": 1
+    },
+    {
+     "id": "landmark-contentinfo-is-top-level",
+     "nodes": 1
+    },
+    {
+     "id": "landmark-main-is-top-level",
+     "nodes": 1
+    },
+    {
+     "id": "landmark-no-duplicate-banner",
+     "nodes": 1
+    },
+    {
+     "id": "landmark-no-duplicate-contentinfo",
+     "nodes": 1
+    },
+    {
+     "id": "landmark-no-duplicate-main",
+     "nodes": 1
+    },
+    {
+     "id": "landmark-one-main",
+     "nodes": 1
+    },
+    {
+     "id": "landmark-unique",
+     "nodes": 1
+    },
+    {
+     "id": "link-in-text-block",
+     "nodes": 1
+    },
+    {
+     "id": "link-name",
+     "nodes": 1
+    },
+    {
+     "id": "meta-viewport-large",
+     "nodes": 1
+    },
+    {
+     "id": "meta-viewport",
+     "nodes": 1
+    },
+    {
+     "id": "nested-interactive",
+     "nodes": 1
+    },
+    {
+     "id": "page-has-heading-one",
+     "nodes": 1
+    },
+    {
+     "id": "region",
+     "nodes": 1
+    },
+    {
+     "id": "target-size",
+     "nodes": 1
+    }
+   ],
+   "inapplicable": [
+    "accesskeys",
+    "area-alt",
+    "aria-allowed-attr",
+    "aria-allowed-role",
+    "aria-braille-equivalent",
+    "aria-command-name",
+    "aria-conditional-attr",
+    "aria-deprecated-role",
+    "aria-dialog-name",
+    "aria-hidden-focus",
+    "aria-input-field-name",
+    "aria-meter-name",
+    "aria-progressbar-name",
+    "aria-prohibited-attr",
+    "aria-required-attr",
+    "aria-required-children",
+    "aria-required-parent",
+    "aria-roles",
+    "aria-tab-name",
+    "aria-text",
+    "aria-toggle-field-name",
+    "aria-tooltip-name",
+    "aria-treeitem-name",
+    "aria-valid-attr-value",
+    "aria-valid-attr",
+    "autocomplete-valid",
+    "avoid-inline-spacing",
+    "blink",
+    "definition-list",
+    "dlitem",
+    "duplicate-id-aria",
+    "empty-table-header",
+    "form-field-multiple-labels",
+    "frame-focusable-content",
+    "frame-tested",
+    "frame-title-unique",
+    "frame-title",
+    "html-xml-lang-mismatch",
+    "input-button-name",
+    "input-image-alt",
+    "label-content-name-mismatch",
+    "label-title-only",
+    "label",
+    "list",
+    "listitem",
+    "marquee",
+    "meta-refresh-no-exceptions",
+    "meta-refresh",
+    "object-alt",
+    "presentation-role-conflict",
+    "role-img-alt",
+    "scope-attr-valid",
+    "scrollable-region-focusable",
+    "select-name",
+    "server-side-image-map",
+    "skip-link",
+    "summary-name",
+    "svg-img-alt",
+    "tabindex",
+    "table-duplicate-name",
+    "td-headers-attr",
+    "th-has-data-cells",
+    "valid-lang",
+    "no-autoplay-audio"
+   ],
+   "status": "ran",
+   "seconds": 0.16
+  },
+  "ibm-equal-access": {
+   "version": null,
+   "ruleset": "WCAG_2_2",
+   "results": [
+    {
+     "ruleId": "page_title_exists",
+     "value": [
+      "VIOLATION",
+      "FAIL"
+     ],
+     "reasonId": "Fail_3",
+     "message": "The <title> element is empty (no innerHTML)",
+     "snippet": "<html lang=\"en\">",
+     "xpath": "/html[1]",
+     "el": {
+      "xpath": "/html[1]",
+      "selector": "",
+      "sig": "body > html",
+      "html": "<html lang=\"en\">",
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "w": 1280,
+       "h": 976
+      }
+     }
+    },
+    {
+     "ruleId": "style_color_misuse",
+     "value": [
+      "VIOLATION",
+      "POTENTIAL"
+     ],
+     "reasonId": "Potential_1",
+     "message": "Verify color is not used as the only visual means of conveying information",
+     "snippet": "<link href=\"site.css\" rel=\"stylesheet\">",
+     "xpath": "/html[1]/head[1]/link[1]",
+     "el": {
+      "xpath": "/html[1]/head[1]/link[1]",
+      "selector": "head > link",
+      "sig": "body head > link",
+      "html": "<link rel=\"stylesheet\" href=\"site.css\">",
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "w": 0,
+       "h": 0
+      }
+     }
+    },
+    {
+     "ruleId": "style_highcontrast_visible",
+     "value": [
+      "RECOMMENDATION",
+      "MANUAL"
+     ],
+     "reasonId": "Manual_1",
+     "message": "Confirm Windows high contrast mode is supported when using CSS to include, position or alter non-decorative content",
+     "snippet": "<link href=\"site.css\" rel=\"stylesheet\">",
+     "xpath": "/html[1]/head[1]/link[1]",
+     "el": {
+      "xpath": "/html[1]/head[1]/link[1]",
+      "selector": "head > link",
+      "sig": "body head > link",
+      "html": "<link rel=\"stylesheet\" href=\"site.css\">",
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "w": 0,
+       "h": 0
+      }
+     }
+    },
+    {
+     "ruleId": "a_text_purpose",
+     "value": [
+      "VIOLATION",
+      "FAIL"
+     ],
+     "reasonId": "fail_acc_name",
+     "message": "Hyperlink has no link text, label or image with a text alternative",
+     "snippet": "<a href=\"index.html\">",
+     "xpath": "/html[1]/body[1]/header[1]/a[1]",
+     "el": {
+      "xpath": "/html[1]/body[1]/header[1]/a[1]",
+      "selector": "body > header > a",
+      "sig": "header header > a",
+      "html": "<a href=\"index.html\">",
+      "rect": {
+       "x": 24,
+       "y": 12,
+       "w": 160,
+       "h": 46
+      }
+     }
+    },
+    {
+     "ruleId": "img_alt_valid",
+     "value": [
+      "VIOLATION",
+      "FAIL"
+     ],
+     "reasonId": "fail_no_alt",
+     "message": "The image has neither an accessible name nor is marked as decorative or redundant",
+     "snippet": "<img height=\"40\" width=\"160\" src=\"logo.svg\">",
+     "xpath": "/html[1]/body[1]/header[1]/a[1]/img[1]",
+     "el": {
+      "xpath": "/html[1]/body[1]/header[1]/a[1]/img[1]",
+      "selector": "body > header > a > img",
+      "sig": "header a > img",
+      "html": "<img src=\"logo.svg\" width=\"160\" height=\"40\">",
+      "rect": {
+       "x": 24,
+       "y": 12,
+       "w": 160,
+       "h": 40
+      }
+     }
+    },
+    {
+     "ruleId": "text_contrast_sufficient",
+     "value": [
+      "VIOLATION",
+      "FAIL"
+     ],
+     "reasonId": "fail_contrast",
+     "message": "Text contrast of 2.88 with its background is less than the WCAG AA minimum requirements for text of size 16px and weight of 400",
+     "snippet": "<a href=\"index.html\">",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[1]",
+     "el": {
+      "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[1]",
+      "selector": "body > header > nav > a:nth-of-type(1)",
+      "sig": "nav nav > a",
+      "html": "<a href=\"index.html\">Home",
+      "rect": {
+       "x": 1000,
+       "y": 26,
+       "w": 43,
+       "h": 17
+      }
+     }
+    },
+    {
+     "ruleId": "text_contrast_sufficient",
+     "value": [
+      "VIOLATION",
+      "FAIL"
+     ],
+     "reasonId": "fail_contrast",
+     "message": "Text contrast of 2.88 with its background is less than the WCAG AA minimum requirements for text of size 16px and weight of 400",
+     "snippet": "<a href=\"services.html\">",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[2]",
+     "el": {
+      "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[2]",
+      "selector": "body > header > nav > a:nth-of-type(2)",
+      "sig": "nav nav > a",
+      "html": "<a href=\"services.html\">Services",
+      "rect": {
+       "x": 1063,
+       "y": 26,
+       "w": 61,
+       "h": 17
+      }
+     }
+    },
+    {
+     "ruleId": "text_contrast_sufficient",
+     "value": [
+      "VIOLATION",
+      "FAIL"
+     ],
+     "reasonId": "fail_contrast",
+     "message": "Text contrast of 2.88 with its background is less than the WCAG AA minimum requirements for text of size 16px and weight of 400",
+     "snippet": "<a href=\"book.html\">",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[3]",
+     "el": {
+      "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[3]",
+      "selector": "body > header > nav > a:nth-of-type(3)",
+      "sig": "nav nav > a",
+      "html": "<a href=\"book.html\">Book",
+      "rect": {
+       "x": 1144,
+       "y": 26,
+       "w": 36,
+       "h": 17
+      }
+     }
+    },
+    {
+     "ruleId": "text_contrast_sufficient",
+     "value": [
+      "VIOLATION",
+      "FAIL"
+     ],
+     "reasonId": "fail_contrast",
+     "message": "Text contrast of 2.88 with its background is less than the WCAG AA minimum requirements for text of size 16px and weight of 400",
+     "snippet": "<a href=\"contact.html\">",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[4]",
+     "el": {
+      "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[4]",
+      "selector": "body > header > nav > a:nth-of-type(4)",
+      "sig": "nav nav > a",
+      "html": "<a href=\"contact.html\">Contact",
+      "rect": {
+       "x": 1201,
+       "y": 26,
+       "w": 55,
+       "h": 17
+      }
+     }
+    },
+    {
+     "ruleId": "caption_track_exists",
+     "value": [
+      "VIOLATION",
+      "POTENTIAL"
+     ],
+     "reasonId": "Potential_1",
+     "message": "Verify that captions are available for any meaningful audio or provide a caption track for the <video> element",
+     "snippet": "<video src=\"media/clinic-tour.mp4\" height=\"270\" width=\"480\" preload=\"none\" controls=\"\">",
+     "xpath": "/html[1]/body[1]/main[1]/video[1]",
+     "el": {
+      "xpath": "/html[1]/body[1]/main[1]/video[1]",
+      "selector": "body > main > video",
+      "sig": "main main > video",
+      "html": "<video controls=\"\" preload=\"none\" width=\"480\" height=\"270\" src=\"media/clinic-tour.mp4\">",
+      "rect": {
+       "x": 184,
+       "y": 279,
+       "w": 480,
+       "h": 270
+      }
+     }
+    },
+    {
+     "ruleId": "media_keyboard_controllable",
+     "value": [
+      "VIOLATION",
+      "MANUAL"
+     ],
+     "reasonId": "Manual_1",
+     "message": "Verify media using <audio> and/or <video> elements have keyboard accessible controls",
+     "snippet": "<video src=\"media/clinic-tour.mp4\" height=\"270\" width=\"480\" preload=\"none\" controls=\"\">",
+     "xpath": "/html[1]/body[1]/main[1]/video[1]",
+     "el": {
+      "xpath": "/html[1]/body[1]/main[1]/video[1]",
+      "selector": "body > main > video",
+      "sig": "main main > video",
+      "html": "<video controls=\"\" preload=\"none\" width=\"480\" height=\"270\" src=\"media/clinic-tour.mp4\">",
+      "rect": {
+       "x": 184,
+       "y": 279,
+       "w": 480,
+       "h": 270
+      }
+     }
+    },
+    {
+     "ruleId": "text_sensory_misuse",
+     "value": [
+      "VIOLATION",
+      "POTENTIAL"
+     ],
+     "reasonId": "potential_position",
+     "message": "Confirm the word(s) 'above' of the user instruction is used to indicate a logical rather than visual position",
+     "snippet": "<p>",
+     "xpath": "/html[1]/body[1]/main[1]/p[2]",
+     "el": {
+      "xpath": "/html[1]/body[1]/main[1]/p[2]",
+      "selector": "body > main > p:nth-of-type(2)",
+      "sig": "main main > p",
+      "html": "<p>We are on the first floor above the pharmacy, two minutes fr…",
+      "rect": {
+       "x": 184,
+       "y": 629,
+       "w": 912,
+       "h": 22
+      }
+     }
+    },
+    {
+     "ruleId": "text_contrast_sufficient",
+     "value": [
+      "VIOLATION",
+      "FAIL"
+     ],
+     "reasonId": "fail_contrast",
+     "message": "Text contrast of 2.59 with its background is less than the WCAG AA minimum requirements for text of size 16px and weight of 400",
+     "snippet": "<p>",
+     "xpath": "/html[1]/body[1]/footer[1]/p[1]",
+     "el": {
+      "xpath": "/html[1]/body[1]/footer[1]/p[1]",
+      "selector": "body > footer > p:nth-of-type(1)",
+      "sig": "footer footer > p",
+      "html": "<p>Harbour Dental, 12 Wharf Street, Sydney NSW 2000. Open Monda…",
+      "rect": {
+       "x": 24,
+       "y": 875,
+       "w": 1232,
+       "h": 22
+      }
+     }
+    },
+    {
+     "ruleId": "aria_content_in_landmark",
+     "value": [
+      "RECOMMENDATION",
+      "FAIL"
+     ],
+     "reasonId": "Fail_1",
+     "message": "Content is not within a landmark element",
+     "snippet": "<a href=\"tel:+61290000000\">",
+     "xpath": "/html[1]/body[1]/div[1]/a[1]",
+     "el": {
+      "xpath": "/html[1]/body[1]/div[1]/a[1]",
+      "selector": "body > div:nth-of-type(1) > a",
+      "sig": "body div.callbar > a",
+      "html": "<a href=\"tel:+61290000000\">Call 02 9000 0000",
+      "rect": {
+       "x": 627,
+       "y": 757,
+       "w": 132,
+       "h": 22
+      }
+     }
+    },
+    {
+     "ruleId": "aria_content_in_landmark",
+     "value": [
+      "RECOMMENDATION",
+      "FAIL"
+     ],
+     "reasonId": "Fail_1",
+     "message": "Content is not within a landmark element",
+     "snippet": "<button id=\"cookie-accept\">",
+     "xpath": "/html[1]/body[1]/div[2]/button[1]",
+     "el": {
+      "xpath": "/html[1]/body[1]/div[2]/button[1]",
+      "selector": "#cookie-accept",
+      "sig": "body div.cookie > button#cookie-accept",
+      "html": "<button id=\"cookie-accept\">Accept",
+      "rect": {
+       "x": 370,
+       "y": 686,
+       "w": 57,
+       "h": 21
+      }
+     }
+    }
+   ],
+   "truncated": false,
+   "passes": {
+    "html_lang_valid": 1,
+    "html_lang_exists": 1,
+    "html_skipnav_exists": 1,
+    "img_alt_background": 30,
+    "aria_content_in_landmark": 28,
+    "style_viewport_resizable": 1,
+    "skip_main_exists": 1,
+    "skip_main_described": 1,
+    "text_quoted_correctly": 29,
+    "text_whitespace_valid": 29,
+    "aria_banner_single": 1,
+    "aria_banner_label_unique": 1,
+    "element_tabbable_unobscured": 12,
+    "element_tabbable_visible": 12,
+    "style_focus_visible": 12,
+    "target_spacing_sufficient": 12,
+    "widget_tabbable_exists": 11,
+    "widget_tabbable_single": 11,
+    "img_alt_misuse": 1,
+    "aria_descendant_valid": 2,
+    "aria_navigation_label_unique": 1,
+    "a_text_purpose": 9,
+    "heading_content_exists": 4,
+    "heading_markup_misuse": 4,
+    "text_contrast_sufficient": 13,
+    "aria_accessiblename_exists": 4,
+    "aria_contentinfo_misuse": 1,
+    "aria_contentinfo_single": 1,
+    "aria_contentinfo_label_unique": 1,
+    "input_label_exists": 1,
+    "input_label_visible": 1
+   },
+   "status": "ran",
+   "seconds": 0.1
+  },
+  "htmlcs": {
+   "standard": "WCAG2AA",
+   "messages": [
+    {
+     "type": 1,
+     "code": "WCAG2AA.Principle2.Guideline2_4.2_4_2.H25.1.EmptyTitle",
+     "msg": "The title element in the head section should be non-empty.",
+     "el": {
+      "xpath": "/html[1]/head[1]/title[1]",
+      "selector": "head > title",
+      "sig": "body head > title",
+      "html": "<title>",
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "w": 0,
+       "h": 0
+      }
+     }
+    },
+    {
+     "type": 1,
+     "code": "WCAG2AA.Principle1.Guideline1_1.1_1_1.H30.2",
+     "msg": "Img element is the only content of the link, but is missing alt text. The alt text should describe the purpose of the link.",
+     "el": {
+      "xpath": "/html[1]/body[1]/header[1]/a[1]",
+      "selector": "body > header > a",
+      "sig": "header header > a",
+      "html": "<a href=\"index.html\">",
+      "rect": {
+       "x": 24,
+       "y": 12,
+       "w": 160,
+       "h": 46
+      }
+     }
+    },
+    {
+     "type": 1,
+     "code": "WCAG2AA.Principle1.Guideline1_4.1_4_3.G18.Fail",
+     "msg": "This element has insufficient contrast at this conformance level. Expected a contrast ratio of at least 4.5:1, but text in this element has a contrast ratio of 2.88:1. Recommendation:  change text colour to #6a7884.",
+     "el": {
+      "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[1]",
+      "selector": "body > header > nav > a:nth-of-type(1)",
+      "sig": "nav nav > a",
+      "html": "<a href=\"index.html\">Home",
+      "rect": {
+       "x": 1000,
+       "y": 26,
+       "w": 43,
+       "h": 17
+      }
+     }
+    },
+    {
+     "type": 1,
+     "code": "WCAG2AA.Principle1.Guideline1_4.1_4_3.G18.Fail",
+     "msg": "This element has insufficient contrast at this conformance level. Expected a contrast ratio of at least 4.5:1, but text in this element has a contrast ratio of 2.88:1. Recommendation:  change text colour to #6a7884.",
+     "el": {
+      "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[2]",
+      "selector": "body > header > nav > a:nth-of-type(2)",
+      "sig": "nav nav > a",
+      "html": "<a href=\"services.html\">Services",
+      "rect": {
+       "x": 1063,
+       "y": 26,
+       "w": 61,
+       "h": 17
+      }
+     }
+    },
+    {
+     "type": 1,
+     "code": "WCAG2AA.Principle1.Guideline1_4.1_4_3.G18.Fail",
+     "msg": "This element has insufficient contrast at this conformance level. Expected a contrast ratio of at least 4.5:1, but text in this element has a contrast ratio of 2.88:1. Recommendation:  change text colour to #6a7884.",
+     "el": {
+      "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[3]",
+      "selector": "body > header > nav > a:nth-of-type(3)",
+      "sig": "nav nav > a",
+      "html": "<a href=\"book.html\">Book",
+      "rect": {
+       "x": 1144,
+       "y": 26,
+       "w": 36,
+       "h": 17
+      }
+     }
+    },
+    {
+     "type": 1,
+     "code": "WCAG2AA.Principle1.Guideline1_4.1_4_3.G18.Fail",
+     "msg": "This element has insufficient contrast at this conformance level. Expected a contrast ratio of at least 4.5:1, but text in this element has a contrast ratio of 2.88:1. Recommendation:  change text colour to #6a7884.",
+     "el": {
+      "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[4]",
+      "selector": "body > header > nav > a:nth-of-type(4)",
+      "sig": "nav nav > a",
+      "html": "<a href=\"contact.html\">Contact",
+      "rect": {
+       "x": 1201,
+       "y": 26,
+       "w": 55,
+       "h": 17
+      }
+     }
+    },
+    {
+     "type": 1,
+     "code": "WCAG2AA.Principle1.Guideline1_4.1_4_3.G18.Fail",
+     "msg": "This element has insufficient contrast at this conformance level. Expected a contrast ratio of at least 4.5:1, but text in this element has a contrast ratio of 2.59:1. Recommendation:  change text colour to #707070.",
+     "el": {
+      "xpath": "/html[1]/body[1]/footer[1]/p[1]",
+      "selector": "body > footer > p:nth-of-type(1)",
+      "sig": "footer footer > p",
+      "html": "<p>Harbour Dental, 12 Wharf Street, Sydney NSW 2000. Open Monda…",
+      "rect": {
+       "x": 24,
+       "y": 875,
+       "w": 1232,
+       "h": 22
+      }
+     }
+    },
+    {
+     "type": 2,
+     "code": "WCAG2AA.Principle1.Guideline1_3.1_3_1.H48",
+     "msg": "If this element contains a navigation section, it is recommended that it be marked up as a list.",
+     "el": {
+      "xpath": "/html[1]/body[1]/footer[1]/p[2]",
+      "selector": "body > footer > p:nth-of-type(2)",
+      "sig": "footer footer > p",
+      "html": "<p>ContactFeesPrivacy",
+      "rect": {
+       "x": 24,
+       "y": 913,
+       "w": 1232,
+       "h": 22
+      }
+     }
+    },
+    {
+     "type": 2,
+     "code": "WCAG2AA.Principle1.Guideline1_4.1_4_10.C32,C31,C33,C38,SCR34,G206",
+     "msg": "This element has \"position: fixed\". This may require scrolling in two dimensions, which is considered a failure of this Success Criterion.",
+     "el": {
+      "xpath": "/html[1]/body[1]/div[1]",
+      "selector": "body > div:nth-of-type(1)",
+      "sig": "body body > div.callbar",
+      "html": "<div class=\"callbar\">",
+      "rect": {
+       "x": 0,
+       "y": 736,
+       "w": 1280,
+       "h": 64
+      }
+     }
+    },
+    {
+     "type": 2,
+     "code": "WCAG2AA.Principle1.Guideline1_4.1_4_10.C32,C31,C33,C38,SCR34,G206",
+     "msg": "This element has \"position: fixed\". This may require scrolling in two dimensions, which is considered a failure of this Success Criterion.",
+     "el": {
+      "xpath": "/html[1]/body[1]/div[2]",
+      "selector": "body > div:nth-of-type(2)",
+      "sig": "body body > div.cookie",
+      "html": "<div class=\"cookie\">",
+      "rect": {
+       "x": 16,
+       "y": 672,
+       "w": 1248,
+       "h": 48
+      }
+     }
+    }
+   ],
+   "truncated": false,
+   "notices": {
+    "WCAG2AA.Principle2.Guideline2_4.2_4_4.H77,H78,H79,H80,H81": 10,
+    "WCAG2AA.Principle1.Guideline1_1.1_1_1.G73,G74": 1,
+    "WCAG2AA.Principle1.Guideline1_2.1_2_1.G159,G166": 1,
+    "WCAG2AA.Principle1.Guideline1_2.1_2_2.G87,G93": 1,
+    "WCAG2AA.Principle1.Guideline1_2.1_2_4.G9,G87,G93": 1,
+    "WCAG2AA.Principle1.Guideline1_2.1_2_5.G78,G173,G8": 1,
+    "WCAG2AA.Principle1.Guideline1_4.1_4_2.F23": 1,
+    "WCAG2AA.Principle3.Guideline3_2.3_2_1.G107": 1,
+    "WCAG2AA.Principle1.Guideline1_3.1_3_2.G57": 1,
+    "WCAG2AA.Principle1.Guideline1_3.1_3_3.G96": 1,
+    "WCAG2AA.Principle1.Guideline1_3.1_3_4.": 1,
+    "WCAG2AA.Principle1.Guideline1_4.1_4_1.G14,G182": 1,
+    "WCAG2AA.Principle1.Guideline1_4.1_4_4.G142": 1,
+    "WCAG2AA.Principle1.Guideline1_4.1_4_5.G140,C22,C30.AALevel": 1,
+    "WCAG2AA.Principle1.Guideline1_4.1_4_10.C32,C31,C33,C38,SCR34,G206": 1,
+    "WCAG2AA.Principle1.Guideline1_4.1_4_11.G195,G207,G18,G145,G174,F78": 1,
+    "WCAG2AA.Principle1.Guideline1_4.1_4_12.C36,C35": 1,
+    "WCAG2AA.Principle1.Guideline1_4.1_4_13.F95": 1,
+    "WCAG2AA.Principle2.Guideline2_1.2_1_4.": 1,
+    "WCAG2AA.Principle2.Guideline2_2.2_2_2.SCR33,SCR22,G187,G152,G186,G191": 1,
+    "WCAG2AA.Principle2.Guideline2_3.2_3_1.G19,G176": 1,
+    "WCAG2AA.Principle2.Guideline2_4.2_4_1.G1,G123,G124,H69": 1,
+    "WCAG2AA.Principle2.Guideline2_4.2_4_5.G125,G64,G63,G161,G126,G185": 1,
+    "WCAG2AA.Principle2.Guideline2_4.2_4_6.G130,G131": 1,
+    "WCAG2AA.Principle2.Guideline2_4.2_4_7.G149,G165,G195,C15,SCR31": 1,
+    "WCAG2AA.Principle2.Guideline2_5.2_5_1.": 1,
+    "WCAG2AA.Principle2.Guideline2_5.2_5_2.": 1,
+    "WCAG2AA.Principle2.Guideline2_5.2_5_3.F96": 1,
+    "WCAG2AA.Principle2.Guideline2_5.2_5_4.": 1,
+    "WCAG2AA.Principle3.Guideline3_1.3_1_2.H58": 1,
+    "WCAG2AA.Principle3.Guideline3_2.3_2_3.G61": 1,
+    "WCAG2AA.Principle3.Guideline3_2.3_2_4.G197": 1,
+    "WCAG2AA.Principle4.Guideline4_1.4_1_3.": 1
+   },
+   "status": "ran",
+   "seconds": 0.04
+  }
+ },
+ "probes": {
+  "keyboard": {
+   "presses": 11,
+   "stops": [
+    {
+     "xpath": "/html[1]/body[1]/header[1]/a[1]",
+     "selector": "body > header > a",
+     "sig": "header header > a",
+     "html": "<a href=\"index.html\">",
+     "rect": {
+      "x": 24,
+      "y": 12,
+      "w": 160,
+      "h": 46
+     },
+     "obscured": {
+      "covered": 0,
+      "total": 9,
+      "by": null
+     },
+     "tabindex": null,
+     "doc_y": 12,
+     "in_dialog": false,
+     "indicator": {
+      "changed_px": 848,
+      "perimeter": 412
+     }
+    },
+    {
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[1]",
+     "selector": "body > header > nav > a:nth-of-type(1)",
+     "sig": "nav nav > a",
+     "html": "<a href=\"index.html\">Home",
+     "rect": {
+      "x": 1000,
+      "y": 26,
+      "w": 43,
+      "h": 17
+     },
+     "obscured": {
+      "covered": 0,
+      "total": 9,
+      "by": null
+     },
+     "tabindex": null,
+     "doc_y": 26,
+     "in_dialog": false,
+     "indicator": {
+      "changed_px": 0,
+      "perimeter": 120
+     }
+    },
+    {
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[2]",
+     "selector": "body > header > nav > a:nth-of-type(2)",
+     "sig": "nav nav > a",
+     "html": "<a href=\"services.html\">Services",
+     "rect": {
+      "x": 1063,
+      "y": 26,
+      "w": 61,
+      "h": 17
+     },
+     "obscured": {
+      "covered": 0,
+      "total": 9,
+      "by": null
+     },
+     "tabindex": null,
+     "doc_y": 26,
+     "in_dialog": false,
+     "indicator": {
+      "changed_px": 0,
+      "perimeter": 156
+     }
+    },
+    {
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[3]",
+     "selector": "body > header > nav > a:nth-of-type(3)",
+     "sig": "nav nav > a",
+     "html": "<a href=\"book.html\">Book",
+     "rect": {
+      "x": 1144,
+      "y": 26,
+      "w": 36,
+      "h": 17
+     },
+     "obscured": {
+      "covered": 0,
+      "total": 9,
+      "by": null
+     },
+     "tabindex": null,
+     "doc_y": 26,
+     "in_dialog": false,
+     "indicator": {
+      "changed_px": 0,
+      "perimeter": 106
+     }
+    },
+    {
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[4]",
+     "selector": "body > header > nav > a:nth-of-type(4)",
+     "sig": "nav nav > a",
+     "html": "<a href=\"contact.html\">Contact",
+     "rect": {
+      "x": 1201,
+      "y": 26,
+      "w": 55,
+      "h": 17
+     },
+     "obscured": {
+      "covered": 0,
+      "total": 9,
+      "by": null
+     },
+     "tabindex": null,
+     "doc_y": 26,
+     "in_dialog": false,
+     "indicator": {
+      "changed_px": 0,
+      "perimeter": 144
+     }
+    },
+    {
+     "xpath": "/html[1]/body[1]/main[1]/video[1]",
+     "selector": "body > main > video",
+     "sig": "main main > video",
+     "html": "<video controls=\"\" preload=\"none\" width=\"480\" height=\"270\" src=\"media/clinic-tour.mp4\">",
+     "rect": {
+      "x": 184,
+      "y": 279,
+      "w": 480,
+      "h": 270
+     },
+     "obscured": {
+      "covered": 0,
+      "total": 9,
+      "by": null
+     },
+     "tabindex": null,
+     "doc_y": 279,
+     "in_dialog": false,
+     "indicator": {
+      "changed_px": 2909,
+      "perimeter": 1500
+     }
+    },
+    {
+     "xpath": "/html[1]/body[1]/main[1]/p[2]/a[1]",
+     "selector": "body > main > p:nth-of-type(2) > a",
+     "sig": "main p > a",
+     "html": "<a href=\"https://maps.example/harbour-dental\">click here",
+     "rect": {
+      "x": 875,
+      "y": 631,
+      "w": 68,
+      "h": 17
+     },
+     "obscured": {
+      "covered": 0,
+      "total": 9,
+      "by": null
+     },
+     "tabindex": null,
+     "doc_y": 631,
+     "in_dialog": false,
+     "indicator": {
+      "changed_px": 361,
+      "perimeter": 170
+     }
+    },
+    {
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[1]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(1)",
+     "sig": "footer p > a",
+     "html": "<a href=\"contact.html\">Contact",
+     "rect": {
+      "x": 24,
+      "y": 739,
+      "w": 55,
+      "h": 17
+     },
+     "obscured": {
+      "covered": 9,
+      "total": 9,
+      "by": {
+       "xpath": "/html[1]/body[1]/div[1]",
+       "selector": "body > div",
+       "sig": "body body > div.callbar",
+       "html": "<div class=\"callbar\">",
+       "rect": {
+        "x": 0,
+        "y": 736,
+        "w": 1280,
+        "h": 64
+       }
+      }
+     },
+     "tabindex": null,
+     "doc_y": 915,
+     "in_dialog": false,
+     "indicator": {
+      "changed_px": 0,
+      "perimeter": 144
+     }
+    },
+    {
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[2]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(2)",
+     "sig": "footer p > a",
+     "html": "<a href=\"services.html#fees\">Fees",
+     "rect": {
+      "x": 95,
+      "y": 739,
+      "w": 36,
+      "h": 17
+     },
+     "obscured": {
+      "covered": 9,
+      "total": 9,
+      "by": {
+       "xpath": "/html[1]/body[1]/div[1]",
+       "selector": "body > div",
+       "sig": "body body > div.callbar",
+       "html": "<div class=\"callbar\">",
+       "rect": {
+        "x": 0,
+        "y": 736,
+        "w": 1280,
+        "h": 64
+       }
+      }
+     },
+     "tabindex": null,
+     "doc_y": 915,
+     "in_dialog": false,
+     "indicator": {
+      "changed_px": 0,
+      "perimeter": 106
+     }
+    },
+    {
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[3]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(3)",
+     "sig": "footer p > a",
+     "html": "<a href=\"contact.html#privacy\">Privacy",
+     "rect": {
+      "x": 147,
+      "y": 739,
+      "w": 52,
+      "h": 17
+     },
+     "obscured": {
+      "covered": 9,
+      "total": 9,
+      "by": {
+       "xpath": "/html[1]/body[1]/div[1]",
+       "selector": "body > div",
+       "sig": "body body > div.callbar",
+       "html": "<div class=\"callbar\">",
+       "rect": {
+        "x": 0,
+        "y": 736,
+        "w": 1280,
+        "h": 64
+       }
+      }
+     },
+     "tabindex": null,
+     "doc_y": 915,
+     "in_dialog": false,
+     "indicator": {
+      "changed_px": 0,
+      "perimeter": 138
+     }
+    },
+    {
+     "xpath": "/html[1]/body[1]/div[1]/a[1]",
+     "selector": "body > div > a",
+     "sig": "body div.callbar > a",
+     "html": "<a href=\"tel:+61290000000\">Call 02 9000 0000",
+     "rect": {
+      "x": 627,
+      "y": 757,
+      "w": 132,
+      "h": 22
+     },
+     "obscured": {
+      "covered": 0,
+      "total": 9,
+      "by": null
+     },
+     "tabindex": null,
+     "doc_y": 933,
+     "in_dialog": false,
+     "indicator": {
+      "changed_px": 960,
+      "perimeter": 308
+     }
+    }
+   ],
+   "focusable_count": 10,
+   "unreached": [],
+   "pointer_only": [],
+   "trap": null,
+   "positive_tabindex": [],
+   "jumps": [],
+   "skip_link_first": false,
+   "status": "ran",
+   "seconds": 1.94
+  },
+  "focus_visible": {
+   "note": "measured during the keyboard probe",
+   "status": "ran",
+   "seconds": 0.0
+  },
+  "text_spacing": {
+   "clipped": [],
+   "clipped_before": 0,
+   "status": "ran",
+   "seconds": 0.22
+  },
+  "resize_text": {
+   "emulation": "640x400 CSS px at device scale 2 (200% of 1280x800)",
+   "clipped": [],
+   "viewport_meta": "width=device-width, initial-scale=1",
+   "zoom_disabled": false,
+   "screenshot": "p04__1280x800-zoom200.png",
+   "status": "ran",
+   "seconds": 1.21
+  },
+  "target_size": {
+   "targets": 10,
+   "undersized": [
+    {
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[1]",
+     "selector": "body > header > nav > a:nth-of-type(1)",
+     "sig": "nav nav > a",
+     "html": "<a href=\"index.html\">Home",
+     "rect": {
+      "x": 1000,
+      "y": -150,
+      "w": 43,
+      "h": 17
+     },
+     "width": 42.7,
+     "height": 17,
+     "inline": false,
+     "spacing_ok": true,
+     "conflicts_with": null
+    },
+    {
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[2]",
+     "selector": "body > header > nav > a:nth-of-type(2)",
+     "sig": "nav nav > a",
+     "html": "<a href=\"services.html\">Services",
+     "rect": {
+      "x": 1063,
+      "y": -150,
+      "w": 61,
+      "h": 17
+     },
+     "width": 61.4,
+     "height": 17,
+     "inline": false,
+     "spacing_ok": true,
+     "conflicts_with": null
+    },
+    {
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[3]",
+     "selector": "body > header > nav > a:nth-of-type(3)",
+     "sig": "nav nav > a",
+     "html": "<a href=\"book.html\">Book",
+     "rect": {
+      "x": 1144,
+      "y": -150,
+      "w": 36,
+      "h": 17
+     },
+     "width": 36.5,
+     "height": 17,
+     "inline": false,
+     "spacing_ok": true,
+     "conflicts_with": null
+    },
+    {
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[4]",
+     "selector": "body > header > nav > a:nth-of-type(4)",
+     "sig": "nav nav > a",
+     "html": "<a href=\"contact.html\">Contact",
+     "rect": {
+      "x": 1201,
+      "y": -150,
+      "w": 55,
+      "h": 17
+     },
+     "width": 55.1,
+     "height": 17,
+     "inline": false,
+     "spacing_ok": true,
+     "conflicts_with": null
+    },
+    {
+     "xpath": "/html[1]/body[1]/main[1]/p[2]/a[1]",
+     "selector": "body > main > p:nth-of-type(2) > a",
+     "sig": "main p > a",
+     "html": "<a href=\"https://maps.example/harbour-dental\">click here",
+     "rect": {
+      "x": 875,
+      "y": 455,
+      "w": 68,
+      "h": 17
+     },
+     "width": 67.6,
+     "height": 17,
+     "inline": true,
+     "spacing_ok": true,
+     "conflicts_with": null
+    },
+    {
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[1]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(1)",
+     "sig": "footer p > a",
+     "html": "<a href=\"contact.html\">Contact",
+     "rect": {
+      "x": 24,
+      "y": 739,
+      "w": 55,
+      "h": 17
+     },
+     "width": 55.1,
+     "height": 17,
+     "inline": false,
+     "spacing_ok": true,
+     "conflicts_with": null
+    },
+    {
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[2]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(2)",
+     "sig": "footer p > a",
+     "html": "<a href=\"services.html#fees\">Fees",
+     "rect": {
+      "x": 95,
+      "y": 739,
+      "w": 36,
+      "h": 17
+     },
+     "width": 35.6,
+     "height": 17,
+     "inline": false,
+     "spacing_ok": true,
+     "conflicts_with": null
+    },
+    {
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[3]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(3)",
+     "sig": "footer p > a",
+     "html": "<a href=\"contact.html#privacy\">Privacy",
+     "rect": {
+      "x": 147,
+      "y": 739,
+      "w": 52,
+      "h": 17
+     },
+     "width": 52.5,
+     "height": 17,
+     "inline": false,
+     "spacing_ok": true,
+     "conflicts_with": null
+    },
+    {
+     "xpath": "/html[1]/body[1]/div[1]/a[1]",
+     "selector": "body > div > a",
+     "sig": "body div.callbar > a",
+     "html": "<a href=\"tel:+61290000000\">Call 02 9000 0000",
+     "rect": {
+      "x": 627,
+      "y": 757,
+      "w": 132,
+      "h": 22
+     },
+     "width": 131.7,
+     "height": 22.4,
+     "inline": false,
+     "spacing_ok": true,
+     "conflicts_with": null
+    }
+   ],
+   "under_44": 9,
+   "status": "ran",
+   "seconds": 0.01
+  },
+  "hover_focus": {
+   "checked": 10,
+   "popups": [],
+   "status": "ran",
+   "seconds": 10.76
+  },
+  "motion": {
+   "window": "changes between 5.0 s and 7.5 s after load",
+   "normal": {
+    "changing": [],
+    "infinite_animations": [],
+    "legacy": []
+   },
+   "reduced_motion": {
+    "changing": [],
+    "infinite_animations": [],
+    "legacy": []
+   },
+   "status": "ran",
+   "seconds": 17.23
+  },
+  "a11y_tree": {
+   "snapshot": "p04__1280x800.txt",
+   "bytes": 1203,
+   "headings": [
+    {
+     "level": 1,
+     "text": "Contact us",
+     "xpath": "/html[1]/body[1]/main[1]/h1[1]"
+    },
+    {
+     "level": 2,
+     "text": "Take a tour of the clinic",
+     "xpath": "/html[1]/body[1]/main[1]/h2[1]"
+    },
+    {
+     "level": 2,
+     "text": "Finding us",
+     "xpath": "/html[1]/body[1]/main[1]/h2[2]"
+    },
+    {
+     "level": 2,
+     "text": "Privacy",
+     "xpath": "/html[1]/body[1]/main[1]/h2[3]"
+    }
+   ],
+   "landmarks": [
+    {
+     "role": "header",
+     "label": null,
+     "xpath": "/html[1]/body[1]/header[1]"
+    },
+    {
+     "role": "nav",
+     "label": null,
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]"
+    },
+    {
+     "role": "main",
+     "label": null,
+     "xpath": "/html[1]/body[1]/main[1]"
+    },
+    {
+     "role": "footer",
+     "label": null,
+     "xpath": "/html[1]/body[1]/footer[1]"
+    }
+   ],
+   "status": "ran",
+   "seconds": 0.03
+  },
+  "language": {
+   "lang": "en",
+   "valid": true,
+   "words": 77,
+   "detected": null,
+   "counts": {
+    "en": 18,
+    "fr": 0,
+    "de": 0,
+    "es": 0,
+    "it": 0,
+    "nl": 0,
+    "pt": 0
+   },
+   "status": "ran",
+   "seconds": 0.0
+  },
+  "media": {
+   "items": [
+    {
+     "xpath": "/html[1]/body[1]/main[1]/video[1]",
+     "selector": "body > main > video",
+     "sig": "main main > video",
+     "html": "<video controls=\"\" preload=\"none\" width=\"480\" height=\"270\" src=\"media/clinic-tour.mp4\">",
+     "rect": {
+      "x": 184,
+      "y": 279,
+      "w": 480,
+      "h": 270
+     },
+     "kind": "video",
+     "autoplay": false,
+     "muted": false,
+     "controls": true,
+     "loop": false,
+     "duration": null,
+     "tracks": []
+    }
+   ],
+   "embeds": [],
+   "status": "ran",
+   "seconds": 0.0
+  }
+ },
+ "consent_dismissed": true
+}

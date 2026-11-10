@@ -1,6 +1,6 @@
 # Design: `wcag-auditor-skill`
 
-Status: Draft. Build order: 6.
+Status: Built (v1.0.0), see "As built" at the end. Build order: 6.
 
 ## Mission
 
@@ -221,3 +221,52 @@ wcag-auditor-skill/
           normalize.py  merge_findings.py  validate_audit.py  render_report.py   # stdlib
   examples/audit.example.json
 ```
+
+## As built (v1.0.0)
+
+Differences from the draft above, and decisions made while building:
+
+- **Engines** are pinned in `data/engines.lock.json`: axe-core 4.14.0, IBM Equal Access
+  (`accessibility-checker-engine`) 4.0.34, HTML_CodeSniffer 2.5.1 and, optionally, the Nu HTML
+  Checker (`vnu-jar`) 26.10.12. `fetch_engines.py` downloads the npm tarball, checks the
+  registry's SHA-512 integrity, reads out only the one file needed, and checks its SHA-256 (the
+  vnu jar has no pinned SHA-256; its hash is recorded on first fetch and checked afterwards).
+  `run_audit.py` re-verifies each file before injecting it. HTML_CodeSniffer's last release
+  predates WCAG 2.2, so it contributes nothing for the 2.2 additions.
+- **`data/rule-map.json` is generated from the engines' own metadata**: axe `wcagNNN` tags and
+  `actIds`, IBM's WCAG ruleset checkpoints and the ACT column of its rule help. HTMLCS SCs are
+  parsed from the message code. Probe result codes are mapped there too.
+- **Severity is per failure pattern** (`failure_patterns` in `data/wcag-sc.json`, with a default
+  severity each), as planned. A deviation needs `severity_override_reason`. The critical-path
+  raise applies when the finding affects what the step needs, not to everything on that page.
+- **Priority** is numeric: severity weight (4/3/2/1) x reach (3 on at least two pages and half
+  the sample, 2 on two or more, 1 on one) x leverage (2 when one fix covers two or more
+  instances). P0 >= 24, P1 >= 12, P2 >= 6, with floors (critical at least P1, serious at least P2,
+  `blocks_critical_path` is P0) and a cap (agent judgment at most P1). The critical path raises
+  severity only, so it isn't counted twice.
+- **Confidence** `high` needs two agreeing failing sources or a failing rule that implements an
+  ACT rule. A probe on its own is `medium`.
+- **Merging** has two stages: per element (same page and XPath, or an element and its parent or
+  grandparent, such as an image and its link, with overlapping SCs) and then per component
+  signature across pages. Candidates are triaged one by one, like the other finding skills; the
+  validator's `--candidates` check makes sure none is missed.
+- **Probes** as built: keyboard traversal with trap detection (no new element for 15 presses,
+  then Shift+Tab and Escape) and DevTools-protocol listener checks for clickable elements that
+  aren't focusable; focus visibility by comparing screenshots of each element focused and after
+  focus moves on (no blur, which would disturb the Tab sequence); obstruction by sampling nine
+  points of the focused element; reflow; text spacing (only text clipped more than before);
+  200% zoom as half the viewport at device scale 2; target size with the 24 px circle spacing
+  test; hover content; motion between 5.0 s and 7.5 s after load (2.2.2 is about movement that
+  lasts more than five seconds), also with reduced motion; accessibility-tree snapshots with
+  Playwright's `aria_snapshot`; language by stop-word counts; and a media inventory. Pixel
+  comparison uses a stdlib PNG decoder.
+- **Evidence completeness** is recomputed from a `checks` matrix in `run.json` (page x viewport x
+  required engine or applicable probe). The validator's `--run` check compares the report's tool
+  statuses, check matrix, sample and browser version with `run.json`.
+- **Not built in v1:** Section 508 mapping (as planned), a crawler that renders SPAs before
+  collecting links (the crawl reads links after load and settle), journey-file input for
+  critical paths (steps are given in the config), and EARL/JSON-LD export.
+- **Example:** `examples/harbour-dental/` is a static site with planted barriers;
+  `examples/run/` is a real run (Chromium 156, Playwright 1.64.1). The Nu HTML Checker did not
+  run: downloading and executing its jar was not permitted in the environment that produced the
+  example, and the report records that.

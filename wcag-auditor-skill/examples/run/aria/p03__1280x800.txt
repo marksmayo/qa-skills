@@ -1,0 +1,56 @@
+- banner:
+  - link:
+    - /url: index.html
+    - img
+  - navigation:
+    - link "Home":
+      - /url: index.html
+    - link "Services":
+      - /url: services.html
+    - link "Book":
+      - /url: book.html
+    - link "Contact":
+      - /url: contact.html
+- main:
+  - heading "Services and fees" [level=1]
+  - paragraph: We offer general and family dentistry for patients of all ages. Our dentists will explain your options and the cost before any treatment starts, and you can ask for a written quote at any time.
+  - text: General dentistry
+  - paragraph: Check-ups, cleans, fillings, root canal treatment and extractions. We see children from their first birthday and we are happy to see nervous patients at a slower pace.
+  - text: Cosmetic dentistry
+  - paragraph: Whitening, veneers and tooth-coloured fillings. Ask us for a consultation and we will talk you through what is possible for your teeth.
+  - text: Fees
+  - table:
+    - rowgroup:
+      - row "Treatment From Health fund item Usual time":
+        - columnheader "Treatment"
+        - columnheader "From"
+        - columnheader "Health fund item"
+        - columnheader "Usual time"
+      - row "Check-up and clean $199 011, 114, 121 45 minutes":
+        - cell "Check-up and clean"
+        - cell "$199"
+        - cell "011, 114, 121"
+        - cell "45 minutes"
+      - row "Filling (one surface) $180 521 30 minutes":
+        - cell "Filling (one surface)"
+        - cell "$180"
+        - cell "521"
+        - cell "30 minutes"
+      - row "Take-home whitening $450 118 Two visits":
+        - cell "Take-home whitening"
+        - cell "$450"
+        - cell "118"
+        - cell "Two visits"
+  - paragraph: Prices are a guide and depend on your treatment. We accept all major health funds and you can claim on the spot with your card.
+- contentinfo:
+  - paragraph: Harbour Dental, 12 Wharf Street, Sydney NSW 2000. Open Monday to Saturday.
+  - paragraph:
+    - link "Contact":
+      - /url: contact.html
+    - link "Fees":
+      - /url: services.html#fees
+    - link "Privacy":
+      - /url: contact.html#privacy
+- text: Emergency?
+- link "Call 02 9000 0000":
+  - /url: tel:+61290000000

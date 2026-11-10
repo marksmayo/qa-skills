@@ -1,0 +1,7547 @@
+{
+ "tool": "merge_findings.py",
+ "wcag_version": "2.2",
+ "level": "AA",
+ "item_count": 514,
+ "candidates": [
+  {
+   "id": "C-001",
+   "sc": [
+    "1.1.1"
+   ],
+   "kind": "wcag",
+   "outcome": "failed",
+   "component": "header a > img",
+   "suggested_confidence": "high",
+   "agreeing_sources": [
+    "axe-core",
+    "htmlcs",
+    "ibm-equal-access"
+   ],
+   "evidence_type": "tool",
+   "pattern": "1.1.1-functional-image-no-name",
+   "default_severity": "critical",
+   "non_interference": false,
+   "pages": [
+    "p01",
+    "p02",
+    "p03",
+    "p04"
+   ],
+   "instance_count": 4,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/header[1]/a[1]/img[1]",
+     "selector": "body > header > a > img",
+     "html": "<img src=\"logo.svg\" width=\"160\" height=\"40\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0012",
+      "N-0021",
+      "N-0034",
+      "N-0072",
+      "N-0085",
+      "N-0095",
+      "N-0127",
+      "N-0138",
+      "N-0155"
+     ]
+    },
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/header[1]/a[1]/img[1]",
+     "selector": "body > header > a > img",
+     "html": "<img src=\"logo.svg\" width=\"160\" height=\"40\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0193",
+      "N-0200",
+      "N-0217",
+      "N-0245",
+      "N-0253",
+      "N-0270",
+      "N-0297",
+      "N-0308",
+      "N-0323"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/header[1]/a[1]/img[1]",
+     "selector": "body > header > a > img",
+     "html": "<img src=\"logo.svg\" width=\"160\" height=\"40\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__1280x800.png",
+     "items": [
+      "N-0345",
+      "N-0352",
+      "N-0363",
+      "N-0387",
+      "N-0410",
+      "N-0418"
+     ]
+    },
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/body[1]/header[1]/a[1]/img[1]",
+     "selector": "body > header > a > img",
+     "html": "<img src=\"logo.svg\" width=\"160\" height=\"40\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__1280x800.png",
+     "items": [
+      "N-0439",
+      "N-0448",
+      "N-0460",
+      "N-0484",
+      "N-0495",
+      "N-0504"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "axe-core",
+     "tool_version": "4.14.0",
+     "rule_id": "image-alt",
+     "act_rules": [
+      "23a2a8"
+     ],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 10,
+     "message": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty\n  Element has no title attribute\n  Element's default semantics were not overridden with role=\"none\" or role=\"presentation\""
+    },
+    {
+     "tool": "ibm-equal-access",
+     "tool_version": "4.0.34",
+     "rule_id": "img_alt_valid",
+     "act_rules": [
+      "23a2a8"
+     ],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 10,
+     "message": "The image has neither an accessible name nor is marked as decorative or redundant"
+    },
+    {
+     "tool": "htmlcs",
+     "tool_version": "2.5.1",
+     "rule_id": "Principle1.Guideline1_1.1_1_1.H30.2",
+     "act_rules": [],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 10,
+     "message": "Img element is the only content of the link, but is missing alt text. The alt text should describe the purpose of the link."
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-002",
+   "sc": [
+    "1.3.1"
+   ],
+   "kind": "wcag",
+   "outcome": "failed",
+   "component": "form div.row > input#name",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [
+    "htmlcs"
+   ],
+   "evidence_type": "tool",
+   "pattern": "1.3.1-form-group-not-associated",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p02"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/main[1]/form[1]/div[1]/input[1]",
+     "selector": "#name",
+     "html": "<input id=\"name\" name=\"name\" placeholder=\"Full name\" required=\"\" class=\"invalid\" style=\"\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0223",
+      "N-0276",
+      "N-0325"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "htmlcs",
+     "tool_version": "2.5.1",
+     "rule_id": "Principle1.Guideline1_3.1_3_1.F68",
+     "act_rules": [],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 3,
+     "message": "This form field should be labelled in some way. Use the label element (either with a \"for\" attribute or wrapped around the form field), or \"title\", \"aria-label\" or \"aria-labelledby\" attributes as appropriate."
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-003",
+   "sc": [
+    "1.3.1"
+   ],
+   "kind": "wcag",
+   "outcome": "failed",
+   "component": "form div.row > label",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [
+    "ibm-equal-access"
+   ],
+   "evidence_type": "tool",
+   "pattern": "1.3.1-form-group-not-associated",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p02"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/main[1]/form[1]/div[3]/label[1]",
+     "selector": "#booking > div:nth-of-type(3) > label",
+     "html": "<label for=\"tel\">Mobile",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0209",
+      "N-0224",
+      "N-0261",
+      "N-0277",
+      "N-0313",
+      "N-0326"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "ibm-equal-access",
+     "tool_version": "4.0.34",
+     "rule_id": "label_ref_valid",
+     "act_rules": [],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 3,
+     "message": "The value \"tel\" of the 'for' attribute is not the 'id' of a valid element"
+    },
+    {
+     "tool": "htmlcs",
+     "tool_version": "2.5.1",
+     "rule_id": "Principle1.Guideline1_3.1_3_1.H44.NonExistentFragment",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 3,
+     "message": "This label's \"for\" attribute contains an ID that does not exist in the document fragment."
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-004",
+   "sc": [
+    "1.4.3"
+   ],
+   "kind": "wcag",
+   "outcome": "failed",
+   "component": "footer footer > p",
+   "suggested_confidence": "high",
+   "agreeing_sources": [
+    "axe-core",
+    "htmlcs",
+    "ibm-equal-access"
+   ],
+   "evidence_type": "tool",
+   "pattern": "1.4.3-body-text-low-contrast",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p01",
+    "p02",
+    "p03",
+    "p04"
+   ],
+   "instance_count": 4,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/footer[1]/p[1]",
+     "selector": "body > footer > p:nth-of-type(1)",
+     "html": "<p>Harbour Dental, 12 Wharf Street, Sydney NSW 2000. Open Monda…",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0011",
+      "N-0031",
+      "N-0047",
+      "N-0071",
+      "N-0092",
+      "N-0104",
+      "N-0126",
+      "N-0153",
+      "N-0168"
+     ]
+    },
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/footer[1]/p[1]",
+     "selector": "body > footer > p:nth-of-type(1)",
+     "html": "<p>Harbour Dental, 12 Wharf Street, Sydney NSW 2000. Open Monda…",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0192",
+      "N-0215",
+      "N-0226",
+      "N-0244",
+      "N-0267",
+      "N-0279",
+      "N-0296",
+      "N-0320",
+      "N-0328"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/footer[1]/p[1]",
+     "selector": "body > footer > p:nth-of-type(1)",
+     "html": "<p>Harbour Dental, 12 Wharf Street, Sydney NSW 2000. Open Monda…",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__1280x800.png",
+     "items": [
+      "N-0344",
+      "N-0360",
+      "N-0369",
+      "N-0386",
+      "N-0415",
+      "N-0420"
+     ]
+    },
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/body[1]/footer[1]/p[1]",
+     "selector": "body > footer > p:nth-of-type(1)",
+     "html": "<p>Harbour Dental, 12 Wharf Street, Sydney NSW 2000. Open Monda…",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__1280x800.png",
+     "items": [
+      "N-0437",
+      "N-0456",
+      "N-0465",
+      "N-0482",
+      "N-0500",
+      "N-0505"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "axe-core",
+     "tool_version": "4.14.0",
+     "rule_id": "color-contrast",
+     "act_rules": [
+      "afw4f7",
+      "09o5cg"
+     ],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 10,
+     "message": "Fix any of the following:\n  Element has insufficient color contrast of 2.59 (foreground color: #999999, background color: #f4f4f4, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1"
+    },
+    {
+     "tool": "ibm-equal-access",
+     "tool_version": "4.0.34",
+     "rule_id": "text_contrast_sufficient",
+     "act_rules": [
+      "afw4f7"
+     ],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 10,
+     "message": "Text contrast of 2.59 with its background is less than the WCAG AA minimum requirements for text of size 16px and weight of 400"
+    },
+    {
+     "tool": "htmlcs",
+     "tool_version": "2.5.1",
+     "rule_id": "Principle1.Guideline1_4.1_4_3.G18.Fail",
+     "act_rules": [],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 10,
+     "message": "This element has insufficient contrast at this conformance level. Expected a contrast ratio of at least 4.5:1, but text in this element has a contrast ratio of 2.59:1. Recommendation:  change text colour to #707070."
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-005",
+   "sc": [
+    "1.4.3"
+   ],
+   "kind": "wcag",
+   "outcome": "failed",
+   "component": "nav nav > a",
+   "suggested_confidence": "high",
+   "agreeing_sources": [
+    "axe-core",
+    "htmlcs",
+    "ibm-equal-access"
+   ],
+   "evidence_type": "tool",
+   "pattern": "1.4.3-body-text-low-contrast",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p01",
+    "p02",
+    "p03",
+    "p04"
+   ],
+   "instance_count": 16,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[1]",
+     "selector": "body > header > nav > a:nth-of-type(1)",
+     "html": "<a href=\"index.html\">Home",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0007",
+      "N-0022",
+      "N-0035",
+      "N-0122",
+      "N-0141",
+      "N-0156"
+     ]
+    },
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[2]",
+     "selector": "body > header > nav > a:nth-of-type(2)",
+     "html": "<a href=\"services.html\">Services",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0008",
+      "N-0023",
+      "N-0036",
+      "N-0123",
+      "N-0143",
+      "N-0157"
+     ]
+    },
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[3]",
+     "selector": "body > header > nav > a:nth-of-type(3)",
+     "html": "<a href=\"book.html\">Book",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0009",
+      "N-0024",
+      "N-0037",
+      "N-0124",
+      "N-0145",
+      "N-0158"
+     ]
+    },
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[4]",
+     "selector": "body > header > nav > a:nth-of-type(4)",
+     "html": "<a href=\"contact.html\">Contact",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0010",
+      "N-0025",
+      "N-0038",
+      "N-0125",
+      "N-0147",
+      "N-0159"
+     ]
+    },
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[1]",
+     "selector": "body > header > nav > a:nth-of-type(1)",
+     "html": "<a href=\"index.html\">Home",
+     "viewports": [
+      "1280x800"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0188",
+      "N-0201",
+      "N-0218",
+      "N-0240",
+      "N-0254",
+      "N-0271"
+     ]
+    },
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[2]",
+     "selector": "body > header > nav > a:nth-of-type(2)",
+     "html": "<a href=\"services.html\">Services",
+     "viewports": [
+      "1280x800"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0189",
+      "N-0202",
+      "N-0219",
+      "N-0241",
+      "N-0255",
+      "N-0272"
+     ]
+    },
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[3]",
+     "selector": "body > header > nav > a:nth-of-type(3)",
+     "html": "<a href=\"book.html\">Book",
+     "viewports": [
+      "1280x800"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0190",
+      "N-0203",
+      "N-0220",
+      "N-0242",
+      "N-0256",
+      "N-0273"
+     ]
+    },
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[4]",
+     "selector": "body > header > nav > a:nth-of-type(4)",
+     "html": "<a href=\"contact.html\">Contact",
+     "viewports": [
+      "1280x800"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0191",
+      "N-0204",
+      "N-0221",
+      "N-0243",
+      "N-0257",
+      "N-0274"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[1]",
+     "selector": "body > header > nav > a:nth-of-type(1)",
+     "html": "<a href=\"index.html\">Home",
+     "viewports": [
+      "1280x800"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__1280x800.png",
+     "items": [
+      "N-0340",
+      "N-0353",
+      "N-0364"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[2]",
+     "selector": "body > header > nav > a:nth-of-type(2)",
+     "html": "<a href=\"services.html\">Services",
+     "viewports": [
+      "1280x800"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__1280x800.png",
+     "items": [
+      "N-0341",
+      "N-0354",
+      "N-0365"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[3]",
+     "selector": "body > header > nav > a:nth-of-type(3)",
+     "html": "<a href=\"book.html\">Book",
+     "viewports": [
+      "1280x800"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__1280x800.png",
+     "items": [
+      "N-0342",
+      "N-0355",
+      "N-0366"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[4]",
+     "selector": "body > header > nav > a:nth-of-type(4)",
+     "html": "<a href=\"contact.html\">Contact",
+     "viewports": [
+      "1280x800"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__1280x800.png",
+     "items": [
+      "N-0343",
+      "N-0356",
+      "N-0367"
+     ]
+    },
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[1]",
+     "selector": "body > header > nav > a:nth-of-type(1)",
+     "html": "<a href=\"index.html\">Home",
+     "viewports": [
+      "1280x800"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__1280x800.png",
+     "items": [
+      "N-0433",
+      "N-0449",
+      "N-0461"
+     ]
+    },
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[2]",
+     "selector": "body > header > nav > a:nth-of-type(2)",
+     "html": "<a href=\"services.html\">Services",
+     "viewports": [
+      "1280x800"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__1280x800.png",
+     "items": [
+      "N-0434",
+      "N-0450",
+      "N-0462"
+     ]
+    },
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[3]",
+     "selector": "body > header > nav > a:nth-of-type(3)",
+     "html": "<a href=\"book.html\">Book",
+     "viewports": [
+      "1280x800"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__1280x800.png",
+     "items": [
+      "N-0435",
+      "N-0451",
+      "N-0463"
+     ]
+    },
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[4]",
+     "selector": "body > header > nav > a:nth-of-type(4)",
+     "html": "<a href=\"contact.html\">Contact",
+     "viewports": [
+      "1280x800"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__1280x800.png",
+     "items": [
+      "N-0436",
+      "N-0452",
+      "N-0464"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "axe-core",
+     "tool_version": "4.14.0",
+     "rule_id": "color-contrast",
+     "act_rules": [
+      "afw4f7",
+      "09o5cg"
+     ],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 24,
+     "message": "Fix any of the following:\n  Element has insufficient color contrast of 2.88 (foreground color: #8c9aa6, background color: #ffffff, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1"
+    },
+    {
+     "tool": "ibm-equal-access",
+     "tool_version": "4.0.34",
+     "rule_id": "text_contrast_sufficient",
+     "act_rules": [
+      "afw4f7"
+     ],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 24,
+     "message": "Text contrast of 2.88 with its background is less than the WCAG AA minimum requirements for text of size 16px and weight of 400"
+    },
+    {
+     "tool": "htmlcs",
+     "tool_version": "2.5.1",
+     "rule_id": "Principle1.Guideline1_4.1_4_3.G18.Fail",
+     "act_rules": [],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 20,
+     "message": "This element has insufficient contrast at this conformance level. Expected a contrast ratio of at least 4.5:1, but text in this element has a contrast ratio of 2.88:1. Recommendation:  change text colour to #6a7884."
+    },
+    {
+     "tool": "htmlcs",
+     "tool_version": "2.5.1",
+     "rule_id": "Principle1.Guideline1_4.1_4_3.G18.Abs",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 4,
+     "message": "This element is absolutely positioned and the background color can not be determined. Ensure the contrast ratio between the text and all covered parts of the background are at least 4.5:1."
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-006",
+   "sc": [
+    "1.4.4"
+   ],
+   "kind": "wcag",
+   "outcome": "failed",
+   "component": "form div.row > button.btn",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [
+    "probe:resize_text"
+   ],
+   "evidence_type": "probe",
+   "pattern": "1.4.4-text-lost-at-200",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p02"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/main[1]/form[1]/div[5]/button[1]",
+     "selector": "#booking > div:nth-of-type(5) > button",
+     "html": "<button class=\"btn\" type=\"submit\">Request appointment",
+     "viewports": [
+      "1280x800"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p02__1280x800-zoom200.png",
+     "items": [
+      "N-0289"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "probe",
+     "tool_version": null,
+     "rule_id": "resize_text.clipped",
+     "act_rules": [],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 1,
+     "message": "Text clipped at 200% zoom"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-007",
+   "sc": [
+    "1.4.10"
+   ],
+   "kind": "wcag",
+   "outcome": "failed",
+   "component": "main main > p.promo",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [
+    "probe:reflow"
+   ],
+   "evidence_type": "probe",
+   "pattern": "1.4.10-horizontal-scroll-320",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p01"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/main[1]/p[1]",
+     "selector": "body > main > p:nth-of-type(1)",
+     "html": "<p class=\"promo\">Spring offer: a check-up and clean for new patients is $199 …",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p01__320x640.png",
+     "items": [
+      "N-0112"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "probe",
+     "tool_version": null,
+     "rule_id": "reflow.horizontal_scroll",
+     "act_rules": [],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 1,
+     "message": "Overflows the 320 px viewport by 464 px and makes the page scroll horizontally"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-008",
+   "sc": [
+    "1.4.12"
+   ],
+   "kind": "wcag",
+   "outcome": "failed",
+   "component": "form div.row > button.btn",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [
+    "probe:text_spacing"
+   ],
+   "evidence_type": "probe",
+   "pattern": "1.4.12-text-clipped-with-spacing",
+   "default_severity": "moderate",
+   "non_interference": false,
+   "pages": [
+    "p02"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/main[1]/form[1]/div[5]/button[1]",
+     "selector": "#booking > div:nth-of-type(5) > button",
+     "html": "<button class=\"btn\" type=\"submit\">Request appointment",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p02__1280x800.png",
+     "items": [
+      "N-0288",
+      "N-0334"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "probe",
+     "tool_version": null,
+     "rule_id": "text_spacing.clipped",
+     "act_rules": [],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 2,
+     "message": "Text clipped with WCAG text-spacing overrides (13 px hidden, 2 before)"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-009",
+   "sc": [
+    "1.4.12"
+   ],
+   "kind": "wcag",
+   "outcome": "failed",
+   "component": "main p > a.btn",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [
+    "probe:text_spacing"
+   ],
+   "evidence_type": "probe",
+   "pattern": "1.4.12-text-clipped-with-spacing",
+   "default_severity": "moderate",
+   "non_interference": false,
+   "pages": [
+    "p01"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/main[1]/p[2]/a[1]",
+     "selector": "body > main > p:nth-of-type(2) > a",
+     "html": "<a class=\"btn\" href=\"book.html\">Book an appointment",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0058",
+      "N-0113"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "probe",
+     "tool_version": null,
+     "rule_id": "text_spacing.clipped",
+     "act_rules": [],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 2,
+     "message": "Text clipped with WCAG text-spacing overrides (3 px hidden, 0 before)"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-010",
+   "sc": [
+    "1.4.13"
+   ],
+   "kind": "wcag",
+   "outcome": "failed",
+   "component": "main h3 > span.help",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [
+    "probe:hover_focus"
+   ],
+   "evidence_type": "probe",
+   "pattern": "1.4.13-not-dismissible",
+   "default_severity": "moderate",
+   "non_interference": false,
+   "pages": [
+    "p01"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/main[1]/div[2]/div[1]/h3[1]/span[1]",
+     "selector": "body > main > div:nth-of-type(2) > div:nth-of-type(1) > h3 > span:nth-of-type(1)",
+     "html": "<span class=\"help\" aria-describedby=\"tip1\">?",
+     "viewports": [
+      "1280x800"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0061",
+      "N-0062"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "probe",
+     "tool_version": null,
+     "rule_id": "hover_focus.not_dismissible",
+     "act_rules": [],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 1,
+     "message": "Content shown on hover stays visible after Escape"
+    },
+    {
+     "tool": "probe",
+     "tool_version": null,
+     "rule_id": "hover_focus.not_hoverable",
+     "act_rules": [],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 1,
+     "message": "Content shown on hover disappears when the pointer moves onto it"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-011",
+   "sc": [
+    "2.1.1"
+   ],
+   "kind": "wcag",
+   "outcome": "failed",
+   "component": "header header > div.menu-toggle",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [
+    "probe:keyboard"
+   ],
+   "evidence_type": "probe",
+   "pattern": "2.1.1-control-not-keyboard",
+   "default_severity": "critical",
+   "non_interference": false,
+   "pages": [
+    "p01",
+    "p02",
+    "p03",
+    "p04"
+   ],
+   "instance_count": 4,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/header[1]/div[1]",
+     "selector": "body > header > div",
+     "html": "<div class=\"menu-toggle\">",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__320x640.png",
+     "items": [
+      "N-0108",
+      "N-0171"
+     ]
+    },
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/header[1]/div[1]",
+     "selector": "body > header > div",
+     "html": "<div class=\"menu-toggle\">",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p02__320x640.png",
+     "items": [
+      "N-0333"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/header[1]/div[1]",
+     "selector": "body > header > div",
+     "html": "<div class=\"menu-toggle\">",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__320x640.png",
+     "items": [
+      "N-0424"
+     ]
+    },
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/body[1]/header[1]/div[1]",
+     "selector": "body > header > div",
+     "html": "<div class=\"menu-toggle\">",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__320x640.png",
+     "items": [
+      "N-0509"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "probe",
+     "tool_version": null,
+     "rule_id": "keyboard.unreachable",
+     "act_rules": [],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 5,
+     "message": "Has click listener(s) and a pointer cursor but is not focusable or a native control"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-012",
+   "sc": [
+    "2.1.1"
+   ],
+   "kind": "wcag",
+   "outcome": "failed",
+   "component": "main main > div.prices",
+   "suggested_confidence": "high",
+   "agreeing_sources": [
+    "axe-core"
+   ],
+   "evidence_type": "tool",
+   "pattern": "2.1.1-control-not-keyboard",
+   "default_severity": "critical",
+   "non_interference": false,
+   "pages": [
+    "p03"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/main[1]/div[4]",
+     "selector": "body > main > div:nth-of-type(4)",
+     "html": "<div class=\"prices\">",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__320x640.png",
+     "items": [
+      "N-0391"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "axe-core",
+     "tool_version": "4.14.0",
+     "rule_id": "scrollable-region-focusable",
+     "act_rules": [
+      "0ssw9k"
+     ],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 1,
+     "message": "Fix any of the following:\n  Element should have focusable content\n  Element should be focusable"
+    }
+   ],
+   "related_sc": [
+    "2.1.3"
+   ]
+  },
+  {
+   "id": "C-013",
+   "sc": [
+    "2.1.2"
+   ],
+   "kind": "wcag",
+   "outcome": "failed",
+   "component": "form div.row > div.datepicker",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [
+    "probe:keyboard"
+   ],
+   "evidence_type": "probe",
+   "pattern": "2.1.2-keyboard-trap",
+   "default_severity": "critical",
+   "non_interference": true,
+   "pages": [
+    "p02"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/main[1]/form[1]/div[4]/div[1]",
+     "selector": "#booking > div:nth-of-type(4) > div",
+     "html": "<div class=\"datepicker\" tabindex=\"0\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors-trap.png",
+     "items": [
+      "N-0229",
+      "N-0283",
+      "N-0332"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "probe",
+     "tool_version": null,
+     "rule_id": "keyboard.trap",
+     "act_rules": [],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 3,
+     "message": "Focus cycles inside this element and cannot leave it with Tab, Shift+Tab or Escape"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-014",
+   "sc": [
+    "2.2.2"
+   ],
+   "kind": "wcag",
+   "outcome": "failed",
+   "component": "main main > div.carousel",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [
+    "probe:motion"
+   ],
+   "evidence_type": "probe",
+   "pattern": "2.2.2-moving-content-no-pause",
+   "default_severity": "critical",
+   "non_interference": true,
+   "pages": [
+    "p01"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/main[1]/div[1]",
+     "selector": "body > main > div:nth-of-type(1)",
+     "html": "<div class=\"carousel\">",
+     "viewports": [
+      "1280x800"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0063"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "probe",
+     "tool_version": null,
+     "rule_id": "motion.autoplay",
+     "act_rules": [],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 1,
+     "message": "Content still changes automatically more than 5 s after load, with no pause, stop or hide control found"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-015",
+   "sc": [
+    "2.4.2"
+   ],
+   "kind": "wcag",
+   "outcome": "failed",
+   "component": "body > html",
+   "suggested_confidence": "high",
+   "agreeing_sources": [
+    "axe-core",
+    "htmlcs",
+    "ibm-equal-access"
+   ],
+   "evidence_type": "tool",
+   "pattern": "2.4.2-no-title",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p04"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]",
+     "selector": "html",
+     "html": "<html lang=\"en\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__1280x800.png",
+     "items": [
+      "N-0438",
+      "N-0444",
+      "N-0459",
+      "N-0483",
+      "N-0491",
+      "N-0503"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "axe-core",
+     "tool_version": "4.14.0",
+     "rule_id": "document-title",
+     "act_rules": [
+      "2779a5"
+     ],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 2,
+     "message": "Fix any of the following:\n  Document does not have a non-empty <title> element"
+    },
+    {
+     "tool": "ibm-equal-access",
+     "tool_version": "4.0.34",
+     "rule_id": "page_title_exists",
+     "act_rules": [
+      "2779a5"
+     ],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 2,
+     "message": "The <title> element is empty (no innerHTML)"
+    },
+    {
+     "tool": "htmlcs",
+     "tool_version": "2.5.1",
+     "rule_id": "Principle2.Guideline2_4.2_4_2.H25.1.EmptyTitle",
+     "act_rules": [],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 2,
+     "message": "The title element in the head section should be non-empty."
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-016",
+   "sc": [
+    "2.4.4",
+    "4.1.2"
+   ],
+   "kind": "wcag",
+   "outcome": "failed",
+   "component": "header header > a",
+   "suggested_confidence": "high",
+   "agreeing_sources": [
+    "axe-core",
+    "ibm-equal-access"
+   ],
+   "evidence_type": "tool",
+   "pattern": "2.4.4-link-no-name",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p01",
+    "p02",
+    "p03",
+    "p04"
+   ],
+   "instance_count": 4,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/header[1]/a[1]",
+     "selector": "body > header > a",
+     "html": "<a href=\"index.html\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0013",
+      "N-0020",
+      "N-0073",
+      "N-0084",
+      "N-0128",
+      "N-0137"
+     ]
+    },
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/header[1]/a[1]",
+     "selector": "body > header > a",
+     "html": "<a href=\"index.html\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0195",
+      "N-0199",
+      "N-0247",
+      "N-0252",
+      "N-0299",
+      "N-0307"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/header[1]/a[1]",
+     "selector": "body > header > a",
+     "html": "<a href=\"index.html\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__1280x800.png",
+     "items": [
+      "N-0346",
+      "N-0351",
+      "N-0388",
+      "N-0409"
+     ]
+    },
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/body[1]/header[1]/a[1]",
+     "selector": "body > header > a",
+     "html": "<a href=\"index.html\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__1280x800.png",
+     "items": [
+      "N-0440",
+      "N-0447",
+      "N-0485",
+      "N-0494"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "axe-core",
+     "tool_version": "4.14.0",
+     "rule_id": "link-name",
+     "act_rules": [
+      "c487ae"
+     ],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 10,
+     "message": "Fix all of the following:\n  Element is in tab order and does not have accessible text\n\nFix any of the following:\n  Element does not have text that is visible to screen readers\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty\n  Element has no title attribute"
+    },
+    {
+     "tool": "ibm-equal-access",
+     "tool_version": "4.0.34",
+     "rule_id": "a_text_purpose",
+     "act_rules": [
+      "c487ae"
+     ],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 10,
+     "message": "Hyperlink has no link text, label or image with a text alternative"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-017",
+   "sc": [
+    "2.4.7"
+   ],
+   "kind": "wcag",
+   "outcome": "failed",
+   "component": "nav nav > a",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [
+    "probe:focus"
+   ],
+   "evidence_type": "probe",
+   "pattern": "2.4.7-focus-indicator-removed",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p01",
+    "p02",
+    "p03",
+    "p04"
+   ],
+   "instance_count": 16,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[1]",
+     "selector": "body > header > nav > a:nth-of-type(1)",
+     "html": "<a href=\"index.html\">Home",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0051",
+      "N-0172"
+     ]
+    },
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[2]",
+     "selector": "body > header > nav > a:nth-of-type(2)",
+     "html": "<a href=\"services.html\">Services",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0052",
+      "N-0173"
+     ]
+    },
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[3]",
+     "selector": "body > header > nav > a:nth-of-type(3)",
+     "html": "<a href=\"book.html\">Book",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0053",
+      "N-0174"
+     ]
+    },
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[4]",
+     "selector": "body > header > nav > a:nth-of-type(4)",
+     "html": "<a href=\"contact.html\">Contact",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0054",
+      "N-0175"
+     ]
+    },
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[1]",
+     "selector": "body > header > nav > a:nth-of-type(1)",
+     "html": "<a href=\"index.html\">Home",
+     "viewports": [
+      "1280x800"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0230",
+      "N-0284"
+     ]
+    },
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[2]",
+     "selector": "body > header > nav > a:nth-of-type(2)",
+     "html": "<a href=\"services.html\">Services",
+     "viewports": [
+      "1280x800"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0231",
+      "N-0285"
+     ]
+    },
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[3]",
+     "selector": "body > header > nav > a:nth-of-type(3)",
+     "html": "<a href=\"book.html\">Book",
+     "viewports": [
+      "1280x800"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0232",
+      "N-0286"
+     ]
+    },
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[4]",
+     "selector": "body > header > nav > a:nth-of-type(4)",
+     "html": "<a href=\"contact.html\">Contact",
+     "viewports": [
+      "1280x800"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0233",
+      "N-0287"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[1]",
+     "selector": "body > header > nav > a:nth-of-type(1)",
+     "html": "<a href=\"index.html\">Home",
+     "viewports": [
+      "1280x800"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__1280x800.png",
+     "items": [
+      "N-0373"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[2]",
+     "selector": "body > header > nav > a:nth-of-type(2)",
+     "html": "<a href=\"services.html\">Services",
+     "viewports": [
+      "1280x800"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__1280x800.png",
+     "items": [
+      "N-0374"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[3]",
+     "selector": "body > header > nav > a:nth-of-type(3)",
+     "html": "<a href=\"book.html\">Book",
+     "viewports": [
+      "1280x800"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__1280x800.png",
+     "items": [
+      "N-0375"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[4]",
+     "selector": "body > header > nav > a:nth-of-type(4)",
+     "html": "<a href=\"contact.html\">Contact",
+     "viewports": [
+      "1280x800"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__1280x800.png",
+     "items": [
+      "N-0376"
+     ]
+    },
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[1]",
+     "selector": "body > header > nav > a:nth-of-type(1)",
+     "html": "<a href=\"index.html\">Home",
+     "viewports": [
+      "1280x800"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__1280x800.png",
+     "items": [
+      "N-0469"
+     ]
+    },
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[2]",
+     "selector": "body > header > nav > a:nth-of-type(2)",
+     "html": "<a href=\"services.html\">Services",
+     "viewports": [
+      "1280x800"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__1280x800.png",
+     "items": [
+      "N-0470"
+     ]
+    },
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[3]",
+     "selector": "body > header > nav > a:nth-of-type(3)",
+     "html": "<a href=\"book.html\">Book",
+     "viewports": [
+      "1280x800"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__1280x800.png",
+     "items": [
+      "N-0471"
+     ]
+    },
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[4]",
+     "selector": "body > header > nav > a:nth-of-type(4)",
+     "html": "<a href=\"contact.html\">Contact",
+     "viewports": [
+      "1280x800"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__1280x800.png",
+     "items": [
+      "N-0472"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "probe",
+     "tool_version": null,
+     "rule_id": "focus.not_visible",
+     "act_rules": [],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 24,
+     "message": "No visible change when focused (0 pixels changed)"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-018",
+   "sc": [
+    "2.4.11"
+   ],
+   "kind": "wcag",
+   "outcome": "failed",
+   "component": "footer p > a",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [
+    "probe:focus"
+   ],
+   "evidence_type": "probe",
+   "pattern": "2.4.11-focus-fully-obscured",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p01",
+    "p03",
+    "p04"
+   ],
+   "instance_count": 9,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[1]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(1)",
+     "html": "<a href=\"contact.html\">Contact",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0055",
+      "N-0109",
+      "N-0176"
+     ]
+    },
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[2]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(2)",
+     "html": "<a href=\"services.html#fees\">Fees",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0056",
+      "N-0110",
+      "N-0177"
+     ]
+    },
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[3]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(3)",
+     "html": "<a href=\"contact.html#privacy\">Privacy",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0057",
+      "N-0111",
+      "N-0178"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[1]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(1)",
+     "html": "<a href=\"contact.html\">Contact",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__1280x800.png",
+     "items": [
+      "N-0377",
+      "N-0425"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[2]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(2)",
+     "html": "<a href=\"services.html#fees\">Fees",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__1280x800.png",
+     "items": [
+      "N-0378",
+      "N-0426"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[3]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(3)",
+     "html": "<a href=\"contact.html#privacy\">Privacy",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__1280x800.png",
+     "items": [
+      "N-0379",
+      "N-0427"
+     ]
+    },
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[1]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(1)",
+     "html": "<a href=\"contact.html\">Contact",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__1280x800.png",
+     "items": [
+      "N-0473",
+      "N-0510"
+     ]
+    },
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[2]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(2)",
+     "html": "<a href=\"services.html#fees\">Fees",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__1280x800.png",
+     "items": [
+      "N-0474",
+      "N-0511"
+     ]
+    },
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[3]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(3)",
+     "html": "<a href=\"contact.html#privacy\">Privacy",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__1280x800.png",
+     "items": [
+      "N-0475",
+      "N-0512"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "probe",
+     "tool_version": null,
+     "rule_id": "focus.obscured",
+     "act_rules": [],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 21,
+     "message": "Focused element entirely hidden by fixed or sticky content"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-019",
+   "sc": [
+    "2.5.8"
+   ],
+   "kind": "wcag",
+   "outcome": "failed",
+   "component": "footer p > a",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [
+    "probe:target_size"
+   ],
+   "evidence_type": "probe",
+   "pattern": "2.5.8-target-too-small",
+   "default_severity": "minor",
+   "non_interference": false,
+   "pages": [
+    "p04"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[3]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(3)",
+     "html": "<a href=\"contact.html#privacy\">Privacy",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__320x640.png",
+     "items": [
+      "N-0514"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "probe",
+     "tool_version": null,
+     "rule_id": "target_size.too_small",
+     "act_rules": [],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 1,
+     "message": "52.5x17 px target; a 24 px circle on it overlaps another target"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-020",
+   "sc": [
+    "2.5.8"
+   ],
+   "kind": "wcag",
+   "outcome": "failed",
+   "component": "main div.carousel > button.ctrl.next",
+   "suggested_confidence": "high",
+   "agreeing_sources": [
+    "axe-core",
+    "ibm-equal-access",
+    "probe:target_size"
+   ],
+   "evidence_type": "tool",
+   "pattern": "2.5.8-target-too-small",
+   "default_severity": "minor",
+   "non_interference": false,
+   "pages": [
+    "p01"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/main[1]/div[1]/button[2]",
+     "selector": "body > main > div:nth-of-type(1) > button:nth-of-type(2)",
+     "html": "<button class=\"ctrl next\">›",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0017",
+      "N-0029",
+      "N-0060",
+      "N-0077",
+      "N-0090",
+      "N-0115",
+      "N-0131",
+      "N-0151",
+      "N-0180"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "axe-core",
+     "tool_version": "4.14.0",
+     "rule_id": "target-size",
+     "act_rules": [],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 3,
+     "message": "Fix any of the following:\n  Target has insufficient size (18px by 18px, should be at least 24px by 24px)\n  Target has insufficient space to its closest neighbors. Safe clickable space has a diameter of 16px instead of at least 24px."
+    },
+    {
+     "tool": "ibm-equal-access",
+     "tool_version": "4.0.34",
+     "rule_id": "target_spacing_sufficient",
+     "act_rules": [],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 3,
+     "message": "Undersized target \"button\" does not have sufficient spacing of 12 CSS pixels from another target \"button\""
+    },
+    {
+     "tool": "probe",
+     "tool_version": null,
+     "rule_id": "target_size.too_small",
+     "act_rules": [],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 3,
+     "message": "18x18 px target; a 24 px circle on it overlaps another target"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-021",
+   "sc": [
+    "2.5.8"
+   ],
+   "kind": "wcag",
+   "outcome": "failed",
+   "component": "main div.carousel > button.ctrl.prev",
+   "suggested_confidence": "high",
+   "agreeing_sources": [
+    "axe-core",
+    "ibm-equal-access",
+    "probe:target_size"
+   ],
+   "evidence_type": "tool",
+   "pattern": "2.5.8-target-too-small",
+   "default_severity": "minor",
+   "non_interference": false,
+   "pages": [
+    "p01"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/main[1]/div[1]/button[1]",
+     "selector": "body > main > div:nth-of-type(1) > button:nth-of-type(1)",
+     "html": "<button class=\"ctrl prev\">‹",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0016",
+      "N-0027",
+      "N-0059",
+      "N-0076",
+      "N-0088",
+      "N-0114",
+      "N-0130",
+      "N-0149",
+      "N-0179"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "axe-core",
+     "tool_version": "4.14.0",
+     "rule_id": "target-size",
+     "act_rules": [],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 3,
+     "message": "Fix any of the following:\n  Target has insufficient size (18px by 18px, should be at least 24px by 24px)\n  Target has insufficient space to its closest neighbors. Safe clickable space has a diameter of 16px instead of at least 24px."
+    },
+    {
+     "tool": "ibm-equal-access",
+     "tool_version": "4.0.34",
+     "rule_id": "target_spacing_sufficient",
+     "act_rules": [],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 3,
+     "message": "Undersized target \"button\" does not have sufficient spacing of 12 CSS pixels from another target \"button\""
+    },
+    {
+     "tool": "probe",
+     "tool_version": null,
+     "rule_id": "target_size.too_small",
+     "act_rules": [],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 3,
+     "message": "18x18 px target; a 24 px circle on it overlaps another target"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-022",
+   "sc": [
+    "3.1.1"
+   ],
+   "kind": "wcag",
+   "outcome": "failed",
+   "component": "document",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [
+    "probe:language"
+   ],
+   "evidence_type": "probe",
+   "pattern": "3.1.1-wrong-page-lang",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p03"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": null,
+     "selector": null,
+     "html": "<html lang=\"de\">",
+     "viewports": [
+      "1280x800"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__1280x800.png",
+     "items": [
+      "N-0380"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "probe",
+     "tool_version": null,
+     "rule_id": "language.mismatch",
+     "act_rules": [],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 1,
+     "message": "lang=\"de\" but the page text reads as 'en' (154 words)"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-023",
+   "sc": [
+    "4.1.2"
+   ],
+   "kind": "wcag",
+   "outcome": "failed",
+   "component": "form div.row > input#name",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [
+    "htmlcs"
+   ],
+   "evidence_type": "tool",
+   "pattern": "4.1.2-control-no-name",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p02"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/main[1]/form[1]/div[1]/input[1]",
+     "selector": "#name",
+     "html": "<input id=\"name\" name=\"name\" placeholder=\"Full name\" required=\"\" class=\"invalid\" style=\"\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0222",
+      "N-0275",
+      "N-0324"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "htmlcs",
+     "tool_version": "2.5.1",
+     "rule_id": "Principle4.Guideline4_1.4_1_2.H91.InputText.Name",
+     "act_rules": [],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 3,
+     "message": "This textinput element does not have a name available to an accessibility API. Valid names are: label element, title undefined, aria-label undefined, aria-labelledby undefined."
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-024",
+   "sc": [
+    "4.1.2"
+   ],
+   "kind": "wcag",
+   "outcome": "failed",
+   "component": "form div.row > input#phone",
+   "suggested_confidence": "high",
+   "agreeing_sources": [
+    "axe-core",
+    "htmlcs",
+    "ibm-equal-access"
+   ],
+   "evidence_type": "tool",
+   "pattern": "4.1.2-control-no-name",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p02"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/main[1]/form[1]/div[3]/input[1]",
+     "selector": "#phone",
+     "html": "<input id=\"phone\" name=\"phone\" type=\"tel\" style=\"\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0194",
+      "N-0211",
+      "N-0225",
+      "N-0246",
+      "N-0263",
+      "N-0278",
+      "N-0298",
+      "N-0315",
+      "N-0327"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "axe-core",
+     "tool_version": "4.14.0",
+     "rule_id": "label",
+     "act_rules": [
+      "e086e5"
+     ],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 3,
+     "message": "Fix any of the following:\n  Element does not have an implicit (wrapped) <label>\n  Element does not have an explicit <label>\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty\n  Element has no title attribute\n  Element has no placeholder attribute\n  Element's default semantics were"
+    },
+    {
+     "tool": "ibm-equal-access",
+     "tool_version": "4.0.34",
+     "rule_id": "input_label_exists",
+     "act_rules": [
+      "97a4e1",
+      "e086e5"
+     ],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 3,
+     "message": "Form control element <input> has no associated label"
+    },
+    {
+     "tool": "htmlcs",
+     "tool_version": "2.5.1",
+     "rule_id": "Principle4.Guideline4_1.4_1_2.H91.InputTel.Name",
+     "act_rules": [],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 3,
+     "message": "This telinput element does not have a name available to an accessibility API. Valid names are: label element, title undefined, aria-label undefined, aria-labelledby undefined."
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-025",
+   "sc": [
+    "1.2.2"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "main main > video",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": "1.2.2-no-captions",
+   "default_severity": "critical",
+   "non_interference": false,
+   "pages": [
+    "p04"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/body[1]/main[1]/video[1]",
+     "selector": "body > main > video",
+     "html": "<video controls=\"\" preload=\"none\" width=\"480\" height=\"270\" src=\"media/clinic-tour.mp4\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__1280x800.png",
+     "items": [
+      "N-0443",
+      "N-0453",
+      "N-0476",
+      "N-0490",
+      "N-0497"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "axe-core",
+     "tool_version": "4.14.0",
+     "rule_id": "video-caption",
+     "act_rules": [
+      "eac66b"
+     ],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 2,
+     "message": "Fix all of the following:\n  Check that captions are available for the element"
+    },
+    {
+     "tool": "ibm-equal-access",
+     "tool_version": "4.0.34",
+     "rule_id": "caption_track_exists",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 2,
+     "message": "Verify that captions are available for any meaningful audio or provide a caption track for the <video> element"
+    },
+    {
+     "tool": "probe",
+     "tool_version": null,
+     "rule_id": "media.video_no_track",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 1,
+     "message": "Video has no captions or subtitles track; check for open (burned-in) captions or a captioned alternative"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-026",
+   "sc": [
+    "1.3.1"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "footer footer > p",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": "1.3.1-form-group-not-associated",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p01",
+    "p02",
+    "p03",
+    "p04"
+   ],
+   "instance_count": 4,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]",
+     "selector": "body > footer > p:nth-of-type(2)",
+     "html": "<p>ContactFeesPrivacy",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0048",
+      "N-0105",
+      "N-0169"
+     ]
+    },
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]",
+     "selector": "body > footer > p:nth-of-type(2)",
+     "html": "<p>ContactFeesPrivacy",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0227",
+      "N-0280",
+      "N-0329"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]",
+     "selector": "body > footer > p:nth-of-type(2)",
+     "html": "<p>ContactFeesPrivacy",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__1280x800.png",
+     "items": [
+      "N-0370",
+      "N-0421"
+     ]
+    },
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]",
+     "selector": "body > footer > p:nth-of-type(2)",
+     "html": "<p>ContactFeesPrivacy",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__1280x800.png",
+     "items": [
+      "N-0466",
+      "N-0506"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "htmlcs",
+     "tool_version": "2.5.1",
+     "rule_id": "Principle1.Guideline1_3.1_3_1.H48",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 10,
+     "message": "If this element contains a navigation section, it is recommended that it be marked up as a list."
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-027",
+   "sc": [
+    "1.3.1"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "header header > div.menu-toggle",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": "1.3.1-form-group-not-associated",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p01",
+    "p02",
+    "p03",
+    "p04"
+   ],
+   "instance_count": 4,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/header[1]/div[1]",
+     "selector": "body > header > div",
+     "html": "<div class=\"menu-toggle\">",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__320x640.png",
+     "items": [
+      "N-0086",
+      "N-0139"
+     ]
+    },
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/header[1]/div[1]",
+     "selector": "body > header > div",
+     "html": "<div class=\"menu-toggle\">",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p02__320x640.png",
+     "items": [
+      "N-0309"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/header[1]/div[1]",
+     "selector": "body > header > div",
+     "html": "<div class=\"menu-toggle\">",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__320x640.png",
+     "items": [
+      "N-0411"
+     ]
+    },
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/body[1]/header[1]/div[1]",
+     "selector": "body > header > div",
+     "html": "<div class=\"menu-toggle\">",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__320x640.png",
+     "items": [
+      "N-0496"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "ibm-equal-access",
+     "tool_version": "4.0.34",
+     "rule_id": "text_block_heading",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 5,
+     "message": "Confirm this text '☰' is used as a heading and if so, modify to use a heading element or role"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-028",
+   "sc": [
+    "1.3.1"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "main div.prices > table",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": "1.3.1-form-group-not-associated",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p03"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/main[1]/div[4]/table[1]",
+     "selector": "body > main > div:nth-of-type(4) > table",
+     "html": "<table>Treatment From Health fund item Usual time Check-up and clea…",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__1280x800.png",
+     "items": [
+      "N-0368",
+      "N-0419"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "htmlcs",
+     "tool_version": "2.5.1",
+     "rule_id": "Principle1.Guideline1_3.1_3_1.H39.3.NoCaption",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 2,
+     "message": "If this table is a data table, consider using a caption element to the table element to identify this table."
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-029",
+   "sc": [
+    "1.3.1"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "main main > div.h2",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": "1.3.1-form-group-not-associated",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p03"
+   ],
+   "instance_count": 2,
+   "instances": [
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/main[1]/div[1]",
+     "selector": "body > main > div:nth-of-type(1)",
+     "html": "<div class=\"h2\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__1280x800.png",
+     "items": [
+      "N-0357",
+      "N-0412"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/main[1]/div[2]",
+     "selector": "body > main > div:nth-of-type(2)",
+     "html": "<div class=\"h2\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__1280x800.png",
+     "items": [
+      "N-0358",
+      "N-0413"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "ibm-equal-access",
+     "tool_version": "4.0.34",
+     "rule_id": "text_block_heading",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 4,
+     "message": "Confirm this text 'General dentistry' is used as a heading and if so, modify to use a heading element or role"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-030",
+   "sc": [
+    "1.3.1"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "main main > div.h2#fees",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": "1.3.1-form-group-not-associated",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p03"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/main[1]/div[3]",
+     "selector": "#fees",
+     "html": "<div class=\"h2\" id=\"fees\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__1280x800.png",
+     "items": [
+      "N-0359",
+      "N-0414"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "ibm-equal-access",
+     "tool_version": "4.0.34",
+     "rule_id": "text_block_heading",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 2,
+     "message": "Confirm this text 'Fees' is used as a heading and if so, modify to use a heading element or role"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-031",
+   "sc": [
+    "1.3.3"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "main main > p",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": "1.3.3-sensory-only-instructions",
+   "default_severity": "moderate",
+   "non_interference": false,
+   "pages": [
+    "p04"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/body[1]/main[1]/p[2]",
+     "selector": "body > main > p:nth-of-type(2)",
+     "html": "<p>We are on the first floor above the pharmacy, two minutes fr…",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__1280x800.png",
+     "items": [
+      "N-0455",
+      "N-0499"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "ibm-equal-access",
+     "tool_version": "4.0.34",
+     "rule_id": "text_sensory_misuse",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 2,
+     "message": "Confirm the word(s) 'above' of the user instruction is used to indicate a logical rather than visual position"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-032",
+   "sc": [
+    "1.3.3"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "main main > p.form-error#summary",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": "1.3.3-sensory-only-instructions",
+   "default_severity": "moderate",
+   "non_interference": false,
+   "pages": [
+    "p02"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/main[1]/p[1]",
+     "selector": "#summary",
+     "html": "<p class=\"form-error\" id=\"summary\">Please fix the errors below.",
+     "viewports": [
+      "1280x800"
+     ],
+     "states": [
+      "errors"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0205"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "ibm-equal-access",
+     "tool_version": "4.0.34",
+     "rule_id": "text_sensory_misuse",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 1,
+     "message": "Confirm the word(s) 'below' of the user instruction is used to indicate a logical rather than visual position"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-033",
+   "sc": [
+    "1.4.1"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "body head > link",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": "1.4.1-color-only-state",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p01",
+    "p02",
+    "p03",
+    "p04"
+   ],
+   "instance_count": 4,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/head[1]/link[1]",
+     "selector": "head > link",
+     "html": "<link rel=\"stylesheet\" href=\"site.css\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0018",
+      "N-0082",
+      "N-0135"
+     ]
+    },
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/head[1]/link[1]",
+     "selector": "head > link",
+     "html": "<link rel=\"stylesheet\" href=\"site.css\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0197",
+      "N-0250",
+      "N-0305"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/head[1]/link[1]",
+     "selector": "head > link",
+     "html": "<link rel=\"stylesheet\" href=\"site.css\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__1280x800.png",
+     "items": [
+      "N-0349",
+      "N-0407"
+     ]
+    },
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/head[1]/link[1]",
+     "selector": "head > link",
+     "html": "<link rel=\"stylesheet\" href=\"site.css\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__1280x800.png",
+     "items": [
+      "N-0445",
+      "N-0492"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "ibm-equal-access",
+     "tool_version": "4.0.34",
+     "rule_id": "style_color_misuse",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 10,
+     "message": "Verify color is not used as the only visual means of conveying information"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-034",
+   "sc": [
+    "1.4.3"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "body body > div.cookie",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": "1.4.3-body-text-low-contrast",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p01",
+    "p02",
+    "p03"
+   ],
+   "instance_count": 3,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/div[2]",
+     "selector": "body > div:nth-of-type(2)",
+     "html": "<div class=\"cookie\">",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p01__320x640.png",
+     "items": [
+      "N-0081"
+     ]
+    },
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/div[2]",
+     "selector": "body > div:nth-of-type(2)",
+     "html": "<div class=\"cookie\">",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p02__320x640.png",
+     "items": [
+      "N-0304"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/div[2]",
+     "selector": "body > div:nth-of-type(2)",
+     "html": "<div class=\"cookie\">",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__320x640.png",
+     "items": [
+      "N-0406"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "axe-core",
+     "tool_version": "4.14.0",
+     "rule_id": "color-contrast",
+     "act_rules": [
+      "afw4f7",
+      "09o5cg"
+     ],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 3,
+     "message": "Fix any of the following:\n  Element's background color could not be determined because it partially overlaps other elements"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-035",
+   "sc": [
+    "1.4.3"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "header header > div.menu-toggle",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": "1.4.3-body-text-low-contrast",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p01",
+    "p02",
+    "p03",
+    "p04"
+   ],
+   "instance_count": 4,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/header[1]/div[1]",
+     "selector": "body > header > div",
+     "html": "<div class=\"menu-toggle\">",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__320x640.png",
+     "items": [
+      "N-0079",
+      "N-0133"
+     ]
+    },
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/header[1]/div[1]",
+     "selector": "body > header > div",
+     "html": "<div class=\"menu-toggle\">",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p02__320x640.png",
+     "items": [
+      "N-0303"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/header[1]/div[1]",
+     "selector": "body > header > div",
+     "html": "<div class=\"menu-toggle\">",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__320x640.png",
+     "items": [
+      "N-0393"
+     ]
+    },
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/body[1]/header[1]/div[1]",
+     "selector": "body > header > div",
+     "html": "<div class=\"menu-toggle\">",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__320x640.png",
+     "items": [
+      "N-0489"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "axe-core",
+     "tool_version": "4.14.0",
+     "rule_id": "color-contrast",
+     "act_rules": [
+      "afw4f7",
+      "09o5cg"
+     ],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 5,
+     "message": "Fix any of the following:\n  Element content contains only non-text characters"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-036",
+   "sc": [
+    "1.4.3"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "main div.carousel > button.ctrl.next",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": "1.4.3-body-text-low-contrast",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p01"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/main[1]/div[1]/button[2]",
+     "selector": "body > main > div:nth-of-type(1) > button:nth-of-type(2)",
+     "html": "<button class=\"ctrl next\">›",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0046",
+      "N-0103",
+      "N-0167"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "htmlcs",
+     "tool_version": "2.5.1",
+     "rule_id": "Principle1.Guideline1_4.1_4_3.G18.Abs",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 3,
+     "message": "This element is absolutely positioned and the background color can not be determined. Ensure the contrast ratio between the text and all covered parts of the background are at least 4.5:1."
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-037",
+   "sc": [
+    "1.4.3"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "main div.carousel > button.ctrl.prev",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": "1.4.3-body-text-low-contrast",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p01"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/main[1]/div[1]/button[1]",
+     "selector": "body > main > div:nth-of-type(1) > button:nth-of-type(1)",
+     "html": "<button class=\"ctrl prev\">‹",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0045",
+      "N-0102",
+      "N-0166"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "htmlcs",
+     "tool_version": "2.5.1",
+     "rule_id": "Principle1.Guideline1_4.1_4_3.G18.Abs",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 3,
+     "message": "This element is absolutely positioned and the background color can not be determined. Ensure the contrast ratio between the text and all covered parts of the background are at least 4.5:1."
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-038",
+   "sc": [
+    "1.4.3"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "main div.slide > h2",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": "1.4.3-body-text-low-contrast",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p01"
+   ],
+   "instance_count": 3,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/main[1]/div[1]/div[1]/h2[1]",
+     "selector": "body > main > div:nth-of-type(1) > div:nth-of-type(1) > h2",
+     "html": "<h2>New patients welcome",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0039",
+      "N-0096",
+      "N-0160"
+     ]
+    },
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/main[1]/div[1]/div[2]/h2[1]",
+     "selector": "body > main > div:nth-of-type(1) > div:nth-of-type(2) > h2",
+     "html": "<h2>Children's dentistry",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0041",
+      "N-0098",
+      "N-0162"
+     ]
+    },
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/main[1]/div[1]/div[3]/h2[1]",
+     "selector": "body > main > div:nth-of-type(1) > div:nth-of-type(3) > h2",
+     "html": "<h2>Late appointments",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0043",
+      "N-0100",
+      "N-0164"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "htmlcs",
+     "tool_version": "2.5.1",
+     "rule_id": "Principle1.Guideline1_4.1_4_3.G145.Abs",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 9,
+     "message": "This element is absolutely positioned and the background color can not be determined. Ensure the contrast ratio between the text and all covered parts of the background are at least 3:1."
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-039",
+   "sc": [
+    "1.4.3"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "main div.slide > p",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": "1.4.3-body-text-low-contrast",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p01"
+   ],
+   "instance_count": 3,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/main[1]/div[1]/div[1]/p[1]",
+     "selector": "body > main > div:nth-of-type(1) > div:nth-of-type(1) > p",
+     "html": "<p>Book your first check-up online in two minutes.",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0040",
+      "N-0097",
+      "N-0161"
+     ]
+    },
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/main[1]/div[1]/div[2]/p[1]",
+     "selector": "body > main > div:nth-of-type(1) > div:nth-of-type(2) > p",
+     "html": "<p>Bulk-billed for eligible children under the Child Dental Ben…",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0042",
+      "N-0099",
+      "N-0163"
+     ]
+    },
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/main[1]/div[1]/div[3]/p[1]",
+     "selector": "body > main > div:nth-of-type(1) > div:nth-of-type(3) > p",
+     "html": "<p>Open until 7pm on Tuesdays and Thursdays.",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0044",
+      "N-0101",
+      "N-0165"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "htmlcs",
+     "tool_version": "2.5.1",
+     "rule_id": "Principle1.Guideline1_4.1_4_3.G18.Abs",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 9,
+     "message": "This element is absolutely positioned and the background color can not be determined. Ensure the contrast ratio between the text and all covered parts of the background are at least 4.5:1."
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-040",
+   "sc": [
+    "1.4.3"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "main main > p.promo",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": "1.4.3-body-text-low-contrast",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p01"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/main[1]/p[1]",
+     "selector": "body > main > p:nth-of-type(1)",
+     "html": "<p class=\"promo\">Spring offer: a check-up and clean for new patients is $199 …",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__320x640.png",
+     "items": [
+      "N-0080",
+      "N-0134"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "axe-core",
+     "tool_version": "4.14.0",
+     "rule_id": "color-contrast",
+     "act_rules": [
+      "afw4f7",
+      "09o5cg"
+     ],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 2,
+     "message": "Fix any of the following:\n  Element's background color could not be determined because it partially overlaps other elements"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-041",
+   "sc": [
+    "1.4.3"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "main tr > td",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": "1.4.3-body-text-low-contrast",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p03"
+   ],
+   "instance_count": 9,
+   "instances": [
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/main[1]/div[4]/table[1]/tbody[1]/tr[2]/td[2]",
+     "selector": "body > main > div:nth-of-type(4) > table > tbody > tr:nth-of-type(2) > td:nth-of-type(2)",
+     "html": "<td>$199",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__320x640.png",
+     "items": [
+      "N-0397"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/main[1]/div[4]/table[1]/tbody[1]/tr[2]/td[3]",
+     "selector": "body > main > div:nth-of-type(4) > table > tbody > tr:nth-of-type(2) > td:nth-of-type(3)",
+     "html": "<td>011, 114, 121",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__320x640.png",
+     "items": [
+      "N-0398"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/main[1]/div[4]/table[1]/tbody[1]/tr[2]/td[4]",
+     "selector": "body > main > div:nth-of-type(4) > table > tbody > tr:nth-of-type(2) > td:nth-of-type(4)",
+     "html": "<td>45 minutes",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__320x640.png",
+     "items": [
+      "N-0399"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/main[1]/div[4]/table[1]/tbody[1]/tr[3]/td[2]",
+     "selector": "body > main > div:nth-of-type(4) > table > tbody > tr:nth-of-type(3) > td:nth-of-type(2)",
+     "html": "<td>$180",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__320x640.png",
+     "items": [
+      "N-0400"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/main[1]/div[4]/table[1]/tbody[1]/tr[3]/td[3]",
+     "selector": "body > main > div:nth-of-type(4) > table > tbody > tr:nth-of-type(3) > td:nth-of-type(3)",
+     "html": "<td>521",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__320x640.png",
+     "items": [
+      "N-0401"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/main[1]/div[4]/table[1]/tbody[1]/tr[3]/td[4]",
+     "selector": "body > main > div:nth-of-type(4) > table > tbody > tr:nth-of-type(3) > td:nth-of-type(4)",
+     "html": "<td>30 minutes",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__320x640.png",
+     "items": [
+      "N-0402"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/main[1]/div[4]/table[1]/tbody[1]/tr[4]/td[2]",
+     "selector": "body > main > div:nth-of-type(4) > table > tbody > tr:nth-of-type(4) > td:nth-of-type(2)",
+     "html": "<td>$450",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__320x640.png",
+     "items": [
+      "N-0403"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/main[1]/div[4]/table[1]/tbody[1]/tr[4]/td[3]",
+     "selector": "body > main > div:nth-of-type(4) > table > tbody > tr:nth-of-type(4) > td:nth-of-type(3)",
+     "html": "<td>118",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__320x640.png",
+     "items": [
+      "N-0404"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/main[1]/div[4]/table[1]/tbody[1]/tr[4]/td[4]",
+     "selector": "body > main > div:nth-of-type(4) > table > tbody > tr:nth-of-type(4) > td:nth-of-type(4)",
+     "html": "<td>Two visits",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__320x640.png",
+     "items": [
+      "N-0405"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "axe-core",
+     "tool_version": "4.14.0",
+     "rule_id": "color-contrast",
+     "act_rules": [
+      "afw4f7",
+      "09o5cg"
+     ],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 9,
+     "message": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-042",
+   "sc": [
+    "1.4.3"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "main tr > th",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": "1.4.3-body-text-low-contrast",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p03"
+   ],
+   "instance_count": 3,
+   "instances": [
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/main[1]/div[4]/table[1]/tbody[1]/tr[1]/th[2]",
+     "selector": "body > main > div:nth-of-type(4) > table > tbody > tr:nth-of-type(1) > th:nth-of-type(2)",
+     "html": "<th>From",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__320x640.png",
+     "items": [
+      "N-0394"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/main[1]/div[4]/table[1]/tbody[1]/tr[1]/th[3]",
+     "selector": "body > main > div:nth-of-type(4) > table > tbody > tr:nth-of-type(1) > th:nth-of-type(3)",
+     "html": "<th>Health fund item",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__320x640.png",
+     "items": [
+      "N-0395"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/main[1]/div[4]/table[1]/tbody[1]/tr[1]/th[4]",
+     "selector": "body > main > div:nth-of-type(4) > table > tbody > tr:nth-of-type(1) > th:nth-of-type(4)",
+     "html": "<th>Usual time",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__320x640.png",
+     "items": [
+      "N-0396"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "axe-core",
+     "tool_version": "4.14.0",
+     "rule_id": "color-contrast",
+     "act_rules": [
+      "afw4f7",
+      "09o5cg"
+     ],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 3,
+     "message": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-043",
+   "sc": [
+    "1.4.10"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "body body > div.callbar",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": "1.4.10-horizontal-scroll-320",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p01",
+    "p02",
+    "p03",
+    "p04"
+   ],
+   "instance_count": 4,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/div[1]",
+     "selector": "body > div:nth-of-type(1)",
+     "html": "<div class=\"callbar\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0049",
+      "N-0106",
+      "N-0170"
+     ]
+    },
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/div[1]",
+     "selector": "body > div",
+     "html": "<div class=\"callbar\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0228",
+      "N-0281",
+      "N-0330"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/div[1]",
+     "selector": "body > div:nth-of-type(1)",
+     "html": "<div class=\"callbar\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__1280x800.png",
+     "items": [
+      "N-0371",
+      "N-0422"
+     ]
+    },
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/body[1]/div[1]",
+     "selector": "body > div:nth-of-type(1)",
+     "html": "<div class=\"callbar\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__1280x800.png",
+     "items": [
+      "N-0467",
+      "N-0507"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "htmlcs",
+     "tool_version": "2.5.1",
+     "rule_id": "Principle1.Guideline1_4.1_4_10.C32,C31,C33,C38,SCR34,G206",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 10,
+     "message": "This element has \"position: fixed\". This may require scrolling in two dimensions, which is considered a failure of this Success Criterion."
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-044",
+   "sc": [
+    "1.4.10"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "body body > div.cookie",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": "1.4.10-horizontal-scroll-320",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p01",
+    "p02",
+    "p03",
+    "p04"
+   ],
+   "instance_count": 4,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/div[2]",
+     "selector": "body > div:nth-of-type(2)",
+     "html": "<div class=\"cookie\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0050",
+      "N-0107"
+     ]
+    },
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/div[2]",
+     "selector": "body > div:nth-of-type(2)",
+     "html": "<div class=\"cookie\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p02__1280x800.png",
+     "items": [
+      "N-0282",
+      "N-0331"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/div[2]",
+     "selector": "body > div:nth-of-type(2)",
+     "html": "<div class=\"cookie\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__1280x800.png",
+     "items": [
+      "N-0372",
+      "N-0423"
+     ]
+    },
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/body[1]/div[2]",
+     "selector": "body > div:nth-of-type(2)",
+     "html": "<div class=\"cookie\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__1280x800.png",
+     "items": [
+      "N-0468",
+      "N-0508"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "htmlcs",
+     "tool_version": "2.5.1",
+     "rule_id": "Principle1.Guideline1_4.1_4_10.C32,C31,C33,C38,SCR34,G206",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 8,
+     "message": "This element has \"position: fixed\". This may require scrolling in two dimensions, which is considered a failure of this Success Criterion."
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-045",
+   "sc": [
+    "1.4.10"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "main main > video",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "probe",
+   "pattern": "1.4.10-horizontal-scroll-320",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p04"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/body[1]/main[1]/video[1]",
+     "selector": "body > main > video",
+     "html": "<video controls=\"\" preload=\"none\" width=\"480\" height=\"270\" src=\"media/clinic-tour.mp4\">",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__320x640.png",
+     "items": [
+      "N-0513"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "probe",
+     "tool_version": null,
+     "rule_id": "reflow.horizontal_scroll",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 1,
+     "message": "<video> causes horizontal scrolling at 320 px; exempt only if it needs two-dimensional layout"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-046",
+   "sc": [
+    "2.1.1"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "main main > video",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": "2.1.1-control-not-keyboard",
+   "default_severity": "critical",
+   "non_interference": false,
+   "pages": [
+    "p04"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/body[1]/main[1]/video[1]",
+     "selector": "body > main > video",
+     "html": "<video controls=\"\" preload=\"none\" width=\"480\" height=\"270\" src=\"media/clinic-tour.mp4\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__1280x800.png",
+     "items": [
+      "N-0454",
+      "N-0498"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "ibm-equal-access",
+     "tool_version": "4.0.34",
+     "rule_id": "media_keyboard_controllable",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 2,
+     "message": "Verify media using <audio> and/or <video> elements have keyboard accessible controls"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-047",
+   "sc": [
+    "2.4.7"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "form div.row > button.btn",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": "2.4.7-focus-indicator-removed",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p02"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/main[1]/form[1]/div[5]/button[1]",
+     "selector": "#booking > div:nth-of-type(5) > button",
+     "html": "<button class=\"btn\" type=\"submit\">Request appointment",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0214",
+      "N-0266",
+      "N-0319"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "ibm-equal-access",
+     "tool_version": "4.0.34",
+     "rule_id": "style_focus_visible",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 3,
+     "message": "Check the keyboard focus indicator is visible when using CSS declaration for 'border' or 'outline'"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-048",
+   "sc": [
+    "2.4.7"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "form div.row > div.datepicker",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": "2.4.7-focus-indicator-removed",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p02"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/main[1]/form[1]/div[4]/div[1]",
+     "selector": "#booking > div:nth-of-type(4) > div",
+     "html": "<div class=\"datepicker\" tabindex=\"0\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0213",
+      "N-0265",
+      "N-0317"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "ibm-equal-access",
+     "tool_version": "4.0.34",
+     "rule_id": "style_focus_visible",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 3,
+     "message": "Check the keyboard focus indicator is visible when using CSS declaration for 'border' or 'outline'"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-049",
+   "sc": [
+    "2.4.7"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "form div.row > input#email",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": "2.4.7-focus-indicator-removed",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p02"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/main[1]/form[1]/div[2]/input[1]",
+     "selector": "#email",
+     "html": "<input id=\"email\" name=\"email\" type=\"email\" required=\"\" class=\"invalid\" style=\"\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0208",
+      "N-0260",
+      "N-0312"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "ibm-equal-access",
+     "tool_version": "4.0.34",
+     "rule_id": "style_focus_visible",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 3,
+     "message": "Check the keyboard focus indicator is visible when using CSS declaration for 'border' or 'outline'"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-050",
+   "sc": [
+    "2.4.7"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "form div.row > input#name",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": "2.4.7-focus-indicator-removed",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p02"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/main[1]/form[1]/div[1]/input[1]",
+     "selector": "#name",
+     "html": "<input id=\"name\" name=\"name\" placeholder=\"Full name\" required=\"\" class=\"invalid\" style=\"\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0206",
+      "N-0258",
+      "N-0310"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "ibm-equal-access",
+     "tool_version": "4.0.34",
+     "rule_id": "style_focus_visible",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 3,
+     "message": "Check the keyboard focus indicator is visible when using CSS declaration for 'border' or 'outline'"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-051",
+   "sc": [
+    "2.4.7"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "form div.row > input#phone",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": "2.4.7-focus-indicator-removed",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p02"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/main[1]/form[1]/div[3]/input[1]",
+     "selector": "#phone",
+     "html": "<input id=\"phone\" name=\"phone\" type=\"tel\" style=\"\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0210",
+      "N-0262",
+      "N-0314"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "ibm-equal-access",
+     "tool_version": "4.0.34",
+     "rule_id": "style_focus_visible",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 3,
+     "message": "Check the keyboard focus indicator is visible when using CSS declaration for 'border' or 'outline'"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-052",
+   "sc": [
+    "2.4.7"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "main div.carousel > button.ctrl.next",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": "2.4.7-focus-indicator-removed",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p01"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/main[1]/div[1]/button[2]",
+     "selector": "body > main > div:nth-of-type(1) > button:nth-of-type(2)",
+     "html": "<button class=\"ctrl next\">›",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0028",
+      "N-0089",
+      "N-0150"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "ibm-equal-access",
+     "tool_version": "4.0.34",
+     "rule_id": "style_focus_visible",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 3,
+     "message": "Check the keyboard focus indicator is visible when using CSS declaration for 'border' or 'outline'"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-053",
+   "sc": [
+    "2.4.7"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "main div.carousel > button.ctrl.prev",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": "2.4.7-focus-indicator-removed",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p01"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/main[1]/div[1]/button[1]",
+     "selector": "body > main > div:nth-of-type(1) > button:nth-of-type(1)",
+     "html": "<button class=\"ctrl prev\">‹",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0026",
+      "N-0087",
+      "N-0148"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "ibm-equal-access",
+     "tool_version": "4.0.34",
+     "rule_id": "style_focus_visible",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 3,
+     "message": "Check the keyboard focus indicator is visible when using CSS declaration for 'border' or 'outline'"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-054",
+   "sc": [
+    "2.4.7"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "main p > a.btn",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": "2.4.7-focus-indicator-removed",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p01"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/main[1]/p[2]/a[1]",
+     "selector": "body > main > p:nth-of-type(2) > a",
+     "html": "<a class=\"btn\" href=\"book.html\">Book an appointment",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0030",
+      "N-0091",
+      "N-0152"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "ibm-equal-access",
+     "tool_version": "4.0.34",
+     "rule_id": "style_focus_visible",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 3,
+     "message": "Check the keyboard focus indicator is visible when using CSS declaration for 'border' or 'outline'"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-055",
+   "sc": [
+    "2.4.11"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "form div.row > button.btn",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": "2.4.11-focus-fully-obscured",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p02"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/main[1]/form[1]/div[5]/button[1]",
+     "selector": "#booking > div:nth-of-type(5) > button",
+     "html": "<button class=\"btn\" type=\"submit\">Request appointment",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p02__320x640.png",
+     "items": [
+      "N-0318"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "ibm-equal-access",
+     "tool_version": "4.0.34",
+     "rule_id": "element_tabbable_unobscured",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 1,
+     "message": "Confirm that when the element receives focus, it is not covered or, if covered by user action, can be uncovered without moving focus"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-056",
+   "sc": [
+    "2.4.11"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "nav nav > a",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": "2.4.11-focus-fully-obscured",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p01"
+   ],
+   "instance_count": 4,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[1]",
+     "selector": "body > header > nav > a:nth-of-type(1)",
+     "html": "<a href=\"index.html\">Home",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "menu-open"
+     ],
+     "screenshot": "p01__320x640__menu-open.png",
+     "items": [
+      "N-0140"
+     ]
+    },
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[2]",
+     "selector": "body > header > nav > a:nth-of-type(2)",
+     "html": "<a href=\"services.html\">Services",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "menu-open"
+     ],
+     "screenshot": "p01__320x640__menu-open.png",
+     "items": [
+      "N-0142"
+     ]
+    },
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[3]",
+     "selector": "body > header > nav > a:nth-of-type(3)",
+     "html": "<a href=\"book.html\">Book",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "menu-open"
+     ],
+     "screenshot": "p01__320x640__menu-open.png",
+     "items": [
+      "N-0144"
+     ]
+    },
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[4]",
+     "selector": "body > header > nav > a:nth-of-type(4)",
+     "html": "<a href=\"contact.html\">Contact",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "menu-open"
+     ],
+     "screenshot": "p01__320x640__menu-open.png",
+     "items": [
+      "N-0146"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "ibm-equal-access",
+     "tool_version": "4.0.34",
+     "rule_id": "element_tabbable_unobscured",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 4,
+     "message": "Confirm that when the element receives focus, it is not covered or, if covered by user action, can be uncovered without moving focus"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-057",
+   "sc": [
+    "2.5.3",
+    "3.3.2"
+   ],
+   "kind": "wcag",
+   "outcome": "cantTell",
+   "component": "form div.row > input#name",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": "3.3.2-input-no-label",
+   "default_severity": "serious",
+   "non_interference": false,
+   "pages": [
+    "p02"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/main[1]/form[1]/div[1]/input[1]",
+     "selector": "#name",
+     "html": "<input id=\"name\" name=\"name\" placeholder=\"Full name\" required=\"\" class=\"invalid\" style=\"\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0207",
+      "N-0259",
+      "N-0311"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "ibm-equal-access",
+     "tool_version": "4.0.34",
+     "rule_id": "input_label_visible",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 3,
+     "message": "The ‘placeholder’ is the only visible label"
+    }
+   ],
+   "related_sc": []
+  },
+  {
+   "id": "C-058",
+   "sc": [],
+   "kind": "above_level",
+   "outcome": "failed",
+   "component": "body body > div.callbar",
+   "suggested_confidence": "high",
+   "agreeing_sources": [
+    "axe-core"
+   ],
+   "evidence_type": "tool",
+   "pattern": null,
+   "default_severity": null,
+   "non_interference": false,
+   "pages": [
+    "p01",
+    "p02",
+    "p03",
+    "p04"
+   ],
+   "instance_count": 4,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/div[1]",
+     "selector": "body > div:nth-of-type(1)",
+     "html": "<div class=\"callbar\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0005",
+      "N-0006",
+      "N-0069",
+      "N-0070",
+      "N-0120",
+      "N-0121"
+     ]
+    },
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/div[1]",
+     "selector": "body > div",
+     "html": "<div class=\"callbar\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0186",
+      "N-0187",
+      "N-0238",
+      "N-0239",
+      "N-0294",
+      "N-0295"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/div[1]",
+     "selector": "body > div:nth-of-type(1)",
+     "html": "<div class=\"callbar\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__1280x800.png",
+     "items": [
+      "N-0338",
+      "N-0339",
+      "N-0384",
+      "N-0385"
+     ]
+    },
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/body[1]/div[1]",
+     "selector": "body > div:nth-of-type(1)",
+     "html": "<div class=\"callbar\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__1280x800.png",
+     "items": [
+      "N-0431",
+      "N-0432",
+      "N-0480",
+      "N-0481"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "axe-core",
+     "tool_version": "4.14.0",
+     "rule_id": "color-contrast-enhanced",
+     "act_rules": [
+      "09o5cg"
+     ],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 20,
+     "message": "Fix any of the following:\n  Element has insufficient color contrast of 5.81 (foreground color: #ffffff, background color: #0b6e8a, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 7:1"
+    }
+   ],
+   "related_sc": [
+    "1.4.6"
+   ]
+  },
+  {
+   "id": "C-059",
+   "sc": [],
+   "kind": "above_level",
+   "outcome": "failed",
+   "component": "footer p > a",
+   "suggested_confidence": "high",
+   "agreeing_sources": [
+    "axe-core"
+   ],
+   "evidence_type": "tool",
+   "pattern": null,
+   "default_severity": null,
+   "non_interference": false,
+   "pages": [
+    "p01",
+    "p02",
+    "p03",
+    "p04"
+   ],
+   "instance_count": 12,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[1]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(1)",
+     "html": "<a href=\"contact.html\">Contact",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0002",
+      "N-0066",
+      "N-0117"
+     ]
+    },
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[2]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(2)",
+     "html": "<a href=\"services.html#fees\">Fees",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0003",
+      "N-0067",
+      "N-0118"
+     ]
+    },
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[3]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(3)",
+     "html": "<a href=\"contact.html#privacy\">Privacy",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0004",
+      "N-0068",
+      "N-0119"
+     ]
+    },
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[1]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(1)",
+     "html": "<a href=\"contact.html\">Contact",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0183",
+      "N-0235",
+      "N-0291"
+     ]
+    },
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[2]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(2)",
+     "html": "<a href=\"services.html#fees\">Fees",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0184",
+      "N-0236",
+      "N-0292"
+     ]
+    },
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[3]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(3)",
+     "html": "<a href=\"contact.html#privacy\">Privacy",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0185",
+      "N-0237",
+      "N-0293"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[1]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(1)",
+     "html": "<a href=\"contact.html\">Contact",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__1280x800.png",
+     "items": [
+      "N-0335",
+      "N-0381"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[2]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(2)",
+     "html": "<a href=\"services.html#fees\">Fees",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__1280x800.png",
+     "items": [
+      "N-0336",
+      "N-0382"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[3]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(3)",
+     "html": "<a href=\"contact.html#privacy\">Privacy",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__1280x800.png",
+     "items": [
+      "N-0337",
+      "N-0383"
+     ]
+    },
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[1]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(1)",
+     "html": "<a href=\"contact.html\">Contact",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__1280x800.png",
+     "items": [
+      "N-0428",
+      "N-0477"
+     ]
+    },
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[2]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(2)",
+     "html": "<a href=\"services.html#fees\">Fees",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__1280x800.png",
+     "items": [
+      "N-0429",
+      "N-0478"
+     ]
+    },
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[3]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(3)",
+     "html": "<a href=\"contact.html#privacy\">Privacy",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__1280x800.png",
+     "items": [
+      "N-0430",
+      "N-0479"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "axe-core",
+     "tool_version": "4.14.0",
+     "rule_id": "color-contrast-enhanced",
+     "act_rules": [
+      "09o5cg"
+     ],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 30,
+     "message": "Fix any of the following:\n  Element has insufficient color contrast of 5.28 (foreground color: #0b6e8a, background color: #f4f4f4, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 7:1"
+    }
+   ],
+   "related_sc": [
+    "1.4.6"
+   ]
+  },
+  {
+   "id": "C-060",
+   "sc": [],
+   "kind": "above_level",
+   "outcome": "failed",
+   "component": "form div.row > button.btn",
+   "suggested_confidence": "high",
+   "agreeing_sources": [
+    "axe-core"
+   ],
+   "evidence_type": "tool",
+   "pattern": null,
+   "default_severity": null,
+   "non_interference": false,
+   "pages": [
+    "p02"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/main[1]/form[1]/div[5]/button[1]",
+     "selector": "#booking > div:nth-of-type(5) > button",
+     "html": "<button class=\"btn\" type=\"submit\">Request appointment",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0182",
+      "N-0234",
+      "N-0290"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "axe-core",
+     "tool_version": "4.14.0",
+     "rule_id": "color-contrast-enhanced",
+     "act_rules": [
+      "09o5cg"
+     ],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 3,
+     "message": "Fix any of the following:\n  Element has insufficient color contrast of 5.81 (foreground color: #ffffff, background color: #0b6e8a, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 7:1"
+    }
+   ],
+   "related_sc": [
+    "1.4.6"
+   ]
+  },
+  {
+   "id": "C-061",
+   "sc": [],
+   "kind": "above_level",
+   "outcome": "failed",
+   "component": "main main > p.form-error#summary",
+   "suggested_confidence": "high",
+   "agreeing_sources": [
+    "axe-core"
+   ],
+   "evidence_type": "tool",
+   "pattern": null,
+   "default_severity": null,
+   "non_interference": false,
+   "pages": [
+    "p02"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/main[1]/p[1]",
+     "selector": "#summary",
+     "html": "<p class=\"form-error\" id=\"summary\">Please fix the errors below.",
+     "viewports": [
+      "1280x800"
+     ],
+     "states": [
+      "errors"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0181"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "axe-core",
+     "tool_version": "4.14.0",
+     "rule_id": "color-contrast-enhanced",
+     "act_rules": [
+      "09o5cg"
+     ],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 1,
+     "message": "Fix any of the following:\n  Element has insufficient color contrast of 5.66 (foreground color: #d0021b, background color: #ffffff, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 7:1"
+    }
+   ],
+   "related_sc": [
+    "1.4.6"
+   ]
+  },
+  {
+   "id": "C-062",
+   "sc": [],
+   "kind": "above_level",
+   "outcome": "failed",
+   "component": "main p > a.btn",
+   "suggested_confidence": "high",
+   "agreeing_sources": [
+    "axe-core"
+   ],
+   "evidence_type": "tool",
+   "pattern": null,
+   "default_severity": null,
+   "non_interference": false,
+   "pages": [
+    "p01"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/main[1]/p[2]/a[1]",
+     "selector": "body > main > p:nth-of-type(2) > a",
+     "html": "<a class=\"btn\" href=\"book.html\">Book an appointment",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0001",
+      "N-0065",
+      "N-0116"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "axe-core",
+     "tool_version": "4.14.0",
+     "rule_id": "color-contrast-enhanced",
+     "act_rules": [
+      "09o5cg"
+     ],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 3,
+     "message": "Fix any of the following:\n  Element has insufficient color contrast of 5.81 (foreground color: #ffffff, background color: #0b6e8a, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 7:1"
+    }
+   ],
+   "related_sc": [
+    "1.4.6"
+   ]
+  },
+  {
+   "id": "C-063",
+   "sc": [],
+   "kind": "above_level",
+   "outcome": "cantTell",
+   "component": "header header > div.menu-toggle",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": null,
+   "default_severity": null,
+   "non_interference": false,
+   "pages": [
+    "p01",
+    "p02",
+    "p03",
+    "p04"
+   ],
+   "instance_count": 4,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/header[1]/div[1]",
+     "selector": "body > header > div",
+     "html": "<div class=\"menu-toggle\">",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__320x640.png",
+     "items": [
+      "N-0078",
+      "N-0132"
+     ]
+    },
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/header[1]/div[1]",
+     "selector": "body > header > div",
+     "html": "<div class=\"menu-toggle\">",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p02__320x640.png",
+     "items": [
+      "N-0302"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/header[1]/div[1]",
+     "selector": "body > header > div",
+     "html": "<div class=\"menu-toggle\">",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__320x640.png",
+     "items": [
+      "N-0392"
+     ]
+    },
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/body[1]/header[1]/div[1]",
+     "selector": "body > header > div",
+     "html": "<div class=\"menu-toggle\">",
+     "viewports": [
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__320x640.png",
+     "items": [
+      "N-0488"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "axe-core",
+     "tool_version": "4.14.0",
+     "rule_id": "color-contrast-enhanced",
+     "act_rules": [
+      "09o5cg"
+     ],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 5,
+     "message": "Fix any of the following:\n  Element content contains only non-text characters"
+    }
+   ],
+   "related_sc": [
+    "1.4.6"
+   ]
+  },
+  {
+   "id": "C-064",
+   "sc": [],
+   "kind": "best_practice",
+   "outcome": "failed",
+   "component": "body body > div.callbar",
+   "suggested_confidence": "high",
+   "agreeing_sources": [
+    "axe-core",
+    "ibm-equal-access"
+   ],
+   "evidence_type": "tool",
+   "pattern": null,
+   "default_severity": null,
+   "non_interference": false,
+   "pages": [
+    "p01",
+    "p02",
+    "p03",
+    "p04"
+   ],
+   "instance_count": 4,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/div[1]",
+     "selector": "body > div:nth-of-type(1)",
+     "html": "<div class=\"callbar\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0014",
+      "N-0032",
+      "N-0074",
+      "N-0093",
+      "N-0129",
+      "N-0154"
+     ]
+    },
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/div[1]",
+     "selector": "body > div",
+     "html": "<div class=\"callbar\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0196",
+      "N-0216",
+      "N-0248",
+      "N-0268",
+      "N-0300",
+      "N-0321"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/div[1]",
+     "selector": "body > div:nth-of-type(1)",
+     "html": "<div class=\"callbar\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__1280x800.png",
+     "items": [
+      "N-0347",
+      "N-0361",
+      "N-0389",
+      "N-0416"
+     ]
+    },
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/body[1]/div[1]",
+     "selector": "body > div:nth-of-type(1)",
+     "html": "<div class=\"callbar\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__1280x800.png",
+     "items": [
+      "N-0441",
+      "N-0457",
+      "N-0486",
+      "N-0501"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "axe-core",
+     "tool_version": "4.14.0",
+     "rule_id": "region",
+     "act_rules": [],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 10,
+     "message": "Fix any of the following:\n  Some page content is not contained by landmarks"
+    },
+    {
+     "tool": "ibm-equal-access",
+     "tool_version": "4.0.34",
+     "rule_id": "aria_content_in_landmark",
+     "act_rules": [],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 10,
+     "message": "Content is not within a landmark element"
+    }
+   ],
+   "related_sc": [
+    "1.3.1"
+   ]
+  },
+  {
+   "id": "C-065",
+   "sc": [],
+   "kind": "best_practice",
+   "outcome": "failed",
+   "component": "body body > div.cookie",
+   "suggested_confidence": "high",
+   "agreeing_sources": [
+    "axe-core",
+    "ibm-equal-access"
+   ],
+   "evidence_type": "tool",
+   "pattern": null,
+   "default_severity": null,
+   "non_interference": false,
+   "pages": [
+    "p01",
+    "p02",
+    "p03",
+    "p04"
+   ],
+   "instance_count": 4,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/div[2]",
+     "selector": "body > div:nth-of-type(2)",
+     "html": "<div class=\"cookie\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0015",
+      "N-0033",
+      "N-0075",
+      "N-0094"
+     ]
+    },
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/div[2]",
+     "selector": "body > div:nth-of-type(2)",
+     "html": "<div class=\"cookie\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p02__1280x800.png",
+     "items": [
+      "N-0249",
+      "N-0269",
+      "N-0301",
+      "N-0322"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/body[1]/div[2]",
+     "selector": "body > div:nth-of-type(2)",
+     "html": "<div class=\"cookie\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__1280x800.png",
+     "items": [
+      "N-0348",
+      "N-0362",
+      "N-0390",
+      "N-0417"
+     ]
+    },
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/body[1]/div[2]",
+     "selector": "body > div:nth-of-type(2)",
+     "html": "<div class=\"cookie\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__1280x800.png",
+     "items": [
+      "N-0442",
+      "N-0458",
+      "N-0487",
+      "N-0502"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "axe-core",
+     "tool_version": "4.14.0",
+     "rule_id": "region",
+     "act_rules": [],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 8,
+     "message": "Fix any of the following:\n  Some page content is not contained by landmarks"
+    },
+    {
+     "tool": "ibm-equal-access",
+     "tool_version": "4.0.34",
+     "rule_id": "aria_content_in_landmark",
+     "act_rules": [],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 8,
+     "message": "Content is not within a landmark element"
+    }
+   ],
+   "related_sc": [
+    "1.3.1"
+   ]
+  },
+  {
+   "id": "C-066",
+   "sc": [],
+   "kind": "best_practice",
+   "outcome": "failed",
+   "component": "form div.row > div.datepicker",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [
+    "ibm-equal-access"
+   ],
+   "evidence_type": "tool",
+   "pattern": null,
+   "default_severity": null,
+   "non_interference": false,
+   "pages": [
+    "p02"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/body[1]/main[1]/form[1]/div[4]/div[1]",
+     "selector": "#booking > div:nth-of-type(4) > div",
+     "html": "<div class=\"datepicker\" tabindex=\"0\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0212",
+      "N-0264",
+      "N-0316"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "ibm-equal-access",
+     "tool_version": "4.0.34",
+     "rule_id": "element_tabbable_role_valid",
+     "act_rules": [],
+     "outcomes": [
+      "failed"
+     ],
+     "count": 3,
+     "message": "The tabbable element does not have a valid widget role"
+    }
+   ],
+   "related_sc": [
+    "4.1.2"
+   ]
+  },
+  {
+   "id": "C-067",
+   "sc": [],
+   "kind": "best_practice",
+   "outcome": "cantTell",
+   "component": "body head > link",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "tool",
+   "pattern": null,
+   "default_severity": null,
+   "non_interference": false,
+   "pages": [
+    "p01",
+    "p02",
+    "p03",
+    "p04"
+   ],
+   "instance_count": 4,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/head[1]/link[1]",
+     "selector": "head > link",
+     "html": "<link rel=\"stylesheet\" href=\"site.css\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial",
+      "menu-open"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0019",
+      "N-0083",
+      "N-0136"
+     ]
+    },
+    {
+     "page": "p02",
+     "url": "http://127.0.0.1:8137/book.html",
+     "xpath": "/html[1]/head[1]/link[1]",
+     "selector": "head > link",
+     "html": "<link rel=\"stylesheet\" href=\"site.css\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "errors",
+      "initial"
+     ],
+     "screenshot": "p02__1280x800__errors.png",
+     "items": [
+      "N-0198",
+      "N-0251",
+      "N-0306"
+     ]
+    },
+    {
+     "page": "p03",
+     "url": "http://127.0.0.1:8137/services.html",
+     "xpath": "/html[1]/head[1]/link[1]",
+     "selector": "head > link",
+     "html": "<link rel=\"stylesheet\" href=\"site.css\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p03__1280x800.png",
+     "items": [
+      "N-0350",
+      "N-0408"
+     ]
+    },
+    {
+     "page": "p04",
+     "url": "http://127.0.0.1:8137/contact.html",
+     "xpath": "/html[1]/head[1]/link[1]",
+     "selector": "head > link",
+     "html": "<link rel=\"stylesheet\" href=\"site.css\">",
+     "viewports": [
+      "1280x800",
+      "320x640"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p04__1280x800.png",
+     "items": [
+      "N-0446",
+      "N-0493"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "ibm-equal-access",
+     "tool_version": "4.0.34",
+     "rule_id": "style_highcontrast_visible",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 10,
+     "message": "Confirm Windows high contrast mode is supported when using CSS to include, position or alter non-decorative content"
+    }
+   ],
+   "related_sc": [
+    "1.1.1",
+    "1.3.2",
+    "1.4.11"
+   ]
+  },
+  {
+   "id": "C-068",
+   "sc": [],
+   "kind": "best_practice",
+   "outcome": "cantTell",
+   "component": "main main > div.carousel",
+   "suggested_confidence": "medium",
+   "agreeing_sources": [],
+   "evidence_type": "probe",
+   "pattern": null,
+   "default_severity": null,
+   "non_interference": false,
+   "pages": [
+    "p01"
+   ],
+   "instance_count": 1,
+   "instances": [
+    {
+     "page": "p01",
+     "url": "http://127.0.0.1:8137/index.html",
+     "xpath": "/html[1]/body[1]/main[1]/div[1]",
+     "selector": "body > main > div:nth-of-type(1)",
+     "html": "<div class=\"carousel\">",
+     "viewports": [
+      "1280x800"
+     ],
+     "states": [
+      "initial"
+     ],
+     "screenshot": "p01__1280x800.png",
+     "items": [
+      "N-0064"
+     ]
+    }
+   ],
+   "sources": [
+    {
+     "tool": "probe",
+     "tool_version": null,
+     "rule_id": "motion.ignores_reduced_motion",
+     "act_rules": [],
+     "outcomes": [
+      "cantTell"
+     ],
+     "count": 1,
+     "message": "Still moving with prefers-reduced-motion: reduce"
+    }
+   ],
+   "related_sc": [
+    "2.3.3"
+   ]
+  }
+ ],
+ "sc_draft": [
+  {
+   "sc": "1.1.1",
+   "title": "Non-text Content",
+   "level": "A",
+   "automatable": "partial",
+   "draft_outcome": "failed",
+   "failed_candidates": [
+    "C-001"
+   ],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {
+     "ibm:img_alt_background": 428,
+     "ibm:img_alt_misuse": 19,
+     "ibm:style_background_decorative": 9,
+     "ibm:style_highcontrast_visible": 9
+    },
+    "htmlcs_notices": 10,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: failing candidates found; confirm in triage"
+  },
+  {
+   "sc": "1.2.1",
+   "title": "Audio-only and Video-only (Prerecorded)",
+   "level": "A",
+   "automatable": "partial",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {},
+    "htmlcs_notices": 2,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  },
+  {
+   "sc": "1.2.2",
+   "title": "Captions (Prerecorded)",
+   "level": "A",
+   "automatable": "partial",
+   "draft_outcome": "cantTell",
+   "failed_candidates": [],
+   "cant_tell_candidates": [
+    "C-025"
+   ],
+   "evidence": {
+    "tool_rule_passes": {},
+    "htmlcs_notices": 2,
+    "probe_checks": 1,
+    "probe_failures": 0,
+    "probe_cant_tell": 1
+   },
+   "note": "Draft: only needs-review candidates"
+  },
+  {
+   "sc": "1.2.3",
+   "title": "Audio Description or Media Alternative (Prerecorded)",
+   "level": "A",
+   "automatable": "partial",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {},
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  },
+  {
+   "sc": "1.2.4",
+   "title": "Captions (Live)",
+   "level": "AA",
+   "automatable": "none",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {},
+    "htmlcs_notices": 2,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  },
+  {
+   "sc": "1.2.5",
+   "title": "Audio Description (Prerecorded)",
+   "level": "AA",
+   "automatable": "partial",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {},
+    "htmlcs_notices": 2,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  },
+  {
+   "sc": "1.3.1",
+   "title": "Info and Relationships",
+   "level": "A",
+   "automatable": "partial",
+   "draft_outcome": "failed",
+   "failed_candidates": [
+    "C-002",
+    "C-003"
+   ],
+   "cant_tell_candidates": [
+    "C-026",
+    "C-027",
+    "C-028",
+    "C-029",
+    "C-030"
+   ],
+   "evidence": {
+    "tool_rule_passes": {
+     "axe:aria-hidden-body": 10,
+     "ibm:aria_content_in_landmark": 310,
+     "ibm:text_quoted_correctly": 418,
+     "ibm:aria_banner_single": 10,
+     "ibm:aria_banner_label_unique": 10,
+     "ibm:aria_navigation_label_unique": 6,
+     "ibm:heading_markup_misuse": 34,
+     "ibm:aria_contentinfo_misuse": 10,
+     "ibm:aria_contentinfo_single": 10,
+     "ibm:aria_contentinfo_label_unique": 10,
+     "ibm:aria_form_label_unique": 3,
+     "ibm:input_fields_grouped": 9,
+     "ibm:form_label_unique": 6,
+     "ibm:label_ref_valid": 3,
+     "axe:td-headers-attr": 2,
+     "axe:th-has-data-cells": 2,
+     "ibm:table_headers_exists": 2,
+     "ibm:table_layout_linearized": 2,
+     "ibm:aria_child_valid": 12
+    },
+    "htmlcs_notices": 2,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: failing candidates found; confirm in triage"
+  },
+  {
+   "sc": "1.3.2",
+   "title": "Meaningful Sequence",
+   "level": "A",
+   "automatable": "partial",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {
+     "ibm:text_whitespace_valid": 418,
+     "ibm:style_highcontrast_visible": 9
+    },
+    "htmlcs_notices": 10,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  },
+  {
+   "sc": "1.3.3",
+   "title": "Sensory Characteristics",
+   "level": "A",
+   "automatable": "none",
+   "draft_outcome": "cantTell",
+   "failed_candidates": [],
+   "cant_tell_candidates": [
+    "C-031",
+    "C-032"
+   ],
+   "evidence": {
+    "tool_rule_passes": {},
+    "htmlcs_notices": 10,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: only needs-review candidates"
+  },
+  {
+   "sc": "1.3.4",
+   "title": "Orientation",
+   "level": "AA",
+   "automatable": "partial",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {},
+    "htmlcs_notices": 10,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  },
+  {
+   "sc": "1.3.5",
+   "title": "Identify Input Purpose",
+   "level": "AA",
+   "automatable": "partial",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {},
+    "htmlcs_notices": 18,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  },
+  {
+   "sc": "1.4.1",
+   "title": "Use of Color",
+   "level": "A",
+   "automatable": "partial",
+   "draft_outcome": "cantTell",
+   "failed_candidates": [],
+   "cant_tell_candidates": [
+    "C-033"
+   ],
+   "evidence": {
+    "tool_rule_passes": {
+     "ibm:form_font_color": 3,
+     "ibm:style_color_misuse": 9,
+     "axe:link-in-text-block": 2
+    },
+    "htmlcs_notices": 10,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: only needs-review candidates"
+  },
+  {
+   "sc": "1.4.2",
+   "title": "Audio Control",
+   "level": "A",
+   "automatable": "partial",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {},
+    "htmlcs_notices": 2,
+    "probe_checks": 1,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  },
+  {
+   "sc": "1.4.3",
+   "title": "Contrast (Minimum)",
+   "level": "AA",
+   "automatable": "partial",
+   "draft_outcome": "failed",
+   "failed_candidates": [
+    "C-004",
+    "C-005"
+   ],
+   "cant_tell_candidates": [
+    "C-034",
+    "C-035",
+    "C-036",
+    "C-037",
+    "C-038",
+    "C-039",
+    "C-040",
+    "C-041",
+    "C-042"
+   ],
+   "evidence": {
+    "tool_rule_passes": {
+     "axe:color-contrast": 10,
+     "ibm:text_contrast_sufficient": 191
+    },
+    "htmlcs_notices": 0,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: failing candidates found; confirm in triage"
+  },
+  {
+   "sc": "1.4.4",
+   "title": "Resize Text",
+   "level": "AA",
+   "automatable": "partial",
+   "draft_outcome": "failed",
+   "failed_candidates": [
+    "C-006"
+   ],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {
+     "axe:meta-viewport": 10,
+     "ibm:style_viewport_resizable": 19
+    },
+    "htmlcs_notices": 10,
+    "probe_checks": 4,
+    "probe_failures": 1,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: failing candidates found; confirm in triage"
+  },
+  {
+   "sc": "1.4.5",
+   "title": "Images of Text",
+   "level": "AA",
+   "automatable": "none",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {},
+    "htmlcs_notices": 10,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  },
+  {
+   "sc": "1.4.10",
+   "title": "Reflow",
+   "level": "AA",
+   "automatable": "partial",
+   "draft_outcome": "failed",
+   "failed_candidates": [
+    "C-007"
+   ],
+   "cant_tell_candidates": [
+    "C-043",
+    "C-044",
+    "C-045"
+   ],
+   "evidence": {
+    "tool_rule_passes": {
+     "ibm:style_viewport_resizable": 19
+    },
+    "htmlcs_notices": 10,
+    "probe_checks": 4,
+    "probe_failures": 1,
+    "probe_cant_tell": 1
+   },
+   "note": "Draft: failing candidates found; confirm in triage"
+  },
+  {
+   "sc": "1.4.11",
+   "title": "Non-text Contrast",
+   "level": "AA",
+   "automatable": "partial",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {
+     "ibm:style_highcontrast_visible": 9
+    },
+    "htmlcs_notices": 10,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  },
+  {
+   "sc": "1.4.12",
+   "title": "Text Spacing",
+   "level": "AA",
+   "automatable": "partial",
+   "draft_outcome": "failed",
+   "failed_candidates": [
+    "C-008",
+    "C-009"
+   ],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {
+     "ibm:text_spacing_valid": 12
+    },
+    "htmlcs_notices": 10,
+    "probe_checks": 8,
+    "probe_failures": 4,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: failing candidates found; confirm in triage"
+  },
+  {
+   "sc": "1.4.13",
+   "title": "Content on Hover or Focus",
+   "level": "AA",
+   "automatable": "partial",
+   "draft_outcome": "failed",
+   "failed_candidates": [
+    "C-010"
+   ],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {},
+    "htmlcs_notices": 10,
+    "probe_checks": 54,
+    "probe_failures": 2,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: failing candidates found; confirm in triage"
+  },
+  {
+   "sc": "2.1.1",
+   "title": "Keyboard",
+   "level": "A",
+   "automatable": "partial",
+   "draft_outcome": "failed",
+   "failed_candidates": [
+    "C-011",
+    "C-012"
+   ],
+   "cant_tell_candidates": [
+    "C-046"
+   ],
+   "evidence": {
+    "tool_rule_passes": {
+     "ibm:widget_tabbable_exists": 129,
+     "ibm:widget_tabbable_single": 137
+    },
+    "htmlcs_notices": 0,
+    "probe_checks": 157,
+    "probe_failures": 5,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: failing candidates found; confirm in triage"
+  },
+  {
+   "sc": "2.1.2",
+   "title": "No Keyboard Trap",
+   "level": "A",
+   "automatable": "partial",
+   "draft_outcome": "failed",
+   "failed_candidates": [
+    "C-013"
+   ],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {},
+    "htmlcs_notices": 0,
+    "probe_checks": 157,
+    "probe_failures": 3,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: failing candidates found; confirm in triage"
+  },
+  {
+   "sc": "2.1.4",
+   "title": "Character Key Shortcuts",
+   "level": "A",
+   "automatable": "none",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {},
+    "htmlcs_notices": 10,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  },
+  {
+   "sc": "2.2.1",
+   "title": "Timing Adjustable",
+   "level": "A",
+   "automatable": "partial",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {},
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  },
+  {
+   "sc": "2.2.2",
+   "title": "Pause, Stop, Hide",
+   "level": "A",
+   "automatable": "partial",
+   "draft_outcome": "failed",
+   "failed_candidates": [
+    "C-014"
+   ],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {
+     "ibm:blink_css_review": 9
+    },
+    "htmlcs_notices": 10,
+    "probe_checks": 4,
+    "probe_failures": 1,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: failing candidates found; confirm in triage"
+  },
+  {
+   "sc": "2.3.1",
+   "title": "Three Flashes or Below Threshold",
+   "level": "A",
+   "automatable": "none",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {},
+    "htmlcs_notices": 10,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  },
+  {
+   "sc": "2.4.1",
+   "title": "Bypass Blocks",
+   "level": "A",
+   "automatable": "partial",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {
+     "axe:bypass": 10,
+     "ibm:html_skipnav_exists": 10,
+     "ibm:skip_main_exists": 10,
+     "ibm:skip_main_described": 10
+    },
+    "htmlcs_notices": 10,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  },
+  {
+   "sc": "2.4.2",
+   "title": "Page Titled",
+   "level": "A",
+   "automatable": "partial",
+   "draft_outcome": "failed",
+   "failed_candidates": [
+    "C-015"
+   ],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {
+     "axe:document-title": 8,
+     "ibm:page_title_exists": 8,
+     "ibm:page_title_valid": 8
+    },
+    "htmlcs_notices": 8,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: failing candidates found; confirm in triage"
+  },
+  {
+   "sc": "2.4.3",
+   "title": "Focus Order",
+   "level": "A",
+   "automatable": "partial",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {
+     "ibm:widget_tabbable_single": 137
+    },
+    "htmlcs_notices": 3,
+    "probe_checks": 157,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  },
+  {
+   "sc": "2.4.4",
+   "title": "Link Purpose (In Context)",
+   "level": "A",
+   "automatable": "partial",
+   "draft_outcome": "failed",
+   "failed_candidates": [
+    "C-016"
+   ],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {
+     "axe:link-name": 10,
+     "ibm:a_text_purpose": 78
+    },
+    "htmlcs_notices": 104,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: failing candidates found; confirm in triage"
+  },
+  {
+   "sc": "2.4.5",
+   "title": "Multiple Ways",
+   "level": "AA",
+   "automatable": "none",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {},
+    "htmlcs_notices": 10,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  },
+  {
+   "sc": "2.4.6",
+   "title": "Headings and Labels",
+   "level": "AA",
+   "automatable": "partial",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {
+     "ibm:heading_content_exists": 34
+    },
+    "htmlcs_notices": 10,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  },
+  {
+   "sc": "2.4.7",
+   "title": "Focus Visible",
+   "level": "AA",
+   "automatable": "partial",
+   "draft_outcome": "failed",
+   "failed_candidates": [
+    "C-017"
+   ],
+   "cant_tell_candidates": [
+    "C-047",
+    "C-048",
+    "C-049",
+    "C-050",
+    "C-051",
+    "C-052",
+    "C-053",
+    "C-054"
+   ],
+   "evidence": {
+    "tool_rule_passes": {
+     "ibm:element_tabbable_visible": 134,
+     "ibm:style_focus_visible": 110
+    },
+    "htmlcs_notices": 10,
+    "probe_checks": 133,
+    "probe_failures": 24,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: failing candidates found; confirm in triage"
+  },
+  {
+   "sc": "2.4.11",
+   "title": "Focus Not Obscured (Minimum)",
+   "level": "AA",
+   "automatable": "partial",
+   "draft_outcome": "failed",
+   "failed_candidates": [
+    "C-018"
+   ],
+   "cant_tell_candidates": [
+    "C-055",
+    "C-056"
+   ],
+   "evidence": {
+    "tool_rule_passes": {
+     "ibm:element_tabbable_unobscured": 129
+    },
+    "htmlcs_notices": 0,
+    "probe_checks": 157,
+    "probe_failures": 21,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: failing candidates found; confirm in triage"
+  },
+  {
+   "sc": "2.5.1",
+   "title": "Pointer Gestures",
+   "level": "A",
+   "automatable": "none",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {},
+    "htmlcs_notices": 10,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  },
+  {
+   "sc": "2.5.2",
+   "title": "Pointer Cancellation",
+   "level": "A",
+   "automatable": "none",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {},
+    "htmlcs_notices": 10,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  },
+  {
+   "sc": "2.5.3",
+   "title": "Label in Name",
+   "level": "A",
+   "automatable": "partial",
+   "draft_outcome": "cantTell",
+   "failed_candidates": [],
+   "cant_tell_candidates": [
+    "C-057"
+   ],
+   "evidence": {
+    "tool_rule_passes": {
+     "ibm:input_label_visible": 35
+    },
+    "htmlcs_notices": 10,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: only needs-review candidates"
+  },
+  {
+   "sc": "2.5.4",
+   "title": "Motion Actuation",
+   "level": "A",
+   "automatable": "none",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {},
+    "htmlcs_notices": 10,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  },
+  {
+   "sc": "2.5.7",
+   "title": "Dragging Movements",
+   "level": "AA",
+   "automatable": "partial",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {},
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  },
+  {
+   "sc": "2.5.8",
+   "title": "Target Size (Minimum)",
+   "level": "AA",
+   "automatable": "partial",
+   "draft_outcome": "failed",
+   "failed_candidates": [
+    "C-019",
+    "C-020",
+    "C-021"
+   ],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {
+     "axe:target-size": 10,
+     "ibm:target_spacing_sufficient": 125
+    },
+    "htmlcs_notices": 0,
+    "probe_checks": 99,
+    "probe_failures": 7,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: failing candidates found; confirm in triage"
+  },
+  {
+   "sc": "3.1.1",
+   "title": "Language of Page",
+   "level": "A",
+   "automatable": "full",
+   "draft_outcome": "failed",
+   "failed_candidates": [
+    "C-022"
+   ],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {
+     "axe:html-has-lang": 10,
+     "axe:html-lang-valid": 10,
+     "ibm:html_lang_valid": 10,
+     "ibm:html_lang_exists": 10
+    },
+    "htmlcs_notices": 0,
+    "probe_checks": 4,
+    "probe_failures": 1,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: failing candidates found; confirm in triage"
+  },
+  {
+   "sc": "3.1.2",
+   "title": "Language of Parts",
+   "level": "AA",
+   "automatable": "partial",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {},
+    "htmlcs_notices": 10,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  },
+  {
+   "sc": "3.2.1",
+   "title": "On Focus",
+   "level": "A",
+   "automatable": "none",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {},
+    "htmlcs_notices": 41,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  },
+  {
+   "sc": "3.2.2",
+   "title": "On Input",
+   "level": "A",
+   "automatable": "partial",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {
+     "ibm:form_submit_button_exists": 3
+    },
+    "htmlcs_notices": 0,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  },
+  {
+   "sc": "3.2.3",
+   "title": "Consistent Navigation",
+   "level": "AA",
+   "automatable": "none",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {},
+    "htmlcs_notices": 10,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  },
+  {
+   "sc": "3.2.4",
+   "title": "Consistent Identification",
+   "level": "AA",
+   "automatable": "none",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {},
+    "htmlcs_notices": 10,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  },
+  {
+   "sc": "3.2.6",
+   "title": "Consistent Help",
+   "level": "A",
+   "automatable": "none",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {},
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  },
+  {
+   "sc": "3.3.1",
+   "title": "Error Identification",
+   "level": "A",
+   "automatable": "partial",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {},
+    "htmlcs_notices": 3,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  },
+  {
+   "sc": "3.3.2",
+   "title": "Labels or Instructions",
+   "level": "A",
+   "automatable": "partial",
+   "draft_outcome": "cantTell",
+   "failed_candidates": [],
+   "cant_tell_candidates": [
+    "C-057"
+   ],
+   "evidence": {
+    "tool_rule_passes": {
+     "ibm:input_label_visible": 35,
+     "axe:form-field-multiple-labels": 3
+    },
+    "htmlcs_notices": 3,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: only needs-review candidates"
+  },
+  {
+   "sc": "3.3.3",
+   "title": "Error Suggestion",
+   "level": "AA",
+   "automatable": "none",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {},
+    "htmlcs_notices": 3,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  },
+  {
+   "sc": "3.3.4",
+   "title": "Error Prevention (Legal, Financial, Data)",
+   "level": "AA",
+   "automatable": "none",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {},
+    "htmlcs_notices": 3,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  },
+  {
+   "sc": "3.3.7",
+   "title": "Redundant Entry",
+   "level": "A",
+   "automatable": "none",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {},
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  },
+  {
+   "sc": "3.3.8",
+   "title": "Accessible Authentication (Minimum)",
+   "level": "AA",
+   "automatable": "none",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {},
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  },
+  {
+   "sc": "4.1.1",
+   "title": "Parsing",
+   "level": "A",
+   "automatable": "partial",
+   "draft_outcome": "inapplicable",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {},
+   "note": "Obsolete in WCAG 2.2"
+  },
+  {
+   "sc": "4.1.2",
+   "title": "Name, Role, Value",
+   "level": "A",
+   "automatable": "partial",
+   "draft_outcome": "failed",
+   "failed_candidates": [
+    "C-016",
+    "C-023",
+    "C-024"
+   ],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {
+     "axe:aria-allowed-attr": 3,
+     "axe:aria-conditional-attr": 3,
+     "axe:aria-hidden-body": 10,
+     "axe:aria-prohibited-attr": 3,
+     "axe:aria-valid-attr-value": 3,
+     "axe:aria-valid-attr": 3,
+     "axe:button-name": 10,
+     "axe:duplicate-id-aria": 6,
+     "axe:link-name": 10,
+     "axe:nested-interactive": 10,
+     "ibm:aria_descendant_valid": 42,
+     "ibm:a_text_purpose": 78,
+     "ibm:aria_accessiblename_exists": 42,
+     "ibm:input_label_exists": 38,
+     "ibm:aria_attribute_allowed": 3,
+     "ibm:aria_id_unique": 3,
+     "axe:label": 3,
+     "ibm:label_content_exists": 6
+    },
+    "htmlcs_notices": 0,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: failing candidates found; confirm in triage"
+  },
+  {
+   "sc": "4.1.3",
+   "title": "Status Messages",
+   "level": "AA",
+   "automatable": "none",
+   "draft_outcome": "untested",
+   "failed_candidates": [],
+   "cant_tell_candidates": [],
+   "evidence": {
+    "tool_rule_passes": {},
+    "htmlcs_notices": 10,
+    "probe_checks": 0,
+    "probe_failures": 0,
+    "probe_cant_tell": 0
+   },
+   "note": "Draft: no automated failure; tool passes never establish a pass"
+  }
+ ]
+}

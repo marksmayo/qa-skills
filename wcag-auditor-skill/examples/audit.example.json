@@ -1,0 +1,4580 @@
+{
+  "schema_version": "1.0",
+  "skill": {
+    "name": "wcag-auditor",
+    "version": "1.0.0"
+  },
+  "generated_at": "2026-11-10T09:41:27Z",
+  "scope": {
+    "targets": [
+      "http://127.0.0.1:8137/index.html"
+    ],
+    "wcag_version": "2.2",
+    "level": "AA",
+    "exclusions": [
+      "https://maps.example/harbour-dental (third-party map, linked not embedded)",
+      "PDF documents (none linked)"
+    ],
+    "authorised_by": "Loopback copy of the example site served by the auditor (examples/harbour-dental/site); no third-party target.",
+    "allow_form_submission": false,
+    "standards_map": null,
+    "critical_paths": [
+      {
+        "name": "Book an appointment",
+        "steps": [
+          {
+            "url": "http://127.0.0.1:8137/index.html",
+            "state": null,
+            "label": "Home page, choose Book"
+          },
+          {
+            "url": "http://127.0.0.1:8137/book.html",
+            "state": null,
+            "label": "Fill in the booking form"
+          },
+          {
+            "url": "http://127.0.0.1:8137/book.html",
+            "state": "errors",
+            "label": "Correct errors and submit"
+          }
+        ]
+      }
+    ]
+  },
+  "metadata": {
+    "browser": {
+      "name": "chromium",
+      "version": "156.0.8078.4"
+    },
+    "playwright": "1.64.1",
+    "tools": [
+      {
+        "name": "axe-core",
+        "version": "4.14.0",
+        "license": "MPL-2.0",
+        "status": "ran",
+        "reason": "",
+        "sha256": "20c09fe157a8a34a30e241aaa1fcdade657734f08ab379ecfbeb7d45cc46e878"
+      },
+      {
+        "name": "ibm-equal-access",
+        "version": "4.0.34",
+        "license": "Apache-2.0",
+        "status": "ran",
+        "reason": "",
+        "sha256": "1fd7c18b2aa5ba3ec0444a275e2e08e2823c317316c6613d1c273d2a688760fa"
+      },
+      {
+        "name": "htmlcs",
+        "version": "2.5.1",
+        "license": "BSD-3-Clause",
+        "status": "ran",
+        "reason": "",
+        "sha256": "bc9501382a35bff6acfc255945b1ed732fcec544cfcaeec17b5ac8d79a6c7967"
+      },
+      {
+        "name": "vnu",
+        "version": "26.10.12",
+        "license": "MIT",
+        "status": "not_run",
+        "reason": "Optional engine; not fetched. In the environment that produced this example, downloading and running the Nu HTML Checker jar was not permitted, so duplicate-ID and invalid-ARIA markup checks rely on axe and IBM only.",
+        "sha256": null
+      }
+    ],
+    "viewports": [
+      "1280x800",
+      "320x640"
+    ],
+    "auth_used": false,
+    "sample": [
+      {
+        "id": "p01",
+        "url": "http://127.0.0.1:8137/index.html",
+        "template": "T1e04de",
+        "reason": "critical_path",
+        "title": "Harbour Dental - Family dentist in Sydney"
+      },
+      {
+        "id": "p02",
+        "url": "http://127.0.0.1:8137/book.html",
+        "template": "Ta1d7d5",
+        "reason": "critical_path",
+        "title": "Book an appointment - Harbour Dental"
+      },
+      {
+        "id": "p03",
+        "url": "http://127.0.0.1:8137/services.html",
+        "template": "T02bc7a",
+        "reason": "structured",
+        "title": "Services and fees - Harbour Dental"
+      },
+      {
+        "id": "p04",
+        "url": "http://127.0.0.1:8137/contact.html",
+        "template": "Taabfaa",
+        "reason": "structured",
+        "title": null,
+        "note": "Empty <title>"
+      }
+    ],
+    "unsampled_count": 0,
+    "checks": [
+      {
+        "page": "p01",
+        "viewport": "1280x800",
+        "kind": "engine",
+        "name": "axe-core",
+        "status": "ran"
+      },
+      {
+        "page": "p01",
+        "viewport": "1280x800",
+        "kind": "engine",
+        "name": "ibm-equal-access",
+        "status": "ran"
+      },
+      {
+        "page": "p01",
+        "viewport": "1280x800",
+        "kind": "engine",
+        "name": "htmlcs",
+        "status": "ran"
+      },
+      {
+        "page": "p01",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "keyboard",
+        "status": "ran"
+      },
+      {
+        "page": "p01",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "focus_visible",
+        "status": "ran"
+      },
+      {
+        "page": "p01",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "text_spacing",
+        "status": "ran"
+      },
+      {
+        "page": "p01",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "resize_text",
+        "status": "ran"
+      },
+      {
+        "page": "p01",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "target_size",
+        "status": "ran"
+      },
+      {
+        "page": "p01",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "hover_focus",
+        "status": "ran"
+      },
+      {
+        "page": "p01",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "motion",
+        "status": "ran"
+      },
+      {
+        "page": "p01",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "a11y_tree",
+        "status": "ran"
+      },
+      {
+        "page": "p01",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "language",
+        "status": "ran"
+      },
+      {
+        "page": "p01",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "media",
+        "status": "ran"
+      },
+      {
+        "page": "p01",
+        "viewport": "320x640",
+        "kind": "engine",
+        "name": "axe-core",
+        "status": "ran"
+      },
+      {
+        "page": "p01",
+        "viewport": "320x640",
+        "kind": "engine",
+        "name": "ibm-equal-access",
+        "status": "ran"
+      },
+      {
+        "page": "p01",
+        "viewport": "320x640",
+        "kind": "engine",
+        "name": "htmlcs",
+        "status": "ran"
+      },
+      {
+        "page": "p01",
+        "viewport": "320x640",
+        "kind": "probe",
+        "name": "keyboard",
+        "status": "ran"
+      },
+      {
+        "page": "p01",
+        "viewport": "320x640",
+        "kind": "probe",
+        "name": "focus_visible",
+        "status": "ran"
+      },
+      {
+        "page": "p01",
+        "viewport": "320x640",
+        "kind": "probe",
+        "name": "reflow",
+        "status": "ran"
+      },
+      {
+        "page": "p01",
+        "viewport": "320x640",
+        "kind": "probe",
+        "name": "text_spacing",
+        "status": "ran"
+      },
+      {
+        "page": "p01",
+        "viewport": "320x640",
+        "kind": "probe",
+        "name": "target_size",
+        "status": "ran"
+      },
+      {
+        "page": "p02",
+        "viewport": "1280x800",
+        "kind": "engine",
+        "name": "axe-core",
+        "status": "ran"
+      },
+      {
+        "page": "p02",
+        "viewport": "1280x800",
+        "kind": "engine",
+        "name": "ibm-equal-access",
+        "status": "ran"
+      },
+      {
+        "page": "p02",
+        "viewport": "1280x800",
+        "kind": "engine",
+        "name": "htmlcs",
+        "status": "ran"
+      },
+      {
+        "page": "p02",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "keyboard",
+        "status": "ran"
+      },
+      {
+        "page": "p02",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "focus_visible",
+        "status": "ran"
+      },
+      {
+        "page": "p02",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "text_spacing",
+        "status": "ran"
+      },
+      {
+        "page": "p02",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "resize_text",
+        "status": "ran"
+      },
+      {
+        "page": "p02",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "target_size",
+        "status": "ran"
+      },
+      {
+        "page": "p02",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "hover_focus",
+        "status": "ran"
+      },
+      {
+        "page": "p02",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "motion",
+        "status": "ran"
+      },
+      {
+        "page": "p02",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "a11y_tree",
+        "status": "ran"
+      },
+      {
+        "page": "p02",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "language",
+        "status": "ran"
+      },
+      {
+        "page": "p02",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "media",
+        "status": "ran"
+      },
+      {
+        "page": "p02",
+        "viewport": "320x640",
+        "kind": "engine",
+        "name": "axe-core",
+        "status": "ran"
+      },
+      {
+        "page": "p02",
+        "viewport": "320x640",
+        "kind": "engine",
+        "name": "ibm-equal-access",
+        "status": "ran"
+      },
+      {
+        "page": "p02",
+        "viewport": "320x640",
+        "kind": "engine",
+        "name": "htmlcs",
+        "status": "ran"
+      },
+      {
+        "page": "p02",
+        "viewport": "320x640",
+        "kind": "probe",
+        "name": "keyboard",
+        "status": "ran"
+      },
+      {
+        "page": "p02",
+        "viewport": "320x640",
+        "kind": "probe",
+        "name": "focus_visible",
+        "status": "ran"
+      },
+      {
+        "page": "p02",
+        "viewport": "320x640",
+        "kind": "probe",
+        "name": "reflow",
+        "status": "ran"
+      },
+      {
+        "page": "p02",
+        "viewport": "320x640",
+        "kind": "probe",
+        "name": "text_spacing",
+        "status": "ran"
+      },
+      {
+        "page": "p02",
+        "viewport": "320x640",
+        "kind": "probe",
+        "name": "target_size",
+        "status": "ran"
+      },
+      {
+        "page": "p03",
+        "viewport": "1280x800",
+        "kind": "engine",
+        "name": "axe-core",
+        "status": "ran"
+      },
+      {
+        "page": "p03",
+        "viewport": "1280x800",
+        "kind": "engine",
+        "name": "ibm-equal-access",
+        "status": "ran"
+      },
+      {
+        "page": "p03",
+        "viewport": "1280x800",
+        "kind": "engine",
+        "name": "htmlcs",
+        "status": "ran"
+      },
+      {
+        "page": "p03",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "keyboard",
+        "status": "ran"
+      },
+      {
+        "page": "p03",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "focus_visible",
+        "status": "ran"
+      },
+      {
+        "page": "p03",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "text_spacing",
+        "status": "ran"
+      },
+      {
+        "page": "p03",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "resize_text",
+        "status": "ran"
+      },
+      {
+        "page": "p03",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "target_size",
+        "status": "ran"
+      },
+      {
+        "page": "p03",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "hover_focus",
+        "status": "ran"
+      },
+      {
+        "page": "p03",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "motion",
+        "status": "ran"
+      },
+      {
+        "page": "p03",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "a11y_tree",
+        "status": "ran"
+      },
+      {
+        "page": "p03",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "language",
+        "status": "ran"
+      },
+      {
+        "page": "p03",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "media",
+        "status": "ran"
+      },
+      {
+        "page": "p03",
+        "viewport": "320x640",
+        "kind": "engine",
+        "name": "axe-core",
+        "status": "ran"
+      },
+      {
+        "page": "p03",
+        "viewport": "320x640",
+        "kind": "engine",
+        "name": "ibm-equal-access",
+        "status": "ran"
+      },
+      {
+        "page": "p03",
+        "viewport": "320x640",
+        "kind": "engine",
+        "name": "htmlcs",
+        "status": "ran"
+      },
+      {
+        "page": "p03",
+        "viewport": "320x640",
+        "kind": "probe",
+        "name": "keyboard",
+        "status": "ran"
+      },
+      {
+        "page": "p03",
+        "viewport": "320x640",
+        "kind": "probe",
+        "name": "focus_visible",
+        "status": "ran"
+      },
+      {
+        "page": "p03",
+        "viewport": "320x640",
+        "kind": "probe",
+        "name": "reflow",
+        "status": "ran"
+      },
+      {
+        "page": "p03",
+        "viewport": "320x640",
+        "kind": "probe",
+        "name": "text_spacing",
+        "status": "ran"
+      },
+      {
+        "page": "p03",
+        "viewport": "320x640",
+        "kind": "probe",
+        "name": "target_size",
+        "status": "ran"
+      },
+      {
+        "page": "p04",
+        "viewport": "1280x800",
+        "kind": "engine",
+        "name": "axe-core",
+        "status": "ran"
+      },
+      {
+        "page": "p04",
+        "viewport": "1280x800",
+        "kind": "engine",
+        "name": "ibm-equal-access",
+        "status": "ran"
+      },
+      {
+        "page": "p04",
+        "viewport": "1280x800",
+        "kind": "engine",
+        "name": "htmlcs",
+        "status": "ran"
+      },
+      {
+        "page": "p04",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "keyboard",
+        "status": "ran"
+      },
+      {
+        "page": "p04",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "focus_visible",
+        "status": "ran"
+      },
+      {
+        "page": "p04",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "text_spacing",
+        "status": "ran"
+      },
+      {
+        "page": "p04",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "resize_text",
+        "status": "ran"
+      },
+      {
+        "page": "p04",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "target_size",
+        "status": "ran"
+      },
+      {
+        "page": "p04",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "hover_focus",
+        "status": "ran"
+      },
+      {
+        "page": "p04",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "motion",
+        "status": "ran"
+      },
+      {
+        "page": "p04",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "a11y_tree",
+        "status": "ran"
+      },
+      {
+        "page": "p04",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "language",
+        "status": "ran"
+      },
+      {
+        "page": "p04",
+        "viewport": "1280x800",
+        "kind": "probe",
+        "name": "media",
+        "status": "ran"
+      },
+      {
+        "page": "p04",
+        "viewport": "320x640",
+        "kind": "engine",
+        "name": "axe-core",
+        "status": "ran"
+      },
+      {
+        "page": "p04",
+        "viewport": "320x640",
+        "kind": "engine",
+        "name": "ibm-equal-access",
+        "status": "ran"
+      },
+      {
+        "page": "p04",
+        "viewport": "320x640",
+        "kind": "engine",
+        "name": "htmlcs",
+        "status": "ran"
+      },
+      {
+        "page": "p04",
+        "viewport": "320x640",
+        "kind": "probe",
+        "name": "keyboard",
+        "status": "ran"
+      },
+      {
+        "page": "p04",
+        "viewport": "320x640",
+        "kind": "probe",
+        "name": "focus_visible",
+        "status": "ran"
+      },
+      {
+        "page": "p04",
+        "viewport": "320x640",
+        "kind": "probe",
+        "name": "reflow",
+        "status": "ran"
+      },
+      {
+        "page": "p04",
+        "viewport": "320x640",
+        "kind": "probe",
+        "name": "text_spacing",
+        "status": "ran"
+      },
+      {
+        "page": "p04",
+        "viewport": "320x640",
+        "kind": "probe",
+        "name": "target_size",
+        "status": "ran"
+      }
+    ],
+    "blocked_requests": 0,
+    "events": [
+      "http://127.0.0.1:8137/index.html: hover probe skipped an element: TimeoutError",
+      "http://127.0.0.1:8137/index.html: hover probe skipped an element: TimeoutError",
+      "http://127.0.0.1:8137/index.html: hover probe skipped an element: TimeoutError",
+      "http://127.0.0.1:8137/services.html: hover probe skipped an element: TimeoutError",
+      "http://127.0.0.1:8137/services.html: hover probe skipped an element: TimeoutError",
+      "http://127.0.0.1:8137/services.html: hover probe skipped an element: TimeoutError",
+      "http://127.0.0.1:8137/contact.html: hover probe skipped an element: TimeoutError",
+      "http://127.0.0.1:8137/contact.html: hover probe skipped an element: TimeoutError",
+      "http://127.0.0.1:8137/contact.html: hover probe skipped an element: TimeoutError"
+    ],
+    "run_dir": "run"
+  },
+  "headline": {
+    "conformance_verdict": "does_not_conform",
+    "verdict_text": "Does not conform to WCAG 2.2 AA: 21 failures across the four sampled pages, 6 of them critical. A keyboard trap in the day picker stops keyboard users completing a booking, and the mobile menu can't be opened by keyboard.",
+    "severity_counts": {
+      "critical": 6,
+      "serious": 8,
+      "moderate": 6,
+      "minor": 1
+    },
+    "sc_coverage": {
+      "total": 56,
+      "failed": 21,
+      "passed": 4,
+      "cantTell": 4,
+      "inapplicable": 6,
+      "untested": 21
+    },
+    "evidence_completeness": 1.0,
+    "overall_confidence": "high",
+    "blocked_critical_paths": [
+      "Book an appointment"
+    ]
+  },
+  "sc_results": [
+    {
+      "sc": "1.1.1",
+      "title": "Non-text Content",
+      "level": "A",
+      "principle": "Perceivable",
+      "automatable": "partial",
+      "outcome": "failed",
+      "confidence": "high",
+      "finding_ids": [
+        "F-3"
+      ],
+      "basis": [
+        "tool"
+      ],
+      "evidence_note": "F-3 Logo link has no accessible name on every page"
+    },
+    {
+      "sc": "1.2.1",
+      "title": "Audio-only and Video-only (Prerecorded)",
+      "level": "A",
+      "principle": "Perceivable",
+      "automatable": "partial",
+      "outcome": "cantTell",
+      "confidence": "low",
+      "finding_ids": [],
+      "needs_review_ids": [
+        "NR-1"
+      ],
+      "basis": [
+        "tool"
+      ],
+      "evidence_note": "Needs a human check; see NR-1."
+    },
+    {
+      "sc": "1.2.2",
+      "title": "Captions (Prerecorded)",
+      "level": "A",
+      "principle": "Perceivable",
+      "automatable": "partial",
+      "outcome": "cantTell",
+      "confidence": "low",
+      "finding_ids": [],
+      "needs_review_ids": [
+        "NR-1"
+      ],
+      "basis": [
+        "tool"
+      ],
+      "evidence_note": "Needs a human check; see NR-1."
+    },
+    {
+      "sc": "1.2.3",
+      "title": "Audio Description or Media Alternative (Prerecorded)",
+      "level": "A",
+      "principle": "Perceivable",
+      "automatable": "partial",
+      "outcome": "cantTell",
+      "confidence": "low",
+      "finding_ids": [],
+      "needs_review_ids": [
+        "NR-1"
+      ],
+      "basis": [
+        "tool"
+      ],
+      "evidence_note": "Needs a human check; see NR-1."
+    },
+    {
+      "sc": "1.2.4",
+      "title": "Captions (Live)",
+      "level": "AA",
+      "principle": "Perceivable",
+      "automatable": "none",
+      "outcome": "inapplicable",
+      "confidence": "medium",
+      "finding_ids": [],
+      "basis": [
+        "agent_review"
+      ],
+      "evidence_note": "The only media is a prerecorded file (media/clinic-tour.mp4); no live audio or video in the sample."
+    },
+    {
+      "sc": "1.2.5",
+      "title": "Audio Description (Prerecorded)",
+      "level": "AA",
+      "principle": "Perceivable",
+      "automatable": "partial",
+      "outcome": "cantTell",
+      "confidence": "low",
+      "finding_ids": [],
+      "needs_review_ids": [
+        "NR-1"
+      ],
+      "basis": [
+        "tool"
+      ],
+      "evidence_note": "Needs a human check; see NR-1."
+    },
+    {
+      "sc": "1.3.1",
+      "title": "Info and Relationships",
+      "level": "A",
+      "principle": "Perceivable",
+      "automatable": "partial",
+      "outcome": "failed",
+      "confidence": "high",
+      "finding_ids": [
+        "F-10",
+        "F-16"
+      ],
+      "basis": [
+        "agent_review",
+        "tool"
+      ],
+      "evidence_note": "F-10 Mobile number field has no accessible name; F-16 Services page section headings are styled divs"
+    },
+    {
+      "sc": "1.3.2",
+      "title": "Meaningful Sequence",
+      "level": "A",
+      "principle": "Perceivable",
+      "automatable": "partial",
+      "outcome": "untested",
+      "confidence": "low",
+      "finding_ids": [],
+      "basis": [
+        "tool"
+      ],
+      "evidence_note": "No failure found. Tool rules passed 427 time(s). Automated passes do not establish the SC; see the manual test plan."
+    },
+    {
+      "sc": "1.3.3",
+      "title": "Sensory Characteristics",
+      "level": "A",
+      "principle": "Perceivable",
+      "automatable": "none",
+      "outcome": "untested",
+      "confidence": "low",
+      "finding_ids": [],
+      "basis": [],
+      "evidence_note": "No failure found. Automated passes do not establish the SC; see the manual test plan."
+    },
+    {
+      "sc": "1.3.4",
+      "title": "Orientation",
+      "level": "AA",
+      "principle": "Perceivable",
+      "automatable": "partial",
+      "outcome": "untested",
+      "confidence": "low",
+      "finding_ids": [],
+      "basis": [],
+      "evidence_note": "No failure found. Automated passes do not establish the SC; see the manual test plan."
+    },
+    {
+      "sc": "1.3.5",
+      "title": "Identify Input Purpose",
+      "level": "AA",
+      "principle": "Perceivable",
+      "automatable": "partial",
+      "outcome": "failed",
+      "confidence": "low",
+      "finding_ids": [
+        "F-18"
+      ],
+      "basis": [
+        "agent_review"
+      ],
+      "evidence_note": "F-18 Booking fields that collect personal data have no autocomplete"
+    },
+    {
+      "sc": "1.4.1",
+      "title": "Use of Color",
+      "level": "A",
+      "principle": "Perceivable",
+      "automatable": "partial",
+      "outcome": "failed",
+      "confidence": "medium",
+      "finding_ids": [
+        "F-9"
+      ],
+      "basis": [
+        "agent_review"
+      ],
+      "evidence_note": "F-9 Form errors are shown only by a red border"
+    },
+    {
+      "sc": "1.4.2",
+      "title": "Audio Control",
+      "level": "A",
+      "principle": "Perceivable",
+      "automatable": "partial",
+      "outcome": "inapplicable",
+      "confidence": "medium",
+      "finding_ids": [],
+      "basis": [
+        "probe"
+      ],
+      "evidence_note": "Media probe: the one video does not autoplay, and no audio element exists on any sampled page."
+    },
+    {
+      "sc": "1.4.3",
+      "title": "Contrast (Minimum)",
+      "level": "AA",
+      "principle": "Perceivable",
+      "automatable": "partial",
+      "outcome": "failed",
+      "confidence": "high",
+      "finding_ids": [
+        "F-4",
+        "F-8"
+      ],
+      "basis": [
+        "tool"
+      ],
+      "evidence_note": "F-4 Navigation links have insufficient text contrast; F-8 Footer address text has insufficient contrast"
+    },
+    {
+      "sc": "1.4.4",
+      "title": "Resize Text",
+      "level": "AA",
+      "principle": "Perceivable",
+      "automatable": "partial",
+      "outcome": "failed",
+      "confidence": "medium",
+      "finding_ids": [
+        "F-7"
+      ],
+      "basis": [
+        "probe"
+      ],
+      "evidence_note": "F-7 Button text is clipped with larger text spacing and at 200% zoom"
+    },
+    {
+      "sc": "1.4.5",
+      "title": "Images of Text",
+      "level": "AA",
+      "principle": "Perceivable",
+      "automatable": "none",
+      "outcome": "untested",
+      "confidence": "low",
+      "finding_ids": [],
+      "basis": [],
+      "evidence_note": "No failure found. Automated passes do not establish the SC; see the manual test plan."
+    },
+    {
+      "sc": "1.4.10",
+      "title": "Reflow",
+      "level": "AA",
+      "principle": "Perceivable",
+      "automatable": "partial",
+      "outcome": "failed",
+      "confidence": "medium",
+      "finding_ids": [
+        "F-15"
+      ],
+      "basis": [
+        "probe"
+      ],
+      "evidence_note": "F-15 Promotion banner forces horizontal scrolling at 320 px"
+    },
+    {
+      "sc": "1.4.11",
+      "title": "Non-text Contrast",
+      "level": "AA",
+      "principle": "Perceivable",
+      "automatable": "partial",
+      "outcome": "untested",
+      "confidence": "low",
+      "finding_ids": [],
+      "basis": [
+        "tool"
+      ],
+      "evidence_note": "No failure found. Tool rules passed 9 time(s). Automated passes do not establish the SC; see the manual test plan."
+    },
+    {
+      "sc": "1.4.12",
+      "title": "Text Spacing",
+      "level": "AA",
+      "principle": "Perceivable",
+      "automatable": "partial",
+      "outcome": "failed",
+      "confidence": "medium",
+      "finding_ids": [
+        "F-7"
+      ],
+      "basis": [
+        "probe"
+      ],
+      "evidence_note": "F-7 Button text is clipped with larger text spacing and at 200% zoom"
+    },
+    {
+      "sc": "1.4.13",
+      "title": "Content on Hover or Focus",
+      "level": "AA",
+      "principle": "Perceivable",
+      "automatable": "partial",
+      "outcome": "failed",
+      "confidence": "medium",
+      "finding_ids": [
+        "F-20"
+      ],
+      "basis": [
+        "probe"
+      ],
+      "evidence_note": "F-20 Check-ups help tooltip cannot be dismissed or hovered"
+    },
+    {
+      "sc": "2.1.1",
+      "title": "Keyboard",
+      "level": "A",
+      "principle": "Operable",
+      "automatable": "partial",
+      "outcome": "failed",
+      "confidence": "high",
+      "finding_ids": [
+        "F-1",
+        "F-19"
+      ],
+      "basis": [
+        "probe",
+        "tool"
+      ],
+      "evidence_note": "F-1 Mobile menu button cannot be reached or operated by keyboard; F-19 Fees table scroll area is not keyboard focusable in every browser"
+    },
+    {
+      "sc": "2.1.2",
+      "title": "No Keyboard Trap",
+      "level": "A",
+      "principle": "Operable",
+      "automatable": "partial",
+      "outcome": "failed",
+      "confidence": "medium",
+      "finding_ids": [
+        "F-2"
+      ],
+      "basis": [
+        "probe"
+      ],
+      "evidence_note": "F-2 Keyboard focus is trapped in the preferred-day picker"
+    },
+    {
+      "sc": "2.1.4",
+      "title": "Character Key Shortcuts",
+      "level": "A",
+      "principle": "Operable",
+      "automatable": "none",
+      "outcome": "untested",
+      "confidence": "low",
+      "finding_ids": [],
+      "basis": [],
+      "evidence_note": "No failure found. Automated passes do not establish the SC; see the manual test plan."
+    },
+    {
+      "sc": "2.2.1",
+      "title": "Timing Adjustable",
+      "level": "A",
+      "principle": "Operable",
+      "automatable": "partial",
+      "outcome": "untested",
+      "confidence": "low",
+      "finding_ids": [],
+      "basis": [],
+      "evidence_note": "No failure found. Automated passes do not establish the SC; see the manual test plan."
+    },
+    {
+      "sc": "2.2.2",
+      "title": "Pause, Stop, Hide",
+      "level": "A",
+      "principle": "Operable",
+      "automatable": "partial",
+      "outcome": "failed",
+      "confidence": "medium",
+      "finding_ids": [
+        "F-12"
+      ],
+      "basis": [
+        "probe"
+      ],
+      "evidence_note": "F-12 Home page carousel moves automatically with no way to pause it"
+    },
+    {
+      "sc": "2.3.1",
+      "title": "Three Flashes or Below Threshold",
+      "level": "A",
+      "principle": "Operable",
+      "automatable": "none",
+      "outcome": "untested",
+      "confidence": "low",
+      "finding_ids": [],
+      "basis": [],
+      "evidence_note": "No failure found. Automated passes do not establish the SC; see the manual test plan."
+    },
+    {
+      "sc": "2.4.1",
+      "title": "Bypass Blocks",
+      "level": "A",
+      "principle": "Operable",
+      "automatable": "partial",
+      "outcome": "untested",
+      "confidence": "low",
+      "finding_ids": [],
+      "basis": [
+        "tool"
+      ],
+      "evidence_note": "No failure found. Tool rules passed 40 time(s). Automated passes do not establish the SC; see the manual test plan."
+    },
+    {
+      "sc": "2.4.2",
+      "title": "Page Titled",
+      "level": "A",
+      "principle": "Operable",
+      "automatable": "partial",
+      "outcome": "failed",
+      "confidence": "high",
+      "finding_ids": [
+        "F-13"
+      ],
+      "basis": [
+        "tool"
+      ],
+      "evidence_note": "F-13 Contact page has an empty title"
+    },
+    {
+      "sc": "2.4.3",
+      "title": "Focus Order",
+      "level": "A",
+      "principle": "Operable",
+      "automatable": "partial",
+      "outcome": "untested",
+      "confidence": "low",
+      "finding_ids": [],
+      "basis": [
+        "tool"
+      ],
+      "evidence_note": "No failure found. Tool rules passed 137 time(s); probe checked 157 element(s). Automated passes do not establish the SC; see the manual test plan."
+    },
+    {
+      "sc": "2.4.4",
+      "title": "Link Purpose (In Context)",
+      "level": "A",
+      "principle": "Operable",
+      "automatable": "partial",
+      "outcome": "failed",
+      "confidence": "high",
+      "finding_ids": [
+        "F-3",
+        "F-17"
+      ],
+      "basis": [
+        "agent_review",
+        "tool"
+      ],
+      "evidence_note": "F-3 Logo link has no accessible name on every page; F-17 Three \"Read more\" links have the same text and no context"
+    },
+    {
+      "sc": "2.4.5",
+      "title": "Multiple Ways",
+      "level": "AA",
+      "principle": "Operable",
+      "automatable": "none",
+      "outcome": "untested",
+      "confidence": "low",
+      "finding_ids": [],
+      "basis": [],
+      "evidence_note": "No failure found. Automated passes do not establish the SC; see the manual test plan."
+    },
+    {
+      "sc": "2.4.6",
+      "title": "Headings and Labels",
+      "level": "AA",
+      "principle": "Operable",
+      "automatable": "partial",
+      "outcome": "passed",
+      "confidence": "medium",
+      "finding_ids": [],
+      "basis": [
+        "probe",
+        "agent_review"
+      ],
+      "evidence_note": "Headings and labels in the accessibility-tree snapshots (\"Book an appointment\", \"Email\", \"Mobile\", \"Preferred day\", \"Finding us\") describe their topic or purpose on all four pages. Sampled pages only."
+    },
+    {
+      "sc": "2.4.7",
+      "title": "Focus Visible",
+      "level": "AA",
+      "principle": "Operable",
+      "automatable": "partial",
+      "outcome": "failed",
+      "confidence": "medium",
+      "finding_ids": [
+        "F-5"
+      ],
+      "basis": [
+        "probe"
+      ],
+      "evidence_note": "F-5 Navigation links show no focus indicator"
+    },
+    {
+      "sc": "2.4.11",
+      "title": "Focus Not Obscured (Minimum)",
+      "level": "AA",
+      "principle": "Operable",
+      "automatable": "partial",
+      "outcome": "failed",
+      "confidence": "medium",
+      "finding_ids": [
+        "F-6"
+      ],
+      "basis": [
+        "probe"
+      ],
+      "evidence_note": "F-6 Footer links are hidden under the sticky call bar when focused"
+    },
+    {
+      "sc": "2.5.1",
+      "title": "Pointer Gestures",
+      "level": "A",
+      "principle": "Operable",
+      "automatable": "none",
+      "outcome": "untested",
+      "confidence": "low",
+      "finding_ids": [],
+      "basis": [],
+      "evidence_note": "No failure found. Automated passes do not establish the SC; see the manual test plan."
+    },
+    {
+      "sc": "2.5.2",
+      "title": "Pointer Cancellation",
+      "level": "A",
+      "principle": "Operable",
+      "automatable": "none",
+      "outcome": "untested",
+      "confidence": "low",
+      "finding_ids": [],
+      "basis": [],
+      "evidence_note": "No failure found. Automated passes do not establish the SC; see the manual test plan."
+    },
+    {
+      "sc": "2.5.3",
+      "title": "Label in Name",
+      "level": "A",
+      "principle": "Operable",
+      "automatable": "partial",
+      "outcome": "untested",
+      "confidence": "low",
+      "finding_ids": [],
+      "basis": [
+        "tool"
+      ],
+      "evidence_note": "No failure found. Tool rules passed 35 time(s). Automated passes do not establish the SC; see the manual test plan."
+    },
+    {
+      "sc": "2.5.4",
+      "title": "Motion Actuation",
+      "level": "A",
+      "principle": "Operable",
+      "automatable": "none",
+      "outcome": "untested",
+      "confidence": "low",
+      "finding_ids": [],
+      "basis": [],
+      "evidence_note": "No failure found. Automated passes do not establish the SC; see the manual test plan."
+    },
+    {
+      "sc": "2.5.7",
+      "title": "Dragging Movements",
+      "level": "AA",
+      "principle": "Operable",
+      "automatable": "partial",
+      "outcome": "untested",
+      "confidence": "low",
+      "finding_ids": [],
+      "basis": [],
+      "evidence_note": "No failure found. Automated passes do not establish the SC; see the manual test plan."
+    },
+    {
+      "sc": "2.5.8",
+      "title": "Target Size (Minimum)",
+      "level": "AA",
+      "principle": "Operable",
+      "automatable": "partial",
+      "outcome": "failed",
+      "confidence": "high",
+      "finding_ids": [
+        "F-21"
+      ],
+      "basis": [
+        "tool"
+      ],
+      "evidence_note": "F-21 Carousel arrow buttons are too small and too close together"
+    },
+    {
+      "sc": "3.1.1",
+      "title": "Language of Page",
+      "level": "A",
+      "principle": "Understandable",
+      "automatable": "full",
+      "outcome": "failed",
+      "confidence": "medium",
+      "finding_ids": [
+        "F-14"
+      ],
+      "basis": [
+        "probe"
+      ],
+      "evidence_note": "F-14 Services page declares German but is written in English"
+    },
+    {
+      "sc": "3.1.2",
+      "title": "Language of Parts",
+      "level": "AA",
+      "principle": "Understandable",
+      "automatable": "partial",
+      "outcome": "untested",
+      "confidence": "low",
+      "finding_ids": [],
+      "basis": [],
+      "evidence_note": "No failure found. Automated passes do not establish the SC; see the manual test plan."
+    },
+    {
+      "sc": "3.2.1",
+      "title": "On Focus",
+      "level": "A",
+      "principle": "Understandable",
+      "automatable": "none",
+      "outcome": "untested",
+      "confidence": "low",
+      "finding_ids": [],
+      "basis": [],
+      "evidence_note": "No failure found. Automated passes do not establish the SC; see the manual test plan."
+    },
+    {
+      "sc": "3.2.2",
+      "title": "On Input",
+      "level": "A",
+      "principle": "Understandable",
+      "automatable": "partial",
+      "outcome": "untested",
+      "confidence": "low",
+      "finding_ids": [],
+      "basis": [
+        "tool"
+      ],
+      "evidence_note": "No failure found. Tool rules passed 3 time(s). Automated passes do not establish the SC; see the manual test plan."
+    },
+    {
+      "sc": "3.2.3",
+      "title": "Consistent Navigation",
+      "level": "AA",
+      "principle": "Understandable",
+      "automatable": "none",
+      "outcome": "passed",
+      "confidence": "medium",
+      "finding_ids": [],
+      "basis": [
+        "agent_review"
+      ],
+      "evidence_note": "The header navigation (Home, Services, Book, Contact) and footer links are in the same order on all four sampled pages (accessibility-tree snapshots). Sampled pages only."
+    },
+    {
+      "sc": "3.2.4",
+      "title": "Consistent Identification",
+      "level": "AA",
+      "principle": "Understandable",
+      "automatable": "none",
+      "outcome": "passed",
+      "confidence": "low",
+      "finding_ids": [],
+      "basis": [
+        "agent_review"
+      ],
+      "evidence_note": "Repeated components (navigation, Book link, call bar, footer links) use the same names on all four pages; only four pages were compared. Sampled pages only."
+    },
+    {
+      "sc": "3.2.6",
+      "title": "Consistent Help",
+      "level": "A",
+      "principle": "Understandable",
+      "automatable": "none",
+      "outcome": "passed",
+      "confidence": "medium",
+      "finding_ids": [],
+      "basis": [
+        "agent_review"
+      ],
+      "evidence_note": "The help mechanism (call bar with the phone number, then footer Contact link) appears in the same place and order on every sampled page. Sampled pages only."
+    },
+    {
+      "sc": "3.3.1",
+      "title": "Error Identification",
+      "level": "A",
+      "principle": "Understandable",
+      "automatable": "partial",
+      "outcome": "failed",
+      "confidence": "medium",
+      "finding_ids": [
+        "F-9"
+      ],
+      "basis": [
+        "agent_review"
+      ],
+      "evidence_note": "F-9 Form errors are shown only by a red border"
+    },
+    {
+      "sc": "3.3.2",
+      "title": "Labels or Instructions",
+      "level": "A",
+      "principle": "Understandable",
+      "automatable": "partial",
+      "outcome": "failed",
+      "confidence": "medium",
+      "finding_ids": [
+        "F-11"
+      ],
+      "basis": [
+        "agent_review"
+      ],
+      "evidence_note": "F-11 Full name field is labelled only by its placeholder"
+    },
+    {
+      "sc": "3.3.3",
+      "title": "Error Suggestion",
+      "level": "AA",
+      "principle": "Understandable",
+      "automatable": "none",
+      "outcome": "untested",
+      "confidence": "low",
+      "finding_ids": [],
+      "basis": [],
+      "evidence_note": "No failure found. Automated passes do not establish the SC; see the manual test plan."
+    },
+    {
+      "sc": "3.3.4",
+      "title": "Error Prevention (Legal, Financial, Data)",
+      "level": "AA",
+      "principle": "Understandable",
+      "automatable": "none",
+      "outcome": "inapplicable",
+      "confidence": "medium",
+      "finding_ids": [],
+      "basis": [
+        "agent_review"
+      ],
+      "evidence_note": "The booking form sends a request for an appointment; it creates no legal commitment or financial transaction and does not change or delete stored data."
+    },
+    {
+      "sc": "3.3.7",
+      "title": "Redundant Entry",
+      "level": "A",
+      "principle": "Understandable",
+      "automatable": "none",
+      "outcome": "inapplicable",
+      "confidence": "medium",
+      "finding_ids": [],
+      "basis": [
+        "agent_review"
+      ],
+      "evidence_note": "No multi-step process: the booking form is a single page."
+    },
+    {
+      "sc": "3.3.8",
+      "title": "Accessible Authentication (Minimum)",
+      "level": "AA",
+      "principle": "Understandable",
+      "automatable": "none",
+      "outcome": "inapplicable",
+      "confidence": "medium",
+      "finding_ids": [],
+      "basis": [
+        "agent_review"
+      ],
+      "evidence_note": "No authentication anywhere in the sample."
+    },
+    {
+      "sc": "4.1.1",
+      "title": "Parsing",
+      "level": "A",
+      "principle": "Robust",
+      "automatable": "partial",
+      "outcome": "inapplicable",
+      "confidence": "medium",
+      "finding_ids": [],
+      "basis": [
+        "agent_review"
+      ],
+      "evidence_note": "Obsolete in WCAG 2.2 (4.1.1 Parsing was removed); treated as inapplicable."
+    },
+    {
+      "sc": "4.1.2",
+      "title": "Name, Role, Value",
+      "level": "A",
+      "principle": "Robust",
+      "automatable": "partial",
+      "outcome": "failed",
+      "confidence": "high",
+      "finding_ids": [
+        "F-3",
+        "F-10"
+      ],
+      "basis": [
+        "tool"
+      ],
+      "evidence_note": "F-3 Logo link has no accessible name on every page; F-10 Mobile number field has no accessible name"
+    },
+    {
+      "sc": "4.1.3",
+      "title": "Status Messages",
+      "level": "AA",
+      "principle": "Robust",
+      "automatable": "none",
+      "outcome": "untested",
+      "confidence": "low",
+      "finding_ids": [],
+      "basis": [],
+      "evidence_note": "No failure found. Automated passes do not establish the SC; see the manual test plan."
+    }
+  ],
+  "findings": [
+    {
+      "id": "F-1",
+      "title": "Mobile menu button cannot be reached or operated by keyboard",
+      "sc": [
+        "2.1.1"
+      ],
+      "level": "A",
+      "pattern": "2.1.1-control-not-keyboard",
+      "base_severity": "critical",
+      "severity": "critical",
+      "severity_rationale": "Rubric default Critical (control not operable by keyboard); it is already the top level, so the critical-path step leaves it at Critical.",
+      "confidence": "medium",
+      "priority": {
+        "band": "P0",
+        "score": 24,
+        "reach": 3,
+        "leverage": 2
+      },
+      "evidence_type": "probe",
+      "sources": [
+        {
+          "tool": "probe",
+          "version": null,
+          "rule_id": "keyboard.unreachable",
+          "act_rules": [],
+          "outcome": "failed"
+        }
+      ],
+      "candidate_ids": [
+        "C-011"
+      ],
+      "component": "header header > div.menu-toggle",
+      "pages": [
+        "p01",
+        "p02",
+        "p03",
+        "p04"
+      ],
+      "instances": [
+        {
+          "page": "p01",
+          "url": "http://127.0.0.1:8137/index.html",
+          "viewport": "320x640",
+          "state": "initial",
+          "selector": "body > header > div",
+          "xpath": "/html[1]/body[1]/header[1]/div[1]",
+          "html_snippet": "<div class=\"menu-toggle\">",
+          "screenshot": "p01__320x640.png"
+        },
+        {
+          "page": "p02",
+          "url": "http://127.0.0.1:8137/book.html",
+          "viewport": "320x640",
+          "state": "initial",
+          "selector": "body > header > div",
+          "xpath": "/html[1]/body[1]/header[1]/div[1]",
+          "html_snippet": "<div class=\"menu-toggle\">",
+          "screenshot": "p02__320x640.png"
+        },
+        {
+          "page": "p03",
+          "url": "http://127.0.0.1:8137/services.html",
+          "viewport": "320x640",
+          "state": "initial",
+          "selector": "body > header > div",
+          "xpath": "/html[1]/body[1]/header[1]/div[1]",
+          "html_snippet": "<div class=\"menu-toggle\">",
+          "screenshot": "p03__320x640.png"
+        },
+        {
+          "page": "p04",
+          "url": "http://127.0.0.1:8137/contact.html",
+          "viewport": "320x640",
+          "state": "initial",
+          "selector": "body > header > div",
+          "xpath": "/html[1]/body[1]/header[1]/div[1]",
+          "html_snippet": "<div class=\"menu-toggle\">",
+          "screenshot": "p04__320x640.png"
+        }
+      ],
+      "user_impact": "At widths under 600 px the navigation is hidden behind a <div class=\"menu-toggle\"> with a click listener and no tabindex, role or name, so keyboard users can't open the menu on any page and screen readers don't announce it. On the home page the Book an appointment button in the content is still reachable, so the booking path isn't blocked.",
+      "affected_users": [
+        "Keyboard-only users on small screens or zoomed browsers",
+        "Screen reader users on mobile",
+        "Switch-control users"
+      ],
+      "remediation": "Make the toggle a <button type=\"button\" aria-expanded=\"false\" aria-controls=\"site-nav\" aria-label=\"Menu\"> and update aria-expanded when it opens; give the <nav> id=\"site-nav\".",
+      "verification_step": "At 320x640, Tab to the menu button, press Enter and Space to open and close it, and Tab into the links. axe and IBM should report a named button, and keyboard.unreachable must be empty.",
+      "non_interference": false,
+      "critical_path": {
+        "name": "Book an appointment",
+        "step": "Home page, choose Book"
+      },
+      "blocks_critical_path": false
+    },
+    {
+      "id": "F-2",
+      "title": "Keyboard focus is trapped in the preferred-day picker",
+      "sc": [
+        "2.1.2"
+      ],
+      "level": "A",
+      "pattern": "2.1.2-keyboard-trap",
+      "base_severity": "critical",
+      "severity": "critical",
+      "severity_rationale": "Rubric default Critical; 2.1.2 is a non-interference criterion, so any failure blocks use of the whole page.",
+      "confidence": "medium",
+      "priority": {
+        "band": "P0",
+        "score": 4,
+        "reach": 1,
+        "leverage": 1
+      },
+      "evidence_type": "probe",
+      "sources": [
+        {
+          "tool": "probe",
+          "version": null,
+          "rule_id": "keyboard.trap",
+          "act_rules": [],
+          "outcome": "failed"
+        }
+      ],
+      "candidate_ids": [
+        "C-013"
+      ],
+      "component": "form div.row > div.datepicker",
+      "pages": [
+        "p02"
+      ],
+      "instances": [
+        {
+          "page": "p02",
+          "url": "http://127.0.0.1:8137/book.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "#booking > div:nth-of-type(4) > div",
+          "xpath": "/html[1]/body[1]/main[1]/form[1]/div[4]/div[1]",
+          "html_snippet": "<div class=\"datepicker\" tabindex=\"0\">",
+          "screenshot": "p02__1280x800-trap.png"
+        }
+      ],
+      "user_impact": "Once keyboard focus enters the day picker it cycles through the five day buttons for good: Tab, Shift+Tab and Escape all stay inside (probe: 29 presses, then 8 x Shift+Tab and 8 x Escape). The Request appointment button and everything after it can't be reached, so keyboard and switch users can't book.",
+      "affected_users": [
+        "Keyboard-only users",
+        "Screen reader users",
+        "Switch and voice-control users"
+      ],
+      "remediation": "Remove the keydown handler that calls preventDefault on Tab in the .datepicker. If the days should behave as one control, use a radio group (native radios, or role=\"radiogroup\" with arrow-key roving tabindex) so Tab moves on to the next field.",
+      "verification_step": "Tab from the Mobile field through the day picker to Request appointment and on to the footer; Shift+Tab back out. Re-run run_audit.py: keyboard.trap must be empty for book.html at both viewports.",
+      "non_interference": true,
+      "critical_path": {
+        "name": "Book an appointment",
+        "step": "Fill in the booking form"
+      },
+      "blocks_critical_path": true
+    },
+    {
+      "id": "F-3",
+      "title": "Logo link has no accessible name on every page",
+      "sc": [
+        "1.1.1",
+        "2.4.4",
+        "4.1.2"
+      ],
+      "level": "A",
+      "pattern": "1.1.1-functional-image-no-name",
+      "base_severity": "serious",
+      "severity": "serious",
+      "severity_rationale": "Serious (overridden from Critical): an unnamed link in the header of every page, with a working alternative.",
+      "severity_override_reason": "The rubric default is Critical for an unnamed functional image, but this link duplicates the Home link in the navigation, so no function is lost; screen readers announce \"link, index.html\" or just \"link\".",
+      "confidence": "high",
+      "priority": {
+        "band": "P1",
+        "score": 18,
+        "reach": 3,
+        "leverage": 2
+      },
+      "evidence_type": "tool",
+      "sources": [
+        {
+          "tool": "axe-core",
+          "version": "4.14.0",
+          "rule_id": "image-alt",
+          "act_rules": [
+            "23a2a8"
+          ],
+          "outcome": "failed"
+        },
+        {
+          "tool": "ibm-equal-access",
+          "version": "4.0.34",
+          "rule_id": "img_alt_valid",
+          "act_rules": [
+            "23a2a8"
+          ],
+          "outcome": "failed"
+        },
+        {
+          "tool": "htmlcs",
+          "version": "2.5.1",
+          "rule_id": "Principle1.Guideline1_1.1_1_1.H30.2",
+          "act_rules": [],
+          "outcome": "failed"
+        },
+        {
+          "tool": "axe-core",
+          "version": "4.14.0",
+          "rule_id": "link-name",
+          "act_rules": [
+            "c487ae"
+          ],
+          "outcome": "failed"
+        },
+        {
+          "tool": "ibm-equal-access",
+          "version": "4.0.34",
+          "rule_id": "a_text_purpose",
+          "act_rules": [
+            "c487ae"
+          ],
+          "outcome": "failed"
+        }
+      ],
+      "candidate_ids": [
+        "C-001",
+        "C-016"
+      ],
+      "component": "header a > img",
+      "pages": [
+        "p01",
+        "p02",
+        "p03",
+        "p04"
+      ],
+      "instances": [
+        {
+          "page": "p01",
+          "url": "http://127.0.0.1:8137/index.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > a > img",
+          "xpath": "/html[1]/body[1]/header[1]/a[1]/img[1]",
+          "html_snippet": "<img src=\"logo.svg\" width=\"160\" height=\"40\">",
+          "screenshot": "p01__1280x800.png"
+        },
+        {
+          "page": "p02",
+          "url": "http://127.0.0.1:8137/book.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > a > img",
+          "xpath": "/html[1]/body[1]/header[1]/a[1]/img[1]",
+          "html_snippet": "<img src=\"logo.svg\" width=\"160\" height=\"40\">",
+          "screenshot": "p02__1280x800.png"
+        },
+        {
+          "page": "p03",
+          "url": "http://127.0.0.1:8137/services.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > a > img",
+          "xpath": "/html[1]/body[1]/header[1]/a[1]/img[1]",
+          "html_snippet": "<img src=\"logo.svg\" width=\"160\" height=\"40\">",
+          "screenshot": "p03__1280x800.png"
+        },
+        {
+          "page": "p04",
+          "url": "http://127.0.0.1:8137/contact.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > a > img",
+          "xpath": "/html[1]/body[1]/header[1]/a[1]/img[1]",
+          "html_snippet": "<img src=\"logo.svg\" width=\"160\" height=\"40\">",
+          "screenshot": "p04__1280x800.png"
+        },
+        {
+          "page": "p01",
+          "url": "http://127.0.0.1:8137/index.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > a",
+          "xpath": "/html[1]/body[1]/header[1]/a[1]",
+          "html_snippet": "<a href=\"index.html\">",
+          "screenshot": "p01__1280x800.png"
+        },
+        {
+          "page": "p02",
+          "url": "http://127.0.0.1:8137/book.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > a",
+          "xpath": "/html[1]/body[1]/header[1]/a[1]",
+          "html_snippet": "<a href=\"index.html\">",
+          "screenshot": "p02__1280x800.png"
+        },
+        {
+          "page": "p03",
+          "url": "http://127.0.0.1:8137/services.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > a",
+          "xpath": "/html[1]/body[1]/header[1]/a[1]",
+          "html_snippet": "<a href=\"index.html\">",
+          "screenshot": "p03__1280x800.png"
+        },
+        {
+          "page": "p04",
+          "url": "http://127.0.0.1:8137/contact.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > a",
+          "xpath": "/html[1]/body[1]/header[1]/a[1]",
+          "html_snippet": "<a href=\"index.html\">",
+          "screenshot": "p04__1280x800.png"
+        }
+      ],
+      "user_impact": "The header logo is a link whose only content is an <img> without alt. Screen readers announce it as an unlabelled link or read the file name, on every page.",
+      "affected_users": [
+        "Screen reader users",
+        "Voice-control users (\"click Harbour Dental\" fails)"
+      ],
+      "remediation": "Add alt=\"Harbour Dental home\" to the logo image (the link takes its name from it).",
+      "verification_step": "axe image-alt and link-name, IBM img_alt_valid and a_text_purpose, and HTMLCS H30.2 pass on all four pages; the accessibility tree shows link \"Harbour Dental home\".",
+      "non_interference": false,
+      "critical_path": null,
+      "blocks_critical_path": false
+    },
+    {
+      "id": "F-4",
+      "title": "Navigation links have insufficient text contrast",
+      "sc": [
+        "1.4.3"
+      ],
+      "level": "AA",
+      "pattern": "1.4.3-body-text-low-contrast",
+      "base_severity": "serious",
+      "severity": "serious",
+      "severity_rationale": "Rubric default Serious: primary navigation text below 4.5:1 on every page.",
+      "confidence": "high",
+      "priority": {
+        "band": "P1",
+        "score": 18,
+        "reach": 3,
+        "leverage": 2
+      },
+      "evidence_type": "tool",
+      "sources": [
+        {
+          "tool": "axe-core",
+          "version": "4.14.0",
+          "rule_id": "color-contrast",
+          "act_rules": [
+            "afw4f7",
+            "09o5cg"
+          ],
+          "outcome": "failed"
+        },
+        {
+          "tool": "ibm-equal-access",
+          "version": "4.0.34",
+          "rule_id": "text_contrast_sufficient",
+          "act_rules": [
+            "afw4f7"
+          ],
+          "outcome": "failed"
+        },
+        {
+          "tool": "htmlcs",
+          "version": "2.5.1",
+          "rule_id": "Principle1.Guideline1_4.1_4_3.G18.Fail",
+          "act_rules": [],
+          "outcome": "failed"
+        },
+        {
+          "tool": "htmlcs",
+          "version": "2.5.1",
+          "rule_id": "Principle1.Guideline1_4.1_4_3.G18.Abs",
+          "act_rules": [],
+          "outcome": "cantTell"
+        }
+      ],
+      "candidate_ids": [
+        "C-005"
+      ],
+      "component": "nav nav > a",
+      "pages": [
+        "p01",
+        "p02",
+        "p03",
+        "p04"
+      ],
+      "instances": [
+        {
+          "page": "p01",
+          "url": "http://127.0.0.1:8137/index.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > nav > a:nth-of-type(1)",
+          "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[1]",
+          "html_snippet": "<a href=\"index.html\">Home",
+          "screenshot": "p01__1280x800.png"
+        },
+        {
+          "page": "p01",
+          "url": "http://127.0.0.1:8137/index.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > nav > a:nth-of-type(2)",
+          "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[2]",
+          "html_snippet": "<a href=\"services.html\">Services",
+          "screenshot": "p01__1280x800.png"
+        },
+        {
+          "page": "p01",
+          "url": "http://127.0.0.1:8137/index.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > nav > a:nth-of-type(3)",
+          "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[3]",
+          "html_snippet": "<a href=\"book.html\">Book",
+          "screenshot": "p01__1280x800.png"
+        },
+        {
+          "page": "p01",
+          "url": "http://127.0.0.1:8137/index.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > nav > a:nth-of-type(4)",
+          "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[4]",
+          "html_snippet": "<a href=\"contact.html\">Contact",
+          "screenshot": "p01__1280x800.png"
+        },
+        {
+          "page": "p02",
+          "url": "http://127.0.0.1:8137/book.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > nav > a:nth-of-type(1)",
+          "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[1]",
+          "html_snippet": "<a href=\"index.html\">Home",
+          "screenshot": "p02__1280x800.png"
+        },
+        {
+          "page": "p02",
+          "url": "http://127.0.0.1:8137/book.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > nav > a:nth-of-type(2)",
+          "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[2]",
+          "html_snippet": "<a href=\"services.html\">Services",
+          "screenshot": "p02__1280x800.png"
+        },
+        {
+          "page": "p02",
+          "url": "http://127.0.0.1:8137/book.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > nav > a:nth-of-type(3)",
+          "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[3]",
+          "html_snippet": "<a href=\"book.html\">Book",
+          "screenshot": "p02__1280x800.png"
+        },
+        {
+          "page": "p02",
+          "url": "http://127.0.0.1:8137/book.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > nav > a:nth-of-type(4)",
+          "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[4]",
+          "html_snippet": "<a href=\"contact.html\">Contact",
+          "screenshot": "p02__1280x800.png"
+        },
+        {
+          "page": "p03",
+          "url": "http://127.0.0.1:8137/services.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > nav > a:nth-of-type(1)",
+          "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[1]",
+          "html_snippet": "<a href=\"index.html\">Home",
+          "screenshot": "p03__1280x800.png"
+        },
+        {
+          "page": "p03",
+          "url": "http://127.0.0.1:8137/services.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > nav > a:nth-of-type(2)",
+          "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[2]",
+          "html_snippet": "<a href=\"services.html\">Services",
+          "screenshot": "p03__1280x800.png"
+        },
+        {
+          "page": "p03",
+          "url": "http://127.0.0.1:8137/services.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > nav > a:nth-of-type(3)",
+          "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[3]",
+          "html_snippet": "<a href=\"book.html\">Book",
+          "screenshot": "p03__1280x800.png"
+        },
+        {
+          "page": "p03",
+          "url": "http://127.0.0.1:8137/services.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > nav > a:nth-of-type(4)",
+          "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[4]",
+          "html_snippet": "<a href=\"contact.html\">Contact",
+          "screenshot": "p03__1280x800.png"
+        },
+        {
+          "page": "p04",
+          "url": "http://127.0.0.1:8137/contact.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > nav > a:nth-of-type(1)",
+          "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[1]",
+          "html_snippet": "<a href=\"index.html\">Home",
+          "screenshot": "p04__1280x800.png"
+        },
+        {
+          "page": "p04",
+          "url": "http://127.0.0.1:8137/contact.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > nav > a:nth-of-type(2)",
+          "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[2]",
+          "html_snippet": "<a href=\"services.html\">Services",
+          "screenshot": "p04__1280x800.png"
+        },
+        {
+          "page": "p04",
+          "url": "http://127.0.0.1:8137/contact.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > nav > a:nth-of-type(3)",
+          "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[3]",
+          "html_snippet": "<a href=\"book.html\">Book",
+          "screenshot": "p04__1280x800.png"
+        },
+        {
+          "page": "p04",
+          "url": "http://127.0.0.1:8137/contact.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > nav > a:nth-of-type(4)",
+          "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[4]",
+          "html_snippet": "<a href=\"contact.html\">Contact",
+          "screenshot": "p04__1280x800.png"
+        }
+      ],
+      "user_impact": "The navigation links are #8c9aa6 on #ffffff (2.9:1, needs 4.5:1), on every page and in the open mobile menu. Low-vision users and anyone on a phone in sunlight struggle to read the site navigation.",
+      "affected_users": [
+        "Low-vision users",
+        "Older users",
+        "Users with colour-vision deficiencies",
+        "Anyone in bright light"
+      ],
+      "remediation": "Darken nav a to at least #5f6f7a (4.9:1 on white), or reuse the body text colour #1d2b33.",
+      "verification_step": "axe color-contrast, IBM text_contrast_sufficient and HTMLCS G18 pass for header nav a on all pages at both viewports.",
+      "non_interference": false,
+      "critical_path": null,
+      "blocks_critical_path": false
+    },
+    {
+      "id": "F-5",
+      "title": "Navigation links show no focus indicator",
+      "sc": [
+        "2.4.7"
+      ],
+      "level": "AA",
+      "pattern": "2.4.7-focus-indicator-removed",
+      "base_severity": "serious",
+      "severity": "serious",
+      "severity_rationale": "Rubric default Serious: keyboard users lose track of where they are in the main navigation on every page.",
+      "confidence": "medium",
+      "priority": {
+        "band": "P1",
+        "score": 18,
+        "reach": 3,
+        "leverage": 2
+      },
+      "evidence_type": "probe",
+      "sources": [
+        {
+          "tool": "probe",
+          "version": null,
+          "rule_id": "focus.not_visible",
+          "act_rules": [],
+          "outcome": "failed"
+        }
+      ],
+      "candidate_ids": [
+        "C-017"
+      ],
+      "component": "nav nav > a",
+      "pages": [
+        "p01",
+        "p02",
+        "p03",
+        "p04"
+      ],
+      "instances": [
+        {
+          "page": "p01",
+          "url": "http://127.0.0.1:8137/index.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > nav > a:nth-of-type(1)",
+          "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[1]",
+          "html_snippet": "<a href=\"index.html\">Home",
+          "screenshot": "p01__1280x800.png"
+        },
+        {
+          "page": "p01",
+          "url": "http://127.0.0.1:8137/index.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > nav > a:nth-of-type(2)",
+          "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[2]",
+          "html_snippet": "<a href=\"services.html\">Services",
+          "screenshot": "p01__1280x800.png"
+        },
+        {
+          "page": "p01",
+          "url": "http://127.0.0.1:8137/index.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > nav > a:nth-of-type(3)",
+          "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[3]",
+          "html_snippet": "<a href=\"book.html\">Book",
+          "screenshot": "p01__1280x800.png"
+        },
+        {
+          "page": "p01",
+          "url": "http://127.0.0.1:8137/index.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > nav > a:nth-of-type(4)",
+          "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[4]",
+          "html_snippet": "<a href=\"contact.html\">Contact",
+          "screenshot": "p01__1280x800.png"
+        },
+        {
+          "page": "p02",
+          "url": "http://127.0.0.1:8137/book.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > nav > a:nth-of-type(1)",
+          "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[1]",
+          "html_snippet": "<a href=\"index.html\">Home",
+          "screenshot": "p02__1280x800.png"
+        },
+        {
+          "page": "p02",
+          "url": "http://127.0.0.1:8137/book.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > nav > a:nth-of-type(2)",
+          "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[2]",
+          "html_snippet": "<a href=\"services.html\">Services",
+          "screenshot": "p02__1280x800.png"
+        },
+        {
+          "page": "p02",
+          "url": "http://127.0.0.1:8137/book.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > nav > a:nth-of-type(3)",
+          "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[3]",
+          "html_snippet": "<a href=\"book.html\">Book",
+          "screenshot": "p02__1280x800.png"
+        },
+        {
+          "page": "p02",
+          "url": "http://127.0.0.1:8137/book.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > nav > a:nth-of-type(4)",
+          "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[4]",
+          "html_snippet": "<a href=\"contact.html\">Contact",
+          "screenshot": "p02__1280x800.png"
+        },
+        {
+          "page": "p03",
+          "url": "http://127.0.0.1:8137/services.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > nav > a:nth-of-type(1)",
+          "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[1]",
+          "html_snippet": "<a href=\"index.html\">Home",
+          "screenshot": "p03__1280x800.png"
+        },
+        {
+          "page": "p03",
+          "url": "http://127.0.0.1:8137/services.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > nav > a:nth-of-type(2)",
+          "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[2]",
+          "html_snippet": "<a href=\"services.html\">Services",
+          "screenshot": "p03__1280x800.png"
+        },
+        {
+          "page": "p03",
+          "url": "http://127.0.0.1:8137/services.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > nav > a:nth-of-type(3)",
+          "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[3]",
+          "html_snippet": "<a href=\"book.html\">Book",
+          "screenshot": "p03__1280x800.png"
+        },
+        {
+          "page": "p03",
+          "url": "http://127.0.0.1:8137/services.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > nav > a:nth-of-type(4)",
+          "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[4]",
+          "html_snippet": "<a href=\"contact.html\">Contact",
+          "screenshot": "p03__1280x800.png"
+        },
+        {
+          "page": "p04",
+          "url": "http://127.0.0.1:8137/contact.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > nav > a:nth-of-type(1)",
+          "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[1]",
+          "html_snippet": "<a href=\"index.html\">Home",
+          "screenshot": "p04__1280x800.png"
+        },
+        {
+          "page": "p04",
+          "url": "http://127.0.0.1:8137/contact.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > nav > a:nth-of-type(2)",
+          "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[2]",
+          "html_snippet": "<a href=\"services.html\">Services",
+          "screenshot": "p04__1280x800.png"
+        },
+        {
+          "page": "p04",
+          "url": "http://127.0.0.1:8137/contact.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > nav > a:nth-of-type(3)",
+          "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[3]",
+          "html_snippet": "<a href=\"book.html\">Book",
+          "screenshot": "p04__1280x800.png"
+        },
+        {
+          "page": "p04",
+          "url": "http://127.0.0.1:8137/contact.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > header > nav > a:nth-of-type(4)",
+          "xpath": "/html[1]/body[1]/header[1]/nav[1]/a[4]",
+          "html_snippet": "<a href=\"contact.html\">Contact",
+          "screenshot": "p04__1280x800.png"
+        }
+      ],
+      "user_impact": "nav a:focus { outline: none } removes the focus ring and nothing replaces it: the focus-visibility probe measured [0] changed pixels around each nav link when focused, on every page and in the open mobile menu. Other controls on the page do show a ring.",
+      "affected_users": [
+        "Keyboard-only users",
+        "Low-vision users who use a keyboard",
+        "Switch-control users"
+      ],
+      "remediation": "Delete the nav a:focus rule, or replace it with nav a:focus-visible { outline: 2px solid #0b6e8a; outline-offset: 2px; }.",
+      "verification_step": "Tab through the navigation; each link shows a visible ring. The probe reports changed_px above half the element perimeter for every nav link.",
+      "non_interference": false,
+      "critical_path": null,
+      "blocks_critical_path": false
+    },
+    {
+      "id": "F-6",
+      "title": "Footer links are hidden under the sticky call bar when focused",
+      "sc": [
+        "2.4.11"
+      ],
+      "level": "AA",
+      "pattern": "2.4.11-focus-fully-obscured",
+      "base_severity": "serious",
+      "severity": "serious",
+      "severity_rationale": "Rubric default Serious: focused links completely hidden on most pages.",
+      "confidence": "medium",
+      "priority": {
+        "band": "P1",
+        "score": 18,
+        "reach": 3,
+        "leverage": 2
+      },
+      "evidence_type": "probe",
+      "sources": [
+        {
+          "tool": "probe",
+          "version": null,
+          "rule_id": "focus.obscured",
+          "act_rules": [],
+          "outcome": "failed"
+        }
+      ],
+      "candidate_ids": [
+        "C-018"
+      ],
+      "component": "footer p > a",
+      "pages": [
+        "p01",
+        "p03",
+        "p04"
+      ],
+      "instances": [
+        {
+          "page": "p01",
+          "url": "http://127.0.0.1:8137/index.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(1)",
+          "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[1]",
+          "html_snippet": "<a href=\"contact.html\">Contact",
+          "screenshot": "p01__1280x800.png"
+        },
+        {
+          "page": "p01",
+          "url": "http://127.0.0.1:8137/index.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(2)",
+          "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[2]",
+          "html_snippet": "<a href=\"services.html#fees\">Fees",
+          "screenshot": "p01__1280x800.png"
+        },
+        {
+          "page": "p01",
+          "url": "http://127.0.0.1:8137/index.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(3)",
+          "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[3]",
+          "html_snippet": "<a href=\"contact.html#privacy\">Privacy",
+          "screenshot": "p01__1280x800.png"
+        },
+        {
+          "page": "p03",
+          "url": "http://127.0.0.1:8137/services.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(1)",
+          "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[1]",
+          "html_snippet": "<a href=\"contact.html\">Contact",
+          "screenshot": "p03__1280x800.png"
+        },
+        {
+          "page": "p03",
+          "url": "http://127.0.0.1:8137/services.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(2)",
+          "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[2]",
+          "html_snippet": "<a href=\"services.html#fees\">Fees",
+          "screenshot": "p03__1280x800.png"
+        },
+        {
+          "page": "p03",
+          "url": "http://127.0.0.1:8137/services.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(3)",
+          "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[3]",
+          "html_snippet": "<a href=\"contact.html#privacy\">Privacy",
+          "screenshot": "p03__1280x800.png"
+        },
+        {
+          "page": "p04",
+          "url": "http://127.0.0.1:8137/contact.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(1)",
+          "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[1]",
+          "html_snippet": "<a href=\"contact.html\">Contact",
+          "screenshot": "p04__1280x800.png"
+        },
+        {
+          "page": "p04",
+          "url": "http://127.0.0.1:8137/contact.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(2)",
+          "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[2]",
+          "html_snippet": "<a href=\"services.html#fees\">Fees",
+          "screenshot": "p04__1280x800.png"
+        },
+        {
+          "page": "p04",
+          "url": "http://127.0.0.1:8137/contact.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(3)",
+          "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[3]",
+          "html_snippet": "<a href=\"contact.html#privacy\">Privacy",
+          "screenshot": "p04__1280x800.png"
+        }
+      ],
+      "user_impact": "When the footer links (Contact, Fees, Privacy) receive focus, the browser scrolls them to the bottom edge of the viewport, where the fixed 64 px call bar covers them completely (9 of 9 sampled points covered, at both viewports, on 3 of the 4 pages; the booking page could not be checked because of the keyboard trap).",
+      "affected_users": [
+        "Keyboard-only users",
+        "Low-vision users",
+        "Screen magnifier users"
+      ],
+      "remediation": "Add padding-bottom: 64px to body (or scroll-padding-bottom: 64px on html) so content can scroll clear of the call bar, or make the bar static at the end of the page on small screens.",
+      "verification_step": "Tab to each footer link at 1280x800 and 320x640; the focused link is fully visible. focus.obscured must be empty.",
+      "non_interference": false,
+      "critical_path": null,
+      "blocks_critical_path": false
+    },
+    {
+      "id": "F-7",
+      "title": "Button text is clipped with larger text spacing and at 200% zoom",
+      "sc": [
+        "1.4.4",
+        "1.4.12"
+      ],
+      "level": "AA",
+      "pattern": "1.4.12-text-clipped-with-spacing",
+      "base_severity": "moderate",
+      "severity": "serious",
+      "severity_rationale": "Rubric default Moderate for 1.4.12 clipping; one level up because the Request appointment button is on the booking step.",
+      "confidence": "medium",
+      "priority": {
+        "band": "P1",
+        "score": 18,
+        "reach": 3,
+        "leverage": 2
+      },
+      "evidence_type": "probe",
+      "sources": [
+        {
+          "tool": "probe",
+          "version": null,
+          "rule_id": "text_spacing.clipped",
+          "act_rules": [],
+          "outcome": "failed"
+        },
+        {
+          "tool": "probe",
+          "version": null,
+          "rule_id": "resize_text.clipped",
+          "act_rules": [],
+          "outcome": "failed"
+        }
+      ],
+      "candidate_ids": [
+        "C-008",
+        "C-009",
+        "C-006"
+      ],
+      "component": "form div.row > button.btn",
+      "pages": [
+        "p01",
+        "p02"
+      ],
+      "instances": [
+        {
+          "page": "p02",
+          "url": "http://127.0.0.1:8137/book.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "#booking > div:nth-of-type(5) > button",
+          "xpath": "/html[1]/body[1]/main[1]/form[1]/div[5]/button[1]",
+          "html_snippet": "<button class=\"btn\" type=\"submit\">Request appointment",
+          "screenshot": "p02__1280x800.png"
+        },
+        {
+          "page": "p01",
+          "url": "http://127.0.0.1:8137/index.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > main > p:nth-of-type(2) > a",
+          "xpath": "/html[1]/body[1]/main[1]/p[2]/a[1]",
+          "html_snippet": "<a class=\"btn\" href=\"book.html\">Book an appointment",
+          "screenshot": "p01__1280x800.png"
+        },
+        {
+          "page": "p02",
+          "url": "http://127.0.0.1:8137/book.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "#booking > div:nth-of-type(5) > button",
+          "xpath": "/html[1]/body[1]/main[1]/form[1]/div[5]/button[1]",
+          "html_snippet": "<button class=\"btn\" type=\"submit\">Request appointment",
+          "screenshot": "p02__1280x800-zoom200.png"
+        }
+      ],
+      "user_impact": ".btn has a fixed width of 190 px with overflow: hidden and white-space: nowrap. With the WCAG text-spacing overrides, 13 px of \"Request appointment\" and 3 px of \"Book an appointment\" are cut off, and at 200% zoom the submit label loses 0 px. Users who need wider spacing or zoom see truncated labels on the two buttons of the booking path.",
+      "affected_users": [
+        "Users with dyslexia or low vision who override text spacing",
+        "Users who zoom text"
+      ],
+      "remediation": "Replace width: 190px; height: 40px; line-height: 40px; overflow: hidden; white-space: nowrap with min-width: 190px; padding: 10px 20px; line-height: 1.25 so the button grows with its text.",
+      "verification_step": "Re-run the text_spacing and resize_text probes; neither reports a.btn or button.btn. Manually apply the text-spacing bookmarklet and zoom to 200%; both labels are readable in full.",
+      "non_interference": false,
+      "critical_path": {
+        "name": "Book an appointment",
+        "step": "Fill in the booking form"
+      },
+      "blocks_critical_path": false
+    },
+    {
+      "id": "F-8",
+      "title": "Footer address text has insufficient contrast",
+      "sc": [
+        "1.4.3"
+      ],
+      "level": "AA",
+      "pattern": "1.4.3-secondary-text-low-contrast",
+      "base_severity": "moderate",
+      "severity": "moderate",
+      "severity_rationale": "Rubric default Moderate: secondary text (address, opening hours) below 4.5:1 on every page.",
+      "confidence": "high",
+      "priority": {
+        "band": "P1",
+        "score": 12,
+        "reach": 3,
+        "leverage": 2
+      },
+      "evidence_type": "tool",
+      "sources": [
+        {
+          "tool": "axe-core",
+          "version": "4.14.0",
+          "rule_id": "color-contrast",
+          "act_rules": [
+            "afw4f7",
+            "09o5cg"
+          ],
+          "outcome": "failed"
+        },
+        {
+          "tool": "ibm-equal-access",
+          "version": "4.0.34",
+          "rule_id": "text_contrast_sufficient",
+          "act_rules": [
+            "afw4f7"
+          ],
+          "outcome": "failed"
+        },
+        {
+          "tool": "htmlcs",
+          "version": "2.5.1",
+          "rule_id": "Principle1.Guideline1_4.1_4_3.G18.Fail",
+          "act_rules": [],
+          "outcome": "failed"
+        }
+      ],
+      "candidate_ids": [
+        "C-004"
+      ],
+      "component": "footer footer > p",
+      "pages": [
+        "p01",
+        "p02",
+        "p03",
+        "p04"
+      ],
+      "instances": [
+        {
+          "page": "p01",
+          "url": "http://127.0.0.1:8137/index.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > footer > p:nth-of-type(1)",
+          "xpath": "/html[1]/body[1]/footer[1]/p[1]",
+          "html_snippet": "<p>Harbour Dental, 12 Wharf Street, Sydney NSW 2000. Open Monda…",
+          "screenshot": "p01__1280x800.png"
+        },
+        {
+          "page": "p02",
+          "url": "http://127.0.0.1:8137/book.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > footer > p:nth-of-type(1)",
+          "xpath": "/html[1]/body[1]/footer[1]/p[1]",
+          "html_snippet": "<p>Harbour Dental, 12 Wharf Street, Sydney NSW 2000. Open Monda…",
+          "screenshot": "p02__1280x800.png"
+        },
+        {
+          "page": "p03",
+          "url": "http://127.0.0.1:8137/services.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > footer > p:nth-of-type(1)",
+          "xpath": "/html[1]/body[1]/footer[1]/p[1]",
+          "html_snippet": "<p>Harbour Dental, 12 Wharf Street, Sydney NSW 2000. Open Monda…",
+          "screenshot": "p03__1280x800.png"
+        },
+        {
+          "page": "p04",
+          "url": "http://127.0.0.1:8137/contact.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > footer > p:nth-of-type(1)",
+          "xpath": "/html[1]/body[1]/footer[1]/p[1]",
+          "html_snippet": "<p>Harbour Dental, 12 Wharf Street, Sydney NSW 2000. Open Monda…",
+          "screenshot": "p04__1280x800.png"
+        }
+      ],
+      "user_impact": "The footer paragraph text is #999999 on #f4f4f4 (2.6:1). It carries the clinic address and opening days.",
+      "affected_users": [
+        "Low-vision users",
+        "Older users",
+        "Anyone in bright light"
+      ],
+      "remediation": "Use #5c5c5c or darker on #f4f4f4 (6.1:1), or the body text colour.",
+      "verification_step": "axe color-contrast, IBM text_contrast_sufficient and HTMLCS G18 pass for footer p on all pages.",
+      "non_interference": false,
+      "critical_path": null,
+      "blocks_critical_path": false
+    },
+    {
+      "id": "F-9",
+      "title": "Form errors are shown only by a red border",
+      "sc": [
+        "1.4.1",
+        "3.3.1"
+      ],
+      "level": "A",
+      "pattern": "3.3.1-error-not-identified",
+      "base_severity": "serious",
+      "severity": "critical",
+      "severity_rationale": "Rubric default Serious for 3.3.1; one level up because correcting errors is a step of the booking path.",
+      "confidence": "medium",
+      "priority": {
+        "band": "P1",
+        "score": 8,
+        "reach": 1,
+        "leverage": 2
+      },
+      "evidence_type": "agent_judgment",
+      "sources": [
+        {
+          "tool": "ibm-equal-access",
+          "version": "4.0.34",
+          "rule_id": "style_color_misuse",
+          "act_rules": [],
+          "outcome": "cantTell"
+        }
+      ],
+      "candidate_ids": [
+        "C-033"
+      ],
+      "component": "form div.row > input.invalid",
+      "pages": [
+        "p02"
+      ],
+      "instances": [
+        {
+          "page": "p02",
+          "url": "http://127.0.0.1:8137/book.html",
+          "viewport": "1280x800",
+          "state": "errors",
+          "selector": "#name",
+          "xpath": "/html[1]/body[1]/main[1]/form[1]/div[1]/input[1]",
+          "html_snippet": "<input id=\"name\" name=\"name\" placeholder=\"Full name\" required=\"\" class=\"invalid\">",
+          "screenshot": "p02__1280x800__errors.png"
+        },
+        {
+          "page": "p02",
+          "url": "http://127.0.0.1:8137/book.html",
+          "viewport": "1280x800",
+          "state": "errors",
+          "selector": "#email",
+          "xpath": "/html[1]/body[1]/main[1]/form[1]/div[2]/input[1]",
+          "html_snippet": "<input id=\"email\" name=\"email\" type=\"email\" required=\"\" class=\"invalid\">",
+          "screenshot": "p02__1280x800__errors.png"
+        }
+      ],
+      "user_impact": "After a failed submit, the only sign of which fields are wrong is a red border. Screen reader users are not told which fields failed or why, the summary is not announced, and users who cannot distinguish red can't find the errors.",
+      "affected_users": [
+        "Screen reader users",
+        "Users with colour-vision deficiencies",
+        "Users with cognitive impairments"
+      ],
+      "remediation": "For each invalid field add a text message (\"Enter your full name\") linked with aria-describedby, set aria-invalid=\"true\", and move focus to the first invalid field or to a summary with role=\"alert\" that links to each field.",
+      "verification_step": "Submit the empty form: each invalid field has visible text describing the error, aria-invalid=\"true\", and the message is announced by a screen reader (NVDA or VoiceOver).",
+      "non_interference": false,
+      "critical_path": {
+        "name": "Book an appointment",
+        "step": "Correct errors and submit"
+      },
+      "blocks_critical_path": false,
+      "resolution": "IBM style_color_misuse asked for review of colour-only meaning. In the errors state (submit pressed with empty fields) the screenshot shows only a red border on Full name and Email and the generic text \"Please fix the errors below.\" The DOM adds class=\"invalid\" with no aria-invalid, no per-field message and no aria-describedby; the accessibility tree is unchanged apart from the summary paragraph."
+    },
+    {
+      "id": "F-10",
+      "title": "Mobile number field has no accessible name",
+      "sc": [
+        "1.3.1",
+        "4.1.2"
+      ],
+      "level": "A",
+      "pattern": "4.1.2-control-no-name",
+      "base_severity": "serious",
+      "severity": "critical",
+      "severity_rationale": "Rubric default Serious; one level up because the field is on the booking step.",
+      "confidence": "high",
+      "priority": {
+        "band": "P1",
+        "score": 4,
+        "reach": 1,
+        "leverage": 1
+      },
+      "evidence_type": "tool",
+      "sources": [
+        {
+          "tool": "axe-core",
+          "version": "4.14.0",
+          "rule_id": "label",
+          "act_rules": [
+            "e086e5"
+          ],
+          "outcome": "failed"
+        },
+        {
+          "tool": "ibm-equal-access",
+          "version": "4.0.34",
+          "rule_id": "input_label_exists",
+          "act_rules": [
+            "97a4e1",
+            "e086e5"
+          ],
+          "outcome": "failed"
+        },
+        {
+          "tool": "htmlcs",
+          "version": "2.5.1",
+          "rule_id": "Principle4.Guideline4_1.4_1_2.H91.InputTel.Name",
+          "act_rules": [],
+          "outcome": "failed"
+        },
+        {
+          "tool": "ibm-equal-access",
+          "version": "4.0.34",
+          "rule_id": "label_ref_valid",
+          "act_rules": [],
+          "outcome": "failed"
+        },
+        {
+          "tool": "htmlcs",
+          "version": "2.5.1",
+          "rule_id": "Principle1.Guideline1_3.1_3_1.H44.NonExistentFragment",
+          "act_rules": [],
+          "outcome": "cantTell"
+        }
+      ],
+      "candidate_ids": [
+        "C-024",
+        "C-003"
+      ],
+      "component": "form div.row > input#phone",
+      "pages": [
+        "p02"
+      ],
+      "instances": [
+        {
+          "page": "p02",
+          "url": "http://127.0.0.1:8137/book.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "#phone",
+          "xpath": "/html[1]/body[1]/main[1]/form[1]/div[3]/input[1]",
+          "html_snippet": "<input id=\"phone\" name=\"phone\" type=\"tel\" style=\"\">",
+          "screenshot": "p02__1280x800.png"
+        }
+      ],
+      "user_impact": "The visible label \"Mobile\" has for=\"tel\", but the input's id is \"phone\", so the label is not associated. Screen readers announce an unnamed text field (the accessibility tree shows \"textbox\" with no name), and clicking the label does not focus the field.",
+      "affected_users": [
+        "Screen reader users",
+        "Voice-control users",
+        "Users with motor impairments who rely on the larger label click target"
+      ],
+      "remediation": "Change <label for=\"tel\"> to <label for=\"phone\">.",
+      "verification_step": "axe label, IBM input_label_exists and label_ref_valid, and HTMLCS H91/H44 pass; the accessibility tree shows textbox \"Mobile\".",
+      "non_interference": false,
+      "critical_path": {
+        "name": "Book an appointment",
+        "step": "Fill in the booking form"
+      },
+      "blocks_critical_path": false
+    },
+    {
+      "id": "F-11",
+      "title": "Full name field is labelled only by its placeholder",
+      "sc": [
+        "3.3.2"
+      ],
+      "level": "A",
+      "pattern": "3.3.2-input-no-label",
+      "base_severity": "serious",
+      "severity": "critical",
+      "severity_rationale": "Rubric default Serious; one level up because the field is on the booking step.",
+      "confidence": "medium",
+      "priority": {
+        "band": "P1",
+        "score": 4,
+        "reach": 1,
+        "leverage": 1
+      },
+      "evidence_type": "agent_judgment",
+      "sources": [
+        {
+          "tool": "ibm-equal-access",
+          "version": "4.0.34",
+          "rule_id": "input_label_visible",
+          "act_rules": [],
+          "outcome": "cantTell"
+        }
+      ],
+      "candidate_ids": [
+        "C-057"
+      ],
+      "component": "form div.row > input#name",
+      "pages": [
+        "p02"
+      ],
+      "instances": [
+        {
+          "page": "p02",
+          "url": "http://127.0.0.1:8137/book.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "#name",
+          "xpath": "/html[1]/body[1]/main[1]/form[1]/div[1]/input[1]",
+          "html_snippet": "<input id=\"name\" name=\"name\" placeholder=\"Full name\" required=\"\" class=\"invalid\" style=\"\">",
+          "screenshot": "p02__1280x800.png"
+        }
+      ],
+      "user_impact": "Once someone starts typing, the field's only label disappears; users with memory or cognitive impairments, and anyone returning to the form after an error, can't tell what the field is for. The placeholder text is also light grey.",
+      "affected_users": [
+        "Users with cognitive or memory impairments",
+        "Low-vision users",
+        "Screen magnifier users who see only part of the form"
+      ],
+      "remediation": "Add a visible <label for=\"name\">Full name</label> above the field, matching the Email and Mobile fields, and keep the placeholder only for an example.",
+      "verification_step": "The field has a persistent visible label; IBM input_label_visible passes; the accessibility tree shows textbox \"Full name\" with the label as its source.",
+      "non_interference": false,
+      "critical_path": {
+        "name": "Book an appointment",
+        "step": "Fill in the booking form"
+      },
+      "blocks_critical_path": false,
+      "resolution": "IBM input_label_visible flagged the field for review. The screenshot and the accessibility tree confirm the only label is placeholder=\"Full name\": it has an accessible name, but no visible label once text is typed, and the field has no instructions. HTMLCS F68/H91 reported a missing name; that part was dismissed (C-002, C-023) because the placeholder supplies one."
+    },
+    {
+      "id": "F-12",
+      "title": "Home page carousel moves automatically with no way to pause it",
+      "sc": [
+        "2.2.2"
+      ],
+      "level": "A",
+      "pattern": "2.2.2-moving-content-no-pause",
+      "base_severity": "critical",
+      "severity": "critical",
+      "severity_rationale": "Rubric default Critical; 2.2.2 is a non-interference criterion.",
+      "confidence": "medium",
+      "priority": {
+        "band": "P1",
+        "score": 4,
+        "reach": 1,
+        "leverage": 1
+      },
+      "evidence_type": "probe",
+      "sources": [
+        {
+          "tool": "probe",
+          "version": null,
+          "rule_id": "motion.autoplay",
+          "act_rules": [],
+          "outcome": "failed"
+        }
+      ],
+      "candidate_ids": [
+        "C-014"
+      ],
+      "component": "main main > div.carousel",
+      "pages": [
+        "p01"
+      ],
+      "instances": [
+        {
+          "page": "p01",
+          "url": "http://127.0.0.1:8137/index.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > main > div:nth-of-type(1)",
+          "xpath": "/html[1]/body[1]/main[1]/div[1]",
+          "html_snippet": "<div class=\"carousel\">",
+          "screenshot": "p01__1280x800.png"
+        }
+      ],
+      "user_impact": "The carousel advances every 3 seconds forever. The motion probe saw it still changing between 5.0 s and 7.5 s after load and found no pause, stop or hide control; it also keeps moving with prefers-reduced-motion. Users who need time to read, or are distracted by motion, can't stop it.",
+      "affected_users": [
+        "Users with attention or cognitive impairments",
+        "Users with vestibular disorders",
+        "Screen reader and magnifier users (content changes under them)",
+        "Slow readers"
+      ],
+      "remediation": "Add a visible Pause/Play button inside the carousel, pause on hover and focus, and do not auto-advance when prefers-reduced-motion: reduce is set.",
+      "verification_step": "The motion probe finds a pause control for div.carousel, and with reduced motion the carousel does not change.",
+      "non_interference": true,
+      "critical_path": null,
+      "blocks_critical_path": false
+    },
+    {
+      "id": "F-13",
+      "title": "Contact page has an empty title",
+      "sc": [
+        "2.4.2"
+      ],
+      "level": "A",
+      "pattern": "2.4.2-no-title",
+      "base_severity": "serious",
+      "severity": "serious",
+      "severity_rationale": "Rubric default Serious: the page has no title at all.",
+      "confidence": "high",
+      "priority": {
+        "band": "P2",
+        "score": 3,
+        "reach": 1,
+        "leverage": 1
+      },
+      "evidence_type": "tool",
+      "sources": [
+        {
+          "tool": "axe-core",
+          "version": "4.14.0",
+          "rule_id": "document-title",
+          "act_rules": [
+            "2779a5"
+          ],
+          "outcome": "failed"
+        },
+        {
+          "tool": "ibm-equal-access",
+          "version": "4.0.34",
+          "rule_id": "page_title_exists",
+          "act_rules": [
+            "2779a5"
+          ],
+          "outcome": "failed"
+        },
+        {
+          "tool": "htmlcs",
+          "version": "2.5.1",
+          "rule_id": "Principle2.Guideline2_4.2_4_2.H25.1.EmptyTitle",
+          "act_rules": [],
+          "outcome": "failed"
+        }
+      ],
+      "candidate_ids": [
+        "C-015"
+      ],
+      "component": "body > html",
+      "pages": [
+        "p04"
+      ],
+      "instances": [
+        {
+          "page": "p04",
+          "url": "http://127.0.0.1:8137/contact.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "html",
+          "xpath": "/html[1]",
+          "html_snippet": "<html lang=\"en\">",
+          "screenshot": "p04__1280x800.png"
+        }
+      ],
+      "user_impact": "contact.html has <title></title>. Screen readers announce no page name, and browser tabs, history and bookmarks show only the URL.",
+      "affected_users": [
+        "Screen reader users",
+        "Users with many tabs open",
+        "Users with cognitive impairments"
+      ],
+      "remediation": "Set <title>Contact us - Harbour Dental</title>.",
+      "verification_step": "axe document-title, IBM page_title_exists and HTMLCS H25.1 pass on contact.html.",
+      "non_interference": false,
+      "critical_path": null,
+      "blocks_critical_path": false
+    },
+    {
+      "id": "F-14",
+      "title": "Services page declares German but is written in English",
+      "sc": [
+        "3.1.1"
+      ],
+      "level": "A",
+      "pattern": "3.1.1-wrong-page-lang",
+      "base_severity": "serious",
+      "severity": "serious",
+      "severity_rationale": "Rubric default Serious: screen readers read the whole page with German pronunciation.",
+      "confidence": "medium",
+      "priority": {
+        "band": "P2",
+        "score": 3,
+        "reach": 1,
+        "leverage": 1
+      },
+      "evidence_type": "probe",
+      "sources": [
+        {
+          "tool": "probe",
+          "version": null,
+          "rule_id": "language.mismatch",
+          "act_rules": [],
+          "outcome": "failed"
+        }
+      ],
+      "candidate_ids": [
+        "C-022"
+      ],
+      "component": "document",
+      "pages": [
+        "p03"
+      ],
+      "instances": [
+        {
+          "page": "p03",
+          "url": "http://127.0.0.1:8137/services.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": null,
+          "xpath": null,
+          "html_snippet": "<html lang=\"de\">",
+          "screenshot": "p03__1280x800.png"
+        }
+      ],
+      "user_impact": "services.html has <html lang=\"de\">, but the text is English (probe: 39 English stop words against 0 German in 154 words). Screen readers switch to a German voice and the page becomes hard to understand; translation tools may offer to translate it from German.",
+      "affected_users": [
+        "Screen reader users",
+        "Users of text-to-speech and translation tools"
+      ],
+      "remediation": "Change the services page to <html lang=\"en\"> (or en-AU), matching the other pages.",
+      "verification_step": "The language probe reports lang \"en\" with detected \"en\" for every page.",
+      "non_interference": false,
+      "critical_path": null,
+      "blocks_critical_path": false
+    },
+    {
+      "id": "F-15",
+      "title": "Promotion banner forces horizontal scrolling at 320 px",
+      "sc": [
+        "1.4.10"
+      ],
+      "level": "AA",
+      "pattern": "1.4.10-horizontal-scroll-320",
+      "base_severity": "serious",
+      "severity": "serious",
+      "severity_rationale": "Rubric default Serious: the page needs two-dimensional scrolling at 320 CSS px.",
+      "confidence": "medium",
+      "priority": {
+        "band": "P2",
+        "score": 3,
+        "reach": 1,
+        "leverage": 1
+      },
+      "evidence_type": "probe",
+      "sources": [
+        {
+          "tool": "probe",
+          "version": null,
+          "rule_id": "reflow.horizontal_scroll",
+          "act_rules": [],
+          "outcome": "failed"
+        }
+      ],
+      "candidate_ids": [
+        "C-007"
+      ],
+      "component": "main main > p.promo",
+      "pages": [
+        "p01"
+      ],
+      "instances": [
+        {
+          "page": "p01",
+          "url": "http://127.0.0.1:8137/index.html",
+          "viewport": "320x640",
+          "state": "initial",
+          "selector": "body > main > p:nth-of-type(1)",
+          "xpath": "/html[1]/body[1]/main[1]/p[1]",
+          "html_snippet": "<p class=\"promo\">Spring offer: a check-up and clean for new patients is $199 …",
+          "screenshot": "p01__320x640.png"
+        }
+      ],
+      "user_impact": "p.promo has width: 760px, so at 320 px the page scrolls horizontally (464 px wider than the viewport) and every line of the offer has to be scrolled sideways to read. People who zoom to 400% on a desktop get the same layout.",
+      "affected_users": [
+        "Low-vision users who zoom",
+        "Mobile users"
+      ],
+      "remediation": "Replace width: 760px with max-width: 760px.",
+      "verification_step": "At 320x640 the reflow probe reports horizontal_scroll false for index.html.",
+      "non_interference": false,
+      "critical_path": null,
+      "blocks_critical_path": false
+    },
+    {
+      "id": "F-16",
+      "title": "Services page section headings are styled divs",
+      "sc": [
+        "1.3.1"
+      ],
+      "level": "A",
+      "pattern": "1.3.1-visual-heading-not-marked",
+      "base_severity": "moderate",
+      "severity": "moderate",
+      "severity_rationale": "Rubric default Moderate: headings are missing from the structure but the text is still readable in order.",
+      "confidence": "medium",
+      "priority": {
+        "band": "P3",
+        "score": 4,
+        "reach": 1,
+        "leverage": 2
+      },
+      "evidence_type": "agent_judgment",
+      "sources": [
+        {
+          "tool": "ibm-equal-access",
+          "version": "4.0.34",
+          "rule_id": "text_block_heading",
+          "act_rules": [],
+          "outcome": "cantTell"
+        }
+      ],
+      "candidate_ids": [
+        "C-029",
+        "C-030"
+      ],
+      "component": "main main > div.h2",
+      "pages": [
+        "p03"
+      ],
+      "instances": [
+        {
+          "page": "p03",
+          "url": "http://127.0.0.1:8137/services.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > main > div:nth-of-type(1)",
+          "xpath": "/html[1]/body[1]/main[1]/div[1]",
+          "html_snippet": "<div class=\"h2\">",
+          "screenshot": "p03__1280x800.png"
+        },
+        {
+          "page": "p03",
+          "url": "http://127.0.0.1:8137/services.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > main > div:nth-of-type(2)",
+          "xpath": "/html[1]/body[1]/main[1]/div[2]",
+          "html_snippet": "<div class=\"h2\">",
+          "screenshot": "p03__1280x800.png"
+        },
+        {
+          "page": "p03",
+          "url": "http://127.0.0.1:8137/services.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "#fees",
+          "xpath": "/html[1]/body[1]/main[1]/div[3]",
+          "html_snippet": "<div class=\"h2\" id=\"fees\">",
+          "screenshot": "p03__1280x800.png"
+        }
+      ],
+      "user_impact": "Screen reader users navigating by heading find only \"Services and fees\" and can't jump to the Fees section; the page structure exists only visually.",
+      "affected_users": [
+        "Screen reader users",
+        "Users of reader modes and outline tools"
+      ],
+      "remediation": "Change <div class=\"h2\"> to <h2> (keeping the class for styling).",
+      "verification_step": "The accessibility tree lists heading \"General dentistry\" [level=2], \"Cosmetic dentistry\" [level=2] and \"Fees\" [level=2]; IBM text_block_heading no longer reports them.",
+      "non_interference": false,
+      "critical_path": null,
+      "blocks_critical_path": false,
+      "resolution": "IBM text_block_heading asked whether these blocks are headings. The screenshot shows \"General dentistry\", \"Cosmetic dentistry\" and \"Fees\" in 24 px bold, styled like the h2 headings on other pages; the DOM has <div class=\"h2\"> and the accessibility tree has no headings after the h1."
+    },
+    {
+      "id": "F-17",
+      "title": "Three \"Read more\" links have the same text and no context",
+      "sc": [
+        "2.4.4"
+      ],
+      "level": "A",
+      "pattern": "2.4.4-link-purpose-unclear",
+      "base_severity": "moderate",
+      "severity": "moderate",
+      "severity_rationale": "Rubric default Moderate: ambiguous links, but all three go to the same page.",
+      "confidence": "low",
+      "priority": {
+        "band": "P3",
+        "score": 4,
+        "reach": 1,
+        "leverage": 2
+      },
+      "evidence_type": "agent_judgment",
+      "sources": [],
+      "candidate_ids": [],
+      "component": "main div.card > a",
+      "pages": [
+        "p01"
+      ],
+      "instances": [
+        {
+          "page": "p01",
+          "url": "http://127.0.0.1:8137/index.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > main > div:nth-of-type(2) > div:nth-of-type(1) > a",
+          "xpath": "/html[1]/body[1]/main[1]/div[2]/div[1]/a[1]",
+          "html_snippet": "<a href=\"services.html\">Read more",
+          "screenshot": "p01__1280x800.png"
+        },
+        {
+          "page": "p01",
+          "url": "http://127.0.0.1:8137/index.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > main > div:nth-of-type(2) > div:nth-of-type(2) > a",
+          "xpath": "/html[1]/body[1]/main[1]/div[2]/div[2]/a[1]",
+          "html_snippet": "<a href=\"services.html\">Read more",
+          "screenshot": "p01__1280x800.png"
+        },
+        {
+          "page": "p01",
+          "url": "http://127.0.0.1:8137/index.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > main > div:nth-of-type(2) > div:nth-of-type(3) > a",
+          "xpath": "/html[1]/body[1]/main[1]/div[2]/div[3]/a[1]",
+          "html_snippet": "<a href=\"services.html\">Read more",
+          "screenshot": "p01__1280x800.png"
+        }
+      ],
+      "user_impact": "In a screen reader's links list the home page offers \"Read more\" three times, with nothing to tell which service each is about.",
+      "affected_users": [
+        "Screen reader users",
+        "Voice-control users"
+      ],
+      "remediation": "Make each link specific (\"More about check-ups\", \"More about whitening\", \"More about emergency care\"), or add visually hidden text.",
+      "verification_step": "The links list in a screen reader shows three distinct link names.",
+      "non_interference": false,
+      "critical_path": null,
+      "blocks_critical_path": false,
+      "resolution": "No engine flags this: axe and IBM only check that a link has a name. In the accessibility tree the three links are all \"Read more\"; each sits in a card after the card's heading and paragraph, but not in the same sentence, paragraph or list item, so none of the WCAG link contexts applies."
+    },
+    {
+      "id": "F-18",
+      "title": "Booking fields that collect personal data have no autocomplete",
+      "sc": [
+        "1.3.5"
+      ],
+      "level": "AA",
+      "pattern": "1.3.5-autocomplete-missing",
+      "base_severity": "minor",
+      "severity": "moderate",
+      "severity_rationale": "Rubric default Minor; one level up because the fields are on the booking step.",
+      "confidence": "low",
+      "priority": {
+        "band": "P3",
+        "score": 4,
+        "reach": 1,
+        "leverage": 2
+      },
+      "evidence_type": "agent_judgment",
+      "sources": [],
+      "candidate_ids": [],
+      "component": "form div.row > input",
+      "pages": [
+        "p02"
+      ],
+      "instances": [
+        {
+          "page": "p02",
+          "url": "http://127.0.0.1:8137/book.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "#name",
+          "xpath": null,
+          "html_snippet": "<input id=\"name\" name=\"name\" placeholder=\"Full name\" required=\"\">",
+          "screenshot": "p02__1280x800.png"
+        },
+        {
+          "page": "p02",
+          "url": "http://127.0.0.1:8137/book.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "#email",
+          "xpath": null,
+          "html_snippet": "<input id=\"email\" name=\"email\" type=\"email\" required=\"\">",
+          "screenshot": "p02__1280x800.png"
+        },
+        {
+          "page": "p02",
+          "url": "http://127.0.0.1:8137/book.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "#phone",
+          "xpath": null,
+          "html_snippet": "<input id=\"phone\" name=\"phone\" type=\"tel\">",
+          "screenshot": "p02__1280x800.png"
+        }
+      ],
+      "user_impact": "Browsers and password managers can't fill in the fields, and assistive tools that add icons to known field types can't identify them. People with motor or cognitive impairments have to type everything.",
+      "affected_users": [
+        "Users with motor impairments",
+        "Users with cognitive or memory impairments"
+      ],
+      "remediation": "Add autocomplete=\"name\", autocomplete=\"email\" and autocomplete=\"tel\".",
+      "verification_step": "The three inputs carry valid autocomplete tokens; axe autocomplete-valid passes.",
+      "non_interference": false,
+      "critical_path": {
+        "name": "Book an appointment",
+        "step": "Fill in the booking form"
+      },
+      "blocks_critical_path": false,
+      "resolution": "No engine checks for a missing autocomplete attribute (axe autocomplete-valid only checks values that are present). Reading the form: name, email and phone collect the user's own details and none has autocomplete."
+    },
+    {
+      "id": "F-19",
+      "title": "Fees table scroll area is not keyboard focusable in every browser",
+      "sc": [
+        "2.1.1"
+      ],
+      "level": "A",
+      "pattern": "2.1.1-control-not-keyboard",
+      "base_severity": "moderate",
+      "severity": "moderate",
+      "severity_rationale": "Moderate (overridden from Critical): affects some browsers only, and only part of one table.",
+      "severity_override_reason": "Rubric default is Critical, but Chromium (used for this audit) and Firefox make scroll containers focusable on their own; the keyboard probe reached div.prices. Only browsers without that behaviour (Safari) are affected, and only the last two columns are hidden.",
+      "confidence": "high",
+      "priority": {
+        "band": "P3",
+        "score": 2,
+        "reach": 1,
+        "leverage": 1
+      },
+      "evidence_type": "tool",
+      "sources": [
+        {
+          "tool": "axe-core",
+          "version": "4.14.0",
+          "rule_id": "scrollable-region-focusable",
+          "act_rules": [
+            "0ssw9k"
+          ],
+          "outcome": "failed"
+        }
+      ],
+      "candidate_ids": [
+        "C-012"
+      ],
+      "component": "main main > div.prices",
+      "pages": [
+        "p03"
+      ],
+      "instances": [
+        {
+          "page": "p03",
+          "url": "http://127.0.0.1:8137/services.html",
+          "viewport": "320x640",
+          "state": "initial",
+          "selector": "body > main > div:nth-of-type(4)",
+          "xpath": "/html[1]/body[1]/main[1]/div[4]",
+          "html_snippet": "<div class=\"prices\">",
+          "screenshot": "p03__320x640.png"
+        }
+      ],
+      "user_impact": "At 320 px the fees table scrolls horizontally inside div.prices, which has no tabindex. In browsers that don't focus scroll containers automatically, keyboard users can't scroll to the Health fund item and Usual time columns.",
+      "affected_users": [
+        "Keyboard-only users on Safari"
+      ],
+      "remediation": "Give the wrapper tabindex=\"0\", role=\"region\" and aria-label=\"Fees\" so every browser can focus and scroll it.",
+      "verification_step": "axe scrollable-region-focusable passes; in Safari, Tab to the table and scroll it with the arrow keys.",
+      "non_interference": false,
+      "critical_path": null,
+      "blocks_critical_path": false
+    },
+    {
+      "id": "F-20",
+      "title": "Check-ups help tooltip cannot be dismissed or hovered",
+      "sc": [
+        "1.4.13"
+      ],
+      "level": "AA",
+      "pattern": "1.4.13-not-dismissible",
+      "base_severity": "moderate",
+      "severity": "moderate",
+      "severity_rationale": "Rubric default Moderate: the tooltip covers card text but only appears on hover.",
+      "confidence": "medium",
+      "priority": {
+        "band": "P3",
+        "score": 2,
+        "reach": 1,
+        "leverage": 1
+      },
+      "evidence_type": "probe",
+      "sources": [
+        {
+          "tool": "probe",
+          "version": null,
+          "rule_id": "hover_focus.not_dismissible",
+          "act_rules": [],
+          "outcome": "failed"
+        },
+        {
+          "tool": "probe",
+          "version": null,
+          "rule_id": "hover_focus.not_hoverable",
+          "act_rules": [],
+          "outcome": "failed"
+        }
+      ],
+      "candidate_ids": [
+        "C-010"
+      ],
+      "component": "main h3 > span.help",
+      "pages": [
+        "p01"
+      ],
+      "instances": [
+        {
+          "page": "p01",
+          "url": "http://127.0.0.1:8137/index.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > main > div:nth-of-type(2) > div:nth-of-type(1) > h3 > span:nth-of-type(1)",
+          "xpath": "/html[1]/body[1]/main[1]/div[2]/div[1]/h3[1]/span[1]",
+          "html_snippet": "<span class=\"help\" aria-describedby=\"tip1\">?",
+          "screenshot": "p01__1280x800.png"
+        }
+      ],
+      "user_impact": "Hovering the \"?\" next to Check-ups shows a tooltip that stays when Escape is pressed (dismissible: False) and disappears when the pointer moves onto it (hoverable: False), so magnifier users can't read it and it can't be closed to reveal the text underneath. It also never appears for keyboard users, because the \"?\" is not focusable.",
+      "affected_users": [
+        "Screen magnifier users",
+        "Low-vision users",
+        "Keyboard-only users"
+      ],
+      "remediation": "Show the tooltip on hover and focus of a focusable trigger (a <button> with aria-describedby), keep it open while the pointer is over the trigger or the tooltip, and close it on Escape.",
+      "verification_step": "The hover probe reports dismissible true and hoverable true; the tooltip opens on keyboard focus.",
+      "non_interference": false,
+      "critical_path": null,
+      "blocks_critical_path": false
+    },
+    {
+      "id": "F-21",
+      "title": "Carousel arrow buttons are too small and too close together",
+      "sc": [
+        "2.5.8"
+      ],
+      "level": "AA",
+      "pattern": "2.5.8-target-too-small",
+      "base_severity": "minor",
+      "severity": "minor",
+      "severity_rationale": "Rubric default Minor: 18 x 18 px targets 2 px apart; the content is also reachable by waiting.",
+      "confidence": "high",
+      "priority": {
+        "band": "P3",
+        "score": 2,
+        "reach": 1,
+        "leverage": 2
+      },
+      "evidence_type": "tool",
+      "sources": [
+        {
+          "tool": "axe-core",
+          "version": "4.14.0",
+          "rule_id": "target-size",
+          "act_rules": [],
+          "outcome": "failed"
+        },
+        {
+          "tool": "ibm-equal-access",
+          "version": "4.0.34",
+          "rule_id": "target_spacing_sufficient",
+          "act_rules": [],
+          "outcome": "failed"
+        },
+        {
+          "tool": "probe",
+          "version": null,
+          "rule_id": "target_size.too_small",
+          "act_rules": [],
+          "outcome": "failed"
+        }
+      ],
+      "candidate_ids": [
+        "C-020",
+        "C-021"
+      ],
+      "component": "main div.carousel > button.ctrl.next",
+      "pages": [
+        "p01"
+      ],
+      "instances": [
+        {
+          "page": "p01",
+          "url": "http://127.0.0.1:8137/index.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > main > div:nth-of-type(1) > button:nth-of-type(2)",
+          "xpath": "/html[1]/body[1]/main[1]/div[1]/button[2]",
+          "html_snippet": "<button class=\"ctrl next\">›",
+          "screenshot": "p01__1280x800.png"
+        },
+        {
+          "page": "p01",
+          "url": "http://127.0.0.1:8137/index.html",
+          "viewport": "1280x800",
+          "state": "initial",
+          "selector": "body > main > div:nth-of-type(1) > button:nth-of-type(1)",
+          "xpath": "/html[1]/body[1]/main[1]/div[1]/button[1]",
+          "html_snippet": "<button class=\"ctrl prev\">‹",
+          "screenshot": "p01__1280x800.png"
+        }
+      ],
+      "user_impact": "The previous and next buttons are 18 x 18 px and 2 px apart, so a 24 px circle on one overlaps the other. People with tremors or large fingers hit the wrong arrow.",
+      "affected_users": [
+        "Users with motor impairments",
+        "Touch-screen users"
+      ],
+      "remediation": "Make each button at least 24 x 24 px (44 x 44 recommended) or space them so their 24 px circles don't overlap.",
+      "verification_step": "axe target-size, IBM target_spacing_sufficient and the target_size probe pass for the carousel buttons.",
+      "non_interference": false,
+      "critical_path": null,
+      "blocks_critical_path": false
+    }
+  ],
+  "advisories": [
+    {
+      "id": "A-1",
+      "kind": "above_target_level",
+      "title": "Text below the AAA enhanced contrast ratio (7:1)",
+      "sc": [
+        "1.4.6"
+      ],
+      "candidate_ids": [
+        "C-058",
+        "C-059",
+        "C-060",
+        "C-061",
+        "C-062",
+        "C-063"
+      ],
+      "sources": [
+        {
+          "tool": "axe-core",
+          "version": "4.14.0",
+          "rule_id": "color-contrast-enhanced",
+          "act_rules": [
+            "09o5cg"
+          ],
+          "outcome": "failed"
+        }
+      ],
+      "pages": [
+        "p01",
+        "p02",
+        "p03",
+        "p04"
+      ],
+      "note": "Call bar, footer links, buttons and the error summary are between 4.5:1 and 7:1 (for example white on #0b6e8a is 5.8:1). They meet AA; 1.4.6 is Level AAA, above the target.",
+      "remediation": "Only if AAA is a goal: darken the teal to #08546a or below."
+    },
+    {
+      "id": "A-2",
+      "kind": "best_practice",
+      "title": "Call bar and cookie banner sit outside any landmark",
+      "sc": [],
+      "candidate_ids": [
+        "C-064",
+        "C-065"
+      ],
+      "sources": [
+        {
+          "tool": "axe-core",
+          "version": "4.14.0",
+          "rule_id": "region",
+          "act_rules": [],
+          "outcome": "failed"
+        },
+        {
+          "tool": "ibm-equal-access",
+          "version": "4.0.34",
+          "rule_id": "aria_content_in_landmark",
+          "act_rules": [],
+          "outcome": "failed"
+        }
+      ],
+      "pages": [
+        "p01",
+        "p02",
+        "p03",
+        "p04"
+      ],
+      "note": "axe region and IBM aria_content_in_landmark: screen reader users navigating by landmark skip the emergency phone number and the cookie notice. Not a WCAG failure.",
+      "remediation": "Put the call bar inside the footer landmark or give it role=\"complementary\" with aria-label=\"Emergency contact\"; give the banner role=\"region\" aria-label=\"Cookie notice\"."
+    },
+    {
+      "id": "A-3",
+      "kind": "best_practice",
+      "title": "Day picker container is focusable but has no role",
+      "sc": [],
+      "candidate_ids": [
+        "C-066"
+      ],
+      "sources": [
+        {
+          "tool": "ibm-equal-access",
+          "version": "4.0.34",
+          "rule_id": "element_tabbable_role_valid",
+          "act_rules": [],
+          "outcome": "failed"
+        }
+      ],
+      "pages": [
+        "p02"
+      ],
+      "note": "IBM element_tabbable_role_valid: <div class=\"datepicker\" tabindex=\"0\"> is a Tab stop announced only as \"group\" or nothing. Fixing F-2 with a radio group resolves it.",
+      "remediation": "Remove tabindex=\"0\" from the container, or give it role=\"radiogroup\" and aria-label=\"Preferred day\"."
+    },
+    {
+      "id": "A-4",
+      "kind": "best_practice",
+      "title": "Check the site in Windows high contrast (forced colours) mode",
+      "sc": [],
+      "candidate_ids": [
+        "C-067"
+      ],
+      "sources": [
+        {
+          "tool": "ibm-equal-access",
+          "version": "4.0.34",
+          "rule_id": "style_highcontrast_visible",
+          "act_rules": [],
+          "outcome": "cantTell"
+        }
+      ],
+      "pages": [
+        "p01",
+        "p02",
+        "p03",
+        "p04"
+      ],
+      "note": "IBM style_highcontrast_visible is a manual reminder raised for every page with author CSS; the run did not emulate forced colours.",
+      "remediation": "Open the site with forced-colors: active (Chromium DevTools rendering emulation) and check buttons, the call bar and focus rings remain visible."
+    },
+    {
+      "id": "A-5",
+      "kind": "best_practice",
+      "title": "Carousel ignores prefers-reduced-motion",
+      "sc": [],
+      "candidate_ids": [
+        "C-068"
+      ],
+      "sources": [
+        {
+          "tool": "probe",
+          "version": null,
+          "rule_id": "motion.ignores_reduced_motion",
+          "act_rules": [],
+          "outcome": "cantTell"
+        }
+      ],
+      "pages": [
+        "p01"
+      ],
+      "note": "With reduced motion requested the carousel still advances. The WCAG failure is F-12 (2.2.2); honouring the preference is good practice and helps 2.3.3 (AAA).",
+      "remediation": "Wrap the auto-advance in if (!matchMedia(\"(prefers-reduced-motion: reduce)\").matches)."
+    }
+  ],
+  "needs_review": [
+    {
+      "id": "NR-1",
+      "sc": [
+        "1.2.1",
+        "1.2.2",
+        "1.2.3",
+        "1.2.5"
+      ],
+      "candidate_ids": [
+        "C-025"
+      ],
+      "what_to_check": "The clinic tour video (contact page) has no captions or audio-description track, and its file (media/clinic-tour.mp4) returned 404 in the audited copy, so it could not be played. Play the real video and check for open captions, audio description or a text alternative.",
+      "pages": [
+        "p04"
+      ],
+      "sources": [
+        {
+          "tool": "axe-core",
+          "version": "4.14.0",
+          "rule_id": "video-caption",
+          "act_rules": [
+            "eac66b"
+          ],
+          "outcome": "cantTell"
+        },
+        {
+          "tool": "ibm-equal-access",
+          "version": "4.0.34",
+          "rule_id": "caption_track_exists",
+          "act_rules": [],
+          "outcome": "cantTell"
+        },
+        {
+          "tool": "probe",
+          "version": null,
+          "rule_id": "media.video_no_track",
+          "act_rules": [],
+          "outcome": "cantTell"
+        }
+      ]
+    },
+    {
+      "id": "NR-2",
+      "sc": [
+        "2.4.11"
+      ],
+      "candidate_ids": [
+        "C-055"
+      ],
+      "what_to_check": "IBM element_tabbable_unobscured asked whether the Request appointment button is covered when focused at 320x640. The keyboard probe could not reach it because of the day-picker trap (F-2); after fixing it, Tab to it at 320x640 and check the call bar does not hide it.",
+      "pages": [
+        "p02"
+      ],
+      "sources": [
+        {
+          "tool": "ibm-equal-access",
+          "version": "4.0.34",
+          "rule_id": "element_tabbable_unobscured",
+          "act_rules": [],
+          "outcome": "cantTell"
+        }
+      ]
+    }
+  ],
+  "triage": [
+    {
+      "candidate_id": "C-001",
+      "decision": "finding",
+      "ref": "F-3",
+      "reason": "Promoted: Logo link has no accessible name on every page."
+    },
+    {
+      "candidate_id": "C-002",
+      "decision": "dismissed",
+      "ref": null,
+      "reason": "HTMLCS F68 says the field has no programmatic name, but placeholder=\"Full name\" supplies one (accessibility tree: textbox \"Full name\"). The real problem, no visible label, is F-11 under 3.3.2."
+    },
+    {
+      "candidate_id": "C-003",
+      "decision": "finding",
+      "ref": "F-10",
+      "reason": "Promoted: Mobile number field has no accessible name."
+    },
+    {
+      "candidate_id": "C-004",
+      "decision": "finding",
+      "ref": "F-8",
+      "reason": "Promoted: Footer address text has insufficient contrast."
+    },
+    {
+      "candidate_id": "C-005",
+      "decision": "finding",
+      "ref": "F-4",
+      "reason": "Promoted: Navigation links have insufficient text contrast."
+    },
+    {
+      "candidate_id": "C-006",
+      "decision": "finding",
+      "ref": "F-7",
+      "reason": "Promoted: Button text is clipped with larger text spacing and at 200% zoom."
+    },
+    {
+      "candidate_id": "C-007",
+      "decision": "finding",
+      "ref": "F-15",
+      "reason": "Promoted: Promotion banner forces horizontal scrolling at 320 px."
+    },
+    {
+      "candidate_id": "C-008",
+      "decision": "finding",
+      "ref": "F-7",
+      "reason": "Promoted: Button text is clipped with larger text spacing and at 200% zoom."
+    },
+    {
+      "candidate_id": "C-009",
+      "decision": "finding",
+      "ref": "F-7",
+      "reason": "Promoted: Button text is clipped with larger text spacing and at 200% zoom."
+    },
+    {
+      "candidate_id": "C-010",
+      "decision": "finding",
+      "ref": "F-20",
+      "reason": "Promoted: Check-ups help tooltip cannot be dismissed or hovered."
+    },
+    {
+      "candidate_id": "C-011",
+      "decision": "finding",
+      "ref": "F-1",
+      "reason": "Promoted: Mobile menu button cannot be reached or operated by keyboard."
+    },
+    {
+      "candidate_id": "C-012",
+      "decision": "finding",
+      "ref": "F-19",
+      "reason": "Promoted: Fees table scroll area is not keyboard focusable in every browser."
+    },
+    {
+      "candidate_id": "C-013",
+      "decision": "finding",
+      "ref": "F-2",
+      "reason": "Promoted: Keyboard focus is trapped in the preferred-day picker."
+    },
+    {
+      "candidate_id": "C-014",
+      "decision": "finding",
+      "ref": "F-12",
+      "reason": "Promoted: Home page carousel moves automatically with no way to pause it."
+    },
+    {
+      "candidate_id": "C-015",
+      "decision": "finding",
+      "ref": "F-13",
+      "reason": "Promoted: Contact page has an empty title."
+    },
+    {
+      "candidate_id": "C-016",
+      "decision": "finding",
+      "ref": "F-3",
+      "reason": "Promoted: Logo link has no accessible name on every page."
+    },
+    {
+      "candidate_id": "C-017",
+      "decision": "finding",
+      "ref": "F-5",
+      "reason": "Promoted: Navigation links show no focus indicator."
+    },
+    {
+      "candidate_id": "C-018",
+      "decision": "finding",
+      "ref": "F-6",
+      "reason": "Promoted: Footer links are hidden under the sticky call bar when focused."
+    },
+    {
+      "candidate_id": "C-019",
+      "decision": "dismissed",
+      "ref": null,
+      "reason": "The 24 px circle on the Privacy link overlaps the fixed call bar's link drawn over the footer at that scroll position, not another footer target; the three footer links are 16 px apart. The overlap is the obscuring problem in F-6."
+    },
+    {
+      "candidate_id": "C-020",
+      "decision": "finding",
+      "ref": "F-21",
+      "reason": "Promoted: Carousel arrow buttons are too small and too close together."
+    },
+    {
+      "candidate_id": "C-021",
+      "decision": "finding",
+      "ref": "F-21",
+      "reason": "Promoted: Carousel arrow buttons are too small and too close together."
+    },
+    {
+      "candidate_id": "C-022",
+      "decision": "finding",
+      "ref": "F-14",
+      "reason": "Promoted: Services page declares German but is written in English."
+    },
+    {
+      "candidate_id": "C-023",
+      "decision": "dismissed",
+      "ref": null,
+      "reason": "HTMLCS H91 InputText.Name reports a missing name for #name; the accessible name \"Full name\" comes from the placeholder (accessibility tree), so 4.1.2 is met. See F-11 for the missing visible label."
+    },
+    {
+      "candidate_id": "C-024",
+      "decision": "finding",
+      "ref": "F-10",
+      "reason": "Promoted: Mobile number field has no accessible name."
+    },
+    {
+      "candidate_id": "C-025",
+      "decision": "needs_review",
+      "ref": "NR-1",
+      "reason": "Needs a human check: The clinic tour video (contact page) has no captions or audio-description track, and its file (media/clinic-tour.mp4) re"
+    },
+    {
+      "candidate_id": "C-026",
+      "decision": "dismissed",
+      "ref": null,
+      "reason": "HTMLCS H48 suggests marking up the three footer links as a list. They are presented inline in a paragraph with no visual list structure, so nothing is lost; H48 is a sufficient technique, not a requirement."
+    },
+    {
+      "candidate_id": "C-027",
+      "decision": "dismissed",
+      "ref": null,
+      "reason": "IBM text_block_heading flagged the menu toggle glyph as a possible heading. It is a single icon character (U+2630) used as a button, not a heading; the real problem is F-1."
+    },
+    {
+      "candidate_id": "C-028",
+      "decision": "dismissed",
+      "ref": null,
+      "reason": "HTMLCS H39.3 notes the fees table has no caption. A caption is a sufficient technique, not a requirement; the table is introduced by the \"Fees\" text and has th header cells (1.3.1 is met for the table itself)."
+    },
+    {
+      "candidate_id": "C-029",
+      "decision": "finding",
+      "ref": "F-16",
+      "reason": "Promoted: Services page section headings are styled divs."
+    },
+    {
+      "candidate_id": "C-030",
+      "decision": "finding",
+      "ref": "F-16",
+      "reason": "Promoted: Services page section headings are styled divs."
+    },
+    {
+      "candidate_id": "C-031",
+      "decision": "dismissed",
+      "ref": null,
+      "reason": "IBM text_sensory_misuse flagged \"above\" in \"We are on the first floor above the pharmacy\". It describes the clinic's physical location, not an instruction about page content."
+    },
+    {
+      "candidate_id": "C-032",
+      "decision": "dismissed",
+      "ref": null,
+      "reason": "IBM text_sensory_misuse flagged \"below\" in \"Please fix the errors below\". The form does follow the message in reading order; the failure is that the fields themselves are only marked by colour, which is F-9 (1.4.1, 3.3.1), not reliance on position."
+    },
+    {
+      "candidate_id": "C-033",
+      "decision": "finding",
+      "ref": "F-9",
+      "reason": "Promoted: Form errors are shown only by a red border."
+    },
+    {
+      "candidate_id": "C-034",
+      "decision": "dismissed",
+      "ref": null,
+      "reason": "axe could not compute the cookie banner's background because it overlaps other content (position: fixed). Its text is #1d2b33 on its own #ffffff background: 14.5:1, above 4.5:1 (site.css .cookie)."
+    },
+    {
+      "candidate_id": "C-035",
+      "decision": "dismissed",
+      "ref": null,
+      "reason": "axe incomplete: the menu toggle contains only a non-text character (U+2630), so 1.4.3 does not apply; as a graphic it is #1d2b33 on #ffffff, 14.5:1, well above the 3:1 of 1.4.11."
+    },
+    {
+      "candidate_id": "C-036",
+      "decision": "dismissed",
+      "ref": null,
+      "reason": "HTMLCS G18/G145.Abs: absolutely positioned, contrast not computed. The arrow glyphs are #0b3a4a on #ffffff: 12.2:1 (site.css .carousel .ctrl)."
+    },
+    {
+      "candidate_id": "C-037",
+      "decision": "dismissed",
+      "ref": null,
+      "reason": "HTMLCS G18/G145.Abs: absolutely positioned, contrast not computed. The arrow glyphs are #0b3a4a on #ffffff: 12.2:1 (site.css .carousel .ctrl)."
+    },
+    {
+      "candidate_id": "C-038",
+      "decision": "dismissed",
+      "ref": null,
+      "reason": "HTMLCS G18.Abs: slide headings are absolutely positioned; they are #ffffff on the carousel's #0b3a4a: 12.2:1."
+    },
+    {
+      "candidate_id": "C-039",
+      "decision": "dismissed",
+      "ref": null,
+      "reason": "HTMLCS G18.Abs: slide text is absolutely positioned; it is #ffffff on the carousel's #0b3a4a: 12.2:1."
+    },
+    {
+      "candidate_id": "C-040",
+      "decision": "dismissed",
+      "ref": null,
+      "reason": "axe incomplete at 320 px because the overflowing promo overlaps other elements; its text is #1d2b33 on #e9f5f8: 13.1:1. Its overflow is F-15."
+    },
+    {
+      "candidate_id": "C-041",
+      "decision": "dismissed",
+      "ref": null,
+      "reason": "axe incomplete at 320 px: table cells inside the horizontal scroller are partly off-screen. Cell text is #1d2b33 on #ffffff: 14.5:1."
+    },
+    {
+      "candidate_id": "C-042",
+      "decision": "dismissed",
+      "ref": null,
+      "reason": "axe incomplete at 320 px: header cells inside the horizontal scroller are partly off-screen. Header text is #1d2b33 on #ffffff: 14.5:1."
+    },
+    {
+      "candidate_id": "C-043",
+      "decision": "dismissed",
+      "ref": null,
+      "reason": "HTMLCS warns that position: fixed may need two-dimensional scrolling. The call bar spans the full 320 px width and is 64 px tall; the reflow probe found the only horizontal overflow at 320 px is p.promo (F-15)."
+    },
+    {
+      "candidate_id": "C-044",
+      "decision": "dismissed",
+      "ref": null,
+      "reason": "HTMLCS warns that position: fixed may need two-dimensional scrolling. The cookie banner is 288 px wide at 320 px, wraps its text and can be dismissed; the reflow probe found no overflow from it."
+    },
+    {
+      "candidate_id": "C-045",
+      "decision": "dismissed",
+      "ref": null,
+      "reason": "The 480 px video makes contact.html scroll sideways at 320 px. Understanding 1.4.10 lists video as content that may need two-dimensional layout, so this is exempt; max-width: 100% on the video would still be kinder."
+    },
+    {
+      "candidate_id": "C-046",
+      "decision": "dismissed",
+      "ref": null,
+      "reason": "IBM media_keyboard_controllable asks for a manual check of media controls. The video uses native controls, and the keyboard probe tabbed into them at both viewports."
+    },
+    {
+      "candidate_id": "C-047",
+      "decision": "dismissed",
+      "ref": null,
+      "reason": "IBM style_focus_visible (potential) on the submit button: the focus probe measured not measured around it in the errors state, well above half its perimeter, so the default focus ring is visible."
+    },
+    {
+      "candidate_id": "C-048",
+      "decision": "dismissed",
+      "ref": null,
+      "reason": "IBM style_focus_visible (potential) on the day picker container: the focus probe measured 1312 pixels changed when it was focused (default focus ring)."
+    },
+    {
+      "candidate_id": "C-049",
+      "decision": "dismissed",
+      "ref": null,
+      "reason": "IBM style_focus_visible (potential) on Email: the focus probe measured 1248 pixels changed (default focus ring)."
+    },
+    {
+      "candidate_id": "C-050",
+      "decision": "dismissed",
+      "ref": null,
+      "reason": "IBM style_focus_visible (potential) on Full name: the focus probe measured 1248 pixels changed (default focus ring)."
+    },
+    {
+      "candidate_id": "C-051",
+      "decision": "dismissed",
+      "ref": null,
+      "reason": "IBM style_focus_visible (potential) on Mobile: the focus probe measured 1248 pixels changed (default focus ring)."
+    },
+    {
+      "candidate_id": "C-052",
+      "decision": "dismissed",
+      "ref": null,
+      "reason": "IBM style_focus_visible (potential) on the next arrow: the focus probe measured 236 pixels changed for an 18 x 18 px button (perimeter 72)."
+    },
+    {
+      "candidate_id": "C-053",
+      "decision": "dismissed",
+      "ref": null,
+      "reason": "IBM style_focus_visible (potential) on the previous arrow: the focus probe measured 270 pixels changed for an 18 x 18 px button (perimeter 72)."
+    },
+    {
+      "candidate_id": "C-054",
+      "decision": "dismissed",
+      "ref": null,
+      "reason": "IBM style_focus_visible (potential) on Book an appointment: the focus probe measured 936 pixels changed (perimeter 460)."
+    },
+    {
+      "candidate_id": "C-055",
+      "decision": "needs_review",
+      "ref": "NR-2",
+      "reason": "Needs a human check: IBM element_tabbable_unobscured asked whether the Request appointment button is covered when focused at 320x640. The key"
+    },
+    {
+      "candidate_id": "C-056",
+      "decision": "dismissed",
+      "ref": null,
+      "reason": "IBM element_tabbable_unobscured (potential) on the open mobile menu links: the keyboard probe in the menu-open state found 0 of 9 sampled points covered for each nav link."
+    },
+    {
+      "candidate_id": "C-057",
+      "decision": "finding",
+      "ref": "F-11",
+      "reason": "Promoted: Full name field is labelled only by its placeholder."
+    },
+    {
+      "candidate_id": "C-058",
+      "decision": "advisory",
+      "ref": "A-1",
+      "reason": "Above target level: Text below the AAA enhanced contrast ratio (7:1)."
+    },
+    {
+      "candidate_id": "C-059",
+      "decision": "advisory",
+      "ref": "A-1",
+      "reason": "Above target level: Text below the AAA enhanced contrast ratio (7:1)."
+    },
+    {
+      "candidate_id": "C-060",
+      "decision": "advisory",
+      "ref": "A-1",
+      "reason": "Above target level: Text below the AAA enhanced contrast ratio (7:1)."
+    },
+    {
+      "candidate_id": "C-061",
+      "decision": "advisory",
+      "ref": "A-1",
+      "reason": "Above target level: Text below the AAA enhanced contrast ratio (7:1)."
+    },
+    {
+      "candidate_id": "C-062",
+      "decision": "advisory",
+      "ref": "A-1",
+      "reason": "Above target level: Text below the AAA enhanced contrast ratio (7:1)."
+    },
+    {
+      "candidate_id": "C-063",
+      "decision": "advisory",
+      "ref": "A-1",
+      "reason": "Above target level: Text below the AAA enhanced contrast ratio (7:1)."
+    },
+    {
+      "candidate_id": "C-064",
+      "decision": "advisory",
+      "ref": "A-2",
+      "reason": "Best practice: Call bar and cookie banner sit outside any landmark."
+    },
+    {
+      "candidate_id": "C-065",
+      "decision": "advisory",
+      "ref": "A-2",
+      "reason": "Best practice: Call bar and cookie banner sit outside any landmark."
+    },
+    {
+      "candidate_id": "C-066",
+      "decision": "advisory",
+      "ref": "A-3",
+      "reason": "Best practice: Day picker container is focusable but has no role."
+    },
+    {
+      "candidate_id": "C-067",
+      "decision": "advisory",
+      "ref": "A-4",
+      "reason": "Best practice: Check the site in Windows high contrast (forced colours) mode."
+    },
+    {
+      "candidate_id": "C-068",
+      "decision": "advisory",
+      "ref": "A-5",
+      "reason": "Best practice: Carousel ignores prefers-reduced-motion."
+    }
+  ],
+  "manual_test_plan": [
+    {
+      "sc": "1.3.2",
+      "title": "Meaningful Sequence",
+      "why_untested": "Automated checks found no failure, but they cover only part of the criterion.",
+      "steps": [
+        "Read the page in DOM order (screen reader or CSS off); check the meaning is preserved.",
+        "Record the outcome per page in the SC matrix (passed, failed with a new finding, or inapplicable with why)."
+      ],
+      "pages": [
+        "p01",
+        "p02",
+        "p03",
+        "p04"
+      ]
+    },
+    {
+      "sc": "1.3.3",
+      "title": "Sensory Characteristics",
+      "why_untested": "No automated check exists for this criterion.",
+      "steps": [
+        "Check instructions do not rely only on shape, colour, size, location, orientation or sound.",
+        "Record the outcome per page in the SC matrix (passed, failed with a new finding, or inapplicable with why)."
+      ],
+      "pages": [
+        "p01",
+        "p02",
+        "p03",
+        "p04"
+      ]
+    },
+    {
+      "sc": "1.3.4",
+      "title": "Orientation",
+      "why_untested": "Automated checks found no failure, but they cover only part of the criterion.",
+      "steps": [
+        "Rotate a mobile viewport between portrait and landscape; check content is not locked to one.",
+        "Record the outcome per page in the SC matrix (passed, failed with a new finding, or inapplicable with why)."
+      ],
+      "pages": [
+        "p01",
+        "p02",
+        "p03",
+        "p04"
+      ]
+    },
+    {
+      "sc": "1.4.5",
+      "title": "Images of Text",
+      "why_untested": "No automated check exists for this criterion.",
+      "steps": [
+        "Check text is not presented as an image unless customisable or essential (logos).",
+        "Record the outcome per page in the SC matrix (passed, failed with a new finding, or inapplicable with why)."
+      ],
+      "pages": [
+        "p01",
+        "p02",
+        "p03",
+        "p04"
+      ]
+    },
+    {
+      "sc": "1.4.11",
+      "title": "Non-text Contrast",
+      "why_untested": "Automated checks found no failure, but they cover only part of the criterion.",
+      "steps": [
+        "Check component boundaries, states, focus indicators and meaningful graphics reach 3:1 against adjacent colours.",
+        "Record the outcome per page in the SC matrix (passed, failed with a new finding, or inapplicable with why)."
+      ],
+      "pages": [
+        "p01",
+        "p02",
+        "p03",
+        "p04"
+      ]
+    },
+    {
+      "sc": "2.1.4",
+      "title": "Character Key Shortcuts",
+      "why_untested": "No automated check exists for this criterion.",
+      "steps": [
+        "Check single-character shortcuts can be turned off, remapped, or only work on focus.",
+        "Record the outcome per page in the SC matrix (passed, failed with a new finding, or inapplicable with why)."
+      ],
+      "pages": [
+        "p01",
+        "p02",
+        "p03",
+        "p04"
+      ]
+    },
+    {
+      "sc": "2.2.1",
+      "title": "Timing Adjustable",
+      "why_untested": "Automated checks found no failure, but they cover only part of the criterion.",
+      "steps": [
+        "Check every time limit (session timeout, auto-refresh, carousel advance) can be turned off, adjusted or extended.",
+        "Record the outcome per page in the SC matrix (passed, failed with a new finding, or inapplicable with why)."
+      ],
+      "pages": [
+        "p01",
+        "p02",
+        "p03",
+        "p04"
+      ]
+    },
+    {
+      "sc": "2.3.1",
+      "title": "Three Flashes or Below Threshold",
+      "why_untested": "No automated check exists for this criterion.",
+      "steps": [
+        "Check nothing flashes more than three times in one second (use PEAT or a frame analysis for video).",
+        "Record the outcome per page in the SC matrix (passed, failed with a new finding, or inapplicable with why)."
+      ],
+      "pages": [
+        "p01",
+        "p02",
+        "p03",
+        "p04"
+      ]
+    },
+    {
+      "sc": "2.4.1",
+      "title": "Bypass Blocks",
+      "why_untested": "Automated checks found no failure, but they cover only part of the criterion.",
+      "steps": [
+        "Check a skip link, landmarks or headings let users bypass repeated blocks.",
+        "Record the outcome per page in the SC matrix (passed, failed with a new finding, or inapplicable with why)."
+      ],
+      "pages": [
+        "p01",
+        "p02",
+        "p03",
+        "p04"
+      ]
+    },
+    {
+      "sc": "2.4.3",
+      "title": "Focus Order",
+      "why_untested": "Automated checks found no failure, but they cover only part of the criterion.",
+      "steps": [
+        "Tab through the page; check focus order preserves meaning and operability, including dialogs that open.",
+        "Record the outcome per page in the SC matrix (passed, failed with a new finding, or inapplicable with why)."
+      ],
+      "pages": [
+        "p01",
+        "p02",
+        "p03",
+        "p04"
+      ]
+    },
+    {
+      "sc": "2.4.5",
+      "title": "Multiple Ways",
+      "why_untested": "No automated check exists for this criterion.",
+      "steps": [
+        "Check there is more than one way to find each page (navigation, search, sitemap).",
+        "Record the outcome per page in the SC matrix (passed, failed with a new finding, or inapplicable with why)."
+      ],
+      "pages": [
+        "p01",
+        "p02",
+        "p03",
+        "p04"
+      ]
+    },
+    {
+      "sc": "2.5.1",
+      "title": "Pointer Gestures",
+      "why_untested": "No automated check exists for this criterion.",
+      "steps": [
+        "Check multipoint or path-based gestures (pinch, swipe) have a single-pointer alternative.",
+        "Record the outcome per page in the SC matrix (passed, failed with a new finding, or inapplicable with why)."
+      ],
+      "pages": [
+        "p01",
+        "p02",
+        "p03",
+        "p04"
+      ]
+    },
+    {
+      "sc": "2.5.2",
+      "title": "Pointer Cancellation",
+      "why_untested": "No automated check exists for this criterion.",
+      "steps": [
+        "Check single-pointer actions fire on the up-event or can be aborted or undone.",
+        "Record the outcome per page in the SC matrix (passed, failed with a new finding, or inapplicable with why)."
+      ],
+      "pages": [
+        "p01",
+        "p02",
+        "p03",
+        "p04"
+      ]
+    },
+    {
+      "sc": "2.5.3",
+      "title": "Label in Name",
+      "why_untested": "Automated checks found no failure, but they cover only part of the criterion.",
+      "steps": [
+        "Check the accessible name of each control contains its visible label text.",
+        "Record the outcome per page in the SC matrix (passed, failed with a new finding, or inapplicable with why)."
+      ],
+      "pages": [
+        "p01",
+        "p02",
+        "p03",
+        "p04"
+      ]
+    },
+    {
+      "sc": "2.5.4",
+      "title": "Motion Actuation",
+      "why_untested": "No automated check exists for this criterion.",
+      "steps": [
+        "Check functions triggered by device motion have a UI alternative and can be disabled.",
+        "Record the outcome per page in the SC matrix (passed, failed with a new finding, or inapplicable with why)."
+      ],
+      "pages": [
+        "p01",
+        "p02",
+        "p03",
+        "p04"
+      ]
+    },
+    {
+      "sc": "2.5.7",
+      "title": "Dragging Movements",
+      "why_untested": "Automated checks found no failure, but they cover only part of the criterion.",
+      "steps": [
+        "Check every drag operation (sliders, sortable lists, maps) has a single-pointer alternative.",
+        "Record the outcome per page in the SC matrix (passed, failed with a new finding, or inapplicable with why)."
+      ],
+      "pages": [
+        "p01",
+        "p02",
+        "p03",
+        "p04"
+      ]
+    },
+    {
+      "sc": "3.1.2",
+      "title": "Language of Parts",
+      "why_untested": "Automated checks found no failure, but they cover only part of the criterion.",
+      "steps": [
+        "Check passages in another language are marked with lang.",
+        "Record the outcome per page in the SC matrix (passed, failed with a new finding, or inapplicable with why)."
+      ],
+      "pages": [
+        "p01",
+        "p02",
+        "p03",
+        "p04"
+      ]
+    },
+    {
+      "sc": "3.2.1",
+      "title": "On Focus",
+      "why_untested": "No automated check exists for this criterion.",
+      "steps": [
+        "Tab through the page; check focus alone never submits a form, opens a window or moves focus unexpectedly.",
+        "Record the outcome per page in the SC matrix (passed, failed with a new finding, or inapplicable with why)."
+      ],
+      "pages": [
+        "p01",
+        "p02",
+        "p03",
+        "p04"
+      ]
+    },
+    {
+      "sc": "3.2.2",
+      "title": "On Input",
+      "why_untested": "Automated checks found no failure, but they cover only part of the criterion.",
+      "steps": [
+        "Change each select, checkbox and field; check no unexpected change of context happens without warning.",
+        "Record the outcome per page in the SC matrix (passed, failed with a new finding, or inapplicable with why)."
+      ],
+      "pages": [
+        "p01",
+        "p02",
+        "p03",
+        "p04"
+      ]
+    },
+    {
+      "sc": "3.3.3",
+      "title": "Error Suggestion",
+      "why_untested": "No automated check exists for this criterion.",
+      "steps": [
+        "Check error messages suggest a correction when one is known.",
+        "Record the outcome per page in the SC matrix (passed, failed with a new finding, or inapplicable with why)."
+      ],
+      "pages": [
+        "p01",
+        "p02",
+        "p03",
+        "p04"
+      ]
+    },
+    {
+      "sc": "4.1.3",
+      "title": "Status Messages",
+      "why_untested": "No automated check exists for this criterion.",
+      "steps": [
+        "Trigger status messages (search results count, cart updates, form saved); check they are announced without moving focus.",
+        "Record the outcome per page in the SC matrix (passed, failed with a new finding, or inapplicable with why)."
+      ],
+      "pages": [
+        "p01",
+        "p02",
+        "p03",
+        "p04"
+      ]
+    }
+  ],
+  "assisted_review": {
+    "scs_reviewed": [
+      "1.1.1",
+      "1.3.1",
+      "1.3.5",
+      "1.4.1",
+      "2.4.2",
+      "2.4.4",
+      "2.4.6",
+      "3.2.3",
+      "3.2.4",
+      "3.2.6",
+      "3.3.1",
+      "3.3.2"
+    ],
+    "method": "Read the full-page screenshots at both viewports, the errors-state screenshot and the accessibility-tree snapshots (aria/) for every sampled page, and compared the header, footer and call bar across pages.",
+    "notes": [
+      "Agent-judgment findings (F-9, F-11, F-16, F-17, F-18) are kept at medium or low confidence.",
+      "Alt text: the only image is the logo (F-3); no image has misleading alt text.",
+      "Link purpose: \"click here\" on the contact page is in the same sentence as \"To see the map\", so its purpose is clear in context."
+    ]
+  },
+  "limitations": [
+    "Four pages were audited (the whole example site); templates were grouped by URL pattern and landmark structure.",
+    "Only Chromium was used. Keyboard behaviour of scroll containers and media controls differs in Safari and Firefox (see F-19).",
+    "The Nu HTML Checker (vnu) did not run, so markup validity (duplicate IDs, invalid ARIA attributes) was checked by axe and IBM only.",
+    "No screen reader was used. Announcements (live regions, error messages, carousel changes) were inferred from the accessibility tree, not heard.",
+    "The clinic tour video file returned 404 in the audited copy, so captions and audio description could not be checked (NR-1).",
+    "The keyboard trap on the booking page stopped the keyboard and focus probes there, so the submit button and footer were not checked by keyboard on that page (NR-2).",
+    "Form submission was blocked (allow_form_submission false): the errors state is client-side validation only; server-side error messages were not seen.",
+    "Severity is this skill's rubric (RUBRIC.md), not part of WCAG. 21 SCs remain untested and are in the manual test plan."
+  ],
+  "files_written": [
+    "audit.json (this report)",
+    "run/ (run.json, raw/, screenshots/, aria/, items.json, candidates.json)"
+  ]
+}

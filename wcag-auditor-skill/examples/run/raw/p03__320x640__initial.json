@@ -1,0 +1,1683 @@
+{
+ "page": "p03",
+ "url": "http://127.0.0.1:8137/services.html",
+ "final_url": "http://127.0.0.1:8137/services.html",
+ "viewport": "320x640",
+ "state": "initial",
+ "page_info": {
+  "title": "Services and fees - Harbour Dental",
+  "lang": "de",
+  "viewport_meta": "width=device-width, initial-scale=1",
+  "template": {
+   "landmarks": "header+main+footer",
+   "main_shape": "h1,p,div,p,div,p"
+  },
+  "landmarks": [
+   {
+    "role": "header",
+    "label": null,
+    "xpath": "/html[1]/body[1]/header[1]"
+   },
+   {
+    "role": "main",
+    "label": null,
+    "xpath": "/html[1]/body[1]/main[1]"
+   },
+   {
+    "role": "footer",
+    "label": null,
+    "xpath": "/html[1]/body[1]/footer[1]"
+   }
+  ],
+  "headings": [
+   {
+    "level": 1,
+    "text": "Services and fees",
+    "xpath": "/html[1]/body[1]/main[1]/h1[1]"
+   }
+  ],
+  "frames": [],
+  "captcha": false
+ },
+ "screenshot": "p03__320x640.png",
+ "engines": {
+  "axe-core": {
+   "version": "4.14.0",
+   "violations": [
+    {
+     "id": "color-contrast-enhanced",
+     "impact": "serious",
+     "tags": [
+      "cat.color",
+      "wcag2aaa",
+      "wcag146",
+      "ACT"
+     ],
+     "help": "Elements must meet enhanced color contrast ratio thresholds",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast-enhanced?application=axeAPI",
+     "nodes": [
+      {
+       "target": [
+        "p:nth-child(2) > a[href$=\"contact.html\"]"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Element has insufficient color contrast of 5.28 (foreground color: #0b6e8a, background color: #f4f4f4, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 7:1",
+       "html": "<a href=\"contact.html\">Contact</a>",
+       "el": {
+        "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[1]",
+        "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(1)",
+        "sig": "footer p > a",
+        "html": "<a href=\"contact.html\">Contact",
+        "rect": {
+         "x": 24,
+         "y": 1231,
+         "w": 55,
+         "h": 17
+        }
+       }
+      },
+      {
+       "target": [
+        "a[href$=\"services.html#fees\"]"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Element has insufficient color contrast of 5.28 (foreground color: #0b6e8a, background color: #f4f4f4, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 7:1",
+       "html": "<a href=\"services.html#fees\">Fees</a>",
+       "el": {
+        "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[2]",
+        "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(2)",
+        "sig": "footer p > a",
+        "html": "<a href=\"services.html#fees\">Fees",
+        "rect": {
+         "x": 95,
+         "y": 1231,
+         "w": 36,
+         "h": 17
+        }
+       }
+      },
+      {
+       "target": [
+        "a[href$=\"contact.html#privacy\"]"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Element has insufficient color contrast of 5.28 (foreground color: #0b6e8a, background color: #f4f4f4, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 7:1",
+       "html": "<a href=\"contact.html#privacy\">Privacy</a>",
+       "el": {
+        "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[3]",
+        "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(3)",
+        "sig": "footer p > a",
+        "html": "<a href=\"contact.html#privacy\">Privacy",
+        "rect": {
+         "x": 147,
+         "y": 1231,
+         "w": 52,
+         "h": 17
+        }
+       }
+      },
+      {
+       "target": [
+        ".callbar"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Element has insufficient color contrast of 5.81 (foreground color: #ffffff, background color: #0b6e8a, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 7:1",
+       "html": "<div class=\"callbar\">Emergency? <a href=\"tel:+61290000000\">Call 02 9000 0000</a></div>",
+       "el": {
+        "xpath": "/html[1]/body[1]/div[1]",
+        "selector": "body > div:nth-of-type(1)",
+        "sig": "body body > div.callbar",
+        "html": "<div class=\"callbar\">",
+        "rect": {
+         "x": 0,
+         "y": 576,
+         "w": 320,
+         "h": 64
+        }
+       }
+      },
+      {
+       "target": [
+        "a[href=\"tel:+61290000000\"]"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Element has insufficient color contrast of 5.81 (foreground color: #ffffff, background color: #0b6e8a, font size: 12.0pt (16px), font weight: bold). Expected contrast ratio of 7:1",
+       "html": "<a href=\"tel:+61290000000\">Call 02 9000 0000</a>",
+       "el": {
+        "xpath": "/html[1]/body[1]/div[1]/a[1]",
+        "selector": "body > div:nth-of-type(1) > a",
+        "sig": "body div.callbar > a",
+        "html": "<a href=\"tel:+61290000000\">Call 02 9000 0000",
+        "rect": {
+         "x": 147,
+         "y": 597,
+         "w": 132,
+         "h": 22
+        }
+       }
+      }
+     ],
+     "node_count": 5
+    },
+    {
+     "id": "color-contrast",
+     "impact": "serious",
+     "tags": [
+      "cat.color",
+      "wcag2aa",
+      "wcag143",
+      "TTv5",
+      "TT13.c",
+      "EN-301-549",
+      "EN-9.1.4.3",
+      "ACT",
+      "RGAAv4",
+      "RGAA-3.2.1"
+     ],
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+     "nodes": [
+      {
+       "target": [
+        "p:nth-child(1)"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.59 (foreground color: #999999, background color: #f4f4f4, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1",
+       "html": "<p>Harbour Dental, 12 Wharf Street, Sydney NSW 2000. Open Monday to Saturday.</p>",
+       "el": {
+        "xpath": "/html[1]/body[1]/footer[1]/p[1]",
+        "selector": "body > footer > p:nth-of-type(1)",
+        "sig": "footer footer > p",
+        "html": "<p>Harbour Dental, 12 Wharf Street, Sydney NSW 2000. Open Monda…",
+        "rect": {
+         "x": 24,
+         "y": 1146,
+         "w": 272,
+         "h": 67
+        }
+       }
+      }
+     ],
+     "node_count": 1
+    },
+    {
+     "id": "image-alt",
+     "impact": "critical",
+     "tags": [
+      "cat.text-alternatives",
+      "wcag2a",
+      "wcag111",
+      "section508",
+      "section508.22.a",
+      "TTv5",
+      "TT7.a",
+      "TT7.b",
+      "EN-301-549",
+      "EN-9.1.1.1",
+      "ACT",
+      "RGAAv4",
+      "RGAA-1.1.1"
+     ],
+     "help": "Images must have alternative text",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/image-alt?application=axeAPI",
+     "nodes": [
+      {
+       "target": [
+        "img"
+       ],
+       "impact": "critical",
+       "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty\n  Element has no title attribute\n  Element's default semantics were not overridden with role=\"none\" or role=\"presentation\"",
+       "html": "<img src=\"logo.svg\" width=\"160\" height=\"40\">",
+       "el": {
+        "xpath": "/html[1]/body[1]/header[1]/a[1]/img[1]",
+        "selector": "body > header > a > img",
+        "sig": "header a > img",
+        "html": "<img src=\"logo.svg\" width=\"160\" height=\"40\">",
+        "rect": {
+         "x": 24,
+         "y": 12,
+         "w": 160,
+         "h": 40
+        }
+       }
+      }
+     ],
+     "node_count": 1
+    },
+    {
+     "id": "link-name",
+     "impact": "serious",
+     "tags": [
+      "cat.name-role-value",
+      "wcag2a",
+      "wcag244",
+      "wcag412",
+      "section508",
+      "section508.22.a",
+      "TTv5",
+      "TT6.a",
+      "EN-301-549",
+      "EN-9.2.4.4",
+      "EN-9.4.1.2",
+      "ACT",
+      "RGAAv4",
+      "RGAA-6.2.1"
+     ],
+     "help": "Links must have discernible text",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/link-name?application=axeAPI",
+     "nodes": [
+      {
+       "target": [
+        "header > a[href=\"index.html\"]"
+       ],
+       "impact": "serious",
+       "summary": "Fix all of the following:\n  Element is in tab order and does not have accessible text\n\nFix any of the following:\n  Element does not have text that is visible to screen readers\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty\n  Element has no title attribute",
+       "html": "<a href=\"index.html\"><img src=\"logo.svg\" width=\"160\" height=\"40\"></a>",
+       "el": {
+        "xpath": "/html[1]/body[1]/header[1]/a[1]",
+        "selector": "body > header > a",
+        "sig": "header header > a",
+        "html": "<a href=\"index.html\">",
+        "rect": {
+         "x": 24,
+         "y": 12,
+         "w": 160,
+         "h": 46
+        }
+       }
+      }
+     ],
+     "node_count": 1
+    },
+    {
+     "id": "region",
+     "impact": "moderate",
+     "tags": [
+      "cat.keyboard",
+      "best-practice",
+      "RGAAv4",
+      "RGAA-9.2.1"
+     ],
+     "help": "All page content should be contained by landmarks",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/region?application=axeAPI",
+     "nodes": [
+      {
+       "target": [
+        ".callbar"
+       ],
+       "impact": "moderate",
+       "summary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+       "html": "<div class=\"callbar\">Emergency? <a href=\"tel:+61290000000\">Call 02 9000 0000</a></div>",
+       "el": {
+        "xpath": "/html[1]/body[1]/div[1]",
+        "selector": "body > div:nth-of-type(1)",
+        "sig": "body body > div.callbar",
+        "html": "<div class=\"callbar\">",
+        "rect": {
+         "x": 0,
+         "y": 576,
+         "w": 320,
+         "h": 64
+        }
+       }
+      },
+      {
+       "target": [
+        ".cookie"
+       ],
+       "impact": "moderate",
+       "summary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+       "html": "<div class=\"cookie\">We use cookies to remember your preferences. <button id=\"cookie-accept\">Accept</button></div>",
+       "el": {
+        "xpath": "/html[1]/body[1]/div[2]",
+        "selector": "body > div:nth-of-type(2)",
+        "sig": "body body > div.cookie",
+        "html": "<div class=\"cookie\">",
+        "rect": {
+         "x": 16,
+         "y": 489,
+         "w": 288,
+         "h": 71
+        }
+       }
+      }
+     ],
+     "node_count": 2
+    },
+    {
+     "id": "scrollable-region-focusable",
+     "impact": "serious",
+     "tags": [
+      "cat.keyboard",
+      "wcag2a",
+      "wcag211",
+      "wcag213",
+      "TTv5",
+      "TT4.a",
+      "EN-301-549",
+      "EN-9.2.1.1",
+      "EN-9.2.1.3",
+      "RGAAv4",
+      "RGAA-7.3.2"
+     ],
+     "help": "Scrollable region must have keyboard access",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/scrollable-region-focusable?application=axeAPI",
+     "nodes": [
+      {
+       "target": [
+        ".prices"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Element should have focusable content\n  Element should be focusable",
+       "html": "<div class=\"prices\">",
+       "el": {
+        "xpath": "/html[1]/body[1]/main[1]/div[4]",
+        "selector": "body > main > div:nth-of-type(4)",
+        "sig": "main main > div.prices",
+        "html": "<div class=\"prices\">",
+        "rect": {
+         "x": 24,
+         "y": 754,
+         "w": 272,
+         "h": 159
+        }
+       }
+      }
+     ],
+     "node_count": 1
+    }
+   ],
+   "incomplete": [
+    {
+     "id": "color-contrast-enhanced",
+     "impact": "serious",
+     "tags": [
+      "cat.color",
+      "wcag2aaa",
+      "wcag146",
+      "ACT"
+     ],
+     "help": "Elements must meet enhanced color contrast ratio thresholds",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast-enhanced?application=axeAPI",
+     "nodes": [
+      {
+       "target": [
+        ".menu-toggle"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Element content contains only non-text characters",
+       "html": "<div class=\"menu-toggle\">☰</div>",
+       "el": {
+        "xpath": "/html[1]/body[1]/header[1]/div[1]",
+        "selector": "body > header > div",
+        "sig": "header header > div.menu-toggle",
+        "html": "<div class=\"menu-toggle\">",
+        "rect": {
+         "x": 274,
+         "y": 18,
+         "w": 22,
+         "h": 34
+        }
+       }
+      }
+     ],
+     "node_count": 1
+    },
+    {
+     "id": "color-contrast",
+     "impact": "serious",
+     "tags": [
+      "cat.color",
+      "wcag2aa",
+      "wcag143",
+      "TTv5",
+      "TT13.c",
+      "EN-301-549",
+      "EN-9.1.4.3",
+      "ACT",
+      "RGAAv4",
+      "RGAA-3.2.1"
+     ],
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+     "nodes": [
+      {
+       "target": [
+        ".menu-toggle"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Element content contains only non-text characters",
+       "html": "<div class=\"menu-toggle\">☰</div>",
+       "el": {
+        "xpath": "/html[1]/body[1]/header[1]/div[1]",
+        "selector": "body > header > div",
+        "sig": "header header > div.menu-toggle",
+        "html": "<div class=\"menu-toggle\">",
+        "rect": {
+         "x": 274,
+         "y": 18,
+         "w": 22,
+         "h": 34
+        }
+       }
+      },
+      {
+       "target": [
+        "th:nth-child(2)"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element",
+       "html": "<th>From</th>",
+       "el": {
+        "xpath": "/html[1]/body[1]/main[1]/div[4]/table[1]/tbody[1]/tr[1]/th[2]",
+        "selector": "body > main > div:nth-of-type(4) > table > tbody > tr:nth-of-type(1) > th:nth-of-type(2)",
+        "sig": "main tr > th",
+        "html": "<th>From",
+        "rect": {
+         "x": 277,
+         "y": 755,
+         "w": 86,
+         "h": 39
+        }
+       }
+      },
+      {
+       "target": [
+        "th:nth-child(3)"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element",
+       "html": "<th>Health fund item</th>",
+       "el": {
+        "xpath": "/html[1]/body[1]/main[1]/div[4]/table[1]/tbody[1]/tr[1]/th[3]",
+        "selector": "body > main > div:nth-of-type(4) > table > tbody > tr:nth-of-type(1) > th:nth-of-type(3)",
+        "sig": "main tr > th",
+        "html": "<th>Health fund item",
+        "rect": {
+         "x": 363,
+         "y": 755,
+         "w": 214,
+         "h": 39
+        }
+       }
+      },
+      {
+       "target": [
+        "th:nth-child(4)"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element",
+       "html": "<th>Usual time</th>",
+       "el": {
+        "xpath": "/html[1]/body[1]/main[1]/div[4]/table[1]/tbody[1]/tr[1]/th[4]",
+        "selector": "body > main > div:nth-of-type(4) > table > tbody > tr:nth-of-type(1) > th:nth-of-type(4)",
+        "sig": "main tr > th",
+        "html": "<th>Usual time",
+        "rect": {
+         "x": 576,
+         "y": 755,
+         "w": 147,
+         "h": 39
+        }
+       }
+      },
+      {
+       "target": [
+        "tr:nth-child(2) > td:nth-child(2)"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element",
+       "html": "<td>$199</td>",
+       "el": {
+        "xpath": "/html[1]/body[1]/main[1]/div[4]/table[1]/tbody[1]/tr[2]/td[2]",
+        "selector": "body > main > div:nth-of-type(4) > table > tbody > tr:nth-of-type(2) > td:nth-of-type(2)",
+        "sig": "main tr > td",
+        "html": "<td>$199",
+        "rect": {
+         "x": 277,
+         "y": 794,
+         "w": 86,
+         "h": 39
+        }
+       }
+      },
+      {
+       "target": [
+        "tr:nth-child(2) > td:nth-child(3)"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element",
+       "html": "<td>011, 114, 121</td>",
+       "el": {
+        "xpath": "/html[1]/body[1]/main[1]/div[4]/table[1]/tbody[1]/tr[2]/td[3]",
+        "selector": "body > main > div:nth-of-type(4) > table > tbody > tr:nth-of-type(2) > td:nth-of-type(3)",
+        "sig": "main tr > td",
+        "html": "<td>011, 114, 121",
+        "rect": {
+         "x": 363,
+         "y": 794,
+         "w": 214,
+         "h": 39
+        }
+       }
+      },
+      {
+       "target": [
+        "tr:nth-child(2) > td:nth-child(4)"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element",
+       "html": "<td>45 minutes</td>",
+       "el": {
+        "xpath": "/html[1]/body[1]/main[1]/div[4]/table[1]/tbody[1]/tr[2]/td[4]",
+        "selector": "body > main > div:nth-of-type(4) > table > tbody > tr:nth-of-type(2) > td:nth-of-type(4)",
+        "sig": "main tr > td",
+        "html": "<td>45 minutes",
+        "rect": {
+         "x": 576,
+         "y": 794,
+         "w": 147,
+         "h": 39
+        }
+       }
+      },
+      {
+       "target": [
+        "tr:nth-child(3) > td:nth-child(2)"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element",
+       "html": "<td>$180</td>",
+       "el": {
+        "xpath": "/html[1]/body[1]/main[1]/div[4]/table[1]/tbody[1]/tr[3]/td[2]",
+        "selector": "body > main > div:nth-of-type(4) > table > tbody > tr:nth-of-type(3) > td:nth-of-type(2)",
+        "sig": "main tr > td",
+        "html": "<td>$180",
+        "rect": {
+         "x": 277,
+         "y": 833,
+         "w": 86,
+         "h": 39
+        }
+       }
+      },
+      {
+       "target": [
+        "tr:nth-child(3) > td:nth-child(3)"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element",
+       "html": "<td>521</td>",
+       "el": {
+        "xpath": "/html[1]/body[1]/main[1]/div[4]/table[1]/tbody[1]/tr[3]/td[3]",
+        "selector": "body > main > div:nth-of-type(4) > table > tbody > tr:nth-of-type(3) > td:nth-of-type(3)",
+        "sig": "main tr > td",
+        "html": "<td>521",
+        "rect": {
+         "x": 363,
+         "y": 833,
+         "w": 214,
+         "h": 39
+        }
+       }
+      },
+      {
+       "target": [
+        "tr:nth-child(3) > td:nth-child(4)"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element",
+       "html": "<td>30 minutes</td>",
+       "el": {
+        "xpath": "/html[1]/body[1]/main[1]/div[4]/table[1]/tbody[1]/tr[3]/td[4]",
+        "selector": "body > main > div:nth-of-type(4) > table > tbody > tr:nth-of-type(3) > td:nth-of-type(4)",
+        "sig": "main tr > td",
+        "html": "<td>30 minutes",
+        "rect": {
+         "x": 576,
+         "y": 833,
+         "w": 147,
+         "h": 39
+        }
+       }
+      },
+      {
+       "target": [
+        "tr:nth-child(4) > td:nth-child(2)"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element",
+       "html": "<td>$450</td>",
+       "el": {
+        "xpath": "/html[1]/body[1]/main[1]/div[4]/table[1]/tbody[1]/tr[4]/td[2]",
+        "selector": "body > main > div:nth-of-type(4) > table > tbody > tr:nth-of-type(4) > td:nth-of-type(2)",
+        "sig": "main tr > td",
+        "html": "<td>$450",
+        "rect": {
+         "x": 277,
+         "y": 873,
+         "w": 86,
+         "h": 39
+        }
+       }
+      },
+      {
+       "target": [
+        "tr:nth-child(4) > td:nth-child(3)"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element",
+       "html": "<td>118</td>",
+       "el": {
+        "xpath": "/html[1]/body[1]/main[1]/div[4]/table[1]/tbody[1]/tr[4]/td[3]",
+        "selector": "body > main > div:nth-of-type(4) > table > tbody > tr:nth-of-type(4) > td:nth-of-type(3)",
+        "sig": "main tr > td",
+        "html": "<td>118",
+        "rect": {
+         "x": 363,
+         "y": 873,
+         "w": 214,
+         "h": 39
+        }
+       }
+      },
+      {
+       "target": [
+        "tr:nth-child(4) > td:nth-child(4)"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element",
+       "html": "<td>Two visits</td>",
+       "el": {
+        "xpath": "/html[1]/body[1]/main[1]/div[4]/table[1]/tbody[1]/tr[4]/td[4]",
+        "selector": "body > main > div:nth-of-type(4) > table > tbody > tr:nth-of-type(4) > td:nth-of-type(4)",
+        "sig": "main tr > td",
+        "html": "<td>Two visits",
+        "rect": {
+         "x": 576,
+         "y": 873,
+         "w": 147,
+         "h": 39
+        }
+       }
+      },
+      {
+       "target": [
+        ".cookie"
+       ],
+       "impact": "serious",
+       "summary": "Fix any of the following:\n  Element's background color could not be determined because it partially overlaps other elements",
+       "html": "<div class=\"cookie\">We use cookies to remember your preferences. <button id=\"cookie-accept\">Accept</button></div>",
+       "el": {
+        "xpath": "/html[1]/body[1]/div[2]",
+        "selector": "body > div:nth-of-type(2)",
+        "sig": "body body > div.cookie",
+        "html": "<div class=\"cookie\">",
+        "rect": {
+         "x": 16,
+         "y": 489,
+         "w": 288,
+         "h": 71
+        }
+       }
+      }
+     ],
+     "node_count": 14
+    }
+   ],
+   "passes": [
+    {
+     "id": "aria-hidden-body",
+     "nodes": 1
+    },
+    {
+     "id": "button-name",
+     "nodes": 1
+    },
+    {
+     "id": "bypass",
+     "nodes": 1
+    },
+    {
+     "id": "color-contrast-enhanced",
+     "nodes": 1
+    },
+    {
+     "id": "color-contrast",
+     "nodes": 1
+    },
+    {
+     "id": "document-title",
+     "nodes": 1
+    },
+    {
+     "id": "empty-heading",
+     "nodes": 1
+    },
+    {
+     "id": "empty-table-header",
+     "nodes": 1
+    },
+    {
+     "id": "heading-order",
+     "nodes": 1
+    },
+    {
+     "id": "html-has-lang",
+     "nodes": 1
+    },
+    {
+     "id": "html-lang-valid",
+     "nodes": 1
+    },
+    {
+     "id": "identical-links-same-purpose",
+     "nodes": 1
+    },
+    {
+     "id": "image-redundant-alt",
+     "nodes": 1
+    },
+    {
+     "id": "landmark-banner-is-top-level",
+     "nodes": 1
+    },
+    {
+     "id": "landmark-contentinfo-is-top-level",
+     "nodes": 1
+    },
+    {
+     "id": "landmark-main-is-top-level",
+     "nodes": 1
+    },
+    {
+     "id": "landmark-no-duplicate-banner",
+     "nodes": 1
+    },
+    {
+     "id": "landmark-no-duplicate-contentinfo",
+     "nodes": 1
+    },
+    {
+     "id": "landmark-no-duplicate-main",
+     "nodes": 1
+    },
+    {
+     "id": "landmark-one-main",
+     "nodes": 1
+    },
+    {
+     "id": "landmark-unique",
+     "nodes": 1
+    },
+    {
+     "id": "link-name",
+     "nodes": 1
+    },
+    {
+     "id": "meta-viewport-large",
+     "nodes": 1
+    },
+    {
+     "id": "meta-viewport",
+     "nodes": 1
+    },
+    {
+     "id": "nested-interactive",
+     "nodes": 1
+    },
+    {
+     "id": "page-has-heading-one",
+     "nodes": 1
+    },
+    {
+     "id": "region",
+     "nodes": 1
+    },
+    {
+     "id": "table-duplicate-name",
+     "nodes": 1
+    },
+    {
+     "id": "target-size",
+     "nodes": 1
+    },
+    {
+     "id": "td-headers-attr",
+     "nodes": 1
+    },
+    {
+     "id": "th-has-data-cells",
+     "nodes": 1
+    }
+   ],
+   "inapplicable": [
+    "accesskeys",
+    "area-alt",
+    "aria-allowed-attr",
+    "aria-allowed-role",
+    "aria-braille-equivalent",
+    "aria-command-name",
+    "aria-conditional-attr",
+    "aria-deprecated-role",
+    "aria-dialog-name",
+    "aria-hidden-focus",
+    "aria-input-field-name",
+    "aria-meter-name",
+    "aria-progressbar-name",
+    "aria-prohibited-attr",
+    "aria-required-attr",
+    "aria-required-children",
+    "aria-required-parent",
+    "aria-roles",
+    "aria-tab-name",
+    "aria-text",
+    "aria-toggle-field-name",
+    "aria-tooltip-name",
+    "aria-treeitem-name",
+    "aria-valid-attr-value",
+    "aria-valid-attr",
+    "autocomplete-valid",
+    "avoid-inline-spacing",
+    "blink",
+    "definition-list",
+    "dlitem",
+    "duplicate-id-aria",
+    "form-field-multiple-labels",
+    "frame-focusable-content",
+    "frame-tested",
+    "frame-title-unique",
+    "frame-title",
+    "html-xml-lang-mismatch",
+    "input-button-name",
+    "input-image-alt",
+    "label-content-name-mismatch",
+    "label-title-only",
+    "label",
+    "link-in-text-block",
+    "list",
+    "listitem",
+    "marquee",
+    "meta-refresh-no-exceptions",
+    "meta-refresh",
+    "object-alt",
+    "presentation-role-conflict",
+    "role-img-alt",
+    "scope-attr-valid",
+    "select-name",
+    "server-side-image-map",
+    "skip-link",
+    "summary-name",
+    "svg-img-alt",
+    "tabindex",
+    "valid-lang",
+    "video-caption",
+    "no-autoplay-audio"
+   ],
+   "status": "ran",
+   "seconds": 0.16
+  },
+  "ibm-equal-access": {
+   "version": null,
+   "ruleset": "WCAG_2_2",
+   "results": [
+    {
+     "ruleId": "style_color_misuse",
+     "value": [
+      "VIOLATION",
+      "POTENTIAL"
+     ],
+     "reasonId": "Potential_1",
+     "message": "Verify color is not used as the only visual means of conveying information",
+     "snippet": "<link href=\"site.css\" rel=\"stylesheet\">",
+     "xpath": "/html[1]/head[1]/link[1]",
+     "el": {
+      "xpath": "/html[1]/head[1]/link[1]",
+      "selector": "head > link",
+      "sig": "body head > link",
+      "html": "<link rel=\"stylesheet\" href=\"site.css\">",
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "w": 0,
+       "h": 0
+      }
+     }
+    },
+    {
+     "ruleId": "style_highcontrast_visible",
+     "value": [
+      "RECOMMENDATION",
+      "MANUAL"
+     ],
+     "reasonId": "Manual_1",
+     "message": "Confirm Windows high contrast mode is supported when using CSS to include, position or alter non-decorative content",
+     "snippet": "<link href=\"site.css\" rel=\"stylesheet\">",
+     "xpath": "/html[1]/head[1]/link[1]",
+     "el": {
+      "xpath": "/html[1]/head[1]/link[1]",
+      "selector": "head > link",
+      "sig": "body head > link",
+      "html": "<link rel=\"stylesheet\" href=\"site.css\">",
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "w": 0,
+       "h": 0
+      }
+     }
+    },
+    {
+     "ruleId": "a_text_purpose",
+     "value": [
+      "VIOLATION",
+      "FAIL"
+     ],
+     "reasonId": "fail_acc_name",
+     "message": "Hyperlink has no link text, label or image with a text alternative",
+     "snippet": "<a href=\"index.html\">",
+     "xpath": "/html[1]/body[1]/header[1]/a[1]",
+     "el": {
+      "xpath": "/html[1]/body[1]/header[1]/a[1]",
+      "selector": "body > header > a",
+      "sig": "header header > a",
+      "html": "<a href=\"index.html\">",
+      "rect": {
+       "x": 24,
+       "y": 12,
+       "w": 160,
+       "h": 46
+      }
+     }
+    },
+    {
+     "ruleId": "img_alt_valid",
+     "value": [
+      "VIOLATION",
+      "FAIL"
+     ],
+     "reasonId": "fail_no_alt",
+     "message": "The image has neither an accessible name nor is marked as decorative or redundant",
+     "snippet": "<img height=\"40\" width=\"160\" src=\"logo.svg\">",
+     "xpath": "/html[1]/body[1]/header[1]/a[1]/img[1]",
+     "el": {
+      "xpath": "/html[1]/body[1]/header[1]/a[1]/img[1]",
+      "selector": "body > header > a > img",
+      "sig": "header a > img",
+      "html": "<img src=\"logo.svg\" width=\"160\" height=\"40\">",
+      "rect": {
+       "x": 24,
+       "y": 12,
+       "w": 160,
+       "h": 40
+      }
+     }
+    },
+    {
+     "ruleId": "text_block_heading",
+     "value": [
+      "VIOLATION",
+      "POTENTIAL"
+     ],
+     "reasonId": "potential_heading",
+     "message": "Confirm this text '☰' is used as a heading and if so, modify to use a heading element or role",
+     "snippet": "<div class=\"menu-toggle\">",
+     "xpath": "/html[1]/body[1]/header[1]/div[1]",
+     "el": {
+      "xpath": "/html[1]/body[1]/header[1]/div[1]",
+      "selector": "body > header > div",
+      "sig": "header header > div.menu-toggle",
+      "html": "<div class=\"menu-toggle\">",
+      "rect": {
+       "x": 274,
+       "y": 18,
+       "w": 22,
+       "h": 34
+      }
+     }
+    },
+    {
+     "ruleId": "text_block_heading",
+     "value": [
+      "VIOLATION",
+      "POTENTIAL"
+     ],
+     "reasonId": "potential_heading",
+     "message": "Confirm this text 'General dentistry' is used as a heading and if so, modify to use a heading element or role",
+     "snippet": "<div class=\"h2\">",
+     "xpath": "/html[1]/body[1]/main[1]/div[1]",
+     "el": {
+      "xpath": "/html[1]/body[1]/main[1]/div[1]",
+      "selector": "body > main > div:nth-of-type(1)",
+      "sig": "main main > div.h2",
+      "html": "<div class=\"h2\">",
+      "rect": {
+       "x": 24,
+       "y": 341,
+       "w": 272,
+       "h": 34
+      }
+     }
+    },
+    {
+     "ruleId": "text_block_heading",
+     "value": [
+      "VIOLATION",
+      "POTENTIAL"
+     ],
+     "reasonId": "potential_heading",
+     "message": "Confirm this text 'Cosmetic dentistry' is used as a heading and if so, modify to use a heading element or role",
+     "snippet": "<div class=\"h2\">",
+     "xpath": "/html[1]/body[1]/main[1]/div[2]",
+     "el": {
+      "xpath": "/html[1]/body[1]/main[1]/div[2]",
+      "selector": "body > main > div:nth-of-type(2)",
+      "sig": "main main > div.h2",
+      "html": "<div class=\"h2\">",
+      "rect": {
+       "x": 24,
+       "y": 527,
+       "w": 272,
+       "h": 34
+      }
+     }
+    },
+    {
+     "ruleId": "text_block_heading",
+     "value": [
+      "VIOLATION",
+      "POTENTIAL"
+     ],
+     "reasonId": "potential_heading",
+     "message": "Confirm this text 'Fees' is used as a heading and if so, modify to use a heading element or role",
+     "snippet": "<div id=\"fees\" class=\"h2\">",
+     "xpath": "/html[1]/body[1]/main[1]/div[3]",
+     "el": {
+      "xpath": "/html[1]/body[1]/main[1]/div[3]",
+      "selector": "#fees",
+      "sig": "main main > div.h2#fees",
+      "html": "<div class=\"h2\" id=\"fees\">",
+      "rect": {
+       "x": 24,
+       "y": 713,
+       "w": 272,
+       "h": 34
+      }
+     }
+    },
+    {
+     "ruleId": "text_contrast_sufficient",
+     "value": [
+      "VIOLATION",
+      "FAIL"
+     ],
+     "reasonId": "fail_contrast",
+     "message": "Text contrast of 2.59 with its background is less than the WCAG AA minimum requirements for text of size 16px and weight of 400",
+     "snippet": "<p>",
+     "xpath": "/html[1]/body[1]/footer[1]/p[1]",
+     "el": {
+      "xpath": "/html[1]/body[1]/footer[1]/p[1]",
+      "selector": "body > footer > p:nth-of-type(1)",
+      "sig": "footer footer > p",
+      "html": "<p>Harbour Dental, 12 Wharf Street, Sydney NSW 2000. Open Monda…",
+      "rect": {
+       "x": 24,
+       "y": 1146,
+       "w": 272,
+       "h": 67
+      }
+     }
+    },
+    {
+     "ruleId": "aria_content_in_landmark",
+     "value": [
+      "RECOMMENDATION",
+      "FAIL"
+     ],
+     "reasonId": "Fail_1",
+     "message": "Content is not within a landmark element",
+     "snippet": "<a href=\"tel:+61290000000\">",
+     "xpath": "/html[1]/body[1]/div[1]/a[1]",
+     "el": {
+      "xpath": "/html[1]/body[1]/div[1]/a[1]",
+      "selector": "body > div:nth-of-type(1) > a",
+      "sig": "body div.callbar > a",
+      "html": "<a href=\"tel:+61290000000\">Call 02 9000 0000",
+      "rect": {
+       "x": 147,
+       "y": 597,
+       "w": 132,
+       "h": 22
+      }
+     }
+    },
+    {
+     "ruleId": "aria_content_in_landmark",
+     "value": [
+      "RECOMMENDATION",
+      "FAIL"
+     ],
+     "reasonId": "Fail_1",
+     "message": "Content is not within a landmark element",
+     "snippet": "<button id=\"cookie-accept\">",
+     "xpath": "/html[1]/body[1]/div[2]/button[1]",
+     "el": {
+      "xpath": "/html[1]/body[1]/div[2]/button[1]",
+      "selector": "#cookie-accept",
+      "sig": "body div.cookie > button#cookie-accept",
+      "html": "<button id=\"cookie-accept\">Accept",
+      "rect": {
+       "x": 122,
+       "y": 526,
+       "w": 57,
+       "h": 21
+      }
+     }
+    }
+   ],
+   "truncated": false,
+   "passes": {
+    "html_lang_valid": 1,
+    "html_lang_exists": 1,
+    "html_skipnav_exists": 1,
+    "page_title_exists": 1,
+    "img_alt_background": 48,
+    "aria_content_in_landmark": 21,
+    "page_title_valid": 1,
+    "style_viewport_resizable": 1,
+    "skip_main_exists": 1,
+    "skip_main_described": 1,
+    "text_quoted_correctly": 47,
+    "text_whitespace_valid": 47,
+    "aria_banner_single": 1,
+    "aria_banner_label_unique": 1,
+    "element_tabbable_unobscured": 6,
+    "element_tabbable_visible": 6,
+    "style_focus_visible": 6,
+    "target_spacing_sufficient": 6,
+    "widget_tabbable_exists": 6,
+    "widget_tabbable_single": 10,
+    "img_alt_misuse": 1,
+    "aria_descendant_valid": 2,
+    "heading_content_exists": 1,
+    "heading_markup_misuse": 1,
+    "text_contrast_sufficient": 29,
+    "aria_accessiblename_exists": 5,
+    "table_headers_exists": 1,
+    "table_layout_linearized": 1,
+    "aria_child_valid": 6,
+    "aria_contentinfo_misuse": 1,
+    "aria_contentinfo_single": 1,
+    "aria_contentinfo_label_unique": 1,
+    "a_text_purpose": 4,
+    "input_label_exists": 1,
+    "input_label_visible": 1
+   },
+   "status": "ran",
+   "seconds": 0.11
+  },
+  "htmlcs": {
+   "standard": "WCAG2AA",
+   "messages": [
+    {
+     "type": 1,
+     "code": "WCAG2AA.Principle1.Guideline1_1.1_1_1.H30.2",
+     "msg": "Img element is the only content of the link, but is missing alt text. The alt text should describe the purpose of the link.",
+     "el": {
+      "xpath": "/html[1]/body[1]/header[1]/a[1]",
+      "selector": "body > header > a",
+      "sig": "header header > a",
+      "html": "<a href=\"index.html\">",
+      "rect": {
+       "x": 24,
+       "y": 12,
+       "w": 160,
+       "h": 46
+      }
+     }
+    },
+    {
+     "type": 2,
+     "code": "WCAG2AA.Principle1.Guideline1_3.1_3_1.H39.3.NoCaption",
+     "msg": "If this table is a data table, consider using a caption element to the table element to identify this table.",
+     "el": {
+      "xpath": "/html[1]/body[1]/main[1]/div[4]/table[1]",
+      "selector": "body > main > div:nth-of-type(4) > table",
+      "sig": "main div.prices > table",
+      "html": "<table>Treatment From Health fund item Usual time Check-up and clea…",
+      "rect": {
+       "x": 24,
+       "y": 754,
+       "w": 700,
+       "h": 159
+      }
+     }
+    },
+    {
+     "type": 1,
+     "code": "WCAG2AA.Principle1.Guideline1_4.1_4_3.G18.Fail",
+     "msg": "This element has insufficient contrast at this conformance level. Expected a contrast ratio of at least 4.5:1, but text in this element has a contrast ratio of 2.59:1. Recommendation:  change text colour to #707070.",
+     "el": {
+      "xpath": "/html[1]/body[1]/footer[1]/p[1]",
+      "selector": "body > footer > p:nth-of-type(1)",
+      "sig": "footer footer > p",
+      "html": "<p>Harbour Dental, 12 Wharf Street, Sydney NSW 2000. Open Monda…",
+      "rect": {
+       "x": 24,
+       "y": 1146,
+       "w": 272,
+       "h": 67
+      }
+     }
+    },
+    {
+     "type": 2,
+     "code": "WCAG2AA.Principle1.Guideline1_3.1_3_1.H48",
+     "msg": "If this element contains a navigation section, it is recommended that it be marked up as a list.",
+     "el": {
+      "xpath": "/html[1]/body[1]/footer[1]/p[2]",
+      "selector": "body > footer > p:nth-of-type(2)",
+      "sig": "footer footer > p",
+      "html": "<p>ContactFeesPrivacy",
+      "rect": {
+       "x": 24,
+       "y": 1229,
+       "w": 272,
+       "h": 22
+      }
+     }
+    },
+    {
+     "type": 2,
+     "code": "WCAG2AA.Principle1.Guideline1_4.1_4_10.C32,C31,C33,C38,SCR34,G206",
+     "msg": "This element has \"position: fixed\". This may require scrolling in two dimensions, which is considered a failure of this Success Criterion.",
+     "el": {
+      "xpath": "/html[1]/body[1]/div[1]",
+      "selector": "body > div:nth-of-type(1)",
+      "sig": "body body > div.callbar",
+      "html": "<div class=\"callbar\">",
+      "rect": {
+       "x": 0,
+       "y": 576,
+       "w": 320,
+       "h": 64
+      }
+     }
+    },
+    {
+     "type": 2,
+     "code": "WCAG2AA.Principle1.Guideline1_4.1_4_10.C32,C31,C33,C38,SCR34,G206",
+     "msg": "This element has \"position: fixed\". This may require scrolling in two dimensions, which is considered a failure of this Success Criterion.",
+     "el": {
+      "xpath": "/html[1]/body[1]/div[2]",
+      "selector": "body > div:nth-of-type(2)",
+      "sig": "body body > div.cookie",
+      "html": "<div class=\"cookie\">",
+      "rect": {
+       "x": 16,
+       "y": 489,
+       "w": 288,
+       "h": 71
+      }
+     }
+    }
+   ],
+   "truncated": false,
+   "notices": {
+    "WCAG2AA.Principle2.Guideline2_4.2_4_2.H25.2": 1,
+    "WCAG2AA.Principle2.Guideline2_4.2_4_4.H77,H78,H79,H80,H81": 9,
+    "WCAG2AA.Principle1.Guideline1_1.1_1_1.G73,G74": 1,
+    "WCAG2AA.Principle1.Guideline1_3.1_3_1.DataTable": 1,
+    "WCAG2AA.Principle3.Guideline3_2.3_2_1.G107": 1,
+    "WCAG2AA.Principle1.Guideline1_3.1_3_2.G57": 1,
+    "WCAG2AA.Principle1.Guideline1_3.1_3_3.G96": 1,
+    "WCAG2AA.Principle1.Guideline1_3.1_3_4.": 1,
+    "WCAG2AA.Principle1.Guideline1_4.1_4_1.G14,G182": 1,
+    "WCAG2AA.Principle1.Guideline1_4.1_4_4.G142": 1,
+    "WCAG2AA.Principle1.Guideline1_4.1_4_5.G140,C22,C30.AALevel": 1,
+    "WCAG2AA.Principle1.Guideline1_4.1_4_10.C32,C31,C33,C38,SCR34,G206": 1,
+    "WCAG2AA.Principle1.Guideline1_4.1_4_11.G195,G207,G18,G145,G174,F78": 1,
+    "WCAG2AA.Principle1.Guideline1_4.1_4_12.C36,C35": 1,
+    "WCAG2AA.Principle1.Guideline1_4.1_4_13.F95": 1,
+    "WCAG2AA.Principle2.Guideline2_1.2_1_4.": 1,
+    "WCAG2AA.Principle2.Guideline2_2.2_2_2.SCR33,SCR22,G187,G152,G186,G191": 1,
+    "WCAG2AA.Principle2.Guideline2_3.2_3_1.G19,G176": 1,
+    "WCAG2AA.Principle2.Guideline2_4.2_4_1.G1,G123,G124,H69": 1,
+    "WCAG2AA.Principle2.Guideline2_4.2_4_5.G125,G64,G63,G161,G126,G185": 1,
+    "WCAG2AA.Principle2.Guideline2_4.2_4_6.G130,G131": 1,
+    "WCAG2AA.Principle2.Guideline2_4.2_4_7.G149,G165,G195,C15,SCR31": 1,
+    "WCAG2AA.Principle2.Guideline2_5.2_5_1.": 1,
+    "WCAG2AA.Principle2.Guideline2_5.2_5_2.": 1,
+    "WCAG2AA.Principle2.Guideline2_5.2_5_3.F96": 1,
+    "WCAG2AA.Principle2.Guideline2_5.2_5_4.": 1,
+    "WCAG2AA.Principle3.Guideline3_1.3_1_2.H58": 1,
+    "WCAG2AA.Principle3.Guideline3_2.3_2_3.G61": 1,
+    "WCAG2AA.Principle3.Guideline3_2.3_2_4.G197": 1,
+    "WCAG2AA.Principle4.Guideline4_1.4_1_3.": 1
+   },
+   "status": "ran",
+   "seconds": 0.04
+  }
+ },
+ "probes": {
+  "keyboard": {
+   "presses": 6,
+   "stops": [
+    {
+     "xpath": "/html[1]/body[1]/header[1]/a[1]",
+     "selector": "body > header > a",
+     "sig": "header header > a",
+     "html": "<a href=\"index.html\">",
+     "rect": {
+      "x": 24,
+      "y": 12,
+      "w": 160,
+      "h": 46
+     },
+     "obscured": {
+      "covered": 0,
+      "total": 9,
+      "by": null
+     },
+     "tabindex": null,
+     "doc_y": 12,
+     "in_dialog": false,
+     "indicator": {
+      "changed_px": 848,
+      "perimeter": 412
+     }
+    },
+    {
+     "xpath": "/html[1]/body[1]/main[1]/div[4]",
+     "selector": "body > main > div:nth-of-type(4)",
+     "sig": "main main > div.prices",
+     "html": "<div class=\"prices\">",
+     "rect": {
+      "x": 24,
+      "y": 241,
+      "w": 272,
+      "h": 159
+     },
+     "obscured": {
+      "covered": 0,
+      "total": 9,
+      "by": null
+     },
+     "tabindex": null,
+     "doc_y": 754,
+     "in_dialog": false,
+     "indicator": {
+      "changed_px": 1732,
+      "perimeter": 862
+     }
+    },
+    {
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[1]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(1)",
+     "sig": "footer p > a",
+     "html": "<a href=\"contact.html\">Contact",
+     "rect": {
+      "x": 24,
+      "y": 579,
+      "w": 55,
+      "h": 17
+     },
+     "obscured": {
+      "covered": 9,
+      "total": 9,
+      "by": {
+       "xpath": "/html[1]/body[1]/div[1]",
+       "selector": "body > div",
+       "sig": "body body > div.callbar",
+       "html": "<div class=\"callbar\">",
+       "rect": {
+        "x": 0,
+        "y": 576,
+        "w": 320,
+        "h": 64
+       }
+      }
+     },
+     "tabindex": null,
+     "doc_y": 1231,
+     "in_dialog": false,
+     "indicator": {
+      "changed_px": 0,
+      "perimeter": 144
+     }
+    },
+    {
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[2]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(2)",
+     "sig": "footer p > a",
+     "html": "<a href=\"services.html#fees\">Fees",
+     "rect": {
+      "x": 95,
+      "y": 579,
+      "w": 36,
+      "h": 17
+     },
+     "obscured": {
+      "covered": 9,
+      "total": 9,
+      "by": {
+       "xpath": "/html[1]/body[1]/div[1]",
+       "selector": "body > div",
+       "sig": "body body > div.callbar",
+       "html": "<div class=\"callbar\">",
+       "rect": {
+        "x": 0,
+        "y": 576,
+        "w": 320,
+        "h": 64
+       }
+      }
+     },
+     "tabindex": null,
+     "doc_y": 1231,
+     "in_dialog": false,
+     "indicator": {
+      "changed_px": 0,
+      "perimeter": 106
+     }
+    },
+    {
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[3]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(3)",
+     "sig": "footer p > a",
+     "html": "<a href=\"contact.html#privacy\">Privacy",
+     "rect": {
+      "x": 147,
+      "y": 579,
+      "w": 52,
+      "h": 17
+     },
+     "obscured": {
+      "covered": 9,
+      "total": 9,
+      "by": {
+       "xpath": "/html[1]/body[1]/div[1]",
+       "selector": "body > div",
+       "sig": "body body > div.callbar",
+       "html": "<div class=\"callbar\">",
+       "rect": {
+        "x": 0,
+        "y": 576,
+        "w": 320,
+        "h": 64
+       }
+      }
+     },
+     "tabindex": null,
+     "doc_y": 1231,
+     "in_dialog": false,
+     "indicator": {
+      "changed_px": 186,
+      "perimeter": 138
+     }
+    },
+    {
+     "xpath": "/html[1]/body[1]/div[1]/a[1]",
+     "selector": "body > div > a",
+     "sig": "body div.callbar > a",
+     "html": "<a href=\"tel:+61290000000\">Call 02 9000 0000",
+     "rect": {
+      "x": 147,
+      "y": 597,
+      "w": 132,
+      "h": 22
+     },
+     "obscured": {
+      "covered": 0,
+      "total": 9,
+      "by": null
+     },
+     "tabindex": null,
+     "doc_y": 1249,
+     "in_dialog": false,
+     "indicator": {
+      "changed_px": 960,
+      "perimeter": 308
+     }
+    }
+   ],
+   "focusable_count": 5,
+   "unreached": [],
+   "pointer_only": [
+    {
+     "xpath": "/html[1]/body[1]/header[1]/div[1]",
+     "selector": "body > header > div",
+     "sig": "header header > div.menu-toggle",
+     "html": "<div class=\"menu-toggle\">",
+     "rect": {
+      "x": 274,
+      "y": 18,
+      "w": 22,
+      "h": 34
+     },
+     "listeners": [
+      "click"
+     ]
+    }
+   ],
+   "trap": null,
+   "positive_tabindex": [],
+   "jumps": [],
+   "skip_link_first": false,
+   "status": "ran",
+   "seconds": 0.97
+  },
+  "focus_visible": {
+   "note": "measured during the keyboard probe",
+   "status": "ran",
+   "seconds": 0.0
+  },
+  "reflow": {
+   "viewport_width": 320,
+   "scroll_width": 320,
+   "horizontal_scroll": false,
+   "culprits": [
+    {
+     "xpath": "/html[1]/body[1]/main[1]/div[4]/table[1]",
+     "selector": "body > main > div:nth-of-type(4) > table",
+     "sig": "main div.prices > table",
+     "html": "<table>Treatment From Health fund item Usual time Check-up and clea…",
+     "rect": {
+      "x": 24,
+      "y": 102,
+      "w": 700,
+      "h": 159
+     },
+     "exempt_kind": "table",
+     "inside_scroller": true,
+     "overflow_px": 404
+    }
+   ],
+   "status": "ran",
+   "seconds": 0.0
+  },
+  "text_spacing": {
+   "clipped": [],
+   "clipped_before": 0,
+   "status": "ran",
+   "seconds": 0.22
+  },
+  "target_size": {
+   "targets": 5,
+   "undersized": [
+    {
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[1]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(1)",
+     "sig": "footer p > a",
+     "html": "<a href=\"contact.html\">Contact",
+     "rect": {
+      "x": 24,
+      "y": 715,
+      "w": 55,
+      "h": 17
+     },
+     "width": 55.1,
+     "height": 17,
+     "inline": false,
+     "spacing_ok": true,
+     "conflicts_with": null
+    },
+    {
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[2]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(2)",
+     "sig": "footer p > a",
+     "html": "<a href=\"services.html#fees\">Fees",
+     "rect": {
+      "x": 95,
+      "y": 715,
+      "w": 36,
+      "h": 17
+     },
+     "width": 35.6,
+     "height": 17,
+     "inline": false,
+     "spacing_ok": true,
+     "conflicts_with": null
+    },
+    {
+     "xpath": "/html[1]/body[1]/footer[1]/p[2]/a[3]",
+     "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(3)",
+     "sig": "footer p > a",
+     "html": "<a href=\"contact.html#privacy\">Privacy",
+     "rect": {
+      "x": 147,
+      "y": 715,
+      "w": 52,
+      "h": 17
+     },
+     "width": 52.5,
+     "height": 17,
+     "inline": false,
+     "spacing_ok": true,
+     "conflicts_with": null
+    },
+    {
+     "xpath": "/html[1]/body[1]/div[1]/a[1]",
+     "selector": "body > div > a",
+     "sig": "body div.callbar > a",
+     "html": "<a href=\"tel:+61290000000\">Call 02 9000 0000",
+     "rect": {
+      "x": 147,
+      "y": 597,
+      "w": 132,
+      "h": 22
+     },
+     "width": 131.7,
+     "height": 22.4,
+     "inline": false,
+     "spacing_ok": true,
+     "conflicts_with": null
+    }
+   ],
+   "under_44": 4,
+   "status": "ran",
+   "seconds": 0.0
+  }
+ },
+ "consent_dismissed": true
+}

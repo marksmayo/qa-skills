@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Book an appointment - Harbour Dental</title><link rel="stylesheet" href="site.css"></head>
+<body>
+<header>
+  <a href="index.html"><img src="logo.svg" width="160" height="40"></a>
+  <div class="menu-toggle">&#9776;</div>
+  <nav>
+    <a href="index.html">Home</a><a href="services.html">Services</a><a href="book.html">Book</a><a href="contact.html">Contact</a>
+  </nav>
+</header>
+<main>
+  <h1>Book an appointment</h1>
+  <p class="form-error" id="summary" hidden>Please fix the errors below.</p>
+  <form id="booking" action="/api/bookings" method="post" novalidate>
+    <div class="row"><input id="name" name="name" placeholder="Full name" required></div>
+    <div class="row"><label for="email">Email</label><br><input id="email" name="email" type="email" required></div>
+    <div class="row"><label for="tel">Mobile</label><br><input id="phone" name="phone" type="tel"></div>
+    <div class="row">Preferred day<br>
+      <div class="datepicker" tabindex="0">
+        <button type="button">Mon</button><button type="button">Tue</button><button type="button">Wed</button><button type="button">Thu</button><button type="button">Fri</button>
+      </div>
+    </div>
+    <div class="row"><button class="btn" type="submit">Request appointment</button></div>
+  </form>
+</main>
+<footer>
+  <p>Harbour Dental, 12 Wharf Street, Sydney NSW 2000. Open Monday to Saturday.</p>
+  <p><a href="contact.html">Contact</a><a href="services.html#fees">Fees</a><a href="contact.html#privacy">Privacy</a></p>
+</footer>
+<div class="callbar">Emergency? <a href="tel:+61290000000">Call 02 9000 0000</a></div>
+<div class="cookie">We use cookies to remember your preferences. <button id="cookie-accept">Accept</button></div>
+<script src="site.js"></script>
+<script>
+  // Day picker: keeps Tab inside the widget so the days can be cycled.
+  const picker = document.querySelector('.datepicker');
+  const days = [...picker.querySelectorAll('button')];
+  picker.addEventListener('keydown', e => {
+    if (e.key !== 'Tab') return;
+    e.preventDefault();
+    const i = days.indexOf(document.activeElement);
+    days[(i + (e.shiftKey ? -1 : 1) + days.length) % days.length].focus();
+  });
+  for (const d of days) d.addEventListener('click', () => { days.forEach(x => x.style.background = ''); d.style.background = '#9fd3e0'; });
+
+  document.getElementById('booking').addEventListener('submit', e => {
+    let bad = false;
+    for (const f of e.target.querySelectorAll('[required]')) {
+      const ok = f.value.trim() !== '';
+      f.classList.toggle('invalid', !ok);
+      bad = bad || !ok;
+    }
+    document.getElementById('summary').hidden = !bad;
+    if (bad) e.preventDefault();
+  });
+</script>
+</body>
+</html>

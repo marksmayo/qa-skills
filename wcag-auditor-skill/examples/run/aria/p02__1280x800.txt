@@ -1,0 +1,39 @@
+- banner:
+  - link:
+    - /url: index.html
+    - img
+  - navigation:
+    - link "Home":
+      - /url: index.html
+    - link "Services":
+      - /url: services.html
+    - link "Book":
+      - /url: book.html
+    - link "Contact":
+      - /url: contact.html
+- main:
+  - heading "Book an appointment" [level=1]
+  - textbox "Full name"
+  - text: Email
+  - textbox "Email"
+  - text: Mobile
+  - textbox
+  - text: Preferred day
+  - button "Mon"
+  - button "Tue"
+  - button "Wed"
+  - button "Thu"
+  - button "Fri"
+  - button "Request appointment"
+- contentinfo:
+  - paragraph: Harbour Dental, 12 Wharf Street, Sydney NSW 2000. Open Monday to Saturday.
+  - paragraph:
+    - link "Contact":
+      - /url: contact.html
+    - link "Fees":
+      - /url: services.html#fees
+    - link "Privacy":
+      - /url: contact.html#privacy
+- text: Emergency?
+- link "Call 02 9000 0000":
+  - /url: tel:+61290000000

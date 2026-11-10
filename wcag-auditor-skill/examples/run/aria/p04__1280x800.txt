@@ -1,0 +1,37 @@
+- banner:
+  - link:
+    - /url: index.html
+    - img
+  - navigation:
+    - link "Home":
+      - /url: index.html
+    - link "Services":
+      - /url: services.html
+    - link "Book":
+      - /url: book.html
+    - link "Contact":
+      - /url: contact.html
+- main:
+  - heading "Contact us" [level=1]
+  - paragraph: Call us on 02 9000 0000 or email hello@harbourdental.example. We reply within one business day.
+  - heading "Take a tour of the clinic" [level=2]
+  - heading "Finding us" [level=2]
+  - paragraph:
+    - text: We are on the first floor above the pharmacy, two minutes from Wynyard station. To see the map,
+    - link "click here":
+      - /url: https://maps.example/harbour-dental
+    - text: .
+  - heading "Privacy" [level=2]
+  - paragraph: We keep your records securely and only share them with your consent or where the law requires it.
+- contentinfo:
+  - paragraph: Harbour Dental, 12 Wharf Street, Sydney NSW 2000. Open Monday to Saturday.
+  - paragraph:
+    - link "Contact":
+      - /url: contact.html
+    - link "Fees":
+      - /url: services.html#fees
+    - link "Privacy":
+      - /url: contact.html#privacy
+- text: Emergency?
+- link "Call 02 9000 0000":
+  - /url: tel:+61290000000

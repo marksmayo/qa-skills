@@ -1,6 +1,6 @@
 # Skill designs
 
-Design documents for planned skills in this repository. Each skill, once built, follows the
+Design documents for the skills in this repository. Each skill, once built, follows the
 anatomy described in the root `CLAUDE.md` (`SKILL.md`, `RUBRIC.md`, `schemas/`, `scripts/`,
 `examples/`, `README.md`).
 
@@ -12,7 +12,7 @@ anatomy described in the root `CLAUDE.md` (`SKILL.md`, `RUBRIC.md`, `schemas/`, 
 | 3 | [Ticket to TDD](ticket-to-tdd.md) | `ticket-to-tdd-skill/` | Built (v1.0.0) |
 | 4 | [UI crash hunter](ui-crash-hunter.md) | `ui-crash-hunter-skill/` | Built (v1.0.0) |
 | 5 | [Code security auditor](code-security-auditor.md) | `code-security-auditor-skill/` | Built (v1.0.0) |
-| 6 | [WCAG auditor](wcag-auditor.md) | `wcag-auditor-skill/` | Draft |
+| 6 | [WCAG auditor](wcag-auditor.md) | `wcag-auditor-skill/` | Built (v1.0.0) |
 
 The table order is the agreed build order.
 

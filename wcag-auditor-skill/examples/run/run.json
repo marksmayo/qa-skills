@@ -1,0 +1,1018 @@
+{
+ "tool": "run_audit.py",
+ "started_at": "2026-11-10T09:38:29Z",
+ "finished_at": "2026-11-10T09:41:27Z",
+ "config": {
+  "targets": [
+   "http://127.0.0.1:8137/index.html"
+  ],
+  "crawl": {
+   "max_pages": 25,
+   "same_origin": true
+  },
+  "wcag_version": "2.2",
+  "level": "AA",
+  "viewports": [
+   "1280x800",
+   "320x640"
+  ],
+  "engines": [
+   "axe-core",
+   "ibm-equal-access",
+   "htmlcs",
+   "vnu"
+  ],
+  "allow_form_submission": false,
+  "rate_limit_seconds": 0.5,
+  "consent": {
+   "dismiss": "#cookie-accept"
+  },
+  "states": [
+   {
+    "url": "http://127.0.0.1:8137/index.html",
+    "name": "menu-open",
+    "viewport": "320x640",
+    "actions": [
+     {
+      "click": ".menu-toggle"
+     }
+    ],
+    "probes": [
+     "keyboard",
+     "target_size"
+    ]
+   },
+   {
+    "url": "http://127.0.0.1:8137/book.html",
+    "name": "errors",
+    "actions": [
+     {
+      "click": "button[type=submit]"
+     }
+    ],
+    "probes": [
+     "keyboard"
+    ]
+   }
+  ],
+  "critical_paths": [
+   {
+    "name": "Book an appointment",
+    "steps": [
+     {
+      "url": "http://127.0.0.1:8137/index.html",
+      "label": "Home page, choose Book"
+     },
+     {
+      "url": "http://127.0.0.1:8137/book.html",
+      "label": "Fill in the booking form"
+     },
+     {
+      "url": "http://127.0.0.1:8137/book.html",
+      "state": "errors",
+      "label": "Correct errors and submit"
+     }
+    ]
+   }
+  ],
+  "random_sample": 0.1,
+  "seed": 7,
+  "auth": null
+ },
+ "checks": [
+  {
+   "page": "p01",
+   "viewport": "1280x800",
+   "kind": "engine",
+   "name": "axe-core",
+   "status": "ran"
+  },
+  {
+   "page": "p01",
+   "viewport": "1280x800",
+   "kind": "engine",
+   "name": "ibm-equal-access",
+   "status": "ran"
+  },
+  {
+   "page": "p01",
+   "viewport": "1280x800",
+   "kind": "engine",
+   "name": "htmlcs",
+   "status": "ran"
+  },
+  {
+   "page": "p01",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "keyboard",
+   "status": "ran"
+  },
+  {
+   "page": "p01",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "focus_visible",
+   "status": "ran"
+  },
+  {
+   "page": "p01",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "text_spacing",
+   "status": "ran"
+  },
+  {
+   "page": "p01",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "resize_text",
+   "status": "ran"
+  },
+  {
+   "page": "p01",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "target_size",
+   "status": "ran"
+  },
+  {
+   "page": "p01",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "hover_focus",
+   "status": "ran"
+  },
+  {
+   "page": "p01",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "motion",
+   "status": "ran"
+  },
+  {
+   "page": "p01",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "a11y_tree",
+   "status": "ran"
+  },
+  {
+   "page": "p01",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "language",
+   "status": "ran"
+  },
+  {
+   "page": "p01",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "media",
+   "status": "ran"
+  },
+  {
+   "page": "p01",
+   "viewport": "320x640",
+   "kind": "engine",
+   "name": "axe-core",
+   "status": "ran"
+  },
+  {
+   "page": "p01",
+   "viewport": "320x640",
+   "kind": "engine",
+   "name": "ibm-equal-access",
+   "status": "ran"
+  },
+  {
+   "page": "p01",
+   "viewport": "320x640",
+   "kind": "engine",
+   "name": "htmlcs",
+   "status": "ran"
+  },
+  {
+   "page": "p01",
+   "viewport": "320x640",
+   "kind": "probe",
+   "name": "keyboard",
+   "status": "ran"
+  },
+  {
+   "page": "p01",
+   "viewport": "320x640",
+   "kind": "probe",
+   "name": "focus_visible",
+   "status": "ran"
+  },
+  {
+   "page": "p01",
+   "viewport": "320x640",
+   "kind": "probe",
+   "name": "reflow",
+   "status": "ran"
+  },
+  {
+   "page": "p01",
+   "viewport": "320x640",
+   "kind": "probe",
+   "name": "text_spacing",
+   "status": "ran"
+  },
+  {
+   "page": "p01",
+   "viewport": "320x640",
+   "kind": "probe",
+   "name": "target_size",
+   "status": "ran"
+  },
+  {
+   "page": "p02",
+   "viewport": "1280x800",
+   "kind": "engine",
+   "name": "axe-core",
+   "status": "ran"
+  },
+  {
+   "page": "p02",
+   "viewport": "1280x800",
+   "kind": "engine",
+   "name": "ibm-equal-access",
+   "status": "ran"
+  },
+  {
+   "page": "p02",
+   "viewport": "1280x800",
+   "kind": "engine",
+   "name": "htmlcs",
+   "status": "ran"
+  },
+  {
+   "page": "p02",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "keyboard",
+   "status": "ran"
+  },
+  {
+   "page": "p02",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "focus_visible",
+   "status": "ran"
+  },
+  {
+   "page": "p02",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "text_spacing",
+   "status": "ran"
+  },
+  {
+   "page": "p02",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "resize_text",
+   "status": "ran"
+  },
+  {
+   "page": "p02",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "target_size",
+   "status": "ran"
+  },
+  {
+   "page": "p02",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "hover_focus",
+   "status": "ran"
+  },
+  {
+   "page": "p02",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "motion",
+   "status": "ran"
+  },
+  {
+   "page": "p02",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "a11y_tree",
+   "status": "ran"
+  },
+  {
+   "page": "p02",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "language",
+   "status": "ran"
+  },
+  {
+   "page": "p02",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "media",
+   "status": "ran"
+  },
+  {
+   "page": "p02",
+   "viewport": "320x640",
+   "kind": "engine",
+   "name": "axe-core",
+   "status": "ran"
+  },
+  {
+   "page": "p02",
+   "viewport": "320x640",
+   "kind": "engine",
+   "name": "ibm-equal-access",
+   "status": "ran"
+  },
+  {
+   "page": "p02",
+   "viewport": "320x640",
+   "kind": "engine",
+   "name": "htmlcs",
+   "status": "ran"
+  },
+  {
+   "page": "p02",
+   "viewport": "320x640",
+   "kind": "probe",
+   "name": "keyboard",
+   "status": "ran"
+  },
+  {
+   "page": "p02",
+   "viewport": "320x640",
+   "kind": "probe",
+   "name": "focus_visible",
+   "status": "ran"
+  },
+  {
+   "page": "p02",
+   "viewport": "320x640",
+   "kind": "probe",
+   "name": "reflow",
+   "status": "ran"
+  },
+  {
+   "page": "p02",
+   "viewport": "320x640",
+   "kind": "probe",
+   "name": "text_spacing",
+   "status": "ran"
+  },
+  {
+   "page": "p02",
+   "viewport": "320x640",
+   "kind": "probe",
+   "name": "target_size",
+   "status": "ran"
+  },
+  {
+   "page": "p03",
+   "viewport": "1280x800",
+   "kind": "engine",
+   "name": "axe-core",
+   "status": "ran"
+  },
+  {
+   "page": "p03",
+   "viewport": "1280x800",
+   "kind": "engine",
+   "name": "ibm-equal-access",
+   "status": "ran"
+  },
+  {
+   "page": "p03",
+   "viewport": "1280x800",
+   "kind": "engine",
+   "name": "htmlcs",
+   "status": "ran"
+  },
+  {
+   "page": "p03",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "keyboard",
+   "status": "ran"
+  },
+  {
+   "page": "p03",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "focus_visible",
+   "status": "ran"
+  },
+  {
+   "page": "p03",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "text_spacing",
+   "status": "ran"
+  },
+  {
+   "page": "p03",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "resize_text",
+   "status": "ran"
+  },
+  {
+   "page": "p03",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "target_size",
+   "status": "ran"
+  },
+  {
+   "page": "p03",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "hover_focus",
+   "status": "ran"
+  },
+  {
+   "page": "p03",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "motion",
+   "status": "ran"
+  },
+  {
+   "page": "p03",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "a11y_tree",
+   "status": "ran"
+  },
+  {
+   "page": "p03",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "language",
+   "status": "ran"
+  },
+  {
+   "page": "p03",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "media",
+   "status": "ran"
+  },
+  {
+   "page": "p03",
+   "viewport": "320x640",
+   "kind": "engine",
+   "name": "axe-core",
+   "status": "ran"
+  },
+  {
+   "page": "p03",
+   "viewport": "320x640",
+   "kind": "engine",
+   "name": "ibm-equal-access",
+   "status": "ran"
+  },
+  {
+   "page": "p03",
+   "viewport": "320x640",
+   "kind": "engine",
+   "name": "htmlcs",
+   "status": "ran"
+  },
+  {
+   "page": "p03",
+   "viewport": "320x640",
+   "kind": "probe",
+   "name": "keyboard",
+   "status": "ran"
+  },
+  {
+   "page": "p03",
+   "viewport": "320x640",
+   "kind": "probe",
+   "name": "focus_visible",
+   "status": "ran"
+  },
+  {
+   "page": "p03",
+   "viewport": "320x640",
+   "kind": "probe",
+   "name": "reflow",
+   "status": "ran"
+  },
+  {
+   "page": "p03",
+   "viewport": "320x640",
+   "kind": "probe",
+   "name": "text_spacing",
+   "status": "ran"
+  },
+  {
+   "page": "p03",
+   "viewport": "320x640",
+   "kind": "probe",
+   "name": "target_size",
+   "status": "ran"
+  },
+  {
+   "page": "p04",
+   "viewport": "1280x800",
+   "kind": "engine",
+   "name": "axe-core",
+   "status": "ran"
+  },
+  {
+   "page": "p04",
+   "viewport": "1280x800",
+   "kind": "engine",
+   "name": "ibm-equal-access",
+   "status": "ran"
+  },
+  {
+   "page": "p04",
+   "viewport": "1280x800",
+   "kind": "engine",
+   "name": "htmlcs",
+   "status": "ran"
+  },
+  {
+   "page": "p04",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "keyboard",
+   "status": "ran"
+  },
+  {
+   "page": "p04",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "focus_visible",
+   "status": "ran"
+  },
+  {
+   "page": "p04",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "text_spacing",
+   "status": "ran"
+  },
+  {
+   "page": "p04",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "resize_text",
+   "status": "ran"
+  },
+  {
+   "page": "p04",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "target_size",
+   "status": "ran"
+  },
+  {
+   "page": "p04",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "hover_focus",
+   "status": "ran"
+  },
+  {
+   "page": "p04",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "motion",
+   "status": "ran"
+  },
+  {
+   "page": "p04",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "a11y_tree",
+   "status": "ran"
+  },
+  {
+   "page": "p04",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "language",
+   "status": "ran"
+  },
+  {
+   "page": "p04",
+   "viewport": "1280x800",
+   "kind": "probe",
+   "name": "media",
+   "status": "ran"
+  },
+  {
+   "page": "p04",
+   "viewport": "320x640",
+   "kind": "engine",
+   "name": "axe-core",
+   "status": "ran"
+  },
+  {
+   "page": "p04",
+   "viewport": "320x640",
+   "kind": "engine",
+   "name": "ibm-equal-access",
+   "status": "ran"
+  },
+  {
+   "page": "p04",
+   "viewport": "320x640",
+   "kind": "engine",
+   "name": "htmlcs",
+   "status": "ran"
+  },
+  {
+   "page": "p04",
+   "viewport": "320x640",
+   "kind": "probe",
+   "name": "keyboard",
+   "status": "ran"
+  },
+  {
+   "page": "p04",
+   "viewport": "320x640",
+   "kind": "probe",
+   "name": "focus_visible",
+   "status": "ran"
+  },
+  {
+   "page": "p04",
+   "viewport": "320x640",
+   "kind": "probe",
+   "name": "reflow",
+   "status": "ran"
+  },
+  {
+   "page": "p04",
+   "viewport": "320x640",
+   "kind": "probe",
+   "name": "text_spacing",
+   "status": "ran"
+  },
+  {
+   "page": "p04",
+   "viewport": "320x640",
+   "kind": "probe",
+   "name": "target_size",
+   "status": "ran"
+  }
+ ],
+ "wcag_version": "2.2",
+ "level": "AA",
+ "browser": {
+  "name": "chromium",
+  "version": "156.0.8078.4"
+ },
+ "playwright": "1.64.1",
+ "engines": [
+  {
+   "name": "axe-core",
+   "version": "4.14.0",
+   "license": "MPL-2.0",
+   "status": "ran",
+   "reason": "",
+   "sha256": "20c09fe157a8a34a30e241aaa1fcdade657734f08ab379ecfbeb7d45cc46e878"
+  },
+  {
+   "name": "ibm-equal-access",
+   "version": "4.0.34",
+   "license": "Apache-2.0",
+   "status": "ran",
+   "reason": "",
+   "sha256": "1fd7c18b2aa5ba3ec0444a275e2e08e2823c317316c6613d1c273d2a688760fa"
+  },
+  {
+   "name": "htmlcs",
+   "version": "2.5.1",
+   "license": "BSD-3-Clause",
+   "status": "ran",
+   "reason": "",
+   "sha256": "bc9501382a35bff6acfc255945b1ed732fcec544cfcaeec17b5ac8d79a6c7967"
+  },
+  {
+   "name": "vnu",
+   "version": "26.10.12",
+   "license": "MIT",
+   "status": "not_run",
+   "reason": "vnu 26.10.12: not in cache. Run fetch_engines.py first.",
+   "sha256": null
+  }
+ ],
+ "probes": [
+  "keyboard",
+  "focus_visible",
+  "reflow",
+  "text_spacing",
+  "resize_text",
+  "target_size",
+  "hover_focus",
+  "motion",
+  "a11y_tree",
+  "language",
+  "media"
+ ],
+ "viewports": [
+  "1280x800",
+  "320x640"
+ ],
+ "sample": [
+  {
+   "id": "p01",
+   "url": "http://127.0.0.1:8137/index.html",
+   "final_url": "http://127.0.0.1:8137/index.html",
+   "title": "Harbour Dental - Family dentist in Sydney",
+   "template": "T1e04de",
+   "template_key": "/|header+nav+main+footer|h1,div,p,div,p",
+   "reason": "critical_path",
+   "error": null,
+   "captcha": false
+  },
+  {
+   "id": "p02",
+   "url": "http://127.0.0.1:8137/book.html",
+   "final_url": "http://127.0.0.1:8137/book.html",
+   "title": "Book an appointment - Harbour Dental",
+   "template": "Ta1d7d5",
+   "template_key": "/|header+nav+main+form+footer|h1,p,form",
+   "reason": "critical_path",
+   "error": null,
+   "captcha": false
+  },
+  {
+   "id": "p03",
+   "url": "http://127.0.0.1:8137/services.html",
+   "final_url": "http://127.0.0.1:8137/services.html",
+   "title": "Services and fees - Harbour Dental",
+   "template": "T02bc7a",
+   "template_key": "/|header+nav+main+footer|h1,p,div,p,div,p",
+   "reason": "structured",
+   "error": null,
+   "captcha": false
+  },
+  {
+   "id": "p04",
+   "url": "http://127.0.0.1:8137/contact.html",
+   "final_url": "http://127.0.0.1:8137/contact.html",
+   "title": "",
+   "template": "Taabfaa",
+   "template_key": "/|header+nav+main+footer|h1,p,h2,video,h2,p",
+   "reason": "structured",
+   "error": null,
+   "captcha": false
+  }
+ ],
+ "unsampled": [],
+ "pages": [
+  {
+   "url": "http://127.0.0.1:8137/index.html",
+   "page": "p01",
+   "viewports": {
+    "1280x800": {
+     "engines": {
+      "axe-core": "ran",
+      "ibm-equal-access": "ran",
+      "htmlcs": "ran"
+     },
+     "probes": {
+      "keyboard": "ran",
+      "focus_visible": "ran",
+      "text_spacing": "ran",
+      "resize_text": "ran",
+      "target_size": "ran",
+      "hover_focus": "ran",
+      "motion": "ran",
+      "a11y_tree": "ran",
+      "language": "ran",
+      "media": "ran"
+     },
+     "states": []
+    },
+    "320x640": {
+     "engines": {
+      "axe-core": "ran",
+      "ibm-equal-access": "ran",
+      "htmlcs": "ran"
+     },
+     "probes": {
+      "keyboard": "ran",
+      "focus_visible": "ran",
+      "reflow": "ran",
+      "text_spacing": "ran",
+      "target_size": "ran"
+     },
+     "states": [
+      {
+       "name": "menu-open",
+       "engines": {
+        "axe-core": "ran",
+        "ibm-equal-access": "ran",
+        "htmlcs": "ran"
+       },
+       "probes": {
+        "keyboard": "ran",
+        "target_size": "ran"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "url": "http://127.0.0.1:8137/book.html",
+   "page": "p02",
+   "viewports": {
+    "1280x800": {
+     "engines": {
+      "axe-core": "ran",
+      "ibm-equal-access": "ran",
+      "htmlcs": "ran"
+     },
+     "probes": {
+      "keyboard": "ran",
+      "focus_visible": "ran",
+      "text_spacing": "ran",
+      "resize_text": "ran",
+      "target_size": "ran",
+      "hover_focus": "ran",
+      "motion": "ran",
+      "a11y_tree": "ran",
+      "language": "ran",
+      "media": "ran"
+     },
+     "states": [
+      {
+       "name": "errors",
+       "engines": {
+        "axe-core": "ran",
+        "ibm-equal-access": "ran",
+        "htmlcs": "ran"
+       },
+       "probes": {
+        "keyboard": "ran"
+       }
+      }
+     ]
+    },
+    "320x640": {
+     "engines": {
+      "axe-core": "ran",
+      "ibm-equal-access": "ran",
+      "htmlcs": "ran"
+     },
+     "probes": {
+      "keyboard": "ran",
+      "focus_visible": "ran",
+      "reflow": "ran",
+      "text_spacing": "ran",
+      "target_size": "ran"
+     },
+     "states": []
+    }
+   }
+  },
+  {
+   "url": "http://127.0.0.1:8137/services.html",
+   "page": "p03",
+   "viewports": {
+    "1280x800": {
+     "engines": {
+      "axe-core": "ran",
+      "ibm-equal-access": "ran",
+      "htmlcs": "ran"
+     },
+     "probes": {
+      "keyboard": "ran",
+      "focus_visible": "ran",
+      "text_spacing": "ran",
+      "resize_text": "ran",
+      "target_size": "ran",
+      "hover_focus": "ran",
+      "motion": "ran",
+      "a11y_tree": "ran",
+      "language": "ran",
+      "media": "ran"
+     },
+     "states": []
+    },
+    "320x640": {
+     "engines": {
+      "axe-core": "ran",
+      "ibm-equal-access": "ran",
+      "htmlcs": "ran"
+     },
+     "probes": {
+      "keyboard": "ran",
+      "focus_visible": "ran",
+      "reflow": "ran",
+      "text_spacing": "ran",
+      "target_size": "ran"
+     },
+     "states": []
+    }
+   }
+  },
+  {
+   "url": "http://127.0.0.1:8137/contact.html",
+   "page": "p04",
+   "viewports": {
+    "1280x800": {
+     "engines": {
+      "axe-core": "ran",
+      "ibm-equal-access": "ran",
+      "htmlcs": "ran"
+     },
+     "probes": {
+      "keyboard": "ran",
+      "focus_visible": "ran",
+      "text_spacing": "ran",
+      "resize_text": "ran",
+      "target_size": "ran",
+      "hover_focus": "ran",
+      "motion": "ran",
+      "a11y_tree": "ran",
+      "language": "ran",
+      "media": "ran"
+     },
+     "states": []
+    },
+    "320x640": {
+     "engines": {
+      "axe-core": "ran",
+      "ibm-equal-access": "ran",
+      "htmlcs": "ran"
+     },
+     "probes": {
+      "keyboard": "ran",
+      "focus_visible": "ran",
+      "reflow": "ran",
+      "text_spacing": "ran",
+      "target_size": "ran"
+     },
+     "states": []
+    }
+   }
+  }
+ ],
+ "blocked_requests": [],
+ "events": [
+  {
+   "url": "http://127.0.0.1:8137/index.html",
+   "event": "hover probe skipped an element: TimeoutError",
+   "at": "2026-11-10T09:38:52Z"
+  },
+  {
+   "url": "http://127.0.0.1:8137/index.html",
+   "event": "hover probe skipped an element: TimeoutError",
+   "at": "2026-11-10T09:38:54Z"
+  },
+  {
+   "url": "http://127.0.0.1:8137/index.html",
+   "event": "hover probe skipped an element: TimeoutError",
+   "at": "2026-11-10T09:38:56Z"
+  },
+  {
+   "url": "http://127.0.0.1:8137/services.html",
+   "event": "hover probe skipped an element: TimeoutError",
+   "at": "2026-11-10T09:40:24Z"
+  },
+  {
+   "url": "http://127.0.0.1:8137/services.html",
+   "event": "hover probe skipped an element: TimeoutError",
+   "at": "2026-11-10T09:40:26Z"
+  },
+  {
+   "url": "http://127.0.0.1:8137/services.html",
+   "event": "hover probe skipped an element: TimeoutError",
+   "at": "2026-11-10T09:40:28Z"
+  },
+  {
+   "url": "http://127.0.0.1:8137/contact.html",
+   "event": "hover probe skipped an element: TimeoutError",
+   "at": "2026-11-10T09:41:00Z"
+  },
+  {
+   "url": "http://127.0.0.1:8137/contact.html",
+   "event": "hover probe skipped an element: TimeoutError",
+   "at": "2026-11-10T09:41:02Z"
+  },
+  {
+   "url": "http://127.0.0.1:8137/contact.html",
+   "event": "hover probe skipped an element: TimeoutError",
+   "at": "2026-11-10T09:41:04Z"
+  }
+ ],
+ "authorised_by": "loopback target",
+ "auth_used": false
+}

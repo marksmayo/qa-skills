@@ -1,0 +1,2371 @@
+{
+ "generated_from": {
+  "axe-core": "4.14.0",
+  "accessibility-checker-engine": "4.0.34",
+  "html_codesniffer": "2.5.1"
+ },
+ "notes": [
+  "axe: SCs from wcagNNN tags and ACT ids from rule metadata; best-practice rules have no SC.",
+  "ibm: SCs from the WCAG_2_0/2_1/2_2 and IBM_Accessibility rulesets' checkpoints; ACT ids from help/rules.csv.",
+  "htmlcs: the SC is encoded in the message code (Principle1.Guideline1_1.1_1_1.H37 -> 1.1.1); no ACT ids.",
+  "vnu: messages are supporting evidence for 4.1.1 (2.0/2.1) and 4.1.2 only.",
+  "probe: result codes emitted by run_audit.py."
+ ],
+ "axe": {
+  "accesskeys": {
+   "sc": [],
+   "act": [],
+   "kind": "best_practice",
+   "obsolete": false,
+   "help": "accesskey attribute value should be unique"
+  },
+  "area-alt": {
+   "sc": [
+    "2.4.4",
+    "4.1.2"
+   ],
+   "act": [
+    "c487ae"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Active <area> elements must have alternative text"
+  },
+  "aria-allowed-attr": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [
+    "5c01ea"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Elements must only use supported ARIA attributes"
+  },
+  "aria-allowed-role": {
+   "sc": [],
+   "act": [],
+   "kind": "best_practice",
+   "obsolete": false,
+   "help": "ARIA role should be appropriate for the element"
+  },
+  "aria-braille-equivalent": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "aria-braille attributes must have a non-braille equivalent"
+  },
+  "aria-command-name": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [
+    "97a4e1"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "ARIA commands must have an accessible name"
+  },
+  "aria-conditional-attr": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [
+    "5c01ea"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "ARIA attributes must be used as specified for the element's role"
+  },
+  "aria-deprecated-role": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [
+    "674b10"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Deprecated ARIA roles must not be used"
+  },
+  "aria-dialog-name": {
+   "sc": [],
+   "act": [],
+   "kind": "best_practice",
+   "obsolete": false,
+   "help": "ARIA dialog and alertdialog nodes should have an accessible name"
+  },
+  "aria-hidden-body": {
+   "sc": [
+    "1.3.1",
+    "4.1.2"
+   ],
+   "act": [],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "aria-hidden=\"true\" must not be present on the document body"
+  },
+  "aria-hidden-focus": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [
+    "6cfa84"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "ARIA hidden element must not be focusable or contain focusable elements"
+  },
+  "aria-input-field-name": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [
+    "e086e5"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "ARIA input fields must have an accessible name"
+  },
+  "aria-meter-name": {
+   "sc": [
+    "1.1.1"
+   ],
+   "act": [],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "ARIA meter nodes must have an accessible name"
+  },
+  "aria-progressbar-name": {
+   "sc": [
+    "1.1.1"
+   ],
+   "act": [],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "ARIA progressbar nodes must have an accessible name"
+  },
+  "aria-prohibited-attr": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [
+    "5c01ea"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Elements must only use permitted ARIA attributes"
+  },
+  "aria-required-attr": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [
+    "4e8ab6"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Required ARIA attributes must be provided"
+  },
+  "aria-required-children": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [
+    "bc4a75",
+    "ff89c9"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Certain ARIA roles must contain particular children"
+  },
+  "aria-required-parent": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [
+    "ff89c9"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Certain ARIA roles must be contained by particular parents"
+  },
+  "aria-roledescription": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "aria-roledescription must be on elements with a semantic role"
+  },
+  "aria-roles": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [
+    "674b10"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "ARIA roles used must conform to valid values"
+  },
+  "aria-tab-name": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "ARIA tab nodes must have an accessible name"
+  },
+  "aria-text": {
+   "sc": [],
+   "act": [],
+   "kind": "best_practice",
+   "obsolete": false,
+   "help": "\"role=text\" should have no focusable descendants"
+  },
+  "aria-toggle-field-name": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [
+    "e086e5"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "ARIA toggle fields must have an accessible name"
+  },
+  "aria-tooltip-name": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "ARIA tooltip nodes must have an accessible name"
+  },
+  "aria-treeitem-name": {
+   "sc": [],
+   "act": [],
+   "kind": "best_practice",
+   "obsolete": false,
+   "help": "ARIA treeitem nodes should have an accessible name"
+  },
+  "aria-valid-attr-value": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [
+    "6a7281"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "ARIA attributes must conform to valid values"
+  },
+  "aria-valid-attr": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [
+    "5f99a7"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "ARIA attributes must conform to valid names"
+  },
+  "audio-caption": {
+   "sc": [
+    "1.2.1"
+   ],
+   "act": [
+    "2eb176",
+    "afb423"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "<audio> elements must have a captions track"
+  },
+  "autocomplete-valid": {
+   "sc": [
+    "1.3.5"
+   ],
+   "act": [
+    "73f2c2"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "autocomplete attribute must be used correctly"
+  },
+  "avoid-inline-spacing": {
+   "sc": [
+    "1.4.12"
+   ],
+   "act": [
+    "24afc2",
+    "9e45ec",
+    "78fd32"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Inline text spacing must be adjustable with custom stylesheets"
+  },
+  "blink": {
+   "sc": [
+    "2.2.2"
+   ],
+   "act": [],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "<blink> elements are deprecated and must not be used"
+  },
+  "button-name": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [
+    "97a4e1",
+    "m6b1q3"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Buttons must have discernible text"
+  },
+  "bypass": {
+   "sc": [
+    "2.4.1"
+   ],
+   "act": [
+    "cf77f2",
+    "047fe0",
+    "b40fd1",
+    "3e12e1",
+    "ye5d6e"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Page must have means to bypass repeated blocks"
+  },
+  "color-contrast-enhanced": {
+   "sc": [
+    "1.4.6"
+   ],
+   "act": [
+    "09o5cg"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Elements must meet enhanced color contrast ratio thresholds"
+  },
+  "color-contrast": {
+   "sc": [
+    "1.4.3"
+   ],
+   "act": [
+    "afw4f7",
+    "09o5cg"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Elements must meet minimum color contrast ratio thresholds"
+  },
+  "css-orientation-lock": {
+   "sc": [
+    "1.3.4"
+   ],
+   "act": [
+    "b33eff"
+   ],
+   "kind": "experimental",
+   "obsolete": false,
+   "help": "CSS Media queries must not lock display orientation"
+  },
+  "definition-list": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "<dl> elements must only directly contain properly-ordered <dt> and <dd> groups, <script>, <template> or <div> elements"
+  },
+  "dlitem": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "<dt> and <dd> elements must be contained by a <dl>"
+  },
+  "document-title": {
+   "sc": [
+    "2.4.2"
+   ],
+   "act": [
+    "2779a5"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Documents must have <title> element to aid in navigation"
+  },
+  "duplicate-id-active": {
+   "sc": [
+    "4.1.1"
+   ],
+   "act": [
+    "3ea0c8"
+   ],
+   "kind": "wcag",
+   "obsolete": true,
+   "help": "IDs of active elements must be unique"
+  },
+  "duplicate-id-aria": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [
+    "3ea0c8"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "IDs used in ARIA and labels must be unique"
+  },
+  "duplicate-id": {
+   "sc": [
+    "4.1.1"
+   ],
+   "act": [
+    "3ea0c8"
+   ],
+   "kind": "wcag",
+   "obsolete": true,
+   "help": "id attribute value must be unique"
+  },
+  "empty-heading": {
+   "sc": [],
+   "act": [
+    "ffd0e9"
+   ],
+   "kind": "best_practice",
+   "obsolete": false,
+   "help": "Headings should not be empty"
+  },
+  "empty-table-header": {
+   "sc": [],
+   "act": [],
+   "kind": "best_practice",
+   "obsolete": false,
+   "help": "Table header text should not be empty"
+  },
+  "focus-order-semantics": {
+   "sc": [],
+   "act": [],
+   "kind": "experimental",
+   "obsolete": false,
+   "help": "Elements in the focus order should have an appropriate role"
+  },
+  "form-field-multiple-labels": {
+   "sc": [
+    "3.3.2"
+   ],
+   "act": [],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Form field must not have multiple label elements"
+  },
+  "frame-focusable-content": {
+   "sc": [
+    "2.1.1"
+   ],
+   "act": [
+    "akn7bn"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Frames with focusable content must not have tabindex=-1"
+  },
+  "frame-tested": {
+   "sc": [],
+   "act": [],
+   "kind": "best_practice",
+   "obsolete": false,
+   "help": "Frames should be tested with axe-core"
+  },
+  "frame-title-unique": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [
+    "4b1c6c"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Frames must have a unique title attribute"
+  },
+  "frame-title": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [
+    "cae760"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Frames must have an accessible name"
+  },
+  "heading-order": {
+   "sc": [],
+   "act": [],
+   "kind": "best_practice",
+   "obsolete": false,
+   "help": "Heading levels should only increase by one"
+  },
+  "hidden-content": {
+   "sc": [],
+   "act": [],
+   "kind": "experimental",
+   "obsolete": false,
+   "help": "Hidden content on the page should be analyzed"
+  },
+  "html-has-lang": {
+   "sc": [
+    "3.1.1"
+   ],
+   "act": [
+    "b5c3f8"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "<html> element must have a lang attribute"
+  },
+  "html-lang-valid": {
+   "sc": [
+    "3.1.1"
+   ],
+   "act": [
+    "bf051a"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "<html> element must have a valid value for the lang attribute"
+  },
+  "html-xml-lang-mismatch": {
+   "sc": [
+    "3.1.1"
+   ],
+   "act": [
+    "5b7ae0"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "HTML elements with lang and xml:lang must have the same base language"
+  },
+  "identical-links-same-purpose": {
+   "sc": [
+    "2.4.9"
+   ],
+   "act": [
+    "b20e66"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Links with the same name must have a similar purpose"
+  },
+  "image-alt": {
+   "sc": [
+    "1.1.1"
+   ],
+   "act": [
+    "23a2a8"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Images must have alternative text"
+  },
+  "image-redundant-alt": {
+   "sc": [],
+   "act": [],
+   "kind": "best_practice",
+   "obsolete": false,
+   "help": "Alternative text of images should not be repeated as text"
+  },
+  "input-button-name": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [
+    "97a4e1"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Input buttons must have discernible text"
+  },
+  "input-image-alt": {
+   "sc": [
+    "1.1.1",
+    "4.1.2"
+   ],
+   "act": [
+    "59796f"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Image buttons must have alternative text"
+  },
+  "label-content-name-mismatch": {
+   "sc": [
+    "2.5.3"
+   ],
+   "act": [
+    "2ee8b8"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Elements must have their visible text as part of their accessible name"
+  },
+  "label-title-only": {
+   "sc": [],
+   "act": [],
+   "kind": "best_practice",
+   "obsolete": false,
+   "help": "Form elements should have a visible label"
+  },
+  "label": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [
+    "e086e5"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Form elements must have labels"
+  },
+  "landmark-banner-is-top-level": {
+   "sc": [],
+   "act": [],
+   "kind": "best_practice",
+   "obsolete": false,
+   "help": "Banner landmark should not be contained in another landmark"
+  },
+  "landmark-complementary-is-top-level": {
+   "sc": [],
+   "act": [],
+   "kind": "best_practice",
+   "obsolete": false,
+   "help": "Aside should not be contained in another landmark"
+  },
+  "landmark-contentinfo-is-top-level": {
+   "sc": [],
+   "act": [],
+   "kind": "best_practice",
+   "obsolete": false,
+   "help": "Contentinfo landmark should not be contained in another landmark"
+  },
+  "landmark-main-is-top-level": {
+   "sc": [],
+   "act": [],
+   "kind": "best_practice",
+   "obsolete": false,
+   "help": "Main landmark should not be contained in another landmark"
+  },
+  "landmark-no-duplicate-banner": {
+   "sc": [],
+   "act": [],
+   "kind": "best_practice",
+   "obsolete": false,
+   "help": "Document should not have more than one banner landmark"
+  },
+  "landmark-no-duplicate-contentinfo": {
+   "sc": [],
+   "act": [],
+   "kind": "best_practice",
+   "obsolete": false,
+   "help": "Document should not have more than one contentinfo landmark"
+  },
+  "landmark-no-duplicate-main": {
+   "sc": [],
+   "act": [],
+   "kind": "best_practice",
+   "obsolete": false,
+   "help": "Document should not have more than one main landmark"
+  },
+  "landmark-one-main": {
+   "sc": [],
+   "act": [],
+   "kind": "best_practice",
+   "obsolete": false,
+   "help": "Document should have one main landmark"
+  },
+  "landmark-unique": {
+   "sc": [],
+   "act": [],
+   "kind": "best_practice",
+   "obsolete": false,
+   "help": "Landmarks should have a unique role or role/label/title (i.e. accessible name) combination"
+  },
+  "link-in-text-block": {
+   "sc": [
+    "1.4.1"
+   ],
+   "act": [],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Links must be distinguishable without relying on color"
+  },
+  "link-name": {
+   "sc": [
+    "2.4.4",
+    "4.1.2"
+   ],
+   "act": [
+    "c487ae"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Links must have discernible text"
+  },
+  "list": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "<ul> and <ol> must only directly contain <li>, <script> or <template> elements"
+  },
+  "listitem": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "<li> elements must be contained in a <ul> or <ol>"
+  },
+  "marquee": {
+   "sc": [
+    "2.2.2"
+   ],
+   "act": [],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "<marquee> elements are deprecated and must not be used"
+  },
+  "meta-refresh-no-exceptions": {
+   "sc": [
+    "2.2.4",
+    "3.2.5"
+   ],
+   "act": [
+    "bisz58"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Delayed refresh must not be used"
+  },
+  "meta-refresh": {
+   "sc": [
+    "2.2.1"
+   ],
+   "act": [
+    "bc659a",
+    "bisz58"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Delayed refresh under 20 hours must not be used"
+  },
+  "meta-viewport-large": {
+   "sc": [],
+   "act": [],
+   "kind": "best_practice",
+   "obsolete": false,
+   "help": "Users should be able to zoom and scale the text up to 500%"
+  },
+  "meta-viewport": {
+   "sc": [
+    "1.4.4"
+   ],
+   "act": [
+    "b4f0c3"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Zooming and scaling must not be disabled"
+  },
+  "nested-interactive": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [
+    "307n5z"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Interactive controls must not be nested"
+  },
+  "no-autoplay-audio": {
+   "sc": [
+    "1.4.2"
+   ],
+   "act": [
+    "80f0bf"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "<video> or <audio> elements must not play automatically"
+  },
+  "object-alt": {
+   "sc": [
+    "1.1.1"
+   ],
+   "act": [
+    "8fc3b6"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "<object> elements must have alternative text"
+  },
+  "p-as-heading": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "experimental",
+   "obsolete": false,
+   "help": "Styled <p> elements must not be used as headings"
+  },
+  "page-has-heading-one": {
+   "sc": [],
+   "act": [],
+   "kind": "best_practice",
+   "obsolete": false,
+   "help": "Page should contain a level-one heading"
+  },
+  "presentation-role-conflict": {
+   "sc": [],
+   "act": [
+    "46ca7f"
+   ],
+   "kind": "best_practice",
+   "obsolete": false,
+   "help": "Elements marked as presentational should be consistently ignored"
+  },
+  "region": {
+   "sc": [],
+   "act": [],
+   "kind": "best_practice",
+   "obsolete": false,
+   "help": "All page content should be contained by landmarks"
+  },
+  "role-img-alt": {
+   "sc": [
+    "1.1.1"
+   ],
+   "act": [
+    "23a2a8"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "[role=\"img\"] and [role=\"image\"] elements must have alternative text"
+  },
+  "scope-attr-valid": {
+   "sc": [],
+   "act": [],
+   "kind": "best_practice",
+   "obsolete": false,
+   "help": "scope attribute should be used correctly"
+  },
+  "scrollable-region-focusable": {
+   "sc": [
+    "2.1.1",
+    "2.1.3"
+   ],
+   "act": [
+    "0ssw9k"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Scrollable region must have keyboard access"
+  },
+  "select-name": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [
+    "e086e5"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Select element must have an accessible name"
+  },
+  "server-side-image-map": {
+   "sc": [
+    "2.1.1"
+   ],
+   "act": [],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Server-side image maps must not be used"
+  },
+  "skip-link": {
+   "sc": [],
+   "act": [],
+   "kind": "best_practice",
+   "obsolete": false,
+   "help": "The skip-link target should exist and be focusable"
+  },
+  "summary-name": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Summary elements must have discernible text"
+  },
+  "svg-img-alt": {
+   "sc": [
+    "1.1.1"
+   ],
+   "act": [
+    "7d6734"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "<svg> elements with an img or image role must have alternative text"
+  },
+  "tabindex": {
+   "sc": [],
+   "act": [],
+   "kind": "best_practice",
+   "obsolete": false,
+   "help": "Elements should not have tabindex greater than zero"
+  },
+  "table-duplicate-name": {
+   "sc": [],
+   "act": [],
+   "kind": "best_practice",
+   "obsolete": false,
+   "help": "Tables should not have the same summary and caption"
+  },
+  "table-fake-caption": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "experimental",
+   "obsolete": false,
+   "help": "Data or header cells must not be used to give caption to a data table."
+  },
+  "target-size": {
+   "sc": [
+    "2.5.8"
+   ],
+   "act": [],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "All touch targets must be 24px large, or leave sufficient space"
+  },
+  "td-has-header": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "experimental",
+   "obsolete": false,
+   "help": "Non-empty <td> elements in larger <table> must have an associated table header"
+  },
+  "td-headers-attr": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [
+    "a25f45"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Table cell headers attributes must refer to other <th> elements in the same table"
+  },
+  "th-has-data-cells": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [
+    "d0f69e"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "Table headers in a data table must refer to data cells"
+  },
+  "valid-lang": {
+   "sc": [
+    "3.1.2"
+   ],
+   "act": [
+    "de46e4"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "lang attribute must have a valid value"
+  },
+  "video-caption": {
+   "sc": [
+    "1.2.2"
+   ],
+   "act": [
+    "eac66b"
+   ],
+   "kind": "wcag",
+   "obsolete": false,
+   "help": "<video> elements must have captions"
+  }
+ },
+ "ibm": {
+  "a_target_warning": {
+   "sc": [
+    "3.2.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "a_text_purpose": {
+   "sc": [
+    "2.4.4",
+    "4.1.2"
+   ],
+   "act": [
+    "c487ae"
+   ],
+   "kind": "wcag"
+  },
+  "applet_alt_exists": {
+   "sc": [
+    "1.1.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "application_content_accessible": {
+   "sc": [
+    "1.1.1",
+    "2.1.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "area_alt_exists": {
+   "sc": [
+    "1.1.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "aria_accessiblename_exists": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [
+    "23a2a8"
+   ],
+   "kind": "wcag"
+  },
+  "aria_activedescendant_tabindex_valid": {
+   "sc": [
+    "2.1.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "aria_activedescendant_valid": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "aria_application_label_unique": {
+   "sc": [
+    "2.4.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "aria_application_labelled": {
+   "sc": [
+    "2.4.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "aria_article_label_unique": {
+   "sc": [
+    "2.4.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "aria_attribute_allowed": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [
+    "5f99a7"
+   ],
+   "kind": "wcag"
+  },
+  "aria_attribute_conflict": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "aria_attribute_exists": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [
+    "6a7281"
+   ],
+   "kind": "wcag"
+  },
+  "aria_attribute_redundant": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "aria_attribute_required": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [
+    "4e8ab6"
+   ],
+   "kind": "wcag"
+  },
+  "aria_attribute_valid": {
+   "sc": [],
+   "act": [
+    "46ca7f",
+    "5c01ea"
+   ],
+   "kind": "best_practice"
+  },
+  "aria_attribute_value_valid": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [
+    "6a7281"
+   ],
+   "kind": "wcag"
+  },
+  "aria_banner_label_unique": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "aria_banner_single": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "aria_child_tabbable": {
+   "sc": [
+    "2.1.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "aria_child_valid": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [
+    "bc4a75"
+   ],
+   "kind": "wcag"
+  },
+  "aria_complementary_label_unique": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "aria_complementary_label_visible": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "aria_complementary_labelled": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "aria_content_in_landmark": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "aria_contentinfo_label_unique": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "aria_contentinfo_misuse": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "aria_contentinfo_single": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "aria_descendant_valid": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [
+    "307n5z"
+   ],
+   "kind": "wcag"
+  },
+  "aria_document_label_unique": {
+   "sc": [
+    "2.4.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "aria_eventhandler_role_valid": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "aria_form_label_unique": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "aria_hidden_nontabbable": {
+   "sc": [
+    "1.3.1",
+    "4.1.2"
+   ],
+   "act": [
+    "6cfa84"
+   ],
+   "kind": "wcag"
+  },
+  "aria_id_unique": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [
+    "59796f",
+    "6a7281"
+   ],
+   "kind": "wcag"
+  },
+  "aria_keyboard_handler_exists": {
+   "sc": [
+    "2.1.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "aria_landmark_name_unique": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "aria_main_label_unique": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "aria_main_label_visible": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "aria_navigation_label_unique": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "aria_parent_required": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [
+    "ff89c9"
+   ],
+   "kind": "wcag"
+  },
+  "aria_region_label_unique": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "aria_region_labelled": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "aria_role_allowed": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [
+    "674b10"
+   ],
+   "kind": "wcag"
+  },
+  "aria_role_valid": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "aria_toolbar_label_unique": {
+   "sc": [
+    "2.4.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "aria_widget_labelled": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [
+    "m6b1q3"
+   ],
+   "kind": "wcag"
+  },
+  "blink_css_review": {
+   "sc": [
+    "2.2.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "blink_elem_deprecated": {
+   "sc": [
+    "2.2.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "blockquote_cite_exists": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "canvas_content_described": {
+   "sc": [
+    "1.1.1",
+    "2.1.1",
+    "4.1.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "caption_track_exists": {
+   "sc": [
+    "1.2.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "combobox_active_descendant": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "combobox_autocomplete_valid": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "combobox_design_valid": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "combobox_focusable_elements": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "combobox_haspopup_valid": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "combobox_popup_reference": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [
+    "4e8ab6"
+   ],
+   "kind": "wcag"
+  },
+  "dir_attribute_valid": {
+   "sc": [
+    "1.3.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "download_keyboard_controllable": {
+   "sc": [
+    "2.1.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "draggable_alternative_exists": {
+   "sc": [
+    "2.5.7"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "element_accesskey_labelled": {
+   "sc": [
+    "3.3.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "element_id_unique": {
+   "sc": [],
+   "act": [
+    "3ea0c8"
+   ],
+   "kind": "best_practice"
+  },
+  "element_lang_valid": {
+   "sc": [
+    "3.1.2"
+   ],
+   "act": [
+    "de46e4"
+   ],
+   "kind": "wcag"
+  },
+  "element_mouseevent_keyboard": {
+   "sc": [
+    "2.1.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "element_orientation_unlocked": {
+   "sc": [
+    "1.3.4"
+   ],
+   "act": [
+    "b33eff"
+   ],
+   "kind": "wcag"
+  },
+  "element_tabbable_role_valid": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "element_tabbable_unobscured": {
+   "sc": [
+    "2.4.11"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "element_tabbable_visible": {
+   "sc": [
+    "2.4.7"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "embed_alt_exists": {
+   "sc": [
+    "1.1.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "error_message_exists": {
+   "sc": [
+    "3.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "fieldset_label_valid": {
+   "sc": [
+    "1.3.1",
+    "3.3.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "fieldset_legend_valid": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "figure_label_exists": {
+   "sc": [
+    "1.1.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "form_font_color": {
+   "sc": [
+    "1.4.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "form_interaction_review": {
+   "sc": [
+    "3.2.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "form_label_unique": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "form_submit_button_exists": {
+   "sc": [
+    "3.2.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "frame_src_valid": {
+   "sc": [
+    "2.4.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "frame_title_exists": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [
+    "cae760"
+   ],
+   "kind": "wcag"
+  },
+  "heading_content_exists": {
+   "sc": [
+    "2.4.6"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "heading_markup_misuse": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "html_lang_exists": {
+   "sc": [
+    "3.1.1"
+   ],
+   "act": [
+    "5b7ae0",
+    "b5c3f8"
+   ],
+   "kind": "wcag"
+  },
+  "html_lang_valid": {
+   "sc": [
+    "3.1.1"
+   ],
+   "act": [
+    "b5c3f8",
+    "bf051a"
+   ],
+   "kind": "wcag"
+  },
+  "html_skipnav_exists": {
+   "sc": [
+    "2.4.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "iframe_interactive_tabbable": {
+   "sc": [
+    "2.1.1"
+   ],
+   "act": [
+    "akn7bn"
+   ],
+   "kind": "wcag"
+  },
+  "imagebutton_alt_exists": {
+   "sc": [
+    "1.1.1"
+   ],
+   "act": [
+    "59796f"
+   ],
+   "kind": "wcag"
+  },
+  "imagemap_alt_exists": {
+   "sc": [
+    "1.1.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "img_alt_background": {
+   "sc": [
+    "1.1.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "img_alt_decorative": {
+   "sc": [
+    "1.1.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "img_alt_misuse": {
+   "sc": [
+    "1.1.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "img_alt_null": {
+   "sc": [
+    "1.1.1"
+   ],
+   "act": [
+    "46ca7f"
+   ],
+   "kind": "wcag"
+  },
+  "img_alt_redundant": {
+   "sc": [
+    "1.1.1",
+    "2.4.4"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "img_alt_valid": {
+   "sc": [
+    "1.1.1"
+   ],
+   "act": [
+    "23a2a8"
+   ],
+   "kind": "wcag"
+  },
+  "img_ismap_misuse": {
+   "sc": [
+    "1.1.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "img_longdesc_misuse": {
+   "sc": [
+    "1.1.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "input_autocomplete_valid": {
+   "sc": [
+    "1.3.5"
+   ],
+   "act": [
+    "73f2c2"
+   ],
+   "kind": "wcag"
+  },
+  "input_checkboxes_grouped": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "input_fields_grouped": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "input_haspopup_conflict": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "input_label_after": {
+   "sc": [
+    "3.3.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "input_label_before": {
+   "sc": [
+    "3.3.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "input_label_exists": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [
+    "97a4e1",
+    "e086e5"
+   ],
+   "kind": "wcag"
+  },
+  "input_label_visible": {
+   "sc": [
+    "2.5.3",
+    "3.3.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "input_onchange_review": {
+   "sc": [
+    "3.2.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "label_content_exists": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "label_name_visible": {
+   "sc": [
+    "2.5.3"
+   ],
+   "act": [
+    "2ee8b8"
+   ],
+   "kind": "wcag"
+  },
+  "label_ref_valid": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "list_children_valid": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "list_markup_review": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "list_structure_proper": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "marquee_elem_avoid": {
+   "sc": [
+    "2.2.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "media_alt_brief": {
+   "sc": [
+    "1.1.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "media_alt_exists": {
+   "sc": [
+    "1.1.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "media_audio_transcribed": {
+   "sc": [
+    "1.2.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "media_autostart_controllable": {
+   "sc": [
+    "1.4.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "media_keyboard_controllable": {
+   "sc": [
+    "2.1.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "media_live_captioned": {
+   "sc": [
+    "1.2.4"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "media_track_available": {
+   "sc": [
+    "1.2.3",
+    "1.2.5"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "meta_refresh_delay": {
+   "sc": [
+    "2.2.1"
+   ],
+   "act": [
+    "bc659a"
+   ],
+   "kind": "wcag"
+  },
+  "meta_viewport_zoomable": {
+   "sc": [
+    "1.4.4"
+   ],
+   "act": [
+    "b4f0c3"
+   ],
+   "kind": "wcag"
+  },
+  "noembed_content_exists": {
+   "sc": [
+    "1.1.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "object_text_exists": {
+   "sc": [
+    "1.1.1"
+   ],
+   "act": [
+    "8fc3b6"
+   ],
+   "kind": "wcag"
+  },
+  "page_title_exists": {
+   "sc": [
+    "2.4.2"
+   ],
+   "act": [
+    "2779a5"
+   ],
+   "kind": "wcag"
+  },
+  "page_title_valid": {
+   "sc": [
+    "2.4.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "script_focus_blur_review": {
+   "sc": [
+    "2.1.1",
+    "2.4.7",
+    "3.2.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "script_onclick_avoid": {
+   "sc": [
+    "2.1.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "script_onclick_misuse": {
+   "sc": [
+    "2.1.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "script_select_review": {
+   "sc": [
+    "3.2.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "select_options_grouped": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "skip_main_described": {
+   "sc": [
+    "2.4.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "skip_main_exists": {
+   "sc": [
+    "2.4.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "style_background_decorative": {
+   "sc": [
+    "1.1.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "style_color_misuse": {
+   "sc": [
+    "1.4.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "style_focus_visible": {
+   "sc": [
+    "2.4.7"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "style_highcontrast_visible": {
+   "sc": [
+    "1.1.1",
+    "1.3.2",
+    "1.4.11"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "style_hover_persistent": {
+   "sc": [
+    "1.4.13"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "style_viewport_resizable": {
+   "sc": [
+    "1.4.4",
+    "1.4.10"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "svg_graphics_labelled": {
+   "sc": [
+    "1.1.1"
+   ],
+   "act": [
+    "7d6734"
+   ],
+   "kind": "wcag"
+  },
+  "table_aria_descendants": {
+   "sc": [
+    "4.1.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "table_caption_empty": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "table_caption_nested": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "table_headers_exists": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "table_headers_ref_valid": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [
+    "a25f45"
+   ],
+   "kind": "wcag"
+  },
+  "table_headers_related": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "table_layout_linearized": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "table_scope_valid": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "table_structure_misuse": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "table_summary_redundant": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "target_spacing_sufficient": {
+   "sc": [
+    "2.5.8"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "text_block_heading": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "text_contrast_sufficient": {
+   "sc": [
+    "1.4.3"
+   ],
+   "act": [
+    "afw4f7"
+   ],
+   "kind": "wcag"
+  },
+  "text_quoted_correctly": {
+   "sc": [
+    "1.3.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "text_sensory_misuse": {
+   "sc": [
+    "1.3.3"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "text_spacing_valid": {
+   "sc": [
+    "1.4.12"
+   ],
+   "act": [
+    "24afc2",
+    "78fd32",
+    "9e45ec"
+   ],
+   "kind": "wcag"
+  },
+  "text_whitespace_valid": {
+   "sc": [
+    "1.3.2"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "widget_tabbable_exists": {
+   "sc": [
+    "2.1.1"
+   ],
+   "act": [],
+   "kind": "wcag"
+  },
+  "widget_tabbable_single": {
+   "sc": [
+    "2.1.1",
+    "2.4.3"
+   ],
+   "act": [],
+   "kind": "wcag"
+  }
+ },
+ "htmlcs": {
+  "code_pattern": "Principle(\\d)\\.Guideline\\d_\\d+\\.(\\d)_(\\d+)_(\\d+)"
+ },
+ "probe": {
+  "keyboard.unreachable": {
+   "sc": [
+    "2.1.1"
+   ],
+   "pattern": "2.1.1-control-not-keyboard"
+  },
+  "keyboard.trap": {
+   "sc": [
+    "2.1.2"
+   ],
+   "pattern": "2.1.2-keyboard-trap"
+  },
+  "keyboard.order": {
+   "sc": [
+    "2.4.3"
+   ],
+   "pattern": "2.4.3-focus-order-illogical"
+  },
+  "keyboard.no_skip": {
+   "sc": [
+    "2.4.1"
+   ],
+   "pattern": "2.4.1-no-bypass"
+  },
+  "focus.not_visible": {
+   "sc": [
+    "2.4.7"
+   ],
+   "pattern": "2.4.7-focus-indicator-removed"
+  },
+  "focus.obscured": {
+   "sc": [
+    "2.4.11"
+   ],
+   "pattern": "2.4.11-focus-fully-obscured"
+  },
+  "focus.partly_obscured": {
+   "sc": [
+    "2.4.12"
+   ],
+   "pattern": "2.4.12-failure"
+  },
+  "reflow.horizontal_scroll": {
+   "sc": [
+    "1.4.10"
+   ],
+   "pattern": "1.4.10-horizontal-scroll-320"
+  },
+  "reflow.clipped": {
+   "sc": [
+    "1.4.10"
+   ],
+   "pattern": "1.4.10-content-lost-320"
+  },
+  "text_spacing.clipped": {
+   "sc": [
+    "1.4.12"
+   ],
+   "pattern": "1.4.12-text-clipped-with-spacing"
+  },
+  "resize_text.clipped": {
+   "sc": [
+    "1.4.4"
+   ],
+   "pattern": "1.4.4-text-lost-at-200"
+  },
+  "resize_text.zoom_disabled": {
+   "sc": [
+    "1.4.4"
+   ],
+   "pattern": "1.4.4-zoom-disabled"
+  },
+  "target_size.too_small": {
+   "sc": [
+    "2.5.8"
+   ],
+   "pattern": "2.5.8-target-too-small"
+  },
+  "target_size.under_44": {
+   "sc": [
+    "2.5.5"
+   ],
+   "pattern": "2.5.5-failure"
+  },
+  "hover_focus.not_dismissible": {
+   "sc": [
+    "1.4.13"
+   ],
+   "pattern": "1.4.13-not-dismissible"
+  },
+  "hover_focus.not_hoverable": {
+   "sc": [
+    "1.4.13"
+   ],
+   "pattern": "1.4.13-not-hoverable"
+  },
+  "motion.autoplay": {
+   "sc": [
+    "2.2.2"
+   ],
+   "pattern": "2.2.2-moving-content-no-pause"
+  },
+  "motion.ignores_reduced_motion": {
+   "sc": [
+    "2.3.3"
+   ],
+   "pattern": "2.3.3-failure"
+  },
+  "media.video_no_track": {
+   "sc": [
+    "1.2.2"
+   ],
+   "pattern": "1.2.2-no-captions"
+  },
+  "media.autoplay_audio": {
+   "sc": [
+    "1.4.2"
+   ],
+   "pattern": "1.4.2-autoplay-audio-no-control"
+  },
+  "language.missing": {
+   "sc": [
+    "3.1.1"
+   ],
+   "pattern": "3.1.1-no-page-lang"
+  },
+  "language.invalid": {
+   "sc": [
+    "3.1.1"
+   ],
+   "pattern": "3.1.1-no-page-lang"
+  },
+  "language.mismatch": {
+   "sc": [
+    "3.1.1"
+   ],
+   "pattern": "3.1.1-wrong-page-lang"
+  }
+ }
+}

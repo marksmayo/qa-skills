@@ -1,0 +1,51 @@
+- banner:
+  - link:
+    - /url: index.html
+    - img
+  - navigation:
+    - link "Home":
+      - /url: index.html
+    - link "Services":
+      - /url: services.html
+    - link "Book":
+      - /url: book.html
+    - link "Contact":
+      - /url: contact.html
+- main:
+  - heading "Gentle dental care for the whole family" [level=1]
+  - heading "New patients welcome" [level=2]
+  - paragraph: Book your first check-up online in two minutes.
+  - heading "Children's dentistry" [level=2]
+  - paragraph: Bulk-billed for eligible children under the Child Dental Benefits Schedule.
+  - heading "Late appointments" [level=2]
+  - paragraph: Open until 7pm on Tuesdays and Thursdays.
+  - button "‹"
+  - button "›"
+  - paragraph: "Spring offer: a check-up and clean for new patients is $199 until the end of November. Mention this page when you book."
+  - heading "Check-ups ?" [level=3]
+  - paragraph: Examination, X-rays when needed and a clean.
+  - link "Read more":
+    - /url: services.html
+  - heading "Whitening" [level=3]
+  - paragraph: In-chair and take-home options.
+  - link "Read more":
+    - /url: services.html
+  - heading "Emergencies" [level=3]
+  - paragraph: Same-day appointments for pain and broken teeth.
+  - link "Read more":
+    - /url: services.html
+  - paragraph:
+    - link "Book an appointment":
+      - /url: book.html
+- contentinfo:
+  - paragraph: Harbour Dental, 12 Wharf Street, Sydney NSW 2000. Open Monday to Saturday.
+  - paragraph:
+    - link "Contact":
+      - /url: contact.html
+    - link "Fees":
+      - /url: services.html#fees
+    - link "Privacy":
+      - /url: contact.html#privacy
+- text: Emergency?
+- link "Call 02 9000 0000":
+  - /url: tel:+61290000000

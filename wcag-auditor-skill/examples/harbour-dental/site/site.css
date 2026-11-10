@@ -1,0 +1,39 @@
+* { box-sizing: border-box; }
+body { margin: 0; font: 16px/1.4 Arial, sans-serif; color: #1d2b33; background: #fff; }
+header { display: flex; align-items: center; justify-content: space-between; padding: 12px 24px; border-bottom: 1px solid #e3e8eb; }
+nav a { color: #8c9aa6; text-decoration: none; margin-left: 20px; }
+nav a:focus { outline: none; }
+.menu-toggle { display: none; font-size: 24px; cursor: pointer; }
+main { max-width: 960px; margin: 0 auto; padding: 24px; }
+.btn { display: inline-block; width: 190px; height: 40px; line-height: 40px; overflow: hidden; white-space: nowrap; text-align: center;
+       background: #0b6e8a; color: #fff; border: 0; border-radius: 4px; font-size: 16px; text-decoration: none; }
+.promo { width: 760px; background: #e9f5f8; padding: 16px; border-radius: 6px; }
+.carousel { position: relative; height: 160px; overflow: hidden; background: #0b3a4a; color: #fff; border-radius: 6px; margin: 16px 0; }
+.slide { position: absolute; inset: 0; padding: 32px; transition: transform .6s; transform: translateX(100%); }
+.slide.current { transform: translateX(0); }
+.carousel .ctrl { position: absolute; bottom: 8px; width: 18px; height: 18px; padding: 0; border: 0; background: #fff; color: #0b3a4a; font-size: 12px; line-height: 18px; }
+.carousel .prev { right: 40px; } .carousel .next { right: 20px; }
+.cards { display: flex; gap: 16px; flex-wrap: wrap; }
+.card { position: relative; flex: 1 1 200px; border: 1px solid #e3e8eb; border-radius: 6px; padding: 16px; }
+.help { display: inline-block; width: 20px; height: 20px; border-radius: 50%; background: #e3e8eb; text-align: center; cursor: help; }
+.tip { display: none; position: absolute; left: 16px; top: 64px; width: 220px; background: #1d2b33; color: #fff; padding: 8px; border-radius: 4px; font-size: 14px; }
+.h2 { font-size: 24px; font-weight: bold; margin: 24px 0 8px; }
+.prices { overflow-x: auto; }
+.prices table { width: 700px; border-collapse: collapse; }
+.prices td, .prices th { border: 1px solid #e3e8eb; padding: 8px; text-align: left; }
+form .row { margin: 12px 0; }
+form input { padding: 8px; border: 1px solid #c5ced3; width: 280px; }
+form input.invalid { border-color: #d0021b; }
+.form-error { color: #d0021b; }
+.datepicker { display: inline-flex; gap: 4px; padding: 6px; border: 1px solid #c5ced3; }
+.datepicker button { width: 36px; height: 36px; }
+footer { background: #f4f4f4; color: #999; padding: 24px; margin-top: 48px; }
+footer a { color: #0b6e8a; margin-right: 16px; }
+.callbar { position: fixed; left: 0; right: 0; bottom: 0; height: 64px; background: #0b6e8a; color: #fff; display: flex; align-items: center; justify-content: center; gap: 16px; z-index: 10; }
+.callbar a { color: #fff; font-weight: bold; }
+.cookie { position: fixed; left: 16px; right: 16px; bottom: 80px; background: #fff; border: 1px solid #c5ced3; padding: 12px; z-index: 20; }
+@media (max-width: 600px) {
+  nav { display: none; }
+  nav.open { display: block; position: absolute; top: 64px; left: 0; right: 0; background: #fff; padding: 12px; }
+  .menu-toggle { display: block; }
+}

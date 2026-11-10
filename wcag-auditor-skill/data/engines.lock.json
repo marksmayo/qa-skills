@@ -1,0 +1,61 @@
+{
+ "schema": 1,
+ "cache_default": "~/.cache/qa-skills/wcag-engines",
+ "engines": [
+  {
+   "name": "axe-core",
+   "version": "4.14.0",
+   "license": "MPL-2.0",
+   "kind": "browser_script",
+   "required": true,
+   "tarball": "https://registry.npmjs.org/axe-core/-/axe-core-4.14.0.tgz",
+   "tarball_integrity": "sha512-9WTZxEjsZ7b13TH8JPmbV2z8CHbl80/2hm3XPEG4JgNdQLK81IBRXmSxHfMAOkSqQeRxT/0dwNDz2GOm3zzpcQ==",
+   "member": "package/axe.min.js",
+   "file": "axe.min.js",
+   "sha256": "20c09fe157a8a34a30e241aaa1fcdade657734f08ab379ecfbeb7d45cc46e878",
+   "mirror": "https://cdn.jsdelivr.net/npm/axe-core@4.14.0/axe.min.js"
+  },
+  {
+   "name": "ibm-equal-access",
+   "package": "accessibility-checker-engine",
+   "version": "4.0.34",
+   "license": "Apache-2.0",
+   "kind": "browser_script",
+   "required": true,
+   "tarball": "https://registry.npmjs.org/accessibility-checker-engine/-/accessibility-checker-engine-4.0.34.tgz",
+   "tarball_integrity": "sha512-nGE7j5gI/914QLgt1tFcjM9kCr4EKx3HxctsZE8BobObYmQr+UoYsKdWVLowG4QHCB7G/F0Prr3kTwKENPHrcA==",
+   "member": "package/ace.js",
+   "file": "ace.js",
+   "sha256": "1fd7c18b2aa5ba3ec0444a275e2e08e2823c317316c6613d1c273d2a688760fa",
+   "mirror": "https://cdn.jsdelivr.net/npm/accessibility-checker-engine@4.0.34/ace.js"
+  },
+  {
+   "name": "htmlcs",
+   "package": "html_codesniffer",
+   "version": "2.5.1",
+   "license": "BSD-3-Clause",
+   "kind": "browser_script",
+   "required": true,
+   "tarball": "https://registry.npmjs.org/html_codesniffer/-/html_codesniffer-2.5.1.tgz",
+   "tarball_integrity": "sha512-vcz0yAaX/OaV6sdNHuT9alBOKkSxYb8h5Yq26dUqgi7XmCgGUSa7U9PiY1PBXQFMjKv1wVPs5/QzHlGuxPDUGg==",
+   "member": "package/build/HTMLCS.js",
+   "file": "HTMLCS.js",
+   "sha256": "bc9501382a35bff6acfc255945b1ed732fcec544cfcaeec17b5ac8d79a6c7967",
+   "mirror": "https://cdn.jsdelivr.net/npm/html_codesniffer@2.5.1/build/HTMLCS.js"
+  },
+  {
+   "name": "vnu",
+   "package": "vnu-jar",
+   "version": "26.10.12",
+   "license": "MIT",
+   "kind": "java_jar",
+   "required": false,
+   "tarball": "https://registry.npmjs.org/vnu-jar/-/vnu-jar-26.10.12.tgz",
+   "tarball_integrity": "sha512-Zg67G1zM28UGEVIOSn1ns6rFSZ6JVI/FNXhw+UJaXM02AQcDE84arp/b5c0OFrvzsgd/VcmpAd9B4hX38BeZvA==",
+   "member": "package/build/dist/vnu.jar",
+   "file": "vnu.jar",
+   "sha256": null,
+   "note": "Optional; needs Java 11+. Verified by the npm tarball integrity only; fetch_engines.py records the jar SHA-256 on first fetch and checks it afterwards. Runs locally on saved page HTML; never sent to the hosted W3C service."
+  }
+ ]
+}
