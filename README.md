@@ -1,6 +1,6 @@
 # qa-skills
 
-A collection of agent skills for QA processes, designed to be vendor-neutral and portable across Claude Code, OpenAI Codex, Gemini CLI, and other coding agents. Skills are plain Markdown, JSON, and dependency-free Python — no installs required, except Playwright for the optional browser probes.
+A collection of agent skills for QA processes, designed to be vendor-neutral and portable across Claude Code, OpenAI Codex, Gemini CLI, and other coding agents. Skills are plain Markdown, JSON, and dependency-free Python — no installs required, except Playwright for the optional browser probes. Skills that drive external analysers (Semgrep, Bandit, gitleaks and the like) use them when they are installed and record them as not run when they aren't.
 
 ## Skills
 
@@ -10,6 +10,7 @@ A collection of agent skills for QA processes, designed to be vendor-neutral and
 | [journey-to-tests-skill](journey-to-tests-skill/) | Turns Journey Markdown files into tests in the repository's existing suite (web, mobile, API), following its framework, page objects and selector conventions. Every Expect is asserted or explicitly accounted for, product mismatches are reported as suspected bugs rather than bent tests, and a test counts only after passing repeated stability runs. |
 | [ticket-to-tdd-skill](ticket-to-tdd-skill/) | Turns a Jira ticket into failing (red) tests in the repository's own framework and style, as an executable spec for the feature. Every requirement quotes the ticket, every red is proven by a real run to be an assertion failure, unexpected greens are investigated, test files are hash-locked against weakening, and instructions hidden in the ticket are reported, never followed. |
 | [ui-crash-hunter-skill](ui-crash-hunter-skill/) | Hunts web and mobile UI code for likely app-fatal and screen-fatal crashes, ranks them by blast radius, reach, likelihood and recoverability, and writes reproduction steps. Every finding has a file and line, a concrete trigger and a confidence (reproduced in the running app, traced, or pattern only); the error-boundary map decides severity, every tool lead is triaged, and the source is never modified. |
+| [code-security-auditor-skill](code-security-auditor-skill/) | Audits a codebase for security weaknesses with free, open-source scanners (Semgrep OSS, Bandit, gitleaks, osv-scanner, pip-audit, zizmor, Trivy and more) and a deep manual review. Each finding has a traced source-to-sink path, a CVSS v4.0 rating, safe repro steps, a fix and a regression test that fails on the vulnerable code; findings are confirmed with canary-only PoCs only when you allow it, secrets are never reproduced, and the report never calls the code secure. |
 | [journey-mapper-skill](journey-mapper-skill/) | Reads a codebase (web, mobile, API) and documents its user journeys as prioritised, evidence-linked Markdown files ready to be turned into tests. Accounts for every route, screen, endpoint, entry point and goal event it finds, and marks every journey `inferred` until a person reviews it. |
 
 Planned skills are designed in [docs/design/](docs/design/).

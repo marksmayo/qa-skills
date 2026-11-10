@@ -1,0 +1,73 @@
+{
+  "tool": "run_poc",
+  "version": "1.0.0",
+  "finding": "F-13",
+  "poc_file": "ssrf-webhook-test.json",
+  "target": "http://127.0.0.1:5058",
+  "permission": "Example run: the fixed copy of the sample app on 127.0.0.1:5058, started for this run to check each proof fails once the fix is in",
+  "allow_hosts": [],
+  "started_at": "2026-11-10T04:27:12Z",
+  "finished_at": "2026-11-10T04:27:12Z",
+  "safety": {
+    "checked": true,
+    "issues": []
+  },
+  "steps": [
+    {
+      "name": "login as alice",
+      "request": {
+        "method": "POST",
+        "url": "http://127.0.0.1:5058/login",
+        "headers": {
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        "body": "email=alice%40example.test&password=alice-test-pw"
+      },
+      "response": {
+        "status": 302,
+        "headers": {
+          "Server": "Werkzeug/3.0.1 Python/3.12.10",
+          "Content-Type": "text/html; charset=utf-8",
+          "Content-Length": "205",
+          "Location": "/invoices",
+          "Set-Cookie": "session=<redacted>; HttpOnly; Path=/"
+        },
+        "body_excerpt": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/invoices\">/invoices</a>. If not, click the link.\n",
+        "body_length": 205,
+        "elapsed_ms": 420
+      },
+      "expect_status_met": true
+    },
+    {
+      "name": "fetch loopback URL",
+      "request": {
+        "method": "POST",
+        "url": "http://127.0.0.1:5058/webhooks/test",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"url\": \"http://127.0.0.1:5058/healthz\"}"
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "Server": "Werkzeug/3.0.1 Python/3.12.10",
+          "Content-Type": "text/html; charset=utf-8",
+          "Content-Length": "167"
+        },
+        "body_excerpt": "<!doctype html>\n<html lang=en>\n<title>400 Bad Request</title>\n<h1>Bad Request</h1>\n<p>The browser (or proxy) sent a request that this server could not understand.</p>\n",
+        "body_length": 167,
+        "elapsed_ms": 22
+      },
+      "expect_status_met": null
+    }
+  ],
+  "proof": {
+    "type": "marker_in_response",
+    "step": "fetch loopback URL",
+    "marker": "invoicer-ok",
+    "passed": false,
+    "observed": "marker not found in the response to 'fetch loopback URL'"
+  },
+  "result": "not_confirmed"
+}

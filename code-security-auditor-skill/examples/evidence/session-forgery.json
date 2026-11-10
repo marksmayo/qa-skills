@@ -1,0 +1,69 @@
+{
+  "tool": "run_poc",
+  "version": "1.0.0",
+  "finding": "F-1",
+  "poc_file": "session-forgery.json",
+  "target": "http://127.0.0.1:5057",
+  "permission": "Example run: the skill's author started the deliberately vulnerable sample app on 127.0.0.1:5057 for this run and allowed safe PoCs against it",
+  "allow_hosts": [],
+  "started_at": "2026-11-10T04:26:51Z",
+  "finished_at": "2026-11-10T04:26:51Z",
+  "safety": {
+    "checked": true,
+    "issues": []
+  },
+  "steps": [
+    {
+      "name": "no session",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:5057/invoices",
+        "headers": {},
+        "body": null
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "Server": "Werkzeug/3.0.1 Python/3.12.10",
+          "Content-Type": "text/html; charset=utf-8",
+          "Content-Length": "317"
+        },
+        "body_excerpt": "<!doctype html>\n<html lang=en>\n<title>401 Unauthorized</title>\n<h1>Unauthorized</h1>\n<p>The server could not verify that you are authorized to access the URL requested. You either supplied the wrong credentials (e.g. a bad password), or your browser doesn&#39;t understand how to supply the credentials required.</p>\n",
+        "body_length": 317,
+        "elapsed_ms": 25
+      },
+      "expect_status_met": true
+    },
+    {
+      "name": "forged session",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:5057/invoices",
+        "headers": {
+          "Cookie": "session=<redacted>"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Server": "Werkzeug/3.0.1 Python/3.12.10",
+          "Content-Type": "application/json",
+          "Content-Length": "173"
+        },
+        "body_excerpt": "[{\"amount\":990.0,\"customer\":\"Initech\",\"id\":3,\"number\":\"INV-2001\",\"status\":\"sent\"},{\"amount\":15000.0,\"customer\":\"Umbrella Corp\",\"id\":4,\"number\":\"INV-2002\",\"status\":\"draft\"}]\n",
+        "body_length": 173,
+        "elapsed_ms": 15
+      },
+      "expect_status_met": null
+    }
+  ],
+  "proof": {
+    "type": "marker_in_response",
+    "step": "forged session",
+    "marker": "INV-2002",
+    "passed": true,
+    "observed": "marker found in the response to 'forged session'"
+  },
+  "result": "confirmed"
+}

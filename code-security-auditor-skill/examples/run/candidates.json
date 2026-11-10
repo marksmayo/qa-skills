@@ -1,0 +1,1182 @@
+{
+  "generated_at": "2026-11-10T04:22:26Z",
+  "repository": "invoicer_scan",
+  "tools": [
+    {
+      "tool": "scan_pitfalls",
+      "input": "<scratch>\\scanrun\\patterns.json",
+      "results": 15
+    },
+    {
+      "tool": "scan_secrets",
+      "input": "<scratch>\\scanrun\\secrets.json",
+      "results": 1,
+      "history": "not_run"
+    },
+    {
+      "tool": "Semgrep OSS",
+      "input": "<scratch>\\scanrun\\semgrep.sarif",
+      "results": 23
+    },
+    {
+      "tool": "zizmor",
+      "input": "<scratch>\\scanrun\\zizmor.sarif",
+      "results": 6
+    },
+    {
+      "tool": "bandit",
+      "input": "<scratch>\\scanrun\\bandit.json",
+      "results": 10
+    },
+    {
+      "tool": "pip-audit",
+      "input": "<scratch>\\scanrun\\pip-audit.json",
+      "results": 31
+    }
+  ],
+  "note": "Candidates, not findings. Promote each to a finding with a traced path, or dismiss it with a checkable reason.",
+  "candidates": [
+    {
+      "kind": "code",
+      "file": ".github/workflows/ci.yml",
+      "line": 4,
+      "end_line": 4,
+      "cwe": [],
+      "pitfall_ids": [
+        "GHA-PR-TARGET-CHECKOUT"
+      ],
+      "message": "use of fundamentally insecure workflow trigger: pull_request_target is almost always used insecurely",
+      "snippet": "pull_request_target",
+      "sources": [
+        {
+          "tool": "zizmor",
+          "version": "1.32.0",
+          "rule_id": "zizmor/dangerous-triggers",
+          "level": "error"
+        }
+      ],
+      "id": "CAND-001",
+      "tools": [
+        "zizmor"
+      ]
+    },
+    {
+      "kind": "code",
+      "file": ".github/workflows/ci.yml",
+      "line": 14,
+      "end_line": 14,
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ],
+      "pitfall_ids": [
+        "GHA-UNPINNED-ACTION"
+      ],
+      "message": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks — as seen in the trivy-action and kics-github-action compromises. Pin the reference to a full 40-character commit SHA instead, e.g. `uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608`.",
+      "snippet": "- uses: actions/checkout@v4",
+      "sources": [
+        {
+          "tool": "Semgrep OSS",
+          "version": "1.184.0",
+          "rule_id": "yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag",
+          "level": "warning"
+        },
+        {
+          "tool": "zizmor",
+          "version": "1.32.0",
+          "rule_id": "zizmor/unpinned-uses",
+          "level": "error"
+        }
+      ],
+      "id": "CAND-002",
+      "tools": [
+        "Semgrep OSS",
+        "zizmor"
+      ]
+    },
+    {
+      "kind": "code",
+      "file": ".github/workflows/ci.yml",
+      "line": 16,
+      "end_line": 16,
+      "cwe": [
+        "CWE-829"
+      ],
+      "pitfall_ids": [
+        "GHA-PR-TARGET-CHECKOUT"
+      ],
+      "message": "pull_request_target checks out and runs untrusted PR code",
+      "snippet": "ref: ${{ github.event.pull_request.head.sha }}",
+      "sources": [
+        {
+          "tool": "Semgrep OSS",
+          "version": "1.184.0",
+          "rule_id": "yaml.github-actions.security.pull-request-target-code-checkout.pull-request-target-code-checkout",
+          "level": "error"
+        },
+        {
+          "tool": "zizmor",
+          "version": "1.32.0",
+          "rule_id": "zizmor/artipacked",
+          "level": "warning"
+        },
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "GHA-PR-TARGET-CHECKOUT"
+        }
+      ],
+      "id": "CAND-003",
+      "tools": [
+        "Semgrep OSS",
+        "scan_pitfalls",
+        "zizmor"
+      ]
+    },
+    {
+      "kind": "code",
+      "file": ".github/workflows/ci.yml",
+      "line": 17,
+      "end_line": 17,
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ],
+      "pitfall_ids": [
+        "GHA-UNPINNED-ACTION"
+      ],
+      "message": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks — as seen in the trivy-action and kics-github-action compromises. Pin the reference to a full 40-character commit SHA instead, e.g. `uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608`.",
+      "snippet": "- uses: actions/setup-python@v5",
+      "sources": [
+        {
+          "tool": "Semgrep OSS",
+          "version": "1.184.0",
+          "rule_id": "yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag",
+          "level": "warning"
+        },
+        {
+          "tool": "zizmor",
+          "version": "1.32.0",
+          "rule_id": "zizmor/unpinned-uses",
+          "level": "error"
+        }
+      ],
+      "id": "CAND-004",
+      "tools": [
+        "Semgrep OSS",
+        "zizmor"
+      ]
+    },
+    {
+      "kind": "code",
+      "file": ".github/workflows/ci.yml",
+      "line": 23,
+      "end_line": 23,
+      "cwe": [
+        "CWE-78"
+      ],
+      "pitfall_ids": [
+        "GHA-EXPR-INJECTION"
+      ],
+      "message": "Attacker-controlled expression in a run: script",
+      "snippet": "run: echo \"Tests passed for ${{ github.event.pull_request.title }}\"",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "GHA-EXPR-INJECTION"
+        },
+        {
+          "tool": "Semgrep OSS",
+          "version": "1.184.0",
+          "rule_id": "yaml.github-actions.security.run-shell-injection.run-shell-injection",
+          "level": "error"
+        },
+        {
+          "tool": "zizmor",
+          "version": "1.32.0",
+          "rule_id": "zizmor/template-injection",
+          "level": "error"
+        }
+      ],
+      "id": "CAND-005",
+      "tools": [
+        "Semgrep OSS",
+        "scan_pitfalls",
+        "zizmor"
+      ]
+    },
+    {
+      "kind": "code",
+      "file": ".github/workflows/ci.yml",
+      "line": 24,
+      "end_line": 24,
+      "cwe": [
+        "CWE-829",
+        "CWE-1357",
+        "CWE-353"
+      ],
+      "pitfall_ids": [
+        "GHA-UNPINNED-ACTION"
+      ],
+      "message": "Third-party action pinned to a mutable tag",
+      "snippet": "- uses: thollander/actions-comment-pull-request@v2",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "GHA-UNPINNED-ACTION"
+        },
+        {
+          "tool": "Semgrep OSS",
+          "version": "1.184.0",
+          "rule_id": "yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag",
+          "level": "warning"
+        },
+        {
+          "tool": "zizmor",
+          "version": "1.32.0",
+          "rule_id": "zizmor/unpinned-uses",
+          "level": "error"
+        }
+      ],
+      "id": "CAND-006",
+      "tools": [
+        "Semgrep OSS",
+        "scan_pitfalls",
+        "zizmor"
+      ]
+    },
+    {
+      "kind": "code",
+      "file": "invoicer/__init__.py",
+      "line": 2,
+      "end_line": 2,
+      "cwe": [
+        "CWE-78"
+      ],
+      "pitfall_ids": [],
+      "message": "Consider possible security implications associated with the subprocess module.",
+      "snippet": "import subprocess",
+      "sources": [
+        {
+          "tool": "bandit",
+          "rule_id": "B404",
+          "level": "low",
+          "confidence": "high"
+        }
+      ],
+      "id": "CAND-007",
+      "tools": [
+        "bandit"
+      ]
+    },
+    {
+      "kind": "code",
+      "file": "invoicer/__init__.py",
+      "line": 28,
+      "end_line": 28,
+      "cwe": [
+        "CWE-78"
+      ],
+      "pitfall_ids": [
+        "PY-CMD-SHELL"
+      ],
+      "message": "Starting a process with a partial executable path",
+      "snippet": "commit = subprocess.run([\"git\", \"rev-parse\", \"--short\", \"HEAD\"], capture_output=True, text=True).stdout.strip()",
+      "sources": [
+        {
+          "tool": "bandit",
+          "rule_id": "B607",
+          "level": "low",
+          "confidence": "high"
+        },
+        {
+          "tool": "bandit",
+          "rule_id": "B603",
+          "level": "low",
+          "confidence": "high"
+        }
+      ],
+      "id": "CAND-008",
+      "tools": [
+        "bandit"
+      ]
+    },
+    {
+      "kind": "code",
+      "file": "invoicer/attachments.py",
+      "line": 17,
+      "end_line": 17,
+      "cwe": [
+        "CWE-22"
+      ],
+      "pitfall_ids": [
+        "PY-FILE-SEND"
+      ],
+      "message": "File opened or served from a runtime path",
+      "snippet": "return send_file(path)",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "PY-FILE-SEND"
+        }
+      ],
+      "id": "CAND-009",
+      "tools": [
+        "scan_pitfalls"
+      ]
+    },
+    {
+      "kind": "code",
+      "file": "invoicer/auth.py",
+      "line": 30,
+      "end_line": 30,
+      "cwe": [
+        "CWE-532"
+      ],
+      "pitfall_ids": [
+        "PY-LOG-SECRET"
+      ],
+      "message": "Credential or token written to a log",
+      "snippet": "log.info(\"login attempt email=%s password=%s\", email, password)",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "PY-LOG-SECRET"
+        },
+        {
+          "tool": "Semgrep OSS",
+          "version": "1.184.0",
+          "rule_id": "python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure",
+          "level": "warning"
+        }
+      ],
+      "id": "CAND-010",
+      "tools": [
+        "Semgrep OSS",
+        "scan_pitfalls"
+      ]
+    },
+    {
+      "kind": "code",
+      "file": "invoicer/auth.py",
+      "line": 36,
+      "end_line": 36,
+      "cwe": [
+        "CWE-601"
+      ],
+      "pitfall_ids": [
+        "PY-OPEN-REDIRECT"
+      ],
+      "message": "Redirect to a runtime URL",
+      "snippet": "return redirect(request.args.get(\"next\") or \"/invoices\")",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "PY-OPEN-REDIRECT"
+        }
+      ],
+      "id": "CAND-011",
+      "tools": [
+        "scan_pitfalls"
+      ]
+    },
+    {
+      "kind": "code",
+      "file": "invoicer/auth.py",
+      "line": 48,
+      "end_line": 48,
+      "cwe": [
+        "CWE-338",
+        "CWE-330"
+      ],
+      "pitfall_ids": [
+        "PY-WEAK-RANDOM"
+      ],
+      "message": "Non-cryptographic random used for a security value",
+      "snippet": "token = \"\".join(random.choices(string.ascii_letters + string.digits, k=8))",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "PY-WEAK-RANDOM"
+        },
+        {
+          "tool": "bandit",
+          "rule_id": "B311",
+          "level": "low",
+          "confidence": "high"
+        }
+      ],
+      "id": "CAND-012",
+      "tools": [
+        "bandit",
+        "scan_pitfalls"
+      ]
+    },
+    {
+      "kind": "code",
+      "file": "invoicer/invoices.py",
+      "line": 20,
+      "end_line": 21,
+      "cwe": [
+        "CWE-89",
+        "CWE-915",
+        "CWE-704"
+      ],
+      "pitfall_ids": [
+        "PY-SQL-FSTRING"
+      ],
+      "message": "SQL built with an f-string",
+      "snippet": "f\"SELECT {COLUMNS} FROM invoices WHERE owner_id = ? ORDER BY {sort}\", (g.user_id,)",
+      "sources": [
+        {
+          "tool": "Semgrep OSS",
+          "version": "1.184.0",
+          "rule_id": "python.django.security.injection.sql.sql-injection-using-db-cursor-execute.sql-injection-db-cursor-execute",
+          "level": "warning"
+        },
+        {
+          "tool": "Semgrep OSS",
+          "version": "1.184.0",
+          "rule_id": "python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query",
+          "level": "error"
+        },
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "PY-SQL-FSTRING"
+        },
+        {
+          "tool": "Semgrep OSS",
+          "version": "1.184.0",
+          "rule_id": "python.django.security.injection.tainted-sql-string.tainted-sql-string",
+          "level": "error"
+        },
+        {
+          "tool": "Semgrep OSS",
+          "version": "1.184.0",
+          "rule_id": "python.flask.security.injection.tainted-sql-string.tainted-sql-string",
+          "level": "error"
+        },
+        {
+          "tool": "bandit",
+          "rule_id": "B608",
+          "level": "medium",
+          "confidence": "medium"
+        }
+      ],
+      "id": "CAND-013",
+      "tools": [
+        "Semgrep OSS",
+        "bandit",
+        "scan_pitfalls"
+      ]
+    },
+    {
+      "kind": "code",
+      "file": "invoicer/invoices.py",
+      "line": 30,
+      "end_line": 31,
+      "cwe": [
+        "CWE-89",
+        "CWE-915",
+        "CWE-704"
+      ],
+      "pitfall_ids": [
+        "PY-SQL-FSTRING"
+      ],
+      "message": "SQL built with an f-string",
+      "snippet": "f\"SELECT {COLUMNS} FROM invoices WHERE owner_id = {g.user_id} AND customer LIKE '%{q}%'\"",
+      "sources": [
+        {
+          "tool": "Semgrep OSS",
+          "version": "1.184.0",
+          "rule_id": "python.django.security.injection.sql.sql-injection-using-db-cursor-execute.sql-injection-db-cursor-execute",
+          "level": "warning"
+        },
+        {
+          "tool": "Semgrep OSS",
+          "version": "1.184.0",
+          "rule_id": "python.lang.security.audit.formatted-sql-query.formatted-sql-query",
+          "level": "warning"
+        },
+        {
+          "tool": "Semgrep OSS",
+          "version": "1.184.0",
+          "rule_id": "python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query",
+          "level": "error"
+        },
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "PY-SQL-FSTRING"
+        },
+        {
+          "tool": "Semgrep OSS",
+          "version": "1.184.0",
+          "rule_id": "python.django.security.injection.tainted-sql-string.tainted-sql-string",
+          "level": "error"
+        },
+        {
+          "tool": "Semgrep OSS",
+          "version": "1.184.0",
+          "rule_id": "python.flask.security.injection.tainted-sql-string.tainted-sql-string",
+          "level": "error"
+        },
+        {
+          "tool": "bandit",
+          "rule_id": "B608",
+          "level": "medium",
+          "confidence": "medium"
+        }
+      ],
+      "id": "CAND-014",
+      "tools": [
+        "Semgrep OSS",
+        "bandit",
+        "scan_pitfalls"
+      ]
+    },
+    {
+      "kind": "code",
+      "file": "invoicer/invoices.py",
+      "line": 38,
+      "end_line": 38,
+      "cwe": [
+        "CWE-89"
+      ],
+      "pitfall_ids": [
+        "PY-SQL-FSTRING"
+      ],
+      "message": "SQL built with an f-string",
+      "snippet": "row = get_db().execute(f\"SELECT {COLUMNS} FROM invoices WHERE id = ?\", (invoice_id,)).fetchone()",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "PY-SQL-FSTRING"
+        },
+        {
+          "tool": "Semgrep OSS",
+          "version": "1.184.0",
+          "rule_id": "python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query",
+          "level": "error"
+        },
+        {
+          "tool": "bandit",
+          "rule_id": "B608",
+          "level": "medium",
+          "confidence": "medium"
+        }
+      ],
+      "id": "CAND-015",
+      "tools": [
+        "Semgrep OSS",
+        "bandit",
+        "scan_pitfalls"
+      ]
+    },
+    {
+      "kind": "code",
+      "file": "invoicer/invoices.py",
+      "line": 48,
+      "end_line": 48,
+      "cwe": [
+        "CWE-89"
+      ],
+      "pitfall_ids": [
+        "PY-SQL-FSTRING"
+      ],
+      "message": "SQL built with an f-string",
+      "snippet": "rows = get_db().execute(f\"SELECT {COLUMNS} FROM invoices WHERE owner_id = ?\", (g.user_id,)).fetchall()",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "PY-SQL-FSTRING"
+        },
+        {
+          "tool": "Semgrep OSS",
+          "version": "1.184.0",
+          "rule_id": "python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query",
+          "level": "error"
+        },
+        {
+          "tool": "bandit",
+          "rule_id": "B608",
+          "level": "medium",
+          "confidence": "medium"
+        }
+      ],
+      "id": "CAND-016",
+      "tools": [
+        "Semgrep OSS",
+        "bandit",
+        "scan_pitfalls"
+      ]
+    },
+    {
+      "kind": "code",
+      "file": "invoicer/invoices.py",
+      "line": 49,
+      "end_line": 52,
+      "cwe": [
+        "CWE-1336",
+        "CWE-96"
+      ],
+      "pitfall_ids": [
+        "PY-SSTI"
+      ],
+      "message": "Template rendered from a runtime string",
+      "snippet": "return render_template_string(",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "PY-SSTI"
+        },
+        {
+          "tool": "Semgrep OSS",
+          "version": "1.184.0",
+          "rule_id": "python.flask.security.audit.render-template-string.render-template-string",
+          "level": "warning"
+        }
+      ],
+      "id": "CAND-017",
+      "tools": [
+        "Semgrep OSS",
+        "scan_pitfalls"
+      ]
+    },
+    {
+      "kind": "code",
+      "file": "invoicer/invoices.py",
+      "line": 50,
+      "end_line": 50,
+      "cwe": [
+        "CWE-79"
+      ],
+      "pitfall_ids": [],
+      "message": "Detected user input flowing into a manually constructed HTML string. You may be accidentally bypassing secure methods of rendering HTML by manually constructing HTML and this could create a cross-site scripting vulnerability, which could let attackers steal sensitive user data. To be sure this is safe, check that the HTML is rendered safely. Otherwise, use templates (`django.shortcuts.render`) which will safely render HTML instead.",
+      "snippet": "\"<h1>\" + title + \"</h1><ul>{% for r in rows %}<li>{{ r.number }}: {{ r.amount }}</li>{% endfor %}</ul>\",",
+      "sources": [
+        {
+          "tool": "Semgrep OSS",
+          "version": "1.184.0",
+          "rule_id": "python.django.security.injection.raw-html-format.raw-html-format",
+          "level": "warning"
+        },
+        {
+          "tool": "Semgrep OSS",
+          "version": "1.184.0",
+          "rule_id": "python.flask.security.injection.raw-html-concat.raw-html-format",
+          "level": "warning"
+        }
+      ],
+      "id": "CAND-018",
+      "tools": [
+        "Semgrep OSS"
+      ]
+    },
+    {
+      "kind": "code",
+      "file": "invoicer/invoices.py",
+      "line": 61,
+      "end_line": 61,
+      "cwe": [
+        "CWE-502",
+        "CWE-20"
+      ],
+      "pitfall_ids": [
+        "PY-YAML-LOAD"
+      ],
+      "message": "yaml.load with an unsafe loader",
+      "snippet": "records = yaml.load(upload.read(), Loader=yaml.Loader)",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "PY-YAML-LOAD"
+        },
+        {
+          "tool": "Semgrep OSS",
+          "version": "1.184.0",
+          "rule_id": "python.lang.security.deserialization.avoid-pyyaml-load.avoid-pyyaml-load",
+          "level": "error"
+        },
+        {
+          "tool": "bandit",
+          "rule_id": "B506",
+          "level": "medium",
+          "confidence": "high"
+        }
+      ],
+      "id": "CAND-019",
+      "tools": [
+        "Semgrep OSS",
+        "bandit",
+        "scan_pitfalls"
+      ]
+    },
+    {
+      "kind": "code",
+      "file": "invoicer/webhooks.py",
+      "line": 15,
+      "end_line": 15,
+      "cwe": [
+        "CWE-918"
+      ],
+      "pitfall_ids": [
+        "PY-SSRF"
+      ],
+      "message": "Outbound request to a runtime URL",
+      "snippet": "resp = requests.get(url, timeout=5)",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "PY-SSRF"
+        },
+        {
+          "tool": "Semgrep OSS",
+          "version": "1.184.0",
+          "rule_id": "python.flask.security.injection.ssrf-requests.ssrf-requests",
+          "level": "error"
+        }
+      ],
+      "id": "CAND-020",
+      "tools": [
+        "Semgrep OSS",
+        "scan_pitfalls"
+      ]
+    },
+    {
+      "kind": "code",
+      "file": "run.py",
+      "line": 6,
+      "end_line": 6,
+      "cwe": [
+        "CWE-489"
+      ],
+      "pitfall_ids": [
+        "PY-DEBUG"
+      ],
+      "message": "Debug mode enabled",
+      "snippet": "app.run(host=\"0.0.0.0\", port=5000, debug=True)",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "PY-DEBUG"
+        }
+      ],
+      "id": "CAND-021",
+      "tools": [
+        "scan_pitfalls"
+      ]
+    },
+    {
+      "kind": "code",
+      "file": "run.py",
+      "line": 6,
+      "end_line": 6,
+      "cwe": [
+        "CWE-668"
+      ],
+      "pitfall_ids": [],
+      "message": "Running flask app with host 0.0.0.0 could expose the server publicly.",
+      "snippet": "app.run(host=\"0.0.0.0\", port=5000, debug=True)",
+      "sources": [
+        {
+          "tool": "Semgrep OSS",
+          "version": "1.184.0",
+          "rule_id": "python.flask.security.audit.app-run-param-config.avoid_app_run_with_bad_host",
+          "level": "warning"
+        }
+      ],
+      "id": "CAND-022",
+      "tools": [
+        "Semgrep OSS"
+      ]
+    },
+    {
+      "kind": "code",
+      "file": "run.py",
+      "line": 6,
+      "end_line": 6,
+      "cwe": [
+        "CWE-605"
+      ],
+      "pitfall_ids": [],
+      "message": "Possible binding to all interfaces.",
+      "snippet": "app.run(host=\"0.0.0.0\", port=5000, debug=True)",
+      "sources": [
+        {
+          "tool": "bandit",
+          "rule_id": "B104",
+          "level": "medium",
+          "confidence": "medium"
+        }
+      ],
+      "id": "CAND-023",
+      "tools": [
+        "bandit"
+      ]
+    }
+  ],
+  "secrets": [
+    {
+      "type": "generic_secret",
+      "file": "invoicer/__init__.py",
+      "line": 11,
+      "column": 62,
+      "key": "SECRET_KEY",
+      "length": 23,
+      "entropy": 3.97,
+      "fingerprint": "sha256:fb5ab5eb9b24d193",
+      "hardcoded_fallback": true,
+      "in_test_path": false,
+      "in_git_history": "unknown",
+      "sources": [
+        {
+          "tool": "scan_secrets",
+          "rule_id": "generic_secret"
+        }
+      ],
+      "id": "SEC-001"
+    }
+  ],
+  "dependencies": [
+    {
+      "ecosystem": "PyPI",
+      "package": "flask",
+      "version": "3.0.3",
+      "advisory": "PYSEC-2026-2151",
+      "aliases": [
+        "CVE-2026-27205",
+        "GHSA-68rp-wp8r-4726"
+      ],
+      "fixed_in": [
+        "3.1.3"
+      ],
+      "summary": "When the `session` object is accessed, Flask should set the `Vary: Cookie` header. This instructs caches not to cache the response, as it may contain information specific to a logged in user. This is handled in most cases, but some forms of access such as the Python `in` operator were overlooked. Th",
+      "sources": [
+        {
+          "tool": "pip-audit",
+          "advisory": "PYSEC-2026-2151"
+        }
+      ],
+      "id": "DEP-001"
+    },
+    {
+      "ecosystem": "PyPI",
+      "package": "jinja2",
+      "version": "3.1.2",
+      "advisory": "PYSEC-2026-1471",
+      "aliases": [
+        "CVE-2025-27516",
+        "GHSA-cpwx-vrp4-4pq7"
+      ],
+      "fixed_in": [
+        "3.1.6"
+      ],
+      "summary": "An oversight in how the Jinja sandboxed environment interacts with the `|attr` filter allows an attacker that controls the content of a template to execute arbitrary Python code. To exploit the vulnerability, an attacker needs to control the content of a template. Whether that is the case depends on",
+      "sources": [
+        {
+          "tool": "pip-audit",
+          "advisory": "PYSEC-2026-1471"
+        }
+      ],
+      "id": "DEP-002"
+    },
+    {
+      "ecosystem": "PyPI",
+      "package": "jinja2",
+      "version": "3.1.2",
+      "advisory": "PYSEC-2026-1472",
+      "aliases": [
+        "CVE-2024-56201",
+        "GHSA-gmj6-6f8f-6699"
+      ],
+      "fixed_in": [
+        "3.1.5"
+      ],
+      "summary": "A bug in the Jinja compiler allows an attacker that controls both the content and filename of a template to execute arbitrary Python code, regardless of if Jinja's sandbox is used. To exploit the vulnerability, an attacker needs to control both the filename and the contents of a template. Whether th",
+      "sources": [
+        {
+          "tool": "pip-audit",
+          "advisory": "PYSEC-2026-1472"
+        }
+      ],
+      "id": "DEP-003"
+    },
+    {
+      "ecosystem": "PyPI",
+      "package": "jinja2",
+      "version": "3.1.2",
+      "advisory": "PYSEC-2026-1473",
+      "aliases": [
+        "CVE-2024-22195",
+        "GHSA-h5c8-rqwp-cp95"
+      ],
+      "fixed_in": [
+        "3.1.3"
+      ],
+      "summary": "The `xmlattr` filter in affected versions of Jinja accepts keys containing spaces. XML/HTML attributes cannot contain spaces, as each would then be interpreted as a separate attribute. If an application accepts keys (as opposed to only values) as user input, and renders these in pages that other use",
+      "sources": [
+        {
+          "tool": "pip-audit",
+          "advisory": "PYSEC-2026-1473"
+        }
+      ],
+      "id": "DEP-004"
+    },
+    {
+      "ecosystem": "PyPI",
+      "package": "jinja2",
+      "version": "3.1.2",
+      "advisory": "PYSEC-2026-1474",
+      "aliases": [
+        "CVE-2024-34064",
+        "GHSA-h75v-3vvj-5mfj"
+      ],
+      "fixed_in": [
+        "3.1.4"
+      ],
+      "summary": "The `xmlattr` filter in affected versions of Jinja accepts keys containing non-attribute characters. XML/HTML attributes cannot contain spaces, `/`, `>`, or `=`, as each would then be interpreted as starting a separate attribute. If an application accepts keys (as opposed to only values) as user inp",
+      "sources": [
+        {
+          "tool": "pip-audit",
+          "advisory": "PYSEC-2026-1474"
+        }
+      ],
+      "id": "DEP-005"
+    },
+    {
+      "ecosystem": "PyPI",
+      "package": "jinja2",
+      "version": "3.1.2",
+      "advisory": "PYSEC-2026-1475",
+      "aliases": [
+        "CVE-2024-56326",
+        "GHSA-q2x7-8rv6-6q7h"
+      ],
+      "fixed_in": [
+        "3.1.5"
+      ],
+      "summary": "An oversight in how the Jinja sandboxed environment detects calls to `str.format` allows an attacker that controls the content of a template to execute arbitrary Python code. To exploit the vulnerability, an attacker needs to control the content of a template. Whether that is the case depends on the",
+      "sources": [
+        {
+          "tool": "pip-audit",
+          "advisory": "PYSEC-2026-1475"
+        }
+      ],
+      "id": "DEP-006"
+    },
+    {
+      "ecosystem": "PyPI",
+      "package": "requests",
+      "version": "2.31.0",
+      "advisory": "PYSEC-2026-1872",
+      "aliases": [
+        "CVE-2024-47081",
+        "GHSA-9hjg-9r4m-mvj7"
+      ],
+      "fixed_in": [
+        "2.32.4"
+      ],
+      "summary": "### Impact Due to a URL parsing issue, Requests releases prior to 2.32.4 may leak .netrc credentials to third parties for specific maliciously-crafted URLs. ### Workarounds For older versions of Requests, use of the .netrc file can be disabled with `trust_env=False` on your Requests Session ([docs](",
+      "sources": [
+        {
+          "tool": "pip-audit",
+          "advisory": "PYSEC-2026-1872"
+        }
+      ],
+      "id": "DEP-007"
+    },
+    {
+      "ecosystem": "PyPI",
+      "package": "requests",
+      "version": "2.31.0",
+      "advisory": "PYSEC-2026-1873",
+      "aliases": [
+        "CVE-2024-35195",
+        "GHSA-9wx4-h78v-vm56"
+      ],
+      "fixed_in": [
+        "2.32.0"
+      ],
+      "summary": "When using a `requests.Session`, if the first request to a given origin is made with `verify=False`, TLS certificate verification may remain disabled for all subsequent requests to that origin, even if `verify=True` is explicitly specified later. This occurs because the underlying connection is reus",
+      "sources": [
+        {
+          "tool": "pip-audit",
+          "advisory": "PYSEC-2026-1873"
+        }
+      ],
+      "id": "DEP-008"
+    },
+    {
+      "ecosystem": "PyPI",
+      "package": "requests",
+      "version": "2.31.0",
+      "advisory": "PYSEC-2026-2275",
+      "aliases": [
+        "CVE-2026-25645",
+        "GHSA-gc5v-m9x4-r6x2"
+      ],
+      "fixed_in": [
+        "2.33.0"
+      ],
+      "summary": "### Impact The `requests.utils.extract_zipped_paths()` utility function uses a predictable filename when extracting files from zip archives into the system temporary directory. If the target file already exists, it is reused without validation. A local attacker with write access to the temp director",
+      "sources": [
+        {
+          "tool": "pip-audit",
+          "advisory": "PYSEC-2026-2275"
+        }
+      ],
+      "id": "DEP-009"
+    },
+    {
+      "ecosystem": "PyPI",
+      "package": "werkzeug",
+      "version": "3.0.1",
+      "advisory": "PYSEC-2026-1860",
+      "aliases": [
+        "CVE-2024-49767",
+        "GHSA-q34m-jh98-gwm2",
+        "PYSEC-2026-3417"
+      ],
+      "fixed_in": [
+        "3.0.6"
+      ],
+      "summary": "Applications using Werkzeug to parse `multipart/form-data` requests are vulnerable to resource exhaustion. A specially crafted form body can bypass the `Request.max_form_memory_size` setting. The `Request.max_content_length` setting, as well as resource limits provided by deployment software and pla",
+      "sources": [
+        {
+          "tool": "pip-audit",
+          "advisory": "PYSEC-2026-1860"
+        },
+        {
+          "tool": "pip-audit",
+          "advisory": "PYSEC-2026-3417"
+        }
+      ],
+      "id": "DEP-010"
+    },
+    {
+      "ecosystem": "PyPI",
+      "package": "werkzeug",
+      "version": "3.0.1",
+      "advisory": "PYSEC-2026-2043",
+      "aliases": [
+        "CVE-2024-34069",
+        "GHSA-2g68-c3qc-8985"
+      ],
+      "fixed_in": [
+        "3.0.3"
+      ],
+      "summary": "The debugger in affected versions of Werkzeug can allow an attacker to execute code on a developer's machine under some circumstances. This requires the attacker to get the developer to interact with a domain and subdomain they control, and enter the debugger PIN, but if they are successful it allow",
+      "sources": [
+        {
+          "tool": "pip-audit",
+          "advisory": "PYSEC-2026-2043"
+        }
+      ],
+      "id": "DEP-011"
+    },
+    {
+      "ecosystem": "PyPI",
+      "package": "werkzeug",
+      "version": "3.0.1",
+      "advisory": "PYSEC-2026-2044",
+      "aliases": [
+        "CVE-2026-21860",
+        "GHSA-87hc-h4r5-73f7"
+      ],
+      "fixed_in": [
+        "3.1.5"
+      ],
+      "summary": "Werkzeug's `safe_join` function allows path segments with Windows device names that have file extensions or trailing spaces. On Windows, there are special device names such as `CON`, `AUX`, etc that are implicitly present and readable in every directory. Windows still accepts them with any file exte",
+      "sources": [
+        {
+          "tool": "pip-audit",
+          "advisory": "PYSEC-2026-2044"
+        }
+      ],
+      "id": "DEP-012"
+    },
+    {
+      "ecosystem": "PyPI",
+      "package": "werkzeug",
+      "version": "3.0.1",
+      "advisory": "PYSEC-2026-2045",
+      "aliases": [
+        "CVE-2024-49766",
+        "GHSA-f9vj-2wh5-fj8j"
+      ],
+      "fixed_in": [
+        "3.0.6"
+      ],
+      "summary": "On Python < 3.11 on Windows, `os.path.isabs()` does not catch UNC paths like `//server/share`. Werkzeug's `safe_join()` relies on this check, and so can produce a path that is not safe, potentially allowing unintended access to data. Applications using Python >= 3.11, or not using Windows, are not v",
+      "sources": [
+        {
+          "tool": "pip-audit",
+          "advisory": "PYSEC-2026-2045"
+        }
+      ],
+      "id": "DEP-013"
+    },
+    {
+      "ecosystem": "PyPI",
+      "package": "werkzeug",
+      "version": "3.0.1",
+      "advisory": "PYSEC-2026-2046",
+      "aliases": [
+        "CVE-2025-66221",
+        "GHSA-hgf8-39gv-g3f2"
+      ],
+      "fixed_in": [
+        "3.1.4"
+      ],
+      "summary": "Werkzeug's `safe_join` function allows path segments with Windows device names. On Windows, there are special device names such as `CON`, `AUX`, etc that are implicitly present and readable in every directory. `send_from_directory` uses `safe_join` to safely serve files at user-specified paths under",
+      "sources": [
+        {
+          "tool": "pip-audit",
+          "advisory": "PYSEC-2026-2046"
+        }
+      ],
+      "id": "DEP-014"
+    },
+    {
+      "ecosystem": "PyPI",
+      "package": "werkzeug",
+      "version": "3.0.1",
+      "advisory": "PYSEC-2026-2320",
+      "aliases": [
+        "CVE-2026-27199",
+        "GHSA-29vq-49wr-vm6x"
+      ],
+      "fixed_in": [
+        "3.1.6"
+      ],
+      "summary": "Werkzeug's `safe_join` function allows Windows device names as filenames if when preceded by other path segments. This was previously reported as https://github.com/pallets/werkzeug/security/advisories/GHSA-hgf8-39gv-g3f2, but the added filtering failed to account for the fact that `safe_join` accep",
+      "sources": [
+        {
+          "tool": "pip-audit",
+          "advisory": "PYSEC-2026-2320"
+        }
+      ],
+      "id": "DEP-015"
+    },
+    {
+      "ecosystem": "PyPI",
+      "package": "werkzeug",
+      "version": "3.0.1",
+      "advisory": "PYSEC-2026-4312",
+      "aliases": [
+        "CVE-2026-102598",
+        "GHSA-g6x2-hccm-hh4m"
+      ],
+      "fixed_in": [
+        "3.1.9"
+      ],
+      "summary": "Werkzeug's `safe_join` function allows Windows device names as filenames when they have an empty ADS marker on NTFS. This was previously reported as https://github.com/pallets/werkzeug/security/advisories/GHSA-hgf8-39gv-g3f2, but the added filtering failed to account for the fact Windows allows spec",
+      "sources": [
+        {
+          "tool": "pip-audit",
+          "advisory": "PYSEC-2026-4312"
+        }
+      ],
+      "id": "DEP-016"
+    }
+  ]
+}

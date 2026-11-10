@@ -1,6 +1,6 @@
 # Design: `code-security-auditor-skill`
 
-Status: Draft. Build order: 5.
+Status: Built (v1.0.0), see "As built" at the end. Build order: 5.
 
 ## Mission
 
@@ -149,3 +149,41 @@ code-security-auditor-skill/
           validate_security_audit.py  render_report.py
   examples/security_audit.example.json
 ```
+
+## As built (v1.0.0)
+
+Differences from the draft above, and decisions made while building:
+
+- **Files.** `export_sarif.py` became `render_report.py --sarif` (as in the UI crash hunter). Added:
+  `recon.py` (attack-surface map), `scan_pitfalls.py` (the catalogue as a built-in scanner, so the
+  skill works with no tools installed), `scan_secrets.py` (values never written; fingerprints and
+  history via `git log -p`), `run_poc.py` (safety-linted PoC runner that records evidence) and
+  `cvss4.py`. Variant rules ship as files next to the report.
+- **CVSS v4.0** is a port of the FIRST reference calculator (BSD-2-Clause, header kept), with the
+  Red Hat `cvss` library's epsilon rounding. It matches all 206,094 test vectors in that library
+  (every base vector plus 100,000 random vectors with threat, environmental and supplemental
+  metrics). Plain `Math.round` disagrees with them on about 0.4% of vectors because of
+  floating-point error.
+- **Priority** is numeric: severity weight (critical 4, high 3, medium 2, low 1) x confidence
+  (confirmed 4, traced 3, possible 2) x exposure (public 3, authenticated 2, restricted 1); P0 >= 32,
+  P1 >= 18, P2 >= 8. "Admin-only" became `restricted`, which also covers internal or adjacent
+  networks, log access and upstream compromise. `informational` is not a confidence level;
+  informational items are `observations`.
+- **Merging** is by sink location (overlapping lines and a shared pitfall or CWE), not (CWE, sink):
+  tools tag the same bug with different CWEs (Semgrep's `tainted-sql-string` carries CWE-704 and
+  CWE-915), and Semgrep anchors multi-line calls on their first line while Bandit uses the line
+  with the expression.
+- **Tools.** zizmor was added for GitHub Actions. ESLint security plugins and Psalm run only when the
+  repository already has them (adding them changes the repository). SpotBugs + FindSecBugs and
+  MobSF need a build or a server, so they are recorded as `not_run` with instructions, and their
+  SARIF can be merged. Semgrep uses `p/default` and `p/owasp-top-ten`, which need no login, with
+  metrics off. Tools run with `PYTHONUTF8=1`, because Semgrep's SARIF writer fails on Windows code
+  pages otherwise.
+- **Dependencies** are assessed in their own `dependencies` section (`yes`, `conditional`, `no`,
+  `unknown`, each with a basis); `yes` and `conditional` need a finding.
+- **Verification evidence** goes further than the draft. Each confirmed PoC is re-run against a copy
+  with the recommended fixes, and its proof must fail there (`fixed_build_result`). Each regression
+  test is run against the vulnerable code and must fail (`fails_on_vulnerable_code`).
+- **OWASP** categories are the 2025 Top 10.
+- **The report** may be written inside the repository only if the path is gitignored; the validator
+  checks with `git check-ignore`.

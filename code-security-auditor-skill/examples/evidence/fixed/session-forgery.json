@@ -1,0 +1,69 @@
+{
+  "tool": "run_poc",
+  "version": "1.0.0",
+  "finding": "F-1",
+  "poc_file": "session-forgery.json",
+  "target": "http://127.0.0.1:5058",
+  "permission": "Example run: the fixed copy of the sample app on 127.0.0.1:5058, started for this run to check each proof fails once the fix is in",
+  "allow_hosts": [],
+  "started_at": "2026-11-10T04:27:10Z",
+  "finished_at": "2026-11-10T04:27:10Z",
+  "safety": {
+    "checked": true,
+    "issues": []
+  },
+  "steps": [
+    {
+      "name": "no session",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:5058/invoices",
+        "headers": {},
+        "body": null
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "Server": "Werkzeug/3.0.1 Python/3.12.10",
+          "Content-Type": "text/html; charset=utf-8",
+          "Content-Length": "317"
+        },
+        "body_excerpt": "<!doctype html>\n<html lang=en>\n<title>401 Unauthorized</title>\n<h1>Unauthorized</h1>\n<p>The server could not verify that you are authorized to access the URL requested. You either supplied the wrong credentials (e.g. a bad password), or your browser doesn&#39;t understand how to supply the credentials required.</p>\n",
+        "body_length": 317,
+        "elapsed_ms": 5
+      },
+      "expect_status_met": true
+    },
+    {
+      "name": "forged session",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:5058/invoices",
+        "headers": {
+          "Cookie": "session=<redacted>"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "Server": "Werkzeug/3.0.1 Python/3.12.10",
+          "Content-Type": "text/html; charset=utf-8",
+          "Content-Length": "317"
+        },
+        "body_excerpt": "<!doctype html>\n<html lang=en>\n<title>401 Unauthorized</title>\n<h1>Unauthorized</h1>\n<p>The server could not verify that you are authorized to access the URL requested. You either supplied the wrong credentials (e.g. a bad password), or your browser doesn&#39;t understand how to supply the credentials required.</p>\n",
+        "body_length": 317,
+        "elapsed_ms": 17
+      },
+      "expect_status_met": null
+    }
+  ],
+  "proof": {
+    "type": "marker_in_response",
+    "step": "forged session",
+    "marker": "INV-2002",
+    "passed": false,
+    "observed": "marker not found in the response to 'forged session'"
+  },
+  "result": "not_confirmed"
+}

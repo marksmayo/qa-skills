@@ -1,0 +1,5 @@
+{"finding": "F-7",
+ "description": "Signed in as alice, request invoice 3, which belongs to bob.",
+ "steps": [{"name": "login as alice", "method": "POST", "path": "/login", "form": {"email": "alice@example.test", "password": "alice-test-pw"}, "expect_status": 302},
+   {"name": "read bob's invoice", "method": "GET", "path": "/invoices/3"}],
+ "proof": {"type": "marker_in_response", "step": "read bob's invoice", "marker": "INV-2001"}}

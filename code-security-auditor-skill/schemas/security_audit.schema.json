@@ -1,0 +1,317 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/qa-skills/code-security-auditor/security_audit.schema.json",
+  "title": "Code security audit",
+  "description": "Output of the code-security-auditor skill. Contains exploit details: keep it out of version control and share it only with people who should see unfixed vulnerabilities.",
+  "type": "object",
+  "required": ["schema_version", "skill", "sensitive", "notice", "generated_at", "target", "recon", "tools", "verification",
+               "triage", "findings", "dependencies", "variant_rules", "observations", "coverage", "limitations",
+               "files_written", "summary"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "skill": {
+      "type": "object", "required": ["name", "version"], "additionalProperties": false,
+      "properties": {"name": {"const": "code-security-auditor"}, "version": {"type": "string"}}
+    },
+    "sensitive": {"const": true},
+    "notice": {"type": "string", "minLength": 20, "description": "Header warning that the report contains exploit details."},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "target": {
+      "type": "object", "required": ["repository", "commit", "scope", "excluded"], "additionalProperties": false,
+      "properties": {
+        "repository": {"type": "string"},
+        "commit": {"type": ["string", "null"]},
+        "scope": {"type": "array", "items": {"type": "string"}},
+        "excluded": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "recon": {
+      "type": "object",
+      "required": ["stack", "entry_points", "trust_boundaries", "auth_model", "data_stores", "outbound_calls", "secret_config", "high_risk_areas"],
+      "additionalProperties": false,
+      "properties": {
+        "stack": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+        "entry_points": {
+          "type": "array",
+          "items": {
+            "type": "object", "required": ["id", "kind", "method", "path", "handler", "auth", "exposure", "reviewed"], "additionalProperties": false,
+            "properties": {
+              "id": {"type": "string", "pattern": "^EP-\\d+$"},
+              "kind": {"enum": ["http_route", "webhook", "graphql", "queue_consumer", "cli", "file_parser", "deep_link", "exported_component", "ci_workflow", "other"]},
+              "method": {"type": "string"},
+              "path": {"type": "string"},
+              "handler": {"type": "string", "pattern": "^[^:]+:\\d+$"},
+              "auth": {"enum": ["public", "authenticated", "admin", "unknown"]},
+              "exposure": {"enum": ["internet", "internal", "local"]},
+              "reviewed": {"type": "boolean"},
+              "note": {"type": "string"}
+            }
+          }
+        },
+        "trust_boundaries": {"type": "array", "items": {"type": "string"}},
+        "auth_model": {
+          "type": "object", "required": ["authentication", "sessions", "authorisation"], "additionalProperties": false,
+          "properties": {"authentication": {"type": "string"}, "sessions": {"type": "string"}, "authorisation": {"type": "string"}}
+        },
+        "data_stores": {"type": "array", "items": {"type": "string"}},
+        "outbound_calls": {"type": "array", "items": {"type": "string"}},
+        "secret_config": {"type": "array", "items": {"type": "string"}},
+        "high_risk_areas": {
+          "type": "array",
+          "items": {
+            "type": "object", "required": ["area", "why", "entry_points"], "additionalProperties": false,
+            "properties": {"area": {"$ref": "#/$defs/area"}, "why": {"type": "string"}, "entry_points": {"type": "array", "items": {"type": "string"}}}
+          }
+        }
+      }
+    },
+    "tools": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "required": ["name", "area", "status"], "additionalProperties": false,
+        "properties": {
+          "name": {"type": "string"},
+          "area": {"enum": ["sast", "patterns", "secrets", "dependencies", "ci", "iac_containers", "mobile", "recon", "agent", "dynamic"]},
+          "status": {"enum": ["ran", "not_run", "errored", "not_applicable"]},
+          "version": {"type": ["string", "null"]},
+          "config": {"type": "string"},
+          "output": {"type": ["string", "null"]},
+          "results": {"type": ["integer", "null"], "minimum": 0},
+          "reason": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "verification": {
+      "type": "object", "required": ["requested", "permitted", "target", "target_kind"], "additionalProperties": false,
+      "properties": {
+        "requested": {"type": "boolean"},
+        "permitted": {"type": "boolean"},
+        "permission": {"type": ["string", "null"], "description": "Who allowed verification, against what, in their words where possible."},
+        "target": {"type": ["string", "null"]},
+        "target_kind": {"enum": ["localhost", "test_environment", "production", "none"]},
+        "production_written_permission": {"type": ["string", "null"]},
+        "runner": {"type": "string"},
+        "notes": {"type": "string"}
+      }
+    },
+    "triage": {
+      "type": "array",
+      "items": {
+        "type": "object", "required": ["candidate", "decision", "reason"], "additionalProperties": false,
+        "properties": {
+          "candidate": {"type": "string", "pattern": "^(CAND|SEC)-\\d+$"},
+          "decision": {"enum": ["promoted", "dismissed", "observation"]},
+          "finding": {"type": ["string", "null"], "pattern": "^(F|O)-\\d+$"},
+          "reason": {"type": "string", "minLength": 10}
+        }
+      }
+    },
+    "findings": {"type": "array", "items": {"$ref": "#/$defs/finding"}},
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "object", "required": ["id", "ecosystem", "package", "version", "advisory", "fixed_in", "reachable", "basis"], "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string", "pattern": "^DEP-\\d+$"},
+          "ecosystem": {"type": "string"},
+          "package": {"type": "string"},
+          "version": {"type": "string"},
+          "advisory": {"type": "string"},
+          "aliases": {"type": "array", "items": {"type": "string"}},
+          "fixed_in": {"type": "array", "items": {"type": "string"}},
+          "summary": {"type": "string"},
+          "reachable": {"enum": ["yes", "conditional", "no", "unknown"]},
+          "basis": {"type": "string", "minLength": 10},
+          "finding": {"type": ["string", "null"], "pattern": "^F-\\d+$"}
+        }
+      }
+    },
+    "variant_rules": {
+      "type": "array",
+      "items": {
+        "type": "object", "required": ["id", "for_findings", "engine", "file", "rule", "matches", "tested"], "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string", "pattern": "^R-\\d+$"},
+          "for_findings": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+          "engine": {"enum": ["semgrep"]},
+          "file": {"type": "string"},
+          "rule": {"type": "string", "minLength": 20},
+          "matches": {"type": "array", "items": {"type": "string", "pattern": "^[^:]+:\\d+$"}},
+          "tested": {"type": "boolean"},
+          "test_note": {"type": "string"}
+        }
+      }
+    },
+    "observations": {
+      "type": "array",
+      "items": {
+        "type": "object", "required": ["id", "title", "file", "line", "note"], "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string", "pattern": "^O-\\d+$"},
+          "title": {"type": "string"},
+          "cwe": {"type": "array", "items": {"type": "string", "pattern": "^CWE-\\d+$"}},
+          "file": {"type": "string"},
+          "line": {"type": "integer", "minimum": 1},
+          "note": {"type": "string"}
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "required": ["languages_reviewed", "files_in_scope", "files_read", "entry_points_total", "entry_points_reviewed", "areas_deep_reviewed", "not_reviewed"],
+      "additionalProperties": false,
+      "properties": {
+        "languages_reviewed": {"type": "array", "items": {"type": "string"}},
+        "files_in_scope": {"type": "integer", "minimum": 0},
+        "files_read": {"type": "integer", "minimum": 0},
+        "entry_points_total": {"type": "integer", "minimum": 0},
+        "entry_points_reviewed": {"type": "integer", "minimum": 0},
+        "areas_deep_reviewed": {"type": "array", "items": {"$ref": "#/$defs/area"}},
+        "not_reviewed": {
+          "type": "array",
+          "items": {"type": "object", "required": ["area", "reason"], "additionalProperties": false,
+                    "properties": {"area": {"type": "string"}, "reason": {"type": "string", "minLength": 10}}}
+        }
+      }
+    },
+    "limitations": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "files_written": {"type": "array", "items": {"type": "string"}},
+    "summary": {
+      "type": "object", "required": ["headline", "counts"], "additionalProperties": false,
+      "properties": {
+        "headline": {"type": "string"},
+        "counts": {
+          "type": "object", "additionalProperties": false,
+          "required": ["findings", "by_priority", "by_severity", "by_confidence", "candidates", "dismissed", "dependencies_reachable", "observations"],
+          "properties": {
+            "findings": {"type": "integer"},
+            "by_priority": {"type": "object", "additionalProperties": {"type": "integer"}},
+            "by_severity": {"type": "object", "additionalProperties": {"type": "integer"}},
+            "by_confidence": {"type": "object", "additionalProperties": {"type": "integer"}},
+            "candidates": {"type": "integer"},
+            "dismissed": {"type": "integer"},
+            "dependencies_reachable": {"type": "integer"},
+            "observations": {"type": "integer"}
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "area": {"enum": ["injection", "web", "server_side", "access_control", "authentication", "business_logic", "cryptography",
+                      "data_exposure", "language_specific", "mobile", "supply_chain_ci", "configuration"]},
+    "location": {
+      "type": "object", "required": ["file", "line", "snippet", "role"], "additionalProperties": false,
+      "properties": {
+        "file": {"type": "string"},
+        "line": {"type": "integer", "minimum": 1},
+        "snippet": {"type": "string"},
+        "role": {"enum": ["source", "transform", "sink", "config", "guard_missing"]},
+        "note": {"type": "string"}
+      }
+    },
+    "finding": {
+      "type": "object",
+      "required": ["id", "rank", "title", "category", "cwe", "owasp", "confidence", "sources", "candidates", "entry_point", "exposure",
+                   "cvss", "priority_score", "priority", "locations", "path", "repro", "poc", "impact", "fix", "regression_test"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "pattern": "^F-\\d+$"},
+        "rank": {"type": "integer", "minimum": 1},
+        "title": {"type": "string", "minLength": 10},
+        "category": {"$ref": "#/$defs/area"},
+        "cwe": {"type": "array", "items": {"type": "string", "pattern": "^CWE-\\d+$"}, "minItems": 1},
+        "owasp": {"type": "string", "pattern": "^A(0[1-9]|10):20(21|25) .+"},
+        "confidence": {"enum": ["confirmed", "traced", "possible"]},
+        "sources": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+        "candidates": {"type": "array", "items": {"type": "string"}},
+        "entry_point": {"type": ["string", "null"]},
+        "exposure": {"enum": ["public", "authenticated", "restricted"]},
+        "exposure_note": {"type": "string"},
+        "cvss": {
+          "type": "object", "required": ["version", "vector", "score", "severity"], "additionalProperties": false,
+          "properties": {
+            "version": {"const": "4.0"},
+            "vector": {"type": "string", "pattern": "^CVSS:4\\.0/"},
+            "score": {"type": "number", "minimum": 0, "maximum": 10},
+            "severity": {"enum": ["critical", "high", "medium", "low"]},
+            "rationale": {"type": "string"}
+          }
+        },
+        "priority_score": {"type": "integer"},
+        "priority": {"enum": ["P0", "P1", "P2", "P3"]},
+        "locations": {"type": "array", "items": {"$ref": "#/$defs/location"}, "minItems": 1},
+        "path": {
+          "type": "object", "required": ["summary", "sanitisers_checked"], "additionalProperties": false,
+          "properties": {
+            "summary": {"type": "string", "minLength": 10},
+            "sanitisers_checked": {"type": "array", "items": {"type": "string"}},
+            "gap": {"type": "string", "description": "For possible findings: what is missing from the path."}
+          }
+        },
+        "repro": {
+          "type": "object", "required": ["preconditions", "steps", "safe_payload", "expected_secure", "actual_vulnerable"], "additionalProperties": false,
+          "properties": {
+            "preconditions": {"type": "array", "items": {"type": "string"}},
+            "steps": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+            "safe_payload": {
+              "type": "object", "required": ["payload", "proof"], "additionalProperties": false,
+              "properties": {"payload": {"type": "string"}, "proof": {"type": "string"}}
+            },
+            "expected_secure": {"type": "string"},
+            "actual_vulnerable": {"type": "string"}
+          }
+        },
+        "poc": {
+          "type": "object", "required": ["result"], "additionalProperties": false,
+          "properties": {
+            "file": {"type": ["string", "null"]},
+            "evidence": {"type": ["string", "null"]},
+            "result": {"enum": ["confirmed", "not_confirmed", "not_run"]},
+            "reason": {"type": ["string", "null"]},
+            "fixed_build_result": {"enum": ["not_confirmed", "confirmed", "not_run"]}
+          }
+        },
+        "impact": {"type": "string", "minLength": 20},
+        "fix": {
+          "type": "object", "required": ["change", "safer_api"], "additionalProperties": false,
+          "properties": {"change": {"type": "string"}, "safer_api": {"type": "string"}}
+        },
+        "regression_test": {
+          "type": "object", "required": ["framework", "sketch", "result"], "additionalProperties": false,
+          "properties": {
+            "framework": {"type": "string"},
+            "file": {"type": ["string", "null"]},
+            "name": {"type": ["string", "null"]},
+            "sketch": {"type": "string"},
+            "result": {"enum": ["fails_on_vulnerable_code", "passes_on_vulnerable_code", "not_run"]},
+            "passes_after_fix": {"type": ["boolean", "null"]},
+            "note": {"type": "string"}
+          }
+        },
+        "secret": {
+          "type": "object", "required": ["type", "fingerprint", "in_git_history", "rotate"], "additionalProperties": false,
+          "properties": {
+            "type": {"type": "string"},
+            "fingerprint": {"type": "string", "pattern": "^sha256:[0-9a-f]{8,64}$"},
+            "in_git_history": {"enum": ["yes", "no", "unknown"]},
+            "rotate": {"type": "boolean"},
+            "note": {"type": "string"}
+          }
+        },
+        "dependency": {
+          "type": "object", "required": ["ids", "package", "version", "fixed_in"], "additionalProperties": false,
+          "properties": {
+            "ids": {"type": "array", "items": {"type": "string", "pattern": "^DEP-\\d+$"}, "minItems": 1},
+            "package": {"type": "string"}, "version": {"type": "string"},
+            "fixed_in": {"type": "array", "items": {"type": "string"}}
+          }
+        },
+        "chains_with": {"type": "array", "items": {"type": "string", "pattern": "^F-\\d+$"}},
+        "variant_of": {"type": ["string", "null"], "pattern": "^F-\\d+$"},
+        "variants": {"type": "array", "items": {"type": "string", "pattern": "^F-\\d+$"}}
+      }
+    }
+  }
+}

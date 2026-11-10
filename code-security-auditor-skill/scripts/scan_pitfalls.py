@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+"""Scan source for security pitfalls from data/pitfalls.json.
+
+    python scan_pitfalls.py <repo> [--packs python,github_actions] [--out patterns.json]
+
+Every hit is a *candidate*: a line that matches a weakness pattern. It is not a finding until the
+agent traces attacker-controlled input to it. Patterns are a fallback and a cross-check for real
+analysers (Semgrep, Bandit, gosec, ...), whose output merge_findings.py combines with this one.
+
+A pitfall can narrow its matches with:
+  suppress_line   skip when the matching line also matches this
+  suppress_near   skip when the lines around the match (window) match this
+  require_near    keep only when the lines around the match match this
+  require_file    keep only when the file matches this anywhere (e.g. pull_request_target)
+Test files, dependencies, build output and minified files are skipped.
+"""
+from __future__ import annotations
+import argparse, json, re, sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+CATALOGUE = HERE.parent / 'data' / 'pitfalls.json'
+SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'out', '.next', '.nuxt', '.svelte-kit', 'coverage', 'vendor',
+             'Pods', 'DerivedData', '.gradle', '.dart_tool', '.idea', '.vscode', '__pycache__', '.venv', 'venv',
+             'env', '.tox', '.mypy_cache', '.pytest_cache', 'site-packages', 'target', 'bin', 'obj', '.terraform',
+             'test', 'tests', '__tests__', '__mocks__', 'spec', 'e2e', 'cypress', 'testdata', 'fixtures',
+             'androidTest', 'UITests', 'Tests'}
+ALLOWED_DOT_DIRS = {'.github'}
+TEST_FILE = re.compile(r'(^test_.*\.py$|_test\.(py|go)$|(\.|_)(test|spec)\.\w+$|Tests?\.(java|kt|swift|cs)$|\.min\.js$)', re.I)
+COMMENT = re.compile(r'^\s*(//|/\*|\*\s|#(?!!)|<!--|--\s)')
+
+def load_catalogue(path: Path = CATALOGUE) -> dict:
+    return json.loads(path.read_text(encoding='utf-8'))
+
+def pack_of(path: Path, rel: str, packs: dict) -> list[str]:
+    out = []
+    for name, pk in packs.items():
+        if pk.get('path_contains') and pk['path_contains'] not in '/' + rel:
+            continue
+        if (path.suffix in pk.get('extensions', []) or path.name in pk.get('filenames', [])
+                or (pk.get('filename_prefix') and path.name.startswith(pk['filename_prefix']))):
+            out.append(name)
+    return out
+
+def walk(root: Path, include_tests: bool = False):
+    stack = [root]
+    while stack:
+        d = stack.pop()
+        try:
+            entries = sorted(d.iterdir())
+        except OSError:
+            continue
+        for p in entries:
+            if p.is_dir():
+                if p.name in SKIP_DIRS and not (include_tests and p.name in ('test', 'tests', 'spec')):
+                    continue
+                if p.name.startswith('.') and p.name not in ALLOWED_DOT_DIRS:
+                    continue
+                stack.append(p)
+            elif p.is_file() and (include_tests or not TEST_FILE.search(p.name)):
+                yield p
+
+def compile_pitfall(p: dict) -> dict:
+    q = dict(p)
+    q['_rx'] = re.compile(p['regex'], re.M)
+    for k in ('suppress_line', 'suppress_near', 'require_near', 'require_file'):
+        if p.get(k):
+            q['_' + k] = re.compile(p[k], re.M)
+    return q
+
+def scan_file(path: Path, rel: str, pitfalls: list[dict]) -> list[dict]:
+    try:
+        text = path.read_text(encoding='utf-8', errors='replace')
+    except OSError:
+        return []
+    lines = text.splitlines()
+    if not lines or max(len(l) for l in lines) > 3000:  # minified or generated
+        return []
+    active = [p for p in pitfalls if not p.get('_require_file') or p['_require_file'].search(text)]
+    hits = []
+    for i, line in enumerate(lines):
+        if COMMENT.match(line):
+            continue
+        for p in active:
+            m = p['_rx'].search(line)
+            if not m or (p.get('_suppress_line') and p['_suppress_line'].search(line)):
+                continue
+            w = int(p.get('window', 4))
+            near = '\n'.join(lines[max(0, i - w):i + w + 1])
+            if p.get('_suppress_near') and p['_suppress_near'].search(near):
+                continue
+            if p.get('_require_near') and not p['_require_near'].search(near):
+                continue
+            hits.append({'pitfall_id': p['id'], 'cwe': [p['cwe']], 'file': rel, 'line': i + 1, 'column': m.start() + 1,
+                         'snippet': line.strip()[:200], 'message': p['title'],
+                         'sources': [{'tool': 'scan_pitfalls', 'rule_id': p['id']}]})
+    return hits
+
+def scan(root: Path, catalogue: dict, wanted: set[str] | None = None, include_tests: bool = False) -> dict:
+    packs = catalogue['packs']
+    wanted = wanted or set(packs)
+    active = [compile_pitfall(p) for p in catalogue['pitfalls'] if p.get('regex') and p['pack'] in wanted]
+    cands, files_by_pack = [], {}
+    for path in walk(root, include_tests):
+        rel = path.relative_to(root).as_posix()
+        names = [n for n in pack_of(path, rel, packs) if n in wanted]
+        if not names:
+            continue
+        for n in names:
+            files_by_pack[n] = files_by_pack.get(n, 0) + 1
+        cands.extend(scan_file(path, rel, [p for p in active if p['pack'] in names]))
+    cands.sort(key=lambda c: (c['file'], c['line'], c['pitfall_id']))
+    return {'tool': 'scan_pitfalls', 'status': 'ran',
+            'generated_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+            'repository': root.name, 'files_scanned': files_by_pack, 'catalogue_version': catalogue.get('version'),
+            'note': 'Candidates are pattern-level leads, not findings. Trace a source-to-sink path or dismiss each one.',
+            'candidates': cands}
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument('repo', type=Path)
+    ap.add_argument('--packs', help='comma-separated packs (default: all)')
+    ap.add_argument('--include-tests', action='store_true', help='also scan test files and directories')
+    ap.add_argument('--catalogue', type=Path, default=CATALOGUE)
+    ap.add_argument('--out', type=Path)
+    args = ap.parse_args()
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(errors='replace')  # tool output can hold characters the console can't encode
+    root = args.repo.resolve()
+    if not root.is_dir():
+        print(f'Not a directory: {root}', file=sys.stderr)
+        return 2
+    cat = load_catalogue(args.catalogue)
+    wanted = set(args.packs.split(',')) if args.packs else None
+    unknown = (wanted or set()) - set(cat['packs'])
+    if unknown:
+        print(f"Unknown pack(s): {', '.join(sorted(unknown))}. Known: {', '.join(cat['packs'])}", file=sys.stderr)
+        return 2
+    out = scan(root, cat, wanted, args.include_tests)
+    text = json.dumps(out, indent=2, ensure_ascii=False)
+    if args.out:
+        args.out.write_text(text + '\n', encoding='utf-8')
+        by: dict[str, int] = {}
+        for c in out['candidates']:
+            by[c['pitfall_id']] = by.get(c['pitfall_id'], 0) + 1
+        print(f"{len(out['candidates'])} candidate(s) from {sum(out['files_scanned'].values())} file(s) -> {args.out}")
+        for k, v in sorted(by.items(), key=lambda kv: (-kv[1], kv[0])):
+            print(f'  {v:4}  {k}')
+    else:
+        print(text)
+    return 0
+
+if __name__ == '__main__':
+    raise SystemExit(main())

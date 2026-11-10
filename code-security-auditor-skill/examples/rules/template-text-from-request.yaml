@@ -1,0 +1,21 @@
+rules:
+  - id: template-text-from-request
+    message: >-
+      Template source is built from request data, so Jinja evaluates it (SSTI). Render a fixed
+      template and pass the value as a variable.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      cwe: "CWE-1336: Improper Neutralization of Special Elements Used in a Template Engine"
+      written_for: invoicer security audit (variant analysis of F-1)
+    mode: taint
+    pattern-sources:
+      - pattern: flask.request.$PART.get(...)
+      - pattern: flask.request.$PART[...]
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: flask.render_template_string($SRC, ...)
+              - pattern: jinja2.Template($SRC, ...)
+              - pattern: $ENV.from_string($SRC, ...)
+          - focus-metavariable: $SRC

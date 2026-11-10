@@ -102,9 +102,13 @@ and setup errors). ticket-to-tdd needs this split to decide whether a red is val
 `sarif.py` as built (shared by ui-crash-hunter and code-security-auditor):
 
 - `read(path, root)` normalises every result of a SARIF 2.1.0 log to `{tool, version, rule_id,
-  level, message, file, line, column, end_line, snippet, fingerprint}`. It resolves `ruleIndex`,
-  `uriBaseId` and `file://` URIs, and fills message templates from `messageStrings`.
+  level, message, file, line, column, end_line, snippet, fingerprint, tags, cwe}`. It resolves
+  `ruleIndex`, `uriBaseId` and `file://` URIs, and fills message templates from `messageStrings`.
+  `cwe` collects CWE ids from rule and result tags, a `cwe` property, or CWE taxonomy relationships
+  (gosec), because tools disagree on where they put them.
 - `build(tool, version, results)` writes a minimal valid SARIF log for code-scanning dashboards.
+  A result's optional `rule_properties` (tags, `security-severity` for GitHub code scanning) go on
+  its rule.
 - CLI: `python sarif.py read a.sarif b.sarif --root <repo>`.
 
 `detect_conventions.py` as built:

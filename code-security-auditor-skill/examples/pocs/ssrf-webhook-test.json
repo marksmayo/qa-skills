@@ -1,0 +1,5 @@
+{"finding": "F-13",
+ "description": "Make the server fetch a loopback-only URL (its own /healthz) and return the body. The marker is the health endpoint's response, not part of the request.",
+ "steps": [{"name": "login as alice", "method": "POST", "path": "/login", "form": {"email": "alice@example.test", "password": "alice-test-pw"}, "expect_status": 302},
+   {"name": "fetch loopback URL", "method": "POST", "path": "/webhooks/test", "json": {"url": "{target}/healthz"}}],
+ "proof": {"type": "marker_in_response", "step": "fetch loopback URL", "marker": "invoicer-ok"}}

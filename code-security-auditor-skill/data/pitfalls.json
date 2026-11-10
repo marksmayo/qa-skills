@@ -1,0 +1,1463 @@
+{
+ "version": "1.0.0",
+ "about": "Security pitfall catalogue for scan_pitfalls.py, organised by CWE. Each entry is a pattern-level lead: a match is a candidate until a source-to-sink path is traced. cvss_hint is a typical CVSS v4.0 base vector for the weakness, to adjust per finding. tools maps rules from other scanners (tool:rule) to the entry. OWASP categories are the 2025 Top 10.",
+ "owasp_2025": {
+  "A01": "A01:2025 Broken Access Control",
+  "A02": "A02:2025 Security Misconfiguration",
+  "A03": "A03:2025 Software Supply Chain Failures",
+  "A04": "A04:2025 Cryptographic Failures",
+  "A05": "A05:2025 Injection",
+  "A06": "A06:2025 Insecure Design",
+  "A07": "A07:2025 Authentication Failures",
+  "A08": "A08:2025 Software or Data Integrity Failures",
+  "A09": "A09:2025 Security Logging and Alerting Failures",
+  "A10": "A10:2025 Mishandling of Exceptional Conditions"
+ },
+ "packs": {
+  "python": {
+   "extensions": [
+    ".py"
+   ]
+  },
+  "javascript": {
+   "extensions": [
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+    ".mjs",
+    ".cjs",
+    ".vue",
+    ".svelte"
+   ]
+  },
+  "java": {
+   "extensions": [
+    ".java",
+    ".kt",
+    ".kts"
+   ]
+  },
+  "android_manifest": {
+   "extensions": [],
+   "filenames": [
+    "AndroidManifest.xml",
+    "network_security_config.xml"
+   ]
+  },
+  "ios": {
+   "extensions": [
+    ".swift",
+    ".m",
+    ".plist"
+   ]
+  },
+  "go": {
+   "extensions": [
+    ".go"
+   ]
+  },
+  "php": {
+   "extensions": [
+    ".php"
+   ]
+  },
+  "ruby": {
+   "extensions": [
+    ".rb",
+    ".erb"
+   ]
+  },
+  "csharp": {
+   "extensions": [
+    ".cs",
+    ".cshtml",
+    ".razor"
+   ]
+  },
+  "c": {
+   "extensions": [
+    ".c",
+    ".h",
+    ".cc",
+    ".cpp",
+    ".cxx",
+    ".hpp"
+   ]
+  },
+  "github_actions": {
+   "extensions": [
+    ".yml",
+    ".yaml"
+   ],
+   "path_contains": ".github/workflows/"
+  },
+  "docker": {
+   "extensions": [
+    ".dockerfile"
+   ],
+   "filenames": [
+    "Dockerfile",
+    "Containerfile"
+   ],
+   "filename_prefix": "Dockerfile."
+  },
+  "terraform": {
+   "extensions": [
+    ".tf"
+   ]
+  }
+ },
+ "pitfalls": [
+  {
+   "id": "PY-SQL-FSTRING",
+   "pack": "python",
+   "cwe": "CWE-89",
+   "owasp": "A05:2025 Injection",
+   "category": "injection",
+   "title": "SQL built with an f-string",
+   "regex": "(?i)\\bf[\"\\']{1,3}\\s*(SELECT|INSERT|UPDATE|DELETE|WITH|REPLACE)\\b[^\"\\']*\\{",
+   "fix": "Pass values as bound parameters (?, %s, :name). Identifiers (columns, ORDER BY) must come from an allow-list, never from input.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:L/SC:N/SI:N/SA:N",
+   "tools": [
+    "bandit:B608",
+    "semgrep:tainted-sql-string",
+    "semgrep:formatted-sql-query",
+    "semgrep:sqlalchemy-execute-raw-query",
+    "semgrep:sql-injection-db-cursor-execute"
+   ]
+  },
+  {
+   "id": "PY-SQL-CONCAT",
+   "pack": "python",
+   "cwe": "CWE-89",
+   "owasp": "A05:2025 Injection",
+   "category": "injection",
+   "title": "SQL built by concatenation or % / .format()",
+   "regex": "(?i)(\"\\s*(SELECT|INSERT|UPDATE|DELETE)\\b[^\"]*\"|\\'\\s*(SELECT|INSERT|UPDATE|DELETE)\\b[^\\']*\\')\\s*(\\+|%\\s*[(\\w]|\\.format\\s*\\()",
+   "fix": "Use bound parameters; build identifiers from an allow-list.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:L/SC:N/SI:N/SA:N",
+   "tools": [
+    "bandit:B608"
+   ]
+  },
+  {
+   "id": "PY-CMD-SHELL",
+   "pack": "python",
+   "cwe": "CWE-78",
+   "owasp": "A05:2025 Injection",
+   "category": "injection",
+   "title": "Shell command execution",
+   "regex": "\\bos\\.(system|popen)\\s*\\(|\\bsubprocess\\.\\w+\\s*\\(.*shell\\s*=\\s*True|\\bcommands\\.getoutput\\s*\\(",
+   "fix": "Call subprocess with an argument list and shell=False; never interpolate input into a command string.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "bandit:B602",
+    "bandit:B605",
+    "bandit:B607",
+    "semgrep:subprocess-shell-true"
+   ]
+  },
+  {
+   "id": "PY-EVAL",
+   "pack": "python",
+   "cwe": "CWE-95",
+   "owasp": "A05:2025 Injection",
+   "category": "injection",
+   "title": "eval/exec of a runtime string",
+   "regex": "(?<![\\w.])(eval|exec)\\s*\\(",
+   "suppress_line": "literal_eval",
+   "fix": "Parse data with json or ast.literal_eval; never evaluate input.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "bandit:B307",
+    "semgrep:eval-detected",
+    "semgrep:exec-detected"
+   ]
+  },
+  {
+   "id": "PY-PICKLE",
+   "pack": "python",
+   "cwe": "CWE-502",
+   "owasp": "A08:2025 Software or Data Integrity Failures",
+   "category": "language_specific",
+   "title": "Unsafe deserialisation (pickle, marshal, shelve)",
+   "regex": "\\b(pickle|cPickle|_pickle|dill|jsonpickle)\\.(loads?|Unpickler|decode)\\b|\\bmarshal\\.loads?\\b|\\bshelve\\.open\\b",
+   "fix": "Use JSON (or a schema-validated format) for untrusted data; sign and verify anything that must round-trip.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "bandit:B301",
+    "bandit:B302",
+    "semgrep:avoid-pickle"
+   ]
+  },
+  {
+   "id": "PY-YAML-LOAD",
+   "pack": "python",
+   "cwe": "CWE-502",
+   "owasp": "A08:2025 Software or Data Integrity Failures",
+   "category": "language_specific",
+   "title": "yaml.load with an unsafe loader",
+   "regex": "\\byaml\\.(load|load_all|unsafe_load|full_load)\\s*\\(",
+   "suppress_line": "SafeLoader|CSafeLoader|BaseLoader",
+   "fix": "Use yaml.safe_load.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "bandit:B506",
+    "semgrep:avoid-pyyaml-load"
+   ]
+  },
+  {
+   "id": "PY-SSTI",
+   "pack": "python",
+   "cwe": "CWE-1336",
+   "owasp": "A05:2025 Injection",
+   "category": "injection",
+   "title": "Template rendered from a runtime string",
+   "regex": "\\brender_template_string\\s*\\(|\\bjinja2\\.Template\\s*\\(|\\.from_string\\s*\\(|\\bMako\\w*Template\\s*\\(",
+   "fix": "Render fixed template files and pass input as variables; never concatenate input into template source.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "semgrep:render-template-string",
+    "bandit:B701",
+    "bandit:B702"
+   ]
+  },
+  {
+   "id": "PY-MARKSAFE",
+   "pack": "python",
+   "cwe": "CWE-79",
+   "owasp": "A05:2025 Injection",
+   "category": "web",
+   "title": "Auto-escaping bypassed (mark_safe / Markup)",
+   "regex": "\\b(mark_safe|Markup|format_html_join)\\s*\\(|\\|\\s*safe\\b",
+   "fix": "Keep auto-escaping on; sanitise rich text with an allow-list sanitiser (bleach/nh3).",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
+   "tools": [
+    "bandit:B308",
+    "bandit:B703",
+    "semgrep:avoid-mark-safe"
+   ]
+  },
+  {
+   "id": "PY-FILE-SEND",
+   "pack": "python",
+   "cwe": "CWE-22",
+   "owasp": "A01:2025 Broken Access Control",
+   "category": "server_side",
+   "title": "File opened or served from a runtime path",
+   "regex": "\\b(send_file|FileResponse|static_file)\\s*\\(|\\bopen\\s*\\(.*request\\.|os\\.path\\.join\\s*\\(.*request\\.",
+   "fix": "Serve with send_from_directory / safe_join, or resolve the path and check it stays under the base directory; prefer opaque IDs.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "semgrep:path-traversal-open",
+    "semgrep:path-traversal-join"
+   ]
+  },
+  {
+   "id": "PY-ARCHIVE-EXTRACT",
+   "pack": "python",
+   "cwe": "CWE-22",
+   "owasp": "A01:2025 Broken Access Control",
+   "category": "server_side",
+   "title": "Archive extracted without member checks (zip slip)",
+   "regex": "\\.extractall\\s*\\(|\\.extract\\s*\\(",
+   "suppress_line": "filter\\s*=\\s*[\"\\']data",
+   "fix": "Use tarfile filter=\"data\" (3.12+) or validate each member path before extracting.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "bandit:B202"
+   ]
+  },
+  {
+   "id": "PY-SSRF",
+   "pack": "python",
+   "cwe": "CWE-918",
+   "owasp": "A01:2025 Broken Access Control",
+   "category": "server_side",
+   "title": "Outbound request to a runtime URL",
+   "regex": "\\b(requests|httpx|session|client)\\.(get|post|put|delete|head|patch|request|stream)\\s*\\(\\s*(url|\\w*_url|\\w*uri|f[\"\\'])|\\burllib\\.request\\.urlopen\\s*\\(|\\burlopen\\s*\\(",
+   "fix": "Allow-list destination hosts; resolve and reject private, loopback and link-local addresses (169.254.169.254); disable redirects or re-check them.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:L/VI:N/VA:N/SC:H/SI:L/SA:N",
+   "tools": [
+    "semgrep:ssrf-requests",
+    "bandit:B310"
+   ]
+  },
+  {
+   "id": "PY-OPEN-REDIRECT",
+   "pack": "python",
+   "cwe": "CWE-601",
+   "owasp": "A01:2025 Broken Access Control",
+   "category": "web",
+   "title": "Redirect to a runtime URL",
+   "regex": "\\b(redirect|HttpResponseRedirect|RedirectResponse)\\s*\\(\\s*(request\\.|.*\\b(next|return_to|redirect_to|return_url|target|url)\\b)",
+   "fix": "Redirect only to relative paths or an allow-list (url_has_allowed_host_and_scheme in Django).",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:A/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
+   "tools": [
+    "semgrep:open-redirect"
+   ]
+  },
+  {
+   "id": "PY-DEBUG",
+   "pack": "python",
+   "cwe": "CWE-489",
+   "owasp": "A02:2025 Security Misconfiguration",
+   "category": "configuration",
+   "title": "Debug mode enabled",
+   "regex": "\\.run\\s*\\(.*debug\\s*=\\s*True|^\\s*DEBUG\\s*=\\s*True\\b|FLASK_DEBUG\\s*=\\s*[\"\\']?1",
+   "fix": "Read debug from the environment and default to off; never ship the Werkzeug debugger.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "bandit:B201",
+    "semgrep:debug-enabled",
+    "semgrep:django-debug-true"
+   ]
+  },
+  {
+   "id": "PY-WEAK-RANDOM",
+   "pack": "python",
+   "cwe": "CWE-338",
+   "owasp": "A04:2025 Cryptographic Failures",
+   "category": "cryptography",
+   "title": "Non-cryptographic random used for a security value",
+   "regex": "\\brandom\\.(random|randint|choice|choices|randrange|getrandbits|sample|shuffle)\\s*\\(",
+   "require_near": "(?i)(token|passw|secret|otp|nonce|reset|session|api_?key|salt|code)",
+   "window": 4,
+   "fix": "Use secrets.token_urlsafe / secrets.choice.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "bandit:B311"
+   ]
+  },
+  {
+   "id": "PY-WEAK-HASH",
+   "pack": "python",
+   "cwe": "CWE-328",
+   "owasp": "A04:2025 Cryptographic Failures",
+   "category": "cryptography",
+   "title": "Weak hash or cipher for a security purpose",
+   "regex": "\\bhashlib\\.(md5|sha1)\\s*\\(|\\bhashlib\\.new\\s*\\(\\s*[\"\\'](md5|sha1)|\\b(DES|DES3|ARC4|Blowfish)\\.new\\s*\\(|MODE_ECB",
+   "require_near": "(?i)(passw|token|secret|sign|auth|key|cipher|encrypt)",
+   "window": 4,
+   "fix": "Passwords: argon2/bcrypt/scrypt. Integrity: SHA-256+ or HMAC. Encryption: AES-GCM via a vetted library.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:H/VI:L/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "bandit:B303",
+    "bandit:B304",
+    "bandit:B305",
+    "bandit:B324",
+    "semgrep:insecure-hash-algorithm-md5"
+   ]
+  },
+  {
+   "id": "PY-TLS-OFF",
+   "pack": "python",
+   "cwe": "CWE-295",
+   "owasp": "A04:2025 Cryptographic Failures",
+   "category": "cryptography",
+   "title": "TLS certificate verification disabled",
+   "regex": "verify\\s*=\\s*False|_create_unverified_context|CERT_NONE|check_hostname\\s*=\\s*False",
+   "fix": "Keep verification on; point verify= at a CA bundle for private CAs.",
+   "cvss_hint": "CVSS:4.0/AV:A/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "bandit:B501",
+    "bandit:B323",
+    "semgrep:disabled-cert-validation"
+   ]
+  },
+  {
+   "id": "PY-LOG-SECRET",
+   "pack": "python",
+   "cwe": "CWE-532",
+   "owasp": "A09:2025 Security Logging and Alerting Failures",
+   "category": "data_exposure",
+   "title": "Credential or token written to a log",
+   "regex": "(?i)\\b(log|logger|logging|app\\.logger)\\.(debug|info|warning|warn|error|critical|exception)\\s*\\(.*\\b(password|passwd|pwd|secret|token|api_?key|authorization)\\b",
+   "fix": "Never log credentials; log the event and a user id. Add a redacting log filter as a backstop.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:H/AT:P/PR:H/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "semgrep:python-logger-credential-disclosure"
+   ]
+  },
+  {
+   "id": "PY-XXE",
+   "pack": "python",
+   "cwe": "CWE-611",
+   "owasp": "A02:2025 Security Misconfiguration",
+   "category": "server_side",
+   "title": "XML parsed with a parser that may resolve entities",
+   "regex": "\\b(etree|ET|lxml\\.etree)\\.(parse|fromstring|XML)\\s*\\(|\\bminidom\\.parse(String)?\\s*\\(|\\bxml\\.sax\\.parse\\s*\\(|\\bXMLParser\\s*\\(",
+   "suppress_line": "defusedxml|resolve_entities\\s*=\\s*False",
+   "fix": "Use defusedxml, or lxml with resolve_entities=False and no_network=True.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "bandit:B313",
+    "bandit:B314",
+    "bandit:B318",
+    "bandit:B320"
+   ]
+  },
+  {
+   "id": "PY-JWT-NOVERIFY",
+   "pack": "python",
+   "cwe": "CWE-347",
+   "owasp": "A07:2025 Authentication Failures",
+   "category": "authentication",
+   "title": "JWT decoded without verifying the signature",
+   "regex": "jwt\\.decode\\s*\\(.*(verify_signature[\"\\']?\\s*:\\s*False|verify\\s*=\\s*False|algorithms\\s*=\\s*\\[[^\\]]*[\"\\']none)",
+   "fix": "Verify with a fixed algorithm list and the expected key, audience and issuer.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "semgrep:unverified-jwt-decode",
+    "semgrep:jwt-python-none-alg"
+   ]
+  },
+  {
+   "id": "PY-MASS-ASSIGN",
+   "pack": "python",
+   "cwe": "CWE-915",
+   "owasp": "A01:2025 Broken Access Control",
+   "category": "access_control",
+   "title": "Request fields copied onto a model without an allow-list",
+   "regex": "for\\s+\\w+\\s*,\\s*\\w+\\s+in\\s+request\\.(json|form|args|get_json\\(\\))\\.items\\(\\)|\\bsetattr\\s*\\(\\s*\\w+\\s*,\\s*\\w+\\s*,|\\*\\*request\\.(json|form|get_json\\(\\))",
+   "fix": "Copy only allow-listed fields (a schema/serializer with explicit fields); never owner_id, role or status.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "semgrep:mass-assignment"
+   ]
+  },
+  {
+   "id": "PY-CSRF-OFF",
+   "pack": "python",
+   "cwe": "CWE-352",
+   "owasp": "A01:2025 Broken Access Control",
+   "category": "web",
+   "title": "CSRF protection disabled",
+   "regex": "@csrf_exempt|WTF_CSRF_ENABLED\\s*=\\s*False|csrf\\.exempt",
+   "fix": "Keep CSRF protection on for cookie-authenticated state-changing routes.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
+   "tools": [
+    "semgrep:no-csrf-exempt"
+   ]
+  },
+  {
+   "id": "JS-SQL-TEMPLATE",
+   "pack": "javascript",
+   "cwe": "CWE-89",
+   "owasp": "A05:2025 Injection",
+   "category": "injection",
+   "title": "SQL built with a template literal or concatenation",
+   "regex": "(?i)\\.(query|execute|raw|\\$queryRawUnsafe|\\$executeRawUnsafe)\\s*\\(\\s*(`[^`]*\\b(SELECT|INSERT|UPDATE|DELETE)\\b[^`]*\\$\\{|\"[^\"]*\\b(SELECT|INSERT|UPDATE|DELETE)\\b[^\"]*\"\\s*\\+|\\'[^\\']*\\b(SELECT|INSERT|UPDATE|DELETE)\\b[^\\']*\\'\\s*\\+)",
+   "fix": "Use placeholders ($1, ?) or the query builder; Prisma: $queryRaw tagged template, never the Unsafe variants.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:L/SC:N/SI:N/SA:N",
+   "tools": [
+    "semgrep:node-sqli-injection",
+    "semgrep:sequelize-injection-express",
+    "semgrep:knex-sqli"
+   ]
+  },
+  {
+   "id": "JS-CMD",
+   "pack": "javascript",
+   "cwe": "CWE-78",
+   "owasp": "A05:2025 Injection",
+   "category": "injection",
+   "title": "Shell command built from runtime values",
+   "regex": "\\b(exec|execSync)\\s*\\(\\s*(`[^`]*\\$\\{|[^,)]*\\+)|\\bspawn(Sync)?\\s*\\(.*shell\\s*:\\s*true",
+   "fix": "Use execFile/spawn with an argument array and no shell.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "semgrep:detect-child-process",
+    "eslint:security/detect-child-process"
+   ]
+  },
+  {
+   "id": "JS-EVAL",
+   "pack": "javascript",
+   "cwe": "CWE-95",
+   "owasp": "A05:2025 Injection",
+   "category": "injection",
+   "title": "eval, new Function or string timers",
+   "regex": "(?<![\\w.])eval\\s*\\(|\\bnew\\s+Function\\s*\\(|\\bset(Timeout|Interval)\\s*\\(\\s*[\"\\'`]|\\bvm\\.(runIn\\w+|Script)\\b",
+   "fix": "Parse data with JSON.parse; never evaluate input.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "eslint:no-eval",
+    "eslint:no-implied-eval",
+    "eslint:security/detect-eval-with-expression",
+    "semgrep:eval-detected"
+   ]
+  },
+  {
+   "id": "JS-XSS-SINK",
+   "pack": "javascript",
+   "cwe": "CWE-79",
+   "owasp": "A05:2025 Injection",
+   "category": "web",
+   "title": "HTML sink that bypasses escaping",
+   "regex": "\\.(innerHTML|outerHTML)\\s*=|\\bdocument\\.write(ln)?\\s*\\(|insertAdjacentHTML\\s*\\(|dangerouslySetInnerHTML|\\bv-html\\s*=|\\{@html\\s|bypassSecurityTrust\\w+\\s*\\(",
+   "suppress_line": "DOMPurify\\.sanitize|sanitizeHtml\\(|sanitize\\(",
+   "fix": "Render text with textContent / framework binding; sanitise unavoidable HTML with DOMPurify.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
+   "tools": [
+    "semgrep:insecure-document-method",
+    "semgrep:react-dangerouslysetinnerhtml",
+    "eslint:react/no-danger"
+   ]
+  },
+  {
+   "id": "JS-OPEN-REDIRECT",
+   "pack": "javascript",
+   "cwe": "CWE-601",
+   "owasp": "A01:2025 Broken Access Control",
+   "category": "web",
+   "title": "Redirect to a runtime URL",
+   "regex": "\\bres\\.redirect\\s*\\(\\s*(\\d+\\s*,\\s*)?req\\.(query|body|params)|\\b(window\\.)?location(\\.href)?\\s*=\\s*.*(searchParams|location\\.(search|hash)|query\\.)",
+   "fix": "Redirect only to relative paths or an allow-list of hosts.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:A/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
+   "tools": [
+    "semgrep:express-open-redirect"
+   ]
+  },
+  {
+   "id": "JS-SSRF",
+   "pack": "javascript",
+   "cwe": "CWE-918",
+   "owasp": "A01:2025 Broken Access Control",
+   "category": "server_side",
+   "title": "Outbound request to a URL taken from the request",
+   "regex": "\\b(axios(\\.\\w+)?|fetch|got|needle|superagent\\.\\w+|https?\\.(get|request))\\s*\\(\\s*(req\\.(query|body|params)|`[^`]*\\$\\{\\s*req\\.)",
+   "fix": "Allow-list hosts; block private, loopback and link-local addresses after DNS resolution.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:L/VI:N/VA:N/SC:H/SI:L/SA:N",
+   "tools": [
+    "semgrep:express-ssrf"
+   ]
+  },
+  {
+   "id": "JS-PATH",
+   "pack": "javascript",
+   "cwe": "CWE-22",
+   "owasp": "A01:2025 Broken Access Control",
+   "category": "server_side",
+   "title": "File path built from request input",
+   "regex": "\\b(res\\.(sendFile|download)|fs\\.\\w+|path\\.(join|resolve))\\s*\\(.*req\\.(query|params|body)",
+   "fix": "Resolve against a base directory and check the result stays inside it; prefer opaque IDs.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "semgrep:express-path-join-resolve-traversal",
+    "eslint:security/detect-non-literal-fs-filename"
+   ]
+  },
+  {
+   "id": "JS-PROTO-POLLUTION",
+   "pack": "javascript",
+   "cwe": "CWE-1321",
+   "owasp": "A08:2025 Software or Data Integrity Failures",
+   "category": "language_specific",
+   "title": "Deep merge of request data (prototype pollution)",
+   "regex": "(_\\.(merge|defaultsDeep|set|setWith)|\\$\\.extend\\s*\\(\\s*true|deepmerge|merge)\\s*\\(.*req\\.(body|query)|Object\\.assign\\s*\\(\\s*\\w+\\s*,\\s*req\\.body",
+   "fix": "Validate input against a schema; merge into Object.create(null) or reject __proto__/constructor/prototype keys.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "semgrep:prototype-pollution-loop"
+   ]
+  },
+  {
+   "id": "JS-NOSQL",
+   "pack": "javascript",
+   "cwe": "CWE-943",
+   "owasp": "A05:2025 Injection",
+   "category": "injection",
+   "title": "NoSQL query built from raw request objects",
+   "regex": "\\.(find|findOne|findOneAndUpdate|updateOne|updateMany|deleteOne|deleteMany|countDocuments|where)\\s*\\(\\s*req\\.(body|query)|\\$where",
+   "fix": "Cast fields to expected primitive types (or validate with a schema) and use mongo-sanitize.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:L/SC:N/SI:N/SA:N",
+   "tools": [
+    "semgrep:express-mongo-nosqli"
+   ]
+  },
+  {
+   "id": "JS-JWT",
+   "pack": "javascript",
+   "cwe": "CWE-347",
+   "owasp": "A07:2025 Authentication Failures",
+   "category": "authentication",
+   "title": "JWT accepted without proper verification",
+   "regex": "\\bjwt\\.decode\\s*\\(|algorithms\\s*:\\s*\\[[^\\]]*[\"\\']none|ignoreExpiration\\s*:\\s*true",
+   "fix": "Use jwt.verify with a fixed algorithms list, the right key, audience and issuer.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "semgrep:jwt-decode-without-verify",
+    "semgrep:jwt-none-alg"
+   ]
+  },
+  {
+   "id": "JS-TLS-OFF",
+   "pack": "javascript",
+   "cwe": "CWE-295",
+   "owasp": "A04:2025 Cryptographic Failures",
+   "category": "cryptography",
+   "title": "TLS certificate verification disabled",
+   "regex": "rejectUnauthorized\\s*:\\s*false|NODE_TLS_REJECT_UNAUTHORIZED\\s*=\\s*[\"\\']?0",
+   "fix": "Keep verification on; supply the private CA via ca.",
+   "cvss_hint": "CVSS:4.0/AV:A/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "semgrep:bypass-tls-verification"
+   ]
+  },
+  {
+   "id": "JS-WEAK-RANDOM",
+   "pack": "javascript",
+   "cwe": "CWE-338",
+   "owasp": "A04:2025 Cryptographic Failures",
+   "category": "cryptography",
+   "title": "Math.random used for a security value",
+   "regex": "\\bMath\\.random\\s*\\(",
+   "require_near": "(?i)(token|passw|secret|otp|nonce|reset|session|api_?key|salt|code)",
+   "window": 4,
+   "fix": "Use crypto.randomBytes / crypto.randomUUID / crypto.getRandomValues.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "eslint:security/detect-pseudoRandomBytes"
+   ]
+  },
+  {
+   "id": "JS-REGEX-INPUT",
+   "pack": "javascript",
+   "cwe": "CWE-1333",
+   "owasp": "A05:2025 Injection",
+   "category": "language_specific",
+   "title": "Regular expression built from input (ReDoS / injection)",
+   "regex": "\\bnew\\s+RegExp\\s*\\(\\s*req\\.|\\bnew\\s+RegExp\\s*\\(\\s*(query|search|term|input)\\b",
+   "fix": "Escape input (lodash.escapeRegExp) or use plain string matching; bound input length.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:N/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "eslint:security/detect-non-literal-regexp"
+   ]
+  },
+  {
+   "id": "JS-COOKIE-FLAGS",
+   "pack": "javascript",
+   "cwe": "CWE-614",
+   "owasp": "A02:2025 Security Misconfiguration",
+   "category": "configuration",
+   "title": "Session cookie without Secure/HttpOnly",
+   "regex": "httpOnly\\s*:\\s*false|secure\\s*:\\s*false|sameSite\\s*:\\s*[\"\\']none[\"\\']",
+   "fix": "Set httpOnly, secure and sameSite=lax (or strict).",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
+   "tools": [
+    "semgrep:express-cookie-session-no-secure"
+   ]
+  },
+  {
+   "id": "JS-POSTMESSAGE",
+   "pack": "javascript",
+   "cwe": "CWE-346",
+   "owasp": "A01:2025 Broken Access Control",
+   "category": "web",
+   "title": "message handler without an origin check",
+   "regex": "addEventListener\\s*\\(\\s*[\"\\']message[\"\\']",
+   "suppress_near": "\\.origin\\b",
+   "window": 6,
+   "fix": "Check event.origin against an allow-list before using event.data.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
+   "tools": [
+    "semgrep:insufficient-postmessage-origin-validation"
+   ]
+  },
+  {
+   "id": "JS-CORS-ANY",
+   "pack": "javascript",
+   "cwe": "CWE-942",
+   "owasp": "A02:2025 Security Misconfiguration",
+   "category": "configuration",
+   "title": "CORS allows any or reflected origin",
+   "regex": "origin\\s*:\\s*(true|[\"\\']\\*[\"\\'])|Access-Control-Allow-Origin[\"\\']?\\s*,\\s*([\"\\']\\*[\"\\']|req\\.headers\\.origin)",
+   "fix": "Allow-list origins; never combine a reflected origin with credentials.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
+   "tools": [
+    "semgrep:cors-misconfiguration"
+   ]
+  },
+  {
+   "id": "JAVA-SQL",
+   "pack": "java",
+   "cwe": "CWE-89",
+   "owasp": "A05:2025 Injection",
+   "category": "injection",
+   "title": "SQL built by concatenation or String.format",
+   "regex": "(?i)(executeQuery|executeUpdate|execute|prepareStatement|createQuery|createNativeQuery|rawQuery|execSQL)\\s*\\(\\s*(\"[^\"]*\\b(SELECT|INSERT|UPDATE|DELETE)\\b[^\"]*\"\\s*\\+|String\\.format\\s*\\(|\"[^\"]*\\$\\{|\\w+\\s*\\+)",
+   "fix": "Use PreparedStatement placeholders / JPA parameters; allow-list identifiers.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:L/SC:N/SI:N/SA:N",
+   "tools": [
+    "semgrep:tainted-sql-string",
+    "spotbugs:SQL_INJECTION_JDBC",
+    "spotbugs:SQL_INJECTION_JPA",
+    "spotbugs:SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE"
+   ]
+  },
+  {
+   "id": "JAVA-CMD",
+   "pack": "java",
+   "cwe": "CWE-78",
+   "owasp": "A05:2025 Injection",
+   "category": "injection",
+   "title": "OS command execution",
+   "regex": "Runtime\\.getRuntime\\s*\\(\\s*\\)\\.exec\\s*\\(|\\bProcessBuilder\\s*\\(",
+   "fix": "Use a fixed executable with an argument list; never pass input through a shell.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "spotbugs:COMMAND_INJECTION",
+    "semgrep:command-injection-process-builder"
+   ]
+  },
+  {
+   "id": "JAVA-DESER",
+   "pack": "java",
+   "cwe": "CWE-502",
+   "owasp": "A08:2025 Software or Data Integrity Failures",
+   "category": "language_specific",
+   "title": "Unsafe deserialisation",
+   "regex": "\\bnew\\s+ObjectInputStream\\s*\\(|\\bXMLDecoder\\b|\\b(enable|activate)DefaultTyping\\s*\\(|JsonTypeInfo\\.Id\\.CLASS|\\bXStream\\s*\\(",
+   "fix": "Avoid native deserialisation of untrusted data; use JSON with fixed types, or an ObjectInputFilter allow-list.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "spotbugs:OBJECT_DESERIALIZATION",
+    "semgrep:object-deserialization",
+    "semgrep:jackson-unsafe-deserialization"
+   ]
+  },
+  {
+   "id": "JAVA-XXE",
+   "pack": "java",
+   "cwe": "CWE-611",
+   "owasp": "A02:2025 Security Misconfiguration",
+   "category": "server_side",
+   "title": "XML parser factory without XXE hardening",
+   "regex": "\\b(DocumentBuilderFactory|SAXParserFactory|XMLInputFactory|TransformerFactory|SchemaFactory)\\.newInstance\\s*\\(",
+   "suppress_near": "disallow-doctype-decl|FEATURE_SECURE_PROCESSING|SUPPORT_DTD|ACCESS_EXTERNAL_(DTD|SCHEMA)|external-general-entities",
+   "window": 8,
+   "fix": "Disable DOCTYPEs (disallow-doctype-decl) and external entities on the factory.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "spotbugs:XXE_DOCUMENT",
+    "spotbugs:XXE_SAXPARSER",
+    "spotbugs:XXE_XMLSTREAMREADER",
+    "semgrep:documentbuilderfactory-disallow-doctype-decl-missing"
+   ]
+  },
+  {
+   "id": "JAVA-WEAK-CRYPTO",
+   "pack": "java",
+   "cwe": "CWE-327",
+   "owasp": "A04:2025 Cryptographic Failures",
+   "category": "cryptography",
+   "title": "Weak cipher, mode or hash",
+   "regex": "Cipher\\.getInstance\\s*\\(\\s*\"(DES|DESede|RC4|RC2|Blowfish|AES\"|AES/ECB)|MessageDigest\\.getInstance\\s*\\(\\s*\"(MD5|MD2|SHA-?1)\"",
+   "fix": "AES/GCM/NoPadding with random IVs; SHA-256+; passwords with bcrypt/argon2.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:H/VI:L/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "spotbugs:DES_USAGE",
+    "spotbugs:ECB_MODE",
+    "spotbugs:WEAK_MESSAGE_DIGEST_MD5",
+    "spotbugs:WEAK_MESSAGE_DIGEST_SHA1"
+   ]
+  },
+  {
+   "id": "JAVA-TLS-OFF",
+   "pack": "java",
+   "cwe": "CWE-295",
+   "owasp": "A04:2025 Cryptographic Failures",
+   "category": "cryptography",
+   "title": "Trust-all certificates or hostname verifier",
+   "regex": "ALLOW_ALL_HOSTNAME_VERIFIER|NoopHostnameVerifier|setHostnameVerifier\\s*\\(.*->\\s*true|TrustAll|checkServerTrusted\\s*\\([^)]*\\)\\s*\\{\\s*\\}|hostnameVerifier\\s*\\{\\s*_\\s*,\\s*_\\s*->\\s*true",
+   "fix": "Use the platform trust store; pin certificates with a network security config if policy requires it.",
+   "cvss_hint": "CVSS:4.0/AV:A/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "spotbugs:WEAK_TRUST_MANAGER",
+    "spotbugs:WEAK_HOSTNAME_VERIFIER"
+   ]
+  },
+  {
+   "id": "JAVA-WEAK-RANDOM",
+   "pack": "java",
+   "cwe": "CWE-338",
+   "owasp": "A04:2025 Cryptographic Failures",
+   "category": "cryptography",
+   "title": "java.util.Random for a security value",
+   "regex": "\\bnew\\s+Random\\s*\\(|\\bMath\\.random\\s*\\(|\\bRandom\\.next\\w*\\s*\\(",
+   "require_near": "(?i)(token|passw|secret|otp|nonce|reset|session|api_?key|salt|code)",
+   "window": 4,
+   "fix": "Use SecureRandom.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "spotbugs:PREDICTABLE_RANDOM"
+   ]
+  },
+  {
+   "id": "JAVA-PATH",
+   "pack": "java",
+   "cwe": "CWE-22",
+   "owasp": "A01:2025 Broken Access Control",
+   "category": "server_side",
+   "title": "File path built from request input",
+   "regex": "\\b(new\\s+File|Paths\\.get|Path\\.of|new\\s+FileInputStream|Files\\.\\w+)\\s*\\(.*(getParameter|@PathVariable|@RequestParam|getHeader)",
+   "fix": "Normalise and check the path stays under the base directory; prefer opaque IDs.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "spotbugs:PATH_TRAVERSAL_IN",
+    "spotbugs:PATH_TRAVERSAL_OUT"
+   ]
+  },
+  {
+   "id": "ANDROID-WEBVIEW",
+   "pack": "java",
+   "cwe": "CWE-749",
+   "owasp": "A02:2025 Security Misconfiguration",
+   "category": "mobile",
+   "title": "WebView with JavaScript bridge or file access",
+   "regex": "addJavascriptInterface\\s*\\(|setJavaScriptEnabled\\s*\\(\\s*true|javaScriptEnabled\\s*=\\s*true|setAllow(File|Content|UniversalAccessFromFile|FileAccessFromFile)\\w*\\s*\\(\\s*true|allow(File|Content|UniversalAccessFromFile|FileAccessFromFile)\\w*\\s*=\\s*true",
+   "fix": "Load only trusted origins; avoid JavaScript bridges, or check the origin on every bridge call; disable file access.",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:N/PR:N/UI:P/VC:H/VI:L/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "android-lint:SetJavaScriptEnabled",
+    "android-lint:JavascriptInterface",
+    "semgrep:webview-javascript-enabled"
+   ]
+  },
+  {
+   "id": "ANDROID-LOG-SECRET",
+   "pack": "java",
+   "cwe": "CWE-532",
+   "owasp": "A09:2025 Security Logging and Alerting Failures",
+   "category": "mobile",
+   "title": "Secret written to logcat",
+   "regex": "(?i)\\b(Log\\.[dviwe]|Timber\\.\\w)\\s*\\(.*\\b(password|token|secret|api_?key|authorization)\\b",
+   "fix": "Remove the log, or strip it from release builds.",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:N/PR:N/UI:P/VC:H/VI:L/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "android-lint:LogConditional"
+   ]
+  },
+  {
+   "id": "ANDROID-PREFS-SECRET",
+   "pack": "java",
+   "cwe": "CWE-312",
+   "owasp": "A04:2025 Cryptographic Failures",
+   "category": "mobile",
+   "title": "Secret stored in plain SharedPreferences or world-readable mode",
+   "regex": "(?i)MODE_WORLD_(READABLE|WRITEABLE)|\\.put(String)?\\s*\\(\\s*[\"\\'][^\"\\']*(token|password|secret|api_?key)",
+   "fix": "Use EncryptedSharedPreferences / Android Keystore.",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:N/PR:N/UI:P/VC:H/VI:L/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "android-lint:WorldReadableFiles"
+   ]
+  },
+  {
+   "id": "ANDROID-EXPORTED",
+   "pack": "android_manifest",
+   "cwe": "CWE-926",
+   "owasp": "A01:2025 Broken Access Control",
+   "category": "mobile",
+   "title": "Exported component without a permission",
+   "regex": "android:exported\\s*=\\s*\"true\"",
+   "suppress_near": "android:permission\\s*=",
+   "window": 3,
+   "fix": "Set exported=\"false\" unless needed; protect exported components with a signature permission and validate intents.",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:N/PR:N/UI:P/VC:H/VI:L/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "android-lint:ExportedService",
+    "android-lint:ExportedReceiver",
+    "android-lint:ExportedContentProvider"
+   ]
+  },
+  {
+   "id": "ANDROID-CLEARTEXT",
+   "pack": "android_manifest",
+   "cwe": "CWE-319",
+   "owasp": "A04:2025 Cryptographic Failures",
+   "category": "mobile",
+   "title": "Cleartext traffic or debuggable build allowed",
+   "regex": "android:usesCleartextTraffic\\s*=\\s*\"true\"|cleartextTrafficPermitted\\s*=\\s*\"true\"|android:debuggable\\s*=\\s*\"true\"|android:allowBackup\\s*=\\s*\"true\"",
+   "fix": "Disable cleartext (network security config), debuggable and allowBackup in release.",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:N/PR:N/UI:P/VC:H/VI:L/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "android-lint:UsesCleartextTraffic",
+    "android-lint:HardcodedDebugMode",
+    "android-lint:AllowBackup"
+   ]
+  },
+  {
+   "id": "IOS-ATS",
+   "pack": "ios",
+   "cwe": "CWE-319",
+   "owasp": "A04:2025 Cryptographic Failures",
+   "category": "mobile",
+   "title": "App Transport Security disabled",
+   "regex": "NSAllowsArbitraryLoads(InWebContent|ForMedia)?</key>|NSExceptionAllowsInsecureHTTPLoads</key>",
+   "require_near": "<true\\s*/>",
+   "window": 2,
+   "fix": "Remove the exception; scope any needed exception to one domain.",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:N/PR:N/UI:P/VC:H/VI:L/VA:N/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "IOS-INSECURE-STORAGE",
+   "pack": "ios",
+   "cwe": "CWE-312",
+   "owasp": "A04:2025 Cryptographic Failures",
+   "category": "mobile",
+   "title": "Secret stored in UserDefaults or a plain file",
+   "regex": "(?i)UserDefaults\\.standard\\.set\\s*\\(.*(token|password|secret|api_?key)|\\.write\\(to:.*(token|password|secret)",
+   "fix": "Store secrets in the Keychain with an appropriate accessibility class.",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:N/PR:N/UI:P/VC:H/VI:L/VA:N/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "IOS-TLS-OFF",
+   "pack": "ios",
+   "cwe": "CWE-295",
+   "owasp": "A04:2025 Cryptographic Failures",
+   "category": "mobile",
+   "title": "Server trust accepted without evaluation",
+   "regex": "URLCredential\\s*\\(\\s*trust\\s*:|\\.useCredential\\b|allowsExpiredCertificates|validatesDomainName\\s*=\\s*false",
+   "suppress_near": "SecTrustEvaluateWithError",
+   "window": 8,
+   "fix": "Call SecTrustEvaluateWithError and fail closed; pin with NSPinnedDomains if policy requires it.",
+   "cvss_hint": "CVSS:4.0/AV:A/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "IOS-WEBVIEW",
+   "pack": "ios",
+   "cwe": "CWE-749",
+   "owasp": "A02:2025 Security Misconfiguration",
+   "category": "mobile",
+   "title": "UIWebView or WKWebView file access from file URLs",
+   "regex": "\\bUIWebView\\b|allowFileAccessFromFileURLs|allowUniversalAccessFromFileURLs|loadFileURL\\s*\\(.*allowingReadAccessTo:\\s*URL\\(fileURLWithPath:\\s*\"/\"",
+   "fix": "Use WKWebView, scope file read access to one directory, and disable universal file access.",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:N/PR:N/UI:P/VC:H/VI:L/VA:N/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "GO-SQL",
+   "pack": "go",
+   "cwe": "CWE-89",
+   "owasp": "A05:2025 Injection",
+   "category": "injection",
+   "title": "SQL built with Sprintf or concatenation",
+   "regex": "(?i)\\.(Query|QueryRow|Exec|QueryContext|QueryRowContext|ExecContext|Raw|Where)\\s*\\(\\s*(ctx\\s*,\\s*)?(fmt\\.Sprintf\\s*\\(|\"[^\"]*\\b(SELECT|INSERT|UPDATE|DELETE)\\b[^\"]*\"\\s*\\+)",
+   "fix": "Use placeholders ($1 / ?); allow-list identifiers.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:L/SC:N/SI:N/SA:N",
+   "tools": [
+    "gosec:G201",
+    "gosec:G202",
+    "semgrep:string-formatted-query"
+   ]
+  },
+  {
+   "id": "GO-CMD",
+   "pack": "go",
+   "cwe": "CWE-78",
+   "owasp": "A05:2025 Injection",
+   "category": "injection",
+   "title": "Command run through a shell or with variable arguments",
+   "regex": "exec\\.Command(Context)?\\s*\\(\\s*(ctx\\s*,\\s*)?(\"(sh|bash|cmd|cmd\\.exe|powershell)\"|\\w+\\s*[,)])",
+   "fix": "Run a fixed binary with separate arguments; never through a shell.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "gosec:G204"
+   ]
+  },
+  {
+   "id": "GO-TLS-OFF",
+   "pack": "go",
+   "cwe": "CWE-295",
+   "owasp": "A04:2025 Cryptographic Failures",
+   "category": "cryptography",
+   "title": "InsecureSkipVerify",
+   "regex": "InsecureSkipVerify\\s*:\\s*true",
+   "fix": "Keep verification; use RootCAs for private CAs.",
+   "cvss_hint": "CVSS:4.0/AV:A/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "gosec:G402"
+   ]
+  },
+  {
+   "id": "GO-PATH",
+   "pack": "go",
+   "cwe": "CWE-22",
+   "owasp": "A01:2025 Broken Access Control",
+   "category": "server_side",
+   "title": "File path built from request input",
+   "regex": "(filepath\\.Join|path\\.Join|os\\.(Open|ReadFile|Create)|http\\.ServeFile)\\s*\\(.*r\\.(URL|FormValue|PathValue)",
+   "fix": "Use http.FS / os.Root (Go 1.24+) or check the cleaned path stays under the base.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "gosec:G304"
+   ]
+  },
+  {
+   "id": "GO-HTML-UNSAFE",
+   "pack": "go",
+   "cwe": "CWE-79",
+   "owasp": "A05:2025 Injection",
+   "category": "web",
+   "title": "Escaping bypassed with template.HTML or text/template",
+   "regex": "\\btemplate\\.(HTML|JS|URL|HTMLAttr)\\s*\\(|\"text/template\"",
+   "fix": "Use html/template and pass plain strings.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
+   "tools": [
+    "gosec:G203"
+   ]
+  },
+  {
+   "id": "GO-WEAK-RANDOM",
+   "pack": "go",
+   "cwe": "CWE-338",
+   "owasp": "A04:2025 Cryptographic Failures",
+   "category": "cryptography",
+   "title": "math/rand used for a security value",
+   "regex": "\\brand\\.(Int|Intn|Int63|Read|Uint32|Uint64|Perm)\\s*\\(",
+   "require_near": "(?i)(token|passw|secret|otp|nonce|reset|session|api_?key|salt|code)",
+   "window": 4,
+   "fix": "Use crypto/rand.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "gosec:G404"
+   ]
+  },
+  {
+   "id": "PHP-SQL",
+   "pack": "php",
+   "cwe": "CWE-89",
+   "owasp": "A05:2025 Injection",
+   "category": "injection",
+   "title": "SQL built from request input",
+   "regex": "(?i)(mysqli_query|mysql_query|->query|->exec|pg_query)\\s*\\(.*(\\$_(GET|POST|REQUEST|COOKIE)|\"[^\"]*\\b(SELECT|INSERT|UPDATE|DELETE)\\b[^\"]*\"\\s*\\.\\s*\\$|\\'[^\\']*\\b(SELECT|INSERT|UPDATE|DELETE)\\b[^\\']*\\'\\s*\\.\\s*\\$)",
+   "fix": "Use PDO/mysqli prepared statements.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:L/SC:N/SI:N/SA:N",
+   "tools": [
+    "psalm:TaintedSql",
+    "semgrep:tainted-sql-string"
+   ]
+  },
+  {
+   "id": "PHP-CMD",
+   "pack": "php",
+   "cwe": "CWE-78",
+   "owasp": "A05:2025 Injection",
+   "category": "injection",
+   "title": "Shell command with variables",
+   "regex": "\\b(system|exec|shell_exec|passthru|popen|proc_open)\\s*\\(.*\\$|`[^`]*\\$\\w+[^`]*`",
+   "fix": "Avoid the shell; escapeshellarg is a last resort.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "psalm:TaintedShell"
+   ]
+  },
+  {
+   "id": "PHP-INCLUDE",
+   "pack": "php",
+   "cwe": "CWE-98",
+   "owasp": "A05:2025 Injection",
+   "category": "injection",
+   "title": "include/require with request input",
+   "regex": "\\b(include|require)(_once)?\\b\\s*\\(?.*\\$_(GET|POST|REQUEST|COOKIE)",
+   "fix": "Map input to a fixed allow-list of files.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "psalm:TaintedInclude"
+   ]
+  },
+  {
+   "id": "PHP-UNSERIALIZE",
+   "pack": "php",
+   "cwe": "CWE-502",
+   "owasp": "A08:2025 Software or Data Integrity Failures",
+   "category": "language_specific",
+   "title": "unserialize of untrusted data",
+   "regex": "\\bunserialize\\s*\\(",
+   "suppress_line": "allowed_classes\\s*=>\\s*false",
+   "fix": "Use json_decode, or allowed_classes => false.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "psalm:TaintedUnserialize"
+   ]
+  },
+  {
+   "id": "PHP-ECHO",
+   "pack": "php",
+   "cwe": "CWE-79",
+   "owasp": "A05:2025 Injection",
+   "category": "web",
+   "title": "Request input echoed without escaping",
+   "regex": "\\b(echo|print)\\b.*\\$_(GET|POST|REQUEST|COOKIE|SERVER)",
+   "suppress_line": "htmlspecialchars|htmlentities|e\\(",
+   "fix": "Escape with htmlspecialchars(..., ENT_QUOTES) or use the template engine.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
+   "tools": [
+    "psalm:TaintedHtml"
+   ]
+  },
+  {
+   "id": "PHP-EVAL",
+   "pack": "php",
+   "cwe": "CWE-95",
+   "owasp": "A05:2025 Injection",
+   "category": "injection",
+   "title": "eval or preg_replace /e",
+   "regex": "\\beval\\s*\\(|\\bassert\\s*\\(\\s*\\$|preg_replace\\s*\\(\\s*[\"\\'].*/e[\"\\']",
+   "fix": "Remove eval; use preg_replace_callback.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "psalm:TaintedEval"
+   ]
+  },
+  {
+   "id": "RB-SQL",
+   "pack": "ruby",
+   "cwe": "CWE-89",
+   "owasp": "A05:2025 Injection",
+   "category": "injection",
+   "title": "SQL fragment with string interpolation",
+   "regex": "\\.(where|find_by_sql|order|pluck|select|joins|group|having|exists\\?|execute|update_all|delete_all)\\s*\\(?\\s*\"[^\"]*#\\{",
+   "fix": "Use hash conditions or placeholders (where(\"x = ?\", v)); allow-list order columns.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:L/SC:N/SI:N/SA:N",
+   "tools": [
+    "brakeman:SQL"
+   ]
+  },
+  {
+   "id": "RB-CMD",
+   "pack": "ruby",
+   "cwe": "CWE-78",
+   "owasp": "A05:2025 Injection",
+   "category": "injection",
+   "title": "Shell command with interpolation",
+   "regex": "\\b(system|exec|spawn|IO\\.popen|Open3\\.\\w+)\\s*\\(?\\s*\"[^\"]*#\\{|`[^`]*#\\{|%x\\{[^}]*#\\{",
+   "fix": "Pass arguments as a list.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "brakeman:Execute"
+   ]
+  },
+  {
+   "id": "RB-DESER",
+   "pack": "ruby",
+   "cwe": "CWE-502",
+   "owasp": "A08:2025 Software or Data Integrity Failures",
+   "category": "language_specific",
+   "title": "Unsafe YAML / Marshal / Oj load",
+   "regex": "\\bYAML\\.(load|unsafe_load)\\s*\\(|\\bMarshal\\.load\\b|\\bOj\\.load\\s*\\(",
+   "suppress_line": "safe_load|permitted_classes|mode:\\s*:strict",
+   "fix": "Use YAML.safe_load / JSON.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "brakeman:Deserialize"
+   ]
+  },
+  {
+   "id": "RB-MASS-ASSIGN",
+   "pack": "ruby",
+   "cwe": "CWE-915",
+   "owasp": "A01:2025 Broken Access Control",
+   "category": "access_control",
+   "title": "Mass assignment from params",
+   "regex": "\\.permit!|params\\.permit\\(\\s*!|\\.(new|create|update|assign_attributes)\\s*\\(\\s*params\\[",
+   "fix": "Use strong parameters with an explicit permit list.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "brakeman:MassAssignment"
+   ]
+  },
+  {
+   "id": "RB-HTML-SAFE",
+   "pack": "ruby",
+   "cwe": "CWE-79",
+   "owasp": "A05:2025 Injection",
+   "category": "web",
+   "title": "Escaping bypassed (html_safe / raw)",
+   "regex": "\\.html_safe\\b|\\braw\\s*\\(|<%==",
+   "fix": "Escape by default; sanitize with an allow-list.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
+   "tools": [
+    "brakeman:CrossSiteScripting"
+   ]
+  },
+  {
+   "id": "RB-REDIRECT",
+   "pack": "ruby",
+   "cwe": "CWE-601",
+   "owasp": "A01:2025 Broken Access Control",
+   "category": "web",
+   "title": "redirect_to with params",
+   "regex": "\\bredirect_to\\s*\\(?\\s*(params|request\\.(referer|params))",
+   "fix": "Redirect to paths or allow-listed hosts (allow_other_host: false).",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:A/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
+   "tools": [
+    "brakeman:Redirect"
+   ]
+  },
+  {
+   "id": "RB-DYNAMIC-SEND",
+   "pack": "ruby",
+   "cwe": "CWE-470",
+   "owasp": "A05:2025 Injection",
+   "category": "language_specific",
+   "title": "Method or class chosen from params",
+   "regex": "\\.(send|public_send|try)\\s*\\(\\s*params|\\bparams\\[[^\\]]+\\]\\.(constantize|safe_constantize)",
+   "fix": "Map input to an allow-list of methods/classes.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "brakeman:Send",
+    "brakeman:UnsafeReflection"
+   ]
+  },
+  {
+   "id": "CS-SQL",
+   "pack": "csharp",
+   "cwe": "CWE-89",
+   "owasp": "A05:2025 Injection",
+   "category": "injection",
+   "title": "SQL built by interpolation or concatenation",
+   "regex": "new\\s+SqlCommand\\s*\\(\\s*(\\$\"|\"[^\"]*\"\\s*\\+)|\\b(FromSqlRaw|ExecuteSqlRaw|ExecuteSqlRawAsync)\\s*\\(\\s*(\\$\"|\"[^\"]*\"\\s*\\+)",
+   "fix": "Use parameters, or FromSqlInterpolated / ExecuteSqlInterpolated.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:L/SC:N/SI:N/SA:N",
+   "tools": [
+    "semgrep:csharp-sqli"
+   ]
+  },
+  {
+   "id": "CS-DESER",
+   "pack": "csharp",
+   "cwe": "CWE-502",
+   "owasp": "A08:2025 Software or Data Integrity Failures",
+   "category": "language_specific",
+   "title": "Unsafe .NET deserialiser",
+   "regex": "\\b(BinaryFormatter|NetDataContractSerializer|LosFormatter|SoapFormatter|ObjectStateFormatter)\\b|TypeNameHandling\\s*=\\s*TypeNameHandling\\.(All|Auto|Objects|Arrays)",
+   "fix": "Use System.Text.Json with fixed types; never TypeNameHandling other than None.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "semgrep:insecure-binaryformatter-deserialization"
+   ]
+  },
+  {
+   "id": "CS-CMD",
+   "pack": "csharp",
+   "cwe": "CWE-78",
+   "owasp": "A05:2025 Injection",
+   "category": "injection",
+   "title": "Process.Start with runtime arguments",
+   "regex": "\\bProcess\\.Start\\s*\\(|\\bFileName\\s*=\\s*\"(cmd|cmd\\.exe|powershell|/bin/sh)\"",
+   "fix": "Use a fixed executable and ArgumentList; never cmd /c with input.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "CS-TLS-OFF",
+   "pack": "csharp",
+   "cwe": "CWE-295",
+   "owasp": "A04:2025 Cryptographic Failures",
+   "category": "cryptography",
+   "title": "Certificate validation bypassed",
+   "regex": "(ServerCertificateValidationCallback|ServerCertificateCustomValidationCallback)\\s*=.*=>\\s*true|DangerousAcceptAnyServerCertificateValidator",
+   "fix": "Remove the callback; trust private CAs via the store.",
+   "cvss_hint": "CVSS:4.0/AV:A/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "CS-HTML-RAW",
+   "pack": "csharp",
+   "cwe": "CWE-79",
+   "owasp": "A05:2025 Injection",
+   "category": "web",
+   "title": "Html.Raw / MarkupString bypasses encoding",
+   "regex": "@?Html\\.Raw\\s*\\(|\\(MarkupString\\)|new\\s+HtmlString\\s*\\(",
+   "fix": "Let Razor encode; sanitise HTML with an allow-list sanitiser.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
+   "tools": []
+  },
+  {
+   "id": "C-UNSAFE-STRING",
+   "pack": "c",
+   "cwe": "CWE-120",
+   "owasp": "A06:2025 Insecure Design",
+   "category": "language_specific",
+   "title": "Unbounded string copy or read",
+   "regex": "\\b(strcpy|strcat|sprintf|vsprintf|gets|wcscpy|wcscat)\\s*\\(|\\bscanf\\s*\\(\\s*\"[^\"]*%s",
+   "fix": "Use bounded variants (snprintf, strlcpy) and check lengths.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "flawfinder:buffer",
+    "semgrep:insecure-use-strcat-fn",
+    "semgrep:insecure-use-gets-fn"
+   ]
+  },
+  {
+   "id": "C-FORMAT-STRING",
+   "pack": "c",
+   "cwe": "CWE-134",
+   "owasp": "A05:2025 Injection",
+   "category": "language_specific",
+   "title": "Format string taken from a variable",
+   "regex": "\\b(printf|syslog)\\s*\\(\\s*(LOG_\\w+\\s*,\\s*)?[a-zA-Z_]\\w*\\s*\\)|\\bfprintf\\s*\\(\\s*\\w+\\s*,\\s*[a-zA-Z_]\\w*\\s*\\)|\\bsnprintf\\s*\\(\\s*\\w+\\s*,\\s*[^,]+,\\s*[a-zA-Z_]\\w*\\s*\\)",
+   "fix": "Always pass a literal format: printf(\"%s\", s).",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "flawfinder:format"
+   ]
+  },
+  {
+   "id": "C-ALLOC-OVERFLOW",
+   "pack": "c",
+   "cwe": "CWE-190",
+   "owasp": "A06:2025 Insecure Design",
+   "category": "language_specific",
+   "title": "Allocation size computed by multiplication",
+   "regex": "\\b(malloc|alloca|realloc)\\s*\\(\\s*[^;]*\\w\\s*\\*\\s*\\w",
+   "fix": "Use calloc or check the multiplication for overflow first.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "C-SYSTEM",
+   "pack": "c",
+   "cwe": "CWE-78",
+   "owasp": "A05:2025 Injection",
+   "category": "injection",
+   "title": "system()/popen()",
+   "regex": "\\b(system|popen)\\s*\\(",
+   "fix": "Use execve with an argument vector.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "flawfinder:shell"
+   ]
+  },
+  {
+   "id": "GHA-PR-TARGET-CHECKOUT",
+   "pack": "github_actions",
+   "cwe": "CWE-829",
+   "owasp": "A08:2025 Software or Data Integrity Failures",
+   "category": "supply_chain_ci",
+   "title": "pull_request_target checks out and runs untrusted PR code",
+   "regex": "ref\\s*:\\s*\\$\\{\\{\\s*github\\.event\\.pull_request\\.head\\.(sha|ref)|ref\\s*:\\s*\\$\\{\\{\\s*github\\.head_ref|refs/pull/\\$\\{\\{",
+   "require_file": "pull_request_target|workflow_run",
+   "fix": "Use pull_request for untrusted code, or split into an unprivileged build and a privileged workflow_run that never executes PR code.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N",
+   "tools": [
+    "semgrep:pull-request-target-code-checkout",
+    "zizmor:dangerous-triggers",
+    "zizmor:artipacked"
+   ]
+  },
+  {
+   "id": "GHA-EXPR-INJECTION",
+   "pack": "github_actions",
+   "cwe": "CWE-78",
+   "owasp": "A05:2025 Injection",
+   "category": "supply_chain_ci",
+   "title": "Attacker-controlled expression in a run: script",
+   "regex": "\\$\\{\\{\\s*github\\.(event\\.(issue\\.(title|body)|pull_request\\.(title|body|head\\.ref|head\\.label)|comment\\.body|review\\.body|review_comment\\.body|pages\\.[^}]*page_name|commits\\.[^}]*\\.(message|author\\.\\w+)|head_commit\\.(message|author\\.\\w+)|workflow_run\\.(head_branch|head_commit\\.\\w+)|discussion\\.(title|body))|head_ref)",
+   "require_near": "\\brun\\s*:",
+   "window": 8,
+   "fix": "Pass the value through env: (TITLE: ${{ github.event.pull_request.title }}) and use \"$TITLE\" in the script.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N",
+   "tools": [
+    "semgrep:run-shell-injection",
+    "zizmor:template-injection"
+   ]
+  },
+  {
+   "id": "GHA-UNPINNED-ACTION",
+   "pack": "github_actions",
+   "cwe": "CWE-829",
+   "owasp": "A03:2025 Software Supply Chain Failures",
+   "category": "supply_chain_ci",
+   "title": "Third-party action pinned to a mutable tag",
+   "regex": "^\\s*-?\\s*uses\\s*:\\s*(?!\\./|docker://|actions/|github/)[\\w.-]+/[\\w./-]+@(?![0-9a-f]{40}\\b)",
+   "fix": "Pin third-party actions to a full commit SHA (with the tag in a comment) and let Dependabot update it.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N",
+   "tools": [
+    "semgrep:github-actions-mutable-action-tag",
+    "zizmor:unpinned-uses",
+    "zizmor:unpinned-images"
+   ]
+  },
+  {
+   "id": "GHA-WRITE-ALL",
+   "pack": "github_actions",
+   "cwe": "CWE-250",
+   "owasp": "A01:2025 Broken Access Control",
+   "category": "supply_chain_ci",
+   "title": "Workflow token with write-all permissions",
+   "regex": "permissions\\s*:\\s*write-all",
+   "fix": "Declare least-privilege permissions per job.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N",
+   "tools": [
+    "zizmor:excessive-permissions"
+   ]
+  },
+  {
+   "id": "DOCKER-PIPE-SHELL",
+   "pack": "docker",
+   "cwe": "CWE-494",
+   "owasp": "A03:2025 Software Supply Chain Failures",
+   "category": "supply_chain_ci",
+   "title": "Remote script piped to a shell or unverified download",
+   "regex": "(curl|wget)[^|\\n]*\\|\\s*(sh|bash)|^\\s*ADD\\s+https?://|--no-check-certificate|\\bcurl\\s+(-\\w*k\\b|--insecure)",
+   "fix": "Download pinned artefacts and verify a checksum or signature.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N",
+   "tools": [
+    "hadolint:DL3020",
+    "hadolint:DL4001"
+   ]
+  },
+  {
+   "id": "DOCKER-SECRET",
+   "pack": "docker",
+   "cwe": "CWE-798",
+   "owasp": "A02:2025 Security Misconfiguration",
+   "category": "data_exposure",
+   "title": "Secret baked into an image via ENV/ARG",
+   "regex": "(?i)^\\s*(ENV|ARG)\\s+\\w*(PASSWORD|SECRET|TOKEN|API_?KEY|PRIVATE_KEY)\\w*[\\s=]+\\S",
+   "fix": "Use build secrets (--mount=type=secret) and runtime injection.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "trivy:secret",
+    "checkov:CKV_DOCKER_"
+   ]
+  },
+  {
+   "id": "TF-PUBLIC",
+   "pack": "terraform",
+   "cwe": "CWE-284",
+   "owasp": "A01:2025 Broken Access Control",
+   "category": "configuration",
+   "title": "Publicly readable storage or open admin port",
+   "regex": "acl\\s*=\\s*\"public-read(-write)?\"|cidr_blocks\\s*=\\s*\\[\\s*\"0\\.0\\.0\\.0/0\"\\s*\\]|publicly_accessible\\s*=\\s*true",
+   "fix": "Block public access; restrict ingress to known ranges or a bastion/VPN.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "trivy:misconfig",
+    "checkov:CKV_AWS_"
+   ]
+  },
+  {
+   "id": "TF-UNENCRYPTED",
+   "pack": "terraform",
+   "cwe": "CWE-311",
+   "owasp": "A04:2025 Cryptographic Failures",
+   "category": "configuration",
+   "title": "Encryption at rest disabled",
+   "regex": "(storage_)?encrypted\\s*=\\s*false|enable_encryption\\s*=\\s*false",
+   "fix": "Enable encryption with a managed key.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "trivy:misconfig",
+    "checkov:CKV_AWS_"
+   ]
+  }
+ ]
+}

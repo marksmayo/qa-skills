@@ -1,0 +1,173 @@
+FFFFFFFFFFF                                                              [100%]
+================================== FAILURES ===================================
+________________ test_app_refuses_to_start_without_secret_key _________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000002C6AB3765D0>
+tmp_path = WindowsPath('<home>/AppData/Local/Temp/pytest-of-<user>/pytest-3/test_app_refuses_to_start_with0')
+
+    def test_app_refuses_to_start_without_secret_key(monkeypatch, tmp_path):
+        monkeypatch.delenv("SECRET_KEY", raising=False)
+        monkeypatch.setenv("INVOICER_DB", str(tmp_path / "t.db"))
+>       with pytest.raises(RuntimeError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RuntimeError
+
+tests\test_security_regressions.py:15: Failed
+______________ test_report_title_is_not_evaluated_as_a_template _______________
+
+client = <FlaskClient <Flask 'invoicer'>>
+login = <function login.<locals>._login at 0x000002C6AB410CC0>
+
+    def test_report_title_is_not_evaluated_as_a_template(client, login):
+        login(*ALICE)
+        body = client.get("/invoices/report", query_string={"title": "{{7*191}}"}).get_data(as_text=True)
+>       assert "1337" not in body
+E       AssertionError: assert '1337' not in '<h1>1337</h....5</li></ul>'
+E         
+E         '1337' is contained here:
+E           <h1>1337</h1><ul><li>INV-1001: 1200.0</li><li>INV-1002: 450.5</li></ul>
+E         ?     ++++
+
+tests\test_security_regressions.py:22: AssertionError
+_____________________ test_search_cannot_widen_the_query ______________________
+
+client = <FlaskClient <Flask 'invoicer'>>
+login = <function login.<locals>._login at 0x000002C6AB4118A0>
+
+    def test_search_cannot_widen_the_query(client, login):
+        login(*ALICE)
+        numbers = [i["number"] for i in client.get("/invoices/search", query_string={"q": "' OR 1=1 --"}).get_json()]
+>       assert "INV-2001" not in numbers
+E       AssertionError: assert 'INV-2001' not in ['INV-1001', 'INV-1002', 'INV-2001', 'INV-2002']
+
+tests\test_security_regressions.py:28: AssertionError
+___________________ test_cannot_read_another_users_invoice ____________________
+
+client = <FlaskClient <Flask 'invoicer'>>
+login = <function login.<locals>._login at 0x000002C6AB413100>
+
+    def test_cannot_read_another_users_invoice(client, login):
+        login(*ALICE)
+>       assert client.get("/invoices/3").status_code == 404
+E       AssertionError: assert 200 == 404
+E        +  where 200 = <WrapperTestResponse streamed [200 OK]>.status_code
+E        +    where <WrapperTestResponse streamed [200 OK]> = get('/invoices/3')
+E        +      where get = <FlaskClient <Flask 'invoicer'>>.get
+
+tests\test_security_regressions.py:33: AssertionError
+__________________ test_attachment_name_cannot_leave_uploads __________________
+
+client = <FlaskClient <Flask 'invoicer'>>
+login = <function login.<locals>._login at 0x000002C6AB4387C0>
+
+    def test_attachment_name_cannot_leave_uploads(client, login):
+        login(*ALICE)
+>       assert client.get("/attachments", query_string={"name": "../requirements.txt"}).status_code == 404
+E       AssertionError: assert 200 == 404
+E        +  where 200 = <WrapperTestResponse streamed [200 OK]>.status_code
+E        +    where <WrapperTestResponse streamed [200 OK]> = get('/attachments', query_string={'name': '../requirements.txt'})
+E        +      where get = <FlaskClient <Flask 'invoicer'>>.get
+
+tests\test_security_regressions.py:38: AssertionError
+___________________ test_webhook_test_refuses_loopback_urls ___________________
+
+client = <FlaskClient <Flask 'invoicer'>>
+login = <function login.<locals>._login at 0x000002C6AB439B20>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000002C6AB455C10>
+
+    def test_webhook_test_refuses_loopback_urls(client, login, monkeypatch):
+        calls = []
+        monkeypatch.setattr(
+            "invoicer.webhooks.requests.get",
+            lambda url, **kw: calls.append(url) or SimpleNamespace(status_code=200, text="ok"),
+        )
+        login(*ALICE)
+        resp = client.post("/webhooks/test", json={"url": "http://127.0.0.1/healthz"})
+>       assert resp.status_code == 400 and calls == []
+E       assert (200 == 400)
+E        +  where 200 = <WrapperTestResponse streamed [200 OK]>.status_code
+
+tests\test_security_regressions.py:49: AssertionError
+____________________ test_sort_accepts_only_known_columns _____________________
+
+client = <FlaskClient <Flask 'invoicer'>>
+login = <function login.<locals>._login at 0x000002C6AB439D00>
+
+    def test_sort_accepts_only_known_columns(client, login):
+        login(*ALICE)
+        resp = client.get("/invoices", query_string={"sort": "CASE WHEN (1=1) THEN amount ELSE number END"})
+>       assert resp.status_code == 400
+E       assert 200 == 400
+E        +  where 200 = <WrapperTestResponse streamed [200 OK]>.status_code
+
+tests\test_security_regressions.py:55: AssertionError
+___________________ test_login_ignores_an_external_next_url ___________________
+
+client = <FlaskClient <Flask 'invoicer'>>
+
+    def test_login_ignores_an_external_next_url(client):
+        resp = client.post("/login?next=https://canary.example/", data={"email": ALICE[0], "password": ALICE[1]})
+>       assert resp.headers["Location"].startswith("/")
+E       AssertionError: assert False
+E        +  where False = <built-in method startswith of str object at 0x000002C6AB49A9B0>('/')
+E        +    where <built-in method startswith of str object at 0x000002C6AB49A9B0> = 'https://canary.example/'.startswith
+
+tests\test_security_regressions.py:60: AssertionError
+____________________ test_import_rejects_python_yaml_tags _____________________
+
+client = <FlaskClient <Flask 'invoicer'>>
+login = <function login.<locals>._login at 0x000002C6AB43B740>
+
+    def test_import_rejects_python_yaml_tags(client, login):
+        login(*ALICE)
+        doc = b"- number: !!python/object/apply:builtins.str [INV-9001]\n  customer: Canary\n  amount: 1\n"
+        resp = client.post("/invoices/import", data={"file": (io.BytesIO(doc), "x.yaml")},
+                           content_type="multipart/form-data")
+>       assert resp.status_code == 400
+E       assert 201 == 400
+E        +  where 201 = <WrapperTestResponse streamed [201 CREATED]>.status_code
+
+tests\test_security_regressions.py:68: AssertionError
+_______________________ test_reset_token_is_long_enough _______________________
+
+client = <FlaskClient <Flask 'invoicer'>>
+
+    def test_reset_token_is_long_enough(client):
+        client.post("/password-reset", data={"email": ALICE[0]})
+        with client.application.app_context():
+            token = get_db().execute("SELECT reset_token FROM users WHERE id = 1").fetchone()[0]
+>       assert len(token) >= 32
+E       AssertionError: assert 8 >= 32
+E        +  where 8 = len('vnOneJP4')
+
+tests\test_security_regressions.py:75: AssertionError
+____________________ test_login_does_not_log_the_password _____________________
+
+client = <FlaskClient <Flask 'invoicer'>>
+caplog = <_pytest.logging.LogCaptureFixture object at 0x000002C6AB4778C0>
+
+    def test_login_does_not_log_the_password(client, caplog):
+        caplog.set_level("INFO")
+        client.post("/login", data={"email": ALICE[0], "password": ALICE[1]})
+>       assert ALICE[1] not in caplog.text
+E       AssertionError: assert 'alice-test-pw' not in 'INFO     in...ce-test-pw\n'
+E         
+E         'alice-test-pw' is contained here:
+E            password=alice-test-pw
+
+tests\test_security_regressions.py:81: AssertionError
+------------------------------ Captured log call ------------------------------
+INFO     invoicer.auth:auth.py:30 login attempt email=alice@example.test password=alice-test-pw
+=========================== short test summary info ===========================
+FAILED tests/test_security_regressions.py::test_app_refuses_to_start_without_secret_key
+FAILED tests/test_security_regressions.py::test_report_title_is_not_evaluated_as_a_template
+FAILED tests/test_security_regressions.py::test_search_cannot_widen_the_query
+FAILED tests/test_security_regressions.py::test_cannot_read_another_users_invoice
+FAILED tests/test_security_regressions.py::test_attachment_name_cannot_leave_uploads
+FAILED tests/test_security_regressions.py::test_webhook_test_refuses_loopback_urls
+FAILED tests/test_security_regressions.py::test_sort_accepts_only_known_columns
+FAILED tests/test_security_regressions.py::test_login_ignores_an_external_next_url
+FAILED tests/test_security_regressions.py::test_import_rejects_python_yaml_tags
+FAILED tests/test_security_regressions.py::test_reset_token_is_long_enough - ...
+FAILED tests/test_security_regressions.py::test_login_does_not_log_the_password
+11 failed in 15.11s

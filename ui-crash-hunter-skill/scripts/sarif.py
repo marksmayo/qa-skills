@@ -4,7 +4,11 @@
 Reading normalises results from any SARIF-emitting tool (Semgrep, detekt, SwiftLint, Android Lint,
 Bandit, gosec, ...) into flat records an agent can triage:
 
-    {tool, version, rule_id, level, message, file, line, column, end_line, snippet, fingerprint}
+    {tool, version, rule_id, level, message, file, line, column, end_line, snippet, fingerprint,
+     tags, cwe}
+
+`tags` are the rule's and result's property tags; `cwe` lists the CWE ids found in them, in the
+rule's `cwe` property, or in CWE taxonomy relationships (as gosec writes them).
 
 Writing builds a minimal valid SARIF log from findings, for upload to code-scanning dashboards.
 
@@ -13,11 +17,31 @@ Writing builds a minimal valid SARIF log from findings, for upload to code-scann
 Paths are made relative to --root when they fall under it, and file:// URIs are decoded.
 """
 from __future__ import annotations
-import argparse, json, sys
+import argparse, json, re, sys
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 LEVELS = ('error', 'warning', 'note', 'none')
+CWE_RE = re.compile(r'\bCWE[-_ :]?(\d{1,4})\b', re.I)
+
+def _cwes(*sources) -> list[str]:
+    found: list[str] = []
+    for src in sources:
+        for text in (src if isinstance(src, list) else [src]):
+            for n in CWE_RE.findall(str(text or '')):
+                cwe = f'CWE-{int(n)}'
+                if cwe not in found:
+                    found.append(cwe)
+    return found
+
+def _relationship_cwes(rule: dict) -> list[str]:
+    out = []
+    for rel in rule.get('relationships') or []:
+        target = rel.get('target') or {}
+        comp = ((target.get('toolComponent') or {}).get('name') or '').upper()
+        if comp == 'CWE' and str(target.get('id', '')).isdigit():
+            out.append(f"CWE-{int(target['id'])}")
+    return out
 
 def _uri_to_path(uri: str) -> str:
     if uri.startswith('file:'):
@@ -47,6 +71,7 @@ def _message(msg: dict, rule: dict) -> str:
 
 def read(path: Path, root: Path | None = None) -> list[dict]:
     """Normalise every result in one SARIF file."""
+    root = Path(root) if root else None
     log = json.loads(Path(path).read_text(encoding='utf-8-sig'))
     out: list[dict] = []
     for run in log.get('runs') or []:
@@ -70,17 +95,22 @@ def read(path: Path, root: Path | None = None) -> list[dict]:
                 file = _uri_to_path(base + uri if base and not uri.startswith('file:') else uri)
                 region = phys.get('region') or {}
                 fp = res.get('fingerprints') or res.get('partialFingerprints') or {}
+                rprops, props = rule.get('properties') or {}, res.get('properties') or {}
+                tags = [str(x) for x in (rprops.get('tags') or []) + (props.get('tags') or [])]
+                cwe = _cwes(tags, rprops.get('cwe') or [], props.get('cwe') or [], _relationship_cwes(rule))
                 out.append({
                     'tool': tool, 'version': version, 'rule_id': rid, 'level': level if level in LEVELS else 'warning',
                     'message': _message(res.get('message') or {}, rule),
                     'file': _relative(file, root), 'line': region.get('startLine'), 'column': region.get('startColumn'),
                     'end_line': region.get('endLine'), 'snippet': ((region.get('snippet') or {}).get('text') or '').strip()[:300],
-                    'fingerprint': next(iter(fp.values()), None),
+                    'fingerprint': next(iter(fp.values()), None), 'tags': tags, 'cwe': cwe,
                 })
     return out
 
 def build(tool: str, version: str | None, results: list[dict], info_uri: str | None = None) -> dict:
-    """Build a SARIF log. Each result: {rule_id, level, message, file, line, column?, rule_name?, help?}."""
+    """Build a SARIF log. Each result: {rule_id, level, message, file, line, column?, rule_name?, help?,
+    properties?, rule_properties?}. rule_properties (e.g. tags, security-severity for GitHub code
+    scanning) are taken from the first result of each rule."""
     rules: dict[str, dict] = {}
     for r in results:
         rid = r['rule_id']
@@ -88,6 +118,8 @@ def build(tool: str, version: str | None, results: list[dict], info_uri: str | N
             rule = {'id': rid, 'shortDescription': {'text': r.get('rule_name') or rid}}
             if r.get('help'):
                 rule['help'] = {'text': r['help']}
+            if r.get('rule_properties'):
+                rule['properties'] = r['rule_properties']
             rules[rid] = rule
     index = {rid: i for i, rid in enumerate(rules)}
     driver = {'name': tool, 'rules': list(rules.values())}

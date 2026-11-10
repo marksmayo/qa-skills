@@ -1,0 +1,71 @@
+{
+  "tool": "run_poc",
+  "version": "1.0.0",
+  "finding": "F-7",
+  "poc_file": "idor-invoice.json",
+  "target": "http://127.0.0.1:5058",
+  "permission": "Example run: the fixed copy of the sample app on 127.0.0.1:5058, started for this run to check each proof fails once the fix is in",
+  "allow_hosts": [],
+  "started_at": "2026-11-10T04:27:08Z",
+  "finished_at": "2026-11-10T04:27:09Z",
+  "safety": {
+    "checked": true,
+    "issues": []
+  },
+  "steps": [
+    {
+      "name": "login as alice",
+      "request": {
+        "method": "POST",
+        "url": "http://127.0.0.1:5058/login",
+        "headers": {
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        "body": "email=alice%40example.test&password=alice-test-pw"
+      },
+      "response": {
+        "status": 302,
+        "headers": {
+          "Server": "Werkzeug/3.0.1 Python/3.12.10",
+          "Content-Type": "text/html; charset=utf-8",
+          "Content-Length": "205",
+          "Location": "/invoices",
+          "Set-Cookie": "session=<redacted>; HttpOnly; Path=/"
+        },
+        "body_excerpt": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/invoices\">/invoices</a>. If not, click the link.\n",
+        "body_length": 205,
+        "elapsed_ms": 564
+      },
+      "expect_status_met": true
+    },
+    {
+      "name": "read bob's invoice",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:5058/invoices/3",
+        "headers": {},
+        "body": null
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "Server": "Werkzeug/3.0.1 Python/3.12.10",
+          "Content-Type": "text/html; charset=utf-8",
+          "Content-Length": "207"
+        },
+        "body_excerpt": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
+        "body_length": 207,
+        "elapsed_ms": 3
+      },
+      "expect_status_met": null
+    }
+  ],
+  "proof": {
+    "type": "marker_in_response",
+    "step": "read bob's invoice",
+    "marker": "INV-2001",
+    "passed": false,
+    "observed": "marker not found in the response to \"read bob's invoice\""
+  },
+  "result": "not_confirmed"
+}

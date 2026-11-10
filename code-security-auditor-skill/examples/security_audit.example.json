@@ -1,0 +1,2723 @@
+{
+  "schema_version": "1.0",
+  "skill": {
+    "name": "code-security-auditor",
+    "version": "1.0.0"
+  },
+  "sensitive": true,
+  "notice": "SENSITIVE: this report contains working exploit details for unfixed vulnerabilities. Keep it out of version control and share it only with people responsible for fixing them. (This copy describes the deliberately vulnerable sample app.)",
+  "generated_at": "2026-11-10T06:00:00Z",
+  "target": {
+    "repository": "examples/invoicer",
+    "commit": null,
+    "scope": [
+      "invoicer/",
+      "run.py",
+      "requirements.txt",
+      ".github/workflows/"
+    ],
+    "excluded": [
+      "tests/ (read for test conventions, not audited)",
+      "uploads/welcome.txt (data)"
+    ]
+  },
+  "recon": {
+    "stack": [
+      "Python 3.12",
+      "Flask 3.0.3 / Werkzeug 3.0.1 / Jinja2 3.1.2",
+      "SQLite (sqlite3)",
+      "requests 2.31.0",
+      "PyYAML 6.0.1",
+      "GitHub Actions"
+    ],
+    "entry_points": [
+      {
+        "id": "EP-1",
+        "kind": "http_route",
+        "method": "GET",
+        "path": "/healthz",
+        "handler": "invoicer/__init__.py:22",
+        "auth": "public",
+        "exposure": "internet",
+        "reviewed": true
+      },
+      {
+        "id": "EP-2",
+        "kind": "http_route",
+        "method": "GET",
+        "path": "/version",
+        "handler": "invoicer/__init__.py:26",
+        "auth": "public",
+        "exposure": "internet",
+        "reviewed": true
+      },
+      {
+        "id": "EP-3",
+        "kind": "http_route",
+        "method": "GET",
+        "path": "/attachments",
+        "handler": "invoicer/attachments.py:10",
+        "auth": "authenticated",
+        "exposure": "internet",
+        "reviewed": true
+      },
+      {
+        "id": "EP-4",
+        "kind": "http_route",
+        "method": "POST",
+        "path": "/login",
+        "handler": "invoicer/auth.py:26",
+        "auth": "public",
+        "exposure": "internet",
+        "reviewed": true
+      },
+      {
+        "id": "EP-5",
+        "kind": "http_route",
+        "method": "POST",
+        "path": "/logout",
+        "handler": "invoicer/auth.py:39",
+        "auth": "public",
+        "exposure": "internet",
+        "reviewed": true
+      },
+      {
+        "id": "EP-6",
+        "kind": "http_route",
+        "method": "POST",
+        "path": "/password-reset",
+        "handler": "invoicer/auth.py:45",
+        "auth": "public",
+        "exposure": "internet",
+        "reviewed": true
+      },
+      {
+        "id": "EP-7",
+        "kind": "http_route",
+        "method": "POST",
+        "path": "/password-reset/confirm",
+        "handler": "invoicer/auth.py:56",
+        "auth": "public",
+        "exposure": "internet",
+        "reviewed": true
+      },
+      {
+        "id": "EP-8",
+        "kind": "http_route",
+        "method": "GET",
+        "path": "/invoices",
+        "handler": "invoicer/invoices.py:15",
+        "auth": "authenticated",
+        "exposure": "internet",
+        "reviewed": true
+      },
+      {
+        "id": "EP-9",
+        "kind": "http_route",
+        "method": "GET",
+        "path": "/invoices/search",
+        "handler": "invoicer/invoices.py:25",
+        "auth": "authenticated",
+        "exposure": "internet",
+        "reviewed": true
+      },
+      {
+        "id": "EP-10",
+        "kind": "http_route",
+        "method": "GET",
+        "path": "/invoices/<int:invoice_id>",
+        "handler": "invoicer/invoices.py:35",
+        "auth": "authenticated",
+        "exposure": "internet",
+        "reviewed": true
+      },
+      {
+        "id": "EP-11",
+        "kind": "http_route",
+        "method": "GET",
+        "path": "/invoices/report",
+        "handler": "invoicer/invoices.py:44",
+        "auth": "authenticated",
+        "exposure": "internet",
+        "reviewed": true
+      },
+      {
+        "id": "EP-12",
+        "kind": "http_route",
+        "method": "POST",
+        "path": "/invoices/import",
+        "handler": "invoicer/invoices.py:55",
+        "auth": "authenticated",
+        "exposure": "internet",
+        "reviewed": true
+      },
+      {
+        "id": "EP-13",
+        "kind": "webhook",
+        "method": "POST",
+        "path": "/webhooks/test",
+        "handler": "invoicer/webhooks.py:9",
+        "auth": "authenticated",
+        "exposure": "internet",
+        "reviewed": true
+      },
+      {
+        "id": "EP-14",
+        "kind": "ci_workflow",
+        "method": "pull_request_target",
+        "path": ".github/workflows/ci.yml (test job)",
+        "handler": ".github/workflows/ci.yml:4",
+        "auth": "public",
+        "exposure": "internet",
+        "reviewed": true,
+        "note": "Added by the agent: triggered by any pull request, including from forks."
+      }
+    ],
+    "trust_boundaries": [
+      "Browser -> Flask app (signed cookie session)",
+      "Flask app -> arbitrary outbound HTTP (POST /webhooks/test)",
+      "Uploaded files -> YAML parser (POST /invoices/import) and filesystem (GET /attachments)",
+      "Pull-request author -> GitHub Actions job with a write token"
+    ],
+    "auth_model": {
+      "authentication": "Email and password at POST /login (werkzeug password hashes in SQLite).",
+      "sessions": "Flask signed cookie holding user_id; key from SECRET_KEY with a literal fallback (invoicer/__init__.py:11). No server-side revocation.",
+      "authorisation": "login_required only checks that a session exists. Ownership is enforced by owner_id filters in list, search and report, but not in view (F-7)."
+    },
+    "data_stores": [
+      "SQLite at instance/invoicer.db (users with password hashes and reset tokens, invoices)",
+      "uploads/ directory on the local filesystem"
+    ],
+    "outbound_calls": [
+      "requests.get(url) at invoicer/webhooks.py:15 with a URL from the request body"
+    ],
+    "secret_config": [
+      "SECRET_KEY (env, literal fallback at invoicer/__init__.py:11)",
+      "INVOICER_DB (env)",
+      "GITHUB_TOKEN passed to a third-party action at .github/workflows/ci.yml:27"
+    ],
+    "high_risk_areas": [
+      {
+        "area": "access_control",
+        "why": "Invoice routes take sequential ids; check ownership on each.",
+        "entry_points": [
+          "EP-8",
+          "EP-9",
+          "EP-10",
+          "EP-11"
+        ]
+      },
+      {
+        "area": "authentication",
+        "why": "Login, reset and reset confirmation are public; tokens, rate limits, session signing.",
+        "entry_points": [
+          "EP-4",
+          "EP-6",
+          "EP-7"
+        ]
+      },
+      {
+        "area": "server_side",
+        "why": "Webhook test fetches URLs; import parses uploaded YAML; attachments read files by name.",
+        "entry_points": [
+          "EP-3",
+          "EP-12",
+          "EP-13"
+        ]
+      },
+      {
+        "area": "supply_chain_ci",
+        "why": "pull_request_target workflow with a write token.",
+        "entry_points": [
+          "EP-14"
+        ]
+      }
+    ]
+  },
+  "tools": [
+    {
+      "name": "recon",
+      "area": "recon",
+      "status": "ran",
+      "version": "1.0.0",
+      "output": "run/recon.json",
+      "results": 13,
+      "config": "scripts/recon.py"
+    },
+    {
+      "name": "semgrep",
+      "area": "sast",
+      "status": "ran",
+      "version": "1.184.0",
+      "config": "p/default, p/owasp-top-ten (community rules, metrics off)",
+      "output": "run/semgrep.sarif",
+      "results": 23
+    },
+    {
+      "name": "bandit",
+      "area": "sast",
+      "status": "ran",
+      "version": "1.9.4",
+      "config": "-x tests",
+      "output": "run/bandit.json",
+      "results": 10
+    },
+    {
+      "name": "scan_pitfalls",
+      "area": "patterns",
+      "status": "ran",
+      "version": "1.0.0",
+      "config": "data/pitfalls.json 1.0.0, packs python + github_actions",
+      "output": "run/patterns.json",
+      "results": 15
+    },
+    {
+      "name": "scan_secrets",
+      "area": "secrets",
+      "status": "ran",
+      "version": "1.0.0",
+      "config": "working tree only (history not scanned)",
+      "output": "run/secrets.json",
+      "results": 1
+    },
+    {
+      "name": "zizmor",
+      "area": "ci",
+      "status": "ran",
+      "version": "1.32.0",
+      "config": "--offline",
+      "output": "run/zizmor.sarif",
+      "results": 6
+    },
+    {
+      "name": "pip-audit",
+      "area": "dependencies",
+      "status": "ran",
+      "version": "2.10.1",
+      "config": "-r requirements.txt",
+      "output": "run/pip-audit.json",
+      "results": 31,
+      "reason": "31 entries; 16 unique advisories after merging aliases"
+    },
+    {
+      "name": "gitleaks",
+      "area": "secrets",
+      "status": "not_run",
+      "version": null,
+      "reason": "not installed (secrets in the working tree were covered by scan_secrets.py; git history was not scanned)"
+    },
+    {
+      "name": "osv-scanner",
+      "area": "dependencies",
+      "status": "not_run",
+      "version": null,
+      "reason": "not installed (pip-audit covered requirements.txt)"
+    },
+    {
+      "name": "trivy",
+      "area": "iac_containers",
+      "status": "not_run",
+      "version": null,
+      "reason": "not installed (no IaC or container files in the repository)"
+    },
+    {
+      "name": "gosec",
+      "area": "sast",
+      "status": "not_applicable",
+      "version": null,
+      "reason": "no Go files"
+    },
+    {
+      "name": "brakeman",
+      "area": "sast",
+      "status": "not_applicable",
+      "version": null,
+      "reason": "not a Rails application"
+    },
+    {
+      "name": "eslint-security",
+      "area": "sast",
+      "status": "not_applicable",
+      "version": null,
+      "reason": "no JavaScript/TypeScript files"
+    },
+    {
+      "name": "psalm-taint",
+      "area": "sast",
+      "status": "not_applicable",
+      "version": null,
+      "reason": "no PHP files"
+    },
+    {
+      "name": "spotbugs-findsecbugs",
+      "area": "sast",
+      "status": "not_applicable",
+      "version": null,
+      "reason": "no Java/Kotlin files"
+    },
+    {
+      "name": "mobsf",
+      "area": "mobile",
+      "status": "not_applicable",
+      "version": null,
+      "reason": "no .apk/.aab/.ipa package provided"
+    },
+    {
+      "name": "npm-audit",
+      "area": "dependencies",
+      "status": "not_applicable",
+      "version": null,
+      "reason": "no package-lock.json"
+    },
+    {
+      "name": "checkov",
+      "area": "iac_containers",
+      "status": "not_applicable",
+      "version": null,
+      "reason": "no IaC or container files"
+    },
+    {
+      "name": "hadolint",
+      "area": "iac_containers",
+      "status": "not_applicable",
+      "version": null,
+      "reason": "no Dockerfiles"
+    },
+    {
+      "name": "run_poc",
+      "area": "dynamic",
+      "status": "ran",
+      "version": "1.0.0",
+      "config": "8 PoCs against 127.0.0.1:5057, and again against a fixed copy on 127.0.0.1:5058",
+      "output": "evidence/",
+      "results": 8
+    },
+    {
+      "name": "agent",
+      "area": "agent",
+      "status": "ran",
+      "version": null,
+      "config": "deep review of all 14 entry points: access control, auth flows, business logic, CI",
+      "results": null
+    }
+  ],
+  "verification": {
+    "requested": true,
+    "permitted": true,
+    "permission": "Example run: the skill's author started the deliberately vulnerable sample app on 127.0.0.1:5057 for this run and allowed safe PoCs against it.",
+    "target": "http://127.0.0.1:5057",
+    "target_kind": "localhost",
+    "production_written_permission": null,
+    "runner": "scripts/run_poc.py",
+    "notes": "Seeded test accounts only. Every PoC was also run against a copy with the recommended fixes on 127.0.0.1:5058 (evidence/fixed/); every proof failed there."
+  },
+  "triage": [
+    {
+      "candidate": "CAND-001",
+      "decision": "promoted",
+      "finding": "F-2",
+      "reason": "zizmor dangerous-triggers on the pull_request_target trigger; same root cause as the checkout at line 16."
+    },
+    {
+      "candidate": "CAND-002",
+      "decision": "promoted",
+      "finding": "F-14",
+      "reason": "actions/checkout@v4 is a mutable tag; listed with the other unpinned actions."
+    },
+    {
+      "candidate": "CAND-003",
+      "decision": "promoted",
+      "finding": "F-2",
+      "reason": "Checkout of github.event.pull_request.head.sha in a pull_request_target job, followed by pip install and pytest (ci.yml:20-21)."
+    },
+    {
+      "candidate": "CAND-004",
+      "decision": "promoted",
+      "finding": "F-14",
+      "reason": "actions/setup-python@v5 is a mutable tag."
+    },
+    {
+      "candidate": "CAND-005",
+      "decision": "promoted",
+      "finding": "F-3",
+      "reason": "github.event.pull_request.title expanded inside run: at ci.yml:23."
+    },
+    {
+      "candidate": "CAND-006",
+      "decision": "promoted",
+      "finding": "F-14",
+      "reason": "Third-party thollander/actions-comment-pull-request@v2 receives GITHUB_TOKEN (ci.yml:27)."
+    },
+    {
+      "candidate": "CAND-007",
+      "decision": "dismissed",
+      "finding": null,
+      "reason": "Bandit B404 flags the import itself; the only call is invoicer/__init__.py:28, triaged as CAND-008."
+    },
+    {
+      "candidate": "CAND-008",
+      "decision": "dismissed",
+      "finding": null,
+      "reason": "invoicer/__init__.py:28 runs a fixed argument list [\"git\", \"rev-parse\", \"--short\", \"HEAD\"] with shell=False and no request data. B607 (partial path) needs control of the server's PATH, which would already be code execution."
+    },
+    {
+      "candidate": "CAND-009",
+      "decision": "promoted",
+      "finding": "F-8",
+      "reason": "name from the query string reaches send_file through os.path.join with no containment check."
+    },
+    {
+      "candidate": "CAND-010",
+      "decision": "promoted",
+      "finding": "F-18",
+      "reason": "The password argument is logged at INFO."
+    },
+    {
+      "candidate": "CAND-011",
+      "decision": "promoted",
+      "finding": "F-9",
+      "reason": "next from the query string is passed to redirect() unchecked."
+    },
+    {
+      "candidate": "CAND-012",
+      "decision": "promoted",
+      "finding": "F-11",
+      "reason": "random.choices generates the reset token."
+    },
+    {
+      "candidate": "CAND-013",
+      "decision": "promoted",
+      "finding": "F-6",
+      "reason": "sort from the query string is interpolated after ORDER BY."
+    },
+    {
+      "candidate": "CAND-014",
+      "decision": "promoted",
+      "finding": "F-5",
+      "reason": "q from the query string is interpolated into the LIKE clause."
+    },
+    {
+      "candidate": "CAND-015",
+      "decision": "dismissed",
+      "finding": null,
+      "reason": "Only the module constant COLUMNS (invoicer/invoices.py:8) is interpolated; invoice_id is a bound parameter and an <int:> route converter. The query is safe, but it is where F-7 (missing owner check) lives."
+    },
+    {
+      "candidate": "CAND-016",
+      "decision": "dismissed",
+      "finding": null,
+      "reason": "Only the module constant COLUMNS (invoicer/invoices.py:8) is interpolated; g.user_id is a bound parameter."
+    },
+    {
+      "candidate": "CAND-017",
+      "decision": "promoted",
+      "finding": "F-4",
+      "reason": "render_template_string compiles a template that contains request data."
+    },
+    {
+      "candidate": "CAND-018",
+      "decision": "promoted",
+      "finding": "F-4",
+      "reason": "Semgrep raw-html-format (XSS) on the same concatenation; the root cause is the template injection at invoices.py:49-50, and fixing it fixes both."
+    },
+    {
+      "candidate": "CAND-019",
+      "decision": "promoted",
+      "finding": "F-10",
+      "reason": "yaml.load with yaml.Loader on an uploaded file."
+    },
+    {
+      "candidate": "CAND-020",
+      "decision": "promoted",
+      "finding": "F-13",
+      "reason": "requests.get on a URL from the request body; scheme check only."
+    },
+    {
+      "candidate": "CAND-021",
+      "decision": "promoted",
+      "finding": "F-16",
+      "reason": "debug=True in run.py."
+    },
+    {
+      "candidate": "CAND-022",
+      "decision": "promoted",
+      "finding": "F-16",
+      "reason": "Semgrep avoid_app_run_with_bad_host: host=\"0.0.0.0\" is what exposes the debugger beyond the machine."
+    },
+    {
+      "candidate": "CAND-023",
+      "decision": "promoted",
+      "finding": "F-16",
+      "reason": "Bandit B104 (bind all interfaces) on the same line."
+    },
+    {
+      "candidate": "SEC-001",
+      "decision": "promoted",
+      "finding": "F-1",
+      "reason": "Literal fallback for SECRET_KEY; the PoC forges a session with it."
+    }
+  ],
+  "findings": [
+    {
+      "id": "F-1",
+      "rank": 1,
+      "title": "Hard-coded session signing key lets anyone forge a login as any user",
+      "category": "authentication",
+      "cwe": [
+        "CWE-321",
+        "CWE-798"
+      ],
+      "owasp": "A07:2025 Authentication Failures",
+      "confidence": "confirmed",
+      "sources": [
+        "scan_secrets",
+        "agent"
+      ],
+      "candidates": [
+        "SEC-001"
+      ],
+      "entry_point": "EP-8",
+      "exposure": "public",
+      "exposure_note": "No account needed: the forged cookie replaces signing in.",
+      "cvss": {
+        "version": "4.0",
+        "vector": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
+        "score": 9.1,
+        "severity": "critical",
+        "rationale": "AT:P because it needs a deployment that does not set SECRET_KEY, which the README does not mention; then full read/write of every account."
+      },
+      "priority_score": 48,
+      "priority": "P0",
+      "locations": [
+        {
+          "file": "invoicer/__init__.py",
+          "line": 11,
+          "snippet": "app.config[\"SECRET_KEY\"] = os.environ.get(\"SECRET_KEY\",",
+          "role": "config",
+          "note": "falls back to a literal key committed to the repository (value redacted; fingerprint below)"
+        },
+        {
+          "file": "invoicer/auth.py",
+          "line": 18,
+          "snippet": "if session.get(\"user_id\") is None:",
+          "role": "sink",
+          "note": "trusts any correctly signed session cookie"
+        },
+        {
+          "file": "invoicer/auth.py",
+          "line": 20,
+          "snippet": "g.user_id = session[\"user_id\"]",
+          "role": "sink",
+          "note": "the forged user_id becomes the acting user"
+        }
+      ],
+      "path": {
+        "summary": "Anyone with the repository (or a leaked copy) knows the fallback key -> signs {\"user_id\": N} with Flask's session serializer -> login_required accepts it -> acts as user N on every route.",
+        "sanitisers_checked": [
+          "SECRET_KEY from the environment: optional, with the literal as default",
+          "No server-side session store or session id to revoke",
+          "README and run.py do not set SECRET_KEY"
+        ]
+      },
+      "repro": {
+        "preconditions": [
+          "The app running locally: flask --app invoicer run --port 5057, with SECRET_KEY unset (as in the README).",
+          "Read the fallback key at invoicer/__init__.py:11 (not reproduced here)."
+        ],
+        "steps": [
+          "GET /invoices without a cookie: 401.",
+          "Sign {'user_id': 2} with the fallback key using Flask's SecureCookieSessionInterface().get_signing_serializer (the PoC file shows the one-liner) and export it as FORGED_SESSION.",
+          "GET /invoices with Cookie: session=$FORGED_SESSION."
+        ],
+        "safe_payload": {
+          "payload": "A session cookie for user_id 2 (bob), signed with the fallback key; read-only GET.",
+          "proof": "The response lists bob's invoices (INV-2002) without any login."
+        },
+        "expected_secure": "The app refuses to start without SECRET_KEY, so no known key ever signs sessions; the forged cookie is rejected (401).",
+        "actual_vulnerable": "200 with bob's invoices INV-2001 and INV-2002."
+      },
+      "poc": {
+        "file": "pocs/session-forgery.json",
+        "evidence": "evidence/session-forgery.json",
+        "result": "confirmed",
+        "reason": null,
+        "fixed_build_result": "not_confirmed"
+      },
+      "impact": "Complete authentication bypass on any deployment that forgot SECRET_KEY: read, create and import invoices as any user. Every \"authenticated\" finding below (F-4 to F-8, F-10, F-13) becomes reachable without an account.",
+      "fix": {
+        "change": "Remove the fallback: read SECRET_KEY from the environment and raise at start-up when it is missing. Rotate the key on any deployment that used the fallback (all sessions are invalidated).",
+        "safer_api": "app.config[\"SECRET_KEY\"] = os.environ[\"SECRET_KEY\"] (or a secrets manager); generate keys with secrets.token_hex(32)."
+      },
+      "regression_test": {
+        "framework": "pytest",
+        "file": "regression/test_security_regressions.py",
+        "name": "test_app_refuses_to_start_without_secret_key",
+        "sketch": "def test_app_refuses_to_start_without_secret_key(monkeypatch, tmp_path):\n    monkeypatch.delenv(\"SECRET_KEY\", raising=False)\n    monkeypatch.setenv(\"INVOICER_DB\", str(tmp_path / \"t.db\"))\n    with pytest.raises(RuntimeError):\n        create_app()",
+        "result": "fails_on_vulnerable_code",
+        "passes_after_fix": true,
+        "note": "Fails on the vulnerable code (regression/vulnerable_run.txt: 11 failed) and passes with the recommended fix applied (regression/fixed_run.txt: 13 passed, including the existing tests)."
+      },
+      "secret": {
+        "type": "generic_secret (Flask SECRET_KEY fallback)",
+        "fingerprint": "sha256:fb5ab5eb9b24d193",
+        "in_git_history": "unknown",
+        "rotate": true,
+        "note": "History not scanned: gitleaks is not installed and the example is not its own git repository. Treat the key as public: it is in the source."
+      },
+      "chains_with": [
+        "F-4",
+        "F-8",
+        "F-10"
+      ]
+    },
+    {
+      "id": "F-2",
+      "rank": 2,
+      "title": "pull_request_target workflow checks out and runs untrusted pull-request code with a write token",
+      "category": "supply_chain_ci",
+      "cwe": [
+        "CWE-829"
+      ],
+      "owasp": "A08:2025 Software or Data Integrity Failures",
+      "confidence": "traced",
+      "sources": [
+        "zizmor",
+        "semgrep",
+        "scan_pitfalls"
+      ],
+      "candidates": [
+        "CAND-001",
+        "CAND-003"
+      ],
+      "entry_point": "EP-14",
+      "exposure": "public",
+      "exposure_note": "Any GitHub user who can open a pull request.",
+      "cvss": {
+        "version": "4.0",
+        "vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:N/SC:L/SI:H/SA:N",
+        "score": 9.9,
+        "severity": "critical",
+        "rationale": "Code execution in the privileged job (VC/VI:H); the pull-requests: write token and persisted checkout credentials reach the repository (SI:H)."
+      },
+      "priority_score": 36,
+      "priority": "P0",
+      "locations": [
+        {
+          "file": ".github/workflows/ci.yml",
+          "line": 4,
+          "snippet": "pull_request_target:",
+          "role": "source",
+          "note": "runs in the base repository context, with secrets and a write token"
+        },
+        {
+          "file": ".github/workflows/ci.yml",
+          "line": 16,
+          "snippet": "ref: ${{ github.event.pull_request.head.sha }}",
+          "role": "transform",
+          "note": "checks out the PR author's code"
+        },
+        {
+          "file": ".github/workflows/ci.yml",
+          "line": 20,
+          "snippet": "- run: pip install -r requirements.txt pytest",
+          "role": "sink",
+          "note": "installs the PR's requirements (arbitrary packages)"
+        },
+        {
+          "file": ".github/workflows/ci.yml",
+          "line": 21,
+          "snippet": "- run: pytest -q",
+          "role": "sink",
+          "note": "runs the PR's conftest.py and tests"
+        },
+        {
+          "file": ".github/workflows/ci.yml",
+          "line": 12,
+          "snippet": "pull-requests: write",
+          "role": "config"
+        }
+      ],
+      "path": {
+        "summary": "Fork PR opened -> pull_request_target job starts with GITHUB_TOKEN (pull-requests: write) -> checkout of head.sha with persisted credentials -> pip install / pytest execute PR-controlled code in that job.",
+        "sanitisers_checked": [
+          "No environment with required reviewers",
+          "No label or author-association gate",
+          "actions/checkout keeps persist-credentials (zizmor artipacked)",
+          "permissions limited to contents: read, pull-requests: write"
+        ]
+      },
+      "repro": {
+        "preconditions": [
+          "The repository accepts pull requests from forks (any public repository does)."
+        ],
+        "steps": [
+          "From a fork, add a conftest.py that prints a marker, e.g. print(\"CANARY-7f2\") (and nothing else).",
+          "Open a pull request against the default branch.",
+          "Open the run of the ci workflow for that PR and look for the marker in the \"pytest -q\" step log."
+        ],
+        "safe_payload": {
+          "payload": "conftest.py containing print(\"CANARY-7f2\")",
+          "proof": "The marker appears in the privileged workflow run triggered by pull_request_target."
+        },
+        "expected_secure": "Untrusted PR code only runs in a pull_request workflow with a read-only token and no secrets.",
+        "actual_vulnerable": "PR code runs inside the pull_request_target job, which holds a pull-requests: write token."
+      },
+      "poc": {
+        "file": null,
+        "evidence": null,
+        "result": "not_run",
+        "reason": "Needs a GitHub repository and a fork PR; verification here was limited to the local app. Traced from the workflow file."
+      },
+      "impact": "A stranger can run code in CI with a token that can write to pull requests (and, through the persisted checkout credentials, whatever contents: allows), poison caches used by later trusted runs, and read any secrets added to this workflow later.",
+      "fix": {
+        "change": "Run tests on pull_request (no secrets, read-only token). If a comment is needed, post it from a separate workflow_run workflow that never checks out or executes PR code. Set persist-credentials: false on checkout.",
+        "safer_api": "on: pull_request; a follow-up on: workflow_run job for commenting; permissions: contents: read."
+      },
+      "regression_test": {
+        "framework": "zizmor",
+        "file": null,
+        "name": null,
+        "sketch": "zizmor --format sarif .github/workflows  # fail CI on dangerous-triggers / artipacked",
+        "result": "not_run",
+        "passes_after_fix": null,
+        "note": "A workflow change, not code: guard it by running zizmor (or the Semgrep rule pull-request-target-code-checkout) in CI."
+      },
+      "chains_with": [
+        "F-3",
+        "F-14"
+      ]
+    },
+    {
+      "id": "F-3",
+      "rank": 3,
+      "title": "Pull-request title is expanded into a shell script in the privileged workflow",
+      "category": "supply_chain_ci",
+      "cwe": [
+        "CWE-78"
+      ],
+      "owasp": "A05:2025 Injection",
+      "confidence": "traced",
+      "sources": [
+        "zizmor",
+        "semgrep",
+        "scan_pitfalls"
+      ],
+      "candidates": [
+        "CAND-005"
+      ],
+      "entry_point": "EP-14",
+      "exposure": "public",
+      "exposure_note": "Any GitHub user who can open a pull request.",
+      "cvss": {
+        "version": "4.0",
+        "vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:N/SC:L/SI:H/SA:N",
+        "score": 9.9,
+        "severity": "critical",
+        "rationale": "Same privileged job as F-2; the title alone is enough, with no code in the PR."
+      },
+      "priority_score": 36,
+      "priority": "P0",
+      "locations": [
+        {
+          "file": ".github/workflows/ci.yml",
+          "line": 4,
+          "snippet": "pull_request_target:",
+          "role": "source"
+        },
+        {
+          "file": ".github/workflows/ci.yml",
+          "line": 23,
+          "snippet": "run: echo \"Tests passed for ${{ github.event.pull_request.title }}\"",
+          "role": "sink",
+          "note": "the expression is substituted into the script before bash parses it"
+        }
+      ],
+      "path": {
+        "summary": "PR title (attacker-controlled) -> ${{ github.event.pull_request.title }} substituted into the run: script text -> bash executes it in the pull_request_target job.",
+        "sanitisers_checked": [
+          "No env: indirection",
+          "Quoting in the script does not help: the substitution happens before the shell parses"
+        ]
+      },
+      "repro": {
+        "preconditions": [
+          "The repository accepts pull requests from forks (any public repository does)."
+        ],
+        "steps": [
+          "Open a pull request whose title is: x\" && echo \"CANARY-3c1",
+          "Read the \"Summarise\" step log of the ci workflow run."
+        ],
+        "safe_payload": {
+          "payload": "x\" && echo \"CANARY-3c1",
+          "proof": "The log shows CANARY-3c1 on its own line, printed by the injected echo."
+        },
+        "expected_secure": "The title is printed literally, quotes and all.",
+        "actual_vulnerable": "The title closes the string and runs a second command."
+      },
+      "poc": {
+        "file": null,
+        "evidence": null,
+        "result": "not_run",
+        "reason": "Needs a GitHub repository; traced from the workflow file."
+      },
+      "impact": "Same as F-2, but needs no code change: a crafted PR title runs commands in the privileged job. Fixing F-2 alone does not fix this.",
+      "fix": {
+        "change": "Pass the value through the environment: env: TITLE: ${{ github.event.pull_request.title }}, then run: echo \"Tests passed for $TITLE\".",
+        "safer_api": "env: indirection for every github.event.* value used in run: scripts."
+      },
+      "regression_test": {
+        "framework": "zizmor",
+        "file": null,
+        "name": null,
+        "sketch": "zizmor --format sarif .github/workflows  # fail CI on template-injection",
+        "result": "not_run",
+        "passes_after_fix": null,
+        "note": "Guard with zizmor template-injection (or Semgrep run-shell-injection) in CI."
+      },
+      "chains_with": [
+        "F-2"
+      ]
+    },
+    {
+      "id": "F-4",
+      "rank": 4,
+      "title": "Report title is compiled as a Jinja template (server-side template injection)",
+      "category": "injection",
+      "cwe": [
+        "CWE-1336",
+        "CWE-94"
+      ],
+      "owasp": "A05:2025 Injection",
+      "confidence": "confirmed",
+      "sources": [
+        "semgrep",
+        "scan_pitfalls"
+      ],
+      "candidates": [
+        "CAND-017",
+        "CAND-018"
+      ],
+      "entry_point": "EP-11",
+      "exposure": "authenticated",
+      "cvss": {
+        "version": "4.0",
+        "vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+        "score": 8.7,
+        "severity": "high",
+        "rationale": "Jinja expressions in an unsandboxed environment lead to code execution as the app user."
+      },
+      "priority_score": 24,
+      "priority": "P1",
+      "locations": [
+        {
+          "file": "invoicer/invoices.py",
+          "line": 47,
+          "snippet": "title = request.args.get(\"title\", \"Invoice report\")",
+          "role": "source"
+        },
+        {
+          "file": "invoicer/invoices.py",
+          "line": 50,
+          "snippet": "\"<h1>\" + title + \"</h1>",
+          "role": "transform",
+          "note": "input concatenated into template source"
+        },
+        {
+          "file": "invoicer/invoices.py",
+          "line": 49,
+          "snippet": "return render_template_string(",
+          "role": "sink"
+        }
+      ],
+      "path": {
+        "summary": "GET /invoices/report?title=... -> concatenated into the template text -> render_template_string compiles and evaluates it.",
+        "sanitisers_checked": [
+          "Auto-escaping only escapes variables, not template source",
+          "No sandboxed environment",
+          "login_required (any account suffices)"
+        ]
+      },
+      "repro": {
+        "preconditions": [
+          "The app running locally: flask --app invoicer run --port 5057, with SECRET_KEY unset (as in the README).",
+          "POST /login with email=alice@example.test&password=alice-test-pw (seeded test account); keep the session cookie."
+        ],
+        "steps": [
+          "GET /invoices/report?title={{7*191}}"
+        ],
+        "safe_payload": {
+          "payload": "{{7*191}}",
+          "proof": "The page heading reads 1337, a value the server computed; the request never contains it."
+        },
+        "expected_secure": "<h1>{{7*191}}</h1> (escaped text).",
+        "actual_vulnerable": "<h1>1337</h1>."
+      },
+      "poc": {
+        "file": "pocs/ssti-report-title.json",
+        "evidence": "evidence/ssti-report-title.json",
+        "result": "confirmed",
+        "reason": null,
+        "fixed_build_result": "not_confirmed"
+      },
+      "impact": "Any signed-in user (or anyone, via F-1) can evaluate Jinja expressions on the server, which in an unsandboxed environment reaches Python objects and runs code as the app user: database, uploaded files, environment secrets.",
+      "fix": {
+        "change": "Render a fixed template and pass the title as a variable: render_template_string(\"<h1>{{ title }}</h1>...\", title=title, rows=rows), or move it to a template file.",
+        "safer_api": "render_template(\"report.html\", title=title, rows=rows)."
+      },
+      "regression_test": {
+        "framework": "pytest",
+        "file": "regression/test_security_regressions.py",
+        "name": "test_report_title_is_not_evaluated_as_a_template",
+        "sketch": "def test_report_title_is_not_evaluated_as_a_template(client, login):\n    login(*ALICE)\n    body = client.get(\"/invoices/report\", query_string={\"title\": \"{{7*191}}\"}).get_data(as_text=True)\n    assert \"1337\" not in body",
+        "result": "fails_on_vulnerable_code",
+        "passes_after_fix": true,
+        "note": "Fails on the vulnerable code (regression/vulnerable_run.txt: 11 failed) and passes with the recommended fix applied (regression/fixed_run.txt: 13 passed, including the existing tests)."
+      },
+      "chains_with": [
+        "F-1"
+      ]
+    },
+    {
+      "id": "F-5",
+      "rank": 5,
+      "title": "SQL injection in invoice search returns other users' invoices",
+      "category": "injection",
+      "cwe": [
+        "CWE-89"
+      ],
+      "owasp": "A05:2025 Injection",
+      "confidence": "confirmed",
+      "sources": [
+        "semgrep",
+        "bandit",
+        "scan_pitfalls"
+      ],
+      "candidates": [
+        "CAND-014"
+      ],
+      "entry_point": "EP-9",
+      "exposure": "authenticated",
+      "cvss": {
+        "version": "4.0",
+        "vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
+        "score": 7.1,
+        "severity": "high",
+        "rationale": "sqlite3 execute() runs one statement, so reads (UNION/boolean) but no stacked writes."
+      },
+      "priority_score": 24,
+      "priority": "P1",
+      "locations": [
+        {
+          "file": "invoicer/invoices.py",
+          "line": 28,
+          "snippet": "q = request.args.get(\"q\", \"\")",
+          "role": "source"
+        },
+        {
+          "file": "invoicer/invoices.py",
+          "line": 30,
+          "snippet": "AND customer LIKE '%{q}%'",
+          "role": "sink",
+          "note": "f-string builds the SQL text"
+        }
+      ],
+      "path": {
+        "summary": "GET /invoices/search?q=... -> interpolated into the f-string SQL -> sqlite3 execute.",
+        "sanitisers_checked": [
+          "No parameter binding for q",
+          "g.user_id is also interpolated, but comes from the session",
+          "sqlite3 rejects stacked statements (limits impact to reads)"
+        ]
+      },
+      "repro": {
+        "preconditions": [
+          "The app running locally: flask --app invoicer run --port 5057, with SECRET_KEY unset (as in the README).",
+          "POST /login with email=alice@example.test&password=alice-test-pw (seeded test account); keep the session cookie."
+        ],
+        "steps": [
+          "GET /invoices/search?q=' OR 1=1 --",
+          "GET /invoices/search?q=' OR 1=2 --"
+        ],
+        "safe_payload": {
+          "payload": "' OR 1=1 --  and  ' OR 1=2 --",
+          "proof": "INV-2001 (bob's) is returned only for the true condition."
+        },
+        "expected_secure": "Both return an empty list (no customer contains the text).",
+        "actual_vulnerable": "The true condition returns all four invoices, including bob's INV-2001 and INV-2002."
+      },
+      "poc": {
+        "file": "pocs/sqli-search.json",
+        "evidence": "evidence/sqli-search.json",
+        "result": "confirmed",
+        "reason": null,
+        "fixed_build_result": "not_confirmed"
+      },
+      "impact": "Any signed-in user can read every invoice, and with UNION SELECT the users table (emails and password hashes).",
+      "fix": {
+        "change": "Bind both values: execute(f\"SELECT {COLUMNS} FROM invoices WHERE owner_id = ? AND customer LIKE ?\", (g.user_id, f\"%{q}%\")).",
+        "safer_api": "sqlite3 parameters (?), or SQLAlchemy Core/ORM expressions."
+      },
+      "regression_test": {
+        "framework": "pytest",
+        "file": "regression/test_security_regressions.py",
+        "name": "test_search_cannot_widen_the_query",
+        "sketch": "def test_search_cannot_widen_the_query(client, login):\n    login(*ALICE)\n    numbers = [i[\"number\"] for i in client.get(\"/invoices/search\", query_string={\"q\": \"' OR 1=1 --\"}).get_json()]\n    assert \"INV-2001\" not in numbers",
+        "result": "fails_on_vulnerable_code",
+        "passes_after_fix": true,
+        "note": "Fails on the vulnerable code (regression/vulnerable_run.txt: 11 failed) and passes with the recommended fix applied (regression/fixed_run.txt: 13 passed, including the existing tests)."
+      },
+      "variants": [
+        "F-6"
+      ]
+    },
+    {
+      "id": "F-6",
+      "rank": 6,
+      "title": "Blind SQL injection through the invoice list sort parameter",
+      "category": "injection",
+      "cwe": [
+        "CWE-89"
+      ],
+      "owasp": "A05:2025 Injection",
+      "confidence": "confirmed",
+      "sources": [
+        "semgrep",
+        "bandit",
+        "scan_pitfalls",
+        "agent"
+      ],
+      "candidates": [
+        "CAND-013"
+      ],
+      "entry_point": "EP-8",
+      "exposure": "authenticated",
+      "cvss": {
+        "version": "4.0",
+        "vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
+        "score": 7.1,
+        "severity": "high",
+        "rationale": "Boolean-blind reads of any table, one bit per request."
+      },
+      "priority_score": 24,
+      "priority": "P1",
+      "locations": [
+        {
+          "file": "invoicer/invoices.py",
+          "line": 18,
+          "snippet": "sort = request.args.get(\"sort\", \"number\")",
+          "role": "source"
+        },
+        {
+          "file": "invoicer/invoices.py",
+          "line": 20,
+          "snippet": "ORDER BY {sort}",
+          "role": "sink",
+          "note": "identifier position: parameters cannot be used here, so it needs an allow-list"
+        }
+      ],
+      "path": {
+        "summary": "GET /invoices?sort=... -> interpolated after ORDER BY -> sqlite3 execute; the condition inside CASE decides the row order.",
+        "sanitisers_checked": [
+          "owner_id is bound (?), so rows stay alice's, but the expression can read other tables in subqueries",
+          "No allow-list of sortable columns"
+        ]
+      },
+      "repro": {
+        "preconditions": [
+          "The app running locally: flask --app invoicer run --port 5057, with SECRET_KEY unset (as in the README).",
+          "POST /login with email=alice@example.test&password=alice-test-pw (seeded test account); keep the session cookie."
+        ],
+        "steps": [
+          "GET /invoices?sort=CASE WHEN (1=1) THEN amount ELSE number END",
+          "GET /invoices?sort=CASE WHEN (1=2) THEN amount ELSE number END"
+        ],
+        "safe_payload": {
+          "payload": "CASE WHEN (1=1) THEN amount ELSE number END (and 1=2)",
+          "proof": "The true condition sorts by amount (INV-1002, 450.5, first); the false one by number."
+        },
+        "expected_secure": "400 for anything but a known column.",
+        "actual_vulnerable": "The order follows the injected condition."
+      },
+      "poc": {
+        "file": "pocs/sqli-sort.json",
+        "evidence": "evidence/sqli-sort.json",
+        "result": "confirmed",
+        "reason": null,
+        "fixed_build_result": "not_confirmed"
+      },
+      "impact": "Replacing 1=1 with a subquery condition (e.g. on users.password_hash) leaks any value bit by bit to a signed-in user.",
+      "fix": {
+        "change": "Allow-list the column: SORTABLE = {\"number\", \"customer\", \"amount\", \"status\"}; abort(400) for anything else.",
+        "safer_api": "A dict from public sort names to column names."
+      },
+      "regression_test": {
+        "framework": "pytest",
+        "file": "regression/test_security_regressions.py",
+        "name": "test_sort_accepts_only_known_columns",
+        "sketch": "def test_sort_accepts_only_known_columns(client, login):\n    login(*ALICE)\n    resp = client.get(\"/invoices\", query_string={\"sort\": \"CASE WHEN (1=1) THEN amount ELSE number END\"})\n    assert resp.status_code == 400",
+        "result": "fails_on_vulnerable_code",
+        "passes_after_fix": true,
+        "note": "Fails on the vulnerable code (regression/vulnerable_run.txt: 11 failed) and passes with the recommended fix applied (regression/fixed_run.txt: 13 passed, including the existing tests)."
+      },
+      "variant_of": "F-5"
+    },
+    {
+      "id": "F-7",
+      "rank": 7,
+      "title": "Any signed-in user can read any invoice by id (IDOR)",
+      "category": "access_control",
+      "cwe": [
+        "CWE-639"
+      ],
+      "owasp": "A01:2025 Broken Access Control",
+      "confidence": "confirmed",
+      "sources": [
+        "agent"
+      ],
+      "candidates": [],
+      "entry_point": "EP-10",
+      "exposure": "authenticated",
+      "cvss": {
+        "version": "4.0",
+        "vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
+        "score": 7.1,
+        "severity": "high",
+        "rationale": "Sequential integer ids make enumeration trivial."
+      },
+      "priority_score": 24,
+      "priority": "P1",
+      "locations": [
+        {
+          "file": "invoicer/invoices.py",
+          "line": 35,
+          "snippet": "@bp.get(\"/<int:invoice_id>\")",
+          "role": "source"
+        },
+        {
+          "file": "invoicer/invoices.py",
+          "line": 38,
+          "snippet": "FROM invoices WHERE id = ?\", (invoice_id,)",
+          "role": "sink",
+          "note": "no owner_id condition"
+        },
+        {
+          "file": "invoicer/invoices.py",
+          "line": 36,
+          "snippet": "@login_required",
+          "role": "guard_missing",
+          "note": "checks a session exists, not ownership"
+        }
+      ],
+      "path": {
+        "summary": "GET /invoices/<id> -> SELECT by id only -> returned to whoever asked.",
+        "sanitisers_checked": [
+          "login_required (authentication only)",
+          "list, search and report filter by owner_id; view does not",
+          "No policy layer elsewhere"
+        ]
+      },
+      "repro": {
+        "preconditions": [
+          "The app running locally: flask --app invoicer run --port 5057, with SECRET_KEY unset (as in the README).",
+          "POST /login with email=alice@example.test&password=alice-test-pw (seeded test account); keep the session cookie."
+        ],
+        "steps": [
+          "GET /invoices/3 (an id belonging to bob)."
+        ],
+        "safe_payload": {
+          "payload": "GET /invoices/3",
+          "proof": "bob's invoice INV-2001 is returned to alice."
+        },
+        "expected_secure": "404, as if the invoice did not exist.",
+        "actual_vulnerable": "200 with bob's invoice."
+      },
+      "poc": {
+        "file": "pocs/idor-invoice.json",
+        "evidence": "evidence/idor-invoice.json",
+        "result": "confirmed",
+        "reason": null,
+        "fixed_build_result": "not_confirmed"
+      },
+      "impact": "Every customer's invoices (customers, amounts, status) are readable by every other user by counting ids. No tool flagged this; it came from reviewing the ownership checks route by route.",
+      "fix": {
+        "change": "Filter by owner: WHERE id = ? AND owner_id = ?, (invoice_id, g.user_id), and return 404 when nothing matches.",
+        "safer_api": "One helper (get_owned_invoice) used by every invoice route, so ownership is checked in one place."
+      },
+      "regression_test": {
+        "framework": "pytest",
+        "file": "regression/test_security_regressions.py",
+        "name": "test_cannot_read_another_users_invoice",
+        "sketch": "def test_cannot_read_another_users_invoice(client, login):\n    login(*ALICE)\n    assert client.get(\"/invoices/3\").status_code == 404",
+        "result": "fails_on_vulnerable_code",
+        "passes_after_fix": true,
+        "note": "Fails on the vulnerable code (regression/vulnerable_run.txt: 11 failed) and passes with the recommended fix applied (regression/fixed_run.txt: 13 passed, including the existing tests)."
+      }
+    },
+    {
+      "id": "F-8",
+      "rank": 8,
+      "title": "Path traversal in attachment downloads reads any file the app can read",
+      "category": "server_side",
+      "cwe": [
+        "CWE-22"
+      ],
+      "owasp": "A01:2025 Broken Access Control",
+      "confidence": "confirmed",
+      "sources": [
+        "scan_pitfalls"
+      ],
+      "candidates": [
+        "CAND-009"
+      ],
+      "entry_point": "EP-3",
+      "exposure": "authenticated",
+      "cvss": {
+        "version": "4.0",
+        "vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
+        "score": 7.1,
+        "severity": "high",
+        "rationale": "Read-only, any file readable by the process."
+      },
+      "priority_score": 24,
+      "priority": "P1",
+      "locations": [
+        {
+          "file": "invoicer/attachments.py",
+          "line": 13,
+          "snippet": "name = request.args.get(\"name\", \"\")",
+          "role": "source"
+        },
+        {
+          "file": "invoicer/attachments.py",
+          "line": 14,
+          "snippet": "path = os.path.join(current_app.config[\"UPLOAD_DIR\"], name)",
+          "role": "transform",
+          "note": "../ is kept; an absolute name replaces the base"
+        },
+        {
+          "file": "invoicer/attachments.py",
+          "line": 17,
+          "snippet": "return send_file(path)",
+          "role": "sink"
+        }
+      ],
+      "path": {
+        "summary": "GET /attachments?name=../x -> os.path.join keeps ../ (and an absolute name discards UPLOAD_DIR) -> isfile -> send_file.",
+        "sanitisers_checked": [
+          "os.path.isfile only checks existence",
+          "No safe_join / send_from_directory",
+          "login_required (any account)"
+        ]
+      },
+      "repro": {
+        "preconditions": [
+          "The app running locally: flask --app invoicer run --port 5057, with SECRET_KEY unset (as in the README).",
+          "POST /login with email=alice@example.test&password=alice-test-pw (seeded test account); keep the session cookie."
+        ],
+        "steps": [
+          "GET /attachments?name=../requirements.txt"
+        ],
+        "safe_payload": {
+          "payload": "../requirements.txt",
+          "proof": "The app's own requirements.txt (PyYAML==6.0.1) is returned; a harmless file chosen on purpose."
+        },
+        "expected_secure": "404.",
+        "actual_vulnerable": "200 with the file."
+      },
+      "poc": {
+        "file": "pocs/traversal-attachments.json",
+        "evidence": "evidence/traversal-attachments.json",
+        "result": "confirmed",
+        "reason": null,
+        "fixed_build_result": "not_confirmed"
+      },
+      "impact": "Reads the SQLite database (instance/invoicer.db: all invoices and password hashes), the source, and the files the Werkzeug debugger PIN is derived from (see F-16).",
+      "fix": {
+        "change": "return send_from_directory(current_app.config[\"UPLOAD_DIR\"], name), which rejects ../ and absolute names. Upgrade Werkzeug with it: its safe_join has Windows device-name bugs (DEP-012, DEP-014 to DEP-016) that would then apply.",
+        "safer_api": "send_from_directory, or store uploads under opaque ids."
+      },
+      "regression_test": {
+        "framework": "pytest",
+        "file": "regression/test_security_regressions.py",
+        "name": "test_attachment_name_cannot_leave_uploads",
+        "sketch": "def test_attachment_name_cannot_leave_uploads(client, login):\n    login(*ALICE)\n    assert client.get(\"/attachments\", query_string={\"name\": \"../requirements.txt\"}).status_code == 404",
+        "result": "fails_on_vulnerable_code",
+        "passes_after_fix": true,
+        "note": "Fails on the vulnerable code (regression/vulnerable_run.txt: 11 failed) and passes with the recommended fix applied (regression/fixed_run.txt: 13 passed, including the existing tests)."
+      },
+      "chains_with": [
+        "F-16"
+      ]
+    },
+    {
+      "id": "F-9",
+      "rank": 9,
+      "title": "Open redirect after sign-in through the next parameter",
+      "category": "web",
+      "cwe": [
+        "CWE-601"
+      ],
+      "owasp": "A01:2025 Broken Access Control",
+      "confidence": "confirmed",
+      "sources": [
+        "scan_pitfalls"
+      ],
+      "candidates": [
+        "CAND-011"
+      ],
+      "entry_point": "EP-4",
+      "exposure": "public",
+      "cvss": {
+        "version": "4.0",
+        "vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:A/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
+        "score": 5.1,
+        "severity": "medium",
+        "rationale": "Needs the victim to use a crafted login link (UI:A); the harm is on the phishing site."
+      },
+      "priority_score": 24,
+      "priority": "P1",
+      "locations": [
+        {
+          "file": "invoicer/auth.py",
+          "line": 36,
+          "snippet": "return redirect(request.args.get(\"next\") or \"/invoices\")",
+          "role": "sink"
+        },
+        {
+          "file": "invoicer/auth.py",
+          "line": 26,
+          "snippet": "@bp.post(\"/login\")",
+          "role": "source"
+        }
+      ],
+      "path": {
+        "summary": "Login link with ?next=https://elsewhere -> after a successful login, redirect() to it unchanged.",
+        "sanitisers_checked": [
+          "No check that next is a relative path",
+          "Semgrep open-redirect rule missed it because of the \"or\" default"
+        ]
+      },
+      "repro": {
+        "preconditions": [
+          "The app running locally: flask --app invoicer run --port 5057, with SECRET_KEY unset (as in the README)."
+        ],
+        "steps": [
+          "POST /login?next=https%3A%2F%2Fcanary.example%2Fphish with valid credentials."
+        ],
+        "safe_payload": {
+          "payload": "next=https://canary.example/phish",
+          "proof": "Location: https://canary.example/phish (a reserved, non-routable domain)."
+        },
+        "expected_secure": "Location: /invoices.",
+        "actual_vulnerable": "Location: https://canary.example/phish."
+      },
+      "poc": {
+        "file": "pocs/open-redirect-login.json",
+        "evidence": "evidence/open-redirect-login.json",
+        "result": "confirmed",
+        "reason": null,
+        "fixed_build_result": "not_confirmed"
+      },
+      "impact": "Phishing: a genuine Invoicer login link lands the user on an attacker page right after they sign in, which is a convincing place to ask for the password again.",
+      "fix": {
+        "change": "Accept next only if it starts with a single \"/\" (not \"//\" or \"/\\\"); otherwise use /invoices.",
+        "safer_api": "url_has_allowed_host_and_scheme-style check, or an allow-list of internal paths."
+      },
+      "regression_test": {
+        "framework": "pytest",
+        "file": "regression/test_security_regressions.py",
+        "name": "test_login_ignores_an_external_next_url",
+        "sketch": "def test_login_ignores_an_external_next_url(client):\n    resp = client.post(\"/login?next=https://canary.example/\", data={\"email\": ALICE[0], \"password\": ALICE[1]})\n    assert resp.headers[\"Location\"].startswith(\"/\")",
+        "result": "fails_on_vulnerable_code",
+        "passes_after_fix": true,
+        "note": "Fails on the vulnerable code (regression/vulnerable_run.txt: 11 failed) and passes with the recommended fix applied (regression/fixed_run.txt: 13 passed, including the existing tests)."
+      }
+    },
+    {
+      "id": "F-10",
+      "rank": 10,
+      "title": "Invoice import parses YAML with the unsafe loader (code execution)",
+      "category": "language_specific",
+      "cwe": [
+        "CWE-502"
+      ],
+      "owasp": "A08:2025 Software or Data Integrity Failures",
+      "confidence": "traced",
+      "sources": [
+        "semgrep",
+        "bandit",
+        "scan_pitfalls"
+      ],
+      "candidates": [
+        "CAND-019"
+      ],
+      "entry_point": "EP-12",
+      "exposure": "authenticated",
+      "cvss": {
+        "version": "4.0",
+        "vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+        "score": 8.7,
+        "severity": "high",
+        "rationale": "yaml.Loader constructs arbitrary Python objects, including callables."
+      },
+      "priority_score": 18,
+      "priority": "P1",
+      "locations": [
+        {
+          "file": "invoicer/invoices.py",
+          "line": 58,
+          "snippet": "upload = request.files.get(\"file\")",
+          "role": "source"
+        },
+        {
+          "file": "invoicer/invoices.py",
+          "line": 61,
+          "snippet": "records = yaml.load(upload.read(), Loader=yaml.Loader)",
+          "role": "sink"
+        }
+      ],
+      "path": {
+        "summary": "POST /invoices/import (multipart file) -> yaml.load with yaml.Loader -> python/object/apply tags call arbitrary functions.",
+        "sanitisers_checked": [
+          "Loader=yaml.Loader is the unsafe loader in every PyYAML version",
+          "No schema validation before parsing"
+        ]
+      },
+      "repro": {
+        "preconditions": [
+          "The app running locally: flask --app invoicer run --port 5057, with SECRET_KEY unset (as in the README).",
+          "POST /login with email=alice@example.test&password=alice-test-pw (seeded test account); keep the session cookie."
+        ],
+        "steps": [
+          "Upload a YAML list whose number field uses a Python tag that calls a harmless builtin, in-process, as the regression test does."
+        ],
+        "safe_payload": {
+          "payload": "None sent to the running app: a proof needs a tag that calls a function, which the PoC safety rules forbid. The regression test uses builtins.str in-process instead.",
+          "proof": "In the test, the import returns 201 and stores a value built by calling str(), showing tags are honoured."
+        },
+        "expected_secure": "400: Python tags are rejected (safe_load).",
+        "actual_vulnerable": "201: the tag was executed."
+      },
+      "poc": {
+        "file": null,
+        "evidence": null,
+        "result": "not_run",
+        "reason": "Proving it against a running app needs a payload that calls a function, which the safety rules forbid. The in-process regression test shows the loader honours Python tags (201 instead of 400)."
+      },
+      "impact": "Any signed-in user (anyone, with F-1) can run code on the server by uploading a crafted YAML file, and can also do it via CSRF (F-17).",
+      "fix": {
+        "change": "yaml.safe_load, catch yaml.YAMLError (400), and check the result is a list of dicts with the expected keys.",
+        "safer_api": "yaml.safe_load, or JSON with a schema."
+      },
+      "regression_test": {
+        "framework": "pytest",
+        "file": "regression/test_security_regressions.py",
+        "name": "test_import_rejects_python_yaml_tags",
+        "sketch": "def test_import_rejects_python_yaml_tags(client, login):\n    login(*ALICE)\n    doc = b\"- number: !!python/object/apply:builtins.str [INV-9001]\\n  customer: Canary\\n  amount: 1\\n\"\n    resp = client.post(\"/invoices/import\", data={\"file\": (io.BytesIO(doc), \"x.yaml\")},\n                       content_type=\"multipart/form-data\")\n    assert resp.status_code == 400",
+        "result": "fails_on_vulnerable_code",
+        "passes_after_fix": true,
+        "note": "Fails on the vulnerable code (regression/vulnerable_run.txt: 11 failed) and passes with the recommended fix applied (regression/fixed_run.txt: 13 passed, including the existing tests). The test sends a Python tag that only calls str(), in-process on the test client, never to a running server."
+      },
+      "chains_with": [
+        "F-1",
+        "F-17"
+      ]
+    },
+    {
+      "id": "F-11",
+      "rank": 11,
+      "title": "Password reset tokens are short, non-cryptographic and never expire",
+      "category": "cryptography",
+      "cwe": [
+        "CWE-338",
+        "CWE-640"
+      ],
+      "owasp": "A07:2025 Authentication Failures",
+      "confidence": "possible",
+      "sources": [
+        "bandit",
+        "scan_pitfalls",
+        "agent"
+      ],
+      "candidates": [
+        "CAND-012"
+      ],
+      "entry_point": "EP-6",
+      "exposure": "public",
+      "cvss": {
+        "version": "4.0",
+        "vector": "CVSS:4.0/AV:N/AC:H/AT:P/PR:L/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
+        "score": 7.6,
+        "severity": "high",
+        "rationale": "Predicting the Mersenne Twister state needs many observed tokens (an account of the attacker's own, PR:L) and is hard from truncated outputs (AC:H)."
+      },
+      "priority_score": 18,
+      "priority": "P1",
+      "locations": [
+        {
+          "file": "invoicer/auth.py",
+          "line": 48,
+          "snippet": "token = \"\".join(random.choices(string.ascii_letters + string.digits, k=8))",
+          "role": "sink"
+        },
+        {
+          "file": "invoicer/auth.py",
+          "line": 50,
+          "snippet": "db.execute(\"UPDATE users SET reset_token = ? WHERE email = ?\", (token, email))",
+          "role": "transform",
+          "note": "stored with no expiry"
+        },
+        {
+          "file": "invoicer/auth.py",
+          "line": 61,
+          "snippet": "request.form.get(\"token\") != user[\"reset_token\"]",
+          "role": "guard_missing",
+          "note": "no attempt limit"
+        }
+      ],
+      "path": {
+        "summary": "POST /password-reset -> 8 characters from random (Mersenne Twister) -> stored without expiry -> POST /password-reset/confirm accepts it with unlimited attempts.",
+        "sanitisers_checked": [
+          "random is not a CSPRNG",
+          "about 47.6 bits of space; no expiry; no attempt limit"
+        ],
+        "gap": "Not shown: recovering the generator state from observed tokens. random.choices maps each 53-bit float to one of 62 characters, so known state-recovery attacks need many tokens and are not demonstrated here."
+      },
+      "repro": {
+        "preconditions": [
+          "The app running locally: flask --app invoicer run --port 5057, with SECRET_KEY unset (as in the README).",
+          "An account of the attacker's own, to receive reset tokens."
+        ],
+        "steps": [
+          "Request resets for your own account repeatedly and record the tokens.",
+          "Use them to model the generator, then request a reset for the victim and predict the token."
+        ],
+        "safe_payload": {
+          "payload": "None sent: prediction was not attempted.",
+          "proof": "The regression test shows the token is 8 characters (expected at least 32)."
+        },
+        "expected_secure": "A 256-bit secrets.token_urlsafe token that expires in minutes and is single use.",
+        "actual_vulnerable": "An 8-character random.choices token with no expiry."
+      },
+      "poc": {
+        "file": null,
+        "evidence": null,
+        "result": "not_run",
+        "reason": "Token prediction is not a canary-safe action and was not attempted."
+      },
+      "impact": "If the token can be predicted (or brute-forced, given unlimited attempts and no expiry), an attacker takes over any account by email address.",
+      "fix": {
+        "change": "token = secrets.token_urlsafe(32); store a hash of it with an expiry (15 minutes); delete it on use; compare with hmac.compare_digest; rate-limit confirm attempts.",
+        "safer_api": "secrets.token_urlsafe, hmac.compare_digest."
+      },
+      "regression_test": {
+        "framework": "pytest",
+        "file": "regression/test_security_regressions.py",
+        "name": "test_reset_token_is_long_enough",
+        "sketch": "def test_reset_token_is_long_enough(client):\n    client.post(\"/password-reset\", data={\"email\": ALICE[0]})\n    with client.application.app_context():\n        token = get_db().execute(\"SELECT reset_token FROM users WHERE id = 1\").fetchone()[0]\n    assert len(token) >= 32",
+        "result": "fails_on_vulnerable_code",
+        "passes_after_fix": true,
+        "note": "Fails on the vulnerable code (regression/vulnerable_run.txt: 11 failed) and passes with the recommended fix applied (regression/fixed_run.txt: 13 passed, including the existing tests)."
+      }
+    },
+    {
+      "id": "F-12",
+      "rank": 12,
+      "title": "Werkzeug 3.0.1 multipart parser can be made to exhaust memory (CVE-2024-49767)",
+      "category": "supply_chain_ci",
+      "cwe": [
+        "CWE-400",
+        "CWE-1395"
+      ],
+      "owasp": "A03:2025 Software Supply Chain Failures",
+      "confidence": "traced",
+      "sources": [
+        "pip-audit",
+        "agent"
+      ],
+      "candidates": [],
+      "entry_point": "EP-12",
+      "exposure": "authenticated",
+      "cvss": {
+        "version": "4.0",
+        "vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:N/VI:N/VA:H/SC:N/SI:N/SA:N",
+        "score": 7.1,
+        "severity": "high",
+        "rationale": "Availability only; any account can upload."
+      },
+      "priority_score": 18,
+      "priority": "P1",
+      "locations": [
+        {
+          "file": "requirements.txt",
+          "line": 2,
+          "snippet": "Werkzeug==3.0.1",
+          "role": "config",
+          "note": "fixed in 3.0.6"
+        },
+        {
+          "file": "invoicer/invoices.py",
+          "line": 58,
+          "snippet": "upload = request.files.get(\"file\")",
+          "role": "sink",
+          "note": "parses multipart/form-data, the vulnerable code path"
+        }
+      ],
+      "path": {
+        "summary": "POST /invoices/import with a crafted multipart body -> Werkzeug form parser bypasses max_form_memory_size.",
+        "sanitisers_checked": [
+          "MAX_CONTENT_LENGTH is not set",
+          "No request size limit in the repository (deployment limits unknown)"
+        ]
+      },
+      "repro": {
+        "preconditions": [
+          "The app running locally: flask --app invoicer run --port 5057, with SECRET_KEY unset (as in the README).",
+          "POST /login with email=alice@example.test&password=alice-test-pw (seeded test account); keep the session cookie."
+        ],
+        "steps": [
+          "Not run: the advisory's trigger is a resource-exhaustion payload, which the safety rules forbid."
+        ],
+        "safe_payload": {
+          "payload": "None sent.",
+          "proof": "Reachability from the code: request.files on an authenticated route."
+        },
+        "expected_secure": "Werkzeug >= 3.0.6 and MAX_CONTENT_LENGTH set.",
+        "actual_vulnerable": "Werkzeug 3.0.1, no size limits."
+      },
+      "poc": {
+        "file": null,
+        "evidence": null,
+        "result": "not_run",
+        "reason": "Denial-of-service payloads are never sent."
+      },
+      "impact": "A signed-in user can tie up memory on the server with one request, taking the app down for everyone.",
+      "fix": {
+        "change": "Upgrade Werkzeug to 3.1.9 or later (covers this and DEP-012 to DEP-016) and Flask with it; set MAX_CONTENT_LENGTH.",
+        "safer_api": "app.config[\"MAX_CONTENT_LENGTH\"] = 1 * 1024 * 1024."
+      },
+      "regression_test": {
+        "framework": "pip-audit",
+        "file": null,
+        "name": null,
+        "sketch": "pip-audit -r requirements.txt --strict  # in CI",
+        "result": "not_run",
+        "passes_after_fix": null,
+        "note": "A dependency version, not code: guard with pip-audit (or osv-scanner) in CI."
+      },
+      "dependency": {
+        "ids": [
+          "DEP-010"
+        ],
+        "package": "werkzeug",
+        "version": "3.0.1",
+        "fixed_in": [
+          "3.0.6"
+        ]
+      }
+    },
+    {
+      "id": "F-13",
+      "rank": 13,
+      "title": "Webhook test fetches any URL from the server and returns the response (SSRF)",
+      "category": "server_side",
+      "cwe": [
+        "CWE-918"
+      ],
+      "owasp": "A01:2025 Broken Access Control",
+      "confidence": "confirmed",
+      "sources": [
+        "semgrep",
+        "scan_pitfalls"
+      ],
+      "candidates": [
+        "CAND-020"
+      ],
+      "entry_point": "EP-13",
+      "exposure": "authenticated",
+      "cvss": {
+        "version": "4.0",
+        "vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:N/VI:N/VA:N/SC:H/SI:L/SA:N",
+        "score": 6.3,
+        "severity": "medium",
+        "rationale": "Reads internal services (SC:H); GET only (SI:L)."
+      },
+      "priority_score": 16,
+      "priority": "P2",
+      "locations": [
+        {
+          "file": "invoicer/webhooks.py",
+          "line": 12,
+          "snippet": "url = (request.get_json(silent=True) or {}).get(\"url\")",
+          "role": "source"
+        },
+        {
+          "file": "invoicer/webhooks.py",
+          "line": 13,
+          "snippet": "if not url or not url.startswith((\"http://\", \"https://\")):",
+          "role": "guard_missing",
+          "note": "checks the scheme only"
+        },
+        {
+          "file": "invoicer/webhooks.py",
+          "line": 15,
+          "snippet": "resp = requests.get(url, timeout=5)",
+          "role": "sink"
+        }
+      ],
+      "path": {
+        "summary": "POST /webhooks/test {\"url\": ...} -> scheme check only -> requests.get (follows redirects) -> first 500 characters returned.",
+        "sanitisers_checked": [
+          "Scheme check (http/https) does not restrict hosts",
+          "No private/loopback/link-local filtering",
+          "Redirects followed"
+        ]
+      },
+      "repro": {
+        "preconditions": [
+          "The app running locally: flask --app invoicer run --port 5057, with SECRET_KEY unset (as in the README).",
+          "POST /login with email=alice@example.test&password=alice-test-pw (seeded test account); keep the session cookie."
+        ],
+        "steps": [
+          "POST /webhooks/test with {\"url\": \"http://127.0.0.1:5057/healthz\"}"
+        ],
+        "safe_payload": {
+          "payload": "{\"url\": \"http://127.0.0.1:5057/healthz\"} (the app's own loopback health check)",
+          "proof": "The response body contains invoicer-ok, fetched by the server from a loopback-only URL."
+        },
+        "expected_secure": "400 for loopback, private and link-local destinations.",
+        "actual_vulnerable": "200 with the loopback response."
+      },
+      "poc": {
+        "file": "pocs/ssrf-webhook-test.json",
+        "evidence": "evidence/ssrf-webhook-test.json",
+        "result": "confirmed",
+        "reason": null,
+        "fixed_build_result": "not_confirmed"
+      },
+      "impact": "Reads services only the server can reach: admin ports, internal APIs and, in the cloud, the instance metadata service and its credentials (not tested: metadata addresses are never targeted).",
+      "fix": {
+        "change": "Resolve the host and reject non-global addresses (ipaddress.ip_address(a).is_global for every resolved address); disable redirects; do not return the body.",
+        "safer_api": "An egress allow-list or proxy for webhook delivery."
+      },
+      "regression_test": {
+        "framework": "pytest",
+        "file": "regression/test_security_regressions.py",
+        "name": "test_webhook_test_refuses_loopback_urls",
+        "sketch": "def test_webhook_test_refuses_loopback_urls(client, login, monkeypatch):\n    calls = []\n    monkeypatch.setattr(\n        \"invoicer.webhooks.requests.get\",\n        lambda url, **kw: calls.append(url) or SimpleNamespace(status_code=200, text=\"ok\"),\n    )\n    login(*ALICE)\n    resp = client.post(\"/webhooks/test\", json={\"url\": \"http://127.0.0.1/healthz\"})\n    assert resp.status_code == 400 and calls == []",
+        "result": "fails_on_vulnerable_code",
+        "passes_after_fix": true,
+        "note": "Fails on the vulnerable code (regression/vulnerable_run.txt: 11 failed) and passes with the recommended fix applied (regression/fixed_run.txt: 13 passed, including the existing tests)."
+      },
+      "chains_with": [
+        "F-15"
+      ]
+    },
+    {
+      "id": "F-14",
+      "rank": 14,
+      "title": "GitHub Actions pinned to mutable tags, including a third-party action that receives the token",
+      "category": "supply_chain_ci",
+      "cwe": [
+        "CWE-829",
+        "CWE-1357"
+      ],
+      "owasp": "A03:2025 Software Supply Chain Failures",
+      "confidence": "traced",
+      "sources": [
+        "zizmor",
+        "semgrep",
+        "scan_pitfalls"
+      ],
+      "candidates": [
+        "CAND-002",
+        "CAND-004",
+        "CAND-006"
+      ],
+      "entry_point": "EP-14",
+      "exposure": "restricted",
+      "exposure_note": "Needs control of the action's repository (a compromised maintainer or tag).",
+      "cvss": {
+        "version": "4.0",
+        "vector": "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:H/VI:H/VA:N/SC:L/SI:H/SA:N",
+        "score": 9.4,
+        "severity": "critical",
+        "rationale": "Requires an upstream compromise (AC:H, AT:P); then code runs with the token."
+      },
+      "priority_score": 12,
+      "priority": "P2",
+      "locations": [
+        {
+          "file": ".github/workflows/ci.yml",
+          "line": 24,
+          "snippet": "- uses: thollander/actions-comment-pull-request@v2",
+          "role": "sink",
+          "note": "third-party; receives GITHUB_TOKEN (line 27)"
+        },
+        {
+          "file": ".github/workflows/ci.yml",
+          "line": 14,
+          "snippet": "- uses: actions/checkout@v4",
+          "role": "config"
+        },
+        {
+          "file": ".github/workflows/ci.yml",
+          "line": 17,
+          "snippet": "- uses: actions/setup-python@v5",
+          "role": "config"
+        }
+      ],
+      "path": {
+        "summary": "A moved v2 tag on the third-party action -> the next workflow run executes the new code with GITHUB_TOKEN (pull-requests: write).",
+        "sanitisers_checked": [
+          "No SHA pinning",
+          "No Dependabot configuration for actions"
+        ]
+      },
+      "repro": {
+        "preconditions": [
+          "Control of the thollander/actions-comment-pull-request repository or its v2 tag."
+        ],
+        "steps": [
+          "Not reproducible without compromising a third party; traced from the workflow file."
+        ],
+        "safe_payload": {
+          "payload": "None.",
+          "proof": "The uses: lines reference tags, not commit SHAs."
+        },
+        "expected_secure": "uses: owner/action@<40-character SHA> # v2.x",
+        "actual_vulnerable": "uses: owner/action@v2"
+      },
+      "poc": {
+        "file": null,
+        "evidence": null,
+        "result": "not_run",
+        "reason": "Requires compromising a third-party repository."
+      },
+      "impact": "If the action or its tag is compromised (as happened to tj-actions/changed-files in 2025), its new code runs with this workflow's token.",
+      "fix": {
+        "change": "Pin every action to a full commit SHA with the version in a comment, and let Dependabot (package-ecosystem: github-actions) update them.",
+        "safer_api": "uses: actions/checkout@<sha> # v4.x"
+      },
+      "regression_test": {
+        "framework": "zizmor",
+        "file": null,
+        "name": null,
+        "sketch": "zizmor --format sarif .github/workflows  # fail CI on unpinned-uses",
+        "result": "not_run",
+        "passes_after_fix": null,
+        "note": "Guard with zizmor unpinned-uses in CI."
+      },
+      "chains_with": [
+        "F-2"
+      ]
+    },
+    {
+      "id": "F-15",
+      "rank": 15,
+      "title": "requests 2.31.0 can leak .netrc credentials to a host chosen through the SSRF endpoint (CVE-2024-47081)",
+      "category": "supply_chain_ci",
+      "cwe": [
+        "CWE-522",
+        "CWE-1395"
+      ],
+      "owasp": "A03:2025 Software Supply Chain Failures",
+      "confidence": "traced",
+      "sources": [
+        "pip-audit",
+        "agent"
+      ],
+      "candidates": [],
+      "entry_point": "EP-13",
+      "exposure": "authenticated",
+      "exposure_note": "Only matters on a server with a .netrc file.",
+      "cvss": {
+        "version": "4.0",
+        "vector": "CVSS:4.0/AV:N/AC:L/AT:P/PR:L/UI:N/VC:N/VI:N/VA:N/SC:H/SI:N/SA:N",
+        "score": 4.9,
+        "severity": "medium",
+        "rationale": "AT:P: needs a .netrc on the server; the credentials belong to other systems (SC:H)."
+      },
+      "priority_score": 12,
+      "priority": "P2",
+      "locations": [
+        {
+          "file": "requirements.txt",
+          "line": 4,
+          "snippet": "requests==2.31.0",
+          "role": "config",
+          "note": "fixed in 2.32.4"
+        },
+        {
+          "file": "invoicer/webhooks.py",
+          "line": 15,
+          "snippet": "resp = requests.get(url, timeout=5)",
+          "role": "sink",
+          "note": "attacker-chosen URL with default trust_env=True"
+        }
+      ],
+      "path": {
+        "summary": "Attacker-chosen URL (F-13) -> requests.get with trust_env -> a crafted URL makes requests send .netrc credentials for another host.",
+        "sanitisers_checked": [
+          "trust_env is left at its default (True)",
+          "Whether servers have a .netrc is unknown"
+        ]
+      },
+      "repro": {
+        "preconditions": [
+          "A server with a .netrc file."
+        ],
+        "steps": [
+          "Not run: it needs a .netrc on the target and an external receiving host; the URL parsing issue is described in GHSA-9hjg-9r4m-mvj7."
+        ],
+        "safe_payload": {
+          "payload": "None sent.",
+          "proof": "Reachability: requests.get with a request-supplied URL at webhooks.py:15."
+        },
+        "expected_secure": "requests >= 2.32.4 (or trust_env=False).",
+        "actual_vulnerable": "requests 2.31.0 with trust_env=True."
+      },
+      "poc": {
+        "file": null,
+        "evidence": null,
+        "result": "not_run",
+        "reason": "Needs an external host to receive the credentials, which the safety rules forbid."
+      },
+      "impact": "Credentials stored in the server's .netrc (package registries, internal services) can be sent to the attacker's host.",
+      "fix": {
+        "change": "Upgrade requests to 2.33.0 or later (also fixes DEP-008 and DEP-009); fixing F-13 removes the attacker-chosen URL.",
+        "safer_api": "A requests.Session with trust_env=False for outbound webhook calls."
+      },
+      "regression_test": {
+        "framework": "pip-audit",
+        "file": null,
+        "name": null,
+        "sketch": "pip-audit -r requirements.txt --strict  # in CI",
+        "result": "not_run",
+        "passes_after_fix": null,
+        "note": "A dependency version: guard with pip-audit in CI."
+      },
+      "dependency": {
+        "ids": [
+          "DEP-007"
+        ],
+        "package": "requests",
+        "version": "2.31.0",
+        "fixed_in": [
+          "2.32.4"
+        ]
+      },
+      "chains_with": [
+        "F-13"
+      ]
+    },
+    {
+      "id": "F-16",
+      "rank": 16,
+      "title": "run.py starts the Werkzeug debugger on all interfaces",
+      "category": "configuration",
+      "cwe": [
+        "CWE-489",
+        "CWE-668"
+      ],
+      "owasp": "A02:2025 Security Misconfiguration",
+      "confidence": "traced",
+      "sources": [
+        "semgrep",
+        "bandit",
+        "scan_pitfalls"
+      ],
+      "candidates": [
+        "CAND-021",
+        "CAND-022",
+        "CAND-023"
+      ],
+      "entry_point": null,
+      "exposure": "restricted",
+      "exposure_note": "Anyone on the same network as a developer who runs python run.py.",
+      "cvss": {
+        "version": "4.0",
+        "vector": "CVSS:4.0/AV:A/AC:H/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+        "score": 7.7,
+        "severity": "high",
+        "rationale": "Adjacent network (a developer machine); the debugger console is PIN-protected (AC:H) but the PIN is derivable with file reads such as F-8."
+      },
+      "priority_score": 9,
+      "priority": "P2",
+      "locations": [
+        {
+          "file": "run.py",
+          "line": 6,
+          "snippet": "app.run(host=\"0.0.0.0\", port=5000, debug=True)",
+          "role": "config"
+        }
+      ],
+      "path": {
+        "summary": "python run.py -> Werkzeug dev server with the interactive debugger, bound to 0.0.0.0 -> any error page offers a Python console after the PIN.",
+        "sanitisers_checked": [
+          "Debugger PIN (derivable from machine id, MAC and paths)",
+          "The README starts the app with flask run, without debug, so production use of run.py is not shown"
+        ]
+      },
+      "repro": {
+        "preconditions": [
+          "A developer runs python run.py on a shared network."
+        ],
+        "steps": [
+          "From another machine, open http://<developer-ip>:5000/console."
+        ],
+        "safe_payload": {
+          "payload": "GET /console (no console input)",
+          "proof": "The Werkzeug debugger PIN prompt is served to a remote address."
+        },
+        "expected_secure": "Debug off unless FLASK_DEBUG is set, and bound to 127.0.0.1.",
+        "actual_vulnerable": "Debugger on, on all interfaces."
+      },
+      "poc": {
+        "file": null,
+        "evidence": null,
+        "result": "not_run",
+        "reason": "The verification target was started with flask run (no debugger), as the README says; run.py was not started."
+      },
+      "impact": "Code execution on a developer machine for someone on the same network, if they get the PIN (made easier by F-8 file reads, and by CVE-2024-34069 in Werkzeug 3.0.1).",
+      "fix": {
+        "change": "app.run(host=\"127.0.0.1\", debug=os.environ.get(\"FLASK_DEBUG\") == \"1\"), or delete run.py and use flask run.",
+        "safer_api": "flask --app invoicer run (debug off by default)."
+      },
+      "regression_test": {
+        "framework": "semgrep",
+        "file": null,
+        "name": null,
+        "sketch": "semgrep --config p/flask  # avoid_app_run_with_bad_host, debug-enabled",
+        "result": "not_run",
+        "passes_after_fix": null,
+        "note": "Configuration: guard with the Semgrep Flask rules in CI."
+      },
+      "dependency": {
+        "ids": [
+          "DEP-011"
+        ],
+        "package": "werkzeug",
+        "version": "3.0.1",
+        "fixed_in": [
+          "3.0.3"
+        ]
+      },
+      "chains_with": [
+        "F-8"
+      ]
+    },
+    {
+      "id": "F-17",
+      "rank": 17,
+      "title": "No CSRF protection on cookie-authenticated form posts (including the YAML import)",
+      "category": "web",
+      "cwe": [
+        "CWE-352"
+      ],
+      "owasp": "A01:2025 Broken Access Control",
+      "confidence": "traced",
+      "sources": [
+        "agent"
+      ],
+      "candidates": [],
+      "entry_point": "EP-12",
+      "exposure": "public",
+      "exposure_note": "Any website a signed-in user visits.",
+      "cvss": {
+        "version": "4.0",
+        "vector": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:A/VC:N/VI:L/VA:N/SC:N/SI:N/SA:N",
+        "score": 2.1,
+        "severity": "low",
+        "rationale": "Rated for the direct effect (invoices created, sign-out). AT:P because browsers that default cookies to SameSite=Lax block it; the chain to F-10 is rated there."
+      },
+      "priority_score": 9,
+      "priority": "P2",
+      "locations": [
+        {
+          "file": "invoicer/invoices.py",
+          "line": 55,
+          "snippet": "@bp.post(\"/import\")",
+          "role": "sink",
+          "note": "multipart form post, no token"
+        },
+        {
+          "file": "invoicer/__init__.py",
+          "line": 10,
+          "snippet": "app = Flask(__name__)",
+          "role": "guard_missing",
+          "note": "no CSRF extension and no SameSite setting"
+        }
+      ],
+      "path": {
+        "summary": "Attacker page auto-submits a multipart form to /invoices/import -> the browser attaches the session cookie (where SameSite is not enforced) -> import runs as the victim.",
+        "sanitisers_checked": [
+          "No CSRF token (Flask-WTF/CSRFProtect absent)",
+          "SESSION_COOKIE_SAMESITE unset (Flask default None)",
+          "Chromium defaults unspecified SameSite to Lax; Safari and Firefox defaults differ"
+        ]
+      },
+      "repro": {
+        "preconditions": [
+          "The app running locally: flask --app invoicer run --port 5057, with SECRET_KEY unset (as in the README).",
+          "A victim signed in, using a browser that does not default to SameSite=Lax."
+        ],
+        "steps": [
+          "Host a page that auto-submits a multipart form with a harmless one-invoice YAML file to http://127.0.0.1:5057/invoices/import.",
+          "Have the victim open it."
+        ],
+        "safe_payload": {
+          "payload": "A one-row YAML file with customer CANARY-CSRF",
+          "proof": "A draft invoice for CANARY-CSRF appears in the victim's list."
+        },
+        "expected_secure": "400: missing CSRF token.",
+        "actual_vulnerable": "201: the invoice is imported."
+      },
+      "poc": {
+        "file": null,
+        "evidence": null,
+        "result": "not_run",
+        "reason": "Needs a browser and a second origin; run_poc sends requests directly and cannot show cross-site cookie behaviour."
+      },
+      "impact": "A malicious page can act as a signed-in victim: import invoices, sign them out and, combined with F-10, run code on the server through their session.",
+      "fix": {
+        "change": "Add CSRFProtect (Flask-WTF) for form posts and set SESSION_COOKIE_SAMESITE=\"Lax\" and SESSION_COOKIE_SECURE=True.",
+        "safer_api": "flask_wtf.csrf.CSRFProtect(app)."
+      },
+      "regression_test": {
+        "framework": "pytest",
+        "file": null,
+        "name": null,
+        "sketch": "def test_import_requires_csrf_token(client, login):\n    login(*ALICE)\n    resp = client.post(\"/invoices/import\", data={\"file\": (io.BytesIO(b\"[]\"), \"x.yaml\")},\n                       content_type=\"multipart/form-data\")\n    assert resp.status_code == 400",
+        "result": "not_run",
+        "passes_after_fix": null,
+        "note": "Not run: the expected status depends on the CSRF library chosen, and the test client must enable CSRF (WTF_CSRF_ENABLED=True) for it to apply."
+      },
+      "chains_with": [
+        "F-10"
+      ]
+    },
+    {
+      "id": "F-18",
+      "rank": 18,
+      "title": "Sign-in logs the submitted password",
+      "category": "data_exposure",
+      "cwe": [
+        "CWE-532"
+      ],
+      "owasp": "A09:2025 Security Logging and Alerting Failures",
+      "confidence": "traced",
+      "sources": [
+        "semgrep",
+        "scan_pitfalls"
+      ],
+      "candidates": [
+        "CAND-010"
+      ],
+      "entry_point": "EP-4",
+      "exposure": "restricted",
+      "exposure_note": "Readable by whoever can read the logs.",
+      "cvss": {
+        "version": "4.0",
+        "vector": "CVSS:4.0/AV:L/AC:L/AT:P/PR:H/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
+        "score": 5.6,
+        "severity": "medium",
+        "rationale": "AT:P: only written when the invoicer.auth logger is at INFO (the root default is WARNING); then every password, including wrong ones, is in plain text."
+      },
+      "priority_score": 6,
+      "priority": "P3",
+      "locations": [
+        {
+          "file": "invoicer/auth.py",
+          "line": 29,
+          "snippet": "password = request.form.get(\"password\", \"\")",
+          "role": "source"
+        },
+        {
+          "file": "invoicer/auth.py",
+          "line": 30,
+          "snippet": "log.info(\"login attempt email=%s password=%s\", email, password)",
+          "role": "sink"
+        }
+      ],
+      "path": {
+        "summary": "POST /login -> password read from the form -> log.info writes it before it is checked.",
+        "sanitisers_checked": [
+          "No log filter or redaction",
+          "Logger level not configured in the repository (INFO in many deployments)"
+        ]
+      },
+      "repro": {
+        "preconditions": [
+          "Logging at INFO for invoicer.auth."
+        ],
+        "steps": [
+          "Sign in (with any password) and read the application log."
+        ],
+        "safe_payload": {
+          "payload": "A normal login with the test account",
+          "proof": "The regression test captures the log line containing the password."
+        },
+        "expected_secure": "login attempt email=alice@example.test",
+        "actual_vulnerable": "login attempt email=alice@example.test password=alice-test-pw"
+      },
+      "poc": {
+        "file": null,
+        "evidence": null,
+        "result": "not_run",
+        "reason": "The local instance logs at WARNING, so nothing is written; shown in-process by the regression test with INFO capture."
+      },
+      "impact": "Anyone with log access (operators, log pipelines, a log-reading bug) gets users' passwords, which are often reused elsewhere.",
+      "fix": {
+        "change": "Log the attempt without the password: log.info(\"login attempt email=%s\", email). Add a redacting logging.Filter as a backstop.",
+        "safer_api": "Structured logging with an allow-list of fields."
+      },
+      "regression_test": {
+        "framework": "pytest",
+        "file": "regression/test_security_regressions.py",
+        "name": "test_login_does_not_log_the_password",
+        "sketch": "def test_login_does_not_log_the_password(client, caplog):\n    caplog.set_level(\"INFO\")\n    client.post(\"/login\", data={\"email\": ALICE[0], \"password\": ALICE[1]})\n    assert ALICE[1] not in caplog.text",
+        "result": "fails_on_vulnerable_code",
+        "passes_after_fix": true,
+        "note": "Fails on the vulnerable code (regression/vulnerable_run.txt: 11 failed) and passes with the recommended fix applied (regression/fixed_run.txt: 13 passed, including the existing tests)."
+      }
+    }
+  ],
+  "dependencies": [
+    {
+      "id": "DEP-001",
+      "ecosystem": "PyPI",
+      "package": "flask",
+      "version": "3.0.3",
+      "advisory": "PYSEC-2026-2151",
+      "aliases": [
+        "CVE-2026-27205",
+        "GHSA-68rp-wp8r-4726"
+      ],
+      "fixed_in": [
+        "3.1.3"
+      ],
+      "summary": "When the `session` object is accessed, Flask should set the `Vary: Cookie` header. This instructs caches not to cache the response, as it may contain information specific to a logged in user. This is ",
+      "reachable": "no",
+      "basis": "Needs session access by key only (e.g. \"in\") without reading values; the app reads values (session.get at invoicer/auth.py:18, session[\"user_id\"] at :20), which sets Vary: Cookie.",
+      "finding": null
+    },
+    {
+      "id": "DEP-002",
+      "ecosystem": "PyPI",
+      "package": "jinja2",
+      "version": "3.1.2",
+      "advisory": "PYSEC-2026-1471",
+      "aliases": [
+        "CVE-2025-27516",
+        "GHSA-cpwx-vrp4-4pq7"
+      ],
+      "fixed_in": [
+        "3.1.6"
+      ],
+      "summary": "An oversight in how the Jinja sandboxed environment interacts with the `|attr` filter allows an attacker that controls the content of a template to execute arbitrary Python code. To exploit the vulner",
+      "reachable": "no",
+      "basis": "Jinja sandbox escape via |attr; the app never uses SandboxedEnvironment. (F-4 is unsandboxed template injection, which is worse.)",
+      "finding": null
+    },
+    {
+      "id": "DEP-003",
+      "ecosystem": "PyPI",
+      "package": "jinja2",
+      "version": "3.1.2",
+      "advisory": "PYSEC-2026-1472",
+      "aliases": [
+        "CVE-2024-56201",
+        "GHSA-gmj6-6f8f-6699"
+      ],
+      "fixed_in": [
+        "3.1.5"
+      ],
+      "summary": "A bug in the Jinja compiler allows an attacker that controls both the content and filename of a template to execute arbitrary Python code, regardless of if Jinja's sandbox is used. To exploit the vuln",
+      "reachable": "no",
+      "basis": "Needs control of both template content and filename; render_template_string has no filename, and template files are not user-supplied.",
+      "finding": null
+    },
+    {
+      "id": "DEP-004",
+      "ecosystem": "PyPI",
+      "package": "jinja2",
+      "version": "3.1.2",
+      "advisory": "PYSEC-2026-1473",
+      "aliases": [
+        "CVE-2024-22195",
+        "GHSA-h5c8-rqwp-cp95"
+      ],
+      "fixed_in": [
+        "3.1.3"
+      ],
+      "summary": "The `xmlattr` filter in affected versions of Jinja accepts keys containing spaces. XML/HTML attributes cannot contain spaces, as each would then be interpreted as a separate attribute. If an applicati",
+      "reachable": "no",
+      "basis": "xmlattr filter with user-controlled keys; no template uses xmlattr (searched the repository).",
+      "finding": null
+    },
+    {
+      "id": "DEP-005",
+      "ecosystem": "PyPI",
+      "package": "jinja2",
+      "version": "3.1.2",
+      "advisory": "PYSEC-2026-1474",
+      "aliases": [
+        "CVE-2024-34064",
+        "GHSA-h75v-3vvj-5mfj"
+      ],
+      "fixed_in": [
+        "3.1.4"
+      ],
+      "summary": "The `xmlattr` filter in affected versions of Jinja accepts keys containing non-attribute characters. XML/HTML attributes cannot contain spaces, `/`, `>`, or `=`, as each would then be interpreted as s",
+      "reachable": "no",
+      "basis": "xmlattr filter with user-controlled keys; no template uses xmlattr (searched the repository).",
+      "finding": null
+    },
+    {
+      "id": "DEP-006",
+      "ecosystem": "PyPI",
+      "package": "jinja2",
+      "version": "3.1.2",
+      "advisory": "PYSEC-2026-1475",
+      "aliases": [
+        "CVE-2024-56326",
+        "GHSA-q2x7-8rv6-6q7h"
+      ],
+      "fixed_in": [
+        "3.1.5"
+      ],
+      "summary": "An oversight in how the Jinja sandboxed environment detects calls to `str.format` allows an attacker that controls the content of a template to execute arbitrary Python code. To exploit the vulnerabil",
+      "reachable": "no",
+      "basis": "Sandbox escape via str.format; the app never uses SandboxedEnvironment.",
+      "finding": null
+    },
+    {
+      "id": "DEP-007",
+      "ecosystem": "PyPI",
+      "package": "requests",
+      "version": "2.31.0",
+      "advisory": "PYSEC-2026-1872",
+      "aliases": [
+        "CVE-2024-47081",
+        "GHSA-9hjg-9r4m-mvj7"
+      ],
+      "fixed_in": [
+        "2.32.4"
+      ],
+      "summary": "### Impact Due to a URL parsing issue, Requests releases prior to 2.32.4 may leak .netrc credentials to third parties for specific maliciously-crafted URLs. ### Workarounds For older versions of Reque",
+      "reachable": "conditional",
+      "basis": "requests.get on an attacker-chosen URL at invoicer/webhooks.py:15 with trust_env=True; leaks only if the server has a .netrc.",
+      "finding": "F-15"
+    },
+    {
+      "id": "DEP-008",
+      "ecosystem": "PyPI",
+      "package": "requests",
+      "version": "2.31.0",
+      "advisory": "PYSEC-2026-1873",
+      "aliases": [
+        "CVE-2024-35195",
+        "GHSA-9wx4-h78v-vm56"
+      ],
+      "fixed_in": [
+        "2.32.0"
+      ],
+      "summary": "When using a `requests.Session`, if the first request to a given origin is made with `verify=False`, TLS certificate verification may remain disabled for all subsequent requests to that origin, even i",
+      "reachable": "no",
+      "basis": "Needs a requests.Session whose first request uses verify=False; the app uses requests.get without verify=False.",
+      "finding": null
+    },
+    {
+      "id": "DEP-009",
+      "ecosystem": "PyPI",
+      "package": "requests",
+      "version": "2.31.0",
+      "advisory": "PYSEC-2026-2275",
+      "aliases": [
+        "CVE-2026-25645",
+        "GHSA-gc5v-m9x4-r6x2"
+      ],
+      "fixed_in": [
+        "2.33.0"
+      ],
+      "summary": "### Impact The `requests.utils.extract_zipped_paths()` utility function uses a predictable filename when extracting files from zip archives into the system temporary directory. If the target file alre",
+      "reachable": "no",
+      "basis": "Only affects direct calls to requests.utils.extract_zipped_paths(); the app makes none.",
+      "finding": null
+    },
+    {
+      "id": "DEP-010",
+      "ecosystem": "PyPI",
+      "package": "werkzeug",
+      "version": "3.0.1",
+      "advisory": "PYSEC-2026-1860",
+      "aliases": [
+        "CVE-2024-49767",
+        "GHSA-q34m-jh98-gwm2",
+        "PYSEC-2026-3417"
+      ],
+      "fixed_in": [
+        "3.0.6"
+      ],
+      "summary": "Applications using Werkzeug to parse `multipart/form-data` requests are vulnerable to resource exhaustion. A specially crafted form body can bypass the `Request.max_form_memory_size` setting. The `Req",
+      "reachable": "yes",
+      "basis": "request.files at invoicer/invoices.py:58 parses multipart/form-data on an authenticated route.",
+      "finding": "F-12"
+    },
+    {
+      "id": "DEP-011",
+      "ecosystem": "PyPI",
+      "package": "werkzeug",
+      "version": "3.0.1",
+      "advisory": "PYSEC-2026-2043",
+      "aliases": [
+        "CVE-2024-34069",
+        "GHSA-2g68-c3qc-8985"
+      ],
+      "fixed_in": [
+        "3.0.3"
+      ],
+      "summary": "The debugger in affected versions of Werkzeug can allow an attacker to execute code on a developer's machine under some circumstances. This requires the attacker to get the developer to interact with ",
+      "reachable": "conditional",
+      "basis": "Only when the debugger is enabled, which run.py:6 does.",
+      "finding": "F-16"
+    },
+    {
+      "id": "DEP-012",
+      "ecosystem": "PyPI",
+      "package": "werkzeug",
+      "version": "3.0.1",
+      "advisory": "PYSEC-2026-2044",
+      "aliases": [
+        "CVE-2026-21860",
+        "GHSA-87hc-h4r5-73f7"
+      ],
+      "fixed_in": [
+        "3.1.5"
+      ],
+      "summary": "Werkzeug's `safe_join` function allows path segments with Windows device names that have file extensions or trailing spaces. On Windows, there are special device names such as `CON`, `AUX`, etc that a",
+      "reachable": "no",
+      "basis": "The app never calls safe_join or send_from_directory (attachments.py uses os.path.join + send_file) and is not served on Windows here. The F-8 fix introduces send_from_directory, so upgrade Werkzeug to 3.1.9+ with it.",
+      "finding": null
+    },
+    {
+      "id": "DEP-013",
+      "ecosystem": "PyPI",
+      "package": "werkzeug",
+      "version": "3.0.1",
+      "advisory": "PYSEC-2026-2045",
+      "aliases": [
+        "CVE-2024-49766",
+        "GHSA-f9vj-2wh5-fj8j"
+      ],
+      "fixed_in": [
+        "3.0.6"
+      ],
+      "summary": "On Python < 3.11 on Windows, `os.path.isabs()` does not catch UNC paths like `//server/share`. Werkzeug's `safe_join()` relies on this check, and so can produce a path that is not safe, potentially al",
+      "reachable": "no",
+      "basis": "Python < 3.11 on Windows only, and only through safe_join, which the app does not call.",
+      "finding": null
+    },
+    {
+      "id": "DEP-014",
+      "ecosystem": "PyPI",
+      "package": "werkzeug",
+      "version": "3.0.1",
+      "advisory": "PYSEC-2026-2046",
+      "aliases": [
+        "CVE-2025-66221",
+        "GHSA-hgf8-39gv-g3f2"
+      ],
+      "fixed_in": [
+        "3.1.4"
+      ],
+      "summary": "Werkzeug's `safe_join` function allows path segments with Windows device names. On Windows, there are special device names such as `CON`, `AUX`, etc that are implicitly present and readable in every d",
+      "reachable": "no",
+      "basis": "The app never calls safe_join or send_from_directory (attachments.py uses os.path.join + send_file) and is not served on Windows here. The F-8 fix introduces send_from_directory, so upgrade Werkzeug to 3.1.9+ with it.",
+      "finding": null
+    },
+    {
+      "id": "DEP-015",
+      "ecosystem": "PyPI",
+      "package": "werkzeug",
+      "version": "3.0.1",
+      "advisory": "PYSEC-2026-2320",
+      "aliases": [
+        "CVE-2026-27199",
+        "GHSA-29vq-49wr-vm6x"
+      ],
+      "fixed_in": [
+        "3.1.6"
+      ],
+      "summary": "Werkzeug's `safe_join` function allows Windows device names as filenames if when preceded by other path segments. This was previously reported as https://github.com/pallets/werkzeug/security/advisorie",
+      "reachable": "no",
+      "basis": "The app never calls safe_join or send_from_directory (attachments.py uses os.path.join + send_file) and is not served on Windows here. The F-8 fix introduces send_from_directory, so upgrade Werkzeug to 3.1.9+ with it.",
+      "finding": null
+    },
+    {
+      "id": "DEP-016",
+      "ecosystem": "PyPI",
+      "package": "werkzeug",
+      "version": "3.0.1",
+      "advisory": "PYSEC-2026-4312",
+      "aliases": [
+        "CVE-2026-102598",
+        "GHSA-g6x2-hccm-hh4m"
+      ],
+      "fixed_in": [
+        "3.1.9"
+      ],
+      "summary": "Werkzeug's `safe_join` function allows Windows device names as filenames when they have an empty ADS marker on NTFS. This was previously reported as https://github.com/pallets/werkzeug/security/adviso",
+      "reachable": "no",
+      "basis": "The app never calls safe_join or send_from_directory (attachments.py uses os.path.join + send_file) and is not served on Windows here. The F-8 fix introduces send_from_directory, so upgrade Werkzeug to 3.1.9+ with it.",
+      "finding": null
+    }
+  ],
+  "variant_rules": [
+    {
+      "id": "R-1",
+      "for_findings": [
+        "F-5",
+        "F-6"
+      ],
+      "engine": "semgrep",
+      "file": "rules/sql-text-from-request.yaml",
+      "rule": "rules:\n  - id: sql-text-from-request\n    message: >-\n      SQL text is built from request data. Pass values as bound parameters, and take\n      identifiers (ORDER BY columns) from an allow-list.\n    severity: ERROR\n    languages: [python]\n    metadata:\n      cwe: \"CWE-89: Improper Neutralization of Special Elements used in an SQL Command\"\n      written_for: invoicer security audit (variant analysis of F-2)\n    mode: taint\n    pattern-sources:\n      - pattern: flask.request.$PART.get(...)\n      - pattern: flask.request.$PART[...]\n    pattern-sinks:\n      - patterns:\n          - pattern: $DB.execute($QUERY, ...)\n          - focus-metavariable: $QUERY\n    pattern-sanitizers:\n      - pattern: int(...)\n      - patterns:  # an allow-list check that rejects anything else\n          - pattern-inside: |\n              if $V not in $ALLOWED:\n                  ...\n              ...\n          - pattern: $V\n",
+      "matches": [
+        "invoicer/invoices.py:20",
+        "invoicer/invoices.py:30"
+      ],
+      "tested": true,
+      "test_note": "Run with Semgrep 1.184.0: matches invoices.py:20 (F-6) and :30 (F-5) and nothing else, including not the COLUMNS-only queries at :38 and :48; no matches on the fixed copy (allow-listed sort, bound LIKE)."
+    },
+    {
+      "id": "R-2",
+      "for_findings": [
+        "F-4"
+      ],
+      "engine": "semgrep",
+      "file": "rules/template-text-from-request.yaml",
+      "rule": "rules:\n  - id: template-text-from-request\n    message: >-\n      Template source is built from request data, so Jinja evaluates it (SSTI). Render a fixed\n      template and pass the value as a variable.\n    severity: ERROR\n    languages: [python]\n    metadata:\n      cwe: \"CWE-1336: Improper Neutralization of Special Elements Used in a Template Engine\"\n      written_for: invoicer security audit (variant analysis of F-1)\n    mode: taint\n    pattern-sources:\n      - pattern: flask.request.$PART.get(...)\n      - pattern: flask.request.$PART[...]\n    pattern-sinks:\n      - patterns:\n          - pattern-either:\n              - pattern: flask.render_template_string($SRC, ...)\n              - pattern: jinja2.Template($SRC, ...)\n              - pattern: $ENV.from_string($SRC, ...)\n          - focus-metavariable: $SRC\n",
+      "matches": [
+        "invoicer/invoices.py:50"
+      ],
+      "tested": true,
+      "test_note": "Run with Semgrep 1.184.0: matches invoices.py:50 (F-4) only; no matches on the fixed copy."
+    }
+  ],
+  "observations": [
+    {
+      "id": "O-1",
+      "title": "No rate limiting or lockout on sign-in and reset confirmation",
+      "cwe": [
+        "CWE-307"
+      ],
+      "file": "invoicer/auth.py",
+      "line": 26,
+      "note": "Unlimited password guesses and reset-token guesses (makes F-11 worse). Add per-account and per-IP limits (e.g. Flask-Limiter)."
+    },
+    {
+      "id": "O-2",
+      "title": "Reset token compared with != rather than in constant time",
+      "cwe": [
+        "CWE-208"
+      ],
+      "file": "invoicer/auth.py",
+      "line": 61,
+      "note": "Low practical impact over a network; use hmac.compare_digest when fixing F-11."
+    },
+    {
+      "id": "O-3",
+      "title": "Session cookie flags left at Flask defaults",
+      "cwe": [
+        "CWE-614",
+        "CWE-1275"
+      ],
+      "file": "invoicer/__init__.py",
+      "line": 10,
+      "note": "SESSION_COOKIE_SECURE is False and SESSION_COOKIE_SAMESITE unset. Set Secure and SameSite=Lax (also mitigates F-17). The edge proxy may set these; not visible in the repository."
+    }
+  ],
+  "coverage": {
+    "languages_reviewed": [
+      "Python",
+      "GitHub Actions YAML"
+    ],
+    "files_in_scope": 9,
+    "files_read": 9,
+    "entry_points_total": 14,
+    "entry_points_reviewed": 14,
+    "areas_deep_reviewed": [
+      "access_control",
+      "authentication",
+      "business_logic",
+      "injection",
+      "server_side",
+      "cryptography",
+      "data_exposure",
+      "supply_chain_ci",
+      "configuration"
+    ],
+    "not_reviewed": [
+      {
+        "area": "git history (secrets)",
+        "reason": "gitleaks is not installed and the example is not its own git repository, so history was not scanned; the key in F-1 has in_git_history unknown."
+      },
+      {
+        "area": "deployment and infrastructure",
+        "reason": "No Dockerfile, IaC or proxy configuration in the repository; TLS, request size limits and cookie flags set at the edge are unknown."
+      },
+      {
+        "area": "transitive dependencies outside requirements.txt resolution",
+        "reason": "osv-scanner and Trivy are not installed; pip-audit resolved requirements.txt only."
+      }
+    ]
+  },
+  "limitations": [
+    "gitleaks, osv-scanner and Trivy were not installed (not_run): secrets were scanned in the working tree only with scan_secrets.py, and dependencies only through pip-audit.",
+    "Verification ran against a local instance with seeded test accounts; behaviour behind a real proxy (size limits, cookie flags) may differ.",
+    "F-10, F-11, F-12 and F-15 were not confirmed: proving them would need a code-execution payload, token prediction, a denial-of-service payload or an external receiving host, all forbidden by the safety rules.",
+    "The CI findings (F-2, F-3, F-14) are traced from the workflow file; they were not exercised on GitHub.",
+    "CVSS vectors use base metrics only; no threat or environmental metrics.",
+    "Recon found routes by pattern; all six modules were read to confirm there are no others."
+  ],
+  "files_written": [
+    "<scratch>/scanrun/ (raw tool outputs, copied to run/)",
+    "<scratch>/secrun/evidence/ (copied to evidence/)",
+    "<scratch>/invoicer_fixed/ (fixed copy used to check the PoCs and regression tests)",
+    "pocs/",
+    "evidence/",
+    "regression/",
+    "rules/",
+    "run/",
+    "security_audit.example.json"
+  ],
+  "summary": {
+    "headline": "18 findings in Invoicer: 3 P0 (session forgery with the hard-coded key, and two ways for a pull request to run code in the privileged CI job), 9 P1. 8 findings confirmed against a local instance with canary PoCs. Not covered: git history and dependencies beyond requirements.txt.",
+    "counts": {
+      "findings": 18,
+      "by_priority": {
+        "P0": 3,
+        "P1": 9,
+        "P2": 5,
+        "P3": 1
+      },
+      "by_severity": {
+        "critical": 4,
+        "high": 9,
+        "medium": 4,
+        "low": 1
+      },
+      "by_confidence": {
+        "confirmed": 8,
+        "traced": 9,
+        "possible": 1
+      },
+      "candidates": 24,
+      "dismissed": 4,
+      "dependencies_reachable": 3,
+      "observations": 3
+    }
+  }
+}

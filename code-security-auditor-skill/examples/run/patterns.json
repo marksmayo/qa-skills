@@ -1,0 +1,269 @@
+{
+  "tool": "scan_pitfalls",
+  "status": "ran",
+  "generated_at": "2026-11-10T04:22:26Z",
+  "repository": "invoicer_scan",
+  "files_scanned": {
+    "python": 7,
+    "github_actions": 1
+  },
+  "catalogue_version": "1.0.0",
+  "note": "Candidates are pattern-level leads, not findings. Trace a source-to-sink path or dismiss each one.",
+  "candidates": [
+    {
+      "pitfall_id": "GHA-PR-TARGET-CHECKOUT",
+      "cwe": [
+        "CWE-829"
+      ],
+      "file": ".github/workflows/ci.yml",
+      "line": 16,
+      "column": 11,
+      "snippet": "ref: ${{ github.event.pull_request.head.sha }}",
+      "message": "pull_request_target checks out and runs untrusted PR code",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "GHA-PR-TARGET-CHECKOUT"
+        }
+      ]
+    },
+    {
+      "pitfall_id": "GHA-EXPR-INJECTION",
+      "cwe": [
+        "CWE-78"
+      ],
+      "file": ".github/workflows/ci.yml",
+      "line": 23,
+      "column": 37,
+      "snippet": "run: echo \"Tests passed for ${{ github.event.pull_request.title }}\"",
+      "message": "Attacker-controlled expression in a run: script",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "GHA-EXPR-INJECTION"
+        }
+      ]
+    },
+    {
+      "pitfall_id": "GHA-UNPINNED-ACTION",
+      "cwe": [
+        "CWE-829"
+      ],
+      "file": ".github/workflows/ci.yml",
+      "line": 24,
+      "column": 1,
+      "snippet": "- uses: thollander/actions-comment-pull-request@v2",
+      "message": "Third-party action pinned to a mutable tag",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "GHA-UNPINNED-ACTION"
+        }
+      ]
+    },
+    {
+      "pitfall_id": "PY-FILE-SEND",
+      "cwe": [
+        "CWE-22"
+      ],
+      "file": "invoicer/attachments.py",
+      "line": 17,
+      "column": 12,
+      "snippet": "return send_file(path)",
+      "message": "File opened or served from a runtime path",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "PY-FILE-SEND"
+        }
+      ]
+    },
+    {
+      "pitfall_id": "PY-LOG-SECRET",
+      "cwe": [
+        "CWE-532"
+      ],
+      "file": "invoicer/auth.py",
+      "line": 30,
+      "column": 5,
+      "snippet": "log.info(\"login attempt email=%s password=%s\", email, password)",
+      "message": "Credential or token written to a log",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "PY-LOG-SECRET"
+        }
+      ]
+    },
+    {
+      "pitfall_id": "PY-OPEN-REDIRECT",
+      "cwe": [
+        "CWE-601"
+      ],
+      "file": "invoicer/auth.py",
+      "line": 36,
+      "column": 12,
+      "snippet": "return redirect(request.args.get(\"next\") or \"/invoices\")",
+      "message": "Redirect to a runtime URL",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "PY-OPEN-REDIRECT"
+        }
+      ]
+    },
+    {
+      "pitfall_id": "PY-WEAK-RANDOM",
+      "cwe": [
+        "CWE-338"
+      ],
+      "file": "invoicer/auth.py",
+      "line": 48,
+      "column": 21,
+      "snippet": "token = \"\".join(random.choices(string.ascii_letters + string.digits, k=8))",
+      "message": "Non-cryptographic random used for a security value",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "PY-WEAK-RANDOM"
+        }
+      ]
+    },
+    {
+      "pitfall_id": "PY-SQL-FSTRING",
+      "cwe": [
+        "CWE-89"
+      ],
+      "file": "invoicer/invoices.py",
+      "line": 20,
+      "column": 9,
+      "snippet": "f\"SELECT {COLUMNS} FROM invoices WHERE owner_id = ? ORDER BY {sort}\", (g.user_id,)",
+      "message": "SQL built with an f-string",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "PY-SQL-FSTRING"
+        }
+      ]
+    },
+    {
+      "pitfall_id": "PY-SQL-FSTRING",
+      "cwe": [
+        "CWE-89"
+      ],
+      "file": "invoicer/invoices.py",
+      "line": 30,
+      "column": 9,
+      "snippet": "f\"SELECT {COLUMNS} FROM invoices WHERE owner_id = {g.user_id} AND customer LIKE '%{q}%'\"",
+      "message": "SQL built with an f-string",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "PY-SQL-FSTRING"
+        }
+      ]
+    },
+    {
+      "pitfall_id": "PY-SQL-FSTRING",
+      "cwe": [
+        "CWE-89"
+      ],
+      "file": "invoicer/invoices.py",
+      "line": 38,
+      "column": 28,
+      "snippet": "row = get_db().execute(f\"SELECT {COLUMNS} FROM invoices WHERE id = ?\", (invoice_id,)).fetchone()",
+      "message": "SQL built with an f-string",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "PY-SQL-FSTRING"
+        }
+      ]
+    },
+    {
+      "pitfall_id": "PY-SQL-FSTRING",
+      "cwe": [
+        "CWE-89"
+      ],
+      "file": "invoicer/invoices.py",
+      "line": 48,
+      "column": 29,
+      "snippet": "rows = get_db().execute(f\"SELECT {COLUMNS} FROM invoices WHERE owner_id = ?\", (g.user_id,)).fetchall()",
+      "message": "SQL built with an f-string",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "PY-SQL-FSTRING"
+        }
+      ]
+    },
+    {
+      "pitfall_id": "PY-SSTI",
+      "cwe": [
+        "CWE-1336"
+      ],
+      "file": "invoicer/invoices.py",
+      "line": 49,
+      "column": 12,
+      "snippet": "return render_template_string(",
+      "message": "Template rendered from a runtime string",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "PY-SSTI"
+        }
+      ]
+    },
+    {
+      "pitfall_id": "PY-YAML-LOAD",
+      "cwe": [
+        "CWE-502"
+      ],
+      "file": "invoicer/invoices.py",
+      "line": 61,
+      "column": 15,
+      "snippet": "records = yaml.load(upload.read(), Loader=yaml.Loader)",
+      "message": "yaml.load with an unsafe loader",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "PY-YAML-LOAD"
+        }
+      ]
+    },
+    {
+      "pitfall_id": "PY-SSRF",
+      "cwe": [
+        "CWE-918"
+      ],
+      "file": "invoicer/webhooks.py",
+      "line": 15,
+      "column": 12,
+      "snippet": "resp = requests.get(url, timeout=5)",
+      "message": "Outbound request to a runtime URL",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "PY-SSRF"
+        }
+      ]
+    },
+    {
+      "pitfall_id": "PY-DEBUG",
+      "cwe": [
+        "CWE-489"
+      ],
+      "file": "run.py",
+      "line": 6,
+      "column": 8,
+      "snippet": "app.run(host=\"0.0.0.0\", port=5000, debug=True)",
+      "message": "Debug mode enabled",
+      "sources": [
+        {
+          "tool": "scan_pitfalls",
+          "rule_id": "PY-DEBUG"
+        }
+      ]
+    }
+  ]
+}

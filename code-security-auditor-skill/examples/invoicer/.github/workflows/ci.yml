@@ -1,0 +1,27 @@
+name: ci
+
+on:
+  pull_request_target:
+    types: [opened, synchronize]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest
+      - run: pytest -q
+      - name: Summarise
+        run: echo "Tests passed for ${{ github.event.pull_request.title }}"
+      - uses: thollander/actions-comment-pull-request@v2
+        with:
+          message: Tests passed
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

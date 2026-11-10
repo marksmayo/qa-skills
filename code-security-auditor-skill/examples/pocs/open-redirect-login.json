@@ -1,0 +1,5 @@
+{"finding": "F-9",
+ "description": "A login link carrying next=https://canary.example/ sends the user to that host after a successful sign-in. The proof is that input is reflected into Location.",
+ "steps": [
+   {"name": "login with next", "method": "POST", "path": "/login?next=https%3A%2F%2Fcanary.example%2Fphish", "form": {"email": "alice@example.test", "password": "alice-test-pw"}}],
+ "proof": {"type": "header_matches", "step": "login with next", "header": "Location", "pattern": "^https://canary\\.example/"}}

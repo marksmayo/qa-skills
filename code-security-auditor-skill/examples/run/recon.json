@@ -1,0 +1,268 @@
+{
+  "generated_at": "2026-11-10T04:22:26Z",
+  "repository": "invoicer_scan",
+  "languages": {
+    "Python": 7
+  },
+  "frameworks": [
+    "Flask"
+  ],
+  "source_files": 9,
+  "entry_points": [
+    {
+      "kind": "http_route",
+      "framework": "flask",
+      "method": "GET",
+      "path": "/healthz",
+      "handler": "invoicer/__init__.py:22",
+      "function": "healthz",
+      "auth": "public",
+      "auth_evidence": "no auth decorator on the route and no app-wide auth hook found",
+      "id": "EP-1"
+    },
+    {
+      "kind": "http_route",
+      "framework": "flask",
+      "method": "GET",
+      "path": "/version",
+      "handler": "invoicer/__init__.py:26",
+      "function": "version",
+      "auth": "public",
+      "auth_evidence": "no auth decorator on the route and no app-wide auth hook found",
+      "id": "EP-2"
+    },
+    {
+      "kind": "http_route",
+      "framework": "flask",
+      "method": "GET",
+      "path": "/attachments",
+      "handler": "invoicer/attachments.py:10",
+      "function": "download",
+      "auth": "authenticated",
+      "auth_evidence": "login_required",
+      "id": "EP-3"
+    },
+    {
+      "kind": "http_route",
+      "framework": "flask",
+      "method": "POST",
+      "path": "/login",
+      "handler": "invoicer/auth.py:26",
+      "function": "login",
+      "auth": "public",
+      "auth_evidence": "no auth decorator on the route and no app-wide auth hook found",
+      "id": "EP-4"
+    },
+    {
+      "kind": "http_route",
+      "framework": "flask",
+      "method": "POST",
+      "path": "/logout",
+      "handler": "invoicer/auth.py:39",
+      "function": "logout",
+      "auth": "public",
+      "auth_evidence": "no auth decorator on the route and no app-wide auth hook found",
+      "id": "EP-5"
+    },
+    {
+      "kind": "http_route",
+      "framework": "flask",
+      "method": "POST",
+      "path": "/password-reset",
+      "handler": "invoicer/auth.py:45",
+      "function": "password_reset",
+      "auth": "public",
+      "auth_evidence": "no auth decorator on the route and no app-wide auth hook found",
+      "id": "EP-6"
+    },
+    {
+      "kind": "http_route",
+      "framework": "flask",
+      "method": "POST",
+      "path": "/password-reset/confirm",
+      "handler": "invoicer/auth.py:56",
+      "function": "password_reset_confirm",
+      "auth": "public",
+      "auth_evidence": "no auth decorator on the route and no app-wide auth hook found",
+      "id": "EP-7"
+    },
+    {
+      "kind": "http_route",
+      "framework": "flask",
+      "method": "GET",
+      "path": "/invoices",
+      "handler": "invoicer/invoices.py:15",
+      "function": "list_invoices",
+      "auth": "authenticated",
+      "auth_evidence": "login_required",
+      "id": "EP-8"
+    },
+    {
+      "kind": "http_route",
+      "framework": "flask",
+      "method": "GET",
+      "path": "/invoices/search",
+      "handler": "invoicer/invoices.py:25",
+      "function": "search",
+      "auth": "authenticated",
+      "auth_evidence": "login_required",
+      "id": "EP-9"
+    },
+    {
+      "kind": "http_route",
+      "framework": "flask",
+      "method": "GET",
+      "path": "/invoices/<int:invoice_id>",
+      "handler": "invoicer/invoices.py:35",
+      "function": "view",
+      "auth": "authenticated",
+      "auth_evidence": "login_required",
+      "id": "EP-10"
+    },
+    {
+      "kind": "http_route",
+      "framework": "flask",
+      "method": "GET",
+      "path": "/invoices/report",
+      "handler": "invoicer/invoices.py:44",
+      "function": "report",
+      "auth": "authenticated",
+      "auth_evidence": "login_required",
+      "id": "EP-11"
+    },
+    {
+      "kind": "http_route",
+      "framework": "flask",
+      "method": "POST",
+      "path": "/invoices/import",
+      "handler": "invoicer/invoices.py:55",
+      "function": "import_invoices",
+      "auth": "authenticated",
+      "auth_evidence": "login_required",
+      "id": "EP-12"
+    },
+    {
+      "kind": "webhook",
+      "framework": "flask",
+      "method": "POST",
+      "path": "/webhooks/test",
+      "handler": "invoicer/webhooks.py:9",
+      "function": "test_webhook",
+      "auth": "authenticated",
+      "auth_evidence": "login_required",
+      "id": "EP-13"
+    }
+  ],
+  "entry_point_auth": {
+    "public": 6,
+    "authenticated": 7
+  },
+  "global_auth_hooks": [],
+  "data_stores": [
+    {
+      "kind": "filesystem",
+      "file": "invoicer/__init__.py",
+      "line": 13
+    },
+    {
+      "kind": "filesystem",
+      "file": "invoicer/attachments.py",
+      "line": 14
+    },
+    {
+      "kind": "sqlite",
+      "file": "invoicer/db.py",
+      "line": 1
+    },
+    {
+      "kind": "filesystem",
+      "file": "invoicer/invoices.py",
+      "line": 58
+    }
+  ],
+  "outbound_calls": [
+    {
+      "file": "invoicer/webhooks.py",
+      "line": 15,
+      "snippet": "resp = requests.get(url, timeout=5)"
+    }
+  ],
+  "secret_config": [
+    {
+      "file": "invoicer/__init__.py",
+      "line": 11,
+      "snippet": "app.config[\"SECRET_KEY\"] = os.environ.get(\"SECRET_KEY\", \"invoicer-dev-7f3c9a1e52\")"
+    }
+  ],
+  "env_files": [],
+  "uploads": [
+    "invoicer/invoices.py:58"
+  ],
+  "dependency_manifests": [
+    "requirements.txt"
+  ],
+  "iac": [],
+  "ci_workflows": [
+    {
+      "file": ".github/workflows/ci.yml",
+      "triggers": [
+        "pull_request_target"
+      ],
+      "untrusted_input_triggers": [
+        "pull_request_target"
+      ],
+      "write_permissions": [
+        "pull-requests"
+      ],
+      "uses_secrets": true
+    }
+  ],
+  "review_leads": [
+    {
+      "area": "authentication",
+      "entry_point": "EP-4",
+      "why": "POST /login is part of an auth flow: tokens, rate limits, enumeration"
+    },
+    {
+      "area": "authentication",
+      "entry_point": "EP-5",
+      "why": "POST /logout is part of an auth flow: tokens, rate limits, enumeration"
+    },
+    {
+      "area": "authentication",
+      "entry_point": "EP-6",
+      "why": "POST /password-reset is part of an auth flow: tokens, rate limits, enumeration"
+    },
+    {
+      "area": "authentication",
+      "entry_point": "EP-7",
+      "why": "POST /password-reset/confirm is part of an auth flow: tokens, rate limits, enumeration"
+    },
+    {
+      "area": "access_control",
+      "entry_point": "EP-10",
+      "why": "GET /invoices/<int:invoice_id> takes an object id: check ownership (IDOR/BOLA)"
+    },
+    {
+      "area": "server_side",
+      "entry_point": "EP-13",
+      "why": "webhook: check signature verification, replay and any outbound fetch"
+    },
+    {
+      "area": "supply_chain_ci",
+      "entry_point": null,
+      "why": ".github/workflows/ci.yml runs on pull_request_target: check for untrusted checkout and expression injection"
+    },
+    {
+      "area": "server_side",
+      "entry_point": null,
+      "why": "file uploads at invoicer/invoices.py:58: parsing, storage path, type checks"
+    },
+    {
+      "area": "server_side",
+      "entry_point": null,
+      "why": "1 outbound call(s): check for request-controlled URLs (SSRF)"
+    }
+  ],
+  "note": "Regex-level first pass. Confirm entry points and auth by reading the code; 'unknown' auth is not 'public'."
+}
