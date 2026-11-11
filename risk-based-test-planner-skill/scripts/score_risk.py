@@ -166,9 +166,47 @@ def area_of(path: str, areas: list[dict]) -> str | None:
     return best[0] if best else None
 
 
+def js_aliases(root: Path, files: list[str]) -> list[tuple[str, str, str]]:
+    """Import aliases as (config directory, alias prefix, target directory), relative to the root: tsconfig or
+    jsconfig compilerOptions.paths, and resolve.alias in vite, vitest or webpack configs
+    ('~': path.resolve(__dirname, 'src'), {find: '~', replacement: ...}, fileURLToPath(new URL('./src', ...)))."""
+    found = []
+    call = r'''(?:(?:path\.)?(?:resolve|join)\(\s*(?:__dirname|process\.cwd\(\))\s*,\s*|fileURLToPath\(\s*new URL\(\s*)['"]([^'"]+)['"]'''
+    for f in files:
+        name, base = PurePosixPath(f).name, PurePosixPath(f).parent
+        if name in ('tsconfig.json', 'jsconfig.json'):
+            text = re.sub(r'^\s*//.*$', '', (root / f).read_text(encoding='utf-8', errors='replace'), flags=re.M)
+            try:
+                opts = json.loads(re.sub(r',(\s*[}\]])', r'\1', text)).get('compilerOptions') or {}
+            except ValueError:
+                continue
+            burl = base / (opts.get('baseUrl') or '.')
+            for alias, targets in (opts.get('paths') or {}).items():
+                if targets:
+                    found.append((base, alias.rstrip('*').rstrip('/'), burl / targets[0].rstrip('*').rstrip('/')))
+        elif re.match(r'(vite|vitest|webpack)\.config\.(js|mjs|cjs|ts)$', name):
+            text = (root / f).read_text(encoding='utf-8', errors='replace')
+            for m in re.finditer(r'''['"]?([~@#$][\w/-]*)['"]?\s*:\s*''' + call, text):
+                found.append((base, m.group(1), base / m.group(2)))
+            for m in re.finditer(r'''find\s*:\s*['"]([^'"]+)['"]\s*,\s*replacement\s*:\s*''' + call, text):
+                found.append((base, m.group(1), base / m.group(2)))
+    out = []
+    for cfg, alias, target in found:
+        parts: list[str] = []
+        for x in PurePosixPath(target).parts:
+            if x == '..' and parts:
+                parts.pop()
+            elif x not in ('.', ''):
+                parts.append(x)
+        out.append(('' if str(cfg) == '.' else cfg.as_posix(), alias, '/'.join(parts)))
+    return out
+
+
 def tests_by_area(root: Path, files: list[str], areas: list[dict], flaky: set[str]) -> tuple[dict, list[str]]:
-    """{area: [test files that import it]}, and flaky test files left out."""
+    """{area: [test files that import it]}, and flaky test files left out. Relative imports and configured import
+    aliases (tsconfig/jsconfig paths, vite or webpack resolve.alias) are followed; mocked modules are not links."""
     out: dict[str, set[str]] = {a['id']: set() for a in areas}
+    aliases = js_aliases(root, files)
     skipped = []
     for t in files:
         if not is_test(t) or PurePosixPath(t).suffix not in CODE_EXT:
@@ -191,6 +229,12 @@ def tests_by_area(root: Path, files: list[str], areas: list[dict], flaky: set[st
         else:
             for m in re.finditer(r'''(?:from|require\(|import\()\s*["'](\.[^"']+)["']''', text):
                 targets.add((PurePosixPath(t).parent / m.group(1)).as_posix())
+            for m in re.finditer(r'''(?:from|require\(|import\()\s*["']([^."'][^"']*)["']''', text):
+                spec = m.group(1)
+                for cfg, alias, target in aliases:
+                    if (not cfg or t.startswith(cfg + '/')) and (spec == alias or spec.startswith(alias + '/')):
+                        targets.add((target + spec[len(alias):]).strip('/'))
+                        break
         for tgt in targets:
             for a in areas:
                 if any(tgt == p or tgt.startswith(p.rstrip('/*') + '/') for p in a['paths']):
@@ -249,7 +293,7 @@ def surface_scan(root: Path, files: list[str]) -> tuple[int, list[str], list[str
             continue
         for i, line in enumerate(lines, 1):
             for cls, spec in SURFACES['classes'].items():
-                if any(re.search(p, line, re.I) for p in spec['patterns']):
+                if any(re.search(p, line, re.I) for p in spec['patterns']) and not any(re.search(p, line, re.I) for p in spec.get('exclude', [])):
                     hits.setdefault(cls, []).append(f'{f}:{i}')
     if not hits:
         return SURFACES['none_score'], [], ['no surface pattern matched in data/surfaces.json']

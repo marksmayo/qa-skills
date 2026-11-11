@@ -11,7 +11,7 @@ Rules for `test_plan.json`. The validator enforces everything marked (computed) 
 | `defects` | likelihood | 3 | Percentile of fix commits plus bug tickets by component or label (each bug counted once); 0 = 1 |
 | `complexity` | likelihood | 1 | Percentile of branches per code file |
 | `change_in_scope` | likelihood | 2 | Percentile of lines changed in the scope diff; 0 = 1 |
-| `test_weakness` | likelihood | 2 | 5 when no test imports the area (flaky tests don't count). Otherwise by test-to-code ratio: < 0.2 = 4, < 0.5 = 3, < 1 = 2, else 1 |
+| `test_weakness` | likelihood | 2 | 5 when no test imports the area (flaky tests don't count; imports are followed through relative paths and configured aliases such as `~/` from tsconfig, jsconfig, vite or webpack; a mocked module is not a link). Otherwise by test-to-code ratio: < 0.2 = 4, < 0.5 = 3, < 1 = 2, else 1 |
 | `journey_criticality` | impact | 3 | Highest linked journey: P0 = 5, P1 = 4, P2 = 3, P3 = 2; a journey map that cites the area nowhere = 1 |
 | `surface` | impact | 3 | `data/surfaces.json`: money, access, personal data, destructive = 5; compliance = 4; external = 3; none = 1 |
 | `reach` | impact | 1 | Usage share: ≥ 50% = 5, ≥ 25% = 4, ≥ 10% = 3, ≥ 2% = 2, else 1. Without usage data, the percentile of journeys citing the area |

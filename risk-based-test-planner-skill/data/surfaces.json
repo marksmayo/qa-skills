@@ -1,5 +1,5 @@
 {
-  "$comment": "Impact surfaces found by pattern in an area's source files (case-insensitive regex per line). The highest-scoring class an area matches sets its surface factor; a person may judge it differently, with a reason. Patterns are deliberately about doing (charging, deleting, authenticating), not merely mentioning: a catalogue that shows a price does not move money.",
+  "$comment": "Impact surfaces found by pattern in an area's source files (case-insensitive regex per line; a line that also matches one of the class's exclude patterns doesn't count, which keeps collection and URL methods such as searchParams.delete() from reading as data destruction).The highest-scoring class an area matches sets its surface factor; a person may judge it differently, with a reason. Patterns are deliberately about doing (charging, deleting, authenticating), not merely mentioning: a catalogue that shows a price does not move money.",
   "classes": {
     "money": {
       "score": 5,
@@ -37,6 +37,11 @@
         "\\b(delete|purge|truncate|drop|erase|wipe)_?\\w*\\s*\\(",
         "\\bDROP\\s+TABLE\\b",
         "\\bDELETE\\s+FROM\\b"
+      ],
+      "exclude": [
+        "\\b(searchParams|params|query|headers|url|map|set|cache|seen|visited|selected|state|formData|weakMap|style|classList|dataset|attributes|listeners|subscribers|timers|pending|queue|ids|keys|subscriptions|observers|handlers|callbacks|registry|entries)\\.delete\\s*\\(",
+        "\\b\\w*(Map|Set|Params|Headers|Cache|Ids|Keys)\\.delete\\s*\\(",
+        "\\b(removeEventListener|removeChild|removeAttribute|removeItem|deleteProperty)\\s*\\("
       ]
     },
     "compliance": {

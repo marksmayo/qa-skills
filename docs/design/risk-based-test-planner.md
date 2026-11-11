@@ -242,6 +242,13 @@ Where the build differs from the design above, and what the example showed.
 
   The 16-session plan gives payments 6 sessions, auth 4, and gift cards, catalog and marketing
   2 each.
+- **Found on a real JavaScript repository, and fixed:**
+  - Tests that import through an alias (`~/utils/...`, configured in jsconfig, tsconfig, vite or webpack)
+    weren't linked to their areas, which overstated test weakness. Aliases are now resolved; on that
+    repository it linked 18 more test files.
+  - Collection and URL methods such as `url.searchParams.delete()` or `map.delete()` matched the
+    "destroys data" surface. Surface classes now take `exclude` patterns, and the destructive class
+    excludes those receivers.
 - **Testing:**
   - The validator catches 25 of 25 seeded violations.
   - 12 scorer scenarios pass:
