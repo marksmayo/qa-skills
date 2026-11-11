@@ -22,25 +22,32 @@
     {"id": "fullstory", "kind": "replay", "vendor": "FullStory", "langs": ["js", "ts", "html"], "pattern": "\\bFS\\.(identify|init)|fullstory\\.com/s/fs\\.js"},
     {"id": "logrocket", "kind": "replay", "vendor": "LogRocket", "langs": ["js", "ts", "html"], "pattern": "\\bLogRocket\\.(init|identify)\\("},
     {"id": "clarity", "kind": "replay", "vendor": "Microsoft Clarity", "langs": ["js", "ts", "html"], "pattern": "\\bclarity\\("},
-    {"id": "replay-masking-off", "kind": "replay", "langs": ["js", "ts", "html"], "pattern": "(maskAllInputs|maskInputs|maskAllText|inputMasking)\\s*:\\s*false|data-(hj|fs)-unmask"},
+    {"id": "replay-masking-off", "kind": "replay", "langs": ["js", "ts", "html"], "pattern": "(maskAllInputs|maskInputs|maskAllText|inputMasking)\\s*:\\s*false|data-(hj|fs)-unmask|defaultPrivacyLevel\\s*:\\s*['\"]allow['\"]|data-dd-privacy=[\"']allow[\"']"},
     {"id": "sentry-user", "kind": "error_tracker", "vendor": "Sentry", "langs": ["js", "ts", "html", "py"], "pattern": "Sentry\\.setUser\\(|sentry_sdk\\.set_user\\("},
     {"id": "default-pii", "kind": "error_tracker", "langs": ["js", "ts", "html", "py"], "pattern": "(sendDefaultPii|send_default_pii)\\s*[:=]\\s*(true|True|false|False)"},
     {"id": "local-storage", "kind": "storage", "langs": ["js", "ts", "html"], "pattern": "\\b(localStorage|sessionStorage)\\.setItem\\("},
     {"id": "js-cookie", "kind": "storage", "langs": ["js", "ts", "html"], "pattern": "document\\.cookie\\s*="},
     {"id": "py-cookie", "kind": "storage", "langs": ["py"], "pattern": "set_cookie\\(|Set-Cookie"},
     {"id": "android-prefs", "kind": "storage", "langs": ["java", "kt"], "pattern": "getSharedPreferences\\(|\\.putString\\("},
-    {"id": "ios-defaults", "kind": "storage", "langs": ["swift", "m"], "pattern": "UserDefaults\\.standard\\.set\\("}
+    {"id": "ios-defaults", "kind": "storage", "langs": ["swift", "m"], "pattern": "UserDefaults\\.standard\\.set\\("},
+    {"id": "datadog-logs", "kind": "log", "vendor": "Datadog", "pattern": "\\b(datadogLogs|DD_LOGS)\\.logger\\.(debug|info|warn|error|log)\\(", "langs": ["js", "ts", "html"]},
+    {"id": "datadog-rum-init", "kind": "replay", "vendor": "Datadog", "pattern": "\\b(datadogRum|DD_RUM)\\.init\\(", "langs": ["js", "ts", "html"]},
+    {"id": "indexeddb", "kind": "storage", "pattern": "\\bindexedDB\\.open\\(|\\bnew Dexie\\(|\\bidb(Keyval)?\\.set\\(|\\bopenDB\\(", "langs": ["js", "ts", "html"]},
+    {"id": "localforage", "kind": "storage", "pattern": "\\blocalforage\\.(setItem|config|createInstance)\\(", "langs": ["js", "ts", "html"]},
+    {"id": "cache-persist", "kind": "storage", "pattern": "\\b(persistCache|CachePersistor|persistQueryClient|createSyncStoragePersister|createAsyncStoragePersister|persistStore)\\(|\\bnew (CachePersistor|LocalForageWrapper|LocalStorageWrapper|SessionStorageWrapper|IonicStorageWrapper)\\(", "langs": ["js", "ts", "html"]}
   ],
   "collection": {
     "html_input": "<(input|select|textarea)\\b[^>]*>",
     "py_form_read": "(request\\.form|form|fields|params|data)(\\.get\\(|\\[)\\s*['\"](?P<name>[\\w-]+)['\"]",
-    "js_value_read": "(getElementById|querySelector)\\(['\"]#?(?P<name>[\\w-]+)['\"]\\)\\.value"
+    "js_value_read": "(getElementById|querySelector)\\(['\"]#?(?P<name>[\\w-]+)['\"]\\)\\.value",
+    "jsx_input": "<(input|select|textarea|TextField|Input|OutlinedInput|FilledInput|Select|NativeSelect|Autocomplete|TextareaAutosize|DatePicker|DateTimePicker|PhoneInput|Field)\\b",
+    "js_register": "\\b(register|useField|getFieldProps)\\(\\s*['\"](?P<name>[\\w.-]+)['\"]"
   },
   "sdk_packages": {
     "@sentry/browser": "Sentry", "@sentry/react": "Sentry", "sentry-sdk": "Sentry", "posthog-js": "PostHog", "mixpanel-browser": "Mixpanel",
     "@segment/analytics-next": "Segment", "logrocket": "LogRocket", "@fullstory/browser": "FullStory", "react-ga4": "Google Analytics",
     "firebase": "Google Firebase", "com.google.firebase:firebase-analytics": "Google Firebase", "com.facebook.android:facebook-android-sdk": "Meta",
     "FBSDKCoreKit": "Meta", "Firebase/Analytics": "Google Firebase", "amplitude-js": "Amplitude", "@amplitude/analytics-browser": "Amplitude",
-    "@intercom/messenger-js-sdk": "Intercom", "bugsnag-js": "Bugsnag", "@bugsnag/js": "Bugsnag", "datadog-rum": "Datadog", "@datadog/browser-rum": "Datadog"
+    "@intercom/messenger-js-sdk": "Intercom", "bugsnag-js": "Bugsnag", "@bugsnag/js": "Bugsnag", "datadog-rum": "Datadog", "@datadog/browser-rum": "Datadog", "@datadog/browser-logs": "Datadog", "@datadog/browser-rum-slim": "Datadog"
   }
 }

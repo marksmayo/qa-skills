@@ -66,10 +66,17 @@ python scripts/merge_candidates.py --capture <run>/capture.json --static <run>/s
 ```
 
 1. **Recon.** Stack, logging libraries, analytics and SDK packages, consent platform, data stores.
-2. **Static scan.** Collection points (form fields by name, label, `autocomplete` and type; server-side
-   reads; device APIs and permissions), sinks (`data/sinks.json`), and candidate flows where a sink line
-   names a collected field or a simple alias of one. Trace each to a full path (collection to sink) before
-   calling it `traced`. Check error trackers' `sendDefaultPii` and `beforeSend`, and replay masking.
+2. **Static scan.** Collection points (form fields by name, label, `autocomplete` and type, in HTML and in
+   JSX, including component-library fields such as MUI `TextField`, and form-library registrations;
+   server-side reads; device APIs and permissions), sinks (`data/sinks.json`), and candidate flows where a
+   sink line names a collected field or a simple alias of one. Trace each to a full path (collection to
+   sink) before calling it `traced`. Check error trackers' `sendDefaultPii` and `beforeSend`, and replay
+   masking: a replay SDK that records with no explicit privacy level (Datadog RUM without
+   `defaultPrivacyLevel`) is a candidate, because the default depends on the SDK version. A persisted
+   client cache (Apollo `persistCache`, React Query persisters, Redux persist, localforage or IndexedDB)
+   holds every query result at rest: trace which personal data the queries return, and whether the cache
+   is encrypted and cleared at sign-out. The scan finds no personal data by itself in an app whose screens
+   show data from an API rather than forms: read what the queries return.
 3. **Live capture.** For each consent state, a fresh context records requests, cookies and storage
    before any interaction, then after the banner choice, then through each flow typing canaries. With
    `--server-log` on a local run, log lines carrying a canary are recorded too.

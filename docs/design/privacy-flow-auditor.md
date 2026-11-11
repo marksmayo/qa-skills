@@ -275,5 +275,17 @@ Where the build differs from the design above, and what the example showed.
   SARIF merge).
 - **Example results:** 3 consent states tested; 25 candidates; 9 findings (1 P0, 5 P1, 3 P2), matching
   the eight planted problems plus the email reaching Trackly through the URL; all three decoys dismissed.
+- **Static scan gaps found on a real React app** (an internal app with no forms of its own, where the
+  scan produced no candidates and every finding was traced by hand) are fixed:
+  - JSX form elements are collection points (`input`, `textarea`, `select` and component-library fields
+    such as MUI `TextField`, with `name`, `id`, `autoComplete`, `label`, `placeholder`), as are
+    `register('field')` calls;
+  - a Datadog RUM `init` that records session replays with `defaultPrivacyLevel` unset or `allow` is a
+    `session_replay_unmasked` candidate, with the init's privacy facts (action-name privacy, `beforeSend`,
+    site); with replay off, tracked interactions without action-name privacy are a candidate;
+  - Datadog browser logs, IndexedDB, localforage and whole-cache persisters (Apollo `persistCache`,
+    React Query, Redux persist) are sinks, and a persisted cache is an `insecure_storage` candidate;
+  - SDKs imported in code that no manifest declares (a service worker), and `importScripts()` hosts, are
+    in the SDK inventory.
 - **Testing:** 34 of 34 seeded violations are caught, including personal data and secrets planted in
   evidence files.
