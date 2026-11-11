@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/qa-skills/hypercare-anomaly-watcher/watch_state.schema.json",
+  "title": "Hypercare watch state (state/watch.json)",
+  "type": "object",
+  "required": ["schema_version", "skill", "config", "config_sha256", "window", "schedule", "ticks", "items", "drafts"],
+  "properties": {
+    "skill": {"type": "object", "properties": {"name": {"const": "hypercare-anomaly-watcher"}}},
+    "schedule": {"type": "object", "required": ["every_minutes", "cron", "command", "installed_by_skill"], "properties": {"installed_by_skill": {"const": false}}},
+    "ticks": {"type": "array", "items": {"type": "object", "required": ["n", "at", "window", "counts", "changed", "drafts_touched"]}},
+    "items": {"type": "object", "additionalProperties": {"type": "object",
+      "required": ["state", "history", "correlated", "correlation_basis", "pre_release", "first_anomalous_tick", "first_anomalous_at", "confirmed_tick"],
+      "properties": {"state": {"enum": ["normal", "suspected", "confirmed", "recovering", "recovered"]}, "correlated": {"enum": ["yes", "no", "unknown", null]}}}},
+    "drafts": {"type": "array", "items": {"type": "object",
+      "required": ["id", "status", "service", "release", "owner", "severity", "title", "started_at", "detected_at", "items", "timeline", "suggested_actions"],
+      "properties": {"status": {"const": "draft"}, "severity": {"enum": ["SEV2", "SEV3"]}}}},
+    "summary": {"type": "object", "properties": {"headline": {"type": "string"}}},
+    "limitations": {"type": "array", "items": {"type": "string"}}
+  }
+}

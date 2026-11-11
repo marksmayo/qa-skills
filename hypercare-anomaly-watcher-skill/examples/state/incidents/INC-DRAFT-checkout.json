@@ -1,0 +1,64 @@
+{
+ "id": "INC-DRAFT-checkout",
+ "status": "draft",
+ "service": "checkout",
+ "release": "harbour-shop 2.4.0",
+ "owner": "On-call engineer, checkout team",
+ "severity": "SEV2",
+ "title": "checkout: HARBOUR-SHOP-WEB-2F, checkout error rate after 2.4.0",
+ "started_at": "2026-11-11T22:00:00Z",
+ "detected_at": "2026-11-11T23:00:00Z",
+ "items": [
+  {
+   "key": "sentry:4100021",
+   "kind": "sentry_issue",
+   "label": "HARBOUR-SHOP-WEB-2F",
+   "first_anomalous_tick": 1,
+   "first_anomalous_at": "2026-11-11T22:00:00Z",
+   "confirmed_tick": 1,
+   "summary": "HARBOUR-SHOP-WEB-2F \"TypeError: Cannot read properties of undefined (reading 'lineItems')\" at cart/summary.js in renderTotals: 342 events, 93 users since 2026-11-11T22:06:41Z",
+   "link": "https://sentry.example.test/organizations/harbour/issues/4100021/",
+   "query": null,
+   "state": "confirmed"
+  },
+  {
+   "key": "datadog:checkout-error-rate",
+   "kind": "metric",
+   "label": "checkout error rate",
+   "first_anomalous_tick": 1,
+   "first_anomalous_at": "2026-11-11T22:00:00Z",
+   "confirmed_tick": 2,
+   "summary": "0.020799 against a median of 0.00396 (robust z 85.05, threshold 4)",
+   "link": null,
+   "query": "sum:trace.http.request.errors{service:checkout,env:prod}.as_count() / sum:trace.http.request.hits{service:checkout,env:prod}.as_count()",
+   "state": "confirmed"
+  }
+ ],
+ "timeline": [
+  {
+   "tick": 1,
+   "at": "2026-11-11T23:00:00Z",
+   "note": "draft created"
+  },
+  {
+   "tick": 1,
+   "at": "2026-11-11T23:00:00Z",
+   "note": "HARBOUR-SHOP-WEB-2F confirmed (first seen in 2.4.0 after the deploy)"
+  },
+  {
+   "tick": 2,
+   "at": "2026-11-12T00:00:00Z",
+   "note": "checkout error rate confirmed (began after the deploy, and the hour before it was normal)"
+  },
+  {
+   "tick": 2,
+   "at": "2026-11-12T00:00:00Z",
+   "note": "severity SEV3 -> SEV2"
+  }
+ ],
+ "suggested_actions": [
+  "Check cart/summary.js renderTotals in 2.4.0 for a cart with no lineItems (empty or restored carts), using the Sentry issue's events.",
+  "Compare checkout errors by endpoint in Datadog to see whether the TypeError explains the whole error-rate rise.",
+  "Decide with the release manager whether to roll back 2.4.0 or ship a fix; the draft does not decide."
+ ]
+}

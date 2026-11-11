@@ -332,6 +332,16 @@ python post-deploy-validator-skill/scripts/recommend.py post-deploy-validator-sk
 
 Run `commands.sh` from `post-deploy-validator-skill/`: the runs record the plan path relative to it. It starts the sample server itself on port 8160 and sets the sample's fake `smoke-reader` credentials. A rerun changes every timing, so the report is rebuilt; the findings and the recommendation stay the same. The runner refuses anything but GET, HEAD and the named sign-in, and a production target needs `authorised_by` in the plan.
 
+Hypercare anomaly watcher (`examples/hypercare.json` watches a release of "harbour-shop" with four Datadog queries and a Sentry project; `examples/recorded/` is simulated monitoring data in the APIs' shapes, made by `examples/simulate.py` with a fixed seed; `examples/state/` is the watch after seven hourly ticks, listed in `examples/commands.sh`; the validator recomputes every tick from its stored inputs, replays the states and checks the drafts, and `--recorded` re-derives the inputs):
+
+```bash
+python hypercare-anomaly-watcher-skill/scripts/validate_watch.py hypercare-anomaly-watcher-skill/examples/state --recorded hypercare-anomaly-watcher-skill/examples/recorded
+python hypercare-anomaly-watcher-skill/scripts/render_report.py hypercare-anomaly-watcher-skill/examples/state [--brief]
+python hypercare-anomaly-watcher-skill/scripts/watch.py tick --state <state> --now 2026-11-12T06:00:00Z --from-dir hypercare-anomaly-watcher-skill/examples/recorded
+```
+
+Run `commands.sh` from `hypercare-anomaly-watcher-skill/`: it regenerates the simulation and the ticks (the same files, since the seed is fixed); the agent's headline, limitations and suggested actions are then added again. Editing `simulate.py`, `hypercare.json` or `detect.py` changes the evaluations. Live watching needs `DD_API_KEY`, `DD_APP_KEY` and `SENTRY_AUTH_TOKEN`; the skill only reads, and never installs the schedule.
+
 Shared files:
 
 ```bash

@@ -1,0 +1,24 @@
+{
+ "schema_version": "1.0.0",
+ "release": {"service": "harbour-shop", "version": "2.4.0", "deployed_at": "2026-11-11T22:00:00Z"},
+ "window_hours": 72,
+ "tick_minutes": 60,
+ "baseline_days": 14,
+ "incident_owner": "On-call engineer, checkout team",
+ "critical_services": ["checkout"],
+ "sources": {
+  "datadog": {"site": "datadoghq.com", "queries": [
+   {"id": "checkout-error-rate", "label": "checkout error rate", "service": "checkout", "kind": "rate", "direction": "up", "is_error_rate": true,
+    "query": "sum:trace.http.request.errors{service:checkout,env:prod}.as_count() / sum:trace.http.request.hits{service:checkout,env:prod}.as_count()",
+    "threshold_z": 4, "min_abs_change": 0.005},
+   {"id": "search-p95", "label": "search p95 latency", "service": "search", "kind": "latency", "direction": "up", "unit": " ms",
+    "query": "p95:trace.http.request.duration{service:search,env:prod}", "threshold_z": 4, "min_abs_change": 100},
+   {"id": "nightly-export-errors", "label": "nightly export job errors", "service": "nightly-export", "kind": "count", "direction": "up",
+    "query": "sum:batch.job.errors{job:nightly-export,env:prod}.as_count()", "p_value": 0.001, "min_abs_change": 10},
+   {"id": "orders", "label": "orders placed", "service": "checkout", "kind": "count", "direction": "down",
+    "query": "sum:shop.orders.count{env:prod}.as_count()", "p_value": 0.001, "min_abs_change": 50}
+  ]},
+  "sentry": {"host": "sentry.io", "org": "harbour", "project": "harbour-shop-web", "service": "checkout", "query": "is:unresolved",
+             "min_users": 5, "min_events": 20, "sev2_users": 25, "regression_p_value": 0.001, "regression_min_abs": 10}
+ }
+}

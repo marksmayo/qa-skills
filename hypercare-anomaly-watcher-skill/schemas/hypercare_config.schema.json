@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/qa-skills/hypercare-anomaly-watcher/hypercare_config.schema.json",
+  "title": "Hypercare watch configuration",
+  "type": "object",
+  "required": ["schema_version", "release", "window_hours", "tick_minutes", "incident_owner", "sources"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "release": {"type": "object", "required": ["service", "version", "deployed_at"]},
+    "window_hours": {"type": "number", "exclusiveMinimum": 0},
+    "tick_minutes": {"type": "integer", "minimum": 5},
+    "baseline_days": {"type": "integer", "minimum": 7},
+    "incident_owner": {"type": "string", "minLength": 3},
+    "critical_services": {"type": "array", "items": {"type": "string"}},
+    "sources": {"type": "object", "properties": {
+      "datadog": {"type": "object", "required": ["queries"], "properties": {"site": {"type": "string"},
+        "queries": {"type": "array", "items": {"type": "object", "required": ["id", "query", "kind", "service", "direction"],
+          "properties": {"kind": {"enum": ["rate", "latency", "gauge", "count"]}, "direction": {"enum": ["up", "down"]},
+                         "threshold_z": {"type": "number"}, "p_value": {"type": "number"}, "min_abs_change": {"type": "number"},
+                         "rel_floor": {"type": "number"}, "abs_floor": {"type": "number"}, "min_baseline": {"type": "integer", "minimum": 3},
+                         "is_error_rate": {"type": "boolean"}}}}}},
+      "sentry": {"type": "object", "required": ["org", "project", "service"],
+        "properties": {"min_users": {"type": "integer"}, "min_events": {"type": "integer"}, "sev2_users": {"type": "integer"},
+                       "regression_p_value": {"type": "number"}, "regression_min_abs": {"type": "number"}}}}}
+  }
+}

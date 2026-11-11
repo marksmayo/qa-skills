@@ -1,0 +1,612 @@
+{
+ "schema_version": "1.0.0",
+ "skill": {
+  "name": "hypercare-anomaly-watcher",
+  "version": "1.0.0"
+ },
+ "config": {
+  "schema_version": "1.0.0",
+  "release": {
+   "service": "harbour-shop",
+   "version": "2.4.0",
+   "deployed_at": "2026-11-11T22:00:00Z"
+  },
+  "window_hours": 72,
+  "tick_minutes": 60,
+  "baseline_days": 14,
+  "incident_owner": "On-call engineer, checkout team",
+  "critical_services": [
+   "checkout"
+  ],
+  "sources": {
+   "datadog": {
+    "site": "datadoghq.com",
+    "queries": [
+     {
+      "id": "checkout-error-rate",
+      "label": "checkout error rate",
+      "service": "checkout",
+      "kind": "rate",
+      "direction": "up",
+      "is_error_rate": true,
+      "query": "sum:trace.http.request.errors{service:checkout,env:prod}.as_count() / sum:trace.http.request.hits{service:checkout,env:prod}.as_count()",
+      "threshold_z": 4,
+      "min_abs_change": 0.005
+     },
+     {
+      "id": "search-p95",
+      "label": "search p95 latency",
+      "service": "search",
+      "kind": "latency",
+      "direction": "up",
+      "unit": " ms",
+      "query": "p95:trace.http.request.duration{service:search,env:prod}",
+      "threshold_z": 4,
+      "min_abs_change": 100
+     },
+     {
+      "id": "nightly-export-errors",
+      "label": "nightly export job errors",
+      "service": "nightly-export",
+      "kind": "count",
+      "direction": "up",
+      "query": "sum:batch.job.errors{job:nightly-export,env:prod}.as_count()",
+      "p_value": 0.001,
+      "min_abs_change": 10
+     },
+     {
+      "id": "orders",
+      "label": "orders placed",
+      "service": "checkout",
+      "kind": "count",
+      "direction": "down",
+      "query": "sum:shop.orders.count{env:prod}.as_count()",
+      "p_value": 0.001,
+      "min_abs_change": 50
+     }
+    ]
+   },
+   "sentry": {
+    "host": "sentry.io",
+    "org": "harbour",
+    "project": "harbour-shop-web",
+    "service": "checkout",
+    "query": "is:unresolved",
+    "min_users": 5,
+    "min_events": 20,
+    "sev2_users": 25,
+    "regression_p_value": 0.001,
+    "regression_min_abs": 10
+   }
+  }
+ },
+ "config_sha256": "054fdd245aa0ce3b5a7f2549a7ca9e32975e6b62f5be6521fab5b50446732e0b",
+ "window": {
+  "from": "2026-11-11T22:00:00Z",
+  "to": "2026-11-14T22:00:00Z"
+ },
+ "schedule": {
+  "every_minutes": 60,
+  "cron": "0 */1 * * *",
+  "command": "python scripts/watch.py tick --state examples/state",
+  "installed_by_skill": false
+ },
+ "ticks": [
+  {
+   "n": 1,
+   "at": "2026-11-11T23:00:00Z",
+   "window": [
+    "2026-11-11T22:00:00Z",
+    "2026-11-11T23:00:00Z"
+   ],
+   "counts": {
+    "normal": 4,
+    "anomalous": 2,
+    "not_assessed": 0
+   },
+   "changed": [
+    {
+     "key": "datadog:checkout-error-rate",
+     "from": "normal",
+     "to": "suspected"
+    },
+    {
+     "key": "sentry:4100021",
+     "from": "normal",
+     "to": "confirmed"
+    }
+   ],
+   "drafts_touched": [
+    "INC-DRAFT-checkout"
+   ]
+  },
+  {
+   "n": 2,
+   "at": "2026-11-12T00:00:00Z",
+   "window": [
+    "2026-11-11T23:00:00Z",
+    "2026-11-12T00:00:00Z"
+   ],
+   "counts": {
+    "normal": 4,
+    "anomalous": 2,
+    "not_assessed": 0
+   },
+   "changed": [
+    {
+     "key": "datadog:checkout-error-rate",
+     "from": "suspected",
+     "to": "confirmed"
+    }
+   ],
+   "drafts_touched": [
+    "INC-DRAFT-checkout"
+   ]
+  },
+  {
+   "n": 3,
+   "at": "2026-11-12T01:00:00Z",
+   "window": [
+    "2026-11-12T00:00:00Z",
+    "2026-11-12T01:00:00Z"
+   ],
+   "counts": {
+    "normal": 3,
+    "anomalous": 3,
+    "not_assessed": 0
+   },
+   "changed": [
+    {
+     "key": "datadog:search-p95",
+     "from": "normal",
+     "to": "suspected"
+    }
+   ],
+   "drafts_touched": [
+    "INC-DRAFT-checkout"
+   ]
+  },
+  {
+   "n": 4,
+   "at": "2026-11-12T02:00:00Z",
+   "window": [
+    "2026-11-12T01:00:00Z",
+    "2026-11-12T02:00:00Z"
+   ],
+   "counts": {
+    "normal": 4,
+    "anomalous": 2,
+    "not_assessed": 0
+   },
+   "changed": [
+    {
+     "key": "datadog:search-p95",
+     "from": "suspected",
+     "to": "normal"
+    }
+   ],
+   "drafts_touched": [
+    "INC-DRAFT-checkout"
+   ]
+  },
+  {
+   "n": 5,
+   "at": "2026-11-12T03:00:00Z",
+   "window": [
+    "2026-11-12T02:00:00Z",
+    "2026-11-12T03:00:00Z"
+   ],
+   "counts": {
+    "normal": 4,
+    "anomalous": 2,
+    "not_assessed": 0
+   },
+   "changed": [],
+   "drafts_touched": [
+    "INC-DRAFT-checkout"
+   ]
+  },
+  {
+   "n": 6,
+   "at": "2026-11-12T04:00:00Z",
+   "window": [
+    "2026-11-12T03:00:00Z",
+    "2026-11-12T04:00:00Z"
+   ],
+   "counts": {
+    "normal": 4,
+    "anomalous": 2,
+    "not_assessed": 0
+   },
+   "changed": [],
+   "drafts_touched": [
+    "INC-DRAFT-checkout"
+   ]
+  },
+  {
+   "n": 7,
+   "at": "2026-11-12T05:00:00Z",
+   "window": [
+    "2026-11-12T04:00:00Z",
+    "2026-11-12T05:00:00Z"
+   ],
+   "counts": {
+    "normal": 4,
+    "anomalous": 2,
+    "not_assessed": 0
+   },
+   "changed": [],
+   "drafts_touched": [
+    "INC-DRAFT-checkout"
+   ]
+  }
+ ],
+ "items": {
+  "datadog:checkout-error-rate": {
+   "state": "confirmed",
+   "history": [
+    {
+     "tick": 1,
+     "decision": "anomalous",
+     "state": "suspected"
+    },
+    {
+     "tick": 2,
+     "decision": "anomalous",
+     "state": "confirmed"
+    },
+    {
+     "tick": 3,
+     "decision": "anomalous",
+     "state": "confirmed"
+    },
+    {
+     "tick": 4,
+     "decision": "anomalous",
+     "state": "confirmed"
+    },
+    {
+     "tick": 5,
+     "decision": "anomalous",
+     "state": "confirmed"
+    },
+    {
+     "tick": 6,
+     "decision": "anomalous",
+     "state": "confirmed"
+    },
+    {
+     "tick": 7,
+     "decision": "anomalous",
+     "state": "confirmed"
+    }
+   ],
+   "correlated": "yes",
+   "correlation_basis": "began after the deploy, and the hour before it was normal",
+   "pre_release": {
+    "value": 0.004146,
+    "decision": "normal",
+    "score": 0.56
+   },
+   "first_anomalous_tick": 1,
+   "first_anomalous_at": "2026-11-11T22:00:00Z",
+   "confirmed_tick": 2
+  },
+  "datadog:search-p95": {
+   "state": "normal",
+   "history": [
+    {
+     "tick": 1,
+     "decision": "normal",
+     "state": "normal"
+    },
+    {
+     "tick": 2,
+     "decision": "normal",
+     "state": "normal"
+    },
+    {
+     "tick": 3,
+     "decision": "anomalous",
+     "state": "suspected"
+    },
+    {
+     "tick": 4,
+     "decision": "normal",
+     "state": "normal"
+    },
+    {
+     "tick": 5,
+     "decision": "normal",
+     "state": "normal"
+    },
+    {
+     "tick": 6,
+     "decision": "normal",
+     "state": "normal"
+    },
+    {
+     "tick": 7,
+     "decision": "normal",
+     "state": "normal"
+    }
+   ],
+   "correlated": "yes",
+   "correlation_basis": "began after the deploy, and the hour before it was normal",
+   "pre_release": {
+    "value": 198.385314,
+    "decision": "normal",
+    "score": 0.65
+   },
+   "first_anomalous_tick": 3,
+   "first_anomalous_at": "2026-11-12T00:00:00Z",
+   "confirmed_tick": null
+  },
+  "datadog:nightly-export-errors": {
+   "state": "normal",
+   "history": [
+    {
+     "tick": 1,
+     "decision": "normal",
+     "state": "normal"
+    },
+    {
+     "tick": 2,
+     "decision": "normal",
+     "state": "normal"
+    },
+    {
+     "tick": 3,
+     "decision": "normal",
+     "state": "normal"
+    },
+    {
+     "tick": 4,
+     "decision": "normal",
+     "state": "normal"
+    },
+    {
+     "tick": 5,
+     "decision": "normal",
+     "state": "normal"
+    },
+    {
+     "tick": 6,
+     "decision": "normal",
+     "state": "normal"
+    },
+    {
+     "tick": 7,
+     "decision": "normal",
+     "state": "normal"
+    }
+   ],
+   "correlated": null,
+   "correlation_basis": null,
+   "pre_release": {
+    "value": 0.0,
+    "decision": "normal",
+    "score": 1.0
+   },
+   "first_anomalous_tick": null,
+   "first_anomalous_at": null,
+   "confirmed_tick": null
+  },
+  "datadog:orders": {
+   "state": "normal",
+   "history": [
+    {
+     "tick": 1,
+     "decision": "normal",
+     "state": "normal"
+    },
+    {
+     "tick": 2,
+     "decision": "normal",
+     "state": "normal"
+    },
+    {
+     "tick": 3,
+     "decision": "normal",
+     "state": "normal"
+    },
+    {
+     "tick": 4,
+     "decision": "normal",
+     "state": "normal"
+    },
+    {
+     "tick": 5,
+     "decision": "normal",
+     "state": "normal"
+    },
+    {
+     "tick": 6,
+     "decision": "normal",
+     "state": "normal"
+    },
+    {
+     "tick": 7,
+     "decision": "normal",
+     "state": "normal"
+    }
+   ],
+   "correlated": null,
+   "correlation_basis": null,
+   "pre_release": {
+    "value": 188.0,
+    "decision": "normal",
+    "score": 0.899
+   },
+   "first_anomalous_tick": null,
+   "first_anomalous_at": null,
+   "confirmed_tick": null
+  },
+  "sentry:4100021": {
+   "state": "confirmed",
+   "history": [
+    {
+     "tick": 1,
+     "decision": "anomalous",
+     "state": "confirmed"
+    },
+    {
+     "tick": 2,
+     "decision": "anomalous",
+     "state": "confirmed"
+    },
+    {
+     "tick": 3,
+     "decision": "anomalous",
+     "state": "confirmed"
+    },
+    {
+     "tick": 4,
+     "decision": "anomalous",
+     "state": "confirmed"
+    },
+    {
+     "tick": 5,
+     "decision": "anomalous",
+     "state": "confirmed"
+    },
+    {
+     "tick": 6,
+     "decision": "anomalous",
+     "state": "confirmed"
+    },
+    {
+     "tick": 7,
+     "decision": "anomalous",
+     "state": "confirmed"
+    }
+   ],
+   "correlated": "yes",
+   "correlation_basis": "first seen in 2.4.0 after the deploy",
+   "pre_release": null,
+   "first_anomalous_tick": 1,
+   "first_anomalous_at": "2026-11-11T22:00:00Z",
+   "confirmed_tick": 1
+  },
+  "sentry:3300410": {
+   "state": "normal",
+   "history": [
+    {
+     "tick": 1,
+     "decision": "normal",
+     "state": "normal"
+    },
+    {
+     "tick": 2,
+     "decision": "normal",
+     "state": "normal"
+    },
+    {
+     "tick": 3,
+     "decision": "normal",
+     "state": "normal"
+    },
+    {
+     "tick": 4,
+     "decision": "normal",
+     "state": "normal"
+    },
+    {
+     "tick": 5,
+     "decision": "normal",
+     "state": "normal"
+    },
+    {
+     "tick": 6,
+     "decision": "normal",
+     "state": "normal"
+    },
+    {
+     "tick": 7,
+     "decision": "normal",
+     "state": "normal"
+    }
+   ],
+   "correlated": null,
+   "correlation_basis": null,
+   "pre_release": null,
+   "first_anomalous_tick": null,
+   "first_anomalous_at": null,
+   "confirmed_tick": null
+  }
+ },
+ "drafts": [
+  {
+   "id": "INC-DRAFT-checkout",
+   "status": "draft",
+   "service": "checkout",
+   "release": "harbour-shop 2.4.0",
+   "owner": "On-call engineer, checkout team",
+   "severity": "SEV2",
+   "title": "checkout: HARBOUR-SHOP-WEB-2F, checkout error rate after 2.4.0",
+   "started_at": "2026-11-11T22:00:00Z",
+   "detected_at": "2026-11-11T23:00:00Z",
+   "items": [
+    {
+     "key": "sentry:4100021",
+     "kind": "sentry_issue",
+     "label": "HARBOUR-SHOP-WEB-2F",
+     "first_anomalous_tick": 1,
+     "first_anomalous_at": "2026-11-11T22:00:00Z",
+     "confirmed_tick": 1,
+     "summary": "HARBOUR-SHOP-WEB-2F \"TypeError: Cannot read properties of undefined (reading 'lineItems')\" at cart/summary.js in renderTotals: 342 events, 93 users since 2026-11-11T22:06:41Z",
+     "link": "https://sentry.example.test/organizations/harbour/issues/4100021/",
+     "query": null,
+     "state": "confirmed"
+    },
+    {
+     "key": "datadog:checkout-error-rate",
+     "kind": "metric",
+     "label": "checkout error rate",
+     "first_anomalous_tick": 1,
+     "first_anomalous_at": "2026-11-11T22:00:00Z",
+     "confirmed_tick": 2,
+     "summary": "0.020799 against a median of 0.00396 (robust z 85.05, threshold 4)",
+     "link": null,
+     "query": "sum:trace.http.request.errors{service:checkout,env:prod}.as_count() / sum:trace.http.request.hits{service:checkout,env:prod}.as_count()",
+     "state": "confirmed"
+    }
+   ],
+   "timeline": [
+    {
+     "tick": 1,
+     "at": "2026-11-11T23:00:00Z",
+     "note": "draft created"
+    },
+    {
+     "tick": 1,
+     "at": "2026-11-11T23:00:00Z",
+     "note": "HARBOUR-SHOP-WEB-2F confirmed (first seen in 2.4.0 after the deploy)"
+    },
+    {
+     "tick": 2,
+     "at": "2026-11-12T00:00:00Z",
+     "note": "checkout error rate confirmed (began after the deploy, and the hour before it was normal)"
+    },
+    {
+     "tick": 2,
+     "at": "2026-11-12T00:00:00Z",
+     "note": "severity SEV3 -> SEV2"
+    }
+   ],
+   "suggested_actions": [
+    "Check cart/summary.js renderTotals in 2.4.0 for a cart with no lineItems (empty or restored carts), using the Sentry issue's events.",
+    "Compare checkout errors by endpoint in Datadog to see whether the TypeError explains the whole error-rate rise.",
+    "Decide with the release manager whether to roll back 2.4.0 or ship a fix; the draft does not decide."
+   ]
+  }
+ ],
+ "summary": {
+  "headline": "Seven hours into hypercare for harbour-shop 2.4.0: one incident drafted (SEV2, checkout). A new TypeError in the cart summary, first seen in 2.4.0 and affecting 93 users, and a checkout error rate about five times the usual for the hour (2.0% against 0.4%) since the deploy. Search p95 latency was high for one hour after midnight and came back without action. The nightly export errors at 02:00 match every other night. No anomalies above the thresholds in orders."
+ },
+ "limitations": [
+  "The monitoring data is simulated (examples/simulate.py) in the Datadog and Sentry response shapes; no real account was queried.",
+  "The baseline is the same hour on the 14 days before the release; weekday differences are not modelled.",
+  "Seven hourly ticks of a 72-hour window; later ticks will update the draft and the states."
+ ]
+}

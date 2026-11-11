@@ -35,7 +35,7 @@ anatomy described in the root `CLAUDE.md` (`SKILL.md`, `RUBRIC.md`, `schemas/`, 
 | 26 | [CI failure triager](ci-failure-triager.md) | `ci-failure-triager-skill/` | Built (v1.0.0) |
 | 27 | [Test case designer](test-case-designer.md) | `test-case-designer-skill/` | Built (v1.0.0) |
 | 28 | [Post-deploy validator](post-deploy-validator.md) | `post-deploy-validator-skill/` | Built (v1.0.0) |
-| 29 | Hypercare anomaly watcher | `hypercare-anomaly-watcher-skill/` | Agreed; design not written |
+| 29 | [Hypercare anomaly watcher](hypercare-anomaly-watcher.md) | `hypercare-anomaly-watcher-skill/` | Built (v1.0.0) |
 | 30 | Requirements traceability auditor | `requirements-traceability-auditor-skill/` | Agreed; design not written |
 | 31 | CI suite runner | `ci-suite-runner-skill/` | Agreed; design not written |
 | 32 | QA orchestrator (gate-aware) | `qa-orchestrator-skill/` | Agreed; design not written |
