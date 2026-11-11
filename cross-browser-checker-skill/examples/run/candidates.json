@@ -1,0 +1,3000 @@
+{
+ "runs_file": "runs.json",
+ "reference": "chromium",
+ "engines": [
+  {
+   "name": "chromium",
+   "version": "158.0.8127.18",
+   "status": "ran",
+   "note": null
+  },
+  {
+   "name": "firefox",
+   "version": "159.0",
+   "status": "ran",
+   "note": null
+  },
+  {
+   "name": "webkit",
+   "version": "27.2",
+   "status": "ran",
+   "note": null
+  }
+ ],
+ "reruns": 3,
+ "candidates": [
+  {
+   "id": "K1",
+   "kind": "behaviour",
+   "subkind": "step_failed",
+   "key": "1",
+   "element": null,
+   "step": {
+    "wait_for": "#recs-list"
+   },
+   "detail": null,
+   "element_tag": null,
+   "element_type": null,
+   "delta": null,
+   "page": "home",
+   "viewport": "1280x800",
+   "states": [
+    "home~recommendations"
+   ],
+   "engines": [
+    "firefox",
+    "webkit"
+   ],
+   "reference": "chromium",
+   "runs": {
+    "home~recommendations|chromium": [
+     false,
+     false,
+     false
+    ],
+    "home~recommendations|firefox": [
+     true,
+     true,
+     true
+    ],
+    "home~recommendations|webkit": [
+     true,
+     true,
+     true
+    ]
+   },
+   "messages": {
+    "firefox": [
+     "TimeoutError: Page.wait_for_selector: Timeout 10000ms exceeded."
+    ],
+    "webkit": [
+     "TimeoutError: Page.wait_for_selector: Timeout 10000ms exceeded."
+    ]
+   },
+   "ink": {},
+   "features": [],
+   "severity": "Critical",
+   "confidence": "high",
+   "usage_share": 20.62,
+   "share_band": 3,
+   "reach": 1,
+   "score": 12,
+   "priority": "P1",
+   "critical_path": true
+  },
+  {
+   "id": "K2",
+   "kind": "error",
+   "subkind": "page_error",
+   "key": "",
+   "element": null,
+   "step": null,
+   "detail": null,
+   "element_tag": null,
+   "element_type": null,
+   "delta": null,
+   "page": "home",
+   "viewport": "1280x800",
+   "states": [
+    "home",
+    "home~recommendations"
+   ],
+   "engines": [
+    "firefox",
+    "webkit"
+   ],
+   "reference": "chromium",
+   "runs": {
+    "home|chromium": [
+     false,
+     false,
+     false
+    ],
+    "home|firefox": [
+     true,
+     true,
+     true
+    ],
+    "home|webkit": [
+     true,
+     true,
+     true
+    ],
+    "home~recommendations|chromium": [
+     false,
+     false,
+     false
+    ],
+    "home~recommendations|firefox": [
+     true,
+     true,
+     true
+    ],
+    "home~recommendations|webkit": [
+     true,
+     true,
+     true
+    ]
+   },
+   "messages": {
+    "firefox": [
+     "TypeError: can't access property \"brands\", navigator.userAgentData is undefined"
+    ],
+    "webkit": [
+     "TypeError: undefined is not an object (evaluating 'navigator.userAgentData.brands')"
+    ]
+   },
+   "ink": {},
+   "features": [
+    "ua-client-hints"
+   ],
+   "severity": "Critical",
+   "confidence": "high",
+   "usage_share": 20.62,
+   "share_band": 3,
+   "reach": 1,
+   "score": 12,
+   "priority": "P1",
+   "critical_path": false
+  },
+  {
+   "id": "K3",
+   "kind": "layout",
+   "subkind": "content_not_rendered",
+   "key": "#depart",
+   "element": "#depart",
+   "step": null,
+   "detail": "#depart shows 0.0% ink in firefox against 10.8% in chromium",
+   "element_tag": "input",
+   "element_type": "date",
+   "delta": null,
+   "page": "home",
+   "viewport": "1280x800",
+   "states": [
+    "home",
+    "home~recommendations"
+   ],
+   "engines": [
+    "firefox",
+    "webkit"
+   ],
+   "reference": "chromium",
+   "runs": {
+    "home|chromium": [
+     false,
+     false,
+     false
+    ],
+    "home|firefox": [
+     true,
+     true,
+     true
+    ],
+    "home|webkit": [
+     true,
+     true,
+     true
+    ],
+    "home~recommendations|chromium": [
+     false,
+     false,
+     false
+    ],
+    "home~recommendations|firefox": [
+     true,
+     true,
+     true
+    ],
+    "home~recommendations|webkit": [
+     true,
+     true,
+     true
+    ]
+   },
+   "messages": {},
+   "ink": {
+    "chromium": [
+     0.1078,
+     0.1078,
+     0.1078
+    ],
+    "firefox": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "webkit": [
+     0.0,
+     0.0,
+     0.0
+    ]
+   },
+   "features": [
+    "webkit-pseudo-elements"
+   ],
+   "severity": "High",
+   "confidence": "high",
+   "usage_share": 20.62,
+   "share_band": 3,
+   "reach": 1,
+   "score": 9,
+   "priority": "P2",
+   "critical_path": false
+  },
+  {
+   "id": "K4",
+   "kind": "layout",
+   "subkind": "element_missing",
+   "key": "#recs-list",
+   "element": "#recs-list",
+   "step": null,
+   "detail": "#recs-list is missing in firefox",
+   "element_tag": null,
+   "element_type": null,
+   "delta": null,
+   "page": "home",
+   "viewport": "1280x800",
+   "states": [
+    "home~recommendations"
+   ],
+   "engines": [
+    "firefox",
+    "webkit"
+   ],
+   "reference": "chromium",
+   "runs": {
+    "home~recommendations|chromium": [
+     true,
+     true,
+     true
+    ],
+    "home~recommendations|firefox": [
+     false,
+     false,
+     false
+    ],
+    "home~recommendations|webkit": [
+     false,
+     false,
+     false
+    ]
+   },
+   "messages": {},
+   "ink": {},
+   "features": [],
+   "severity": "High",
+   "confidence": "medium",
+   "usage_share": 20.62,
+   "share_band": 3,
+   "reach": 1,
+   "score": 9,
+   "priority": "P2",
+   "critical_path": false
+  },
+  {
+   "id": "K5",
+   "kind": "layout",
+   "subkind": "input_type_fallback",
+   "key": "#depart",
+   "element": "#depart",
+   "step": null,
+   "detail": "#depart is an input of type text in webkit but date in chromium: webkit has no date control",
+   "element_tag": "input",
+   "element_type": "date",
+   "delta": null,
+   "page": "home",
+   "viewport": "1280x800",
+   "states": [
+    "home",
+    "home~recommendations"
+   ],
+   "engines": [
+    "webkit"
+   ],
+   "reference": "chromium",
+   "runs": {
+    "home|chromium": [
+     false,
+     false,
+     false
+    ],
+    "home|webkit": [
+     true,
+     true,
+     true
+    ],
+    "home~recommendations|chromium": [
+     false,
+     false,
+     false
+    ],
+    "home~recommendations|webkit": [
+     true,
+     true,
+     true
+    ]
+   },
+   "messages": {},
+   "ink": {},
+   "features": [],
+   "severity": "Medium",
+   "confidence": "medium",
+   "usage_share": 17.9,
+   "share_band": 2,
+   "reach": 1,
+   "score": 4,
+   "priority": "P3",
+   "critical_path": false
+  }
+ ],
+ "flaky": [
+  {
+   "page": "deals",
+   "viewport": "1280x800",
+   "kind": "layout",
+   "subkind": "element_presence",
+   "key": "#flash",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "firefox": [
+     true,
+     false,
+     false
+    ]
+   }
+  },
+  {
+   "page": "deals",
+   "viewport": "1280x800",
+   "kind": "layout",
+   "subkind": "element_presence",
+   "key": "#flash",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "webkit": [
+     true,
+     false,
+     true
+    ]
+   }
+  }
+ ],
+ "dismissed_automatically": [
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "#depart",
+   "element": "#depart",
+   "delta": [
+    -6,
+    2,
+    -2,
+    -2
+   ],
+   "ref_box": [
+    249,
+    174,
+    150,
+    35
+   ],
+   "reason": "font metrics: under 16 px of movement and within 4 px or 5% in size",
+   "page": "home",
+   "viewport": "1280x800",
+   "engine": "firefox",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "firefox": [
+     true,
+     true,
+     true
+    ]
+   }
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "#more",
+   "element": "#more",
+   "delta": [
+    0,
+    0,
+    -6,
+    1
+   ],
+   "ref_box": [
+    24,
+    424,
+    159,
+    21
+   ],
+   "reason": "font metrics: under 16 px of movement and within 4 px or 5% in size",
+   "page": "home",
+   "viewport": "1280x800",
+   "engine": "firefox",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "firefox": [
+     true,
+     true,
+     true
+    ]
+   }
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "#search",
+   "element": "#search",
+   "delta": [
+    -8,
+    -1,
+    -6,
+    1
+   ],
+   "ref_box": [
+    411,
+    188,
+    58,
+    21
+   ],
+   "reason": "native control rendering: engines draw <button> at different sizes",
+   "page": "home",
+   "viewport": "1280x800",
+   "engine": "firefox",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "firefox": [
+     true,
+     true,
+     true
+    ]
+   }
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "#to",
+   "element": "#to",
+   "delta": [
+    0,
+    -1,
+    -6,
+    1
+   ],
+   "ref_box": [
+    24,
+    177,
+    213,
+    32
+   ],
+   "reason": "font metrics: under 16 px of movement and within 4 px or 5% in size",
+   "page": "home",
+   "viewport": "1280x800",
+   "engine": "firefox",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "firefox": [
+     true,
+     true,
+     true
+    ]
+   }
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "html>body>main>form.search>div:nth-of-type(1)",
+   "element": "html>body>main>form.search>div:nth-of-type(1)",
+   "delta": [
+    0,
+    -2,
+    -6,
+    2
+   ],
+   "ref_box": [
+    24,
+    157,
+    213,
+    52
+   ],
+   "reason": "font metrics: under 16 px of movement and within 4 px or 5% in size",
+   "page": "home",
+   "viewport": "1280x800",
+   "engine": "firefox",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "firefox": [
+     true,
+     true,
+     true
+    ]
+   }
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "html>body>main>form.search>div:nth-of-type(1)>label",
+   "element": "html>body>main>form.search>div:nth-of-type(1)>label",
+   "delta": [
+    0,
+    -2,
+    -6,
+    1
+   ],
+   "ref_box": [
+    24,
+    157,
+    213,
+    16
+   ],
+   "reason": "font metrics: under 16 px of movement and within 4 px or 5% in size",
+   "page": "home",
+   "viewport": "1280x800",
+   "engine": "firefox",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "firefox": [
+     true,
+     true,
+     true
+    ]
+   }
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "html>body>main>form.search>div:nth-of-type(2)",
+   "element": "html>body>main>form.search>div:nth-of-type(2)",
+   "delta": [
+    -6,
+    1,
+    -2,
+    -1
+   ],
+   "ref_box": [
+    249,
+    154,
+    150,
+    55
+   ],
+   "reason": "font metrics: under 16 px of movement and within 4 px or 5% in size",
+   "page": "home",
+   "viewport": "1280x800",
+   "engine": "firefox",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "firefox": [
+     true,
+     true,
+     true
+    ]
+   }
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "html>body>main>form.search>div:nth-of-type(2)>label",
+   "element": "html>body>main>form.search>div:nth-of-type(2)>label",
+   "delta": [
+    -6,
+    1,
+    -2,
+    1
+   ],
+   "ref_box": [
+    249,
+    154,
+    150,
+    16
+   ],
+   "reason": "font metrics: under 16 px of movement and within 4 px or 5% in size",
+   "page": "home",
+   "viewport": "1280x800",
+   "engine": "firefox",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "firefox": [
+     true,
+     true,
+     true
+    ]
+   }
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "#more",
+   "element": "#more",
+   "delta": [
+    0,
+    -3,
+    -18,
+    4
+   ],
+   "ref_box": [
+    24,
+    424,
+    159,
+    21
+   ],
+   "reason": "native control rendering: engines draw <button> at different sizes",
+   "page": "home",
+   "viewport": "1280x800",
+   "engine": "webkit",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "webkit": [
+     true,
+     true,
+     true
+    ]
+   }
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "#search",
+   "element": "#search",
+   "delta": [
+    7,
+    -7,
+    -7,
+    4
+   ],
+   "ref_box": [
+    411,
+    188,
+    58,
+    21
+   ],
+   "reason": "native control rendering: engines draw <button> at different sizes",
+   "page": "home",
+   "viewport": "1280x800",
+   "engine": "webkit",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "webkit": [
+     true,
+     true,
+     true
+    ]
+   }
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "#to",
+   "element": "#to",
+   "delta": [
+    0,
+    -3,
+    -28,
+    0
+   ],
+   "ref_box": [
+    24,
+    177,
+    213,
+    32
+   ],
+   "reason": "native control rendering: engines draw <input> at different sizes",
+   "page": "home",
+   "viewport": "1280x800",
+   "engine": "webkit",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "webkit": [
+     true,
+     true,
+     true
+    ]
+   }
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "#depart",
+   "element": "#depart",
+   "delta": [
+    -6,
+    2,
+    -2,
+    -2
+   ],
+   "ref_box": [
+    249,
+    174,
+    150,
+    35
+   ],
+   "reason": "font metrics: under 16 px of movement and within 4 px or 5% in size",
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "engine": "firefox",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "firefox": [
+     true,
+     true,
+     true
+    ]
+   }
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "#more",
+   "element": "#more",
+   "delta": [
+    0,
+    0,
+    -6,
+    1
+   ],
+   "ref_box": [
+    24,
+    424,
+    159,
+    21
+   ],
+   "reason": "font metrics: under 16 px of movement and within 4 px or 5% in size",
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "engine": "firefox",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "firefox": [
+     true,
+     true,
+     true
+    ]
+   }
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "#search",
+   "element": "#search",
+   "delta": [
+    -8,
+    -1,
+    -6,
+    1
+   ],
+   "ref_box": [
+    411,
+    188,
+    58,
+    21
+   ],
+   "reason": "native control rendering: engines draw <button> at different sizes",
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "engine": "firefox",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "firefox": [
+     true,
+     true,
+     true
+    ]
+   }
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "#to",
+   "element": "#to",
+   "delta": [
+    0,
+    -1,
+    -6,
+    1
+   ],
+   "ref_box": [
+    24,
+    177,
+    213,
+    32
+   ],
+   "reason": "font metrics: under 16 px of movement and within 4 px or 5% in size",
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "engine": "firefox",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "firefox": [
+     true,
+     true,
+     true
+    ]
+   }
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "html>body>main>form.search>div:nth-of-type(1)",
+   "element": "html>body>main>form.search>div:nth-of-type(1)",
+   "delta": [
+    0,
+    -2,
+    -6,
+    2
+   ],
+   "ref_box": [
+    24,
+    157,
+    213,
+    52
+   ],
+   "reason": "font metrics: under 16 px of movement and within 4 px or 5% in size",
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "engine": "firefox",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "firefox": [
+     true,
+     true,
+     true
+    ]
+   }
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "html>body>main>form.search>div:nth-of-type(1)>label",
+   "element": "html>body>main>form.search>div:nth-of-type(1)>label",
+   "delta": [
+    0,
+    -2,
+    -6,
+    1
+   ],
+   "ref_box": [
+    24,
+    157,
+    213,
+    16
+   ],
+   "reason": "font metrics: under 16 px of movement and within 4 px or 5% in size",
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "engine": "firefox",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "firefox": [
+     true,
+     true,
+     true
+    ]
+   }
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "html>body>main>form.search>div:nth-of-type(2)",
+   "element": "html>body>main>form.search>div:nth-of-type(2)",
+   "delta": [
+    -6,
+    1,
+    -2,
+    -1
+   ],
+   "ref_box": [
+    249,
+    154,
+    150,
+    55
+   ],
+   "reason": "font metrics: under 16 px of movement and within 4 px or 5% in size",
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "engine": "firefox",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "firefox": [
+     true,
+     true,
+     true
+    ]
+   }
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "html>body>main>form.search>div:nth-of-type(2)>label",
+   "element": "html>body>main>form.search>div:nth-of-type(2)>label",
+   "delta": [
+    -6,
+    1,
+    -2,
+    1
+   ],
+   "ref_box": [
+    249,
+    154,
+    150,
+    16
+   ],
+   "reason": "font metrics: under 16 px of movement and within 4 px or 5% in size",
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "engine": "firefox",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "firefox": [
+     true,
+     true,
+     true
+    ]
+   }
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "#more",
+   "element": "#more",
+   "delta": [
+    0,
+    -3,
+    -18,
+    4
+   ],
+   "ref_box": [
+    24,
+    424,
+    159,
+    21
+   ],
+   "reason": "native control rendering: engines draw <button> at different sizes",
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "engine": "webkit",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "webkit": [
+     true,
+     true,
+     true
+    ]
+   }
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "#search",
+   "element": "#search",
+   "delta": [
+    7,
+    -7,
+    -7,
+    4
+   ],
+   "ref_box": [
+    411,
+    188,
+    58,
+    21
+   ],
+   "reason": "native control rendering: engines draw <button> at different sizes",
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "engine": "webkit",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "webkit": [
+     true,
+     true,
+     true
+    ]
+   }
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "#to",
+   "element": "#to",
+   "delta": [
+    0,
+    -3,
+    -28,
+    0
+   ],
+   "ref_box": [
+    24,
+    177,
+    213,
+    32
+   ],
+   "reason": "native control rendering: engines draw <input> at different sizes",
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "engine": "webkit",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "webkit": [
+     true,
+     true,
+     true
+    ]
+   }
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "#depart",
+   "element": "#depart",
+   "delta": [
+    -28,
+    0,
+    35,
+    -3
+   ],
+   "ref_box": [
+    249,
+    174,
+    150,
+    35
+   ],
+   "size": true,
+   "detail": "#depart box differs by dx -28, dy 0, dw 35, dh -3",
+   "page": "home",
+   "viewport": "1280x800",
+   "engine": "webkit",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "webkit": [
+     true,
+     true,
+     true
+    ]
+   },
+   "reason": "follows from its input type fallback"
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "html>body>main>form.search>div:nth-of-type(1)",
+   "element": "html>body>main>form.search>div:nth-of-type(1)",
+   "delta": [
+    0,
+    -3,
+    -28,
+    0
+   ],
+   "ref_box": [
+    24,
+    157,
+    213,
+    52
+   ],
+   "size": true,
+   "detail": "html>body>main>form.search>div:nth-of-type(1) box differs by dx 0, dy -3, dw -28, dh 0",
+   "page": "home",
+   "viewport": "1280x800",
+   "engine": "webkit",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "webkit": [
+     true,
+     true,
+     true
+    ]
+   },
+   "reason": "follows from box_differs of html>body>main>form.search>div:nth-of-type(1)>label inside it"
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "html>body>main>form.search>div:nth-of-type(1)>label",
+   "element": "html>body>main>form.search>div:nth-of-type(1)>label",
+   "delta": [
+    0,
+    -3,
+    -28,
+    0
+   ],
+   "ref_box": [
+    24,
+    157,
+    213,
+    16
+   ],
+   "size": true,
+   "detail": "html>body>main>form.search>div:nth-of-type(1)>label box differs by dx 0, dy -3, dw -28, dh 0",
+   "page": "home",
+   "viewport": "1280x800",
+   "engine": "webkit",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "webkit": [
+     true,
+     true,
+     true
+    ]
+   },
+   "reason": "resized with its container html>body>main>form.search>div:nth-of-type(1)"
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "html>body>main>form.search>div:nth-of-type(2)",
+   "element": "html>body>main>form.search>div:nth-of-type(2)",
+   "delta": [
+    -28,
+    0,
+    35,
+    -3
+   ],
+   "ref_box": [
+    249,
+    154,
+    150,
+    55
+   ],
+   "size": true,
+   "detail": "html>body>main>form.search>div:nth-of-type(2) box differs by dx -28, dy 0, dw 35, dh -3",
+   "page": "home",
+   "viewport": "1280x800",
+   "engine": "webkit",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "webkit": [
+     true,
+     true,
+     true
+    ]
+   },
+   "reason": "follows from box_differs of #depart inside it"
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "html>body>main>form.search>div:nth-of-type(2)>label",
+   "element": "html>body>main>form.search>div:nth-of-type(2)>label",
+   "delta": [
+    -28,
+    0,
+    35,
+    0
+   ],
+   "ref_box": [
+    249,
+    154,
+    150,
+    16
+   ],
+   "size": true,
+   "detail": "html>body>main>form.search>div:nth-of-type(2)>label box differs by dx -28, dy 0, dw 35, dh 0",
+   "page": "home",
+   "viewport": "1280x800",
+   "engine": "webkit",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "webkit": [
+     true,
+     true,
+     true
+    ]
+   },
+   "reason": "resized with its container html>body>main>form.search>div:nth-of-type(2)"
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "#recs",
+   "element": "#recs",
+   "delta": [
+    0,
+    0,
+    0,
+    -69
+   ],
+   "ref_box": [
+    24,
+    376,
+    1232,
+    139
+   ],
+   "size": true,
+   "detail": "#recs box differs by dx 0, dy 0, dw 0, dh -69",
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "engine": "firefox",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "firefox": [
+     true,
+     true,
+     true
+    ]
+   },
+   "reason": "follows from element_missing of #recs-list inside it"
+  },
+  {
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "engine": "firefox",
+   "ref": "chromium",
+   "kind": "layout",
+   "subkind": "element_missing",
+   "key": "#recs-list>li:nth-of-type(1)",
+   "element": "#recs-list>li:nth-of-type(1)",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "firefox": [
+     false,
+     false,
+     false
+    ]
+   },
+   "ref_box": [
+    64,
+    461,
+    1192,
+    18
+   ],
+   "detail": "#recs-list>li:nth-of-type(1) is missing in firefox",
+   "reason": "inside #recs-list, which is also missing"
+  },
+  {
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "engine": "firefox",
+   "ref": "chromium",
+   "kind": "layout",
+   "subkind": "element_missing",
+   "key": "#recs-list>li:nth-of-type(2)",
+   "element": "#recs-list>li:nth-of-type(2)",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "firefox": [
+     false,
+     false,
+     false
+    ]
+   },
+   "ref_box": [
+    64,
+    479,
+    1192,
+    18
+   ],
+   "detail": "#recs-list>li:nth-of-type(2) is missing in firefox",
+   "reason": "inside #recs-list, which is also missing"
+  },
+  {
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "engine": "firefox",
+   "ref": "chromium",
+   "kind": "layout",
+   "subkind": "element_missing",
+   "key": "#recs-list>li:nth-of-type(3)",
+   "element": "#recs-list>li:nth-of-type(3)",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "firefox": [
+     false,
+     false,
+     false
+    ]
+   },
+   "ref_box": [
+    64,
+    497,
+    1192,
+    18
+   ],
+   "detail": "#recs-list>li:nth-of-type(3) is missing in firefox",
+   "reason": "inside #recs-list, which is also missing"
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "html>body>main",
+   "element": "html>body>main",
+   "delta": [
+    0,
+    0,
+    0,
+    -85
+   ],
+   "ref_box": [
+    0,
+    50,
+    1280,
+    505
+   ],
+   "size": true,
+   "detail": "html>body>main box differs by dx 0, dy 0, dw 0, dh -85",
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "engine": "firefox",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "firefox": [
+     true,
+     true,
+     true
+    ]
+   },
+   "reason": "follows from box_differs of #recs inside it"
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "#depart",
+   "element": "#depart",
+   "delta": [
+    -28,
+    0,
+    35,
+    -3
+   ],
+   "ref_box": [
+    249,
+    174,
+    150,
+    35
+   ],
+   "size": true,
+   "detail": "#depart box differs by dx -28, dy 0, dw 35, dh -3",
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "engine": "webkit",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "webkit": [
+     true,
+     true,
+     true
+    ]
+   },
+   "reason": "follows from its input type fallback"
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "#recs",
+   "element": "#recs",
+   "delta": [
+    0,
+    -3,
+    0,
+    -66
+   ],
+   "ref_box": [
+    24,
+    376,
+    1232,
+    139
+   ],
+   "size": true,
+   "detail": "#recs box differs by dx 0, dy -3, dw 0, dh -66",
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "engine": "webkit",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "webkit": [
+     true,
+     true,
+     true
+    ]
+   },
+   "reason": "follows from element_missing of #recs-list inside it"
+  },
+  {
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "engine": "webkit",
+   "ref": "chromium",
+   "kind": "layout",
+   "subkind": "element_missing",
+   "key": "#recs-list>li:nth-of-type(1)",
+   "element": "#recs-list>li:nth-of-type(1)",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "webkit": [
+     false,
+     false,
+     false
+    ]
+   },
+   "ref_box": [
+    64,
+    461,
+    1192,
+    18
+   ],
+   "detail": "#recs-list>li:nth-of-type(1) is missing in webkit",
+   "reason": "inside #recs-list, which is also missing"
+  },
+  {
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "engine": "webkit",
+   "ref": "chromium",
+   "kind": "layout",
+   "subkind": "element_missing",
+   "key": "#recs-list>li:nth-of-type(2)",
+   "element": "#recs-list>li:nth-of-type(2)",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "webkit": [
+     false,
+     false,
+     false
+    ]
+   },
+   "ref_box": [
+    64,
+    479,
+    1192,
+    18
+   ],
+   "detail": "#recs-list>li:nth-of-type(2) is missing in webkit",
+   "reason": "inside #recs-list, which is also missing"
+  },
+  {
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "engine": "webkit",
+   "ref": "chromium",
+   "kind": "layout",
+   "subkind": "element_missing",
+   "key": "#recs-list>li:nth-of-type(3)",
+   "element": "#recs-list>li:nth-of-type(3)",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "webkit": [
+     false,
+     false,
+     false
+    ]
+   },
+   "ref_box": [
+    64,
+    497,
+    1192,
+    18
+   ],
+   "detail": "#recs-list>li:nth-of-type(3) is missing in webkit",
+   "reason": "inside #recs-list, which is also missing"
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "html>body>main",
+   "element": "html>body>main",
+   "delta": [
+    0,
+    0,
+    0,
+    -85
+   ],
+   "ref_box": [
+    0,
+    50,
+    1280,
+    505
+   ],
+   "size": true,
+   "detail": "html>body>main box differs by dx 0, dy 0, dw 0, dh -85",
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "engine": "webkit",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "webkit": [
+     true,
+     true,
+     true
+    ]
+   },
+   "reason": "follows from box_differs of #depart inside it"
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "html>body>main>form.search>div:nth-of-type(1)",
+   "element": "html>body>main>form.search>div:nth-of-type(1)",
+   "delta": [
+    0,
+    -3,
+    -28,
+    0
+   ],
+   "ref_box": [
+    24,
+    157,
+    213,
+    52
+   ],
+   "size": true,
+   "detail": "html>body>main>form.search>div:nth-of-type(1) box differs by dx 0, dy -3, dw -28, dh 0",
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "engine": "webkit",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "webkit": [
+     true,
+     true,
+     true
+    ]
+   },
+   "reason": "follows from box_differs of html>body>main>form.search>div:nth-of-type(1)>label inside it"
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "html>body>main>form.search>div:nth-of-type(1)>label",
+   "element": "html>body>main>form.search>div:nth-of-type(1)>label",
+   "delta": [
+    0,
+    -3,
+    -28,
+    0
+   ],
+   "ref_box": [
+    24,
+    157,
+    213,
+    16
+   ],
+   "size": true,
+   "detail": "html>body>main>form.search>div:nth-of-type(1)>label box differs by dx 0, dy -3, dw -28, dh 0",
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "engine": "webkit",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "webkit": [
+     true,
+     true,
+     true
+    ]
+   },
+   "reason": "resized with its container html>body>main>form.search>div:nth-of-type(1)"
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "html>body>main>form.search>div:nth-of-type(2)",
+   "element": "html>body>main>form.search>div:nth-of-type(2)",
+   "delta": [
+    -28,
+    0,
+    35,
+    -3
+   ],
+   "ref_box": [
+    249,
+    154,
+    150,
+    55
+   ],
+   "size": true,
+   "detail": "html>body>main>form.search>div:nth-of-type(2) box differs by dx -28, dy 0, dw 35, dh -3",
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "engine": "webkit",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "webkit": [
+     true,
+     true,
+     true
+    ]
+   },
+   "reason": "follows from box_differs of #depart inside it"
+  },
+  {
+   "kind": "layout",
+   "subkind": "box_differs",
+   "key": "html>body>main>form.search>div:nth-of-type(2)>label",
+   "element": "html>body>main>form.search>div:nth-of-type(2)>label",
+   "delta": [
+    -28,
+    0,
+    35,
+    0
+   ],
+   "ref_box": [
+    249,
+    154,
+    150,
+    16
+   ],
+   "size": true,
+   "detail": "html>body>main>form.search>div:nth-of-type(2)>label box differs by dx -28, dy 0, dw 35, dh 0",
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "engine": "webkit",
+   "ref": "chromium",
+   "runs": {
+    "chromium": [
+     true,
+     true,
+     true
+    ],
+    "webkit": [
+     true,
+     true,
+     true
+    ]
+   },
+   "reason": "resized with its container html>body>main>form.search>div:nth-of-type(2)"
+  }
+ ],
+ "features": {
+  "repo": "examples/travel-site",
+  "browserslist": {
+   "query": "defaults, firefox >= 115, safari >= 14",
+   "source": "package.json",
+   "resolved_count": 109,
+   "coverage": 88.52,
+   "unresolved": [
+    "unresolved: 'Firefox ESR'"
+   ]
+  },
+  "uses": 6,
+  "features": [
+   {
+    "feature": "ua-client-hints",
+    "name": "navigator.userAgentData",
+    "baseline_status": "limited",
+    "files": [
+     {
+      "file": "site/app.js",
+      "line": 3,
+      "snippet": "const brands = navigator.userAgentData.brands.map(b => b.brand).join(', ');",
+      "selector": null,
+      "fallback": false
+     }
+    ],
+    "unsupported_in": [
+     {
+      "browser": "and_ff",
+      "version": "158",
+      "engine": "gecko",
+      "usage": 0.4133,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "115",
+      "engine": "gecko",
+      "usage": 0.1373,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "116",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "117",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "118",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "119",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "120",
+      "engine": "gecko",
+      "usage": 0.1294,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "121",
+      "engine": "gecko",
+      "usage": 0.2549,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "122",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "123",
+      "engine": "gecko",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "124",
+      "engine": "gecko",
+      "usage": 0.0118,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "125",
+      "engine": "gecko",
+      "usage": 0.0039,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "126",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "127",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "128",
+      "engine": "gecko",
+      "usage": 0.0039,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "129",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "130",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "131",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "132",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "133",
+      "engine": "gecko",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "134",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "135",
+      "engine": "gecko",
+      "usage": 0.0039,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "136",
+      "engine": "gecko",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "137",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "138",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "139",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "140",
+      "engine": "gecko",
+      "usage": 0.0863,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "141",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "142",
+      "engine": "gecko",
+      "usage": 0.0039,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "143",
+      "engine": "gecko",
+      "usage": 0.0039,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "144",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "145",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "146",
+      "engine": "gecko",
+      "usage": 0.0039,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "147",
+      "engine": "gecko",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "148",
+      "engine": "gecko",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "149",
+      "engine": "gecko",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "150",
+      "engine": "gecko",
+      "usage": 0.0157,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "151",
+      "engine": "gecko",
+      "usage": 0.0118,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "152",
+      "engine": "gecko",
+      "usage": 0.0275,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "153",
+      "engine": "gecko",
+      "usage": 0.0471,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "154",
+      "engine": "gecko",
+      "usage": 0.2,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "155",
+      "engine": "gecko",
+      "usage": 0.6432,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "156",
+      "engine": "gecko",
+      "usage": 0.6354,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "157",
+      "engine": "gecko",
+      "usage": 0.0235,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "158",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "ios_saf",
+      "version": "18.5-18.7",
+      "engine": "webkit",
+      "usage": 2.0064,
+      "first_supported": null
+     },
+     {
+      "browser": "ios_saf",
+      "version": "26.5",
+      "engine": "webkit",
+      "usage": 1.361,
+      "first_supported": null
+     },
+     {
+      "browser": "ios_saf",
+      "version": "26.6",
+      "engine": "webkit",
+      "usage": 8.3976,
+      "first_supported": null
+     },
+     {
+      "browser": "ios_saf",
+      "version": "27.0",
+      "engine": "webkit",
+      "usage": 0.6439,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "14",
+      "engine": "webkit",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "14.1",
+      "engine": "webkit",
+      "usage": 0.0157,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "15",
+      "engine": "webkit",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "15.1",
+      "engine": "webkit",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "15.2-15.3",
+      "engine": "webkit",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "15.4",
+      "engine": "webkit",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "15.5",
+      "engine": "webkit",
+      "usage": 0.0039,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "15.6",
+      "engine": "webkit",
+      "usage": 0.0706,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "16.0",
+      "engine": "webkit",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "16.1",
+      "engine": "webkit",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "16.2",
+      "engine": "webkit",
+      "usage": 0.0039,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "16.3",
+      "engine": "webkit",
+      "usage": 0.0118,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "16.4",
+      "engine": "webkit",
+      "usage": 0.0039,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "16.5",
+      "engine": "webkit",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "16.6",
+      "engine": "webkit",
+      "usage": 0.1255,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "17.0",
+      "engine": "webkit",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "17.1",
+      "engine": "webkit",
+      "usage": 0.1059,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "17.2",
+      "engine": "webkit",
+      "usage": 0.0118,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "17.3",
+      "engine": "webkit",
+      "usage": 0.0157,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "17.4",
+      "engine": "webkit",
+      "usage": 0.051,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "17.5",
+      "engine": "webkit",
+      "usage": 0.0431,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "17.6",
+      "engine": "webkit",
+      "usage": 0.1765,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "18.0",
+      "engine": "webkit",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "18.1",
+      "engine": "webkit",
+      "usage": 0.0353,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "18.2",
+      "engine": "webkit",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "18.3",
+      "engine": "webkit",
+      "usage": 0.0314,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "18.4",
+      "engine": "webkit",
+      "usage": 0.0118,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "18.5-18.7",
+      "engine": "webkit",
+      "usage": 0.2942,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "26.0",
+      "engine": "webkit",
+      "usage": 0.0157,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "26.1",
+      "engine": "webkit",
+      "usage": 0.0157,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "26.2",
+      "engine": "webkit",
+      "usage": 0.051,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "26.3",
+      "engine": "webkit",
+      "usage": 0.0667,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "26.4",
+      "engine": "webkit",
+      "usage": 0.0628,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "26.5",
+      "engine": "webkit",
+      "usage": 0.2706,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "26.6",
+      "engine": "webkit",
+      "usage": 1.4119,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "27",
+      "engine": "webkit",
+      "usage": 0.1216,
+      "first_supported": null
+     }
+    ],
+    "unsupported_usage": 18.191,
+    "not_assessed": [
+     "and_qq",
+     "and_uc",
+     "android",
+     "kaios",
+     "op_mini",
+     "op_mob",
+     "opera",
+     "samsung"
+    ],
+    "fallback": false,
+    "status": "confirmed_at_runtime",
+    "linked_differences": [
+     "K2"
+    ]
+   },
+   {
+    "feature": "has",
+    "name": ":has()",
+    "baseline_status": "high",
+    "files": [
+     {
+      "file": "site/style.css",
+      "line": 13,
+      "snippet": ".card:has(.sale)",
+      "selector": ".card:has(.sale)",
+      "fallback": false
+     }
+    ],
+    "unsupported_in": [
+     {
+      "browser": "firefox",
+      "version": "115",
+      "engine": "gecko",
+      "usage": 0.1373,
+      "first_supported": "121"
+     },
+     {
+      "browser": "firefox",
+      "version": "116",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": "121"
+     },
+     {
+      "browser": "firefox",
+      "version": "117",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": "121"
+     },
+     {
+      "browser": "firefox",
+      "version": "118",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": "121"
+     },
+     {
+      "browser": "firefox",
+      "version": "119",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": "121"
+     },
+     {
+      "browser": "firefox",
+      "version": "120",
+      "engine": "gecko",
+      "usage": 0.1294,
+      "first_supported": "121"
+     },
+     {
+      "browser": "safari",
+      "version": "14",
+      "engine": "webkit",
+      "usage": 0.0078,
+      "first_supported": "15.4"
+     },
+     {
+      "browser": "safari",
+      "version": "14.1",
+      "engine": "webkit",
+      "usage": 0.0157,
+      "first_supported": "15.4"
+     },
+     {
+      "browser": "safari",
+      "version": "15",
+      "engine": "webkit",
+      "usage": 0,
+      "first_supported": "15.4"
+     },
+     {
+      "browser": "safari",
+      "version": "15.1",
+      "engine": "webkit",
+      "usage": 0,
+      "first_supported": "15.4"
+     },
+     {
+      "browser": "safari",
+      "version": "15.2-15.3",
+      "engine": "webkit",
+      "usage": 0,
+      "first_supported": "15.4"
+     }
+    ],
+    "unsupported_usage": 0.29,
+    "not_assessed": [
+     "and_qq",
+     "and_uc",
+     "android",
+     "kaios",
+     "op_mini",
+     "op_mob",
+     "opera",
+     "samsung"
+    ],
+    "fallback": false,
+    "status": "possible",
+    "linked_differences": []
+   },
+   {
+    "feature": "flexbox-gap",
+    "name": "gap in flexbox",
+    "baseline_status": "high",
+    "files": [
+     {
+      "file": "site/style.css",
+      "line": 5,
+      "snippet": "form.search { display: flex; gap: 12px }",
+      "selector": "form.search",
+      "fallback": false
+     },
+     {
+      "file": "site/style.css",
+      "line": 11,
+      "snippet": ".cards { display: flex; gap: 16px }",
+      "selector": ".cards",
+      "fallback": false
+     }
+    ],
+    "unsupported_in": [
+     {
+      "browser": "safari",
+      "version": "14",
+      "engine": "webkit",
+      "usage": 0.0078,
+      "first_supported": "14.1"
+     }
+    ],
+    "unsupported_usage": 0.008,
+    "not_assessed": [
+     "and_qq",
+     "and_uc",
+     "android",
+     "kaios",
+     "op_mini",
+     "op_mob",
+     "opera",
+     "samsung"
+    ],
+    "fallback": false,
+    "status": "possible",
+    "linked_differences": []
+   },
+   {
+    "feature": "webkit-pseudo-elements",
+    "name": "::-webkit- pseudo-elements",
+    "baseline_status": "non_standard",
+    "files": [
+     {
+      "file": "site/style.css",
+      "line": 10,
+      "snippet": "input[type=\"date\"]::-webkit-datetime-edit",
+      "selector": "input[type=\"date\"]::-webkit-datetime-edit",
+      "fallback": false
+     }
+    ],
+    "unsupported_in": [
+     {
+      "browser": "and_ff",
+      "version": "158",
+      "engine": "gecko",
+      "usage": 0.4133,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "115",
+      "engine": "gecko",
+      "usage": 0.1373,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "116",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "117",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "118",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "119",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "120",
+      "engine": "gecko",
+      "usage": 0.1294,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "121",
+      "engine": "gecko",
+      "usage": 0.2549,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "122",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "123",
+      "engine": "gecko",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "124",
+      "engine": "gecko",
+      "usage": 0.0118,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "125",
+      "engine": "gecko",
+      "usage": 0.0039,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "126",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "127",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "128",
+      "engine": "gecko",
+      "usage": 0.0039,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "129",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "130",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "131",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "132",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "133",
+      "engine": "gecko",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "134",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "135",
+      "engine": "gecko",
+      "usage": 0.0039,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "136",
+      "engine": "gecko",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "137",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "138",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "139",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "140",
+      "engine": "gecko",
+      "usage": 0.0863,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "141",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "142",
+      "engine": "gecko",
+      "usage": 0.0039,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "143",
+      "engine": "gecko",
+      "usage": 0.0039,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "144",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "145",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "146",
+      "engine": "gecko",
+      "usage": 0.0039,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "147",
+      "engine": "gecko",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "148",
+      "engine": "gecko",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "149",
+      "engine": "gecko",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "150",
+      "engine": "gecko",
+      "usage": 0.0157,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "151",
+      "engine": "gecko",
+      "usage": 0.0118,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "152",
+      "engine": "gecko",
+      "usage": 0.0275,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "153",
+      "engine": "gecko",
+      "usage": 0.0471,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "154",
+      "engine": "gecko",
+      "usage": 0.2,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "155",
+      "engine": "gecko",
+      "usage": 0.6432,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "156",
+      "engine": "gecko",
+      "usage": 0.6354,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "157",
+      "engine": "gecko",
+      "usage": 0.0235,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "158",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     }
+    ],
+    "unsupported_usage": 2.707,
+    "not_assessed": [
+     "and_qq",
+     "and_uc",
+     "android",
+     "kaios",
+     "op_mini",
+     "op_mob",
+     "opera",
+     "samsung"
+    ],
+    "fallback": false,
+    "status": "confirmed_at_runtime",
+    "linked_differences": [
+     "K3"
+    ]
+   }
+  ]
+ }
+}

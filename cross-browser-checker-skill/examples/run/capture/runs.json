@@ -1,0 +1,8917 @@
+{
+ "site": "http://127.0.0.1:8145/",
+ "captured_at": "2026-11-11T08:29:01Z",
+ "reruns": 3,
+ "engines": [
+  {
+   "name": "chromium",
+   "version": "158.0.8127.18",
+   "status": "ran",
+   "note": null
+  },
+  {
+   "name": "firefox",
+   "version": "159.0",
+   "status": "ran",
+   "note": null
+  },
+  {
+   "name": "webkit",
+   "version": "27.2",
+   "status": "ran",
+   "note": null
+  }
+ ],
+ "runs": [
+  {
+   "engine": "chromium",
+   "page": "home",
+   "viewport": "1280x800",
+   "run": 1,
+   "critical_path": false,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      16,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      16,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      16,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      50,
+      1280,
+      419
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "Where to next?",
+     "box": [
+      24,
+      95,
+      1232,
+      37
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search",
+     "tag": "form",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      154,
+      1232,
+      55
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      157,
+      213,
+      52
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Destination",
+     "box": [
+      24,
+      157,
+      213,
+      16
+     ]
+    },
+    {
+     "sig": "#to",
+     "tag": "input",
+     "type": "text",
+     "text": "",
+     "box": [
+      24,
+      177,
+      213,
+      32
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      249,
+      154,
+      150,
+      55
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Departing",
+     "box": [
+      249,
+      154,
+      150,
+      16
+     ]
+    },
+    {
+     "sig": "#depart",
+     "tag": "input",
+     "type": "date",
+     "text": "",
+     "box": [
+      249,
+      174,
+      150,
+      35
+     ]
+    },
+    {
+     "sig": "#search",
+     "tag": "button",
+     "type": "button",
+     "text": "Search",
+     "box": [
+      411,
+      188,
+      58,
+      21
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      233,
+      1232,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Hobart",
+     "box": [
+      37,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $320",
+     "box": [
+      37,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      286,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Broome",
+     "box": [
+      299,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>p.sale",
+     "tag": "p",
+     "type": null,
+     "text": "Sale: from $410",
+     "box": [
+      299,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      548,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Queenstown",
+     "box": [
+      561,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $560",
+     "box": [
+      561,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "#recs",
+     "tag": "section",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      376,
+      1232,
+      69
+     ]
+    },
+    {
+     "sig": "#recs>h2",
+     "tag": "h2",
+     "type": null,
+     "text": "Recommended for you",
+     "box": [
+      24,
+      376,
+      1232,
+      28
+     ]
+    },
+    {
+     "sig": "#more",
+     "tag": "button",
+     "type": "button",
+     "text": "Show recommendations",
+     "box": [
+      24,
+      424,
+      159,
+      21
+     ]
+    }
+   ],
+   "images": [],
+   "scripts": [
+    "http://127.0.0.1:8145/app.js"
+   ],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "chromium/1280x800/home.r1.png",
+   "console_errors": [],
+   "page_errors": [],
+   "failed_requests": [],
+   "screenshot_sha256": "2ed255eebf07eed2e0a4380bfd8e7337bf4ce5c730da545952764c7c95619ba1"
+  },
+  {
+   "engine": "chromium",
+   "page": "home",
+   "viewport": "1280x800",
+   "run": 2,
+   "critical_path": false,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      16,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      16,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      16,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      50,
+      1280,
+      419
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "Where to next?",
+     "box": [
+      24,
+      95,
+      1232,
+      37
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search",
+     "tag": "form",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      154,
+      1232,
+      55
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      157,
+      213,
+      52
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Destination",
+     "box": [
+      24,
+      157,
+      213,
+      16
+     ]
+    },
+    {
+     "sig": "#to",
+     "tag": "input",
+     "type": "text",
+     "text": "",
+     "box": [
+      24,
+      177,
+      213,
+      32
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      249,
+      154,
+      150,
+      55
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Departing",
+     "box": [
+      249,
+      154,
+      150,
+      16
+     ]
+    },
+    {
+     "sig": "#depart",
+     "tag": "input",
+     "type": "date",
+     "text": "",
+     "box": [
+      249,
+      174,
+      150,
+      35
+     ]
+    },
+    {
+     "sig": "#search",
+     "tag": "button",
+     "type": "button",
+     "text": "Search",
+     "box": [
+      411,
+      188,
+      58,
+      21
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      233,
+      1232,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Hobart",
+     "box": [
+      37,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $320",
+     "box": [
+      37,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      286,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Broome",
+     "box": [
+      299,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>p.sale",
+     "tag": "p",
+     "type": null,
+     "text": "Sale: from $410",
+     "box": [
+      299,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      548,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Queenstown",
+     "box": [
+      561,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $560",
+     "box": [
+      561,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "#recs",
+     "tag": "section",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      376,
+      1232,
+      69
+     ]
+    },
+    {
+     "sig": "#recs>h2",
+     "tag": "h2",
+     "type": null,
+     "text": "Recommended for you",
+     "box": [
+      24,
+      376,
+      1232,
+      28
+     ]
+    },
+    {
+     "sig": "#more",
+     "tag": "button",
+     "type": "button",
+     "text": "Show recommendations",
+     "box": [
+      24,
+      424,
+      159,
+      21
+     ]
+    }
+   ],
+   "images": [],
+   "scripts": [
+    "http://127.0.0.1:8145/app.js"
+   ],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "chromium/1280x800/home.r2.png",
+   "console_errors": [],
+   "page_errors": [],
+   "failed_requests": [],
+   "screenshot_sha256": "2ed255eebf07eed2e0a4380bfd8e7337bf4ce5c730da545952764c7c95619ba1"
+  },
+  {
+   "engine": "chromium",
+   "page": "home",
+   "viewport": "1280x800",
+   "run": 3,
+   "critical_path": false,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      16,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      16,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      16,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      50,
+      1280,
+      419
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "Where to next?",
+     "box": [
+      24,
+      95,
+      1232,
+      37
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search",
+     "tag": "form",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      154,
+      1232,
+      55
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      157,
+      213,
+      52
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Destination",
+     "box": [
+      24,
+      157,
+      213,
+      16
+     ]
+    },
+    {
+     "sig": "#to",
+     "tag": "input",
+     "type": "text",
+     "text": "",
+     "box": [
+      24,
+      177,
+      213,
+      32
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      249,
+      154,
+      150,
+      55
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Departing",
+     "box": [
+      249,
+      154,
+      150,
+      16
+     ]
+    },
+    {
+     "sig": "#depart",
+     "tag": "input",
+     "type": "date",
+     "text": "",
+     "box": [
+      249,
+      174,
+      150,
+      35
+     ]
+    },
+    {
+     "sig": "#search",
+     "tag": "button",
+     "type": "button",
+     "text": "Search",
+     "box": [
+      411,
+      188,
+      58,
+      21
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      233,
+      1232,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Hobart",
+     "box": [
+      37,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $320",
+     "box": [
+      37,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      286,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Broome",
+     "box": [
+      299,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>p.sale",
+     "tag": "p",
+     "type": null,
+     "text": "Sale: from $410",
+     "box": [
+      299,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      548,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Queenstown",
+     "box": [
+      561,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $560",
+     "box": [
+      561,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "#recs",
+     "tag": "section",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      376,
+      1232,
+      69
+     ]
+    },
+    {
+     "sig": "#recs>h2",
+     "tag": "h2",
+     "type": null,
+     "text": "Recommended for you",
+     "box": [
+      24,
+      376,
+      1232,
+      28
+     ]
+    },
+    {
+     "sig": "#more",
+     "tag": "button",
+     "type": "button",
+     "text": "Show recommendations",
+     "box": [
+      24,
+      424,
+      159,
+      21
+     ]
+    }
+   ],
+   "images": [],
+   "scripts": [
+    "http://127.0.0.1:8145/app.js"
+   ],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "chromium/1280x800/home.r3.png",
+   "console_errors": [],
+   "page_errors": [],
+   "failed_requests": [],
+   "screenshot_sha256": "2ed255eebf07eed2e0a4380bfd8e7337bf4ce5c730da545952764c7c95619ba1"
+  },
+  {
+   "engine": "chromium",
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "run": 1,
+   "critical_path": true,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [
+    {
+     "index": 0,
+     "action": {
+      "click": "#more"
+     },
+     "outcome": "ok",
+     "error": null
+    },
+    {
+     "index": 1,
+     "action": {
+      "wait_for": "#recs-list"
+     },
+     "outcome": "ok",
+     "error": null
+    }
+   ],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      16,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      16,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      16,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      50,
+      1280,
+      505
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "Where to next?",
+     "box": [
+      24,
+      95,
+      1232,
+      37
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search",
+     "tag": "form",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      154,
+      1232,
+      55
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      157,
+      213,
+      52
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Destination",
+     "box": [
+      24,
+      157,
+      213,
+      16
+     ]
+    },
+    {
+     "sig": "#to",
+     "tag": "input",
+     "type": "text",
+     "text": "",
+     "box": [
+      24,
+      177,
+      213,
+      32
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      249,
+      154,
+      150,
+      55
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Departing",
+     "box": [
+      249,
+      154,
+      150,
+      16
+     ]
+    },
+    {
+     "sig": "#depart",
+     "tag": "input",
+     "type": "date",
+     "text": "",
+     "box": [
+      249,
+      174,
+      150,
+      35
+     ]
+    },
+    {
+     "sig": "#search",
+     "tag": "button",
+     "type": "button",
+     "text": "Search",
+     "box": [
+      411,
+      188,
+      58,
+      21
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      233,
+      1232,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Hobart",
+     "box": [
+      37,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $320",
+     "box": [
+      37,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      286,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Broome",
+     "box": [
+      299,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>p.sale",
+     "tag": "p",
+     "type": null,
+     "text": "Sale: from $410",
+     "box": [
+      299,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      548,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Queenstown",
+     "box": [
+      561,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $560",
+     "box": [
+      561,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "#recs",
+     "tag": "section",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      376,
+      1232,
+      139
+     ]
+    },
+    {
+     "sig": "#recs>h2",
+     "tag": "h2",
+     "type": null,
+     "text": "Recommended for you",
+     "box": [
+      24,
+      376,
+      1232,
+      28
+     ]
+    },
+    {
+     "sig": "#more",
+     "tag": "button",
+     "type": "button",
+     "text": "Show recommendations",
+     "box": [
+      24,
+      424,
+      159,
+      21
+     ]
+    },
+    {
+     "sig": "#recs-list",
+     "tag": "ul",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      461,
+      1232,
+      54
+     ]
+    },
+    {
+     "sig": "#recs-list>li:nth-of-type(1)",
+     "tag": "li",
+     "type": null,
+     "text": "Hobart, 3 nights",
+     "box": [
+      64,
+      461,
+      1192,
+      18
+     ]
+    },
+    {
+     "sig": "#recs-list>li:nth-of-type(2)",
+     "tag": "li",
+     "type": null,
+     "text": "Broome, 5 nights",
+     "box": [
+      64,
+      479,
+      1192,
+      18
+     ]
+    },
+    {
+     "sig": "#recs-list>li:nth-of-type(3)",
+     "tag": "li",
+     "type": null,
+     "text": "Queenstown, 4 nights",
+     "box": [
+      64,
+      497,
+      1192,
+      18
+     ]
+    }
+   ],
+   "images": [],
+   "scripts": [
+    "http://127.0.0.1:8145/app.js"
+   ],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "chromium/1280x800/home~recommendations.r1.png",
+   "console_errors": [],
+   "page_errors": [],
+   "failed_requests": [],
+   "screenshot_sha256": "0c61b9893bc29c0e568db6e2ef598362ceb1b421ac03788c10e8f5ee638c8c43"
+  },
+  {
+   "engine": "chromium",
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "run": 2,
+   "critical_path": true,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [
+    {
+     "index": 0,
+     "action": {
+      "click": "#more"
+     },
+     "outcome": "ok",
+     "error": null
+    },
+    {
+     "index": 1,
+     "action": {
+      "wait_for": "#recs-list"
+     },
+     "outcome": "ok",
+     "error": null
+    }
+   ],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      16,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      16,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      16,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      50,
+      1280,
+      505
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "Where to next?",
+     "box": [
+      24,
+      95,
+      1232,
+      37
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search",
+     "tag": "form",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      154,
+      1232,
+      55
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      157,
+      213,
+      52
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Destination",
+     "box": [
+      24,
+      157,
+      213,
+      16
+     ]
+    },
+    {
+     "sig": "#to",
+     "tag": "input",
+     "type": "text",
+     "text": "",
+     "box": [
+      24,
+      177,
+      213,
+      32
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      249,
+      154,
+      150,
+      55
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Departing",
+     "box": [
+      249,
+      154,
+      150,
+      16
+     ]
+    },
+    {
+     "sig": "#depart",
+     "tag": "input",
+     "type": "date",
+     "text": "",
+     "box": [
+      249,
+      174,
+      150,
+      35
+     ]
+    },
+    {
+     "sig": "#search",
+     "tag": "button",
+     "type": "button",
+     "text": "Search",
+     "box": [
+      411,
+      188,
+      58,
+      21
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      233,
+      1232,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Hobart",
+     "box": [
+      37,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $320",
+     "box": [
+      37,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      286,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Broome",
+     "box": [
+      299,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>p.sale",
+     "tag": "p",
+     "type": null,
+     "text": "Sale: from $410",
+     "box": [
+      299,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      548,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Queenstown",
+     "box": [
+      561,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $560",
+     "box": [
+      561,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "#recs",
+     "tag": "section",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      376,
+      1232,
+      139
+     ]
+    },
+    {
+     "sig": "#recs>h2",
+     "tag": "h2",
+     "type": null,
+     "text": "Recommended for you",
+     "box": [
+      24,
+      376,
+      1232,
+      28
+     ]
+    },
+    {
+     "sig": "#more",
+     "tag": "button",
+     "type": "button",
+     "text": "Show recommendations",
+     "box": [
+      24,
+      424,
+      159,
+      21
+     ]
+    },
+    {
+     "sig": "#recs-list",
+     "tag": "ul",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      461,
+      1232,
+      54
+     ]
+    },
+    {
+     "sig": "#recs-list>li:nth-of-type(1)",
+     "tag": "li",
+     "type": null,
+     "text": "Hobart, 3 nights",
+     "box": [
+      64,
+      461,
+      1192,
+      18
+     ]
+    },
+    {
+     "sig": "#recs-list>li:nth-of-type(2)",
+     "tag": "li",
+     "type": null,
+     "text": "Broome, 5 nights",
+     "box": [
+      64,
+      479,
+      1192,
+      18
+     ]
+    },
+    {
+     "sig": "#recs-list>li:nth-of-type(3)",
+     "tag": "li",
+     "type": null,
+     "text": "Queenstown, 4 nights",
+     "box": [
+      64,
+      497,
+      1192,
+      18
+     ]
+    }
+   ],
+   "images": [],
+   "scripts": [
+    "http://127.0.0.1:8145/app.js"
+   ],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "chromium/1280x800/home~recommendations.r2.png",
+   "console_errors": [],
+   "page_errors": [],
+   "failed_requests": [],
+   "screenshot_sha256": "0c61b9893bc29c0e568db6e2ef598362ceb1b421ac03788c10e8f5ee638c8c43"
+  },
+  {
+   "engine": "chromium",
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "run": 3,
+   "critical_path": true,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [
+    {
+     "index": 0,
+     "action": {
+      "click": "#more"
+     },
+     "outcome": "ok",
+     "error": null
+    },
+    {
+     "index": 1,
+     "action": {
+      "wait_for": "#recs-list"
+     },
+     "outcome": "ok",
+     "error": null
+    }
+   ],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      16,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      16,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      16,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      50,
+      1280,
+      505
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "Where to next?",
+     "box": [
+      24,
+      95,
+      1232,
+      37
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search",
+     "tag": "form",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      154,
+      1232,
+      55
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      157,
+      213,
+      52
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Destination",
+     "box": [
+      24,
+      157,
+      213,
+      16
+     ]
+    },
+    {
+     "sig": "#to",
+     "tag": "input",
+     "type": "text",
+     "text": "",
+     "box": [
+      24,
+      177,
+      213,
+      32
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      249,
+      154,
+      150,
+      55
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Departing",
+     "box": [
+      249,
+      154,
+      150,
+      16
+     ]
+    },
+    {
+     "sig": "#depart",
+     "tag": "input",
+     "type": "date",
+     "text": "",
+     "box": [
+      249,
+      174,
+      150,
+      35
+     ]
+    },
+    {
+     "sig": "#search",
+     "tag": "button",
+     "type": "button",
+     "text": "Search",
+     "box": [
+      411,
+      188,
+      58,
+      21
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      233,
+      1232,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Hobart",
+     "box": [
+      37,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $320",
+     "box": [
+      37,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      286,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Broome",
+     "box": [
+      299,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>p.sale",
+     "tag": "p",
+     "type": null,
+     "text": "Sale: from $410",
+     "box": [
+      299,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      548,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Queenstown",
+     "box": [
+      561,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $560",
+     "box": [
+      561,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "#recs",
+     "tag": "section",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      376,
+      1232,
+      139
+     ]
+    },
+    {
+     "sig": "#recs>h2",
+     "tag": "h2",
+     "type": null,
+     "text": "Recommended for you",
+     "box": [
+      24,
+      376,
+      1232,
+      28
+     ]
+    },
+    {
+     "sig": "#more",
+     "tag": "button",
+     "type": "button",
+     "text": "Show recommendations",
+     "box": [
+      24,
+      424,
+      159,
+      21
+     ]
+    },
+    {
+     "sig": "#recs-list",
+     "tag": "ul",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      461,
+      1232,
+      54
+     ]
+    },
+    {
+     "sig": "#recs-list>li:nth-of-type(1)",
+     "tag": "li",
+     "type": null,
+     "text": "Hobart, 3 nights",
+     "box": [
+      64,
+      461,
+      1192,
+      18
+     ]
+    },
+    {
+     "sig": "#recs-list>li:nth-of-type(2)",
+     "tag": "li",
+     "type": null,
+     "text": "Broome, 5 nights",
+     "box": [
+      64,
+      479,
+      1192,
+      18
+     ]
+    },
+    {
+     "sig": "#recs-list>li:nth-of-type(3)",
+     "tag": "li",
+     "type": null,
+     "text": "Queenstown, 4 nights",
+     "box": [
+      64,
+      497,
+      1192,
+      18
+     ]
+    }
+   ],
+   "images": [],
+   "scripts": [
+    "http://127.0.0.1:8145/app.js"
+   ],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "chromium/1280x800/home~recommendations.r3.png",
+   "console_errors": [],
+   "page_errors": [],
+   "failed_requests": [],
+   "screenshot_sha256": "0c61b9893bc29c0e568db6e2ef598362ceb1b421ac03788c10e8f5ee638c8c43"
+  },
+  {
+   "engine": "chromium",
+   "page": "deals",
+   "viewport": "1280x800",
+   "run": 1,
+   "critical_path": false,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      16,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      16,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      16,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "#flash",
+     "tag": "div",
+     "type": null,
+     "text": "Flash sale: 2 hours left",
+     "box": [
+      0,
+      50,
+      1280,
+      42
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      92,
+      1280,
+      382
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      24,
+      137,
+      1232,
+      37
+     ]
+    },
+    {
+     "sig": "#hero",
+     "tag": "img",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      196,
+      480,
+      200
+     ]
+    },
+    {
+     "sig": "html>body>main>p",
+     "tag": "p",
+     "type": null,
+     "text": "Prices include taxes. All destinations and prices are invented.",
+     "box": [
+      24,
+      416,
+      1232,
+      18
+     ]
+    }
+   ],
+   "images": [
+    {
+     "sig": "#hero",
+     "src": "http://127.0.0.1:8145/deals.webp",
+     "complete": true,
+     "natural": [
+      480,
+      200
+     ]
+    }
+   ],
+   "scripts": [
+    "inline:321"
+   ],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "chromium/1280x800/deals.r1.png",
+   "console_errors": [],
+   "page_errors": [],
+   "failed_requests": [],
+   "screenshot_sha256": "aeeecbc8a9a24487e49efa79d342a23eb1d0ce49f0d633b95f7370b0d8907919"
+  },
+  {
+   "engine": "chromium",
+   "page": "deals",
+   "viewport": "1280x800",
+   "run": 2,
+   "critical_path": false,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      16,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      16,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      16,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "#flash",
+     "tag": "div",
+     "type": null,
+     "text": "Flash sale: 2 hours left",
+     "box": [
+      0,
+      50,
+      1280,
+      42
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      92,
+      1280,
+      382
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      24,
+      137,
+      1232,
+      37
+     ]
+    },
+    {
+     "sig": "#hero",
+     "tag": "img",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      196,
+      480,
+      200
+     ]
+    },
+    {
+     "sig": "html>body>main>p",
+     "tag": "p",
+     "type": null,
+     "text": "Prices include taxes. All destinations and prices are invented.",
+     "box": [
+      24,
+      416,
+      1232,
+      18
+     ]
+    }
+   ],
+   "images": [
+    {
+     "sig": "#hero",
+     "src": "http://127.0.0.1:8145/deals.webp",
+     "complete": true,
+     "natural": [
+      480,
+      200
+     ]
+    }
+   ],
+   "scripts": [
+    "inline:321"
+   ],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "chromium/1280x800/deals.r2.png",
+   "console_errors": [],
+   "page_errors": [],
+   "failed_requests": [],
+   "screenshot_sha256": "aeeecbc8a9a24487e49efa79d342a23eb1d0ce49f0d633b95f7370b0d8907919"
+  },
+  {
+   "engine": "chromium",
+   "page": "deals",
+   "viewport": "1280x800",
+   "run": 3,
+   "critical_path": false,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      16,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      16,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      16,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "#flash",
+     "tag": "div",
+     "type": null,
+     "text": "Flash sale: 2 hours left",
+     "box": [
+      0,
+      50,
+      1280,
+      42
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      92,
+      1280,
+      382
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      24,
+      137,
+      1232,
+      37
+     ]
+    },
+    {
+     "sig": "#hero",
+     "tag": "img",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      196,
+      480,
+      200
+     ]
+    },
+    {
+     "sig": "html>body>main>p",
+     "tag": "p",
+     "type": null,
+     "text": "Prices include taxes. All destinations and prices are invented.",
+     "box": [
+      24,
+      416,
+      1232,
+      18
+     ]
+    }
+   ],
+   "images": [
+    {
+     "sig": "#hero",
+     "src": "http://127.0.0.1:8145/deals.webp",
+     "complete": true,
+     "natural": [
+      480,
+      200
+     ]
+    }
+   ],
+   "scripts": [
+    "inline:321"
+   ],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "chromium/1280x800/deals.r3.png",
+   "console_errors": [],
+   "page_errors": [],
+   "failed_requests": [],
+   "screenshot_sha256": "aeeecbc8a9a24487e49efa79d342a23eb1d0ce49f0d633b95f7370b0d8907919"
+  },
+  {
+   "engine": "chromium",
+   "page": "about",
+   "viewport": "1280x800",
+   "run": 1,
+   "critical_path": false,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      16,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      16,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      16,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      50,
+      1280,
+      162
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "About Wander",
+     "box": [
+      24,
+      95,
+      1232,
+      37
+     ]
+    },
+    {
+     "sig": "html>body>main>p",
+     "tag": "p",
+     "type": null,
+     "text": "A small travel site invented for the example. This page should look the same in ",
+     "box": [
+      24,
+      154,
+      1232,
+      18
+     ]
+    }
+   ],
+   "images": [],
+   "scripts": [],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "chromium/1280x800/about.r1.png",
+   "console_errors": [],
+   "page_errors": [],
+   "failed_requests": [],
+   "screenshot_sha256": "ab4e2a658a5a234c9ab45e4dd9c1135784e29a049684cd8331bb10a0f342e675"
+  },
+  {
+   "engine": "chromium",
+   "page": "about",
+   "viewport": "1280x800",
+   "run": 2,
+   "critical_path": false,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      16,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      16,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      16,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      50,
+      1280,
+      162
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "About Wander",
+     "box": [
+      24,
+      95,
+      1232,
+      37
+     ]
+    },
+    {
+     "sig": "html>body>main>p",
+     "tag": "p",
+     "type": null,
+     "text": "A small travel site invented for the example. This page should look the same in ",
+     "box": [
+      24,
+      154,
+      1232,
+      18
+     ]
+    }
+   ],
+   "images": [],
+   "scripts": [],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "chromium/1280x800/about.r2.png",
+   "console_errors": [],
+   "page_errors": [],
+   "failed_requests": [],
+   "screenshot_sha256": "ab4e2a658a5a234c9ab45e4dd9c1135784e29a049684cd8331bb10a0f342e675"
+  },
+  {
+   "engine": "chromium",
+   "page": "about",
+   "viewport": "1280x800",
+   "run": 3,
+   "critical_path": false,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      16,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      16,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      16,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      50,
+      1280,
+      162
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "About Wander",
+     "box": [
+      24,
+      95,
+      1232,
+      37
+     ]
+    },
+    {
+     "sig": "html>body>main>p",
+     "tag": "p",
+     "type": null,
+     "text": "A small travel site invented for the example. This page should look the same in ",
+     "box": [
+      24,
+      154,
+      1232,
+      18
+     ]
+    }
+   ],
+   "images": [],
+   "scripts": [],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "chromium/1280x800/about.r3.png",
+   "console_errors": [],
+   "page_errors": [],
+   "failed_requests": [],
+   "screenshot_sha256": "ab4e2a658a5a234c9ab45e4dd9c1135784e29a049684cd8331bb10a0f342e675"
+  },
+  {
+   "engine": "firefox",
+   "page": "home",
+   "viewport": "1280x800",
+   "run": 1,
+   "critical_path": false,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      17,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      17,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      17,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      50,
+      1280,
+      420
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "Where to next?",
+     "box": [
+      24,
+      95,
+      1232,
+      38
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search",
+     "tag": "form",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      155,
+      1232,
+      54
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      155,
+      207,
+      54
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Destination",
+     "box": [
+      24,
+      155,
+      207,
+      17
+     ]
+    },
+    {
+     "sig": "#to",
+     "tag": "input",
+     "type": "text",
+     "text": "",
+     "box": [
+      24,
+      176,
+      207,
+      33
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      243,
+      155,
+      148,
+      54
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Departing",
+     "box": [
+      243,
+      155,
+      148,
+      17
+     ]
+    },
+    {
+     "sig": "#depart",
+     "tag": "input",
+     "type": "date",
+     "text": "",
+     "box": [
+      243,
+      176,
+      148,
+      33
+     ]
+    },
+    {
+     "sig": "#search",
+     "tag": "button",
+     "type": "button",
+     "text": "Search",
+     "box": [
+      403,
+      187,
+      52,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      233,
+      1232,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Hobart",
+     "box": [
+      37,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $320",
+     "box": [
+      37,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      286,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Broome",
+     "box": [
+      299,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>p.sale",
+     "tag": "p",
+     "type": null,
+     "text": "Sale: from $410",
+     "box": [
+      299,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      548,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Queenstown",
+     "box": [
+      561,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $560",
+     "box": [
+      561,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "#recs",
+     "tag": "section",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      376,
+      1232,
+      70
+     ]
+    },
+    {
+     "sig": "#recs>h2",
+     "tag": "h2",
+     "type": null,
+     "text": "Recommended for you",
+     "box": [
+      24,
+      376,
+      1232,
+      28
+     ]
+    },
+    {
+     "sig": "#more",
+     "tag": "button",
+     "type": "button",
+     "text": "Show recommendations",
+     "box": [
+      24,
+      424,
+      153,
+      22
+     ]
+    }
+   ],
+   "images": [],
+   "scripts": [
+    "http://127.0.0.1:8145/app.js"
+   ],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "firefox/1280x800/home.r1.png",
+   "console_errors": [],
+   "page_errors": [
+    "TypeError: can't access property \"brands\", navigator.userAgentData is undefined"
+   ],
+   "failed_requests": [],
+   "screenshot_sha256": "57ef075edae6f28bd95627ac1583a00a6cb64ccf12abc082225ffc31d1163ae5"
+  },
+  {
+   "engine": "firefox",
+   "page": "home",
+   "viewport": "1280x800",
+   "run": 2,
+   "critical_path": false,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      17,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      17,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      17,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      50,
+      1280,
+      420
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "Where to next?",
+     "box": [
+      24,
+      95,
+      1232,
+      38
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search",
+     "tag": "form",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      155,
+      1232,
+      54
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      155,
+      207,
+      54
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Destination",
+     "box": [
+      24,
+      155,
+      207,
+      17
+     ]
+    },
+    {
+     "sig": "#to",
+     "tag": "input",
+     "type": "text",
+     "text": "",
+     "box": [
+      24,
+      176,
+      207,
+      33
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      243,
+      155,
+      148,
+      54
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Departing",
+     "box": [
+      243,
+      155,
+      148,
+      17
+     ]
+    },
+    {
+     "sig": "#depart",
+     "tag": "input",
+     "type": "date",
+     "text": "",
+     "box": [
+      243,
+      176,
+      148,
+      33
+     ]
+    },
+    {
+     "sig": "#search",
+     "tag": "button",
+     "type": "button",
+     "text": "Search",
+     "box": [
+      403,
+      187,
+      52,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      233,
+      1232,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Hobart",
+     "box": [
+      37,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $320",
+     "box": [
+      37,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      286,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Broome",
+     "box": [
+      299,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>p.sale",
+     "tag": "p",
+     "type": null,
+     "text": "Sale: from $410",
+     "box": [
+      299,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      548,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Queenstown",
+     "box": [
+      561,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $560",
+     "box": [
+      561,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "#recs",
+     "tag": "section",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      376,
+      1232,
+      70
+     ]
+    },
+    {
+     "sig": "#recs>h2",
+     "tag": "h2",
+     "type": null,
+     "text": "Recommended for you",
+     "box": [
+      24,
+      376,
+      1232,
+      28
+     ]
+    },
+    {
+     "sig": "#more",
+     "tag": "button",
+     "type": "button",
+     "text": "Show recommendations",
+     "box": [
+      24,
+      424,
+      153,
+      22
+     ]
+    }
+   ],
+   "images": [],
+   "scripts": [
+    "http://127.0.0.1:8145/app.js"
+   ],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "firefox/1280x800/home.r2.png",
+   "console_errors": [],
+   "page_errors": [
+    "TypeError: can't access property \"brands\", navigator.userAgentData is undefined"
+   ],
+   "failed_requests": [],
+   "screenshot_sha256": "57ef075edae6f28bd95627ac1583a00a6cb64ccf12abc082225ffc31d1163ae5"
+  },
+  {
+   "engine": "firefox",
+   "page": "home",
+   "viewport": "1280x800",
+   "run": 3,
+   "critical_path": false,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      17,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      17,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      17,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      50,
+      1280,
+      420
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "Where to next?",
+     "box": [
+      24,
+      95,
+      1232,
+      38
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search",
+     "tag": "form",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      155,
+      1232,
+      54
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      155,
+      207,
+      54
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Destination",
+     "box": [
+      24,
+      155,
+      207,
+      17
+     ]
+    },
+    {
+     "sig": "#to",
+     "tag": "input",
+     "type": "text",
+     "text": "",
+     "box": [
+      24,
+      176,
+      207,
+      33
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      243,
+      155,
+      148,
+      54
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Departing",
+     "box": [
+      243,
+      155,
+      148,
+      17
+     ]
+    },
+    {
+     "sig": "#depart",
+     "tag": "input",
+     "type": "date",
+     "text": "",
+     "box": [
+      243,
+      176,
+      148,
+      33
+     ]
+    },
+    {
+     "sig": "#search",
+     "tag": "button",
+     "type": "button",
+     "text": "Search",
+     "box": [
+      403,
+      187,
+      52,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      233,
+      1232,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Hobart",
+     "box": [
+      37,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $320",
+     "box": [
+      37,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      286,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Broome",
+     "box": [
+      299,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>p.sale",
+     "tag": "p",
+     "type": null,
+     "text": "Sale: from $410",
+     "box": [
+      299,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      548,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Queenstown",
+     "box": [
+      561,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $560",
+     "box": [
+      561,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "#recs",
+     "tag": "section",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      376,
+      1232,
+      70
+     ]
+    },
+    {
+     "sig": "#recs>h2",
+     "tag": "h2",
+     "type": null,
+     "text": "Recommended for you",
+     "box": [
+      24,
+      376,
+      1232,
+      28
+     ]
+    },
+    {
+     "sig": "#more",
+     "tag": "button",
+     "type": "button",
+     "text": "Show recommendations",
+     "box": [
+      24,
+      424,
+      153,
+      22
+     ]
+    }
+   ],
+   "images": [],
+   "scripts": [
+    "http://127.0.0.1:8145/app.js"
+   ],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "firefox/1280x800/home.r3.png",
+   "console_errors": [],
+   "page_errors": [
+    "TypeError: can't access property \"brands\", navigator.userAgentData is undefined"
+   ],
+   "failed_requests": [],
+   "screenshot_sha256": "57ef075edae6f28bd95627ac1583a00a6cb64ccf12abc082225ffc31d1163ae5"
+  },
+  {
+   "engine": "firefox",
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "run": 1,
+   "critical_path": true,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [
+    {
+     "index": 0,
+     "action": {
+      "click": "#more"
+     },
+     "outcome": "ok",
+     "error": null
+    },
+    {
+     "index": 1,
+     "action": {
+      "wait_for": "#recs-list"
+     },
+     "outcome": "failed",
+     "error": "TimeoutError: Page.wait_for_selector: Timeout 10000ms exceeded."
+    }
+   ],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      17,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      17,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      17,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      50,
+      1280,
+      420
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "Where to next?",
+     "box": [
+      24,
+      95,
+      1232,
+      38
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search",
+     "tag": "form",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      155,
+      1232,
+      54
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      155,
+      207,
+      54
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Destination",
+     "box": [
+      24,
+      155,
+      207,
+      17
+     ]
+    },
+    {
+     "sig": "#to",
+     "tag": "input",
+     "type": "text",
+     "text": "",
+     "box": [
+      24,
+      176,
+      207,
+      33
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      243,
+      155,
+      148,
+      54
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Departing",
+     "box": [
+      243,
+      155,
+      148,
+      17
+     ]
+    },
+    {
+     "sig": "#depart",
+     "tag": "input",
+     "type": "date",
+     "text": "",
+     "box": [
+      243,
+      176,
+      148,
+      33
+     ]
+    },
+    {
+     "sig": "#search",
+     "tag": "button",
+     "type": "button",
+     "text": "Search",
+     "box": [
+      403,
+      187,
+      52,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      233,
+      1232,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Hobart",
+     "box": [
+      37,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $320",
+     "box": [
+      37,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      286,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Broome",
+     "box": [
+      299,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>p.sale",
+     "tag": "p",
+     "type": null,
+     "text": "Sale: from $410",
+     "box": [
+      299,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      548,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Queenstown",
+     "box": [
+      561,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $560",
+     "box": [
+      561,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "#recs",
+     "tag": "section",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      376,
+      1232,
+      70
+     ]
+    },
+    {
+     "sig": "#recs>h2",
+     "tag": "h2",
+     "type": null,
+     "text": "Recommended for you",
+     "box": [
+      24,
+      376,
+      1232,
+      28
+     ]
+    },
+    {
+     "sig": "#more",
+     "tag": "button",
+     "type": "button",
+     "text": "Show recommendations",
+     "box": [
+      24,
+      424,
+      153,
+      22
+     ]
+    }
+   ],
+   "images": [],
+   "scripts": [
+    "http://127.0.0.1:8145/app.js"
+   ],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "firefox/1280x800/home~recommendations.r1.png",
+   "console_errors": [],
+   "page_errors": [
+    "TypeError: can't access property \"brands\", navigator.userAgentData is undefined"
+   ],
+   "failed_requests": [],
+   "screenshot_sha256": "0bbf8259a13fc1ea12218103625a4fecce397c4a413d5dcbb83e1a30b51963d4"
+  },
+  {
+   "engine": "firefox",
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "run": 2,
+   "critical_path": true,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [
+    {
+     "index": 0,
+     "action": {
+      "click": "#more"
+     },
+     "outcome": "ok",
+     "error": null
+    },
+    {
+     "index": 1,
+     "action": {
+      "wait_for": "#recs-list"
+     },
+     "outcome": "failed",
+     "error": "TimeoutError: Page.wait_for_selector: Timeout 10000ms exceeded."
+    }
+   ],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      17,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      17,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      17,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      50,
+      1280,
+      420
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "Where to next?",
+     "box": [
+      24,
+      95,
+      1232,
+      38
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search",
+     "tag": "form",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      155,
+      1232,
+      54
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      155,
+      207,
+      54
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Destination",
+     "box": [
+      24,
+      155,
+      207,
+      17
+     ]
+    },
+    {
+     "sig": "#to",
+     "tag": "input",
+     "type": "text",
+     "text": "",
+     "box": [
+      24,
+      176,
+      207,
+      33
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      243,
+      155,
+      148,
+      54
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Departing",
+     "box": [
+      243,
+      155,
+      148,
+      17
+     ]
+    },
+    {
+     "sig": "#depart",
+     "tag": "input",
+     "type": "date",
+     "text": "",
+     "box": [
+      243,
+      176,
+      148,
+      33
+     ]
+    },
+    {
+     "sig": "#search",
+     "tag": "button",
+     "type": "button",
+     "text": "Search",
+     "box": [
+      403,
+      187,
+      52,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      233,
+      1232,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Hobart",
+     "box": [
+      37,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $320",
+     "box": [
+      37,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      286,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Broome",
+     "box": [
+      299,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>p.sale",
+     "tag": "p",
+     "type": null,
+     "text": "Sale: from $410",
+     "box": [
+      299,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      548,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Queenstown",
+     "box": [
+      561,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $560",
+     "box": [
+      561,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "#recs",
+     "tag": "section",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      376,
+      1232,
+      70
+     ]
+    },
+    {
+     "sig": "#recs>h2",
+     "tag": "h2",
+     "type": null,
+     "text": "Recommended for you",
+     "box": [
+      24,
+      376,
+      1232,
+      28
+     ]
+    },
+    {
+     "sig": "#more",
+     "tag": "button",
+     "type": "button",
+     "text": "Show recommendations",
+     "box": [
+      24,
+      424,
+      153,
+      22
+     ]
+    }
+   ],
+   "images": [],
+   "scripts": [
+    "http://127.0.0.1:8145/app.js"
+   ],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "firefox/1280x800/home~recommendations.r2.png",
+   "console_errors": [],
+   "page_errors": [
+    "TypeError: can't access property \"brands\", navigator.userAgentData is undefined"
+   ],
+   "failed_requests": [],
+   "screenshot_sha256": "0bbf8259a13fc1ea12218103625a4fecce397c4a413d5dcbb83e1a30b51963d4"
+  },
+  {
+   "engine": "firefox",
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "run": 3,
+   "critical_path": true,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [
+    {
+     "index": 0,
+     "action": {
+      "click": "#more"
+     },
+     "outcome": "ok",
+     "error": null
+    },
+    {
+     "index": 1,
+     "action": {
+      "wait_for": "#recs-list"
+     },
+     "outcome": "failed",
+     "error": "TimeoutError: Page.wait_for_selector: Timeout 10000ms exceeded."
+    }
+   ],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      17,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      17,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      17,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      50,
+      1280,
+      420
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "Where to next?",
+     "box": [
+      24,
+      95,
+      1232,
+      38
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search",
+     "tag": "form",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      155,
+      1232,
+      54
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      155,
+      207,
+      54
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Destination",
+     "box": [
+      24,
+      155,
+      207,
+      17
+     ]
+    },
+    {
+     "sig": "#to",
+     "tag": "input",
+     "type": "text",
+     "text": "",
+     "box": [
+      24,
+      176,
+      207,
+      33
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      243,
+      155,
+      148,
+      54
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Departing",
+     "box": [
+      243,
+      155,
+      148,
+      17
+     ]
+    },
+    {
+     "sig": "#depart",
+     "tag": "input",
+     "type": "date",
+     "text": "",
+     "box": [
+      243,
+      176,
+      148,
+      33
+     ]
+    },
+    {
+     "sig": "#search",
+     "tag": "button",
+     "type": "button",
+     "text": "Search",
+     "box": [
+      403,
+      187,
+      52,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      233,
+      1232,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Hobart",
+     "box": [
+      37,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $320",
+     "box": [
+      37,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      286,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Broome",
+     "box": [
+      299,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>p.sale",
+     "tag": "p",
+     "type": null,
+     "text": "Sale: from $410",
+     "box": [
+      299,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      548,
+      233,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Queenstown",
+     "box": [
+      561,
+      265,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $560",
+     "box": [
+      561,
+      305,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "#recs",
+     "tag": "section",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      376,
+      1232,
+      70
+     ]
+    },
+    {
+     "sig": "#recs>h2",
+     "tag": "h2",
+     "type": null,
+     "text": "Recommended for you",
+     "box": [
+      24,
+      376,
+      1232,
+      28
+     ]
+    },
+    {
+     "sig": "#more",
+     "tag": "button",
+     "type": "button",
+     "text": "Show recommendations",
+     "box": [
+      24,
+      424,
+      153,
+      22
+     ]
+    }
+   ],
+   "images": [],
+   "scripts": [
+    "http://127.0.0.1:8145/app.js"
+   ],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "firefox/1280x800/home~recommendations.r3.png",
+   "console_errors": [],
+   "page_errors": [
+    "TypeError: can't access property \"brands\", navigator.userAgentData is undefined"
+   ],
+   "failed_requests": [],
+   "screenshot_sha256": "0bbf8259a13fc1ea12218103625a4fecce397c4a413d5dcbb83e1a30b51963d4"
+  },
+  {
+   "engine": "firefox",
+   "page": "deals",
+   "viewport": "1280x800",
+   "run": 1,
+   "critical_path": false,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      17,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      17,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      17,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "#flash",
+     "tag": "div",
+     "type": null,
+     "text": "Flash sale: 2 hours left",
+     "box": [
+      0,
+      50,
+      1280,
+      42
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      92,
+      1280,
+      382
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      24,
+      137,
+      1232,
+      38
+     ]
+    },
+    {
+     "sig": "#hero",
+     "tag": "img",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      197,
+      480,
+      200
+     ]
+    },
+    {
+     "sig": "html>body>main>p",
+     "tag": "p",
+     "type": null,
+     "text": "Prices include taxes. All destinations and prices are invented.",
+     "box": [
+      24,
+      416,
+      1232,
+      18
+     ]
+    }
+   ],
+   "images": [
+    {
+     "sig": "#hero",
+     "src": "http://127.0.0.1:8145/deals.webp",
+     "complete": true,
+     "natural": [
+      480,
+      200
+     ]
+    }
+   ],
+   "scripts": [
+    "inline:321"
+   ],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "firefox/1280x800/deals.r1.png",
+   "console_errors": [],
+   "page_errors": [],
+   "failed_requests": [],
+   "screenshot_sha256": "e29cd1260d014e13e5f314751648dd8e923ae6ef3450705cfe0d1f6172eac7ce"
+  },
+  {
+   "engine": "firefox",
+   "page": "deals",
+   "viewport": "1280x800",
+   "run": 2,
+   "critical_path": false,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      17,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      17,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      17,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      50,
+      1280,
+      382
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      24,
+      95,
+      1232,
+      38
+     ]
+    },
+    {
+     "sig": "#hero",
+     "tag": "img",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      155,
+      480,
+      200
+     ]
+    },
+    {
+     "sig": "html>body>main>p",
+     "tag": "p",
+     "type": null,
+     "text": "Prices include taxes. All destinations and prices are invented.",
+     "box": [
+      24,
+      374,
+      1232,
+      18
+     ]
+    }
+   ],
+   "images": [
+    {
+     "sig": "#hero",
+     "src": "http://127.0.0.1:8145/deals.webp",
+     "complete": true,
+     "natural": [
+      480,
+      200
+     ]
+    }
+   ],
+   "scripts": [
+    "inline:321"
+   ],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "firefox/1280x800/deals.r2.png",
+   "console_errors": [],
+   "page_errors": [],
+   "failed_requests": [],
+   "screenshot_sha256": "b5c1ed9affd53f2a16c863ca5f22264981c6681cf4d201ab571520e7dd1a100a"
+  },
+  {
+   "engine": "firefox",
+   "page": "deals",
+   "viewport": "1280x800",
+   "run": 3,
+   "critical_path": false,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      17,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      17,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      17,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      50,
+      1280,
+      382
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      24,
+      95,
+      1232,
+      38
+     ]
+    },
+    {
+     "sig": "#hero",
+     "tag": "img",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      155,
+      480,
+      200
+     ]
+    },
+    {
+     "sig": "html>body>main>p",
+     "tag": "p",
+     "type": null,
+     "text": "Prices include taxes. All destinations and prices are invented.",
+     "box": [
+      24,
+      374,
+      1232,
+      18
+     ]
+    }
+   ],
+   "images": [
+    {
+     "sig": "#hero",
+     "src": "http://127.0.0.1:8145/deals.webp",
+     "complete": true,
+     "natural": [
+      480,
+      200
+     ]
+    }
+   ],
+   "scripts": [
+    "inline:321"
+   ],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "firefox/1280x800/deals.r3.png",
+   "console_errors": [],
+   "page_errors": [],
+   "failed_requests": [],
+   "screenshot_sha256": "b5c1ed9affd53f2a16c863ca5f22264981c6681cf4d201ab571520e7dd1a100a"
+  },
+  {
+   "engine": "firefox",
+   "page": "about",
+   "viewport": "1280x800",
+   "run": 1,
+   "critical_path": false,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      17,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      17,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      17,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      50,
+      1280,
+      163
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "About Wander",
+     "box": [
+      24,
+      95,
+      1232,
+      38
+     ]
+    },
+    {
+     "sig": "html>body>main>p",
+     "tag": "p",
+     "type": null,
+     "text": "A small travel site invented for the example. This page should look the same in ",
+     "box": [
+      24,
+      155,
+      1232,
+      18
+     ]
+    }
+   ],
+   "images": [],
+   "scripts": [],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "firefox/1280x800/about.r1.png",
+   "console_errors": [],
+   "page_errors": [],
+   "failed_requests": [],
+   "screenshot_sha256": "b43aaf23a85dd30055302473cedca7587abe9ccc62113a0186954b23f101a781"
+  },
+  {
+   "engine": "firefox",
+   "page": "about",
+   "viewport": "1280x800",
+   "run": 2,
+   "critical_path": false,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      17,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      17,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      17,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      50,
+      1280,
+      163
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "About Wander",
+     "box": [
+      24,
+      95,
+      1232,
+      38
+     ]
+    },
+    {
+     "sig": "html>body>main>p",
+     "tag": "p",
+     "type": null,
+     "text": "A small travel site invented for the example. This page should look the same in ",
+     "box": [
+      24,
+      155,
+      1232,
+      18
+     ]
+    }
+   ],
+   "images": [],
+   "scripts": [],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "firefox/1280x800/about.r2.png",
+   "console_errors": [],
+   "page_errors": [],
+   "failed_requests": [],
+   "screenshot_sha256": "b43aaf23a85dd30055302473cedca7587abe9ccc62113a0186954b23f101a781"
+  },
+  {
+   "engine": "firefox",
+   "page": "about",
+   "viewport": "1280x800",
+   "run": 3,
+   "critical_path": false,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      17,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      17,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      17,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      50,
+      1280,
+      163
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "About Wander",
+     "box": [
+      24,
+      95,
+      1232,
+      38
+     ]
+    },
+    {
+     "sig": "html>body>main>p",
+     "tag": "p",
+     "type": null,
+     "text": "A small travel site invented for the example. This page should look the same in ",
+     "box": [
+      24,
+      155,
+      1232,
+      18
+     ]
+    }
+   ],
+   "images": [],
+   "scripts": [],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "firefox/1280x800/about.r3.png",
+   "console_errors": [],
+   "page_errors": [],
+   "failed_requests": [],
+   "screenshot_sha256": "b43aaf23a85dd30055302473cedca7587abe9ccc62113a0186954b23f101a781"
+  },
+  {
+   "engine": "webkit",
+   "page": "home",
+   "viewport": "1280x800",
+   "run": 1,
+   "critical_path": false,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      17,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      17,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      17,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      50,
+      1280,
+      420
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "Where to next?",
+     "box": [
+      24,
+      95,
+      1232,
+      37
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search",
+     "tag": "form",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      154,
+      1232,
+      52
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      154,
+      185,
+      52
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Destination",
+     "box": [
+      24,
+      154,
+      185,
+      16
+     ]
+    },
+    {
+     "sig": "#to",
+     "tag": "input",
+     "type": "text",
+     "text": "",
+     "box": [
+      24,
+      174,
+      185,
+      32
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      221,
+      154,
+      185,
+      52
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Departing",
+     "box": [
+      221,
+      154,
+      185,
+      16
+     ]
+    },
+    {
+     "sig": "#depart",
+     "tag": "input",
+     "type": "text",
+     "text": "",
+     "box": [
+      221,
+      174,
+      185,
+      32
+     ]
+    },
+    {
+     "sig": "#search",
+     "tag": "button",
+     "type": "button",
+     "text": "Search",
+     "box": [
+      418,
+      181,
+      51,
+      25
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      230,
+      1232,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      230,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Hobart",
+     "box": [
+      37,
+      262,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $320",
+     "box": [
+      37,
+      302,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      286,
+      230,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Broome",
+     "box": [
+      299,
+      262,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>p.sale",
+     "tag": "p",
+     "type": null,
+     "text": "Sale: from $410",
+     "box": [
+      299,
+      302,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      548,
+      230,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Queenstown",
+     "box": [
+      561,
+      262,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $560",
+     "box": [
+      561,
+      302,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "#recs",
+     "tag": "section",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      373,
+      1232,
+      73
+     ]
+    },
+    {
+     "sig": "#recs>h2",
+     "tag": "h2",
+     "type": null,
+     "text": "Recommended for you",
+     "box": [
+      24,
+      373,
+      1232,
+      28
+     ]
+    },
+    {
+     "sig": "#more",
+     "tag": "button",
+     "type": "button",
+     "text": "Show recommendations",
+     "box": [
+      24,
+      421,
+      141,
+      25
+     ]
+    }
+   ],
+   "images": [],
+   "scripts": [
+    "http://127.0.0.1:8145/app.js"
+   ],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "webkit/1280x800/home.r1.png",
+   "console_errors": [],
+   "page_errors": [
+    "TypeError: undefined is not an object (evaluating 'navigator.userAgentData.brands')"
+   ],
+   "failed_requests": [],
+   "screenshot_sha256": "7a7085a3e1adebb11c6595c986db4f4748f5f5299ab9fe5423aa20927c0815c2"
+  },
+  {
+   "engine": "webkit",
+   "page": "home",
+   "viewport": "1280x800",
+   "run": 2,
+   "critical_path": false,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      17,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      17,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      17,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      50,
+      1280,
+      420
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "Where to next?",
+     "box": [
+      24,
+      95,
+      1232,
+      37
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search",
+     "tag": "form",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      154,
+      1232,
+      52
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      154,
+      185,
+      52
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Destination",
+     "box": [
+      24,
+      154,
+      185,
+      16
+     ]
+    },
+    {
+     "sig": "#to",
+     "tag": "input",
+     "type": "text",
+     "text": "",
+     "box": [
+      24,
+      174,
+      185,
+      32
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      221,
+      154,
+      185,
+      52
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Departing",
+     "box": [
+      221,
+      154,
+      185,
+      16
+     ]
+    },
+    {
+     "sig": "#depart",
+     "tag": "input",
+     "type": "text",
+     "text": "",
+     "box": [
+      221,
+      174,
+      185,
+      32
+     ]
+    },
+    {
+     "sig": "#search",
+     "tag": "button",
+     "type": "button",
+     "text": "Search",
+     "box": [
+      418,
+      181,
+      51,
+      25
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      230,
+      1232,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      230,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Hobart",
+     "box": [
+      37,
+      262,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $320",
+     "box": [
+      37,
+      302,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      286,
+      230,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Broome",
+     "box": [
+      299,
+      262,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>p.sale",
+     "tag": "p",
+     "type": null,
+     "text": "Sale: from $410",
+     "box": [
+      299,
+      302,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      548,
+      230,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Queenstown",
+     "box": [
+      561,
+      262,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $560",
+     "box": [
+      561,
+      302,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "#recs",
+     "tag": "section",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      373,
+      1232,
+      73
+     ]
+    },
+    {
+     "sig": "#recs>h2",
+     "tag": "h2",
+     "type": null,
+     "text": "Recommended for you",
+     "box": [
+      24,
+      373,
+      1232,
+      28
+     ]
+    },
+    {
+     "sig": "#more",
+     "tag": "button",
+     "type": "button",
+     "text": "Show recommendations",
+     "box": [
+      24,
+      421,
+      141,
+      25
+     ]
+    }
+   ],
+   "images": [],
+   "scripts": [
+    "http://127.0.0.1:8145/app.js"
+   ],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "webkit/1280x800/home.r2.png",
+   "console_errors": [],
+   "page_errors": [
+    "TypeError: undefined is not an object (evaluating 'navigator.userAgentData.brands')"
+   ],
+   "failed_requests": [],
+   "screenshot_sha256": "7a7085a3e1adebb11c6595c986db4f4748f5f5299ab9fe5423aa20927c0815c2"
+  },
+  {
+   "engine": "webkit",
+   "page": "home",
+   "viewport": "1280x800",
+   "run": 3,
+   "critical_path": false,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      17,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      17,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      17,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      50,
+      1280,
+      420
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "Where to next?",
+     "box": [
+      24,
+      95,
+      1232,
+      37
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search",
+     "tag": "form",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      154,
+      1232,
+      52
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      154,
+      185,
+      52
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Destination",
+     "box": [
+      24,
+      154,
+      185,
+      16
+     ]
+    },
+    {
+     "sig": "#to",
+     "tag": "input",
+     "type": "text",
+     "text": "",
+     "box": [
+      24,
+      174,
+      185,
+      32
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      221,
+      154,
+      185,
+      52
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Departing",
+     "box": [
+      221,
+      154,
+      185,
+      16
+     ]
+    },
+    {
+     "sig": "#depart",
+     "tag": "input",
+     "type": "text",
+     "text": "",
+     "box": [
+      221,
+      174,
+      185,
+      32
+     ]
+    },
+    {
+     "sig": "#search",
+     "tag": "button",
+     "type": "button",
+     "text": "Search",
+     "box": [
+      418,
+      181,
+      51,
+      25
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      230,
+      1232,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      230,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Hobart",
+     "box": [
+      37,
+      262,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $320",
+     "box": [
+      37,
+      302,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      286,
+      230,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Broome",
+     "box": [
+      299,
+      262,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>p.sale",
+     "tag": "p",
+     "type": null,
+     "text": "Sale: from $410",
+     "box": [
+      299,
+      302,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      548,
+      230,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Queenstown",
+     "box": [
+      561,
+      262,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $560",
+     "box": [
+      561,
+      302,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "#recs",
+     "tag": "section",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      373,
+      1232,
+      73
+     ]
+    },
+    {
+     "sig": "#recs>h2",
+     "tag": "h2",
+     "type": null,
+     "text": "Recommended for you",
+     "box": [
+      24,
+      373,
+      1232,
+      28
+     ]
+    },
+    {
+     "sig": "#more",
+     "tag": "button",
+     "type": "button",
+     "text": "Show recommendations",
+     "box": [
+      24,
+      421,
+      141,
+      25
+     ]
+    }
+   ],
+   "images": [],
+   "scripts": [
+    "http://127.0.0.1:8145/app.js"
+   ],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "webkit/1280x800/home.r3.png",
+   "console_errors": [],
+   "page_errors": [
+    "TypeError: undefined is not an object (evaluating 'navigator.userAgentData.brands')"
+   ],
+   "failed_requests": [],
+   "screenshot_sha256": "7a7085a3e1adebb11c6595c986db4f4748f5f5299ab9fe5423aa20927c0815c2"
+  },
+  {
+   "engine": "webkit",
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "run": 1,
+   "critical_path": true,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [
+    {
+     "index": 0,
+     "action": {
+      "click": "#more"
+     },
+     "outcome": "ok",
+     "error": null
+    },
+    {
+     "index": 1,
+     "action": {
+      "wait_for": "#recs-list"
+     },
+     "outcome": "failed",
+     "error": "TimeoutError: Page.wait_for_selector: Timeout 10000ms exceeded."
+    }
+   ],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      17,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      17,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      17,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      50,
+      1280,
+      420
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "Where to next?",
+     "box": [
+      24,
+      95,
+      1232,
+      37
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search",
+     "tag": "form",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      154,
+      1232,
+      52
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      154,
+      185,
+      52
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Destination",
+     "box": [
+      24,
+      154,
+      185,
+      16
+     ]
+    },
+    {
+     "sig": "#to",
+     "tag": "input",
+     "type": "text",
+     "text": "",
+     "box": [
+      24,
+      174,
+      185,
+      32
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      221,
+      154,
+      185,
+      52
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Departing",
+     "box": [
+      221,
+      154,
+      185,
+      16
+     ]
+    },
+    {
+     "sig": "#depart",
+     "tag": "input",
+     "type": "text",
+     "text": "",
+     "box": [
+      221,
+      174,
+      185,
+      32
+     ]
+    },
+    {
+     "sig": "#search",
+     "tag": "button",
+     "type": "button",
+     "text": "Search",
+     "box": [
+      418,
+      181,
+      51,
+      25
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      230,
+      1232,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      230,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Hobart",
+     "box": [
+      37,
+      262,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $320",
+     "box": [
+      37,
+      302,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      286,
+      230,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Broome",
+     "box": [
+      299,
+      262,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>p.sale",
+     "tag": "p",
+     "type": null,
+     "text": "Sale: from $410",
+     "box": [
+      299,
+      302,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      548,
+      230,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Queenstown",
+     "box": [
+      561,
+      262,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $560",
+     "box": [
+      561,
+      302,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "#recs",
+     "tag": "section",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      373,
+      1232,
+      73
+     ]
+    },
+    {
+     "sig": "#recs>h2",
+     "tag": "h2",
+     "type": null,
+     "text": "Recommended for you",
+     "box": [
+      24,
+      373,
+      1232,
+      28
+     ]
+    },
+    {
+     "sig": "#more",
+     "tag": "button",
+     "type": "button",
+     "text": "Show recommendations",
+     "box": [
+      24,
+      421,
+      141,
+      25
+     ]
+    }
+   ],
+   "images": [],
+   "scripts": [
+    "http://127.0.0.1:8145/app.js"
+   ],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "webkit/1280x800/home~recommendations.r1.png",
+   "console_errors": [],
+   "page_errors": [
+    "TypeError: undefined is not an object (evaluating 'navigator.userAgentData.brands')"
+   ],
+   "failed_requests": [],
+   "screenshot_sha256": "4a2dc3c8107d7dbb36b9fa40e91d2a65eb587f27bfc44af38c00202a0d3f6262"
+  },
+  {
+   "engine": "webkit",
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "run": 2,
+   "critical_path": true,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [
+    {
+     "index": 0,
+     "action": {
+      "click": "#more"
+     },
+     "outcome": "ok",
+     "error": null
+    },
+    {
+     "index": 1,
+     "action": {
+      "wait_for": "#recs-list"
+     },
+     "outcome": "failed",
+     "error": "TimeoutError: Page.wait_for_selector: Timeout 10000ms exceeded."
+    }
+   ],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      17,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      17,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      17,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      50,
+      1280,
+      420
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "Where to next?",
+     "box": [
+      24,
+      95,
+      1232,
+      37
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search",
+     "tag": "form",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      154,
+      1232,
+      52
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      154,
+      185,
+      52
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Destination",
+     "box": [
+      24,
+      154,
+      185,
+      16
+     ]
+    },
+    {
+     "sig": "#to",
+     "tag": "input",
+     "type": "text",
+     "text": "",
+     "box": [
+      24,
+      174,
+      185,
+      32
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      221,
+      154,
+      185,
+      52
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Departing",
+     "box": [
+      221,
+      154,
+      185,
+      16
+     ]
+    },
+    {
+     "sig": "#depart",
+     "tag": "input",
+     "type": "text",
+     "text": "",
+     "box": [
+      221,
+      174,
+      185,
+      32
+     ]
+    },
+    {
+     "sig": "#search",
+     "tag": "button",
+     "type": "button",
+     "text": "Search",
+     "box": [
+      418,
+      181,
+      51,
+      25
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      230,
+      1232,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      230,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Hobart",
+     "box": [
+      37,
+      262,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $320",
+     "box": [
+      37,
+      302,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      286,
+      230,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Broome",
+     "box": [
+      299,
+      262,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>p.sale",
+     "tag": "p",
+     "type": null,
+     "text": "Sale: from $410",
+     "box": [
+      299,
+      302,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      548,
+      230,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Queenstown",
+     "box": [
+      561,
+      262,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $560",
+     "box": [
+      561,
+      302,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "#recs",
+     "tag": "section",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      373,
+      1232,
+      73
+     ]
+    },
+    {
+     "sig": "#recs>h2",
+     "tag": "h2",
+     "type": null,
+     "text": "Recommended for you",
+     "box": [
+      24,
+      373,
+      1232,
+      28
+     ]
+    },
+    {
+     "sig": "#more",
+     "tag": "button",
+     "type": "button",
+     "text": "Show recommendations",
+     "box": [
+      24,
+      421,
+      141,
+      25
+     ]
+    }
+   ],
+   "images": [],
+   "scripts": [
+    "http://127.0.0.1:8145/app.js"
+   ],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "webkit/1280x800/home~recommendations.r2.png",
+   "console_errors": [],
+   "page_errors": [
+    "TypeError: undefined is not an object (evaluating 'navigator.userAgentData.brands')"
+   ],
+   "failed_requests": [],
+   "screenshot_sha256": "4a2dc3c8107d7dbb36b9fa40e91d2a65eb587f27bfc44af38c00202a0d3f6262"
+  },
+  {
+   "engine": "webkit",
+   "page": "home~recommendations",
+   "viewport": "1280x800",
+   "run": 3,
+   "critical_path": true,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [
+    {
+     "index": 0,
+     "action": {
+      "click": "#more"
+     },
+     "outcome": "ok",
+     "error": null
+    },
+    {
+     "index": 1,
+     "action": {
+      "wait_for": "#recs-list"
+     },
+     "outcome": "failed",
+     "error": "TimeoutError: Page.wait_for_selector: Timeout 10000ms exceeded."
+    }
+   ],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      17,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      17,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      17,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      50,
+      1280,
+      420
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "Where to next?",
+     "box": [
+      24,
+      95,
+      1232,
+      37
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search",
+     "tag": "form",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      154,
+      1232,
+      52
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      154,
+      185,
+      52
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(1)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Destination",
+     "box": [
+      24,
+      154,
+      185,
+      16
+     ]
+    },
+    {
+     "sig": "#to",
+     "tag": "input",
+     "type": "text",
+     "text": "",
+     "box": [
+      24,
+      174,
+      185,
+      32
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      221,
+      154,
+      185,
+      52
+     ]
+    },
+    {
+     "sig": "html>body>main>form.search>div:nth-of-type(2)>label",
+     "tag": "label",
+     "type": null,
+     "text": "Departing",
+     "box": [
+      221,
+      154,
+      185,
+      16
+     ]
+    },
+    {
+     "sig": "#depart",
+     "tag": "input",
+     "type": "text",
+     "text": "",
+     "box": [
+      221,
+      174,
+      185,
+      32
+     ]
+    },
+    {
+     "sig": "#search",
+     "tag": "button",
+     "type": "button",
+     "text": "Search",
+     "box": [
+      418,
+      181,
+      51,
+      25
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      230,
+      1232,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      230,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Hobart",
+     "box": [
+      37,
+      262,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(1)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $320",
+     "box": [
+      37,
+      302,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      286,
+      230,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Broome",
+     "box": [
+      299,
+      262,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(2)>p.sale",
+     "tag": "p",
+     "type": null,
+     "text": "Sale: from $410",
+     "box": [
+      299,
+      302,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)",
+     "tag": "div",
+     "type": null,
+     "text": "",
+     "box": [
+      548,
+      230,
+      246,
+      119
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>h3",
+     "tag": "h3",
+     "type": null,
+     "text": "Queenstown",
+     "box": [
+      561,
+      262,
+      220,
+      22
+     ]
+    },
+    {
+     "sig": "html>body>main>div.cards>div.card:nth-of-type(3)>p",
+     "tag": "p",
+     "type": null,
+     "text": "From $560",
+     "box": [
+      561,
+      302,
+      220,
+      18
+     ]
+    },
+    {
+     "sig": "#recs",
+     "tag": "section",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      373,
+      1232,
+      73
+     ]
+    },
+    {
+     "sig": "#recs>h2",
+     "tag": "h2",
+     "type": null,
+     "text": "Recommended for you",
+     "box": [
+      24,
+      373,
+      1232,
+      28
+     ]
+    },
+    {
+     "sig": "#more",
+     "tag": "button",
+     "type": "button",
+     "text": "Show recommendations",
+     "box": [
+      24,
+      421,
+      141,
+      25
+     ]
+    }
+   ],
+   "images": [],
+   "scripts": [
+    "http://127.0.0.1:8145/app.js"
+   ],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "webkit/1280x800/home~recommendations.r3.png",
+   "console_errors": [],
+   "page_errors": [
+    "TypeError: undefined is not an object (evaluating 'navigator.userAgentData.brands')"
+   ],
+   "failed_requests": [],
+   "screenshot_sha256": "4a2dc3c8107d7dbb36b9fa40e91d2a65eb587f27bfc44af38c00202a0d3f6262"
+  },
+  {
+   "engine": "webkit",
+   "page": "deals",
+   "viewport": "1280x800",
+   "run": 1,
+   "critical_path": false,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      17,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      17,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      17,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "#flash",
+     "tag": "div",
+     "type": null,
+     "text": "Flash sale: 2 hours left",
+     "box": [
+      0,
+      50,
+      1280,
+      42
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      92,
+      1280,
+      381
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      24,
+      137,
+      1232,
+      37
+     ]
+    },
+    {
+     "sig": "#hero",
+     "tag": "img",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      196,
+      480,
+      200
+     ]
+    },
+    {
+     "sig": "html>body>main>p",
+     "tag": "p",
+     "type": null,
+     "text": "Prices include taxes. All destinations and prices are invented.",
+     "box": [
+      24,
+      415,
+      1232,
+      18
+     ]
+    }
+   ],
+   "images": [
+    {
+     "sig": "#hero",
+     "src": "http://127.0.0.1:8145/deals.webp",
+     "complete": true,
+     "natural": [
+      480,
+      200
+     ]
+    }
+   ],
+   "scripts": [
+    "inline:321"
+   ],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "webkit/1280x800/deals.r1.png",
+   "console_errors": [],
+   "page_errors": [],
+   "failed_requests": [],
+   "screenshot_sha256": "c6e5f3ed5edd93231db6ffc7a938ea90e3cede90451d92d920b3eaeb877b1bf7"
+  },
+  {
+   "engine": "webkit",
+   "page": "deals",
+   "viewport": "1280x800",
+   "run": 2,
+   "critical_path": false,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      17,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      17,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      17,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      50,
+      1280,
+      381
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      24,
+      95,
+      1232,
+      37
+     ]
+    },
+    {
+     "sig": "#hero",
+     "tag": "img",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      154,
+      480,
+      200
+     ]
+    },
+    {
+     "sig": "html>body>main>p",
+     "tag": "p",
+     "type": null,
+     "text": "Prices include taxes. All destinations and prices are invented.",
+     "box": [
+      24,
+      373,
+      1232,
+      18
+     ]
+    }
+   ],
+   "images": [
+    {
+     "sig": "#hero",
+     "src": "http://127.0.0.1:8145/deals.webp",
+     "complete": true,
+     "natural": [
+      480,
+      200
+     ]
+    }
+   ],
+   "scripts": [
+    "inline:321"
+   ],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "webkit/1280x800/deals.r2.png",
+   "console_errors": [],
+   "page_errors": [],
+   "failed_requests": [],
+   "screenshot_sha256": "971047d8cb7d736c323372aa8edef8900837d107a1d60c90dfe8f341dfb084dc"
+  },
+  {
+   "engine": "webkit",
+   "page": "deals",
+   "viewport": "1280x800",
+   "run": 3,
+   "critical_path": false,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      17,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      17,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      17,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "#flash",
+     "tag": "div",
+     "type": null,
+     "text": "Flash sale: 2 hours left",
+     "box": [
+      0,
+      50,
+      1280,
+      42
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      92,
+      1280,
+      381
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      24,
+      137,
+      1232,
+      37
+     ]
+    },
+    {
+     "sig": "#hero",
+     "tag": "img",
+     "type": null,
+     "text": "",
+     "box": [
+      24,
+      196,
+      480,
+      200
+     ]
+    },
+    {
+     "sig": "html>body>main>p",
+     "tag": "p",
+     "type": null,
+     "text": "Prices include taxes. All destinations and prices are invented.",
+     "box": [
+      24,
+      415,
+      1232,
+      18
+     ]
+    }
+   ],
+   "images": [
+    {
+     "sig": "#hero",
+     "src": "http://127.0.0.1:8145/deals.webp",
+     "complete": true,
+     "natural": [
+      480,
+      200
+     ]
+    }
+   ],
+   "scripts": [
+    "inline:321"
+   ],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "webkit/1280x800/deals.r3.png",
+   "console_errors": [],
+   "page_errors": [],
+   "failed_requests": [],
+   "screenshot_sha256": "c6e5f3ed5edd93231db6ffc7a938ea90e3cede90451d92d920b3eaeb877b1bf7"
+  },
+  {
+   "engine": "webkit",
+   "page": "about",
+   "viewport": "1280x800",
+   "run": 1,
+   "critical_path": false,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      17,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      17,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      17,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      50,
+      1280,
+      162
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "About Wander",
+     "box": [
+      24,
+      95,
+      1232,
+      37
+     ]
+    },
+    {
+     "sig": "html>body>main>p",
+     "tag": "p",
+     "type": null,
+     "text": "A small travel site invented for the example. This page should look the same in ",
+     "box": [
+      24,
+      154,
+      1232,
+      18
+     ]
+    }
+   ],
+   "images": [],
+   "scripts": [],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "webkit/1280x800/about.r1.png",
+   "console_errors": [],
+   "page_errors": [],
+   "failed_requests": [],
+   "screenshot_sha256": "dd26c51c9d36e85ed4f7adb06a0011a3e2e81408859db4f6191a1a6bff7aad9d"
+  },
+  {
+   "engine": "webkit",
+   "page": "about",
+   "viewport": "1280x800",
+   "run": 2,
+   "critical_path": false,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      17,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      17,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      17,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      50,
+      1280,
+      162
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "About Wander",
+     "box": [
+      24,
+      95,
+      1232,
+      37
+     ]
+    },
+    {
+     "sig": "html>body>main>p",
+     "tag": "p",
+     "type": null,
+     "text": "A small travel site invented for the example. This page should look the same in ",
+     "box": [
+      24,
+      154,
+      1232,
+      18
+     ]
+    }
+   ],
+   "images": [],
+   "scripts": [],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "webkit/1280x800/about.r2.png",
+   "console_errors": [],
+   "page_errors": [],
+   "failed_requests": [],
+   "screenshot_sha256": "dd26c51c9d36e85ed4f7adb06a0011a3e2e81408859db4f6191a1a6bff7aad9d"
+  },
+  {
+   "engine": "webkit",
+   "page": "about",
+   "viewport": "1280x800",
+   "run": 3,
+   "critical_path": false,
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "steps": [],
+   "elements": [
+    {
+     "sig": "html>body>header",
+     "tag": "header",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      0,
+      1280,
+      50
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(1)",
+     "tag": "a",
+     "type": null,
+     "text": "Wander",
+     "box": [
+      24,
+      17,
+      55,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(2)",
+     "tag": "a",
+     "type": null,
+     "text": "Deals",
+     "box": [
+      95,
+      17,
+      41,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>header>a:nth-of-type(3)",
+     "tag": "a",
+     "type": null,
+     "text": "About",
+     "box": [
+      152,
+      17,
+      42,
+      17
+     ]
+    },
+    {
+     "sig": "html>body>main",
+     "tag": "main",
+     "type": null,
+     "text": "",
+     "box": [
+      0,
+      50,
+      1280,
+      162
+     ]
+    },
+    {
+     "sig": "html>body>main>h1",
+     "tag": "h1",
+     "type": null,
+     "text": "About Wander",
+     "box": [
+      24,
+      95,
+      1232,
+      37
+     ]
+    },
+    {
+     "sig": "html>body>main>p",
+     "tag": "p",
+     "type": null,
+     "text": "A small travel site invented for the example. This page should look the same in ",
+     "box": [
+      24,
+      154,
+      1232,
+      18
+     ]
+    }
+   ],
+   "images": [],
+   "scripts": [],
+   "overflow_x": false,
+   "size": [
+    1280,
+    800
+   ],
+   "screenshot": "webkit/1280x800/about.r3.png",
+   "console_errors": [],
+   "page_errors": [],
+   "failed_requests": [],
+   "screenshot_sha256": "dd26c51c9d36e85ed4f7adb06a0011a3e2e81408859db4f6191a1a6bff7aad9d"
+  }
+ ],
+ "blocked_requests": []
+}

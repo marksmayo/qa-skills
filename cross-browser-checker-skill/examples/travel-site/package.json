@@ -1,0 +1,6 @@
+{
+  "name": "travel-site",
+  "private": true,
+  "description": "Sample site for the cross-browser-checker example (invented).",
+  "browserslist": ["defaults", "firefox >= 115", "safari >= 14"]
+}

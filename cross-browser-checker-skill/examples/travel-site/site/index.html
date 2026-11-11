@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wander - travel deals (sample)</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<header><a href="index.html">Wander</a><a href="deals.html">Deals</a><a href="about.html">About</a></header>
+<main>
+  <h1>Where to next?</h1>
+  <form class="search" onsubmit="return false">
+    <div><label for="to">Destination</label><input id="to" value="Hobart"></div>
+    <div><label for="depart">Departing</label><input id="depart" type="date" value="2026-12-24"></div>
+    <button type="button" id="search">Search</button>
+  </form>
+  <div class="cards">
+    <div class="card"><h3>Hobart</h3><p>From $320</p></div>
+    <div class="card"><h3>Broome</h3><p class="sale">Sale: from $410</p></div>
+    <div class="card"><h3>Queenstown</h3><p>From $560</p></div>
+  </div>
+  <section id="recs"><h2>Recommended for you</h2><button type="button" id="more">Show recommendations</button></section>
+</main>
+<script src="app.js"></script>
+</body></html>

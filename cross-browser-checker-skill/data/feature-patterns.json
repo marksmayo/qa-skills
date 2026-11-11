@@ -1,0 +1,23 @@
+{
+  "note": "Syntax and API patterns mapped to web-features ids. kind: css-selector (substring of a selector), css-pseudo-regex (regex over selectors), css-at-rule, css-declaration (property regex, optional value), css-flex-gap (gap in a rule that also sets display:flex), js-api (regex over scripts), html (regex over markup). fallback lists regexes that, found in the same file, count as a feature check or alternative. support overrides web-features for non-standard syntax.",
+  "patterns": [
+    {"feature": "has", "name": ":has()", "kind": "css-selector", "match": ":has(", "fallback": ["@supports\\s+selector\\(\\s*:has"]},
+    {"feature": "flexbox-gap", "name": "gap in flexbox", "kind": "css-flex-gap", "fallback": ["@supports\\s*\\(\\s*gap"]},
+    {"feature": "container-queries", "name": "@container", "kind": "css-at-rule", "match": "@container", "fallback": ["@supports\\s*\\(\\s*container"]},
+    {"feature": "cascade-layers", "name": "@layer", "kind": "css-at-rule", "match": "@layer", "fallback": []},
+    {"feature": "subgrid", "name": "subgrid", "kind": "css-declaration", "property": "grid-template-(columns|rows)", "value": "subgrid", "fallback": ["@supports\\s*\\([^)]*subgrid"]},
+    {"feature": "text-wrap-balance", "name": "text-wrap: balance", "kind": "css-declaration", "property": "text-wrap", "value": "balance", "fallback": []},
+    {"feature": "webkit-pseudo-elements", "name": "::-webkit- pseudo-elements", "kind": "css-pseudo-regex", "match": "::-webkit-[a-z-]+",
+     "support": {"chrome": "1", "chrome_android": "18", "edge": "79", "safari": "3", "safari_ios": "3"}, "baseline": "non_standard",
+     "fallback": ["::-moz-", "@supports\\s+selector\\(\\s*::-webkit-"]},
+    {"feature": "ua-client-hints", "name": "navigator.userAgentData", "kind": "js-api", "match": "navigator\\.userAgentData(?!\\s*\\?)",
+     "fallback": ["['\"]userAgentData['\"]\\s+in\\s+navigator", "typeof\\s+navigator\\.userAgentData", "navigator\\.userAgentData\\s*\\?", "if\\s*\\(\\s*navigator\\.userAgentData\\s*\\)"]},
+    {"feature": "structured-clone", "name": "structuredClone()", "kind": "js-api", "match": "\\bstructuredClone\\s*\\(", "fallback": ["typeof\\s+structuredClone"]},
+    {"feature": "view-transitions", "name": "document.startViewTransition()", "kind": "js-api", "match": "document\\.startViewTransition\\s*\\(", "fallback": ["if\\s*\\(\\s*!?\\s*document\\.startViewTransition"]},
+    {"feature": "navigation", "name": "Navigation API", "kind": "js-api", "match": "\\bnavigation\\.(navigate|addEventListener|currentEntry)\\b", "fallback": ["['\"]navigation['\"]\\s+in\\s+window"]},
+    {"feature": "dialog", "name": "<dialog>", "kind": "html", "match": "<dialog\\b", "fallback": []},
+    {"feature": "popover", "name": "popover attribute", "kind": "html", "match": "\\spopover(=|\\s|>)", "fallback": []},
+    {"feature": "webp", "name": "WebP images", "kind": "html", "match": "\\.webp\\b", "fallback": ["<picture"]},
+    {"feature": "avif", "name": "AVIF images", "kind": "html", "match": "\\.avif\\b", "fallback": ["<picture"]}
+  ]
+}

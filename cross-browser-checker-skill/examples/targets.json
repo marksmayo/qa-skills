@@ -1,0 +1,13 @@
+{
+  "site": "http://127.0.0.1:8145/",
+  "pages": [
+    {"name": "home", "path": "index.html",
+     "states": [{"name": "recommendations", "critical_path": true, "actions": [{"click": "#more"}, {"wait_for": "#recs-list"}]}]},
+    {"name": "deals", "path": "deals.html"},
+    {"name": "about", "path": "about.html"}
+  ],
+  "viewports": ["1280x800"],
+  "engines": ["chromium", "firefox", "webkit"],
+  "reruns": 3,
+  "authorised_by": null
+}

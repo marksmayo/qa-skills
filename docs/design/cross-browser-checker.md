@@ -1,6 +1,6 @@
 # Design: `cross-browser-checker-skill`
 
-Status: Designed; not built. Build order: 19.
+Status: Built (v1.0.0). Build order: 19.
 
 ## Mission
 
@@ -172,3 +172,35 @@ Agreed with the user before the build.
 1. **Reference engine?** Chromium.
 2. **Commercial device cloud?** No: open-source only.
 3. **Code-only static feature scan?** Yes, as a lighter mode.
+
+## As built (v1.0.0)
+
+Where the build differs from the design above, and what the example showed.
+
+- **Data:** caniuse-db 1.0.30001818 (plain `data.json`, used for browser versions and usage when
+  resolving browserslist) and web-features 3.44.0 (per-feature Baseline status and first supporting
+  version, used for support), both pinned with npm integrity and SHA-256. caniuse-lite's packed
+  format and `baseline-browser-mapping` weren't needed: web-features covers APIs caniuse lacks, such
+  as User-Agent Client Hints.
+- **The planted WebP difference didn't exist.** Playwright's WebKit on Windows decodes WebP (480x200 in
+  every run), so the WebP image stays in the example as a checked non-difference. A real WebKit
+  difference turned up instead: no date control, so `<input type="date">` falls back to a text field.
+  `input_type_fallback` was added for it.
+- **Content not rendered is measured by ink**: the share of an element's pixels far from its most
+  common colour, compared with the reference engine's. It is robust to font differences, which a
+  pixel diff across engines is not.
+- **Automatic dismissals.** The first comparison produced 18 candidates, most of them font metrics,
+  native control sizes and knock-on box changes. Rules for those (font metrics, native controls, a
+  box that changed because something inside it did, a box resized with its container, an element
+  moved by a box above, an input whose type fell back, an element inside a missing one) brought it to
+  the five real differences, and every dismissal is recorded with its reason.
+- **States of one page merge** into one candidate; reach counts pages.
+- **`png_io.py` moved to `shared/`** (used here and by the visual regression reviewer).
+- **The example server refuses a busy port**, like the other example servers.
+- **Not built:** journey Markdown and Playwright test runs per engine through `run_tests.py`
+  (scripted states cover journeys here), branded Chrome and Edge channels, device emulation, and
+  user-agent sniffing detection beyond recording the scripts each engine loaded.
+- **Example results** (Chromium 158, Firefox 159, WebKit 27.2, 3 runs each, 36 runs): 5 differences
+  on the home page (two Critical, from one client-hints call), the deals banner flaky, 42 automatic
+  dismissals, 4 feature findings (2 confirmed at runtime, 2 possible).
+- **Testing:** 17 of 17 seeded report violations are caught.

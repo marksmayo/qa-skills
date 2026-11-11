@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deals - Wander (sample)</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<header><a href="index.html">Wander</a><a href="deals.html">Deals</a><a href="about.html">About</a></header>
+<main>
+  <h1>Deals</h1>
+  <img id="hero" src="deals.webp" alt="Last-minute deals" width="480" height="200">
+  <p>Prices include taxes. All destinations and prices are invented.</p>
+</main>
+<script>
+  // A last-minute banner that appears on about half of all page loads, in any browser.
+  if (Math.random() < 0.5) {
+    var b = document.createElement('div'); b.className = 'deal-banner'; b.id = 'flash'; b.textContent = 'Flash sale: 2 hours left';
+    document.body.insertBefore(b, document.querySelector('main'));
+  }
+</script>
+</body></html>

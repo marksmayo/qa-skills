@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "cache_default": "~/.cache/qa-skills/cross-browser-data",
+  "assets": [
+    {
+      "name": "caniuse-db",
+      "version": "1.0.30001818",
+      "license": "CC-BY-4.0",
+      "published": "2026-10-21",
+      "tarball": "https://registry.npmjs.org/caniuse-db/-/caniuse-db-1.0.30001818.tgz",
+      "tarball_integrity": "sha512-kmLSQtK4Kg0n5LgIK0jxfWX9ZTYnF9Y8G8PDKp0c1KWsIRIXmVuQHIRGT16TGgBDRlK+jVWcIE8avhxUuHvsgg==",
+      "member": "package/data.json",
+      "file": "caniuse-data.json",
+      "sha256": "33d0af33f9da104c78d65b2c4b985aa8bf9ba329ecebb95f39cee62cc62cc3d0",
+      "use": "browser versions and global usage, for resolving browserslist queries and engine shares"
+    },
+    {
+      "name": "web-features",
+      "version": "3.44.0",
+      "license": "Apache-2.0",
+      "published": "2026-10-22",
+      "tarball": "https://registry.npmjs.org/web-features/-/web-features-3.44.0.tgz",
+      "tarball_integrity": "sha512-K/+YJI7uVE/b4G8SU67/F/4j81/ajJ6MfBCZyuQaqyuPlVXF8cd6dLqBznXIWJI9nwnvuY2dapKK08OHzTjYww==",
+      "member": "package/data.json",
+      "file": "web-features-data.json",
+      "sha256": "72577e8df9c8abe8a8af86a03bc161ac06be21488d76857f157c7f83f017f706",
+      "use": "per-feature Baseline status and the first supporting version in each core browser"
+    }
+  ]
+}

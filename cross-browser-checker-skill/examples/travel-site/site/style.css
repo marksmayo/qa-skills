@@ -1,0 +1,16 @@
+body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #1d2733; }
+header { padding: 16px 24px; background: #1b6ca8; color: #fff; }
+header a { color: #fff; margin-right: 16px; }
+main { padding: 24px; }
+form.search { display: flex; gap: 12px; align-items: end; margin-bottom: 24px; }
+label { display: block; font-size: 14px; margin-bottom: 4px; }
+input { font-size: 16px; padding: 6px 8px; border: 1px solid #8a99a8; }
+/* the date's text is drawn by a Chromium-only pseudo-element; every other engine shows nothing */
+input[type="date"] { color: transparent; }
+input[type="date"]::-webkit-datetime-edit { color: #1d2733; }
+.cards { display: flex; flex-wrap: wrap; gap: 16px; }
+.card { width: 220px; border: 1px solid #d5dde5; padding: 12px; }
+.card:has(.sale) { border-color: #d9480f; }
+.sale { color: #d9480f; font-weight: bold; }
+#recs { margin-top: 24px; }
+.deal-banner { background: #fff3bf; padding: 12px 24px; }
