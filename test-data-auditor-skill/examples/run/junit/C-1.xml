@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.078" timestamp="2026-11-11T14:46:15.895434+13:00" hostname="host"><testcase classname="tests.test_billing" name="test_fee_is_shown_in_dollars" time="0.001"><failure message="ValueError: Currency formatting is not possible using the 'C' locale.">def test_fee_is_shown_in_dollars():
+&gt;       assert format_fee(123450) == "$1,234.50"
+               ^^^^^^^^^^^^^^^^^^
+
+tests/test_billing.py:5: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+clinic_api/billing.py:6: in format_fee
+    return locale.currency(cents / 100, grouping=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+val = 1234.5, symbol = True, grouping = True, international = False
+
+    def currency(val, symbol=True, grouping=False, international=False):
+        """Formats val according to the currency settings
+        in the current locale."""
+        conv = localeconv()
+    
+        # check for illegal values
+        digits = conv[international and 'int_frac_digits' or 'frac_digits']
+        if digits == 127:
+&gt;           raise ValueError("Currency formatting is not possible using "
+                             "the 'C' locale.")
+E           ValueError: Currency formatting is not possible using the 'C' locale.
+
+/usr/lib/python3.12/locale.py:258: ValueError</failure></testcase></testsuite></testsuites>

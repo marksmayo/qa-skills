@@ -1,0 +1,4 @@
+[
+  {"patient_id": 1, "plan": "ten-pack", "expires": "2026-12-01", "visits_left": 6},
+  {"patient_id": 2, "plan": "casual", "expires": "2025-06-30", "visits_left": 0}
+]

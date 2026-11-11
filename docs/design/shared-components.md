@@ -126,7 +126,7 @@ from the first skill that needs them, then copied into the rest by `tools/check_
 
 | Planned shared file | Extracted from | Used by |
 |---|---|---|
-| `scripts/run_tests.py` | new (wraps `parse_results.py`) | flaky-test-hunter, mutation-tester, test-impact-selector, dead-test-finder, bug-reproducer |
+| `scripts/run_tests.py` | new (wraps `parse_results.py`) | flaky-test-hunter, mutation-tester, test-impact-selector, test-data-auditor, dead-test-finder, bug-reproducer |
 | `scripts/diff_scope.py` | new | mutation-tester, test-impact-selector, db-migration-reviewer, risk-based-test-planner |
 | `scripts/browser_harness.py` | wcag-auditor's `run_audit.py` | performance-budget-auditor, visual-regression-reviewer, cross-browser-checker, i18n-checker, resilience-prober, privacy-flow-auditor, bug-reproducer, api-contract-tester (request guard only) |
 | `scripts/fetch_ticket.py` | ticket-to-tdd | ticket-readiness-reviewer, bug-reproducer, risk-based-test-planner |

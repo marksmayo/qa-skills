@@ -1,0 +1,47 @@
+{
+  "$comment": "Values reserved for documentation, fiction or testing. A value on these lists is never personal data; scan_data.py dismisses it automatically and names the list. Check the regulators' current lists before relying on a range for a new purpose.",
+  "email_domains_reserved": {
+    "$source": "RFC 2606 and RFC 6761",
+    "exact": ["example.com", "example.net", "example.org", "localhost"],
+    "suffixes": [".example", ".test", ".invalid", ".localhost", ".example.com", ".example.net", ".example.org"]
+  },
+  "public_mail_domains": ["gmail.com", "googlemail.com", "outlook.com", "outlook.com.au", "hotmail.com", "hotmail.co.uk", "live.com",
+                          "live.com.au", "msn.com", "yahoo.com", "yahoo.co.uk", "yahoo.com.au", "ymail.com", "icloud.com", "me.com",
+                          "mac.com", "aol.com", "proton.me", "protonmail.com", "gmx.com", "gmx.de", "web.de", "mail.com", "zoho.com",
+                          "yandex.ru", "qq.com", "163.com", "bigpond.com", "bigpond.net.au", "optusnet.com.au", "iinet.net.au",
+                          "tpg.com.au", "xtra.co.nz", "btinternet.com", "sky.com", "orange.fr", "free.fr", "laposte.net",
+                          "t-online.de", "libero.it", "comcast.net", "verizon.net", "att.net"],
+  "phones": {
+    "au_mobile": {"$source": "ACMA numbers for use in creative works", "numbers": [
+      "0491570006", "0491570156", "0491570157", "0491570737", "0491570738", "0491571266", "0491571491", "0491571804",
+      "0491572549", "0491572665", "0491572983", "0491573770", "0491573087", "0491574118", "0491574632", "0491575254",
+      "0491575789", "0491576398", "0491576801", "0491577426", "0491577644", "0491578957", "0491578148", "0491578888",
+      "0491579212", "0491579760", "0491579455"]},
+    "au_landline": {"$source": "ACMA numbers for use in creative works", "prefixes": [
+      "0255500", "0270100", "0355500", "0370100", "0755500", "0770100", "0855500", "0870100"]},
+    "uk": {"$source": "Ofcom numbers for drama", "prefixes": [
+      "07700900", "01632960", "02079460", "01134960", "01144960", "01154960", "01164960", "01174960", "01184960",
+      "01214960", "01314960", "01414960", "01514960", "01614960", "08081570", "09098790"]},
+    "us": {"$source": "NANPA fictitious numbers 555-0100 to 555-0199", "pattern": "^(1)?\\d{3}55501\\d{2}$"}
+  },
+  "test_cards": {"$source": "Published test card numbers (Stripe, Braintree, Adyen and the card schemes' own examples)", "numbers": [
+    "4242424242424242", "4000056655665556", "4111111111111111", "4012888888881881", "4222222222222", "4000000000000002",
+    "4000000000009995", "4000000000000069", "4000000000000127", "4000000000003220", "5555555555554444", "2223003122003222",
+    "5200828282828210", "5105105105105100", "5454545454545454", "378282246310005", "371449635398431", "378734493671000",
+    "6011111111111117", "6011000990139424", "3056930009020004", "36227206271667", "30569309025904", "3566002020360505",
+    "3530111333300000", "6200000000000005", "6759649826438453"]},
+  "id_examples": {"$source": "Specimen and test values published by the issuers", "values": {
+    "ssn": ["078051120", "123456789", "219099999"],
+    "nhs": {"prefix": "999", "note": "NHS numbers starting 999 are reserved for testing"},
+    "nino": ["QQ123456C", "AB123456C"],
+    "iban": ["GB82WEST12345698765432", "DE89370400440532013000", "FR1420041010050500013M02606", "NL91ABNA0417164300"],
+    "tfn": ["123456782"],
+    "medicare": []
+  }},
+  "hosts_reserved": {
+    "$source": "RFC 2606, RFC 6761, RFC 5737 (documentation addresses)",
+    "exact": ["localhost", "127.0.0.1", "0.0.0.0", "::1", "example.com", "example.net", "example.org"],
+    "suffixes": [".example", ".test", ".invalid", ".localhost", ".local", ".internal", ".example.com", ".example.net", ".example.org"],
+    "ip_prefixes": ["192.0.2.", "198.51.100.", "203.0.113.", "10.", "192.168.", "127."]
+  }
+}

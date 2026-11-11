@@ -1,0 +1,399 @@
+{
+  "repo": "clinic-api",
+  "today": "2026-11-11",
+  "candidates": [
+    {
+      "id": "C1",
+      "category": "secret",
+      "rule": "authorization_header",
+      "file": "tests/cassettes/insurer_cover.json",
+      "line": 5,
+      "field": null,
+      "data_type": "secret",
+      "why": "looks like a secret (authorization header)",
+      "fingerprint": "967279f0b012b1a7",
+      "auto_dismiss": null,
+      "details": {
+        "route_to": "code-security-auditor"
+      },
+      "affected_tests": [
+        "tests/test_insurer.py::test_cover_is_read_from_the_insurer"
+      ]
+    },
+    {
+      "id": "C2",
+      "category": "shared_mutable",
+      "rule": "mutated_wide_fixture",
+      "file": "tests/conftest.py",
+      "line": 42,
+      "field": "waitlist",
+      "data_type": null,
+      "why": "session-scoped fixture waitlist returns a mutable value and 1 test(s) mutate it; 2 test(s) share it",
+      "fingerprint": null,
+      "auto_dismiss": null,
+      "details": {
+        "fixture": "waitlist",
+        "scope": "session",
+        "mutated_by": [
+          {
+            "test": "tests/test_waitlist.py::test_join_waitlist",
+            "line": 6
+          }
+        ],
+        "shared_by": [
+          "tests/test_waitlist.py::test_waitlist_starts_empty",
+          "tests/test_waitlist.py::test_join_waitlist"
+        ]
+      },
+      "affected_tests": [
+        "tests/test_waitlist.py::test_waitlist_starts_empty",
+        "tests/test_waitlist.py::test_join_waitlist"
+      ]
+    },
+    {
+      "id": "C3",
+      "category": "schema_drift",
+      "rule": "extra_field",
+      "file": "tests/fixtures/appointments.yaml",
+      "line": 7,
+      "field": "room",
+      "data_type": null,
+      "why": "2 records with a field room that Appointment (clinic_api/models.py:24) no longer has",
+      "fingerprint": null,
+      "auto_dismiss": null,
+      "details": {
+        "model": "Appointment",
+        "model_source": "clinic_api/models.py:24",
+        "lines": [
+          7,
+          13
+        ]
+      },
+      "affected_tests": [
+        "tests/test_appointments.py::test_appointments_load",
+        "tests/test_appointments.py::test_total_minutes"
+      ]
+    },
+    {
+      "id": "C4",
+      "category": "unused_or_duplicate",
+      "rule": "unused",
+      "file": "tests/fixtures/legacy_rooms.csv",
+      "line": 1,
+      "field": null,
+      "data_type": null,
+      "why": "no test loads this file (its name appears in no test, fixture or loader)",
+      "fingerprint": null,
+      "auto_dismiss": null,
+      "details": {},
+      "affected_tests": []
+    },
+    {
+      "id": "C5",
+      "category": "time_bomb",
+      "rule": "fixed_expiry",
+      "file": "tests/fixtures/memberships.json",
+      "line": 2,
+      "field": "expires",
+      "data_type": "date",
+      "why": "expires is fixed at 2026-12-01 and compared with today at clinic_api/membership.py:12",
+      "fingerprint": null,
+      "auto_dismiss": null,
+      "details": {
+        "date": "2026-12-01",
+        "compared_with_now": [
+          {
+            "file": "clinic_api/membership.py",
+            "line": 12,
+            "op": "GtE",
+            "field_left": true
+          }
+        ],
+        "fails_on_date": "2026-12-02",
+        "days_until": 21
+      },
+      "affected_tests": [
+        "tests/test_membership.py::test_expired_casual_member_is_not_active",
+        "tests/test_membership.py::test_ten_pack_member_is_active"
+      ]
+    },
+    {
+      "id": "C6",
+      "category": "personal_data",
+      "rule": "email",
+      "file": "tests/fixtures/patients.json",
+      "line": 5,
+      "field": "email",
+      "data_type": "email address",
+      "why": "an email address at a public mail domain",
+      "fingerprint": "c16df8ea3d98135e",
+      "auto_dismiss": null,
+      "details": {
+        "domain_class": "public",
+        "domain": "gmail.com"
+      },
+      "affected_tests": [
+        "tests/test_patients.py::test_patient_fixture_builds_models"
+      ]
+    },
+    {
+      "id": "C7",
+      "category": "personal_data",
+      "rule": "phone",
+      "file": "tests/fixtures/patients.json",
+      "line": 6,
+      "field": "phone",
+      "data_type": "phone number",
+      "why": "ACMA number reserved for creative works",
+      "fingerprint": "7c3338609c4feefe",
+      "auto_dismiss": "ACMA number reserved for creative works",
+      "details": {},
+      "affected_tests": [
+        "tests/test_patients.py::test_patient_fixture_builds_models"
+      ]
+    },
+    {
+      "id": "C8",
+      "category": "personal_data",
+      "rule": "medicare",
+      "file": "tests/fixtures/patients.json",
+      "line": 7,
+      "field": "medicare_number",
+      "data_type": "a Medicare number",
+      "why": "a Medicare number with a valid check digit",
+      "fingerprint": "ef3c677ec570982b",
+      "auto_dismiss": null,
+      "details": {},
+      "affected_tests": [
+        "tests/test_patients.py::test_patient_fixture_builds_models"
+      ]
+    },
+    {
+      "id": "C9",
+      "category": "personal_data",
+      "rule": "name_and_address",
+      "file": "tests/fixtures/patients.json",
+      "line": 8,
+      "field": "address",
+      "data_type": "name and street address",
+      "why": "a full name with a street address",
+      "fingerprint": "14416417210debe9",
+      "auto_dismiss": null,
+      "details": {
+        "name_field": "display_name",
+        "placeholder_words": false
+      },
+      "affected_tests": [
+        "tests/test_patients.py::test_patient_fixture_builds_models"
+      ]
+    },
+    {
+      "id": "C10",
+      "category": "personal_data",
+      "rule": "dob_with_name",
+      "file": "tests/fixtures/patients.json",
+      "line": 9,
+      "field": "dob",
+      "data_type": "date of birth",
+      "why": "a date of birth beside a name",
+      "fingerprint": "aedbac9fff4047d3",
+      "auto_dismiss": null,
+      "details": {
+        "name_field": "display_name",
+        "placeholder_words": false
+      },
+      "affected_tests": [
+        "tests/test_patients.py::test_patient_fixture_builds_models"
+      ]
+    },
+    {
+      "id": "C11",
+      "category": "personal_data",
+      "rule": "email",
+      "file": "tests/fixtures/patients.json",
+      "line": 14,
+      "field": "email",
+      "data_type": "email address",
+      "why": "reserved documentation domain (RFC 2606 and RFC 6761)",
+      "fingerprint": "ea2b61da6a5fbebc",
+      "auto_dismiss": "reserved documentation domain (RFC 2606 and RFC 6761)",
+      "details": {
+        "domain_class": "reserved",
+        "domain": "example.com"
+      },
+      "affected_tests": [
+        "tests/test_patients.py::test_patient_fixture_builds_models"
+      ]
+    },
+    {
+      "id": "C12",
+      "category": "personal_data",
+      "rule": "phone",
+      "file": "tests/fixtures/patients.json",
+      "line": 15,
+      "field": "phone",
+      "data_type": "phone number",
+      "why": "ACMA number reserved for creative works",
+      "fingerprint": "871b902d79c7d185",
+      "auto_dismiss": "ACMA number reserved for creative works",
+      "details": {},
+      "affected_tests": [
+        "tests/test_patients.py::test_patient_fixture_builds_models"
+      ]
+    },
+    {
+      "id": "C13",
+      "category": "personal_data",
+      "rule": "name_and_address",
+      "file": "tests/fixtures/patients.json",
+      "line": 17,
+      "field": "address",
+      "data_type": "name and street address",
+      "why": "a full name with a street address",
+      "fingerprint": "eb3ffb739af683da",
+      "auto_dismiss": null,
+      "details": {
+        "name_field": "display_name",
+        "placeholder_words": true
+      },
+      "affected_tests": [
+        "tests/test_patients.py::test_patient_fixture_builds_models"
+      ]
+    },
+    {
+      "id": "C14",
+      "category": "personal_data",
+      "rule": "dob_with_name",
+      "file": "tests/fixtures/patients.json",
+      "line": 18,
+      "field": "dob",
+      "data_type": "date of birth",
+      "why": "a date of birth beside a name",
+      "fingerprint": "c20d5fdbe07193d8",
+      "auto_dismiss": null,
+      "details": {
+        "name_field": "display_name",
+        "placeholder_words": true
+      },
+      "affected_tests": [
+        "tests/test_patients.py::test_patient_fixture_builds_models"
+      ]
+    },
+    {
+      "id": "C15",
+      "category": "locale_assumption",
+      "rule": "machine_locale_literal",
+      "file": "tests/test_billing.py",
+      "line": 5,
+      "field": null,
+      "data_type": "formatted value",
+      "why": "test_fee_is_shown_in_dollars compares format_fee() with the literal \"$1,234.50\"; format_fee formats with the machine locale (clinic_api/billing.py:4, locale.currency)",
+      "fingerprint": null,
+      "auto_dismiss": null,
+      "details": {
+        "literal": "$1,234.50",
+        "function": "clinic_api/billing.py:4"
+      },
+      "affected_tests": [
+        "tests/test_billing.py::test_fee_is_shown_in_dollars"
+      ]
+    },
+    {
+      "id": "C16",
+      "category": "magic_id",
+      "rule": "literal_lookup",
+      "file": "tests/test_patients.py",
+      "line": 6,
+      "field": null,
+      "data_type": "id",
+      "why": "test_seed_patient_is_loaded looks up id 42 by a literal, which matches the seed row at db/seed.sql:3",
+      "fingerprint": null,
+      "auto_dismiss": null,
+      "details": {
+        "id": 42,
+        "seed_row": "db/seed.sql:3",
+        "call": "get_patient"
+      },
+      "affected_tests": [
+        "tests/test_patients.py::test_seed_patient_is_loaded"
+      ]
+    }
+  ],
+  "inventory_status": {
+    "db/seed.sql": {
+      "status": "scanned",
+      "reason": null
+    },
+    "tests/conftest.py": {
+      "status": "scanned",
+      "reason": null
+    },
+    "tests/factories.py": {
+      "status": "scanned",
+      "reason": null
+    },
+    "tests/test_appointments.py": {
+      "status": "scanned",
+      "reason": null
+    },
+    "tests/test_billing.py": {
+      "status": "scanned",
+      "reason": null
+    },
+    "tests/test_factories.py": {
+      "status": "scanned",
+      "reason": null
+    },
+    "tests/test_insurer.py": {
+      "status": "scanned",
+      "reason": null
+    },
+    "tests/test_membership.py": {
+      "status": "scanned",
+      "reason": null
+    },
+    "tests/test_patients.py": {
+      "status": "scanned",
+      "reason": null
+    },
+    "tests/test_waitlist.py": {
+      "status": "scanned",
+      "reason": null
+    },
+    "tests/cassettes/insurer_cover.json": {
+      "status": "scanned",
+      "reason": null
+    },
+    "tests/fixtures/appointments.yaml": {
+      "status": "scanned",
+      "reason": null
+    },
+    "tests/fixtures/legacy_rooms.csv": {
+      "status": "scanned",
+      "reason": null
+    },
+    "tests/fixtures/memberships.json": {
+      "status": "scanned",
+      "reason": null
+    },
+    "tests/fixtures/patients.json": {
+      "status": "scanned",
+      "reason": null
+    }
+  },
+  "summary": {
+    "candidates": 16,
+    "auto_dismissed": 3,
+    "by_category": {
+      "locale_assumption": 1,
+      "magic_id": 1,
+      "personal_data": 9,
+      "schema_drift": 1,
+      "secret": 1,
+      "shared_mutable": 1,
+      "time_bomb": 1,
+      "unused_or_duplicate": 1
+    }
+  },
+  "notes": []
+}

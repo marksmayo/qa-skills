@@ -1,6 +1,6 @@
 # Design: `test-data-auditor-skill`
 
-Status: Designed; not built. Build order: 11.
+Status: Built (v1.0.0), see "As built" at the end. Build order: 11.
 
 ## Mission
 
@@ -186,3 +186,77 @@ Agreed with the user before the build.
 1. **Horizon for a Critical time bomb?** 30 days.
 2. **May an `anonymised_by` marker lower severity?** Yes, by one level, and the finding cites the marker.
 3. **Which national ID formats?** TFN, Medicare, SSN, UK National Insurance number and NHS number.
+
+## As built (v1.0.0)
+
+Where the build differs from the design above, and what the example showed.
+
+- **Candidates hold no values.**
+  - **What `scan_data.py` writes:** the file, line, field, data type, why the candidate was
+    flagged, and a 16-character SHA-256 fingerprint of the normalised value.
+  - **Rule dismissals:** values on `data/reserved.json`'s lists, or with an invalid check digit,
+    are dismissed by rule, and the rule is quoted.
+  - **The validator's check:** it re-reads each remaining personal-data and secret location and
+    fails when the report or any evidence file contains:
+    - the value;
+    - the number without its separators;
+    - six consecutive digits of it.
+  - **First catch:** on the first example report it caught my own dismissal reason quoting a
+    placeholder name.
+- **Secrets** come from a small set of patterns in `data/rules.json`: authorization headers,
+  API key and password fields, AWS keys, private keys and live tokens. detect-secrets is
+  optional and wasn't installed. Every secret must be handed to code-security-auditor; it can't
+  be dismissed or made a finding.
+- **Inventory mapping.** A data file's `loaded_by` comes from where its name appears:
+  - a test function;
+  - a test module;
+  - a conftest fixture, followed through fixtures that request fixtures;
+  - a source module, through the tests that import it.
+
+  Mapping through a source module is module-level, so both tests in `test_patients.py` count
+  as loading `seed.sql`. JavaScript tests are mapped per file.
+- **YAML is a subset.** `datafiles.py` reads:
+  - block mappings and sequences;
+  - scalars;
+  - inline lists;
+  - comments.
+
+  Anchors, aliases, tags, block scalars and multiple documents make a file `not_assessed`,
+  never guessed at.
+- **Time bombs.** A fixed future expiry date counts as a time bomb when a source or test
+  compares that field with a now() call. The comparison operator decides the fail date: `>=`
+  fails the day after, `>` on the day. Ages from fixed birth dates and "next Tuesday" logic
+  aren't detected; the limitations say so.
+- **`clock_shift.py`** is a stdlib pytest plugin. `TDA_CLOCK_SHIFT=+400d` or
+  `TDA_CLOCK_DATE=2028-02-29` replaces `datetime.date`, `datetime.datetime`, `time.time` and
+  `time.time_ns` before the tests import anything. Prefer the repo's own clock library, or
+  libfaketime.
+- **Locale on Windows.** Python's `setlocale(LC_ALL, "")` ignores `LANG` there, so the locale
+  run was made in WSL with `C.UTF-8`. The report says that run also changed the platform.
+- **Severity and priority are computed** by `--write-summary`, from the category, the audit
+  date, the confidence and the `anonymised_by` marker.
+  - Time bombs beyond a year are Moderate.
+  - `suspected` findings are capped at P2.
+  - Unconfirmed shared state is Moderate.
+- **Example results:**
+  - **Findings:** 7 findings from 16 candidates; 5 dismissed (3 by rule, 2 by review) and 2
+    handed off.
+  - **Personal data:** P0, four candidates in one finding.
+  - **Time bomb:** fails 2026-12-02 and is Critical, but it is P1 because only two tests load
+    the fixture.
+  - **Shared state:** P1, confirmed by reverse order and passing in isolation.
+  - **Schema drift:** P2.
+  - **Locale (confirmed), magic id and unused file:** P3.
+- **Testing:**
+  - The validator catches 33 of 33 seeded violations.
+  - 16 rule scenarios pass:
+    - cards, specimen SSN and IBAN;
+    - NI, NHS and TFN numbers;
+    - the NHS 999 range;
+    - production hosts, buckets and local paths;
+    - unseeded random;
+    - orphan snapshots and duplicates;
+    - invalid enum values;
+    - binary files and YAML anchors;
+    - the `anonymised_by` marker;
+    - `clock_shift.py` itself.

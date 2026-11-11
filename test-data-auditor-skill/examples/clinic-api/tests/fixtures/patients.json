@@ -1,0 +1,20 @@
+[
+  {
+    "id": 1,
+    "display_name": "Harriet Quinlan",
+    "email": "harriet.quinlan.84721@gmail.com",
+    "phone": "0491 570 157",
+    "medicare_number": "2953 81048 1",
+    "address": "14 Wattle Grove Road, Kew VIC 3101",
+    "dob": "1987-03-14"
+  },
+  {
+    "id": 2,
+    "display_name": "Test Patient",
+    "email": "test.patient@example.com",
+    "phone": "0491 570 156",
+    "medicare_number": "",
+    "address": "1 Example Street, Testville",
+    "dob": "1990-01-01"
+  }
+]

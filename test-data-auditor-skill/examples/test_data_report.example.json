@@ -1,0 +1,551 @@
+{
+  "metadata": {
+    "repo": "clinic-api",
+    "commit": null,
+    "generated_at": "2026-11-11T03:30:00Z",
+    "today": "2026-11-11",
+    "skill_version": "1.0.0",
+    "clock_shift": "+400d",
+    "apply_fixes": false,
+    "candidates_file": "run/candidates.json",
+    "runs_file": "run/runs.json",
+    "critical_tests": [],
+    "platform": "Windows 11, Python 3.14, pytest; locale run on WSL Ubuntu, Python 3.12"
+  },
+  "inventory": [
+    {
+      "path": "db/seed.sql",
+      "kind": "seed",
+      "format": "sql",
+      "bytes": 262,
+      "loaded_by": [
+        "tests/test_patients.py::test_patient_fixture_builds_models",
+        "tests/test_patients.py::test_seed_patient_is_loaded"
+      ],
+      "status": "scanned",
+      "reason": null,
+      "lines": 4
+    },
+    {
+      "path": "tests/conftest.py",
+      "kind": "inline",
+      "format": "python",
+      "bytes": 1092,
+      "loaded_by": [
+        "tests/test_appointments.py::test_appointments_load",
+        "tests/test_appointments.py::test_total_minutes",
+        "tests/test_membership.py::test_expired_casual_member_is_not_active",
+        "tests/test_membership.py::test_ten_pack_member_is_active",
+        "tests/test_patients.py::test_patient_fixture_builds_models",
+        "tests/test_waitlist.py::test_join_waitlist",
+        "tests/test_waitlist.py::test_waitlist_starts_empty"
+      ],
+      "status": "scanned",
+      "reason": null,
+      "lines": 43
+    },
+    {
+      "path": "tests/factories.py",
+      "kind": "factory",
+      "format": "python",
+      "bytes": 293,
+      "loaded_by": [
+        "tests/test_factories.py::test_factory_patients_use_reserved_addresses"
+      ],
+      "status": "scanned",
+      "reason": null,
+      "lines": 12
+    },
+    {
+      "path": "tests/test_appointments.py",
+      "kind": "inline",
+      "format": "python",
+      "bytes": 341,
+      "loaded_by": [
+        "tests/test_appointments.py::test_appointments_load",
+        "tests/test_appointments.py::test_total_minutes"
+      ],
+      "status": "scanned",
+      "reason": null,
+      "lines": 10
+    },
+    {
+      "path": "tests/test_billing.py",
+      "kind": "inline",
+      "format": "python",
+      "bytes": 125,
+      "loaded_by": [
+        "tests/test_billing.py::test_fee_is_shown_in_dollars"
+      ],
+      "status": "scanned",
+      "reason": null,
+      "lines": 5
+    },
+    {
+      "path": "tests/test_factories.py",
+      "kind": "inline",
+      "format": "python",
+      "bytes": 152,
+      "loaded_by": [
+        "tests/test_factories.py::test_factory_patients_use_reserved_addresses"
+      ],
+      "status": "scanned",
+      "reason": null,
+      "lines": 5
+    },
+    {
+      "path": "tests/test_insurer.py",
+      "kind": "inline",
+      "format": "python",
+      "bytes": 479,
+      "loaded_by": [
+        "tests/test_insurer.py::test_cover_is_read_from_the_insurer"
+      ],
+      "status": "scanned",
+      "reason": null,
+      "lines": 16
+    },
+    {
+      "path": "tests/test_membership.py",
+      "kind": "inline",
+      "format": "python",
+      "bytes": 273,
+      "loaded_by": [
+        "tests/test_membership.py::test_ten_pack_member_is_active",
+        "tests/test_membership.py::test_expired_casual_member_is_not_active"
+      ],
+      "status": "scanned",
+      "reason": null,
+      "lines": 9
+    },
+    {
+      "path": "tests/test_patients.py",
+      "kind": "inline",
+      "format": "python",
+      "bytes": 370,
+      "loaded_by": [
+        "tests/test_patients.py::test_seed_patient_is_loaded",
+        "tests/test_patients.py::test_patient_fixture_builds_models"
+      ],
+      "status": "scanned",
+      "reason": null,
+      "lines": 12
+    },
+    {
+      "path": "tests/test_waitlist.py",
+      "kind": "inline",
+      "format": "python",
+      "bytes": 154,
+      "loaded_by": [
+        "tests/test_waitlist.py::test_waitlist_starts_empty",
+        "tests/test_waitlist.py::test_join_waitlist"
+      ],
+      "status": "scanned",
+      "reason": null,
+      "lines": 7
+    },
+    {
+      "path": "tests/cassettes/insurer_cover.json",
+      "kind": "recording",
+      "format": "json",
+      "bytes": 252,
+      "loaded_by": [
+        "tests/test_insurer.py::test_cover_is_read_from_the_insurer"
+      ],
+      "status": "scanned",
+      "reason": null,
+      "lines": 11
+    },
+    {
+      "path": "tests/fixtures/appointments.yaml",
+      "kind": "fixture",
+      "format": "yaml",
+      "bytes": 248,
+      "loaded_by": [
+        "tests/test_appointments.py::test_appointments_load",
+        "tests/test_appointments.py::test_total_minutes"
+      ],
+      "status": "scanned",
+      "reason": null,
+      "lines": 13
+    },
+    {
+      "path": "tests/fixtures/legacy_rooms.csv",
+      "kind": "fixture",
+      "format": "csv",
+      "bytes": 49,
+      "loaded_by": [],
+      "status": "scanned",
+      "reason": null,
+      "lines": 4
+    },
+    {
+      "path": "tests/fixtures/memberships.json",
+      "kind": "fixture",
+      "format": "json",
+      "bytes": 169,
+      "loaded_by": [
+        "tests/test_membership.py::test_expired_casual_member_is_not_active",
+        "tests/test_membership.py::test_ten_pack_member_is_active"
+      ],
+      "status": "scanned",
+      "reason": null,
+      "lines": 4
+    },
+    {
+      "path": "tests/fixtures/patients.json",
+      "kind": "fixture",
+      "format": "json",
+      "bytes": 482,
+      "loaded_by": [
+        "tests/test_patients.py::test_patient_fixture_builds_models"
+      ],
+      "status": "scanned",
+      "reason": null,
+      "lines": 20
+    }
+  ],
+  "tools": [
+    {
+      "name": "inventory.py, scan_data.py, schema_drift.py",
+      "version": "1.0.0",
+      "status": "ran",
+      "reason": "stdlib static rules"
+    },
+    {
+      "name": "clock_shift.py (pytest plugin)",
+      "version": "1.0.0",
+      "status": "ran",
+      "reason": "moved date.today, datetime.now and time.time for the shifted runs"
+    },
+    {
+      "name": "run_tests.py (order, isolate, locale)",
+      "version": "1.0.0",
+      "status": "ran",
+      "reason": "baseline and experiment runs"
+    },
+    {
+      "name": "libfaketime",
+      "version": null,
+      "status": "not_applicable",
+      "reason": "Windows run; the repo has no clock library, so clock_shift.py was used",
+      "leaves_unchecked": null
+    },
+    {
+      "name": "detect-secrets",
+      "version": null,
+      "status": "not_run",
+      "reason": "not installed; secret patterns in data/rules.json routed the one secret",
+      "leaves_unchecked": "secret formats outside the built-in patterns"
+    }
+  ],
+  "findings": [
+    {
+      "id": "F1",
+      "category": "personal_data",
+      "title": "Patient 1 in patients.json looks like a real person's record",
+      "candidates": [
+        "C6",
+        "C8",
+        "C9",
+        "C10"
+      ],
+      "location": {
+        "file": "tests/fixtures/patients.json",
+        "line": 5,
+        "field": "email"
+      },
+      "data_type": "email address, Medicare number, name with street address, date of birth",
+      "why_flagged": "One record holds an email address at a public mail domain (line 5), a Medicare number with a valid check digit (line 7), a full name with a street address (line 8) and a date of birth beside that name (line 9). The repository cannot tell whether the person exists, so the record is treated as real.",
+      "real_looking": true,
+      "anonymised_by": null,
+      "confidence": "static",
+      "affected_tests": [
+        "tests/test_patients.py::test_patient_fixture_builds_models"
+      ],
+      "fix": "Replace the record with reserved values: an example.com address, an ACMA fiction number, a Medicare number with an invalid check digit or none, a placeholder name and street, and a date of birth only if a test needs it. Then update the display-name assertion in test_patient_fixture_builds_models. If the record came from production, treat it as a privacy incident and remove it from history as well.",
+      "verification_step": "Rerun scan_data.py: patients.json lines 5-9 produce no personal_data candidates, and tests/test_patients.py passes.",
+      "severity": "critical",
+      "reach": 1,
+      "score": 4,
+      "priority": "P0"
+    },
+    {
+      "id": "F2",
+      "category": "time_bomb",
+      "title": "The ten-pack membership expires on 2026-12-01, so its test fails from 2026-12-02",
+      "candidates": [
+        "C5"
+      ],
+      "location": {
+        "file": "tests/fixtures/memberships.json",
+        "line": 2,
+        "field": "expires"
+      },
+      "data_type": "date",
+      "why_flagged": "memberships.json fixes expires at 2026-12-01 and clinic_api/membership.py:12 compares it with date.today() using >=, so test_ten_pack_member_is_active starts failing on 2026-12-02, 21 days after this audit.",
+      "confidence": "confirmed",
+      "fails_on_date": "2026-12-02",
+      "affected_tests": [
+        "tests/test_membership.py::test_expired_casual_member_is_not_active",
+        "tests/test_membership.py::test_ten_pack_member_is_active"
+      ],
+      "experiment": {
+        "run_ids": [
+          "S-1",
+          "M-1",
+          "L-1"
+        ],
+        "baseline_run_ids": [
+          "B-1",
+          "B-2"
+        ],
+        "variation": "clock moved +400 days, to 2027-01-31 and to 2028-02-29 (clock_shift.py)",
+        "result": "failed_as_predicted",
+        "note": "test_ten_pack_member_is_active failed in all three shifted runs and passed in both baselines."
+      },
+      "fix": "Build the fixture expiry relative to a frozen clock (today + 30 days in a fixture, or freezegun/time-machine in the test) instead of a literal date.",
+      "verification_step": "Rerun the +400d, month-end and leap-day runs: test_ten_pack_member_is_active passes in all three.",
+      "severity": "critical",
+      "reach": 2,
+      "score": 8,
+      "priority": "P1"
+    },
+    {
+      "id": "F3",
+      "category": "shared_mutable",
+      "title": "The session-scoped waitlist fixture is mutated by one test and read by another",
+      "candidates": [
+        "C2"
+      ],
+      "location": {
+        "file": "tests/conftest.py",
+        "line": 42,
+        "field": "waitlist"
+      },
+      "data_type": null,
+      "why_flagged": "tests/conftest.py:42 returns one list for the whole session; test_join_waitlist appends to it and test_waitlist_starts_empty expects it empty, so the result depends on test order.",
+      "confidence": "confirmed",
+      "affected_tests": [
+        "tests/test_waitlist.py::test_waitlist_starts_empty",
+        "tests/test_waitlist.py::test_join_waitlist"
+      ],
+      "experiment": {
+        "run_ids": [
+          "O-1"
+        ],
+        "baseline_run_ids": [
+          "B-1",
+          "B-2"
+        ],
+        "variation": "reverse order of the two tests",
+        "result": "failed_as_predicted",
+        "note": "test_waitlist_starts_empty failed when run after test_join_waitlist; each passed alone (I-1, I-2)."
+      },
+      "fix": "Make the fixture function-scoped, or return a fresh list per test.",
+      "verification_step": "Rerun the reverse-order run: both waitlist tests pass.",
+      "severity": "serious",
+      "reach": 2,
+      "score": 6,
+      "priority": "P1"
+    },
+    {
+      "id": "F4",
+      "category": "locale_assumption",
+      "title": "The fee test expects \"$1,234.50\" from machine-locale formatting",
+      "candidates": [
+        "C15"
+      ],
+      "location": {
+        "file": "tests/test_billing.py",
+        "line": 5,
+        "field": null
+      },
+      "data_type": "formatted value",
+      "why_flagged": "format_fee calls locale.setlocale(LC_ALL, \"\") then locale.currency, so the string depends on the machine's locale. It matches the locale this audit ran under (English_New Zealand on Windows) and fails where currency formatting differs or is unavailable.",
+      "confidence": "confirmed",
+      "affected_tests": [
+        "tests/test_billing.py::test_fee_is_shown_in_dollars"
+      ],
+      "experiment": {
+        "run_ids": [
+          "C-1"
+        ],
+        "baseline_run_ids": [
+          "B-1",
+          "B-2"
+        ],
+        "variation": "LANG and LC_ALL set to C.UTF-8 (WSL Ubuntu)",
+        "result": "failed_as_predicted",
+        "note": "The run fails with \"Currency formatting is not possible using the C locale\". It also changes the platform from Windows to Linux; the failure message ties it to the locale."
+      },
+      "fix": "Format with an explicit locale or a fixed format in format_fee (or set the locale in the test), and assert against that.",
+      "verification_step": "Rerun test_billing.py under C.UTF-8 in WSL and on Windows: it passes in both.",
+      "severity": "moderate",
+      "reach": 1,
+      "score": 2,
+      "priority": "P3"
+    },
+    {
+      "id": "F5",
+      "category": "magic_id",
+      "title": "test_seed_patient_is_loaded depends on seed row id 42",
+      "candidates": [
+        "C16"
+      ],
+      "location": {
+        "file": "tests/test_patients.py",
+        "line": 6,
+        "field": null
+      },
+      "data_type": "id",
+      "why_flagged": "The test looks up patient 42, which only exists because db/seed.sql:3 inserts it; reseeding or renumbering the dev seed breaks the test.",
+      "confidence": "static",
+      "affected_tests": [
+        "tests/test_patients.py::test_seed_patient_is_loaded"
+      ],
+      "fix": "Create the patient in the test (or a fixture) and look it up by the id that call returns, or by a natural key.",
+      "verification_step": "Remove row 42 from a copy of seed.sql and rerun test_patients.py: it still passes.",
+      "severity": "moderate",
+      "reach": 1,
+      "score": 2,
+      "priority": "P3"
+    },
+    {
+      "id": "F6",
+      "category": "schema_drift",
+      "title": "appointments.yaml still has a room field the Appointment model dropped",
+      "candidates": [
+        "C3"
+      ],
+      "location": {
+        "file": "tests/fixtures/appointments.yaml",
+        "line": 7,
+        "field": "room"
+      },
+      "data_type": null,
+      "why_flagged": "Both records carry room (lines 7 and 13), which Appointment (clinic_api/models.py:24) no longer has; the loader silently ignores it, so the fixture no longer shows what an appointment is.",
+      "confidence": "static",
+      "affected_tests": [
+        "tests/test_appointments.py::test_appointments_load",
+        "tests/test_appointments.py::test_total_minutes"
+      ],
+      "fix": "Remove room from the fixture, or add it back to the model if rooms are meant to exist.",
+      "verification_step": "Rerun schema_drift.py: no findings for appointments.yaml.",
+      "severity": "moderate",
+      "reach": 2,
+      "score": 4,
+      "priority": "P2"
+    },
+    {
+      "id": "F7",
+      "category": "unused_or_duplicate",
+      "title": "legacy_rooms.csv is not loaded by any test",
+      "candidates": [
+        "C4"
+      ],
+      "location": {
+        "file": "tests/fixtures/legacy_rooms.csv",
+        "line": 1,
+        "field": null
+      },
+      "data_type": null,
+      "why_flagged": "No test, fixture or loader mentions legacy_rooms.csv.",
+      "confidence": "static",
+      "affected_tests": [],
+      "fix": "Delete the file, or load it from the test that needs it.",
+      "verification_step": "Rerun inventory.py: the file is gone or has loaded_by entries.",
+      "severity": "minor",
+      "reach": 1,
+      "score": 1,
+      "priority": "P3"
+    }
+  ],
+  "dismissed": [
+    {
+      "candidate_id": "C7",
+      "by": "rule",
+      "reason": "ACMA number reserved for creative works (data/reserved.json)"
+    },
+    {
+      "candidate_id": "C11",
+      "by": "rule",
+      "reason": "reserved documentation domain (RFC 2606 and RFC 6761) (data/reserved.json)"
+    },
+    {
+      "candidate_id": "C12",
+      "by": "rule",
+      "reason": "ACMA number reserved for creative works (data/reserved.json)"
+    },
+    {
+      "candidate_id": "C13",
+      "by": "review",
+      "reason": "Patient 2 is a placeholder record: its name, street and suburb are made of placeholder words (Test, Example), beside an example.com address."
+    },
+    {
+      "candidate_id": "C14",
+      "by": "review",
+      "reason": "The date of birth sits beside a placeholder name in the same placeholder record as C13."
+    }
+  ],
+  "handoffs": [
+    {
+      "to": "code-security-auditor",
+      "candidate_id": "C1",
+      "finding_id": null,
+      "location": {
+        "file": "tests/cassettes/insurer_cover.json",
+        "line": 5
+      },
+      "reason": "The recorded request keeps an Authorization bearer token. Rated there, not here; the value is not reproduced."
+    },
+    {
+      "to": "flaky-test-hunter",
+      "candidate_id": null,
+      "finding_id": "F3",
+      "location": {
+        "file": "tests/conftest.py",
+        "line": 42
+      },
+      "reason": "Confirmed order dependence in the waitlist tests; a full investigation with repeats and bisection belongs there."
+    }
+  ],
+  "summary": {
+    "headline": "P0: patients.json holds a real-looking patient record (email, Medicare number, address, date of birth). A membership time bomb fails on 2026-12-02, and shared-fixture, locale, seed-id, drift and unused-file findings follow.",
+    "files_scanned": 15,
+    "not_assessed": 0,
+    "findings_by_category": {
+      "locale_assumption": 1,
+      "magic_id": 1,
+      "personal_data": 1,
+      "schema_drift": 1,
+      "shared_mutable": 1,
+      "time_bomb": 1,
+      "unused_or_duplicate": 1
+    },
+    "by_priority": {
+      "P0": 1,
+      "P1": 2,
+      "P2": 1,
+      "P3": 3
+    },
+    "by_severity": {
+      "critical": 2,
+      "minor": 1,
+      "moderate": 3,
+      "serious": 1
+    },
+    "earliest_time_bomb_date": "2026-12-02",
+    "evidence_completeness": 0.9167,
+    "dismissed": 5,
+    "handoffs": 2
+  },
+  "limitations": [
+    "15 data sources in 5 formats (JSON, YAML, CSV, SQL, Python) were scanned; none was binary or encrypted.",
+    "Personal-data rules cover emails, phone numbers, cards, Medicare, TFN, SSN, NI and NHS numbers, IBANs, names with addresses and dates of birth beside names. Other kinds of personal data are not detected.",
+    "The time-bomb rules look for fixed expiry dates compared with now and for future literals in tests with a now() call. Ages from fixed birth dates and \"next Tuesday\" logic are not detected.",
+    "clock_shift.py moves Python's clock only: C extensions, subprocesses and databases keep the real time.",
+    "The locale run used WSL because Windows ignores LANG; it changes platform as well as locale."
+  ],
+  "files_changed": []
+}

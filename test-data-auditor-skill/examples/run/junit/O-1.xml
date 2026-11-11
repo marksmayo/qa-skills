@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="2" time="0.056" timestamp="2026-11-11T14:44:21.138189+13:00" hostname="host"><testcase classname="tests.test_waitlist" name="test_join_waitlist" time="0.001" /><testcase classname="tests.test_waitlist" name="test_waitlist_starts_empty" time="0.001"><failure message="assert [1] == []&#10;  &#10;  Left contains one more item: 1&#10;  Use -v to get more diff">waitlist = [1]
+
+    def test_waitlist_starts_empty(waitlist):
+&gt;       assert waitlist == []
+E       assert [1] == []
+E         
+E         Left contains one more item: 1
+E         Use -v to get more diff
+
+tests\test_waitlist.py:2: AssertionError</failure></testcase></testsuite></testsuites>

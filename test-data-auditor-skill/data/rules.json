@@ -1,0 +1,37 @@
+{
+  "$comment": "Settings for scan_data.py's static rules. Field-name patterns are case-insensitive regular expressions matched against the whole field name.",
+  "today_horizon_days": {"critical": 30, "serious": 365},
+  "expiry_fields": "expires?|expiry|expiry_date|expiration(_date)?|expires_at|expires_on|valid_(until|to|through)|not_after|end_date|ends_(at|on)|renew(al)?_(date|on)|due_(date|on)|deadline|cutoff|valid_thru|exp_date",
+  "birth_fields": "dob|date_of_birth|birth_?date|birthday|born(_on)?",
+  "name_fields": "name|full_?name|display_?name|patient_?name|customer_?name|first_?name|last_?name|surname|given_?name|family_?name",
+  "address_fields": "address|address_?line_?1|street|street_?address|home_?address|postal_?address|residential_?address",
+  "phone_fields": "phone|mobile|cell|tel|telephone|fax|contact_?number|phone_?number",
+  "email_fields": "e?-?mail|email_?address|contact_?email",
+  "id_fields": {
+    "medicare": "medicare(_?(number|no|card))?",
+    "tfn": "tfn|tax_?file(_?number)?",
+    "ssn": "ssn|social_?security(_?number)?",
+    "nino": "nino|ni_?number|national_?insurance(_?number)?",
+    "nhs": "nhs(_?(number|no))?",
+    "iban": "iban|bank_?account"
+  },
+  "street_pattern": "\\b\\d+[A-Za-z]?\\s+[A-Z][A-Za-z' ]+\\s(Street|St|Road|Rd|Avenue|Ave|Grove|Gr|Lane|Ln|Drive|Dr|Court|Ct|Place|Pl|Crescent|Cres|Way|Parade|Pde|Boulevard|Blvd|Terrace|Tce|Close|Cl|Highway|Hwy)\\b",
+  "now_calls": ["date.today", "datetime.now", "datetime.utcnow", "datetime.today", "time.time", "timezone.now", "Date.now", "new Date()",
+                "LocalDate.now", "Instant.now", "Clock.systemUTC", "DateTime.now", "DateTime.UtcNow", "Date()"],
+  "environment_markers": "(^|[.-])(prod|production|live|staging|stage|stg|uat|preprod|pre-prod)([.-]|$)",
+  "secret_patterns": {
+    "authorization_header": "(?i)\\b(authorization|proxy-authorization)\\b[\"']?\\s*[:=]\\s*[\"']?(bearer|basic|token)\\s+[A-Za-z0-9._~+/=-]{12,}",
+    "api_key_field": "(?i)[\"']?(api[_-]?key|secret|client[_-]?secret|access[_-]?token|auth[_-]?token|password|passwd)[\"']?\\s*[:=]\\s*[\"'][^\"'\\s]{12,}[\"']",
+    "aws_access_key": "\\bAKIA[0-9A-Z]{16}\\b",
+    "private_key": "-----BEGIN [A-Z ]*PRIVATE KEY-----",
+    "live_token": "\\b(sk|rk|pk)_live_[A-Za-z0-9]{16,}\\b|\\bghp_[A-Za-z0-9]{36}\\b|\\bxox[abp]-[A-Za-z0-9-]{20,}"
+  },
+  "locale_calls_py": ["locale.currency", "locale.format_string", "locale.str", "locale.atof", "locale.atoi", "locale.nl_langinfo"],
+  "locale_calls_js": ["toLocaleString()", "toLocaleDateString()", "toLocaleTimeString()", "Intl.NumberFormat()", "Intl.DateTimeFormat()"],
+  "mutating_methods": ["append", "extend", "insert", "update", "pop", "popitem", "remove", "clear", "setdefault", "add", "discard", "sort", "reverse"],
+  "wide_scopes": ["session", "package", "module", "class"],
+  "snapshot_max_lines": 500,
+  "duplicate_similarity": 0.9,
+  "duplicate_min_lines": 5,
+  "large_file_mb": 50
+}

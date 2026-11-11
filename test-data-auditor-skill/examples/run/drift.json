@@ -1,0 +1,57 @@
+{
+  "models": {
+    "Appointment": {
+      "source": "clinic_api/models.py:24",
+      "fields": [
+        "id",
+        "kind",
+        "minutes",
+        "notes",
+        "patient_id",
+        "starts_at"
+      ]
+    },
+    "Membership": {
+      "source": "clinic_api/models.py:34",
+      "fields": [
+        "expires",
+        "patient_id",
+        "plan",
+        "visits_left"
+      ]
+    },
+    "Patient": {
+      "source": "clinic_api/models.py:13",
+      "fields": [
+        "address",
+        "display_name",
+        "dob",
+        "email",
+        "id",
+        "medicare_number",
+        "phone"
+      ]
+    }
+  },
+  "findings": [
+    {
+      "rule": "extra_field",
+      "file": "tests/fixtures/appointments.yaml",
+      "field": "room",
+      "model": "Appointment",
+      "model_source": "clinic_api/models.py:24",
+      "lines": [
+        7,
+        13
+      ]
+    }
+  ],
+  "unmatched_records": [
+    "tests/cassettes/insurer_cover.json:3",
+    "tests/cassettes/insurer_cover.json:5",
+    "tests/cassettes/insurer_cover.json:8",
+    "tests/fixtures/legacy_rooms.csv:2",
+    "tests/fixtures/legacy_rooms.csv:3",
+    "tests/fixtures/legacy_rooms.csv:4"
+  ]
+}

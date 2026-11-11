@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/marksmayo/qa-skills/test-data-auditor-skill/schemas/test_data_report.schema.json",
+  "title": "Test data audit report",
+  "description": "Every data source tests depend on, the findings from the static rules and the experiments, every candidate dismissed or handed off, and a ranked list. Personal data and secrets appear only as file, line, field and data type, never as values.",
+  "type": "object",
+  "required": ["metadata", "inventory", "tools", "findings", "dismissed", "handoffs", "summary", "limitations", "files_changed"],
+  "additionalProperties": false,
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": ["repo", "generated_at", "today", "skill_version", "clock_shift", "apply_fixes", "candidates_file", "runs_file"],
+      "additionalProperties": false,
+      "properties": {
+        "repo": {"type": "string", "minLength": 1},
+        "commit": {"type": ["string", "null"]},
+        "generated_at": {"type": "string", "minLength": 10},
+        "today": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+        "skill_version": {"type": "string"},
+        "clock_shift": {"type": "string"},
+        "apply_fixes": {"type": "boolean"},
+        "candidates_file": {"type": "string"},
+        "runs_file": {"type": ["string", "null"]},
+        "critical_tests": {"type": "array", "items": {"type": "string"}},
+        "platform": {"type": "string"}
+      }
+    },
+    "inventory": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "kind", "format", "loaded_by", "status"],
+        "properties": {
+          "path": {"type": "string"},
+          "kind": {"enum": ["fixture", "factory", "seed", "snapshot", "recording", "inline"]},
+          "format": {"type": "string"},
+          "bytes": {"type": "integer"},
+          "lines": {"type": "integer"},
+          "loaded_by": {"type": "array", "items": {"type": "string"}},
+          "status": {"enum": ["scanned", "not_assessed"]},
+          "reason": {"type": ["string", "null"]},
+          "anonymised_by": {"type": "string"}
+        }
+      }
+    },
+    "tools": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "status", "reason"],
+        "properties": {
+          "name": {"type": "string"},
+          "version": {"type": ["string", "null"]},
+          "status": {"enum": ["ran", "not_run", "errored", "not_applicable"]},
+          "reason": {"type": "string", "minLength": 5},
+          "leaves_unchecked": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "category", "title", "candidates", "location", "why_flagged", "severity", "confidence",
+                     "affected_tests", "fix", "verification_step", "reach", "score", "priority"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string", "pattern": "^F\\d+$"},
+          "category": {"enum": ["personal_data", "time_bomb", "magic_id", "environment_coupling", "shared_mutable",
+                                "nondeterministic", "schema_drift", "snapshot_rot", "unused_or_duplicate", "locale_assumption"]},
+          "title": {"type": "string", "minLength": 10},
+          "candidates": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^C\\d+$"}},
+          "location": {
+            "type": "object",
+            "required": ["file", "line"],
+            "properties": {"file": {"type": "string"}, "line": {"type": "integer", "minimum": 1}, "field": {"type": ["string", "null"]}}
+          },
+          "data_type": {"type": ["string", "null"]},
+          "why_flagged": {"type": "string", "minLength": 15},
+          "real_looking": {"type": "boolean"},
+          "anonymised_by": {"type": ["string", "null"]},
+          "severity": {"enum": ["critical", "serious", "moderate", "minor"]},
+          "confidence": {"enum": ["confirmed", "static", "suspected"]},
+          "experiment": {
+            "type": "object",
+            "required": ["run_ids", "variation", "result"],
+            "properties": {
+              "run_ids": {"type": "array", "items": {"type": "string"}},
+              "baseline_run_ids": {"type": "array", "items": {"type": "string"}},
+              "variation": {"type": "string"},
+              "result": {"enum": ["failed_as_predicted", "passed", "not_run"]},
+              "note": {"type": "string"}
+            }
+          },
+          "fails_on_date": {"type": ["string", "null"], "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+          "affected_tests": {"type": "array", "items": {"type": "string"}},
+          "fix": {"type": "string", "minLength": 15},
+          "verification_step": {"type": "string", "minLength": 15},
+          "reach": {"type": "integer", "minimum": 1, "maximum": 3},
+          "score": {"type": "integer", "minimum": 1},
+          "priority": {"enum": ["P0", "P1", "P2", "P3"]}
+        }
+      }
+    },
+    "dismissed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["candidate_id", "reason", "by"],
+        "properties": {
+          "candidate_id": {"type": "string", "pattern": "^C\\d+$"},
+          "reason": {"type": "string", "minLength": 15},
+          "by": {"enum": ["rule", "review"]}
+        }
+      }
+    },
+    "handoffs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["to", "location", "reason"],
+        "properties": {
+          "to": {"enum": ["flaky-test-hunter", "code-security-auditor", "privacy-flow-auditor"]},
+          "candidate_id": {"type": ["string", "null"]},
+          "finding_id": {"type": ["string", "null"]},
+          "location": {"type": "object", "required": ["file", "line"], "properties": {"file": {"type": "string"}, "line": {"type": "integer"}}},
+          "reason": {"type": "string", "minLength": 15}
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["headline", "files_scanned", "not_assessed", "findings_by_category", "by_priority", "by_severity",
+                   "earliest_time_bomb_date", "evidence_completeness"],
+      "additionalProperties": false,
+      "properties": {
+        "headline": {"type": "string", "minLength": 20},
+        "files_scanned": {"type": "integer"},
+        "not_assessed": {"type": "integer"},
+        "findings_by_category": {"type": "object"},
+        "by_priority": {"type": "object"},
+        "by_severity": {"type": "object"},
+        "earliest_time_bomb_date": {"type": ["string", "null"]},
+        "evidence_completeness": {"type": "number", "minimum": 0, "maximum": 1},
+        "dismissed": {"type": "integer"},
+        "handoffs": {"type": "integer"}
+      }
+    },
+    "limitations": {"type": "array", "items": {"type": "string", "minLength": 10}},
+    "files_changed": {"type": "array", "items": {"type": "string"}}
+  }
+}
