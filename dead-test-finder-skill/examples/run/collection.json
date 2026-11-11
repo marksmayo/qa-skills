@@ -1,0 +1,45 @@
+{
+  "packages": [
+    {
+      "package": "client",
+      "framework": "vitest",
+      "command": "npx vitest list --json",
+      "exit_code": 0,
+      "status": "ran",
+      "raw_output": "collect-client.json",
+      "collected": [
+        "client/src/api.test.ts::formatCents > formats negative amounts",
+        "client/src/api.test.ts::save > refuses a zero entry",
+        "client/src/api.test.ts::save > saves a valid entry"
+      ]
+    },
+    {
+      "package": "core",
+      "framework": "pytest",
+      "command": "python -m pytest --collect-only -q -p no:cacheprovider",
+      "exit_code": 0,
+      "status": "ran",
+      "raw_output": "collect-core.txt",
+      "collected": [
+        "core/tests/test_entries.py::test_balance_sums_the_account",
+        "core/tests/test_entries.py::test_post_entry_records_a_sale",
+        "core/tests/test_entries.py::test_zero_entry_is_rejected",
+        "core/tests/test_imports.py::test_package_imports",
+        "core/tests/test_reports.py::test_csv_lines_are_sorted",
+        "core/tests/test_reports.py::test_trial_balance_lists_every_account",
+        "core/tests/test_reports.py::test_trial_balance_with_two_currencies",
+        "core/tests/test_tax.py::test_gst_on_a_hundred_dollar_invoice",
+        "core/tests/test_tax.py::test_gst_on_one_hundred_dollars",
+        "core/tests/test_tax.py::test_tax_is_calculated",
+        "core/tests/test_tax.py::test_with_gst_adds_the_tax"
+      ]
+    }
+  ],
+  "defined": 15,
+  "collected": 14,
+  "not_collected": [
+    "core/tests/check_balance.py::test_refund_reduces_the_balance"
+  ],
+  "not_assessed": [],
+  "collected_not_defined": []
+}

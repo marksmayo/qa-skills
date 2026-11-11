@@ -1,0 +1,14 @@
+[
+  {
+    "name": "save > saves a valid entry",
+    "file": "<client>/src/api.test.ts"
+  },
+  {
+    "name": "save > refuses a zero entry",
+    "file": "<client>/src/api.test.ts"
+  },
+  {
+    "name": "formatCents > formats negative amounts",
+    "file": "<client>/src/api.test.ts"
+  }
+]

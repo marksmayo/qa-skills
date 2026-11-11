@@ -1,6 +1,6 @@
 # Design: `dead-test-finder-skill`
 
-Status: Designed; not built. Build order: 12.
+Status: Built (v1.0.0), see "As built" at the end. Build order: 12.
 
 ## Mission
 
@@ -194,3 +194,70 @@ Agreed with the user before the build.
 1. **Neutralise a sample of ordinary tests by default?** No: only the candidates the static rules flag.
 2. **Age at which an unticketed skip is stale?** 180 days.
 3. **May `apply: true` remove a stray `.only`?** Yes.
+
+## As built (v1.0.0)
+
+Where the build differs from the design above, and what the example showed.
+
+- **Every run has an `original`.** `neutralise.py` runs each test three ways:
+  - unchanged;
+  - with each target's body replaced by `return None` or `return undefined`;
+  - with that body raising instead.
+
+  Confirmed can't-fail needs the unchanged run to pass and the neutral variant to pass too.
+  When the raise variant fails, the report must say the test does check that nothing raises.
+  The design's "passes both times" applies only to smoke tests, which stay `weak` unless even
+  the raise passes.
+- **Proofs.** `neutralise.py --patch` applies a proposal in the scratch copy first. A
+  strengthening fix counts as `proved` when the patched test passes unchanged and fails when
+  neutralised. Test ids may name tests that only exist after the patch, such as a renamed file.
+- **Scratch copies live outside the repo.** Python packages are copied to a temporary
+  directory. JavaScript runs in a scratch copy with `node_modules` (`--cwd`), and every file
+  patched there is restored. The tree hash leaves out the run directory, which can sit inside
+  the repo.
+
+  An edge-case scenario caught the first version copying its work directory into itself when
+  the run directory was inside the repo.
+- **Collection.**
+  - Python: `pytest --collect-only -q` per package, with `python_files`, `python_classes` and
+    `python_functions` read from the pytest config for the static rule.
+  - JavaScript: `vitest list --json`, or `jest --listTests --json` (file level).
+  - The raw output is kept, with the scratch path replaced.
+- **Duplicates.**
+  - Shape: the token similarity of a normalised AST dump, with names, string and number
+    literals replaced.
+  - Behaviour: a small `sys.settrace` pytest plugin records the product lines each test runs,
+    and the literal values in each test are compared.
+  - Python only. JavaScript pairs are `not_assessed`.
+- **Skips.** Ticket status comes from `fetch_ticket.py` output; `status_category` was added to
+  the shared script for this. Age comes from `git blame --porcelain` when the repo is a git work
+  tree. A ticket key with no ticket file is `unknown`, never assumed open or closed.
+- **Shared files.** The diff applier moved from the test impact selector into
+  `shared/scripts/unified_diff.py`. The skill also uses `diff_scope.py` and `fetch_ticket.py`.
+- **Example results:** 15 test definitions, 14 collected, 8 candidates, 7 findings and 1
+  dismissal.
+
+  | Finding | Result |
+  |---|---|
+  | `never_runs` (check_balance.py) | P0 |
+  | `cant_fail` (post_entry) | P0 |
+  | `mock_only` | P1 |
+  | `async_not_awaited` | P2 |
+  | `stale_skip` (LEDG-12 Done) | P2 |
+  | `duplicate` | P3 |
+  | `weak` | P3 |
+
+  - **The un-awaited Vitest assertion:** it failed when `save()` was neutralised. Vitest 3.2.4
+    auto-awaits hanging assertions and warns, so the finding stays static at P2 instead of
+    becoming a can't-fail, as the design's answer key assumed.
+  - **The five strengthening and un-skip patches** are all proved. The merge and the deletion
+    are only proposed.
+- **Testing:**
+  - The validator catches 31 of 31 seeded violations.
+  - 18 scanner, similarity and skip scenarios pass:
+    - tautologies, loops, except-only and post-return assertions;
+    - swallowed failures and strict xfail;
+    - class patterns and config `python_files`;
+    - `.only`, `describe.skip`, empty catches and `done` callbacks;
+    - an overlap with the same lines but different values;
+    - git-blame ages either side of 180 days.

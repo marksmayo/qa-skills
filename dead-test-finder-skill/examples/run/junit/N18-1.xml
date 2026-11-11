@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.069" timestamp="2026-11-11T15:58:40.359747+13:00" hostname="host"><testcase classname="tests.test_tax" name="test_tax_is_calculated" time="0.001"><failure message="assert None == 1500&#10; +  where None = &lt;function calculate_tax at 0x000002142DBB8B40&gt;(10000, 0.15)&#10; +    where &lt;function calculate_tax at 0x000002142DBB8B40&gt; = tax.calculate_tax">def test_tax_is_calculated():
+&gt;       assert tax.calculate_tax(10000, 0.15) == 1500
+E       assert None == 1500
+E        +  where None = &lt;function calculate_tax at 0x000002142DBB8B40&gt;(10000, 0.15)
+E        +    where &lt;function calculate_tax at 0x000002142DBB8B40&gt; = tax.calculate_tax
+
+tests\test_tax.py:19: AssertionError</failure></testcase></testsuite></testsuites>

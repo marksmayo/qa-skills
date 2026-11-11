@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="3" failures="0" errors="0" time="0.0044063">
+    <testsuite name="src/api.test.ts" timestamp="2026-11-11T02:58:34.504Z" hostname="host" tests="3" failures="0" errors="0" skipped="0" time="0.0044063">
+        <testcase classname="src/api.test.ts" name="save &gt; saves a valid entry" time="0.0021349">
+        </testcase>
+        <testcase classname="src/api.test.ts" name="save &gt; refuses a zero entry" time="0.0003092">
+        </testcase>
+        <testcase classname="src/api.test.ts" name="formatCents &gt; formats negative amounts" time="0.0002258">
+        </testcase>
+    </testsuite>
+</testsuites>

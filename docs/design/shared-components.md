@@ -145,6 +145,18 @@ the variation it applied. Variations:
 A per-run timeout kills the process tree and records `timed_out`. The script never edits test
 files.
 
+**`unified_diff.py`** (shared since skill 12) parses and applies unified diffs without git:
+- new, deleted and renamed files, several hunks per file;
+- hunks matched exactly, ignoring line endings;
+- `check` mode, which does a dry run in a temporary copy.
+
+It was written for the test impact selector, which applies each change to a scratch copy. The
+dead test finder applies its proposal patches with it, to prove them.
+
+**`fetch_ticket.py`** gained `status_category` with skill 12: Jira's `new`, `indeterminate` or
+`done`. A skip's ticket can then be checked without guessing from workflow status names. The
+content fingerprint doesn't include status, so existing examples are unaffected.
+
 Two fixes came with skill 10 (the test impact selector):
 
 - **Windows shims:** on Windows the program is looked up with `shutil.which`, so the `npx`, Jest,

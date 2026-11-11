@@ -1,0 +1,4 @@
+diff --git a/core/tests/check_balance.py b/core/tests/test_balance.py
+similarity index 100%
+rename from core/tests/check_balance.py
+rename to core/tests/test_balance.py

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="3" failures="2" errors="0" time="0.0151477">
+    <testsuite name="src/api.test.ts" timestamp="2026-11-11T02:58:27.719Z" hostname="host" tests="3" failures="2" errors="0" skipped="0" time="0.0151477">
+        <testcase classname="src/api.test.ts" name="save &gt; saves a valid entry" time="0.0122945">
+            <system-err>
+Promise returned by `expect(actual).resolves.toBe(expected)` was not awaited. Vitest currently auto-awaits hanging assertions at the end of the test, but this will cause the test to fail in Vitest 3. Please remember to await the assertion.
+    at <client>/src/api.test.ts:6:58
+
+            </system-err>
+            <failure message="promise rejected &quot;Error: neutralised by dead-test-finder&quot; instead of resolving" type="AssertionError">
+AssertionError: promise rejected &quot;Error: neutralised by dead-test-finder&quot; instead of resolving
+ ❯ src/api.test.ts:6:58
+
+Caused by: Error: neutralised by dead-test-finder
+ ❯ save src/api.ts:6:73
+ ❯ src/api.test.ts:6:12
+            </failure>
+        </testcase>
+        <testcase classname="src/api.test.ts" name="save &gt; refuses a zero entry" time="0.0008933">
+            <failure message="promise rejected &quot;Error: neutralised by dead-test-finder&quot; instead of resolving" type="AssertionError">
+AssertionError: promise rejected &quot;Error: neutralised by dead-test-finder&quot; instead of resolving
+ ❯ src/api.test.ts:10:60
+
+Caused by: Error: neutralised by dead-test-finder
+ ❯ save src/api.ts:6:73
+ ❯ src/api.test.ts:10:18
+            </failure>
+        </testcase>
+        <testcase classname="src/api.test.ts" name="formatCents &gt; formats negative amounts" time="0.0004917">
+        </testcase>
+    </testsuite>
+</testsuites>

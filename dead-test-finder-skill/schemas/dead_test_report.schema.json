@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/marksmayo/qa-skills/dead-test-finder-skill/schemas/dead_test_report.schema.json",
+  "title": "Dead test report",
+  "description": "Tests that can't fail, never run, only check their mocks, are duplicated, or are skipped for a reason that has gone, each with its evidence (collection, neutralisation runs, coverage comparison, ticket status) and a proposal with a patch.",
+  "type": "object",
+  "required": ["metadata", "tools", "collection", "tests", "findings", "dismissed", "summary", "limitations", "files_changed"],
+  "additionalProperties": false,
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": ["repo", "generated_at", "skill_version", "frameworks", "apply", "evidence_files"],
+      "additionalProperties": false,
+      "properties": {
+        "repo": {"type": "string"},
+        "commit": {"type": ["string", "null"]},
+        "generated_at": {"type": "string"},
+        "skill_version": {"type": "string"},
+        "frameworks": {"type": "array", "items": {"type": "object", "required": ["package", "framework", "collect_command"]}},
+        "apply": {"type": "boolean"},
+        "skip_age_days": {"type": "integer"},
+        "platform": {"type": "string"},
+        "evidence_files": {
+          "type": "object",
+          "required": ["candidates", "collection", "runs", "neutralisations"],
+          "properties": {
+            "candidates": {"type": "string"}, "collection": {"type": "string"}, "runs": {"type": "string"},
+            "neutralisations": {"type": "string"}, "similarity": {"type": ["string", "null"]}, "skips": {"type": ["string", "null"]}
+          }
+        }
+      }
+    },
+    "tools": {
+      "type": "array", "minItems": 1,
+      "items": {"type": "object", "required": ["name", "status", "reason"],
+                "properties": {"name": {"type": "string"}, "version": {"type": ["string", "null"]},
+                               "status": {"enum": ["ran", "not_run", "errored", "not_applicable"]}, "reason": {"type": "string", "minLength": 5}}}
+    },
+    "collection": {
+      "type": "object",
+      "required": ["defined", "collected", "not_collected", "not_assessed"],
+      "properties": {
+        "defined": {"type": "integer"}, "collected": {"type": "integer"},
+        "not_collected": {"type": "array", "items": {"type": "string"}},
+        "not_assessed": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "tests": {
+      "type": "array",
+      "items": {"type": "object", "required": ["id", "file", "line", "status"],
+                "properties": {"id": {"type": "string"}, "file": {"type": "string"}, "line": {"type": "integer"},
+                               "status": {"enum": ["scanned", "neutralised", "not_assessed"]}, "reason": {"type": ["string", "null"]}}}
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "category", "candidates", "test_ids", "location", "confidence", "why", "criticality", "criticality_reason",
+                     "evidence", "proposal", "applied", "weight", "score", "priority"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string", "pattern": "^F\\d+$"},
+          "category": {"enum": ["never_runs", "cant_fail", "mock_only", "async_not_awaited", "swallowed_failure", "unreached_assertion",
+                                "stale_skip", "duplicate", "overlap", "weak"]},
+          "candidates": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^C\\d+$"}},
+          "test_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+          "location": {"type": "object", "required": ["file", "line"], "properties": {"file": {"type": "string"}, "line": {"type": "integer"}}},
+          "confidence": {"enum": ["confirmed", "static", "suspected"]},
+          "why": {"type": "string", "minLength": 20},
+          "criticality": {"type": "integer", "minimum": 1, "maximum": 3},
+          "criticality_reason": {"type": "string", "minLength": 10},
+          "evidence": {
+            "type": "object",
+            "properties": {
+              "neutralisation": {"type": "object", "required": ["test_id", "original_run_id", "targets", "outcome"],
+                                 "properties": {"test_id": {"type": "string"}, "original_run_id": {"type": "string"},
+                                                "targets": {"type": "array"}, "outcome": {"enum": ["passed_neutralised", "failed_neutralised", "not_run"]},
+                                                "checks_no_exception": {"type": "boolean"}}},
+              "collection": {"type": "object", "required": ["not_collected", "raw_output"],
+                             "properties": {"not_collected": {"type": "boolean"}, "raw_output": {"type": "string"}, "marker": {"type": "string"}}},
+              "similarity": {"type": "object", "required": ["similarity", "coverage_identical", "values_identical"],
+                             "properties": {"similarity": {"type": "number"}, "coverage_identical": {"type": "boolean"},
+                                            "values_identical": {"type": "boolean"}}},
+              "skip": {"type": "object", "required": ["verdict"],
+                       "properties": {"verdict": {"enum": ["stale", "open", "legitimate", "unknown"]}, "ticket": {"type": ["object", "null"]},
+                                      "age_days": {"type": ["integer", "null"]}, "age_source": {"type": "string"}}},
+              "note": {"type": "string"}
+            }
+          },
+          "proposal": {
+            "type": "object",
+            "required": ["action", "patch_path", "rationale"],
+            "properties": {
+              "action": {"enum": ["fix", "merge", "unskip", "delete", "investigate"]},
+              "patch_path": {"type": ["string", "null"]},
+              "rationale": {"type": "string", "minLength": 15},
+              "proof": {"type": "object", "required": ["test_id", "original_run_id", "neutralised_run_ids", "result"],
+                        "properties": {"test_id": {"type": "string"}, "original_run_id": {"type": "string"},
+                                       "neutralised_run_ids": {"type": "array", "items": {"type": "string"}},
+                                       "result": {"enum": ["proved", "not_proved"]}}}
+            }
+          },
+          "applied": {"type": "boolean"},
+          "weight": {"type": "integer"},
+          "score": {"type": "integer"},
+          "priority": {"enum": ["P0", "P1", "P2", "P3"]}
+        }
+      }
+    },
+    "dismissed": {
+      "type": "array",
+      "items": {"type": "object", "required": ["candidate_id", "reason"],
+                "properties": {"candidate_id": {"type": "string", "pattern": "^C\\d+$"}, "reason": {"type": "string", "minLength": 20}}}
+    },
+    "summary": {
+      "type": "object",
+      "required": ["headline", "tests_defined", "collected", "neutralised", "findings_by_category", "by_priority", "evidence_completeness"],
+      "additionalProperties": false,
+      "properties": {
+        "headline": {"type": "string", "minLength": 20},
+        "tests_defined": {"type": "integer"}, "collected": {"type": "integer"}, "neutralised": {"type": "integer"},
+        "findings_by_category": {"type": "object"}, "by_priority": {"type": "object"},
+        "evidence_completeness": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    },
+    "limitations": {"type": "array", "items": {"type": "string", "minLength": 10}},
+    "files_changed": {"type": "array", "items": {"type": "string"}}
+  }
+}

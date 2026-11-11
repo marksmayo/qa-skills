@@ -1,0 +1,250 @@
+{
+  "tree_hash_before": "9dc597e7cc054a07bc9406665890814748a17f4e35ee62b46293cec4b1d1aeae",
+  "tree_hash_after": "9dc597e7cc054a07bc9406665890814748a17f4e35ee62b46293cec4b1d1aeae",
+  "results": [
+    {
+      "test_id": "core/tests/test_entries.py::test_post_entry_records_a_sale",
+      "patch": null,
+      "targets": [
+        {
+          "target": "ledger.entries.post_entry",
+          "file": "core/ledger/entries.py",
+          "variants": [
+            {
+              "variant": "return",
+              "run_id": "N2-1",
+              "test_status": "passed"
+            },
+            {
+              "variant": "raise",
+              "run_id": "N3-1",
+              "test_status": "failed"
+            }
+          ]
+        }
+      ],
+      "note": null,
+      "original": {
+        "run_id": "N1-1",
+        "test_status": "passed"
+      },
+      "outcome": "passed_neutralised",
+      "checks_no_exception": true
+    },
+    {
+      "test_id": "core/tests/test_tax.py::test_tax_is_calculated",
+      "patch": null,
+      "targets": [
+        {
+          "target": "ledger.tax.calculate_tax",
+          "file": "core/ledger/tax.py",
+          "variants": [
+            {
+              "variant": "return",
+              "run_id": "N5-1",
+              "test_status": "passed"
+            },
+            {
+              "variant": "raise",
+              "run_id": "N6-1",
+              "test_status": "passed"
+            }
+          ]
+        }
+      ],
+      "note": null,
+      "original": {
+        "run_id": "N4-1",
+        "test_status": "passed"
+      },
+      "outcome": "passed_neutralised",
+      "checks_no_exception": false
+    },
+    {
+      "test_id": "client/src/api.test.ts::save > saves a valid entry",
+      "patch": null,
+      "targets": [
+        {
+          "target": "save",
+          "file": "client/src/api.ts",
+          "variants": [
+            {
+              "variant": "return",
+              "run_id": "N8-1",
+              "test_status": "failed"
+            },
+            {
+              "variant": "raise",
+              "run_id": "N9-1",
+              "test_status": "failed"
+            }
+          ]
+        }
+      ],
+      "note": null,
+      "original": {
+        "run_id": "N7-1",
+        "test_status": "passed"
+      },
+      "outcome": "failed_neutralised",
+      "checks_no_exception": true
+    },
+    {
+      "test_id": "core/tests/test_imports.py::test_package_imports",
+      "patch": null,
+      "targets": [],
+      "note": "no product function to neutralise (the test calls nothing it imports)",
+      "original": {
+        "run_id": "N10-1",
+        "test_status": "passed"
+      },
+      "outcome": "not_run",
+      "checks_no_exception": false
+    },
+    {
+      "test_id": "core/tests/test_entries.py::test_post_entry_records_a_sale",
+      "patch": "dead-test-finder-skill/examples/proposals/assert-post-entry.diff",
+      "targets": [
+        {
+          "target": "ledger.entries.post_entry",
+          "file": "core/ledger/entries.py",
+          "variants": [
+            {
+              "variant": "return",
+              "run_id": "N12-1",
+              "test_status": "failed"
+            },
+            {
+              "variant": "raise",
+              "run_id": "N13-1",
+              "test_status": "failed"
+            }
+          ]
+        }
+      ],
+      "note": null,
+      "original": {
+        "run_id": "N11-1",
+        "test_status": "passed"
+      },
+      "outcome": "failed_neutralised",
+      "checks_no_exception": true
+    },
+    {
+      "test_id": "client/src/api.test.ts::save > saves a valid entry",
+      "patch": "dead-test-finder-skill/examples/proposals/await-save.diff",
+      "targets": [
+        {
+          "target": "save",
+          "file": "client/src/api.ts",
+          "variants": [
+            {
+              "variant": "return",
+              "run_id": "N15-1",
+              "test_status": "failed"
+            },
+            {
+              "variant": "raise",
+              "run_id": "N16-1",
+              "test_status": "failed"
+            }
+          ]
+        }
+      ],
+      "note": null,
+      "original": {
+        "run_id": "N14-1",
+        "test_status": "passed"
+      },
+      "outcome": "failed_neutralised",
+      "checks_no_exception": true
+    },
+    {
+      "test_id": "core/tests/test_tax.py::test_tax_is_calculated",
+      "patch": "dead-test-finder-skill/examples/proposals/unmock-calculate-tax.diff",
+      "targets": [
+        {
+          "target": "ledger.tax.calculate_tax",
+          "file": "core/ledger/tax.py",
+          "variants": [
+            {
+              "variant": "return",
+              "run_id": "N18-1",
+              "test_status": "failed"
+            },
+            {
+              "variant": "raise",
+              "run_id": "N19-1",
+              "test_status": "failed"
+            }
+          ]
+        }
+      ],
+      "note": null,
+      "original": {
+        "run_id": "N17-1",
+        "test_status": "passed"
+      },
+      "outcome": "failed_neutralised",
+      "checks_no_exception": true
+    },
+    {
+      "test_id": "core/tests/test_balance.py::test_refund_reduces_the_balance",
+      "patch": "dead-test-finder-skill/examples/proposals/rename-check-balance.diff",
+      "targets": [
+        {
+          "target": "ledger.entries.balance",
+          "file": "core/ledger/entries.py",
+          "variants": [
+            {
+              "variant": "return",
+              "run_id": "N21-1",
+              "test_status": "failed"
+            },
+            {
+              "variant": "raise",
+              "run_id": "N22-1",
+              "test_status": "failed"
+            }
+          ]
+        }
+      ],
+      "note": null,
+      "original": {
+        "run_id": "N20-1",
+        "test_status": "passed"
+      },
+      "outcome": "failed_neutralised",
+      "checks_no_exception": true
+    },
+    {
+      "test_id": "core/tests/test_reports.py::test_trial_balance_with_two_currencies",
+      "patch": "dead-test-finder-skill/examples/proposals/unskip-ledg-12.diff",
+      "targets": [
+        {
+          "target": "ledger.reports.trial_balance",
+          "file": "core/ledger/reports.py",
+          "variants": [
+            {
+              "variant": "return",
+              "run_id": "N24-1",
+              "test_status": "failed"
+            },
+            {
+              "variant": "raise",
+              "run_id": "N25-1",
+              "test_status": "failed"
+            }
+          ]
+        }
+      ],
+      "note": null,
+      "original": {
+        "run_id": "N23-1",
+        "test_status": "passed"
+      },
+      "outcome": "failed_neutralised",
+      "checks_no_exception": true
+    }
+  ]
+}

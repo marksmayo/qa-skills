@@ -1,0 +1,1 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="0" tests="1" time="0.019" timestamp="2026-11-11T15:58:42.756856+13:00" hostname="host"><testcase classname="tests.test_balance" name="test_refund_reduces_the_balance" time="0.001" /></testsuite></testsuites>

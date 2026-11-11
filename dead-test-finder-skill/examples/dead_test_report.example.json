@@ -1,0 +1,567 @@
+{
+  "metadata": {
+    "repo": "ledger",
+    "commit": null,
+    "generated_at": "2026-11-11T05:00:00Z",
+    "skill_version": "1.0.0",
+    "frameworks": [
+      {
+        "package": "client",
+        "framework": "vitest",
+        "collect_command": "npx vitest list --json"
+      },
+      {
+        "package": "core",
+        "framework": "pytest",
+        "collect_command": "python -m pytest --collect-only -q -p no:cacheprovider"
+      }
+    ],
+    "apply": false,
+    "skip_age_days": 180,
+    "platform": "Windows 11, Python 3.14, Node 26",
+    "evidence_files": {
+      "candidates": "run/candidates.json",
+      "collection": "run/collection.json",
+      "runs": "run/runs.json",
+      "neutralisations": "run/neutralisations.json",
+      "similarity": "run/similarity.json",
+      "skips": "run/skips.json"
+    }
+  },
+  "tools": [
+    {
+      "name": "pytest",
+      "version": "pytest 9.2.0",
+      "status": "ran",
+      "reason": "collection, neutralisation and proof runs for core/"
+    },
+    {
+      "name": "vitest",
+      "version": "3.2.4",
+      "status": "ran",
+      "reason": "collection (vitest list --json) and runs for client/, in a scratch copy with node_modules"
+    },
+    {
+      "name": "per-test line coverage (similarity.py plugin)",
+      "version": "1.0.0",
+      "status": "ran",
+      "reason": "duplicate check for the GST pair"
+    },
+    {
+      "name": "git blame",
+      "version": null,
+      "status": "not_run",
+      "reason": "the example's lines were not committed when the run was made, so skip ages are not_checked"
+    },
+    {
+      "name": "Jira",
+      "version": null,
+      "status": "not_applicable",
+      "reason": "LEDG-12 was read from an exported issue (examples/tickets/), normalised with fetch_ticket.py"
+    }
+  ],
+  "collection": {
+    "defined": 15,
+    "collected": 14,
+    "not_collected": [
+      "core/tests/check_balance.py::test_refund_reduces_the_balance"
+    ],
+    "not_assessed": []
+  },
+  "tests": [
+    {
+      "id": "client/src/api.test.ts::save > saves a valid entry",
+      "file": "client/src/api.test.ts",
+      "line": 5,
+      "status": "neutralised",
+      "reason": null
+    },
+    {
+      "id": "client/src/api.test.ts::save > refuses a zero entry",
+      "file": "client/src/api.test.ts",
+      "line": 9,
+      "status": "scanned",
+      "reason": null
+    },
+    {
+      "id": "client/src/api.test.ts::formatCents > formats negative amounts",
+      "file": "client/src/api.test.ts",
+      "line": 15,
+      "status": "scanned",
+      "reason": null
+    },
+    {
+      "id": "core/tests/check_balance.py::test_refund_reduces_the_balance",
+      "file": "core/tests/check_balance.py",
+      "line": 4,
+      "status": "scanned",
+      "reason": null
+    },
+    {
+      "id": "core/tests/test_entries.py::test_post_entry_records_a_sale",
+      "file": "core/tests/test_entries.py",
+      "line": 6,
+      "status": "neutralised",
+      "reason": null
+    },
+    {
+      "id": "core/tests/test_entries.py::test_balance_sums_the_account",
+      "file": "core/tests/test_entries.py",
+      "line": 11,
+      "status": "scanned",
+      "reason": null
+    },
+    {
+      "id": "core/tests/test_entries.py::test_zero_entry_is_rejected",
+      "file": "core/tests/test_entries.py",
+      "line": 19,
+      "status": "scanned",
+      "reason": null
+    },
+    {
+      "id": "core/tests/test_imports.py::test_package_imports",
+      "file": "core/tests/test_imports.py",
+      "line": 1,
+      "status": "scanned",
+      "reason": null
+    },
+    {
+      "id": "core/tests/test_reports.py::test_trial_balance_with_two_currencies",
+      "file": "core/tests/test_reports.py",
+      "line": 10,
+      "status": "scanned",
+      "reason": null
+    },
+    {
+      "id": "core/tests/test_reports.py::test_csv_lines_are_sorted",
+      "file": "core/tests/test_reports.py",
+      "line": 18,
+      "status": "scanned",
+      "reason": null
+    },
+    {
+      "id": "core/tests/test_reports.py::test_trial_balance_lists_every_account",
+      "file": "core/tests/test_reports.py",
+      "line": 22,
+      "status": "scanned",
+      "reason": null
+    },
+    {
+      "id": "core/tests/test_tax.py::test_gst_on_one_hundred_dollars",
+      "file": "core/tests/test_tax.py",
+      "line": 6,
+      "status": "scanned",
+      "reason": null
+    },
+    {
+      "id": "core/tests/test_tax.py::test_gst_on_a_hundred_dollar_invoice",
+      "file": "core/tests/test_tax.py",
+      "line": 11,
+      "status": "scanned",
+      "reason": null
+    },
+    {
+      "id": "core/tests/test_tax.py::test_with_gst_adds_the_tax",
+      "file": "core/tests/test_tax.py",
+      "line": 16,
+      "status": "scanned",
+      "reason": null
+    },
+    {
+      "id": "core/tests/test_tax.py::test_tax_is_calculated",
+      "file": "core/tests/test_tax.py",
+      "line": 20,
+      "status": "neutralised",
+      "reason": null
+    }
+  ],
+  "findings": [
+    {
+      "id": "F1",
+      "category": "never_runs",
+      "candidates": [
+        "C2"
+      ],
+      "test_ids": [
+        "core/tests/check_balance.py::test_refund_reduces_the_balance"
+      ],
+      "location": {
+        "file": "core/tests/check_balance.py",
+        "line": 4
+      },
+      "confidence": "confirmed",
+      "why": "check_balance.py does not match pytest's python_files (test_*.py, *_test.py), and `pytest --collect-only` in core/ lists 11 tests without it: the refund-balance test has never run.",
+      "criticality": 3,
+      "criticality_reason": "Balances after refunds are money.",
+      "evidence": {
+        "collection": {
+          "not_collected": true,
+          "raw_output": "collect-core.txt"
+        }
+      },
+      "proposal": {
+        "action": "fix",
+        "patch_path": "proposals/rename-check-balance.diff",
+        "rationale": "Rename the file to test_balance.py so pytest collects it. With the rename, the test passes on the real code and fails when balance() is neutralised.",
+        "proof": {
+          "test_id": "core/tests/test_balance.py::test_refund_reduces_the_balance",
+          "original_run_id": "N20-1",
+          "neutralised_run_ids": [
+            "N21-1",
+            "N22-1"
+          ],
+          "result": "proved"
+        }
+      },
+      "applied": false,
+      "weight": 4,
+      "score": 12,
+      "priority": "P0"
+    },
+    {
+      "id": "F2",
+      "category": "cant_fail",
+      "candidates": [
+        "C3"
+      ],
+      "test_ids": [
+        "core/tests/test_entries.py::test_post_entry_records_a_sale"
+      ],
+      "location": {
+        "file": "core/tests/test_entries.py",
+        "line": 6
+      },
+      "confidence": "confirmed",
+      "why": "test_post_entry_records_a_sale asserts nothing. With post_entry() reduced to `return None` it still passed, so it cannot notice a sale that is never recorded.",
+      "criticality": 3,
+      "criticality_reason": "Posting journal entries is the core money path.",
+      "evidence": {
+        "neutralisation": {
+          "test_id": "core/tests/test_entries.py::test_post_entry_records_a_sale",
+          "original_run_id": "N1-1",
+          "targets": [
+            {
+              "target": "ledger.entries.post_entry",
+              "file": "core/ledger/entries.py",
+              "variants": [
+                {
+                  "variant": "return",
+                  "run_id": "N2-1",
+                  "test_status": "passed"
+                },
+                {
+                  "variant": "raise",
+                  "run_id": "N3-1",
+                  "test_status": "failed"
+                }
+              ]
+            }
+          ],
+          "outcome": "passed_neutralised",
+          "checks_no_exception": true
+        },
+        "note": "It failed only when post_entry() raised: the test checks that posting does not raise, nothing more."
+      },
+      "proposal": {
+        "action": "fix",
+        "patch_path": "proposals/assert-post-entry.diff",
+        "rationale": "Assert the returned entry and that the journal holds it; the patched test fails with both neutralised variants.",
+        "proof": {
+          "test_id": "core/tests/test_entries.py::test_post_entry_records_a_sale",
+          "original_run_id": "N11-1",
+          "neutralised_run_ids": [
+            "N12-1",
+            "N13-1"
+          ],
+          "result": "proved"
+        }
+      },
+      "applied": false,
+      "weight": 4,
+      "score": 12,
+      "priority": "P0"
+    },
+    {
+      "id": "F3",
+      "category": "mock_only",
+      "candidates": [
+        "C8"
+      ],
+      "test_ids": [
+        "core/tests/test_tax.py::test_tax_is_calculated"
+      ],
+      "location": {
+        "file": "core/tests/test_tax.py",
+        "line": 20
+      },
+      "confidence": "confirmed",
+      "why": "test_tax_is_calculated patches ledger.tax.calculate_tax and then asserts on the patched function, so it checks the mock. It passed with calculate_tax neutralised to return None and to raise.",
+      "criticality": 3,
+      "criticality_reason": "Tax calculation is money.",
+      "evidence": {
+        "neutralisation": {
+          "test_id": "core/tests/test_tax.py::test_tax_is_calculated",
+          "original_run_id": "N4-1",
+          "targets": [
+            {
+              "target": "ledger.tax.calculate_tax",
+              "file": "core/ledger/tax.py",
+              "variants": [
+                {
+                  "variant": "return",
+                  "run_id": "N5-1",
+                  "test_status": "passed"
+                },
+                {
+                  "variant": "raise",
+                  "run_id": "N6-1",
+                  "test_status": "passed"
+                }
+              ]
+            }
+          ],
+          "outcome": "passed_neutralised",
+          "checks_no_exception": false
+        }
+      },
+      "proposal": {
+        "action": "fix",
+        "patch_path": "proposals/unmock-calculate-tax.diff",
+        "rationale": "Call the real calculate_tax with two inputs, including a rounding case; the patched test fails when calculate_tax is neutralised.",
+        "proof": {
+          "test_id": "core/tests/test_tax.py::test_tax_is_calculated",
+          "original_run_id": "N17-1",
+          "neutralised_run_ids": [
+            "N18-1",
+            "N19-1"
+          ],
+          "result": "proved"
+        }
+      },
+      "applied": false,
+      "weight": 3,
+      "score": 9,
+      "priority": "P1"
+    },
+    {
+      "id": "F4",
+      "category": "async_not_awaited",
+      "candidates": [
+        "C1"
+      ],
+      "test_ids": [
+        "client/src/api.test.ts::save > saves a valid entry"
+      ],
+      "location": {
+        "file": "client/src/api.test.ts",
+        "line": 6
+      },
+      "confidence": "static",
+      "why": "expect(save(...)).resolves.toBe(true) is neither awaited nor returned. Vitest 3.2.4 still checks it, with the warning \"Vitest currently auto-awaits hanging assertions at the end of the test, but this will cause the test to fail\".",
+      "criticality": 2,
+      "criticality_reason": "Saving a draft entry; the server validates again.",
+      "evidence": {
+        "neutralisation": {
+          "test_id": "client/src/api.test.ts::save > saves a valid entry",
+          "original_run_id": "N7-1",
+          "targets": [
+            {
+              "target": "save",
+              "file": "client/src/api.ts",
+              "variants": [
+                {
+                  "variant": "return",
+                  "run_id": "N8-1",
+                  "test_status": "failed"
+                },
+                {
+                  "variant": "raise",
+                  "run_id": "N9-1",
+                  "test_status": "failed"
+                }
+              ]
+            }
+          ],
+          "outcome": "failed_neutralised",
+          "checks_no_exception": true
+        },
+        "note": "With save() neutralised the test failed, so today it can fail. The finding is the missing await, which leaves the result to Vitest's auto-await and breaks under other runners or a Vitest upgrade."
+      },
+      "proposal": {
+        "action": "fix",
+        "patch_path": "proposals/await-save.diff",
+        "rationale": "Make the test async and await the expectation.",
+        "proof": {
+          "test_id": "client/src/api.test.ts::save > saves a valid entry",
+          "original_run_id": "N14-1",
+          "neutralised_run_ids": [
+            "N15-1",
+            "N16-1"
+          ],
+          "result": "proved"
+        }
+      },
+      "applied": false,
+      "weight": 3,
+      "score": 6,
+      "priority": "P2"
+    },
+    {
+      "id": "F5",
+      "category": "stale_skip",
+      "candidates": [
+        "C5"
+      ],
+      "test_ids": [
+        "core/tests/test_reports.py::test_trial_balance_with_two_currencies"
+      ],
+      "location": {
+        "file": "core/tests/test_reports.py",
+        "line": 9
+      },
+      "confidence": "confirmed",
+      "why": "The skip waits on LEDG-12, which is Done (status category done) in the exported ticket, so the reason for skipping has gone. The test passes when un-skipped.",
+      "criticality": 2,
+      "criticality_reason": "Trial balance report; the totals are covered elsewhere for one currency.",
+      "evidence": {
+        "skip": {
+          "verdict": "stale",
+          "ticket": {
+            "key": "LEDG-12",
+            "checked": true,
+            "status": "Done",
+            "status_category": "done",
+            "source": "connector"
+          },
+          "age_days": null,
+          "age_source": "not_checked: the line is not committed yet"
+        }
+      },
+      "proposal": {
+        "action": "unskip",
+        "patch_path": "proposals/unskip-ledg-12.diff",
+        "rationale": "Remove the skip; the un-skipped test passes and fails when trial_balance() is neutralised.",
+        "proof": {
+          "test_id": "core/tests/test_reports.py::test_trial_balance_with_two_currencies",
+          "original_run_id": "N23-1",
+          "neutralised_run_ids": [
+            "N24-1",
+            "N25-1"
+          ],
+          "result": "proved"
+        }
+      },
+      "applied": false,
+      "weight": 2,
+      "score": 4,
+      "priority": "P2"
+    },
+    {
+      "id": "F6",
+      "category": "duplicate",
+      "candidates": [
+        "C7"
+      ],
+      "test_ids": [
+        "core/tests/test_tax.py::test_gst_on_one_hundred_dollars",
+        "core/tests/test_tax.py::test_gst_on_a_hundred_dollar_invoice"
+      ],
+      "location": {
+        "file": "core/tests/test_tax.py",
+        "line": 11
+      },
+      "confidence": "confirmed",
+      "why": "The two GST tests are the same test with renamed variables: 100% similar after normalising names and literals, the same 10 product lines run, and the same values.",
+      "criticality": 3,
+      "criticality_reason": "GST is money; the duplicate adds maintenance, not risk.",
+      "evidence": {
+        "similarity": {
+          "similarity": 1.0,
+          "coverage_identical": true,
+          "values_identical": true
+        }
+      },
+      "proposal": {
+        "action": "merge",
+        "patch_path": "proposals/merge-gst-duplicates.diff",
+        "rationale": "Keep one test. A second case worth having would use a different amount, not a different name."
+      },
+      "applied": false,
+      "weight": 1,
+      "score": 3,
+      "priority": "P3"
+    },
+    {
+      "id": "F7",
+      "category": "weak",
+      "candidates": [
+        "C4"
+      ],
+      "test_ids": [
+        "core/tests/test_imports.py::test_package_imports"
+      ],
+      "location": {
+        "file": "core/tests/test_imports.py",
+        "line": 1
+      },
+      "confidence": "static",
+      "why": "test_package_imports only checks that `import ledger` does not raise; every other test imports the package anyway.",
+      "criticality": 1,
+      "criticality_reason": "A smoke check of the package import.",
+      "evidence": {
+        "neutralisation": {
+          "test_id": "core/tests/test_imports.py::test_package_imports",
+          "original_run_id": "N10-1",
+          "targets": [],
+          "outcome": "not_run",
+          "checks_no_exception": false
+        },
+        "note": "Nothing to neutralise: the test calls no product function."
+      },
+      "proposal": {
+        "action": "delete",
+        "patch_path": "proposals/delete-import-smoke-test.diff",
+        "rationale": "Delete it, or keep it on purpose as a smoke test; either way it is a person's call."
+      },
+      "applied": false,
+      "weight": 1,
+      "score": 1,
+      "priority": "P3"
+    }
+  ],
+  "dismissed": [
+    {
+      "candidate_id": "C6",
+      "reason": "A conditional skip (Windows only) with a stated reason: the CSV export is checked with LF line endings. It runs on Linux and macOS."
+    }
+  ],
+  "summary": {
+    "headline": "P0: check_balance.py is never collected, and test_post_entry_records_a_sale passes with post_entry() neutralised. P1: a tax test that only checks its mock. Four lesser findings; five of the seven fixes are proved by runs.",
+    "tests_defined": 15,
+    "collected": 14,
+    "neutralised": 3,
+    "findings_by_category": {
+      "async_not_awaited": 1,
+      "cant_fail": 1,
+      "duplicate": 1,
+      "mock_only": 1,
+      "never_runs": 1,
+      "stale_skip": 1,
+      "weak": 1
+    },
+    "by_priority": {
+      "P0": 2,
+      "P1": 1,
+      "P2": 2,
+      "P3": 2
+    },
+    "evidence_completeness": 1.0
+  },
+  "limitations": [
+    "15 tests in 6 files were scanned; 3 flagged tests were neutralised. Tests the rules did not flag were not neutralised, so a test can still be weak without appearing here (mutation-tester looks finer).",
+    "Neutralisation replaced whole function bodies one target at a time; it does not show which assertions are missing.",
+    "Per-test coverage for the duplicate check is Python only; JavaScript pairs would be not_assessed.",
+    "Skip ages need git history; they were not_checked here."
+  ],
+  "files_changed": []
+}

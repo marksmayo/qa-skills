@@ -1,0 +1,46 @@
+{
+  "today": "2026-11-11",
+  "skip_age_days": 180,
+  "skips": [
+    {
+      "candidate_id": "C5",
+      "test_ids": [
+        "core/tests/test_reports.py::test_trial_balance_with_two_currencies"
+      ],
+      "file": "core/tests/test_reports.py",
+      "line": 9,
+      "kind": "skip",
+      "reason": "LEDG-12: trial balance wrong for multi-currency journals",
+      "conditional": false,
+      "condition": null,
+      "ticket": {
+        "key": "LEDG-12",
+        "checked": true,
+        "status": "Done",
+        "status_category": "done",
+        "source": "connector"
+      },
+      "age_days": null,
+      "age_source": "not_checked: the line is not committed yet",
+      "verdict": "stale",
+      "why": "LEDG-12 is Done (done), so the reason for the skip has gone"
+    },
+    {
+      "candidate_id": "C6",
+      "test_ids": [
+        "core/tests/test_reports.py::test_csv_lines_are_sorted"
+      ],
+      "file": "core/tests/test_reports.py",
+      "line": 17,
+      "kind": "skipif",
+      "reason": "CSV export is checked with LF line endings; Windows writes CRLF",
+      "conditional": true,
+      "condition": "sys.platform == 'win32'",
+      "ticket": null,
+      "age_days": null,
+      "age_source": "not_checked: the line is not committed yet",
+      "verdict": "legitimate",
+      "why": "conditional skip (sys.platform == 'win32') with a reason: CSV export is checked with LF line endings; Windows writes CRLF"
+    }
+  ]
+}

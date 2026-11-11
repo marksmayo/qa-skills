@@ -148,6 +148,17 @@ python test-data-auditor-skill/scripts/scan_data.py test-data-auditor-skill/exam
 
 The candidates and the report cite lines in `examples/clinic-api/`, and the time-bomb figures count from the audit date `2026-11-11` recorded in the report (pass `--today 2026-11-11` when re-scanning). Editing the package invalidates the example until the run is repeated. The experiments run on a copy with `scripts/clock_shift.py` at its root; the locale run needs Linux or WSL, because Windows ignores `LANG`.
 
+Dead test finder (`examples/ledger/` is the sample app, a Python core with pytest and a TypeScript client with Vitest; `examples/proposals/` holds one patch per finding; `examples/run/` is the real run, listed in `examples/run/commands.sh`; the validator reads the evidence files named in the report, relative to the report's directory, and `--repo` checks every patch still applies):
+
+```bash
+python dead-test-finder-skill/scripts/validate_dead_test_report.py dead-test-finder-skill/examples/dead_test_report.example.json --repo dead-test-finder-skill/examples/ledger
+python dead-test-finder-skill/scripts/render_report.py dead-test-finder-skill/examples/dead_test_report.example.json [--brief]
+python dead-test-finder-skill/scripts/scan_tests.py dead-test-finder-skill/examples/ledger --out candidates.json
+python dead-test-finder-skill/scripts/unified_diff.py check dead-test-finder-skill/examples/proposals/assert-post-entry.diff --root dead-test-finder-skill/examples/ledger
+```
+
+The candidates, neutralisation runs and proofs cite lines and test ids in `examples/ledger/`, so editing it invalidates the example until `commands.sh` is rerun. That needs a scratch copy of `ledger/client` with `npm install` done (`CLIENT=...`). Neutralisation works in copies outside the repo and restores everything it patches.
+
 Shared files:
 
 ```bash
@@ -157,7 +168,7 @@ python tools/check_shared.py --fix  # copy canonical files from shared/ into ski
 
 ## Shared files
 
-Files used by more than one skill (the Journey Markdown spec `JOURNEY_FORMAT.md`, its front-matter schema, `journey_md.py`, `detect_conventions.py`, `parse_results.py`, `sarif.py`, `fetch_ticket.py`, `run_tests.py`, `stats.py` and `diff_scope.py`) have their canonical copy in `shared/`. Each skill carries an identical copy because skills are installed by copying a single directory. Edit only the copy in `shared/`, then run `python tools/check_shared.py --fix`; the mapping of shared files to skills lives in `tools/check_shared.py`.
+Files used by more than one skill (the Journey Markdown spec `JOURNEY_FORMAT.md`, its front-matter schema, `journey_md.py`, `detect_conventions.py`, `parse_results.py`, `sarif.py`, `fetch_ticket.py`, `run_tests.py`, `stats.py`, `diff_scope.py` and `unified_diff.py`) have their canonical copy in `shared/`. Each skill carries an identical copy because skills are installed by copying a single directory. Edit only the copy in `shared/`, then run `python tools/check_shared.py --fix`; the mapping of shared files to skills lives in `tools/check_shared.py`.
 
 Design documents for each skill (with an "As built" section), and the agreed build order, are in `docs/design/`.
 

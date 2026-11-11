@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="3" failures="2" errors="0" time="0.009971">
+    <testsuite name="src/api.test.ts" timestamp="2026-11-11T02:58:36.383Z" hostname="host" tests="3" failures="2" errors="0" skipped="0" time="0.009971">
+        <testcase classname="src/api.test.ts" name="save &gt; saves a valid entry" time="0.0073941">
+            <failure message="expected undefined to be true // Object.is equality" type="AssertionError">
+AssertionError: expected undefined to be true // Object.is equality
+
+- Expected: 
+true
+
++ Received: 
+undefined
+            </failure>
+        </testcase>
+        <testcase classname="src/api.test.ts" name="save &gt; refuses a zero entry" time="0.0007201">
+            <failure message="expected undefined to be false // Object.is equality" type="AssertionError">
+AssertionError: expected undefined to be false // Object.is equality
+
+- Expected: 
+false
+
++ Received: 
+undefined
+            </failure>
+        </testcase>
+        <testcase classname="src/api.test.ts" name="formatCents &gt; formats negative amounts" time="0.0003249">
+        </testcase>
+    </testsuite>
+</testsuites>

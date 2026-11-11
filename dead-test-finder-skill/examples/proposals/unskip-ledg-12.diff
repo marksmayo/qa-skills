@@ -1,0 +1,11 @@
+diff --git a/core/tests/test_reports.py b/core/tests/test_reports.py
+--- a/core/tests/test_reports.py
++++ b/core/tests/test_reports.py
+@@ -6,7 +6,6 @@
+ from ledger.reports import to_csv_lines, trial_balance
+ 
+ 
+-@pytest.mark.skip(reason="LEDG-12: trial balance wrong for multi-currency journals")
+ def test_trial_balance_with_two_currencies():
+     journal = []
+     post_entry(journal, "sales:NZD", 1000)

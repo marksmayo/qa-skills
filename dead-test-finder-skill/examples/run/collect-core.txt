@@ -1,0 +1,13 @@
+tests/test_entries.py::test_post_entry_records_a_sale
+tests/test_entries.py::test_balance_sums_the_account
+tests/test_entries.py::test_zero_entry_is_rejected
+tests/test_imports.py::test_package_imports
+tests/test_reports.py::test_trial_balance_with_two_currencies
+tests/test_reports.py::test_csv_lines_are_sorted
+tests/test_reports.py::test_trial_balance_lists_every_account
+tests/test_tax.py::test_gst_on_one_hundred_dollars
+tests/test_tax.py::test_gst_on_a_hundred_dollar_invoice
+tests/test_tax.py::test_with_gst_adds_the_tax
+tests/test_tax.py::test_tax_is_calculated
+
+11 tests collected in 0.41s

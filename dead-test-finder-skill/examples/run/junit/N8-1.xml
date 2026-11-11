@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="3" failures="2" errors="0" time="0.017188">
+    <testsuite name="src/api.test.ts" timestamp="2026-11-11T02:58:25.898Z" hostname="host" tests="3" failures="2" errors="0" skipped="0" time="0.017188">
+        <testcase classname="src/api.test.ts" name="save &gt; saves a valid entry" time="0.0146441">
+            <system-err>
+Promise returned by `expect(actual).resolves.toBe(expected)` was not awaited. Vitest currently auto-awaits hanging assertions at the end of the test, but this will cause the test to fail in Vitest 3. Please remember to await the assertion.
+    at <client>/src/api.test.ts:6:58
+
+            </system-err>
+            <failure message="expected undefined to be true // Object.is equality" type="AssertionError">
+AssertionError: expected undefined to be true // Object.is equality
+
+- Expected: 
+true
+
++ Received: 
+undefined
+            </failure>
+        </testcase>
+        <testcase classname="src/api.test.ts" name="save &gt; refuses a zero entry" time="0.0007225">
+            <failure message="expected undefined to be false // Object.is equality" type="AssertionError">
+AssertionError: expected undefined to be false // Object.is equality
+
+- Expected: 
+false
+
++ Received: 
+undefined
+            </failure>
+        </testcase>
+        <testcase classname="src/api.test.ts" name="formatCents &gt; formats negative amounts" time="0.0003187">
+        </testcase>
+    </testsuite>
+</testsuites>

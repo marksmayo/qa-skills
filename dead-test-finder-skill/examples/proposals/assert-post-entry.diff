@@ -1,0 +1,14 @@
+diff --git a/core/tests/test_entries.py b/core/tests/test_entries.py
+--- a/core/tests/test_entries.py
++++ b/core/tests/test_entries.py
+@@ -5,7 +5,9 @@
+ 
+ def test_post_entry_records_a_sale():
+     journal = []
+-    post_entry(journal, "sales", 12000, "invoice 1041")
++    entry = post_entry(journal, "sales", 12000, "invoice 1041")
++    assert journal == [entry]
++    assert (entry.account, entry.amount_cents, entry.memo) == ("sales", 12000, "invoice 1041")
+ 
+ 
+ def test_balance_sums_the_account():

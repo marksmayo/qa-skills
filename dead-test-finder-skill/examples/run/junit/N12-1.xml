@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.055" timestamp="2026-11-11T15:58:30.984982+13:00" hostname="host"><testcase classname="tests.test_entries" name="test_post_entry_records_a_sale" time="0.001"><failure message="assert [] == [None]&#10;  &#10;  Right contains one more item: None&#10;  Use -v to get more diff">def test_post_entry_records_a_sale():
+        journal = []
+        entry = post_entry(journal, "sales", 12000, "invoice 1041")
+&gt;       assert journal == [entry]
+E       assert [] == [None]
+E         
+E         Right contains one more item: None
+E         Use -v to get more diff
+
+tests\test_entries.py:9: AssertionError</failure></testcase></testsuite></testsuites>

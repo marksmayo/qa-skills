@@ -1,0 +1,1400 @@
+{
+  "runs": [
+    {
+      "id": "N1-1",
+      "command": "python -m pytest -q -p no:cacheprovider --junitxml=junit/N1-1.xml tests/test_entries.py::test_post_entry_records_a_sale",
+      "exit_code": 0,
+      "junit_paths": [
+        "junit/N1-1.xml"
+      ],
+      "started_at": "2026-11-11T02:58:16Z",
+      "totals": {
+        "tests": 1,
+        "passed": 1,
+        "failed": 0,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {},
+      "notes": [],
+      "duration_s": 0.886,
+      "timed_out": false,
+      "label": "original",
+      "preset": "pytest",
+      "tests_selected": [
+        "tests/test_entries.py::test_post_entry_records_a_sale"
+      ],
+      "variation": {
+        "order": "given",
+        "seed": null,
+        "hash_seed": null,
+        "workers": null,
+        "tz": null,
+        "tz_applied": null,
+        "locale": null,
+        "cpu_load": 0,
+        "isolate": false,
+        "env": {}
+      },
+      "code_hash": "4c95f2027b7488c5ce8f71aaf20c1d476e959e52bdfa707e16557d87e1bdf7e4"
+    },
+    {
+      "id": "N2-1",
+      "command": "python -m pytest -q -p no:cacheprovider --junitxml=junit/N2-1.xml tests/test_entries.py::test_post_entry_records_a_sale",
+      "exit_code": 0,
+      "junit_paths": [
+        "junit/N2-1.xml"
+      ],
+      "started_at": "2026-11-11T02:58:17Z",
+      "totals": {
+        "tests": 1,
+        "passed": 1,
+        "failed": 0,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {},
+      "notes": [],
+      "duration_s": 1.009,
+      "timed_out": false,
+      "label": "neutralise post_entry return",
+      "preset": "pytest",
+      "tests_selected": [
+        "tests/test_entries.py::test_post_entry_records_a_sale"
+      ],
+      "variation": {
+        "order": "given",
+        "seed": null,
+        "hash_seed": null,
+        "workers": null,
+        "tz": null,
+        "tz_applied": null,
+        "locale": null,
+        "cpu_load": 0,
+        "isolate": false,
+        "env": {}
+      },
+      "code_hash": "ba5737d2071b008b612a9dd5476617fff86ce886a1a61819b4ab0192cd09e16a"
+    },
+    {
+      "id": "N3-1",
+      "command": "python -m pytest -q -p no:cacheprovider --junitxml=junit/N3-1.xml tests/test_entries.py::test_post_entry_records_a_sale",
+      "exit_code": 1,
+      "junit_paths": [
+        "junit/N3-1.xml"
+      ],
+      "started_at": "2026-11-11T02:58:19Z",
+      "totals": {
+        "tests": 1,
+        "passed": 0,
+        "failed": 1,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {},
+      "notes": [],
+      "duration_s": 0.984,
+      "timed_out": false,
+      "label": "neutralise post_entry raise",
+      "preset": "pytest",
+      "tests_selected": [
+        "tests/test_entries.py::test_post_entry_records_a_sale"
+      ],
+      "variation": {
+        "order": "given",
+        "seed": null,
+        "hash_seed": null,
+        "workers": null,
+        "tz": null,
+        "tz_applied": null,
+        "locale": null,
+        "cpu_load": 0,
+        "isolate": false,
+        "env": {}
+      },
+      "code_hash": "3895bca745cc34e891875211d20ce1897e361ba9b4abe30ae162e8c76ed631ad"
+    },
+    {
+      "id": "N4-1",
+      "command": "python -m pytest -q -p no:cacheprovider --junitxml=junit/N4-1.xml tests/test_tax.py::test_tax_is_calculated",
+      "exit_code": 0,
+      "junit_paths": [
+        "junit/N4-1.xml"
+      ],
+      "started_at": "2026-11-11T02:58:20Z",
+      "totals": {
+        "tests": 1,
+        "passed": 1,
+        "failed": 0,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {},
+      "notes": [],
+      "duration_s": 0.958,
+      "timed_out": false,
+      "label": "original",
+      "preset": "pytest",
+      "tests_selected": [
+        "tests/test_tax.py::test_tax_is_calculated"
+      ],
+      "variation": {
+        "order": "given",
+        "seed": null,
+        "hash_seed": null,
+        "workers": null,
+        "tz": null,
+        "tz_applied": null,
+        "locale": null,
+        "cpu_load": 0,
+        "isolate": false,
+        "env": {}
+      },
+      "code_hash": "4c95f2027b7488c5ce8f71aaf20c1d476e959e52bdfa707e16557d87e1bdf7e4"
+    },
+    {
+      "id": "N5-1",
+      "command": "python -m pytest -q -p no:cacheprovider --junitxml=junit/N5-1.xml tests/test_tax.py::test_tax_is_calculated",
+      "exit_code": 0,
+      "junit_paths": [
+        "junit/N5-1.xml"
+      ],
+      "started_at": "2026-11-11T02:58:21Z",
+      "totals": {
+        "tests": 1,
+        "passed": 1,
+        "failed": 0,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {},
+      "notes": [],
+      "duration_s": 0.892,
+      "timed_out": false,
+      "label": "neutralise calculate_tax return",
+      "preset": "pytest",
+      "tests_selected": [
+        "tests/test_tax.py::test_tax_is_calculated"
+      ],
+      "variation": {
+        "order": "given",
+        "seed": null,
+        "hash_seed": null,
+        "workers": null,
+        "tz": null,
+        "tz_applied": null,
+        "locale": null,
+        "cpu_load": 0,
+        "isolate": false,
+        "env": {}
+      },
+      "code_hash": "5f2d4301b677c5ba9fb091d967a145e3b5a1327c7f5a08609123869c71d5f418"
+    },
+    {
+      "id": "N6-1",
+      "command": "python -m pytest -q -p no:cacheprovider --junitxml=junit/N6-1.xml tests/test_tax.py::test_tax_is_calculated",
+      "exit_code": 0,
+      "junit_paths": [
+        "junit/N6-1.xml"
+      ],
+      "started_at": "2026-11-11T02:58:22Z",
+      "totals": {
+        "tests": 1,
+        "passed": 1,
+        "failed": 0,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {},
+      "notes": [],
+      "duration_s": 0.924,
+      "timed_out": false,
+      "label": "neutralise calculate_tax raise",
+      "preset": "pytest",
+      "tests_selected": [
+        "tests/test_tax.py::test_tax_is_calculated"
+      ],
+      "variation": {
+        "order": "given",
+        "seed": null,
+        "hash_seed": null,
+        "workers": null,
+        "tz": null,
+        "tz_applied": null,
+        "locale": null,
+        "cpu_load": 0,
+        "isolate": false,
+        "env": {}
+      },
+      "code_hash": "e591a8d5ff4895ecb6c18a130726290fd7b336d8b876e890248edb10f463c6db"
+    },
+    {
+      "id": "N7-1",
+      "command": "npx vitest run --reporter=junit --outputFile=junit/N7-1.xml src/api.test.ts",
+      "exit_code": 0,
+      "junit_paths": [
+        "junit/N7-1.xml"
+      ],
+      "started_at": "2026-11-11T02:58:24Z",
+      "totals": {
+        "tests": 3,
+        "passed": 3,
+        "failed": 0,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {},
+      "notes": [],
+      "duration_s": 1.748,
+      "timed_out": false,
+      "label": "original",
+      "preset": "vitest",
+      "tests_selected": [
+        "src/api.test.ts"
+      ],
+      "variation": {
+        "order": "given",
+        "seed": null,
+        "hash_seed": null,
+        "workers": null,
+        "tz": null,
+        "tz_applied": null,
+        "locale": null,
+        "cpu_load": 0,
+        "isolate": false,
+        "env": {}
+      },
+      "code_hash": "211e48161a867040c074584935bcfd5f4b7f9f9d02eb865e7268ff3006ecc268"
+    },
+    {
+      "id": "N8-1",
+      "command": "npx vitest run --reporter=junit --outputFile=junit/N8-1.xml src/api.test.ts",
+      "exit_code": 1,
+      "junit_paths": [
+        "junit/N8-1.xml"
+      ],
+      "started_at": "2026-11-11T02:58:26Z",
+      "totals": {
+        "tests": 3,
+        "passed": 1,
+        "failed": 2,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {},
+      "notes": [],
+      "duration_s": 1.666,
+      "timed_out": false,
+      "label": "neutralise save return",
+      "preset": "vitest",
+      "tests_selected": [
+        "src/api.test.ts"
+      ],
+      "variation": {
+        "order": "given",
+        "seed": null,
+        "hash_seed": null,
+        "workers": null,
+        "tz": null,
+        "tz_applied": null,
+        "locale": null,
+        "cpu_load": 0,
+        "isolate": false,
+        "env": {}
+      },
+      "code_hash": "7d0a7a4c9a13e63d14fe0102bd6c5fc2ce8233759e1645160f75d8422472751f"
+    },
+    {
+      "id": "N9-1",
+      "command": "npx vitest run --reporter=junit --outputFile=junit/N9-1.xml src/api.test.ts",
+      "exit_code": 1,
+      "junit_paths": [
+        "junit/N9-1.xml"
+      ],
+      "started_at": "2026-11-11T02:58:27Z",
+      "totals": {
+        "tests": 3,
+        "passed": 1,
+        "failed": 2,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {},
+      "notes": [],
+      "duration_s": 1.65,
+      "timed_out": false,
+      "label": "neutralise save raise",
+      "preset": "vitest",
+      "tests_selected": [
+        "src/api.test.ts"
+      ],
+      "variation": {
+        "order": "given",
+        "seed": null,
+        "hash_seed": null,
+        "workers": null,
+        "tz": null,
+        "tz_applied": null,
+        "locale": null,
+        "cpu_load": 0,
+        "isolate": false,
+        "env": {}
+      },
+      "code_hash": "a4806d87bcb69f06ef2dff6075d797e6ca3ac1d9e60af44901e5262f25343665"
+    },
+    {
+      "id": "N10-1",
+      "command": "python -m pytest -q -p no:cacheprovider --junitxml=junit/N10-1.xml tests/test_imports.py::test_package_imports",
+      "exit_code": 0,
+      "junit_paths": [
+        "junit/N10-1.xml"
+      ],
+      "started_at": "2026-11-11T02:58:29Z",
+      "totals": {
+        "tests": 1,
+        "passed": 1,
+        "failed": 0,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {},
+      "notes": [],
+      "duration_s": 0.994,
+      "timed_out": false,
+      "label": "original",
+      "preset": "pytest",
+      "tests_selected": [
+        "tests/test_imports.py::test_package_imports"
+      ],
+      "variation": {
+        "order": "given",
+        "seed": null,
+        "hash_seed": null,
+        "workers": null,
+        "tz": null,
+        "tz_applied": null,
+        "locale": null,
+        "cpu_load": 0,
+        "isolate": false,
+        "env": {}
+      },
+      "code_hash": "4c95f2027b7488c5ce8f71aaf20c1d476e959e52bdfa707e16557d87e1bdf7e4"
+    },
+    {
+      "id": "N11-1",
+      "command": "python -m pytest -q -p no:cacheprovider --junitxml=junit/N11-1.xml tests/test_entries.py::test_post_entry_records_a_sale",
+      "exit_code": 0,
+      "junit_paths": [
+        "junit/N11-1.xml"
+      ],
+      "started_at": "2026-11-11T02:58:30Z",
+      "totals": {
+        "tests": 1,
+        "passed": 1,
+        "failed": 0,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {},
+      "notes": [],
+      "duration_s": 0.924,
+      "timed_out": false,
+      "label": "original (patched)",
+      "preset": "pytest",
+      "tests_selected": [
+        "tests/test_entries.py::test_post_entry_records_a_sale"
+      ],
+      "variation": {
+        "order": "given",
+        "seed": null,
+        "hash_seed": null,
+        "workers": null,
+        "tz": null,
+        "tz_applied": null,
+        "locale": null,
+        "cpu_load": 0,
+        "isolate": false,
+        "env": {}
+      },
+      "code_hash": "1748ff866ca3ac51a791be561342ddeaa1ecd02a2cce0d0fab1126ee19e592d1"
+    },
+    {
+      "id": "N12-1",
+      "command": "python -m pytest -q -p no:cacheprovider --junitxml=junit/N12-1.xml tests/test_entries.py::test_post_entry_records_a_sale",
+      "exit_code": 1,
+      "junit_paths": [
+        "junit/N12-1.xml"
+      ],
+      "started_at": "2026-11-11T02:58:31Z",
+      "totals": {
+        "tests": 1,
+        "passed": 0,
+        "failed": 1,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {},
+      "notes": [],
+      "duration_s": 0.902,
+      "timed_out": false,
+      "label": "neutralise post_entry return (patched)",
+      "preset": "pytest",
+      "tests_selected": [
+        "tests/test_entries.py::test_post_entry_records_a_sale"
+      ],
+      "variation": {
+        "order": "given",
+        "seed": null,
+        "hash_seed": null,
+        "workers": null,
+        "tz": null,
+        "tz_applied": null,
+        "locale": null,
+        "cpu_load": 0,
+        "isolate": false,
+        "env": {}
+      },
+      "code_hash": "f3f5a92dabdc84d69620aa0927fd2d53ca9384ec92b7f9455e350023322c66ae"
+    },
+    {
+      "id": "N13-1",
+      "command": "python -m pytest -q -p no:cacheprovider --junitxml=junit/N13-1.xml tests/test_entries.py::test_post_entry_records_a_sale",
+      "exit_code": 1,
+      "junit_paths": [
+        "junit/N13-1.xml"
+      ],
+      "started_at": "2026-11-11T02:58:32Z",
+      "totals": {
+        "tests": 1,
+        "passed": 0,
+        "failed": 1,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {},
+      "notes": [],
+      "duration_s": 0.967,
+      "timed_out": false,
+      "label": "neutralise post_entry raise (patched)",
+      "preset": "pytest",
+      "tests_selected": [
+        "tests/test_entries.py::test_post_entry_records_a_sale"
+      ],
+      "variation": {
+        "order": "given",
+        "seed": null,
+        "hash_seed": null,
+        "workers": null,
+        "tz": null,
+        "tz_applied": null,
+        "locale": null,
+        "cpu_load": 0,
+        "isolate": false,
+        "env": {}
+      },
+      "code_hash": "a60233cb18a39dae98293f83d39d9da70f42e67b878584d40d40dba8cbb9458e"
+    },
+    {
+      "id": "N14-1",
+      "command": "npx vitest run --reporter=junit --outputFile=junit/N14-1.xml src/api.test.ts",
+      "exit_code": 0,
+      "junit_paths": [
+        "junit/N14-1.xml"
+      ],
+      "started_at": "2026-11-11T02:58:34Z",
+      "totals": {
+        "tests": 3,
+        "passed": 3,
+        "failed": 0,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {},
+      "notes": [],
+      "duration_s": 1.752,
+      "timed_out": false,
+      "label": "original (patched)",
+      "preset": "vitest",
+      "tests_selected": [
+        "src/api.test.ts"
+      ],
+      "variation": {
+        "order": "given",
+        "seed": null,
+        "hash_seed": null,
+        "workers": null,
+        "tz": null,
+        "tz_applied": null,
+        "locale": null,
+        "cpu_load": 0,
+        "isolate": false,
+        "env": {}
+      },
+      "code_hash": "bafff0635ec5942ce4cad45efc7c603df17fd163c1656fe7e19dbe4966b43934"
+    },
+    {
+      "id": "N15-1",
+      "command": "npx vitest run --reporter=junit --outputFile=junit/N15-1.xml src/api.test.ts",
+      "exit_code": 1,
+      "junit_paths": [
+        "junit/N15-1.xml"
+      ],
+      "started_at": "2026-11-11T02:58:36Z",
+      "totals": {
+        "tests": 3,
+        "passed": 1,
+        "failed": 2,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {},
+      "notes": [],
+      "duration_s": 1.667,
+      "timed_out": false,
+      "label": "neutralise save return (patched)",
+      "preset": "vitest",
+      "tests_selected": [
+        "src/api.test.ts"
+      ],
+      "variation": {
+        "order": "given",
+        "seed": null,
+        "hash_seed": null,
+        "workers": null,
+        "tz": null,
+        "tz_applied": null,
+        "locale": null,
+        "cpu_load": 0,
+        "isolate": false,
+        "env": {}
+      },
+      "code_hash": "c3e0f67c0a6c0084ae52536a62b348148033fce7e6c3722b45fa30a9b41658cb"
+    },
+    {
+      "id": "N16-1",
+      "command": "npx vitest run --reporter=junit --outputFile=junit/N16-1.xml src/api.test.ts",
+      "exit_code": 1,
+      "junit_paths": [
+        "junit/N16-1.xml"
+      ],
+      "started_at": "2026-11-11T02:58:38Z",
+      "totals": {
+        "tests": 3,
+        "passed": 1,
+        "failed": 2,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {},
+      "notes": [],
+      "duration_s": 1.649,
+      "timed_out": false,
+      "label": "neutralise save raise (patched)",
+      "preset": "vitest",
+      "tests_selected": [
+        "src/api.test.ts"
+      ],
+      "variation": {
+        "order": "given",
+        "seed": null,
+        "hash_seed": null,
+        "workers": null,
+        "tz": null,
+        "tz_applied": null,
+        "locale": null,
+        "cpu_load": 0,
+        "isolate": false,
+        "env": {}
+      },
+      "code_hash": "5ee1ead7475bbc556644f745dfeb988ab85702fa03186dcbaae8b70bab7bd919"
+    },
+    {
+      "id": "N17-1",
+      "command": "python -m pytest -q -p no:cacheprovider --junitxml=junit/N17-1.xml tests/test_tax.py::test_tax_is_calculated",
+      "exit_code": 0,
+      "junit_paths": [
+        "junit/N17-1.xml"
+      ],
+      "started_at": "2026-11-11T02:58:39Z",
+      "totals": {
+        "tests": 1,
+        "passed": 1,
+        "failed": 0,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {},
+      "notes": [],
+      "duration_s": 0.946,
+      "timed_out": false,
+      "label": "original (patched)",
+      "preset": "pytest",
+      "tests_selected": [
+        "tests/test_tax.py::test_tax_is_calculated"
+      ],
+      "variation": {
+        "order": "given",
+        "seed": null,
+        "hash_seed": null,
+        "workers": null,
+        "tz": null,
+        "tz_applied": null,
+        "locale": null,
+        "cpu_load": 0,
+        "isolate": false,
+        "env": {}
+      },
+      "code_hash": "fb3fd5d5e2df50f244c9af92df7b36af649eea4f540061b833d0e566bf0d9c31"
+    },
+    {
+      "id": "N18-1",
+      "command": "python -m pytest -q -p no:cacheprovider --junitxml=junit/N18-1.xml tests/test_tax.py::test_tax_is_calculated",
+      "exit_code": 1,
+      "junit_paths": [
+        "junit/N18-1.xml"
+      ],
+      "started_at": "2026-11-11T02:58:40Z",
+      "totals": {
+        "tests": 1,
+        "passed": 0,
+        "failed": 1,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {},
+      "notes": [],
+      "duration_s": 0.997,
+      "timed_out": false,
+      "label": "neutralise calculate_tax return (patched)",
+      "preset": "pytest",
+      "tests_selected": [
+        "tests/test_tax.py::test_tax_is_calculated"
+      ],
+      "variation": {
+        "order": "given",
+        "seed": null,
+        "hash_seed": null,
+        "workers": null,
+        "tz": null,
+        "tz_applied": null,
+        "locale": null,
+        "cpu_load": 0,
+        "isolate": false,
+        "env": {}
+      },
+      "code_hash": "43b3f25598c8cff21abd15934bc7ef6bb9b211ef258b9ed7c0aba7c3bcee8aa8"
+    },
+    {
+      "id": "N19-1",
+      "command": "python -m pytest -q -p no:cacheprovider --junitxml=junit/N19-1.xml tests/test_tax.py::test_tax_is_calculated",
+      "exit_code": 1,
+      "junit_paths": [
+        "junit/N19-1.xml"
+      ],
+      "started_at": "2026-11-11T02:58:41Z",
+      "totals": {
+        "tests": 1,
+        "passed": 0,
+        "failed": 1,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {},
+      "notes": [],
+      "duration_s": 0.917,
+      "timed_out": false,
+      "label": "neutralise calculate_tax raise (patched)",
+      "preset": "pytest",
+      "tests_selected": [
+        "tests/test_tax.py::test_tax_is_calculated"
+      ],
+      "variation": {
+        "order": "given",
+        "seed": null,
+        "hash_seed": null,
+        "workers": null,
+        "tz": null,
+        "tz_applied": null,
+        "locale": null,
+        "cpu_load": 0,
+        "isolate": false,
+        "env": {}
+      },
+      "code_hash": "1496d977cd433fda2cc3e723c060eed6a70d4b88c65689c793cc918ee23bf9ca"
+    },
+    {
+      "id": "N20-1",
+      "command": "python -m pytest -q -p no:cacheprovider --junitxml=junit/N20-1.xml tests/test_balance.py::test_refund_reduces_the_balance",
+      "exit_code": 0,
+      "junit_paths": [
+        "junit/N20-1.xml"
+      ],
+      "started_at": "2026-11-11T02:58:43Z",
+      "totals": {
+        "tests": 1,
+        "passed": 1,
+        "failed": 0,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {},
+      "notes": [],
+      "duration_s": 0.867,
+      "timed_out": false,
+      "label": "original (patched)",
+      "preset": "pytest",
+      "tests_selected": [
+        "tests/test_balance.py::test_refund_reduces_the_balance"
+      ],
+      "variation": {
+        "order": "given",
+        "seed": null,
+        "hash_seed": null,
+        "workers": null,
+        "tz": null,
+        "tz_applied": null,
+        "locale": null,
+        "cpu_load": 0,
+        "isolate": false,
+        "env": {}
+      },
+      "code_hash": "01b610bebe032977b191d439db80b8da2552c868103ed90042c2e913de91726c"
+    },
+    {
+      "id": "N21-1",
+      "command": "python -m pytest -q -p no:cacheprovider --junitxml=junit/N21-1.xml tests/test_balance.py::test_refund_reduces_the_balance",
+      "exit_code": 1,
+      "junit_paths": [
+        "junit/N21-1.xml"
+      ],
+      "started_at": "2026-11-11T02:58:44Z",
+      "totals": {
+        "tests": 1,
+        "passed": 0,
+        "failed": 1,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {},
+      "notes": [],
+      "duration_s": 1.006,
+      "timed_out": false,
+      "label": "neutralise balance return (patched)",
+      "preset": "pytest",
+      "tests_selected": [
+        "tests/test_balance.py::test_refund_reduces_the_balance"
+      ],
+      "variation": {
+        "order": "given",
+        "seed": null,
+        "hash_seed": null,
+        "workers": null,
+        "tz": null,
+        "tz_applied": null,
+        "locale": null,
+        "cpu_load": 0,
+        "isolate": false,
+        "env": {}
+      },
+      "code_hash": "37c78cb801cc86e72ba506e551fb9b822b2335c5eadb7eafc7f7d63ae45eaefd"
+    },
+    {
+      "id": "N22-1",
+      "command": "python -m pytest -q -p no:cacheprovider --junitxml=junit/N22-1.xml tests/test_balance.py::test_refund_reduces_the_balance",
+      "exit_code": 1,
+      "junit_paths": [
+        "junit/N22-1.xml"
+      ],
+      "started_at": "2026-11-11T02:58:45Z",
+      "totals": {
+        "tests": 1,
+        "passed": 0,
+        "failed": 1,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {},
+      "notes": [],
+      "duration_s": 1.008,
+      "timed_out": false,
+      "label": "neutralise balance raise (patched)",
+      "preset": "pytest",
+      "tests_selected": [
+        "tests/test_balance.py::test_refund_reduces_the_balance"
+      ],
+      "variation": {
+        "order": "given",
+        "seed": null,
+        "hash_seed": null,
+        "workers": null,
+        "tz": null,
+        "tz_applied": null,
+        "locale": null,
+        "cpu_load": 0,
+        "isolate": false,
+        "env": {}
+      },
+      "code_hash": "0db386e621ef146bcbf4f49c3368b64ee59d69b1367db32d736c759214ac2202"
+    },
+    {
+      "id": "N23-1",
+      "command": "python -m pytest -q -p no:cacheprovider --junitxml=junit/N23-1.xml tests/test_reports.py::test_trial_balance_with_two_currencies",
+      "exit_code": 0,
+      "junit_paths": [
+        "junit/N23-1.xml"
+      ],
+      "started_at": "2026-11-11T02:58:46Z",
+      "totals": {
+        "tests": 1,
+        "passed": 1,
+        "failed": 0,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {},
+      "notes": [],
+      "duration_s": 0.906,
+      "timed_out": false,
+      "label": "original (patched)",
+      "preset": "pytest",
+      "tests_selected": [
+        "tests/test_reports.py::test_trial_balance_with_two_currencies"
+      ],
+      "variation": {
+        "order": "given",
+        "seed": null,
+        "hash_seed": null,
+        "workers": null,
+        "tz": null,
+        "tz_applied": null,
+        "locale": null,
+        "cpu_load": 0,
+        "isolate": false,
+        "env": {}
+      },
+      "code_hash": "19f0bb374bb96cb261ffbaa1e3527614c4cdd90a13b408bc984d1bf9820216bb"
+    },
+    {
+      "id": "N24-1",
+      "command": "python -m pytest -q -p no:cacheprovider --junitxml=junit/N24-1.xml tests/test_reports.py::test_trial_balance_with_two_currencies",
+      "exit_code": 1,
+      "junit_paths": [
+        "junit/N24-1.xml"
+      ],
+      "started_at": "2026-11-11T02:58:47Z",
+      "totals": {
+        "tests": 1,
+        "passed": 0,
+        "failed": 1,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {},
+      "notes": [],
+      "duration_s": 0.904,
+      "timed_out": false,
+      "label": "neutralise trial_balance return (patched)",
+      "preset": "pytest",
+      "tests_selected": [
+        "tests/test_reports.py::test_trial_balance_with_two_currencies"
+      ],
+      "variation": {
+        "order": "given",
+        "seed": null,
+        "hash_seed": null,
+        "workers": null,
+        "tz": null,
+        "tz_applied": null,
+        "locale": null,
+        "cpu_load": 0,
+        "isolate": false,
+        "env": {}
+      },
+      "code_hash": "151b5e1f719a453f825943cc758fbede03f9e98fb49f76451282089ce98064e2"
+    },
+    {
+      "id": "N25-1",
+      "command": "python -m pytest -q -p no:cacheprovider --junitxml=junit/N25-1.xml tests/test_reports.py::test_trial_balance_with_two_currencies",
+      "exit_code": 1,
+      "junit_paths": [
+        "junit/N25-1.xml"
+      ],
+      "started_at": "2026-11-11T02:58:48Z",
+      "totals": {
+        "tests": 1,
+        "passed": 0,
+        "failed": 1,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {},
+      "notes": [],
+      "duration_s": 0.909,
+      "timed_out": false,
+      "label": "neutralise trial_balance raise (patched)",
+      "preset": "pytest",
+      "tests_selected": [
+        "tests/test_reports.py::test_trial_balance_with_two_currencies"
+      ],
+      "variation": {
+        "order": "given",
+        "seed": null,
+        "hash_seed": null,
+        "workers": null,
+        "tz": null,
+        "tz_applied": null,
+        "locale": null,
+        "cpu_load": 0,
+        "isolate": false,
+        "env": {}
+      },
+      "code_hash": "a218a91d8f14989f04ea6b9d22d1db0c7857a89275a1334f7cd08ee89c1c8660"
+    }
+  ],
+  "cases": [
+    {
+      "run_id": "N1-1",
+      "id": "tests.test_entries::test_post_entry_records_a_sale",
+      "name": "test_post_entry_records_a_sale",
+      "classname": "tests.test_entries",
+      "file": "tests/test_entries.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.001
+    },
+    {
+      "run_id": "N2-1",
+      "id": "tests.test_entries::test_post_entry_records_a_sale",
+      "name": "test_post_entry_records_a_sale",
+      "classname": "tests.test_entries",
+      "file": "tests/test_entries.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.001
+    },
+    {
+      "run_id": "N3-1",
+      "id": "tests.test_entries::test_post_entry_records_a_sale",
+      "name": "test_post_entry_records_a_sale",
+      "classname": "tests.test_entries",
+      "file": "tests/test_entries.py",
+      "status": "failed",
+      "failure_type": "assertion",
+      "signals": [],
+      "message_excerpt": "RuntimeError: neutralised by dead-test-finder\ndef test_post_entry_records_a_sale():\n        journal = []\n>       post_entry(journal, \"sales\", 12000, \"invoice 1041\")\n\ntests\\test_entries.py:8: \n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _\n\njournal = [], account = 'sales', amount_cents = 12000, memo = 'invoice 1041'\n\n    def post_entry(journal, account, amount_cents, memo=\"\"):\n>       raise RuntimeError(\"neutralised by dead-test-finder\")  # neutralised by dead-test-finder\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       RuntimeError: neutral …",
+      "time": 0.001
+    },
+    {
+      "run_id": "N4-1",
+      "id": "tests.test_tax::test_tax_is_calculated",
+      "name": "test_tax_is_calculated",
+      "classname": "tests.test_tax",
+      "file": "tests/test_tax.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.001
+    },
+    {
+      "run_id": "N5-1",
+      "id": "tests.test_tax::test_tax_is_calculated",
+      "name": "test_tax_is_calculated",
+      "classname": "tests.test_tax",
+      "file": "tests/test_tax.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.001
+    },
+    {
+      "run_id": "N6-1",
+      "id": "tests.test_tax::test_tax_is_calculated",
+      "name": "test_tax_is_calculated",
+      "classname": "tests.test_tax",
+      "file": "tests/test_tax.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.001
+    },
+    {
+      "run_id": "N7-1",
+      "id": "src/api.test.ts::save > saves a valid entry",
+      "name": "save > saves a valid entry",
+      "classname": "src/api.test.ts",
+      "file": "src/api.test.ts",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0104806
+    },
+    {
+      "run_id": "N7-1",
+      "id": "src/api.test.ts::save > refuses a zero entry",
+      "name": "save > refuses a zero entry",
+      "classname": "src/api.test.ts",
+      "file": "src/api.test.ts",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0003393
+    },
+    {
+      "run_id": "N7-1",
+      "id": "src/api.test.ts::formatCents > formats negative amounts",
+      "name": "formatCents > formats negative amounts",
+      "classname": "src/api.test.ts",
+      "file": "src/api.test.ts",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.00021
+    },
+    {
+      "run_id": "N8-1",
+      "id": "src/api.test.ts::save > saves a valid entry",
+      "name": "save > saves a valid entry",
+      "classname": "src/api.test.ts",
+      "file": "src/api.test.ts",
+      "status": "failed",
+      "failure_type": "assertion",
+      "signals": [],
+      "message_excerpt": "AssertionError: expected undefined to be true // Object.is equality\n\nAssertionError: expected undefined to be true // Object.is equality\n\n- Expected: \ntrue\n\n+ Received: \nundefined",
+      "time": 0.0146441
+    },
+    {
+      "run_id": "N8-1",
+      "id": "src/api.test.ts::save > refuses a zero entry",
+      "name": "save > refuses a zero entry",
+      "classname": "src/api.test.ts",
+      "file": "src/api.test.ts",
+      "status": "failed",
+      "failure_type": "assertion",
+      "signals": [],
+      "message_excerpt": "AssertionError: expected undefined to be false // Object.is equality\n\nAssertionError: expected undefined to be false // Object.is equality\n\n- Expected: \nfalse\n\n+ Received: \nundefined",
+      "time": 0.0007225
+    },
+    {
+      "run_id": "N8-1",
+      "id": "src/api.test.ts::formatCents > formats negative amounts",
+      "name": "formatCents > formats negative amounts",
+      "classname": "src/api.test.ts",
+      "file": "src/api.test.ts",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0003187
+    },
+    {
+      "run_id": "N9-1",
+      "id": "src/api.test.ts::save > saves a valid entry",
+      "name": "save > saves a valid entry",
+      "classname": "src/api.test.ts",
+      "file": "src/api.test.ts",
+      "status": "failed",
+      "failure_type": "assertion",
+      "signals": [],
+      "message_excerpt": "AssertionError: promise rejected \"Error: neutralised by dead-test-finder\" instead of resolving\n\nAssertionError: promise rejected \"Error: neutralised by dead-test-finder\" instead of resolving\n ❯ src/api.test.ts:6:58\n\nCaused by: Error: neutralised by dead-test-finder\n ❯ save src/api.ts:6:73\n ❯ src/api.test.ts:6:12",
+      "time": 0.0122945
+    },
+    {
+      "run_id": "N9-1",
+      "id": "src/api.test.ts::save > refuses a zero entry",
+      "name": "save > refuses a zero entry",
+      "classname": "src/api.test.ts",
+      "file": "src/api.test.ts",
+      "status": "failed",
+      "failure_type": "assertion",
+      "signals": [],
+      "message_excerpt": "AssertionError: promise rejected \"Error: neutralised by dead-test-finder\" instead of resolving\n\nAssertionError: promise rejected \"Error: neutralised by dead-test-finder\" instead of resolving\n ❯ src/api.test.ts:10:60\n\nCaused by: Error: neutralised by dead-test-finder\n ❯ save src/api.ts:6:73\n ❯ src/api.test.ts:10:18",
+      "time": 0.0008933
+    },
+    {
+      "run_id": "N9-1",
+      "id": "src/api.test.ts::formatCents > formats negative amounts",
+      "name": "formatCents > formats negative amounts",
+      "classname": "src/api.test.ts",
+      "file": "src/api.test.ts",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0004917
+    },
+    {
+      "run_id": "N10-1",
+      "id": "tests.test_imports::test_package_imports",
+      "name": "test_package_imports",
+      "classname": "tests.test_imports",
+      "file": "tests/test_imports.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.001
+    },
+    {
+      "run_id": "N11-1",
+      "id": "tests.test_entries::test_post_entry_records_a_sale",
+      "name": "test_post_entry_records_a_sale",
+      "classname": "tests.test_entries",
+      "file": "tests/test_entries.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.001
+    },
+    {
+      "run_id": "N12-1",
+      "id": "tests.test_entries::test_post_entry_records_a_sale",
+      "name": "test_post_entry_records_a_sale",
+      "classname": "tests.test_entries",
+      "file": "tests/test_entries.py",
+      "status": "failed",
+      "failure_type": "assertion",
+      "signals": [],
+      "message_excerpt": "assert [] == [None]\n  \n  Right contains one more item: None\n  Use -v to get more diff\ndef test_post_entry_records_a_sale():\n        journal = []\n        entry = post_entry(journal, \"sales\", 12000, \"invoice 1041\")\n>       assert journal == [entry]\nE       assert [] == [None]\nE         \nE         Right contains one more item: None\nE         Use -v to get more diff\n\ntests\\test_entries.py:9: AssertionError",
+      "time": 0.001
+    },
+    {
+      "run_id": "N13-1",
+      "id": "tests.test_entries::test_post_entry_records_a_sale",
+      "name": "test_post_entry_records_a_sale",
+      "classname": "tests.test_entries",
+      "file": "tests/test_entries.py",
+      "status": "failed",
+      "failure_type": "assertion",
+      "signals": [],
+      "message_excerpt": "RuntimeError: neutralised by dead-test-finder\ndef test_post_entry_records_a_sale():\n        journal = []\n>       entry = post_entry(journal, \"sales\", 12000, \"invoice 1041\")\n                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n\ntests\\test_entries.py:8: \n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _\n\njournal = [], account = 'sales', amount_cents = 12000, memo = 'invoice 1041'\n\n    def post_entry(journal, account, amount_cents, memo=\"\"):\n>       raise RuntimeError(\"neutralised by dead-test-finder\")  # neutralised by dead-test-finder\n        ^^^^^^^ …",
+      "time": 0.001
+    },
+    {
+      "run_id": "N14-1",
+      "id": "src/api.test.ts::save > saves a valid entry",
+      "name": "save > saves a valid entry",
+      "classname": "src/api.test.ts",
+      "file": "src/api.test.ts",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0021349
+    },
+    {
+      "run_id": "N14-1",
+      "id": "src/api.test.ts::save > refuses a zero entry",
+      "name": "save > refuses a zero entry",
+      "classname": "src/api.test.ts",
+      "file": "src/api.test.ts",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0003092
+    },
+    {
+      "run_id": "N14-1",
+      "id": "src/api.test.ts::formatCents > formats negative amounts",
+      "name": "formatCents > formats negative amounts",
+      "classname": "src/api.test.ts",
+      "file": "src/api.test.ts",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0002258
+    },
+    {
+      "run_id": "N15-1",
+      "id": "src/api.test.ts::save > saves a valid entry",
+      "name": "save > saves a valid entry",
+      "classname": "src/api.test.ts",
+      "file": "src/api.test.ts",
+      "status": "failed",
+      "failure_type": "assertion",
+      "signals": [],
+      "message_excerpt": "AssertionError: expected undefined to be true // Object.is equality\n\nAssertionError: expected undefined to be true // Object.is equality\n\n- Expected: \ntrue\n\n+ Received: \nundefined",
+      "time": 0.0073941
+    },
+    {
+      "run_id": "N15-1",
+      "id": "src/api.test.ts::save > refuses a zero entry",
+      "name": "save > refuses a zero entry",
+      "classname": "src/api.test.ts",
+      "file": "src/api.test.ts",
+      "status": "failed",
+      "failure_type": "assertion",
+      "signals": [],
+      "message_excerpt": "AssertionError: expected undefined to be false // Object.is equality\n\nAssertionError: expected undefined to be false // Object.is equality\n\n- Expected: \nfalse\n\n+ Received: \nundefined",
+      "time": 0.0007201
+    },
+    {
+      "run_id": "N15-1",
+      "id": "src/api.test.ts::formatCents > formats negative amounts",
+      "name": "formatCents > formats negative amounts",
+      "classname": "src/api.test.ts",
+      "file": "src/api.test.ts",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0003249
+    },
+    {
+      "run_id": "N16-1",
+      "id": "src/api.test.ts::save > saves a valid entry",
+      "name": "save > saves a valid entry",
+      "classname": "src/api.test.ts",
+      "file": "src/api.test.ts",
+      "status": "failed",
+      "failure_type": "assertion",
+      "signals": [],
+      "message_excerpt": "AssertionError: promise rejected \"Error: neutralised by dead-test-finder\" instead of resolving\n\nAssertionError: promise rejected \"Error: neutralised by dead-test-finder\" instead of resolving\n ❯ src/api.test.ts:6:64\n\nCaused by: Error: neutralised by dead-test-finder\n ❯ save src/api.ts:6:73\n ❯ src/api.test.ts:6:18",
+      "time": 0.0115701
+    },
+    {
+      "run_id": "N16-1",
+      "id": "src/api.test.ts::save > refuses a zero entry",
+      "name": "save > refuses a zero entry",
+      "classname": "src/api.test.ts",
+      "file": "src/api.test.ts",
+      "status": "failed",
+      "failure_type": "assertion",
+      "signals": [],
+      "message_excerpt": "AssertionError: promise rejected \"Error: neutralised by dead-test-finder\" instead of resolving\n\nAssertionError: promise rejected \"Error: neutralised by dead-test-finder\" instead of resolving\n ❯ src/api.test.ts:10:60\n\nCaused by: Error: neutralised by dead-test-finder\n ❯ save src/api.ts:6:73\n ❯ src/api.test.ts:10:18",
+      "time": 0.0011025
+    },
+    {
+      "run_id": "N16-1",
+      "id": "src/api.test.ts::formatCents > formats negative amounts",
+      "name": "formatCents > formats negative amounts",
+      "classname": "src/api.test.ts",
+      "file": "src/api.test.ts",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0005363
+    },
+    {
+      "run_id": "N17-1",
+      "id": "tests.test_tax::test_tax_is_calculated",
+      "name": "test_tax_is_calculated",
+      "classname": "tests.test_tax",
+      "file": "tests/test_tax.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.001
+    },
+    {
+      "run_id": "N18-1",
+      "id": "tests.test_tax::test_tax_is_calculated",
+      "name": "test_tax_is_calculated",
+      "classname": "tests.test_tax",
+      "file": "tests/test_tax.py",
+      "status": "failed",
+      "failure_type": "assertion",
+      "signals": [],
+      "message_excerpt": "assert None == 1500\n +  where None = <function calculate_tax at 0x000002142DBB8B40>(10000, 0.15)\n +    where <function calculate_tax at 0x000002142DBB8B40> = tax.calculate_tax\ndef test_tax_is_calculated():\n>       assert tax.calculate_tax(10000, 0.15) == 1500\nE       assert None == 1500\nE        +  where None = <function calculate_tax at 0x000002142DBB8B40>(10000, 0.15)\nE        +    where <function calculate_tax at 0x000002142DBB8B40> = tax.calculate_tax\n\ntests\\test_tax.py:19: AssertionError",
+      "time": 0.001
+    },
+    {
+      "run_id": "N19-1",
+      "id": "tests.test_tax::test_tax_is_calculated",
+      "name": "test_tax_is_calculated",
+      "classname": "tests.test_tax",
+      "file": "tests/test_tax.py",
+      "status": "failed",
+      "failure_type": "assertion",
+      "signals": [],
+      "message_excerpt": "RuntimeError: neutralised by dead-test-finder\ndef test_tax_is_calculated():\n>       assert tax.calculate_tax(10000, 0.15) == 1500\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n\ntests\\test_tax.py:19: \n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _\n\namount_cents = 10000, rate = 0.15\n\n    def calculate_tax(amount_cents, rate):\n>       raise RuntimeError(\"neutralised by dead-test-finder\")  # neutralised by dead-test-finder\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       RuntimeError: neutralised by dead-test-finder\n\nledger\\tax.py:5: RuntimeErr …",
+      "time": 0.001
+    },
+    {
+      "run_id": "N20-1",
+      "id": "tests.test_balance::test_refund_reduces_the_balance",
+      "name": "test_refund_reduces_the_balance",
+      "classname": "tests.test_balance",
+      "file": "tests/test_balance.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.001
+    },
+    {
+      "run_id": "N21-1",
+      "id": "tests.test_balance::test_refund_reduces_the_balance",
+      "name": "test_refund_reduces_the_balance",
+      "classname": "tests.test_balance",
+      "file": "tests/test_balance.py",
+      "status": "failed",
+      "failure_type": "assertion",
+      "signals": [],
+      "message_excerpt": "AssertionError: assert None == 3500\n +  where None = balance([Entry(account='sales', amount_cents=5000, memo=''), Entry(account='sales', amount_cents=-1500, memo='')], 'sales')\ndef test_refund_reduces_the_balance():\n        journal = []\n        post_entry(journal, \"sales\", 5000)\n        post_entry(journal, \"sales\", -1500)\n>       assert balance(journal, \"sales\") == 3500\nE       AssertionError: assert None == 3500\nE        +  where None = balance([Entry(account='sales', amount_cents=5000, memo=''), Entry(account='sales', amount_cents=-1500, memo='')], 'sales')\n\ntests\\test_balance.py:8: Assertio …",
+      "time": 0.001
+    },
+    {
+      "run_id": "N22-1",
+      "id": "tests.test_balance::test_refund_reduces_the_balance",
+      "name": "test_refund_reduces_the_balance",
+      "classname": "tests.test_balance",
+      "file": "tests/test_balance.py",
+      "status": "failed",
+      "failure_type": "assertion",
+      "signals": [],
+      "message_excerpt": "RuntimeError: neutralised by dead-test-finder\ndef test_refund_reduces_the_balance():\n        journal = []\n        post_entry(journal, \"sales\", 5000)\n        post_entry(journal, \"sales\", -1500)\n>       assert balance(journal, \"sales\") == 3500\n               ^^^^^^^^^^^^^^^^^^^^^^^^^\n\ntests\\test_balance.py:8: \n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _\n\njournal = [Entry(account='sales', amount_cents=5000, memo=''), Entry(account='sales', amount_cents=-1500, memo='')]\naccount = 'sales'\n\n    def balance(journal, account):\n>       raise RuntimeError(\"neutralised …",
+      "time": 0.001
+    },
+    {
+      "run_id": "N23-1",
+      "id": "tests.test_reports::test_trial_balance_with_two_currencies",
+      "name": "test_trial_balance_with_two_currencies",
+      "classname": "tests.test_reports",
+      "file": "tests/test_reports.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.001
+    },
+    {
+      "run_id": "N24-1",
+      "id": "tests.test_reports::test_trial_balance_with_two_currencies",
+      "name": "test_trial_balance_with_two_currencies",
+      "classname": "tests.test_reports",
+      "file": "tests/test_reports.py",
+      "status": "failed",
+      "failure_type": "assertion",
+      "signals": [],
+      "message_excerpt": "AssertionError: assert None == {'sales:AUD': 900, 'sales:NZD': 1000}\n +  where None = trial_balance([Entry(account='sales:NZD', amount_cents=1000, memo=''), Entry(account='sales:AUD', amount_cents=900, memo='')])\ndef test_trial_balance_with_two_currencies():\n        journal = []\n        post_entry(journal, \"sales:NZD\", 1000)\n        post_entry(journal, \"sales:AUD\", 900)\n>       assert trial_balance(journal) == {\"sales:AUD\": 900, \"sales:NZD\": 1000}\nE       AssertionError: assert None == {'sales:AUD': 900, 'sales:NZD': 1000}\nE        +  where None = trial_balance([Entry(account='sales:NZD', amou …",
+      "time": 0.001
+    },
+    {
+      "run_id": "N25-1",
+      "id": "tests.test_reports::test_trial_balance_with_two_currencies",
+      "name": "test_trial_balance_with_two_currencies",
+      "classname": "tests.test_reports",
+      "file": "tests/test_reports.py",
+      "status": "failed",
+      "failure_type": "assertion",
+      "signals": [],
+      "message_excerpt": "RuntimeError: neutralised by dead-test-finder\ndef test_trial_balance_with_two_currencies():\n        journal = []\n        post_entry(journal, \"sales:NZD\", 1000)\n        post_entry(journal, \"sales:AUD\", 900)\n>       assert trial_balance(journal) == {\"sales:AUD\": 900, \"sales:NZD\": 1000}\n               ^^^^^^^^^^^^^^^^^^^^^^\n\ntests\\test_reports.py:13: \n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _\n\njournal = [Entry(account='sales:NZD', amount_cents=1000, memo=''), Entry(account='sales:AUD', amount_cents=900, memo='')]\n\n    def trial_balance(journal):\n>       raise …",
+      "time": 0.001
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+diff --git a/core/tests/test_tax.py b/core/tests/test_tax.py
+--- a/core/tests/test_tax.py
++++ b/core/tests/test_tax.py
+@@ -1,5 +1,3 @@
+-from unittest import mock
+-
+ from ledger import tax
+ 
+ 
+@@ -18,6 +16,5 @@
+ 
+ 
+ def test_tax_is_calculated():
+-    with mock.patch("ledger.tax.calculate_tax", return_value=1500) as calc:
+-        assert tax.calculate_tax(10000, 0.15) == 1500
+-        calc.assert_called_once_with(10000, 0.15)
++    assert tax.calculate_tax(10000, 0.15) == 1500
++    assert tax.calculate_tax(999, 0.15) == 150

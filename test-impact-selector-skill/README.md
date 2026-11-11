@@ -125,7 +125,7 @@ python scripts/render_report.py examples/impact_report.example.json --brief
 - `scripts/build_command.py`: commands per framework, splitting, CI snippets
 - `scripts/validate_impact_report.py`: checks the report against the evidence and the rules
 - `scripts/render_report.py`: coloured terminal/Markdown report
-- `scripts/diff_scope.py`, `run_tests.py`, `parse_results.py`, `detect_conventions.py`, `stats.py`: shared helpers
+- `scripts/diff_scope.py`, `unified_diff.py`, `run_tests.py`, `parse_results.py`, `detect_conventions.py`, `stats.py`: shared helpers
 - `examples/`: sample monorepo, changes, history, real run and reports
 
 ## Design principles

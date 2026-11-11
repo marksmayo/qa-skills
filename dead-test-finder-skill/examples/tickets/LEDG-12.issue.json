@@ -1,0 +1,19 @@
+{
+  "key": "LEDG-12",
+  "fields": {
+    "summary": "Trial balance is wrong for journals with more than one currency",
+    "issuetype": {"name": "Bug"},
+    "status": {"name": "Done", "statusCategory": {"key": "done", "name": "Done"}},
+    "priority": {"name": "High"},
+    "labels": ["reports"],
+    "components": [{"name": "core"}],
+    "fixVersions": [{"name": "1.2.0"}],
+    "description": {
+      "type": "doc", "version": 1,
+      "content": [
+        {"type": "paragraph", "content": [{"type": "text", "text": "trial_balance() mixed NZD and AUD accounts into one total. Fixed in 1.2.0 by keying totals on the full account name, currency suffix included."}]}
+      ]
+    },
+    "comment": {"comments": [], "total": 0}
+  }
+}

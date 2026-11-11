@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.058" timestamp="2026-11-11T15:58:47.387039+13:00" hostname="host"><testcase classname="tests.test_reports" name="test_trial_balance_with_two_currencies" time="0.001"><failure message="AssertionError: assert None == {'sales:AUD': 900, 'sales:NZD': 1000}&#10; +  where None = trial_balance([Entry(account='sales:NZD', amount_cents=1000, memo=''), Entry(account='sales:AUD', amount_cents=900, memo='')])">def test_trial_balance_with_two_currencies():
+        journal = []
+        post_entry(journal, "sales:NZD", 1000)
+        post_entry(journal, "sales:AUD", 900)
+&gt;       assert trial_balance(journal) == {"sales:AUD": 900, "sales:NZD": 1000}
+E       AssertionError: assert None == {'sales:AUD': 900, 'sales:NZD': 1000}
+E        +  where None = trial_balance([Entry(account='sales:NZD', amount_cents=1000, memo=''), Entry(account='sales:AUD', amount_cents=900, memo='')])
+
+tests\test_reports.py:13: AssertionError</failure></testcase></testsuite></testsuites>

@@ -16,7 +16,7 @@
     python fetch_ticket.py --from-file search.json --source connector --out tickets.json
     python fetch_ticket.py --from-file issues/ --source connector --out tickets.json
 
-Output (ticket.json): key, type, summary, description_md (Atlassian Document Format and wiki
+Output (ticket.json): key, type, summary, status and status_category (Jira's new, indeterminate or done), description_md (Atlassian Document Format and wiki
 markup converted to Markdown), acceptance_criteria[{id, text, source}], bug sections, subtasks,
 links, parent, recent comments, attachments (listed, never downloaded), suspicious_instructions
 and content_sha256. Several tickets give tickets.json: {query, source, fetched_at, tickets[]}.
@@ -321,6 +321,7 @@ def normalise_issue(issue: dict, source: str, base_url: str | None, ac_field_nam
         'type': itype,
         'summary': f.get('summary') or '',
         'status': (f.get('status') or {}).get('name'),
+        'status_category': ((f.get('status') or {}).get('statusCategory') or {}).get('key'),
         'priority': (f.get('priority') or {}).get('name'),
         'labels': f.get('labels') or [],
         'components': [c.get('name') for c in f.get('components') or []],
@@ -351,7 +352,8 @@ def from_text(text: str, key: str | None, source: str) -> dict:
     itype = m.group(2).title() if m else ('Bug' if re.search(r'steps to reproduce', body, re.I) else 'Unknown')
     ticket = {'key': key, 'url': None, 'source': source,
               'fetched_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
-              'type': itype, 'summary': summary, 'status': None, 'priority': None, 'labels': [], 'components': [],
+              'type': itype, 'summary': summary, 'status': None, 'status_category': None, 'priority': None, 'labels': [],
+              'components': [],
               'fix_versions': [], 'parent': None, 'description_md': body, 'acceptance_criteria_field': None,
               'acceptance_criteria': extract_criteria(None, body, None),
               'bug': bug_sections(body) if itype.lower() in ('bug', 'defect') else None,

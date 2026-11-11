@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.060" timestamp="2026-11-11T15:58:48.452149+13:00" hostname="host"><testcase classname="tests.test_reports" name="test_trial_balance_with_two_currencies" time="0.001"><failure message="RuntimeError: neutralised by dead-test-finder">def test_trial_balance_with_two_currencies():
+        journal = []
+        post_entry(journal, "sales:NZD", 1000)
+        post_entry(journal, "sales:AUD", 900)
+&gt;       assert trial_balance(journal) == {"sales:AUD": 900, "sales:NZD": 1000}
+               ^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_reports.py:13: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+journal = [Entry(account='sales:NZD', amount_cents=1000, memo=''), Entry(account='sales:AUD', amount_cents=900, memo='')]
+
+    def trial_balance(journal):
+&gt;       raise RuntimeError("neutralised by dead-test-finder")  # neutralised by dead-test-finder
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       RuntimeError: neutralised by dead-test-finder
+
+ledger\reports.py:5: RuntimeError</failure></testcase></testsuite></testsuites>

@@ -1,0 +1,15 @@
+diff --git a/core/tests/test_tax.py b/core/tests/test_tax.py
+--- a/core/tests/test_tax.py
++++ b/core/tests/test_tax.py
+@@ -8,11 +8,6 @@
+     assert tax.gst(price) == 1500
+ 
+ 
+-def test_gst_on_a_hundred_dollar_invoice():
+-    invoice_total = 10000
+-    assert tax.gst(invoice_total) == 1500
+-
+-
+ def test_with_gst_adds_the_tax():
+     assert tax.with_gst(2000) == 2300
+ 

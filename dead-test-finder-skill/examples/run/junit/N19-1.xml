@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.057" timestamp="2026-11-11T15:58:41.489711+13:00" hostname="host"><testcase classname="tests.test_tax" name="test_tax_is_calculated" time="0.001"><failure message="RuntimeError: neutralised by dead-test-finder">def test_tax_is_calculated():
+&gt;       assert tax.calculate_tax(10000, 0.15) == 1500
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_tax.py:19: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+amount_cents = 10000, rate = 0.15
+
+    def calculate_tax(amount_cents, rate):
+&gt;       raise RuntimeError("neutralised by dead-test-finder")  # neutralised by dead-test-finder
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       RuntimeError: neutralised by dead-test-finder
+
+ledger\tax.py:5: RuntimeError</failure></testcase></testsuite></testsuites>

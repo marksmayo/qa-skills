@@ -1,0 +1,14 @@
+diff --git a/client/src/api.test.ts b/client/src/api.test.ts
+--- a/client/src/api.test.ts
++++ b/client/src/api.test.ts
+@@ -2,8 +2,8 @@
+ import { formatCents, save } from "./api";
+ 
+ describe("save", () => {
+-  it("saves a valid entry", () => {
+-    expect(save({ account: "sales", amountCents: 12000 })).resolves.toBe(true);
++  it("saves a valid entry", async () => {
++    await expect(save({ account: "sales", amountCents: 12000 })).resolves.toBe(true);
+   });
+ 
+   it("refuses a zero entry", async () => {

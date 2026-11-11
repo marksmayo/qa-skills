@@ -1,0 +1,326 @@
+{
+  "repo": "ledger",
+  "definitions": [
+    {
+      "id": "client/src/api.test.ts::save > saves a valid entry",
+      "file": "client/src/api.test.ts",
+      "line": 5,
+      "name": "save > saves a valid entry",
+      "lang": "typescript",
+      "package": "client",
+      "calls": [
+        "save"
+      ]
+    },
+    {
+      "id": "client/src/api.test.ts::save > refuses a zero entry",
+      "file": "client/src/api.test.ts",
+      "line": 9,
+      "name": "save > refuses a zero entry",
+      "lang": "typescript",
+      "package": "client",
+      "calls": [
+        "save"
+      ]
+    },
+    {
+      "id": "client/src/api.test.ts::formatCents > formats negative amounts",
+      "file": "client/src/api.test.ts",
+      "line": 15,
+      "name": "formatCents > formats negative amounts",
+      "lang": "typescript",
+      "package": "client",
+      "calls": [
+        "formatCents"
+      ]
+    },
+    {
+      "id": "core/tests/check_balance.py::test_refund_reduces_the_balance",
+      "file": "core/tests/check_balance.py",
+      "line": 4,
+      "name": "test_refund_reduces_the_balance",
+      "lang": "python",
+      "package": "core",
+      "calls": [
+        "ledger.entries.balance",
+        "ledger.entries.post_entry"
+      ]
+    },
+    {
+      "id": "core/tests/test_entries.py::test_post_entry_records_a_sale",
+      "file": "core/tests/test_entries.py",
+      "line": 6,
+      "name": "test_post_entry_records_a_sale",
+      "lang": "python",
+      "package": "core",
+      "calls": [
+        "ledger.entries.post_entry"
+      ]
+    },
+    {
+      "id": "core/tests/test_entries.py::test_balance_sums_the_account",
+      "file": "core/tests/test_entries.py",
+      "line": 11,
+      "name": "test_balance_sums_the_account",
+      "lang": "python",
+      "package": "core",
+      "calls": [
+        "ledger.entries.balance",
+        "ledger.entries.post_entry"
+      ]
+    },
+    {
+      "id": "core/tests/test_entries.py::test_zero_entry_is_rejected",
+      "file": "core/tests/test_entries.py",
+      "line": 19,
+      "name": "test_zero_entry_is_rejected",
+      "lang": "python",
+      "package": "core",
+      "calls": [
+        "ledger.entries.post_entry"
+      ]
+    },
+    {
+      "id": "core/tests/test_imports.py::test_package_imports",
+      "file": "core/tests/test_imports.py",
+      "line": 1,
+      "name": "test_package_imports",
+      "lang": "python",
+      "package": "core",
+      "calls": []
+    },
+    {
+      "id": "core/tests/test_reports.py::test_trial_balance_with_two_currencies",
+      "file": "core/tests/test_reports.py",
+      "line": 10,
+      "name": "test_trial_balance_with_two_currencies",
+      "lang": "python",
+      "package": "core",
+      "calls": [
+        "ledger.entries.post_entry",
+        "ledger.reports.trial_balance"
+      ]
+    },
+    {
+      "id": "core/tests/test_reports.py::test_csv_lines_are_sorted",
+      "file": "core/tests/test_reports.py",
+      "line": 18,
+      "name": "test_csv_lines_are_sorted",
+      "lang": "python",
+      "package": "core",
+      "calls": [
+        "ledger.reports.to_csv_lines"
+      ]
+    },
+    {
+      "id": "core/tests/test_reports.py::test_trial_balance_lists_every_account",
+      "file": "core/tests/test_reports.py",
+      "line": 22,
+      "name": "test_trial_balance_lists_every_account",
+      "lang": "python",
+      "package": "core",
+      "calls": [
+        "ledger.entries.post_entry",
+        "ledger.reports.trial_balance"
+      ]
+    },
+    {
+      "id": "core/tests/test_tax.py::test_gst_on_one_hundred_dollars",
+      "file": "core/tests/test_tax.py",
+      "line": 6,
+      "name": "test_gst_on_one_hundred_dollars",
+      "lang": "python",
+      "package": "core",
+      "calls": [
+        "ledger.tax.gst"
+      ]
+    },
+    {
+      "id": "core/tests/test_tax.py::test_gst_on_a_hundred_dollar_invoice",
+      "file": "core/tests/test_tax.py",
+      "line": 11,
+      "name": "test_gst_on_a_hundred_dollar_invoice",
+      "lang": "python",
+      "package": "core",
+      "calls": [
+        "ledger.tax.gst"
+      ]
+    },
+    {
+      "id": "core/tests/test_tax.py::test_with_gst_adds_the_tax",
+      "file": "core/tests/test_tax.py",
+      "line": 16,
+      "name": "test_with_gst_adds_the_tax",
+      "lang": "python",
+      "package": "core",
+      "calls": [
+        "ledger.tax.with_gst"
+      ]
+    },
+    {
+      "id": "core/tests/test_tax.py::test_tax_is_calculated",
+      "file": "core/tests/test_tax.py",
+      "line": 20,
+      "name": "test_tax_is_calculated",
+      "lang": "python",
+      "package": "core",
+      "calls": [
+        "ledger.tax.calculate_tax"
+      ]
+    }
+  ],
+  "candidates": [
+    {
+      "id": "C1",
+      "category": "async_not_awaited",
+      "rule": "resolves_not_awaited",
+      "test_ids": [
+        "client/src/api.test.ts::save > saves a valid entry"
+      ],
+      "file": "client/src/api.test.ts",
+      "line": 6,
+      "why": "expect(...).resolves/.rejects is neither awaited nor returned, so the assertion can finish after the test",
+      "details": {
+        "matcher": "resolves"
+      }
+    },
+    {
+      "id": "C2",
+      "category": "never_runs",
+      "rule": "file_pattern",
+      "test_ids": [
+        "core/tests/check_balance.py::test_refund_reduces_the_balance"
+      ],
+      "file": "core/tests/check_balance.py",
+      "line": 4,
+      "why": "check_balance.py does not match python_files ['test_*.py', '*_test.py'] (pytest defaults; core/pyproject.toml sets no patterns), so pytest never collects it",
+      "details": {
+        "python_files": [
+          "test_*.py",
+          "*_test.py"
+        ]
+      }
+    },
+    {
+      "id": "C3",
+      "category": "no_assertion",
+      "rule": "no_assertion",
+      "test_ids": [
+        "core/tests/test_entries.py::test_post_entry_records_a_sale"
+      ],
+      "file": "core/tests/test_entries.py",
+      "line": 6,
+      "why": "test_post_entry_records_a_sale has no assert, assertion call or pytest.raises",
+      "details": {}
+    },
+    {
+      "id": "C4",
+      "category": "no_assertion",
+      "rule": "no_assertion",
+      "test_ids": [
+        "core/tests/test_imports.py::test_package_imports"
+      ],
+      "file": "core/tests/test_imports.py",
+      "line": 1,
+      "why": "test_package_imports has no assert, assertion call or pytest.raises",
+      "details": {}
+    },
+    {
+      "id": "C5",
+      "category": "skipped",
+      "rule": "skip",
+      "test_ids": [
+        "core/tests/test_reports.py::test_trial_balance_with_two_currencies"
+      ],
+      "file": "core/tests/test_reports.py",
+      "line": 9,
+      "why": "skip: LEDG-12: trial balance wrong for multi-currency journals",
+      "details": {
+        "kind": "skip",
+        "line": 9,
+        "reason": "LEDG-12: trial balance wrong for multi-currency journals",
+        "conditional": false,
+        "condition": null,
+        "ticket": "LEDG-12"
+      }
+    },
+    {
+      "id": "C6",
+      "category": "skipped",
+      "rule": "skipif",
+      "test_ids": [
+        "core/tests/test_reports.py::test_csv_lines_are_sorted"
+      ],
+      "file": "core/tests/test_reports.py",
+      "line": 17,
+      "why": "skipif: CSV export is checked with LF line endings; Windows writes CRLF",
+      "details": {
+        "kind": "skipif",
+        "line": 17,
+        "reason": "CSV export is checked with LF line endings; Windows writes CRLF",
+        "conditional": true,
+        "condition": "sys.platform == 'win32'",
+        "ticket": null
+      }
+    },
+    {
+      "id": "C7",
+      "category": "duplicate",
+      "rule": "ast_similarity",
+      "test_ids": [
+        "core/tests/test_tax.py::test_gst_on_one_hundred_dollars",
+        "core/tests/test_tax.py::test_gst_on_a_hundred_dollar_invoice"
+      ],
+      "file": "core/tests/test_tax.py",
+      "line": 11,
+      "why": "100% similar to core/tests/test_tax.py::test_gst_on_one_hundred_dollars after normalising names and literals",
+      "details": {
+        "similarity": 1.0
+      }
+    },
+    {
+      "id": "C8",
+      "category": "mock_only",
+      "rule": "subject_is_mocked",
+      "test_ids": [
+        "core/tests/test_tax.py::test_tax_is_calculated"
+      ],
+      "file": "core/tests/test_tax.py",
+      "line": 20,
+      "why": "test_tax_is_calculated patches ledger.tax.calculate_tax and then asserts on that same function, so it only checks the mock",
+      "details": {
+        "patched": [
+          "ledger.tax.calculate_tax"
+        ]
+      }
+    }
+  ],
+  "pytest_config": {
+    "core": {
+      "python_files": [
+        "test_*.py",
+        "*_test.py"
+      ],
+      "python_functions": [
+        "test*"
+      ],
+      "python_classes": [
+        "Test*"
+      ],
+      "source": "pytest defaults; core/pyproject.toml sets no patterns"
+    }
+  },
+  "summary": {
+    "tests_defined": 15,
+    "candidates": 8,
+    "by_category": {
+      "async_not_awaited": 1,
+      "duplicate": 1,
+      "mock_only": 1,
+      "never_runs": 1,
+      "no_assertion": 2,
+      "skipped": 2
+    }
+  },
+  "notes": []
+}
