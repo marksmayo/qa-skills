@@ -1,0 +1,121 @@
+{
+"elements": [
+{
+"sig": "html>body>header",
+"path": "html>body>header",
+"tag": "header",
+"text": "",
+"box": [
+0,
+0,
+1280,
+64
+],
+"color": "rgb(34, 34, 34)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>header>nav",
+"path": "html>body>header>nav",
+"tag": "nav",
+"text": "",
+"box": [
+24,
+20,
+135,
+18
+],
+"color": "rgb(34, 34, 34)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>header>nav>a",
+"path": "html>body>header>nav>a",
+"tag": "a",
+"text": "Back to the shop",
+"box": [
+24,
+20,
+119,
+17
+],
+"color": "rgb(31, 95, 191)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>main",
+"path": "html>body>main",
+"tag": "main",
+"text": "",
+"box": [
+0,
+64,
+1280,
+162
+],
+"color": "rgb(34, 34, 34)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>main>h1",
+"path": "html>body>main>h1",
+"tag": "h1",
+"text": "Contact",
+"box": [
+24,
+109,
+1232,
+37
+],
+"color": "rgb(34, 34, 34)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "700 32px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>main>p",
+"path": "html>body>main>p",
+"tag": "p",
+"text": "Write to us at the shop. This page is deliberately the same in both versions.",
+"box": [
+24,
+168,
+1232,
+18
+],
+"color": "rgb(34, 34, 34)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>footer",
+"path": "html>body>footer",
+"tag": "footer",
+"text": "Storefront (sample, invented).",
+"box": [
+0,
+226,
+1280,
+51
+],
+"color": "rgb(102, 102, 102)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+}
+],
+"fonts": "loaded",
+"scroll": [
+1280,
+800
+]
+}

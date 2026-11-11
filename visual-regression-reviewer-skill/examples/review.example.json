@@ -1,0 +1,459 @@
+{
+ "skill": {
+  "name": "visual-regression-reviewer",
+  "version": "1.0.0"
+ },
+ "scope": {
+  "mode": "capture_both",
+  "sets": {
+   "baseline": {
+    "source": "http://127.0.0.1:8143/ (storefront v1)",
+    "manifest_sha256": "f5f1d3a4b90d0bafd7072119c3344a464946d19572c38c6e73746178932679be"
+   },
+   "current": {
+    "source": "http://127.0.0.1:8144/ (storefront v2)",
+    "manifest_sha256": "a3430496de209bd00c0f13eac4706548ae0524ac6f2268cf8197bfe77edf8337"
+   }
+  },
+  "browsers": [
+   "chromium"
+  ],
+  "viewports": [
+   "1280x800",
+   "375x812"
+  ],
+  "pages": [
+   "home",
+   "product",
+   "about",
+   "contact"
+  ],
+  "ignore_regions": {},
+  "threshold": 0.1,
+  "min_region_pixels": 20,
+  "change_context": {
+   "source": "examples/change_context.md",
+   "summary": "PR 214: logo moved down, Add to cart in brand green, Free delivery banner removed, fourth carousel slide"
+  },
+  "authorised_by": null
+ },
+ "metadata": {
+  "generated_at": "2026-11-11T08:13:10Z",
+  "browser_versions": {
+   "chromium": "158.0.8127.18"
+  },
+  "tools": [
+   {
+    "name": "playwright-chromium",
+    "version": "158.0.8127.18",
+    "status": "ran",
+    "note": "two takes per current page"
+   },
+   {
+    "name": "diff_images.py (stdlib YIQ diff, pixelmatch-style anti-aliasing test)",
+    "version": "1.0.0",
+    "status": "ran",
+    "note": null
+   }
+  ],
+  "pairs": {
+   "matched": 8,
+   "added": 0,
+   "removed": 0,
+   "size_mismatch": 0
+  },
+  "groups_file": "run/groups.json"
+ },
+ "headline": {
+  "summary": "7 groups to review across 3 of the 4 pages: 5 changes and 2 kinds of dynamic content. One looks unintended against PR 214: the wool scarf price changed from $24.00 to $26.00. The contact page is unchanged at both viewports. Accepting any group is your decision; no baseline was touched.",
+  "groups_by_impact": {
+   "medium": 3,
+   "high": 2,
+   "low": 2
+  },
+  "groups_by_cause": {
+   "layout_shift": 2,
+   "missing_element": 1,
+   "colour_change": 1,
+   "text_change": 1,
+   "dynamic_content": 2
+  },
+  "pairs_compared": 8,
+  "pages_compared": [
+   "about",
+   "contact",
+   "home",
+   "product"
+  ],
+  "pages_untested": [],
+  "flaky_pixels_excluded": 5644,
+  "evidence_completeness": "complete",
+  "overall_confidence": "high",
+  "approval": "none"
+ },
+ "groups": [
+  {
+   "id": "G1",
+   "cause": "layout_shift",
+   "impact": "medium",
+   "confidence": "high",
+   "reach": 2,
+   "review_score": 12,
+   "noise": false,
+   "element_sigs": [
+    "html>body>header>div.logo"
+   ],
+   "pages": [
+    "about",
+    "home",
+    "product"
+   ],
+   "viewports": [
+    "1280x800",
+    "375x812"
+   ],
+   "browsers": [
+    "chromium"
+   ],
+   "measure": {
+    "dx": 0,
+    "dy": 4,
+    "dw": 0,
+    "dh": 0
+   },
+   "pixels": 8778,
+   "aa_pixels": 2472,
+   "flaky_pixels": 0,
+   "crops": [
+    {
+     "pair": "chromium/1280x800/about.png",
+     "box": [
+      8,
+      0,
+      152,
+      68
+     ],
+     "baseline": "G1-baseline.png",
+     "current": "G1-current.png",
+     "diff": "G1-diff.png"
+    }
+   ],
+   "review_order": 4,
+   "intent": "likely_intended",
+   "intent_basis": "agent_judgment",
+   "intent_confidence": "medium",
+   "explanation": "The logo is 4 px lower on every page with the shared header (home, product, about) at both viewports; nothing else in the header moved. PR 214 says the logo moves down to line up with the navigation."
+  },
+  {
+   "id": "G2",
+   "cause": "layout_shift",
+   "impact": "high",
+   "confidence": "high",
+   "reach": 1,
+   "review_score": 9,
+   "noise": false,
+   "element_sigs": [
+    "html>body>main",
+    "html>body>footer"
+   ],
+   "pages": [
+    "home"
+   ],
+   "viewports": [
+    "1280x800",
+    "375x812"
+   ],
+   "browsers": [
+    "chromium"
+   ],
+   "measure": {
+    "dx": 0,
+    "dy": -46,
+    "dw": 0,
+    "dh": 0
+   },
+   "pixels": 19680,
+   "aa_pixels": 10411,
+   "flaky_pixels": 0,
+   "crops": [
+    {
+     "pair": "chromium/1280x800/home.png",
+     "box": [
+      0,
+      48,
+      1280,
+      462
+     ],
+     "baseline": "G2-baseline.png",
+     "current": "G2-current.png",
+     "diff": "G2-diff.png"
+    }
+   ],
+   "review_order": 5,
+   "intent": "likely_intended",
+   "intent_basis": "agent_judgment",
+   "intent_confidence": "medium",
+   "explanation": "Everything below the header on the home page moved up 46 px. That is the height of the removed \"Free delivery\" banner (G3), so this follows from it; the content itself is unchanged apart from the carousel and clock (G6, G7)."
+  },
+  {
+   "id": "G3",
+   "cause": "missing_element",
+   "impact": "high",
+   "confidence": "high",
+   "reach": 1,
+   "review_score": 9,
+   "noise": false,
+   "element_sigs": [
+    "html>body>div.banner"
+   ],
+   "pages": [
+    "home"
+   ],
+   "viewports": [
+    "1280x800",
+    "375x812"
+   ],
+   "browsers": [
+    "chromium"
+   ],
+   "measure": {
+    "text_before": "Free delivery on orders over $50"
+   },
+   "pixels": 1766,
+   "aa_pixels": 1452,
+   "flaky_pixels": 0,
+   "crops": [
+    {
+     "pair": "chromium/1280x800/home.png",
+     "box": [
+      0,
+      48,
+      1280,
+      78
+     ],
+     "baseline": "G3-baseline.png",
+     "current": "G3-current.png",
+     "diff": "G3-diff.png"
+    }
+   ],
+   "review_order": 6,
+   "intent": "likely_intended",
+   "intent_basis": "agent_judgment",
+   "intent_confidence": "medium",
+   "explanation": "The \"Free delivery on orders over $50\" banner is gone from the home page at both viewports. PR 214 removes it because the promotion ended."
+  },
+  {
+   "id": "G4",
+   "cause": "colour_change",
+   "impact": "medium",
+   "confidence": "high",
+   "reach": 1,
+   "review_score": 6,
+   "noise": false,
+   "element_sigs": [
+    "html>body>main>button.buy"
+   ],
+   "pages": [
+    "product"
+   ],
+   "viewports": [
+    "1280x800",
+    "375x812"
+   ],
+   "browsers": [
+    "chromium"
+   ],
+   "measure": {
+    "property": "background",
+    "colour_before": "rgb(31, 95, 191)",
+    "colour_after": "rgb(31, 143, 79)"
+   },
+   "pixels": 7702,
+   "aa_pixels": 222,
+   "flaky_pixels": 0,
+   "crops": [
+    {
+     "pair": "chromium/1280x800/product.png",
+     "box": [
+      8,
+      225,
+      145,
+      70
+     ],
+     "baseline": "G4-baseline.png",
+     "current": "G4-current.png",
+     "diff": "G4-diff.png"
+    }
+   ],
+   "review_order": 7,
+   "intent": "likely_intended",
+   "intent_basis": "agent_judgment",
+   "intent_confidence": "medium",
+   "explanation": "The Add to cart button background changed from rgb(31, 95, 191) (blue) to rgb(31, 143, 79) (green); its box and text are unchanged. PR 214 asks for the new brand green."
+  },
+  {
+   "id": "G5",
+   "cause": "text_change",
+   "impact": "medium",
+   "confidence": "high",
+   "reach": 1,
+   "review_score": 6,
+   "noise": false,
+   "element_sigs": [
+    "#price"
+   ],
+   "pages": [
+    "product"
+   ],
+   "viewports": [
+    "1280x800",
+    "375x812"
+   ],
+   "browsers": [
+    "chromium"
+   ],
+   "measure": {
+    "text_before": "$24.00",
+    "text_after": "$26.00"
+   },
+   "pixels": 88,
+   "aa_pixels": 120,
+   "flaky_pixels": 0,
+   "crops": [
+    {
+     "pair": "chromium/1280x800/product.png",
+     "box": [
+      8,
+      152,
+      1264,
+      55
+     ],
+     "baseline": "G5-baseline.png",
+     "current": "G5-current.png",
+     "diff": "G5-diff.png"
+    }
+   ],
+   "review_order": 1,
+   "intent": "likely_unintended",
+   "intent_basis": "agent_judgment",
+   "intent_confidence": "medium",
+   "explanation": "The wool scarf price changed from $24.00 to $26.00 at both viewports. PR 214 is about the header and the product page styling and says nothing about prices, so check whether this came from data rather than the change under review."
+  },
+  {
+   "id": "G6",
+   "cause": "dynamic_content",
+   "impact": "low",
+   "confidence": "high",
+   "reach": 2,
+   "review_score": 6,
+   "noise": true,
+   "element_sigs": [
+    "#clock"
+   ],
+   "pages": [
+    "home",
+    "product"
+   ],
+   "viewports": [
+    "1280x800",
+    "375x812"
+   ],
+   "browsers": [
+    "chromium"
+   ],
+   "measure": {
+    "text_before": "9:13:01 pm",
+    "text_after": "9:13:11 pm"
+   },
+   "pixels": 713,
+   "aa_pixels": 899,
+   "flaky_pixels": 411,
+   "crops": [
+    {
+     "pair": "chromium/1280x800/home.png",
+     "box": [
+      305,
+      398,
+      112,
+      95
+     ],
+     "baseline": "G6-baseline.png",
+     "current": "G6-current.png",
+     "diff": "G6-diff.png"
+    }
+   ],
+   "review_order": 2,
+   "intent": "unknown",
+   "intent_basis": "none",
+   "intent_confidence": null,
+   "explanation": "The footer clock shows the time of each capture (9 p.m. times, seconds apart), so it differs between every take: dynamic content, listed as noise. Freeze the clock or ignore #clock to remove it."
+  },
+  {
+   "id": "G7",
+   "cause": "dynamic_content",
+   "impact": "low",
+   "confidence": "high",
+   "reach": 1,
+   "review_score": 3,
+   "noise": true,
+   "element_sigs": [
+    "html>body>main>div.carousel>div.slide"
+   ],
+   "pages": [
+    "home"
+   ],
+   "viewports": [
+    "1280x800",
+    "375x812"
+   ],
+   "browsers": [
+    "chromium"
+   ],
+   "measure": {
+    "text_before": "Gift cards now available"
+   },
+   "pixels": 2749,
+   "aa_pixels": 2758,
+   "flaky_pixels": 5225,
+   "crops": [
+    {
+     "pair": "chromium/1280x800/home.png",
+     "box": [
+      8,
+      118,
+      1264,
+      152
+     ],
+     "baseline": "G7-baseline.png",
+     "current": "G7-current.png",
+     "diff": "G7-diff.png"
+    }
+   ],
+   "review_order": 3,
+   "intent": "unknown",
+   "intent_basis": "none",
+   "intent_confidence": null,
+   "explanation": "The home carousel rotates every 1.5 s, so each capture shows whichever slide is current; the two current takes differed here. Listed as noise. PR 214 adds a fourth slide, which a capture with a frozen clock could check."
+  }
+ ],
+ "unchanged": [
+  {
+   "pair": "chromium/1280x800/contact.png",
+   "flaky_pixels": 0
+  },
+  {
+   "pair": "chromium/375x812/contact.png",
+   "flaky_pixels": 0
+  }
+ ],
+ "added": [],
+ "removed": [],
+ "untested": [],
+ "files_written": [],
+ "limitations": [
+  "One browser (Chromium 158) at two viewports; Firefox and WebKit were not captured.",
+  "At 375 px the header overflows to 417 px wide, so those screenshots are 417 px; both sets have it, so it is not a difference.",
+  "The clock was not frozen, so the clock and carousel differ between takes; they are grouped as dynamic content, and the new fourth carousel slide could not be checked visually.",
+  "Intent is judged against the PR description only (agent judgment); nobody has reviewed the groups yet."
+ ]
+}

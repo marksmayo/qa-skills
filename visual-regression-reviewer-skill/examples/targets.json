@@ -1,0 +1,14 @@
+{
+  "sites": {"baseline": "http://127.0.0.1:8143/", "current": "http://127.0.0.1:8144/"},
+  "pages": [
+    {"name": "home", "path": "index.html"},
+    {"name": "product", "path": "product.html"},
+    {"name": "about", "path": "about.html"},
+    {"name": "contact", "path": "contact.html"}
+  ],
+  "viewports": ["1280x800", "375x812"],
+  "browsers": ["chromium"],
+  "clock": null,
+  "authorised_by": null,
+  "ignore_regions": {}
+}

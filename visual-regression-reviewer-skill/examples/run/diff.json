@@ -1,0 +1,709 @@
+{
+ "sets": {
+  "baseline": "examples/run/baseline",
+  "current": "examples/run/current"
+ },
+ "threshold": 0.1,
+ "min_region_pixels": 20,
+ "pairs": [
+  {
+   "rel": "chromium/1280x800/about.png",
+   "page": "about",
+   "viewport": "1280x800",
+   "browser": "chromium",
+   "baseline": "examples/run/baseline/chromium/1280x800/about.png",
+   "current": "examples/run/current/chromium/1280x800/about.png",
+   "take2": "examples/run/current/chromium/1280x800/about.take2.png",
+   "baseline_sha256": "2a22e20f25f6a8c7658fc386fc4725f850d439b8e04fb951739abb5e22ff9dd2",
+   "current_sha256": "74c675c741c6fc34724fcf1190a6f870945666e5e35195aeb0dc1695f50fb46f",
+   "size": {
+    "baseline": [
+     1280,
+     800
+    ],
+    "current": [
+     1280,
+     800
+    ],
+    "compared": [
+     1280,
+     800
+    ]
+   },
+   "size_mismatch": false,
+   "changed_pixels": 1501,
+   "aa_pixels": 417,
+   "flaky_pixels": 0,
+   "ignored_pixels": 0,
+   "small_region_pixels": 0,
+   "regions": [
+    {
+     "bbox": [
+      24,
+      8,
+      120,
+      29
+     ],
+     "pixels": 1021,
+     "aa_pixels": 417,
+     "id": "R1"
+    },
+    {
+     "bbox": [
+      24,
+      48,
+      120,
+      4
+     ],
+     "pixels": 480,
+     "aa_pixels": 0,
+     "id": "R2"
+    }
+   ],
+   "flaky_regions": [],
+   "flaky_small_pixels": 0,
+   "diff_image": "examples/run/diffs/chromium/1280x800/about.diff.png"
+  },
+  {
+   "rel": "chromium/1280x800/contact.png",
+   "page": "contact",
+   "viewport": "1280x800",
+   "browser": "chromium",
+   "baseline": "examples/run/baseline/chromium/1280x800/contact.png",
+   "current": "examples/run/current/chromium/1280x800/contact.png",
+   "take2": "examples/run/current/chromium/1280x800/contact.take2.png",
+   "baseline_sha256": "0f3bc1a3953aa6ea0ec003c738502193e90f9d04d4fa865f50ca189af2a8f0ea",
+   "current_sha256": "0f3bc1a3953aa6ea0ec003c738502193e90f9d04d4fa865f50ca189af2a8f0ea",
+   "size": {
+    "baseline": [
+     1280,
+     800
+    ],
+    "current": [
+     1280,
+     800
+    ],
+    "compared": [
+     1280,
+     800
+    ]
+   },
+   "size_mismatch": false,
+   "changed_pixels": 0,
+   "aa_pixels": 0,
+   "flaky_pixels": 0,
+   "ignored_pixels": 0,
+   "small_region_pixels": 0,
+   "regions": [],
+   "flaky_regions": [],
+   "flaky_small_pixels": 0,
+   "diff_image": null
+  },
+  {
+   "rel": "chromium/1280x800/home.png",
+   "page": "home",
+   "viewport": "1280x800",
+   "browser": "chromium",
+   "baseline": "examples/run/baseline/chromium/1280x800/home.png",
+   "current": "examples/run/current/chromium/1280x800/home.png",
+   "take2": "examples/run/current/chromium/1280x800/home.take2.png",
+   "baseline_sha256": "adb07e6f7e39bd0cf12bdeccd7ca02ab6c060d3f761c9e80e134e529b2ab88dc",
+   "current_sha256": "c2f6cdb6d69fd78afd89a41e14405d765430c2e543cd898ce369c8868a3f49c4",
+   "size": {
+    "baseline": [
+     1280,
+     800
+    ],
+    "current": [
+     1280,
+     800
+    ],
+    "compared": [
+     1280,
+     800
+    ]
+   },
+   "size_mismatch": false,
+   "changed_pixels": 14922,
+   "aa_pixels": 8057,
+   "flaky_pixels": 2864,
+   "ignored_pixels": 0,
+   "small_region_pixels": 58,
+   "regions": [
+    {
+     "bbox": [
+      24,
+      8,
+      120,
+      29
+     ],
+     "pixels": 1021,
+     "aa_pixels": 417,
+     "id": "R1"
+    },
+    {
+     "bbox": [
+      24,
+      48,
+      120,
+      4
+     ],
+     "pixels": 480,
+     "aa_pixels": 0,
+     "id": "R2"
+    },
+    {
+     "bbox": [
+      24,
+      79,
+      246,
+      16
+     ],
+     "pixels": 883,
+     "aa_pixels": 726,
+     "id": "R3"
+    },
+    {
+     "bbox": [
+      65,
+      132,
+      62,
+      16
+     ],
+     "pixels": 34,
+     "aa_pixels": 18,
+     "id": "R4"
+    },
+    {
+     "bbox": [
+      65,
+      178,
+      232,
+      16
+     ],
+     "pixels": 646,
+     "aa_pixels": 914,
+     "id": "R5"
+    },
+    {
+     "bbox": [
+      25,
+      238,
+      152,
+      23
+     ],
+     "pixels": 942,
+     "aa_pixels": 626,
+     "id": "R6"
+    },
+    {
+     "bbox": [
+      0,
+      284,
+      1280,
+      147
+     ],
+     "pixels": 8783,
+     "aa_pixels": 4316,
+     "id": "R7"
+    },
+    {
+     "bbox": [
+      0,
+      443,
+      1280,
+      1
+     ],
+     "pixels": 1280,
+     "aa_pixels": 0,
+     "id": "R8"
+    },
+    {
+     "bbox": [
+      24,
+      462,
+      377,
+      15
+     ],
+     "pixels": 828,
+     "aa_pixels": 1007,
+     "id": "R9"
+    }
+   ],
+   "flaky_regions": [
+    {
+     "bbox": [
+      64,
+      132,
+      298,
+      20
+     ],
+     "pixels": 2616,
+     "aa_pixels": 0,
+     "id": "F1"
+    },
+    {
+     "bbox": [
+      366,
+      416,
+      35,
+      15
+     ],
+     "pixels": 248,
+     "aa_pixels": 0,
+     "id": "F2"
+    }
+   ],
+   "flaky_small_pixels": 0,
+   "diff_image": "examples/run/diffs/chromium/1280x800/home.diff.png"
+  },
+  {
+   "rel": "chromium/1280x800/product.png",
+   "page": "product",
+   "viewport": "1280x800",
+   "browser": "chromium",
+   "baseline": "examples/run/baseline/chromium/1280x800/product.png",
+   "current": "examples/run/current/chromium/1280x800/product.png",
+   "take2": "examples/run/current/chromium/1280x800/product.take2.png",
+   "baseline_sha256": "386e1b2280a574b77ab47daa149b2464bccf6b499ae65df974a7a2513c48321c",
+   "current_sha256": "e73abff6dbc49ab439699c0795db2ea7c7092042f8448af4c3fe61b5c326539c",
+   "size": {
+    "baseline": [
+     1280,
+     800
+    ],
+    "current": [
+     1280,
+     800
+    ],
+    "compared": [
+     1280,
+     800
+    ]
+   },
+   "size_mismatch": false,
+   "changed_pixels": 5441,
+   "aa_pixels": 633,
+   "flaky_pixels": 30,
+   "ignored_pixels": 0,
+   "small_region_pixels": 0,
+   "regions": [
+    {
+     "bbox": [
+      24,
+      8,
+      120,
+      29
+     ],
+     "pixels": 1021,
+     "aa_pixels": 417,
+     "id": "R1"
+    },
+    {
+     "bbox": [
+      24,
+      48,
+      120,
+      4
+     ],
+     "pixels": 480,
+     "aa_pixels": 0,
+     "id": "R2"
+    },
+    {
+     "bbox": [
+      46,
+      171,
+      12,
+      15
+     ],
+     "pixels": 44,
+     "aa_pixels": 60,
+     "id": "R3"
+    },
+    {
+     "bbox": [
+      24,
+      241,
+      113,
+      38
+     ],
+     "pixels": 3851,
+     "aa_pixels": 111,
+     "id": "R4"
+    },
+    {
+     "bbox": [
+      357,
+      322,
+      17,
+      12
+     ],
+     "pixels": 45,
+     "aa_pixels": 45,
+     "id": "R5"
+    }
+   ],
+   "flaky_regions": [
+    {
+     "bbox": [
+      366,
+      322,
+      8,
+      12
+     ],
+     "pixels": 30,
+     "aa_pixels": 0,
+     "id": "F1"
+    }
+   ],
+   "flaky_small_pixels": 0,
+   "diff_image": "examples/run/diffs/chromium/1280x800/product.diff.png"
+  },
+  {
+   "rel": "chromium/375x812/about.png",
+   "page": "about",
+   "viewport": "375x812",
+   "browser": "chromium",
+   "baseline": "examples/run/baseline/chromium/375x812/about.png",
+   "current": "examples/run/current/chromium/375x812/about.png",
+   "take2": "examples/run/current/chromium/375x812/about.take2.png",
+   "baseline_sha256": "37d5c4c77fd3fbac0521fc8f66b349e56e3bf9279b05d56aa482454ffbb3f924",
+   "current_sha256": "6772855cc1dd3c40f4d0a8fe718b640274af071c548e4046c2ab88dbededcfda",
+   "size": {
+    "baseline": [
+     417,
+     812
+    ],
+    "current": [
+     417,
+     812
+    ],
+    "compared": [
+     417,
+     812
+    ]
+   },
+   "size_mismatch": false,
+   "changed_pixels": 1425,
+   "aa_pixels": 407,
+   "flaky_pixels": 0,
+   "ignored_pixels": 0,
+   "small_region_pixels": 0,
+   "regions": [
+    {
+     "bbox": [
+      24,
+      8,
+      110,
+      29
+     ],
+     "pixels": 985,
+     "aa_pixels": 407,
+     "id": "R1"
+    },
+    {
+     "bbox": [
+      24,
+      48,
+      110,
+      4
+     ],
+     "pixels": 440,
+     "aa_pixels": 0,
+     "id": "R2"
+    }
+   ],
+   "flaky_regions": [],
+   "flaky_small_pixels": 0,
+   "diff_image": "examples/run/diffs/chromium/375x812/about.diff.png"
+  },
+  {
+   "rel": "chromium/375x812/contact.png",
+   "page": "contact",
+   "viewport": "375x812",
+   "browser": "chromium",
+   "baseline": "examples/run/baseline/chromium/375x812/contact.png",
+   "current": "examples/run/current/chromium/375x812/contact.png",
+   "take2": "examples/run/current/chromium/375x812/contact.take2.png",
+   "baseline_sha256": "590e1ee534b10a381bcf0be2ab974117bdef3f55b1c7eb575a7721a9bc27a7cc",
+   "current_sha256": "590e1ee534b10a381bcf0be2ab974117bdef3f55b1c7eb575a7721a9bc27a7cc",
+   "size": {
+    "baseline": [
+     375,
+     812
+    ],
+    "current": [
+     375,
+     812
+    ],
+    "compared": [
+     375,
+     812
+    ]
+   },
+   "size_mismatch": false,
+   "changed_pixels": 0,
+   "aa_pixels": 0,
+   "flaky_pixels": 0,
+   "ignored_pixels": 0,
+   "small_region_pixels": 0,
+   "regions": [],
+   "flaky_regions": [],
+   "flaky_small_pixels": 0,
+   "diff_image": null
+  },
+  {
+   "rel": "chromium/375x812/home.png",
+   "page": "home",
+   "viewport": "375x812",
+   "browser": "chromium",
+   "baseline": "examples/run/baseline/chromium/375x812/home.png",
+   "current": "examples/run/current/chromium/375x812/home.png",
+   "take2": "examples/run/current/chromium/375x812/home.take2.png",
+   "baseline_sha256": "08dfb0e0d364d9b1e66d8648049c6cfb65f80e558f184669db3d8e198bb809fc",
+   "current_sha256": "eb8c44c1694dcb122d0586f674f2a0d308410cf1d7540f005f46ee352f138f26",
+   "size": {
+    "baseline": [
+     417,
+     812
+    ],
+    "current": [
+     417,
+     812
+    ],
+    "compared": [
+     417,
+     812
+    ]
+   },
+   "size_mismatch": false,
+   "changed_pixels": 12816,
+   "aa_pixels": 8206,
+   "flaky_pixels": 2679,
+   "ignored_pixels": 0,
+   "small_region_pixels": 27,
+   "regions": [
+    {
+     "bbox": [
+      24,
+      8,
+      110,
+      29
+     ],
+     "pixels": 985,
+     "aa_pixels": 407,
+     "id": "R1"
+    },
+    {
+     "bbox": [
+      24,
+      48,
+      110,
+      4
+     ],
+     "pixels": 440,
+     "aa_pixels": 0,
+     "id": "R2"
+    },
+    {
+     "bbox": [
+      24,
+      79,
+      246,
+      16
+     ],
+     "pixels": 883,
+     "aa_pixels": 726,
+     "id": "R3"
+    },
+    {
+     "bbox": [
+      201,
+      132,
+      41,
+      16
+     ],
+     "pixels": 15,
+     "aa_pixels": 19,
+     "id": "R4"
+    },
+    {
+     "bbox": [
+      65,
+      133,
+      232,
+      61
+     ],
+     "pixels": 728,
+     "aa_pixels": 974,
+     "id": "R5"
+    },
+    {
+     "bbox": [
+      25,
+      238,
+      152,
+      23
+     ],
+     "pixels": 942,
+     "aa_pixels": 626,
+     "id": "R6"
+    },
+    {
+     "bbox": [
+      0,
+      284,
+      375,
+      363
+     ],
+     "pixels": 7981,
+     "aa_pixels": 4426,
+     "id": "R7"
+    },
+    {
+     "bbox": [
+      24,
+      660,
+      292,
+      33
+     ],
+     "pixels": 829,
+     "aa_pixels": 1014,
+     "id": "R8"
+    }
+   ],
+   "flaky_regions": [
+    {
+     "bbox": [
+      63,
+      132,
+      211,
+      46
+     ],
+     "pixels": 2609,
+     "aa_pixels": 0,
+     "id": "F1"
+    },
+    {
+     "bbox": [
+      69,
+      632,
+      8,
+      12
+     ],
+     "pixels": 70,
+     "aa_pixels": 0,
+     "id": "F2"
+    }
+   ],
+   "flaky_small_pixels": 0,
+   "diff_image": "examples/run/diffs/chromium/375x812/home.diff.png"
+  },
+  {
+   "rel": "chromium/375x812/product.png",
+   "page": "product",
+   "viewport": "375x812",
+   "browser": "chromium",
+   "baseline": "examples/run/baseline/chromium/375x812/product.png",
+   "current": "examples/run/current/chromium/375x812/product.png",
+   "take2": "examples/run/current/chromium/375x812/product.take2.png",
+   "baseline_sha256": "481a190ff1998138ac034a184335153ad5b861c90511c5580797102685cde895",
+   "current_sha256": "7421496d4010f474a3db6c47dfce7aca7de25e1e2433375fa369cf16c5c4dbef",
+   "size": {
+    "baseline": [
+     417,
+     812
+    ],
+    "current": [
+     417,
+     812
+    ],
+    "compared": [
+     417,
+     812
+    ]
+   },
+   "size_mismatch": false,
+   "changed_pixels": 5371,
+   "aa_pixels": 614,
+   "flaky_pixels": 71,
+   "ignored_pixels": 0,
+   "small_region_pixels": 0,
+   "regions": [
+    {
+     "bbox": [
+      24,
+      8,
+      110,
+      29
+     ],
+     "pixels": 985,
+     "aa_pixels": 407,
+     "id": "R1"
+    },
+    {
+     "bbox": [
+      24,
+      48,
+      110,
+      4
+     ],
+     "pixels": 440,
+     "aa_pixels": 0,
+     "id": "R2"
+    },
+    {
+     "bbox": [
+      46,
+      171,
+      12,
+      15
+     ],
+     "pixels": 44,
+     "aa_pixels": 60,
+     "id": "R3"
+    },
+    {
+     "bbox": [
+      24,
+      241,
+      113,
+      38
+     ],
+     "pixels": 3851,
+     "aa_pixels": 111,
+     "id": "R4"
+    },
+    {
+     "bbox": [
+      60,
+      340,
+      16,
+      12
+     ],
+     "pixels": 51,
+     "aa_pixels": 36,
+     "id": "R5"
+    }
+   ],
+   "flaky_regions": [
+    {
+     "bbox": [
+      69,
+      340,
+      8,
+      12
+     ],
+     "pixels": 71,
+     "aa_pixels": 0,
+     "id": "F1"
+    }
+   ],
+   "flaky_small_pixels": 0,
+   "diff_image": "examples/run/diffs/chromium/375x812/product.diff.png"
+  }
+ ],
+ "added": [],
+ "removed": []
+}

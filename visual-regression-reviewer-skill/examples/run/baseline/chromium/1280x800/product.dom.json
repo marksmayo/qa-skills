@@ -1,0 +1,233 @@
+{
+"elements": [
+{
+"sig": "html>body>header",
+"path": "html>body>header",
+"tag": "header",
+"text": "",
+"box": [
+0,
+0,
+1280,
+64
+],
+"color": "rgb(34, 34, 34)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>header>div.logo",
+"path": "html>body>header>div.logo",
+"tag": "div",
+"text": "STOREFRONT",
+"box": [
+24,
+8,
+120,
+40
+],
+"color": "rgb(255, 255, 255)",
+"background": "rgb(31, 95, 191)",
+"font": "700 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>header>nav",
+"path": "html>body>header>nav",
+"tag": "nav",
+"text": "",
+"box": [
+168,
+20,
+259,
+18
+],
+"color": "rgb(34, 34, 34)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>header>nav>a:nth-of-type(1)",
+"path": "html>body>header>nav>a",
+"tag": "a",
+"text": "Home",
+"box": [
+168,
+20,
+43,
+17
+],
+"color": "rgb(31, 95, 191)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>header>nav>a:nth-of-type(2)",
+"path": "html>body>header>nav>a",
+"tag": "a",
+"text": "Product",
+"box": [
+227,
+20,
+55,
+17
+],
+"color": "rgb(31, 95, 191)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>header>nav>a:nth-of-type(3)",
+"path": "html>body>header>nav>a",
+"tag": "a",
+"text": "About",
+"box": [
+298,
+20,
+42,
+17
+],
+"color": "rgb(31, 95, 191)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>header>nav>a:nth-of-type(4)",
+"path": "html>body>header>nav>a",
+"tag": "a",
+"text": "Contact",
+"box": [
+356,
+20,
+55,
+17
+],
+"color": "rgb(31, 95, 191)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>main",
+"path": "html>body>main",
+"tag": "main",
+"text": "",
+"box": [
+0,
+64,
+1280,
+239
+],
+"color": "rgb(34, 34, 34)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>main>h1",
+"path": "html>body>main>h1",
+"tag": "h1",
+"text": "Wool scarf",
+"box": [
+24,
+109,
+1232,
+37
+],
+"color": "rgb(34, 34, 34)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "700 32px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "#price",
+"path": "html>body>main>div#price",
+"tag": "div",
+"text": "$24.00",
+"box": [
+24,
+168,
+1232,
+23
+],
+"color": "rgb(34, 34, 34)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "700 20px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>main>p",
+"path": "html>body>main>p",
+"tag": "p",
+"text": "Merino wool, 180 cm. Knitted locally.",
+"box": [
+24,
+207,
+1232,
+18
+],
+"color": "rgb(34, 34, 34)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>main>button.buy",
+"path": "html>body>main>button.buy",
+"tag": "button",
+"text": "Add to cart",
+"box": [
+24,
+241,
+113,
+38
+],
+"color": "rgb(255, 255, 255)",
+"background": "rgb(31, 95, 191)",
+"font": "400 16px Arial",
+"image": null
+},
+{
+"sig": "html>body>footer",
+"path": "html>body>footer",
+"tag": "footer",
+"text": "Storefront (sample, invented). Local time:",
+"box": [
+0,
+303,
+1280,
+51
+],
+"color": "rgb(102, 102, 102)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "#clock",
+"path": "html>body>footer>span#clock",
+"tag": "span",
+"text": "9:13:03 pm",
+"box": [
+321,
+320,
+80,
+17
+],
+"color": "rgb(102, 102, 102)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+}
+],
+"fonts": "loaded",
+"scroll": [
+1280,
+800
+]
+}

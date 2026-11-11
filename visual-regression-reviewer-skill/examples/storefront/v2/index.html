@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Home - Storefront</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<header><div class="logo">STOREFRONT</div><nav><a href="index.html">Home</a><a href="product.html">Product</a><a href="about.html">About</a><a href="contact.html">Contact</a></nav></header>
+<main>
+<div class="carousel"><div class="slide">Autumn sale: 20% off knitwear</div><div class="slide">New: waxed cotton jackets</div><div class="slide">Gift cards now available</div><div class="slide">Free returns for 60 days</div></div>
+<script>var sl=document.querySelectorAll('.slide');sl[Math.floor(Date.now()/1500)%sl.length].classList.add('on');setInterval(function(){sl.forEach(function(e){e.classList.remove('on')});sl[Math.floor(Date.now()/1500)%sl.length].classList.add('on');},1500);</script>
+<h1>This week</h1><div class="grid"><div class="card"><div>Wool scarf</div><div class="price">$24.00</div></div><div class="card"><div>Canvas tote</div><div class="price">$18.00</div></div><div class="card"><div>Rain jacket</div><div class="price">$120.00</div></div></div></main>
+<footer>Storefront (sample, invented). Local time: <span id="clock"></span></footer>
+<script>function tick(){document.getElementById('clock').textContent=new Date().toLocaleTimeString('en-AU');}tick();setInterval(tick,1000);</script>
+</body></html>

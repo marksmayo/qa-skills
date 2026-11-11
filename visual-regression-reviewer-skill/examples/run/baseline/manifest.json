@@ -1,0 +1,119 @@
+{
+ "set": "baseline",
+ "base_url": "http://127.0.0.1:8143/",
+ "captured_at": "2026-11-11T08:13:01Z",
+ "takes": 1,
+ "browsers": {
+  "chromium": "158.0.8127.18"
+ },
+ "captures": [
+  {
+   "page": "home",
+   "viewport": "1280x800",
+   "browser": "chromium",
+   "take": 1,
+   "url": "http://127.0.0.1:8143/index.html",
+   "ok": true,
+   "status": 200,
+   "fonts": "loaded",
+   "error": null
+  },
+  {
+   "page": "home",
+   "viewport": "375x812",
+   "browser": "chromium",
+   "take": 1,
+   "url": "http://127.0.0.1:8143/index.html",
+   "ok": true,
+   "status": 200,
+   "fonts": "loaded",
+   "error": null
+  },
+  {
+   "page": "product",
+   "viewport": "1280x800",
+   "browser": "chromium",
+   "take": 1,
+   "url": "http://127.0.0.1:8143/product.html",
+   "ok": true,
+   "status": 200,
+   "fonts": "loaded",
+   "error": null
+  },
+  {
+   "page": "product",
+   "viewport": "375x812",
+   "browser": "chromium",
+   "take": 1,
+   "url": "http://127.0.0.1:8143/product.html",
+   "ok": true,
+   "status": 200,
+   "fonts": "loaded",
+   "error": null
+  },
+  {
+   "page": "about",
+   "viewport": "1280x800",
+   "browser": "chromium",
+   "take": 1,
+   "url": "http://127.0.0.1:8143/about.html",
+   "ok": true,
+   "status": 200,
+   "fonts": "loaded",
+   "error": null
+  },
+  {
+   "page": "about",
+   "viewport": "375x812",
+   "browser": "chromium",
+   "take": 1,
+   "url": "http://127.0.0.1:8143/about.html",
+   "ok": true,
+   "status": 200,
+   "fonts": "loaded",
+   "error": null
+  },
+  {
+   "page": "contact",
+   "viewport": "1280x800",
+   "browser": "chromium",
+   "take": 1,
+   "url": "http://127.0.0.1:8143/contact.html",
+   "ok": true,
+   "status": 200,
+   "fonts": "loaded",
+   "error": null
+  },
+  {
+   "page": "contact",
+   "viewport": "375x812",
+   "browser": "chromium",
+   "take": 1,
+   "url": "http://127.0.0.1:8143/contact.html",
+   "ok": true,
+   "status": 200,
+   "fonts": "loaded",
+   "error": null
+  }
+ ],
+ "files": {
+  "chromium/1280x800/about.dom.json": "c59cb2e02a04a68dc52f10f1e47db355695f25c8ee55aba599ebcfc8b79a6870",
+  "chromium/1280x800/about.png": "2a22e20f25f6a8c7658fc386fc4725f850d439b8e04fb951739abb5e22ff9dd2",
+  "chromium/1280x800/contact.dom.json": "a830d3736239b622ad2f7f4d53aa1ff8e780ff01eb71eb3b4356a6cd6260b318",
+  "chromium/1280x800/contact.png": "0f3bc1a3953aa6ea0ec003c738502193e90f9d04d4fa865f50ca189af2a8f0ea",
+  "chromium/1280x800/home.dom.json": "7d58cae9081f5eb25838a430fe5ef45c9d62e7a4e719f1de18a4367b26b79653",
+  "chromium/1280x800/home.png": "adb07e6f7e39bd0cf12bdeccd7ca02ab6c060d3f761c9e80e134e529b2ab88dc",
+  "chromium/1280x800/product.dom.json": "67a38ad3607deddbd41a43c9e54ba99f6a3999da6a174900e93493c2fddcfcc7",
+  "chromium/1280x800/product.png": "386e1b2280a574b77ab47daa149b2464bccf6b499ae65df974a7a2513c48321c",
+  "chromium/375x812/about.dom.json": "74202f045988c58c6faca2760686c5bea4b7f932d0856e54d1a375cd0bb94399",
+  "chromium/375x812/about.png": "37d5c4c77fd3fbac0521fc8f66b349e56e3bf9279b05d56aa482454ffbb3f924",
+  "chromium/375x812/contact.dom.json": "3f1d0575e0aa134124074e185c55e1515b6132e2b49568475a396dbabda31135",
+  "chromium/375x812/contact.png": "590e1ee534b10a381bcf0be2ab974117bdef3f55b1c7eb575a7721a9bc27a7cc",
+  "chromium/375x812/home.dom.json": "ea22aa18be2c28504360c970b3b46f7324db22796593b56959442c210d8a40b8",
+  "chromium/375x812/home.png": "08dfb0e0d364d9b1e66d8648049c6cfb65f80e558f184669db3d8e198bb809fc",
+  "chromium/375x812/product.dom.json": "fde69d9c41d0bcf959274ff77421d3c053c09e1613d05393e0d7fe0b596670d4",
+  "chromium/375x812/product.png": "481a190ff1998138ac034a184335153ad5b861c90511c5580797102685cde895"
+ },
+ "events": [],
+ "blocked_requests": []
+}

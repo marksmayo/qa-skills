@@ -1,0 +1,1231 @@
+{
+ "diff": "diff.json",
+ "threshold": 0.1,
+ "min_region_pixels": 20,
+ "groups": [
+  {
+   "cause": "layout_shift",
+   "impact": "medium",
+   "confidence": "high",
+   "reach": 2,
+   "review_score": 12,
+   "noise": false,
+   "element_sigs": [
+    "html>body>header>div.logo"
+   ],
+   "dom": "both",
+   "pages": [
+    "about",
+    "home",
+    "product"
+   ],
+   "viewports": [
+    "1280x800",
+    "375x812"
+   ],
+   "browsers": [
+    "chromium"
+   ],
+   "measure": {
+    "dx": 0,
+    "dy": 4,
+    "dw": 0,
+    "dh": 0
+   },
+   "dynamic_reason": null,
+   "pixels": 8778,
+   "aa_pixels": 2472,
+   "flaky_pixels": 0,
+   "instances": [
+    {
+     "pair": "chromium/1280x800/about.png",
+     "page": "about",
+     "viewport": "1280x800",
+     "browser": "chromium",
+     "pixels": 1501,
+     "aa_pixels": 417,
+     "flaky_pixels": 0,
+     "element_sigs": [
+      "html>body>header>div.logo"
+     ],
+     "boxes": {
+      "baseline": [
+       24,
+       8,
+       120,
+       40
+      ],
+      "current": [
+       24,
+       12,
+       120,
+       40
+      ]
+     },
+     "measure": {
+      "dx": 0,
+      "dy": 4,
+      "dw": 0,
+      "dh": 0
+     },
+     "dynamic_reason": null,
+     "original_cause": null
+    },
+    {
+     "pair": "chromium/1280x800/home.png",
+     "page": "home",
+     "viewport": "1280x800",
+     "browser": "chromium",
+     "pixels": 1501,
+     "aa_pixels": 417,
+     "flaky_pixels": 0,
+     "element_sigs": [
+      "html>body>header>div.logo"
+     ],
+     "boxes": {
+      "baseline": [
+       24,
+       8,
+       120,
+       40
+      ],
+      "current": [
+       24,
+       12,
+       120,
+       40
+      ]
+     },
+     "measure": {
+      "dx": 0,
+      "dy": 4,
+      "dw": 0,
+      "dh": 0
+     },
+     "dynamic_reason": null,
+     "original_cause": null
+    },
+    {
+     "pair": "chromium/1280x800/product.png",
+     "page": "product",
+     "viewport": "1280x800",
+     "browser": "chromium",
+     "pixels": 1501,
+     "aa_pixels": 417,
+     "flaky_pixels": 0,
+     "element_sigs": [
+      "html>body>header>div.logo"
+     ],
+     "boxes": {
+      "baseline": [
+       24,
+       8,
+       120,
+       40
+      ],
+      "current": [
+       24,
+       12,
+       120,
+       40
+      ]
+     },
+     "measure": {
+      "dx": 0,
+      "dy": 4,
+      "dw": 0,
+      "dh": 0
+     },
+     "dynamic_reason": null,
+     "original_cause": null
+    },
+    {
+     "pair": "chromium/375x812/about.png",
+     "page": "about",
+     "viewport": "375x812",
+     "browser": "chromium",
+     "pixels": 1425,
+     "aa_pixels": 407,
+     "flaky_pixels": 0,
+     "element_sigs": [
+      "html>body>header>div.logo"
+     ],
+     "boxes": {
+      "baseline": [
+       24,
+       8,
+       110,
+       40
+      ],
+      "current": [
+       24,
+       12,
+       110,
+       40
+      ]
+     },
+     "measure": {
+      "dx": 0,
+      "dy": 4,
+      "dw": 0,
+      "dh": 0
+     },
+     "dynamic_reason": null,
+     "original_cause": null
+    },
+    {
+     "pair": "chromium/375x812/home.png",
+     "page": "home",
+     "viewport": "375x812",
+     "browser": "chromium",
+     "pixels": 1425,
+     "aa_pixels": 407,
+     "flaky_pixels": 0,
+     "element_sigs": [
+      "html>body>header>div.logo"
+     ],
+     "boxes": {
+      "baseline": [
+       24,
+       8,
+       110,
+       40
+      ],
+      "current": [
+       24,
+       12,
+       110,
+       40
+      ]
+     },
+     "measure": {
+      "dx": 0,
+      "dy": 4,
+      "dw": 0,
+      "dh": 0
+     },
+     "dynamic_reason": null,
+     "original_cause": null
+    },
+    {
+     "pair": "chromium/375x812/product.png",
+     "page": "product",
+     "viewport": "375x812",
+     "browser": "chromium",
+     "pixels": 1425,
+     "aa_pixels": 407,
+     "flaky_pixels": 0,
+     "element_sigs": [
+      "html>body>header>div.logo"
+     ],
+     "boxes": {
+      "baseline": [
+       24,
+       8,
+       110,
+       40
+      ],
+      "current": [
+       24,
+       12,
+       110,
+       40
+      ]
+     },
+     "measure": {
+      "dx": 0,
+      "dy": 4,
+      "dw": 0,
+      "dh": 0
+     },
+     "dynamic_reason": null,
+     "original_cause": null
+    }
+   ],
+   "id": "G1",
+   "crops": [
+    {
+     "pair": "chromium/1280x800/about.png",
+     "box": [
+      8,
+      0,
+      152,
+      68
+     ],
+     "baseline": "G1-baseline.png",
+     "current": "G1-current.png",
+     "diff": "G1-diff.png"
+    }
+   ]
+  },
+  {
+   "cause": "layout_shift",
+   "impact": "high",
+   "confidence": "high",
+   "reach": 1,
+   "review_score": 9,
+   "noise": false,
+   "element_sigs": [
+    "html>body>main",
+    "html>body>footer"
+   ],
+   "dom": "both",
+   "pages": [
+    "home"
+   ],
+   "viewports": [
+    "1280x800",
+    "375x812"
+   ],
+   "browsers": [
+    "chromium"
+   ],
+   "measure": {
+    "dx": 0,
+    "dy": -46,
+    "dw": 0,
+    "dh": 0
+   },
+   "dynamic_reason": null,
+   "pixels": 19680,
+   "aa_pixels": 10411,
+   "flaky_pixels": 0,
+   "instances": [
+    {
+     "pair": "chromium/1280x800/home.png",
+     "page": "home",
+     "viewport": "1280x800",
+     "browser": "chromium",
+     "pixels": 10904,
+     "aa_pixels": 5199,
+     "flaky_pixels": 0,
+     "element_sigs": [
+      "html>body>main",
+      "html>body>footer"
+     ],
+     "boxes": {
+      "baseline": [
+       0,
+       110,
+       1280,
+       333
+      ],
+      "current": [
+       0,
+       64,
+       1280,
+       333
+      ]
+     },
+     "measure": {
+      "dx": 0,
+      "dy": -46,
+      "dw": 0,
+      "dh": 0
+     },
+     "dynamic_reason": null,
+     "original_cause": null
+    },
+    {
+     "pair": "chromium/375x812/home.png",
+     "page": "home",
+     "viewport": "375x812",
+     "browser": "chromium",
+     "pixels": 8776,
+     "aa_pixels": 5212,
+     "flaky_pixels": 0,
+     "element_sigs": [
+      "html>body>main",
+      "html>body>footer"
+     ],
+     "boxes": {
+      "baseline": [
+       0,
+       110,
+       375,
+       531
+      ],
+      "current": [
+       0,
+       64,
+       375,
+       531
+      ]
+     },
+     "measure": {
+      "dx": 0,
+      "dy": -46,
+      "dw": 0,
+      "dh": 0
+     },
+     "dynamic_reason": null,
+     "original_cause": null
+    }
+   ],
+   "id": "G2",
+   "crops": [
+    {
+     "pair": "chromium/1280x800/home.png",
+     "box": [
+      0,
+      48,
+      1280,
+      462
+     ],
+     "baseline": "G2-baseline.png",
+     "current": "G2-current.png",
+     "diff": "G2-diff.png"
+    }
+   ]
+  },
+  {
+   "cause": "missing_element",
+   "impact": "high",
+   "confidence": "high",
+   "reach": 1,
+   "review_score": 9,
+   "noise": false,
+   "element_sigs": [
+    "html>body>div.banner"
+   ],
+   "dom": "both",
+   "pages": [
+    "home"
+   ],
+   "viewports": [
+    "1280x800",
+    "375x812"
+   ],
+   "browsers": [
+    "chromium"
+   ],
+   "measure": {
+    "text_before": "Free delivery on orders over $50"
+   },
+   "dynamic_reason": null,
+   "pixels": 1766,
+   "aa_pixels": 1452,
+   "flaky_pixels": 0,
+   "instances": [
+    {
+     "pair": "chromium/1280x800/home.png",
+     "page": "home",
+     "viewport": "1280x800",
+     "browser": "chromium",
+     "pixels": 883,
+     "aa_pixels": 726,
+     "flaky_pixels": 0,
+     "element_sigs": [
+      "html>body>div.banner"
+     ],
+     "boxes": {
+      "baseline": [
+       0,
+       64,
+       1280,
+       46
+      ],
+      "current": null
+     },
+     "measure": {
+      "text_before": "Free delivery on orders over $50"
+     },
+     "dynamic_reason": null,
+     "original_cause": null
+    },
+    {
+     "pair": "chromium/375x812/home.png",
+     "page": "home",
+     "viewport": "375x812",
+     "browser": "chromium",
+     "pixels": 883,
+     "aa_pixels": 726,
+     "flaky_pixels": 0,
+     "element_sigs": [
+      "html>body>div.banner"
+     ],
+     "boxes": {
+      "baseline": [
+       0,
+       64,
+       375,
+       46
+      ],
+      "current": null
+     },
+     "measure": {
+      "text_before": "Free delivery on orders over $50"
+     },
+     "dynamic_reason": null,
+     "original_cause": null
+    }
+   ],
+   "id": "G3",
+   "crops": [
+    {
+     "pair": "chromium/1280x800/home.png",
+     "box": [
+      0,
+      48,
+      1280,
+      78
+     ],
+     "baseline": "G3-baseline.png",
+     "current": "G3-current.png",
+     "diff": "G3-diff.png"
+    }
+   ]
+  },
+  {
+   "cause": "colour_change",
+   "impact": "medium",
+   "confidence": "high",
+   "reach": 1,
+   "review_score": 6,
+   "noise": false,
+   "element_sigs": [
+    "html>body>main>button.buy"
+   ],
+   "dom": "both",
+   "pages": [
+    "product"
+   ],
+   "viewports": [
+    "1280x800",
+    "375x812"
+   ],
+   "browsers": [
+    "chromium"
+   ],
+   "measure": {
+    "property": "background",
+    "colour_before": "rgb(31, 95, 191)",
+    "colour_after": "rgb(31, 143, 79)"
+   },
+   "dynamic_reason": null,
+   "pixels": 7702,
+   "aa_pixels": 222,
+   "flaky_pixels": 0,
+   "instances": [
+    {
+     "pair": "chromium/1280x800/product.png",
+     "page": "product",
+     "viewport": "1280x800",
+     "browser": "chromium",
+     "pixels": 3851,
+     "aa_pixels": 111,
+     "flaky_pixels": 0,
+     "element_sigs": [
+      "html>body>main>button.buy"
+     ],
+     "boxes": {
+      "baseline": [
+       24,
+       241,
+       113,
+       38
+      ],
+      "current": [
+       24,
+       241,
+       113,
+       38
+      ]
+     },
+     "measure": {
+      "property": "background",
+      "colour_before": "rgb(31, 95, 191)",
+      "colour_after": "rgb(31, 143, 79)"
+     },
+     "dynamic_reason": null,
+     "original_cause": null
+    },
+    {
+     "pair": "chromium/375x812/product.png",
+     "page": "product",
+     "viewport": "375x812",
+     "browser": "chromium",
+     "pixels": 3851,
+     "aa_pixels": 111,
+     "flaky_pixels": 0,
+     "element_sigs": [
+      "html>body>main>button.buy"
+     ],
+     "boxes": {
+      "baseline": [
+       24,
+       241,
+       113,
+       38
+      ],
+      "current": [
+       24,
+       241,
+       113,
+       38
+      ]
+     },
+     "measure": {
+      "property": "background",
+      "colour_before": "rgb(31, 95, 191)",
+      "colour_after": "rgb(31, 143, 79)"
+     },
+     "dynamic_reason": null,
+     "original_cause": null
+    }
+   ],
+   "id": "G4",
+   "crops": [
+    {
+     "pair": "chromium/1280x800/product.png",
+     "box": [
+      8,
+      225,
+      145,
+      70
+     ],
+     "baseline": "G4-baseline.png",
+     "current": "G4-current.png",
+     "diff": "G4-diff.png"
+    }
+   ]
+  },
+  {
+   "cause": "text_change",
+   "impact": "medium",
+   "confidence": "high",
+   "reach": 1,
+   "review_score": 6,
+   "noise": false,
+   "element_sigs": [
+    "#price"
+   ],
+   "dom": "both",
+   "pages": [
+    "product"
+   ],
+   "viewports": [
+    "1280x800",
+    "375x812"
+   ],
+   "browsers": [
+    "chromium"
+   ],
+   "measure": {
+    "text_before": "$24.00",
+    "text_after": "$26.00"
+   },
+   "dynamic_reason": null,
+   "pixels": 88,
+   "aa_pixels": 120,
+   "flaky_pixels": 0,
+   "instances": [
+    {
+     "pair": "chromium/1280x800/product.png",
+     "page": "product",
+     "viewport": "1280x800",
+     "browser": "chromium",
+     "pixels": 44,
+     "aa_pixels": 60,
+     "flaky_pixels": 0,
+     "element_sigs": [
+      "#price"
+     ],
+     "boxes": {
+      "baseline": [
+       24,
+       168,
+       1232,
+       23
+      ],
+      "current": [
+       24,
+       168,
+       1232,
+       23
+      ]
+     },
+     "measure": {
+      "text_before": "$24.00",
+      "text_after": "$26.00"
+     },
+     "dynamic_reason": null,
+     "original_cause": null
+    },
+    {
+     "pair": "chromium/375x812/product.png",
+     "page": "product",
+     "viewport": "375x812",
+     "browser": "chromium",
+     "pixels": 44,
+     "aa_pixels": 60,
+     "flaky_pixels": 0,
+     "element_sigs": [
+      "#price"
+     ],
+     "boxes": {
+      "baseline": [
+       24,
+       168,
+       327,
+       23
+      ],
+      "current": [
+       24,
+       168,
+       327,
+       23
+      ]
+     },
+     "measure": {
+      "text_before": "$24.00",
+      "text_after": "$26.00"
+     },
+     "dynamic_reason": null,
+     "original_cause": null
+    }
+   ],
+   "id": "G5",
+   "crops": [
+    {
+     "pair": "chromium/1280x800/product.png",
+     "box": [
+      8,
+      152,
+      1264,
+      55
+     ],
+     "baseline": "G5-baseline.png",
+     "current": "G5-current.png",
+     "diff": "G5-diff.png"
+    }
+   ]
+  },
+  {
+   "cause": "dynamic_content",
+   "impact": "low",
+   "confidence": "high",
+   "reach": 2,
+   "review_score": 6,
+   "noise": true,
+   "element_sigs": [
+    "#clock"
+   ],
+   "dom": "both",
+   "pages": [
+    "home",
+    "product"
+   ],
+   "viewports": [
+    "1280x800",
+    "375x812"
+   ],
+   "browsers": [
+    "chromium"
+   ],
+   "measure": {
+    "text_before": "9:13:01 pm",
+    "text_after": "9:13:11 pm"
+   },
+   "dynamic_reason": "its text looks like a time, date or counter",
+   "pixels": 713,
+   "aa_pixels": 899,
+   "flaky_pixels": 411,
+   "instances": [
+    {
+     "pair": "chromium/1280x800/home.png",
+     "page": "home",
+     "viewport": "1280x800",
+     "browser": "chromium",
+     "pixels": 285,
+     "aa_pixels": 357,
+     "flaky_pixels": 240,
+     "element_sigs": [
+      "#clock"
+     ],
+     "boxes": {
+      "baseline": [
+       321,
+       460,
+       80,
+       17
+      ],
+      "current": [
+       321,
+       414,
+       79,
+       17
+      ]
+     },
+     "measure": {
+      "text_before": "9:13:01 pm",
+      "text_after": "9:13:11 pm"
+     },
+     "dynamic_reason": "its text looks like a time, date or counter",
+     "original_cause": "text_change"
+    },
+    {
+     "pair": "chromium/1280x800/product.png",
+     "page": "product",
+     "viewport": "1280x800",
+     "browser": "chromium",
+     "pixels": 45,
+     "aa_pixels": 45,
+     "flaky_pixels": 30,
+     "element_sigs": [
+      "#clock"
+     ],
+     "boxes": {
+      "baseline": [
+       321,
+       320,
+       80,
+       17
+      ],
+      "current": [
+       321,
+       320,
+       80,
+       17
+      ]
+     },
+     "measure": {
+      "text_before": "9:13:03 pm",
+      "text_after": "9:13:15 pm"
+     },
+     "dynamic_reason": "most of its changed pixels are where the two current takes differ",
+     "original_cause": "text_change"
+    },
+    {
+     "pair": "chromium/375x812/home.png",
+     "page": "home",
+     "viewport": "375x812",
+     "browser": "chromium",
+     "pixels": 332,
+     "aa_pixels": 461,
+     "flaky_pixels": 70,
+     "element_sigs": [
+      "#clock"
+     ],
+     "boxes": {
+      "baseline": [
+       24,
+       676,
+       80,
+       17
+      ],
+      "current": [
+       24,
+       630,
+       80,
+       17
+      ]
+     },
+     "measure": {
+      "text_before": "9:13:02 pm",
+      "text_after": "9:13:13 pm"
+     },
+     "dynamic_reason": "its text looks like a time, date or counter",
+     "original_cause": "text_change"
+    },
+    {
+     "pair": "chromium/375x812/product.png",
+     "page": "product",
+     "viewport": "375x812",
+     "browser": "chromium",
+     "pixels": 51,
+     "aa_pixels": 36,
+     "flaky_pixels": 71,
+     "element_sigs": [
+      "#clock"
+     ],
+     "boxes": {
+      "baseline": [
+       24,
+       338,
+       80,
+       17
+      ],
+      "current": [
+       24,
+       338,
+       80,
+       17
+      ]
+     },
+     "measure": {
+      "text_before": "9:13:04 pm",
+      "text_after": "9:13:17 pm"
+     },
+     "dynamic_reason": "most of its changed pixels are where the two current takes differ",
+     "original_cause": "text_change"
+    }
+   ],
+   "id": "G6",
+   "crops": [
+    {
+     "pair": "chromium/1280x800/home.png",
+     "box": [
+      305,
+      398,
+      112,
+      95
+     ],
+     "baseline": "G6-baseline.png",
+     "current": "G6-current.png",
+     "diff": "G6-diff.png"
+    }
+   ]
+  },
+  {
+   "cause": "dynamic_content",
+   "impact": "low",
+   "confidence": "high",
+   "reach": 1,
+   "review_score": 3,
+   "noise": true,
+   "element_sigs": [
+    "html>body>main>div.carousel>div.slide"
+   ],
+   "dom": "both",
+   "pages": [
+    "home"
+   ],
+   "viewports": [
+    "1280x800",
+    "375x812"
+   ],
+   "browsers": [
+    "chromium"
+   ],
+   "measure": {
+    "text_before": "Gift cards now available"
+   },
+   "dynamic_reason": "a sibling of the same kind changes between the two current takes (a rotating set)",
+   "pixels": 2749,
+   "aa_pixels": 2758,
+   "flaky_pixels": 5225,
+   "instances": [
+    {
+     "pair": "chromium/1280x800/home.png",
+     "page": "home",
+     "viewport": "1280x800",
+     "browser": "chromium",
+     "pixels": 1346,
+     "aa_pixels": 1351,
+     "flaky_pixels": 2474,
+     "element_sigs": [
+      "html>body>main>div.carousel>div.slide:nth-of-type(3)"
+     ],
+     "boxes": {
+      "baseline": [
+       24,
+       134,
+       1232,
+       120
+      ],
+      "current": null
+     },
+     "measure": {
+      "text_before": "Gift cards now available"
+     },
+     "dynamic_reason": "a sibling of the same kind changes between the two current takes (a rotating set)",
+     "original_cause": "missing_element"
+    },
+    {
+     "pair": "chromium/1280x800/home.png",
+     "page": "home",
+     "viewport": "1280x800",
+     "browser": "chromium",
+     "pixels": 3,
+     "aa_pixels": 7,
+     "flaky_pixels": 142,
+     "element_sigs": [
+      "html>body>main>div.carousel>div.slide:nth-of-type(4)"
+     ],
+     "boxes": {
+      "baseline": null,
+      "current": [
+       24,
+       88,
+       1232,
+       120
+      ]
+     },
+     "measure": {
+      "text_after": "Free returns for 60 days"
+     },
+     "dynamic_reason": "most of its changed pixels are where the two current takes differ",
+     "original_cause": "new_element"
+    },
+    {
+     "pair": "chromium/375x812/home.png",
+     "page": "home",
+     "viewport": "375x812",
+     "browser": "chromium",
+     "pixels": 1400,
+     "aa_pixels": 1396,
+     "flaky_pixels": 2499,
+     "element_sigs": [
+      "html>body>main>div.carousel>div.slide:nth-of-type(3)"
+     ],
+     "boxes": {
+      "baseline": [
+       24,
+       134,
+       327,
+       120
+      ],
+      "current": null
+     },
+     "measure": {
+      "text_before": "Gift cards now available"
+     },
+     "dynamic_reason": "a sibling of the same kind changes between the two current takes (a rotating set)",
+     "original_cause": "missing_element"
+    },
+    {
+     "pair": "chromium/375x812/home.png",
+     "page": "home",
+     "viewport": "375x812",
+     "browser": "chromium",
+     "pixels": 0,
+     "aa_pixels": 4,
+     "flaky_pixels": 110,
+     "element_sigs": [
+      "html>body>main>div.carousel>div.slide:nth-of-type(1)"
+     ],
+     "boxes": {
+      "baseline": null,
+      "current": [
+       24,
+       88,
+       327,
+       120
+      ]
+     },
+     "measure": {
+      "text_after": "Autumn sale: 20% off knitwear"
+     },
+     "dynamic_reason": "most of its changed pixels are where the two current takes differ",
+     "original_cause": "new_element"
+    }
+   ],
+   "id": "G7",
+   "crops": [
+    {
+     "pair": "chromium/1280x800/home.png",
+     "box": [
+      8,
+      118,
+      1264,
+      152
+     ],
+     "baseline": "G7-baseline.png",
+     "current": "G7-current.png",
+     "diff": "G7-diff.png"
+    }
+   ]
+  }
+ ],
+ "unchanged": [
+  {
+   "pair": "chromium/1280x800/contact.png",
+   "flaky_pixels": 0
+  },
+  {
+   "pair": "chromium/375x812/contact.png",
+   "flaky_pixels": 0
+  }
+ ],
+ "added": [],
+ "removed": [],
+ "untested": [],
+ "totals": [
+  {
+   "pair": "chromium/1280x800/about.png",
+   "changed_pixels": 1501,
+   "aa_pixels": 417,
+   "flaky_pixels": 0,
+   "ungrouped_pixels": 0,
+   "ungrouped_flaky_pixels": 0,
+   "size_mismatch": false,
+   "size": {
+    "baseline": [
+     1280,
+     800
+    ],
+    "current": [
+     1280,
+     800
+    ],
+    "compared": [
+     1280,
+     800
+    ]
+   }
+  },
+  {
+   "pair": "chromium/1280x800/contact.png",
+   "changed_pixels": 0,
+   "aa_pixels": 0,
+   "flaky_pixels": 0,
+   "ungrouped_pixels": 0,
+   "ungrouped_flaky_pixels": 0,
+   "size_mismatch": false,
+   "size": {
+    "baseline": [
+     1280,
+     800
+    ],
+    "current": [
+     1280,
+     800
+    ],
+    "compared": [
+     1280,
+     800
+    ]
+   }
+  },
+  {
+   "pair": "chromium/1280x800/home.png",
+   "changed_pixels": 14922,
+   "aa_pixels": 8057,
+   "flaky_pixels": 2864,
+   "ungrouped_pixels": 0,
+   "ungrouped_flaky_pixels": 8,
+   "size_mismatch": false,
+   "size": {
+    "baseline": [
+     1280,
+     800
+    ],
+    "current": [
+     1280,
+     800
+    ],
+    "compared": [
+     1280,
+     800
+    ]
+   }
+  },
+  {
+   "pair": "chromium/1280x800/product.png",
+   "changed_pixels": 5441,
+   "aa_pixels": 633,
+   "flaky_pixels": 30,
+   "ungrouped_pixels": 0,
+   "ungrouped_flaky_pixels": 0,
+   "size_mismatch": false,
+   "size": {
+    "baseline": [
+     1280,
+     800
+    ],
+    "current": [
+     1280,
+     800
+    ],
+    "compared": [
+     1280,
+     800
+    ]
+   }
+  },
+  {
+   "pair": "chromium/375x812/about.png",
+   "changed_pixels": 1425,
+   "aa_pixels": 407,
+   "flaky_pixels": 0,
+   "ungrouped_pixels": 0,
+   "ungrouped_flaky_pixels": 0,
+   "size_mismatch": false,
+   "size": {
+    "baseline": [
+     417,
+     812
+    ],
+    "current": [
+     417,
+     812
+    ],
+    "compared": [
+     417,
+     812
+    ]
+   }
+  },
+  {
+   "pair": "chromium/375x812/contact.png",
+   "changed_pixels": 0,
+   "aa_pixels": 0,
+   "flaky_pixels": 0,
+   "ungrouped_pixels": 0,
+   "ungrouped_flaky_pixels": 0,
+   "size_mismatch": false,
+   "size": {
+    "baseline": [
+     375,
+     812
+    ],
+    "current": [
+     375,
+     812
+    ],
+    "compared": [
+     375,
+     812
+    ]
+   }
+  },
+  {
+   "pair": "chromium/375x812/home.png",
+   "changed_pixels": 12816,
+   "aa_pixels": 8206,
+   "flaky_pixels": 2679,
+   "ungrouped_pixels": 0,
+   "ungrouped_flaky_pixels": 0,
+   "size_mismatch": false,
+   "size": {
+    "baseline": [
+     417,
+     812
+    ],
+    "current": [
+     417,
+     812
+    ],
+    "compared": [
+     417,
+     812
+    ]
+   }
+  },
+  {
+   "pair": "chromium/375x812/product.png",
+   "changed_pixels": 5371,
+   "aa_pixels": 614,
+   "flaky_pixels": 71,
+   "ungrouped_pixels": 0,
+   "ungrouped_flaky_pixels": 0,
+   "size_mismatch": false,
+   "size": {
+    "baseline": [
+     417,
+     812
+    ],
+    "current": [
+     417,
+     812
+    ],
+    "compared": [
+     417,
+     812
+    ]
+   }
+  }
+ ],
+ "crops_manifest": "crops/manifest.json"
+}

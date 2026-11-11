@@ -1,6 +1,6 @@
 # Design: `visual-regression-reviewer-skill`
 
-Status: Designed; not built. Build order: 18.
+Status: Built (v1.0.0). Build order: 18.
 
 ## Mission
 
@@ -167,3 +167,31 @@ Agreed with the user before the build.
 1. **Read Playwright `toHaveScreenshot` failure folders?** Yes.
 2. **Compare production with staging?** Only with `authorised_by`.
 3. **Write accepted baselines?** Only on explicit request, from the decisions in `review.md`.
+
+## As built (v1.0.0)
+
+Where the build differs from the design above, and what the example showed.
+
+- **Element changes come from the DOM first, pixels second.** `attribute.py` compares the two DOM
+  snapshots by signature (outermost missing or new elements, outermost shifts with children that
+  moved with them dropped, and one change per shared shift delta), then gives every changed pixel to
+  the change owning the smallest box containing it. What no change explains is grouped by region.
+  This is what makes every pixel accountable.
+- **Captures record a full ancestry path** besides the signature, because an id-anchored signature
+  (`#clock`) loses its parent; nesting uses the path.
+- **Dynamic content** is a change with half or more of its pixels within 8 px of flaky pixels, time-
+  or date-like text, or a missing/new member of a rotating set whose sibling is dynamic (a
+  carousel). A rotating set is one group. The first rule version (any overlap with a flaky region)
+  wrongly classed a whole shifted `main` as dynamic because it contained the carousel.
+- **`png_io.py` has its own decoder** with fast paths for the None, Sub and Up filters; a 1280x800
+  screenshot decodes in about 0.15 s, and the eight-pair example diffs in about 4 s.
+- **`apply_review.py`** overwrites a baseline only when every group on that pair, noise included,
+  is ticked accept; it is never run by the skill on its own.
+- **Not built:** BackstopJS and Storybook folder layouts (use `compare` mode with two directories),
+  device scale factors from Playwright's device list, and text-truncation detection for impact.
+- **Example results** (Chromium 158, two viewports, four pages): 7 groups: the logo shift (6 pairs),
+  the banner removal and the 46 px shift it causes, the button colour, the price text (judged likely
+  unintended against the PR), and the clock and carousel as dynamic noise; the contact page is
+  unchanged; 5,644 flaky pixels excluded.
+- **Testing:** 18 of 18 seeded review violations are caught; `apply_review.py --dry-run` with no
+  ticks keeps every baseline.

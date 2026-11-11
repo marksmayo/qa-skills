@@ -1,0 +1,185 @@
+{
+"elements": [
+{
+"sig": "html>body>header",
+"path": "html>body>header",
+"tag": "header",
+"text": "",
+"box": [
+0,
+0,
+375,
+64
+],
+"color": "rgb(34, 34, 34)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>header>div.logo",
+"path": "html>body>header>div.logo",
+"tag": "div",
+"text": "STOREFRONT",
+"box": [
+24,
+12,
+110,
+40
+],
+"color": "rgb(255, 255, 255)",
+"background": "rgb(31, 95, 191)",
+"font": "700 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>header>nav",
+"path": "html>body>header>nav",
+"tag": "nav",
+"text": "",
+"box": [
+158,
+20,
+259,
+18
+],
+"color": "rgb(34, 34, 34)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>header>nav>a:nth-of-type(1)",
+"path": "html>body>header>nav>a",
+"tag": "a",
+"text": "Home",
+"box": [
+158,
+20,
+43,
+17
+],
+"color": "rgb(31, 95, 191)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>header>nav>a:nth-of-type(2)",
+"path": "html>body>header>nav>a",
+"tag": "a",
+"text": "Product",
+"box": [
+217,
+20,
+55,
+17
+],
+"color": "rgb(31, 95, 191)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>header>nav>a:nth-of-type(3)",
+"path": "html>body>header>nav>a",
+"tag": "a",
+"text": "About",
+"box": [
+288,
+20,
+42,
+17
+],
+"color": "rgb(31, 95, 191)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>header>nav>a:nth-of-type(4)",
+"path": "html>body>header>nav>a",
+"tag": "a",
+"text": "Contact",
+"box": [
+346,
+20,
+55,
+17
+],
+"color": "rgb(31, 95, 191)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>main",
+"path": "html>body>main",
+"tag": "main",
+"text": "",
+"box": [
+0,
+64,
+375,
+180
+],
+"color": "rgb(34, 34, 34)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>main>h1",
+"path": "html>body>main>h1",
+"tag": "h1",
+"text": "About us",
+"box": [
+24,
+109,
+327,
+37
+],
+"color": "rgb(34, 34, 34)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "700 32px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>main>p",
+"path": "html>body>main>p",
+"tag": "p",
+"text": "A small shop selling things that last. Everything here is invented for the example.",
+"box": [
+24,
+168,
+327,
+36
+],
+"color": "rgb(34, 34, 34)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>footer",
+"path": "html>body>footer",
+"tag": "footer",
+"text": "Storefront (sample, invented).",
+"box": [
+0,
+244,
+375,
+51
+],
+"color": "rgb(102, 102, 102)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+}
+],
+"fonts": "loaded",
+"scroll": [
+417,
+812
+]
+}

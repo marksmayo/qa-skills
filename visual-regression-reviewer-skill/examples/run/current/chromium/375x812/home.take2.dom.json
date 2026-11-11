@@ -1,0 +1,377 @@
+{
+"elements": [
+{
+"sig": "html>body>header",
+"path": "html>body>header",
+"tag": "header",
+"text": "",
+"box": [
+0,
+0,
+375,
+64
+],
+"color": "rgb(34, 34, 34)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>header>div.logo",
+"path": "html>body>header>div.logo",
+"tag": "div",
+"text": "STOREFRONT",
+"box": [
+24,
+12,
+110,
+40
+],
+"color": "rgb(255, 255, 255)",
+"background": "rgb(31, 95, 191)",
+"font": "700 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>header>nav",
+"path": "html>body>header>nav",
+"tag": "nav",
+"text": "",
+"box": [
+158,
+20,
+259,
+18
+],
+"color": "rgb(34, 34, 34)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>header>nav>a:nth-of-type(1)",
+"path": "html>body>header>nav>a",
+"tag": "a",
+"text": "Home",
+"box": [
+158,
+20,
+43,
+17
+],
+"color": "rgb(31, 95, 191)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>header>nav>a:nth-of-type(2)",
+"path": "html>body>header>nav>a",
+"tag": "a",
+"text": "Product",
+"box": [
+217,
+20,
+55,
+17
+],
+"color": "rgb(31, 95, 191)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>header>nav>a:nth-of-type(3)",
+"path": "html>body>header>nav>a",
+"tag": "a",
+"text": "About",
+"box": [
+288,
+20,
+42,
+17
+],
+"color": "rgb(31, 95, 191)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>header>nav>a:nth-of-type(4)",
+"path": "html>body>header>nav>a",
+"tag": "a",
+"text": "Contact",
+"box": [
+346,
+20,
+55,
+17
+],
+"color": "rgb(31, 95, 191)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>main",
+"path": "html>body>main",
+"tag": "main",
+"text": "",
+"box": [
+0,
+64,
+375,
+531
+],
+"color": "rgb(34, 34, 34)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>main>div.carousel",
+"path": "html>body>main>div.carousel",
+"tag": "div",
+"text": "",
+"box": [
+24,
+88,
+327,
+120
+],
+"color": "rgb(34, 34, 34)",
+"background": "rgb(243, 243, 243)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>main>div.carousel>div.slide:nth-of-type(2)",
+"path": "html>body>main>div.carousel>div.slide",
+"tag": "div",
+"text": "New: waxed cotton jackets",
+"box": [
+24,
+88,
+327,
+120
+],
+"color": "rgb(34, 34, 34)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 22px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>main>h1",
+"path": "html>body>main>h1",
+"tag": "h1",
+"text": "This week",
+"box": [
+24,
+232,
+327,
+37
+],
+"color": "rgb(34, 34, 34)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "700 32px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>main>div.grid",
+"path": "html>body>main>div.grid",
+"tag": "div",
+"text": "",
+"box": [
+24,
+290,
+327,
+281
+],
+"color": "rgb(34, 34, 34)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>main>div.grid>div.card:nth-of-type(1)",
+"path": "html>body>main>div.grid>div.card",
+"tag": "div",
+"text": "",
+"box": [
+24,
+290,
+200,
+83
+],
+"color": "rgb(34, 34, 34)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>main>div.grid>div.card:nth-of-type(1)>div",
+"path": "html>body>main>div.grid>div.card>div",
+"tag": "div",
+"text": "Wool scarf",
+"box": [
+37,
+303,
+174,
+18
+],
+"color": "rgb(34, 34, 34)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>main>div.grid>div.card:nth-of-type(1)>div.price",
+"path": "html>body>main>div.grid>div.card>div.price",
+"tag": "div",
+"text": "$24.00",
+"box": [
+37,
+329,
+174,
+23
+],
+"color": "rgb(34, 34, 34)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "700 20px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>main>div.grid>div.card:nth-of-type(2)",
+"path": "html>body>main>div.grid>div.card",
+"tag": "div",
+"text": "",
+"box": [
+24,
+389,
+200,
+83
+],
+"color": "rgb(34, 34, 34)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>main>div.grid>div.card:nth-of-type(2)>div",
+"path": "html>body>main>div.grid>div.card>div",
+"tag": "div",
+"text": "Canvas tote",
+"box": [
+37,
+402,
+174,
+18
+],
+"color": "rgb(34, 34, 34)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>main>div.grid>div.card:nth-of-type(2)>div.price",
+"path": "html>body>main>div.grid>div.card>div.price",
+"tag": "div",
+"text": "$18.00",
+"box": [
+37,
+428,
+174,
+23
+],
+"color": "rgb(34, 34, 34)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "700 20px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>main>div.grid>div.card:nth-of-type(3)",
+"path": "html>body>main>div.grid>div.card",
+"tag": "div",
+"text": "",
+"box": [
+24,
+488,
+200,
+83
+],
+"color": "rgb(34, 34, 34)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>main>div.grid>div.card:nth-of-type(3)>div",
+"path": "html>body>main>div.grid>div.card>div",
+"tag": "div",
+"text": "Rain jacket",
+"box": [
+37,
+501,
+174,
+18
+],
+"color": "rgb(34, 34, 34)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>main>div.grid>div.card:nth-of-type(3)>div.price",
+"path": "html>body>main>div.grid>div.card>div.price",
+"tag": "div",
+"text": "$120.00",
+"box": [
+37,
+527,
+174,
+23
+],
+"color": "rgb(34, 34, 34)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "700 20px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "html>body>footer",
+"path": "html>body>footer",
+"tag": "footer",
+"text": "Storefront (sample, invented). Local time:",
+"box": [
+0,
+595,
+375,
+69
+],
+"color": "rgb(102, 102, 102)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+},
+{
+"sig": "#clock",
+"path": "html>body>footer>span#clock",
+"tag": "span",
+"text": "9:13:14 pm",
+"box": [
+24,
+630,
+80,
+17
+],
+"color": "rgb(102, 102, 102)",
+"background": "rgba(0, 0, 0, 0)",
+"font": "400 16px Arial, Helvetica, sans-serif",
+"image": null
+}
+],
+"fonts": "loaded",
+"scroll": [
+417,
+812
+]
+}

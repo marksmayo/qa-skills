@@ -215,6 +215,16 @@ python performance-budget-auditor-skill/scripts/fetch_assets.py --check
 
 Re-measuring needs Playwright with Chromium and Firefox, web-vitals in the cache (`fetch_assets.py`), and the site on loopback (`python performance-budget-auditor-skill/examples/bakery/serve.py`, which refuses a busy port); run `commands.sh` from `performance-budget-auditor-skill/`. Lab numbers depend on the machine, so a rerun changes every value and invalidates the report until it is rebuilt.
 
+Visual regression reviewer (`examples/storefront/` holds two versions of a small shop with planted changes, `examples/change_context.md` the PR description; `examples/run/` is a real run, listed in `examples/run/commands.sh`, with captures, DOM boxes, diff images and crops; the validator checks groups against `groups.json`, crop hashes, and that every changed pixel is accounted for):
+
+```bash
+python visual-regression-reviewer-skill/scripts/validate_review.py visual-regression-reviewer-skill/examples/review.example.json --groups visual-regression-reviewer-skill/examples/run/groups.json --diff visual-regression-reviewer-skill/examples/run/diff.json
+python visual-regression-reviewer-skill/scripts/render_report.py visual-regression-reviewer-skill/examples/review.example.json [--brief]
+python visual-regression-reviewer-skill/scripts/attribute.py visual-regression-reviewer-skill/examples/run/diff.json --pair chromium/1280x800/home.png
+```
+
+`diff.json` records image paths relative to `visual-regression-reviewer-skill/`, so run `group.py` and `attribute.py` from there. Re-capturing needs Playwright with Chromium and both versions on loopback (`commands.sh` starts them); the clock and carousel make every capture differ slightly, so a rerun changes the pixel counts and invalidates the review until it is rebuilt.
+
 Shared files:
 
 ```bash
