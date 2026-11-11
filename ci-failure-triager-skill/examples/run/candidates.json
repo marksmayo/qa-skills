@@ -1,0 +1,323 @@
+{
+ "run_id": 109,
+ "candidates": [
+  {
+   "id": "X01",
+   "failure": {
+    "job": "unit",
+    "job_id": 5101,
+    "step": "Run python -m pytest --junitxml=junit.xml",
+    "kind": "test",
+    "test_id": "tests.test_booking::test_sample_booking_is_open",
+    "test_file": "tests/test_booking.py",
+    "failure_type": "assertion",
+    "message": "AssertionError: sample booking TW-1001 sails 2026-11-10, which is in the past",
+    "frames": [
+     {
+      "file": "tests/test_booking.py",
+      "line": 15
+     }
+    ],
+    "log_excerpt": {
+     "path": "logs/5101.txt",
+     "lines": [
+      {
+       "n": 26,
+       "text": "_________________________ test_sample_booking_is_open _________________________"
+      },
+      {
+       "n": 27,
+       "text": "tests/test_booking.py:15: in test_sample_booking_is_open"
+      },
+      {
+       "n": 28,
+       "text": "    assert is_open(sailing), f\"sample booking {booking['ref']} sails {sailing}, which is in the past\""
+      },
+      {
+       "n": 29,
+       "text": "E   AssertionError: sample booking TW-1001 sails 2026-11-10, which is in the past"
+      },
+      {
+       "n": 30,
+       "text": "E   assert False"
+      },
+      {
+       "n": 31,
+       "text": "E    +  where False = is_open(datetime.date(2026, 11, 10))"
+      }
+     ]
+    },
+    "id": "X01"
+   },
+   "classification": "data",
+   "confidence": "indicated",
+   "rule": "data signature DATA-EXPIRED (a date in the test data); date 2026-11-10 before the run date 2026-11-12",
+   "signals": {
+    "signatures": [
+     {
+      "id": "DATA-EXPIRED",
+      "class": "data",
+      "names": "a date in the test data",
+      "line": null,
+      "text": "AssertionError: sample booking TW-1001 sails 2026-11-10, which is in the past"
+     }
+    ],
+    "date_markers": [
+     "2026-11-10"
+    ],
+    "run_date": "2026-11-12",
+    "rerun": "failed",
+    "rerun_attempt": 2,
+    "history_same_commit": [],
+    "history_passed_same_commit": false,
+    "step_kind": "test",
+    "failure_type": "assertion"
+   },
+   "owning_change": {
+    "status": "identified",
+    "commit": "902084eac0c8662ec0ab80516002b49654c18e57",
+    "subject": "Add sample bookings fixture",
+    "score": 5,
+    "files_shared": [
+     {
+      "file": "tests/fixtures/bookings.json",
+      "why": "data file the test reads"
+     },
+     {
+      "file": "tests/test_booking.py",
+      "why": "traceback frame"
+     }
+    ],
+    "ties": [],
+    "others": [],
+    "files_considered": [
+     "tests/fixtures/bookings.json",
+     "tests/test_booking.py",
+     "tidewater/__init__.py",
+     "tidewater/booking.py"
+    ]
+   }
+  },
+  {
+   "id": "X02",
+   "failure": {
+    "job": "unit",
+    "job_id": 5101,
+    "step": "Run python -m pytest --junitxml=junit.xml",
+    "kind": "test",
+    "test_id": "tests.test_fares::test_fare_rounds_half_up",
+    "test_file": "tests/test_fares.py",
+    "failure_type": "assertion",
+    "message": "AssertionError: assert Decimal('12.12') == Decimal('12.13')",
+    "frames": [
+     {
+      "file": "tests/test_fares.py",
+      "line": 12
+     }
+    ],
+    "log_excerpt": {
+     "path": "logs/5101.txt",
+     "lines": [
+      {
+       "n": 32,
+       "text": "__________________________ test_fare_rounds_half_up ___________________________"
+      },
+      {
+       "n": 33,
+       "text": "tests/test_fares.py:12: in test_fare_rounds_half_up"
+      },
+      {
+       "n": 34,
+       "text": "    assert fare(Decimal(\"24.25\"), discount_pct=50) == Decimal(\"12.13\")"
+      },
+      {
+       "n": 35,
+       "text": "E   AssertionError: assert Decimal('12.12') == Decimal('12.13')"
+      },
+      {
+       "n": 36,
+       "text": "E    +  where Decimal('12.12') = fare(Decimal('24.25'), discount_pct=50)"
+      },
+      {
+       "n": 37,
+       "text": "E    +    where Decimal('24.25') = Decimal('24.25')"
+      },
+      {
+       "n": 38,
+       "text": "E    +  and   Decimal('12.13') = Decimal('12.13')"
+      }
+     ]
+    },
+    "id": "X02"
+   },
+   "classification": "real",
+   "confidence": "confirmed",
+   "rule": "failed again on re-run on the same commit",
+   "signals": {
+    "signatures": [],
+    "date_markers": [],
+    "run_date": "2026-11-12",
+    "rerun": "failed",
+    "rerun_attempt": 2,
+    "history_same_commit": [],
+    "history_passed_same_commit": false,
+    "step_kind": "test",
+    "failure_type": "assertion"
+   },
+   "owning_change": {
+    "status": "identified",
+    "commit": "613509c84ff974d24ff6b3cb2099e816aa64cdac",
+    "subject": "Use banker's rounding for fares",
+    "score": 2,
+    "files_shared": [
+     {
+      "file": "tidewater/fares.py",
+      "why": "module the test imports"
+     }
+    ],
+    "ties": [],
+    "others": [],
+    "files_considered": [
+     "tests/test_fares.py",
+     "tidewater/__init__.py",
+     "tidewater/fares.py"
+    ]
+   }
+  },
+  {
+   "id": "X03",
+   "failure": {
+    "job": "unit",
+    "job_id": 5101,
+    "step": "Run python -m pytest --junitxml=junit.xml",
+    "kind": "test",
+    "test_id": "tests.test_slots::test_pick_two_gives_two_different_slots",
+    "test_file": "tests/test_slots.py",
+    "failure_type": "assertion",
+    "message": "AssertionError: assert 'A4' != 'A4'",
+    "frames": [
+     {
+      "file": "tests/test_slots.py",
+      "line": 6
+     }
+    ],
+    "log_excerpt": {
+     "path": "logs/5101.txt",
+     "lines": [
+      {
+       "n": 39,
+       "text": "___________________ test_pick_two_gives_two_different_slots ___________________"
+      },
+      {
+       "n": 40,
+       "text": "tests/test_slots.py:6: in test_pick_two_gives_two_different_slots"
+      },
+      {
+       "n": 41,
+       "text": "    assert a != b"
+      },
+      {
+       "n": 42,
+       "text": "E   AssertionError: assert 'A4' != 'A4'"
+      }
+     ]
+    },
+    "id": "X03"
+   },
+   "classification": "flaky",
+   "confidence": "confirmed",
+   "rule": "failed and passed on the same commit (re-run)",
+   "signals": {
+    "signatures": [],
+    "date_markers": [],
+    "run_date": "2026-11-12",
+    "rerun": "passed",
+    "rerun_attempt": 2,
+    "history_same_commit": [],
+    "history_passed_same_commit": false,
+    "step_kind": "test",
+    "failure_type": "assertion"
+   },
+   "owning_change": {
+    "status": "not_identified",
+    "basis": "no commit in 3 commit(s) since the last green run touches the files of this failure",
+    "files_considered": [
+     "tests/test_slots.py",
+     "tidewater/__init__.py",
+     "tidewater/slots.py"
+    ]
+   }
+  },
+  {
+   "id": "X04",
+   "failure": {
+    "job": "install-check",
+    "job_id": 5102,
+    "step": "Install internal pricing package",
+    "kind": "step",
+    "test_id": null,
+    "test_file": null,
+    "failure_type": "step",
+    "message": "ERROR: Could not find a version that satisfies the requirement tidewater-internal-pricing==2.1 (from versions: none)",
+    "frames": [],
+    "log_excerpt": {
+     "path": "logs/5102.txt",
+     "lines": [
+      {
+       "n": 8,
+       "text": "##[endgroup]"
+      },
+      {
+       "n": 9,
+       "text": "Looking in indexes: http://127.0.0.1:9/simple/"
+      },
+      {
+       "n": 10,
+       "text": "ERROR: Could not find a version that satisfies the requirement tidewater-internal-pricing==2.1 (from versions: none)"
+      },
+      {
+       "n": 11,
+       "text": "ERROR: No matching distribution found for tidewater-internal-pricing==2.1"
+      },
+      {
+       "n": 12,
+       "text": "##[error]Process completed with exit code 1."
+      },
+      {
+       "n": 13,
+       "text": ""
+      }
+     ]
+    },
+    "id": "X04"
+   },
+   "classification": "environment",
+   "confidence": "indicated",
+   "rule": "environment signature ENV-REGISTRY (package registry)",
+   "signals": {
+    "signatures": [
+     {
+      "id": "ENV-REGISTRY",
+      "class": "environment",
+      "names": "package registry",
+      "line": null,
+      "text": "ERROR: Could not find a version that satisfies the requirement tidewater-internal-pricing==2.1 (from versions: none)"
+     }
+    ],
+    "date_markers": [],
+    "run_date": "2026-11-12",
+    "rerun": "failed",
+    "rerun_attempt": 2,
+    "history_same_commit": [],
+    "history_passed_same_commit": false,
+    "step_kind": "setup",
+    "failure_type": "step"
+   },
+   "owning_change": {
+    "status": "not_identified",
+    "basis": "no commit in 3 commit(s) since the last green run touches the files of this failure",
+    "files_considered": []
+   }
+  }
+ ]
+}

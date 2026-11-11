@@ -1,0 +1,64 @@
+{
+ "records": [
+  {
+   "id": "stage-1",
+   "parentId": null,
+   "type": "Stage",
+   "name": "Build",
+   "state": "completed",
+   "result": "failed",
+   "attempt": 1,
+   "log": null
+  },
+  {
+   "id": "job-unit",
+   "parentId": "stage-1",
+   "type": "Job",
+   "name": "unit",
+   "state": "completed",
+   "result": "failed",
+   "attempt": 1,
+   "log": {
+    "id": 5
+   }
+  },
+  {
+   "id": "task-pytest",
+   "parentId": "job-unit",
+   "type": "Task",
+   "name": "pytest",
+   "order": 3,
+   "state": "completed",
+   "result": "failed",
+   "attempt": 1,
+   "log": {
+    "id": 7
+   }
+  },
+  {
+   "id": "job-install",
+   "parentId": "stage-1",
+   "type": "Job",
+   "name": "install-check",
+   "state": "completed",
+   "result": "failed",
+   "attempt": 1,
+   "log": {
+    "id": 8
+   }
+  },
+  {
+   "id": "task-install",
+   "parentId": "job-install",
+   "type": "Task",
+   "name": "Install internal pricing package",
+   "order": 2,
+   "state": "completed",
+   "result": "failed",
+   "attempt": 1,
+   "log": {
+    "id": 9
+   }
+  }
+ ]
+}

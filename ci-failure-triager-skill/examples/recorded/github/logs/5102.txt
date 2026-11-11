@@ -1,0 +1,12 @@
+2026-11-12T03:10:00.0000000Z ##[group]Runner Image
+2026-11-12T03:10:00.0000137Z Image: ubuntu-24.04
+2026-11-12T03:10:00.0000274Z ##[endgroup]
+2026-11-12T03:10:00.0000411Z ##[group]Run actions/checkout@v5
+2026-11-12T03:10:00.0000548Z ##[endgroup]
+2026-11-12T03:10:00.0000685Z ##[group]Run pip install --index-url http://127.0.0.1:9/simple/ tidewater-internal-pricing==2.1
+2026-11-12T03:10:00.0000822Z pip install --index-url http://127.0.0.1:9/simple/ tidewater-internal-pricing==2.1
+2026-11-12T03:10:00.0000959Z ##[endgroup]
+2026-11-12T03:10:00.0001096Z Looking in indexes: http://127.0.0.1:9/simple/
+2026-11-12T03:10:00.0001233Z ERROR: Could not find a version that satisfies the requirement tidewater-internal-pricing==2.1 (from versions: none)
+2026-11-12T03:10:00.0001370Z ERROR: No matching distribution found for tidewater-internal-pricing==2.1
+2026-11-12T03:10:00.0001507Z ##[error]Process completed with exit code 1.

@@ -1,0 +1,181 @@
+{
+ "run_id": 109,
+ "attempt": 1,
+ "failures": [
+  {
+   "job": "unit",
+   "job_id": 5101,
+   "step": "Run python -m pytest --junitxml=junit.xml",
+   "kind": "test",
+   "test_id": "tests.test_booking::test_sample_booking_is_open",
+   "test_file": "tests/test_booking.py",
+   "failure_type": "assertion",
+   "message": "AssertionError: sample booking TW-1001 sails 2026-11-10, which is in the past",
+   "frames": [
+    {
+     "file": "tests/test_booking.py",
+     "line": 15
+    }
+   ],
+   "log_excerpt": {
+    "path": "logs/5101.txt",
+    "lines": [
+     {
+      "n": 26,
+      "text": "_________________________ test_sample_booking_is_open _________________________"
+     },
+     {
+      "n": 27,
+      "text": "tests/test_booking.py:15: in test_sample_booking_is_open"
+     },
+     {
+      "n": 28,
+      "text": "    assert is_open(sailing), f\"sample booking {booking['ref']} sails {sailing}, which is in the past\""
+     },
+     {
+      "n": 29,
+      "text": "E   AssertionError: sample booking TW-1001 sails 2026-11-10, which is in the past"
+     },
+     {
+      "n": 30,
+      "text": "E   assert False"
+     },
+     {
+      "n": 31,
+      "text": "E    +  where False = is_open(datetime.date(2026, 11, 10))"
+     }
+    ]
+   },
+   "id": "X01"
+  },
+  {
+   "job": "unit",
+   "job_id": 5101,
+   "step": "Run python -m pytest --junitxml=junit.xml",
+   "kind": "test",
+   "test_id": "tests.test_fares::test_fare_rounds_half_up",
+   "test_file": "tests/test_fares.py",
+   "failure_type": "assertion",
+   "message": "AssertionError: assert Decimal('12.12') == Decimal('12.13')",
+   "frames": [
+    {
+     "file": "tests/test_fares.py",
+     "line": 12
+    }
+   ],
+   "log_excerpt": {
+    "path": "logs/5101.txt",
+    "lines": [
+     {
+      "n": 32,
+      "text": "__________________________ test_fare_rounds_half_up ___________________________"
+     },
+     {
+      "n": 33,
+      "text": "tests/test_fares.py:12: in test_fare_rounds_half_up"
+     },
+     {
+      "n": 34,
+      "text": "    assert fare(Decimal(\"24.25\"), discount_pct=50) == Decimal(\"12.13\")"
+     },
+     {
+      "n": 35,
+      "text": "E   AssertionError: assert Decimal('12.12') == Decimal('12.13')"
+     },
+     {
+      "n": 36,
+      "text": "E    +  where Decimal('12.12') = fare(Decimal('24.25'), discount_pct=50)"
+     },
+     {
+      "n": 37,
+      "text": "E    +    where Decimal('24.25') = Decimal('24.25')"
+     },
+     {
+      "n": 38,
+      "text": "E    +  and   Decimal('12.13') = Decimal('12.13')"
+     }
+    ]
+   },
+   "id": "X02"
+  },
+  {
+   "job": "unit",
+   "job_id": 5101,
+   "step": "Run python -m pytest --junitxml=junit.xml",
+   "kind": "test",
+   "test_id": "tests.test_slots::test_pick_two_gives_two_different_slots",
+   "test_file": "tests/test_slots.py",
+   "failure_type": "assertion",
+   "message": "AssertionError: assert 'A4' != 'A4'",
+   "frames": [
+    {
+     "file": "tests/test_slots.py",
+     "line": 6
+    }
+   ],
+   "log_excerpt": {
+    "path": "logs/5101.txt",
+    "lines": [
+     {
+      "n": 39,
+      "text": "___________________ test_pick_two_gives_two_different_slots ___________________"
+     },
+     {
+      "n": 40,
+      "text": "tests/test_slots.py:6: in test_pick_two_gives_two_different_slots"
+     },
+     {
+      "n": 41,
+      "text": "    assert a != b"
+     },
+     {
+      "n": 42,
+      "text": "E   AssertionError: assert 'A4' != 'A4'"
+     }
+    ]
+   },
+   "id": "X03"
+  },
+  {
+   "job": "install-check",
+   "job_id": 5102,
+   "step": "Install internal pricing package",
+   "kind": "step",
+   "test_id": null,
+   "test_file": null,
+   "failure_type": "step",
+   "message": "ERROR: Could not find a version that satisfies the requirement tidewater-internal-pricing==2.1 (from versions: none)",
+   "frames": [],
+   "log_excerpt": {
+    "path": "logs/5102.txt",
+    "lines": [
+     {
+      "n": 8,
+      "text": "##[endgroup]"
+     },
+     {
+      "n": 9,
+      "text": "Looking in indexes: http://127.0.0.1:9/simple/"
+     },
+     {
+      "n": 10,
+      "text": "ERROR: Could not find a version that satisfies the requirement tidewater-internal-pricing==2.1 (from versions: none)"
+     },
+     {
+      "n": 11,
+      "text": "ERROR: No matching distribution found for tidewater-internal-pricing==2.1"
+     },
+     {
+      "n": 12,
+      "text": "##[error]Process completed with exit code 1."
+     },
+     {
+      "n": 13,
+      "text": ""
+     }
+    ]
+   },
+   "id": "X04"
+  }
+ ]
+}

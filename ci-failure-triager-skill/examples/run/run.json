@@ -1,0 +1,203 @@
+{
+ "system": "github",
+ "repo": "example-org/tidewater",
+ "run": {
+  "id": 109,
+  "url": "https://github.com/example-org/tidewater/actions/runs/109",
+  "attempt": 2,
+  "commit": "5a2cbd7d7a4721c95f4f74bb945675fbb3c9b769",
+  "branch": "main",
+  "event": "push",
+  "started_at": "2026-11-12T03:10:00Z",
+  "conclusion": "failure",
+  "workflow": ".github/workflows/ci.yml"
+ },
+ "attempts": [
+  {
+   "n": 1,
+   "started_at": "2026-11-12T03:10:00Z",
+   "jobs": [
+    {
+     "id": 5101,
+     "name": "unit",
+     "conclusion": "failure",
+     "url": "https://github.com/example-org/tidewater/actions/runs/109/job/5101",
+     "steps": [
+      {
+       "number": 1,
+       "name": "Set up job",
+       "conclusion": "success"
+      },
+      {
+       "number": 2,
+       "name": "Run actions/checkout@v5",
+       "conclusion": "success"
+      },
+      {
+       "number": 3,
+       "name": "Run actions/setup-python@v6",
+       "conclusion": "success"
+      },
+      {
+       "number": 4,
+       "name": "Run pip install pytest",
+       "conclusion": "success"
+      },
+      {
+       "number": 5,
+       "name": "Run python -m pytest --junitxml=junit.xml",
+       "conclusion": "failure"
+      },
+      {
+       "number": 6,
+       "name": "Run actions/upload-artifact@v5",
+       "conclusion": "success"
+      },
+      {
+       "number": 7,
+       "name": "Complete job",
+       "conclusion": "success"
+      }
+     ],
+     "log": "logs/5101.txt",
+     "junit": [
+      "junit/1/junit-unit/junit.xml"
+     ]
+    },
+    {
+     "id": 5102,
+     "name": "install-check",
+     "conclusion": "failure",
+     "url": "https://github.com/example-org/tidewater/actions/runs/109/job/5102",
+     "steps": [
+      {
+       "number": 1,
+       "name": "Set up job",
+       "conclusion": "success"
+      },
+      {
+       "number": 2,
+       "name": "Run actions/checkout@v5",
+       "conclusion": "success"
+      },
+      {
+       "number": 3,
+       "name": "Install internal pricing package",
+       "conclusion": "failure"
+      },
+      {
+       "number": 4,
+       "name": "Complete job",
+       "conclusion": "success"
+      }
+     ],
+     "log": "logs/5102.txt",
+     "junit": []
+    }
+   ]
+  },
+  {
+   "n": 2,
+   "started_at": "2026-11-12T03:40:00Z",
+   "jobs": [
+    {
+     "id": 5201,
+     "name": "unit",
+     "conclusion": "failure",
+     "url": "https://github.com/example-org/tidewater/actions/runs/109/job/5201",
+     "steps": [
+      {
+       "number": 1,
+       "name": "Set up job",
+       "conclusion": "success"
+      },
+      {
+       "number": 2,
+       "name": "Run actions/checkout@v5",
+       "conclusion": "success"
+      },
+      {
+       "number": 3,
+       "name": "Run actions/setup-python@v6",
+       "conclusion": "success"
+      },
+      {
+       "number": 4,
+       "name": "Run pip install pytest",
+       "conclusion": "success"
+      },
+      {
+       "number": 5,
+       "name": "Run python -m pytest --junitxml=junit.xml",
+       "conclusion": "failure"
+      },
+      {
+       "number": 6,
+       "name": "Run actions/upload-artifact@v5",
+       "conclusion": "success"
+      },
+      {
+       "number": 7,
+       "name": "Complete job",
+       "conclusion": "success"
+      }
+     ],
+     "log": "logs/5201.txt",
+     "junit": [
+      "junit/2/junit-unit/junit.xml"
+     ]
+    },
+    {
+     "id": 5202,
+     "name": "install-check",
+     "conclusion": "failure",
+     "url": "https://github.com/example-org/tidewater/actions/runs/109/job/5202",
+     "steps": [
+      {
+       "number": 1,
+       "name": "Set up job",
+       "conclusion": "success"
+      },
+      {
+       "number": 2,
+       "name": "Run actions/checkout@v5",
+       "conclusion": "success"
+      },
+      {
+       "number": 3,
+       "name": "Install internal pricing package",
+       "conclusion": "failure"
+      },
+      {
+       "number": 4,
+       "name": "Complete job",
+       "conclusion": "success"
+      }
+     ],
+     "log": "logs/5202.txt",
+     "junit": []
+    }
+   ]
+  }
+ ],
+ "history": [
+  {
+   "id": 109,
+   "commit": "5a2cbd7d7a4721c95f4f74bb945675fbb3c9b769",
+   "conclusion": "failure",
+   "started_at": "2026-11-12T03:10:00Z"
+  },
+  {
+   "id": 101,
+   "commit": "1e537ac23f72913514214744dcf1bae69cddab0c",
+   "conclusion": "success",
+   "started_at": "2026-11-09T01:20:00Z"
+  }
+ ],
+ "last_green": {
+  "id": 101,
+  "commit": "1e537ac23f72913514214744dcf1bae69cddab0c"
+ },
+ "source": "recorded",
+ "fetched_from": "../recorded/github"
+}

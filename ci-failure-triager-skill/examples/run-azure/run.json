@@ -1,0 +1,74 @@
+{
+ "system": "azure",
+ "repo": "tidewater",
+ "run": {
+  "id": 2207,
+  "url": "https://dev.azure.com/example-org/tidewater/_build/results?buildId=2207",
+  "attempt": 1,
+  "commit": "5a2cbd7d7a4721c95f4f74bb945675fbb3c9b769",
+  "branch": "main",
+  "event": "individualCI",
+  "started_at": "2026-11-12T03:10:00Z",
+  "conclusion": "failure",
+  "workflow": "tidewater-ci"
+ },
+ "attempts": [
+  {
+   "n": 1,
+   "jobs": [
+    {
+     "id": "job-unit",
+     "name": "unit",
+     "conclusion": "failure",
+     "url": "https://dev.azure.com/example-org/tidewater/_build/results?buildId=2207",
+     "steps": [
+      {
+       "number": 1,
+       "name": "pytest",
+       "conclusion": "failure"
+      }
+     ],
+     "log": "logs/job-unit.txt",
+     "junit": [
+      "junit/1/junit-unit/junit.xml"
+     ]
+    },
+    {
+     "id": "job-install",
+     "name": "install-check",
+     "conclusion": "failure",
+     "url": "https://dev.azure.com/example-org/tidewater/_build/results?buildId=2207",
+     "steps": [
+      {
+       "number": 1,
+       "name": "Install internal pricing package",
+       "conclusion": "failure"
+      }
+     ],
+     "log": "logs/job-install.txt",
+     "junit": []
+    }
+   ]
+  }
+ ],
+ "history": [
+  {
+   "id": 2207,
+   "commit": "5a2cbd7d7a4721c95f4f74bb945675fbb3c9b769",
+   "conclusion": "failure",
+   "started_at": "2026-11-12T03:10:00Z"
+  },
+  {
+   "id": 2201,
+   "commit": "1e537ac23f72913514214744dcf1bae69cddab0c",
+   "conclusion": "success",
+   "started_at": "2026-11-09T01:20:00Z"
+  }
+ ],
+ "last_green": {
+  "id": 2201,
+  "commit": "1e537ac23f72913514214744dcf1bae69cddab0c"
+ },
+ "source": "recorded",
+ "fetched_from": "../recorded/azure"
+}

@@ -1,0 +1,379 @@
+{
+ "schema_version": "1.0.0",
+ "skill": {
+  "name": "ci-failure-triager",
+  "version": "1.0.0"
+ },
+ "generated_at": "2026-11-12T04:05:00Z",
+ "run": {
+  "system": "github",
+  "repo": "example-org/tidewater",
+  "id": 109,
+  "url": "https://github.com/example-org/tidewater/actions/runs/109",
+  "attempt": 2,
+  "commit": "5a2cbd7d7a4721c95f4f74bb945675fbb3c9b769",
+  "branch": "main",
+  "event": "push",
+  "started_at": "2026-11-12T03:10:00Z",
+  "last_green": {
+   "id": 101,
+   "commit": "1e537ac23f72913514214744dcf1bae69cddab0c"
+  },
+  "source": "recorded"
+ },
+ "reruns": [
+  {
+   "run_id": 109,
+   "from_attempt": 1,
+   "new_attempt": 2,
+   "jobs_rerun": [
+    "unit",
+    "install-check"
+   ],
+   "jobs_failed_before": [
+    "unit",
+    "install-check"
+   ],
+   "authorised_by": "Repository owner, allow_rerun in the task",
+   "mode": "recorded",
+   "at": "2026-11-12T03:40:00Z",
+   "outcomes": {
+    "unit": "failure",
+    "install-check": "failure"
+   }
+  }
+ ],
+ "failures": [
+  {
+   "id": "X01",
+   "job": "unit",
+   "job_id": 5101,
+   "step": "Run python -m pytest --junitxml=junit.xml",
+   "kind": "test",
+   "test_id": "tests.test_booking::test_sample_booking_is_open",
+   "message": "AssertionError: sample booking TW-1001 sails 2026-11-10, which is in the past",
+   "classification": "data",
+   "confidence": "indicated",
+   "rule": "data signature DATA-EXPIRED (a date in the test data); date 2026-11-10 before the run date 2026-11-12",
+   "signals": {
+    "signatures": [
+     {
+      "id": "DATA-EXPIRED",
+      "line": null,
+      "names": "a date in the test data"
+     }
+    ],
+    "date_markers": [
+     "2026-11-10"
+    ],
+    "rerun": "failed",
+    "rerun_attempt": 2,
+    "history_same_commit": [],
+    "step_kind": "test"
+   },
+   "log_excerpt": {
+    "path": "logs/5101.txt",
+    "lines": [
+     {
+      "n": 26,
+      "text": "_________________________ test_sample_booking_is_open _________________________"
+     },
+     {
+      "n": 27,
+      "text": "tests/test_booking.py:15: in test_sample_booking_is_open"
+     },
+     {
+      "n": 28,
+      "text": "    assert is_open(sailing), f\"sample booking {booking['ref']} sails {sailing}, which is in the past\""
+     },
+     {
+      "n": 29,
+      "text": "E   AssertionError: sample booking TW-1001 sails 2026-11-10, which is in the past"
+     },
+     {
+      "n": 30,
+      "text": "E   assert False"
+     },
+     {
+      "n": 31,
+      "text": "E    +  where False = is_open(datetime.date(2026, 11, 10))"
+     }
+    ]
+   },
+   "owning_change": {
+    "status": "identified",
+    "commit": "902084eac0c8662ec0ab80516002b49654c18e57",
+    "subject": "Add sample bookings fixture",
+    "files_shared": [
+     {
+      "file": "tests/fixtures/bookings.json",
+      "why": "data file the test reads"
+     },
+     {
+      "file": "tests/test_booking.py",
+      "why": "traceback frame"
+     }
+    ]
+   },
+   "priority": null,
+   "next_action": "Fix the test data: give the sample booking a sailing date relative to the run (today + 7 days), or pass a fixed today to is_open(). Not a product bug.",
+   "draft_defect": {
+    "kind": "test_data_issue",
+    "title": "Sample booking TW-1001 in tests/fixtures/bookings.json sails 2026-11-10, now in the past",
+    "body": {
+     "summary": "tests.test_booking::test_sample_booking_is_open reads the fixture added in 902084ea and asserts the booking is open. Its sailing date is fixed at 2026-11-10, so the test has failed since that date passed (the run date is 2026-11-12). The product check is_open() behaves as written.",
+     "steps": [
+      "git checkout 5a2cbd7d7a47",
+      "python -m pytest tests/test_booking.py::test_sample_booking_is_open"
+     ],
+     "expected": "The sample booking is open (a sailing date after the run date)",
+     "actual": "AssertionError: sample booking TW-1001 sails 2026-11-10, which is in the past",
+     "evidence": [
+      "logs/5101.txt lines 26-31 (attempt 1)",
+      "Re-run attempt 2: failed",
+      "https://github.com/example-org/tidewater/actions/runs/109"
+     ],
+     "suspect_commit": {
+      "commit": "902084eac0c8662ec0ab80516002b49654c18e57",
+      "subject": "Add sample bookings fixture",
+      "files_shared": [
+       {
+        "file": "tests/fixtures/bookings.json",
+        "why": "data file the test reads"
+       },
+       {
+        "file": "tests/test_booking.py",
+        "why": "traceback frame"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "id": "X02",
+   "job": "unit",
+   "job_id": 5101,
+   "step": "Run python -m pytest --junitxml=junit.xml",
+   "kind": "test",
+   "test_id": "tests.test_fares::test_fare_rounds_half_up",
+   "message": "AssertionError: assert Decimal('12.12') == Decimal('12.13')",
+   "classification": "real",
+   "confidence": "confirmed",
+   "rule": "failed again on re-run on the same commit",
+   "signals": {
+    "signatures": [],
+    "date_markers": [],
+    "rerun": "failed",
+    "rerun_attempt": 2,
+    "history_same_commit": [],
+    "step_kind": "test"
+   },
+   "log_excerpt": {
+    "path": "logs/5101.txt",
+    "lines": [
+     {
+      "n": 32,
+      "text": "__________________________ test_fare_rounds_half_up ___________________________"
+     },
+     {
+      "n": 33,
+      "text": "tests/test_fares.py:12: in test_fare_rounds_half_up"
+     },
+     {
+      "n": 34,
+      "text": "    assert fare(Decimal(\"24.25\"), discount_pct=50) == Decimal(\"12.13\")"
+     },
+     {
+      "n": 35,
+      "text": "E   AssertionError: assert Decimal('12.12') == Decimal('12.13')"
+     },
+     {
+      "n": 36,
+      "text": "E    +  where Decimal('12.12') = fare(Decimal('24.25'), discount_pct=50)"
+     },
+     {
+      "n": 37,
+      "text": "E    +    where Decimal('24.25') = Decimal('24.25')"
+     },
+     {
+      "n": 38,
+      "text": "E    +  and   Decimal('12.13') = Decimal('12.13')"
+     }
+    ]
+   },
+   "owning_change": {
+    "status": "identified",
+    "commit": "613509c84ff974d24ff6b3cb2099e816aa64cdac",
+    "subject": "Use banker's rounding for fares",
+    "files_shared": [
+     {
+      "file": "tidewater/fares.py",
+      "why": "module the test imports"
+     }
+    ]
+   },
+   "priority": "P1",
+   "next_action": "Decide the rounding rule: tickets print half up, so either revert 613509c8 or change the test and the printed tickets together. Owner: whoever made the rounding change.",
+   "draft_defect": {
+    "kind": "defect",
+    "title": "Half-price fare of 24.25 prints 12.12 instead of 12.13 after the rounding change",
+    "body": {
+     "summary": "Since \"Use banker's rounding for fares\" (613509c8), fare() rounds half to even. A half-price fare of 24.25 is 12.125, which tickets print as 12.13 (half up); fare() now returns 12.12. tests.test_fares::test_fare_rounds_half_up fails on main in run 109, in both attempts.",
+     "steps": [
+      "git checkout 5a2cbd7d7a47",
+      "python -m pytest tests/test_fares.py::test_fare_rounds_half_up"
+     ],
+     "expected": "fare(Decimal('24.25'), discount_pct=50) == Decimal('12.13')",
+     "actual": "Decimal('12.12')",
+     "evidence": [
+      "logs/5101.txt lines 32-38 (attempt 1)",
+      "Re-run attempt 2: failed",
+      "https://github.com/example-org/tidewater/actions/runs/109"
+     ],
+     "suspect_commit": {
+      "commit": "613509c84ff974d24ff6b3cb2099e816aa64cdac",
+      "subject": "Use banker's rounding for fares",
+      "files_shared": [
+       {
+        "file": "tidewater/fares.py",
+        "why": "module the test imports"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "id": "X03",
+   "job": "unit",
+   "job_id": 5101,
+   "step": "Run python -m pytest --junitxml=junit.xml",
+   "kind": "test",
+   "test_id": "tests.test_slots::test_pick_two_gives_two_different_slots",
+   "message": "AssertionError: assert 'A4' != 'A4'",
+   "classification": "flaky",
+   "confidence": "confirmed",
+   "rule": "failed and passed on the same commit (re-run)",
+   "signals": {
+    "signatures": [],
+    "date_markers": [],
+    "rerun": "passed",
+    "rerun_attempt": 2,
+    "history_same_commit": [],
+    "step_kind": "test"
+   },
+   "log_excerpt": {
+    "path": "logs/5101.txt",
+    "lines": [
+     {
+      "n": 39,
+      "text": "___________________ test_pick_two_gives_two_different_slots ___________________"
+     },
+     {
+      "n": 40,
+      "text": "tests/test_slots.py:6: in test_pick_two_gives_two_different_slots"
+     },
+     {
+      "n": 41,
+      "text": "    assert a != b"
+     },
+     {
+      "n": 42,
+      "text": "E   AssertionError: assert 'A4' != 'A4'"
+     }
+    ]
+   },
+   "owning_change": {
+    "status": "not_identified",
+    "basis": "no commit in 3 commit(s) since the last green run touches the files of this failure"
+   },
+   "priority": null,
+   "next_action": "Hand tests.test_slots::test_pick_two_gives_two_different_slots to flaky-test-hunter: it picks two random slots with replacement, so about one run in four picks the same slot."
+  },
+  {
+   "id": "X04",
+   "job": "install-check",
+   "job_id": 5102,
+   "step": "Install internal pricing package",
+   "kind": "step",
+   "test_id": null,
+   "message": "ERROR: Could not find a version that satisfies the requirement tidewater-internal-pricing==2.1 (from versions: none)",
+   "classification": "environment",
+   "confidence": "indicated",
+   "rule": "environment signature ENV-REGISTRY (package registry)",
+   "signals": {
+    "signatures": [
+     {
+      "id": "ENV-REGISTRY",
+      "line": null,
+      "names": "package registry"
+     }
+    ],
+    "date_markers": [],
+    "rerun": "failed",
+    "rerun_attempt": 2,
+    "history_same_commit": [],
+    "step_kind": "setup"
+   },
+   "log_excerpt": {
+    "path": "logs/5102.txt",
+    "lines": [
+     {
+      "n": 8,
+      "text": "##[endgroup]"
+     },
+     {
+      "n": 9,
+      "text": "Looking in indexes: http://127.0.0.1:9/simple/"
+     },
+     {
+      "n": 10,
+      "text": "ERROR: Could not find a version that satisfies the requirement tidewater-internal-pricing==2.1 (from versions: none)"
+     },
+     {
+      "n": 11,
+      "text": "ERROR: No matching distribution found for tidewater-internal-pricing==2.1"
+     },
+     {
+      "n": 12,
+      "text": "##[error]Process completed with exit code 1."
+     },
+     {
+      "n": 13,
+      "text": ""
+     }
+    ]
+   },
+   "owning_change": {
+    "status": "not_identified",
+    "basis": "no commit in 3 commit(s) since the last green run touches the files of this failure"
+   },
+   "priority": null,
+   "next_action": "Re-run once the internal package index answers: pip found no versions at http://127.0.0.1:9/simple/ in both attempts (in the sample nothing listens there). Check the index host and the runner network; no code change."
+  }
+ ],
+ "summary": {
+  "headline": "Run 109 on main has four failures and one is a product regression: the rounding change 613509c8 makes a half-price fare print 12.12 instead of 12.13 (fails again on re-run; drafted). The others are a fixture booking dated in the past (test data, drafted), a slot-picking test that passed on re-run (flaky, hand to flaky-test-hunter), and the internal package index giving no versions in both attempts (environment). The docs commit in range is not involved.",
+  "by_classification": {
+   "real": 1,
+   "flaky": 1,
+   "environment": 1,
+   "data": 1,
+   "unclassified": 0
+  },
+  "defects_drafted": 2,
+  "reruns": 1,
+  "evidence_completeness": 1.0
+ },
+ "limitations": [
+  "The CI responses are recorded: the logs and JUnit are real local runs of the sample, inside envelopes shaped like the GitHub Actions REST API; no CI system was called and the re-run was recorded, not triggered.",
+  "Run history has two runs on main (the green run 101 and this one), so no earlier outcomes of each test on this commit were available beyond the re-run.",
+  "The data failure is indicated by a date marker and a signature; it was not confirmed by running with a shifted clock.",
+  "The environment failure names a loopback index in the sample; on a real runner, check the index host and the runner network."
+ ],
+ "files_written": [
+  "examples/triage.example.json",
+  "examples/drafts.md"
+ ]
+}

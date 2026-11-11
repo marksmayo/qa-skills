@@ -1,0 +1,24 @@
+{
+ "reruns": [
+  {
+   "run_id": 109,
+   "from_attempt": 1,
+   "new_attempt": 2,
+   "jobs_rerun": [
+    "unit",
+    "install-check"
+   ],
+   "jobs_failed_before": [
+    "unit",
+    "install-check"
+   ],
+   "authorised_by": "Repository owner, allow_rerun in the task",
+   "mode": "recorded",
+   "at": "2026-11-12T03:40:00Z",
+   "outcomes": {
+    "unit": "failure",
+    "install-check": "failure"
+   }
+  }
+ ]
+}

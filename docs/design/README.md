@@ -32,7 +32,7 @@ anatomy described in the root `CLAUDE.md` (`SKILL.md`, `RUBRIC.md`, `schemas/`, 
 | 23 | [Privacy flow auditor](privacy-flow-auditor.md) | `privacy-flow-auditor-skill/` | Built (v1.0.0) |
 | 24 | [Mobile app auditor](mobile-app-auditor.md) | `mobile-app-auditor-skill/` | Built (v1.0.0) |
 | 25 | [Release readiness gate](release-readiness-gate.md) | `release-readiness-gate-skill/` | Built (v1.0.0) |
-| 26 | CI failure triager | `ci-failure-triager-skill/` | Agreed; design not written |
+| 26 | [CI failure triager](ci-failure-triager.md) | `ci-failure-triager-skill/` | Built (v1.0.0) |
 | 27 | Test case designer | `test-case-designer-skill/` | Agreed; design not written |
 | 28 | Post-deploy validator | `post-deploy-validator-skill/` | Agreed; design not written |
 | 29 | Hypercare anomaly watcher | `hypercare-anomaly-watcher-skill/` | Agreed; design not written |

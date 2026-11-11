@@ -300,6 +300,17 @@ python release-readiness-gate-skill/scripts/adapters.py <any skill's report>
 
 Run these from the repo root: the collection and the report record paths relative to it. The gate hashes the security, WCAG, crash, journey-tests and impact example reports in place, so editing any of them (or `examples/rc-2026.11.2/`) invalidates the gate example until `commands.sh` is rerun (it needs `HS`, an empty directory for the sample repository). The policy is the starter policy with `validator_args`; each source is checked with its own skill's validator.
 
+CI failure triager (`examples/make_repo.py` builds the sample package "tidewater" with a fixed history; `examples/recorded/` holds a failed GitHub Actions run with its re-run attempt and an Azure DevOps build of the same commit, made from real local pytest and pip runs by `examples/record_example_run.py`; `examples/run/` is the normalised run, listed in `examples/commands.sh`; the validator re-extracts the failures and re-applies the classification rules from the run):
+
+```bash
+python ci-failure-triager-skill/scripts/validate_triage.py ci-failure-triager-skill/examples/triage.example.json --run ci-failure-triager-skill/examples/run
+python ci-failure-triager-skill/scripts/render_report.py ci-failure-triager-skill/examples/triage.example.json [--brief | --defects-md drafts.md]
+python ci-failure-triager-skill/scripts/fetch_run.py --system github --from-dir ci-failure-triager-skill/examples/recorded/github --out run/
+python ci-failure-triager-skill/scripts/classify.py --run ci-failure-triager-skill/examples/run --out candidates.json
+```
+
+The triage quotes `examples/run/logs/` by line and names commits of the sample history, so editing `make_repo.py` or the recordings invalidates it until `commands.sh` is rerun from `ci-failure-triager-skill/` (it needs `TW`, an empty directory for the sample repository). `record_example_run.py` makes new real runs, which change the flaky test's picks and the line numbers. Live fetches need `GITHUB_TOKEN`/`GH_TOKEN` or `AZURE_DEVOPS_EXT_PAT`; `rerun.py` starts CI jobs and refuses without `--authorised-by`.
+
 Shared files:
 
 ```bash

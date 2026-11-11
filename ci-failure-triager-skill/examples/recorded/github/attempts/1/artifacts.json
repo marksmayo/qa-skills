@@ -1,0 +1,14 @@
+{
+ "total_count": 1,
+ "artifacts": [
+  {
+   "id": 9001,
+   "name": "junit-unit",
+   "workflow_run": {
+    "id": 109
+   },
+   "expired": false,
+   "archive_download_url": "https://api.github.com/repos/example-org/tidewater/actions/artifacts/9001/zip"
+  }
+ ]
+}

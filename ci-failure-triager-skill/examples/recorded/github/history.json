@@ -1,0 +1,23 @@
+{
+ "total_count": 2,
+ "workflow_runs": [
+  {
+   "id": 109,
+   "head_sha": "5a2cbd7d7a4721c95f4f74bb945675fbb3c9b769",
+   "head_branch": "main",
+   "conclusion": "failure",
+   "run_attempt": 1,
+   "run_started_at": "2026-11-12T03:10:00Z",
+   "event": "push"
+  },
+  {
+   "id": 101,
+   "head_sha": "1e537ac23f72913514214744dcf1bae69cddab0c",
+   "head_branch": "main",
+   "conclusion": "success",
+   "run_attempt": 1,
+   "run_started_at": "2026-11-09T01:20:00Z",
+   "event": "push"
+  }
+ ]
+}

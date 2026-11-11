@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="5" time="0.080" timestamp="2026-11-12T02:32:04.762062+13:00" hostname="runner"><testcase classname="tests.test_booking" name="test_future_sailing_is_open" time="0.000" /><testcase classname="tests.test_booking" name="test_sample_booking_is_open" time="0.001"><failure message="AssertionError: sample booking TW-1001 sails 2026-11-10, which is in the past&#10;assert False&#10; +  where False = is_open(datetime.date(2026, 11, 10))">tests/test_booking.py:15: in test_sample_booking_is_open
+    assert is_open(sailing), f"sample booking {booking['ref']} sails {sailing}, which is in the past"
+E   AssertionError: sample booking TW-1001 sails 2026-11-10, which is in the past
+E   assert False
+E    +  where False = is_open(datetime.date(2026, 11, 10))</failure></testcase><testcase classname="tests.test_fares" name="test_fare_without_discount" time="0.000" /><testcase classname="tests.test_fares" name="test_fare_rounds_half_up" time="0.000"><failure message="AssertionError: assert Decimal('12.12') == Decimal('12.13')&#10; +  where Decimal('12.12') = fare(Decimal('24.25'), discount_pct=50)&#10; +    where Decimal('24.25') = Decimal('24.25')&#10; +  and   Decimal('12.13') = Decimal('12.13')">tests/test_fares.py:12: in test_fare_rounds_half_up
+    assert fare(Decimal("24.25"), discount_pct=50) == Decimal("12.13")
+E   AssertionError: assert Decimal('12.12') == Decimal('12.13')
+E    +  where Decimal('12.12') = fare(Decimal('24.25'), discount_pct=50)
+E    +    where Decimal('24.25') = Decimal('24.25')
+E    +  and   Decimal('12.13') = Decimal('12.13')</failure></testcase><testcase classname="tests.test_slots" name="test_pick_two_gives_two_different_slots" time="0.000" /></testsuite></testsuites>

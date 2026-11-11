@@ -1,0 +1,13 @@
+{
+ "count": 1,
+ "value": [
+  {
+   "id": 31,
+   "name": "junit-unit",
+   "resource": {
+    "type": "Container",
+    "downloadUrl": "https://dev.azure.com/example-org/tidewater/_apis/build/builds/2207/artifacts?artifactName=junit-unit&$format=zip"
+   }
+  }
+ ]
+}

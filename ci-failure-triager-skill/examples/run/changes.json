@@ -1,0 +1,90 @@
+{
+ "range": {
+  "from": "1e537ac23f72913514214744dcf1bae69cddab0c",
+  "to": "5a2cbd7d7a4721c95f4f74bb945675fbb3c9b769",
+  "spec": "1e537ac23f72913514214744dcf1bae69cddab0c..5a2cbd7d7a4721c95f4f74bb945675fbb3c9b769"
+ },
+ "commits": [
+  {
+   "commit": "613509c84ff974d24ff6b3cb2099e816aa64cdac",
+   "subject": "Use banker's rounding for fares",
+   "files": [
+    "tidewater/fares.py"
+   ]
+  },
+  {
+   "commit": "902084eac0c8662ec0ab80516002b49654c18e57",
+   "subject": "Add sample bookings fixture",
+   "files": [
+    "tests/fixtures/bookings.json",
+    "tests/test_booking.py"
+   ]
+  },
+  {
+   "commit": "5a2cbd7d7a4721c95f4f74bb945675fbb3c9b769",
+   "subject": "Docs: describe fare rounding",
+   "files": [
+    "README.md"
+   ]
+  }
+ ],
+ "per_failure": {
+  "X01": {
+   "status": "identified",
+   "commit": "902084eac0c8662ec0ab80516002b49654c18e57",
+   "subject": "Add sample bookings fixture",
+   "score": 5,
+   "files_shared": [
+    {
+     "file": "tests/fixtures/bookings.json",
+     "why": "data file the test reads"
+    },
+    {
+     "file": "tests/test_booking.py",
+     "why": "traceback frame"
+    }
+   ],
+   "ties": [],
+   "others": [],
+   "files_considered": [
+    "tests/fixtures/bookings.json",
+    "tests/test_booking.py",
+    "tidewater/__init__.py",
+    "tidewater/booking.py"
+   ]
+  },
+  "X02": {
+   "status": "identified",
+   "commit": "613509c84ff974d24ff6b3cb2099e816aa64cdac",
+   "subject": "Use banker's rounding for fares",
+   "score": 2,
+   "files_shared": [
+    {
+     "file": "tidewater/fares.py",
+     "why": "module the test imports"
+    }
+   ],
+   "ties": [],
+   "others": [],
+   "files_considered": [
+    "tests/test_fares.py",
+    "tidewater/__init__.py",
+    "tidewater/fares.py"
+   ]
+  },
+  "X03": {
+   "status": "not_identified",
+   "basis": "no commit in 3 commit(s) since the last green run touches the files of this failure",
+   "files_considered": [
+    "tests/test_slots.py",
+    "tidewater/__init__.py",
+    "tidewater/slots.py"
+   ]
+  },
+  "X04": {
+   "status": "not_identified",
+   "basis": "no commit in 3 commit(s) since the last green run touches the files of this failure",
+   "files_considered": []
+  }
+ }
+}

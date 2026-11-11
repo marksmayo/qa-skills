@@ -1,0 +1,44 @@
+2026-11-12T03:40:00.0000000Z ##[group]Runner Image
+2026-11-12T03:40:00.0000137Z Image: ubuntu-24.04
+2026-11-12T03:40:00.0000274Z ##[endgroup]
+2026-11-12T03:40:00.0000411Z ##[group]Run actions/checkout@v5
+2026-11-12T03:40:00.0000548Z ##[endgroup]
+2026-11-12T03:40:00.0000685Z ##[group]Run actions/setup-python@v6
+2026-11-12T03:40:00.0000822Z ##[endgroup]
+2026-11-12T03:40:00.0000959Z ##[group]Run pip install pytest
+2026-11-12T03:40:00.0001096Z ##[endgroup]
+2026-11-12T03:40:00.0001233Z ##[group]Run python -m pytest --junitxml=junit.xml
+2026-11-12T03:40:00.0001370Z python -m pytest --junitxml=junit.xml
+2026-11-12T03:40:00.0001507Z ##[endgroup]
+2026-11-12T03:40:00.0001644Z ============================= test session starts =============================
+2026-11-12T03:40:00.0001781Z platform (runner)
+2026-11-12T03:40:00.0001918Z rootdir: /home/runner/work/tidewater/tidewater
+2026-11-12T03:40:00.0002055Z configfile: pyproject.toml
+2026-11-12T03:40:00.0002192Z testpaths: tests
+2026-11-12T03:40:00.0002329Z plugins: hypothesis-6.170.15, platformdirs-4.14.5, xdist-3.8.0
+2026-11-12T03:40:00.0002466Z collected 5 items
+2026-11-12T03:40:00.0002603Z 
+2026-11-12T03:40:01.0002740Z tests/test_booking.py .F
+2026-11-12T03:40:01.0002877Z tests/test_fares.py .F
+2026-11-12T03:40:01.0003014Z tests/test_slots.py .
+2026-11-12T03:40:01.0003151Z 
+2026-11-12T03:40:01.0003288Z ================================== FAILURES ===================================
+2026-11-12T03:40:01.0003425Z _________________________ test_sample_booking_is_open _________________________
+2026-11-12T03:40:01.0003562Z tests/test_booking.py:15: in test_sample_booking_is_open
+2026-11-12T03:40:01.0003699Z     assert is_open(sailing), f"sample booking {booking['ref']} sails {sailing}, which is in the past"
+2026-11-12T03:40:01.0003836Z E   AssertionError: sample booking TW-1001 sails 2026-11-10, which is in the past
+2026-11-12T03:40:01.0003973Z E   assert False
+2026-11-12T03:40:01.0004110Z E    +  where False = is_open(datetime.date(2026, 11, 10))
+2026-11-12T03:40:01.0004247Z __________________________ test_fare_rounds_half_up ___________________________
+2026-11-12T03:40:01.0004384Z tests/test_fares.py:12: in test_fare_rounds_half_up
+2026-11-12T03:40:01.0004521Z     assert fare(Decimal("24.25"), discount_pct=50) == Decimal("12.13")
+2026-11-12T03:40:01.0004658Z E   AssertionError: assert Decimal('12.12') == Decimal('12.13')
+2026-11-12T03:40:01.0004795Z E    +  where Decimal('12.12') = fare(Decimal('24.25'), discount_pct=50)
+2026-11-12T03:40:01.0004932Z E    +    where Decimal('24.25') = Decimal('24.25')
+2026-11-12T03:40:01.0005069Z E    +  and   Decimal('12.13') = Decimal('12.13')
+2026-11-12T03:40:01.0005206Z - generated xml file: /home/runner/work/tidewater/tidewater/junit.xml -
+2026-11-12T03:40:01.0005343Z =========================== short test summary info ===========================
+2026-11-12T03:40:02.0005480Z FAILED tests/test_booking.py::test_sample_booking_is_open - AssertionError: s...
+2026-11-12T03:40:02.0005617Z FAILED tests/test_fares.py::test_fare_rounds_half_up - AssertionError: assert...
+2026-11-12T03:40:02.0005754Z ========================= 2 failed, 3 passed in 0.34s =========================
+2026-11-12T03:40:02.0005891Z ##[error]Process completed with exit code 1.

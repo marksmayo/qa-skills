@@ -1,0 +1,23 @@
+{
+ "id": 2207,
+ "buildNumber": "20261112.3",
+ "status": "completed",
+ "result": "failed",
+ "sourceBranch": "refs/heads/main",
+ "sourceVersion": "5a2cbd7d7a4721c95f4f74bb945675fbb3c9b769",
+ "startTime": "2026-11-12T03:10:00Z",
+ "reason": "individualCI",
+ "definition": {
+  "id": 4,
+  "name": "tidewater-ci"
+ },
+ "repository": {
+  "id": "tidewater",
+  "type": "TfsGit"
+ },
+ "_links": {
+  "web": {
+   "href": "https://dev.azure.com/example-org/tidewater/_build/results?buildId=2207"
+  }
+ }
+}
