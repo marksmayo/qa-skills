@@ -1,0 +1,442 @@
+{
+ "schema_version": "1.0.0",
+ "skill": {
+  "name": "requirements-traceability-auditor",
+  "version": "1.0.0"
+ },
+ "generated_at": "2026-11-12T06:00:00Z",
+ "sources": {
+  "tickets": "examples/run/tickets.json (examples/tickets/, as a Jira connector returns them)",
+  "documents": [
+   "examples/requirements.md"
+  ],
+  "repo": {
+   "head": "ef045e3ffa7dfbc0ff7a51edf8ce5d244d9137e5",
+   "built_by": "examples/make_repo.py"
+  },
+  "junit": [
+   "examples/run/junit.xml"
+  ],
+  "test_management": "examples/test-management.json",
+  "filter": "fixVersion = 2026.12, component loyalty"
+ },
+ "triage": {
+  "note": "The agent's triage of the inferred links and criteria: dropped inferred links with reasons, and criteria judged covered (none here).",
+  "dropped_links": [
+   {
+    "requirement": "SHOP-401",
+    "test_id": "tests.test_points::test_gold_members_earn_double",
+    "reason": "The SHOP-401 comment names tests/test_points.py, which also holds SHOP-402's tier tests; this test names SHOP-402 AC-1 and checks the tier multiplier, not the base rule."
+   },
+   {
+    "requirement": "SHOP-401",
+    "test_id": "tests.test_points::test_silver_members_earn_one_and_a_half_rounded_down",
+    "reason": "Same file mention as above; this test names SHOP-402 AC-2 (Silver rounding), not SHOP-401."
+   }
+  ],
+  "judged_coverage": []
+ },
+ "requirements": [
+  {
+   "id": "SHOP-401",
+   "source": "jira",
+   "title": "Members earn points per dollar",
+   "priority": "High",
+   "status": "verified",
+   "criteria": [
+    {
+     "id": "SHOP-401/AC-1",
+     "text": "Members earn 1 point per whole dollar of the subtotal.",
+     "tests_explicit": [
+      "tests.test_points::test_earn_one_point_per_whole_dollar"
+     ],
+     "tests_inferred": []
+    },
+    {
+     "id": "SHOP-401/AC-2",
+     "text": "Orders below $10.00 earn no points.",
+     "tests_explicit": [
+      "tests.test_points::test_no_points_below_ten_dollars"
+     ],
+     "tests_inferred": []
+    },
+    {
+     "id": "SHOP-401/AC-3",
+     "text": "Orders above $500.00 earn 500 points.",
+     "tests_explicit": [
+      "tests.test_points::test_points_capped_at_500"
+     ],
+     "tests_inferred": []
+    }
+   ],
+   "tests": [
+    {
+     "test_id": "tests.test_points::test_earn_one_point_per_whole_dollar",
+     "strength": "explicit",
+     "evidence": [
+      {
+       "kind": "test_code",
+       "ref": "tests/test_points.py:7",
+       "detail": "\"\"\"SHOP-401 AC-1: 1 point per whole dollar.\"\"\""
+      },
+      {
+       "kind": "commit",
+       "ref": "11e670e513f17ad4d20874e934f8b4868d5c3f52",
+       "detail": "\"Points per dollar (SHOP-401)\" added this test"
+      },
+      {
+       "kind": "ticket_comment",
+       "ref": "SHOP-401 comment 1",
+       "detail": "names tests/test_points.py"
+      }
+     ],
+     "criteria": [
+      "SHOP-401/AC-1"
+     ],
+     "judged_criteria": [],
+     "result": "passed",
+     "result_at": "2026-11-12T03:04:25.521503+13:00",
+     "fresh": true
+    },
+    {
+     "test_id": "tests.test_points::test_no_points_below_ten_dollars",
+     "strength": "explicit",
+     "evidence": [
+      {
+       "kind": "test_code",
+       "ref": "tests/test_points.py:12",
+       "detail": "\"\"\"SHOP-401 AC-2: orders below $10.00 earn nothing.\"\"\""
+      },
+      {
+       "kind": "commit",
+       "ref": "11e670e513f17ad4d20874e934f8b4868d5c3f52",
+       "detail": "\"Points per dollar (SHOP-401)\" added this test"
+      },
+      {
+       "kind": "ticket_comment",
+       "ref": "SHOP-401 comment 1",
+       "detail": "names tests/test_points.py"
+      }
+     ],
+     "criteria": [
+      "SHOP-401/AC-2"
+     ],
+     "judged_criteria": [],
+     "result": "passed",
+     "result_at": "2026-11-12T03:04:25.521503+13:00",
+     "fresh": true
+    },
+    {
+     "test_id": "tests.test_points::test_points_capped_at_500",
+     "strength": "explicit",
+     "evidence": [
+      {
+       "kind": "test_code",
+       "ref": "tests/test_points.py:17",
+       "detail": "\"\"\"SHOP-401 AC-3: orders above $500.00 earn 500 points.\"\"\""
+      },
+      {
+       "kind": "commit",
+       "ref": "11e670e513f17ad4d20874e934f8b4868d5c3f52",
+       "detail": "\"Points per dollar (SHOP-401)\" added this test"
+      },
+      {
+       "kind": "ticket_comment",
+       "ref": "SHOP-401 comment 1",
+       "detail": "names tests/test_points.py"
+      }
+     ],
+     "criteria": [
+      "SHOP-401/AC-3"
+     ],
+     "judged_criteria": [],
+     "result": "passed",
+     "result_at": "2026-11-12T03:04:25.521503+13:00",
+     "fresh": true
+    }
+   ],
+   "implementation": [
+    {
+     "kind": "code",
+     "ref": "loyalty/points.py:9",
+     "detail": "\"\"\"SHOP-401: 1 point per whole dollar from $10.00, capped at 500 points.\"\"\""
+    },
+    {
+     "kind": "commit",
+     "ref": "11e670e513f17ad4d20874e934f8b4868d5c3f52",
+     "detail": "Points per dollar (SHOP-401)"
+    }
+   ],
+   "attachments": [],
+   "gaps": []
+  },
+  {
+   "id": "SHOP-402",
+   "source": "jira",
+   "title": "Tier multipliers",
+   "priority": "High",
+   "status": "partially_verified",
+   "criteria": [
+    {
+     "id": "SHOP-402/AC-1",
+     "text": "Gold members earn double points.",
+     "tests_explicit": [
+      "tests.test_points::test_gold_members_earn_double"
+     ],
+     "tests_inferred": []
+    },
+    {
+     "id": "SHOP-402/AC-2",
+     "text": "Silver members earn 1.5 times the points, rounded down.",
+     "tests_explicit": [
+      "tests.test_points::test_silver_members_earn_one_and_a_half_rounded_down"
+     ],
+     "tests_inferred": []
+    },
+    {
+     "id": "SHOP-402/AC-3",
+     "text": "Bronze members earn the base points.",
+     "tests_explicit": [],
+     "tests_inferred": []
+    }
+   ],
+   "tests": [
+    {
+     "test_id": "tests.test_points::test_gold_members_earn_double",
+     "strength": "explicit",
+     "evidence": [
+      {
+       "kind": "test_code",
+       "ref": "tests/test_points.py:22",
+       "detail": "\"\"\"SHOP-402 AC-1\"\"\""
+      },
+      {
+       "kind": "commit",
+       "ref": "e9de126a7d3e67aa43e3073e4541e8c2f1fe1eb5",
+       "detail": "\"Tier multipliers for SHOP-402\" added this test"
+      }
+     ],
+     "criteria": [
+      "SHOP-402/AC-1"
+     ],
+     "judged_criteria": [],
+     "result": "passed",
+     "result_at": "2026-11-12T03:04:25.521503+13:00",
+     "fresh": true
+    },
+    {
+     "test_id": "tests.test_points::test_silver_members_earn_one_and_a_half_rounded_down",
+     "strength": "explicit",
+     "evidence": [
+      {
+       "kind": "test_code",
+       "ref": "tests/test_points.py:28",
+       "detail": "\"\"\"SHOP-402 AC-2: 1.5 times, rounded down.\"\"\""
+      },
+      {
+       "kind": "commit",
+       "ref": "e9de126a7d3e67aa43e3073e4541e8c2f1fe1eb5",
+       "detail": "\"Tier multipliers for SHOP-402\" added this test"
+      }
+     ],
+     "criteria": [
+      "SHOP-402/AC-2"
+     ],
+     "judged_criteria": [],
+     "result": "passed",
+     "result_at": "2026-11-12T03:04:25.521503+13:00",
+     "fresh": true
+    }
+   ],
+   "implementation": [
+    {
+     "kind": "code",
+     "ref": "loyalty/points.py:19",
+     "detail": "# SHOP-402: tier multipliers, rounded down"
+    },
+    {
+     "kind": "commit",
+     "ref": "e9de126a7d3e67aa43e3073e4541e8c2f1fe1eb5",
+     "detail": "Tier multipliers for SHOP-402"
+    }
+   ],
+   "attachments": [
+    "tier-rules.pdf"
+   ],
+   "gaps": [
+    "SHOP-402/AC-3 has no explicit test"
+   ]
+  },
+  {
+   "id": "SHOP-403",
+   "source": "jira",
+   "title": "Points expire after 12 months",
+   "priority": "Medium",
+   "status": "failing",
+   "criteria": [
+    {
+     "id": "SHOP-403/AC-1",
+     "text": "Points earned on a date expire 12 months later, on the same day of the month.",
+     "tests_explicit": [
+      "tests.test_expiry::test_points_expire_after_12_months"
+     ],
+     "tests_inferred": []
+    }
+   ],
+   "tests": [
+    {
+     "test_id": "tests.test_expiry::test_points_expire_after_12_months",
+     "strength": "explicit",
+     "evidence": [
+      {
+       "kind": "ticket_link",
+       "ref": "SHOP-403 is tested by SHOP-T12",
+       "detail": "Points expire 12 months after they are earned"
+      },
+      {
+       "kind": "test_management",
+       "ref": "examples/test-management.json SHOP-T12",
+       "detail": "SHOP-T12 -> tests.test_expiry::test_points_expire_after_12_months"
+      },
+      {
+       "kind": "commit",
+       "ref": "bcf2420247444766a07bcd38ebf6cd13d720f086",
+       "detail": "\"Points expiry (SHOP-403)\" added this test"
+      }
+     ],
+     "criteria": [
+      "SHOP-403/AC-1"
+     ],
+     "judged_criteria": [],
+     "result": "failed",
+     "result_at": "2026-11-12T03:04:25.521503+13:00",
+     "fresh": true
+    }
+   ],
+   "implementation": [
+    {
+     "kind": "commit",
+     "ref": "bcf2420247444766a07bcd38ebf6cd13d720f086",
+     "detail": "Points expiry (SHOP-403)"
+    }
+   ],
+   "attachments": [],
+   "gaps": [
+    "tests.test_expiry::test_points_expire_after_12_months failed"
+   ]
+  },
+  {
+   "id": "SHOP-404",
+   "source": "jira",
+   "title": "Referral bonus",
+   "priority": "Medium",
+   "status": "untested",
+   "criteria": [
+    {
+     "id": "SHOP-404/AC-1",
+     "text": "A member earns 250 points when a friend they referred has their first order delivered, if the member has ordered before.",
+     "tests_explicit": [],
+     "tests_inferred": []
+    }
+   ],
+   "tests": [],
+   "implementation": [
+    {
+     "kind": "code",
+     "ref": "loyalty/referral.py:7",
+     "detail": "\"\"\"SHOP-404: 250 points when the referred friend's first order is delivered, if the referrer has ordered before.\"\"\""
+    },
+    {
+     "kind": "commit",
+     "ref": "749e694f51bed8ae950417ba57a057668a616c16",
+     "detail": "Referral bonus, SHOP-404"
+    }
+   ],
+   "attachments": [],
+   "gaps": [
+    "SHOP-404/AC-1 has no explicit test"
+   ]
+  },
+  {
+   "id": "REQ-NFR-1",
+   "source": "document:requirements.md",
+   "title": "Points calculation time",
+   "priority": null,
+   "status": "not_traceable",
+   "criteria": [
+    {
+     "id": "REQ-NFR-1/AC-1",
+     "text": "Calculating the points for an order takes under 50 ms at the 95th percentile, measured at the loyalty service, for orders of up to 100 lines.",
+     "tests_explicit": [],
+     "tests_inferred": []
+    }
+   ],
+   "tests": [],
+   "implementation": [],
+   "attachments": [],
+   "gaps": [
+    "REQ-NFR-1/AC-1 has no explicit test"
+   ]
+  },
+  {
+   "id": "REQ-NFR-2",
+   "source": "document:requirements.md",
+   "title": "Points history retention",
+   "priority": null,
+   "status": "not_traceable",
+   "criteria": [
+    {
+     "id": "REQ-NFR-2/AC-1",
+     "text": "A member's points history is kept for 7 years after their last order.",
+     "tests_explicit": [],
+     "tests_inferred": []
+    }
+   ],
+   "tests": [],
+   "implementation": [],
+   "attachments": [],
+   "gaps": [
+    "REQ-NFR-2/AC-1 has no explicit test"
+   ]
+  }
+ ],
+ "orphan_tests": [
+  {
+   "test_id": "tests.test_legacy::test_bulk_import_line",
+   "file": "tests/test_legacy.py",
+   "line": 4,
+   "result": "passed",
+   "names_out_of_scope": [
+    "SHOP-4010"
+   ]
+  },
+  {
+   "test_id": "tests.test_legacy::test_legacy_bonus_flag_is_ignored",
+   "file": "tests/test_legacy.py",
+   "line": 9,
+   "result": "passed",
+   "names_out_of_scope": []
+  }
+ ],
+ "summary": {
+  "by_status": {
+   "verified": 1,
+   "partially_verified": 1,
+   "failing": 1,
+   "untested": 1,
+   "not_traceable": 2
+  },
+  "requirements": 6,
+  "criteria_total": 10,
+  "criteria_with_explicit_tests": 6,
+  "tests_linked": 6,
+  "orphans": 2,
+  "headline": "Of 6 requirements for loyalty 2026.12, 1 has passing explicit tests for every criterion in the run provided (SHOP-401). SHOP-402 has no test for Bronze (AC-3); SHOP-403's linked test fails (points expire a month late); SHOP-404 is implemented with no test; the two non-functional requirements in the requirements document are named by no code, test or commit. Two tests trace to no requirement in this set."
+ },
+ "limitations": [
+  "Requirements came from four Jira issues and one requirements document; tickets outside fixVersion 2026.12 were not read.",
+  "Results are one local pytest run (examples/run/junit.xml); CI history was not read, so a test that passed once is not proven stable.",
+  "REQ-NFR-1 (points under 50 ms at p95) needs a performance test; hand it to the performance budget auditor. REQ-NFR-2 (7-year retention) needs a data-retention check.",
+  "The attachment tier-rules.pdf on SHOP-402 was listed, not read."
+ ]
+}

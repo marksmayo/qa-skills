@@ -1,0 +1,125 @@
+{
+ "key": "SHOP-402",
+ "names": {
+  "customfield_10034": "Acceptance Criteria"
+ },
+ "fields": {
+  "summary": "Tier multipliers",
+  "issuetype": {
+   "name": "Story"
+  },
+  "status": {
+   "name": "Done",
+   "statusCategory": {
+    "key": "done"
+   }
+  },
+  "priority": {
+   "name": "High"
+  },
+  "labels": [
+   "loyalty"
+  ],
+  "components": [
+   {
+    "name": "loyalty"
+   }
+  ],
+  "fixVersions": [
+   {
+    "name": "2026.12"
+   }
+  ],
+  "description": {
+   "type": "doc",
+   "version": 1,
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "Gold, Silver and Bronze earn at different rates."
+      }
+     ]
+    }
+   ]
+  },
+  "customfield_10034": {
+   "type": "doc",
+   "version": 1,
+   "content": [
+    {
+     "type": "orderedList",
+     "content": [
+      {
+       "type": "listItem",
+       "content": [
+        {
+         "type": "paragraph",
+         "content": [
+          {
+           "type": "text",
+           "text": "Gold members earn double points."
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "listItem",
+       "content": [
+        {
+         "type": "paragraph",
+         "content": [
+          {
+           "type": "text",
+           "text": "Silver members earn 1.5 times the points, rounded down."
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "listItem",
+       "content": [
+        {
+         "type": "paragraph",
+         "content": [
+          {
+           "type": "text",
+           "text": "Bronze members earn the base points."
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "subtasks": [],
+  "issuelinks": [],
+  "attachment": [
+   {
+    "filename": "tier-rules.pdf",
+    "size": 48213,
+    "mimeType": "application/pdf",
+    "created": "2026-11-03T01:00:00.000+0000"
+   }
+  ],
+  "comment": {
+   "comments": [],
+   "total": 0
+  },
+  "parent": {
+   "key": "SHOP-300",
+   "fields": {
+    "summary": "Loyalty programme",
+    "issuetype": {
+     "name": "Epic"
+    }
+   }
+  }
+ }
+}

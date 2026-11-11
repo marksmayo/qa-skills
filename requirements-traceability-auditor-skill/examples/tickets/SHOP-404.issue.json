@@ -1,0 +1,90 @@
+{
+ "key": "SHOP-404",
+ "names": {
+  "customfield_10034": "Acceptance Criteria"
+ },
+ "fields": {
+  "summary": "Referral bonus",
+  "issuetype": {
+   "name": "Story"
+  },
+  "status": {
+   "name": "Done",
+   "statusCategory": {
+    "key": "done"
+   }
+  },
+  "priority": {
+   "name": "Medium"
+  },
+  "labels": [
+   "loyalty"
+  ],
+  "components": [
+   {
+    "name": "loyalty"
+   }
+  ],
+  "fixVersions": [
+   {
+    "name": "2026.12"
+   }
+  ],
+  "description": {
+   "type": "doc",
+   "version": 1,
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "Members who refer a friend get a bonus."
+      }
+     ]
+    }
+   ]
+  },
+  "customfield_10034": {
+   "type": "doc",
+   "version": 1,
+   "content": [
+    {
+     "type": "orderedList",
+     "content": [
+      {
+       "type": "listItem",
+       "content": [
+        {
+         "type": "paragraph",
+         "content": [
+          {
+           "type": "text",
+           "text": "A member earns 250 points when a friend they referred has their first order delivered, if the member has ordered before."
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "subtasks": [],
+  "issuelinks": [],
+  "attachment": [],
+  "comment": {
+   "comments": [],
+   "total": 0
+  },
+  "parent": {
+   "key": "SHOP-300",
+   "fields": {
+    "summary": "Loyalty programme",
+    "issuetype": {
+     "name": "Epic"
+    }
+   }
+  }
+ }
+}

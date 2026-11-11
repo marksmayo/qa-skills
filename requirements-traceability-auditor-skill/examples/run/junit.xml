@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="8" time="0.090" timestamp="2026-11-12T03:04:25.521503+13:00" hostname="ci-runner"><testcase classname="tests.test_expiry" name="test_points_expire_after_12_months" time="0.000"><failure message="assert False&#10; +  where False = expired(datetime.date(2025, 11, 12), datetime.date(2026, 11, 12))&#10; +    where datetime.date(2025, 11, 12) = date(2025, 11, 12)&#10; +    and   datetime.date(2026, 11, 12) = date(2026, 11, 12)">def test_points_expire_after_12_months():
+&gt;       assert expired(date(2025, 11, 12), date(2026, 11, 12))
+E       assert False
+E        +  where False = expired(datetime.date(2025, 11, 12), datetime.date(2026, 11, 12))
+E        +    where datetime.date(2025, 11, 12) = date(2025, 11, 12)
+E        +    and   datetime.date(2026, 11, 12) = date(2026, 11, 12)
+
+tests\test_expiry.py:7: AssertionError</failure></testcase><testcase classname="tests.test_legacy" name="test_bulk_import_line" time="0.000" /><testcase classname="tests.test_legacy" name="test_legacy_bonus_flag_is_ignored" time="0.000" /><testcase classname="tests.test_points" name="test_earn_one_point_per_whole_dollar" time="0.000" /><testcase classname="tests.test_points" name="test_no_points_below_ten_dollars" time="0.000" /><testcase classname="tests.test_points" name="test_points_capped_at_500" time="0.000" /><testcase classname="tests.test_points" name="test_gold_members_earn_double" time="0.000" /><testcase classname="tests.test_points" name="test_silver_members_earn_one_and_a_half_rounded_down" time="0.000" /></testsuite></testsuites>

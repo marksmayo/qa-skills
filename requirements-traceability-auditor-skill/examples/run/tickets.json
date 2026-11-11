@@ -1,0 +1,217 @@
+{
+  "query": null,
+  "source": "connector",
+  "fetched_at": "2026-11-11T14:08:44Z",
+  "tickets": [
+    {
+      "key": "SHOP-401",
+      "url": null,
+      "source": "connector",
+      "fetched_at": "2026-11-11T14:08:44Z",
+      "type": "Story",
+      "summary": "Members earn points per dollar",
+      "status": "Done",
+      "status_category": "done",
+      "priority": "High",
+      "labels": [
+        "loyalty"
+      ],
+      "components": [
+        "loyalty"
+      ],
+      "fix_versions": [
+        "2026.12"
+      ],
+      "parent": {
+        "key": "SHOP-300",
+        "summary": "Loyalty programme",
+        "type": "Epic"
+      },
+      "description_md": "Base earning rule for the loyalty programme.",
+      "acceptance_criteria_field": "Acceptance Criteria",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Members earn 1 point per whole dollar of the subtotal.",
+          "source": "field:Acceptance Criteria"
+        },
+        {
+          "id": "AC-2",
+          "text": "Orders below $10.00 earn no points.",
+          "source": "field:Acceptance Criteria"
+        },
+        {
+          "id": "AC-3",
+          "text": "Orders above $500.00 earn 500 points.",
+          "source": "field:Acceptance Criteria"
+        }
+      ],
+      "bug": null,
+      "subtasks": [],
+      "links": [],
+      "comments": [
+        {
+          "author": "Dev (Loyalty)",
+          "created": "2026-11-02T04:00:00.000+0000",
+          "body_md": "Implemented with tests in tests/test_points.py."
+        }
+      ],
+      "comments_total": 1,
+      "attachments": [],
+      "size_warnings": [],
+      "suspicious_instructions": [],
+      "content_sha256": "3e69e9d7dd59a4a98f0b0832259524bf54e140cff29d7ed84435a5552ad8b2c2"
+    },
+    {
+      "key": "SHOP-402",
+      "url": null,
+      "source": "connector",
+      "fetched_at": "2026-11-11T14:08:44Z",
+      "type": "Story",
+      "summary": "Tier multipliers",
+      "status": "Done",
+      "status_category": "done",
+      "priority": "High",
+      "labels": [
+        "loyalty"
+      ],
+      "components": [
+        "loyalty"
+      ],
+      "fix_versions": [
+        "2026.12"
+      ],
+      "parent": {
+        "key": "SHOP-300",
+        "summary": "Loyalty programme",
+        "type": "Epic"
+      },
+      "description_md": "Gold, Silver and Bronze earn at different rates.",
+      "acceptance_criteria_field": "Acceptance Criteria",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Gold members earn double points.",
+          "source": "field:Acceptance Criteria"
+        },
+        {
+          "id": "AC-2",
+          "text": "Silver members earn 1.5 times the points, rounded down.",
+          "source": "field:Acceptance Criteria"
+        },
+        {
+          "id": "AC-3",
+          "text": "Bronze members earn the base points.",
+          "source": "field:Acceptance Criteria"
+        }
+      ],
+      "bug": null,
+      "subtasks": [],
+      "links": [],
+      "comments": [],
+      "comments_total": 0,
+      "attachments": [
+        {
+          "filename": "tier-rules.pdf",
+          "mime_type": "application/pdf",
+          "size": 48213
+        }
+      ],
+      "size_warnings": [],
+      "suspicious_instructions": [],
+      "content_sha256": "12d235b8680e97995d95c94efdb4c0a1c7f1b804e6c146b7b97967bfe0a1e394"
+    },
+    {
+      "key": "SHOP-403",
+      "url": null,
+      "source": "connector",
+      "fetched_at": "2026-11-11T14:08:44Z",
+      "type": "Story",
+      "summary": "Points expire after 12 months",
+      "status": "Done",
+      "status_category": "done",
+      "priority": "Medium",
+      "labels": [
+        "loyalty"
+      ],
+      "components": [
+        "loyalty"
+      ],
+      "fix_versions": [
+        "2026.12"
+      ],
+      "parent": {
+        "key": "SHOP-300",
+        "summary": "Loyalty programme",
+        "type": "Epic"
+      },
+      "description_md": "Unused points expire on the anniversary of the day they were earned.",
+      "acceptance_criteria_field": "Acceptance Criteria",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "Points earned on a date expire 12 months later, on the same day of the month.",
+          "source": "field:Acceptance Criteria"
+        }
+      ],
+      "bug": null,
+      "subtasks": [],
+      "links": [
+        {
+          "type": "is tested by",
+          "key": "SHOP-T12",
+          "summary": "Points expire 12 months after they are earned"
+        }
+      ],
+      "comments": [],
+      "comments_total": 0,
+      "attachments": [],
+      "size_warnings": [],
+      "suspicious_instructions": [],
+      "content_sha256": "83110eadfd061b52a0285ca8c10ca0e0f062e3f7fc709e6867d63b3d618122f1"
+    },
+    {
+      "key": "SHOP-404",
+      "url": null,
+      "source": "connector",
+      "fetched_at": "2026-11-11T14:08:44Z",
+      "type": "Story",
+      "summary": "Referral bonus",
+      "status": "Done",
+      "status_category": "done",
+      "priority": "Medium",
+      "labels": [
+        "loyalty"
+      ],
+      "components": [
+        "loyalty"
+      ],
+      "fix_versions": [
+        "2026.12"
+      ],
+      "parent": {
+        "key": "SHOP-300",
+        "summary": "Loyalty programme",
+        "type": "Epic"
+      },
+      "description_md": "Members who refer a friend get a bonus.",
+      "acceptance_criteria_field": "Acceptance Criteria",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "A member earns 250 points when a friend they referred has their first order delivered, if the member has ordered before.",
+          "source": "field:Acceptance Criteria"
+        }
+      ],
+      "bug": null,
+      "subtasks": [],
+      "links": [],
+      "comments": [],
+      "comments_total": 0,
+      "attachments": [],
+      "size_warnings": [],
+      "suspicious_instructions": [],
+      "content_sha256": "4e4d9c85618b71ddb08990344ecd72db3900b12c2c4ebb650621f5be3d8df18d"
+    }
+  ]
+}

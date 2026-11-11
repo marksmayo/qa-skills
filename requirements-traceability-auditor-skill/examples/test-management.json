@@ -1,0 +1,15 @@
+{
+ "note": "A test-management export (Xray tests with their automated test ids), normalised: key, summary, requirement keys, the automated test id.",
+ "source": "Xray test repository export, 2026-11-11",
+ "tests": [
+  {
+   "key": "SHOP-T12",
+   "summary": "Points expire 12 months after they are earned",
+   "requirements": [
+    "SHOP-403"
+   ],
+   "test_id": "tests.test_expiry::test_points_expire_after_12_months",
+   "type": "Generic"
+  }
+ ]
+}

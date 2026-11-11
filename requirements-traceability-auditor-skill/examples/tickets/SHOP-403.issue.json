@@ -1,0 +1,107 @@
+{
+ "key": "SHOP-403",
+ "names": {
+  "customfield_10034": "Acceptance Criteria"
+ },
+ "fields": {
+  "summary": "Points expire after 12 months",
+  "issuetype": {
+   "name": "Story"
+  },
+  "status": {
+   "name": "Done",
+   "statusCategory": {
+    "key": "done"
+   }
+  },
+  "priority": {
+   "name": "Medium"
+  },
+  "labels": [
+   "loyalty"
+  ],
+  "components": [
+   {
+    "name": "loyalty"
+   }
+  ],
+  "fixVersions": [
+   {
+    "name": "2026.12"
+   }
+  ],
+  "description": {
+   "type": "doc",
+   "version": 1,
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "Unused points expire on the anniversary of the day they were earned."
+      }
+     ]
+    }
+   ]
+  },
+  "customfield_10034": {
+   "type": "doc",
+   "version": 1,
+   "content": [
+    {
+     "type": "orderedList",
+     "content": [
+      {
+       "type": "listItem",
+       "content": [
+        {
+         "type": "paragraph",
+         "content": [
+          {
+           "type": "text",
+           "text": "Points earned on a date expire 12 months later, on the same day of the month."
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "subtasks": [],
+  "issuelinks": [
+   {
+    "type": {
+     "name": "Test",
+     "inward": "is tested by",
+     "outward": "tests"
+    },
+    "inwardIssue": {
+     "key": "SHOP-T12",
+     "fields": {
+      "summary": "Points expire 12 months after they are earned",
+      "issuetype": {
+       "name": "Test"
+      }
+     }
+    }
+   }
+  ],
+  "attachment": [],
+  "comment": {
+   "comments": [],
+   "total": 0
+  },
+  "parent": {
+   "key": "SHOP-300",
+   "fields": {
+    "summary": "Loyalty programme",
+    "issuetype": {
+     "name": "Epic"
+    }
+   }
+  }
+ }
+}

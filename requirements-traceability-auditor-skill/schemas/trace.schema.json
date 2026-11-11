@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/qa-skills/requirements-traceability-auditor/trace.schema.json",
+  "title": "Requirements traceability report",
+  "type": "object",
+  "required": ["schema_version", "skill", "generated_at", "sources", "triage", "requirements", "orphan_tests", "summary", "limitations"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "skill": {"type": "object", "properties": {"name": {"const": "requirements-traceability-auditor"}}},
+    "triage": {"type": "object", "required": ["dropped_links", "judged_coverage"],
+      "properties": {"dropped_links": {"type": "array", "items": {"type": "object", "required": ["requirement", "test_id", "reason"]}},
+                     "judged_coverage": {"type": "array", "items": {"type": "object", "required": ["criterion", "test_id", "reason"]}}}},
+    "requirements": {"type": "array", "items": {"type": "object", "required": ["id", "source", "title", "status", "criteria", "tests", "implementation", "gaps"],
+      "properties": {
+        "status": {"enum": ["verified", "partially_verified", "failing", "untested", "not_traceable"]},
+        "criteria": {"type": "array", "items": {"type": "object", "required": ["id", "text", "tests_explicit", "tests_inferred"]}},
+        "tests": {"type": "array", "items": {"type": "object", "required": ["test_id", "strength", "evidence", "criteria", "result", "result_at", "fresh"],
+          "properties": {"strength": {"enum": ["explicit", "inferred"]}, "result": {"enum": ["passed", "failed", "error", "skipped", "not_run"]},
+                         "evidence": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["kind", "ref", "detail"],
+                           "properties": {"kind": {"enum": ["test_code", "ticket_link", "test_management", "commit", "ticket_comment"]}}}}}}},
+        "implementation": {"type": "array", "items": {"type": "object", "required": ["kind", "ref", "detail"], "properties": {"kind": {"enum": ["code", "commit"]}}}}}}},
+    "orphan_tests": {"type": "array", "items": {"type": "object", "required": ["test_id", "file", "result", "names_out_of_scope"]}},
+    "summary": {"type": "object", "required": ["headline", "by_status", "requirements", "criteria_total", "criteria_with_explicit_tests", "tests_linked", "orphans"]},
+    "limitations": {"type": "array", "items": {"type": "string"}}
+  }
+}

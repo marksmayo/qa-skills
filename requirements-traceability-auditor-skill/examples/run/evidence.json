@@ -1,0 +1,356 @@
+{
+ "repo": {
+  "head": "ef045e3ffa7dfbc0ff7a51edf8ce5d244d9137e5"
+ },
+ "keys": [
+  "SHOP-401",
+  "SHOP-402",
+  "SHOP-403",
+  "SHOP-404",
+  "REQ-NFR-1",
+  "REQ-NFR-2"
+ ],
+ "tests": [
+  {
+   "test_id": "tests.test_expiry::test_points_expire_after_12_months",
+   "name": "test_points_expire_after_12_months",
+   "file": "tests/test_expiry.py",
+   "start": 6,
+   "end": 7,
+   "refs": [],
+   "other_keys": []
+  },
+  {
+   "test_id": "tests.test_legacy::test_bulk_import_line",
+   "name": "test_bulk_import_line",
+   "file": "tests/test_legacy.py",
+   "start": 4,
+   "end": 6,
+   "refs": [],
+   "other_keys": [
+    "SHOP-4010"
+   ]
+  },
+  {
+   "test_id": "tests.test_legacy::test_legacy_bonus_flag_is_ignored",
+   "name": "test_legacy_bonus_flag_is_ignored",
+   "file": "tests/test_legacy.py",
+   "start": 9,
+   "end": 10,
+   "refs": [],
+   "other_keys": []
+  },
+  {
+   "test_id": "tests.test_points::test_earn_one_point_per_whole_dollar",
+   "name": "test_earn_one_point_per_whole_dollar",
+   "file": "tests/test_points.py",
+   "start": 6,
+   "end": 8,
+   "refs": [
+    {
+     "key": "SHOP-401",
+     "criterion": "SHOP-401/AC-1",
+     "file": "tests/test_points.py",
+     "line": 7,
+     "text": "\"\"\"SHOP-401 AC-1: 1 point per whole dollar.\"\"\""
+    }
+   ],
+   "other_keys": []
+  },
+  {
+   "test_id": "tests.test_points::test_no_points_below_ten_dollars",
+   "name": "test_no_points_below_ten_dollars",
+   "file": "tests/test_points.py",
+   "start": 11,
+   "end": 13,
+   "refs": [
+    {
+     "key": "SHOP-401",
+     "criterion": "SHOP-401/AC-2",
+     "file": "tests/test_points.py",
+     "line": 12,
+     "text": "\"\"\"SHOP-401 AC-2: orders below $10.00 earn nothing.\"\"\""
+    }
+   ],
+   "other_keys": []
+  },
+  {
+   "test_id": "tests.test_points::test_points_capped_at_500",
+   "name": "test_points_capped_at_500",
+   "file": "tests/test_points.py",
+   "start": 16,
+   "end": 18,
+   "refs": [
+    {
+     "key": "SHOP-401",
+     "criterion": "SHOP-401/AC-3",
+     "file": "tests/test_points.py",
+     "line": 17,
+     "text": "\"\"\"SHOP-401 AC-3: orders above $500.00 earn 500 points.\"\"\""
+    }
+   ],
+   "other_keys": []
+  },
+  {
+   "test_id": "tests.test_points::test_gold_members_earn_double",
+   "name": "test_gold_members_earn_double",
+   "file": "tests/test_points.py",
+   "start": 21,
+   "end": 24,
+   "refs": [
+    {
+     "key": "SHOP-402",
+     "criterion": "SHOP-402/AC-1",
+     "file": "tests/test_points.py",
+     "line": 22,
+     "text": "\"\"\"SHOP-402 AC-1\"\"\""
+    }
+   ],
+   "other_keys": []
+  },
+  {
+   "test_id": "tests.test_points::test_silver_members_earn_one_and_a_half_rounded_down",
+   "name": "test_silver_members_earn_one_and_a_half_rounded_down",
+   "file": "tests/test_points.py",
+   "start": 27,
+   "end": 30,
+   "refs": [
+    {
+     "key": "SHOP-402",
+     "criterion": "SHOP-402/AC-2",
+     "file": "tests/test_points.py",
+     "line": 28,
+     "text": "\"\"\"SHOP-402 AC-2: 1.5 times, rounded down.\"\"\""
+    }
+   ],
+   "other_keys": []
+  }
+ ],
+ "code": [
+  {
+   "key": "SHOP-401",
+   "file": "loyalty/points.py",
+   "line": 9,
+   "text": "\"\"\"SHOP-401: 1 point per whole dollar from $10.00, capped at 500 points.\"\"\""
+  },
+  {
+   "key": "SHOP-402",
+   "file": "loyalty/points.py",
+   "line": 19,
+   "text": "# SHOP-402: tier multipliers, rounded down"
+  },
+  {
+   "key": "SHOP-404",
+   "file": "loyalty/referral.py",
+   "line": 7,
+   "text": "\"\"\"SHOP-404: 250 points when the referred friend's first order is delivered, if the referrer has ordered before.\"\"\""
+  }
+ ],
+ "commits": [
+  {
+   "commit": "ef045e3ffa7dfbc0ff7a51edf8ce5d244d9137e5",
+   "at": "2026-11-09T03:00:00Z",
+   "subject": "Legacy import fixes (SHOP-4010)",
+   "keys": [],
+   "files": [
+    "loyalty/importer.py",
+    "tests/test_legacy.py"
+   ],
+   "tests_added": [
+    "tests.test_legacy::test_bulk_import_line",
+    "tests.test_legacy::test_legacy_bonus_flag_is_ignored"
+   ]
+  },
+  {
+   "commit": "749e694f51bed8ae950417ba57a057668a616c16",
+   "at": "2026-11-08T03:00:00Z",
+   "subject": "Referral bonus, SHOP-404",
+   "keys": [
+    "SHOP-404"
+   ],
+   "files": [
+    "loyalty/referral.py"
+   ],
+   "tests_added": []
+  },
+  {
+   "commit": "bcf2420247444766a07bcd38ebf6cd13d720f086",
+   "at": "2026-11-06T03:00:00Z",
+   "subject": "Points expiry (SHOP-403)",
+   "keys": [
+    "SHOP-403"
+   ],
+   "files": [
+    "loyalty/expiry.py",
+    "tests/test_expiry.py"
+   ],
+   "tests_added": [
+    "tests.test_expiry::test_points_expire_after_12_months"
+   ]
+  },
+  {
+   "commit": "e9de126a7d3e67aa43e3073e4541e8c2f1fe1eb5",
+   "at": "2026-11-04T03:00:00Z",
+   "subject": "Tier multipliers for SHOP-402",
+   "keys": [
+    "SHOP-402"
+   ],
+   "files": [
+    "loyalty/points.py",
+    "tests/test_points.py"
+   ],
+   "tests_added": [
+    "tests.test_points::test_gold_members_earn_double",
+    "tests.test_points::test_silver_members_earn_one_and_a_half_rounded_down"
+   ]
+  },
+  {
+   "commit": "11e670e513f17ad4d20874e934f8b4868d5c3f52",
+   "at": "2026-11-02T03:00:00Z",
+   "subject": "Points per dollar (SHOP-401)",
+   "keys": [
+    "SHOP-401"
+   ],
+   "files": [
+    "README.md",
+    "loyalty/__init__.py",
+    "loyalty/points.py",
+    "pyproject.toml",
+    "tests/test_points.py"
+   ],
+   "tests_added": [
+    "tests.test_points::test_earn_one_point_per_whole_dollar",
+    "tests.test_points::test_no_points_below_ten_dollars",
+    "tests.test_points::test_points_capped_at_500"
+   ]
+  }
+ ],
+ "tickets": [
+  {
+   "id": "SHOP-401",
+   "links": [],
+   "comments": [
+    {
+     "index": 0,
+     "author": "Dev (Loyalty)",
+     "created": "2026-11-02T04:00:00.000+0000",
+     "mentions": [
+      "tests/test_points.py"
+     ]
+    }
+   ],
+   "attachments": []
+  },
+  {
+   "id": "SHOP-402",
+   "links": [],
+   "comments": [],
+   "attachments": [
+    "tier-rules.pdf"
+   ]
+  },
+  {
+   "id": "SHOP-403",
+   "links": [
+    {
+     "type": "is tested by",
+     "key": "SHOP-T12",
+     "summary": "Points expire 12 months after they are earned",
+     "test_id": "tests.test_expiry::test_points_expire_after_12_months"
+    }
+   ],
+   "comments": [],
+   "attachments": []
+  },
+  {
+   "id": "SHOP-404",
+   "links": [],
+   "comments": [],
+   "attachments": []
+  },
+  {
+   "id": "REQ-NFR-1",
+   "links": [],
+   "comments": [],
+   "attachments": []
+  },
+  {
+   "id": "REQ-NFR-2",
+   "links": [],
+   "comments": [],
+   "attachments": []
+  }
+ ],
+ "test_management": {
+  "path": "examples/test-management.json",
+  "source": "Xray test repository export, 2026-11-11",
+  "tests": [
+   {
+    "key": "SHOP-T12",
+    "summary": "Points expire 12 months after they are earned",
+    "requirements": [
+     "SHOP-403"
+    ],
+    "test_id": "tests.test_expiry::test_points_expire_after_12_months",
+    "type": "Generic"
+   }
+  ]
+ },
+ "runs": [
+  {
+   "path": "examples/run/junit.xml",
+   "timestamp": "2026-11-12T03:04:25.521503+13:00",
+   "cases": 8
+  }
+ ],
+ "results": {
+  "tests.test_expiry::test_points_expire_after_12_months": {
+   "status": "failed",
+   "run": "examples/run/junit.xml",
+   "at": "2026-11-12T03:04:25.521503+13:00",
+   "message": "assert False\n +  where False = expired(datetime.date(2025, 11, 12), datetime.date(2026, 11, 12))\n +    where datetime.date(2025, 11, 12) = date(2025, 11, 12)\n +"
+  },
+  "tests.test_legacy::test_bulk_import_line": {
+   "status": "passed",
+   "run": "examples/run/junit.xml",
+   "at": "2026-11-12T03:04:25.521503+13:00",
+   "message": ""
+  },
+  "tests.test_legacy::test_legacy_bonus_flag_is_ignored": {
+   "status": "passed",
+   "run": "examples/run/junit.xml",
+   "at": "2026-11-12T03:04:25.521503+13:00",
+   "message": ""
+  },
+  "tests.test_points::test_earn_one_point_per_whole_dollar": {
+   "status": "passed",
+   "run": "examples/run/junit.xml",
+   "at": "2026-11-12T03:04:25.521503+13:00",
+   "message": ""
+  },
+  "tests.test_points::test_no_points_below_ten_dollars": {
+   "status": "passed",
+   "run": "examples/run/junit.xml",
+   "at": "2026-11-12T03:04:25.521503+13:00",
+   "message": ""
+  },
+  "tests.test_points::test_points_capped_at_500": {
+   "status": "passed",
+   "run": "examples/run/junit.xml",
+   "at": "2026-11-12T03:04:25.521503+13:00",
+   "message": ""
+  },
+  "tests.test_points::test_gold_members_earn_double": {
+   "status": "passed",
+   "run": "examples/run/junit.xml",
+   "at": "2026-11-12T03:04:25.521503+13:00",
+   "message": ""
+  },
+  "tests.test_points::test_silver_members_earn_one_and_a_half_rounded_down": {
+   "status": "passed",
+   "run": "examples/run/junit.xml",
+   "at": "2026-11-12T03:04:25.521503+13:00",
+   "message": ""
+  }
+ }
+}

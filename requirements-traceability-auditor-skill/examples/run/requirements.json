@@ -1,0 +1,156 @@
+{
+ "sources": {
+  "tickets": "examples/run/tickets.json",
+  "documents": [
+   "examples/requirements.md"
+  ]
+ },
+ "requirements": [
+  {
+   "id": "SHOP-401",
+   "source": "jira",
+   "title": "Members earn points per dollar",
+   "priority": "High",
+   "type": "Story",
+   "status": "Done",
+   "statement": "Base earning rule for the loyalty programme.",
+   "criteria": [
+    {
+     "id": "SHOP-401/AC-1",
+     "text": "Members earn 1 point per whole dollar of the subtotal."
+    },
+    {
+     "id": "SHOP-401/AC-2",
+     "text": "Orders below $10.00 earn no points."
+    },
+    {
+     "id": "SHOP-401/AC-3",
+     "text": "Orders above $500.00 earn 500 points."
+    }
+   ],
+   "links": [],
+   "comments": [
+    {
+     "author": "Dev (Loyalty)",
+     "created": "2026-11-02T04:00:00.000+0000",
+     "text": "Implemented with tests in tests/test_points.py."
+    }
+   ],
+   "attachments": [],
+   "content_sha256": "3e69e9d7dd59a4a98f0b0832259524bf54e140cff29d7ed84435a5552ad8b2c2"
+  },
+  {
+   "id": "SHOP-402",
+   "source": "jira",
+   "title": "Tier multipliers",
+   "priority": "High",
+   "type": "Story",
+   "status": "Done",
+   "statement": "Gold, Silver and Bronze earn at different rates.",
+   "criteria": [
+    {
+     "id": "SHOP-402/AC-1",
+     "text": "Gold members earn double points."
+    },
+    {
+     "id": "SHOP-402/AC-2",
+     "text": "Silver members earn 1.5 times the points, rounded down."
+    },
+    {
+     "id": "SHOP-402/AC-3",
+     "text": "Bronze members earn the base points."
+    }
+   ],
+   "links": [],
+   "comments": [],
+   "attachments": [
+    "tier-rules.pdf"
+   ],
+   "content_sha256": "12d235b8680e97995d95c94efdb4c0a1c7f1b804e6c146b7b97967bfe0a1e394"
+  },
+  {
+   "id": "SHOP-403",
+   "source": "jira",
+   "title": "Points expire after 12 months",
+   "priority": "Medium",
+   "type": "Story",
+   "status": "Done",
+   "statement": "Unused points expire on the anniversary of the day they were earned.",
+   "criteria": [
+    {
+     "id": "SHOP-403/AC-1",
+     "text": "Points earned on a date expire 12 months later, on the same day of the month."
+    }
+   ],
+   "links": [
+    {
+     "type": "is tested by",
+     "key": "SHOP-T12",
+     "summary": "Points expire 12 months after they are earned"
+    }
+   ],
+   "comments": [],
+   "attachments": [],
+   "content_sha256": "83110eadfd061b52a0285ca8c10ca0e0f062e3f7fc709e6867d63b3d618122f1"
+  },
+  {
+   "id": "SHOP-404",
+   "source": "jira",
+   "title": "Referral bonus",
+   "priority": "Medium",
+   "type": "Story",
+   "status": "Done",
+   "statement": "Members who refer a friend get a bonus.",
+   "criteria": [
+    {
+     "id": "SHOP-404/AC-1",
+     "text": "A member earns 250 points when a friend they referred has their first order delivered, if the member has ordered before."
+    }
+   ],
+   "links": [],
+   "comments": [],
+   "attachments": [],
+   "content_sha256": "4e4d9c85618b71ddb08990344ecd72db3900b12c2c4ebb650621f5be3d8df18d"
+  },
+  {
+   "id": "REQ-NFR-1",
+   "source": "document:requirements.md",
+   "title": "Points calculation time",
+   "priority": null,
+   "type": "Requirement",
+   "status": null,
+   "statement": "Calculating the points for an order takes under 50 ms at the 95th percentile, measured at the loyalty service, for orders of up to 100 lines.",
+   "criteria": [
+    {
+     "id": "REQ-NFR-1/AC-1",
+     "text": "Calculating the points for an order takes under 50 ms at the 95th percentile, measured at the loyalty service, for orders of up to 100 lines."
+    }
+   ],
+   "links": [],
+   "comments": [],
+   "attachments": [],
+   "line": 5,
+   "content_sha256": "02a86169ecca6a2ad82865a520dd639a2f872a30ba6eec25736545936d9a6b10"
+  },
+  {
+   "id": "REQ-NFR-2",
+   "source": "document:requirements.md",
+   "title": "Points history retention",
+   "priority": null,
+   "type": "Requirement",
+   "status": null,
+   "statement": "A member's points history is kept for 7 years after their last order.",
+   "criteria": [
+    {
+     "id": "REQ-NFR-2/AC-1",
+     "text": "A member's points history is kept for 7 years after their last order."
+    }
+   ],
+   "links": [],
+   "comments": [],
+   "attachments": [],
+   "line": 10,
+   "content_sha256": "3db3ab4e15a640da6dda50690555ad33886e207bcc6d11f45cceb51f60f75870"
+  }
+ ]
+}

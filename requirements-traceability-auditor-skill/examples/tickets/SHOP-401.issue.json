@@ -1,0 +1,140 @@
+{
+ "key": "SHOP-401",
+ "names": {
+  "customfield_10034": "Acceptance Criteria"
+ },
+ "fields": {
+  "summary": "Members earn points per dollar",
+  "issuetype": {
+   "name": "Story"
+  },
+  "status": {
+   "name": "Done",
+   "statusCategory": {
+    "key": "done"
+   }
+  },
+  "priority": {
+   "name": "High"
+  },
+  "labels": [
+   "loyalty"
+  ],
+  "components": [
+   {
+    "name": "loyalty"
+   }
+  ],
+  "fixVersions": [
+   {
+    "name": "2026.12"
+   }
+  ],
+  "description": {
+   "type": "doc",
+   "version": 1,
+   "content": [
+    {
+     "type": "paragraph",
+     "content": [
+      {
+       "type": "text",
+       "text": "Base earning rule for the loyalty programme."
+      }
+     ]
+    }
+   ]
+  },
+  "customfield_10034": {
+   "type": "doc",
+   "version": 1,
+   "content": [
+    {
+     "type": "orderedList",
+     "content": [
+      {
+       "type": "listItem",
+       "content": [
+        {
+         "type": "paragraph",
+         "content": [
+          {
+           "type": "text",
+           "text": "Members earn 1 point per whole dollar of the subtotal."
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "listItem",
+       "content": [
+        {
+         "type": "paragraph",
+         "content": [
+          {
+           "type": "text",
+           "text": "Orders below $10.00 earn no points."
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "type": "listItem",
+       "content": [
+        {
+         "type": "paragraph",
+         "content": [
+          {
+           "type": "text",
+           "text": "Orders above $500.00 earn 500 points."
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "subtasks": [],
+  "issuelinks": [],
+  "attachment": [],
+  "comment": {
+   "comments": [
+    {
+     "author": {
+      "displayName": "Dev (Loyalty)"
+     },
+     "created": "2026-11-02T04:00:00.000+0000",
+     "body": {
+      "type": "doc",
+      "version": 1,
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "Implemented with tests in tests/test_points.py."
+         }
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "total": 1
+  },
+  "parent": {
+   "key": "SHOP-300",
+   "fields": {
+    "summary": "Loyalty programme",
+    "issuetype": {
+     "name": "Epic"
+    }
+   }
+  }
+ }
+}

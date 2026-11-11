@@ -1,0 +1,10 @@
+{
+ "note": "The agent's triage of the inferred links and criteria: dropped inferred links with reasons, and criteria judged covered (none here).",
+ "dropped_links": [
+  {"requirement": "SHOP-401", "test_id": "tests.test_points::test_gold_members_earn_double",
+   "reason": "The SHOP-401 comment names tests/test_points.py, which also holds SHOP-402's tier tests; this test names SHOP-402 AC-1 and checks the tier multiplier, not the base rule."},
+  {"requirement": "SHOP-401", "test_id": "tests.test_points::test_silver_members_earn_one_and_a_half_rounded_down",
+   "reason": "Same file mention as above; this test names SHOP-402 AC-2 (Silver rounding), not SHOP-401."}
+ ],
+ "judged_coverage": []
+}

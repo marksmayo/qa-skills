@@ -1,0 +1,11 @@
+requirement,status,criterion,test_id,strength,evidence,result,fresh
+SHOP-401,verified,SHOP-401/AC-1,tests.test_points::test_earn_one_point_per_whole_dollar,explicit,commit test_code ticket_comment,passed,True
+SHOP-401,verified,SHOP-401/AC-2,tests.test_points::test_no_points_below_ten_dollars,explicit,commit test_code ticket_comment,passed,True
+SHOP-401,verified,SHOP-401/AC-3,tests.test_points::test_points_capped_at_500,explicit,commit test_code ticket_comment,passed,True
+SHOP-402,partially_verified,SHOP-402/AC-1,tests.test_points::test_gold_members_earn_double,explicit,commit test_code,passed,True
+SHOP-402,partially_verified,SHOP-402/AC-2,tests.test_points::test_silver_members_earn_one_and_a_half_rounded_down,explicit,commit test_code,passed,True
+SHOP-402,partially_verified,SHOP-402/AC-3,,,,,
+SHOP-403,failing,SHOP-403/AC-1,tests.test_expiry::test_points_expire_after_12_months,explicit,commit test_management ticket_link,failed,True
+SHOP-404,untested,SHOP-404/AC-1,,,,,
+REQ-NFR-1,not_traceable,REQ-NFR-1/AC-1,,,,,
+REQ-NFR-2,not_traceable,REQ-NFR-2/AC-1,,,,,

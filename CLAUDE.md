@@ -342,6 +342,16 @@ python hypercare-anomaly-watcher-skill/scripts/watch.py tick --state <state> --n
 
 Run `commands.sh` from `hypercare-anomaly-watcher-skill/`: it regenerates the simulation and the ticks (the same files, since the seed is fixed); the agent's headline, limitations and suggested actions are then added again. Editing `simulate.py`, `hypercare.json` or `detect.py` changes the evaluations. Live watching needs `DD_API_KEY`, `DD_APP_KEY` and `SENTRY_AUTH_TOKEN`; the skill only reads, and never installs the schedule.
 
+Requirements traceability auditor (`examples/make_repo.py` builds the sample package "harbour-loyalty" whose commits name their tickets; `examples/tickets/` holds four Jira issues and `examples/requirements.md` two document requirements; `examples/run/` holds the normalised inputs, a real pytest JUnit run and the evidence, listed in `examples/commands.sh`; the validator rebuilds the matrix from the evidence and the triage, and `--repo` re-reads every file line and commit):
+
+```bash
+python requirements-traceability-auditor-skill/scripts/validate_trace.py requirements-traceability-auditor-skill/examples/trace.example.json --requirements requirements-traceability-auditor-skill/examples/run/requirements.json --evidence requirements-traceability-auditor-skill/examples/run/evidence.json --junit requirements-traceability-auditor-skill/examples/run/junit.xml
+python requirements-traceability-auditor-skill/scripts/render_report.py requirements-traceability-auditor-skill/examples/trace.example.json [--brief | --csv matrix.csv]
+python requirements-traceability-auditor-skill/scripts/build_matrix.py --requirements requirements-traceability-auditor-skill/examples/run/requirements.json --evidence requirements-traceability-auditor-skill/examples/run/evidence.json --triage requirements-traceability-auditor-skill/examples/triage.json --out matrix.json
+```
+
+Run `commands.sh` from `requirements-traceability-auditor-skill/` with `HL` set to an empty directory for the sample repository (fixed commit ids). The report cites lines of that repository and its commits, so editing `make_repo.py`, the tickets, the document or the export invalidates the example until `commands.sh` is rerun and the report rebuilt.
+
 Shared files:
 
 ```bash
