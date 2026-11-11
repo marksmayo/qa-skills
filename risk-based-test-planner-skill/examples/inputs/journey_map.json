@@ -1,0 +1,16 @@
+{
+  "metadata": {"note": "Trimmed journey-mapper output for larder: only the fields the planner reads.", "generated_at": "2026-10-30T09:00:00Z"},
+  "journeys": [
+    {"id": "JRN-CHK-001", "title": "Customer pays for an order", "priority": "P0",
+     "steps": [{"action": "Add flour and honey to the cart", "evidence": [{"file": "larder/catalog/products.py", "line": 1}]},
+               {"action": "Pay by card", "evidence": [{"file": "larder/payments/service.py", "line": 6}, {"file": "larder/payments/gateway.py", "line": 13}]}],
+     "variants": [{"id": "V1", "name": "refund", "evidence": [{"file": "larder/payments/service.py", "line": 15}]}]},
+    {"id": "JRN-ACC-001", "title": "Customer signs in", "priority": "P1",
+     "steps": [{"action": "Sign in with email and password", "evidence": [{"file": "larder/auth/session.py", "line": 11}]}], "variants": []},
+    {"id": "JRN-BRW-001", "title": "Customer browses an aisle", "priority": "P2",
+     "steps": [{"action": "Open the baking aisle", "evidence": [{"file": "larder/catalog/products.py", "line": 8}, {"file": "larder/marketing/banners.py", "line": 6}]}],
+     "variants": []},
+    {"id": "JRN-ADM-001", "title": "Store manager reads the weekly stock report", "priority": "P3",
+     "steps": [{"action": "Open the stock report", "evidence": [{"file": "larder/reports/stock.py", "line": 20}]}], "variants": []}
+  ]
+}

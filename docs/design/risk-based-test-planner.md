@@ -1,6 +1,6 @@
 # Design: `risk-based-test-planner-skill`
 
-Status: Designed; not built. Build order: 13.
+Status: Built (v1.0.0), see "As built" at the end. Build order: 13.
 
 ## Mission
 
@@ -186,3 +186,72 @@ Agreed with the user before the build.
 1. **Effort unit?** 90-minute sessions.
 2. **Defect history source?** Fix commits, plus a read-only Jira JQL search when a connector or credentials exist.
 3. **Production usage data for reach?** Optional input; the default is the journey graph.
+
+
+## As built (v1.0.0)
+
+Where the build differs from the design above, and what the example showed.
+
+- **Percentiles are mid-rank.** p = (areas below + half the ties) / (areas - 1). The first
+  version ranked tied areas at the bottom: payments got reach 1 while tied with three other
+  areas on one journey each.
+- **The history window ends at the HEAD commit's date** unless `--as-of` is given, so the same
+  repository always scores the same.
+- **Formatting-only commits** are left out of churn and listed. The subject must say style,
+  format or reformat, and every file's added and deleted counts must be within 2 of each other.
+- **Defect history** counts fix commits found by subject, plus Jira Bug tickets passed with
+  `--defects` (`fetch_ticket.py --jql` output) whose component or label names the area. A bug
+  already linked from a fix commit counts once. The example gives no Jira search, and the plan
+  lists that as missing.
+- **Surfaces describe actions.** `data/surfaces.json` matches calls like charge, refund, redeem,
+  login, delete and export, not mere mentions: a catalogue showing a price is not a money
+  surface. Gift-card redemption was added after the first run scored gift cards 1.
+- **Test weakness:**
+  - **Reach:** found by the tests that import an area.
+  - **Score:** no test scores 5; otherwise it goes by the test-to-code ratio.
+  - **Flaky tests:** tests from a flaky-test-hunter report don't count.
+  - **The evaluator:** the test-suite-evaluator's scores are suite-wide, so they aren't used per
+    area.
+- **Inputs from other skills:**
+  - **What is read:** security (CVSS severity), crash (ranking band), WCAG (findings with a file
+    component) and flaky reports, through small adapters.
+  - **How they count:** findings map to areas by file. Critical and high findings set the High
+    floor, and each keeps its source confidence. The validator re-reads the source with
+    `--input` to check that.
+- **Effort.**
+  - **Floors first:** each planned High area gets max(1, ceil(min(2, 0.1 x budget))), then the
+    rest is shared by risk with largest remainders. The design's "budget x risk / sum of risk,
+    with a floor" was ambiguous about rounding; this way the total always equals the budget.
+  - **`sessions_short` counts every High area in scope**, planned or not. The first version
+    counted only planned ones, so dropping a High area from the plan hid the shortfall; the
+    one-session example caught it.
+  - **The 4-session variant became 1 session:** with this floor rule, a 4-session budget covers
+    two High areas.
+- **Judged factors.** A person can change a factor's score by marking it `judged`, with
+  `computed_score` kept and a reason. Every other factor must equal `risk.json`.
+- **Example results:**
+
+  | Area | Risk | Band | Note |
+  |---|---|---|---|
+  | payments | 17.9 | High | |
+  | auth | 7.7 | High | Through security finding F-1 |
+  | giftcards | 10.3 | Medium | Novel |
+  | catalog | 8.9 | Medium | |
+  | marketing | 7.4 | Low | The design's answer key had Medium; with no impact surface its likelihood alone isn't enough |
+  | reports | 3.7 | Low | Not tested |
+
+  The 16-session plan gives payments 6 sessions, auth 4, and gift cards, catalog and marketing
+  2 each.
+- **Testing:**
+  - The validator catches 25 of 25 seeded violations.
+  - 12 scorer scenarios pass:
+    - no journey map;
+    - a usage export;
+    - a shallow clone;
+    - formatting exclusion;
+    - a low-severity finding setting no floor;
+    - the novel floor;
+    - floors, shares and shortfall in the allocation;
+    - no budget;
+    - monorepo areas;
+    - no scope diff.

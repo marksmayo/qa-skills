@@ -1,0 +1,12 @@
+{
+  "notice": "Trimmed code-security-auditor output for larder: only the fields the planner reads.",
+  "generated_at": "2026-10-29T14:00:00Z",
+  "findings": [
+    {"id": "F-1", "title": "Session tokens never expire server-side", "confidence": "likely",
+     "cvss": {"severity": "High", "score": 7.1},
+     "locations": [{"file": "larder/auth/session.py", "line": 14}]},
+    {"id": "F-2", "title": "Gateway timeout is long enough to hold worker threads", "confidence": "possible",
+     "cvss": {"severity": "Low", "score": 3.1},
+     "locations": [{"file": "larder/payments/gateway.py", "line": 9}]}
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "$comment": "Impact surfaces found by pattern in an area's source files (case-insensitive regex per line). The highest-scoring class an area matches sets its surface factor; a person may judge it differently, with a reason. Patterns are deliberately about doing (charging, deleting, authenticating), not merely mentioning: a catalogue that shows a price does not move money.",
+  "classes": {
+    "money": {
+      "score": 5,
+      "label": "moves money",
+      "patterns": [
+        "\\b(charge|capture|refund|payout|settle|transfer)_?\\w*\\s*\\(",
+        "\\b(redeem|debit|top_?up|issue_gift_card|apply_gift_card)\\w*\\s*\\(",
+        "\\bpayment_intent\\b",
+        "\\bledger\\b",
+        "\\bstripe\\b|\\bbraintree\\b|\\badyen\\b"
+      ]
+    },
+    "access": {
+      "score": 5,
+      "label": "controls access",
+      "patterns": [
+        "\\b(login|logout|authenticate|authorise|authorize|has_permission|check_permission|require_role)\\w*\\s*\\(",
+        "\\bpassword_?hash\\b|\\bhash_password\\b",
+        "\\bsession(_?token)?\\b.*=|\\bjwt\\b",
+        "\\bcompare_digest\\b"
+      ]
+    },
+    "personal_data": {
+      "score": 5,
+      "label": "deletes or exposes personal data",
+      "patterns": [
+        "\\b(export|download|share)\\w*\\(.*\\b(customer|user|patient|member)s?\\b",
+        "\\b(email|phone|address|date_of_birth|dob)\\b.*\\b(export|csv|send|share)\\b"
+      ]
+    },
+    "destructive": {
+      "score": 5,
+      "label": "destroys data",
+      "patterns": [
+        "\\b(delete|purge|truncate|drop|erase|wipe)_?\\w*\\s*\\(",
+        "\\bDROP\\s+TABLE\\b",
+        "\\bDELETE\\s+FROM\\b"
+      ]
+    },
+    "compliance": {
+      "score": 4,
+      "label": "compliance-relevant",
+      "patterns": [
+        "\\b(gdpr|consent|retention|audit_log|right_to_erasure|accessibility_statement)\\b"
+      ]
+    },
+    "external": {
+      "score": 3,
+      "label": "external integration",
+      "patterns": [
+        "\\burllib\\.request\\b|\\brequests\\.(get|post|put|delete)\\b|\\bfetch\\s*\\(|\\baxios\\b|\\bhttpx\\b",
+        "\\bwebhook\\b"
+      ]
+    }
+  },
+  "none_score": 1
+}

@@ -1,0 +1,100 @@
+{
+  "repo": "larder",
+  "files": {
+    "larder/__init__.py": {
+      "loc": 0,
+      "branches": 0,
+      "method": "ast"
+    },
+    "larder/auth/__init__.py": {
+      "loc": 0,
+      "branches": 0,
+      "method": "ast"
+    },
+    "larder/auth/session.py": {
+      "loc": 12,
+      "branches": 1,
+      "method": "ast"
+    },
+    "larder/catalog/__init__.py": {
+      "loc": 0,
+      "branches": 0,
+      "method": "ast"
+    },
+    "larder/catalog/products.py": {
+      "loc": 10,
+      "branches": 1,
+      "method": "ast"
+    },
+    "larder/giftcards/__init__.py": {
+      "loc": 0,
+      "branches": 0,
+      "method": "ast"
+    },
+    "larder/giftcards/cards.py": {
+      "loc": 10,
+      "branches": 1,
+      "method": "ast"
+    },
+    "larder/marketing/__init__.py": {
+      "loc": 0,
+      "branches": 0,
+      "method": "ast"
+    },
+    "larder/marketing/banners.py": {
+      "loc": 17,
+      "branches": 2,
+      "method": "ast"
+    },
+    "larder/payments/__init__.py": {
+      "loc": 0,
+      "branches": 0,
+      "method": "ast"
+    },
+    "larder/payments/gateway.py": {
+      "loc": 11,
+      "branches": 0,
+      "method": "ast"
+    },
+    "larder/payments/service.py": {
+      "loc": 28,
+      "branches": 3,
+      "method": "ast"
+    },
+    "larder/reports/__init__.py": {
+      "loc": 0,
+      "branches": 0,
+      "method": "ast"
+    },
+    "larder/reports/stock.py": {
+      "loc": 36,
+      "branches": 18,
+      "method": "ast"
+    },
+    "tests/__init__.py": {
+      "loc": 0,
+      "branches": 0,
+      "method": "ast"
+    },
+    "tests/test_catalog.py": {
+      "loc": 3,
+      "branches": 0,
+      "method": "ast"
+    },
+    "tests/test_marketing.py": {
+      "loc": 3,
+      "branches": 0,
+      "method": "ast"
+    },
+    "tests/test_payments.py": {
+      "loc": 8,
+      "branches": 0,
+      "method": "ast"
+    },
+    "tests/test_reports.py": {
+      "loc": 3,
+      "branches": 0,
+      "method": "ast"
+    }
+  }
+}

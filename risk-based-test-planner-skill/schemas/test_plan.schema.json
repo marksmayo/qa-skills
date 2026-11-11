@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/marksmayo/qa-skills/risk-based-test-planner-skill/schemas/test_plan.schema.json",
+  "title": "Risk-based test plan",
+  "description": "Every area in scope scored for likelihood and impact with cited evidence, the testing planned for it or the reason it is not tested, effort in 90-minute sessions, and entry and exit criteria. The areas section is copied from score_risk.py's risk.json; only factors marked judged may differ, with the reason.",
+  "type": "object",
+  "required": ["metadata", "areas", "strategy", "not_tested", "entry_criteria", "exit_criteria", "assumptions", "open_questions", "summary"],
+  "additionalProperties": false,
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": ["repo", "head", "generated_at", "skill_version", "scope", "history", "budget_sessions", "risk_file", "inputs_used", "inputs_missing"],
+      "additionalProperties": false,
+      "properties": {
+        "repo": {"type": "string"},
+        "head": {"type": "string"},
+        "generated_at": {"type": "string"},
+        "skill_version": {"type": "string"},
+        "title": {"type": "string"},
+        "scope": {"type": ["object", "null"]},
+        "history": {"type": "object", "required": ["from", "to", "commits"]},
+        "budget_sessions": {"type": ["integer", "null"], "minimum": 0},
+        "session_minutes": {"type": "integer"},
+        "risk_file": {"type": "string"},
+        "inputs_used": {"type": "array", "items": {"type": "object", "required": ["skill", "path"]}},
+        "inputs_missing": {"type": "array", "items": {"type": "string"}},
+        "excluded": {"type": "array"}
+      }
+    },
+    "areas": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "paths", "journeys", "surfaces", "flags", "open_findings", "factors", "likelihood", "impact", "risk", "band", "confidence"],
+        "properties": {
+          "id": {"type": "string"},
+          "paths": {"type": "array", "items": {"type": "string"}},
+          "files": {"type": "integer"},
+          "journeys": {"type": "array", "items": {"type": "string"}},
+          "surfaces": {"type": "array", "items": {"type": "string"}},
+          "flags": {"type": "array", "items": {"enum": ["novel", "open_findings"]}},
+          "open_findings": {"type": "array", "items": {"type": "object", "required": ["skill", "id", "severity", "confidence"]}},
+          "tests": {"type": "array", "items": {"type": "string"}},
+          "factors": {
+            "type": "object",
+            "required": ["churn", "defects", "complexity", "change_in_scope", "test_weakness", "journey_criticality", "surface", "reach"],
+            "additionalProperties": {
+              "type": "object",
+              "required": ["score", "status", "evidence"],
+              "properties": {
+                "score": {"type": ["integer", "null"], "minimum": 1, "maximum": 5},
+                "status": {"enum": ["assessed", "not_assessed", "judged"]},
+                "evidence": {"type": "array", "items": {"type": "string", "minLength": 3}},
+                "command": {"type": "string"},
+                "judged_reason": {"type": "string"},
+                "computed_score": {"type": ["integer", "null"]}
+              }
+            }
+          },
+          "likelihood": {"type": ["number", "null"]},
+          "impact": {"type": ["number", "null"]},
+          "risk": {"type": ["number", "null"]},
+          "band": {"enum": ["High", "Medium", "Low"]},
+          "confidence": {"enum": ["high", "medium", "low"]}
+        }
+      }
+    },
+    "strategy": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["area_id", "test_types", "effort_sessions", "effort_share"],
+        "additionalProperties": false,
+        "properties": {
+          "area_id": {"type": "string"},
+          "test_types": {
+            "type": "array", "minItems": 1,
+            "items": {"type": "object", "required": ["type", "why"],
+                      "properties": {"type": {"enum": ["unit", "integration", "contract", "journey", "exploratory", "performance", "accessibility",
+                                                       "security", "mutation", "regression", "smoke", "visual", "data"]},
+                                     "owner_skill": {"type": ["string", "null"]}, "why": {"type": "string", "minLength": 10}}}
+          },
+          "effort_sessions": {"type": ["integer", "null"], "minimum": 0},
+          "effort_share": {"type": "number", "minimum": 0, "maximum": 1},
+          "charters": {"type": "array", "items": {"type": "string", "minLength": 10}}
+        }
+      }
+    },
+    "not_tested": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["area_id", "reason", "residual_band", "accepted_by"],
+        "additionalProperties": false,
+        "properties": {
+          "area_id": {"type": "string"},
+          "reason": {"type": "string", "minLength": 20},
+          "residual_band": {"enum": ["High", "Medium", "Low"]},
+          "accepted_by": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "entry_criteria": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 10}},
+    "exit_criteria": {"type": "array", "minItems": 1,
+                      "items": {"type": "object", "required": ["condition", "measure"],
+                                "properties": {"condition": {"type": "string", "minLength": 10}, "measure": {"type": "string", "minLength": 5}}}},
+    "assumptions": {"type": "array", "items": {"type": "string"}},
+    "open_questions": {"type": "array", "items": {"type": "string"}},
+    "summary": {
+      "type": "object",
+      "required": ["headline", "areas", "high", "medium", "low", "planned", "not_tested", "sessions_allocated", "sessions_short"],
+      "additionalProperties": false,
+      "properties": {
+        "headline": {"type": "string", "minLength": 20},
+        "areas": {"type": "integer"}, "high": {"type": "integer"}, "medium": {"type": "integer"}, "low": {"type": "integer"},
+        "planned": {"type": "integer"}, "not_tested": {"type": "integer"},
+        "sessions_allocated": {"type": ["integer", "null"]}, "sessions_short": {"type": "integer"}
+      }
+    }
+  }
+}

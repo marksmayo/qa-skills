@@ -159,6 +159,17 @@ python dead-test-finder-skill/scripts/unified_diff.py check dead-test-finder-ski
 
 The candidates, neutralisation runs and proofs cite lines and test ids in `examples/ledger/`, so editing it invalidates the example until `commands.sh` is rerun. That needs a scratch copy of `ledger/client` with `npm install` done (`CLIENT=...`). Neutralisation works in copies outside the repo and restores everything it patches.
 
+Risk-based test planner (`examples/make_sample_repo.py` builds the sample git repository "larder" deterministically, HEAD `d834c7e`, because a `.git` directory can't be shipped; `examples/run/` holds the mined history, complexity, scope and scores, listed in `examples/run/commands.sh`; `--risk` checks the plan's areas against the scores, `--input` checks carried findings keep their source confidence):
+
+```bash
+python risk-based-test-planner-skill/scripts/validate_test_plan.py risk-based-test-planner-skill/examples/test_plan.example.json --risk risk-based-test-planner-skill/examples/run/risk.json --input security=risk-based-test-planner-skill/examples/inputs/security_audit.json
+python risk-based-test-planner-skill/scripts/validate_test_plan.py risk-based-test-planner-skill/examples/test_plan.one-session.example.json --risk risk-based-test-planner-skill/examples/run/risk.json --input security=risk-based-test-planner-skill/examples/inputs/security_audit.json
+python risk-based-test-planner-skill/scripts/render_report.py risk-based-test-planner-skill/examples/test_plan.example.json [--brief | --markdown plan.md]
+python risk-based-test-planner-skill/examples/make_sample_repo.py <empty dir>
+```
+
+Re-scoring needs the sample repository: build it with `make_sample_repo.py`, then run `commands.sh` with `LARDER=<that dir>`. The history window is fixed with `--as-of 2026-11-01`, so the scores don't depend on today's date. Editing the trimmed inputs in `examples/inputs/` or `data/surfaces.json` changes the scores and invalidates both plans until they are re-scored and re-validated with `--write-summary`.
+
 Shared files:
 
 ```bash

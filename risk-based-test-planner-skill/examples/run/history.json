@@ -1,0 +1,922 @@
+{
+  "repo": "larder",
+  "head": "d834c7e13dc8",
+  "shallow": false,
+  "window": {
+    "days": 180,
+    "from": "2026-05-05",
+    "to": "2026-11-01"
+  },
+  "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%s%x1f%b",
+  "commits": [
+    {
+      "sha": "d834c7e13dc8",
+      "date": "2026-10-28",
+      "author": "Chloe Tan",
+      "subject": "Marketing: gift card launch banners",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/marketing/banners.py",
+          "added": 10,
+          "deleted": 10
+        }
+      ]
+    },
+    {
+      "sha": "36de3fe6f453",
+      "date": "2026-10-20",
+      "author": "Ana Ruiz",
+      "subject": "Payments: pay part of an order with a gift card",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/payments/service.py",
+          "added": 6,
+          "deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "bf14292c803c",
+      "date": "2026-10-12",
+      "author": "Dev Patel",
+      "subject": "Gift cards: issue and redeem",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/giftcards/__init__.py",
+          "added": 0,
+          "deleted": 0
+        },
+        {
+          "path": "larder/giftcards/cards.py",
+          "added": 15,
+          "deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "bac397ec032a",
+      "date": "2026-09-22",
+      "author": "Ben Okafor",
+      "subject": "style: normalise string handling (no behaviour change)",
+      "fix": false,
+      "keys": [],
+      "formatting": true,
+      "files": [
+        {
+          "path": "larder/catalog/products.py",
+          "added": 2,
+          "deleted": 2
+        },
+        {
+          "path": "larder/reports/stock.py",
+          "added": 1,
+          "deleted": 2
+        }
+      ]
+    },
+    {
+      "sha": "83276abd7a9b",
+      "date": "2026-09-27",
+      "author": "Dev Patel",
+      "subject": "Marketing: week 20 banners",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/marketing/banners.py",
+          "added": 10,
+          "deleted": 10
+        }
+      ]
+    },
+    {
+      "sha": "541441fc10df",
+      "date": "2026-09-20",
+      "author": "Chloe Tan",
+      "subject": "Marketing: week 19 banners",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/marketing/banners.py",
+          "added": 10,
+          "deleted": 10
+        }
+      ]
+    },
+    {
+      "sha": "e6f800ca9872",
+      "date": "2026-09-15",
+      "author": "Ben Okafor",
+      "subject": "Gateway: longer timeout",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/payments/gateway.py",
+          "added": 1,
+          "deleted": 1
+        }
+      ]
+    },
+    {
+      "sha": "b2f74c33093a",
+      "date": "2026-09-13",
+      "author": "Ana Ruiz",
+      "subject": "Marketing: week 18 banners",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/marketing/banners.py",
+          "added": 10,
+          "deleted": 10
+        }
+      ]
+    },
+    {
+      "sha": "048c970b0dec",
+      "date": "2026-09-09",
+      "author": "Dev Patel",
+      "subject": "fix: regression in partial refunds (PAY-57)",
+      "fix": true,
+      "keys": [
+        "PAY-57"
+      ],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/payments/service.py",
+          "added": 1,
+          "deleted": 1
+        }
+      ]
+    },
+    {
+      "sha": "f6ae2153549a",
+      "date": "2026-09-06",
+      "author": "Chloe Tan",
+      "subject": "Marketing: week 17 banners",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/marketing/banners.py",
+          "added": 10,
+          "deleted": 10
+        }
+      ]
+    },
+    {
+      "sha": "a1d84b49566a",
+      "date": "2026-09-02",
+      "author": "Ben Okafor",
+      "subject": "Catalog: autumn prices",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/catalog/products.py",
+          "added": 2,
+          "deleted": 2
+        }
+      ]
+    },
+    {
+      "sha": "5e0c624d136e",
+      "date": "2026-08-27",
+      "author": "Ana Ruiz",
+      "subject": "Payments: receipt numbers",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/payments/service.py",
+          "added": 4,
+          "deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "defc60f1958f",
+      "date": "2026-08-27",
+      "author": "Dev Patel",
+      "subject": "Marketing: week 16 banners",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/marketing/banners.py",
+          "added": 10,
+          "deleted": 10
+        }
+      ]
+    },
+    {
+      "sha": "d84fa31f7b97",
+      "date": "2026-08-20",
+      "author": "Chloe Tan",
+      "subject": "Marketing: week 15 banners",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/marketing/banners.py",
+          "added": 10,
+          "deleted": 10
+        }
+      ]
+    },
+    {
+      "sha": "229928e8cd68",
+      "date": "2026-08-18",
+      "author": "Ben Okafor",
+      "subject": "hotfix: revert currency change, charge in the order currency",
+      "fix": true,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/payments/service.py",
+          "added": 1,
+          "deleted": 1
+        }
+      ]
+    },
+    {
+      "sha": "dc1d295c8ea1",
+      "date": "2026-08-13",
+      "author": "Ana Ruiz",
+      "subject": "Marketing: week 14 banners",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/marketing/banners.py",
+          "added": 10,
+          "deleted": 10
+        }
+      ]
+    },
+    {
+      "sha": "6f3e3dbb199b",
+      "date": "2026-08-06",
+      "author": "Dev Patel",
+      "subject": "Marketing: week 13 banners",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/marketing/banners.py",
+          "added": 10,
+          "deleted": 10
+        }
+      ]
+    },
+    {
+      "sha": "0eb29c6bea07",
+      "date": "2026-08-04",
+      "author": "Chloe Tan",
+      "subject": "Payments: split tender groundwork",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/payments/service.py",
+          "added": 4,
+          "deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "324d76b86c53",
+      "date": "2026-07-30",
+      "author": "Ben Okafor",
+      "subject": "Auth: sessions last 2 hours",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/auth/session.py",
+          "added": 1,
+          "deleted": 1
+        }
+      ]
+    },
+    {
+      "sha": "1a1953346136",
+      "date": "2026-07-27",
+      "author": "Ana Ruiz",
+      "subject": "Marketing: week 12 banners",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/marketing/banners.py",
+          "added": 10,
+          "deleted": 10
+        }
+      ]
+    },
+    {
+      "sha": "fede2b2a77eb",
+      "date": "2026-07-21",
+      "author": "Dev Patel",
+      "subject": "fix: AUD orders were charged in NZD (PAY-41)",
+      "fix": true,
+      "keys": [
+        "PAY-41"
+      ],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/payments/service.py",
+          "added": 1,
+          "deleted": 1
+        }
+      ]
+    },
+    {
+      "sha": "4882afb59aa0",
+      "date": "2026-07-20",
+      "author": "Chloe Tan",
+      "subject": "Marketing: week 11 banners",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/marketing/banners.py",
+          "added": 10,
+          "deleted": 10
+        }
+      ]
+    },
+    {
+      "sha": "db9dbcef59e2",
+      "date": "2026-07-14",
+      "author": "Ben Okafor",
+      "subject": "fix: flour price was in dollars, not cents",
+      "fix": true,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/catalog/products.py",
+          "added": 1,
+          "deleted": 1
+        }
+      ]
+    },
+    {
+      "sha": "847809e50cb4",
+      "date": "2026-07-13",
+      "author": "Ana Ruiz",
+      "subject": "Marketing: week 10 banners",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/marketing/banners.py",
+          "added": 10,
+          "deleted": 10
+        }
+      ]
+    },
+    {
+      "sha": "252740cc5f75",
+      "date": "2026-07-07",
+      "author": "Dev Patel",
+      "subject": "Payments: support store credit",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/payments/service.py",
+          "added": 4,
+          "deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "a67e22282ffe",
+      "date": "2026-07-06",
+      "author": "Chloe Tan",
+      "subject": "Marketing: week 9 banners",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/marketing/banners.py",
+          "added": 10,
+          "deleted": 10
+        }
+      ]
+    },
+    {
+      "sha": "cdc6de118eee",
+      "date": "2026-06-29",
+      "author": "Ben Okafor",
+      "subject": "fix: refund reason \"missing\" was rejected",
+      "fix": true,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/payments/service.py",
+          "added": 1,
+          "deleted": 1
+        }
+      ]
+    },
+    {
+      "sha": "6228483a77a6",
+      "date": "2026-06-27",
+      "author": "Ana Ruiz",
+      "subject": "Marketing: week 8 banners",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/marketing/banners.py",
+          "added": 10,
+          "deleted": 10
+        }
+      ]
+    },
+    {
+      "sha": "c1a85b075a6c",
+      "date": "2026-06-20",
+      "author": "Dev Patel",
+      "subject": "Marketing: week 7 banners",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/marketing/banners.py",
+          "added": 10,
+          "deleted": 10
+        }
+      ]
+    },
+    {
+      "sha": "d5d721ef0300",
+      "date": "2026-06-15",
+      "author": "Chloe Tan",
+      "subject": "Payments: retry once on gateway timeout",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/payments/service.py",
+          "added": 4,
+          "deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "780a7afe249a",
+      "date": "2026-06-13",
+      "author": "Ben Okafor",
+      "subject": "Marketing: week 6 banners",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/marketing/banners.py",
+          "added": 10,
+          "deleted": 10
+        }
+      ]
+    },
+    {
+      "sha": "d7dee63a6db6",
+      "date": "2026-06-10",
+      "author": "Ana Ruiz",
+      "subject": "Catalog: honey price update",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/catalog/products.py",
+          "added": 1,
+          "deleted": 1
+        }
+      ]
+    },
+    {
+      "sha": "96e054b32fab",
+      "date": "2026-06-06",
+      "author": "Dev Patel",
+      "subject": "Marketing: week 5 banners",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/marketing/banners.py",
+          "added": 10,
+          "deleted": 10
+        }
+      ]
+    },
+    {
+      "sha": "ce1e7e181f76",
+      "date": "2026-06-03",
+      "author": "Chloe Tan",
+      "subject": "fix: card fee missing from the charged amount",
+      "fix": true,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/payments/service.py",
+          "added": 1,
+          "deleted": 1
+        }
+      ]
+    },
+    {
+      "sha": "a74cf1c741cc",
+      "date": "2026-05-27",
+      "author": "Ben Okafor",
+      "subject": "Marketing: week 4 banners",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/marketing/banners.py",
+          "added": 10,
+          "deleted": 10
+        }
+      ]
+    },
+    {
+      "sha": "ed2ceff9ded1",
+      "date": "2026-05-26",
+      "author": "Ana Ruiz",
+      "subject": "Payments: log charge attempts",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/payments/service.py",
+          "added": 4,
+          "deleted": 0
+        }
+      ]
+    },
+    {
+      "sha": "207af7c9891e",
+      "date": "2026-05-20",
+      "author": "Dev Patel",
+      "subject": "Marketing: week 3 banners",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/marketing/banners.py",
+          "added": 10,
+          "deleted": 10
+        }
+      ]
+    },
+    {
+      "sha": "f06724b2e6f9",
+      "date": "2026-05-13",
+      "author": "Chloe Tan",
+      "subject": "Marketing: week 2 banners",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/marketing/banners.py",
+          "added": 10,
+          "deleted": 10
+        }
+      ]
+    },
+    {
+      "sha": "391c813ac8f1",
+      "date": "2026-05-12",
+      "author": "Ben Okafor",
+      "subject": "fix: refunds for spoiled goods were rejected",
+      "fix": true,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/payments/service.py",
+          "added": 1,
+          "deleted": 1
+        }
+      ]
+    },
+    {
+      "sha": "580a9b0916b7",
+      "date": "2026-05-06",
+      "author": "Ana Ruiz",
+      "subject": "Marketing: week 1 banners",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/marketing/banners.py",
+          "added": 10,
+          "deleted": 10
+        }
+      ]
+    },
+    {
+      "sha": "5fb958576335",
+      "date": "2026-05-20",
+      "author": "Chloe Tan",
+      "subject": "Stock report: add a report version marker",
+      "fix": false,
+      "keys": [],
+      "formatting": false,
+      "files": [
+        {
+          "path": "larder/reports/stock.py",
+          "added": 4,
+          "deleted": 0
+        }
+      ]
+    }
+  ],
+  "files": {
+    "README.md": {
+      "commits": 0,
+      "lines_added": 0,
+      "lines_deleted": 0,
+      "authors": [],
+      "fix_commits": [],
+      "formatting_commits": [],
+      "first_commit": "2026-03-02"
+    },
+    "larder/__init__.py": {
+      "commits": 0,
+      "lines_added": 0,
+      "lines_deleted": 0,
+      "authors": [],
+      "fix_commits": [],
+      "formatting_commits": [],
+      "first_commit": "2026-03-02"
+    },
+    "larder/auth/__init__.py": {
+      "commits": 0,
+      "lines_added": 0,
+      "lines_deleted": 0,
+      "authors": [],
+      "fix_commits": [],
+      "formatting_commits": [],
+      "first_commit": "2026-03-02"
+    },
+    "larder/auth/session.py": {
+      "commits": 1,
+      "lines_added": 1,
+      "lines_deleted": 1,
+      "authors": [
+        "Ben Okafor"
+      ],
+      "fix_commits": [],
+      "formatting_commits": [],
+      "first_commit": "2026-03-02"
+    },
+    "larder/catalog/__init__.py": {
+      "commits": 0,
+      "lines_added": 0,
+      "lines_deleted": 0,
+      "authors": [],
+      "fix_commits": [],
+      "formatting_commits": [],
+      "first_commit": "2026-03-02"
+    },
+    "larder/catalog/products.py": {
+      "commits": 3,
+      "lines_added": 4,
+      "lines_deleted": 4,
+      "authors": [
+        "Ana Ruiz",
+        "Ben Okafor"
+      ],
+      "fix_commits": [
+        "db9dbcef59e2"
+      ],
+      "formatting_commits": [
+        "bac397ec032a"
+      ],
+      "first_commit": "2026-03-02"
+    },
+    "larder/giftcards/__init__.py": {
+      "commits": 1,
+      "lines_added": 0,
+      "lines_deleted": 0,
+      "authors": [
+        "Dev Patel"
+      ],
+      "fix_commits": [],
+      "formatting_commits": [],
+      "first_commit": "2026-10-12"
+    },
+    "larder/giftcards/cards.py": {
+      "commits": 1,
+      "lines_added": 15,
+      "lines_deleted": 0,
+      "authors": [
+        "Dev Patel"
+      ],
+      "fix_commits": [],
+      "formatting_commits": [],
+      "first_commit": "2026-10-12"
+    },
+    "larder/marketing/__init__.py": {
+      "commits": 0,
+      "lines_added": 0,
+      "lines_deleted": 0,
+      "authors": [],
+      "fix_commits": [],
+      "formatting_commits": [],
+      "first_commit": "2026-03-02"
+    },
+    "larder/marketing/banners.py": {
+      "commits": 21,
+      "lines_added": 210,
+      "lines_deleted": 210,
+      "authors": [
+        "Ana Ruiz",
+        "Ben Okafor",
+        "Chloe Tan",
+        "Dev Patel"
+      ],
+      "fix_commits": [],
+      "formatting_commits": [],
+      "first_commit": "2026-03-02"
+    },
+    "larder/payments/__init__.py": {
+      "commits": 0,
+      "lines_added": 0,
+      "lines_deleted": 0,
+      "authors": [],
+      "fix_commits": [],
+      "formatting_commits": [],
+      "first_commit": "2026-03-02"
+    },
+    "larder/payments/gateway.py": {
+      "commits": 1,
+      "lines_added": 1,
+      "lines_deleted": 1,
+      "authors": [
+        "Ben Okafor"
+      ],
+      "fix_commits": [],
+      "formatting_commits": [],
+      "first_commit": "2026-03-02"
+    },
+    "larder/payments/service.py": {
+      "commits": 12,
+      "lines_added": 32,
+      "lines_deleted": 6,
+      "authors": [
+        "Ana Ruiz",
+        "Ben Okafor",
+        "Chloe Tan",
+        "Dev Patel"
+      ],
+      "fix_commits": [
+        "048c970b0dec",
+        "229928e8cd68",
+        "fede2b2a77eb",
+        "cdc6de118eee",
+        "ce1e7e181f76",
+        "391c813ac8f1"
+      ],
+      "formatting_commits": [],
+      "first_commit": "2026-03-02"
+    },
+    "larder/reports/__init__.py": {
+      "commits": 0,
+      "lines_added": 0,
+      "lines_deleted": 0,
+      "authors": [],
+      "fix_commits": [],
+      "formatting_commits": [],
+      "first_commit": "2026-03-02"
+    },
+    "larder/reports/stock.py": {
+      "commits": 1,
+      "lines_added": 4,
+      "lines_deleted": 0,
+      "authors": [
+        "Chloe Tan"
+      ],
+      "fix_commits": [],
+      "formatting_commits": [
+        "bac397ec032a"
+      ],
+      "first_commit": "2026-03-02"
+    },
+    "pyproject.toml": {
+      "commits": 0,
+      "lines_added": 0,
+      "lines_deleted": 0,
+      "authors": [],
+      "fix_commits": [],
+      "formatting_commits": [],
+      "first_commit": "2026-03-02"
+    },
+    "tests/__init__.py": {
+      "commits": 0,
+      "lines_added": 0,
+      "lines_deleted": 0,
+      "authors": [],
+      "fix_commits": [],
+      "formatting_commits": [],
+      "first_commit": "2026-03-02"
+    },
+    "tests/test_catalog.py": {
+      "commits": 0,
+      "lines_added": 0,
+      "lines_deleted": 0,
+      "authors": [],
+      "fix_commits": [],
+      "formatting_commits": [],
+      "first_commit": "2026-03-02"
+    },
+    "tests/test_marketing.py": {
+      "commits": 0,
+      "lines_added": 0,
+      "lines_deleted": 0,
+      "authors": [],
+      "fix_commits": [],
+      "formatting_commits": [],
+      "first_commit": "2026-03-02"
+    },
+    "tests/test_payments.py": {
+      "commits": 0,
+      "lines_added": 0,
+      "lines_deleted": 0,
+      "authors": [],
+      "fix_commits": [],
+      "formatting_commits": [],
+      "first_commit": "2026-03-02"
+    },
+    "tests/test_reports.py": {
+      "commits": 0,
+      "lines_added": 0,
+      "lines_deleted": 0,
+      "authors": [],
+      "fix_commits": [],
+      "formatting_commits": [],
+      "first_commit": "2026-03-02"
+    }
+  },
+  "excluded_formatting": [
+    {
+      "sha": "bac397ec032a",
+      "subject": "style: normalise string handling (no behaviour change)"
+    }
+  ],
+  "summary": {
+    "commits": 41,
+    "fix_commits": 7,
+    "formatting_commits": 1,
+    "files_tracked": 21
+  }
+}

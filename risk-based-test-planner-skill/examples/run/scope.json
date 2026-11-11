@@ -1,0 +1,141 @@
+{
+  "generated_at": "2026-11-11T03:29:26Z",
+  "repo": "larder",
+  "source": {
+    "kind": "git",
+    "diff_file": null,
+    "base_ref": "v1.4",
+    "merge_base": "bac397ec032af0c329eb9547594239162c2300dd",
+    "head": "d834c7e13dc8331f63750b0a297822077f63915a",
+    "command": "git diff -M bac397ec032af0c329eb9547594239162c2300dd...HEAD",
+    "working_tree": false
+  },
+  "files": [
+    {
+      "path": "larder/giftcards/__init__.py",
+      "old_path": null,
+      "status": "added",
+      "kind": "source",
+      "kind_reason": "source code",
+      "ranges": [],
+      "deleted_at": [],
+      "lines_added": 0,
+      "lines_deleted": 0,
+      "present": true,
+      "functions": [],
+      "function_method": "ast"
+    },
+    {
+      "path": "larder/giftcards/cards.py",
+      "old_path": null,
+      "status": "added",
+      "kind": "source",
+      "kind_reason": "source code",
+      "ranges": [
+        [
+          1,
+          15
+        ]
+      ],
+      "deleted_at": [],
+      "lines_added": 15,
+      "lines_deleted": 0,
+      "present": true,
+      "functions": [
+        {
+          "name": "issue_gift_card",
+          "qualname": "issue_gift_card",
+          "start": 6,
+          "end": 9,
+          "changed": [
+            [
+              6,
+              9
+            ]
+          ],
+          "deletions": 0
+        },
+        {
+          "name": "redeem",
+          "qualname": "redeem",
+          "start": 12,
+          "end": 15,
+          "changed": [
+            [
+              12,
+              15
+            ]
+          ],
+          "deletions": 0
+        }
+      ],
+      "function_method": "ast"
+    },
+    {
+      "path": "larder/marketing/banners.py",
+      "old_path": null,
+      "status": "modified",
+      "kind": "source",
+      "kind_reason": "source code",
+      "ranges": [
+        [
+          2,
+          11
+        ]
+      ],
+      "deleted_at": [
+        2
+      ],
+      "lines_added": 10,
+      "lines_deleted": 10,
+      "present": true,
+      "functions": [],
+      "function_method": "ast"
+    },
+    {
+      "path": "larder/payments/service.py",
+      "old_path": null,
+      "status": "modified",
+      "kind": "source",
+      "kind_reason": "source code",
+      "ranges": [
+        [
+          40,
+          45
+        ]
+      ],
+      "deleted_at": [],
+      "lines_added": 6,
+      "lines_deleted": 0,
+      "present": true,
+      "functions": [
+        {
+          "name": "apply_gift_card",
+          "qualname": "apply_gift_card",
+          "start": 42,
+          "end": 45,
+          "changed": [
+            [
+              42,
+              45
+            ]
+          ],
+          "deletions": 0
+        }
+      ],
+      "function_method": "ast"
+    }
+  ],
+  "summary": {
+    "files": 4,
+    "by_status": {
+      "added": 2,
+      "modified": 2
+    },
+    "by_kind": {
+      "source": 4
+    },
+    "lines_added": 31,
+    "lines_deleted": 10
+  }
+}

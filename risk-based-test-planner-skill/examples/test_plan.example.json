@@ -1,0 +1,740 @@
+{
+  "metadata": {
+    "repo": "larder",
+    "head": "d834c7e13dc8",
+    "generated_at": "2026-11-01T09:00:00Z",
+    "skill_version": "1.0.0",
+    "title": "larder 1.5 (since v1.4), 16 sessions",
+    "scope": {
+      "kind": "git",
+      "value": "v1.4",
+      "command": "git diff -M bac397ec032af0c329eb9547594239162c2300dd...HEAD"
+    },
+    "history": {
+      "days": 180,
+      "from": "2026-05-05",
+      "to": "2026-11-01",
+      "commits": 41,
+      "shallow": false,
+      "excluded_formatting": [
+        {
+          "sha": "bac397ec032a",
+          "subject": "style: normalise string handling (no behaviour change)"
+        }
+      ]
+    },
+    "budget_sessions": 16,
+    "session_minutes": 90,
+    "risk_file": "run/risk.json",
+    "inputs_used": [
+      {
+        "skill": "security",
+        "path": "security_audit.json",
+        "generated_at": "2026-10-29T14:00:00Z",
+        "items": 2,
+        "confidence": "as reported per finding"
+      },
+      {
+        "skill": "journey-mapper",
+        "path": "journey_map.json",
+        "generated_at": null,
+        "items": 4,
+        "confidence": "as reported per finding"
+      }
+    ],
+    "inputs_missing": [
+      "usage export",
+      "Jira bug search"
+    ],
+    "excluded": []
+  },
+  "areas": [
+    {
+      "id": "payments",
+      "paths": [
+        "larder/payments"
+      ],
+      "files": 3,
+      "journeys": [
+        "JRN-CHK-001"
+      ],
+      "surfaces": [
+        "external",
+        "money"
+      ],
+      "flags": [],
+      "open_findings": [
+        {
+          "skill": "security",
+          "id": "F-2",
+          "title": "Gateway timeout is long enough to hold worker threads",
+          "severity": "low",
+          "confidence": "possible"
+        }
+      ],
+      "tests": [
+        "tests/test_payments.py"
+      ],
+      "factors": {
+        "churn": {
+          "score": 4,
+          "status": "assessed",
+          "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%s%x1f%b",
+          "evidence": [
+            "40 lines changed in 13 commits by 4 author(s), 2026-05-05 to 2026-11-01 (formatting-only commits excluded)"
+          ]
+        },
+        "defects": {
+          "score": 5,
+          "status": "assessed",
+          "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%s%x1f%b",
+          "evidence": [
+            "6 fix commit(s) in the window",
+            "048c970b0dec fix: regression in partial refunds (PAY-57)",
+            "229928e8cd68 hotfix: revert currency change, charge in the order currency",
+            "391c813ac8f1 fix: refunds for spoiled goods were rejected",
+            "cdc6de118eee fix: refund reason \"missing\" was rejected",
+            "ce1e7e181f76 fix: card fee missing from the charged amount",
+            "fede2b2a77eb fix: AUD orders were charged in NZD (PAY-41)",
+            "linked issues: PAY-41, PAY-57"
+          ]
+        },
+        "complexity": {
+          "score": 3,
+          "status": "assessed",
+          "evidence": [
+            "3 branches in 2 file(s), 1.5 per file; 39 lines of code (complexity.py)"
+          ]
+        },
+        "change_in_scope": {
+          "score": 3,
+          "status": "assessed",
+          "command": "git diff -M bac397ec032af0c329eb9547594239162c2300dd...HEAD",
+          "evidence": [
+            "6 lines changed in the scope diff"
+          ]
+        },
+        "test_weakness": {
+          "score": 3,
+          "status": "assessed",
+          "evidence": [
+            "1 test file(s) import it (tests/test_payments.py); 8 test lines for 39 lines of code (ratio 0.21)"
+          ]
+        },
+        "journey_criticality": {
+          "score": 5,
+          "status": "assessed",
+          "evidence": [
+            "JRN-CHK-001 (P0) Customer pays for an order"
+          ]
+        },
+        "surface": {
+          "score": 5,
+          "status": "assessed",
+          "evidence": [
+            "moves money: larder/payments/gateway.py:13, larder/payments/gateway.py:17, larder/payments/service.py:6 (+5)",
+            "external integration: larder/payments/gateway.py:2, larder/payments/gateway.py:8, larder/payments/gateway.py:9"
+          ]
+        },
+        "reach": {
+          "score": 3,
+          "status": "assessed",
+          "evidence": [
+            "cited by 1 of 4 journeys (journey graph)"
+          ]
+        }
+      },
+      "likelihood": 3.8,
+      "impact": 4.7,
+      "risk": 17.9,
+      "band": "High",
+      "confidence": "high"
+    },
+    {
+      "id": "giftcards",
+      "paths": [
+        "larder/giftcards"
+      ],
+      "files": 2,
+      "journeys": [],
+      "surfaces": [
+        "money"
+      ],
+      "flags": [
+        "novel"
+      ],
+      "open_findings": [],
+      "tests": [],
+      "factors": {
+        "churn": {
+          "score": null,
+          "status": "not_assessed",
+          "evidence": [
+            "no history before the scope: every file is new"
+          ]
+        },
+        "defects": {
+          "score": null,
+          "status": "not_assessed",
+          "evidence": [
+            "no history before the scope: every file is new"
+          ]
+        },
+        "complexity": {
+          "score": 1,
+          "status": "assessed",
+          "evidence": [
+            "1 branches in 1 file(s), 1.0 per file; 10 lines of code (complexity.py)"
+          ]
+        },
+        "change_in_scope": {
+          "score": 4,
+          "status": "assessed",
+          "command": "git diff -M bac397ec032af0c329eb9547594239162c2300dd...HEAD",
+          "evidence": [
+            "15 lines changed in the scope diff"
+          ]
+        },
+        "test_weakness": {
+          "score": 5,
+          "status": "assessed",
+          "evidence": [
+            "no test imports this area"
+          ]
+        },
+        "journey_criticality": {
+          "score": 1,
+          "status": "assessed",
+          "evidence": [
+            "journey map present; no journey cites this area"
+          ]
+        },
+        "surface": {
+          "score": 5,
+          "status": "assessed",
+          "evidence": [
+            "moves money: larder/giftcards/cards.py:6, larder/giftcards/cards.py:12"
+          ]
+        },
+        "reach": {
+          "score": 1,
+          "status": "assessed",
+          "evidence": [
+            "cited by 0 of 4 journeys (journey graph)"
+          ]
+        }
+      },
+      "likelihood": 3.8,
+      "impact": 2.7,
+      "risk": 10.3,
+      "band": "Medium",
+      "confidence": "low"
+    },
+    {
+      "id": "catalog",
+      "paths": [
+        "larder/catalog"
+      ],
+      "files": 2,
+      "journeys": [
+        "JRN-CHK-001",
+        "JRN-BRW-001"
+      ],
+      "surfaces": [],
+      "flags": [],
+      "open_findings": [],
+      "tests": [
+        "tests/test_catalog.py"
+      ],
+      "factors": {
+        "churn": {
+          "score": 3,
+          "status": "assessed",
+          "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%s%x1f%b",
+          "evidence": [
+            "8 lines changed in 3 commits by 2 author(s), 2026-05-05 to 2026-11-01 (formatting-only commits excluded)"
+          ]
+        },
+        "defects": {
+          "score": 4,
+          "status": "assessed",
+          "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%s%x1f%b",
+          "evidence": [
+            "1 fix commit(s) in the window",
+            "db9dbcef59e2 fix: flour price was in dollars, not cents"
+          ]
+        },
+        "complexity": {
+          "score": 1,
+          "status": "assessed",
+          "evidence": [
+            "1 branches in 1 file(s), 1.0 per file; 10 lines of code (complexity.py)"
+          ]
+        },
+        "change_in_scope": {
+          "score": 1,
+          "status": "assessed",
+          "command": "git diff -M bac397ec032af0c329eb9547594239162c2300dd...HEAD",
+          "evidence": [
+            "0 lines changed in the scope diff"
+          ]
+        },
+        "test_weakness": {
+          "score": 3,
+          "status": "assessed",
+          "evidence": [
+            "1 test file(s) import it (tests/test_catalog.py); 3 test lines for 10 lines of code (ratio 0.30)"
+          ]
+        },
+        "journey_criticality": {
+          "score": 5,
+          "status": "assessed",
+          "evidence": [
+            "JRN-CHK-001 (P0) Customer pays for an order",
+            "JRN-BRW-001 (P2) Customer browses an aisle"
+          ]
+        },
+        "surface": {
+          "score": 1,
+          "status": "assessed",
+          "evidence": [
+            "no surface pattern matched in data/surfaces.json"
+          ]
+        },
+        "reach": {
+          "score": 5,
+          "status": "assessed",
+          "evidence": [
+            "cited by 2 of 4 journeys (journey graph)"
+          ]
+        }
+      },
+      "likelihood": 2.7,
+      "impact": 3.3,
+      "risk": 8.9,
+      "band": "Medium",
+      "confidence": "high"
+    },
+    {
+      "id": "auth",
+      "paths": [
+        "larder/auth"
+      ],
+      "files": 2,
+      "journeys": [
+        "JRN-ACC-001"
+      ],
+      "surfaces": [
+        "access"
+      ],
+      "flags": [
+        "open_findings"
+      ],
+      "open_findings": [
+        {
+          "skill": "security",
+          "id": "F-1",
+          "title": "Session tokens never expire server-side",
+          "severity": "high",
+          "confidence": "likely"
+        }
+      ],
+      "tests": [],
+      "factors": {
+        "churn": {
+          "score": 1,
+          "status": "assessed",
+          "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%s%x1f%b",
+          "evidence": [
+            "2 lines changed in 1 commits by 1 author(s), 2026-05-05 to 2026-11-01 (formatting-only commits excluded)"
+          ]
+        },
+        "defects": {
+          "score": 1,
+          "status": "assessed",
+          "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%s%x1f%b",
+          "evidence": [
+            "0 fix commit(s) in the window"
+          ]
+        },
+        "complexity": {
+          "score": 1,
+          "status": "assessed",
+          "evidence": [
+            "1 branches in 1 file(s), 1.0 per file; 12 lines of code (complexity.py)"
+          ]
+        },
+        "change_in_scope": {
+          "score": 1,
+          "status": "assessed",
+          "command": "git diff -M bac397ec032af0c329eb9547594239162c2300dd...HEAD",
+          "evidence": [
+            "0 lines changed in the scope diff"
+          ]
+        },
+        "test_weakness": {
+          "score": 5,
+          "status": "assessed",
+          "evidence": [
+            "no test imports this area"
+          ]
+        },
+        "journey_criticality": {
+          "score": 4,
+          "status": "assessed",
+          "evidence": [
+            "JRN-ACC-001 (P1) Customer signs in"
+          ]
+        },
+        "surface": {
+          "score": 5,
+          "status": "assessed",
+          "evidence": [
+            "controls access: larder/auth/session.py:8, larder/auth/session.py:12, larder/auth/session.py:13 (+1)"
+          ]
+        },
+        "reach": {
+          "score": 3,
+          "status": "assessed",
+          "evidence": [
+            "cited by 1 of 4 journeys (journey graph)"
+          ]
+        }
+      },
+      "likelihood": 1.8,
+      "impact": 4.3,
+      "risk": 7.7,
+      "band": "High",
+      "confidence": "high"
+    },
+    {
+      "id": "marketing",
+      "paths": [
+        "larder/marketing"
+      ],
+      "files": 2,
+      "journeys": [
+        "JRN-BRW-001"
+      ],
+      "surfaces": [],
+      "flags": [],
+      "open_findings": [],
+      "tests": [
+        "tests/test_marketing.py"
+      ],
+      "factors": {
+        "churn": {
+          "score": 5,
+          "status": "assessed",
+          "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%s%x1f%b",
+          "evidence": [
+            "420 lines changed in 21 commits by 4 author(s), 2026-05-05 to 2026-11-01 (formatting-only commits excluded)"
+          ]
+        },
+        "defects": {
+          "score": 1,
+          "status": "assessed",
+          "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%s%x1f%b",
+          "evidence": [
+            "0 fix commit(s) in the window"
+          ]
+        },
+        "complexity": {
+          "score": 4,
+          "status": "assessed",
+          "evidence": [
+            "2 branches in 1 file(s), 2.0 per file; 17 lines of code (complexity.py)"
+          ]
+        },
+        "change_in_scope": {
+          "score": 5,
+          "status": "assessed",
+          "command": "git diff -M bac397ec032af0c329eb9547594239162c2300dd...HEAD",
+          "evidence": [
+            "20 lines changed in the scope diff"
+          ]
+        },
+        "test_weakness": {
+          "score": 4,
+          "status": "assessed",
+          "evidence": [
+            "1 test file(s) import it (tests/test_marketing.py); 3 test lines for 17 lines of code (ratio 0.18)"
+          ]
+        },
+        "journey_criticality": {
+          "score": 3,
+          "status": "assessed",
+          "evidence": [
+            "JRN-BRW-001 (P2) Customer browses an aisle"
+          ]
+        },
+        "surface": {
+          "score": 1,
+          "status": "assessed",
+          "evidence": [
+            "no surface pattern matched in data/surfaces.json"
+          ]
+        },
+        "reach": {
+          "score": 3,
+          "status": "assessed",
+          "evidence": [
+            "cited by 1 of 4 journeys (journey graph)"
+          ]
+        }
+      },
+      "likelihood": 3.5,
+      "impact": 2.1,
+      "risk": 7.4,
+      "band": "Low",
+      "confidence": "high"
+    },
+    {
+      "id": "reports",
+      "paths": [
+        "larder/reports"
+      ],
+      "files": 2,
+      "journeys": [
+        "JRN-ADM-001"
+      ],
+      "surfaces": [],
+      "flags": [],
+      "open_findings": [],
+      "tests": [
+        "tests/test_reports.py"
+      ],
+      "factors": {
+        "churn": {
+          "score": 2,
+          "status": "assessed",
+          "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%s%x1f%b",
+          "evidence": [
+            "4 lines changed in 1 commits by 1 author(s), 2026-05-05 to 2026-11-01 (formatting-only commits excluded)"
+          ]
+        },
+        "defects": {
+          "score": 1,
+          "status": "assessed",
+          "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%s%x1f%b",
+          "evidence": [
+            "0 fix commit(s) in the window"
+          ]
+        },
+        "complexity": {
+          "score": 5,
+          "status": "assessed",
+          "evidence": [
+            "18 branches in 1 file(s), 18.0 per file; 36 lines of code (complexity.py)"
+          ]
+        },
+        "change_in_scope": {
+          "score": 1,
+          "status": "assessed",
+          "command": "git diff -M bac397ec032af0c329eb9547594239162c2300dd...HEAD",
+          "evidence": [
+            "0 lines changed in the scope diff"
+          ]
+        },
+        "test_weakness": {
+          "score": 4,
+          "status": "assessed",
+          "evidence": [
+            "1 test file(s) import it (tests/test_reports.py); 3 test lines for 36 lines of code (ratio 0.08)"
+          ]
+        },
+        "journey_criticality": {
+          "score": 2,
+          "status": "assessed",
+          "evidence": [
+            "JRN-ADM-001 (P3) Store manager reads the weekly stock report"
+          ]
+        },
+        "surface": {
+          "score": 1,
+          "status": "assessed",
+          "evidence": [
+            "no surface pattern matched in data/surfaces.json"
+          ]
+        },
+        "reach": {
+          "score": 3,
+          "status": "assessed",
+          "evidence": [
+            "cited by 1 of 4 journeys (journey graph)"
+          ]
+        }
+      },
+      "likelihood": 2.2,
+      "impact": 1.7,
+      "risk": 3.7,
+      "band": "Low",
+      "confidence": "high"
+    }
+  ],
+  "strategy": [
+    {
+      "area_id": "payments",
+      "charters": [
+        "Explore refunds across every reason, partial amounts and currencies to discover where the six recent fixes left gaps",
+        "Explore paying with a gift card plus a card, including a card that covers the whole order"
+      ],
+      "effort_sessions": 6,
+      "effort_share": 0.343,
+      "test_types": [
+        {
+          "type": "journey",
+          "owner_skill": "journey-to-tests",
+          "why": "Checkout and refund are the P0 journey; automate the card and refund paths end to end."
+        },
+        {
+          "type": "exploratory",
+          "owner_skill": "exploratory-charter-writer",
+          "why": "Six fix commits in six months, five of them on refunds or currency: explore around them."
+        },
+        {
+          "type": "contract",
+          "owner_skill": "api-contract-tester",
+          "why": "The gateway is an external HTTP API; pin the charge and refund request shapes."
+        },
+        {
+          "type": "mutation",
+          "owner_skill": "mutation-tester",
+          "why": "The two payments tests only check rejections; measure what the refund and fee logic tests miss."
+        }
+      ]
+    },
+    {
+      "area_id": "auth",
+      "charters": [
+        "Explore sign-in, session length and permission checks with expired, reused and tampered tokens"
+      ],
+      "effort_sessions": 4,
+      "effort_share": 0.148,
+      "test_types": [
+        {
+          "type": "security",
+          "owner_skill": "code-security-auditor",
+          "why": "Retest security finding F-1 (session tokens never expire server-side) once fixed."
+        },
+        {
+          "type": "unit",
+          "owner_skill": "ticket-to-tdd",
+          "why": "No test imports auth at all: add unit tests for login, password hashing and permissions."
+        },
+        {
+          "type": "exploratory",
+          "owner_skill": "exploratory-charter-writer",
+          "why": "Sign-in is the P1 journey and the area has no tests to lean on."
+        }
+      ]
+    },
+    {
+      "area_id": "giftcards",
+      "charters": [
+        "Explore issuing and redeeming gift cards at the $5 and $500 limits and redeeming more than the balance"
+      ],
+      "effort_sessions": 2,
+      "effort_share": 0.197,
+      "test_types": [
+        {
+          "type": "exploratory",
+          "owner_skill": "exploratory-charter-writer",
+          "why": "New in this release with no history, no journey and no tests."
+        },
+        {
+          "type": "unit",
+          "owner_skill": "ticket-to-tdd",
+          "why": "Issue and redeem limits ($5 to $500, partial redemption) need unit tests."
+        },
+        {
+          "type": "regression",
+          "owner_skill": null,
+          "why": "Payments now calls redeem(): run the payments regression suite with gift cards."
+        }
+      ]
+    },
+    {
+      "area_id": "catalog",
+      "effort_sessions": 2,
+      "effort_share": 0.17,
+      "charters": [],
+      "test_types": [
+        {
+          "type": "regression",
+          "owner_skill": null,
+          "why": "Existing catalog test plus the browse journey after the autumn price changes."
+        },
+        {
+          "type": "journey",
+          "owner_skill": "journey-to-tests",
+          "why": "Catalog sits on the P0 checkout and P2 browse journeys; cover search and price display."
+        }
+      ]
+    },
+    {
+      "area_id": "marketing",
+      "effort_sessions": 2,
+      "effort_share": 0.142,
+      "charters": [],
+      "test_types": [
+        {
+          "type": "smoke",
+          "owner_skill": null,
+          "why": "Banner copy changes weekly but moves nothing: a smoke check that every aisle gets a banner."
+        }
+      ]
+    }
+  ],
+  "not_tested": [
+    {
+      "area_id": "reports",
+      "residual_band": "Low",
+      "accepted_by": null,
+      "reason": "Low risk (3.7): the most complex area, but one 4-line change in six months, no fixes, a P3 admin journey and an existing unit test. Its existing test keeps running in CI."
+    }
+  ],
+  "entry_criteria": [
+    "The release candidate is deployed to the staging environment with the gateway sandbox.",
+    "Security finding F-1 has a fix in the release candidate, or an accepted exception.",
+    "Gift card issue and redeem are feature-complete and behind no flag in staging."
+  ],
+  "exit_criteria": [
+    {
+      "condition": "Every High-risk area's planned sessions are done and their charters debriefed",
+      "measure": "session sheets for payments and auth"
+    },
+    {
+      "condition": "No open critical or high defect in payments, auth or gift cards",
+      "measure": "defect tracker query for this release"
+    },
+    {
+      "condition": "The checkout and sign-in journeys pass in staging",
+      "measure": "journey test run, linked"
+    },
+    {
+      "condition": "F-1 retested",
+      "measure": "code-security-auditor retest report"
+    }
+  ],
+  "assumptions": [
+    "Fix commits are found by message (fix, bug, hotfix, regression, revert); a fix with another message is not counted.",
+    "Reach comes from the journey graph, because no usage export was given.",
+    "The journey map predates gift cards, so gift cards score 1 for journey criticality until it is refreshed."
+  ],
+  "open_questions": [
+    "Should gift cards get a journey in the journey map before release? Run journey-mapper.",
+    "Is the stock report used outside head office? If so, reports may deserve more than its existing test."
+  ],
+  "summary": {
+    "headline": "Payments (risk 17.9) and auth (High because of open security finding F-1) get most of the 16 sessions; gift cards are new and get an exploratory charter; reports is not tested beyond its existing test, with the reason.",
+    "areas": 6,
+    "high": 2,
+    "medium": 2,
+    "low": 2,
+    "planned": 5,
+    "not_tested": 1,
+    "sessions_allocated": 16,
+    "sessions_short": 0
+  }
+}
