@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/qa-skills/post-deploy-validator/pvt_plan.schema.json",
+  "title": "Post-deploy check plan",
+  "type": "object",
+  "required": ["schema_version", "name", "target", "version", "checks", "performance"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "target": {"type": "object", "required": ["base_url", "environment"],
+      "properties": {"environment": {"enum": ["production", "staging", "test"]}, "authorised_by": {"type": "string"}},
+      "if": {"properties": {"environment": {"const": "production"}}}, "then": {"required": ["authorised_by"]}},
+    "version": {"type": "object", "required": ["path"], "properties": {"json_path": {"type": "string"}, "header": {"type": "string"}}},
+    "credential_sets": {"type": "object", "additionalProperties": {"type": "object", "required": ["env", "login"],
+      "properties": {"env": {"type": "object", "additionalProperties": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]+$"}},
+                     "login": {"type": "object", "required": ["path", "token_json_path"], "properties": {"method": {"const": "POST"}}}}}},
+    "checks": {"type": "array", "items": {"type": "object", "required": ["id", "kind", "path", "expect"],
+      "properties": {"kind": {"enum": ["page", "api", "data"]}, "method": {"type": "string"}, "critical": {"type": "boolean"}, "timed": {"type": "boolean"},
+                     "credential_set": {"type": "string"},
+                     "expect": {"type": "object", "properties": {"status": {"type": "integer"}, "contains": {"type": "array"}, "not_contains": {"type": "array"},
+                       "json": {"type": "array", "items": {"type": "object", "required": ["path", "op"],
+                         "properties": {"op": {"enum": ["exists", "eq", "ne", "gt", "ge", "lt", "le", "len_ge", "len_le", "all_gt", "all_ge", "all_lt", "all_le", "unique", "matches", "fresh_within_minutes"]},
+                                        "record": {"type": "boolean"}}}}}}}}},
+    "performance": {"type": "object", "properties": {"samples": {"type": "integer", "minimum": 1}, "tolerance_pct": {"type": "number"}, "min_delta_ms": {"type": "number"}}},
+    "rate_per_second": {"type": "number", "exclusiveMinimum": 0}
+  }
+}

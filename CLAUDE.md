@@ -322,6 +322,16 @@ python test-case-designer-skill/scripts/design_rows.py test-case-designer-skill/
 
 The cases fingerprint the normalised ticket and cite row ids generated from `examples/model.json`, so editing the issue, the model or the generators invalidates the example until `commands.sh` is rerun from `test-case-designer-skill/` and the cases are rebuilt. Exports are files for a person to import; nothing is written to a tracker.
 
+Post-deploy validator (`examples/harbour-tickets/server.py` is a small ticket site and API standing in for production on loopback, in releases 1.8.0 and 1.9.0 with planted problems; `examples/runs/` holds a real baseline run of 1.8.0 and a real run of 1.9.0 against it, listed in `examples/commands.sh`; the validator checks the run was read-only, recomputes timings, comparisons, findings and the recommendation, and scans for secrets):
+
+```bash
+python post-deploy-validator-skill/scripts/validate_pvt.py post-deploy-validator-skill/examples/pvt_report.example.json --run post-deploy-validator-skill/examples/runs/release-1.9.0/run.json --baseline post-deploy-validator-skill/examples/runs/baseline-1.8.0/run.json --plan post-deploy-validator-skill/examples/pvt_plan.json
+python post-deploy-validator-skill/scripts/render_report.py post-deploy-validator-skill/examples/pvt_report.example.json [--brief]
+python post-deploy-validator-skill/scripts/recommend.py post-deploy-validator-skill/examples/runs/release-1.9.0/run.json --out report.json
+```
+
+Run `commands.sh` from `post-deploy-validator-skill/`: the runs record the plan path relative to it. It starts the sample server itself on port 8160 and sets the sample's fake `smoke-reader` credentials. A rerun changes every timing, so the report is rebuilt; the findings and the recommendation stay the same. The runner refuses anything but GET, HEAD and the named sign-in, and a production target needs `authorised_by` in the plan.
+
 Shared files:
 
 ```bash

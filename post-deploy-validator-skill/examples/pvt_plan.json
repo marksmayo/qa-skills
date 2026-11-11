@@ -1,0 +1,29 @@
+{
+ "schema_version": "1.0.0",
+ "name": "Harbour Tickets post-deploy checks",
+ "target": {"base_url": "http://127.0.0.1:8160", "environment": "production",
+            "authorised_by": "Release manager, for the example: a loopback stand-in for production (examples/harbour-tickets/server.py)"},
+ "version": {"path": "/version", "json_path": "version", "header": "X-App-Version"},
+ "credential_sets": {
+  "smoke-reader": {"env": {"username": "PVT_SMOKE_READER_USERNAME", "password": "PVT_SMOKE_READER_PASSWORD"},
+                   "login": {"method": "POST", "path": "/api/login", "body": {"username": "{username}", "password": "{password}"}, "token_json_path": "token"}}
+ },
+ "checks": [
+  {"id": "home", "kind": "page", "path": "/", "critical": true, "timed": true, "expect": {"status": 200, "contains": ["Book a ferry"]}},
+  {"id": "timetable", "kind": "page", "path": "/timetable", "critical": true, "timed": true,
+   "expect": {"status": 200, "contains": ["<h1>Timetable</h1>"], "not_contains": ["Something went wrong"]}},
+  {"id": "about", "kind": "page", "path": "/about", "critical": false, "timed": true, "expect": {"status": 200, "contains": ["Family-run"]}},
+  {"id": "sailings-data", "kind": "data", "path": "/api/sailings", "critical": true, "timed": true,
+   "expect": {"status": 200, "json": [{"path": "sailings", "op": "len_ge", "value": 1}, {"path": "sailings[*].seats_left", "op": "all_ge", "value": 0},
+                                      {"path": "sailings[*].id", "op": "unique"}, {"path": "generated_at", "op": "fresh_within_minutes", "value": 10}]}},
+  {"id": "fares-data", "kind": "data", "path": "/api/fares", "critical": true, "timed": true,
+   "expect": {"status": 200, "json": [{"path": "fares", "op": "len_ge", "value": 3}, {"path": "fares[*].price", "op": "all_gt", "value": 0, "record": true},
+                                      {"path": "currency", "op": "eq", "value": "AUD", "record": true}]}},
+  {"id": "account", "kind": "api", "path": "/api/account", "credential_set": "smoke-reader", "critical": true,
+   "expect": {"status": 200, "json": [{"path": "username", "op": "eq", "value": "smoke-reader"}, {"path": "email", "op": "exists"}]}},
+  {"id": "create-booking", "kind": "api", "method": "POST", "path": "/api/bookings", "critical": false,
+   "note": "Listed by a team member to check bookings still work; the validator must refuse it.", "expect": {"status": 201}}
+ ],
+ "performance": {"samples": 5, "tolerance_pct": 20, "min_delta_ms": 50},
+ "rate_per_second": 8
+}

@@ -1,0 +1,227 @@
+{
+ "schema_version": "1.0.0",
+ "skill": {
+  "name": "post-deploy-validator",
+  "version": "1.0.0"
+ },
+ "run": "examples/runs/release-1.9.0/run.json",
+ "target": {
+  "base_url": "http://127.0.0.1:8160",
+  "environment": "production",
+  "authorised_by": "Release manager, for the example: a loopback stand-in for production (examples/harbour-tickets/server.py)"
+ },
+ "plan": {
+  "path": "examples/pvt_plan.json",
+  "sha256": "5b1ab116564d6ab4dfc42dc487fec32cbf3a61f1a289076b0cf1028d6d323dc6",
+  "name": "Harbour Tickets post-deploy checks"
+ },
+ "deployed": {
+  "version": "1.9.0",
+  "expected": "1.9.0",
+  "matches": true,
+  "source": "/version version"
+ },
+ "window": {
+  "started_at": "2026-11-11T13:53:16Z",
+  "finished_at": "2026-11-11T13:53:20Z",
+  "requests_sent": 28,
+  "blocked": [
+   {
+    "check_id": "create-booking",
+    "method": "POST",
+    "path": "/api/bookings",
+    "reason": "not a read: the run is read-only"
+   }
+  ]
+ },
+ "credential_sets": [
+  {
+   "name": "smoke-reader",
+   "available": true,
+   "signed_in": true,
+   "reason": null
+  }
+ ],
+ "checks": [
+  {
+   "id": "home",
+   "kind": "page",
+   "critical": true,
+   "method": "GET",
+   "path": "/",
+   "status": "pass",
+   "http_status": 200,
+   "reason": null
+  },
+  {
+   "id": "timetable",
+   "kind": "page",
+   "critical": true,
+   "method": "GET",
+   "path": "/timetable",
+   "status": "fail",
+   "http_status": 500,
+   "reason": null
+  },
+  {
+   "id": "about",
+   "kind": "page",
+   "critical": false,
+   "method": "GET",
+   "path": "/about",
+   "status": "pass",
+   "http_status": 200,
+   "reason": null
+  },
+  {
+   "id": "sailings-data",
+   "kind": "data",
+   "critical": true,
+   "method": "GET",
+   "path": "/api/sailings",
+   "status": "pass",
+   "http_status": 200,
+   "reason": null
+  },
+  {
+   "id": "fares-data",
+   "kind": "data",
+   "critical": true,
+   "method": "GET",
+   "path": "/api/fares",
+   "status": "fail",
+   "http_status": 200,
+   "reason": null
+  },
+  {
+   "id": "account",
+   "kind": "api",
+   "critical": true,
+   "method": "GET",
+   "path": "/api/account",
+   "status": "pass",
+   "http_status": 200,
+   "reason": null
+  },
+  {
+   "id": "create-booking",
+   "kind": "api",
+   "critical": false,
+   "method": "POST",
+   "path": "/api/bookings",
+   "status": "blocked",
+   "http_status": null,
+   "reason": "POST is not allowed: the run is read-only, so this check was not sent"
+  }
+ ],
+ "performance": {
+  "baseline_run": "examples/runs/baseline-1.8.0/run.json",
+  "baseline_note": null,
+  "tolerance_pct": 20.0,
+  "min_delta_ms": 50.0,
+  "samples": 5,
+  "comparisons": [
+   {
+    "check_id": "home",
+    "median_ms": 14.2,
+    "baseline_median_ms": 1.5,
+    "change_pct": 846.7,
+    "status": "ok"
+   },
+   {
+    "check_id": "timetable",
+    "median_ms": 10.8,
+    "baseline_median_ms": 16.1,
+    "change_pct": -32.9,
+    "status": "ok"
+   },
+   {
+    "check_id": "about",
+    "median_ms": 44.0,
+    "baseline_median_ms": 15.0,
+    "change_pct": 193.3,
+    "status": "ok"
+   },
+   {
+    "check_id": "sailings-data",
+    "median_ms": 11.9,
+    "baseline_median_ms": 17.7,
+    "change_pct": -32.8,
+    "status": "ok"
+   },
+   {
+    "check_id": "fares-data",
+    "median_ms": 331.1,
+    "baseline_median_ms": 37.0,
+    "change_pct": 794.9,
+    "status": "regressed"
+   }
+  ]
+ },
+ "findings": [
+  {
+   "kind": "check_failed",
+   "severity": "critical",
+   "check_ids": [
+    "timetable"
+   ],
+   "title": "The timetable page answers 500 (\"Something went wrong\") on every request",
+   "evidence": "run.json checks[timetable]",
+   "id": "F1",
+   "detail": "timetable: GET /timetable answered 500 (expected 200); body lacks \"<h1>Timetable</h1>\"; body contains \"Something went wrong\""
+  },
+  {
+   "kind": "check_failed",
+   "severity": "critical",
+   "check_ids": [
+    "fares-data"
+   ],
+   "title": "The fares API returns a negative child fare (-12.25 AUD)",
+   "evidence": "run.json checks[fares-data]",
+   "id": "F2",
+   "detail": "fares-data: GET /api/fares fares[*].price all_gt 0: 3 value(s), 1 failing (items [1]) (values [24.5, -12.25, 18.0])"
+  },
+  {
+   "kind": "regression",
+   "severity": "major",
+   "check_ids": [
+    "fares-data"
+   ],
+   "title": "The fares API is about 9 times slower than in the 1.8.0 run (331 ms median against 37 ms)",
+   "evidence": "examples/runs/baseline-1.8.0/run.json -> run.json, 5 samples each",
+   "id": "F3",
+   "detail": "fares-data median 331.1 ms against 37.0 ms in the previous run (+794.9%)"
+  }
+ ],
+ "recommendation": {
+  "value": "no_go",
+  "reasons": [
+   "critical check timetable failed",
+   "critical check fares-data failed",
+   "critical check fares-data regressed (+794.9%)"
+  ],
+  "notes": [
+   "POST /api/bookings (create-booking) was not sent: not a read: the run is read-only"
+  ],
+  "decision_owner": "Release manager",
+  "decided_by": null,
+  "decision": null
+ },
+ "summary": {
+  "headline": "Recommend no-go for 1.9.0: the timetable page is down (500) and the fares API returns a negative child fare, both on critical checks, and the fares API is about 9 times slower than in the previous run. The deployed version is 1.9.0 as expected; the home page, sailings data and the signed-in account check pass. The release manager decides.",
+  "checks": {
+   "pass": 4,
+   "fail": 2,
+   "error": 0,
+   "blocked": 1,
+   "skipped": 0
+  },
+  "findings": 3
+ },
+ "limitations": [
+  "The target is a loopback stand-in for production (examples/harbour-tickets/server.py); the timings are from this machine.",
+  "Checks are HTTP requests, not a browser: client-side errors and rendering are not checked.",
+  "The about page median rose from 15.0 ms to 44.0 ms (+193.3%), less than the 50 ms minimum change, so it is not a regression; with 5 samples a change that small is within noise.",
+  "POST /api/bookings in the plan was refused and not sent: bookings were not checked. A read-only check, or a synthetic monitor owned by the team, is needed for that."
+ ]
+}

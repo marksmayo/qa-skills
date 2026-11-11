@@ -1,0 +1,605 @@
+{
+ "schema_version": "1.0.0",
+ "plan": {
+  "path": "examples/pvt_plan.json",
+  "sha256": "5b1ab116564d6ab4dfc42dc487fec32cbf3a61f1a289076b0cf1028d6d323dc6",
+  "name": "Harbour Tickets post-deploy checks"
+ },
+ "target": {
+  "base_url": "http://127.0.0.1:8160",
+  "environment": "production",
+  "authorised_by": "Release manager, for the example: a loopback stand-in for production (examples/harbour-tickets/server.py)"
+ },
+ "started_at": "2026-11-11T13:53:16Z",
+ "finished_at": "2026-11-11T13:53:20Z",
+ "deployed": {
+  "version": "1.9.0",
+  "expected": "1.9.0",
+  "matches": true,
+  "source": "/version version"
+ },
+ "credential_sets": [
+  {
+   "name": "smoke-reader",
+   "available": true,
+   "signed_in": true,
+   "reason": null
+  }
+ ],
+ "checks": [
+  {
+   "id": "home",
+   "kind": "page",
+   "critical": true,
+   "method": "GET",
+   "path": "/",
+   "credential_set": null,
+   "timed": true,
+   "status": "pass",
+   "http_status": 200,
+   "bytes": 295,
+   "headers": {
+    "server": "HarbourTickets ",
+    "content-type": "text/html; charset=utf-8",
+    "content-length": "295",
+    "x-app-version": "1.9.0"
+   },
+   "assertions": [
+    {
+     "path": "status",
+     "op": "eq",
+     "expected": 200,
+     "ok": true,
+     "actual": 200
+    },
+    {
+     "path": "body",
+     "op": "contains",
+     "expected": "Book a ferry",
+     "ok": true
+    }
+   ],
+   "timing": {
+    "samples_ms": [
+     15.1,
+     14.2,
+     14.2,
+     1.2,
+     14.7
+    ],
+    "median_ms": 14.2
+   }
+  },
+  {
+   "id": "timetable",
+   "kind": "page",
+   "critical": true,
+   "method": "GET",
+   "path": "/timetable",
+   "credential_set": null,
+   "timed": true,
+   "status": "fail",
+   "http_status": 500,
+   "bytes": 250,
+   "headers": {
+    "server": "HarbourTickets ",
+    "content-type": "text/html; charset=utf-8",
+    "content-length": "250",
+    "x-app-version": "1.9.0"
+   },
+   "assertions": [
+    {
+     "path": "status",
+     "op": "eq",
+     "expected": 200,
+     "ok": false,
+     "actual": 500
+    },
+    {
+     "path": "body",
+     "op": "contains",
+     "expected": "<h1>Timetable</h1>",
+     "ok": false
+    },
+    {
+     "path": "body",
+     "op": "not_contains",
+     "expected": "Something went wrong",
+     "ok": false
+    }
+   ],
+   "timing": {
+    "samples_ms": [
+     1.4,
+     1.5,
+     10.8,
+     14.1,
+     14.2
+    ],
+    "median_ms": 10.8
+   }
+  },
+  {
+   "id": "about",
+   "kind": "page",
+   "critical": false,
+   "method": "GET",
+   "path": "/about",
+   "credential_set": null,
+   "timed": true,
+   "status": "pass",
+   "http_status": 200,
+   "bytes": 222,
+   "headers": {
+    "server": "HarbourTickets ",
+    "content-type": "text/html; charset=utf-8",
+    "content-length": "222",
+    "x-app-version": "1.9.0"
+   },
+   "assertions": [
+    {
+     "path": "status",
+     "op": "eq",
+     "expected": 200,
+     "ok": true,
+     "actual": 200
+    },
+    {
+     "path": "body",
+     "op": "contains",
+     "expected": "Family-run",
+     "ok": true
+    }
+   ],
+   "timing": {
+    "samples_ms": [
+     44.0,
+     45.3,
+     33.1,
+     43.8,
+     44.4
+    ],
+    "median_ms": 44.0
+   }
+  },
+  {
+   "id": "sailings-data",
+   "kind": "data",
+   "critical": true,
+   "method": "GET",
+   "path": "/api/sailings",
+   "credential_set": null,
+   "timed": true,
+   "status": "pass",
+   "http_status": 200,
+   "bytes": 454,
+   "headers": {
+    "server": "HarbourTickets ",
+    "content-type": "application/json",
+    "content-length": "454",
+    "x-app-version": "1.9.0"
+   },
+   "assertions": [
+    {
+     "path": "status",
+     "op": "eq",
+     "expected": 200,
+     "ok": true,
+     "actual": 200
+    },
+    {
+     "path": "sailings",
+     "op": "len_ge",
+     "expected": 1,
+     "ok": true,
+     "detail": "length 4",
+     "actual_shape": "list of length 4"
+    },
+    {
+     "path": "sailings[*].seats_left",
+     "op": "all_ge",
+     "expected": 0,
+     "ok": true,
+     "detail": "4 value(s), 0 failing",
+     "actual_shape": "list of length 4"
+    },
+    {
+     "path": "sailings[*].id",
+     "op": "unique",
+     "expected": null,
+     "ok": true,
+     "detail": "4 value(s), 0 duplicate(s)",
+     "actual_shape": "list of length 4"
+    },
+    {
+     "path": "generated_at",
+     "op": "fresh_within_minutes",
+     "expected": 10,
+     "ok": true,
+     "detail": "age -0.0 min",
+     "actual_shape": "str of length 20"
+    }
+   ],
+   "timing": {
+    "samples_ms": [
+     12.8,
+     3.0,
+     11.9,
+     25.6,
+     10.6
+    ],
+    "median_ms": 11.9
+   }
+  },
+  {
+   "id": "fares-data",
+   "kind": "data",
+   "critical": true,
+   "method": "GET",
+   "path": "/api/fares",
+   "credential_set": null,
+   "timed": true,
+   "status": "fail",
+   "http_status": 200,
+   "bytes": 139,
+   "headers": {
+    "server": "HarbourTickets ",
+    "content-type": "application/json",
+    "content-length": "139",
+    "x-app-version": "1.9.0"
+   },
+   "assertions": [
+    {
+     "path": "status",
+     "op": "eq",
+     "expected": 200,
+     "ok": true,
+     "actual": 200
+    },
+    {
+     "path": "fares",
+     "op": "len_ge",
+     "expected": 3,
+     "ok": true,
+     "detail": "length 3",
+     "actual_shape": "list of length 3"
+    },
+    {
+     "path": "fares[*].price",
+     "op": "all_gt",
+     "expected": 0,
+     "ok": false,
+     "detail": "3 value(s), 1 failing (items [1])",
+     "actual": [
+      24.5,
+      -12.25,
+      18.0
+     ]
+    },
+    {
+     "path": "currency",
+     "op": "eq",
+     "expected": "AUD",
+     "ok": true,
+     "detail": "1 value(s)",
+     "actual": "AUD"
+    }
+   ],
+   "timing": {
+    "samples_ms": [
+     346.6,
+     331.1,
+     344.6,
+     322.5,
+     322.1
+    ],
+    "median_ms": 331.1
+   }
+  },
+  {
+   "id": "account",
+   "kind": "api",
+   "critical": true,
+   "method": "GET",
+   "path": "/api/account",
+   "credential_set": "smoke-reader",
+   "timed": false,
+   "status": "pass",
+   "http_status": 200,
+   "bytes": 113,
+   "headers": {
+    "server": "HarbourTickets ",
+    "content-type": "application/json",
+    "content-length": "113",
+    "x-app-version": "1.9.0"
+   },
+   "assertions": [
+    {
+     "path": "status",
+     "op": "eq",
+     "expected": 200,
+     "ok": true,
+     "actual": 200
+    },
+    {
+     "path": "username",
+     "op": "eq",
+     "expected": "smoke-reader",
+     "ok": true,
+     "detail": "1 value(s)",
+     "actual_shape": "str of length 12"
+    },
+    {
+     "path": "email",
+     "op": "exists",
+     "expected": null,
+     "ok": true,
+     "detail": "1 value(s)",
+     "actual_shape": "str of length 25"
+    }
+   ],
+   "timing": null
+  },
+  {
+   "id": "create-booking",
+   "kind": "api",
+   "critical": false,
+   "method": "POST",
+   "path": "/api/bookings",
+   "credential_set": null,
+   "timed": false,
+   "status": "blocked",
+   "reason": "POST is not allowed: the run is read-only, so this check was not sent"
+  }
+ ],
+ "requests": [
+  {
+   "method": "GET",
+   "path": "/version",
+   "status": 200,
+   "ms": 28.2,
+   "purpose": "version"
+  },
+  {
+   "method": "GET",
+   "path": "/",
+   "status": 200,
+   "ms": 15.1,
+   "purpose": "check"
+  },
+  {
+   "method": "GET",
+   "path": "/",
+   "status": 200,
+   "ms": 14.2,
+   "purpose": "timing sample"
+  },
+  {
+   "method": "GET",
+   "path": "/",
+   "status": 200,
+   "ms": 14.2,
+   "purpose": "timing sample"
+  },
+  {
+   "method": "GET",
+   "path": "/",
+   "status": 200,
+   "ms": 1.2,
+   "purpose": "timing sample"
+  },
+  {
+   "method": "GET",
+   "path": "/",
+   "status": 200,
+   "ms": 14.7,
+   "purpose": "timing sample"
+  },
+  {
+   "method": "GET",
+   "path": "/timetable",
+   "status": 500,
+   "ms": 1.4,
+   "purpose": "check"
+  },
+  {
+   "method": "GET",
+   "path": "/timetable",
+   "status": 500,
+   "ms": 1.5,
+   "purpose": "timing sample"
+  },
+  {
+   "method": "GET",
+   "path": "/timetable",
+   "status": 500,
+   "ms": 10.8,
+   "purpose": "timing sample"
+  },
+  {
+   "method": "GET",
+   "path": "/timetable",
+   "status": 500,
+   "ms": 14.1,
+   "purpose": "timing sample"
+  },
+  {
+   "method": "GET",
+   "path": "/timetable",
+   "status": 500,
+   "ms": 14.2,
+   "purpose": "timing sample"
+  },
+  {
+   "method": "GET",
+   "path": "/about",
+   "status": 200,
+   "ms": 44.0,
+   "purpose": "check"
+  },
+  {
+   "method": "GET",
+   "path": "/about",
+   "status": 200,
+   "ms": 45.3,
+   "purpose": "timing sample"
+  },
+  {
+   "method": "GET",
+   "path": "/about",
+   "status": 200,
+   "ms": 33.1,
+   "purpose": "timing sample"
+  },
+  {
+   "method": "GET",
+   "path": "/about",
+   "status": 200,
+   "ms": 43.8,
+   "purpose": "timing sample"
+  },
+  {
+   "method": "GET",
+   "path": "/about",
+   "status": 200,
+   "ms": 44.4,
+   "purpose": "timing sample"
+  },
+  {
+   "method": "GET",
+   "path": "/api/sailings",
+   "status": 200,
+   "ms": 12.8,
+   "purpose": "check"
+  },
+  {
+   "method": "GET",
+   "path": "/api/sailings",
+   "status": 200,
+   "ms": 3.0,
+   "purpose": "timing sample"
+  },
+  {
+   "method": "GET",
+   "path": "/api/sailings",
+   "status": 200,
+   "ms": 11.9,
+   "purpose": "timing sample"
+  },
+  {
+   "method": "GET",
+   "path": "/api/sailings",
+   "status": 200,
+   "ms": 25.6,
+   "purpose": "timing sample"
+  },
+  {
+   "method": "GET",
+   "path": "/api/sailings",
+   "status": 200,
+   "ms": 10.6,
+   "purpose": "timing sample"
+  },
+  {
+   "method": "GET",
+   "path": "/api/fares",
+   "status": 200,
+   "ms": 346.6,
+   "purpose": "check"
+  },
+  {
+   "method": "GET",
+   "path": "/api/fares",
+   "status": 200,
+   "ms": 331.1,
+   "purpose": "timing sample"
+  },
+  {
+   "method": "GET",
+   "path": "/api/fares",
+   "status": 200,
+   "ms": 344.6,
+   "purpose": "timing sample"
+  },
+  {
+   "method": "GET",
+   "path": "/api/fares",
+   "status": 200,
+   "ms": 322.5,
+   "purpose": "timing sample"
+  },
+  {
+   "method": "GET",
+   "path": "/api/fares",
+   "status": 200,
+   "ms": 322.1,
+   "purpose": "timing sample"
+  },
+  {
+   "method": "POST",
+   "path": "/api/login",
+   "status": 200,
+   "ms": 21.3,
+   "purpose": "sign in (smoke-reader)"
+  },
+  {
+   "method": "GET",
+   "path": "/api/account",
+   "status": 200,
+   "ms": 22.7,
+   "purpose": "check"
+  }
+ ],
+ "blocked": [
+  {
+   "check_id": "create-booking",
+   "method": "POST",
+   "path": "/api/bookings",
+   "reason": "not a read: the run is read-only"
+  }
+ ],
+ "performance": {
+  "baseline_run": "examples/runs/baseline-1.8.0/run.json",
+  "baseline_note": null,
+  "tolerance_pct": 20.0,
+  "min_delta_ms": 50.0,
+  "samples": 5,
+  "comparisons": [
+   {
+    "check_id": "home",
+    "median_ms": 14.2,
+    "baseline_median_ms": 1.5,
+    "change_pct": 846.7,
+    "status": "ok"
+   },
+   {
+    "check_id": "timetable",
+    "median_ms": 10.8,
+    "baseline_median_ms": 16.1,
+    "change_pct": -32.9,
+    "status": "ok"
+   },
+   {
+    "check_id": "about",
+    "median_ms": 44.0,
+    "baseline_median_ms": 15.0,
+    "change_pct": 193.3,
+    "status": "ok"
+   },
+   {
+    "check_id": "sailings-data",
+    "median_ms": 11.9,
+    "baseline_median_ms": 17.7,
+    "change_pct": -32.8,
+    "status": "ok"
+   },
+   {
+    "check_id": "fares-data",
+    "median_ms": 331.1,
+    "baseline_median_ms": 37.0,
+    "change_pct": 794.9,
+    "status": "regressed"
+   }
+  ]
+ }
+}

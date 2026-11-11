@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/qa-skills/post-deploy-validator/pvt_report.schema.json",
+  "title": "Post-deploy validation report",
+  "type": "object",
+  "required": ["schema_version", "skill", "run", "target", "plan", "deployed", "window", "credential_sets", "checks", "performance", "findings", "recommendation", "summary", "limitations"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "skill": {"type": "object", "required": ["name", "version"], "properties": {"name": {"const": "post-deploy-validator"}}},
+    "deployed": {"type": "object", "required": ["version", "expected", "matches", "source"]},
+    "window": {"type": "object", "required": ["started_at", "finished_at", "requests_sent", "blocked"]},
+    "credential_sets": {"type": "array", "items": {"type": "object", "required": ["name", "available", "signed_in"]}},
+    "checks": {"type": "array", "items": {"type": "object", "required": ["id", "kind", "critical", "method", "path", "status"],
+      "properties": {"status": {"enum": ["pass", "fail", "error", "blocked", "skipped"]}}}},
+    "performance": {"type": "object", "required": ["baseline_run", "tolerance_pct", "min_delta_ms", "samples", "comparisons"],
+      "properties": {"comparisons": {"type": "array", "items": {"type": "object", "required": ["check_id", "median_ms", "baseline_median_ms", "change_pct", "status"],
+        "properties": {"status": {"enum": ["regressed", "ok", "improved", "no_baseline"]}}}}}},
+    "findings": {"type": "array", "items": {"type": "object", "required": ["id", "kind", "severity", "check_ids", "title", "evidence"],
+      "properties": {"kind": {"enum": ["version_mismatch", "check_failed", "regression"]}, "severity": {"enum": ["critical", "major", "minor"]}}}},
+    "recommendation": {"type": "object", "required": ["value", "reasons", "notes", "decision_owner", "decided_by", "decision"],
+      "properties": {"value": {"enum": ["go", "no_go", "not_established"]}, "decided_by": {"type": "null"}, "decision": {"type": "null"}}},
+    "summary": {"type": "object", "required": ["headline", "checks", "findings"]},
+    "limitations": {"type": "array", "items": {"type": "string"}}
+  }
+}
