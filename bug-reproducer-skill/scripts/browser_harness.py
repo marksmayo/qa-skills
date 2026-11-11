@@ -17,9 +17,18 @@ Config (dict):
     browser               chromium (default), firefox or webkit
     authorised_by         who confirmed testing the target is allowed; required unless every URL is loopback
     allow_form_submission false (default): every non-GET/HEAD/OPTIONS request is aborted and logged
+    third_party           block (default): every request to a host that isn't loopback (including *.test and
+                          host_map hosts), a host the run navigated to with goto(), a host in targets, or a
+                          host in allowed_hosts is aborted and logged in h.blocked with reason third_party,
+                          GETs included, so a run never sends analytics hits or ad requests from a test page.
+                          The page still attempts the request, so it shows in request logs. allow lets them out.
+    targets               URLs whose hosts are part of the site under test (goto() adds each host it visits)
+    allowed_hosts         further hosts to let through: ["cdn.example.com", "*.example-cdn.net"]
+    service_workers       allow (default) or block, for every page unless new_page() says otherwise
     rate_limit_seconds    0.5 between page loads; 429/503 back off (Retry-After) up to twice
     auth                  {"storage_state": file} or {"login": {"url", "steps": [...], "wait_for"}};
-                          login steps use {"fill": sel, "env": NAME}, so credentials never appear in output
+                          login steps use {"fill": sel, "env": NAME}, so credentials never appear in output;
+                          an identity provider the login redirects to must be listed in allowed_hosts
     headless              true (default)
     host_map              {"*.shop.test": "127.0.0.1"}: resolve these hosts to loopback (Chromium only), so a
                           sample app can use made-up hostnames for itself and its stub vendors
@@ -144,6 +153,12 @@ class Harness:
         self.cfg = cfg
         self.browser_name = cfg.get('browser', 'chromium')
         self.allow_post = bool(cfg.get('allow_form_submission', False))
+        self.third_party = cfg.get('third_party', 'block')
+        if self.third_party not in ('block', 'allow'):
+            raise ValueError("third_party must be 'block' or 'allow'")
+        self.allowed_hosts = [h.lower() for h in cfg.get('allowed_hosts', [])] + [h.lower() for h in (cfg.get('host_map') or {})]
+        self.targets: set[str] = {(urlparse(u).hostname or '').lower() for u in cfg.get('targets', [])}
+        self.service_workers = cfg.get('service_workers', 'allow')
         self.rate = float(cfg.get('rate_limit_seconds', 0.5))
         self.blocked: list[dict] = []
         self.events: list[dict] = []
@@ -177,16 +192,29 @@ class Harness:
                 self._pw.stop()
 
     # -------------------------------------------------------- pages
+    def host_allowed(self, url: str) -> bool:
+        """Loopback, the hosts this run navigated to, host_map hosts and allowed_hosts; nothing else."""
+        if url.startswith(('data:', 'blob:', 'about:')):
+            return True
+        host = (urlparse(url).hostname or '').lower()
+        if is_loopback(url) or host in self.targets:
+            return True
+        return any(host == p or (p.startswith('*.') and host.endswith(p[1:])) for p in self.allowed_hosts)
+
     def guard(self, route, request):
+        if self.third_party == 'block' and not self.host_allowed(request.url):
+            self.blocked.append({'method': request.method, 'url': request.url.split('?')[0], 'reason': 'third_party', 'at': now()})
+            return route.abort('blockedbyclient')
         if request.method in SAFE_METHODS or self.allow_post:
             return route.continue_()
-        self.blocked.append({'method': request.method, 'url': request.url.split('?')[0], 'at': now()})
+        self.blocked.append({'method': request.method, 'url': request.url.split('?')[0], 'reason': 'write', 'at': now()})
         return route.abort()
 
     def new_page(self, viewport: str = '1280x800', timezone: str | None = None, locale: str | None = None,
                  clock: str | None = None, cpu_throttle: float | None = None, network: str | None = None,
                  reduced_motion: str = 'no-preference', trace: bool = False, user_agent: str | None = None,
-                 service_workers: str = 'allow', mobile: bool = False):
+                 service_workers: str | None = None, mobile: bool = False):
+        service_workers = service_workers or self.service_workers
         w, h = parse_vp(viewport)
         kw = {'viewport': {'width': w, 'height': h}, 'reduced_motion': reduced_motion, 'storage_state': self.storage_state,
               'service_workers': service_workers}
@@ -274,6 +302,9 @@ class Harness:
 
     def goto(self, page, url: str, wait_until: str = 'load') -> dict:
         status = None
+        host = (urlparse(url).hostname or '').lower()
+        if host and not is_loopback(url):
+            self.targets.add(host)  # a page the run navigates to is a target, not a third party
         for attempt in range(3):
             self.throttle()
             try:

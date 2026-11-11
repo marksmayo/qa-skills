@@ -10,6 +10,12 @@ screen) and whether a fallback text is visible, plus a screenshot. Output is evi
 --out-dir. --emit-spec writes a standalone script that replays the scenario and exits 1 while the
 crash still reproduces; keep it outside the repository unless the user asks for it there.
 
+Third parties are blocked: every request to a host that is not loopback, the base URL's host or in
+scenario.allowed_hosts is aborted and listed in blocked_requests (GETs included), so a probe never
+sends analytics hits or ad requests. Console errors and failed requests caused by that blocking are
+kept apart (blocked_console_errors) and never count towards a reproduction. scenario.third_party
+"allow" lets them through; scenario.service_workers "block" stops service workers.
+
 Needs the Playwright Python package and a browser (see requirements.txt). The rest of the skill
 does not. Point it only at local or test environments the user has approved.
 """
@@ -26,6 +32,35 @@ def seed_script(storage: dict) -> str:
             " for (const [k, v] of Object.entries(s.localStorage || {})) localStorage.setItem(k, v);"
             " for (const [k, v] of Object.entries(s.sessionStorage || {})) sessionStorage.setItem(k, v);"
             " sessionStorage.setItem('__probe_seeded', '1'); } catch (e) {} })();")
+
+def guard_third_party(context, base_url: str, scenario: dict, blocked: list) -> None:
+    """Abort every request to a host that is not loopback, the base URL's host or an allowed host."""
+    from urllib.parse import urlparse
+    import ipaddress
+    if scenario.get('third_party', 'block') == 'allow':
+        return
+    site = (urlparse(base_url).hostname or '').lower()
+    allowed = [h.lower() for h in scenario.get('allowed_hosts', [])]
+
+    def ok(url: str) -> bool:
+        if url.startswith(('data:', 'blob:', 'about:')):
+            return True
+        host = (urlparse(url).hostname or '').lower()
+        if host in (site, 'localhost') or host.endswith(('.localhost', '.test')):
+            return True
+        try:
+            if ipaddress.ip_address(host).is_loopback:
+                return True
+        except ValueError:
+            pass
+        return any(host == p or (p.startswith('*.') and host.endswith(p[1:])) for p in allowed)
+
+    def handler(route, request):
+        if ok(request.url):
+            return route.fallback()
+        blocked.append(request.url.split('?')[0])
+        return route.abort('blockedbyclient')
+    context.route('**/*', handler)
 
 def apply_routes(page, routes: list) -> None:
     def make(r):
@@ -86,14 +121,18 @@ def probe(scenario: dict, base_url: str, out_dir: Path, headed: bool = False) ->
         browser = bt.launch(headless=not headed)
         context = browser.new_context(viewport=scenario.get('viewport') or {'width': 1280, 'height': 800},
                                       locale=scenario.get('locale'), timezone_id=scenario.get('timezone'),
-                                      user_agent=scenario.get('user_agent'))
+                                      user_agent=scenario.get('user_agent'),
+                                      service_workers=scenario.get('service_workers', 'allow'))
+        blocked: list = []
+        guard_third_party(context, base_url, scenario, blocked)
         context.add_init_script(seed_script(scenario.get('storage')))
         page = context.new_page()
         page.on('pageerror', lambda e: errors.append({'after_step': current(), 'name': e.name, 'message': e.message,
                                                       'stack': e.stack}))
         page.on('console', lambda m: console.append({'after_step': current(), 'type': m.type, 'text': m.text[:1000]})
                 if m.type in ('error', 'warning') else None)
-        page.on('requestfailed', lambda r: failed.append({'after_step': current(), 'url': r.url, 'failure': r.failure}))
+        page.on('requestfailed', lambda r: None if r.url.split('?')[0] in blocked else
+                failed.append({'after_step': current(), 'url': r.url, 'failure': r.failure}))
         apply_routes(page, scenario.get('routes'))
         step_error = None
         try:
@@ -104,6 +143,7 @@ def probe(scenario: dict, base_url: str, out_dir: Path, headed: bool = False) ->
         state = observe(page, scenario.get('observe') or {})
         shot = out_dir / 'screenshot.png'
         page.screenshot(path=str(shot), full_page=True)
+        own = [c for c in console if c['type'] == 'error' and 'ERR_BLOCKED_BY_CLIENT' not in c['text']]
         evidence = {
             'scenario': scenario.get('name'), 'base_url': base_url, 'final_url': page.url,
             'browser': f"{scenario.get('browser', 'chromium')} {browser.version}",
@@ -111,10 +151,11 @@ def probe(scenario: dict, base_url: str, out_dir: Path, headed: bool = False) ->
             'locale': scenario.get('locale'), 'timezone': scenario.get('timezone'),
             'captured_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
             'steps': [{k: v for k, v in s.items() if k != 'at'} for s in steps_log], 'step_error': step_error,
-            'page_errors': errors, 'console_errors': [c for c in console if c['type'] == 'error'],
-            'failed_requests': failed, **state, 'screenshot': shot.name,
+            'page_errors': errors, 'console_errors': own,
+            'blocked_console_errors': [c for c in console if c['type'] == 'error' and 'ERR_BLOCKED_BY_CLIENT' in c['text']],
+            'blocked_requests': sorted(set(blocked)), 'failed_requests': failed, **state, 'screenshot': shot.name,
             # an error boundary catches the throw and React logs it with console.error, so both count
-            'reproduced': bool(errors or [c for c in console if c['type'] == 'error'])
+            'reproduced': bool(errors or own)
                           and (state['root_empty'] or bool(state['fallback_visible'])),
         }
         browser.close()
@@ -129,11 +170,13 @@ def main():
     with sync_playwright() as pw:
         browser = getattr(pw, SCENARIO.get('browser', 'chromium')).launch()
         context = browser.new_context(viewport=SCENARIO.get('viewport') or {'width': 1280, 'height': 800},
-                                      locale=SCENARIO.get('locale'), timezone_id=SCENARIO.get('timezone'))
+                                      locale=SCENARIO.get('locale'), timezone_id=SCENARIO.get('timezone'),
+                                      service_workers=SCENARIO.get('service_workers', 'allow'))
+        guard_third_party(context, base_url, SCENARIO, [])
         context.add_init_script(seed_script(SCENARIO.get('storage')))
         page = context.new_page()
         page.on('pageerror', lambda e: errors.append(e.message))
-        page.on('console', lambda m: errors.append(m.text.splitlines()[0]) if m.type == 'error' else None)
+        page.on('console', lambda m: errors.append(m.text.splitlines()[0]) if m.type == 'error' and 'ERR_BLOCKED_BY_CLIENT' not in m.text else None)
         apply_routes(page, SCENARIO.get('routes'))
         run_steps(page, context, SCENARIO.get('steps'), base_url, [])
         page.wait_for_timeout(int(SCENARIO.get('settle_ms', 800)))
@@ -148,7 +191,7 @@ if __name__ == '__main__':
 '''
 
 def emit_spec(scenario: dict, base_url: str, path: Path, title: str) -> None:
-    funcs = '\n\n'.join(inspect.getsource(f) for f in (seed_script, apply_routes, run_steps, observe))
+    funcs = '\n\n'.join(inspect.getsource(f) for f in (seed_script, guard_third_party, apply_routes, run_steps, observe))
     sc = dict(scenario, base_url=scenario.get('base_url') or base_url)
     body = (f'#!/usr/bin/env python3\n"""Repro spec: {title}\n\nReplays the crash trigger with Playwright. Exits 1 while the crash '
             f'reproduces and 0 once it is fixed.\n    python {path.name} [--base-url http://localhost:5173]\n"""\n'

@@ -17,6 +17,12 @@ Config (JSON):
                        target_size, hover_focus, motion, a11y_tree, language, media
     authorised_by      who confirmed the user may test the target (required unless every target is loopback)
     allow_form_submission  false (default): every non-GET request is aborted and logged
+    third_party        "block" (default): every request to a host that is not loopback, a target's host or in
+                       allowed_hosts is aborted and logged (GETs included), so an audit never sends analytics
+                       hits or ad requests; third-party content is then absent and the report says so.
+                       "allow" lets them through.
+    allowed_hosts      further hosts to let through, e.g. a CDN the site needs: ["cdn.example.com", "*.cdn.net"]
+    service_workers    "block" (default) or "allow"
     rate_limit_seconds 1.0 between page loads; 429/503 responses back off (Retry-After) up to twice
     consent            {"dismiss": "<selector>"}: engines run with the banner showing, then it is dismissed
     auth               {"storage_state": "<file>"} or {"login": {"url", "steps": [...], "wait_for"}};
@@ -132,6 +138,12 @@ class Runner:
         self.probes = cfg.get('probes') or ALL_PROBES
         self.rate = float(cfg.get('rate_limit_seconds', 1.0))
         self.allow_post = bool(cfg.get('allow_form_submission', False))
+        self.third_party = cfg.get('third_party', 'block')
+        targets = cfg.get('targets') if isinstance(cfg.get('targets'), list) else []
+        self.site_hosts = {(urlparse(u).hostname or '').lower() for u in targets + [cfg.get('sitemap') or '']} - {''}
+        self.site_hosts |= {(urlparse(s.get('url', '')).hostname or '').lower() for s in cfg.get('states') or []} - {''}
+        self.site_hosts.add((urlparse(((cfg.get('auth') or {}).get('login') or {}).get('url', '')).hostname or '').lower())
+        self.allowed_hosts = [h.lower() for h in cfg.get('allowed_hosts', [])]
         self.blocked: list[dict] = []
         self.events: list[dict] = []
         self.engine_status: list[dict] = []
@@ -170,17 +182,27 @@ class Runner:
             time.sleep(wait)
         self.last_load = time.time()
 
+    def host_allowed(self, url: str) -> bool:
+        if url.startswith(('data:', 'blob:', 'about:')) or is_loopback(url):
+            return True
+        host = (urlparse(url).hostname or '').lower()
+        return host in self.site_hosts or any(host == p or (p.startswith('*.') and host.endswith(p[1:])) for p in self.allowed_hosts)
+
     def guard(self, route, request):
+        if self.third_party == 'block' and not self.host_allowed(request.url):
+            self.blocked.append({'method': request.method, 'url': request.url.split('?')[0], 'reason': 'third_party', 'at': now()})
+            return route.abort('blockedbyclient')
         if request.method in ('GET', 'HEAD', 'OPTIONS') or self.allow_post:
             return route.continue_()
-        self.blocked.append({'method': request.method, 'url': request.url.split('?')[0], 'at': now()})
+        self.blocked.append({'method': request.method, 'url': request.url.split('?')[0], 'reason': 'write', 'at': now()})
         return route.abort()
 
     def new_context(self, browser, vp: str, reduced_motion: str = 'no-preference', scale: float = 1):
         w, h = parse_vp(vp)
         ctx = browser.new_context(viewport={'width': w, 'height': h}, device_scale_factor=scale,
                                   reduced_motion=reduced_motion, storage_state=self.storage_state,
-                                  user_agent=None, ignore_https_errors=False)
+                                  user_agent=None, ignore_https_errors=False,
+                                  service_workers=self.cfg.get('service_workers', 'block'))
         ctx.route('**/*', self.guard)
         return ctx
 
