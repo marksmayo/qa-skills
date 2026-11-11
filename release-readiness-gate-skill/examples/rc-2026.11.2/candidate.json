@@ -1,0 +1,10 @@
+{
+ "commit": "a7c23dea801abfc544a0eebeaa71587787fc47ca",
+ "build_id": "ci-4821",
+ "version": "2026.11.2",
+ "target_url": null,
+ "release_type": "minor",
+ "previous_tag": "v2026.11.1",
+ "commit_time": "2026-11-09T06:00:00+00:00",
+ "repository": "harbour-suite (build it with make_repo.py)"
+}

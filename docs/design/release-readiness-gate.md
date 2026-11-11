@@ -1,6 +1,6 @@
 # Design: `release-readiness-gate-skill`
 
-Status: Designed; not built. Build order: 25.
+Status: Built (v1.0.0); see "As built" at the end. Build order: 25.
 
 ## Mission
 
@@ -274,3 +274,32 @@ Agreed with the user before the build.
 2. **Starter policy thresholds?** Block on any open P0, a security finding with CVSS >= 9, and a WCAG failure on a critical path; the flake-rate and completeness thresholds warn.
 3. **`no_go` or `not_established` when both apply?** `no_go` headlines; the missing evidence is still listed.
 4. **Waiver approvers?** The approver must be on the policy's allow-list for that finding category.
+
+## As built (v1.0.0)
+
+Where the build differs from the design above, and what the example showed.
+
+- **Reports can be listed in a manifest** (`reports.json`, each with an optional provenance path) as well as
+  found in a directory. Several skills' validators resolve evidence relative to the report's own folder, so a
+  report copied elsewhere fails its own validator. The example therefore lists the other skills' example
+  reports in place, rather than using trimmed copies.
+- **One generic adapter** reads every report type from `data/report_types.json` (detection, validator,
+  finding paths, untested paths, waiver category), with `extras` for the flake rates and journey results
+  that two rules need. There is no per-skill adapter code. `diff_scope.py` and `fetch_ticket.py` are not
+  used: freshness and conditions call `git` directly, and only `parse_results.py` is shared.
+- **Which findings count:** valid reports and reports whose validator was not run; never an invalid one.
+  A stale or unverified report's findings still block, because a known blocker blocks until a fresh report
+  shows it fixed. The crash hunter's stale P0 does so in the example.
+- **Red gating tests are one issue per suite**, listing the failing cases. **An untested critical journey**
+  becomes an issue only when the rule fires; it carries no rating.
+- **A rule with no counted report is `not_evaluable`**. It only adds missing evidence when its skill is
+  required, so an optional skill's absence doesn't block every release.
+- **Overall confidence is also capped by completeness:** at most medium under 1, low under 0.5.
+- **Example results:** `no_go` with 7 blockers (three security P0s with CVSS 9 or more, a P2 security finding
+  with CVSS 9 or more, the WCAG menu toggle whose waiver expired, the stale crash loop, and the red discount
+  suite). One finding was waived (the day-picker trap). One waiver was rejected because its approver
+  wasn't on the security list. Missing evidence: the stale crash report and the absent flaky report.
+  Completeness 0.71, confidence medium.
+- **Testing:** 27 of 27 seeded violations are caught by the validator. Eight scenario checks on the policy
+  engine cover `go`, `not_established`, a validator that wasn't run, a cross-skill merge, a wildcard waiver,
+  a valid security waiver, and waiver expiry.

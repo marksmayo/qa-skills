@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="6" skipped="0" tests="13" time="0.087" timestamp="2026-11-12T02:12:14.508410+13:00" hostname="ci-runner"><testcase classname="tests.test_cart" name="test_subtotal_sums_lines" time="0.000" /><testcase classname="tests.test_cart" name="test_quantity_multiplies_unit_price" time="0.000" /><testcase classname="tests.test_cart" name="test_quantity_below_one_is_rejected" time="0.000" /><testcase classname="tests.test_cart" name="test_total_without_code_equals_subtotal" time="0.000" /><testcase classname="tests.test_discount_codes" name="test_percentage_code_reduces_total" time="0.001"><failure message="AssertionError: assert Decimal('100.00') == Decimal('90.00')&#10; +  where Decimal('100.00') = total()&#10; +    where total = Cart(lines=[Line(sku='SKU-1', unit_price=Decimal('60.00'), quantity=1), Line(sku='SKU-2', unit_price=Decimal('40.00'), quantity=1)]).total&#10; +  and   Decimal('90.00') = Decimal('90.00')">cart_of = &lt;function cart_of.&lt;locals&gt;.make at 0x0000012A787B8BF0&gt;
+
+    def test_percentage_code_reduces_total(cart_of):
+        """BILL-142 REQ-1: a valid percentage code reduces the total by that percentage."""
+        cart = cart_of('60.00', '40.00')
+        cart.apply_code('SAVE10', today=TODAY)
+&gt;       assert cart.total() == Decimal('90.00')
+E       AssertionError: assert Decimal('100.00') == Decimal('90.00')
+E        +  where Decimal('100.00') = total()
+E        +    where total = Cart(lines=[Line(sku='SKU-1', unit_price=Decimal('60.00'), quantity=1), Line(sku='SKU-2', unit_price=Decimal('40.00'), quantity=1)]).total
+E        +  and   Decimal('90.00') = Decimal('90.00')
+
+tests\test_discount_codes.py:19: AssertionError</failure></testcase><testcase classname="tests.test_discount_codes" name="test_code_applies_when_subtotal_equals_minimum_spend" time="0.000"><failure message="AssertionError: assert Decimal('50.00') == Decimal('40.00')&#10; +  where Decimal('50.00') = total()&#10; +    where total = Cart(lines=[Line(sku='SKU-1', unit_price=Decimal('50.00'), quantity=1)]).total&#10; +  and   Decimal('40.00') = Decimal('40.00')">cart_of = &lt;function cart_of.&lt;locals&gt;.make at 0x0000012A787B9170&gt;
+
+    def test_code_applies_when_subtotal_equals_minimum_spend(cart_of):
+        """BILL-142 REQ-1: "at least the minimum spend" includes a subtotal exactly equal to it."""
+        cart = cart_of('50.00')
+        cart.apply_code('SAVE20', today=TODAY)
+&gt;       assert cart.total() == Decimal('40.00')
+E       AssertionError: assert Decimal('50.00') == Decimal('40.00')
+E        +  where Decimal('50.00') = total()
+E        +    where total = Cart(lines=[Line(sku='SKU-1', unit_price=Decimal('50.00'), quantity=1)]).total
+E        +  and   Decimal('40.00') = Decimal('40.00')
+
+tests\test_discount_codes.py:26: AssertionError</failure></testcase><testcase classname="tests.test_discount_codes" name="test_discounted_total_is_rounded_to_the_nearest_cent" time="0.000"><failure message="AssertionError: assert Decimal('19.99') == Decimal('17.99')&#10; +  where Decimal('19.99') = total()&#10; +    where total = Cart(lines=[Line(sku='SKU-1', unit_price=Decimal('19.99'), quantity=1)]).total&#10; +  and   Decimal('17.99') = Decimal('17.99')">cart_of = &lt;function cart_of.&lt;locals&gt;.make at 0x0000012A787B97A0&gt;
+
+    def test_discounted_total_is_rounded_to_the_nearest_cent(cart_of):
+        """BILL-142 REQ-2: 19.99 less 10% is 17.991, shown as 17.99."""
+        cart = cart_of('19.99')
+        cart.apply_code('SAVE10', today=TODAY)
+&gt;       assert cart.total() == Decimal('17.99')
+E       AssertionError: assert Decimal('19.99') == Decimal('17.99')
+E        +  where Decimal('19.99') = total()
+E        +    where total = Cart(lines=[Line(sku='SKU-1', unit_price=Decimal('19.99'), quantity=1)]).total
+E        +  and   Decimal('17.99') = Decimal('17.99')
+
+tests\test_discount_codes.py:33: AssertionError</failure></testcase><testcase classname="tests.test_discount_codes" name="test_code_lookup_ignores_case_and_surrounding_spaces" time="0.000" /><testcase classname="tests.test_discount_codes" name="test_expired_code_is_rejected_and_total_unchanged" time="0.000"><failure message="Failed: DID NOT RAISE DiscountError">cart_of = &lt;function cart_of.&lt;locals&gt;.make at 0x0000012A787BA2A0&gt;
+
+    def test_expired_code_is_rejected_and_total_unchanged(cart_of):
+        """BILL-142 REQ-4: an expired code is rejected with "This code has expired"."""
+        cart = cart_of('100.00')
+&gt;       with pytest.raises(DiscountError, match='This code has expired'):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE DiscountError
+
+tests\test_discount_codes.py:44: Failed</failure></testcase><testcase classname="tests.test_discount_codes" name="test_second_code_replaces_the_first" time="0.000"><failure message="AssertionError: assert Decimal('100.00') == Decimal('80.00')&#10; +  where Decimal('100.00') = total()&#10; +    where total = Cart(lines=[Line(sku='SKU-1', unit_price=Decimal('100.00'), quantity=1)]).total&#10; +  and   Decimal('80.00') = Decimal('80.00')">cart_of = &lt;function cart_of.&lt;locals&gt;.make at 0x0000012A787BA8D0&gt;
+
+    def test_second_code_replaces_the_first(cart_of):
+        """BILL-142 REQ-5: only one code per cart; applying a second code replaces the first."""
+        cart = cart_of('100.00')
+        cart.apply_code('SAVE10', today=TODAY)
+        cart.apply_code('SAVE20', today=TODAY)
+&gt;       assert cart.total() == Decimal('80.00')
+E       AssertionError: assert Decimal('100.00') == Decimal('80.00')
+E        +  where Decimal('100.00') = total()
+E        +    where total = Cart(lines=[Line(sku='SKU-1', unit_price=Decimal('100.00'), quantity=1)]).total
+E        +  and   Decimal('80.00') = Decimal('80.00')
+
+tests\test_discount_codes.py:54: AssertionError</failure></testcase><testcase classname="tests.test_discount_codes" name="test_code_below_minimum_spend_is_rejected_with_shortfall" time="0.000"><failure message="Failed: DID NOT RAISE DiscountError">cart_of = &lt;function cart_of.&lt;locals&gt;.make at 0x0000012A787777F0&gt;
+
+    def test_code_below_minimum_spend_is_rejected_with_shortfall(cart_of):
+        """BILL-142 REQ-6: below the minimum spend, the message says how much more to spend."""
+        cart = cart_of('30.00')
+&gt;       with pytest.raises(DiscountError, match=r'Spend \$20\.00 more to use this code'):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE DiscountError
+
+tests\test_discount_codes.py:60: Failed</failure></testcase><testcase classname="tests.test_promotions" name="test_unknown_code_is_not_found" time="0.000" /><testcase classname="tests.test_promotions" name="test_known_code_is_found" time="0.000" /></testsuite></testsuites>

@@ -290,6 +290,16 @@ python mobile-app-auditor-skill/scripts/merge_findings.py --run mobile-app-audit
 
 Re-running needs the Android SDK platform tools and one emulator; run `commands.sh` from the repo root. Exploration, probes and replay change device settings (rotation, font scale, display size, dark mode) and restore them; each script records what it changed and what it put back. A rerun changes screenshots and hashes and invalidates the audit until it is rebuilt. The APK is built from `examples/harbour-dental-app/` (`gradle assembleRelease`, JDK 17, SDK 36); rebuilding changes its hash. `data/wcag-sc.json` and `data/en301549-map.json` are shared with the WCAG auditor (edit them in `shared/data/`).
 
+Release readiness gate (`examples/rc-2026.11.2/` is a release candidate whose evidence is other skills' example reports, listed in place by `reports.json` with provenance in `provenance/`, plus a real CI JUnit run; `make_repo.py` builds its sample git history with fixed ids; `--reports` re-reads every source and compares copied ratings, `--recompute` re-applies the policy to the collection):
+
+```bash
+python release-readiness-gate-skill/scripts/validate_gate.py release-readiness-gate-skill/examples/rc-2026.11.2/gate_report.json --reports --recompute release-readiness-gate-skill/examples/rc-2026.11.2/collection.json
+python release-readiness-gate-skill/scripts/render_report.py release-readiness-gate-skill/examples/rc-2026.11.2/gate_report.json [--brief | --markdown gate.md]
+python release-readiness-gate-skill/scripts/adapters.py <any skill's report>
+```
+
+Run these from the repo root: the collection and the report record paths relative to it. The gate hashes the security, WCAG, crash, journey-tests and impact example reports in place, so editing any of them (or `examples/rc-2026.11.2/`) invalidates the gate example until `commands.sh` is rerun (it needs `HS`, an empty directory for the sample repository). The policy is the starter policy with `validator_args`; each source is checked with its own skill's validator.
+
 Shared files:
 
 ```bash

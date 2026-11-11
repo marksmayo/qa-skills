@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/qa-skills/release-readiness-gate/release_policy.schema.json",
+  "title": "Release policy",
+  "description": "The team's policy: release types and their required evidence, blocking and warning rules, thresholds, and who may approve waivers for each finding category.",
+  "type": "object",
+  "required": ["schema_version", "name", "starter", "release_types", "rules", "show_threshold", "waiver_approvers"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "name": {"type": "string"},
+    "starter": {"type": "boolean", "description": "true only for the example policy shipped with the skill"},
+    "release_types": {"type": "object", "additionalProperties": {"type": "object", "required": ["required"],
+      "properties": {"extends": {"type": "string"},
+                     "required": {"type": "array", "items": {"type": "object", "required": ["id"],
+                       "properties": {"id": {"type": "string"}, "skill": {"type": "string"}, "kind": {"const": "junit"}, "if": {"type": "string"}},
+                       "oneOf": [{"required": ["skill"]}, {"required": ["kind"]}]}}}}},
+    "conditions": {"type": "object", "additionalProperties": {"type": "object", "required": ["paths"], "properties": {"paths": {"type": "array", "items": {"type": "string"}}}}},
+    "rules": {"type": "array", "items": {"type": "object", "required": ["id", "effect", "kind"],
+      "properties": {"effect": {"enum": ["block", "warn"]},
+                     "kind": {"enum": ["priority", "cvss_at_least", "blocked_critical_path", "junit_failed", "flaky_rate", "completeness",
+                                       "irreversible_migration", "untested_critical_journey", "perf_over_budget", "privacy_pre_consent"]},
+                     "priorities": {"type": "array", "items": {"enum": ["P0", "P1", "P2", "P3"]}}, "score": {"type": "number"},
+                     "skills": {"type": "array", "items": {"type": "string"}}, "gating": {"type": "array", "items": {"type": "string"}},
+                     "threshold": {"type": "number"}}}},
+    "min_completeness": {"type": "number", "minimum": 0, "maximum": 1},
+    "show_threshold": {"type": "object", "required": ["severity", "priority"]},
+    "validator_not_run_acceptable": {"type": "boolean"},
+    "waiver_approvers": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}},
+    "validator_args": {"type": "object", "additionalProperties": {"type": "string"}}
+  }
+}

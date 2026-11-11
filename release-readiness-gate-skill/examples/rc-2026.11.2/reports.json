@@ -1,0 +1,29 @@
+{
+ "note": "The evidence for release candidate 2026.11.2. Each report is listed where its skill produced it, so its validator finds the evidence beside it; provenance names the commit and build it was made for.",
+ "reports": [
+  {
+   "path": "../../../code-security-auditor-skill/examples/security_audit.example.json",
+   "provenance": "provenance/security_audit.json"
+  },
+  {
+   "path": "../../../wcag-auditor-skill/examples/audit.example.json",
+   "provenance": "provenance/wcag_audit.json"
+  },
+  {
+   "path": "../../../ui-crash-hunter-skill/examples/crash_report.example.json",
+   "provenance": "provenance/crash_report.json"
+  },
+  {
+   "path": "../../../journey-to-tests-skill/examples/journey_tests_report.example.json",
+   "provenance": "provenance/journey_tests.json"
+  },
+  {
+   "path": "../../../test-impact-selector-skill/examples/impact_report.example.json",
+   "provenance": "provenance/impact.json"
+  },
+  {
+   "path": "reports/ci.xml",
+   "provenance": "provenance/ci.json"
+  }
+ ]
+}

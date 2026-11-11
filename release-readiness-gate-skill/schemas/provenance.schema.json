@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/qa-skills/release-readiness-gate/provenance.schema.json",
+  "title": "Report provenance",
+  "description": "What a report was made for. Either a subject block inside the report, or a sidecar <report>.provenance.json written when the report was produced (or named in the reports manifest).",
+  "type": "object",
+  "required": ["commit", "generated_at"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "commit": {"type": "string", "pattern": "^[0-9a-f]{7,64}$"},
+    "build_id": {"type": ["string", "null"]},
+    "target_url": {"type": ["string", "null"]},
+    "generated_at": {"type": "string"},
+    "produced_by": {"type": "string"},
+    "note": {"type": "string"}
+  }
+}

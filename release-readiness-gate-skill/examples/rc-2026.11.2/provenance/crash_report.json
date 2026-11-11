@@ -1,0 +1,9 @@
+{
+ "schema_version": "1.0.0",
+ "commit": "a35dba359ea303b64f995e609e3b88a23482e98b",
+ "build_id": "ci-4790",
+ "target_url": null,
+ "generated_at": "2026-11-10T09:30:00Z",
+ "produced_by": "ui-crash-hunter",
+ "note": "Written when the report was produced; the source skill's report has no subject block yet."
+}

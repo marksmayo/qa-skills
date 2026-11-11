@@ -1,0 +1,48 @@
+{
+ "schema_version": "1.0.0",
+ "name": "Starter release policy (example only)",
+ "starter": true,
+ "note": "An EXAMPLE policy shipped with the release readiness gate. Copy it to release_policy.json, set starter to false, and edit the rules, required evidence and approvers to what your team agreed. The gate uses this file only when the user says so, and the report then records starter: true.",
+ "release_types": {
+  "hotfix": {"required": [{"id": "ci", "kind": "junit"}, {"id": "bug-reproduced", "skill": "bug-reproducer"}, {"id": "impact", "skill": "test-impact-selector"}]},
+  "patch": {"required": [{"id": "ci", "kind": "junit"}, {"id": "security", "skill": "code-security-auditor"}, {"id": "impact", "skill": "test-impact-selector"}]},
+  "minor": {"extends": "patch", "required": [{"id": "crashes", "skill": "ui-crash-hunter"}, {"id": "accessibility", "skill": "wcag-auditor"},
+                                           {"id": "journey-tests", "skill": "journey-to-tests"}, {"id": "flakiness", "skill": "flaky-test-hunter"}]},
+  "major": {"extends": "minor", "required": [{"id": "performance", "skill": "performance-budget-auditor"}, {"id": "browsers", "skill": "cross-browser-checker"},
+                                           {"id": "migrations", "skill": "db-migration-reviewer", "if": "migrations_changed"},
+                                           {"id": "privacy", "skill": "privacy-flow-auditor"},
+                                           {"id": "mobile", "skill": "mobile-app-auditor", "if": "mobile_app_ships"}]}
+ },
+ "conditions": {
+  "migrations_changed": {"paths": ["**/migrations/**", "**/alembic/**", "**/*.sql"], "note": "Files changed since the previous release tag; true when no tag is given."},
+  "mobile_app_ships": {"paths": ["**/AndroidManifest.xml", "**/*.xcodeproj/**", "android/**", "ios/**"], "note": "Files changed since the previous release tag; true when no tag is given."}
+ },
+ "rules": [
+  {"id": "open-p0", "effect": "block", "kind": "priority", "priorities": ["P0"], "note": "Any open finding with priority P0, from any skill"},
+  {"id": "critical-security", "effect": "block", "kind": "cvss_at_least", "skill": "code-security-auditor", "score": 9.0, "note": "A security finding with CVSS-B 9.0 or more"},
+  {"id": "wcag-critical-path", "effect": "block", "kind": "blocked_critical_path", "skills": ["wcag-auditor", "mobile-app-auditor"], "note": "does_not_conform with a finding that blocks a critical path"},
+  {"id": "red-gating-tests", "effect": "block", "kind": "junit_failed", "gating": ["*"], "note": "Any failing or erroring case in a gating suite of the CI JUnit"},
+  {"id": "flaky-gating", "effect": "warn", "kind": "flaky_rate", "threshold": 0.02, "note": "A gating test's flake rate above 2%, using the lower bound of the flaky hunter's 95% interval"},
+  {"id": "low-completeness", "effect": "warn", "kind": "completeness", "note": "A required source's evidence completeness below min_completeness"},
+  {"id": "irreversible-migration", "effect": "block", "kind": "irreversible_migration", "note": "A migration rated irreversible with no rollback_plan"},
+  {"id": "untested-critical-journey", "effect": "block", "kind": "untested_critical_journey", "priorities": ["P0"], "note": "A critical journey whose main path has no passing journey test"},
+  {"id": "perf-budget", "effect": "block", "kind": "perf_over_budget", "note": "A budget metric over budget at the median of the runs"},
+  {"id": "privacy-pre-consent", "effect": "block", "kind": "privacy_pre_consent", "note": "Personal data or a tracking cookie sent before consent"}
+ ],
+ "min_completeness": 0.8,
+ "show_threshold": {"severity": "serious", "priority": "P1"},
+ "validator_not_run_acceptable": false,
+ "waiver_approvers": {
+  "security": ["Security lead"],
+  "privacy": ["Privacy officer"],
+  "accessibility": ["Accessibility lead"],
+  "reliability": ["Engineering manager"],
+  "testing": ["QA lead"],
+  "performance": ["Engineering manager"],
+  "data": ["Engineering manager", "Database owner"],
+  "compatibility": ["QA lead"],
+  "localisation": ["Product owner"],
+  "visual": ["Product owner"]
+ },
+ "validator_args": {}
+}

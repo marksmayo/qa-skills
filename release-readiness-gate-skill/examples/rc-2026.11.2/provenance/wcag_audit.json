@@ -1,0 +1,9 @@
+{
+ "schema_version": "1.0.0",
+ "commit": "a7c23dea801abfc544a0eebeaa71587787fc47ca",
+ "build_id": "ci-4821",
+ "target_url": null,
+ "generated_at": "2026-11-10T09:41:27Z",
+ "produced_by": "wcag-auditor",
+ "note": "Written when the report was produced; the source skill's report has no subject block yet."
+}

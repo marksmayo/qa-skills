@@ -1,0 +1,1536 @@
+{
+ "collected_at": "2026-11-11T13:24:06Z",
+ "candidate": {
+  "commit": "a7c23dea801abfc544a0eebeaa71587787fc47ca",
+  "build_id": "ci-4821",
+  "version": "2026.11.2",
+  "target_url": null,
+  "release_type": "minor",
+  "previous_tag": "v2026.11.1",
+  "commit_time": "2026-11-09T06:00:00+00:00",
+  "repository": "harbour-suite (build it with make_repo.py)"
+ },
+ "candidate_commit_time": "2026-11-09T06:00:00+00:00",
+ "reports": "release-readiness-gate-skill/examples/rc-2026.11.2/reports.json",
+ "reports_kind": "manifest",
+ "repo": "(outside the working directory; HEAD a7c23dea801abfc544a0eebeaa71587787fc47ca)",
+ "repo_used": true,
+ "policy": {
+  "path": "release-readiness-gate-skill/examples/rc-2026.11.2/release_policy.json",
+  "sha256": "8307b4c58b4724783548454c67aeccaddfa9103ffc0cbb3fe6393768d1308661",
+  "starter": true
+ },
+ "waivers": {
+  "path": "release-readiness-gate-skill/examples/rc-2026.11.2/waivers.json",
+  "sha256": "b1d61f18bc72bea706c340ac8bfb8c18101fe62ccdf4db0d86298c11bdce798b"
+ },
+ "conditions": {
+  "migrations_changed": {
+   "value": false,
+   "basis": "files changed since v2026.11.1",
+   "files": []
+  },
+  "mobile_app_ships": {
+   "value": false,
+   "basis": "files changed since v2026.11.1",
+   "files": []
+  }
+ },
+ "sources": [
+  {
+   "path": "code-security-auditor-skill/examples/security_audit.example.json",
+   "sha256": "e62c0f311099836af4eb69c43781d810581fa58f3ac7e622665fbbce817c52cb",
+   "type": "code-security-auditor",
+   "skill": "code-security-auditor",
+   "skill_version": "1.0.0",
+   "provenance": {
+    "schema_version": "1.0.0",
+    "commit": "a7c23dea801abfc544a0eebeaa71587787fc47ca",
+    "build_id": "ci-4821",
+    "target_url": null,
+    "generated_at": "2026-11-10T06:00:00Z",
+    "produced_by": "code-security-auditor",
+    "note": "Written when the report was produced; the source skill's report has no subject block yet.",
+    "source": "release-readiness-gate-skill/examples/rc-2026.11.2/provenance/security_audit.json",
+    "source_sha256": "2935751d2508bda811b1ad7d745fc92bfc3382eca92d22cb1a421e43bece4302"
+   },
+   "validator": {
+    "command": "python code-security-auditor-skill/scripts/validate_security_audit.py code-security-auditor-skill/examples/security_audit.example.json --repo code-security-auditor-skill/examples/invoicer --candidates code-security-auditor-skill/examples/run/candidates.json",
+    "exit_code": 0,
+    "status": "valid",
+    "errors": []
+   },
+   "freshness": "fresh",
+   "freshness_reasons": [],
+   "generated_at": "2026-11-10T06:00:00Z",
+   "facts": {
+    "type": "code-security-auditor",
+    "skill": "code-security-auditor",
+    "skill_version": "1.0.0",
+    "generated_at": "2026-11-10T06:00:00Z",
+    "verdict": null,
+    "evidence_completeness": null,
+    "overall_confidence": null,
+    "blocked_critical_paths": [],
+    "subject": null,
+    "findings": [
+     {
+      "skill": "code-security-auditor",
+      "finding_id": "F-1",
+      "title": "Hard-coded session signing key lets anyone forge a login as any user",
+      "severity": "critical",
+      "tier": null,
+      "priority": "P0",
+      "confidence": "confirmed",
+      "evidence_type": null,
+      "category": "authentication",
+      "class": "security",
+      "waiver_category": "security",
+      "location": {
+       "file": "invoicer/__init__.py",
+       "line": 11
+      },
+      "facts": {
+       "cvss": 9.1
+      }
+     },
+     {
+      "skill": "code-security-auditor",
+      "finding_id": "F-2",
+      "title": "pull_request_target workflow checks out and runs untrusted pull-request code with a write token",
+      "severity": "critical",
+      "tier": null,
+      "priority": "P0",
+      "confidence": "traced",
+      "evidence_type": null,
+      "category": "supply_chain_ci",
+      "class": "security",
+      "waiver_category": "security",
+      "location": {
+       "file": ".github/workflows/ci.yml",
+       "line": 4
+      },
+      "facts": {
+       "cvss": 9.9
+      }
+     },
+     {
+      "skill": "code-security-auditor",
+      "finding_id": "F-3",
+      "title": "Pull-request title is expanded into a shell script in the privileged workflow",
+      "severity": "critical",
+      "tier": null,
+      "priority": "P0",
+      "confidence": "traced",
+      "evidence_type": null,
+      "category": "supply_chain_ci",
+      "class": "security",
+      "waiver_category": "security",
+      "location": {
+       "file": ".github/workflows/ci.yml",
+       "line": 4
+      },
+      "facts": {
+       "cvss": 9.9
+      }
+     },
+     {
+      "skill": "code-security-auditor",
+      "finding_id": "F-4",
+      "title": "Report title is compiled as a Jinja template (server-side template injection)",
+      "severity": "high",
+      "tier": null,
+      "priority": "P1",
+      "confidence": "confirmed",
+      "evidence_type": null,
+      "category": "injection",
+      "class": "security",
+      "waiver_category": "security",
+      "location": {
+       "file": "invoicer/invoices.py",
+       "line": 47
+      },
+      "facts": {
+       "cvss": 8.7
+      }
+     },
+     {
+      "skill": "code-security-auditor",
+      "finding_id": "F-5",
+      "title": "SQL injection in invoice search returns other users' invoices",
+      "severity": "high",
+      "tier": null,
+      "priority": "P1",
+      "confidence": "confirmed",
+      "evidence_type": null,
+      "category": "injection",
+      "class": "security",
+      "waiver_category": "security",
+      "location": {
+       "file": "invoicer/invoices.py",
+       "line": 28
+      },
+      "facts": {
+       "cvss": 7.1
+      }
+     },
+     {
+      "skill": "code-security-auditor",
+      "finding_id": "F-6",
+      "title": "Blind SQL injection through the invoice list sort parameter",
+      "severity": "high",
+      "tier": null,
+      "priority": "P1",
+      "confidence": "confirmed",
+      "evidence_type": null,
+      "category": "injection",
+      "class": "security",
+      "waiver_category": "security",
+      "location": {
+       "file": "invoicer/invoices.py",
+       "line": 18
+      },
+      "facts": {
+       "cvss": 7.1
+      }
+     },
+     {
+      "skill": "code-security-auditor",
+      "finding_id": "F-7",
+      "title": "Any signed-in user can read any invoice by id (IDOR)",
+      "severity": "high",
+      "tier": null,
+      "priority": "P1",
+      "confidence": "confirmed",
+      "evidence_type": null,
+      "category": "access_control",
+      "class": "security",
+      "waiver_category": "security",
+      "location": {
+       "file": "invoicer/invoices.py",
+       "line": 35
+      },
+      "facts": {
+       "cvss": 7.1
+      }
+     },
+     {
+      "skill": "code-security-auditor",
+      "finding_id": "F-8",
+      "title": "Path traversal in attachment downloads reads any file the app can read",
+      "severity": "high",
+      "tier": null,
+      "priority": "P1",
+      "confidence": "confirmed",
+      "evidence_type": null,
+      "category": "server_side",
+      "class": "security",
+      "waiver_category": "security",
+      "location": {
+       "file": "invoicer/attachments.py",
+       "line": 13
+      },
+      "facts": {
+       "cvss": 7.1
+      }
+     },
+     {
+      "skill": "code-security-auditor",
+      "finding_id": "F-9",
+      "title": "Open redirect after sign-in through the next parameter",
+      "severity": "medium",
+      "tier": null,
+      "priority": "P1",
+      "confidence": "confirmed",
+      "evidence_type": null,
+      "category": "web",
+      "class": "security",
+      "waiver_category": "security",
+      "location": {
+       "file": "invoicer/auth.py",
+       "line": 36
+      },
+      "facts": {
+       "cvss": 5.1
+      }
+     },
+     {
+      "skill": "code-security-auditor",
+      "finding_id": "F-10",
+      "title": "Invoice import parses YAML with the unsafe loader (code execution)",
+      "severity": "high",
+      "tier": null,
+      "priority": "P1",
+      "confidence": "traced",
+      "evidence_type": null,
+      "category": "language_specific",
+      "class": "security",
+      "waiver_category": "security",
+      "location": {
+       "file": "invoicer/invoices.py",
+       "line": 58
+      },
+      "facts": {
+       "cvss": 8.7
+      }
+     },
+     {
+      "skill": "code-security-auditor",
+      "finding_id": "F-11",
+      "title": "Password reset tokens are short, non-cryptographic and never expire",
+      "severity": "high",
+      "tier": null,
+      "priority": "P1",
+      "confidence": "possible",
+      "evidence_type": null,
+      "category": "cryptography",
+      "class": "security",
+      "waiver_category": "security",
+      "location": {
+       "file": "invoicer/auth.py",
+       "line": 48
+      },
+      "facts": {
+       "cvss": 7.6
+      }
+     },
+     {
+      "skill": "code-security-auditor",
+      "finding_id": "F-12",
+      "title": "Werkzeug 3.0.1 multipart parser can be made to exhaust memory (CVE-2024-49767)",
+      "severity": "high",
+      "tier": null,
+      "priority": "P1",
+      "confidence": "traced",
+      "evidence_type": null,
+      "category": "supply_chain_ci",
+      "class": "security",
+      "waiver_category": "security",
+      "location": {
+       "file": "requirements.txt",
+       "line": 2
+      },
+      "facts": {
+       "cvss": 7.1
+      }
+     },
+     {
+      "skill": "code-security-auditor",
+      "finding_id": "F-13",
+      "title": "Webhook test fetches any URL from the server and returns the response (SSRF)",
+      "severity": "medium",
+      "tier": null,
+      "priority": "P2",
+      "confidence": "confirmed",
+      "evidence_type": null,
+      "category": "server_side",
+      "class": "security",
+      "waiver_category": "security",
+      "location": {
+       "file": "invoicer/webhooks.py",
+       "line": 12
+      },
+      "facts": {
+       "cvss": 6.3
+      }
+     },
+     {
+      "skill": "code-security-auditor",
+      "finding_id": "F-14",
+      "title": "GitHub Actions pinned to mutable tags, including a third-party action that receives the token",
+      "severity": "critical",
+      "tier": null,
+      "priority": "P2",
+      "confidence": "traced",
+      "evidence_type": null,
+      "category": "supply_chain_ci",
+      "class": "security",
+      "waiver_category": "security",
+      "location": {
+       "file": ".github/workflows/ci.yml",
+       "line": 24
+      },
+      "facts": {
+       "cvss": 9.4
+      }
+     },
+     {
+      "skill": "code-security-auditor",
+      "finding_id": "F-15",
+      "title": "requests 2.31.0 can leak .netrc credentials to a host chosen through the SSRF endpoint (CVE-2024-47081)",
+      "severity": "medium",
+      "tier": null,
+      "priority": "P2",
+      "confidence": "traced",
+      "evidence_type": null,
+      "category": "supply_chain_ci",
+      "class": "security",
+      "waiver_category": "security",
+      "location": {
+       "file": "requirements.txt",
+       "line": 4
+      },
+      "facts": {
+       "cvss": 4.9
+      }
+     },
+     {
+      "skill": "code-security-auditor",
+      "finding_id": "F-16",
+      "title": "run.py starts the Werkzeug debugger on all interfaces",
+      "severity": "high",
+      "tier": null,
+      "priority": "P2",
+      "confidence": "traced",
+      "evidence_type": null,
+      "category": "configuration",
+      "class": "security",
+      "waiver_category": "security",
+      "location": {
+       "file": "run.py",
+       "line": 6
+      },
+      "facts": {
+       "cvss": 7.7
+      }
+     },
+     {
+      "skill": "code-security-auditor",
+      "finding_id": "F-17",
+      "title": "No CSRF protection on cookie-authenticated form posts (including the YAML import)",
+      "severity": "low",
+      "tier": null,
+      "priority": "P2",
+      "confidence": "traced",
+      "evidence_type": null,
+      "category": "web",
+      "class": "security",
+      "waiver_category": "security",
+      "location": {
+       "file": "invoicer/invoices.py",
+       "line": 55
+      },
+      "facts": {
+       "cvss": 2.1
+      }
+     },
+     {
+      "skill": "code-security-auditor",
+      "finding_id": "F-18",
+      "title": "Sign-in logs the submitted password",
+      "severity": "medium",
+      "tier": null,
+      "priority": "P3",
+      "confidence": "traced",
+      "evidence_type": null,
+      "category": "data_exposure",
+      "class": "security",
+      "waiver_category": "security",
+      "location": {
+       "file": "invoicer/auth.py",
+       "line": 29
+      },
+      "facts": {
+       "cvss": 5.6
+      }
+     }
+    ],
+    "untested": [
+     {
+      "label": "areas not reviewed",
+      "item": "git history (secrets)"
+     },
+     {
+      "label": "areas not reviewed",
+      "item": "deployment and infrastructure"
+     },
+     {
+      "label": "areas not reviewed",
+      "item": "transitive dependencies outside requirements.txt resolution"
+     }
+    ],
+    "not_run_tools": [
+     "gitleaks",
+     "osv-scanner",
+     "trivy"
+    ]
+   },
+   "superseded": false
+  },
+  {
+   "path": "wcag-auditor-skill/examples/audit.example.json",
+   "sha256": "06473272f65ef7ac2d2c31142726897eb77e6abc779e7780485f289f3a9d3d2a",
+   "type": "wcag-auditor",
+   "skill": "wcag-auditor",
+   "skill_version": "1.0.0",
+   "provenance": {
+    "schema_version": "1.0.0",
+    "commit": "a7c23dea801abfc544a0eebeaa71587787fc47ca",
+    "build_id": "ci-4821",
+    "target_url": null,
+    "generated_at": "2026-11-10T09:41:27Z",
+    "produced_by": "wcag-auditor",
+    "note": "Written when the report was produced; the source skill's report has no subject block yet.",
+    "source": "release-readiness-gate-skill/examples/rc-2026.11.2/provenance/wcag_audit.json",
+    "source_sha256": "aec26aad03dedb004001992f9291cd49dc7df34b40f08fbcf042234111ae58b7"
+   },
+   "validator": {
+    "command": "python wcag-auditor-skill/scripts/validate_audit.py wcag-auditor-skill/examples/audit.example.json --run wcag-auditor-skill/examples/run --candidates wcag-auditor-skill/examples/run/candidates.json",
+    "exit_code": 0,
+    "status": "valid",
+    "errors": []
+   },
+   "freshness": "fresh",
+   "freshness_reasons": [],
+   "generated_at": "2026-11-10T09:41:27Z",
+   "facts": {
+    "type": "wcag-auditor",
+    "skill": "wcag-auditor",
+    "skill_version": "1.0.0",
+    "generated_at": "2026-11-10T09:41:27Z",
+    "verdict": "does_not_conform",
+    "evidence_completeness": 1.0,
+    "overall_confidence": "high",
+    "blocked_critical_paths": [
+     "Book an appointment"
+    ],
+    "subject": null,
+    "findings": [
+     {
+      "skill": "wcag-auditor",
+      "finding_id": "F-1",
+      "title": "Mobile menu button cannot be reached or operated by keyboard",
+      "severity": "critical",
+      "tier": null,
+      "priority": "P0",
+      "confidence": "medium",
+      "evidence_type": "probe",
+      "category": "2.1.1-control-not-keyboard",
+      "class": "accessibility",
+      "waiver_category": "accessibility",
+      "location": {
+       "url": "http://127.0.0.1:8137/index.html",
+       "selector": "body > header > div",
+       "page": "p01"
+      },
+      "facts": {
+       "blocks_critical_path": false,
+       "critical_path": {
+        "name": "Book an appointment",
+        "step": "Home page, choose Book"
+       }
+      }
+     },
+     {
+      "skill": "wcag-auditor",
+      "finding_id": "F-2",
+      "title": "Keyboard focus is trapped in the preferred-day picker",
+      "severity": "critical",
+      "tier": null,
+      "priority": "P0",
+      "confidence": "medium",
+      "evidence_type": "probe",
+      "category": "2.1.2-keyboard-trap",
+      "class": "accessibility",
+      "waiver_category": "accessibility",
+      "location": {
+       "url": "http://127.0.0.1:8137/book.html",
+       "selector": "#booking > div:nth-of-type(4) > div",
+       "page": "p02"
+      },
+      "facts": {
+       "blocks_critical_path": true,
+       "critical_path": {
+        "name": "Book an appointment",
+        "step": "Fill in the booking form"
+       }
+      }
+     },
+     {
+      "skill": "wcag-auditor",
+      "finding_id": "F-3",
+      "title": "Logo link has no accessible name on every page",
+      "severity": "serious",
+      "tier": null,
+      "priority": "P1",
+      "confidence": "high",
+      "evidence_type": "tool",
+      "category": "1.1.1-functional-image-no-name",
+      "class": "accessibility",
+      "waiver_category": "accessibility",
+      "location": {
+       "url": "http://127.0.0.1:8137/index.html",
+       "selector": "body > header > a > img",
+       "page": "p01"
+      },
+      "facts": {
+       "blocks_critical_path": false,
+       "critical_path": null
+      }
+     },
+     {
+      "skill": "wcag-auditor",
+      "finding_id": "F-4",
+      "title": "Navigation links have insufficient text contrast",
+      "severity": "serious",
+      "tier": null,
+      "priority": "P1",
+      "confidence": "high",
+      "evidence_type": "tool",
+      "category": "1.4.3-body-text-low-contrast",
+      "class": "accessibility",
+      "waiver_category": "accessibility",
+      "location": {
+       "url": "http://127.0.0.1:8137/index.html",
+       "selector": "body > header > nav > a:nth-of-type(1)",
+       "page": "p01"
+      },
+      "facts": {
+       "blocks_critical_path": false,
+       "critical_path": null
+      }
+     },
+     {
+      "skill": "wcag-auditor",
+      "finding_id": "F-5",
+      "title": "Navigation links show no focus indicator",
+      "severity": "serious",
+      "tier": null,
+      "priority": "P1",
+      "confidence": "medium",
+      "evidence_type": "probe",
+      "category": "2.4.7-focus-indicator-removed",
+      "class": "accessibility",
+      "waiver_category": "accessibility",
+      "location": {
+       "url": "http://127.0.0.1:8137/index.html",
+       "selector": "body > header > nav > a:nth-of-type(1)",
+       "page": "p01"
+      },
+      "facts": {
+       "blocks_critical_path": false,
+       "critical_path": null
+      }
+     },
+     {
+      "skill": "wcag-auditor",
+      "finding_id": "F-6",
+      "title": "Footer links are hidden under the sticky call bar when focused",
+      "severity": "serious",
+      "tier": null,
+      "priority": "P1",
+      "confidence": "medium",
+      "evidence_type": "probe",
+      "category": "2.4.11-focus-fully-obscured",
+      "class": "accessibility",
+      "waiver_category": "accessibility",
+      "location": {
+       "url": "http://127.0.0.1:8137/index.html",
+       "selector": "body > footer > p:nth-of-type(2) > a:nth-of-type(1)",
+       "page": "p01"
+      },
+      "facts": {
+       "blocks_critical_path": false,
+       "critical_path": null
+      }
+     },
+     {
+      "skill": "wcag-auditor",
+      "finding_id": "F-7",
+      "title": "Button text is clipped with larger text spacing and at 200% zoom",
+      "severity": "serious",
+      "tier": null,
+      "priority": "P1",
+      "confidence": "medium",
+      "evidence_type": "probe",
+      "category": "1.4.12-text-clipped-with-spacing",
+      "class": "accessibility",
+      "waiver_category": "accessibility",
+      "location": {
+       "url": "http://127.0.0.1:8137/book.html",
+       "selector": "#booking > div:nth-of-type(5) > button",
+       "page": "p02"
+      },
+      "facts": {
+       "blocks_critical_path": false,
+       "critical_path": {
+        "name": "Book an appointment",
+        "step": "Fill in the booking form"
+       }
+      }
+     },
+     {
+      "skill": "wcag-auditor",
+      "finding_id": "F-8",
+      "title": "Footer address text has insufficient contrast",
+      "severity": "moderate",
+      "tier": null,
+      "priority": "P1",
+      "confidence": "high",
+      "evidence_type": "tool",
+      "category": "1.4.3-secondary-text-low-contrast",
+      "class": "accessibility",
+      "waiver_category": "accessibility",
+      "location": {
+       "url": "http://127.0.0.1:8137/index.html",
+       "selector": "body > footer > p:nth-of-type(1)",
+       "page": "p01"
+      },
+      "facts": {
+       "blocks_critical_path": false,
+       "critical_path": null
+      }
+     },
+     {
+      "skill": "wcag-auditor",
+      "finding_id": "F-9",
+      "title": "Form errors are shown only by a red border",
+      "severity": "critical",
+      "tier": null,
+      "priority": "P1",
+      "confidence": "medium",
+      "evidence_type": "agent_judgment",
+      "category": "3.3.1-error-not-identified",
+      "class": "accessibility",
+      "waiver_category": "accessibility",
+      "location": {
+       "url": "http://127.0.0.1:8137/book.html",
+       "selector": "#name",
+       "page": "p02"
+      },
+      "facts": {
+       "blocks_critical_path": false,
+       "critical_path": {
+        "name": "Book an appointment",
+        "step": "Correct errors and submit"
+       }
+      }
+     },
+     {
+      "skill": "wcag-auditor",
+      "finding_id": "F-10",
+      "title": "Mobile number field has no accessible name",
+      "severity": "critical",
+      "tier": null,
+      "priority": "P1",
+      "confidence": "high",
+      "evidence_type": "tool",
+      "category": "4.1.2-control-no-name",
+      "class": "accessibility",
+      "waiver_category": "accessibility",
+      "location": {
+       "url": "http://127.0.0.1:8137/book.html",
+       "selector": "#phone",
+       "page": "p02"
+      },
+      "facts": {
+       "blocks_critical_path": false,
+       "critical_path": {
+        "name": "Book an appointment",
+        "step": "Fill in the booking form"
+       }
+      }
+     },
+     {
+      "skill": "wcag-auditor",
+      "finding_id": "F-11",
+      "title": "Full name field is labelled only by its placeholder",
+      "severity": "critical",
+      "tier": null,
+      "priority": "P1",
+      "confidence": "medium",
+      "evidence_type": "agent_judgment",
+      "category": "3.3.2-input-no-label",
+      "class": "accessibility",
+      "waiver_category": "accessibility",
+      "location": {
+       "url": "http://127.0.0.1:8137/book.html",
+       "selector": "#name",
+       "page": "p02"
+      },
+      "facts": {
+       "blocks_critical_path": false,
+       "critical_path": {
+        "name": "Book an appointment",
+        "step": "Fill in the booking form"
+       }
+      }
+     },
+     {
+      "skill": "wcag-auditor",
+      "finding_id": "F-12",
+      "title": "Home page carousel moves automatically with no way to pause it",
+      "severity": "critical",
+      "tier": null,
+      "priority": "P1",
+      "confidence": "medium",
+      "evidence_type": "probe",
+      "category": "2.2.2-moving-content-no-pause",
+      "class": "accessibility",
+      "waiver_category": "accessibility",
+      "location": {
+       "url": "http://127.0.0.1:8137/index.html",
+       "selector": "body > main > div:nth-of-type(1)",
+       "page": "p01"
+      },
+      "facts": {
+       "blocks_critical_path": false,
+       "critical_path": null
+      }
+     },
+     {
+      "skill": "wcag-auditor",
+      "finding_id": "F-13",
+      "title": "Contact page has an empty title",
+      "severity": "serious",
+      "tier": null,
+      "priority": "P2",
+      "confidence": "high",
+      "evidence_type": "tool",
+      "category": "2.4.2-no-title",
+      "class": "accessibility",
+      "waiver_category": "accessibility",
+      "location": {
+       "url": "http://127.0.0.1:8137/contact.html",
+       "selector": "html",
+       "page": "p04"
+      },
+      "facts": {
+       "blocks_critical_path": false,
+       "critical_path": null
+      }
+     },
+     {
+      "skill": "wcag-auditor",
+      "finding_id": "F-14",
+      "title": "Services page declares German but is written in English",
+      "severity": "serious",
+      "tier": null,
+      "priority": "P2",
+      "confidence": "medium",
+      "evidence_type": "probe",
+      "category": "3.1.1-wrong-page-lang",
+      "class": "accessibility",
+      "waiver_category": "accessibility",
+      "location": {
+       "url": "http://127.0.0.1:8137/services.html",
+       "page": "p03"
+      },
+      "facts": {
+       "blocks_critical_path": false,
+       "critical_path": null
+      }
+     },
+     {
+      "skill": "wcag-auditor",
+      "finding_id": "F-15",
+      "title": "Promotion banner forces horizontal scrolling at 320 px",
+      "severity": "serious",
+      "tier": null,
+      "priority": "P2",
+      "confidence": "medium",
+      "evidence_type": "probe",
+      "category": "1.4.10-horizontal-scroll-320",
+      "class": "accessibility",
+      "waiver_category": "accessibility",
+      "location": {
+       "url": "http://127.0.0.1:8137/index.html",
+       "selector": "body > main > p:nth-of-type(1)",
+       "page": "p01"
+      },
+      "facts": {
+       "blocks_critical_path": false,
+       "critical_path": null
+      }
+     },
+     {
+      "skill": "wcag-auditor",
+      "finding_id": "F-16",
+      "title": "Services page section headings are styled divs",
+      "severity": "moderate",
+      "tier": null,
+      "priority": "P3",
+      "confidence": "medium",
+      "evidence_type": "agent_judgment",
+      "category": "1.3.1-visual-heading-not-marked",
+      "class": "accessibility",
+      "waiver_category": "accessibility",
+      "location": {
+       "url": "http://127.0.0.1:8137/services.html",
+       "selector": "body > main > div:nth-of-type(1)",
+       "page": "p03"
+      },
+      "facts": {
+       "blocks_critical_path": false,
+       "critical_path": null
+      }
+     },
+     {
+      "skill": "wcag-auditor",
+      "finding_id": "F-17",
+      "title": "Three \"Read more\" links have the same text and no context",
+      "severity": "moderate",
+      "tier": null,
+      "priority": "P3",
+      "confidence": "low",
+      "evidence_type": "agent_judgment",
+      "category": "2.4.4-link-purpose-unclear",
+      "class": "accessibility",
+      "waiver_category": "accessibility",
+      "location": {
+       "url": "http://127.0.0.1:8137/index.html",
+       "selector": "body > main > div:nth-of-type(2) > div:nth-of-type(1) > a",
+       "page": "p01"
+      },
+      "facts": {
+       "blocks_critical_path": false,
+       "critical_path": null
+      }
+     },
+     {
+      "skill": "wcag-auditor",
+      "finding_id": "F-18",
+      "title": "Booking fields that collect personal data have no autocomplete",
+      "severity": "moderate",
+      "tier": null,
+      "priority": "P3",
+      "confidence": "low",
+      "evidence_type": "agent_judgment",
+      "category": "1.3.5-autocomplete-missing",
+      "class": "accessibility",
+      "waiver_category": "accessibility",
+      "location": {
+       "url": "http://127.0.0.1:8137/book.html",
+       "selector": "#name",
+       "page": "p02"
+      },
+      "facts": {
+       "blocks_critical_path": false,
+       "critical_path": {
+        "name": "Book an appointment",
+        "step": "Fill in the booking form"
+       }
+      }
+     },
+     {
+      "skill": "wcag-auditor",
+      "finding_id": "F-19",
+      "title": "Fees table scroll area is not keyboard focusable in every browser",
+      "severity": "moderate",
+      "tier": null,
+      "priority": "P3",
+      "confidence": "high",
+      "evidence_type": "tool",
+      "category": "2.1.1-control-not-keyboard",
+      "class": "accessibility",
+      "waiver_category": "accessibility",
+      "location": {
+       "url": "http://127.0.0.1:8137/services.html",
+       "selector": "body > main > div:nth-of-type(4)",
+       "page": "p03"
+      },
+      "facts": {
+       "blocks_critical_path": false,
+       "critical_path": null
+      }
+     },
+     {
+      "skill": "wcag-auditor",
+      "finding_id": "F-20",
+      "title": "Check-ups help tooltip cannot be dismissed or hovered",
+      "severity": "moderate",
+      "tier": null,
+      "priority": "P3",
+      "confidence": "medium",
+      "evidence_type": "probe",
+      "category": "1.4.13-not-dismissible",
+      "class": "accessibility",
+      "waiver_category": "accessibility",
+      "location": {
+       "url": "http://127.0.0.1:8137/index.html",
+       "selector": "body > main > div:nth-of-type(2) > div:nth-of-type(1) > h3 > span:nth-of-type(1)",
+       "page": "p01"
+      },
+      "facts": {
+       "blocks_critical_path": false,
+       "critical_path": null
+      }
+     },
+     {
+      "skill": "wcag-auditor",
+      "finding_id": "F-21",
+      "title": "Carousel arrow buttons are too small and too close together",
+      "severity": "minor",
+      "tier": null,
+      "priority": "P3",
+      "confidence": "high",
+      "evidence_type": "tool",
+      "category": "2.5.8-target-too-small",
+      "class": "accessibility",
+      "waiver_category": "accessibility",
+      "location": {
+       "url": "http://127.0.0.1:8137/index.html",
+       "selector": "body > main > div:nth-of-type(1) > button:nth-of-type(2)",
+       "page": "p01"
+      },
+      "facts": {
+       "blocks_critical_path": false,
+       "critical_path": null
+      }
+     }
+    ],
+    "untested": [
+     {
+      "label": "SCs untested",
+      "item": "1.3.2"
+     },
+     {
+      "label": "SCs untested",
+      "item": "1.3.3"
+     },
+     {
+      "label": "SCs untested",
+      "item": "1.3.4"
+     },
+     {
+      "label": "SCs untested",
+      "item": "1.4.5"
+     },
+     {
+      "label": "SCs untested",
+      "item": "1.4.11"
+     },
+     {
+      "label": "SCs untested",
+      "item": "2.1.4"
+     },
+     {
+      "label": "SCs untested",
+      "item": "2.2.1"
+     },
+     {
+      "label": "SCs untested",
+      "item": "2.3.1"
+     },
+     {
+      "label": "SCs untested",
+      "item": "2.4.1"
+     },
+     {
+      "label": "SCs untested",
+      "item": "2.4.3"
+     },
+     {
+      "label": "SCs untested",
+      "item": "2.4.5"
+     },
+     {
+      "label": "SCs untested",
+      "item": "2.5.1"
+     },
+     {
+      "label": "SCs untested",
+      "item": "2.5.2"
+     },
+     {
+      "label": "SCs untested",
+      "item": "2.5.3"
+     },
+     {
+      "label": "SCs untested",
+      "item": "2.5.4"
+     },
+     {
+      "label": "SCs untested",
+      "item": "2.5.7"
+     },
+     {
+      "label": "SCs untested",
+      "item": "3.1.2"
+     },
+     {
+      "label": "SCs untested",
+      "item": "3.2.1"
+     },
+     {
+      "label": "SCs untested",
+      "item": "3.2.2"
+     },
+     {
+      "label": "SCs untested",
+      "item": "3.3.3"
+     },
+     {
+      "label": "SCs untested",
+      "item": "4.1.3"
+     }
+    ],
+    "not_run_tools": [
+     "vnu"
+    ]
+   },
+   "superseded": false
+  },
+  {
+   "path": "ui-crash-hunter-skill/examples/crash_report.example.json",
+   "sha256": "1bc849fc9aa0baf9f4e65c5d92dd07c34e8629e4f9d0238360e501ee7d08b9e8",
+   "type": "ui-crash-hunter",
+   "skill": "ui-crash-hunter",
+   "skill_version": "1.0.0",
+   "provenance": {
+    "schema_version": "1.0.0",
+    "commit": "a35dba359ea303b64f995e609e3b88a23482e98b",
+    "build_id": "ci-4790",
+    "target_url": null,
+    "generated_at": "2026-11-10T09:30:00Z",
+    "produced_by": "ui-crash-hunter",
+    "note": "Written when the report was produced; the source skill's report has no subject block yet.",
+    "source": "release-readiness-gate-skill/examples/rc-2026.11.2/provenance/crash_report.json",
+    "source_sha256": "c7f561be37d9d8dcf9a5a30909ad7c2ee89cd65bf87212ec3f43f0816eb14111"
+   },
+   "validator": {
+    "command": "python ui-crash-hunter-skill/scripts/validate_crash_report.py ui-crash-hunter-skill/examples/crash_report.example.json --repo ui-crash-hunter-skill/examples/pantry --candidates ui-crash-hunter-skill/examples/run/candidates.json",
+    "exit_code": 0,
+    "status": "valid",
+    "errors": []
+   },
+   "freshness": "stale",
+   "freshness_reasons": [
+    "commit_mismatch",
+    "build_mismatch"
+   ],
+   "commits_behind": 2,
+   "changed_since": [
+    "site/book.html",
+    "web/src/prefs.ts"
+   ],
+   "generated_at": "2026-11-10T09:30:00Z",
+   "facts": {
+    "type": "ui-crash-hunter",
+    "skill": "ui-crash-hunter",
+    "skill_version": "1.0.0",
+    "generated_at": "2026-11-10T09:30:00Z",
+    "verdict": null,
+    "evidence_completeness": 0.71,
+    "overall_confidence": null,
+    "blocked_critical_paths": [],
+    "subject": null,
+    "findings": [
+     {
+      "skill": "ui-crash-hunter",
+      "finding_id": "C-1",
+      "title": "Theme saved by version 0.2.0 crashes the app on every launch",
+      "severity": null,
+      "tier": "B1",
+      "priority": "P0",
+      "confidence": "reproduced",
+      "evidence_type": "reproduced",
+      "category": null,
+      "class": "crash",
+      "waiver_category": "reliability",
+      "location": {
+       "file": "src/prefs.ts",
+       "line": 11
+      },
+      "facts": {}
+     },
+     {
+      "skill": "ui-crash-hunter",
+      "finding_id": "C-2",
+      "title": "An imported recipe (no author) breaks the recipe list",
+      "severity": null,
+      "tier": "B2",
+      "priority": "P1",
+      "confidence": "reproduced",
+      "evidence_type": "reproduced",
+      "category": null,
+      "class": "crash",
+      "waiver_category": "reliability",
+      "location": {
+       "file": "src/screens/RecipeList.tsx",
+       "line": 21
+      },
+      "facts": {}
+     },
+     {
+      "skill": "ui-crash-hunter",
+      "finding_id": "C-3",
+      "title": "A recipe with no ratings yet cannot be opened",
+      "severity": null,
+      "tier": "B2",
+      "priority": "P1",
+      "confidence": "reproduced",
+      "evidence_type": "reproduced",
+      "category": null,
+      "class": "crash",
+      "waiver_category": "reliability",
+      "location": {
+       "file": "src/screens/RecipeDetail.tsx",
+       "line": 23
+      },
+      "facts": {}
+     },
+     {
+      "skill": "ui-crash-hunter",
+      "finding_id": "C-5",
+      "title": "Recipe page crashes on iOS 16 and Safari before 17.4 (Object.groupBy missing)",
+      "severity": null,
+      "tier": "B2",
+      "priority": "P2",
+      "confidence": "traced",
+      "evidence_type": "trace",
+      "category": null,
+      "class": "crash",
+      "waiver_category": "reliability",
+      "location": {
+       "file": "src/screens/RecipeDetail.tsx",
+       "line": 17
+      },
+      "facts": {}
+     },
+     {
+      "skill": "ui-crash-hunter",
+      "finding_id": "C-4",
+      "title": "A malformed recipe link blanks the whole app",
+      "severity": null,
+      "tier": "B1",
+      "priority": "P2",
+      "confidence": "reproduced",
+      "evidence_type": "reproduced",
+      "category": null,
+      "class": "crash",
+      "waiver_category": "reliability",
+      "location": {
+       "file": "src/routes.ts",
+       "line": 27
+      },
+      "facts": {}
+     }
+    ],
+    "untested": [
+     {
+      "label": "tools not applicable",
+      "item": "Android Lint / detekt"
+     },
+     {
+      "label": "tools not applicable",
+      "item": "SwiftLint"
+     },
+     {
+      "label": "tools not applicable",
+      "item": "dart analyze"
+     }
+    ],
+    "not_run_tools": [
+     "eslint (strict overlay)",
+     "semgrep"
+    ]
+   },
+   "superseded": false
+  },
+  {
+   "path": "journey-to-tests-skill/examples/journey_tests_report.example.json",
+   "sha256": "3cb99200d2f59ecc9515eabe7d4c1a5f6d1830c0af0dc027f3c726058c7be09e",
+   "type": "journey-to-tests",
+   "skill": "journey-to-tests",
+   "skill_version": "1.0.0",
+   "provenance": {
+    "schema_version": "1.0.0",
+    "commit": "a7c23dea801abfc544a0eebeaa71587787fc47ca",
+    "build_id": "ci-4821",
+    "target_url": null,
+    "generated_at": "2026-11-09T08:51:13Z",
+    "produced_by": "journey-to-tests",
+    "note": "Written when the report was produced; the source skill's report has no subject block yet.",
+    "source": "release-readiness-gate-skill/examples/rc-2026.11.2/provenance/journey_tests.json",
+    "source_sha256": "98a6fd8df9ba50905a8d110d85122a8e9b4685e2bc5032bf796147b67850e588"
+   },
+   "validator": {
+    "command": "python journey-to-tests-skill/scripts/validate_report.py journey-to-tests-skill/examples/journey_tests_report.example.json --repo journey-to-tests-skill/examples/acme-shop",
+    "exit_code": 0,
+    "status": "valid",
+    "errors": []
+   },
+   "freshness": "fresh",
+   "freshness_reasons": [],
+   "generated_at": "2026-11-09T08:51:13Z",
+   "facts": {
+    "type": "journey-to-tests",
+    "skill": "journey-to-tests",
+    "skill_version": "1.0.0",
+    "generated_at": "2026-11-09T08:51:13Z",
+    "verdict": null,
+    "evidence_completeness": null,
+    "overall_confidence": null,
+    "blocked_critical_paths": [],
+    "subject": null,
+    "findings": [
+     {
+      "skill": "journey-to-tests",
+      "finding_id": "BUG-001",
+      "title": "Button is disabled but shows \"Sold out\"",
+      "severity": null,
+      "tier": null,
+      "priority": null,
+      "confidence": null,
+      "evidence_type": null,
+      "category": null,
+      "class": "functional",
+      "waiver_category": "testing",
+      "location": {
+       "ref": "CHK-V2"
+      },
+      "facts": {}
+     }
+    ],
+    "untested": [
+     {
+      "label": "tests not run or blocked",
+      "item": "ACC-V2"
+     },
+     {
+      "label": "testability gaps",
+      "item": "GAP-001"
+     }
+    ],
+    "not_run_tools": [],
+    "journeys": [
+     {
+      "id": "JRN-ACC-001",
+      "title": "Member signs in and views their account",
+      "priority": "P1",
+      "in_scope": true
+     },
+     {
+      "id": "JRN-CHK-001",
+      "title": "Guest completes checkout with card",
+      "priority": "P1",
+      "in_scope": true
+     }
+    ],
+    "results": [
+     {
+      "test_id": "CHK-main",
+      "journey_id": "JRN-CHK-001",
+      "variant": null,
+      "status": "pass"
+     },
+     {
+      "test_id": "CHK-V1",
+      "journey_id": "JRN-CHK-001",
+      "variant": "V1",
+      "status": "pass"
+     },
+     {
+      "test_id": "CHK-V2",
+      "journey_id": "JRN-CHK-001",
+      "variant": "V2",
+      "status": "fail_product"
+     },
+     {
+      "test_id": "ACC-main",
+      "journey_id": "JRN-ACC-001",
+      "variant": null,
+      "status": "flaky"
+     },
+     {
+      "test_id": "ACC-V1",
+      "journey_id": "JRN-ACC-001",
+      "variant": "V1",
+      "status": "pass"
+     },
+     {
+      "test_id": "ACC-V2",
+      "journey_id": "JRN-ACC-001",
+      "variant": "V2",
+      "status": "blocked_env"
+     }
+    ]
+   },
+   "superseded": false
+  },
+  {
+   "path": "test-impact-selector-skill/examples/impact_report.example.json",
+   "sha256": "41a2674ae08be2d84550f94b40663af2f221ad7edc9a622f4c178296094951f7",
+   "type": "test-impact-selector",
+   "skill": "test-impact-selector",
+   "skill_version": "1.0.0",
+   "provenance": {
+    "schema_version": "1.0.0",
+    "commit": "a7c23dea801abfc544a0eebeaa71587787fc47ca",
+    "build_id": "ci-4821",
+    "target_url": null,
+    "generated_at": "2026-11-11T01:27:51Z",
+    "produced_by": "test-impact-selector",
+    "note": "Written when the report was produced; the source skill's report has no subject block yet.",
+    "source": "release-readiness-gate-skill/examples/rc-2026.11.2/provenance/impact.json",
+    "source_sha256": "a63bee19b052ce5d26416faafadfdc183db70aa2cc8a5643e36db15437754561"
+   },
+   "validator": {
+    "command": "python test-impact-selector-skill/scripts/validate_impact_report.py test-impact-selector-skill/examples/impact_report.example.json --selection test-impact-selector-skill/examples/run/C1/selection.json --replay test-impact-selector-skill/examples/run/replay.json --runs test-impact-selector-skill/examples/run/C1/verify/runs.json --recompute",
+    "exit_code": 0,
+    "status": "valid",
+    "errors": []
+   },
+   "freshness": "fresh",
+   "freshness_reasons": [],
+   "generated_at": "2026-11-11T01:27:51Z",
+   "facts": {
+    "type": "test-impact-selector",
+    "skill": "test-impact-selector",
+    "skill_version": "1.0.0",
+    "generated_at": "2026-11-11T01:27:51Z",
+    "verdict": null,
+    "evidence_completeness": 0.8333,
+    "overall_confidence": null,
+    "blocked_critical_paths": [],
+    "subject": null,
+    "findings": [],
+    "untested": [
+     {
+      "label": "sources not run",
+      "item": "framework_tools"
+     }
+    ],
+    "not_run_tools": []
+   },
+   "superseded": false
+  },
+  {
+   "path": "release-readiness-gate-skill/examples/rc-2026.11.2/reports/ci.xml",
+   "sha256": "ef224195874c966dd7950f945c99f563c6be9d5d1706ab2f0ccdba5af8707603",
+   "type": "ci-junit",
+   "skill": "ci-junit",
+   "skill_version": null,
+   "provenance": {
+    "schema_version": "1.0.0",
+    "commit": "a7c23dea801abfc544a0eebeaa71587787fc47ca",
+    "build_id": "ci-4821",
+    "target_url": null,
+    "generated_at": "2026-11-12T02:12:14.508410+13:00",
+    "produced_by": "CI (pytest --junitxml)",
+    "note": "Written when the report was produced; the source skill's report has no subject block yet.",
+    "source": "release-readiness-gate-skill/examples/rc-2026.11.2/provenance/ci.json",
+    "source_sha256": "a03a6266898998a93fce0b6bd904b04128f3b50597094f6db30f7d8d62984520"
+   },
+   "validator": {
+    "command": "parse_results.parse_junit",
+    "exit_code": null,
+    "status": "valid",
+    "errors": []
+   },
+   "freshness": "fresh",
+   "freshness_reasons": [],
+   "generated_at": "2026-11-12T02:12:14.508410+13:00",
+   "facts": {
+    "type": "ci-junit",
+    "skill": "ci-junit",
+    "skill_version": null,
+    "generated_at": null,
+    "verdict": null,
+    "evidence_completeness": null,
+    "overall_confidence": null,
+    "blocked_critical_paths": [],
+    "subject": null,
+    "findings": [],
+    "untested": [],
+    "not_run_tools": [],
+    "cases": [
+     {
+      "id": "tests.test_cart::test_subtotal_sums_lines",
+      "classname": "tests.test_cart",
+      "name": "test_subtotal_sums_lines",
+      "status": "passed",
+      "failure_type": null
+     },
+     {
+      "id": "tests.test_cart::test_quantity_multiplies_unit_price",
+      "classname": "tests.test_cart",
+      "name": "test_quantity_multiplies_unit_price",
+      "status": "passed",
+      "failure_type": null
+     },
+     {
+      "id": "tests.test_cart::test_quantity_below_one_is_rejected",
+      "classname": "tests.test_cart",
+      "name": "test_quantity_below_one_is_rejected",
+      "status": "passed",
+      "failure_type": null
+     },
+     {
+      "id": "tests.test_cart::test_total_without_code_equals_subtotal",
+      "classname": "tests.test_cart",
+      "name": "test_total_without_code_equals_subtotal",
+      "status": "passed",
+      "failure_type": null
+     },
+     {
+      "id": "tests.test_discount_codes::test_percentage_code_reduces_total",
+      "classname": "tests.test_discount_codes",
+      "name": "test_percentage_code_reduces_total",
+      "status": "failed",
+      "failure_type": "assertion"
+     },
+     {
+      "id": "tests.test_discount_codes::test_code_applies_when_subtotal_equals_minimum_spend",
+      "classname": "tests.test_discount_codes",
+      "name": "test_code_applies_when_subtotal_equals_minimum_spend",
+      "status": "failed",
+      "failure_type": "assertion"
+     },
+     {
+      "id": "tests.test_discount_codes::test_discounted_total_is_rounded_to_the_nearest_cent",
+      "classname": "tests.test_discount_codes",
+      "name": "test_discounted_total_is_rounded_to_the_nearest_cent",
+      "status": "failed",
+      "failure_type": "assertion"
+     },
+     {
+      "id": "tests.test_discount_codes::test_code_lookup_ignores_case_and_surrounding_spaces",
+      "classname": "tests.test_discount_codes",
+      "name": "test_code_lookup_ignores_case_and_surrounding_spaces",
+      "status": "passed",
+      "failure_type": null
+     },
+     {
+      "id": "tests.test_discount_codes::test_expired_code_is_rejected_and_total_unchanged",
+      "classname": "tests.test_discount_codes",
+      "name": "test_expired_code_is_rejected_and_total_unchanged",
+      "status": "failed",
+      "failure_type": "assertion"
+     },
+     {
+      "id": "tests.test_discount_codes::test_second_code_replaces_the_first",
+      "classname": "tests.test_discount_codes",
+      "name": "test_second_code_replaces_the_first",
+      "status": "failed",
+      "failure_type": "assertion"
+     },
+     {
+      "id": "tests.test_discount_codes::test_code_below_minimum_spend_is_rejected_with_shortfall",
+      "classname": "tests.test_discount_codes",
+      "name": "test_code_below_minimum_spend_is_rejected_with_shortfall",
+      "status": "failed",
+      "failure_type": "assertion"
+     },
+     {
+      "id": "tests.test_promotions::test_unknown_code_is_not_found",
+      "classname": "tests.test_promotions",
+      "name": "test_unknown_code_is_not_found",
+      "status": "passed",
+      "failure_type": null
+     },
+     {
+      "id": "tests.test_promotions::test_known_code_is_found",
+      "classname": "tests.test_promotions",
+      "name": "test_known_code_is_found",
+      "status": "passed",
+      "failure_type": null
+     }
+    ],
+    "parse_notes": []
+   },
+   "superseded": false
+  }
+ ]
+}

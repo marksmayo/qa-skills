@@ -1,0 +1,36 @@
+{
+ "schema_version": "1.0.0",
+ "release": "2026.11.2",
+ "waivers": [
+  {
+   "id": "W-1",
+   "finding_ids": [
+    "wcag-auditor:F-2"
+   ],
+   "approver": "Accessibility lead",
+   "reason": "The booking day picker trap is fixed in the new picker shipping on 2026-11-30; until then the booking page links to phone booking above the picker.",
+   "expires": "2026-12-31",
+   "approved_on": "2026-11-11"
+  },
+  {
+   "id": "W-2",
+   "finding_ids": [
+    "wcag-auditor:F-1"
+   ],
+   "approver": "Accessibility lead",
+   "reason": "Menu toggle to be fixed in the October release.",
+   "expires": "2026-11-01",
+   "approved_on": "2026-10-15"
+  },
+  {
+   "id": "W-3",
+   "finding_ids": [
+    "code-security-auditor:F-2"
+   ],
+   "approver": "QA lead",
+   "reason": "The workflow only runs on forks we trust.",
+   "expires": "2026-12-15",
+   "approved_on": "2026-11-11"
+  }
+ ]
+}
