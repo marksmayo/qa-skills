@@ -34,6 +34,13 @@ TEST_DIRS = {'tests', 'test', '__tests__', 'spec', 'e2e', 'fixtures', 'testdata'
 RECORDING_DIRS = {'cassettes', 'recordings', '__recordings__', 'mappings', 'wiremock', 'vcr', 'har', 'mocks', '__mocks__'}
 SEED_RX = re.compile(r'(^|/)(seeds?|db/seed[^/]*|seed[^/]*\.(sql|json|ya?ml|csv|py|ts|js))(/|$)', re.I)
 FACTORY_RX = re.compile(r'(^|/)(factories|factory|builders?)(/|\.|_)|(_factory|Factory|Builder)\.[a-z]+$|(^|/)factories\.py$')
+# tool and package configuration that sits in a test directory (e2e/package.json) is not test data
+TOOLING = re.compile(r'^(package(-lock)?\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb|composer\.(json|lock)|'
+                     r'(ts|js)config(\.[\w-]+)?\.json|\.?eslintrc(\.\w+)?|\.prettierrc(\.\w+)?|\.babelrc|babel\.config\.json|'
+                     r'renovate\.json|\.?nycrc(\.json)?|lerna\.json|nx\.json|turbo\.json|angular\.json|project\.json|'
+                     r'(Pipfile|poetry|Gemfile|Cargo|uv)\.lock|requirements[\w.-]*\.txt|\.pre-commit-config\.yaml|'
+                     r'docker-compose[\w.-]*\.ya?ml|\.gitlab-ci\.yml|codecov\.ya?ml|\.?codeclimate\.yml|sonar-project\.properties|'
+                     r'cypress\.(json|env\.json)|playwright\.config\.json|jest\.config\.json|vitest\.config\.json|\.\w+rc\.json)$', re.I)
 MOBILE_ASSETS = re.compile(r'(^|/)(androidTest|test)/assets/|\.xctest|TestResources?/|(^|/)Fixtures/')
 
 
@@ -65,6 +72,8 @@ def kind_of(path: str) -> str | None:
         return 'factory'
     if detect_conventions.is_test_file(path) or p.name == 'conftest.py':
         return 'inline'
+    if TOOLING.match(p.name):
+        return None
     if (in_test_area(path) or MOBILE_ASSETS.search(path)) and (ext in DATA_EXT or ext in BINARY_EXT):
         return 'fixture'
     return None

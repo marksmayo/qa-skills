@@ -26,6 +26,8 @@ WEIGHT = {'critical': 4, 'serious': 3, 'moderate': 2, 'minor': 1}
 DOWN = {'critical': 'serious', 'serious': 'moderate', 'moderate': 'minor', 'minor': 'minor'}
 BANDS = [(9, 'P0'), (6, 'P1'), (3, 'P2'), (0, 'P3')]
 CONFIRMABLE = ('time_bomb', 'shared_mutable', 'locale_assumption')
+GENERIC_LOCAL = {'admin', 'administrator', 'contact', 'demo', 'example', 'hello', 'info', 'noreply', 'no-reply', 'postmaster',
+                 'sample', 'support', 'test', 'tester', 'testing', 'user', 'users', 'webmaster'}
 BANNED = re.compile(r'\b(test )?data (is|are|looks?) (clean|safe|fine)\b|\bclean (test )?data\b|\bno (real |personal |sensitive )?'
                     r'(personal )?data (found|left|remains?)\b|\bfree of (personal|sensitive) data\b|\bprivacy[- ]safe\b|'
                     r'\b(GDPR|privacy)[- ]compliant\b|\bfixtures? (is|are) (clean|safe)\b|\bnothing sensitive\b', re.I)
@@ -186,7 +188,10 @@ def flagged_values(c: dict, repo: Path) -> set[str]:
             pass
         return {v for v in vals if len(v) >= 6}
     for m in scan_data.EMAIL.finditer(line):
-        vals |= {m.group(0), m.group(1)}
+        vals.add(m.group(0))
+        # the local part alone identifies someone only when it isn't a generic word (user@, test@, admin@)
+        if len(m.group(1)) >= 5 and m.group(1).lower() not in GENERIC_LOCAL:
+            vals.add(m.group(1))
     for q in re.findall(r'"([^"]+)"|\'([^\']+)\'', line):
         s = q[0] or q[1]
         d = scan_data.digits(s)
@@ -199,6 +204,12 @@ def leaks(values: set[str], text: str) -> list[str]:
     hits = []
     flat = re.sub(r'[\s-]', '', text)
     for v in values:
+        # a value of letters only (a name, an email's local part) counts as a whole token, not inside a longer word or a
+        # path (user -> mockServer/src/user.js); values with digits (secrets, numbers) still count anywhere
+        if re.search(r'[A-Za-z]', v) and not re.search(r'\d', v):
+            if re.search(rf'(?<![\w@./\\-]){re.escape(v)}(?![\w@/\\-]|\.\w)', text):
+                hits.append('a full value')
+            continue
         if v in text:
             hits.append('a full value')
             continue

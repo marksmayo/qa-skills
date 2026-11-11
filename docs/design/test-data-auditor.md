@@ -247,6 +247,17 @@ Where the build differs from the design above, and what the example showed.
   - **Shared state:** P1, confirmed by reverse order and passing in isolation.
   - **Schema drift:** P2.
   - **Locale (confirmed), magic id and unused file:** P3.
+- **Found on a real repository, and fixed:**
+  - Package and tool configuration in a test directory (`e2e/package.json`, `package-lock.json`,
+    tsconfig, lint and CI configs) was inventoried as fixtures, and the near-duplicate check, which is
+    quadratic, hung on the lockfiles. Those files are no longer test data. The duplicate check now applies
+    the length bound and `quick_ratio` first, and compares very large files by their shared lines,
+    recording `method: line_jaccard`.
+  - The leak check matched an email's local part anywhere: a placeholder `user@` failed the report
+    because "user" appears in file paths such as `src/user.js`. A local part now counts only when it is at
+    least five characters and not a generic word, and values made only of letters must appear as a whole
+    token. Values with digits, secrets included, still count anywhere. Every non-reserved flagged value in
+    the example, planted in a sentence, at a sentence's end and inside a URL, is still caught (33 of 33).
 - **Testing:**
   - The validator catches 33 of 33 seeded violations.
   - 16 rule scenarios pass:

@@ -493,7 +493,23 @@ class Scanner:
                 x, y = data[a], data[b]
                 if x['format'] != y['format']:
                     continue
-                ratio = difflib.SequenceMatcher(None, texts[x['path']], texts[y['path']], autojunk=False).ratio()
+                tx, ty = texts[x['path']], texts[y['path']]
+                # cheap upper bounds first: the length bound, then quick_ratio; full matching is quadratic on large files
+                if not tx or not ty or 2 * min(len(tx), len(ty)) / (len(tx) + len(ty)) < RULES['duplicate_similarity']:
+                    continue
+                sm = difflib.SequenceMatcher(None, tx, ty, autojunk=False)
+                if sm.real_quick_ratio() < RULES['duplicate_similarity'] or sm.quick_ratio() < RULES['duplicate_similarity']:
+                    continue
+                if len(tx) + len(ty) > RULES.get('duplicate_max_chars', 400_000):
+                    # very large files: compare their line sets instead (Jaccard), and say so
+                    lx = set((self.root / x['path']).read_text(encoding='utf-8').splitlines())
+                    ly = set((self.root / y['path']).read_text(encoding='utf-8').splitlines())
+                    ratio = len(lx & ly) / len(lx | ly) if lx | ly else 0.0
+                    if ratio >= RULES['duplicate_similarity']:
+                        self.add('unused_or_duplicate', 'near_duplicate', y['path'], 1, f'{ratio:.0%} of distinct lines shared with {x["path"]}',
+                                 None, None, details={'similar_to': x['path'], 'similarity': round(ratio, 3), 'method': 'line_jaccard'})
+                    continue
+                ratio = sm.ratio()
                 if ratio >= RULES['duplicate_similarity']:
                     self.add('unused_or_duplicate', 'near_duplicate', y['path'], 1, f'{ratio:.0%} similar to {x["path"]}', None, None,
                              details={'similar_to': x['path'], 'similarity': round(ratio, 3)})
