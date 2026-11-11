@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/marksmayo/qa-skills/exploratory-charter-writer-skill/schemas/charters.schema.json",
+  "title": "Exploratory charters",
+  "description": "Time-boxed charters in Hendrickson's format (Explore target with resources to discover information), each citing the sources it comes from verbatim, ranked by impact x uncertainty.",
+  "type": "object",
+  "required": ["metadata", "charters", "merged", "over_limit"],
+  "additionalProperties": false,
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": ["generated_at", "timebox", "max_charters", "sources_file", "sources_used", "sources_missing"],
+      "properties": {
+        "generated_at": {"type": "string"},
+        "timebox": {"enum": [60, 90, 120]},
+        "max_charters": {"type": "integer", "minimum": 1},
+        "sources_file": {"type": "string"},
+        "sources_used": {"type": "array"},
+        "sources_missing": {"type": "array", "items": {"type": "string"}},
+        "suspicious_instructions": {"type": "array"}
+      }
+    },
+    "charters": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "mission", "areas", "heuristics", "personas", "setup", "risks", "out_of_scope", "timebox", "basis",
+                     "impact", "uncertainty", "priority", "group"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^CH\\d+$"},
+          "mission": {"type": "object", "required": ["target", "resources", "information"],
+                      "properties": {"target": {"type": "string", "minLength": 5}, "resources": {"type": "string", "minLength": 5},
+                                     "information": {"type": "string", "minLength": 5}}},
+          "areas": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 3}},
+          "heuristics": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+          "oracles": {"type": "array", "items": {"type": "string"}},
+          "personas": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+          "setup": {"type": "array", "items": {"type": "string"}},
+          "risks": {"type": "array", "items": {"type": "string"}},
+          "out_of_scope": {"type": "array", "items": {"type": "string"}},
+          "timebox": {"enum": [60, 90, 120]},
+          "basis": {"type": "array", "minItems": 1,
+                    "items": {"type": "object", "required": ["kind", "ref", "excerpt"],
+                              "properties": {"kind": {"enum": ["ticket", "journey", "risk", "diff", "finding", "user_request"]},
+                                             "ref": {"type": "string"}, "excerpt": {"type": "string", "minLength": 3}}}},
+          "impact": {"type": ["integer", "null"], "minimum": 1, "maximum": 3},
+          "uncertainty": {"type": "integer", "minimum": 1, "maximum": 3},
+          "priority": {"type": ["integer", "null"], "minimum": 1, "maximum": 9},
+          "group": {"enum": ["do_first", "next", "if_time", "unranked"]},
+          "ranking_reasons": {"type": "object"},
+          "merged_from": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "merged": {"type": "array", "items": {"type": "object", "required": ["id", "into", "reason"]}},
+    "over_limit": {"type": "array"}
+  }
+}

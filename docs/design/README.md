@@ -20,7 +20,7 @@ anatomy described in the root `CLAUDE.md` (`SKILL.md`, `RUBRIC.md`, `schemas/`, 
 | 11 | [Test data auditor](test-data-auditor.md) | `test-data-auditor-skill/` | Built (v1.0.0) |
 | 12 | [Dead test finder](dead-test-finder.md) | `dead-test-finder-skill/` | Built (v1.0.0) |
 | 13 | [Risk-based test planner](risk-based-test-planner.md) | `risk-based-test-planner-skill/` | Built (v1.0.0) |
-| 14 | [Exploratory charter writer](exploratory-charter-writer.md) | `exploratory-charter-writer-skill/` | Designed |
+| 14 | [Exploratory charter writer](exploratory-charter-writer.md) | `exploratory-charter-writer-skill/` | Built (v1.0.0) |
 | 15 | [Bug reproducer](bug-reproducer.md) | `bug-reproducer-skill/` | Designed |
 | 16 | [API contract tester](api-contract-tester.md) | `api-contract-tester-skill/` | Designed |
 | 17 | [Performance budget auditor](performance-budget-auditor.md) | `performance-budget-auditor-skill/` | Designed |

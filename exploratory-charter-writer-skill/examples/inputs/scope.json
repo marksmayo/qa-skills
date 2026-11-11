@@ -1,0 +1,9 @@
+{
+  "note": "Excerpt of diff_scope.py output for larder v1.4..HEAD: the files the charter writer reads.",
+  "source": {"kind": "git", "base_ref": "v1.4"},
+  "files": [
+    {"path": "larder/giftcards/cards.py", "status": "added", "kind": "source", "lines_added": 15, "lines_deleted": 0},
+    {"path": "larder/payments/service.py", "status": "modified", "kind": "source", "lines_added": 6, "lines_deleted": 0},
+    {"path": "larder/web/giftcards_page.py", "status": "modified", "kind": "source", "lines_added": 9, "lines_deleted": 3}
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "metadata": {"note": "Trimmed journey-mapper output for larder: only the fields the charter writer reads."},
+  "journeys": [
+    {"id": "JRN-CHK-001", "title": "Customer pays for an order", "priority": "P0", "persona": "returning customer",
+     "steps": [{"action": "Add flour and honey to the cart", "expect": "Cart shows both items and the total", "evidence": [{"file": "larder/catalog/products.py", "line": 1}]},
+               {"action": "Pay by card", "expect": "Order confirmed and the card charged once", "evidence": [{"file": "larder/payments/service.py", "line": 6}]}],
+     "variants": [{"id": "V1", "name": "refund", "action": "Refund a damaged item", "expect": "The refund reaches the card", "evidence": [{"file": "larder/payments/service.py", "line": 15}]}]},
+    {"id": "JRN-GFT-001", "title": "Customer checks a gift card balance", "priority": "P2", "persona": "gift recipient",
+     "steps": [{"action": "Open Gift cards and enter a code", "expect": "The remaining balance is shown", "evidence": [{"file": "larder/giftcards/cards.py", "line": 1}]}],
+     "variants": []}
+  ]
+}

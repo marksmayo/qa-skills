@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/marksmayo/qa-skills/exploratory-charter-writer-skill/schemas/debrief.schema.json",
+  "title": "Exploratory session debrief",
+  "description": "Draft bugs, questions, obstacles and ideas taken from a tester's session notes, each quoting the note lines it came from; the coverage the notes show; session metrics; and a PROOF summary. Nothing is invented and nothing is called passed.",
+  "type": "object",
+  "required": ["metadata", "bugs", "questions", "obstacles", "ideas", "off_charter", "suspicious_instructions_ignored", "coverage",
+               "metrics", "proof", "handoffs", "redactions"],
+  "additionalProperties": false,
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": ["notes", "parsed_file", "charter_id", "charters_file", "testers", "generated_at"],
+      "properties": {
+        "notes": {"type": "object", "required": ["path", "sha256", "format"],
+                  "properties": {"path": {"type": "string"}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                                 "format": {"enum": ["markdown", "timeline_json", "free_form"]}}},
+        "parsed_file": {"type": "string"},
+        "charter_id": {"type": ["string", "null"]},
+        "charters_file": {"type": ["string", "null"]},
+        "testers": {"type": "array", "items": {"type": "string"}},
+        "environment": {"type": ["string", "null"]},
+        "generated_at": {"type": "string"}
+      }
+    },
+    "bugs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "steps", "expected", "actual", "environment", "evidence", "quotes", "status", "missing",
+                     "suggested_severity", "confidence", "reproduction"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string", "pattern": "^DB\\d+$"},
+          "title": {"type": "string", "minLength": 10},
+          "steps": {"type": "array", "items": {"type": "string"}},
+          "expected": {"type": ["string", "null"]},
+          "actual": {"type": ["string", "null"]},
+          "environment": {"type": ["string", "null"]},
+          "evidence": {"type": "array", "items": {"type": "string"}},
+          "quotes": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/quote"}},
+          "merged_from_lines": {"type": "array", "items": {"type": "integer"}},
+          "status": {"enum": ["complete", "incomplete"]},
+          "missing": {"type": "array", "items": {"enum": ["steps", "expected", "actual", "environment"]}},
+          "suggested_severity": {"enum": ["critical", "major", "minor", "trivial"]},
+          "confidence": {"enum": ["as_noted"]},
+          "reproduction": {"type": "object", "required": ["status"],
+                           "properties": {"status": {"enum": ["not_reproduced_by_skill", "reproduced", "not_reproduced"]},
+                                          "report": {"type": "string"}}}
+        }
+      }
+    },
+    "questions": {"type": "array", "items": {"$ref": "#/$defs/item"}},
+    "obstacles": {"type": "array", "items": {"$ref": "#/$defs/item"}},
+    "ideas": {"type": "array", "items": {"$ref": "#/$defs/item"}},
+    "off_charter": {"type": "array", "items": {"$ref": "#/$defs/item"}},
+    "suspicious_instructions_ignored": {"type": "array", "items": {"type": "object", "required": ["line", "text"],
+                                                                   "properties": {"line": {"type": "integer"}, "text": {"type": "string"}}}},
+    "coverage": {
+      "type": "object",
+      "required": ["areas", "heuristics"],
+      "properties": {
+        "areas": {"type": "array", "items": {"$ref": "#/$defs/covered"}},
+        "heuristics": {"type": "array", "items": {"$ref": "#/$defs/covered"}}
+      }
+    },
+    "metrics": {"type": ["object", "null"]},
+    "proof": {"type": "object", "required": ["past", "results", "obstacles", "outlook", "feelings"],
+              "properties": {"past": {"type": "string", "minLength": 10}, "results": {"type": "string", "minLength": 10},
+                             "obstacles": {"type": "string", "minLength": 3}, "outlook": {"type": "string", "minLength": 10},
+                             "feelings": {"type": "string", "minLength": 3}}},
+    "handoffs": {"type": "array", "items": {"type": "object", "required": ["to", "item", "why"],
+                                            "properties": {"to": {"enum": ["bug-reproducer", "journey-to-tests", "risk-based-test-planner",
+                                                                           "ticket-readiness-reviewer"]},
+                                                           "item": {"type": "string"}, "why": {"type": "string", "minLength": 10}}}},
+    "redactions": {"type": "array", "items": {"type": "object", "required": ["line", "kinds"]}}
+  },
+  "$defs": {
+    "quote": {"type": "object", "required": ["line", "text"],
+              "properties": {"line": {"type": "integer", "minimum": 1}, "text": {"type": "string", "minLength": 3}}},
+    "item": {"type": "object", "required": ["text", "quotes"],
+             "properties": {"text": {"type": "string", "minLength": 3}, "quotes": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/quote"}}}},
+    "covered": {"type": "object", "required": ["name", "status", "note_lines"],
+                "properties": {"name": {"type": "string"}, "status": {"enum": ["explored", "not_explored"]},
+                               "note_lines": {"type": "array", "items": {"type": "integer"}}}}
+  }
+}

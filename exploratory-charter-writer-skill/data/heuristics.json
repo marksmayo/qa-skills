@@ -1,0 +1,33 @@
+{
+  "$comment": "Heuristics and oracles a charter may name. Sources: James Bach's Heuristic Test Strategy Model (SFDPOT), Elisabeth Hendrickson's Test Heuristics Cheat Sheet and Explore It!, Michael Bolton's FEW HICCUPPS oracles. ids are what charters cite.",
+  "heuristics": {
+    "sfdpot.structure": {"family": "SFDPOT", "name": "Structure", "prompt": "What the product is made of: components, files, screens, the code that changed."},
+    "sfdpot.function": {"family": "SFDPOT", "name": "Function", "prompt": "What it does: each feature, calculation, error path."},
+    "sfdpot.data": {"family": "SFDPOT", "name": "Data", "prompt": "What it processes: inputs, outputs, stored state, boundaries, formats."},
+    "sfdpot.platform": {"family": "SFDPOT", "name": "Platform", "prompt": "What it depends on: browsers, devices, OS, services, configuration."},
+    "sfdpot.operations": {"family": "SFDPOT", "name": "Operations", "prompt": "How it is used: real workflows, personas, frequency, misuse."},
+    "sfdpot.time": {"family": "SFDPOT", "name": "Time", "prompt": "Timing: concurrency, timeouts, dates, ordering, slow and fast actions."},
+    "zero_one_many": {"family": "Hendrickson", "name": "Zero, one, many", "prompt": "No items, exactly one, lots of them."},
+    "crud": {"family": "Hendrickson", "name": "CRUD", "prompt": "Create, read, update and delete every kind of record, in every order."},
+    "interruptions": {"family": "Hendrickson", "name": "Interruptions", "prompt": "Log out, close the tab, lose the network, go back, time out in the middle of a task."},
+    "goldilocks": {"family": "Hendrickson", "name": "Goldilocks", "prompt": "Too big, too small, just right: values at and across each limit."},
+    "starve": {"family": "Hendrickson", "name": "Starve", "prompt": "Run short of a resource: balance, stock, disk, memory, rate limit."},
+    "follow_the_data": {"family": "Hendrickson", "name": "Follow the data", "prompt": "Trace one value from entry through every screen, report and integration it reaches."},
+    "sequence_variations": {"family": "Hendrickson", "name": "Sequence variations", "prompt": "Do the steps in a different order, twice, or concurrently in two tabs."},
+    "some_none_all": {"family": "Hendrickson", "name": "Some, none, all", "prompt": "Select some, none or all of a set; apply to a partial set."},
+    "beginning_middle_end": {"family": "Hendrickson", "name": "Beginning, middle, end", "prompt": "Act at the start, middle and end of a list, a period or a flow."}
+  },
+  "oracles": {
+    "familiar_problems": {"name": "Familiar problems", "prompt": "It shouldn't repeat a known bug or a problem of similar products."},
+    "explainability": {"name": "Explainability", "prompt": "Its behaviour should be explainable to a user."},
+    "world": {"name": "World", "prompt": "It should be consistent with how things work in the world."},
+    "history": {"name": "History", "prompt": "Consistent with past versions."},
+    "image": {"name": "Image", "prompt": "Consistent with the image the organisation wants."},
+    "comparable_products": {"name": "Comparable products", "prompt": "Consistent with similar products."},
+    "claims": {"name": "Claims", "prompt": "Consistent with what the ticket, docs and marketing say."},
+    "user_expectations": {"name": "User expectations", "prompt": "Consistent with what a reasonable user expects."},
+    "product": {"name": "Product", "prompt": "Consistent with itself: same thing, same behaviour elsewhere in the product."},
+    "purpose": {"name": "Purpose", "prompt": "Consistent with its purpose."},
+    "statutes": {"name": "Statutes and standards", "prompt": "Consistent with laws, regulations and standards (consumer law, WCAG, PCI)."}
+  }
+}

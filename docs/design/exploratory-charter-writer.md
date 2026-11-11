@@ -1,6 +1,6 @@
 # Design: `exploratory-charter-writer-skill`
 
-Status: Designed; not built. Build order: 14.
+Status: Built (v1.0.0), see "As built" at the end. Build order: 14.
 
 ## Mission
 
@@ -191,3 +191,57 @@ Agreed with the user before the build.
 1. **Which note formats in v1?** Markdown plus the Xray exploratory export.
 2. **Browser-assisted exploring mode?** Later, not v1.
 3. **Default session length?** 90 minutes.
+
+
+## As built (v1.0.0)
+
+Where the build differs from the design above, and what the example showed.
+
+- **Xray export: not read directly.** The design agreed on Markdown plus the Xray Exploratory
+  App's export. The export format isn't documented publicly, the vendor's documentation site
+  refused the connection, and a reader written blind would have been a guess.
+
+  `parse_notes.py` instead reads a documented timeline JSON:
+  `{session, items[{time, type, text, steps, expected, actual, environment, evidence}]}`.
+  The skill says to map other tools' exports to it. A native Xray reader needs a real sample
+  export first.
+- **A source index.** `gather_sources.py` turns the ticket (via `fetch_ticket.py`), journey map,
+  risk plan, diff and findings into `sources.json`. Each source has a ref, quotable text and the
+  attributes ranking uses. Basis excerpts must quote that text verbatim, ignoring case,
+  whitespace and curly quotes.
+- **Ranking is computed only from cited sources** (`rank_charters.py`), so a charter's priority
+  can't be argued up.
+  - **No sources at all:** a charter with only a user-request basis gets impact `not_assessed`
+    and the group `unranked`.
+  - **Merging:** same target and first heuristic. The merged charter's areas, personas and risks
+    join the first.
+- **Timestamps are `[HH:MM]` from the start of the session.**
+  - **Time split:** setup is SETUP plus ISSUE (obstacles, such as an outage, as in
+    session-based test management); bug investigation is BUG plus INVESTIGATE; the rest is
+    testing. OFF also counts as off-charter.
+  - **First version:** it counted the outage as testing.
+- **Instruction-like lines and personal data.** `parse_notes.py` flags both:
+  - **Instructions:** ignore-instructions phrasing, "mark ... passed", lines addressed to an AI.
+  - **Personal data:** emails outside reserved domains, Luhn-valid card-like numbers.
+
+  The debrief validator requires instructions to be listed and never used as items, and
+  personal-data values to appear nowhere in the debrief.
+- **"Nothing dropped" was added.** Every BUG, Q, ISSUE, IDEA and OFF line must end up in some
+  item. A bug's fields must be text found in the notes.
+- **Suggested severity** uses a four-level scale (critical, major, minor, trivial), always
+  `as_noted`. The bug reproducer, whose rubric the design pointed to, isn't built yet.
+- **Example results:**
+  - **Charters:** CH1 (redeem at checkout) and CH3 (attacker's view) are Do first; CH2 (balance
+    page) and CH5 (keyboard and screen reader) are Next; CH4 merged into CH1.
+  - **Debrief:** one complete bug, merged from two notes; one incomplete bug; one question; one
+    obstacle; the planted instruction ignored; 4 of 6 areas explored.
+  - **Metrics:** test 48%, bug investigation 21%, setup 31%.
+- **Testing:**
+  - 26 of 26 seeded violations are caught across both validators.
+  - 8 scenarios pass:
+    - timeline JSON with its metrics;
+    - free-form notes;
+    - personal-data detection;
+    - a leaked value caught;
+    - a redacted debrief that validates;
+    - charters with no sources, which validate.

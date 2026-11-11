@@ -1,0 +1,260 @@
+{
+  "generated_at": "2026-11-11T04:03:56Z",
+  "sources_used": [
+    {
+      "kind": "ticket",
+      "path": "ticket.json",
+      "sha256": "8db8e70a6debea01b7bdec380e882cf933d8bacf0f82bd023821e22826d93353"
+    },
+    {
+      "kind": "journeys",
+      "path": "journey_map.json",
+      "sha256": "774e44f285f150070d90c446cd2872995b050aa7f3e50ef08d57cc599c091841"
+    },
+    {
+      "kind": "risk_plan",
+      "path": "test_plan.json",
+      "sha256": "1e3cc2b388597c601341610fd1a6ff54faac7117ec27e58e17c2911c4fc7be88"
+    },
+    {
+      "kind": "diff",
+      "path": "scope.json",
+      "sha256": "b7b6a6d1b9eae61b89cb632c750a0b41b6b56bc8e0771b78b04379f0a54da066"
+    }
+  ],
+  "sources_missing": [],
+  "suspicious_instructions": [],
+  "sources": [
+    {
+      "ref": "ticket:GIFT-7#summary",
+      "kind": "ticket",
+      "text": "Customers can pay with a gift card at checkout",
+      "attrs": {
+        "ticket": "GIFT-7",
+        "type": "Story",
+        "labels": [
+          "gift-cards",
+          "payments"
+        ],
+        "components": [
+          "checkout"
+        ],
+        "priority": "High"
+      }
+    },
+    {
+      "ref": "ticket:GIFT-7#description",
+      "kind": "ticket",
+      "text": "Customers enter a gift card code at checkout. The card pays as much of the order as its balance allows and the rest is charged to their card. Customers can check a card's balance on the Gift cards page.",
+      "attrs": {
+        "ticket": "GIFT-7",
+        "type": "Story",
+        "labels": [
+          "gift-cards",
+          "payments"
+        ],
+        "components": [
+          "checkout"
+        ],
+        "priority": "High"
+      }
+    },
+    {
+      "ref": "ticket:GIFT-7#AC1",
+      "kind": "ticket",
+      "text": "A gift card code can be applied at checkout and reduces the amount charged to the card by up to its balance.",
+      "attrs": {
+        "ticket": "GIFT-7",
+        "type": "Story",
+        "labels": [
+          "gift-cards",
+          "payments"
+        ],
+        "components": [
+          "checkout"
+        ],
+        "priority": "High"
+      }
+    },
+    {
+      "ref": "ticket:GIFT-7#AC2",
+      "kind": "ticket",
+      "text": "If the gift card covers the whole order, no card payment is taken.",
+      "attrs": {
+        "ticket": "GIFT-7",
+        "type": "Story",
+        "labels": [
+          "gift-cards",
+          "payments"
+        ],
+        "components": [
+          "checkout"
+        ],
+        "priority": "High"
+      }
+    },
+    {
+      "ref": "ticket:GIFT-7#AC3",
+      "kind": "ticket",
+      "text": "The balance shown on the Gift cards page goes down by the amount redeemed.",
+      "attrs": {
+        "ticket": "GIFT-7",
+        "type": "Story",
+        "labels": [
+          "gift-cards",
+          "payments"
+        ],
+        "components": [
+          "checkout"
+        ],
+        "priority": "High"
+      }
+    },
+    {
+      "ref": "ticket:GIFT-7#AC4",
+      "kind": "ticket",
+      "text": "An unknown or used-up code shows \"This gift card can't be used\" and nothing is charged.",
+      "attrs": {
+        "ticket": "GIFT-7",
+        "type": "Story",
+        "labels": [
+          "gift-cards",
+          "payments"
+        ],
+        "components": [
+          "checkout"
+        ],
+        "priority": "High"
+      }
+    },
+    {
+      "ref": "journey:JRN-CHK-001#step1",
+      "kind": "journey",
+      "text": "Add flour and honey to the cart - Cart shows both items and the total",
+      "attrs": {
+        "journey": "JRN-CHK-001",
+        "priority": "P0",
+        "persona": "returning customer",
+        "title": "Customer pays for an order",
+        "files": [
+          "larder/catalog/products.py"
+        ]
+      }
+    },
+    {
+      "ref": "journey:JRN-CHK-001#step2",
+      "kind": "journey",
+      "text": "Pay by card - Order confirmed and the card charged once",
+      "attrs": {
+        "journey": "JRN-CHK-001",
+        "priority": "P0",
+        "persona": "returning customer",
+        "title": "Customer pays for an order",
+        "files": [
+          "larder/payments/service.py"
+        ]
+      }
+    },
+    {
+      "ref": "journey:JRN-CHK-001#V1",
+      "kind": "journey",
+      "text": "refund - Refund a damaged item - The refund reaches the card",
+      "attrs": {
+        "journey": "JRN-CHK-001",
+        "priority": "P0",
+        "persona": "returning customer",
+        "title": "Customer pays for an order",
+        "files": [
+          "larder/payments/service.py"
+        ]
+      }
+    },
+    {
+      "ref": "journey:JRN-GFT-001#step1",
+      "kind": "journey",
+      "text": "Open Gift cards and enter a code - The remaining balance is shown",
+      "attrs": {
+        "journey": "JRN-GFT-001",
+        "priority": "P2",
+        "persona": "gift recipient",
+        "title": "Customer checks a gift card balance",
+        "files": [
+          "larder/giftcards/cards.py"
+        ]
+      }
+    },
+    {
+      "ref": "risk:giftcards",
+      "kind": "risk",
+      "text": "giftcards: Medium risk 10.3, flags novel, surfaces money, 0 test file(s)",
+      "attrs": {
+        "area": "giftcards",
+        "band": "Medium",
+        "flags": [
+          "novel"
+        ],
+        "surfaces": [
+          "money"
+        ],
+        "tests": [],
+        "paths": [
+          "larder/giftcards"
+        ],
+        "confidence": "low",
+        "open_findings": []
+      }
+    },
+    {
+      "ref": "risk:payments",
+      "kind": "risk",
+      "text": "payments: High risk 17.9, surfaces external, money, 1 test file(s)",
+      "attrs": {
+        "area": "payments",
+        "band": "High",
+        "flags": [],
+        "surfaces": [
+          "external",
+          "money"
+        ],
+        "tests": [
+          "tests/test_payments.py"
+        ],
+        "paths": [
+          "larder/payments"
+        ],
+        "confidence": "high",
+        "open_findings": []
+      }
+    },
+    {
+      "ref": "diff:larder/giftcards/cards.py",
+      "kind": "diff",
+      "text": "added larder/giftcards/cards.py (+15 -0)",
+      "attrs": {
+        "status": "added",
+        "path": "larder/giftcards/cards.py",
+        "file_kind": "source"
+      }
+    },
+    {
+      "ref": "diff:larder/payments/service.py",
+      "kind": "diff",
+      "text": "modified larder/payments/service.py (+6 -0)",
+      "attrs": {
+        "status": "modified",
+        "path": "larder/payments/service.py",
+        "file_kind": "source"
+      }
+    },
+    {
+      "ref": "diff:larder/web/giftcards_page.py",
+      "kind": "diff",
+      "text": "modified larder/web/giftcards_page.py (+9 -3)",
+      "attrs": {
+        "status": "modified",
+        "path": "larder/web/giftcards_page.py",
+        "file_kind": "source"
+      }
+    }
+  ]
+}

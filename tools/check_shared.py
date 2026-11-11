@@ -28,7 +28,7 @@ SHARED = {
     'scripts/unified_diff.py': ['test-impact-selector-skill', 'dead-test-finder-skill'],
     'scripts/stats.py': ['flaky-test-hunter-skill', 'test-impact-selector-skill'],
     'scripts/sarif.py': ['ui-crash-hunter-skill', 'code-security-auditor-skill'],
-    'scripts/fetch_ticket.py': ['ticket-to-tdd-skill', 'ticket-readiness-reviewer-skill', 'dead-test-finder-skill', 'risk-based-test-planner-skill'],
+    'scripts/fetch_ticket.py': ['ticket-to-tdd-skill', 'ticket-readiness-reviewer-skill', 'dead-test-finder-skill', 'risk-based-test-planner-skill', 'exploratory-charter-writer-skill'],
 }
 
 def normalised(path: Path) -> bytes:

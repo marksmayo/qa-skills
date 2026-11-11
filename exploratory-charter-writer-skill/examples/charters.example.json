@@ -1,0 +1,317 @@
+{
+  "metadata": {
+    "generated_at": "2026-11-11T04:03:57Z",
+    "timebox": 90,
+    "max_charters": 8,
+    "sources_file": "sources.json",
+    "sources_used": [
+      {
+        "kind": "ticket",
+        "path": "ticket.json",
+        "sha256": "8db8e70a6debea01b7bdec380e882cf933d8bacf0f82bd023821e22826d93353"
+      },
+      {
+        "kind": "journeys",
+        "path": "journey_map.json",
+        "sha256": "774e44f285f150070d90c446cd2872995b050aa7f3e50ef08d57cc599c091841"
+      },
+      {
+        "kind": "risk_plan",
+        "path": "test_plan.json",
+        "sha256": "1e3cc2b388597c601341610fd1a6ff54faac7117ec27e58e17c2911c4fc7be88"
+      },
+      {
+        "kind": "diff",
+        "path": "scope.json",
+        "sha256": "b7b6a6d1b9eae61b89cb632c750a0b41b6b56bc8e0771b78b04379f0a54da066"
+      }
+    ],
+    "sources_missing": [],
+    "suspicious_instructions": []
+  },
+  "charters": [
+    {
+      "id": "CH1",
+      "mission": {
+        "target": "redeeming a gift card at checkout",
+        "resources": "$5, $50 and $500 test cards, two browser tabs and the gateway sandbox",
+        "information": "whether the amount charged and the remaining balance are always right"
+      },
+      "areas": [
+        "part of the order paid by gift card",
+        "whole order paid by gift card",
+        "unknown or used-up code",
+        "two tabs redeeming the same card",
+        "refund of an order paid partly by gift card",
+        "a $500 card on a $1 order"
+      ],
+      "heuristics": [
+        "goldilocks",
+        "sequence_variations",
+        "starve",
+        "follow_the_data"
+      ],
+      "oracles": [
+        "claims",
+        "user_expectations"
+      ],
+      "personas": [
+        "first_time",
+        "adversarial",
+        "power_user"
+      ],
+      "setup": [
+        "Create $5, $50 and $500 gift cards in the back office",
+        "Log in as the test customer with a sandbox card saved"
+      ],
+      "risks": [
+        "Charging the card for money the gift card covered",
+        "A balance that goes below zero or never goes down",
+        "Rounding at the limits"
+      ],
+      "out_of_scope": [
+        "Buying gift cards",
+        "Gift card emails"
+      ],
+      "basis": [
+        {
+          "kind": "ticket",
+          "ref": "ticket:GIFT-7#AC1",
+          "excerpt": "reduces the amount charged to the card by up to its balance"
+        },
+        {
+          "kind": "ticket",
+          "ref": "ticket:GIFT-7#AC2",
+          "excerpt": "If the gift card covers the whole order, no card payment is taken."
+        },
+        {
+          "kind": "ticket",
+          "ref": "ticket:GIFT-7#AC4",
+          "excerpt": "An unknown or used-up code shows \"This gift card can't be used\" and nothing is charged."
+        },
+        {
+          "kind": "risk",
+          "ref": "risk:giftcards",
+          "excerpt": "flags novel, surfaces money, 0 test file(s)"
+        },
+        {
+          "kind": "risk",
+          "ref": "risk:payments",
+          "excerpt": "payments: High risk 17.9"
+        },
+        {
+          "kind": "journey",
+          "ref": "journey:JRN-CHK-001#step2",
+          "excerpt": "Order confirmed and the card charged once"
+        },
+        {
+          "kind": "ticket",
+          "ref": "ticket:GIFT-7#AC1",
+          "excerpt": "up to its balance"
+        }
+      ],
+      "timebox": 90,
+      "merged_from": [
+        "CH4"
+      ],
+      "impact": 3,
+      "uncertainty": 3,
+      "priority": 9,
+      "group": "do_first",
+      "ranking_reasons": {
+        "impact": [
+          "risk:giftcards has a money surface",
+          "risk:payments is a High risk area",
+          "risk:payments has a money surface",
+          "journey:JRN-CHK-001#step2 is on a P0 journey"
+        ],
+        "uncertainty": [
+          "risk:giftcards is new code"
+        ]
+      }
+    },
+    {
+      "id": "CH3",
+      "mission": {
+        "target": "gift card codes from an attacker's point of view",
+        "resources": "a proxy to edit requests, two customer accounts",
+        "information": "whether codes can be guessed, reused or redeemed by someone else"
+      },
+      "areas": [
+        "guessing codes",
+        "replaying a redemption request",
+        "redeeming another customer's card"
+      ],
+      "heuristics": [
+        "sequence_variations",
+        "starve"
+      ],
+      "oracles": [
+        "statutes",
+        "familiar_problems"
+      ],
+      "personas": [
+        "adversarial"
+      ],
+      "setup": [
+        "Proxy (for example OWASP ZAP) between the browser and staging"
+      ],
+      "risks": [
+        "Free money through replay or guessing"
+      ],
+      "out_of_scope": [
+        "Card payments"
+      ],
+      "basis": [
+        {
+          "kind": "risk",
+          "ref": "risk:giftcards",
+          "excerpt": "surfaces money"
+        },
+        {
+          "kind": "diff",
+          "ref": "diff:larder/giftcards/cards.py",
+          "excerpt": "added larder/giftcards/cards.py"
+        }
+      ],
+      "timebox": 90,
+      "impact": 3,
+      "uncertainty": 3,
+      "priority": 9,
+      "group": "do_first",
+      "ranking_reasons": {
+        "impact": [
+          "risk:giftcards has a money surface"
+        ],
+        "uncertainty": [
+          "risk:giftcards is new code",
+          "diff:larder/giftcards/cards.py is added in the change"
+        ]
+      }
+    },
+    {
+      "id": "CH2",
+      "mission": {
+        "target": "the gift card balance page",
+        "resources": "cards with known balances and their redemption history",
+        "information": "whether the balance shown matches what was redeemed"
+      },
+      "areas": [
+        "balance after a redemption",
+        "unknown code",
+        "a card used on several orders"
+      ],
+      "heuristics": [
+        "follow_the_data",
+        "zero_one_many"
+      ],
+      "oracles": [
+        "claims",
+        "product"
+      ],
+      "personas": [
+        "first_time"
+      ],
+      "setup": [
+        "Redeem a $50 card across two orders first"
+      ],
+      "risks": [
+        "Balance not updated, or updated twice"
+      ],
+      "out_of_scope": [
+        "Checkout"
+      ],
+      "basis": [
+        {
+          "kind": "ticket",
+          "ref": "ticket:GIFT-7#AC3",
+          "excerpt": "The balance shown on the Gift cards page goes down by the amount redeemed."
+        },
+        {
+          "kind": "journey",
+          "ref": "journey:JRN-GFT-001#step1",
+          "excerpt": "The remaining balance is shown"
+        },
+        {
+          "kind": "diff",
+          "ref": "diff:larder/web/giftcards_page.py",
+          "excerpt": "modified larder/web/giftcards_page.py"
+        }
+      ],
+      "timebox": 90,
+      "impact": 2,
+      "uncertainty": 2,
+      "priority": 4,
+      "group": "next",
+      "ranking_reasons": {
+        "impact": [
+          "journey:JRN-GFT-001#step1 is on a P2 journey"
+        ],
+        "uncertainty": [
+          "diff:larder/web/giftcards_page.py is modified in the change"
+        ]
+      }
+    },
+    {
+      "id": "CH5",
+      "mission": {
+        "target": "the gift card field at checkout with a keyboard and a screen reader",
+        "resources": "NVDA and Firefox, keyboard only",
+        "information": "whether applying a card and its errors can be done and heard without a mouse"
+      },
+      "areas": [
+        "reaching and filling the field",
+        "hearing the error for an unknown code",
+        "hearing the new total"
+      ],
+      "heuristics": [
+        "sfdpot.operations"
+      ],
+      "oracles": [
+        "statutes",
+        "user_expectations"
+      ],
+      "personas": [
+        "keyboard_only",
+        "screen_reader"
+      ],
+      "setup": [
+        "NVDA on, mouse unplugged"
+      ],
+      "risks": [
+        "Error message not announced"
+      ],
+      "out_of_scope": [
+        "Visual design"
+      ],
+      "basis": [
+        {
+          "kind": "journey",
+          "ref": "journey:JRN-CHK-001#step2",
+          "excerpt": "Pay by card"
+        }
+      ],
+      "timebox": 90,
+      "impact": 3,
+      "uncertainty": 1,
+      "priority": 3,
+      "group": "next",
+      "ranking_reasons": {
+        "impact": [
+          "journey:JRN-CHK-001#step2 is on a P0 journey"
+        ],
+        "uncertainty": [
+          "no new or changed code and no open finding among the sources"
+        ]
+      }
+    }
+  ],
+  "merged": [
+    {
+      "id": "CH4",
+      "into": "CH1",
+      "reason": "same target and first heuristic"
+    }
+  ],
+  "over_limit": []
+}

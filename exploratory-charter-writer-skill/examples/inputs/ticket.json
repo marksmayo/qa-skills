@@ -1,0 +1,55 @@
+{
+  "key": "GIFT-7",
+  "url": null,
+  "source": "connector",
+  "fetched_at": "2026-11-11T04:03:56Z",
+  "type": "Story",
+  "summary": "Customers can pay with a gift card at checkout",
+  "status": "In Test",
+  "status_category": "indeterminate",
+  "priority": "High",
+  "labels": [
+    "gift-cards",
+    "payments"
+  ],
+  "components": [
+    "checkout"
+  ],
+  "fix_versions": [
+    "1.5"
+  ],
+  "parent": null,
+  "description_md": "Customers enter a gift card code at checkout. The card pays as much of the order as its balance allows and the rest is charged to their card. Customers can check a card's balance on the Gift cards page.",
+  "acceptance_criteria_field": "Acceptance Criteria",
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "text": "A gift card code can be applied at checkout and reduces the amount charged to the card by up to its balance.",
+      "source": "field:Acceptance Criteria"
+    },
+    {
+      "id": "AC-2",
+      "text": "If the gift card covers the whole order, no card payment is taken.",
+      "source": "field:Acceptance Criteria"
+    },
+    {
+      "id": "AC-3",
+      "text": "The balance shown on the Gift cards page goes down by the amount redeemed.",
+      "source": "field:Acceptance Criteria"
+    },
+    {
+      "id": "AC-4",
+      "text": "An unknown or used-up code shows \"This gift card can't be used\" and nothing is charged.",
+      "source": "field:Acceptance Criteria"
+    }
+  ],
+  "bug": null,
+  "subtasks": [],
+  "links": [],
+  "comments": [],
+  "comments_total": 0,
+  "attachments": [],
+  "size_warnings": [],
+  "suspicious_instructions": [],
+  "content_sha256": "432ddffe46267784ba4b175adf6873b3d37234052f6d2e22945da9fb046ef4dc"
+}

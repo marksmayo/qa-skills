@@ -170,6 +170,17 @@ python risk-based-test-planner-skill/examples/make_sample_repo.py <empty dir>
 
 Re-scoring needs the sample repository: build it with `make_sample_repo.py`, then run `commands.sh` with `LARDER=<that dir>`. The history window is fixed with `--as-of 2026-11-01`, so the scores don't depend on today's date. Editing the trimmed inputs in `examples/inputs/` or `data/surfaces.json` changes the scores and invalidates both plans until they are re-scored and re-validated with `--write-summary`.
 
+Exploratory charter writer (`examples/inputs/` holds a gift-card ticket, journey map, risk-plan excerpt and scope excerpt; `examples/run/commands.sh` lists every step; `validate_charters.py` checks each basis excerpt is verbatim from `run/sources.json` and recomputes the ranking; `validate_debrief.py` re-reads the notes so every quote, line, metric and redaction matches them):
+
+```bash
+python exploratory-charter-writer-skill/scripts/validate_charters.py exploratory-charter-writer-skill/examples/charters.example.json --sources exploratory-charter-writer-skill/examples/run/sources.json --md-dir exploratory-charter-writer-skill/examples/charters --personas exploratory-charter-writer-skill/examples/inputs/journey_map.json
+python exploratory-charter-writer-skill/scripts/validate_debrief.py exploratory-charter-writer-skill/examples/debrief.example.json --notes exploratory-charter-writer-skill/examples/notes/session-01.md --parsed exploratory-charter-writer-skill/examples/run/parsed-session-01.json --charters exploratory-charter-writer-skill/examples/charters.example.json
+python exploratory-charter-writer-skill/scripts/render_report.py exploratory-charter-writer-skill/examples/debrief.example.json [--brief]
+python exploratory-charter-writer-skill/scripts/parse_notes.py exploratory-charter-writer-skill/examples/notes/session-01.md --out parsed.json
+```
+
+The debrief fingerprints `examples/notes/session-01.md` and quotes it by line number, so editing the notes invalidates the debrief. Editing the inputs or `run/draft.json` changes the sources and rankings; rerun `commands.sh`.
+
 Shared files:
 
 ```bash

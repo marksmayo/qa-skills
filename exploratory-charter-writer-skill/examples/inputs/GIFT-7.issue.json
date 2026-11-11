@@ -1,0 +1,25 @@
+{
+  "key": "GIFT-7",
+  "names": {"customfield_10034": "Acceptance Criteria"},
+  "fields": {
+    "summary": "Customers can pay with a gift card at checkout",
+    "issuetype": {"name": "Story"},
+    "status": {"name": "In Test", "statusCategory": {"key": "indeterminate"}},
+    "priority": {"name": "High"},
+    "labels": ["gift-cards", "payments"],
+    "components": [{"name": "checkout"}],
+    "fixVersions": [{"name": "1.5"}],
+    "description": {"type": "doc", "version": 1, "content": [
+      {"type": "paragraph", "content": [{"type": "text", "text": "Customers enter a gift card code at checkout. The card pays as much of the order as its balance allows and the rest is charged to their card. Customers can check a card's balance on the Gift cards page."}]}
+    ]},
+    "customfield_10034": {"type": "doc", "version": 1, "content": [
+      {"type": "bulletList", "content": [
+        {"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "A gift card code can be applied at checkout and reduces the amount charged to the card by up to its balance."}]}]},
+        {"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "If the gift card covers the whole order, no card payment is taken."}]}]},
+        {"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "The balance shown on the Gift cards page goes down by the amount redeemed."}]}]},
+        {"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "An unknown or used-up code shows \"This gift card can't be used\" and nothing is charged."}]}]}
+      ]}
+    ]},
+    "comment": {"comments": [], "total": 0}
+  }
+}

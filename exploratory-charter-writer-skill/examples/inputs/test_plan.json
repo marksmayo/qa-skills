@@ -1,0 +1,9 @@
+{
+  "metadata": {"repo": "larder", "note": "Excerpt of risk-based-test-planner output: two areas, fields the charter writer reads."},
+  "areas": [
+    {"id": "giftcards", "paths": ["larder/giftcards"], "journeys": [], "surfaces": ["money"], "flags": ["novel"], "tests": [],
+     "risk": 10.3, "band": "Medium", "confidence": "low", "open_findings": []},
+    {"id": "payments", "paths": ["larder/payments"], "journeys": ["JRN-CHK-001"], "surfaces": ["external", "money"], "flags": [],
+     "tests": ["tests/test_payments.py"], "risk": 17.9, "band": "High", "confidence": "high", "open_findings": []}
+  ]
+}

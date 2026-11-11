@@ -1,0 +1,12 @@
+{
+  "$comment": "Built-in personas; a journey map's personas are added to these. ids are what charters cite.",
+  "personas": {
+    "first_time": {"name": "First-time customer", "notes": "No saved details, reads every label, follows the happy path literally."},
+    "power_user": {"name": "Power user", "notes": "Keyboard shortcuts, several tabs, bulk actions, goes fast."},
+    "keyboard_only": {"name": "Keyboard-only user", "notes": "No mouse: Tab, Shift+Tab, Enter, Space, Escape, arrow keys."},
+    "screen_reader": {"name": "Screen reader user", "notes": "NVDA or VoiceOver; listens to names, roles, states and announcements."},
+    "slow_network": {"name": "Slow or flaky network", "notes": "Throttled to 3G, drops the connection mid-action, retries."},
+    "adversarial": {"name": "Adversarial user", "notes": "Edits requests, replays them, uses other people's ids, races two tabs."},
+    "support_agent": {"name": "Support agent", "notes": "Acts on a customer's behalf from the back office; sees more data than a customer."}
+  }
+}
