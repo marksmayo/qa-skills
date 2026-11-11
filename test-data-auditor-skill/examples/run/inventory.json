@@ -136,7 +136,7 @@
       "path": "tests/cassettes/insurer_cover.json",
       "kind": "recording",
       "format": "json",
-      "bytes": 252,
+      "bytes": 237,
       "loaded_by": [
         "tests/test_insurer.py::test_cover_is_read_from_the_insurer"
       ],

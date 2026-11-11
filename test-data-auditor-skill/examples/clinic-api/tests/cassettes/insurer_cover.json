@@ -2,7 +2,7 @@
   "request": {
     "method": "GET",
     "path": "/members/M-1001/cover",
-    "headers": {"Authorization": "Bearer cliniq_live_3f9a1c7e5b2d4086a1f0e9c8b7d6a5f4"}
+    "headers": {"Authorization": "Bearer EXAMPLE-NOT-A-REAL-TOKEN-0000"}
   },
   "response": {
     "status": 200,

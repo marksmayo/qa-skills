@@ -23,7 +23,7 @@ JSON, YAML, CSV and SQL fixtures. **Every personal detail in it is invented.** T
 | A test expects `"$1,234.50"` from `locale.currency` after `setlocale(LC_ALL, "")` | F4 `locale_assumption`, confirmed: the `C.UTF-8` run fails |
 | `get_patient(42)`, which only exists in `db/seed.sql` | F5 `magic_id` |
 | `legacy_rooms.csv`, which nothing loads | F7 `unused_or_duplicate` |
-| A bearer token in the recorded insurer request | handed to code-security-auditor; no value shown |
+| A bearer token in the recorded insurer request (`EXAMPLE-NOT-A-REAL-TOKEN-0000`, deliberately fake and low-entropy so secret scanners on this repository don't flag it) | handed to code-security-auditor; no value shown |
 | Patient 2: an `example.com` address and two ACMA fiction numbers | dismissed by rule, naming the rule |
 | Patient 2's placeholder name, address and date of birth | dismissed by review |
 

@@ -11,7 +11,7 @@
       "field": null,
       "data_type": "secret",
       "why": "looks like a secret (authorization header)",
-      "fingerprint": "967279f0b012b1a7",
+      "fingerprint": "15034dcc631b9720",
       "auto_dismiss": null,
       "details": {
         "route_to": "code-security-auditor"
