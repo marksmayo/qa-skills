@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/qa-skills/qa-orchestrator/orchestrator.schema.json",
+  "title": "QA orchestrator configuration",
+  "type": "object",
+  "required": ["schema_version", "name", "gates"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "gates": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["id", "name", "approver", "auto_approve", "steps", "criteria"],
+      "properties": {
+        "auto_approve": {"type": "boolean", "description": "off by default: a person approves; turning it on is a decision the team records here"},
+        "steps": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["id", "skill", "validator"],
+          "properties": {"validator": {"type": "string", "description": "a command template with {report} and {skills}"}, "cwd": {"type": "string"},
+                         "required": {"type": "boolean"}, "purpose": {"type": "string"}, "command": {"type": "string"}}}},
+        "criteria": {"type": "array", "items": {"type": "object", "required": ["id", "kind", "step"],
+          "properties": {"kind": {"enum": ["report_valid", "field_in", "field_compare", "field_equals_field"]},
+                         "path": {"type": "string"}, "values": {"type": "array"}, "op": {"enum": ["==", "!=", "<=", ">=", "<", ">"]}, "value": {"type": "number"}, "other": {"type": "string"}}}}}}}
+  }
+}

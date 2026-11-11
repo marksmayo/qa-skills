@@ -38,7 +38,7 @@ anatomy described in the root `CLAUDE.md` (`SKILL.md`, `RUBRIC.md`, `schemas/`, 
 | 29 | [Hypercare anomaly watcher](hypercare-anomaly-watcher.md) | `hypercare-anomaly-watcher-skill/` | Built (v1.0.0) |
 | 30 | [Requirements traceability auditor](requirements-traceability-auditor.md) | `requirements-traceability-auditor-skill/` | Built (v1.0.0) |
 | 31 | [CI suite runner](ci-suite-runner.md) | `ci-suite-runner-skill/` | Built (v1.0.0) |
-| 32 | QA orchestrator (gate-aware) | `qa-orchestrator-skill/` | Agreed; design not written |
+| 32 | [QA orchestrator (gate-aware)](qa-orchestrator.md) | `qa-orchestrator-skill/` | Built (v1.0.0) |
 
 The table order is the agreed build order. Skills 7–24 are ordered so that each shared script
 is built by the first skill that needs it: `fetch_ticket.py` moves to `shared/` with 7,
@@ -97,6 +97,19 @@ test-impact-selector ◄── diff_scope + coverage maps
 wcag-auditor + ui-crash-hunter ──► mobile-app-auditor (same rating models, native apps)
 
 every skill's report + CI results ──► release-readiness-gate ──► go / no_go / not_established
+```
+
+Skills 26–32 add the CI and release loop, with the orchestrator over all of them:
+
+```text
+ticket ──► test-case-designer (cases per criterion) ──► requirements-traceability-auditor (requirement -> test -> run)
+
+ci-suite-runner (trigger, poll, collect) ──► ci-failure-triager (real / flaky / environment / data, owning change)
+
+release-readiness-gate ──► deploy ──► post-deploy-validator (read-only, go/no-go) ──► hypercare-anomaly-watcher (drafts incidents)
+
+qa-orchestrator: Ready ─► Designed ─► Built and tested ─► Verified in CI ─► Release ready ─► Deployed ─► Hypercare,
+                 a person approving each gate
 ```
 
 ## Decisions that apply to every skill

@@ -1,0 +1,597 @@
+{
+ "schema_version": "1.0.0",
+ "skill": {
+  "name": "qa-orchestrator",
+  "version": "1.0.0"
+ },
+ "run_id": "example-2026.12",
+ "subject": "Loyalty points at checkout, release 2026.12 (example: other skills' example reports stand in for one change's evidence)",
+ "config_path": "qa-orchestrator-skill/examples/orchestrator.example.json",
+ "config_sha256": "f331e59c552328f29dc6f9142634b991e8e9f498f9cadbfcc0837f0e1961b0d2",
+ "config": {
+  "schema_version": "1.0.0",
+  "name": "Example: loyalty points change, four gates then deploy and hypercare",
+  "note": "A shortened configuration for the example: Ready, Designed, Verified in CI, Release ready, Deployed, Hypercare. Validator commands carry the arguments each example report needs; paths are relative to the repository root.",
+  "gates": [
+   {
+    "id": "G1",
+    "name": "Ready",
+    "approver": "QA lead",
+    "auto_approve": false,
+    "steps": [
+     {
+      "id": "readiness",
+      "skill": "ticket-readiness-reviewer",
+      "purpose": "Are the acceptance criteria testable?",
+      "validator": "python {skills}/ticket-readiness-reviewer-skill/scripts/validate_readiness.py {report} --tickets {skills}/ticket-readiness-reviewer-skill/examples/tickets.json --lint {skills}/ticket-readiness-reviewer-skill/examples/lint.json"
+     }
+    ],
+    "criteria": [
+     {
+      "id": "readiness-valid",
+      "kind": "report_valid",
+      "step": "readiness"
+     },
+     {
+      "id": "ticket-ready",
+      "kind": "field_in",
+      "step": "readiness",
+      "path": "reviews[ticket.key=SHOP-201].verdict.value",
+      "values": [
+       "ready",
+       "ready_with_questions"
+      ]
+     }
+    ]
+   },
+   {
+    "id": "G2",
+    "name": "Designed",
+    "approver": "QA lead",
+    "auto_approve": false,
+    "steps": [
+     {
+      "id": "cases",
+      "skill": "test-case-designer",
+      "purpose": "Test cases per criterion",
+      "validator": "python {skills}/test-case-designer-skill/scripts/validate_cases.py {report} --ticket {skills}/test-case-designer-skill/examples/run/ticket.json --model {skills}/test-case-designer-skill/examples/model.json --rows {skills}/test-case-designer-skill/examples/run/rows.json"
+     }
+    ],
+    "criteria": [
+     {
+      "id": "cases-valid",
+      "kind": "report_valid",
+      "step": "cases"
+     },
+     {
+      "id": "all-rows-covered",
+      "kind": "field_equals_field",
+      "step": "cases",
+      "path": "summary.rows_covered",
+      "other": "summary.rows_total"
+     }
+    ]
+   },
+   {
+    "id": "G3",
+    "name": "Verified in CI",
+    "approver": "QA lead",
+    "auto_approve": false,
+    "steps": [
+     {
+      "id": "suite",
+      "skill": "ci-suite-runner",
+      "purpose": "The checkout regression in CI on staging",
+      "cwd": "{skills}/ci-suite-runner-skill",
+      "validator": "python scripts/validate_suite_run.py {report} --preauth examples/preauth.json --stub-log examples/runs/stub_log.json"
+     },
+     {
+      "id": "triage",
+      "skill": "ci-failure-triager",
+      "purpose": "Classify the failures",
+      "validator": "python {skills}/ci-failure-triager-skill/scripts/validate_triage.py {report} --run {skills}/ci-failure-triager-skill/examples/run"
+     }
+    ],
+    "criteria": [
+     {
+      "id": "suite-valid",
+      "kind": "report_valid",
+      "step": "suite"
+     },
+     {
+      "id": "triage-valid",
+      "kind": "report_valid",
+      "step": "triage"
+     },
+     {
+      "id": "no-failed-tests",
+      "kind": "field_compare",
+      "step": "suite",
+      "path": "results.totals.failed",
+      "op": "==",
+      "value": 0
+     },
+     {
+      "id": "no-real-failures",
+      "kind": "field_compare",
+      "step": "triage",
+      "path": "summary.by_classification.real",
+      "op": "==",
+      "value": 0
+     }
+    ]
+   },
+   {
+    "id": "G4",
+    "name": "Release ready",
+    "approver": "Release manager",
+    "auto_approve": false,
+    "steps": [
+     {
+      "id": "gate",
+      "skill": "release-readiness-gate",
+      "purpose": "Go, no-go or not established from the release's reports",
+      "validator": "python {skills}/release-readiness-gate-skill/scripts/validate_gate.py {report} --reports"
+     }
+    ],
+    "criteria": [
+     {
+      "id": "gate-valid",
+      "kind": "report_valid",
+      "step": "gate"
+     },
+     {
+      "id": "gate-go",
+      "kind": "field_in",
+      "step": "gate",
+      "path": "headline.verdict",
+      "values": [
+       "go"
+      ]
+     }
+    ]
+   },
+   {
+    "id": "G5",
+    "name": "Deployed",
+    "approver": "Release manager",
+    "auto_approve": false,
+    "steps": [
+     {
+      "id": "pvt",
+      "skill": "post-deploy-validator",
+      "purpose": "Read-only checks after the deploy",
+      "validator": "python {skills}/post-deploy-validator-skill/scripts/validate_pvt.py {report} --run {skills}/post-deploy-validator-skill/examples/runs/release-1.9.0/run.json"
+     }
+    ],
+    "criteria": [
+     {
+      "id": "pvt-valid",
+      "kind": "report_valid",
+      "step": "pvt"
+     },
+     {
+      "id": "pvt-go",
+      "kind": "field_in",
+      "step": "pvt",
+      "path": "recommendation.value",
+      "values": [
+       "go"
+      ]
+     }
+    ]
+   },
+   {
+    "id": "G6",
+    "name": "Hypercare",
+    "approver": "On-call lead",
+    "auto_approve": false,
+    "steps": [
+     {
+      "id": "watch",
+      "skill": "hypercare-anomaly-watcher",
+      "purpose": "Watch the release for the hypercare window",
+      "validator": "python {skills}/hypercare-anomaly-watcher-skill/scripts/validate_watch.py {report}"
+     }
+    ],
+    "criteria": [
+     {
+      "id": "watch-valid",
+      "kind": "report_valid",
+      "step": "watch"
+     }
+    ]
+   }
+  ]
+ },
+ "state_dir": "qa-orchestrator-skill/examples/state",
+ "state_in_temp": false,
+ "skills_root": ".",
+ "created_at": "2026-11-11T14:23:22Z",
+ "status": "stopped",
+ "gates": [
+  {
+   "id": "G1",
+   "name": "Ready",
+   "approver": "QA lead",
+   "status": "approved",
+   "steps": [
+    {
+     "id": "readiness",
+     "skill": "ticket-readiness-reviewer",
+     "required": true,
+     "report": "ticket-readiness-reviewer-skill/examples/batch.example.json",
+     "sha256": "33738c16195027cfd4c99ed080277e37c2d29c27ccb8031990bb052ff21f73c7",
+     "validator": {
+      "command": "python ./ticket-readiness-reviewer-skill/scripts/validate_readiness.py ticket-readiness-reviewer-skill/examples/batch.example.json --tickets ./ticket-readiness-reviewer-skill/examples/tickets.json --lint ./ticket-readiness-reviewer-skill/examples/lint.json",
+      "cwd": null,
+      "exit_code": 0,
+      "output": [
+       "VALID"
+      ],
+      "at": "2026-11-11T14:23:22Z"
+     }
+    }
+   ],
+   "criteria": [
+    {
+     "id": "readiness-valid",
+     "kind": "report_valid",
+     "step": "readiness",
+     "result": "pass",
+     "detail": "validator exited 0 and the report is unchanged"
+    },
+    {
+     "id": "ticket-ready",
+     "kind": "field_in",
+     "step": "readiness",
+     "result": "pass",
+     "detail": "reviews[ticket.key=SHOP-201].verdict.value = 'ready' (allowed ['ready', 'ready_with_questions'])"
+    }
+   ],
+   "decision": {
+    "kind": "approved",
+    "by": "QA lead",
+    "how": "in chat, after reading the SHOP-201 review",
+    "at": "2026-11-11T14:23:22Z",
+    "override": null,
+    "failed_criteria": []
+   },
+   "history": []
+  },
+  {
+   "id": "G2",
+   "name": "Designed",
+   "approver": "QA lead",
+   "status": "approved",
+   "steps": [
+    {
+     "id": "cases",
+     "skill": "test-case-designer",
+     "required": true,
+     "report": "test-case-designer-skill/examples/test_cases.example.json",
+     "sha256": "50edec126467003c484988026f4bdac9efa3f246d3763758fb094f792f26c377",
+     "validator": {
+      "command": "python ./test-case-designer-skill/scripts/validate_cases.py test-case-designer-skill/examples/test_cases.example.json --ticket ./test-case-designer-skill/examples/run/ticket.json --model ./test-case-designer-skill/examples/model.json --rows ./test-case-designer-skill/examples/run/rows.json",
+      "cwd": null,
+      "exit_code": 0,
+      "output": [
+       "test-case-designer-skill\\examples\\test_cases.example.json: valid. 42 case(s) for 5 of 5 criteria; rows 52/52 covered, 0 infeasible; 2 question(s)"
+      ],
+      "at": "2026-11-11T14:23:23Z"
+     }
+    }
+   ],
+   "criteria": [
+    {
+     "id": "cases-valid",
+     "kind": "report_valid",
+     "step": "cases",
+     "result": "pass",
+     "detail": "validator exited 0 and the report is unchanged"
+    },
+    {
+     "id": "all-rows-covered",
+     "kind": "field_equals_field",
+     "step": "cases",
+     "result": "pass",
+     "detail": "summary.rows_covered = 52, summary.rows_total = 52"
+    }
+   ],
+   "decision": {
+    "kind": "approved",
+    "by": "QA lead",
+    "how": "in chat; Q-1 and Q-2 go to the product owner before G3",
+    "at": "2026-11-11T14:23:23Z",
+    "override": null,
+    "failed_criteria": []
+   },
+   "history": []
+  },
+  {
+   "id": "G3",
+   "name": "Verified in CI",
+   "approver": "QA lead",
+   "status": "approved",
+   "steps": [
+    {
+     "id": "suite",
+     "skill": "ci-suite-runner",
+     "required": true,
+     "report": "ci-suite-runner-skill/examples/runs/checkout-staging/suite_run.json",
+     "sha256": "f2a78e49af10998c829abf08b2e8b877ae126332d8f8af2e7c38e6e897f3a20d",
+     "validator": {
+      "command": "python scripts/validate_suite_run.py examples/runs/checkout-staging/suite_run.json --preauth examples/preauth.json --stub-log examples/runs/stub_log.json",
+      "cwd": "./ci-suite-runner-skill",
+      "exit_code": 0,
+      "output": [
+       "examples\\runs\\checkout-staging\\suite_run.json: valid. checkout-regression on staging: triggered (preauth), completed failure; 2 of 3 passed"
+      ],
+      "at": "2026-11-11T14:23:23Z"
+     }
+    },
+    {
+     "id": "triage",
+     "skill": "ci-failure-triager",
+     "required": true,
+     "report": "ci-failure-triager-skill/examples/triage.example.json",
+     "sha256": "331846f249995db4b546a74b0031782fe1d1c83e71c23193863d5a8d8e309515",
+     "validator": {
+      "command": "python ./ci-failure-triager-skill/scripts/validate_triage.py ci-failure-triager-skill/examples/triage.example.json --run ./ci-failure-triager-skill/examples/run",
+      "cwd": null,
+      "exit_code": 0,
+      "output": [
+       "ci-failure-triager-skill\\examples\\triage.example.json: valid. 4 failure(s): real 1, flaky 1, environment 1, data 1; 2 draft(s), 1 re-run(s), evidence completeness 1.0"
+      ],
+      "at": "2026-11-11T14:23:23Z"
+     }
+    }
+   ],
+   "criteria": [
+    {
+     "id": "suite-valid",
+     "kind": "report_valid",
+     "step": "suite",
+     "result": "pass",
+     "detail": "validator exited 0 and the report is unchanged"
+    },
+    {
+     "id": "triage-valid",
+     "kind": "report_valid",
+     "step": "triage",
+     "result": "pass",
+     "detail": "validator exited 0 and the report is unchanged"
+    },
+    {
+     "id": "no-failed-tests",
+     "kind": "field_compare",
+     "step": "suite",
+     "result": "fail",
+     "detail": "results.totals.failed = 1, needs == 0"
+    },
+    {
+     "id": "no-real-failures",
+     "kind": "field_compare",
+     "step": "triage",
+     "result": "fail",
+     "detail": "summary.by_classification.real = 1, needs == 0"
+    }
+   ],
+   "decision": {
+    "kind": "approved_with_override",
+    "by": "QA lead",
+    "how": "in chat, 2026-11-12",
+    "at": "2026-11-11T14:23:24Z",
+    "override": "The failing test and the real failure are drafted as defects in the triage report; the QA lead accepts them into G4, where the release gate decides",
+    "failed_criteria": [
+     "no-failed-tests",
+     "no-real-failures"
+    ]
+   },
+   "history": []
+  },
+  {
+   "id": "G4",
+   "name": "Release ready",
+   "approver": "Release manager",
+   "status": "rejected",
+   "steps": [
+    {
+     "id": "gate",
+     "skill": "release-readiness-gate",
+     "required": true,
+     "report": "release-readiness-gate-skill/examples/rc-2026.11.2/gate_report.json",
+     "sha256": "6a24b94656de544faea6715d8ae152c2988b023a364ab0fffdcfb8c92b3dee71",
+     "validator": {
+      "command": "python ./release-readiness-gate-skill/scripts/validate_gate.py release-readiness-gate-skill/examples/rc-2026.11.2/gate_report.json --reports",
+      "cwd": null,
+      "exit_code": 0,
+      "output": [
+       "release-readiness-gate-skill\\examples\\rc-2026.11.2\\gate_report.json: valid. verdict no_go; 7 blocker(s), 1 waived, 2 missing, 1 warning(s); completeness 0.71, confidence medium"
+      ],
+      "at": "2026-11-11T14:23:24Z"
+     }
+    }
+   ],
+   "criteria": [
+    {
+     "id": "gate-valid",
+     "kind": "report_valid",
+     "step": "gate",
+     "result": "pass",
+     "detail": "validator exited 0 and the report is unchanged"
+    },
+    {
+     "id": "gate-go",
+     "kind": "field_in",
+     "step": "gate",
+     "result": "fail",
+     "detail": "headline.verdict = 'no_go' (allowed ['go'])"
+    }
+   ],
+   "decision": {
+    "kind": "rejected",
+    "by": "Release manager",
+    "how": "release meeting, 2026-11-12",
+    "at": "2026-11-11T14:23:24Z",
+    "reason": "Seven blockers, including three security P0s and the stale crash report; no release until a fresh gate report shows them fixed",
+    "failed_criteria": [
+     "gate-go"
+    ]
+   },
+   "history": []
+  },
+  {
+   "id": "G5",
+   "name": "Deployed",
+   "approver": "Release manager",
+   "status": "pending",
+   "steps": [
+    {
+     "id": "pvt",
+     "skill": "post-deploy-validator",
+     "required": true,
+     "report": null,
+     "sha256": null,
+     "validator": null
+    }
+   ],
+   "criteria": [],
+   "decision": null,
+   "history": []
+  },
+  {
+   "id": "G6",
+   "name": "Hypercare",
+   "approver": "On-call lead",
+   "status": "pending",
+   "steps": [
+    {
+     "id": "watch",
+     "skill": "hypercare-anomaly-watcher",
+     "required": true,
+     "report": null,
+     "sha256": null,
+     "validator": null
+    }
+   ],
+   "criteria": [],
+   "decision": null,
+   "history": []
+  }
+ ],
+ "events": [
+  {
+   "at": "2026-11-11T14:23:22Z",
+   "kind": "init",
+   "gate": "G1",
+   "subject": "Loyalty points at checkout, release 2026.12 (example: other skills' example reports stand in for one change's evidence)"
+  },
+  {
+   "at": "2026-11-11T14:23:22Z",
+   "kind": "record",
+   "gate": "G1",
+   "step": "readiness",
+   "report": "ticket-readiness-reviewer-skill/examples/batch.example.json",
+   "exit_code": 0
+  },
+  {
+   "at": "2026-11-11T14:23:22Z",
+   "kind": "evaluate",
+   "gate": "G1",
+   "result": "criteria_met"
+  },
+  {
+   "at": "2026-11-11T14:23:22Z",
+   "kind": "approve",
+   "gate": "G1",
+   "by": "QA lead",
+   "override": false
+  },
+  {
+   "at": "2026-11-11T14:23:22Z",
+   "kind": "start",
+   "gate": "G2"
+  },
+  {
+   "at": "2026-11-11T14:23:23Z",
+   "kind": "record",
+   "gate": "G2",
+   "step": "cases",
+   "report": "test-case-designer-skill/examples/test_cases.example.json",
+   "exit_code": 0
+  },
+  {
+   "at": "2026-11-11T14:23:23Z",
+   "kind": "evaluate",
+   "gate": "G2",
+   "result": "criteria_met"
+  },
+  {
+   "at": "2026-11-11T14:23:23Z",
+   "kind": "approve",
+   "gate": "G2",
+   "by": "QA lead",
+   "override": false
+  },
+  {
+   "at": "2026-11-11T14:23:23Z",
+   "kind": "start",
+   "gate": "G3"
+  },
+  {
+   "at": "2026-11-11T14:23:23Z",
+   "kind": "record",
+   "gate": "G3",
+   "step": "suite",
+   "report": "ci-suite-runner-skill/examples/runs/checkout-staging/suite_run.json",
+   "exit_code": 0
+  },
+  {
+   "at": "2026-11-11T14:23:23Z",
+   "kind": "record",
+   "gate": "G3",
+   "step": "triage",
+   "report": "ci-failure-triager-skill/examples/triage.example.json",
+   "exit_code": 0
+  },
+  {
+   "at": "2026-11-11T14:23:24Z",
+   "kind": "evaluate",
+   "gate": "G3",
+   "result": "criteria_failed"
+  },
+  {
+   "at": "2026-11-11T14:23:24Z",
+   "kind": "approve",
+   "gate": "G3",
+   "by": "QA lead",
+   "override": true
+  },
+  {
+   "at": "2026-11-11T14:23:24Z",
+   "kind": "start",
+   "gate": "G4"
+  },
+  {
+   "at": "2026-11-11T14:23:24Z",
+   "kind": "record",
+   "gate": "G4",
+   "step": "gate",
+   "report": "release-readiness-gate-skill/examples/rc-2026.11.2/gate_report.json",
+   "exit_code": 0
+  },
+  {
+   "at": "2026-11-11T14:23:24Z",
+   "kind": "evaluate",
+   "gate": "G4",
+   "result": "criteria_failed"
+  },
+  {
+   "at": "2026-11-11T14:23:24Z",
+   "kind": "reject",
+   "gate": "G4",
+   "by": "Release manager"
+  }
+ ]
+}

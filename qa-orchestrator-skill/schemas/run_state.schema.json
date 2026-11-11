@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/qa-skills/qa-orchestrator/run_state.schema.json",
+  "title": "QA orchestrator run state (state.json)",
+  "type": "object",
+  "required": ["schema_version", "skill", "run_id", "subject", "config_path", "config_sha256", "config", "state_dir", "state_in_temp", "skills_root", "created_at", "status", "gates", "events"],
+  "properties": {
+    "skill": {"type": "object", "properties": {"name": {"const": "qa-orchestrator"}}},
+    "status": {"enum": ["running", "stopped", "finished"]},
+    "gates": {"type": "array", "items": {"type": "object", "required": ["id", "name", "approver", "status", "steps", "criteria", "decision", "history"],
+      "properties": {
+        "status": {"enum": ["pending", "in_progress", "criteria_met", "criteria_failed", "approved", "rejected", "skipped"]},
+        "steps": {"type": "array", "items": {"type": "object", "required": ["id", "skill", "required", "report", "sha256", "validator"]}},
+        "criteria": {"type": "array", "items": {"type": "object", "required": ["id", "kind", "result", "detail"], "properties": {"result": {"enum": ["pass", "fail"]}}}},
+        "decision": {"type": ["object", "null"], "properties": {"kind": {"enum": ["approved", "approved_with_override", "auto_approved", "rejected", "skipped"]}}}}}},
+    "events": {"type": "array", "items": {"type": "object", "required": ["at", "kind", "gate"],
+      "properties": {"kind": {"enum": ["init", "start", "record", "evaluate", "approve", "auto_approve", "reject", "reopen"]}}}}
+  }
+}

@@ -362,6 +362,16 @@ python ci-suite-runner-skill/scripts/render_report.py ci-suite-runner-skill/exam
 
 Run `commands.sh` from `ci-suite-runner-skill/`: the records name the catalogue relative to it. It starts the stub on port 8170 with fake tokens; the agent's headline, next steps and limitations are added afterwards, then the records are validated. `run_suite.py trigger` starts real CI jobs when pointed at GitHub or Azure DevOps, and refuses without a covering grant or `--confirmed-by`; production needs the confirmation.
 
+QA orchestrator (`data/orchestrator.json` is the default seven gates; `examples/orchestrator.example.json` is a six-gate example configuration; `examples/state/` is a real run made by `examples/commands.sh`, in which other skills' example reports stand in for one change's evidence; the validator checks gate order, decisions, report hashes and criteria, and `--rerun` runs each step's validator again):
+
+```bash
+python qa-orchestrator-skill/scripts/validate_run.py qa-orchestrator-skill/examples/state [--rerun]
+python qa-orchestrator-skill/scripts/render_report.py qa-orchestrator-skill/examples/state [--brief | --markdown summary.md]
+python qa-orchestrator-skill/scripts/orchestrate.py status --state qa-orchestrator-skill/examples/state
+```
+
+Run these and `commands.sh` from the repo root: the run records report paths and validator commands relative to it. The run hashes the readiness, test case, CI suite, triage and release gate example reports, so editing any of them makes the validator report the change until `commands.sh` is rerun. A real run keeps its state in a temporary folder; the example uses `--state-dir` so it can be committed.
+
 Shared files:
 
 ```bash
