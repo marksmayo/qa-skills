@@ -1,0 +1,35 @@
+{
+  "site": "http://127.0.0.1:8147/",
+  "authorised_by": null,
+  "allow_form_submission": true,
+  "app_root": "#app",
+  "viewport": "1280x800",
+  "flows": [
+    {"name": "track", "critical_path": true, "steps": [
+      {"name": "open orders", "actions": [{"goto": "#orders"}], "done": "a.track"},
+      {"name": "open tracking", "actions": [{"click": "a.track"}], "done": ".status"}]},
+    {"name": "address", "critical_path": true, "write": true, "steps": [
+      {"name": "open form", "actions": [{"goto": "#address"}], "done": "#street"},
+      {"name": "save address", "input": {"#street": "1 Test Lane"}, "actions": [{"fill": "#street", "value": "1 Test Lane"}, {"click": "#save"}],
+       "done": "text=Address saved", "write": true}]},
+    {"name": "receive", "critical_path": false, "steps": [
+      {"name": "open tracking", "actions": [{"goto": "#track/P1001"}], "done": ".status"},
+      {"name": "mark received", "actions": [{"click": "#received"}], "done": ".received-state", "write": true}]},
+    {"name": "help", "critical_path": false, "steps": [
+      {"name": "open orders", "actions": [{"goto": "#orders"}], "done": "a.track"},
+      {"name": "open help", "actions": [{"click": "a.help"}], "done": ".help"}]}
+  ],
+  "scenarios": [
+    {"flow": "track", "step": "open tracking", "endpoint": "**/api/status/*", "fault": "hang"},
+    {"flow": "track", "step": "open tracking", "endpoint": "**/api/status/*", "fault": "http_500"},
+    {"flow": "track", "step": "open tracking", "endpoint": "**/api/status/*", "fault": "slow_3s"},
+    {"flow": "track", "step": "open orders", "endpoint": "**/api/orders", "fault": "http_500"},
+    {"flow": "track", "step": "open orders", "endpoint": "**/api/orders", "fault": "truncated_json"},
+    {"flow": "track", "step": "open orders", "endpoint": "**/api/recommendations", "fault": "partial_500"},
+    {"flow": "track", "step": "open orders", "endpoint": "**/api/notices", "fault": "http_503_retry_after"},
+    {"flow": "address", "step": "save address", "endpoint": "**/api/address", "fault": "http_500", "method": "POST"},
+    {"flow": "address", "step": "save address", "endpoint": "**/api/address", "fault": "offline"},
+    {"flow": "receive", "step": "mark received", "endpoint": "**/api/received/*", "fault": "http_500", "method": "POST"},
+    {"flow": "help", "step": "open help", "endpoint": "**/chunk-help.js", "fault": "asset_abort"}
+  ]
+}

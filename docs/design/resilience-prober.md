@@ -1,6 +1,6 @@
 # Design: `resilience-prober-skill`
 
-Status: Designed; not built. Build order: 21.
+Status: Built (v1.0.0). Build order: 21.
 
 ## Mission
 
@@ -252,3 +252,27 @@ Agreed with the user before the build.
 1. **Toxiproxy server-side faults in v1?** Later; v1 is browser-only.
 2. **Budgets?** 10 s for an error message to appear, 30 s before a spinner counts as endless.
 3. **Production HAR to weight reach by real traffic?** Optional input.
+
+## As built (v1.0.0)
+
+Where the build differs from the design above, and what the example showed.
+
+- **Delays are queued, not slept.** Playwright for Python's synchronous route handlers can't wait, so a
+  delayed or hung request is held and released by the runner's own polling loop.
+- **Faults on a flow's first step are installed before the page loads**, because that step's requests
+  (a notices poll, for example) start with the page. The first version installed them afterwards and
+  missed the retry storm.
+- **Expected outcomes are templates** from the step (read or write) and the fault group with the
+  budgets, written by `plan_scenarios.py` with a `planned_at` time the validator compares with each
+  run's start.
+- **Recovery** is the app's retry control, or the step's actions again without re-typing input and
+  without a reload.
+- **Merging:** the same effect at one step and endpoint across faults; no_recovery across a step's
+  endpoints; retry storms per endpoint. Not reproduced caps at P2.
+- **Baseline console errors** (the decoy font) are reported as notes.
+- **Not built:** recon from source, device profiles beyond one desktop, HAR weighting, GraphQL
+  operation matching, WebSocket closing, and the service-worker scenario set.
+- **Example results:** 11 scenarios, 8 fault types, all run twice after clean baselines; 9 findings
+  (6 P0, 3 P1), all reproduced, matching the seven planted defects plus one real one (the status page
+  ignores `r.ok`); both decoys produced notes only. The F1 repro script reproduces the lost input.
+- **Testing:** 13 of 13 seeded report violations are caught.

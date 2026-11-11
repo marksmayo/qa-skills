@@ -247,6 +247,16 @@ python i18n-checker-skill/scripts/icu_lite.py "{count, plural, one {# book} othe
 
 The report cites `examples/bookclub/` by file and line, so editing the site or its resources invalidates it until `commands.sh` is rerun from `i18n-checker-skill/` (the runtime step needs Playwright with Chromium).
 
+Resilience prober (`examples/parcel-tracker/` is the sample single-page app with a stub API and planted resilience problems; `examples/flows.json` the flows and scenarios; `examples/run/` is a real run, listed in `examples/run/commands.sh`, with screenshots and a repro script per finding):
+
+```bash
+python resilience-prober-skill/scripts/validate_resilience.py resilience-prober-skill/examples/resilience_report.example.json --run resilience-prober-skill/examples/run/run.json --scenarios resilience-prober-skill/examples/run/scenarios.json --candidates resilience-prober-skill/examples/run/candidates.json
+python resilience-prober-skill/scripts/render_report.py resilience-prober-skill/examples/resilience_report.example.json [--brief]
+python resilience-prober-skill/scripts/plan_scenarios.py resilience-prober-skill/examples/flows.json --plan-only
+```
+
+Re-running needs Playwright with Chromium and the app on loopback (`commands.sh` starts it); rerunning the plan rewrites `planned_at`, so rebuild the report afterwards.
+
 Shared files:
 
 ```bash

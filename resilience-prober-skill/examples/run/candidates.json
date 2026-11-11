@@ -1,0 +1,665 @@
+{
+ "scenarios": [
+  {
+   "id": "S01",
+   "status": "ran",
+   "effects": [
+    "endless_loading"
+   ]
+  },
+  {
+   "id": "S02",
+   "status": "ran",
+   "effects": [
+    "misleading_state"
+   ]
+  },
+  {
+   "id": "S03",
+   "status": "ran",
+   "effects": []
+  },
+  {
+   "id": "S04",
+   "status": "ran",
+   "effects": [
+    "misleading_state",
+    "no_recovery"
+   ]
+  },
+  {
+   "id": "S05",
+   "status": "ran",
+   "effects": [
+    "misleading_state",
+    "no_recovery"
+   ]
+  },
+  {
+   "id": "S06",
+   "status": "ran",
+   "effects": [
+    "crash_b2",
+    "no_recovery"
+   ]
+  },
+  {
+   "id": "S07",
+   "status": "ran",
+   "effects": [
+    "silent_failure",
+    "retry_storm"
+   ]
+  },
+  {
+   "id": "S08",
+   "status": "ran",
+   "effects": [
+    "silent_failure_write",
+    "lost_input"
+   ]
+  },
+  {
+   "id": "S09",
+   "status": "ran",
+   "effects": [
+    "silent_failure_write",
+    "lost_input"
+   ]
+  },
+  {
+   "id": "S10",
+   "status": "ran",
+   "effects": []
+  },
+  {
+   "id": "S11",
+   "status": "ran",
+   "effects": [
+    "chunk_failure"
+   ]
+  }
+ ],
+ "candidates": [
+  {
+   "id": "K1",
+   "effect": "lost_input",
+   "on_write": true,
+   "impact": "Stuck",
+   "impact_weight": 3,
+   "likelihood": 3,
+   "reach": 3,
+   "score": 27,
+   "priority": "P0",
+   "floors": [],
+   "confidence": "reproduced",
+   "flow": "address",
+   "step": "save address",
+   "endpoints": [
+    "**/api/address"
+   ],
+   "faults": [
+    "http_500",
+    "offline"
+   ],
+   "scenarios": [
+    "S08",
+    "S09"
+   ],
+   "critical_path": true,
+   "evidence": [
+    {
+     "scenario": "S08",
+     "run": "run1",
+     "measure": {
+      "field": "#street",
+      "before": {
+       "length": 11,
+       "sha256": "9fbd817ca1276486f42ac88e00961b92ad45301357603d0528ea6a93e55e9562"
+      },
+      "after": {
+       "length": 0,
+       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+     },
+     "screenshots": [
+      "S08.run1.fault.png",
+      "S08.run1.recovery.png"
+     ],
+     "requests": 2
+    },
+    {
+     "scenario": "S09",
+     "run": "run1",
+     "measure": {
+      "field": "#street",
+      "before": {
+       "length": 11,
+       "sha256": "9fbd817ca1276486f42ac88e00961b92ad45301357603d0528ea6a93e55e9562"
+      },
+      "after": {
+       "length": 0,
+       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+     },
+     "screenshots": [
+      "S09.run1.fault.png",
+      "S09.run1.recovery.png"
+     ],
+     "requests": 2
+    }
+   ]
+  },
+  {
+   "id": "K2",
+   "effect": "silent_failure",
+   "on_write": true,
+   "impact": "Misleading",
+   "impact_weight": 3,
+   "likelihood": 3,
+   "reach": 3,
+   "score": 27,
+   "priority": "P0",
+   "floors": [],
+   "confidence": "reproduced",
+   "flow": "address",
+   "step": "save address",
+   "endpoints": [
+    "**/api/address"
+   ],
+   "faults": [
+    "http_500",
+    "offline"
+   ],
+   "scenarios": [
+    "S08",
+    "S09"
+   ],
+   "critical_path": true,
+   "evidence": [
+    {
+     "scenario": "S08",
+     "run": "run1",
+     "measure": {
+      "message_budget_ms": 10000,
+      "watched_ms": 10694,
+      "error_shown": false
+     },
+     "screenshots": [
+      "S08.run1.fault.png",
+      "S08.run1.recovery.png"
+     ],
+     "requests": 2
+    },
+    {
+     "scenario": "S09",
+     "run": "run1",
+     "measure": {
+      "message_budget_ms": 10000,
+      "watched_ms": 10680,
+      "error_shown": false
+     },
+     "screenshots": [
+      "S09.run1.fault.png",
+      "S09.run1.recovery.png"
+     ],
+     "requests": 2
+    }
+   ]
+  },
+  {
+   "id": "K3",
+   "effect": "endless_loading",
+   "on_write": false,
+   "impact": "Stuck",
+   "impact_weight": 3,
+   "likelihood": 3,
+   "reach": 3,
+   "score": 27,
+   "priority": "P0",
+   "floors": [],
+   "confidence": "reproduced",
+   "flow": "track",
+   "step": "open tracking",
+   "endpoints": [
+    "**/api/status/*"
+   ],
+   "faults": [
+    "hang"
+   ],
+   "scenarios": [
+    "S01"
+   ],
+   "critical_path": true,
+   "evidence": [
+    {
+     "scenario": "S01",
+     "run": "run1",
+     "measure": {
+      "spinner_visible_after_ms": 30801
+     },
+     "screenshots": [
+      "S01.run1.fault.png",
+      "S01.run1.recovery.png"
+     ],
+     "requests": 1
+    }
+   ]
+  },
+  {
+   "id": "K4",
+   "effect": "misleading_state",
+   "on_write": false,
+   "impact": "Misleading",
+   "impact_weight": 3,
+   "likelihood": 3,
+   "reach": 3,
+   "score": 27,
+   "priority": "P0",
+   "floors": [],
+   "confidence": "reproduced",
+   "flow": "track",
+   "step": "open tracking",
+   "endpoints": [
+    "**/api/status/*"
+   ],
+   "faults": [
+    "http_500"
+   ],
+   "scenarios": [
+    "S02"
+   ],
+   "critical_path": true,
+   "evidence": [
+    {
+     "scenario": "S02",
+     "run": "run1",
+     "measure": {
+      "empty_state_words": [
+       "none yet"
+      ],
+      "baseline_excerpt": "My parcels Delivery address Help\nDeliveries run as normal this week.\nP1001: In transit\n\nLast scan: Sorting centre\n\nMark ",
+      "shown_excerpt": "My parcels Delivery address Help\nDeliveries run as normal this week.\nundefined: undefined\n\nLast scan: none yet\n\nMark as "
+     },
+     "screenshots": [
+      "S02.run1.fault.png",
+      "S02.run1.recovery.png"
+     ],
+     "requests": 1
+    }
+   ]
+  },
+  {
+   "id": "K5",
+   "effect": "misleading_state",
+   "on_write": false,
+   "impact": "Misleading",
+   "impact_weight": 3,
+   "likelihood": 3,
+   "reach": 3,
+   "score": 27,
+   "priority": "P0",
+   "floors": [],
+   "confidence": "reproduced",
+   "flow": "track",
+   "step": "open orders",
+   "endpoints": [
+    "**/api/orders"
+   ],
+   "faults": [
+    "http_500",
+    "truncated_json"
+   ],
+   "scenarios": [
+    "S04",
+    "S05"
+   ],
+   "critical_path": true,
+   "evidence": [
+    {
+     "scenario": "S04",
+     "run": "run1",
+     "measure": {
+      "empty_state_words": [
+       "no parcels",
+       "you have no"
+      ],
+      "baseline_excerpt": "My parcels Delivery address Help\nDeliveries run as normal this week.\nYour parcels\nP1001 from Test Books Track\nP1002 from",
+      "shown_excerpt": "My parcels Delivery address Help\nDeliveries run as normal this week.\nYou have no parcels yet\nGood to know\nTrack by SMS\nC"
+     },
+     "screenshots": [
+      "S04.run1.fault.png",
+      "S04.run1.recovery.png"
+     ],
+     "requests": 2
+    },
+    {
+     "scenario": "S05",
+     "run": "run1",
+     "measure": {
+      "empty_state_words": [
+       "no parcels",
+       "you have no"
+      ],
+      "baseline_excerpt": "My parcels Delivery address Help\nDeliveries run as normal this week.\nYour parcels\nP1001 from Test Books Track\nP1002 from",
+      "shown_excerpt": "My parcels Delivery address Help\nDeliveries run as normal this week.\nYou have no parcels yet\nGood to know\nTrack by SMS\nC"
+     },
+     "screenshots": [
+      "S05.run1.fault.png",
+      "S05.run1.recovery.png"
+     ],
+     "requests": 2
+    }
+   ]
+  },
+  {
+   "id": "K6",
+   "effect": "no_recovery",
+   "on_write": false,
+   "impact": "Stuck",
+   "impact_weight": 3,
+   "likelihood": 3,
+   "reach": 3,
+   "score": 27,
+   "priority": "P0",
+   "floors": [],
+   "confidence": "reproduced",
+   "flow": "track",
+   "step": "open orders",
+   "endpoints": [
+    "**/api/orders",
+    "**/api/recommendations"
+   ],
+   "faults": [
+    "http_500",
+    "truncated_json",
+    "partial_500"
+   ],
+   "scenarios": [
+    "S04",
+    "S05",
+    "S06"
+   ],
+   "critical_path": true,
+   "evidence": [
+    {
+     "scenario": "S04",
+     "run": "run1",
+     "measure": {
+      "recovery": "repeat_step",
+      "retry_controls": []
+     },
+     "screenshots": [
+      "S04.run1.fault.png",
+      "S04.run1.recovery.png"
+     ],
+     "requests": 2
+    },
+    {
+     "scenario": "S05",
+     "run": "run1",
+     "measure": {
+      "recovery": "repeat_step",
+      "retry_controls": []
+     },
+     "screenshots": [
+      "S05.run1.fault.png",
+      "S05.run1.recovery.png"
+     ],
+     "requests": 2
+    },
+    {
+     "scenario": "S06",
+     "run": "run1",
+     "measure": {
+      "recovery": "repeat_step",
+      "retry_controls": []
+     },
+     "screenshots": [
+      "S06.run1.fault.png",
+      "S06.run1.recovery.png"
+     ],
+     "requests": 2
+    }
+   ]
+  },
+  {
+   "id": "K7",
+   "effect": "crash_b2",
+   "on_write": false,
+   "impact": "Fatal",
+   "impact_weight": 4,
+   "likelihood": 2,
+   "reach": 3,
+   "score": 24,
+   "priority": "P1",
+   "floors": [],
+   "confidence": "reproduced",
+   "flow": "track",
+   "step": "open orders",
+   "endpoints": [
+    "**/api/recommendations"
+   ],
+   "faults": [
+    "partial_500"
+   ],
+   "scenarios": [
+    "S06"
+   ],
+   "critical_path": true,
+   "evidence": [
+    {
+     "scenario": "S06",
+     "run": "run1",
+     "measure": {
+      "fallback_words": [
+       "please reload",
+       "something went wrong"
+      ],
+      "page_errors": [],
+      "root_len": 45
+     },
+     "screenshots": [
+      "S06.run1.fault.png",
+      "S06.run1.recovery.png"
+     ],
+     "requests": 2
+    }
+   ]
+  },
+  {
+   "id": "K8",
+   "effect": "chunk_failure",
+   "on_write": false,
+   "impact": "Stuck",
+   "impact_weight": 3,
+   "likelihood": 3,
+   "reach": 2,
+   "score": 18,
+   "priority": "P1",
+   "floors": [],
+   "confidence": "reproduced",
+   "flow": "help",
+   "step": "open help",
+   "endpoints": [
+    "**/chunk-help.js"
+   ],
+   "faults": [
+    "asset_abort"
+   ],
+   "scenarios": [
+    "S11"
+   ],
+   "critical_path": false,
+   "evidence": [
+    {
+     "scenario": "S11",
+     "run": "run1",
+     "measure": {
+      "app_root_chars": 0,
+      "request": {
+       "method": "GET",
+       "t_ms": 942,
+       "url": "http://127.0.0.1:8147/chunk-help.js",
+       "status": null,
+       "failure": "net::ERR_FAILED"
+      }
+     },
+     "screenshots": [
+      "S11.run1.fault.png",
+      "S11.run1.recovery.png"
+     ],
+     "requests": 1
+    }
+   ]
+  },
+  {
+   "id": "K9",
+   "effect": "retry_storm",
+   "on_write": false,
+   "impact": "Friction",
+   "impact_weight": 2,
+   "likelihood": 3,
+   "reach": 3,
+   "score": 18,
+   "priority": "P1",
+   "floors": [],
+   "confidence": "reproduced",
+   "flow": "track",
+   "step": "open orders",
+   "endpoints": [
+    "**/api/notices"
+   ],
+   "faults": [
+    "http_503_retry_after"
+   ],
+   "scenarios": [
+    "S07"
+   ],
+   "critical_path": true,
+   "evidence": [
+    {
+     "scenario": "S07",
+     "run": "run1",
+     "measure": {
+      "requests": 12,
+      "span_ms": 2351,
+      "gaps_ms": [
+       212,
+       204,
+       219,
+       218,
+       218,
+       203,
+       204,
+       218,
+       219,
+       217,
+       219
+      ],
+      "retry_after_ignored": 11,
+      "growing_gaps": false
+     },
+     "screenshots": [
+      "S07.run1.fault.png",
+      "S07.run1.recovery.png"
+     ],
+     "requests": 12
+    }
+   ]
+  },
+  {
+   "id": "K10",
+   "effect": "silent_failure",
+   "on_write": false,
+   "impact": "Friction",
+   "impact_weight": 2,
+   "likelihood": 3,
+   "reach": 3,
+   "score": 18,
+   "priority": "P1",
+   "floors": [],
+   "confidence": "reproduced",
+   "flow": "track",
+   "step": "open orders",
+   "endpoints": [
+    "**/api/notices"
+   ],
+   "faults": [
+    "http_503_retry_after"
+   ],
+   "scenarios": [
+    "S07"
+   ],
+   "critical_path": true,
+   "evidence": [
+    {
+     "scenario": "S07",
+     "run": "run1",
+     "measure": {
+      "message_budget_ms": 10000,
+      "watched_ms": 2200,
+      "error_shown": false
+     },
+     "screenshots": [
+      "S07.run1.fault.png",
+      "S07.run1.recovery.png"
+     ],
+     "requests": 12
+    }
+   ]
+  }
+ ],
+ "notes": [
+  {
+   "kind": "console_only",
+   "detail": [
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+   ],
+   "scenario": "S10"
+  },
+  {
+   "kind": "console_only",
+   "detail": [
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+   ],
+   "scenario": "S10"
+  },
+  {
+   "kind": "console_only",
+   "detail": [
+    "Failed to load resource: the server responded with a status of 404 (Not Found)"
+   ],
+   "scenario": null,
+   "flow": "track",
+   "in_baseline": true
+  },
+  {
+   "kind": "console_only",
+   "detail": [
+    "Failed to load resource: the server responded with a status of 404 (Not Found)"
+   ],
+   "scenario": null,
+   "flow": "address",
+   "in_baseline": true
+  },
+  {
+   "kind": "console_only",
+   "detail": [
+    "Failed to load resource: the server responded with a status of 404 (Not Found)"
+   ],
+   "scenario": null,
+   "flow": "receive",
+   "in_baseline": true
+  },
+  {
+   "kind": "console_only",
+   "detail": [
+    "Failed to load resource: the server responded with a status of 404 (Not Found)"
+   ],
+   "scenario": null,
+   "flow": "help",
+   "in_baseline": true
+  }
+ ]
+}

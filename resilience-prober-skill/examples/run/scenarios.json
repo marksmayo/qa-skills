@@ -1,0 +1,145 @@
+{
+ "planned_at": "2026-11-11T09:06:16Z",
+ "budgets": {
+  "message_ms": 10000,
+  "spinner_ms": 30000,
+  "retry_window_ms": 30000,
+  "retry_storm_requests": 10
+ },
+ "scenarios": [
+  {
+   "id": "S01",
+   "flow": "track",
+   "step": "open tracking",
+   "endpoint": "**/api/status/*",
+   "fault": "hang",
+   "group": "timeout",
+   "likelihood": 3,
+   "critical_path": true,
+   "write": false,
+   "expected": "Within 10 s the user sees an error message (role=alert or error wording) instead of a spinner running past 30 s; no blank or crashed screen; data is never shown as empty because of the failure; after the fault is removed the step completes without a full reload."
+  },
+  {
+   "id": "S02",
+   "flow": "track",
+   "step": "open tracking",
+   "endpoint": "**/api/status/*",
+   "fault": "http_500",
+   "group": "server_error",
+   "likelihood": 3,
+   "critical_path": true,
+   "write": false,
+   "expected": "Within 10 s the user sees an error message (role=alert or error wording) instead of a spinner running past 30 s; no blank or crashed screen; data is never shown as empty because of the failure; after the fault is removed the step completes without a full reload."
+  },
+  {
+   "id": "S03",
+   "flow": "track",
+   "step": "open tracking",
+   "endpoint": "**/api/status/*",
+   "fault": "slow_3s",
+   "group": "latency",
+   "likelihood": 3,
+   "critical_path": true,
+   "write": false,
+   "expected": "The step completes once the response arrives; any spinner stops, and no error is shown for a slow but successful response."
+  },
+  {
+   "id": "S04",
+   "flow": "track",
+   "step": "open orders",
+   "endpoint": "**/api/orders",
+   "fault": "http_500",
+   "group": "server_error",
+   "likelihood": 3,
+   "critical_path": true,
+   "write": false,
+   "expected": "Within 10 s the user sees an error message (role=alert or error wording) instead of a spinner running past 30 s; no blank or crashed screen; data is never shown as empty because of the failure; after the fault is removed the step completes without a full reload."
+  },
+  {
+   "id": "S05",
+   "flow": "track",
+   "step": "open orders",
+   "endpoint": "**/api/orders",
+   "fault": "truncated_json",
+   "group": "payload",
+   "likelihood": 1,
+   "critical_path": true,
+   "write": false,
+   "expected": "Within 10 s the user sees an error message (role=alert or error wording) instead of a spinner running past 30 s; no blank or crashed screen; data is never shown as empty because of the failure; after the fault is removed the step completes without a full reload."
+  },
+  {
+   "id": "S06",
+   "flow": "track",
+   "step": "open orders",
+   "endpoint": "**/api/recommendations",
+   "fault": "partial_500",
+   "group": "partial",
+   "likelihood": 2,
+   "critical_path": true,
+   "write": false,
+   "expected": "Within 10 s the user sees an error message (role=alert or error wording) instead of a spinner running past 30 s; no blank or crashed screen; data is never shown as empty because of the failure; after the fault is removed the step completes without a full reload."
+  },
+  {
+   "id": "S07",
+   "flow": "track",
+   "step": "open orders",
+   "endpoint": "**/api/notices",
+   "fault": "http_503_retry_after",
+   "group": "server_error",
+   "likelihood": 3,
+   "critical_path": true,
+   "write": false,
+   "expected": "Within 10 s the user sees an error message (role=alert or error wording) instead of a spinner running past 30 s; no blank or crashed screen; data is never shown as empty because of the failure; no more than 10 requests in 30 s and none before Retry-After; after the fault is removed the step completes without a full reload."
+  },
+  {
+   "id": "S08",
+   "flow": "address",
+   "step": "save address",
+   "endpoint": "**/api/address",
+   "fault": "http_500",
+   "method": "POST",
+   "group": "server_error",
+   "likelihood": 3,
+   "critical_path": true,
+   "write": true,
+   "expected": "Within 10 s the user sees an error message (role=alert or error wording) instead of a spinner running past 30 s; no blank or crashed screen; data is never shown as empty because of the failure; the typed input is kept; the action is never shown as done; after the fault is removed the step completes without a full reload."
+  },
+  {
+   "id": "S09",
+   "flow": "address",
+   "step": "save address",
+   "endpoint": "**/api/address",
+   "fault": "offline",
+   "group": "offline",
+   "likelihood": 3,
+   "critical_path": true,
+   "write": true,
+   "expected": "Within 10 s the user sees an error message (role=alert or error wording) instead of a spinner running past 30 s; no blank or crashed screen; data is never shown as empty because of the failure; the typed input is kept; the action is never shown as done; after the fault is removed the step completes without a full reload."
+  },
+  {
+   "id": "S10",
+   "flow": "receive",
+   "step": "mark received",
+   "endpoint": "**/api/received/*",
+   "fault": "http_500",
+   "method": "POST",
+   "group": "server_error",
+   "likelihood": 3,
+   "critical_path": false,
+   "write": true,
+   "expected": "Within 10 s the user sees an error message (role=alert or error wording) instead of a spinner running past 30 s; no blank or crashed screen; data is never shown as empty because of the failure; the typed input is kept; the action is never shown as done; after the fault is removed the step completes without a full reload."
+  },
+  {
+   "id": "S11",
+   "flow": "help",
+   "step": "open help",
+   "endpoint": "**/chunk-help.js",
+   "fault": "asset_abort",
+   "group": "static_asset",
+   "likelihood": 3,
+   "critical_path": false,
+   "write": false,
+   "expected": "The screen keeps its content or shows an error within 10 s; no blank screen."
+  }
+ ]
+}

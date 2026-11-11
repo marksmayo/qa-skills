@@ -27,7 +27,7 @@ anatomy described in the root `CLAUDE.md` (`SKILL.md`, `RUBRIC.md`, `schemas/`, 
 | 18 | [Visual regression reviewer](visual-regression-reviewer.md) | `visual-regression-reviewer-skill/` | Built (v1.0.0) |
 | 19 | [Cross-browser checker](cross-browser-checker.md) | `cross-browser-checker-skill/` | Built (v1.0.0) |
 | 20 | [Internationalisation checker](i18n-checker.md) | `i18n-checker-skill/` | Built (v1.0.0) |
-| 21 | [Resilience prober](resilience-prober.md) | `resilience-prober-skill/` | Designed |
+| 21 | [Resilience prober](resilience-prober.md) | `resilience-prober-skill/` | Built (v1.0.0) |
 | 22 | [Database migration reviewer](db-migration-reviewer.md) | `db-migration-reviewer-skill/` | Designed |
 | 23 | [Privacy flow auditor](privacy-flow-auditor.md) | `privacy-flow-auditor-skill/` | Designed |
 | 24 | [Mobile app auditor](mobile-app-auditor.md) | `mobile-app-auditor-skill/` | Designed |

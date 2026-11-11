@@ -1,0 +1,9 @@
+@font-face { font-family: "Parcel Sans"; src: url("fonts/parcel-sans.woff2") format("woff2"); }
+body { margin: 0; font-family: "Parcel Sans", Arial, Helvetica, sans-serif; color: #1f2a37; }
+header { padding: 12px 24px; background: #0f5c4d; }
+header a { color: #fff; margin-right: 16px; }
+#notice { padding: 6px 24px; background: #eef7f4; min-height: 1em; }
+main { padding: 24px; }
+.spinner { width: 24px; height: 24px; border: 3px solid #ccc; border-top-color: #0f5c4d; border-radius: 50%; }
+.error { color: #b42318; }
+.recs { margin-top: 24px; border-top: 1px solid #ddd; padding-top: 12px; }

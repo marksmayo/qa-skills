@@ -1,0 +1,11 @@
+{
+  "note": "Patterns for what the user sees. Edit for a product's own wording; the report records the version used.",
+  "spinner_selectors": ["[role=progressbar]", "[aria-busy=true]", ".spinner", ".loading", ".loader", ".skeleton", ".MuiCircularProgress-root"],
+  "error_selectors": ["[role=alert]", ".error", ".alert-danger", ".toast-error", ".Mui-error"],
+  "error_words": ["error", "couldn't", "could not", "can't", "cannot", "failed", "unable", "try again", "something went wrong", "went wrong",
+                  "problem", "unavailable", "offline", "no connection", "timed out", "retry"],
+  "empty_state_words": ["no parcels", "no orders", "nothing here", "no results", "no items", "is empty", "you have no", "none yet"],
+  "boundary_fallback_words": ["something went wrong", "unexpected error", "please reload"],
+  "retry_control_names": ["retry", "try again", "reload", "refresh"],
+  "budgets": {"message_ms": 10000, "spinner_ms": 30000, "retry_window_ms": 30000, "retry_storm_requests": 10}
+}

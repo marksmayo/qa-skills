@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/qa-skills/resilience-prober/resilience_report.schema.json",
+  "title": "Resilience report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["skill", "scope", "metadata", "baseline", "scenarios", "findings", "notes", "coverage", "headline", "needs_review", "triage", "limitations"],
+  "properties": {
+    "skill": {"type": "object", "additionalProperties": false, "required": ["name", "version"],
+              "properties": {"name": {"enum": ["resilience-prober"]}, "version": {"type": "string"}}},
+    "scope": {"type": "object", "additionalProperties": false, "required": ["target", "authorised_by", "devices", "flows", "faults", "budgets"],
+              "properties": {"target": {"type": "string"}, "authorised_by": {"type": ["string", "null"]}, "devices": {"type": "array", "items": {"type": "string"}},
+                             "flows": {"type": "array", "minItems": 1}, "faults": {"type": "array", "items": {"type": "string"}}, "budgets": {"type": "object"}}},
+    "metadata": {"type": "object", "additionalProperties": false, "required": ["generated_at", "browser", "tools", "har", "blocked_requests"],
+                 "properties": {"generated_at": {"type": "string"}, "browser": {"type": "object"}, "tools": {"type": "array"},
+                                "har": {"type": ["string", "null"]}, "blocked_requests": {"type": "integer"}}},
+    "baseline": {"type": "object"},
+    "scenarios": {"type": "array", "items": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "flow", "step", "endpoint", "fault", "expected", "status", "effects", "runs", "screenshots"],
+      "properties": {"id": {"type": "string"}, "flow": {"type": "string"}, "step": {"type": "string"}, "endpoint": {"type": "string"},
+                     "fault": {"type": "string"}, "expected": {"type": "string", "minLength": 20},
+                     "status": {"enum": ["ran", "untested", "errored"]}, "effects": {"type": "array", "items": {"type": "string"}},
+                     "runs": {"type": "integer"}, "screenshots": {"type": "array", "items": {"type": "string"}}}}},
+    "findings": {"type": "array", "items": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "candidate_id", "title", "effect", "on_write", "impact", "likelihood", "reach", "score", "priority", "confidence", "floors",
+                   "flow", "step", "endpoints", "faults", "scenarios", "expected", "actual", "user_impact", "evidence", "repro", "fix",
+                   "verification_step"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^F[0-9]+$"}, "candidate_id": {"type": "string"}, "title": {"type": "string", "minLength": 10},
+        "effect": {"enum": ["crash_b1", "crash_b2", "blank_screen", "chunk_failure", "endless_loading", "silent_failure", "misleading_state",
+                            "lost_input", "no_recovery", "retry_storm"]},
+        "on_write": {"type": "boolean"}, "impact": {"enum": ["Fatal", "Stuck", "Misleading", "Friction"]},
+        "likelihood": {"enum": [1, 2, 3]}, "reach": {"enum": [1, 2, 3]}, "score": {"type": "integer"}, "priority": {"enum": ["P0", "P1", "P2", "P3"]},
+        "confidence": {"enum": ["reproduced", "observed"]}, "floors": {"type": "array", "items": {"type": "string"}},
+        "flow": {"type": "string"}, "step": {"type": "string"}, "endpoints": {"type": "array", "minItems": 1}, "faults": {"type": "array", "minItems": 1},
+        "scenarios": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "expected": {"type": "string", "minLength": 20}, "actual": {"type": "string", "minLength": 10}, "user_impact": {"type": "string", "minLength": 10},
+        "evidence": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["scenario", "run", "measure", "screenshots", "requests"]}},
+        "repro": {"type": "object", "required": ["flow", "step", "fault", "endpoint", "script"]},
+        "fix": {"type": "string", "minLength": 10}, "verification_step": {"type": "string", "minLength": 10}
+      }}},
+    "notes": {"type": "array"},
+    "coverage": {"type": "object"},
+    "headline": {"type": "object", "additionalProperties": false,
+                 "required": ["summary", "priority_counts", "flows_with_p0", "scenarios_run", "scenarios_planned", "overall_confidence"],
+                 "properties": {"summary": {"type": "string", "minLength": 20}, "priority_counts": {"type": "object"},
+                                "flows_with_p0": {"type": "array", "items": {"type": "string"}}, "scenarios_run": {"type": "integer"},
+                                "scenarios_planned": {"type": "integer"}, "overall_confidence": {"enum": ["high", "medium", "low"]}}},
+    "needs_review": {"type": "array", "items": {"type": "object", "required": ["candidate_id", "reason"]}},
+    "triage": {"type": "array", "items": {
+      "type": "object", "additionalProperties": false, "required": ["candidate_id", "decision", "finding_id", "reason"],
+      "properties": {"candidate_id": {"type": "string"}, "decision": {"enum": ["promoted", "needs_review", "dismissed"]},
+                     "finding_id": {"type": ["string", "null"]}, "reason": {"type": "string", "minLength": 10}}}},
+    "limitations": {"type": "array", "items": {"type": "string"}}
+  }
+}
