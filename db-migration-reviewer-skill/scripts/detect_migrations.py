@@ -5,11 +5,13 @@
 
 Tools: Alembic (Python AST of upgrade() and downgrade(): op.* calls become the SQL they run, op.execute SQL
 is split), Django (the operations list: AddField, RemoveField, RenameField, AlterField, AddIndex, RunSQL,
-RunPython), and SQL files (Flyway V__/U__, Prisma migration.sql, any other .sql). Rails, Knex and Liquibase
-are listed as not parsed in this version.
+RunPython), Knex (the schema builder, knex.raw SQL and knex('table') deletes and updates in up and down, by
+source pattern; anything else is listed as not analysed), and SQL files (Flyway V__/U__, Prisma migration.sql,
+any other .sql). Rails and Liquibase are listed as not parsed in this version.
 
-Engine and version: --engine/--engine-version, else alembic.ini or settings URLs (postgresql://, mysql://), and
-docker-compose image tags (postgres:16.4). Without a version, the oldest the repository claims is assumed and
+Engine and version: --engine/--engine-version, else settings URLs (postgresql://, mysql://), infrastructure
+(CloudFormation or Terraform Engine and EngineVersion), and docker-compose or Dockerfile image tags (postgres:16.4,
+also behind a registry prefix). Without a version, the oldest the repository claims is assumed and
 the output says so.
 
 The pending set: --since <revision> (everything after it in the chain), --migrations a,b, or all.
@@ -188,6 +190,322 @@ def parse_django(path: Path) -> dict:
     return rec
 
 
+KNEX_TYPES = {'increments': 'SERIAL', 'bigIncrements': 'BIGSERIAL', 'integer': 'INTEGER', 'bigInteger': 'BIGINT', 'bigint': 'BIGINT',
+              'smallint': 'SMALLINT', 'tinyint': 'SMALLINT', 'mediumint': 'INTEGER', 'text': 'TEXT', 'string': 'VARCHAR', 'float': 'REAL',
+              'double': 'DOUBLE PRECISION', 'decimal': 'NUMERIC', 'boolean': 'BOOLEAN', 'date': 'DATE', 'datetime': 'TIMESTAMP',
+              'timestamp': 'TIMESTAMP', 'time': 'TIME', 'binary': 'BYTEA', 'json': 'JSON', 'jsonb': 'JSONB', 'uuid': 'UUID',
+              'enum': 'TEXT', 'enu': 'TEXT', 'specificType': None}
+KNEX_SCHEMA = re.compile(r'\.(createTable|createTableIfNotExists|alterTable|table|dropTable|dropTableIfExists|renameTable|raw)\s*\(')
+OPENERS = {'(': ')', '[': ']', '{': '}'}
+
+
+def js_mask(text: str) -> str:
+    """The text with comments and string contents blanked (quotes and newlines kept), so offsets still match."""
+    out, i, n = list(text), 0, len(text)
+
+    def blank(a: int, b: int):
+        for k in range(a, b):
+            if out[k] != '\n':
+                out[k] = ' '
+    while i < n:
+        if text.startswith('//', i):
+            j = text.find('\n', i)
+            j = n if j < 0 else j
+            blank(i, j)
+            i = j
+        elif text.startswith('/*', i):
+            j = text.find('*/', i + 2)
+            j = n if j < 0 else j + 2
+            blank(i, j)
+            i = j
+        elif text[i] in '\'"`':
+            q, j = text[i], i + 1
+            while j < n and text[j] != q:
+                j += 2 if text[j] == '\\' else 1
+            blank(i + 1, min(j, n))
+            i = j + 1
+        else:
+            i += 1
+    return ''.join(out)
+
+
+def js_close(masked: str, i: int) -> int:
+    """Index of the bracket closing the one at i (or the end of the text)."""
+    stack = []
+    for j in range(i, len(masked)):
+        c = masked[j]
+        if c in OPENERS:
+            stack.append(OPENERS[c])
+        elif stack and c == stack[-1]:
+            stack.pop()
+            if not stack:
+                return j
+    return len(masked) - 1
+
+
+def js_args(text: str, masked: str, open_i: int) -> list[str]:
+    """The top-level arguments of the call whose '(' is at open_i, as source text."""
+    close, args, depth, start = js_close(masked, open_i), [], 0, open_i + 1
+    for j in range(open_i + 1, close):
+        c = masked[j]
+        if c in OPENERS:
+            depth += 1
+        elif c in ')]}':
+            depth -= 1
+        elif c == ',' and depth == 0:
+            args.append(text[start:j].strip())
+            start = j + 1
+    if text[start:close].strip():
+        args.append(text[start:close].strip())
+    return args
+
+
+def js_str(arg: str | None):
+    """A JavaScript string literal's value; a list for an array of literals; None otherwise."""
+    if not arg:
+        return None
+    arg = arg.strip()
+    if arg[:1] in '\'"`' and arg[-1:] == arg[:1] and (arg[0] != '`' or '${' not in arg):
+        return arg[1:-1]
+    if arg.startswith('[') and arg.endswith(']'):
+        items = [js_str(x) for x in re.split(r'\s*,\s*', arg[1:-1].strip()) if x]
+        return items if all(isinstance(x, str) for x in items) else None
+    return None
+
+
+def js_chain(text: str, masked: str, open_i: int) -> tuple[list[tuple[str, list[str]]], int]:
+    """Calls chained after the call at open_i: [(method, args)] and the index after the chain."""
+    chain, j = [], js_close(masked, open_i) + 1
+    while True:
+        m = re.compile(r'\s*\.\s*(\w+)\s*\(').match(masked, j)
+        if not m:
+            return chain, j
+        o = m.end() - 1
+        chain.append((m.group(1), js_args(text, masked, o)))
+        j = js_close(masked, o) + 1
+
+
+def js_function(masked: str, name: str) -> tuple[int, int, str] | None:
+    """(start, end, first parameter) of the body of the migration's up or down function."""
+    sig = r'\(\s*(\w*)[^)]*\)(?:\s*:\s*[\w<>\[\]., ]+)?\s*'
+    for pat in (rf'\b{name}\s*[=:]\s*(?:async\s+)?(?:function\b[^(]*)?{sig}(=>\s*)?', rf'\bfunction\s+{name}\s*{sig}()'):
+        m = re.search(pat, masked)
+        if not m:
+            continue
+        j = m.end()
+        if masked[j:j + 1] == '{':
+            return j + 1, js_close(masked, j), m.group(1) or 'knex'
+        if m.group(2):  # expression-bodied arrow function: up to the end of the statement
+            depth, k = 0, j
+            while k < len(masked):
+                c = masked[k]
+                if c in OPENERS:
+                    depth += 1
+                elif c in ')]}':
+                    if depth == 0:
+                        break
+                    depth -= 1
+                elif c == ';' and depth == 0:
+                    break
+                k += 1
+            return j, k, m.group(1) or 'knex'
+    return None
+
+
+def knex_column(method: str, args: list[str], mods: list[tuple[str, list[str]]]) -> tuple[str, str]:
+    name = js_str(args[0]) if args else 'id' if method in ('increments', 'bigIncrements') else '?'
+    if method == 'specificType':
+        typ = (js_str(args[1]) if len(args) > 1 else None) or '?'
+    else:
+        typ = KNEX_TYPES[method]
+        if method == 'string':
+            typ += f'({args[1] if len(args) > 1 and args[1].isdigit() else 255})'
+        if method == 'decimal' and len(args) > 2 and args[1].isdigit() and args[2].isdigit():
+            typ += f'({args[1]},{args[2]})'
+        elif method == 'decimal':
+            typ += '(8,2)'
+    parts = [name, typ]
+    names = [m for m, _ in mods]
+    if 'primary' in names:
+        parts.append('PRIMARY KEY')
+    elif 'notNullable' in names:
+        parts.append('NOT NULL')
+    for m, a in mods:
+        if m == 'defaultTo' and a:
+            v = a[0].strip()
+            if 'fn.now' in v:
+                v = 'now()'
+            elif v.startswith(('knex.raw', 'db.raw')):
+                v = js_str(re.sub(r'^\w+\.raw\s*\(|\)$', '', v)) or v
+            elif js_str(v) is not None:
+                v = f"'{js_str(v)}'"
+            parts.append(f'DEFAULT {v}')
+    return name, ' '.join(parts)
+
+
+def knex_ref(mods: list[tuple[str, list[str]]]) -> str:
+    """The referenced table of .references('col').inTable('t') or .references('t.col')."""
+    d = dict(mods)
+    ref = js_str((d.get('references') or [None])[0]) or '?'
+    table = js_str((d.get('inTable') or [None])[0])
+    return f'{table} ({ref})' if table else (f'{ref.rsplit(".", 1)[0]} ({ref.rsplit(".", 1)[1]})' if '.' in ref else ref)
+
+
+def knex_builder(text: str, masked: str, start: int, end: int, param: str, table: str, creating: bool, line_of) -> tuple[list[dict], list[dict], list[str]]:
+    """Translate a createTable/alterTable callback body into statements; returns (statements, not analysed, CREATE TABLE columns)."""
+    stmts, skipped, cols = [], [], []
+
+    def add(i: int, sql: str, via: str):
+        stmts.append({'line': line_of(i), 'sql': sql, 'via': f'knex {via}'})
+    for m in re.finditer(rf'\b{re.escape(param)}\s*\.\s*(\w+)\s*\(', masked[start:end]):
+        i = start + m.start()
+        method, o = m.group(1), start + m.end() - 1
+        args = js_args(text, masked, o)
+        mods, after = js_chain(text, masked, o)
+        names = [x for x, _ in mods]
+        a0 = js_str(args[0]) if args else None
+        cols_list = a0 if isinstance(a0, list) else [a0] if a0 else []
+        if method in KNEX_TYPES:
+            col, sql = knex_column(method, args, mods)
+            if creating:
+                cols.append(sql)
+                continue
+            if 'alter' in names:
+                add(i, f'ALTER TABLE {table} ALTER COLUMN {col} TYPE {sql.split(" ")[1]}', f'{method}().alter()')
+                if 'notNullable' in names:
+                    add(i, f'ALTER TABLE {table} ALTER COLUMN {col} SET NOT NULL', 'notNullable().alter()')
+                if 'nullable' in names:
+                    add(i, f'ALTER TABLE {table} ALTER COLUMN {col} DROP NOT NULL', 'nullable().alter()')
+                continue
+            add(i, f'ALTER TABLE {table} ADD COLUMN {sql}', f'{method}()')
+            if 'unique' in names:
+                add(i, f'ALTER TABLE {table} ADD CONSTRAINT ? UNIQUE ({col})', f'{method}().unique()')
+            if 'index' in names:
+                add(i, f'CREATE INDEX ? ON {table} ({col})', f'{method}().index()')
+            if 'references' in names:
+                add(i, f'ALTER TABLE {table} ADD FOREIGN KEY ({col}) REFERENCES {knex_ref(mods)}', f'{method}().references()')
+        elif method == 'timestamps':
+            if creating:
+                cols += ['created_at TIMESTAMP', 'updated_at TIMESTAMP']
+            else:
+                add(i, f'ALTER TABLE {table} ADD COLUMN created_at TIMESTAMP', 'timestamps()')
+                add(i, f'ALTER TABLE {table} ADD COLUMN updated_at TIMESTAMP', 'timestamps()')
+        elif creating:
+            continue  # indexes, keys and constraints on a table created here lock nothing anyone uses yet
+        elif method in ('dropColumn', 'dropColumns'):
+            for a in args:
+                for c in (js_str(a) if isinstance(js_str(a), list) else [js_str(a) or '?']):
+                    add(i, f'ALTER TABLE {table} DROP COLUMN {c}', f'{method}()')
+        elif method == 'renameColumn':
+            add(i, f'ALTER TABLE {table} RENAME COLUMN {a0} TO {js_str(args[1]) if len(args) > 1 else "?"}', 'renameColumn()')
+        elif method in ('unique', 'primary'):
+            kind = 'UNIQUE' if method == 'unique' else 'PRIMARY KEY'
+            add(i, f'ALTER TABLE {table} ADD CONSTRAINT ? {kind} ({", ".join(cols_list)})', f'{method}()')
+        elif method == 'index':
+            add(i, f'CREATE INDEX ? ON {table} ({", ".join(cols_list)})', 'index()')
+        elif method == 'foreign':
+            add(i, f'ALTER TABLE {table} ADD FOREIGN KEY ({", ".join(cols_list)}) REFERENCES {knex_ref(mods)}', 'foreign()')
+        elif method == 'check':
+            add(i, f'ALTER TABLE {table} ADD CONSTRAINT ? CHECK ({a0 or "?"})', 'check()')
+        elif method in ('dropIndex', 'dropUnique', 'dropForeign', 'dropPrimary', 'dropChecks'):
+            add(i, f'ALTER TABLE {table} DROP CONSTRAINT ?' if method != 'dropIndex' else 'DROP INDEX ?', f'{method}()')
+        elif method in ('setNullable', 'dropNullable'):
+            add(i, f'ALTER TABLE {table} ALTER COLUMN {a0} {"DROP NOT NULL" if method == "setNullable" else "SET NOT NULL"}', f'{method}()')
+        elif method == 'renameTable':
+            add(i, f'ALTER TABLE {table} RENAME TO {js_str(args[1]) if len(args) > 1 else "?"}', 'renameTable()')
+        else:
+            skipped.append({'line': line_of(i), 'what': f'knex builder call {method}() not translated (read by hand)'})
+    return stmts, skipped, cols
+
+
+def parse_knex(path: Path) -> dict:
+    """Knex migrations: the schema builder, knex.raw SQL and knex('table') DML in up and down, by source pattern."""
+    text = path.read_text(encoding='utf-8')
+    masked = js_mask(text)
+    starts = [0] + [k + 1 for k, c in enumerate(text) if c == '\n']
+
+    def line_of(i: int) -> int:
+        lo, hi = 0, len(starts) - 1
+        while lo < hi:
+            mid = (lo + hi + 1) // 2
+            if starts[mid] <= i:
+                lo = mid
+            else:
+                hi = mid - 1
+        return lo + 1
+    rec = {'revision': path.stem, 'down_revision': None, 'up': [], 'down': [], 'not_analysed': [], 'down_state': 'missing',
+           'transactional': not re.search(r'\bconfig\s*=\s*\{[^}]*transaction\s*:\s*false', masked)}
+    for key in ('up', 'down'):
+        fn = js_function(masked, key)
+        if not fn:
+            continue
+        start, end, param = fn
+        if key == 'down':
+            rec['down_line'] = line_of(start)
+            body = masked[start:end].strip()
+            rec['down_state'] = 'empty' if not body else 'raises' if re.match(r'throw\b', body) else 'ok'
+        used: list[tuple[int, int]] = []
+        for m in KNEX_SCHEMA.finditer(masked, start, end):
+            i, method, o = m.start(), m.group(1), m.end() - 1
+            if any(s <= i < e for s, e in used):
+                continue
+            args = js_args(text, masked, o)
+            close = js_close(masked, o)
+            used.append((i, close))
+            if method == 'raw':
+                raw = args[0] if args else ''
+                sql_text = raw[1:-1] if raw[:1] in '\'"`' else None
+                if sql_text is None:
+                    rec['not_analysed'].append({'line': line_of(i), 'what': 'knex.raw with SQL built at runtime'})
+                    continue
+                if '${' in sql_text:
+                    rec['not_analysed'].append({'line': line_of(i), 'what': 'knex.raw template with interpolated values (shown as ?)'})
+                    sql_text = re.sub(r'\$\{[^}]*\}', '?', sql_text)
+                first = line_of(o + 1 + (len(text[o + 1:]) - len(text[o + 1:].lstrip())))
+                rec[key] += [{'line': ln, 'sql': s, 'via': 'knex.raw'} for ln, s in split_sql.split(sql_text, first)]
+                continue
+            table = js_str(args[0]) if args else None
+            table = table if isinstance(table, str) else '?'
+            if method in ('dropTable', 'dropTableIfExists'):
+                rec[key].append({'line': line_of(i), 'sql': f'DROP TABLE {table}', 'via': f'knex {method}()'})
+                continue
+            if method == 'renameTable':
+                rec[key].append({'line': line_of(i), 'sql': f'ALTER TABLE {table} RENAME TO {js_str(args[1]) if len(args) > 1 else "?"}',
+                                 'via': 'knex renameTable()'})
+                continue
+            cb = re.compile(r'\(?\s*(\w+)[^)=]*\)?\s*=>\s*\{|function\s*\w*\s*\(\s*(\w+)[^)]*\)\s*\{').search(masked, o, close)
+            if not cb:
+                rec['not_analysed'].append({'line': line_of(i), 'what': f'knex {method}() without a builder callback'})
+                continue
+            b_open = cb.end() - 1
+            stmts, skipped, cols = knex_builder(text, masked, b_open + 1, js_close(masked, b_open), cb.group(1) or cb.group(2), table,
+                                                method.startswith('createTable'), line_of)
+            if method.startswith('createTable'):
+                rec[key].append({'line': line_of(i), 'sql': f'CREATE TABLE {table} ({", ".join(cols)})', 'via': f'knex {method}()'})
+            rec[key] += stmts
+            rec['not_analysed'] += skipped
+        # DML through the query builder: knex('table')...del() / .update()
+        for m in re.finditer(r'\b(\w+)\s*\(\s*[\'"`]', masked[start:end]):
+            i = start + m.start()
+            if m.group(1) not in (param, 'trx', 'db') or any(s <= i < e for s, e in used):
+                continue
+            o = masked.index('(', i)
+            table = js_str((js_args(text, masked, o) or [None])[0])
+            chain, _ = js_chain(text, masked, o)
+            names = [c for c, _ in chain]
+            where = ' WHERE ?' if any(n.startswith(('where', 'whereIn', 'whereNot')) for n in names) else ''
+            if {'del', 'delete'} & set(names):
+                rec[key].append({'line': line_of(i), 'sql': f'DELETE FROM {table}{where}', 'via': 'knex query builder del()'})
+            elif 'update' in names:
+                rec[key].append({'line': line_of(i), 'sql': f'UPDATE {table} SET ?{where}', 'via': 'knex query builder update()'})
+            elif 'insert' in names:
+                rec[key].append({'line': line_of(i), 'sql': f'INSERT INTO {table} VALUES ?', 'via': 'knex query builder insert()'})
+            else:
+                rec['not_analysed'].append({'line': line_of(i), 'what': f'knex query on {table} not translated (read by hand)'})
+        rec[key].sort(key=lambda s: s['line'])
+    return rec
+
+
 def parse_sql_file(path: Path) -> dict:
     stmts = [{'line': ln, 'sql': s, 'via': 'sql'} for ln, s in split_sql.split(path.read_text(encoding='utf-8'))]
     return {'revision': path.stem, 'down_revision': None, 'up': stmts, 'down': [], 'transactional': True, 'not_analysed': [], 'down_state': 'missing'}
@@ -207,6 +525,11 @@ def detect(repo: Path) -> tuple[str, list[Path]]:
     prisma = sorted(p for p in files if p.name == 'migration.sql')
     if prisma:
         return 'prisma', prisma
+    knex = sorted((p for p in files if p.suffix in ('.js', '.ts', '.mjs', '.cjs') and 'migrations' in p.parts
+                   and re.search(r'\b(exports\.up|export\s+(const|async\s+function|function)\s+up)\b|\bup\s*:', p.read_text(encoding='utf-8', errors='replace'))
+                   and 'knex' in p.read_text(encoding='utf-8', errors='replace').lower()), key=lambda p: p.name)
+    if knex:
+        return 'knex', knex
     other = [p for p in files if p.suffix == '.rb' and 'db/migrate' in p.as_posix() or p.name.startswith('changelog') or
              (p.suffix in ('.js', '.ts') and 'migrations' in p.as_posix())]
     if other:
@@ -215,24 +538,51 @@ def detect(repo: Path) -> tuple[str, list[Path]]:
 
 
 def engine(repo: Path, a) -> dict:
+    """The engine and version: given, else what the repository's infrastructure declares (CloudFormation or Terraform
+    Engine/EngineVersion), else docker-compose and Dockerfile image tags (with or without a registry prefix). Of
+    several versions, the oldest from the most production-like source is used, and every claim is listed."""
     if a.engine:
         return {'name': a.engine, 'version': a.engine_version, 'source': 'given', 'assumed': a.engine_version is None}
-    name, version, source = None, None, None
-    for p in repo.rglob('*'):
-        if not p.is_file() or set(p.relative_to(repo).parts) & SKIP or p.suffix not in ('.ini', '.py', '.yml', '.yaml', '.env', '.toml', '.json'):
+    name, url_source, claims = None, None, []
+    names = {'postgres': 'postgresql', 'postgresql': 'postgresql', 'aurora-postgresql': 'postgresql', 'mysql': 'mysql',
+             'aurora-mysql': 'mysql', 'aurora': 'mysql', 'mariadb': 'mariadb'}
+    for p in sorted(repo.rglob('*')):
+        if not p.is_file() or set(p.relative_to(repo).parts) & SKIP or \
+                (p.suffix not in ('.ini', '.py', '.yml', '.yaml', '.env', '.toml', '.json', '.tf') and not p.name.startswith('Dockerfile')):
             continue
         t = p.read_text(encoding='utf-8', errors='replace')
+        rel = p.relative_to(repo).as_posix()
         m = re.search(r'\b(postgresql|postgres|mysql)(?:\+\w+)?://', t)
         if m and not name:
-            name, source = ('mysql' if m.group(1) == 'mysql' else 'postgresql'), p.relative_to(repo).as_posix()
-        m = re.search(r'image:\s*["\']?(postgres|mysql|mariadb):(\d+(?:\.\d+)?)', t)
-        if m:
-            name = name or {'postgres': 'postgresql'}.get(m.group(1), m.group(1))
-            version, source = m.group(2), (source + ' and ' if source else '') + p.relative_to(repo).as_posix()
+            name, url_source = ('mysql' if m.group(1) == 'mysql' else 'postgresql'), rel
+        for m in re.finditer(r'(?:image:\s*|FROM\s+)["\']?(?:[\w.\-]+(?::\d+)?/)*(postgres|mysql|mariadb):(\d+(?:\.\d+)?)', t):
+            claims.append({'kind': 'image', 'name': names[m.group(1)], 'version': m.group(2), 'source': rel})
+        eng = re.search(r'\bEngine["\']?\s*[:=]\s*["\']?(aurora-postgresql|aurora-mysql|postgres|mysql|mariadb)\b', t)
+        ver = re.search(r'\bEngineVersion["\']?\s*[:=]\s*["\']?(\d+(?:\.\d+)?)', t) or re.search(r'\bengine_version\s*=\s*"(\d+(?:\.\d+)?)', t)
+        ref = re.search(r'\bEngineVersion["\']?\s*:\s*!Ref\s+(\w+)', t)
+        if ref and not ver:  # a CloudFormation parameter: use its Default
+            ver = re.search(rf'^\s*{ref.group(1)}:\s*\n(?:[ \t]+.*\n)*?[ \t]+Default:\s*["\']?(\d+(?:\.\d+)?)', t, re.M)
+        if not eng:
+            eng = re.search(r'\bengine\s*=\s*"(aurora-postgresql|aurora-mysql|postgres|mysql|mariadb)"', t)
+        if eng and ver:
+            claims.append({'kind': 'infrastructure', 'name': names[eng.group(1)], 'version': ver.group(1), 'source': rel})
+
+    def key(c):
+        return tuple(int(x) for x in c['version'].split('.'))
+    best = [c for c in claims if c['kind'] == 'infrastructure'] or claims
+    if name:
+        best = [c for c in best if c['name'] == name] or best
+    chosen = min(best, key=key) if best else None
+    name = name or (chosen or {}).get('name')
+    version = chosen['version'] if chosen else None
+    source = ' and '.join(x for x in (url_source, chosen and chosen['source']) if x) or None
     assumed = version is None
     if assumed:
         version = {'postgresql': '10', 'mysql': '5.7'}.get(name)
-    return {'name': name or 'unknown', 'version': version, 'source': source, 'assumed': assumed}
+    out = {'name': name or 'unknown', 'version': version, 'source': source, 'assumed': assumed}
+    if len(claims) > 1:
+        out['claims'] = claims
+    return out
 
 
 def main() -> int:
@@ -245,7 +595,7 @@ def main() -> int:
     ap.add_argument('--engine-version')
     a = ap.parse_args()
     tool, files = detect(a.repo)
-    parser = {'alembic': parse_alembic, 'django': parse_django}.get(tool, parse_sql_file)
+    parser = {'alembic': parse_alembic, 'django': parse_django, 'knex': parse_knex}.get(tool, parse_sql_file)
     migs = []
     for p in files:
         if tool == 'not_parsed':

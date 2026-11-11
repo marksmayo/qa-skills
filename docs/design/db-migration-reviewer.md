@@ -256,8 +256,25 @@ Where the build differs from the design above, and what the example showed.
   The design's "real dynamic run on a container" is still to do.
 - **Dynamic check is PostgreSQL only.** It runs the statements `detect_migrations.py` derived (not the
   tool itself), so Alembic's own SQL may differ in details. MySQL dynamic runs, and `PyMySQL`, are not built.
-- **Parsed tools:** Alembic, Django operations, Flyway, Prisma and raw SQL. Rails, Knex and Liquibase are
-  listed as not parsed.
+- **Parsed tools:** Alembic, Django operations, Knex, Flyway, Prisma and raw SQL. Rails and Liquibase are
+  listed as not parsed; the scanner skips a migration it couldn't parse and lists it under `not_parsed`, so
+  it is reviewed by hand instead of silently having no candidates.
+- **Knex is read by source pattern** (added after a first run on a real knex repository, where every
+  migration was `not_parsed` and the scanner crashed): `up` and `down` in any of the CommonJS, ESM, async
+  function, arrow and TypeScript forms; the schema builder (`createTable`, `alterTable`/`table`, `dropTable`,
+  `renameTable`, column types with `.notNullable()`, `.defaultTo()`, `.alter()`, `.unique()`, `.index()`,
+  `.references()`, and `dropColumn`, `renameColumn`, `unique`, `primary`, `index`, `foreign`, `check`,
+  `setNullable`/`dropNullable`); `knex.raw` SQL (template interpolations become `?` and are listed as not
+  analysed); and `knex('table')` deletes and updates. `config = { transaction: false }` marks the migration
+  non-transactional, and `lock_timeout` is also looked for in `knexfile.*`. Keys, indexes and constraints
+  inside a `createTable` are not emitted, since the table is new.
+- **Engine detection reads infrastructure first:** CloudFormation or Terraform `Engine` and `EngineVersion`
+  (a `!Ref` resolves to the parameter's `Default`), then image tags, which may have a registry prefix
+  (`public.ecr.aws/docker/library/postgres:16.10`). Of several claims the oldest from the most
+  production-like kind is used, and all of them are listed in `claims`.
+- **Three rules were added after the same run:** `PG-UNIQUE-CONSTRAINT-LOCK` (ADD CONSTRAINT UNIQUE or
+  PRIMARY KEY without `USING INDEX`), `PG-CHECK-VALIDATE` (ADD CHECK without `NOT VALID`) and `DELETE-ROWS`
+  (a DELETE with a WHERE on an existing table, with no backup copy earlier in the migration).
 - **No lock_timeout is one finding per release**, not per migration: it names the migrations and tables
   it affects and rates by the largest table. Comments in `env.py` don't count as setting it.
 - **Facts on candidates drive dismissals.** The validator checks a dismissal code against the facts

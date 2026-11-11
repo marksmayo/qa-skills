@@ -20,7 +20,7 @@ It can also run the migrations on a throwaway local PostgreSQL (a container it s
 server) to time them, watch the locks, probe for blocked queries and test the rollback. It never
 connects to anything else, never prints row values, and never edits a migration.
 
-Supported: Alembic, Django, Flyway, Prisma and raw SQL; PostgreSQL and MySQL rules (MariaDB and SQLite
+Supported: Alembic, Django, Knex, Flyway, Prisma and raw SQL; PostgreSQL and MySQL rules (MariaDB and SQLite
 get engine-neutral rules only).
 
 ## Install

@@ -53,6 +53,15 @@
       "rewrite": "Use an online schema change tool (gh-ost, pt-online-schema-change), or split the change"},
     "MYSQL-DDL-AUTOCOMMIT": {"category": "transaction_mistake", "hazard": 2, "engine": "mysql", "versions": "*",
       "effect": "MySQL commits each DDL statement: a failure halfway leaves the migration half applied",
-      "rewrite": "One DDL statement per migration, or make each step idempotent"}
+      "rewrite": "One DDL statement per migration, or make each step idempotent"},
+    "PG-UNIQUE-CONSTRAINT-LOCK": {"category": "blocking_lock", "hazard": 3, "engine": "postgresql", "versions": "*",
+      "effect": "ADD CONSTRAINT UNIQUE or PRIMARY KEY builds its index on {table} under an ACCESS EXCLUSIVE lock: reads and writes wait until the index is built",
+      "rewrite": "CREATE UNIQUE INDEX CONCURRENTLY in its own non-transactional migration, then ADD CONSTRAINT ... UNIQUE USING INDEX"},
+    "PG-CHECK-VALIDATE": {"category": "blocking_lock", "hazard": 3, "engine": "postgresql", "versions": "*",
+      "effect": "ADD CHECK scans every row of {table} under an ACCESS EXCLUSIVE lock to validate it",
+      "rewrite": "ADD CONSTRAINT ... CHECK (...) NOT VALID, then VALIDATE CONSTRAINT in a separate migration"},
+    "DELETE-ROWS": {"category": "data_loss", "hazard": 3, "engine": "*", "versions": "*",
+      "effect": "DELETE on {table} removes the matching rows, and nothing in the migration keeps a copy",
+      "rewrite": "Copy the rows to a backup table (or export them) in the same migration before deleting, and restore them in the down migration"}
   }
 }

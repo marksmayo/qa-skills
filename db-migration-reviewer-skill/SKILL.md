@@ -1,6 +1,6 @@
 ---
 name: db-migration-reviewer
-description: Review database migrations before they ship and find the ones that are dangerous in production - locks that block a busy table, table rewrites, data loss and silent narrowing, down migrations that can't roll back, and schema changes that break code still running during a rolling deploy. Reads Alembic, Django, Flyway, Prisma and raw SQL migrations for PostgreSQL and MySQL, sizes each table from real statistics, searches the code for readers of dropped or renamed columns, and can run the migrations on a throwaway local database to time them, watch the locks and test the rollback. Never runs against production, never edits a migration, and never says "safe to deploy" without saying what was checked.
+description: Review database migrations before they ship and find the ones that are dangerous in production - locks that block a busy table, table rewrites, data loss and silent narrowing, down migrations that can't roll back, and schema changes that break code still running during a rolling deploy. Reads Alembic, Django, Knex, Flyway, Prisma and raw SQL migrations for PostgreSQL and MySQL, sizes each table from real statistics, searches the code for readers of dropped or renamed columns, and can run the migrations on a throwaway local database to time them, watch the locks and test the rollback. Never runs against production, never edits a migration, and never says "safe to deploy" without saying what was checked.
 version: 1.0.0
 ---
 
@@ -49,7 +49,7 @@ code, new code and the new schema coexist.
 |---|---|---|
 | `repo` | required | The repository |
 | `migrations` | the pending set | `--since <revision>` (everything after the deployed head), `--migrations a,b`, or all |
-| `engine` | detected | From URLs in config and docker-compose image tags; else the oldest version the repo claims, marked `assumed` |
+| `engine` | detected | From URLs in config, infrastructure templates (CloudFormation or Terraform `Engine`/`EngineVersion`, including a parameter's default) and docker-compose or Dockerfile image tags (with or without a registry prefix); the oldest version from the most production-like source, every claim listed; with no version, the oldest the repo claims, marked `assumed` |
 | `table_stats` | none | JSON `{"source": ..., "tables": {name: {"rows", "bytes"}}}` |
 | `deploy_model` | `rolling` | `rolling`, `blue_green` or `stop_the_world`; record where it came from |
 | `dynamic` | `auto` | `container` when Docker or Podman is present, a loopback `--dsn`, or `off`; otherwise static only, and the report says so |

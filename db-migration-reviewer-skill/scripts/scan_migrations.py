@@ -63,7 +63,8 @@ class Scan:
     def __init__(self, data: dict, repo: Path, stats: dict, other: list[Path]):
         self.data, self.repo, self.stats, self.roots = data, repo, stats, [repo] + other
         self.engine = data['engine']
-        self.pending = [m for m in data['migrations'] if m.get('pending')]
+        self.pending = [m for m in data['migrations'] if m.get('pending') and m.get('parsed', True)]
+        self.not_parsed = [m['file'] for m in data['migrations'] if m.get('pending') and not m.get('parsed', True)]
         self.created = {t: m['id'] for m in self.pending for t in m.get('created_tables', [])}
         self.out: list[dict] = []
         self._readers: dict = {}
@@ -155,6 +156,12 @@ class Scan:
                 m = re.match(r'ALTER TABLE (\S+) ADD (?:CONSTRAINT \S+ )?FOREIGN KEY', sql, re.I)
                 if m and pg and 'NOT VALID' not in up and m.group(1) not in self.created:
                     self.add('PG-FK-VALIDATE', mig, st, m.group(1), 'postgresql: all versions')
+                m = re.match(r'ALTER TABLE (\S+) ADD (?:CONSTRAINT \S+ )?(UNIQUE|PRIMARY KEY)\b', sql, re.I)
+                if m and pg and 'USING INDEX' not in up and m.group(1) not in self.created:
+                    self.add('PG-UNIQUE-CONSTRAINT-LOCK', mig, st, m.group(1), 'postgresql: all versions')
+                m = re.match(r'ALTER TABLE (\S+) ADD (?:CONSTRAINT \S+ )?CHECK\b', sql, re.I)
+                if m and pg and 'NOT VALID' not in up and m.group(1) not in self.created:
+                    self.add('PG-CHECK-VALIDATE', mig, st, m.group(1), 'postgresql: all versions')
                 m = re.match(r'ALTER TABLE (\S+) DROP COLUMN (?:IF EXISTS )?(\S+)', sql, re.I)
                 if m:
                     table, col = m.groups()
@@ -176,6 +183,11 @@ class Scan:
                     verb, table = m.group(1).split()[0].upper(), m.group(2)
                     if not re.search(r'\bWHERE\b', sql, re.I):
                         self.add('DML-WITHOUT-WHERE', mig, st, table, f'{self.engine["name"]}: all versions', verb=verb)
+                    elif verb == 'DELETE' and table not in self.created:
+                        backup = any(re.match(rf'(INSERT INTO|CREATE TABLE) \S+ .*\bFROM {re.escape(table)}\b', s['sql'], re.I)
+                                     for s in mig['up'] if s['line'] < st['line'])
+                        if not backup:
+                            self.add('DELETE-ROWS', mig, st, table, f'{self.engine["name"]}: all versions', {'backup_found': False})
                     if verb == 'UPDATE' and not re.search(r'\b(LIMIT|BETWEEN)\b|\bid\s*[<>]', sql, re.I):
                         self.add('BACKFILL-UNBATCHED', mig, st, table, f'{self.engine["name"]}: all versions',
                                  {'in_transaction': mig.get('transactional'), 'has_where': bool(re.search(r'\bWHERE\b', sql, re.I))})
@@ -196,13 +208,13 @@ class Scan:
     def lock_timeout(self):
         """One candidate for the release when DDL on existing tables runs without a lock_timeout anywhere."""
         def sets(text: str) -> bool:
-            code = ' '.join(ln.split('#')[0] for ln in text.splitlines())
+            code = ' '.join(ln.split('#')[0].split('//')[0] for ln in text.splitlines())
             return bool(re.search(r'lock_timeout', code, re.I))
         affected = [(m, s) for m in self.pending for s in m['up'] if DDL_LOCKING.match(s['sql'])
                     and (re.match(r'(?:ALTER TABLE|DROP TABLE|TRUNCATE(?: TABLE)?|CREATE (?:UNIQUE )?INDEX (?:CONCURRENTLY )?\S+ ON) (\S+)', s['sql'], re.I) or [None, None])[1] not in self.created]
         if not affected:
             return
-        env = [p for p in self.repo.rglob('env.py') if 'migrations' in p.parts or 'alembic' in p.parts]
+        env = [p for p in self.repo.rglob('env.py') if 'migrations' in p.parts or 'alembic' in p.parts] +             sorted(p for p in self.repo.rglob('knexfile.*') if 'node_modules' not in p.parts)
         configured = any(sets(p.read_text(encoding='utf-8', errors='replace')) for p in env) or \
             any(sets(s['sql']) for m in self.pending for s in m['up'])
         if configured:
@@ -217,7 +229,7 @@ class Scan:
         f, line = (env[0].relative_to(self.repo).as_posix(), 1) if env else (m0['file'], s0['line'])
         if env:
             for n, text in enumerate(env[0].read_text(encoding='utf-8').splitlines(), 1):
-                if 'configure(' in text:
+                if 'configure(' in text or 'pool' in text or 'connection' in text:
                     line = n
                     break
         self.add('PG-NO-LOCK-TIMEOUT', m0, s0, table, 'postgresql: all versions',
@@ -250,15 +262,20 @@ def main() -> int:
     a = ap.parse_args()
     data = json.loads(a.migrations.read_text(encoding='utf-8'))
     stats = json.loads(a.table_stats.read_text(encoding='utf-8')) if a.table_stats else {}
-    cands = Scan(data, a.repo, stats, a.other_readers).run()
+    scan = Scan(data, a.repo, stats, a.other_readers)
+    cands = scan.run()
     if a.squawk:
         merge_squawk(cands, a.squawk, a.repo)
     out = {'migrations_file': a.migrations.as_posix(), 'table_stats': a.table_stats.as_posix() if a.table_stats else None,
            'engine': data['engine'], 'pending': [m['id'] for m in data['migrations'] if m.get('pending')],
-           'squawk': a.squawk.as_posix() if a.squawk else None, 'candidates': cands}
+           'squawk': a.squawk.as_posix() if a.squawk else None, 'not_parsed': scan.not_parsed, 'candidates': cands}
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(json.dumps(out, indent=1) + '\n', encoding='utf-8', newline='\n')
     print(f'{len(cands)} candidate(s) from {len(out["pending"])} pending migration(s) -> {a.out}')
+    if scan.not_parsed:
+        print(f'  {len(scan.not_parsed)} pending migration(s) could not be parsed and have no candidates; review them by hand:')
+        for f in scan.not_parsed:
+            print(f'    {f}')
     for c in cands:
         print(f'  {c["id"]} {c["migration"] or "-":5} {c["rule"]:32} {c["table"] or "-":13} {(c["size"] or {}).get("class", "-"):7} hits={len(c["code_hits"])}')
     return 0
