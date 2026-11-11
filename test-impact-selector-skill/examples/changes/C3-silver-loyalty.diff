@@ -1,0 +1,14 @@
+diff --git a/api/harbourline_api/plugins/loyalty.py b/api/harbourline_api/plugins/loyalty.py
+--- a/api/harbourline_api/plugins/loyalty.py
++++ b/api/harbourline_api/plugins/loyalty.py
+@@ -1,7 +1,10 @@
+ GOLD_TRIPS = 40
++SILVER_TRIPS = 20
+ 
+ 
+ def apply(booking, customer):
+     if customer.get("trips", 0) >= GOLD_TRIPS:
+         booking = {**booking, "total_cents": booking["total_cents"] * 9 // 10, "loyalty": "gold"}
++    elif customer.get("trips", 0) >= SILVER_TRIPS:
++        booking = {**booking, "total_cents": booking["total_cents"] * 95 // 100, "loyalty": "silver"}
+     return booking

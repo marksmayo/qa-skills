@@ -1,0 +1,12 @@
+diff --git a/api/tests/conftest.py b/api/tests/conftest.py
+--- a/api/tests/conftest.py
++++ b/api/tests/conftest.py
+@@ -13,3 +13,8 @@
+ @pytest.fixture
+ def family():
+     return {"origin": "circular-quay", "destination": "manly", "ages": [41, 39, 12], "hour": 11}
++
++
++@pytest.fixture
++def same_day_refund():
++    return {"total_cents": 2450, "hours_before": 3}

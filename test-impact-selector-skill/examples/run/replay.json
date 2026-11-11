@@ -1,0 +1,377 @@
+{
+  "generated_at": "2026-11-11T01:27:54Z",
+  "tool": "replay.py",
+  "mode": "strict",
+  "inputs": {
+    "repo": "test-impact-selector-skill/examples/harbourline",
+    "history": "test-impact-selector-skill/examples/history/history.json",
+    "history_sha256": "c5736f4cc91b9f7e9b3e6d5f6a653b3e0b815a7064ef63bbdef8a70e1733bf55",
+    "coverage": [
+      "test-impact-selector-skill/examples/run/coverage_map.json"
+    ],
+    "journeys": "test-impact-selector-skill/examples/journeys/journey_map.json",
+    "related": null,
+    "flaky": null
+  },
+  "approximation": "Each past change was selected against the current coverage map, journey map and file kinds.",
+  "changes_replayed": 12,
+  "changes_skipped": [],
+  "failures_total": 12,
+  "failures_missed": 1,
+  "failures_flaky": 0,
+  "recall": 0.9167,
+  "wilson_low": 0.6461,
+  "wilson_high": 0.9851,
+  "mean_selected_share": 0.3788,
+  "misses": [
+    {
+      "change": "H07",
+      "test_id": "web/e2e/checkout.e2e.test.ts",
+      "changed_paths": [
+        "web/src/receipts/compact.ts"
+      ],
+      "selected_count": 1,
+      "blind_spot_kinds": []
+    }
+  ],
+  "flaky_failures": [],
+  "changes": [
+    {
+      "id": "H01",
+      "description": "Children pay 40% instead of half",
+      "diff": "H01.diff",
+      "changed_paths": [
+        "api/harbourline_api/pricing.py"
+      ],
+      "selected_count": 6,
+      "total_tests": 11,
+      "selected": [
+        "api/tests/api/test_booking_api.py",
+        "api/tests/api/test_loyalty_api.py",
+        "api/tests/api/test_refund_api.py",
+        "api/tests/unit/test_bookings.py",
+        "api/tests/unit/test_pricing.py",
+        "web/e2e/checkout.e2e.test.ts"
+      ],
+      "blind_spots": [],
+      "failed": [
+        {
+          "file": "api/tests/api/test_booking_api.py",
+          "selected": true,
+          "flaky": false,
+          "failed_cases": [
+            "tests.api.test_booking_api::test_family_booking_is_created"
+          ]
+        },
+        {
+          "file": "api/tests/unit/test_pricing.py",
+          "selected": true,
+          "flaky": false,
+          "failed_cases": [
+            "tests.unit.test_pricing::test_child_pays_half",
+            "tests.unit.test_pricing::test_party_fare_sums_passengers"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "H02",
+      "description": "Booking validation checks for None instead of an empty party",
+      "diff": "H02.diff",
+      "changed_paths": [
+        "api/harbourline_api/bookings.py"
+      ],
+      "selected_count": 5,
+      "total_tests": 11,
+      "selected": [
+        "api/tests/api/test_booking_api.py",
+        "api/tests/api/test_loyalty_api.py",
+        "api/tests/api/test_refund_api.py",
+        "api/tests/unit/test_bookings.py",
+        "web/e2e/checkout.e2e.test.ts"
+      ],
+      "blind_spots": [],
+      "failed": [
+        {
+          "file": "api/tests/unit/test_bookings.py",
+          "selected": true,
+          "flaky": false,
+          "failed_cases": [
+            "tests.unit.test_bookings::test_empty_party_is_rejected"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "H03",
+      "description": "Fare formatting drops the cents padding",
+      "diff": "H03.diff",
+      "changed_paths": [
+        "web/src/fare.ts"
+      ],
+      "selected_count": 5,
+      "total_tests": 11,
+      "selected": [
+        "web/e2e/checkout.e2e.test.ts",
+        "web/src/checkout.test.ts",
+        "web/src/fare.test.ts",
+        "web/src/receipts/compact.test.ts",
+        "web/visual/checkout.visual.test.ts"
+      ],
+      "blind_spots": [],
+      "failed": [
+        {
+          "file": "web/src/fare.test.ts",
+          "selected": true,
+          "flaky": false,
+          "failed_cases": [
+            "src/fare.test.ts::formatFare > formats whole dollars",
+            "src/fare.test.ts::formatFare > pads cents"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "H04",
+      "description": "Longer refund notice: 48 hours for full, 4 hours for half",
+      "diff": "H04.diff",
+      "changed_paths": [
+        "api/harbourline_api/refunds.py"
+      ],
+      "selected_count": 4,
+      "total_tests": 11,
+      "selected": [
+        "api/tests/api/test_booking_api.py",
+        "api/tests/api/test_loyalty_api.py",
+        "api/tests/api/test_refund_api.py",
+        "api/tests/unit/test_refunds.py"
+      ],
+      "blind_spots": [],
+      "failed": [
+        {
+          "file": "api/tests/api/test_refund_api.py",
+          "selected": true,
+          "flaky": false,
+          "failed_cases": [
+            "tests.api.test_refund_api::test_refund_quote_on_the_day"
+          ]
+        },
+        {
+          "file": "api/tests/unit/test_refunds.py",
+          "selected": true,
+          "flaky": false,
+          "failed_cases": [
+            "tests.unit.test_refunds::test_full_refund_a_day_ahead"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "H05",
+      "description": "Child age limit lowered to 12",
+      "diff": "H05.diff",
+      "changed_paths": [
+        "api/harbourline_api/pricing.py"
+      ],
+      "selected_count": 6,
+      "total_tests": 11,
+      "selected": [
+        "api/tests/api/test_booking_api.py",
+        "api/tests/api/test_loyalty_api.py",
+        "api/tests/api/test_refund_api.py",
+        "api/tests/unit/test_bookings.py",
+        "api/tests/unit/test_pricing.py",
+        "web/e2e/checkout.e2e.test.ts"
+      ],
+      "blind_spots": [],
+      "failed": [
+        {
+          "file": "api/tests/api/test_booking_api.py",
+          "selected": true,
+          "flaky": false,
+          "failed_cases": [
+            "tests.api.test_booking_api::test_family_booking_is_created"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "H06",
+      "description": "Party size paragraph gets a class",
+      "diff": "H06.diff",
+      "changed_paths": [
+        "web/src/checkout.ts"
+      ],
+      "selected_count": 3,
+      "total_tests": 11,
+      "selected": [
+        "web/e2e/checkout.e2e.test.ts",
+        "web/src/checkout.test.ts",
+        "web/visual/checkout.visual.test.ts"
+      ],
+      "blind_spots": [],
+      "failed": [
+        {
+          "file": "web/visual/checkout.visual.test.ts",
+          "selected": true,
+          "flaky": false,
+          "failed_cases": [
+            "visual/checkout.visual.test.ts::checkout markup and styles match the approved snapshot"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "H07",
+      "description": "Compact receipt footer reworded",
+      "diff": "H07.diff",
+      "changed_paths": [
+        "web/src/receipts/compact.ts"
+      ],
+      "selected_count": 1,
+      "total_tests": 11,
+      "selected": [
+        "web/src/receipts/compact.test.ts"
+      ],
+      "blind_spots": [],
+      "failed": [
+        {
+          "file": "web/e2e/checkout.e2e.test.ts",
+          "selected": false,
+          "flaky": false,
+          "failed_cases": [
+            "e2e/checkout.e2e.test.ts::a family books Circular Quay to Manly and gets a compact receipt"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "H08",
+      "description": "Gold loyalty discount raised to 15%",
+      "diff": "H08.diff",
+      "changed_paths": [
+        "api/harbourline_api/plugins/loyalty.py"
+      ],
+      "selected_count": 6,
+      "total_tests": 11,
+      "selected": [
+        "api/tests/api/test_booking_api.py",
+        "api/tests/api/test_loyalty_api.py",
+        "api/tests/api/test_refund_api.py",
+        "api/tests/unit/test_bookings.py",
+        "api/tests/unit/test_pricing.py",
+        "api/tests/unit/test_refunds.py"
+      ],
+      "blind_spots": [
+        {
+          "kind": "dynamic_reference",
+          "path": "api/harbourline_api/plugins/loyalty.py",
+          "action": "package"
+        }
+      ],
+      "failed": [
+        {
+          "file": "api/tests/api/test_loyalty_api.py",
+          "selected": true,
+          "flaky": false,
+          "failed_cases": [
+            "tests.api.test_loyalty_api::test_gold_customer_gets_ten_percent_off"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "H09",
+      "description": "README wording",
+      "diff": "H09.diff",
+      "changed_paths": [
+        "README.md"
+      ],
+      "selected_count": 0,
+      "total_tests": 11,
+      "selected": [],
+      "blind_spots": [],
+      "failed": []
+    },
+    {
+      "id": "H10",
+      "description": "Watsons Bay base fare raised",
+      "diff": "H10.diff",
+      "changed_paths": [
+        "api/harbourline_api/data/routes.json"
+      ],
+      "selected_count": 6,
+      "total_tests": 11,
+      "selected": [
+        "api/tests/api/test_booking_api.py",
+        "api/tests/api/test_loyalty_api.py",
+        "api/tests/api/test_refund_api.py",
+        "api/tests/unit/test_bookings.py",
+        "api/tests/unit/test_pricing.py",
+        "api/tests/unit/test_refunds.py"
+      ],
+      "blind_spots": [
+        {
+          "kind": "data_or_schema",
+          "path": "api/harbourline_api/data/routes.json",
+          "action": "package_and_contract"
+        }
+      ],
+      "failed": [
+        {
+          "file": "api/tests/unit/test_pricing.py",
+          "selected": true,
+          "flaky": false,
+          "failed_cases": [
+            "tests.unit.test_pricing::test_party_fare_sums_passengers"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "H11",
+      "description": "Party label refactor",
+      "diff": "H11.diff",
+      "changed_paths": [
+        "web/src/fare.ts"
+      ],
+      "selected_count": 5,
+      "total_tests": 11,
+      "selected": [
+        "web/e2e/checkout.e2e.test.ts",
+        "web/src/checkout.test.ts",
+        "web/src/fare.test.ts",
+        "web/src/receipts/compact.test.ts",
+        "web/visual/checkout.visual.test.ts"
+      ],
+      "blind_spots": [],
+      "failed": []
+    },
+    {
+      "id": "H12",
+      "description": "Booking errors return 400 instead of 422",
+      "diff": "H12.diff",
+      "changed_paths": [
+        "api/harbourline_api/app.py"
+      ],
+      "selected_count": 3,
+      "total_tests": 11,
+      "selected": [
+        "api/tests/api/test_booking_api.py",
+        "api/tests/api/test_loyalty_api.py",
+        "api/tests/api/test_refund_api.py"
+      ],
+      "blind_spots": [],
+      "failed": [
+        {
+          "file": "api/tests/api/test_booking_api.py",
+          "selected": true,
+          "flaky": false,
+          "failed_cases": [
+            "tests.api.test_booking_api::test_oversized_party_is_422"
+          ]
+        }
+      ]
+    }
+  ]
+}

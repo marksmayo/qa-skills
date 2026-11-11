@@ -1,0 +1,5 @@
+{
+  "circular-quay:manly": {"base_cents": 980, "minutes": 30},
+  "circular-quay:watsons-bay": {"base_cents": 760, "minutes": 25},
+  "barangaroo:parramatta": {"base_cents": 1240, "minutes": 75}
+}

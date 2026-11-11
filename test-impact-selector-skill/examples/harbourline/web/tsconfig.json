@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "types": ["vitest/importMeta"]
+  },
+  "include": ["src", "e2e", "visual", "test"]
+}

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="1" failures="0" errors="0" time="0.0017903">
+    <testsuite name="e2e/checkout.e2e.test.ts" timestamp="2026-11-11T01:16:19.260Z" hostname="host" tests="1" failures="0" errors="0" skipped="0" time="0.0017903">
+        <testcase classname="e2e/checkout.e2e.test.ts" name="a family books Circular Quay to Manly and gets a compact receipt" time="0.0010829">
+        </testcase>
+    </testsuite>
+</testsuites>

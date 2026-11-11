@@ -1,0 +1,12 @@
+diff --git a/api/harbourline_api/app.py b/api/harbourline_api/app.py
+--- a/api/harbourline_api/app.py
++++ b/api/harbourline_api/app.py
+@@ -10,7 +10,7 @@
+         try:
+             booking = create_booking(body["origin"], body["destination"], body["ages"], body["hour"])
+         except BookingError as exc:
+-            return 422, {"error": str(exc)}
++            return 400, {"error": str(exc)}
+         except KeyError as exc:
+             return 404, {"error": str(exc)}
+         return 201, plugins.apply_all(booking, body.get("customer", {}))

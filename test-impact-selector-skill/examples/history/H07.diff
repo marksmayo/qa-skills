@@ -1,0 +1,10 @@
+diff --git a/web/src/receipts/compact.ts b/web/src/receipts/compact.ts
+--- a/web/src/receipts/compact.ts
++++ b/web/src/receipts/compact.ts
+@@ -6,5 +6,5 @@
+ }
+ 
+ register("compact", (booking) =>
+-  [compactHeader(booking), booking.route, formatFare(booking.total_cents), "Show this at the gate"].join(" | "),
++  [compactHeader(booking), booking.route, formatFare(booking.total_cents), "Show at the gate"].join(" | "),
+ );

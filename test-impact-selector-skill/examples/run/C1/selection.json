@@ -1,0 +1,356 @@
+{
+  "generated_at": "2026-11-11T01:27:51Z",
+  "tool": "select_tests.py",
+  "inputs": {
+    "repo": "test-impact-selector-skill/examples/harbourline",
+    "diff": "test-impact-selector-skill/examples/changes/C1-late-sailing-discount.diff",
+    "diff_applied": false,
+    "base": null,
+    "committed_only": false,
+    "mode": "strict",
+    "coverage": [
+      "test-impact-selector-skill/examples/run/coverage_map.json"
+    ],
+    "journeys": "test-impact-selector-skill/examples/journeys/journey_map.json",
+    "history": "test-impact-selector-skill/examples/history/history.json",
+    "related": null,
+    "max_chars": 8000,
+    "file_kinds_sha256": "98d89ee9a6be8b457e9d1aa1bb3647c28c884472aac4052cfb69fe22b9156bcc"
+  },
+  "repo_code_hash": "6caea5268792dd90c27580e5fbcfe94d870878327052976a6122bfde6bc9a6d6",
+  "change": {
+    "source": "diff",
+    "diff": "test-impact-selector-skill/examples/changes/C1-late-sailing-discount.diff",
+    "diff_applied": false,
+    "base": null,
+    "head": null,
+    "diff_sha256": "662097f2bb5f307a107638e898e39c22ebdc20c09da30fe290dcc010b132df83"
+  },
+  "mode": "strict",
+  "sources": [
+    {
+      "name": "coverage",
+      "status": "ran",
+      "reason": "Per-test coverage for package(s) api. Every measured file matches the base tree.",
+      "version": "coverage.py-json 7.17.2",
+      "collected_at_commit": null,
+      "inputs": [
+        "test-impact-selector-skill/examples/run/coverage_map.json"
+      ],
+      "stale_files": [],
+      "factor": 1.0
+    },
+    {
+      "name": "import_graph",
+      "status": "ran",
+      "version": "import_graph.py",
+      "reason": "Parsed python, typescript.",
+      "factor": 1.0
+    },
+    {
+      "name": "framework_tools",
+      "status": "not_run",
+      "version": null,
+      "factor": 0.0,
+      "reason": "web/vitest.config.ts present, but no related-tests output was given (--related)."
+    },
+    {
+      "name": "journeys",
+      "status": "ran",
+      "version": null,
+      "reason": "2 journeys with test links.",
+      "factor": 1.0
+    },
+    {
+      "name": "naming",
+      "status": "ran",
+      "version": null,
+      "reason": "Test file names matched to changed file names.",
+      "factor": 1.0
+    },
+    {
+      "name": "co_failure",
+      "status": "ran",
+      "version": null,
+      "reason": "12 earlier change(s) with full-run results.",
+      "factor": 1.0
+    }
+  ],
+  "changes": [
+    {
+      "path": "api/harbourline_api/pricing.py",
+      "old_path": null,
+      "status": "modified",
+      "kind": "source",
+      "kind_reason": "source code",
+      "line_ranges": [
+        [
+          6,
+          6
+        ],
+        [
+          21,
+          22
+        ]
+      ],
+      "renamed_from": null
+    }
+  ],
+  "packages": [
+    {
+      "root": "api",
+      "name": "api",
+      "manifests": [
+        "api/pyproject.toml"
+      ],
+      "frameworks": [
+        "pytest"
+      ],
+      "languages": [
+        "python"
+      ],
+      "test_files": [
+        "api/tests/api/test_booking_api.py",
+        "api/tests/api/test_loyalty_api.py",
+        "api/tests/api/test_refund_api.py",
+        "api/tests/unit/test_bookings.py",
+        "api/tests/unit/test_pricing.py",
+        "api/tests/unit/test_refunds.py"
+      ],
+      "selected": 5,
+      "full_suite": false
+    },
+    {
+      "root": "web",
+      "name": "@harbourline/web",
+      "manifests": [
+        "web/package.json"
+      ],
+      "frameworks": [
+        "vitest"
+      ],
+      "languages": [
+        "typescript"
+      ],
+      "test_files": [
+        "web/e2e/checkout.e2e.test.ts",
+        "web/src/checkout.test.ts",
+        "web/src/fare.test.ts",
+        "web/src/receipts/compact.test.ts",
+        "web/visual/checkout.visual.test.ts"
+      ],
+      "selected": 1,
+      "full_suite": false
+    }
+  ],
+  "selected": [
+    {
+      "test_id": "api/tests/api/test_booking_api.py",
+      "file": "api/tests/api/test_booking_api.py",
+      "package": "api",
+      "test_level": "unit",
+      "strength": 3,
+      "reasons": [
+        {
+          "source": "coverage",
+          "strength": 3,
+          "evidence": "test_family_booking_is_created ran base line(s) 20",
+          "changed_path": "api/harbourline_api/pricing.py"
+        },
+        {
+          "source": "import_graph",
+          "strength": 2,
+          "evidence": "api/tests/api/test_booking_api.py -> api/harbourline_api/app.py -> api/harbourline_api/bookings.py -> api/harbourline_api/pricing.py",
+          "changed_path": "api/harbourline_api/pricing.py"
+        },
+        {
+          "source": "co_failure",
+          "strength": 1,
+          "evidence": "failed in 2 of 2 past changes to this file (H01, H05)",
+          "changed_path": "api/harbourline_api/pricing.py"
+        }
+      ],
+      "journey_priority": null,
+      "past_failures": "3/12",
+      "widened_by": [],
+      "order": 1
+    },
+    {
+      "test_id": "api/tests/unit/test_pricing.py",
+      "file": "api/tests/unit/test_pricing.py",
+      "package": "api",
+      "test_level": "unit",
+      "strength": 3,
+      "reasons": [
+        {
+          "source": "coverage",
+          "strength": 3,
+          "evidence": "test_peak_fare_adds_thirty_percent ran base line(s) 19, 20 (and 2 more tests in this file)",
+          "changed_path": "api/harbourline_api/pricing.py"
+        },
+        {
+          "source": "import_graph",
+          "strength": 2,
+          "evidence": "api/tests/unit/test_pricing.py -> api/harbourline_api/pricing.py",
+          "changed_path": "api/harbourline_api/pricing.py"
+        },
+        {
+          "source": "naming",
+          "strength": 1,
+          "evidence": "test_pricing.py is named after pricing.py",
+          "changed_path": "api/harbourline_api/pricing.py"
+        }
+      ],
+      "journey_priority": null,
+      "past_failures": "2/12",
+      "widened_by": [],
+      "order": 2
+    },
+    {
+      "test_id": "api/tests/api/test_loyalty_api.py",
+      "file": "api/tests/api/test_loyalty_api.py",
+      "package": "api",
+      "test_level": "unit",
+      "strength": 3,
+      "reasons": [
+        {
+          "source": "coverage",
+          "strength": 3,
+          "evidence": "test_gold_customer_gets_ten_percent_off ran base line(s) 20 (and 1 more test in this file)",
+          "changed_path": "api/harbourline_api/pricing.py"
+        },
+        {
+          "source": "import_graph",
+          "strength": 2,
+          "evidence": "api/tests/api/test_loyalty_api.py -> api/tests/conftest.py -> api/harbourline_api/app.py -> api/harbourline_api/bookings.py -> api/harbourline_api/pricing.py",
+          "changed_path": "api/harbourline_api/pricing.py"
+        }
+      ],
+      "journey_priority": null,
+      "past_failures": "1/12",
+      "widened_by": [],
+      "order": 3
+    },
+    {
+      "test_id": "api/tests/unit/test_bookings.py",
+      "file": "api/tests/unit/test_bookings.py",
+      "package": "api",
+      "test_level": "unit",
+      "strength": 3,
+      "reasons": [
+        {
+          "source": "coverage",
+          "strength": 3,
+          "evidence": "test_booking_totals_the_party ran base line(s) 20",
+          "changed_path": "api/harbourline_api/pricing.py"
+        },
+        {
+          "source": "import_graph",
+          "strength": 2,
+          "evidence": "api/tests/unit/test_bookings.py -> api/harbourline_api/bookings.py -> api/harbourline_api/pricing.py",
+          "changed_path": "api/harbourline_api/pricing.py"
+        }
+      ],
+      "journey_priority": null,
+      "past_failures": "1/12",
+      "widened_by": [],
+      "order": 4
+    },
+    {
+      "test_id": "web/e2e/checkout.e2e.test.ts",
+      "file": "web/e2e/checkout.e2e.test.ts",
+      "package": "web",
+      "test_level": "e2e",
+      "strength": 2,
+      "reasons": [
+        {
+          "source": "journeys",
+          "strength": 2,
+          "evidence": "JRN-BKG-001 (P1) cites api/harbourline_api/pricing.py and links this test",
+          "changed_path": "api/harbourline_api/pricing.py"
+        }
+      ],
+      "journey_priority": "P1",
+      "past_failures": "1/12",
+      "widened_by": [],
+      "order": 5
+    },
+    {
+      "test_id": "api/tests/api/test_refund_api.py",
+      "file": "api/tests/api/test_refund_api.py",
+      "package": "api",
+      "test_level": "unit",
+      "strength": 2,
+      "reasons": [
+        {
+          "source": "import_graph",
+          "strength": 2,
+          "evidence": "api/tests/api/test_refund_api.py -> api/harbourline_api/app.py -> api/harbourline_api/bookings.py -> api/harbourline_api/pricing.py",
+          "changed_path": "api/harbourline_api/pricing.py"
+        }
+      ],
+      "journey_priority": "P2",
+      "past_failures": "1/12",
+      "widened_by": [],
+      "order": 6
+    }
+  ],
+  "considered_not_selected": [],
+  "blind_spots": [],
+  "total_tests": 11,
+  "not_selected_count": 5,
+  "command": {
+    "commands": [
+      {
+        "package": "api",
+        "cwd": "api",
+        "framework": "pytest",
+        "full_suite": false,
+        "argv": [
+          "python",
+          "-m",
+          "pytest",
+          "tests/api/test_booking_api.py",
+          "tests/unit/test_pricing.py",
+          "tests/api/test_loyalty_api.py",
+          "tests/unit/test_bookings.py",
+          "tests/api/test_refund_api.py"
+        ],
+        "tests": 5,
+        "part": 1,
+        "parts": 1
+      },
+      {
+        "package": "web",
+        "cwd": "web",
+        "framework": "vitest",
+        "full_suite": false,
+        "argv": [
+          "npx",
+          "vitest",
+          "run",
+          "e2e/checkout.e2e.test.ts"
+        ],
+        "tests": 1,
+        "part": 1,
+        "parts": 1
+      }
+    ],
+    "split_into": 2,
+    "max_chars": 8000,
+    "no_runner": []
+  },
+  "docs_only": false,
+  "notes": [],
+  "summary": {
+    "changed_files": 1,
+    "selected": 6,
+    "total_tests": 11,
+    "widened_by_blind_spots": 0,
+    "tests_in_widened_scopes": 0,
+    "blind_spots": 0,
+    "blind_spots_labelled_only": 0,
+    "full_suite_selected": false,
+    "evidence_completeness": 0.8333
+  }
+}

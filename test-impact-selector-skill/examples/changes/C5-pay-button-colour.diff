@@ -1,0 +1,12 @@
+diff --git a/web/src/checkout.css b/web/src/checkout.css
+--- a/web/src/checkout.css
++++ b/web/src/checkout.css
+@@ -10,7 +10,7 @@
+ }
+ 
+ .checkout button[type="submit"] {
+-  background: #0b5394;
++  background: #08427a;
+   color: #ffffff;
+   min-height: 44px;
+ }

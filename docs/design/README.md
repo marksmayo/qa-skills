@@ -16,7 +16,7 @@ anatomy described in the root `CLAUDE.md` (`SKILL.md`, `RUBRIC.md`, `schemas/`, 
 | 7 | [Ticket readiness reviewer](ticket-readiness-reviewer.md) | `ticket-readiness-reviewer-skill/` | Built (v1.0.0) |
 | 8 | [Flaky test hunter](flaky-test-hunter.md) | `flaky-test-hunter-skill/` | Built (v1.0.0) |
 | 9 | [Mutation tester](mutation-tester.md) | `mutation-tester-skill/` | Built (v1.0.0) |
-| 10 | [Test impact selector](test-impact-selector.md) | `test-impact-selector-skill/` | Designed |
+| 10 | [Test impact selector](test-impact-selector.md) | `test-impact-selector-skill/` | Built (v1.0.0) |
 | 11 | [Test data auditor](test-data-auditor.md) | `test-data-auditor-skill/` | Designed |
 | 12 | [Dead test finder](dead-test-finder.md) | `dead-test-finder-skill/` | Designed |
 | 13 | [Risk-based test planner](risk-based-test-planner.md) | `risk-based-test-planner-skill/` | Designed |

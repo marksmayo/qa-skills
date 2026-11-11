@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="9" failures="2" errors="0" time="0.0145574">
+    <testsuite name="e2e/checkout.e2e.test.ts" timestamp="2026-11-11T01:13:20.885Z" hostname="host" tests="1" failures="0" errors="0" skipped="0" time="0.0016746">
+        <testcase classname="e2e/checkout.e2e.test.ts" name="a family books Circular Quay to Manly and gets a compact receipt" time="0.0010425">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/checkout.test.ts" timestamp="2026-11-11T01:13:20.888Z" hostname="host" tests="2" failures="0" errors="0" skipped="0" time="0.001682">
+        <testcase classname="src/checkout.test.ts" name="shows the route and the party size" time="0.0009294">
+        </testcase>
+        <testcase classname="src/checkout.test.ts" name="puts the total on the pay button" time="0.0001088">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/fare.test.ts" timestamp="2026-11-11T01:13:20.891Z" hostname="host" tests="4" failures="2" errors="0" skipped="0" time="0.0072699">
+        <testcase classname="src/fare.test.ts" name="formatFare &gt; formats whole dollars" time="0.0053759">
+            <failure message="expected &apos;$9.0&apos; to be &apos;$9.00&apos; // Object.is equality" type="AssertionError">
+AssertionError: expected &apos;$9.0&apos; to be &apos;$9.00&apos; // Object.is equality
+
+Expected: &quot;$9.00&quot;
+Received: &quot;$9.0&quot;
+
+ ❯ src/fare.test.ts:6:29
+            </failure>
+        </testcase>
+        <testcase classname="src/fare.test.ts" name="formatFare &gt; pads cents" time="0.000679">
+            <failure message="expected &apos;$12.5&apos; to be &apos;$12.05&apos; // Object.is equality" type="AssertionError">
+AssertionError: expected &apos;$12.5&apos; to be &apos;$12.05&apos; // Object.is equality
+
+Expected: &quot;$12.05&quot;
+Received: &quot;$12.5&quot;
+
+ ❯ src/fare.test.ts:9:30
+            </failure>
+        </testcase>
+        <testcase classname="src/fare.test.ts" name="formatParty &gt; uses the singular for one passenger" time="0.0002005">
+        </testcase>
+        <testcase classname="src/fare.test.ts" name="formatParty &gt; uses the plural otherwise" time="0.0000862">
+        </testcase>
+    </testsuite>
+    <testsuite name="visual/checkout.visual.test.ts" timestamp="2026-11-11T01:13:20.896Z" hostname="host" tests="1" failures="0" errors="0" skipped="0" time="0.0023236">
+        <testcase classname="visual/checkout.visual.test.ts" name="checkout markup and styles match the approved snapshot" time="0.0015344">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/receipts/compact.test.ts" timestamp="2026-11-11T01:13:20.897Z" hostname="host" tests="1" failures="0" errors="0" skipped="0" time="0.0016073">
+        <testcase classname="src/receipts/compact.test.ts" name="puts the reference in the header" time="0.0008083">
+        </testcase>
+    </testsuite>
+</testsuites>

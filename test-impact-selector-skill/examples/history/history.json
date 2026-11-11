@@ -1,0 +1,245 @@
+{
+  "note": "Twelve earlier changes, each recreated as a diff against the current example tree and run with both full suites. The JUnit files are the real results of those runs.",
+  "changes": [
+    {
+      "id": "H01",
+      "description": "Children pay 40% instead of half",
+      "diff": "H01.diff",
+      "full_run": true,
+      "runs": [
+        {
+          "package": "api",
+          "junit": "H01/api.xml",
+          "exit_code": 1,
+          "command": "python -m pytest -q -p no:cacheprovider --junitxml=api.xml"
+        },
+        {
+          "package": "web",
+          "junit": "H01/web.xml",
+          "exit_code": 0,
+          "command": "npx vitest run --reporter=junit --outputFile=web.xml"
+        }
+      ]
+    },
+    {
+      "id": "H02",
+      "description": "Booking validation checks for None instead of an empty party",
+      "diff": "H02.diff",
+      "full_run": true,
+      "runs": [
+        {
+          "package": "api",
+          "junit": "H02/api.xml",
+          "exit_code": 1,
+          "command": "python -m pytest -q -p no:cacheprovider --junitxml=api.xml"
+        },
+        {
+          "package": "web",
+          "junit": "H02/web.xml",
+          "exit_code": 0,
+          "command": "npx vitest run --reporter=junit --outputFile=web.xml"
+        }
+      ]
+    },
+    {
+      "id": "H03",
+      "description": "Fare formatting drops the cents padding",
+      "diff": "H03.diff",
+      "full_run": true,
+      "runs": [
+        {
+          "package": "api",
+          "junit": "H03/api.xml",
+          "exit_code": 0,
+          "command": "python -m pytest -q -p no:cacheprovider --junitxml=api.xml"
+        },
+        {
+          "package": "web",
+          "junit": "H03/web.xml",
+          "exit_code": 1,
+          "command": "npx vitest run --reporter=junit --outputFile=web.xml"
+        }
+      ]
+    },
+    {
+      "id": "H04",
+      "description": "Longer refund notice: 48 hours for full, 4 hours for half",
+      "diff": "H04.diff",
+      "full_run": true,
+      "runs": [
+        {
+          "package": "api",
+          "junit": "H04/api.xml",
+          "exit_code": 1,
+          "command": "python -m pytest -q -p no:cacheprovider --junitxml=api.xml"
+        },
+        {
+          "package": "web",
+          "junit": "H04/web.xml",
+          "exit_code": 0,
+          "command": "npx vitest run --reporter=junit --outputFile=web.xml"
+        }
+      ]
+    },
+    {
+      "id": "H05",
+      "description": "Child age limit lowered to 12",
+      "diff": "H05.diff",
+      "full_run": true,
+      "runs": [
+        {
+          "package": "api",
+          "junit": "H05/api.xml",
+          "exit_code": 1,
+          "command": "python -m pytest -q -p no:cacheprovider --junitxml=api.xml"
+        },
+        {
+          "package": "web",
+          "junit": "H05/web.xml",
+          "exit_code": 0,
+          "command": "npx vitest run --reporter=junit --outputFile=web.xml"
+        }
+      ]
+    },
+    {
+      "id": "H06",
+      "description": "Party size paragraph gets a class",
+      "diff": "H06.diff",
+      "full_run": true,
+      "runs": [
+        {
+          "package": "api",
+          "junit": "H06/api.xml",
+          "exit_code": 0,
+          "command": "python -m pytest -q -p no:cacheprovider --junitxml=api.xml"
+        },
+        {
+          "package": "web",
+          "junit": "H06/web.xml",
+          "exit_code": 1,
+          "command": "npx vitest run --reporter=junit --outputFile=web.xml"
+        }
+      ]
+    },
+    {
+      "id": "H07",
+      "description": "Compact receipt footer reworded",
+      "diff": "H07.diff",
+      "full_run": true,
+      "runs": [
+        {
+          "package": "api",
+          "junit": "H07/api.xml",
+          "exit_code": 0,
+          "command": "python -m pytest -q -p no:cacheprovider --junitxml=api.xml"
+        },
+        {
+          "package": "web",
+          "junit": "H07/web.xml",
+          "exit_code": 1,
+          "command": "npx vitest run --reporter=junit --outputFile=web.xml"
+        }
+      ]
+    },
+    {
+      "id": "H08",
+      "description": "Gold loyalty discount raised to 15%",
+      "diff": "H08.diff",
+      "full_run": true,
+      "runs": [
+        {
+          "package": "api",
+          "junit": "H08/api.xml",
+          "exit_code": 1,
+          "command": "python -m pytest -q -p no:cacheprovider --junitxml=api.xml"
+        },
+        {
+          "package": "web",
+          "junit": "H08/web.xml",
+          "exit_code": 0,
+          "command": "npx vitest run --reporter=junit --outputFile=web.xml"
+        }
+      ]
+    },
+    {
+      "id": "H09",
+      "description": "README wording",
+      "diff": "H09.diff",
+      "full_run": true,
+      "runs": [
+        {
+          "package": "api",
+          "junit": "H09/api.xml",
+          "exit_code": 0,
+          "command": "python -m pytest -q -p no:cacheprovider --junitxml=api.xml"
+        },
+        {
+          "package": "web",
+          "junit": "H09/web.xml",
+          "exit_code": 0,
+          "command": "npx vitest run --reporter=junit --outputFile=web.xml"
+        }
+      ]
+    },
+    {
+      "id": "H10",
+      "description": "Watsons Bay base fare raised",
+      "diff": "H10.diff",
+      "full_run": true,
+      "runs": [
+        {
+          "package": "api",
+          "junit": "H10/api.xml",
+          "exit_code": 1,
+          "command": "python -m pytest -q -p no:cacheprovider --junitxml=api.xml"
+        },
+        {
+          "package": "web",
+          "junit": "H10/web.xml",
+          "exit_code": 0,
+          "command": "npx vitest run --reporter=junit --outputFile=web.xml"
+        }
+      ]
+    },
+    {
+      "id": "H11",
+      "description": "Party label refactor",
+      "diff": "H11.diff",
+      "full_run": true,
+      "runs": [
+        {
+          "package": "api",
+          "junit": "H11/api.xml",
+          "exit_code": 0,
+          "command": "python -m pytest -q -p no:cacheprovider --junitxml=api.xml"
+        },
+        {
+          "package": "web",
+          "junit": "H11/web.xml",
+          "exit_code": 0,
+          "command": "npx vitest run --reporter=junit --outputFile=web.xml"
+        }
+      ]
+    },
+    {
+      "id": "H12",
+      "description": "Booking errors return 400 instead of 422",
+      "diff": "H12.diff",
+      "full_run": true,
+      "runs": [
+        {
+          "package": "api",
+          "junit": "H12/api.xml",
+          "exit_code": 1,
+          "command": "python -m pytest -q -p no:cacheprovider --junitxml=api.xml"
+        },
+        {
+          "package": "web",
+          "junit": "H12/web.xml",
+          "exit_code": 0,
+          "command": "npx vitest run --reporter=junit --outputFile=web.xml"
+        }
+      ]
+    }
+  ]
+}

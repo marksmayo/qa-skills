@@ -1,0 +1,11 @@
+diff --git a/README.md b/README.md
+--- a/README.md
++++ b/README.md
+@@ -1,6 +1,6 @@
+ # Harbourline
+ 
+-Ferry bookings: a Python API (`api/`) and a TypeScript web front end (`web/`).
++Harbour ferry bookings: a Python API (`api/`) and a TypeScript web front end (`web/`).
+ 
+     cd api && python -m pytest
+     cd web && pnpm install && pnpm test

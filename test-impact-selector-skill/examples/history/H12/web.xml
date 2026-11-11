@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="9" failures="0" errors="0" time="0.0150614">
+    <testsuite name="e2e/checkout.e2e.test.ts" timestamp="2026-11-11T01:13:44.424Z" hostname="host" tests="1" failures="0" errors="0" skipped="0" time="0.0026376">
+        <testcase classname="e2e/checkout.e2e.test.ts" name="a family books Circular Quay to Manly and gets a compact receipt" time="0.0015145">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/checkout.test.ts" timestamp="2026-11-11T01:13:44.428Z" hostname="host" tests="2" failures="0" errors="0" skipped="0" time="0.0024909">
+        <testcase classname="src/checkout.test.ts" name="shows the route and the party size" time="0.0013468">
+        </testcase>
+        <testcase classname="src/checkout.test.ts" name="puts the total on the pay button" time="0.0001532">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/fare.test.ts" timestamp="2026-11-11T01:13:44.430Z" hostname="host" tests="4" failures="0" errors="0" skipped="0" time="0.0037938">
+        <testcase classname="src/fare.test.ts" name="formatFare &gt; formats whole dollars" time="0.0014494">
+        </testcase>
+        <testcase classname="src/fare.test.ts" name="formatFare &gt; pads cents" time="0.0003128">
+        </testcase>
+        <testcase classname="src/fare.test.ts" name="formatParty &gt; uses the singular for one passenger" time="0.0002832">
+        </testcase>
+        <testcase classname="src/fare.test.ts" name="formatParty &gt; uses the plural otherwise" time="0.0001865">
+        </testcase>
+    </testsuite>
+    <testsuite name="visual/checkout.visual.test.ts" timestamp="2026-11-11T01:13:44.431Z" hostname="host" tests="1" failures="0" errors="0" skipped="0" time="0.0035779">
+        <testcase classname="visual/checkout.visual.test.ts" name="checkout markup and styles match the approved snapshot" time="0.0024658">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/receipts/compact.test.ts" timestamp="2026-11-11T01:13:44.432Z" hostname="host" tests="1" failures="0" errors="0" skipped="0" time="0.0025612">
+        <testcase classname="src/receipts/compact.test.ts" name="puts the reference in the header" time="0.0014837">
+        </testcase>
+    </testsuite>
+</testsuites>

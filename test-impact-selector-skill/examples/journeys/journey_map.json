@@ -1,0 +1,45 @@
+{
+  "metadata": {
+    "note": "Trimmed journey-mapper output: only the fields the impact selector reads."
+  },
+  "journeys": [
+    {
+      "id": "JRN-BKG-001",
+      "title": "Family books a ferry at checkout",
+      "priority": "P1",
+      "tests": ["web/e2e/checkout.e2e.test.ts"],
+      "steps": [
+        {
+          "action": "Choose Circular Quay to Manly for two adults and a child",
+          "expect": "The fare is shown per passenger, half price for the child",
+          "evidence": [{"file": "api/harbourline_api/pricing.py", "line": 9}]
+        },
+        {
+          "action": "Confirm the booking",
+          "expect": "A booking is created with the party total",
+          "evidence": [{"file": "api/harbourline_api/bookings.py", "line": 11}]
+        },
+        {
+          "action": "Review the checkout page",
+          "expect": "The total is on the pay button",
+          "evidence": [{"file": "web/src/checkout.ts", "line": 10}]
+        }
+      ],
+      "variants": []
+    },
+    {
+      "id": "JRN-RFD-001",
+      "title": "Customer asks for a refund quote",
+      "priority": "P2",
+      "tests": ["api/tests/api/test_refund_api.py"],
+      "steps": [
+        {
+          "action": "Ask for a refund quote three hours before departure",
+          "expect": "Half the fare is quoted",
+          "evidence": [{"file": "api/harbourline_api/refunds.py", "line": 4}]
+        }
+      ],
+      "variants": []
+    }
+  ]
+}

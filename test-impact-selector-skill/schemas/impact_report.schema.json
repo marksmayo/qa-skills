@@ -1,0 +1,236 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/marksmayo/qa-skills/test-impact-selector-skill/schemas/impact_report.schema.json",
+  "title": "Test impact report",
+  "description": "Which tests to run for one change, why each was picked, every blind spot and what was done about it, the command, and (with history) measured recall. The sources, changes, selected, blind_spots, counts and command sections are copied unchanged from select_tests.py's selection.json.",
+  "type": "object",
+  "required": ["metadata", "sources", "changes", "selected", "blind_spots", "total_tests", "not_selected_count", "command",
+               "recommendations", "summary", "limitations", "files_written"],
+  "additionalProperties": false,
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": ["repo", "change", "mode", "generated_at", "skill_version", "repo_code_hash", "selection_file", "file_kinds_sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "repo": {"type": "string", "minLength": 1},
+        "change": {
+          "type": "object",
+          "required": ["source", "diff_sha256"],
+          "properties": {
+            "source": {"enum": ["diff", "git"]},
+            "diff": {"type": ["string", "null"]},
+            "diff_applied": {"type": ["boolean", "null"]},
+            "base": {"type": ["string", "null"]},
+            "merge_base": {"type": ["string", "null"]},
+            "head": {"type": ["string", "null"]},
+            "working_tree": {"type": ["boolean", "null"]},
+            "diff_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "title": {"type": "string"}
+          }
+        },
+        "mode": {"enum": ["strict", "balanced", "aggressive"]},
+        "mode_reason": {"type": "string"},
+        "generated_at": {"type": "string", "minLength": 10},
+        "skill_version": {"type": "string"},
+        "repo_code_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "selection_file": {"type": "string"},
+        "file_kinds_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "packages": {"type": "array", "items": {"type": "object"}}
+      }
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 6,
+      "items": {
+        "type": "object",
+        "required": ["name", "status", "reason"],
+        "properties": {
+          "name": {"enum": ["coverage", "import_graph", "framework_tools", "journeys", "naming", "co_failure"]},
+          "status": {"enum": ["ran", "not_run", "errored", "stale", "not_applicable"]},
+          "version": {"type": ["string", "null"]},
+          "reason": {"type": "string", "minLength": 5},
+          "collected_at_commit": {"type": ["string", "null"]},
+          "inputs": {"type": "array", "items": {"type": "string"}},
+          "stale_files": {"type": "array", "items": {"type": "string"}},
+          "factor": {"type": ["number", "null"], "minimum": 0, "maximum": 1}
+        }
+      }
+    },
+    "changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "status", "kind", "line_ranges"],
+        "properties": {
+          "path": {"type": "string"},
+          "old_path": {"type": ["string", "null"]},
+          "status": {"enum": ["added", "modified", "deleted", "renamed"]},
+          "kind": {"enum": ["source", "test", "snapshot", "shared_fixture", "global_config", "data_or_schema", "non_code", "docs", "unknown"]},
+          "kind_reason": {"type": ["string", "null"]},
+          "line_ranges": {"type": "array", "items": {"type": "array", "items": {"type": "integer"}}},
+          "renamed_from": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "selected": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["test_id", "file", "package", "strength", "reasons", "order"],
+        "properties": {
+          "test_id": {"type": "string"},
+          "file": {"type": "string"},
+          "package": {"type": "string"},
+          "test_level": {"type": ["string", "null"]},
+          "strength": {"type": "integer", "minimum": 0, "maximum": 3},
+          "reasons": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["source", "strength", "evidence", "changed_path"],
+              "properties": {
+                "source": {"enum": ["changed_test", "coverage", "import_graph", "framework_tools", "journeys", "naming", "co_failure", "blind_spot"]},
+                "strength": {"type": "integer", "minimum": 0, "maximum": 3},
+                "evidence": {"type": "string", "minLength": 5},
+                "changed_path": {"type": "string"}
+              }
+            }
+          },
+          "journey_priority": {"type": ["string", "null"]},
+          "past_failures": {"type": ["string", "null"]},
+          "widened_by": {"type": "array", "items": {"type": "string"}},
+          "order": {"type": "integer", "minimum": 1}
+        }
+      }
+    },
+    "considered_not_selected": {"type": "array", "items": {"type": "object"}},
+    "blind_spots": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "path", "kind", "action", "required_scope", "widened_to", "would_widen_to", "note"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^B\\d+$"},
+          "path": {"type": "string"},
+          "kind": {"enum": ["global_config", "shared_fixture", "dynamic_reference", "data_or_schema", "unmapped_source",
+                            "deleted_or_renamed", "non_code", "huge_change"]},
+          "action": {"enum": ["full_suite", "package", "fixture_reach", "package_and_contract", "importers", "e2e_and_visual", "labelled"]},
+          "required_scope": {"enum": ["full_suite", "package", "fixture_reach", "package_and_contract", "importers", "e2e_and_visual"]},
+          "widened_to": {"type": "array", "items": {"type": "string"}},
+          "would_widen_to": {"type": "array", "items": {"type": "string"}},
+          "note": {"type": "string", "minLength": 10},
+          "comment": {"type": "string"}
+        }
+      }
+    },
+    "total_tests": {"type": "integer", "minimum": 0},
+    "not_selected_count": {"type": "integer", "minimum": 0},
+    "docs_only": {"type": "boolean"},
+    "command": {
+      "type": "object",
+      "required": ["commands", "split_into"],
+      "properties": {
+        "commands": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["package", "cwd", "framework", "argv", "full_suite"],
+            "properties": {
+              "package": {"type": "string"}, "cwd": {"type": "string"}, "framework": {"type": "string"},
+              "argv": {"type": "array", "minItems": 1, "items": {"type": "string"}}, "full_suite": {"type": "boolean"},
+              "tests": {"type": "integer"}, "part": {"type": "integer"}, "parts": {"type": "integer"}
+            }
+          }
+        },
+        "split_into": {"type": "integer", "minimum": 0},
+        "max_chars": {"type": "integer"},
+        "no_runner": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "replay": {
+      "type": "object",
+      "required": ["replay_file", "changes_replayed", "failures_total", "failures_missed", "recall", "wilson_low", "wilson_high", "misses"],
+      "additionalProperties": false,
+      "properties": {
+        "replay_file": {"type": "string"},
+        "mode": {"enum": ["strict", "balanced", "aggressive"]},
+        "changes_replayed": {"type": "integer", "minimum": 0},
+        "changes_skipped": {"type": "array"},
+        "failures_total": {"type": "integer", "minimum": 0},
+        "failures_missed": {"type": "integer", "minimum": 0},
+        "failures_flaky": {"type": "integer", "minimum": 0},
+        "recall": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "wilson_low": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "wilson_high": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "mean_selected_share": {"type": ["number", "null"]},
+        "approximation": {"type": "string"},
+        "misses": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["change", "test_id", "why_missed", "explanation"],
+            "properties": {
+              "change": {"type": "string"},
+              "test_id": {"type": "string"},
+              "changed_paths": {"type": "array", "items": {"type": "string"}},
+              "why_missed": {"enum": ["missing_source", "weak_rule"]},
+              "explanation": {"type": "string", "minLength": 30},
+              "fix": {"type": "string"}
+            }
+          }
+        },
+        "flaky_failures": {"type": "array"}
+      }
+    },
+    "verify": {
+      "type": "object",
+      "required": ["runs_file", "selected_run_ids", "full_run_ids", "failures_outside_selection", "failures_inside_selection"],
+      "additionalProperties": false,
+      "properties": {
+        "runs_file": {"type": "string"},
+        "selected_run_ids": {"type": "array", "items": {"type": "string"}},
+        "full_run_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "failures_outside_selection": {"type": "array", "items": {"type": "string"}},
+        "failures_inside_selection": {"type": "array", "items": {"type": "string"}},
+        "note": {"type": "string"}
+      }
+    },
+    "recommendations": {
+      "type": "object",
+      "required": ["full_suite"],
+      "properties": {
+        "full_suite": {"type": "string", "minLength": 10},
+        "other": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "ci_snippet": {
+      "type": "object",
+      "required": ["format", "path"],
+      "properties": {"format": {"enum": ["github", "gitlab"]}, "path": {"type": "string"}}
+    },
+    "summary": {
+      "type": "object",
+      "required": ["headline", "selected", "total_tests", "widened_by_blind_spots", "blind_spots", "evidence_completeness",
+                   "recall_status", "recall_text"],
+      "additionalProperties": false,
+      "properties": {
+        "headline": {"type": "string", "minLength": 20},
+        "selected": {"type": "integer"},
+        "total_tests": {"type": "integer"},
+        "widened_by_blind_spots": {"type": "integer"},
+        "blind_spots": {"type": "integer"},
+        "blind_spots_labelled_only": {"type": "integer"},
+        "full_suite_selected": {"type": "boolean"},
+        "evidence_completeness": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "recall_status": {"enum": ["measured", "not_assessed"]},
+        "recall_text": {"type": ["string", "null"]},
+        "sources_not_run": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "limitations": {"type": "array", "items": {"type": "string", "minLength": 10}},
+    "files_written": {"type": "array", "items": {"type": "string"}},
+    "notes": {"type": "array", "items": {"type": "string"}}
+  }
+}

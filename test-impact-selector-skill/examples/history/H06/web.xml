@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="9" failures="1" errors="0" time="0.0209548">
+    <testsuite name="e2e/checkout.e2e.test.ts" timestamp="2026-11-11T01:13:28.702Z" hostname="host" tests="1" failures="0" errors="0" skipped="0" time="0.0033364">
+        <testcase classname="e2e/checkout.e2e.test.ts" name="a family books Circular Quay to Manly and gets a compact receipt" time="0.0020218">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/checkout.test.ts" timestamp="2026-11-11T01:13:28.706Z" hostname="host" tests="2" failures="0" errors="0" skipped="0" time="0.0024603">
+        <testcase classname="src/checkout.test.ts" name="shows the route and the party size" time="0.0012667">
+        </testcase>
+        <testcase classname="src/checkout.test.ts" name="puts the total on the pay button" time="0.0001354">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/fare.test.ts" timestamp="2026-11-11T01:13:28.707Z" hostname="host" tests="4" failures="0" errors="0" skipped="0" time="0.0025528">
+        <testcase classname="src/fare.test.ts" name="formatFare &gt; formats whole dollars" time="0.001092">
+        </testcase>
+        <testcase classname="src/fare.test.ts" name="formatFare &gt; pads cents" time="0.0001701">
+        </testcase>
+        <testcase classname="src/fare.test.ts" name="formatParty &gt; uses the singular for one passenger" time="0.0001301">
+        </testcase>
+        <testcase classname="src/fare.test.ts" name="formatParty &gt; uses the plural otherwise" time="0.0000861">
+        </testcase>
+    </testsuite>
+    <testsuite name="visual/checkout.visual.test.ts" timestamp="2026-11-11T01:13:28.708Z" hostname="host" tests="1" failures="1" errors="0" skipped="0" time="0.0105803">
+        <testcase classname="visual/checkout.visual.test.ts" name="checkout markup and styles match the approved snapshot" time="0.0096107">
+            <failure message="Snapshot `checkout markup and styles match the approved snapshot 1` mismatched" type="Error">
+Error: Snapshot `checkout markup and styles match the approved snapshot 1` mismatched
+
+- Expected
++ Received
+
+@@ -15,9 +15,9 @@
+    min-height: 44px;
+  }
+  &lt;/style&gt;
+  &lt;section class=&quot;checkout&quot;&gt;
+  &lt;h2&gt;circular-quay to manly&lt;/h2&gt;
+- &lt;p&gt;2 passengers&lt;/p&gt;
++ &lt;p class=&quot;party&quot;&gt;2 passengers&lt;/p&gt;
+  &lt;p class=&quot;total&quot;&gt;Total $19.60&lt;/p&gt;
+  &lt;button type=&quot;submit&quot;&gt;Pay $19.60&lt;/button&gt;
+  &lt;/section&gt;&quot;
+
+ ❯ visual/checkout.visual.test.ts:7:44
+            </failure>
+        </testcase>
+    </testsuite>
+    <testsuite name="src/receipts/compact.test.ts" timestamp="2026-11-11T01:13:28.712Z" hostname="host" tests="1" failures="0" errors="0" skipped="0" time="0.002025">
+        <testcase classname="src/receipts/compact.test.ts" name="puts the reference in the header" time="0.0011613">
+        </testcase>
+    </testsuite>
+</testsuites>

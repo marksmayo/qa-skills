@@ -1,0 +1,20 @@
+diff --git a/api/harbourline_api/pricing.py b/api/harbourline_api/pricing.py
+--- a/api/harbourline_api/pricing.py
++++ b/api/harbourline_api/pricing.py
+@@ -3,6 +3,7 @@
+ CHILD_AGE = 16
+ CONCESSION_AGE = 65
+ PEAK_HOURS = range(7, 10)
++LATE_HOUR = 21
+ 
+ 
+ def passenger_rate(age):
+@@ -17,6 +18,8 @@
+     base = route(origin, destination)["base_cents"]
+     if hour in PEAK_HOURS:
+         base = base * 13 // 10
++    elif hour >= LATE_HOUR:
++        base = base * 9 // 10
+     return round(base * passenger_rate(age))
+ 
+ 

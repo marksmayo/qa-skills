@@ -1,0 +1,281 @@
+{
+  "metadata": {
+    "repo": "harbourline",
+    "change": {
+      "source": "diff",
+      "diff": "test-impact-selector-skill/examples/changes/C5-pay-button-colour.diff",
+      "diff_applied": false,
+      "base": null,
+      "head": null,
+      "diff_sha256": "a796543b9bf66630bdf91710df11379392c89142fc653c791399f0f2787a959b",
+      "title": "C5 pay button colour"
+    },
+    "mode": "strict",
+    "mode_reason": "Default.",
+    "generated_at": "2026-11-11T01:27:53Z",
+    "skill_version": "1.0.0",
+    "repo_code_hash": "6caea5268792dd90c27580e5fbcfe94d870878327052976a6122bfde6bc9a6d6",
+    "selection_file": "../run/C5/selection.json",
+    "file_kinds_sha256": "98d89ee9a6be8b457e9d1aa1bb3647c28c884472aac4052cfb69fe22b9156bcc",
+    "packages": [
+      {
+        "root": "api",
+        "name": "api",
+        "manifests": [
+          "api/pyproject.toml"
+        ],
+        "frameworks": [
+          "pytest"
+        ],
+        "languages": [
+          "python"
+        ],
+        "test_files": [
+          "api/tests/api/test_booking_api.py",
+          "api/tests/api/test_loyalty_api.py",
+          "api/tests/api/test_refund_api.py",
+          "api/tests/unit/test_bookings.py",
+          "api/tests/unit/test_pricing.py",
+          "api/tests/unit/test_refunds.py"
+        ],
+        "selected": 0,
+        "full_suite": false
+      },
+      {
+        "root": "web",
+        "name": "@harbourline/web",
+        "manifests": [
+          "web/package.json"
+        ],
+        "frameworks": [
+          "vitest"
+        ],
+        "languages": [
+          "typescript"
+        ],
+        "test_files": [
+          "web/e2e/checkout.e2e.test.ts",
+          "web/src/checkout.test.ts",
+          "web/src/fare.test.ts",
+          "web/src/receipts/compact.test.ts",
+          "web/visual/checkout.visual.test.ts"
+        ],
+        "selected": 2,
+        "full_suite": false
+      }
+    ]
+  },
+  "sources": [
+    {
+      "name": "coverage",
+      "status": "ran",
+      "reason": "Per-test coverage for package(s) api. Every measured file matches the base tree.",
+      "version": "coverage.py-json 7.17.2",
+      "collected_at_commit": null,
+      "inputs": [
+        "test-impact-selector-skill/examples/run/coverage_map.json"
+      ],
+      "stale_files": [],
+      "factor": null
+    },
+    {
+      "name": "import_graph",
+      "status": "ran",
+      "version": "import_graph.py",
+      "reason": "Parsed python, typescript.",
+      "factor": 1.0
+    },
+    {
+      "name": "framework_tools",
+      "status": "not_run",
+      "version": null,
+      "factor": 0.0,
+      "reason": "web/vitest.config.ts present, but no related-tests output was given (--related)."
+    },
+    {
+      "name": "journeys",
+      "status": "ran",
+      "version": null,
+      "reason": "2 journeys with test links.",
+      "factor": 1.0
+    },
+    {
+      "name": "naming",
+      "status": "ran",
+      "version": null,
+      "reason": "Test file names matched to changed file names.",
+      "factor": 1.0
+    },
+    {
+      "name": "co_failure",
+      "status": "ran",
+      "version": null,
+      "reason": "12 earlier change(s) with full-run results.",
+      "factor": 1.0
+    }
+  ],
+  "changes": [
+    {
+      "path": "web/src/checkout.css",
+      "old_path": null,
+      "status": "modified",
+      "kind": "non_code",
+      "kind_reason": "unrecognised extension .css",
+      "line_ranges": [
+        [
+          13,
+          13
+        ]
+      ],
+      "renamed_from": null
+    }
+  ],
+  "selected": [
+    {
+      "test_id": "web/e2e/checkout.e2e.test.ts",
+      "file": "web/e2e/checkout.e2e.test.ts",
+      "package": "web",
+      "test_level": "e2e",
+      "strength": 0,
+      "reasons": [
+        {
+          "source": "blind_spot",
+          "strength": 0,
+          "evidence": "B1 non_code: e2e_and_visual",
+          "changed_path": "web/src/checkout.css"
+        }
+      ],
+      "journey_priority": "P1",
+      "past_failures": "1/12",
+      "widened_by": [
+        "B1"
+      ],
+      "order": 1
+    },
+    {
+      "test_id": "web/visual/checkout.visual.test.ts",
+      "file": "web/visual/checkout.visual.test.ts",
+      "package": "web",
+      "test_level": "visual",
+      "strength": 0,
+      "reasons": [
+        {
+          "source": "blind_spot",
+          "strength": 0,
+          "evidence": "B1 non_code: e2e_and_visual",
+          "changed_path": "web/src/checkout.css"
+        }
+      ],
+      "journey_priority": null,
+      "past_failures": "1/12",
+      "widened_by": [
+        "B1"
+      ],
+      "order": 2
+    }
+  ],
+  "considered_not_selected": [],
+  "blind_spots": [
+    {
+      "id": "B1",
+      "path": "web/src/checkout.css",
+      "kind": "non_code",
+      "action": "e2e_and_visual",
+      "required_scope": "e2e_and_visual",
+      "widened_to": [
+        "web/e2e/checkout.e2e.test.ts",
+        "web/visual/checkout.visual.test.ts"
+      ],
+      "would_widen_to": [
+        "web/e2e/checkout.e2e.test.ts",
+        "web/visual/checkout.visual.test.ts"
+      ],
+      "note": "Template, style, translation or image: only tests that render it can notice a change.",
+      "comment": "checkout.test.ts also imports checkout.ts, which imports the stylesheet, but it asserts markup only, so it is not selected for a style change."
+    }
+  ],
+  "total_tests": 11,
+  "not_selected_count": 9,
+  "docs_only": false,
+  "command": {
+    "commands": [
+      {
+        "package": "web",
+        "cwd": "web",
+        "framework": "vitest",
+        "full_suite": false,
+        "argv": [
+          "npx",
+          "vitest",
+          "run",
+          "e2e/checkout.e2e.test.ts",
+          "visual/checkout.visual.test.ts"
+        ],
+        "tests": 2,
+        "part": 1,
+        "parts": 1
+      }
+    ],
+    "split_into": 1,
+    "max_chars": 8000,
+    "no_runner": []
+  },
+  "replay": {
+    "replay_file": "../run/replay.json",
+    "mode": "strict",
+    "changes_replayed": 12,
+    "changes_skipped": [],
+    "failures_total": 12,
+    "failures_missed": 1,
+    "failures_flaky": 0,
+    "recall": 0.9167,
+    "wilson_low": 0.6461,
+    "wilson_high": 0.9851,
+    "mean_selected_share": 0.3788,
+    "approximation": "Each past change was selected against the current coverage map, journey map and file kinds.",
+    "flaky_failures": [],
+    "misses": [
+      {
+        "change": "H07",
+        "test_id": "web/e2e/checkout.e2e.test.ts",
+        "changed_paths": [
+          "web/src/receipts/compact.ts"
+        ],
+        "why_missed": "weak_rule",
+        "explanation": "The e2e test reaches compact.ts only through the receipts registry: web/test/setup.ts, a Vitest setupFiles entry, imports compact.ts, which registers itself, and the test calls renderReceipt('compact'). No import chain runs from the test file to compact.ts, the web package has no per-test coverage, and no journey cites compact.ts. `vitest related src/receipts/compact.ts` lists only compact.test.ts as well.",
+        "fix": "Treat files named in Vitest/Jest setupFiles as imported by every test in the package, or collect per-test coverage for web so registry-reached code is mapped."
+      }
+    ]
+  },
+  "recommendations": {
+    "full_suite": "Run both full suites (api pytest, web Vitest) on every merge to main and nightly; a selection without a periodic full run hides misses like H07.",
+    "other": [
+      "Collect per-test coverage for web (or record setupFiles as imports) to close the registry gap that replay found.",
+      "Refresh coverage_map.json whenever pricing, bookings or plugins change shape; a stale map is labelled but still used."
+    ]
+  },
+  "summary": {
+    "headline": "2 of 11 test files selected for the checkout.css change: the e2e and visual tests that render it.",
+    "selected": 2,
+    "total_tests": 11,
+    "widened_by_blind_spots": 2,
+    "blind_spots": 1,
+    "blind_spots_labelled_only": 0,
+    "full_suite_selected": false,
+    "evidence_completeness": 0.8,
+    "recall_status": "measured",
+    "recall_text": "11 of 12 failures selected in 12 replayed changes (91.7%, 95% CI 64.6%-98.5%)",
+    "sources_not_run": [
+      "framework_tools"
+    ]
+  },
+  "limitations": [
+    "Selection is per test file, not per test case: a selected file runs all of its tests.",
+    "The coverage map covers the api package only. Changes in web are linked by imports, naming and the journey map.",
+    "framework_tools did not run: Vitest is configured, but `vitest related` runs tests rather than listing them, and no --related output was given.",
+    "Replay selected each past change against today's coverage map and journey map, not the ones that existed then.",
+    "Twelve replayed failures give a wide interval (64.6%-98.5%): the selector missed one of these twelve, which does not pin down how often it misses in general."
+  ],
+  "files_written": [],
+  "notes": []
+}

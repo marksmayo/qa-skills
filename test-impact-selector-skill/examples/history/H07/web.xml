@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="9" failures="1" errors="0" time="0.0193165">
+    <testsuite name="e2e/checkout.e2e.test.ts" timestamp="2026-11-11T01:13:31.351Z" hostname="host" tests="1" failures="1" errors="0" skipped="0" time="0.0091372">
+        <testcase classname="e2e/checkout.e2e.test.ts" name="a family books Circular Quay to Manly and gets a compact receipt" time="0.007928">
+            <failure message="expected &apos;HARBOURLINE HL-2041 | circular-quay:m…&apos; to be &apos;HARBOURLINE HL-2041 | circular-quay:m…&apos; // Object.is equality" type="AssertionError">
+AssertionError: expected &apos;HARBOURLINE HL-2041 | circular-quay:m…&apos; to be &apos;HARBOURLINE HL-2041 | circular-quay:m…&apos; // Object.is equality
+
+Expected: &quot;HARBOURLINE HL-2041 | circular-quay:manly | $24.50 | Show this at the gate&quot;
+Received: &quot;HARBOURLINE HL-2041 | circular-quay:manly | $24.50 | Show at the gate&quot;
+
+ ❯ e2e/checkout.e2e.test.ts:10:19
+            </failure>
+        </testcase>
+    </testsuite>
+    <testsuite name="src/checkout.test.ts" timestamp="2026-11-11T01:13:31.361Z" hostname="host" tests="2" failures="0" errors="0" skipped="0" time="0.0025428">
+        <testcase classname="src/checkout.test.ts" name="shows the route and the party size" time="0.001363">
+        </testcase>
+        <testcase classname="src/checkout.test.ts" name="puts the total on the pay button" time="0.0001566">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/fare.test.ts" timestamp="2026-11-11T01:13:31.362Z" hostname="host" tests="4" failures="0" errors="0" skipped="0" time="0.0026967">
+        <testcase classname="src/fare.test.ts" name="formatFare &gt; formats whole dollars" time="0.0011439">
+        </testcase>
+        <testcase classname="src/fare.test.ts" name="formatFare &gt; pads cents" time="0.0001798">
+        </testcase>
+        <testcase classname="src/fare.test.ts" name="formatParty &gt; uses the singular for one passenger" time="0.0001386">
+        </testcase>
+        <testcase classname="src/fare.test.ts" name="formatParty &gt; uses the plural otherwise" time="0.0000906">
+        </testcase>
+    </testsuite>
+    <testsuite name="visual/checkout.visual.test.ts" timestamp="2026-11-11T01:13:31.364Z" hostname="host" tests="1" failures="0" errors="0" skipped="0" time="0.0029031">
+        <testcase classname="visual/checkout.visual.test.ts" name="checkout markup and styles match the approved snapshot" time="0.0020492">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/receipts/compact.test.ts" timestamp="2026-11-11T01:13:31.365Z" hostname="host" tests="1" failures="0" errors="0" skipped="0" time="0.0020367">
+        <testcase classname="src/receipts/compact.test.ts" name="puts the reference in the header" time="0.0011491">
+        </testcase>
+    </testsuite>
+</testsuites>

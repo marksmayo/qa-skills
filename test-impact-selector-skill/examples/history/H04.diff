@@ -1,0 +1,15 @@
+diff --git a/api/harbourline_api/refunds.py b/api/harbourline_api/refunds.py
+--- a/api/harbourline_api/refunds.py
++++ b/api/harbourline_api/refunds.py
+@@ -1,9 +1,9 @@
+-FULL_REFUND_HOURS = 24
++FULL_REFUND_HOURS = 48
+ 
+ 
+ def refund_cents(total_cents, hours_before_departure):
+     if hours_before_departure >= FULL_REFUND_HOURS:
+         return total_cents
+-    if hours_before_departure >= 2:
++    if hours_before_departure >= 4:
+         return total_cents // 2
+     return 0

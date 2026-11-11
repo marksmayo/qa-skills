@@ -1,0 +1,7 @@
+[project]
+name = "harbourline-api"
+version = "0.4.0"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,16 @@
+.checkout {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 32rem;
+}
+
+.checkout .total {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.checkout button[type="submit"] {
+  background: #0b5394;
+  color: #ffffff;
+  min-height: 44px;
+}

@@ -1,0 +1,11 @@
+diff --git a/web/src/fare.ts b/web/src/fare.ts
+--- a/web/src/fare.ts
++++ b/web/src/fare.ts
+@@ -1,6 +1,6 @@
+ export function formatFare(cents: number): string {
+   const dollars = Math.floor(cents / 100);
+-  const rest = String(cents % 100).padStart(2, "0");
++  const rest = String(cents % 100);
+   return `$${dollars}.${rest}`;
+ }
+ 

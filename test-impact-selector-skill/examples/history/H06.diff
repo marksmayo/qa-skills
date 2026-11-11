@@ -1,0 +1,12 @@
+diff --git a/web/src/checkout.ts b/web/src/checkout.ts
+--- a/web/src/checkout.ts
++++ b/web/src/checkout.ts
+@@ -11,7 +11,7 @@
+   return [
+     `<section class="checkout">`,
+     `<h2>${booking.route.replace(":", " to ")}</h2>`,
+-    `<p>${formatParty(booking.passengers)}</p>`,
++    `<p class="party">${formatParty(booking.passengers)}</p>`,
+     `<p class="total">Total ${formatFare(booking.total_cents)}</p>`,
+     `<button type="submit">Pay ${formatFare(booking.total_cents)}</button>`,
+     `</section>`,

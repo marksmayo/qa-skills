@@ -1,0 +1,27 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`checkout markup and styles match the approved snapshot 1`] = `
+"<style>.checkout {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 32rem;
+}
+
+.checkout .total {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.checkout button[type="submit"] {
+  background: #0b5394;
+  color: #ffffff;
+  min-height: 44px;
+}
+</style>
+<section class="checkout">
+<h2>circular-quay to manly</h2>
+<p>2 passengers</p>
+<p class="total">Total $19.60</p>
+<button type="submit">Pay $19.60</button>
+</section>"
+`;

@@ -29,7 +29,7 @@ applied value is recorded. LANG and LC_ALL are set as
 given; many runtimes on Windows ignore them, and each run says so.
 """
 from __future__ import annotations
-import argparse, hashlib, json, os, random, shlex, signal, subprocess, sys, time
+import argparse, hashlib, json, os, random, shlex, shutil, signal, subprocess, sys, time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -89,9 +89,10 @@ def redact_home(text: str) -> str:
 
 
 def code_hash(root: Path) -> str:
+    """SHA-256 of every file's relative path and content (line endings normalised), sorted by POSIX path string so
+    the order is the same on every platform (Path ordering is case-insensitive on Windows)."""
     h = hashlib.sha256()
-    for p in sorted(iter_files(root)):
-        rel = p.relative_to(root).as_posix()
+    for rel, p in sorted((p.relative_to(root).as_posix(), p) for p in iter_files(root)):
         h.update(rel.encode('utf-8') + b'\0')
         h.update(p.read_bytes().replace(b'\r\n', b'\n'))
         h.update(b'\0')
@@ -191,7 +192,11 @@ def run_one(args, preset, run_id: str, tests: list[str], base_env: dict, junit_d
     t0 = time.monotonic()
     timed_out = False
     try:
-        proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **kw)
+        exe = cmd
+        if os.name == 'nt' and not os.path.isabs(cmd[0]):
+            found = shutil.which(cmd[0], path=env.get('PATH'))  # npx, gradlew etc. are .cmd/.bat shims on Windows
+            exe = [found, *cmd[1:]] if found else cmd
+        proc = subprocess.Popen(exe, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **kw)
         try:
             out, _ = proc.communicate(timeout=args.timeout)
         except subprocess.TimeoutExpired:

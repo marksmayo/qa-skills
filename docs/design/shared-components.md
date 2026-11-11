@@ -1,6 +1,6 @@
 # Shared components and the Journey Markdown format
 
-Status: Partly built; skills 7–25 add more shared files (see "Planned for skills 7–24"). Done: the Journey Markdown format, `journey_md.py`, `fetch_ticket.py` (shared since skill 7), `run_tests.py` and `stats.py` (since skill 8), `diff_scope.py` (since skill 9),
+Status: Partly built; skills 7–25 add more shared files (see "Planned for skills 7–24"). Done: the Journey Markdown format, `journey_md.py`, `fetch_ticket.py` (shared since skill 7), `run_tests.py` and `stats.py` (since skill 8, and used by the test impact selector since skill 10), `diff_scope.py` (since skill 9, and in the test impact selector since skill 10),
 `detect_conventions.py`, `parse_results.py`, `sarif.py` and `tools/check_shared.py`. The
 rendering helpers were not shared: each skill's renderer is small and report-specific, so each keeps
 its own.
@@ -144,6 +144,14 @@ the variation it applied. Variations:
 
 A per-run timeout kills the process tree and records `timed_out`. The script never edits test
 files.
+
+Two fixes came with skill 10 (the test impact selector):
+
+- **Windows shims:** on Windows the program is looked up with `shutil.which`, so the `npx`, Jest,
+  Vitest and Playwright presets can start a `.cmd` shim.
+- **Stable `code_hash`:** it now sorts files by POSIX path string, so a tree hashes the same on
+  Windows and Linux. It used to sort `Path` objects, which Windows compares case-insensitively.
+  The flaky test hunter's example runs predate this; see its "As built".
 
 **`diff_scope.py`** (built with skill 9; see the mutation tester's "As built") turns `git diff <base>...HEAD` (or a patch file) into changed files and
 changed line ranges per file. It follows renames (`-M`), separates added, modified, deleted and

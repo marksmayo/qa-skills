@@ -1,0 +1,12 @@
+diff --git a/api/harbourline_api/bookings.py b/api/harbourline_api/bookings.py
+--- a/api/harbourline_api/bookings.py
++++ b/api/harbourline_api/bookings.py
+@@ -8,7 +8,7 @@
+ 
+ 
+ def create_booking(origin, destination, ages, hour):
+-    if not ages:
++    if ages is None:
+         raise BookingError("a booking needs at least one passenger")
+     if len(ages) > MAX_PARTY:
+         raise BookingError(f"at most {MAX_PARTY} passengers per booking")

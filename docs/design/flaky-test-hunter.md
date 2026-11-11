@@ -261,3 +261,13 @@ Agreed with the user before the build.
   The time-zone test failed every normal run because the runs were made while the local NZ date
   was ahead of the UTC date.
 - **Validator:** 37 of 37 seeded violations are caught.
+- **Later change to `code_hash` (with skill 10):**
+  - What changed: `run_tests.py` used to sort files as `Path` objects. Windows compares those
+    case-insensitively, so the same tree hashed differently on Windows and Linux. It now sorts
+    by POSIX path string.
+  - Effect on the example: its 87 runs were recorded before the fix, so they carry `389ec8eb…`,
+    while a fresh `code_hash` of `examples/ferry-booking/` is now `35d0a247…`.
+  - Why it still validates: the report and its runs agree with each other, and the validator
+    compares the report's hash with the runs' hashes, never with a fresh one.
+  - What to watch: runs added to that `runs.json` now would not count with the old ones.
+    Regenerate all of them with `commands.sh`.

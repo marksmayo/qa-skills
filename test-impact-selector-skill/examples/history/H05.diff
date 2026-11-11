@@ -1,0 +1,11 @@
+diff --git a/api/harbourline_api/pricing.py b/api/harbourline_api/pricing.py
+--- a/api/harbourline_api/pricing.py
++++ b/api/harbourline_api/pricing.py
+@@ -1,6 +1,6 @@
+ from .routes import route
+ 
+-CHILD_AGE = 16
++CHILD_AGE = 12
+ CONCESSION_AGE = 65
+ PEAK_HOURS = range(7, 10)
+ 

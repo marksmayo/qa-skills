@@ -1,0 +1,11 @@
+diff --git a/web/src/fare.ts b/web/src/fare.ts
+--- a/web/src/fare.ts
++++ b/web/src/fare.ts
+@@ -5,5 +5,6 @@
+ }
+ 
+ export function formatParty(passengers: number): string {
+-  return passengers === 1 ? "1 passenger" : `${passengers} passengers`;
++  const noun = passengers === 1 ? "passenger" : "passengers";
++  return `${passengers} ${noun}`;
+ }

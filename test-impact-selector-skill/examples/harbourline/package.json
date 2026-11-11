@@ -1,0 +1,7 @@
+{
+  "name": "harbourline",
+  "private": true,
+  "scripts": {
+    "test:web": "pnpm --filter @harbourline/web test"
+  }
+}

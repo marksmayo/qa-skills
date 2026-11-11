@@ -1,0 +1,12 @@
+diff --git a/api/harbourline_api/pricing.py b/api/harbourline_api/pricing.py
+--- a/api/harbourline_api/pricing.py
++++ b/api/harbourline_api/pricing.py
+@@ -7,7 +7,7 @@
+ 
+ def passenger_rate(age):
+     if age < CHILD_AGE:
+-        return 0.5
++        return 0.4
+     if age >= CONCESSION_AGE:
+         return 0.5
+     return 1.0

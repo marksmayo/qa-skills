@@ -1,0 +1,8 @@
+# Selected tests, from test-impact-selector. Add these steps to a job yourself.
+steps:
+  - name: Selected pytest tests (api, part 1 of 1)
+    working-directory: api
+    run: python -m pytest tests/api/test_booking_api.py tests/unit/test_pricing.py tests/api/test_loyalty_api.py tests/unit/test_bookings.py tests/api/test_refund_api.py
+  - name: Selected vitest tests (web, part 1 of 1)
+    working-directory: web
+    run: npx vitest run e2e/checkout.e2e.test.ts

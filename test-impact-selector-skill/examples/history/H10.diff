@@ -1,0 +1,10 @@
+diff --git a/api/harbourline_api/data/routes.json b/api/harbourline_api/data/routes.json
+--- a/api/harbourline_api/data/routes.json
++++ b/api/harbourline_api/data/routes.json
+@@ -1,5 +1,5 @@
+ {
+   "circular-quay:manly": {"base_cents": 980, "minutes": 30},
+-  "circular-quay:watsons-bay": {"base_cents": 760, "minutes": 25},
++  "circular-quay:watsons-bay": {"base_cents": 780, "minutes": 25},
+   "barangaroo:parramatta": {"base_cents": 1240, "minutes": 75}
+ }
