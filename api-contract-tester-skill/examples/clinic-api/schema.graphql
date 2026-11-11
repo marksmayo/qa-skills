@@ -1,0 +1,24 @@
+"""The read-only GraphQL view of clinic-api, served at POST /graphql."""
+schema {
+  query: Query
+}
+
+type Query {
+  "Every clinician, optionally filtered by specialty."
+  clinicians(specialty: Specialty): [Clinician!]!
+  "One clinician, or null when there is no such id."
+  clinician(id: ID!): Clinician
+}
+
+type Clinician {
+  id: ID!
+  name: String!
+  specialty: Specialty!
+  rooms: [String!]!
+}
+
+enum Specialty {
+  GP
+  PHYSIO
+  DENTAL
+}

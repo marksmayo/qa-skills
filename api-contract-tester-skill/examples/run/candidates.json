@@ -1,0 +1,1292 @@
+{
+  "contract_sha256": "bbc3ac4d3a170c9814594d1d7f45ae2ee781e96699d0ece85bd79dab69b1bcbc",
+  "seed": 1611,
+  "run_status": "complete",
+  "operations": [
+    {
+      "operation_id": "healthCheck",
+      "method": "GET",
+      "path": "/health",
+      "status": "exercised",
+      "cases_sent": 1,
+      "checks": {
+        "status_documented": "passed",
+        "server_error": "passed",
+        "content_type": "passed",
+        "schema_conformance": "passed",
+        "required_headers": "not_applicable",
+        "negative_accepted": "not_applicable",
+        "positive_rejected": "passed",
+        "auth_enforced": "not_applicable",
+        "graphql_errors": "not_applicable"
+      }
+    },
+    {
+      "operation_id": "listClinicians",
+      "method": "GET",
+      "path": "/clinicians",
+      "status": "exercised",
+      "cases_sent": 21,
+      "checks": {
+        "status_documented": "passed",
+        "server_error": "passed",
+        "content_type": "passed",
+        "schema_conformance": "failed",
+        "required_headers": "not_applicable",
+        "negative_accepted": "passed",
+        "positive_rejected": "passed",
+        "auth_enforced": "not_applicable",
+        "graphql_errors": "not_applicable"
+      }
+    },
+    {
+      "operation_id": "getClinician",
+      "method": "GET",
+      "path": "/clinicians/{clinicianId}",
+      "status": "exercised",
+      "cases_sent": 15,
+      "checks": {
+        "status_documented": "failed",
+        "server_error": "passed",
+        "content_type": "passed",
+        "schema_conformance": "failed",
+        "required_headers": "passed",
+        "negative_accepted": "passed",
+        "positive_rejected": "passed",
+        "auth_enforced": "not_applicable",
+        "graphql_errors": "not_applicable"
+      }
+    },
+    {
+      "operation_id": "listAppointments",
+      "method": "GET",
+      "path": "/appointments",
+      "status": "exercised",
+      "cases_sent": 17,
+      "checks": {
+        "status_documented": "passed",
+        "server_error": "failed",
+        "content_type": "passed",
+        "schema_conformance": "passed",
+        "required_headers": "not_applicable",
+        "negative_accepted": "failed",
+        "positive_rejected": "passed",
+        "auth_enforced": "passed",
+        "graphql_errors": "not_applicable"
+      }
+    },
+    {
+      "operation_id": "createAppointment",
+      "method": "POST",
+      "path": "/appointments",
+      "status": "exercised",
+      "cases_sent": 29,
+      "checks": {
+        "status_documented": "passed",
+        "server_error": "passed",
+        "content_type": "passed",
+        "schema_conformance": "passed",
+        "required_headers": "passed",
+        "negative_accepted": "failed",
+        "positive_rejected": "passed",
+        "auth_enforced": "passed",
+        "graphql_errors": "not_applicable"
+      }
+    },
+    {
+      "operation_id": "getAppointment",
+      "method": "GET",
+      "path": "/appointments/{appointmentId}",
+      "status": "exercised",
+      "cases_sent": 16,
+      "checks": {
+        "status_documented": "passed",
+        "server_error": "passed",
+        "content_type": "failed",
+        "schema_conformance": "passed",
+        "required_headers": "not_applicable",
+        "negative_accepted": "passed",
+        "positive_rejected": "passed",
+        "auth_enforced": "passed",
+        "graphql_errors": "not_applicable"
+      }
+    },
+    {
+      "operation_id": "cancelAppointment",
+      "method": "DELETE",
+      "path": "/appointments/{appointmentId}",
+      "status": "excluded",
+      "cases_sent": 0,
+      "checks": {
+        "status_documented": "untested",
+        "server_error": "untested",
+        "content_type": "untested",
+        "schema_conformance": "untested",
+        "required_headers": "untested",
+        "negative_accepted": "untested",
+        "positive_rejected": "untested",
+        "auth_enforced": "untested",
+        "graphql_errors": "untested"
+      }
+    },
+    {
+      "operation_id": "dailyReport",
+      "method": "GET",
+      "path": "/reports/daily",
+      "status": "exercised",
+      "cases_sent": 13,
+      "checks": {
+        "status_documented": "passed",
+        "server_error": "passed",
+        "content_type": "passed",
+        "schema_conformance": "cantTell",
+        "required_headers": "not_applicable",
+        "negative_accepted": "passed",
+        "positive_rejected": "passed",
+        "auth_enforced": "failed",
+        "graphql_errors": "not_applicable"
+      }
+    },
+    {
+      "operation_id": "listSlots",
+      "method": "GET",
+      "path": "/slots",
+      "status": "exercised",
+      "cases_sent": 17,
+      "checks": {
+        "status_documented": "passed",
+        "server_error": "failed",
+        "content_type": "passed",
+        "schema_conformance": "passed",
+        "required_headers": "not_applicable",
+        "negative_accepted": "failed",
+        "positive_rejected": "passed",
+        "auth_enforced": "not_applicable",
+        "graphql_errors": "not_applicable"
+      }
+    }
+  ],
+  "operation_coverage": {
+    "total": 9,
+    "exercised": 8,
+    "excluded": 1,
+    "skipped_write": 0,
+    "skipped_auth": 0,
+    "untested": 0
+  },
+  "candidates": [
+    {
+      "id": "K1",
+      "source": "stdlib",
+      "check": "schema_conformance",
+      "cause": "Clinician: missing required 'specialty'",
+      "operation_ids": [
+        "listClinicians",
+        "getClinician"
+      ],
+      "repeatable": true,
+      "instances": [
+        {
+          "case_id": "listClinicians-001",
+          "operation_id": "listClinicians",
+          "kind": "example",
+          "valid": true,
+          "write": false,
+          "status": 200,
+          "exchange": "exchanges/listClinicians-001.json",
+          "resend_exchange": "exchanges/listClinicians-001.resend.json",
+          "resend_status": 200,
+          "repeated": true
+        },
+        {
+          "case_id": "listClinicians-006",
+          "operation_id": "listClinicians",
+          "kind": "boundary",
+          "valid": true,
+          "write": false,
+          "status": 200,
+          "exchange": "exchanges/listClinicians-006.json",
+          "resend_exchange": "exchanges/listClinicians-006.resend.json",
+          "resend_status": 200,
+          "repeated": true
+        },
+        {
+          "case_id": "listClinicians-012",
+          "operation_id": "listClinicians",
+          "kind": "random",
+          "valid": true,
+          "write": false,
+          "status": 200,
+          "exchange": "exchanges/listClinicians-012.json",
+          "resend_exchange": "exchanges/listClinicians-012.resend.json",
+          "resend_status": 200,
+          "repeated": true
+        },
+        {
+          "case_id": "listClinicians-014",
+          "operation_id": "listClinicians",
+          "kind": "random",
+          "valid": true,
+          "write": false,
+          "status": 200,
+          "exchange": "exchanges/listClinicians-014.json",
+          "resend_exchange": "exchanges/listClinicians-014.resend.json",
+          "resend_status": 200,
+          "repeated": true
+        },
+        {
+          "case_id": "listClinicians-015",
+          "operation_id": "listClinicians",
+          "kind": "random",
+          "valid": true,
+          "write": false,
+          "status": 200,
+          "exchange": "exchanges/listClinicians-015.json",
+          "resend_exchange": "exchanges/listClinicians-015.resend.json",
+          "resend_status": 200,
+          "repeated": true
+        },
+        {
+          "case_id": "listClinicians-016",
+          "operation_id": "listClinicians",
+          "kind": "random",
+          "valid": true,
+          "write": false,
+          "status": 200,
+          "exchange": "exchanges/listClinicians-016.json",
+          "resend_exchange": "exchanges/listClinicians-016.resend.json",
+          "resend_status": 200,
+          "repeated": true
+        },
+        {
+          "case_id": "listClinicians-017",
+          "operation_id": "listClinicians",
+          "kind": "random",
+          "valid": true,
+          "write": false,
+          "status": 200,
+          "exchange": "exchanges/listClinicians-017.json",
+          "resend_exchange": "exchanges/listClinicians-017.resend.json",
+          "resend_status": 200,
+          "repeated": true
+        },
+        {
+          "case_id": "getClinician-015",
+          "operation_id": "getClinician",
+          "kind": "added",
+          "valid": true,
+          "write": false,
+          "status": 200,
+          "exchange": "exchanges/getClinician-015.json",
+          "resend_exchange": "exchanges/getClinician-015.resend.json",
+          "resend_status": 200,
+          "repeated": true
+        }
+      ],
+      "severity": "High",
+      "confidence": "high",
+      "reach": 2,
+      "score": 18,
+      "priority": "P1",
+      "regression_test_sketch": "def test_listclinicians_schema_conformance(api):\n    \"\"\"schema_conformance: Clinician: missing required 'specialty'\"\"\"\n    resp = api.request('GET', '/clinicians?limit=10')\n    assert not contract_errors(resp)  # validate the body against the response schema"
+    },
+    {
+      "id": "K2",
+      "source": "stdlib",
+      "check": "auth_enforced",
+      "cause": "answers 2xx without credentials",
+      "operation_ids": [
+        "dailyReport"
+      ],
+      "repeatable": true,
+      "instances": [
+        {
+          "case_id": "dailyReport-013",
+          "operation_id": "dailyReport",
+          "kind": "no_auth",
+          "valid": true,
+          "write": false,
+          "status": 200,
+          "exchange": "exchanges/dailyReport-013.json",
+          "resend_exchange": "exchanges/dailyReport-013.resend.json",
+          "resend_status": 200,
+          "repeated": true
+        }
+      ],
+      "severity": "Critical",
+      "confidence": "high",
+      "reach": 1,
+      "score": 12,
+      "priority": "P1",
+      "regression_test_sketch": "def test_dailyreport_auth_enforced(api):\n    \"\"\"auth_enforced: answers 2xx without credentials\"\"\"\n    resp = api.request('GET', '/reports/daily?date=2026-11-12', auth=None)\n    assert resp.status in (401, 403)"
+    },
+    {
+      "id": "K3",
+      "source": "stdlib",
+      "check": "negative_accepted",
+      "cause": "clinic_id: below minimum 1",
+      "operation_ids": [
+        "listAppointments"
+      ],
+      "repeatable": true,
+      "instances": [
+        {
+          "case_id": "listAppointments-002",
+          "operation_id": "listAppointments",
+          "kind": "negative",
+          "valid": false,
+          "write": false,
+          "status": 200,
+          "exchange": "exchanges/listAppointments-002.json",
+          "resend_exchange": "exchanges/listAppointments-002.resend.json",
+          "resend_status": 200,
+          "repeated": true
+        }
+      ],
+      "severity": "Medium",
+      "confidence": "high",
+      "reach": 1,
+      "score": 6,
+      "priority": "P2",
+      "regression_test_sketch": "def test_listappointments_negative_accepted(api):\n    \"\"\"negative_accepted: clinic_id: below minimum 1\"\"\"\n    resp = api.request('GET', '/appointments?clinic_id=0&date=2026-11-12')\n    assert 400 <= resp.status < 500"
+    },
+    {
+      "id": "K4",
+      "source": "stdlib",
+      "check": "negative_accepted",
+      "cause": "clinician_id: below minimum 1",
+      "operation_ids": [
+        "listSlots"
+      ],
+      "repeatable": true,
+      "instances": [
+        {
+          "case_id": "listSlots-002",
+          "operation_id": "listSlots",
+          "kind": "negative",
+          "valid": false,
+          "write": false,
+          "status": 200,
+          "exchange": "exchanges/listSlots-002.json",
+          "resend_exchange": "exchanges/listSlots-002.resend.json",
+          "resend_status": 200,
+          "repeated": true
+        }
+      ],
+      "severity": "Medium",
+      "confidence": "high",
+      "reach": 1,
+      "score": 6,
+      "priority": "P2",
+      "regression_test_sketch": "def test_listslots_negative_accepted(api):\n    \"\"\"negative_accepted: clinician_id: below minimum 1\"\"\"\n    resp = api.request('GET', '/slots?clinician_id=0&date=2026-11-12')\n    assert 400 <= resp.status < 500"
+    },
+    {
+      "id": "K5",
+      "source": "stdlib",
+      "check": "server_error",
+      "cause": "status 500",
+      "operation_ids": [
+        "listAppointments"
+      ],
+      "repeatable": true,
+      "instances": [
+        {
+          "case_id": "listAppointments-006",
+          "operation_id": "listAppointments",
+          "kind": "negative",
+          "valid": false,
+          "write": false,
+          "status": 500,
+          "exchange": "exchanges/listAppointments-006.json",
+          "resend_exchange": "exchanges/listAppointments-006.resend.json",
+          "resend_status": 500,
+          "repeated": true
+        }
+      ],
+      "severity": "Medium",
+      "confidence": "high",
+      "reach": 1,
+      "score": 6,
+      "priority": "P2",
+      "regression_test_sketch": "def test_listappointments_server_error(api):\n    \"\"\"server_error: status 500\"\"\"\n    resp = api.request('GET', '/appointments?clinic_id=1&date=11%2F11%2F2026')\n    assert resp.status < 500"
+    },
+    {
+      "id": "K6",
+      "source": "stdlib",
+      "check": "status_documented",
+      "cause": "status 404",
+      "operation_ids": [
+        "getClinician"
+      ],
+      "repeatable": true,
+      "instances": [
+        {
+          "case_id": "getClinician-002",
+          "operation_id": "getClinician",
+          "kind": "negative",
+          "valid": false,
+          "write": false,
+          "status": 404,
+          "exchange": "exchanges/getClinician-002.json",
+          "resend_exchange": "exchanges/getClinician-002.resend.json",
+          "resend_status": 404,
+          "repeated": true
+        },
+        {
+          "case_id": "getClinician-005",
+          "operation_id": "getClinician",
+          "kind": "random",
+          "valid": true,
+          "write": false,
+          "status": 404,
+          "exchange": "exchanges/getClinician-005.json",
+          "resend_exchange": "exchanges/getClinician-005.resend.json",
+          "resend_status": 404,
+          "repeated": true
+        },
+        {
+          "case_id": "getClinician-006",
+          "operation_id": "getClinician",
+          "kind": "random",
+          "valid": true,
+          "write": false,
+          "status": 404,
+          "exchange": "exchanges/getClinician-006.json",
+          "resend_exchange": "exchanges/getClinician-006.resend.json",
+          "resend_status": 404,
+          "repeated": true
+        },
+        {
+          "case_id": "getClinician-007",
+          "operation_id": "getClinician",
+          "kind": "random",
+          "valid": true,
+          "write": false,
+          "status": 404,
+          "exchange": "exchanges/getClinician-007.json",
+          "resend_exchange": "exchanges/getClinician-007.resend.json",
+          "resend_status": 404,
+          "repeated": true
+        },
+        {
+          "case_id": "getClinician-008",
+          "operation_id": "getClinician",
+          "kind": "random",
+          "valid": true,
+          "write": false,
+          "status": 404,
+          "exchange": "exchanges/getClinician-008.json",
+          "resend_exchange": "exchanges/getClinician-008.resend.json",
+          "resend_status": 404,
+          "repeated": true
+        },
+        {
+          "case_id": "getClinician-009",
+          "operation_id": "getClinician",
+          "kind": "random",
+          "valid": true,
+          "write": false,
+          "status": 404,
+          "exchange": "exchanges/getClinician-009.json",
+          "resend_exchange": "exchanges/getClinician-009.resend.json",
+          "resend_status": 404,
+          "repeated": true
+        },
+        {
+          "case_id": "getClinician-010",
+          "operation_id": "getClinician",
+          "kind": "random",
+          "valid": true,
+          "write": false,
+          "status": 404,
+          "exchange": "exchanges/getClinician-010.json",
+          "resend_exchange": "exchanges/getClinician-010.resend.json",
+          "resend_status": 404,
+          "repeated": true
+        },
+        {
+          "case_id": "getClinician-011",
+          "operation_id": "getClinician",
+          "kind": "random",
+          "valid": true,
+          "write": false,
+          "status": 404,
+          "exchange": "exchanges/getClinician-011.json",
+          "resend_exchange": "exchanges/getClinician-011.resend.json",
+          "resend_status": 404,
+          "repeated": true
+        },
+        {
+          "case_id": "getClinician-012",
+          "operation_id": "getClinician",
+          "kind": "random",
+          "valid": true,
+          "write": false,
+          "status": 404,
+          "exchange": "exchanges/getClinician-012.json",
+          "resend_exchange": "exchanges/getClinician-012.resend.json",
+          "resend_status": 404,
+          "repeated": true
+        },
+        {
+          "case_id": "getClinician-013",
+          "operation_id": "getClinician",
+          "kind": "random",
+          "valid": true,
+          "write": false,
+          "status": 404,
+          "exchange": "exchanges/getClinician-013.json",
+          "resend_exchange": "exchanges/getClinician-013.resend.json",
+          "resend_status": 404,
+          "repeated": true
+        },
+        {
+          "case_id": "getClinician-014",
+          "operation_id": "getClinician",
+          "kind": "random",
+          "valid": true,
+          "write": false,
+          "status": 404,
+          "exchange": "exchanges/getClinician-014.json",
+          "resend_exchange": "exchanges/getClinician-014.resend.json",
+          "resend_status": 404,
+          "repeated": true
+        }
+      ],
+      "severity": "Medium",
+      "confidence": "high",
+      "reach": 1,
+      "score": 6,
+      "priority": "P2",
+      "regression_test_sketch": "def test_getclinician_status_documented(api):\n    \"\"\"status_documented: status 404\"\"\"\n    resp = api.request('GET', '/clinicians/0')\n    assert str(resp.status) in ['200', '400'] or \"default\" in ['200', '400']"
+    },
+    {
+      "id": "K7",
+      "source": "stdlib",
+      "check": "negative_accepted",
+      "cause": "body.patient_name: longer than maxLength 60",
+      "operation_ids": [
+        "createAppointment"
+      ],
+      "repeatable": true,
+      "instances": [
+        {
+          "case_id": "createAppointment-009",
+          "operation_id": "createAppointment",
+          "kind": "negative",
+          "valid": false,
+          "write": true,
+          "status": 201,
+          "exchange": "exchanges/createAppointment-009.json",
+          "resend_exchange": "exchanges/createAppointment-009.resend.json",
+          "resend_status": 201,
+          "repeated": true
+        }
+      ],
+      "severity": "Medium",
+      "confidence": "medium",
+      "reach": 1,
+      "score": 4,
+      "priority": "P3",
+      "regression_test_sketch": "def test_createappointment_negative_accepted(api):\n    \"\"\"negative_accepted: body.patient_name: longer than maxLength 60\"\"\"\n    resp = api.request('POST', '/appointments', json={\"patient_name\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"clinician_id\": 1, \"date\": \"2026-11-13\", \"time\": \"09:30\"})\n    assert 400 <= resp.status < 500"
+    },
+    {
+      "id": "K8",
+      "source": "stdlib",
+      "check": "negative_accepted",
+      "cause": "body: unexpected property",
+      "operation_ids": [
+        "createAppointment"
+      ],
+      "repeatable": true,
+      "instances": [
+        {
+          "case_id": "createAppointment-016",
+          "operation_id": "createAppointment",
+          "kind": "negative",
+          "valid": false,
+          "write": true,
+          "status": 201,
+          "exchange": "exchanges/createAppointment-016.json",
+          "resend_exchange": "exchanges/createAppointment-016.resend.json",
+          "resend_status": 201,
+          "repeated": true
+        }
+      ],
+      "severity": "Medium",
+      "confidence": "medium",
+      "reach": 1,
+      "score": 4,
+      "priority": "P3",
+      "regression_test_sketch": "def test_createappointment_negative_accepted(api):\n    \"\"\"negative_accepted: body: unexpected property\"\"\"\n    resp = api.request('POST', '/appointments', json={\"patient_name\": \"Test Patient C\", \"clinician_id\": 1, \"date\": \"2026-11-13\", \"time\": \"09:30\", \"unexpected_field\": \"x\"})\n    assert 400 <= resp.status < 500"
+    },
+    {
+      "id": "K9",
+      "source": "stdlib",
+      "check": "content_type",
+      "cause": "status 400: Content-Type text/html",
+      "operation_ids": [
+        "getAppointment"
+      ],
+      "repeatable": true,
+      "instances": [
+        {
+          "case_id": "getAppointment-004",
+          "operation_id": "getAppointment",
+          "kind": "negative",
+          "valid": false,
+          "write": false,
+          "status": 400,
+          "exchange": "exchanges/getAppointment-004.json",
+          "resend_exchange": "exchanges/getAppointment-004.resend.json",
+          "resend_status": 400,
+          "repeated": true
+        },
+        {
+          "case_id": "getAppointment-005",
+          "operation_id": "getAppointment",
+          "kind": "negative",
+          "valid": false,
+          "write": false,
+          "status": 400,
+          "exchange": "exchanges/getAppointment-005.json",
+          "resend_exchange": "exchanges/getAppointment-005.resend.json",
+          "resend_status": 400,
+          "repeated": true
+        }
+      ],
+      "severity": "Low",
+      "confidence": "high",
+      "reach": 1,
+      "score": 3,
+      "priority": "P3",
+      "regression_test_sketch": "def test_getappointment_content_type(api):\n    \"\"\"content_type: status 400: Content-Type text/html\"\"\"\n    resp = api.request('GET', '/appointments/abc')\n    assert resp.headers['Content-Type'].split(';')[0] == 'application/json'"
+    },
+    {
+      "id": "K10",
+      "source": "stdlib",
+      "check": "server_error",
+      "cause": "status 503",
+      "operation_ids": [
+        "listSlots"
+      ],
+      "repeatable": false,
+      "instances": [
+        {
+          "case_id": "listSlots-008",
+          "operation_id": "listSlots",
+          "kind": "random",
+          "valid": true,
+          "write": false,
+          "status": 503,
+          "exchange": "exchanges/listSlots-008.json",
+          "resend_exchange": null,
+          "resend_status": 200,
+          "repeated": false
+        },
+        {
+          "case_id": "listSlots-016",
+          "operation_id": "listSlots",
+          "kind": "random",
+          "valid": true,
+          "write": false,
+          "status": 503,
+          "exchange": "exchanges/listSlots-016.json",
+          "resend_exchange": null,
+          "resend_status": 200,
+          "repeated": false
+        }
+      ],
+      "severity": "High",
+      "confidence": "low",
+      "reach": 1,
+      "score": 3,
+      "priority": "P3",
+      "regression_test_sketch": "def test_listslots_server_error(api):\n    \"\"\"server_error: status 503\"\"\"\n    resp = api.request('GET', '/slots?clinician_id=648&date=2026-01-04')\n    assert resp.status < 500"
+    },
+    {
+      "id": "S1",
+      "source": "schemathesis",
+      "check": "auth_enforced",
+      "cause": "ST401 API accepts requests without authentication: API accepts requests without authentication Expected 401 or 403, got `200 OK` for `GET /reports/daily`",
+      "operation_ids": [
+        "dailyReport"
+      ],
+      "repeatable": null,
+      "instances": [],
+      "severity": null,
+      "confidence": null,
+      "reach": null,
+      "score": null,
+      "priority": null,
+      "regression_test_sketch": null,
+      "evidence": "schemathesis/junit-20261111T201934Z.xml"
+    },
+    {
+      "id": "S2",
+      "source": "schemathesis",
+      "check": "server_error",
+      "cause": "ST101 Server error: Server error",
+      "operation_ids": [
+        "listSlots"
+      ],
+      "repeatable": null,
+      "instances": [],
+      "severity": null,
+      "confidence": null,
+      "reach": null,
+      "score": null,
+      "priority": null,
+      "regression_test_sketch": null,
+      "evidence": "schemathesis/junit-20261111T201934Z.xml"
+    },
+    {
+      "id": "S3",
+      "source": "schemathesis",
+      "check": "schema_conformance",
+      "cause": "ST108 Response violates schema: Response violates schema \"specialty\" is a required property Validated against the response schema for status code 200. Schema at /components/schemas/Clinician: { \"required\": [ \"id\", \"name\", \"specialty",
+      "operation_ids": [
+        "listClinicians"
+      ],
+      "repeatable": null,
+      "instances": [],
+      "severity": null,
+      "confidence": null,
+      "reach": null,
+      "score": null,
+      "priority": null,
+      "regression_test_sketch": null,
+      "evidence": "schemathesis/junit-20261111T201934Z.xml"
+    },
+    {
+      "id": "S4",
+      "source": "schemathesis",
+      "check": "schema_conformance",
+      "cause": "ST108 Response violates schema: Response violates schema \"specialty\" is a required property Validated against the response schema for status code 200. Schema at /components/schemas/Clinician: { \"required\": [ \"id\", \"name\", \"specialty",
+      "operation_ids": [
+        "getClinician"
+      ],
+      "repeatable": null,
+      "instances": [],
+      "severity": null,
+      "confidence": null,
+      "reach": null,
+      "score": null,
+      "priority": null,
+      "regression_test_sketch": null,
+      "evidence": "schemathesis/junit-20261111T201934Z.xml"
+    },
+    {
+      "id": "S5",
+      "source": "schemathesis",
+      "check": "auth_enforced",
+      "cause": "ST203 Missing required header accepted: Missing required header accepted Got 200 when missing required 'Authorization' header, expected 401",
+      "operation_ids": [
+        "dailyReport"
+      ],
+      "repeatable": null,
+      "instances": [],
+      "severity": null,
+      "confidence": null,
+      "reach": null,
+      "score": null,
+      "priority": null,
+      "regression_test_sketch": null,
+      "evidence": "schemathesis/junit-20261111T201934Z.xml"
+    },
+    {
+      "id": "S6",
+      "source": "schemathesis",
+      "check": "negative_accepted",
+      "cause": "ST201 Schema-violating request accepted: Schema-violating request accepted Invalid data should have been rejected Expected: 400, 401, 403, 404, 405, 406, 409, 415, 422, 428, 429, 5xx Invalid component: parameter `clinic_id` in query - clinic",
+      "operation_ids": [
+        "listAppointments"
+      ],
+      "repeatable": null,
+      "instances": [],
+      "severity": null,
+      "confidence": null,
+      "reach": null,
+      "score": null,
+      "priority": null,
+      "regression_test_sketch": null,
+      "evidence": "schemathesis/junit-20261111T201934Z.xml"
+    },
+    {
+      "id": "S7",
+      "source": "schemathesis",
+      "check": "required_headers",
+      "cause": "ST105 Undocumented Content-Type: Undocumented Content-Type Received: text/html; charset=utf-8 Documented: application/json",
+      "operation_ids": [
+        "getAppointment"
+      ],
+      "repeatable": null,
+      "instances": [],
+      "severity": null,
+      "confidence": null,
+      "reach": null,
+      "score": null,
+      "priority": null,
+      "regression_test_sketch": null,
+      "evidence": "schemathesis/junit-20261111T201934Z.xml"
+    },
+    {
+      "id": "S8",
+      "source": "schemathesis",
+      "check": "status_documented",
+      "cause": "ST103 Undocumented status code: Undocumented status code Received: 404 Documented: 200, 400",
+      "operation_ids": [
+        "getClinician"
+      ],
+      "repeatable": null,
+      "instances": [],
+      "severity": null,
+      "confidence": null,
+      "reach": null,
+      "score": null,
+      "priority": null,
+      "regression_test_sketch": null,
+      "evidence": "schemathesis/junit-20261111T201934Z.xml"
+    }
+  ],
+  "contract_issues": [
+    {
+      "kind": "example_mismatch",
+      "location": "components.schemas.Clinician.example",
+      "message": "the example for Clinician doesn't match its own schema: $.id: expected integer, got string",
+      "id": "C1",
+      "line": null
+    },
+    {
+      "kind": "unsupported_keyword",
+      "location": "dependentRequired",
+      "message": "response schemas use 'dependentRequired', which the stdlib checker can't evaluate; schema_conformance is cantTell for dailyReport unless another keyword fails",
+      "id": "C2",
+      "line": null
+    }
+  ],
+  "breaking_changes": [
+    {
+      "id": "B1",
+      "kind": "response_property_removed",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "response",
+      "operation_ids": [
+        "listAppointments",
+        "createAppointment",
+        "getAppointment"
+      ],
+      "location": "Appointment.room",
+      "detail": "room removed from the response",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B2",
+      "kind": "additional_properties_disallowed",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "request",
+      "operation_ids": [
+        "createAppointment"
+      ],
+      "location": "NewAppointment",
+      "detail": "additionalProperties: false added",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B3",
+      "kind": "bound_tightened",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "request",
+      "operation_ids": [
+        "createAppointment"
+      ],
+      "location": "NewAppointment.clinician_id",
+      "detail": "minimum none -> 1",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B4",
+      "kind": "bound_tightened",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "request",
+      "operation_ids": [
+        "createAppointment"
+      ],
+      "location": "NewAppointment.patient_name",
+      "detail": "minLength none -> 1",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B5",
+      "kind": "bound_tightened",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "request",
+      "operation_ids": [
+        "createAppointment"
+      ],
+      "location": "NewAppointment.patient_name",
+      "detail": "maxLength 80 -> 60",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B6",
+      "kind": "pattern_changed",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "request",
+      "operation_ids": [
+        "createAppointment"
+      ],
+      "location": "NewAppointment.time",
+      "detail": "pattern none -> '^([01][0-9]|2[0-3]):[0-5][0-9]$'",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B7",
+      "kind": "bound_tightened",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "request",
+      "operation_ids": [
+        "getAppointment"
+      ],
+      "location": "parameter path.appointmentId",
+      "detail": "minimum none -> 1",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B8",
+      "kind": "bound_tightened",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "request",
+      "operation_ids": [
+        "getClinician"
+      ],
+      "location": "parameter path.clinicianId",
+      "detail": "minimum none -> 1",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B9",
+      "kind": "required_parameter_added",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "request",
+      "operation_ids": [
+        "listAppointments"
+      ],
+      "location": "parameter query.clinic_id",
+      "detail": "new required query parameter clinic_id",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B10",
+      "kind": "response_status_removed",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "response",
+      "operation_ids": [
+        "getClinician"
+      ],
+      "location": "response 404",
+      "detail": "404 is no longer documented",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B11",
+      "kind": "enum_value_added",
+      "rating": "potentially_breaking",
+      "severity": "Medium",
+      "direction": "response",
+      "operation_ids": [
+        "listAppointments",
+        "createAppointment",
+        "getAppointment"
+      ],
+      "location": "Appointment.status",
+      "detail": "enum gained no_show",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B12",
+      "kind": "property_now_required",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "listAppointments",
+        "createAppointment",
+        "getAppointment"
+      ],
+      "location": "Appointment.clinic_id",
+      "detail": "clinic_id is now always returned",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B13",
+      "kind": "pattern_changed",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "listAppointments",
+        "createAppointment",
+        "getAppointment"
+      ],
+      "location": "Appointment.time",
+      "detail": "pattern none -> '^([01][0-9]|2[0-3]):[0-5][0-9]$'",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B14",
+      "kind": "bound_tightened",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "listClinicians",
+        "getClinician"
+      ],
+      "location": "Clinician.id",
+      "detail": "minimum none -> 1",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B15",
+      "kind": "bound_tightened",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "listClinicians",
+        "getClinician"
+      ],
+      "location": "Clinician.name",
+      "detail": "minLength none -> 1",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B16",
+      "kind": "operation_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "operation",
+      "operation_ids": [
+        "dailyReport"
+      ],
+      "location": "GET /reports/daily",
+      "detail": "dailyReport added",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B17",
+      "kind": "operation_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "operation",
+      "operation_ids": [
+        "listSlots"
+      ],
+      "location": "GET /slots",
+      "detail": "listSlots added",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B18",
+      "kind": "property_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "request",
+      "operation_ids": [
+        "createAppointment"
+      ],
+      "location": "NewAppointment.portal_pin",
+      "detail": "portal_pin added",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B19",
+      "kind": "parameter_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "request",
+      "operation_ids": [
+        "listClinicians"
+      ],
+      "location": "parameter query.limit",
+      "detail": "new optional query parameter limit",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B20",
+      "kind": "response_header_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "getClinician"
+      ],
+      "location": "response 200 header X-Request-Id",
+      "detail": "X-Request-Id is now always sent",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B21",
+      "kind": "enum_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "healthCheck"
+      ],
+      "location": "response 200.status",
+      "detail": "now restricted to ['ok']",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B22",
+      "kind": "property_now_required",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "healthCheck"
+      ],
+      "location": "response 200.status",
+      "detail": "status is now always returned",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B23",
+      "kind": "property_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "healthCheck"
+      ],
+      "location": "response 200.version",
+      "detail": "version added",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B24",
+      "kind": "response_header_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "createAppointment"
+      ],
+      "location": "response 201 header Location",
+      "detail": "Location is now always sent",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B25",
+      "kind": "response_status_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "listClinicians",
+        "getClinician",
+        "listAppointments",
+        "createAppointment",
+        "getAppointment"
+      ],
+      "location": "response 400",
+      "detail": "400 added",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B26",
+      "kind": "response_status_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "listAppointments",
+        "createAppointment",
+        "getAppointment",
+        "cancelAppointment"
+      ],
+      "location": "response 401",
+      "detail": "401 added",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B27",
+      "kind": "response_status_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "cancelAppointment"
+      ],
+      "location": "response 404",
+      "detail": "404 added",
+      "sources": [
+        "stdlib"
+      ]
+    }
+  ]
+}

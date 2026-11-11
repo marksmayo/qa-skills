@@ -1,0 +1,249 @@
+{
+  "skill": {
+    "name": "api-contract-tester",
+    "version": "1.0.0"
+  },
+  "scope": {
+    "contract": {
+      "kind": "graphql",
+      "version": null,
+      "api_version": null,
+      "source": "examples/clinic-api/schema.graphql",
+      "sha256": "931107eca8279b9473c2c4b418bc2dde62c14e68c6b9fa0af45005221daeeda9"
+    },
+    "previous_contract": null,
+    "base_url": "http://127.0.0.1:8140",
+    "authorised_by": null,
+    "writes_allowed": false,
+    "production_hosts": [],
+    "seed": 1611,
+    "operations_filter": {
+      "include": [],
+      "exclude": []
+    },
+    "max_cases_per_operation": 50
+  },
+  "metadata": {
+    "generated_at": "2026-11-11T07:20:32Z",
+    "tools": [
+      {
+        "name": "gen_cases.py (stdlib generator)",
+        "version": "1.0.0",
+        "status": "ran",
+        "note": "9 queries, seed 1611"
+      },
+      {
+        "name": "send_cases.py",
+        "version": "1.0.0",
+        "status": "ran",
+        "note": "13 requests at 5 per second"
+      },
+      {
+        "name": "schemathesis",
+        "version": null,
+        "status": "not_run",
+        "note": "not run against the GraphQL endpoint in this example"
+      }
+    ],
+    "generator": "stdlib",
+    "requests_sent": 13,
+    "rate_limited": {
+      "events": 0,
+      "backoff_seconds": 0.0
+    },
+    "run_status": "complete",
+    "secret_env": [],
+    "run": "run-graphql/run.json"
+  },
+  "headline": {
+    "verdict": "violations_found",
+    "summary": "2 contract violations found in 13 requests over both query fields: a non-null field returned as null, and a valid filter that fails. The served schema also has a field (Clinician.internalNotes) that schema.graphql lacks.",
+    "severity_counts": {
+      "Critical": 0,
+      "High": 2,
+      "Medium": 0,
+      "Low": 0
+    },
+    "flaky_findings": 0,
+    "breaking_change_counts": {
+      "breaking": 0,
+      "potentially_breaking": 0,
+      "compatible": 0
+    },
+    "operation_coverage": {
+      "total": 2,
+      "exercised": 2,
+      "excluded": 0,
+      "skipped_write": 0,
+      "skipped_auth": 0,
+      "untested": 0
+    },
+    "evidence_completeness": "complete",
+    "overall_confidence": "high"
+  },
+  "operations": [
+    {
+      "operation_id": "Query.clinicians",
+      "method": "QUERY",
+      "path": "clinicians",
+      "status": "exercised",
+      "cases_sent": 4,
+      "checks": {
+        "status_documented": "not_applicable",
+        "server_error": "passed",
+        "content_type": "passed",
+        "schema_conformance": "not_applicable",
+        "required_headers": "not_applicable",
+        "negative_accepted": "not_applicable",
+        "positive_rejected": "not_applicable",
+        "auth_enforced": "not_applicable",
+        "graphql_errors": "failed"
+      }
+    },
+    {
+      "operation_id": "Query.clinician",
+      "method": "QUERY",
+      "path": "clinician",
+      "status": "exercised",
+      "cases_sent": 5,
+      "checks": {
+        "status_documented": "not_applicable",
+        "server_error": "passed",
+        "content_type": "passed",
+        "schema_conformance": "not_applicable",
+        "required_headers": "not_applicable",
+        "negative_accepted": "passed",
+        "positive_rejected": "not_applicable",
+        "auth_enforced": "not_applicable",
+        "graphql_errors": "failed"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "F1",
+      "candidate_id": "K1",
+      "title": "Clinician 3 resolves specialty to null although the schema says Specialty!",
+      "check": "graphql_errors",
+      "cause": ".specialty: null for non-null Specialty!",
+      "operation_ids": [
+        "Query.clinicians",
+        "Query.clinician"
+      ],
+      "severity": "High",
+      "confidence": "high",
+      "reach": 2,
+      "score": 18,
+      "priority": "P1",
+      "repeatable": true,
+      "exchanges": [
+        {
+          "path": "exchanges/Query.clinicians-001.json",
+          "request_summary": "POST /graphql {\"query\": \"{ clinicians { id name specialty rooms } }\"}",
+          "status": 200
+        },
+        {
+          "path": "exchanges/Query.clinicians-001.resend.json",
+          "request_summary": "POST /graphql {\"query\": \"{ clinicians { id name specialty rooms } }\"} (re-send)",
+          "status": 200
+        },
+        {
+          "path": "exchanges/Query.clinician-003.json",
+          "request_summary": "POST /graphql {\"query\": \"{ clinician(id: \\\"3\\\") { id name specialty rooms } }\"}",
+          "status": 200
+        },
+        {
+          "path": "exchanges/Query.clinician-003.resend.json",
+          "request_summary": "POST /graphql {\"query\": \"{ clinician(id: \\\"3\\\") { id name specialty rooms } }\"} (re-send)",
+          "status": 200
+        }
+      ],
+      "expected": "specialty is non-null (Specialty!), so every Clinician returned has one of GP, PHYSIO or DENTAL.",
+      "actual": "clinicians and clinician(id: \"3\") both return specialty: null for clinician 3, with no error. A GraphQL server should have nulled the parent and raised an error; this one returned invalid data.",
+      "fix_direction": "fix_api",
+      "fix_direction_basis": "agent_judgment",
+      "handler": {
+        "file": "server.py",
+        "line": 22
+      },
+      "remediation": "The same data defect as the REST API's missing specialty: fix the record or the resolver. If specialty can be absent, make the field nullable in schema.graphql.",
+      "verification_step": "Rerun send_cases.py on run-graphql with seed 1611: Query.clinicians-001 and Query.clinician-003 pass.",
+      "regression_test_sketch": "def test_query_clinicians_graphql_errors(api):\n    \"\"\"graphql_errors: .specialty: null for non-null Specialty!\"\"\"\n    resp = api.request('POST', '/graphql', json={\"query\": \"{ clinicians { id name specialty rooms } }\"})\n    assert not contract_errors(resp)  # validate the body against the response schema",
+      "security_relevant": false
+    },
+    {
+      "id": "F2",
+      "candidate_id": "K2",
+      "title": "clinicians(specialty: DENTAL) fails with an internal error",
+      "check": "graphql_errors",
+      "cause": "a valid query returned errors: Internal error",
+      "operation_ids": [
+        "Query.clinicians"
+      ],
+      "severity": "High",
+      "confidence": "high",
+      "reach": 1,
+      "score": 9,
+      "priority": "P2",
+      "repeatable": true,
+      "exchanges": [
+        {
+          "path": "exchanges/Query.clinicians-004.json",
+          "request_summary": "POST /graphql {\"query\": \"{ clinicians(specialty: DENTAL) { id name specialty rooms }",
+          "status": 200
+        },
+        {
+          "path": "exchanges/Query.clinicians-004.resend.json",
+          "request_summary": "POST /graphql {\"query\": \"{ clinicians(specialty: DENTAL) { id name specialty rooms } (re-send)",
+          "status": 200
+        }
+      ],
+      "expected": "A valid query returns data and no errors; with no dental clinicians, an empty list.",
+      "actual": "{\"data\": null, \"errors\": [{\"message\": \"Internal error\", \"path\": [\"clinicians\"]}]} on both sends.",
+      "fix_direction": "fix_api",
+      "fix_direction_basis": "agent_judgment",
+      "handler": {
+        "file": "server.py",
+        "line": 222
+      },
+      "remediation": "Find why the DENTAL filter raises in the resolver and return an empty list when nothing matches.",
+      "verification_step": "Rerun with seed 1611: Query.clinicians-004 passes graphql_errors.",
+      "regression_test_sketch": "def test_query_clinicians_graphql_errors(api):\n    \"\"\"graphql_errors: a valid query returned errors: Internal error\"\"\"\n    resp = api.request('POST', '/graphql', json={\"query\": \"{ clinicians(specialty: DENTAL) { id name specialty rooms } }\"})\n    assert not contract_errors(resp)  # validate the body against the response schema",
+      "security_relevant": false
+    }
+  ],
+  "needs_review": [],
+  "triage": [
+    {
+      "candidate_id": "K1",
+      "decision": "promoted",
+      "finding_id": "F1",
+      "reason": "Repeated on both query fields."
+    },
+    {
+      "candidate_id": "K2",
+      "decision": "promoted",
+      "finding_id": "F2",
+      "reason": "Repeated on the re-send."
+    }
+  ],
+  "contract_issues": [
+    {
+      "kind": "introspection_mismatch",
+      "location": "Clinician.internalNotes",
+      "message": "the API serves Clinician.internalNotes, which isn't in the SDL",
+      "id": "C1",
+      "line": null
+    }
+  ],
+  "breaking_changes": [],
+  "limitations": [
+    "Only queries were tested; the schema has no mutations.",
+    "Argument values come from a small fixed set per scalar (IDs 1, 2, 3 and 999) and every enum value; the selection is every scalar field one level deep.",
+    "Schemathesis was not run against the GraphQL endpoint."
+  ],
+  "next_steps": [
+    "Fix F1 together with the REST report's F2 (same data).",
+    "Decide whether internalNotes should be served (C1); if not, remove it from the server, otherwise add it to the SDL."
+  ]
+}

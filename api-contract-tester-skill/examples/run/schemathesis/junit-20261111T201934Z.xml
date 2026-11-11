@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites errors="0" failures="6" skipped="0" tests="7" time="16.804407">
+  <testsuite name="schemathesis" hostname="MM-Terem" errors="0" failures="6" skipped="0" tests="7" time="16.804407">
+    <testcase name="GET /clinicians" time="3.940239">
+      <failure type="failure" message="ST108">1. Test Case ID: hvPPbL
+
+- ST108 Response violates schema
+
+    "specialty" is a required property
+
+    Validated against the response schema for status code 200.
+
+    Schema at /components/schemas/Clinician:
+
+        {
+            "required": [
+                "id",
+                "name",
+                "specialty"
+            ],
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "name": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "specialty": {
+                    "$ref": "#/components/schemas/Specialty"
+                }
+            // Output truncated...
+        }
+
+    Value:
+
+        {
+            "id": 3,
+            "name": "Dr Test Three"
+        }
+
+[200] OK:
+
+    `[{"id": 1, "name": "Dr Test One", "specialty": "gp"}, {"id": 2, "name": "Dr Test Two", "specialty": "physio"}, {"id": 3, "name": "Dr Test Three"}]`
+
+Reproduce with:
+
+    curl -X GET -H 'Authorization: [Filtered]' 'http://127.0.0.1:8140/clinicians?limit=10'</failure>
+    </testcase>
+    <testcase name="GET /health" time="0.033567" />
+    <testcase name="GET /reports/daily" time="0.629724">
+      <failure type="failure" message="ST401">1. Test Case ID: LfwW8Q
+
+- ST401 API accepts requests without authentication
+
+    Expected 401 or 403, got `200 OK` for `GET /reports/daily`
+
+[200] OK:
+
+    `{"date": "2026-11-12", "booked": 1, "cancelled": 1}`
+
+Reproduce with:
+
+    curl -X GET 'http://127.0.0.1:8140/reports/daily?date=2026-11-12'</failure>
+      <failure type="failure" message="ST203">1. Test Case ID: XXJ7d6
+
+- ST203 Missing required header accepted
+
+    Got 200 when missing required 'Authorization' header, expected 401
+
+[200] OK:
+
+    `{"date": "2026-11-12", "booked": 1, "cancelled": 1}`
+
+Reproduce with:
+
+    curl -X GET 'http://127.0.0.1:8140/reports/daily?date=2026-11-12'</failure>
+    </testcase>
+    <testcase name="GET /clinicians/{clinicianId}" time="1.454604">
+      <failure type="failure" message="ST108">1. Test Case ID: WZEYPP
+
+- ST108 Response violates schema
+
+    "specialty" is a required property
+
+    Validated against the response schema for status code 200.
+
+    Schema at /components/schemas/Clinician:
+
+        {
+            "required": [
+                "id",
+                "name",
+                "specialty"
+            ],
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "name": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "specialty": {
+                    "$ref": "#/components/schemas/Specialty"
+                }
+            // Output truncated...
+        }
+
+    Value:
+
+        {
+            "id": 3,
+            "name": "Dr Test Three"
+        }
+
+[200] OK:
+
+    `{"id": 3, "name": "Dr Test Three"}`
+
+Reproduce with:
+
+    curl -X GET -H 'Authorization: [Filtered]' http://127.0.0.1:8140/clinicians/3</failure>
+      <failure type="failure" message="ST103">1. Test Case ID: kQwFT7
+
+- ST103 Undocumented status code
+
+    Received: 404
+    Documented: 200, 400
+
+[404] Not Found:
+
+    `{"detail": "clinician not found"}`
+
+Reproduce with:
+
+    curl -X GET -H 'Authorization: [Filtered]' http://127.0.0.1:8140/clinicians/0</failure>
+    </testcase>
+    <testcase name="GET /appointments" time="5.248076">
+      <failure type="failure" message="ST201">1. Test Case ID: kXXqCO
+
+- ST201 Schema-violating request accepted
+
+    Invalid data should have been rejected
+    Expected: 400, 401, 403, 404, 405, 406, 409, 415, 422, 428, 429, 5xx
+    Invalid component: parameter `clinic_id` in query - clinic_id: Value smaller than minimum
+
+[200] OK:
+
+    `[]`
+
+Reproduce with:
+
+    curl -X GET -H 'Authorization: [Filtered]' 'http://127.0.0.1:8140/appointments?clinic_id=0'</failure>
+    </testcase>
+    <testcase name="GET /slots" time="3.269516">
+      <failure type="failure" message="ST101">1. Test Case ID: WcqjCn
+
+- ST101 Server error
+
+[503] Service Unavailable:
+
+    `{"code": "unavailable", "message": "Scheduler busy"}`
+
+Reproduce with:
+
+    curl -X GET -H 'Authorization: [Filtered]' 'http://127.0.0.1:8140/slots?clinician_id=3&amp;date=null'</failure>
+    </testcase>
+    <testcase name="GET /appointments/{appointmentId}" time="2.228683">
+      <failure type="failure" message="ST105">1. Test Case ID: bhtuNr
+
+- ST105 Undocumented Content-Type
+
+    Received: text/html; charset=utf-8
+    Documented: application/json
+
+[400] Bad Request:
+
+    `{"code": "bad_id", "message": "appointmentId must be an integer"}`
+
+Reproduce with:
+
+    curl -X GET -H 'Authorization: [Filtered]' http://127.0.0.1:8140/appointments/%20</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

@@ -1,0 +1,296 @@
+{
+  "base_url": "http://127.0.0.1:8140",
+  "host": "127.0.0.1",
+  "loopback": true,
+  "authorised_by": null,
+  "writes_allowed": false,
+  "production_hosts": [],
+  "rate_per_second": 5.0,
+  "contract_sha256": "931107eca8279b9473c2c4b418bc2dde62c14e68c6b9fa0af45005221daeeda9",
+  "seed": 1611,
+  "generator": "stdlib",
+  "secret_env": [],
+  "started_at": "2026-11-11T07:20:29Z",
+  "probe": {
+    "path": "/graphql",
+    "status": 200,
+    "elapsed_ms": 5
+  },
+  "status": "complete",
+  "results": [
+    {
+      "case_id": "Query.clinicians-001",
+      "operation_id": "Query.clinicians",
+      "kind": "graphql",
+      "valid": true,
+      "method": "POST",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 21,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "graphql_errors": {
+          "result": "failed",
+          "detail": "data.clinicians[2].specialty: null for non-null Specialty!",
+          "errors": [
+            "data.clinicians[2].specialty: null for non-null Specialty!"
+          ]
+        }
+      },
+      "failed": [
+        "graphql_errors"
+      ],
+      "exchange": "exchanges/Query.clinicians-001.json",
+      "resend": {
+        "status": 200,
+        "failed": [
+          "graphql_errors"
+        ],
+        "exchange": "exchanges/Query.clinicians-001.resend.json",
+        "repeated": {
+          "graphql_errors": true
+        }
+      }
+    },
+    {
+      "case_id": "Query.clinicians-002",
+      "operation_id": "Query.clinicians",
+      "kind": "graphql",
+      "valid": true,
+      "method": "POST",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 22,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "graphql_errors": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "Query.clinicians-003",
+      "operation_id": "Query.clinicians",
+      "kind": "graphql",
+      "valid": true,
+      "method": "POST",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "graphql_errors": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "Query.clinicians-004",
+      "operation_id": "Query.clinicians",
+      "kind": "graphql",
+      "valid": true,
+      "method": "POST",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 1,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "graphql_errors": {
+          "result": "failed",
+          "detail": "a valid query returned errors: Internal error"
+        }
+      },
+      "failed": [
+        "graphql_errors"
+      ],
+      "exchange": "exchanges/Query.clinicians-004.json",
+      "resend": {
+        "status": 200,
+        "failed": [
+          "graphql_errors"
+        ],
+        "exchange": "exchanges/Query.clinicians-004.resend.json",
+        "repeated": {
+          "graphql_errors": true
+        }
+      }
+    },
+    {
+      "case_id": "Query.clinician-001",
+      "operation_id": "Query.clinician",
+      "kind": "graphql",
+      "valid": true,
+      "method": "POST",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "graphql_errors": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "Query.clinician-002",
+      "operation_id": "Query.clinician",
+      "kind": "graphql",
+      "valid": true,
+      "method": "POST",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 24,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "graphql_errors": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "Query.clinician-003",
+      "operation_id": "Query.clinician",
+      "kind": "graphql",
+      "valid": true,
+      "method": "POST",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 23,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "graphql_errors": {
+          "result": "failed",
+          "detail": "data.clinician.specialty: null for non-null Specialty!",
+          "errors": [
+            "data.clinician.specialty: null for non-null Specialty!"
+          ]
+        }
+      },
+      "failed": [
+        "graphql_errors"
+      ],
+      "exchange": "exchanges/Query.clinician-003.json",
+      "resend": {
+        "status": 200,
+        "failed": [
+          "graphql_errors"
+        ],
+        "exchange": "exchanges/Query.clinician-003.resend.json",
+        "repeated": {
+          "graphql_errors": true
+        }
+      }
+    },
+    {
+      "case_id": "Query.clinician-004",
+      "operation_id": "Query.clinician",
+      "kind": "graphql",
+      "valid": true,
+      "method": "POST",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "graphql_errors": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "Query.clinician-005",
+      "operation_id": "Query.clinician",
+      "kind": "negative",
+      "valid": false,
+      "method": "POST",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 12,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    }
+  ],
+  "blocked": [],
+  "requests_sent": 13,
+  "rate_limited": {
+    "events": 0,
+    "backoff_seconds": 0.0
+  },
+  "finished_at": "2026-11-11T07:20:32Z"
+}

@@ -1,0 +1,208 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/qa-skills/api-contract-tester/api_contract_report.schema.json",
+  "title": "API contract test report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["skill", "scope", "metadata", "headline", "operations", "findings", "needs_review", "triage",
+               "contract_issues", "breaking_changes", "limitations", "next_steps"],
+  "properties": {
+    "skill": {
+      "type": "object", "additionalProperties": false, "required": ["name", "version"],
+      "properties": {"name": {"enum": ["api-contract-tester"]}, "version": {"type": "string"}}
+    },
+    "scope": {
+      "type": "object", "additionalProperties": false,
+      "required": ["contract", "previous_contract", "base_url", "authorised_by", "writes_allowed", "production_hosts", "seed",
+                   "operations_filter", "max_cases_per_operation"],
+      "properties": {
+        "contract": {
+          "type": "object", "additionalProperties": false, "required": ["kind", "version", "api_version", "source", "sha256"],
+          "properties": {
+            "kind": {"enum": ["openapi", "graphql", "swagger2"]},
+            "version": {"type": ["string", "null"]},
+            "api_version": {"type": ["string", "null"]},
+            "source": {"type": "string"},
+            "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+          }
+        },
+        "previous_contract": {
+          "oneOf": [
+            {"type": "null"},
+            {"type": "object", "additionalProperties": false, "required": ["source", "sha256", "api_version"],
+             "properties": {"source": {"type": "string"}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                            "api_version": {"type": ["string", "null"]}}}
+          ]
+        },
+        "base_url": {"type": "string", "pattern": "^https?://"},
+        "authorised_by": {"type": ["string", "null"]},
+        "writes_allowed": {"type": "boolean"},
+        "production_hosts": {"type": "array", "items": {"type": "string"}},
+        "seed": {"type": "integer"},
+        "operations_filter": {
+          "type": "object", "additionalProperties": false, "required": ["include", "exclude"],
+          "properties": {"include": {"type": "array", "items": {"type": "string"}}, "exclude": {"type": "array", "items": {"type": "string"}}}
+        },
+        "max_cases_per_operation": {"type": "integer", "minimum": 1}
+      }
+    },
+    "metadata": {
+      "type": "object", "additionalProperties": false,
+      "required": ["generated_at", "tools", "generator", "requests_sent", "rate_limited", "run_status", "secret_env", "run"],
+      "properties": {
+        "generated_at": {"type": "string"},
+        "tools": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/tool"}},
+        "generator": {"enum": ["stdlib", "schemathesis", "both"]},
+        "requests_sent": {"type": "integer", "minimum": 0},
+        "rate_limited": {
+          "type": "object", "additionalProperties": false, "required": ["events", "backoff_seconds"],
+          "properties": {"events": {"type": "integer", "minimum": 0}, "backoff_seconds": {"type": "number", "minimum": 0}}
+        },
+        "run_status": {"enum": ["complete", "incomplete", "down"]},
+        "secret_env": {"type": "array", "items": {"type": "string"}},
+        "run": {"type": "string"}
+      }
+    },
+    "headline": {
+      "type": "object", "additionalProperties": false,
+      "required": ["verdict", "summary", "severity_counts", "flaky_findings", "breaking_change_counts", "operation_coverage",
+                   "evidence_completeness", "overall_confidence"],
+      "properties": {
+        "verdict": {"enum": ["violations_found", "not_established"]},
+        "summary": {"type": "string", "minLength": 20},
+        "severity_counts": {
+          "type": "object", "additionalProperties": false, "required": ["Critical", "High", "Medium", "Low"],
+          "properties": {"Critical": {"type": "integer"}, "High": {"type": "integer"}, "Medium": {"type": "integer"}, "Low": {"type": "integer"}}
+        },
+        "flaky_findings": {"type": "integer", "minimum": 0},
+        "breaking_change_counts": {
+          "type": "object", "additionalProperties": false, "required": ["breaking", "potentially_breaking", "compatible"],
+          "properties": {"breaking": {"type": "integer"}, "potentially_breaking": {"type": "integer"}, "compatible": {"type": "integer"}}
+        },
+        "operation_coverage": {"$ref": "#/$defs/coverage"},
+        "evidence_completeness": {"enum": ["complete", "partial", "incomplete"]},
+        "overall_confidence": {"enum": ["high", "medium", "low"]}
+      }
+    },
+    "operations": {"type": "array", "items": {"$ref": "#/$defs/operation"}},
+    "findings": {"type": "array", "items": {"$ref": "#/$defs/finding"}},
+    "needs_review": {
+      "type": "array",
+      "items": {"type": "object", "additionalProperties": false, "required": ["candidate_id", "reason"],
+                "properties": {"candidate_id": {"type": "string"}, "reason": {"type": "string", "minLength": 10}}}
+    },
+    "triage": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["candidate_id", "decision", "finding_id", "reason"],
+        "properties": {
+          "candidate_id": {"type": "string"},
+          "decision": {"enum": ["promoted", "needs_review", "dismissed"]},
+          "finding_id": {"type": ["string", "null"]},
+          "reason": {"type": "string", "minLength": 10}
+        }
+      }
+    },
+    "contract_issues": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["id", "kind", "location", "line", "message"],
+        "properties": {"id": {"type": "string"}, "kind": {"type": "string"}, "location": {"type": "string"},
+                       "line": {"type": ["integer", "null"]}, "message": {"type": "string"}}
+      }
+    },
+    "breaking_changes": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "kind", "rating", "severity", "direction", "operation_ids", "location", "detail", "sources"],
+        "properties": {
+          "id": {"type": "string"}, "kind": {"type": "string"},
+          "rating": {"enum": ["breaking", "potentially_breaking", "compatible"]},
+          "severity": {"enum": ["High", "Medium", "Low", null]},
+          "direction": {"enum": ["request", "response", "operation", "unknown"]},
+          "operation_ids": {"type": "array", "items": {"type": "string"}},
+          "location": {"type": "string"}, "detail": {"type": "string"},
+          "sources": {"type": "array", "minItems": 1, "items": {"enum": ["stdlib", "oasdiff"]}}
+        }
+      }
+    },
+    "limitations": {"type": "array", "items": {"type": "string"}},
+    "next_steps": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {
+    "tool": {
+      "type": "object", "additionalProperties": false, "required": ["name", "version", "status", "note"],
+      "properties": {"name": {"type": "string"}, "version": {"type": ["string", "null"]},
+                     "status": {"enum": ["ran", "not_run", "errored"]}, "note": {"type": ["string", "null"]}}
+    },
+    "coverage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["total", "exercised", "excluded", "skipped_write", "skipped_auth", "untested"],
+      "properties": {"total": {"type": "integer"}, "exercised": {"type": "integer"}, "excluded": {"type": "integer"},
+                     "skipped_write": {"type": "integer"}, "skipped_auth": {"type": "integer"}, "untested": {"type": "integer"}}
+    },
+    "check_result": {"enum": ["passed", "failed", "cantTell", "not_applicable", "untested"]},
+    "operation": {
+      "type": "object", "additionalProperties": false, "required": ["operation_id", "method", "path", "status", "cases_sent", "checks"],
+      "properties": {
+        "operation_id": {"type": "string"}, "method": {"type": "string"}, "path": {"type": "string"},
+        "status": {"enum": ["exercised", "excluded", "skipped_write", "skipped_auth", "untested"]},
+        "cases_sent": {"type": "integer", "minimum": 0},
+        "checks": {
+          "type": "object", "additionalProperties": false,
+          "required": ["status_documented", "server_error", "content_type", "schema_conformance", "required_headers",
+                       "negative_accepted", "positive_rejected", "auth_enforced", "graphql_errors"],
+          "properties": {
+            "status_documented": {"$ref": "#/$defs/check_result"}, "server_error": {"$ref": "#/$defs/check_result"},
+            "content_type": {"$ref": "#/$defs/check_result"}, "schema_conformance": {"$ref": "#/$defs/check_result"},
+            "required_headers": {"$ref": "#/$defs/check_result"}, "negative_accepted": {"$ref": "#/$defs/check_result"},
+            "positive_rejected": {"$ref": "#/$defs/check_result"}, "auth_enforced": {"$ref": "#/$defs/check_result"},
+            "graphql_errors": {"$ref": "#/$defs/check_result"}
+          }
+        }
+      }
+    },
+    "finding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "candidate_id", "title", "check", "cause", "operation_ids", "severity", "confidence", "reach", "score",
+                   "priority", "repeatable", "exchanges", "expected", "actual", "fix_direction", "fix_direction_basis", "handler",
+                   "remediation", "verification_step", "regression_test_sketch", "security_relevant"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^F[0-9]+$"},
+        "candidate_id": {"type": "string"},
+        "title": {"type": "string", "minLength": 10},
+        "check": {"enum": ["status_documented", "server_error", "content_type", "schema_conformance", "required_headers",
+                           "negative_accepted", "positive_rejected", "auth_enforced", "graphql_errors"]},
+        "cause": {"type": "string"},
+        "operation_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "severity": {"enum": ["Critical", "High", "Medium", "Low"]},
+        "confidence": {"enum": ["high", "medium", "low"]},
+        "reach": {"type": "integer", "minimum": 1, "maximum": 3},
+        "score": {"type": "integer", "minimum": 1},
+        "priority": {"enum": ["P0", "P1", "P2", "P3"]},
+        "repeatable": {"type": "boolean"},
+        "exchanges": {
+          "type": "array", "minItems": 1,
+          "items": {"type": "object", "additionalProperties": false, "required": ["path", "request_summary", "status"],
+                    "properties": {"path": {"type": "string"}, "request_summary": {"type": "string"}, "status": {"type": "integer"}}}
+        },
+        "expected": {"type": "string", "minLength": 5},
+        "actual": {"type": "string", "minLength": 5},
+        "fix_direction": {"enum": ["fix_api", "fix_contract"]},
+        "fix_direction_basis": {"enum": ["agent_judgment"]},
+        "handler": {
+          "oneOf": [
+            {"type": "null"},
+            {"type": "object", "additionalProperties": false, "required": ["file", "line"],
+             "properties": {"file": {"type": "string"}, "line": {"type": "integer", "minimum": 1}}}
+          ]
+        },
+        "remediation": {"type": "string", "minLength": 10},
+        "verification_step": {"type": "string", "minLength": 10},
+        "regression_test_sketch": {"type": "string", "minLength": 10},
+        "security_relevant": {"type": "boolean"}
+      }
+    }
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "case_id": "getClinician-013",
+  "operation_id": "getClinician",
+  "kind": "random",
+  "valid": true,
+  "description": "seeded random sample 9",
+  "sent_with_credentials": true,
+  "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:8140/clinicians/354",
+    "headers": {
+      "Authorization": "[REDACTED]",
+      "Accept": "application/json"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 404,
+    "headers": {
+      "Server": "clinic-api/1.5.0 Python/3.14.10",
+      "Date": "Wed, 11 Nov 2026 07:20:24 GMT",
+      "Content-Type": "application/json",
+      "Content-Length": "33"
+    },
+    "body": {
+      "json": {
+        "detail": "clinician not found"
+      },
+      "sha256": "c6f2944b9b005d864b57a4858c02b1a3999fd3b965e6f4a1e41fb3289dcc9177",
+      "truncated": false,
+      "bytes": 33
+    }
+  },
+  "elapsed_ms": 2,
+  "failed_checks": [
+    "status_documented"
+  ]
+}

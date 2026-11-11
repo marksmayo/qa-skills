@@ -1,0 +1,51 @@
+{
+  "case_id": "createAppointment-009",
+  "operation_id": "createAppointment",
+  "kind": "negative",
+  "valid": false,
+  "description": "body.patient_name: longer than maxLength 60",
+  "sent_with_credentials": true,
+  "request": {
+    "method": "POST",
+    "url": "http://127.0.0.1:8140/appointments",
+    "headers": {
+      "Authorization": "[REDACTED]",
+      "Content-Type": "application/json",
+      "Accept": "application/json"
+    },
+    "body": {
+      "patient_name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "clinician_id": 1,
+      "date": "2026-11-13",
+      "time": "09:30"
+    }
+  },
+  "response": {
+    "status": 201,
+    "headers": {
+      "Server": "clinic-api/1.5.0 Python/3.14.10",
+      "Date": "Wed, 11 Nov 2026 07:20:07 GMT",
+      "Content-Type": "application/json",
+      "Content-Length": "186",
+      "Location": "/appointments/113"
+    },
+    "body": {
+      "json": {
+        "id": 113,
+        "clinic_id": 1,
+        "clinician_id": 1,
+        "date": "2026-11-13",
+        "time": "09:30",
+        "status": "booked",
+        "patient_name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      },
+      "sha256": "bfb0e985bad165972adc93a7cb34e8c37ec51226abe6d20114050cf6e268383e",
+      "truncated": false,
+      "bytes": 186
+    }
+  },
+  "elapsed_ms": 2,
+  "failed_checks": [
+    "negative_accepted"
+  ]
+}

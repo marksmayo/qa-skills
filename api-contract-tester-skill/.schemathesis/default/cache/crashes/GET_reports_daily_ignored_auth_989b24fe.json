@@ -1,0 +1,148 @@
+{
+  "operation": "GET /reports/daily",
+  "method": "GET",
+  "path_template": "/reports/daily",
+  "fingerprint": "989b24fe",
+  "case_id": "LfwW8Q",
+  "code_sample": "curl -X GET 'http://127.0.0.1:8140/reports/daily?date=2026-11-12'",
+  "sequence": [
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:8140/reports/daily?date=2026-11-12",
+      "url_template": "http://127.0.0.1:8140/reports/daily",
+      "headers": {
+        "User-Agent": "schemathesis/4.33.2",
+        "Accept-Encoding": "gzip, deflate, zstd",
+        "Accept": "*/*",
+        "Connection": "keep-alive",
+        "Authorization": "[Filtered]",
+        "X-Schemathesis-TestCaseId": "5diau4"
+      },
+      "response": {
+        "status_code": 200,
+        "headers": {
+          "server": "clinic-api/1.5.0 Python/3.14.10",
+          "date": "Wed, 11 Nov 2026 07:19:35 GMT",
+          "content-type": "application/json",
+          "content-length": "51"
+        },
+        "body": "{\"date\": \"2026-11-12\", \"booked\": 1, \"cancelled\": 1}"
+      },
+      "link": null,
+      "checks": [],
+      "meta": {
+        "generation": {
+          "time": 0.0006378000252880156,
+          "mode": "positive"
+        },
+        "components": {},
+        "phase": {
+          "name": "examples",
+          "data": {
+            "type": "ExamplesPhaseData",
+            "description": "Positive test case",
+            "location": null,
+            "parameter": null,
+            "parameter_location": null,
+            "mutations": []
+          }
+        },
+        "pool_draws": [],
+        "pool_misses": [],
+        "semantic_draws": [],
+        "dictionary_draws": [],
+        "constants_draws": [],
+        "raw_containers": {}
+      },
+      "path": "/reports/daily",
+      "path_parameters": {},
+      "query": {
+        "date": "2026-11-12"
+      },
+      "case_headers": {
+        "Authorization": "[Filtered]"
+      },
+      "cookies": {},
+      "case_body": {
+        "encoding": "none"
+      },
+      "media_type": null,
+      "parent_index": null,
+      "auth_identity": null,
+      "operation": "GET /reports/daily"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:8140/reports/daily?date=2026-11-12",
+      "url_template": "http://127.0.0.1:8140/reports/daily",
+      "headers": {
+        "User-Agent": "schemathesis/4.33.2",
+        "Accept-Encoding": "gzip, deflate, zstd",
+        "Accept": "*/*",
+        "Connection": "keep-alive",
+        "X-Schemathesis-TestCaseId": "LfwW8Q"
+      },
+      "response": {
+        "status_code": 200,
+        "headers": {
+          "server": "clinic-api/1.5.0 Python/3.14.10",
+          "date": "Wed, 11 Nov 2026 07:19:35 GMT",
+          "content-type": "application/json",
+          "content-length": "51"
+        },
+        "body": "{\"date\": \"2026-11-12\", \"booked\": 1, \"cancelled\": 1}"
+      },
+      "link": null,
+      "checks": [
+        {
+          "name": "ignored_auth",
+          "status": "failure",
+          "message": "API accepts requests without authentication\n\nExpected 401 or 403, got `200 OK` for `GET /reports/daily`"
+        }
+      ],
+      "meta": {
+        "generation": {
+          "time": 0.0006378000252880156,
+          "mode": "positive"
+        },
+        "components": {},
+        "phase": {
+          "name": "examples",
+          "data": {
+            "type": "ExamplesPhaseData",
+            "description": "Positive test case",
+            "location": null,
+            "parameter": null,
+            "parameter_location": null,
+            "mutations": []
+          }
+        },
+        "pool_draws": [],
+        "pool_misses": [],
+        "semantic_draws": [],
+        "dictionary_draws": [],
+        "constants_draws": [],
+        "raw_containers": {}
+      },
+      "path": "/reports/daily",
+      "path_parameters": {},
+      "query": {
+        "date": "2026-11-12"
+      },
+      "case_headers": {},
+      "cookies": {},
+      "case_body": {
+        "encoding": "none"
+      },
+      "media_type": null,
+      "parent_index": 0,
+      "auth_identity": null,
+      "operation": "GET /reports/daily"
+    }
+  ],
+  "aliases": [
+    "KvhBgu",
+    "O34aSU",
+    "VbkqhS"
+  ]
+}

@@ -1,0 +1,120 @@
+{
+  "kind": "graphql",
+  "version": null,
+  "title": null,
+  "api_version": null,
+  "dialect": "graphql",
+  "source": "examples/clinic-api/schema.graphql",
+  "sha256": "931107eca8279b9473c2c4b418bc2dde62c14e68c6b9fa0af45005221daeeda9",
+  "yaml_parser": null,
+  "operations": [
+    {
+      "operation_id": "Query.clinicians",
+      "method": "QUERY",
+      "path": "clinicians",
+      "tags": [
+        "query"
+      ],
+      "line": 8,
+      "write": false,
+      "security": [],
+      "parameters": [
+        {
+          "name": "specialty",
+          "in": "argument",
+          "required": false,
+          "type": "Specialty"
+        }
+      ],
+      "request_body": null,
+      "responses": {},
+      "returns": "[Clinician!]!"
+    },
+    {
+      "operation_id": "Query.clinician",
+      "method": "QUERY",
+      "path": "clinician",
+      "tags": [
+        "query"
+      ],
+      "line": 10,
+      "write": false,
+      "security": [],
+      "parameters": [
+        {
+          "name": "id",
+          "in": "argument",
+          "required": true,
+          "type": "ID!"
+        }
+      ],
+      "request_body": null,
+      "responses": {},
+      "returns": "Clinician"
+    }
+  ],
+  "issues": [
+    {
+      "kind": "introspection_mismatch",
+      "location": "Clinician.internalNotes",
+      "message": "the API serves Clinician.internalNotes, which isn't in the SDL",
+      "id": "C1",
+      "line": null
+    }
+  ],
+  "root": {
+    "types": {
+      "Query": {
+        "kind": "OBJECT",
+        "fields": {
+          "clinicians": {
+            "type": "[Clinician!]!",
+            "args": {
+              "specialty": "Specialty"
+            }
+          },
+          "clinician": {
+            "type": "Clinician",
+            "args": {
+              "id": "ID!"
+            }
+          }
+        }
+      },
+      "Clinician": {
+        "kind": "OBJECT",
+        "fields": {
+          "id": {
+            "type": "ID!",
+            "args": {}
+          },
+          "name": {
+            "type": "String!",
+            "args": {}
+          },
+          "specialty": {
+            "type": "Specialty!",
+            "args": {}
+          },
+          "rooms": {
+            "type": "[String!]!",
+            "args": {}
+          }
+        }
+      },
+      "Specialty": {
+        "kind": "ENUM",
+        "values": [
+          "GP",
+          "PHYSIO",
+          "DENTAL"
+        ]
+      }
+    },
+    "roots": {
+      "query": "Query",
+      "mutation": "Mutation"
+    }
+  },
+  "introspection_compared": true
+}

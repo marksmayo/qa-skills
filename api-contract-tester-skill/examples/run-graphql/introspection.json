@@ -1,0 +1,161 @@
+{
+  "data": {
+    "__schema": {
+      "queryType": {
+        "name": "Query"
+      },
+      "mutationType": null,
+      "types": [
+        {
+          "kind": "OBJECT",
+          "name": "Query",
+          "fields": [
+            {
+              "name": "clinicians",
+              "args": [
+                {
+                  "name": "specialty",
+                  "type": {
+                    "kind": "ENUM",
+                    "name": "Specialty",
+                    "ofType": null
+                  }
+                }
+              ],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "OBJECT",
+                      "name": "Clinician",
+                      "ofType": null
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "clinician",
+              "args": [
+                {
+                  "name": "id",
+                  "type": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "ID",
+                      "ofType": null
+                    }
+                  }
+                }
+              ],
+              "type": {
+                "kind": "OBJECT",
+                "name": "Clinician",
+                "ofType": null
+              }
+            }
+          ]
+        },
+        {
+          "kind": "OBJECT",
+          "name": "Clinician",
+          "fields": [
+            {
+              "name": "id",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "ID",
+                  "ofType": null
+                }
+              }
+            },
+            {
+              "name": "name",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              }
+            },
+            {
+              "name": "specialty",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "ENUM",
+                  "name": "Specialty",
+                  "ofType": null
+                }
+              }
+            },
+            {
+              "name": "rooms",
+              "args": [],
+              "type": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "LIST",
+                  "name": null,
+                  "ofType": {
+                    "kind": "NON_NULL",
+                    "name": null,
+                    "ofType": {
+                      "kind": "SCALAR",
+                      "name": "String",
+                      "ofType": null
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "internalNotes",
+              "args": [],
+              "type": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            }
+          ]
+        },
+        {
+          "kind": "ENUM",
+          "name": "Specialty",
+          "fields": null,
+          "enumValues": [
+            {
+              "name": "GP"
+            },
+            {
+              "name": "PHYSIO"
+            },
+            {
+              "name": "DENTAL"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,8 @@
+[
+  {
+    "operation_id": "getClinician",
+    "description": "clinicianId 3, from Schemathesis ST108 (response violates schema)",
+    "path_params": {"clinicianId": 3},
+    "source": "schemathesis ST108"
+  }
+]

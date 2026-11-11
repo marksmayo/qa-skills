@@ -1,0 +1,51 @@
+{
+  "case_id": "listClinicians-006",
+  "operation_id": "listClinicians",
+  "kind": "boundary",
+  "valid": true,
+  "description": "limit: maximum 50",
+  "sent_with_credentials": true,
+  "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:8140/clinicians?limit=50",
+    "headers": {
+      "Authorization": "[REDACTED]",
+      "Accept": "application/json"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Server": "clinic-api/1.5.0 Python/3.14.10",
+      "Date": "Wed, 11 Nov 2026 07:20:21 GMT",
+      "Content-Type": "application/json",
+      "Content-Length": "146"
+    },
+    "body": {
+      "json": [
+        {
+          "id": 1,
+          "name": "Dr Test One",
+          "specialty": "gp"
+        },
+        {
+          "id": 2,
+          "name": "Dr Test Two",
+          "specialty": "physio"
+        },
+        {
+          "id": 3,
+          "name": "Dr Test Three"
+        }
+      ],
+      "sha256": "f4ae66a5fe47ec0e589a9a28c6fe01fc64b258c0fe8d0a00ca095aef2fb5190c",
+      "truncated": false,
+      "bytes": 146
+    }
+  },
+  "elapsed_ms": 2,
+  "failed_checks": [
+    "schema_conformance"
+  ]
+}

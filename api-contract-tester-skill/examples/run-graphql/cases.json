@@ -1,0 +1,194 @@
+{
+  "generator": "stdlib",
+  "seed": 1611,
+  "max_cases_per_operation": 50,
+  "contract_sha256": "931107eca8279b9473c2c4b418bc2dde62c14e68c6b9fa0af45005221daeeda9",
+  "allow_writes": false,
+  "auth_configured": false,
+  "dropped_invalid_samples": 0,
+  "plan": [
+    {
+      "operation_id": "Query.clinicians",
+      "status": "planned",
+      "reason": null
+    },
+    {
+      "operation_id": "Query.clinician",
+      "status": "planned",
+      "reason": null
+    }
+  ],
+  "cases": [
+    {
+      "id": "Query.clinicians-001",
+      "operation_id": "Query.clinicians",
+      "kind": "graphql",
+      "valid": true,
+      "description": "no arguments",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "graphql": true,
+        "body": {
+          "query": "{ clinicians { id name specialty rooms } }"
+        },
+        "media_type": "application/json",
+        "path_params": {},
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "Query.clinicians-002",
+      "operation_id": "Query.clinicians",
+      "kind": "graphql",
+      "valid": true,
+      "description": "specialty=GP",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "graphql": true,
+        "body": {
+          "query": "{ clinicians(specialty: GP) { id name specialty rooms } }"
+        },
+        "media_type": "application/json",
+        "path_params": {},
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "Query.clinicians-003",
+      "operation_id": "Query.clinicians",
+      "kind": "graphql",
+      "valid": true,
+      "description": "specialty=PHYSIO",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "graphql": true,
+        "body": {
+          "query": "{ clinicians(specialty: PHYSIO) { id name specialty rooms } }"
+        },
+        "media_type": "application/json",
+        "path_params": {},
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "Query.clinicians-004",
+      "operation_id": "Query.clinicians",
+      "kind": "graphql",
+      "valid": true,
+      "description": "specialty=DENTAL",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "graphql": true,
+        "body": {
+          "query": "{ clinicians(specialty: DENTAL) { id name specialty rooms } }"
+        },
+        "media_type": "application/json",
+        "path_params": {},
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "Query.clinician-001",
+      "operation_id": "Query.clinician",
+      "kind": "graphql",
+      "valid": true,
+      "description": "id=1",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "graphql": true,
+        "body": {
+          "query": "{ clinician(id: \"1\") { id name specialty rooms } }"
+        },
+        "media_type": "application/json",
+        "path_params": {},
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "Query.clinician-002",
+      "operation_id": "Query.clinician",
+      "kind": "graphql",
+      "valid": true,
+      "description": "id=2",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "graphql": true,
+        "body": {
+          "query": "{ clinician(id: \"2\") { id name specialty rooms } }"
+        },
+        "media_type": "application/json",
+        "path_params": {},
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "Query.clinician-003",
+      "operation_id": "Query.clinician",
+      "kind": "graphql",
+      "valid": true,
+      "description": "id=3",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "graphql": true,
+        "body": {
+          "query": "{ clinician(id: \"3\") { id name specialty rooms } }"
+        },
+        "media_type": "application/json",
+        "path_params": {},
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "Query.clinician-004",
+      "operation_id": "Query.clinician",
+      "kind": "graphql",
+      "valid": true,
+      "description": "id=999",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "graphql": true,
+        "body": {
+          "query": "{ clinician(id: \"999\") { id name specialty rooms } }"
+        },
+        "media_type": "application/json",
+        "path_params": {},
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "Query.clinician-005",
+      "operation_id": "Query.clinician",
+      "kind": "negative",
+      "valid": false,
+      "description": "missing required argument id",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "graphql": true,
+        "body": {
+          "query": "{ clinician { id name specialty rooms } }"
+        },
+        "media_type": "application/json",
+        "path_params": {},
+        "query": {},
+        "headers": {}
+      }
+    }
+  ]
+}

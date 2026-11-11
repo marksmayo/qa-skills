@@ -1,0 +1,39 @@
+{
+  "case_id": "dailyReport-013",
+  "operation_id": "dailyReport",
+  "kind": "no_auth",
+  "valid": true,
+  "description": "the example without credentials",
+  "sent_with_credentials": false,
+  "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:8140/reports/daily?date=2026-11-12",
+    "headers": {
+      "Accept": "application/json"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Server": "clinic-api/1.5.0 Python/3.14.10",
+      "Date": "Wed, 11 Nov 2026 07:20:17 GMT",
+      "Content-Type": "application/json",
+      "Content-Length": "51"
+    },
+    "body": {
+      "json": {
+        "date": "2026-11-12",
+        "booked": 1,
+        "cancelled": 1
+      },
+      "sha256": "ed3441bde81d19d06416a7b224a4ce2bad2aa3e6566d3e16fecef65848678394",
+      "truncated": false,
+      "bytes": 51
+    }
+  },
+  "elapsed_ms": 2,
+  "failed_checks": [
+    "auth_enforced"
+  ]
+}

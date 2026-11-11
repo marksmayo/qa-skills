@@ -1,0 +1,87 @@
+{
+  "operation": "GET /clinicians/{clinicianId}",
+  "method": "GET",
+  "path_template": "/clinicians/{clinicianId}",
+  "fingerprint": "1e34795e",
+  "case_id": "WZEYPP",
+  "code_sample": "curl -X GET -H 'Authorization: [Filtered]' http://127.0.0.1:8140/clinicians/3",
+  "sequence": [
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:8140/clinicians/3",
+      "url_template": "http://127.0.0.1:8140/clinicians/{clinicianId}",
+      "headers": {
+        "User-Agent": "schemathesis/4.33.2",
+        "Accept-Encoding": "gzip, deflate, zstd",
+        "Accept": "*/*",
+        "Connection": "keep-alive",
+        "Authorization": "[Filtered]",
+        "X-Schemathesis-TestCaseId": "WZEYPP"
+      },
+      "response": {
+        "status_code": 200,
+        "headers": {
+          "server": "clinic-api/1.5.0 Python/3.14.10",
+          "date": "Wed, 11 Nov 2026 07:19:35 GMT",
+          "content-type": "application/json",
+          "content-length": "34",
+          "x-request-id": "req-0003"
+        },
+        "body": "{\"id\": 3, \"name\": \"Dr Test Three\"}"
+      },
+      "link": null,
+      "checks": [
+        {
+          "name": "response_schema_conformance",
+          "status": "failure",
+          "message": "Response violates schema\n\n\"specialty\" is a required property\n\nValidated against the response schema for status code 200.\n\nSchema at /components/schemas/Clinician:\n\n    {\n        \"required\": [\n            \"id\",\n            \"name\",\n            \"specialty\"\n        ],\n        \"type\": \"object\",\n        \"properties\": {\n            \"id\": {\n                \"type\": \"integer\",\n                \"minimum\": 1\n            },\n            \"name\": {\n                \"type\": \"string\",\n                \"minLength\": 1\n            },\n            \"specialty\": {\n                \"$ref\": \"#/components/schemas/Specialty\"\n            }\n        // Output truncated...\n    }\n\nValue:\n\n    {\n        \"id\": 3,\n        \"name\": \"Dr Test Three\"\n    }"
+        }
+      ],
+      "meta": {
+        "generation": {
+          "time": 0.00024130003293976188,
+          "mode": "positive"
+        },
+        "components": {},
+        "phase": {
+          "name": "examples",
+          "data": {
+            "type": "ExamplesPhaseData",
+            "description": "Positive test case",
+            "location": null,
+            "parameter": null,
+            "parameter_location": null,
+            "mutations": []
+          }
+        },
+        "pool_draws": [],
+        "pool_misses": [],
+        "semantic_draws": [],
+        "dictionary_draws": [],
+        "constants_draws": [],
+        "raw_containers": {}
+      },
+      "path": "/clinicians/{clinicianId}",
+      "path_parameters": {
+        "clinicianId": 3
+      },
+      "query": {},
+      "case_headers": {
+        "Authorization": "[Filtered]"
+      },
+      "cookies": {},
+      "case_body": {
+        "encoding": "none"
+      },
+      "media_type": null,
+      "parent_index": null,
+      "auth_identity": null,
+      "operation": "GET /clinicians/{clinicianId}"
+    }
+  ],
+  "aliases": [
+    "8cMBGv",
+    "cYyKUM",
+    "IYqDYr"
+  ]
+}

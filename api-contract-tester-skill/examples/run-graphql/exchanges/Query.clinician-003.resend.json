@@ -1,0 +1,47 @@
+{
+  "case_id": "Query.clinician-003",
+  "operation_id": "Query.clinician",
+  "kind": "graphql",
+  "valid": true,
+  "description": "id=3",
+  "sent_with_credentials": true,
+  "request": {
+    "method": "POST",
+    "url": "http://127.0.0.1:8140/graphql",
+    "headers": {
+      "Content-Type": "application/json",
+      "Accept": "application/json"
+    },
+    "body": {
+      "query": "{ clinician(id: \"3\") { id name specialty rooms } }"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Server": "clinic-api/1.5.0 Python/3.14.10",
+      "Date": "Wed, 11 Nov 2026 07:20:32 GMT",
+      "Content-Type": "application/json",
+      "Content-Length": "93"
+    },
+    "body": {
+      "json": {
+        "data": {
+          "clinician": {
+            "id": "3",
+            "name": "Dr Test Three",
+            "specialty": null,
+            "rooms": []
+          }
+        }
+      },
+      "sha256": "5bf4957b561355680923c5aaa95597f5afabf76cac2dbf62f7b13ad11fb37d3f",
+      "truncated": false,
+      "bytes": 93
+    }
+  },
+  "elapsed_ms": 2,
+  "failed_checks": [
+    "graphql_errors"
+  ]
+}

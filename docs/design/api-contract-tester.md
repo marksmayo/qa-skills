@@ -1,6 +1,6 @@
 # Design: `api-contract-tester-skill`
 
-Status: Designed; not built. Build order: 16.
+Status: Built (v1.0.0). Build order: 16.
 
 ## Mission
 
@@ -207,3 +207,47 @@ Agreed with the user before the build.
 1. **Allow `POST` to operations marked safe in safe mode?** No: write methods need `authorised_by` and a non-production target.
 2. **Regression-test sketch per finding in v1?** Yes.
 3. **gRPC or AsyncAPI?** Later, not v1.
+
+## As built (v1.0.0)
+
+Where the build differs from the design above, and what the example showed.
+
+- **Two more scripts.** `yaml_lite.py` parses the YAML subset contracts use, so YAML works
+  without PyYAML (it matched PyYAML on both example contracts). `run_schemathesis.py` replaces
+  "Schemathesis when installed" with a wrapper that enforces the same safe mode.
+- **Schemathesis's defaults are not safe.** Its coverage phase sends PUT, POST, DELETE, PATCH and
+  TRACE to every path ("unexpected methods"), whatever `--include-method` says; the first trial
+  run sent TRACE requests. In safe mode the wrapper writes a config file that turns this off, and
+  also disables the stateful phase and the checks that create resources. With it, all 81 requests
+  in the example were GETs.
+- **Schemathesis failures are candidates without exchanges.** They are never promoted directly:
+  the agent reproduces one with an added case (`gen_cases.py --add-cases`), which then becomes a
+  stdlib candidate with a saved exchange, or lists it as needs_review.
+- **Candidates merge across operations** for a shared cause: an undocumented status, a content
+  type, missing auth, a missing header, a fault in a named component schema (found by walking
+  the error path to the last `$ref`), and a GraphQL field-type fault.
+- **`status_documented` ignores 5xx**, which `server_error` reports, so one 500 isn't two
+  candidates.
+- **Confidence** is high when the failure repeated on the re-send, medium when a repeated
+  instance is a write, low when it didn't repeat. Severity of a 5xx on valid input other than a
+  documented example is High (the design named only the example and invalid-input cases).
+- **Breaking-change severity**: High for breaking and Medium for potentially breaking without a
+  major version bump; with one, breaking is Low and the rest have none.
+- **The example has two reports**, REST and GraphQL, because a report covers one contract.
+  GraphQL support is queries and mutations with scalar and enum arguments, one level of nested
+  selection, and introspection comparison (`--introspect-url`).
+- **Not built:** OAuth client-credentials (bearer tokens and API keys from environment variables
+  only), stateful OpenAPI links in the stdlib sender (Schemathesis covers them with writes
+  allowed), and Swagger 2.0 conversion without Schemathesis.
+- **Example results** (`examples/run/`, seed 1611, 159 requests; Schemathesis 4.33.2 in a
+  throwaway venv, 75 cases, safe mode):
+  - 10 findings: 1 Critical, 2 High, 6 Medium, 1 Low, one of them flaky. All 7 planted API
+    faults were found, plus 3 real ones the sample wasn't designed to have (0 accepted for
+    `clinic_id` and `clinician_id`, and an extra property accepted).
+  - Schemathesis's 8 failures were all the same as stdlib candidates; one (getClinician id 3)
+    the seeded sample had missed, reproduced with an added case.
+  - 27 contract changes against 1.4.0: 10 breaking, 1 potentially breaking.
+  - GraphQL: 2 findings and the served-schema mismatch.
+- **Testing:** 36 of 36 seeded report violations are caught. The sender refuses a non-loopback
+  host without `authorised_by` and writes without authorisation or to a production host, blocks
+  every write case in safe mode, and backs off on 429.

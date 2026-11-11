@@ -1,0 +1,96 @@
+{
+  "operation": "GET /appointments",
+  "method": "GET",
+  "path_template": "/appointments",
+  "fingerprint": "7145e8bc",
+  "case_id": "kXXqCO",
+  "code_sample": "curl -X GET -H 'Authorization: [Filtered]' 'http://127.0.0.1:8140/appointments?clinic_id=0'",
+  "sequence": [
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:8140/appointments?clinic_id=0",
+      "url_template": "http://127.0.0.1:8140/appointments",
+      "headers": {
+        "User-Agent": "schemathesis/4.33.2",
+        "Accept-Encoding": "gzip, deflate, zstd",
+        "Accept": "*/*",
+        "Connection": "keep-alive",
+        "Authorization": "[Filtered]",
+        "X-Schemathesis-TestCaseId": "kXXqCO"
+      },
+      "response": {
+        "status_code": 200,
+        "headers": {
+          "server": "clinic-api/1.5.0 Python/3.14.10",
+          "date": "Wed, 11 Nov 2026 07:19:43 GMT",
+          "content-type": "application/json",
+          "content-length": "2"
+        },
+        "body": "[]"
+      },
+      "link": null,
+      "checks": [
+        {
+          "name": "negative_data_rejection",
+          "status": "failure",
+          "message": "Schema-violating request accepted\n\nInvalid data should have been rejected\nExpected: 400, 401, 403, 404, 405, 406, 409, 415, 422, 428, 429, 5xx\nInvalid component: parameter `clinic_id` in query - clinic_id: Value smaller than minimum"
+        }
+      ],
+      "meta": {
+        "generation": {
+          "time": 4.2499974370002747e-05,
+          "mode": "negative"
+        },
+        "components": {
+          "HEADER": "positive",
+          "QUERY": "negative"
+        },
+        "phase": {
+          "name": "coverage",
+          "data": {
+            "type": "CoveragePhaseData",
+            "description": "clinic_id: Value smaller than minimum",
+            "location": null,
+            "parameter": "clinic_id",
+            "parameter_location": "QUERY",
+            "scenario": "value_below_minimum"
+          }
+        },
+        "pool_draws": [],
+        "pool_misses": [],
+        "semantic_draws": [],
+        "dictionary_draws": [],
+        "constants_draws": [],
+        "raw_containers": {
+          "HEADER": {
+            "Authorization": "Bearer "
+          },
+          "QUERY": {
+            "clinic_id": 0
+          }
+        }
+      },
+      "path": "/appointments",
+      "path_parameters": {},
+      "query": {
+        "clinic_id": "0"
+      },
+      "case_headers": {
+        "Authorization": "[Filtered]"
+      },
+      "cookies": {},
+      "case_body": {
+        "encoding": "none"
+      },
+      "media_type": null,
+      "parent_index": null,
+      "auth_identity": null,
+      "operation": "GET /appointments"
+    }
+  ],
+  "aliases": [
+    "bzON0S",
+    "cuCLQp",
+    "IwKLZ2"
+  ]
+}

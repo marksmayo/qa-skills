@@ -22,7 +22,7 @@ anatomy described in the root `CLAUDE.md` (`SKILL.md`, `RUBRIC.md`, `schemas/`, 
 | 13 | [Risk-based test planner](risk-based-test-planner.md) | `risk-based-test-planner-skill/` | Built (v1.0.0) |
 | 14 | [Exploratory charter writer](exploratory-charter-writer.md) | `exploratory-charter-writer-skill/` | Built (v1.0.0) |
 | 15 | [Bug reproducer](bug-reproducer.md) | `bug-reproducer-skill/` | Built (v1.0.0) |
-| 16 | [API contract tester](api-contract-tester.md) | `api-contract-tester-skill/` | Designed |
+| 16 | [API contract tester](api-contract-tester.md) | `api-contract-tester-skill/` | Built (v1.0.0) |
 | 17 | [Performance budget auditor](performance-budget-auditor.md) | `performance-budget-auditor-skill/` | Designed |
 | 18 | [Visual regression reviewer](visual-regression-reviewer.md) | `visual-regression-reviewer-skill/` | Designed |
 | 19 | [Cross-browser checker](cross-browser-checker.md) | `cross-browser-checker-skill/` | Designed |

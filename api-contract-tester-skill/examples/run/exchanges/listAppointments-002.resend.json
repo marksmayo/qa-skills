@@ -1,0 +1,36 @@
+{
+  "case_id": "listAppointments-002",
+  "operation_id": "listAppointments",
+  "kind": "negative",
+  "valid": false,
+  "description": "clinic_id: below minimum 1",
+  "sent_with_credentials": true,
+  "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:8140/appointments?clinic_id=0&date=2026-11-12",
+    "headers": {
+      "Authorization": "[REDACTED]",
+      "Accept": "application/json"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Server": "clinic-api/1.5.0 Python/3.14.10",
+      "Date": "Wed, 11 Nov 2026 07:20:24 GMT",
+      "Content-Type": "application/json",
+      "Content-Length": "2"
+    },
+    "body": {
+      "json": [],
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "truncated": false,
+      "bytes": 2
+    }
+  },
+  "elapsed_ms": 2,
+  "failed_checks": [
+    "negative_accepted"
+  ]
+}

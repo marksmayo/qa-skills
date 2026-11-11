@@ -1,0 +1,111 @@
+{
+  "operation": "GET /appointments/{appointmentId}",
+  "method": "TRACE",
+  "path_template": "/appointments/{appointmentId}",
+  "fingerprint": "ff05c543",
+  "case_id": "tfh62P",
+  "code_sample": "curl -X TRACE -H 'Authorization: [Filtered]' http://127.0.0.1:8140/appointments/101",
+  "sequence": [
+    {
+      "method": "TRACE",
+      "url": "http://127.0.0.1:8140/appointments/101",
+      "url_template": "http://127.0.0.1:8140/appointments/{appointmentId}",
+      "headers": {
+        "User-Agent": "schemathesis/4.33.2",
+        "Accept-Encoding": "gzip, deflate, zstd",
+        "Accept": "*/*",
+        "Connection": "keep-alive",
+        "Authorization": "[Filtered]",
+        "X-Schemathesis-TestCaseId": "tfh62P",
+        "Content-Length": "0"
+      },
+      "response": {
+        "status_code": 501,
+        "headers": {
+          "server": "clinic-api/1.5.0 Python/3.14.10",
+          "date": "Wed, 11 Nov 2026 07:17:18 GMT",
+          "connection": "close",
+          "content-type": "text/html;charset=utf-8",
+          "content-length": "483"
+        },
+        "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 501</p>\n        <p>Message: Unsupported method ('TRACE').</p>\n        <p>Error code explanation: 501 - Server does not support this operation.</p>\n    </body>\n</html>\n"
+      },
+      "link": null,
+      "checks": [
+        {
+          "name": "not_a_server_error",
+          "status": "failure",
+          "message": "Server error"
+        }
+      ],
+      "meta": {
+        "generation": {
+          "time": 4.8099958803504705e-05,
+          "mode": "negative"
+        },
+        "components": {
+          "PATH": "positive",
+          "HEADER": "positive"
+        },
+        "phase": {
+          "name": "coverage",
+          "data": {
+            "type": "CoveragePhaseData",
+            "description": "Unspecified HTTP method: TRACE",
+            "location": null,
+            "parameter": null,
+            "parameter_location": null,
+            "scenario": "unspecified_http_method"
+          }
+        },
+        "pool_draws": [
+          {
+            "location": "path",
+            "parameter_name": "appointmentId",
+            "resource_name": "Appointment",
+            "resource_field": "id",
+            "source_operation": "GET /appointments",
+            "source_status": 200,
+            "source_identity": null,
+            "source_input": false,
+            "source_query": {
+              "clinic_id": 1,
+              "date": "2026-11-12"
+            }
+          }
+        ],
+        "pool_misses": [],
+        "semantic_draws": [],
+        "dictionary_draws": [],
+        "constants_draws": [],
+        "raw_containers": {
+          "PATH": {
+            "appointmentId": 101
+          },
+          "HEADER": {
+            "Authorization": "Bearer "
+          }
+        }
+      },
+      "path": "/appointments/{appointmentId}",
+      "path_parameters": {
+        "appointmentId": "101"
+      },
+      "query": {},
+      "case_headers": {
+        "Authorization": "[Filtered]"
+      },
+      "cookies": {},
+      "case_body": {
+        "encoding": "none"
+      },
+      "media_type": null,
+      "parent_index": null,
+      "auth_identity": null,
+      "operation": "GET /appointments/{appointmentId}"
+    }
+  ],
+  "aliases": [
+    "Luw0nb"
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "case_id": "Query.clinicians-004",
+  "operation_id": "Query.clinicians",
+  "kind": "graphql",
+  "valid": true,
+  "description": "specialty=DENTAL",
+  "sent_with_credentials": true,
+  "request": {
+    "method": "POST",
+    "url": "http://127.0.0.1:8140/graphql",
+    "headers": {
+      "Content-Type": "application/json",
+      "Accept": "application/json"
+    },
+    "body": {
+      "query": "{ clinicians(specialty: DENTAL) { id name specialty rooms } }"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Server": "clinic-api/1.5.0 Python/3.14.10",
+      "Date": "Wed, 11 Nov 2026 07:20:30 GMT",
+      "Content-Type": "application/json",
+      "Content-Length": "81"
+    },
+    "body": {
+      "json": {
+        "data": null,
+        "errors": [
+          {
+            "message": "Internal error",
+            "path": [
+              "clinicians"
+            ]
+          }
+        ]
+      },
+      "sha256": "522fe77633d0e859fcea9aebff776789ba6e83a85ff983bb98b2f43aad6bd63e",
+      "truncated": false,
+      "bytes": 81
+    }
+  },
+  "elapsed_ms": 1,
+  "failed_checks": [
+    "graphql_errors"
+  ]
+}

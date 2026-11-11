@@ -1,0 +1,40 @@
+{
+  "case_id": "getClinician-015",
+  "operation_id": "getClinician",
+  "kind": "added",
+  "valid": true,
+  "description": "clinicianId 3, from Schemathesis ST108 (response violates schema)",
+  "sent_with_credentials": true,
+  "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:8140/clinicians/3",
+    "headers": {
+      "Authorization": "[REDACTED]",
+      "Accept": "application/json"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Server": "clinic-api/1.5.0 Python/3.14.10",
+      "Date": "Wed, 11 Nov 2026 07:20:26 GMT",
+      "Content-Type": "application/json",
+      "Content-Length": "34",
+      "X-Request-Id": "req-0003"
+    },
+    "body": {
+      "json": {
+        "id": 3,
+        "name": "Dr Test Three"
+      },
+      "sha256": "4df6e8f15c554d92789fd4a2d92f17a5fa5db644fd9cf0e2988b29be13439e2e",
+      "truncated": false,
+      "bytes": 34
+    }
+  },
+  "elapsed_ms": 2,
+  "failed_checks": [
+    "schema_conformance"
+  ]
+}

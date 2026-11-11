@@ -1,0 +1,1171 @@
+{
+  "kind": "openapi",
+  "version": "3.1.0",
+  "title": "Clinic API",
+  "api_version": "1.5.0",
+  "dialect": "3.1",
+  "source": "examples/clinic-api/openapi.yaml",
+  "sha256": "bbc3ac4d3a170c9814594d1d7f45ae2ee781e96699d0ece85bd79dab69b1bcbc",
+  "yaml_parser": "pyyaml",
+  "operations": [
+    {
+      "operation_id": "healthCheck",
+      "method": "GET",
+      "path": "/health",
+      "tags": [
+        "ops"
+      ],
+      "line": 125,
+      "write": false,
+      "security": [],
+      "parameters": [],
+      "request_body": null,
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "type": "object",
+              "required": [
+                "status"
+              ],
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "ok"
+                  ]
+                },
+                "version": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "headers": {}
+        }
+      }
+    },
+    {
+      "operation_id": "listClinicians",
+      "method": "GET",
+      "path": "/clinicians",
+      "tags": [
+        "clinicians"
+      ],
+      "line": 143,
+      "write": false,
+      "security": [],
+      "parameters": [
+        {
+          "name": "specialty",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "$ref": "#/components/schemas/Specialty"
+          },
+          "examples": []
+        },
+        {
+          "name": "limit",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "examples": [
+            10
+          ]
+        }
+      ],
+      "request_body": null,
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/Clinician"
+              }
+            }
+          },
+          "headers": {}
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "$ref": "#/components/schemas/Error"
+            }
+          },
+          "headers": {}
+        }
+      }
+    },
+    {
+      "operation_id": "getClinician",
+      "method": "GET",
+      "path": "/clinicians/{clinicianId}",
+      "tags": [
+        "clinicians"
+      ],
+      "line": 170,
+      "write": false,
+      "security": [],
+      "parameters": [
+        {
+          "name": "clinicianId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "examples": [
+            1
+          ]
+        }
+      ],
+      "request_body": null,
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "$ref": "#/components/schemas/Clinician"
+            }
+          },
+          "headers": {
+            "X-Request-Id": {
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "$ref": "#/components/schemas/Error"
+            }
+          },
+          "headers": {}
+        }
+      }
+    },
+    {
+      "operation_id": "listAppointments",
+      "method": "GET",
+      "path": "/appointments",
+      "tags": [
+        "appointments"
+      ],
+      "line": 196,
+      "write": false,
+      "security": [
+        "bearer"
+      ],
+      "parameters": [
+        {
+          "name": "clinic_id",
+          "in": "query",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "examples": [
+            1
+          ]
+        },
+        {
+          "name": "date",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "type": "string",
+            "format": "date"
+          },
+          "examples": [
+            "2026-11-12"
+          ]
+        }
+      ],
+      "request_body": null,
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/Appointment"
+              }
+            }
+          },
+          "headers": {}
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "$ref": "#/components/schemas/Error"
+            }
+          },
+          "headers": {}
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "$ref": "#/components/schemas/Error"
+            }
+          },
+          "headers": {}
+        }
+      }
+    },
+    {
+      "operation_id": "createAppointment",
+      "method": "POST",
+      "path": "/appointments",
+      "tags": [
+        "appointments"
+      ],
+      "line": 228,
+      "write": true,
+      "security": [
+        "bearer"
+      ],
+      "parameters": [],
+      "request_body": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/NewAppointment"
+            },
+            "examples": [
+              {
+                "patient_name": "Test Patient C",
+                "clinician_id": 1,
+                "date": "2026-11-13",
+                "time": "09:30"
+              }
+            ]
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "$ref": "#/components/schemas/Appointment"
+            }
+          },
+          "headers": {
+            "Location": {
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "$ref": "#/components/schemas/Error"
+            }
+          },
+          "headers": {}
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "$ref": "#/components/schemas/Error"
+            }
+          },
+          "headers": {}
+        }
+      }
+    },
+    {
+      "operation_id": "getAppointment",
+      "method": "GET",
+      "path": "/appointments/{appointmentId}",
+      "tags": [
+        "appointments"
+      ],
+      "line": 261,
+      "write": false,
+      "security": [
+        "bearer"
+      ],
+      "parameters": [
+        {
+          "name": "appointmentId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "examples": [
+            101
+          ]
+        }
+      ],
+      "request_body": null,
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "$ref": "#/components/schemas/Appointment"
+            }
+          },
+          "headers": {}
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "$ref": "#/components/schemas/Error"
+            }
+          },
+          "headers": {}
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "$ref": "#/components/schemas/Error"
+            }
+          },
+          "headers": {}
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "$ref": "#/components/schemas/Error"
+            }
+          },
+          "headers": {}
+        }
+      }
+    },
+    {
+      "operation_id": "cancelAppointment",
+      "method": "DELETE",
+      "path": "/appointments/{appointmentId}",
+      "tags": [
+        "appointments"
+      ],
+      "line": 291,
+      "write": true,
+      "security": [
+        "bearer"
+      ],
+      "parameters": [
+        {
+          "name": "appointmentId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          },
+          "examples": [
+            101
+          ]
+        }
+      ],
+      "request_body": null,
+      "responses": {
+        "204": {
+          "content": {},
+          "headers": {}
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "$ref": "#/components/schemas/Error"
+            }
+          },
+          "headers": {}
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "$ref": "#/components/schemas/Error"
+            }
+          },
+          "headers": {}
+        }
+      }
+    },
+    {
+      "operation_id": "dailyReport",
+      "method": "GET",
+      "path": "/reports/daily",
+      "tags": [
+        "reports"
+      ],
+      "line": 315,
+      "write": false,
+      "security": [
+        "bearer"
+      ],
+      "parameters": [
+        {
+          "name": "date",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "type": "string",
+            "format": "date"
+          },
+          "examples": [
+            "2026-11-12"
+          ]
+        }
+      ],
+      "request_body": null,
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "$ref": "#/components/schemas/Report"
+            }
+          },
+          "headers": {}
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "$ref": "#/components/schemas/Error"
+            }
+          },
+          "headers": {}
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "$ref": "#/components/schemas/Error"
+            }
+          },
+          "headers": {}
+        }
+      }
+    },
+    {
+      "operation_id": "listSlots",
+      "method": "GET",
+      "path": "/slots",
+      "tags": [
+        "appointments"
+      ],
+      "line": 339,
+      "write": false,
+      "security": [],
+      "parameters": [
+        {
+          "name": "clinician_id",
+          "in": "query",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "examples": [
+            1
+          ]
+        },
+        {
+          "name": "date",
+          "in": "query",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "date"
+          },
+          "examples": [
+            "2026-11-12"
+          ]
+        }
+      ],
+      "request_body": null,
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/Slot"
+              }
+            }
+          },
+          "headers": {}
+        },
+        "default": {
+          "content": {
+            "application/json": {
+              "$ref": "#/components/schemas/Error"
+            }
+          },
+          "headers": {}
+        }
+      }
+    }
+  ],
+  "issues": [
+    {
+      "kind": "example_mismatch",
+      "location": "components.schemas.Clinician.example",
+      "message": "the example for Clinician doesn't match its own schema: $.id: expected integer, got string",
+      "id": "C1",
+      "line": null
+    },
+    {
+      "kind": "unsupported_keyword",
+      "location": "dependentRequired",
+      "message": "response schemas use 'dependentRequired', which the stdlib checker can't evaluate; schema_conformance is cantTell for dailyReport unless another keyword fails",
+      "id": "C2",
+      "line": null
+    }
+  ],
+  "root": {
+    "openapi": "3.1.0",
+    "info": {
+      "title": "Clinic API",
+      "version": "1.5.0",
+      "description": "Appointment booking for a small clinic. All data in examples is invented."
+    },
+    "servers": [
+      {
+        "url": "http://127.0.0.1:8140"
+      }
+    ],
+    "components": {
+      "securitySchemes": {
+        "bearer": {
+          "type": "http",
+          "scheme": "bearer"
+        }
+      },
+      "responses": {
+        "Unauthorised": {
+          "description": "Missing or wrong bearer token",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        },
+        "BadRequest": {
+          "description": "The request was invalid",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Error"
+              }
+            }
+          }
+        }
+      },
+      "schemas": {
+        "Error": {
+          "type": "object",
+          "required": [
+            "code",
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            }
+          }
+        },
+        "Specialty": {
+          "type": "string",
+          "enum": [
+            "gp",
+            "physio",
+            "dental"
+          ]
+        },
+        "Clinician": {
+          "type": "object",
+          "required": [
+            "id",
+            "name",
+            "specialty"
+          ],
+          "properties": {
+            "id": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "specialty": {
+              "$ref": "#/components/schemas/Specialty"
+            }
+          },
+          "example": {
+            "id": "c-7",
+            "name": "Dr Example",
+            "specialty": "gp"
+          }
+        },
+        "Appointment": {
+          "type": "object",
+          "required": [
+            "id",
+            "clinic_id",
+            "clinician_id",
+            "date",
+            "time",
+            "status"
+          ],
+          "properties": {
+            "id": {
+              "type": "integer"
+            },
+            "clinic_id": {
+              "type": "integer"
+            },
+            "clinician_id": {
+              "type": "integer"
+            },
+            "date": {
+              "type": "string",
+              "format": "date"
+            },
+            "time": {
+              "type": "string",
+              "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "booked",
+                "cancelled",
+                "no_show"
+              ]
+            },
+            "patient_name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "NewAppointment": {
+          "type": "object",
+          "required": [
+            "patient_name",
+            "clinician_id",
+            "date",
+            "time"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "patient_name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 60
+            },
+            "clinician_id": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "date": {
+              "type": "string",
+              "format": "date"
+            },
+            "time": {
+              "type": "string",
+              "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+            },
+            "portal_pin": {
+              "type": "string",
+              "format": "password",
+              "writeOnly": true,
+              "pattern": "^[0-9]{4}$"
+            }
+          }
+        },
+        "Report": {
+          "type": "object",
+          "required": [
+            "date",
+            "booked",
+            "cancelled"
+          ],
+          "properties": {
+            "date": {
+              "type": "string",
+              "format": "date"
+            },
+            "booked": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "cancelled": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "no_show": {
+              "type": "integer"
+            }
+          },
+          "dependentRequired": {
+            "no_show": [
+              "booked"
+            ]
+          }
+        },
+        "Slot": {
+          "type": "object",
+          "required": [
+            "time",
+            "free"
+          ],
+          "properties": {
+            "time": {
+              "type": "string"
+            },
+            "free": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "paths": {
+      "/health": {
+        "get": {
+          "operationId": "healthCheck",
+          "tags": [
+            "ops"
+          ],
+          "responses": {
+            "200": {
+              "description": "Up",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "required": [
+                      "status"
+                    ],
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "ok"
+                        ]
+                      },
+                      "version": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/clinicians": {
+        "get": {
+          "operationId": "listClinicians",
+          "tags": [
+            "clinicians"
+          ],
+          "parameters": [
+            {
+              "name": "specialty",
+              "in": "query",
+              "schema": {
+                "$ref": "#/components/schemas/Specialty"
+              }
+            },
+            {
+              "name": "limit",
+              "in": "query",
+              "schema": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 50
+              },
+              "example": 10
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Clinicians",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/Clinician"
+                    }
+                  }
+                }
+              }
+            },
+            "400": {
+              "$ref": "#/components/responses/BadRequest"
+            }
+          }
+        }
+      },
+      "/clinicians/{clinicianId}": {
+        "get": {
+          "operationId": "getClinician",
+          "tags": [
+            "clinicians"
+          ],
+          "parameters": [
+            {
+              "name": "clinicianId",
+              "in": "path",
+              "required": true,
+              "schema": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "example": 1
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "One clinician",
+              "headers": {
+                "X-Request-Id": {
+                  "required": true,
+                  "schema": {
+                    "type": "string"
+                  }
+                }
+              },
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Clinician"
+                  }
+                }
+              }
+            },
+            "400": {
+              "$ref": "#/components/responses/BadRequest"
+            }
+          }
+        }
+      },
+      "/appointments": {
+        "get": {
+          "operationId": "listAppointments",
+          "tags": [
+            "appointments"
+          ],
+          "security": [
+            {
+              "bearer": []
+            }
+          ],
+          "parameters": [
+            {
+              "name": "clinic_id",
+              "in": "query",
+              "required": true,
+              "schema": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "example": 1
+            },
+            {
+              "name": "date",
+              "in": "query",
+              "schema": {
+                "type": "string",
+                "format": "date"
+              },
+              "example": "2026-11-12"
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Appointments",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/Appointment"
+                    }
+                  }
+                }
+              }
+            },
+            "400": {
+              "$ref": "#/components/responses/BadRequest"
+            },
+            "401": {
+              "$ref": "#/components/responses/Unauthorised"
+            }
+          }
+        },
+        "post": {
+          "operationId": "createAppointment",
+          "tags": [
+            "appointments"
+          ],
+          "security": [
+            {
+              "bearer": []
+            }
+          ],
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NewAppointment"
+                },
+                "example": {
+                  "patient_name": "Test Patient C",
+                  "clinician_id": 1,
+                  "date": "2026-11-13",
+                  "time": "09:30"
+                }
+              }
+            }
+          },
+          "responses": {
+            "201": {
+              "description": "Booked",
+              "headers": {
+                "Location": {
+                  "required": true,
+                  "schema": {
+                    "type": "string"
+                  }
+                }
+              },
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Appointment"
+                  }
+                }
+              }
+            },
+            "400": {
+              "$ref": "#/components/responses/BadRequest"
+            },
+            "401": {
+              "$ref": "#/components/responses/Unauthorised"
+            }
+          }
+        }
+      },
+      "/appointments/{appointmentId}": {
+        "get": {
+          "operationId": "getAppointment",
+          "tags": [
+            "appointments"
+          ],
+          "security": [
+            {
+              "bearer": []
+            }
+          ],
+          "parameters": [
+            {
+              "name": "appointmentId",
+              "in": "path",
+              "required": true,
+              "schema": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "example": 101
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "One appointment",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Appointment"
+                  }
+                }
+              }
+            },
+            "400": {
+              "$ref": "#/components/responses/BadRequest"
+            },
+            "401": {
+              "$ref": "#/components/responses/Unauthorised"
+            },
+            "404": {
+              "description": "No such appointment",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "delete": {
+          "operationId": "cancelAppointment",
+          "tags": [
+            "appointments"
+          ],
+          "security": [
+            {
+              "bearer": []
+            }
+          ],
+          "parameters": [
+            {
+              "name": "appointmentId",
+              "in": "path",
+              "required": true,
+              "schema": {
+                "type": "integer"
+              },
+              "example": 101
+            }
+          ],
+          "responses": {
+            "204": {
+              "description": "Cancelled"
+            },
+            "401": {
+              "$ref": "#/components/responses/Unauthorised"
+            },
+            "404": {
+              "description": "No such appointment",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/reports/daily": {
+        "get": {
+          "operationId": "dailyReport",
+          "tags": [
+            "reports"
+          ],
+          "security": [
+            {
+              "bearer": []
+            }
+          ],
+          "parameters": [
+            {
+              "name": "date",
+              "in": "query",
+              "schema": {
+                "type": "string",
+                "format": "date"
+              },
+              "example": "2026-11-12"
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Daily counts",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Report"
+                  }
+                }
+              }
+            },
+            "400": {
+              "$ref": "#/components/responses/BadRequest"
+            },
+            "401": {
+              "$ref": "#/components/responses/Unauthorised"
+            }
+          }
+        }
+      },
+      "/slots": {
+        "get": {
+          "operationId": "listSlots",
+          "tags": [
+            "appointments"
+          ],
+          "parameters": [
+            {
+              "name": "clinician_id",
+              "in": "query",
+              "required": true,
+              "schema": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "example": 1
+            },
+            {
+              "name": "date",
+              "in": "query",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "format": "date"
+              },
+              "example": "2026-11-12"
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Free and taken slots",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/Slot"
+                    }
+                  }
+                }
+              }
+            },
+            "default": {
+              "description": "Any other error",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Error"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

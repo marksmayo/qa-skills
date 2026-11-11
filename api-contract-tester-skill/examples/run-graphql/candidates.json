@@ -1,0 +1,136 @@
+{
+  "contract_sha256": "931107eca8279b9473c2c4b418bc2dde62c14e68c6b9fa0af45005221daeeda9",
+  "seed": 1611,
+  "run_status": "complete",
+  "operations": [
+    {
+      "operation_id": "Query.clinicians",
+      "method": "QUERY",
+      "path": "clinicians",
+      "status": "exercised",
+      "cases_sent": 4,
+      "checks": {
+        "status_documented": "not_applicable",
+        "server_error": "passed",
+        "content_type": "passed",
+        "schema_conformance": "not_applicable",
+        "required_headers": "not_applicable",
+        "negative_accepted": "not_applicable",
+        "positive_rejected": "not_applicable",
+        "auth_enforced": "not_applicable",
+        "graphql_errors": "failed"
+      }
+    },
+    {
+      "operation_id": "Query.clinician",
+      "method": "QUERY",
+      "path": "clinician",
+      "status": "exercised",
+      "cases_sent": 5,
+      "checks": {
+        "status_documented": "not_applicable",
+        "server_error": "passed",
+        "content_type": "passed",
+        "schema_conformance": "not_applicable",
+        "required_headers": "not_applicable",
+        "negative_accepted": "passed",
+        "positive_rejected": "not_applicable",
+        "auth_enforced": "not_applicable",
+        "graphql_errors": "failed"
+      }
+    }
+  ],
+  "operation_coverage": {
+    "total": 2,
+    "exercised": 2,
+    "excluded": 0,
+    "skipped_write": 0,
+    "skipped_auth": 0,
+    "untested": 0
+  },
+  "candidates": [
+    {
+      "id": "K1",
+      "source": "stdlib",
+      "check": "graphql_errors",
+      "cause": ".specialty: null for non-null Specialty!",
+      "operation_ids": [
+        "Query.clinicians",
+        "Query.clinician"
+      ],
+      "repeatable": true,
+      "instances": [
+        {
+          "case_id": "Query.clinicians-001",
+          "operation_id": "Query.clinicians",
+          "kind": "graphql",
+          "valid": true,
+          "write": false,
+          "status": 200,
+          "exchange": "exchanges/Query.clinicians-001.json",
+          "resend_exchange": "exchanges/Query.clinicians-001.resend.json",
+          "resend_status": 200,
+          "repeated": true
+        },
+        {
+          "case_id": "Query.clinician-003",
+          "operation_id": "Query.clinician",
+          "kind": "graphql",
+          "valid": true,
+          "write": false,
+          "status": 200,
+          "exchange": "exchanges/Query.clinician-003.json",
+          "resend_exchange": "exchanges/Query.clinician-003.resend.json",
+          "resend_status": 200,
+          "repeated": true
+        }
+      ],
+      "severity": "High",
+      "confidence": "high",
+      "reach": 2,
+      "score": 18,
+      "priority": "P1",
+      "regression_test_sketch": "def test_query_clinicians_graphql_errors(api):\n    \"\"\"graphql_errors: .specialty: null for non-null Specialty!\"\"\"\n    resp = api.request('POST', '/graphql', json={\"query\": \"{ clinicians { id name specialty rooms } }\"})\n    assert not contract_errors(resp)  # validate the body against the response schema"
+    },
+    {
+      "id": "K2",
+      "source": "stdlib",
+      "check": "graphql_errors",
+      "cause": "a valid query returned errors: Internal error",
+      "operation_ids": [
+        "Query.clinicians"
+      ],
+      "repeatable": true,
+      "instances": [
+        {
+          "case_id": "Query.clinicians-004",
+          "operation_id": "Query.clinicians",
+          "kind": "graphql",
+          "valid": true,
+          "write": false,
+          "status": 200,
+          "exchange": "exchanges/Query.clinicians-004.json",
+          "resend_exchange": "exchanges/Query.clinicians-004.resend.json",
+          "resend_status": 200,
+          "repeated": true
+        }
+      ],
+      "severity": "High",
+      "confidence": "high",
+      "reach": 1,
+      "score": 9,
+      "priority": "P2",
+      "regression_test_sketch": "def test_query_clinicians_graphql_errors(api):\n    \"\"\"graphql_errors: a valid query returned errors: Internal error\"\"\"\n    resp = api.request('POST', '/graphql', json={\"query\": \"{ clinicians(specialty: DENTAL) { id name specialty rooms } }\"})\n    assert not contract_errors(resp)  # validate the body against the response schema"
+    }
+  ],
+  "contract_issues": [
+    {
+      "kind": "introspection_mismatch",
+      "location": "Clinician.internalNotes",
+      "message": "the API serves Clinician.internalNotes, which isn't in the SDL",
+      "id": "C1",
+      "line": null
+    }
+  ],
+  "breaking_changes": []
+}

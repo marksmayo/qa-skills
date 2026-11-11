@@ -1,0 +1,2265 @@
+{
+  "generator": "stdlib",
+  "seed": 1611,
+  "max_cases_per_operation": 50,
+  "contract_sha256": "bbc3ac4d3a170c9814594d1d7f45ae2ee781e96699d0ece85bd79dab69b1bcbc",
+  "allow_writes": true,
+  "auth_configured": true,
+  "dropped_invalid_samples": 0,
+  "plan": [
+    {
+      "operation_id": "healthCheck",
+      "status": "planned",
+      "reason": null
+    },
+    {
+      "operation_id": "listClinicians",
+      "status": "planned",
+      "reason": null
+    },
+    {
+      "operation_id": "getClinician",
+      "status": "planned",
+      "reason": null
+    },
+    {
+      "operation_id": "listAppointments",
+      "status": "planned",
+      "reason": null
+    },
+    {
+      "operation_id": "createAppointment",
+      "status": "planned",
+      "reason": null
+    },
+    {
+      "operation_id": "getAppointment",
+      "status": "planned",
+      "reason": null
+    },
+    {
+      "operation_id": "cancelAppointment",
+      "status": "excluded",
+      "reason": "excluded by --include/--exclude"
+    },
+    {
+      "operation_id": "dailyReport",
+      "status": "planned",
+      "reason": null
+    },
+    {
+      "operation_id": "listSlots",
+      "status": "planned",
+      "reason": null
+    }
+  ],
+  "cases": [
+    {
+      "id": "healthCheck-001",
+      "operation_id": "healthCheck",
+      "kind": "example",
+      "valid": true,
+      "description": "documented examples",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "listClinicians-001",
+      "operation_id": "listClinicians",
+      "kind": "example",
+      "valid": true,
+      "description": "documented examples",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "limit": "10"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listClinicians-002",
+      "operation_id": "listClinicians",
+      "kind": "boundary",
+      "valid": true,
+      "description": "specialty: enum value 'gp'",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "limit": "10",
+          "specialty": "gp"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listClinicians-003",
+      "operation_id": "listClinicians",
+      "kind": "boundary",
+      "valid": true,
+      "description": "specialty: enum value 'physio'",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "limit": "10",
+          "specialty": "physio"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listClinicians-004",
+      "operation_id": "listClinicians",
+      "kind": "boundary",
+      "valid": true,
+      "description": "specialty: enum value 'dental'",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "limit": "10",
+          "specialty": "dental"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listClinicians-005",
+      "operation_id": "listClinicians",
+      "kind": "boundary",
+      "valid": true,
+      "description": "limit: minimum 1",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "limit": "1"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listClinicians-006",
+      "operation_id": "listClinicians",
+      "kind": "boundary",
+      "valid": true,
+      "description": "limit: maximum 50",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "limit": "50"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listClinicians-007",
+      "operation_id": "listClinicians",
+      "kind": "negative",
+      "valid": false,
+      "description": "specialty: outside the enum",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "limit": "10",
+          "specialty": "zzz-not-in-enum"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listClinicians-008",
+      "operation_id": "listClinicians",
+      "kind": "negative",
+      "valid": false,
+      "description": "limit: below minimum 1",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "limit": "0"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listClinicians-009",
+      "operation_id": "listClinicians",
+      "kind": "negative",
+      "valid": false,
+      "description": "limit: above maximum 50",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "limit": "51"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listClinicians-010",
+      "operation_id": "listClinicians",
+      "kind": "negative",
+      "valid": false,
+      "description": "limit: wrong type",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "limit": "abc"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listClinicians-011",
+      "operation_id": "listClinicians",
+      "kind": "negative",
+      "valid": false,
+      "description": "limit: not an integer",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "limit": "1.5"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listClinicians-012",
+      "operation_id": "listClinicians",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 1",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "listClinicians-013",
+      "operation_id": "listClinicians",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 2",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "specialty": "dental"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listClinicians-014",
+      "operation_id": "listClinicians",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 3",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "listClinicians-015",
+      "operation_id": "listClinicians",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 4",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "listClinicians-016",
+      "operation_id": "listClinicians",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 5",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "listClinicians-017",
+      "operation_id": "listClinicians",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 6",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "listClinicians-018",
+      "operation_id": "listClinicians",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 7",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "specialty": "gp",
+          "limit": "8"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listClinicians-019",
+      "operation_id": "listClinicians",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 8",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "specialty": "dental",
+          "limit": "18"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listClinicians-020",
+      "operation_id": "listClinicians",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 9",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "specialty": "gp"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listClinicians-021",
+      "operation_id": "listClinicians",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 10",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "specialty": "dental"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "getClinician-001",
+      "operation_id": "getClinician",
+      "kind": "example",
+      "valid": true,
+      "description": "documented examples",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {
+          "clinicianId": "1"
+        },
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "getClinician-002",
+      "operation_id": "getClinician",
+      "kind": "negative",
+      "valid": false,
+      "description": "clinicianId: below minimum 1",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {
+          "clinicianId": "0"
+        },
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "getClinician-003",
+      "operation_id": "getClinician",
+      "kind": "negative",
+      "valid": false,
+      "description": "clinicianId: wrong type",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {
+          "clinicianId": "abc"
+        },
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "getClinician-004",
+      "operation_id": "getClinician",
+      "kind": "negative",
+      "valid": false,
+      "description": "clinicianId: not an integer",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {
+          "clinicianId": "1.5"
+        },
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "getClinician-005",
+      "operation_id": "getClinician",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 1",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {
+          "clinicianId": "939"
+        },
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "getClinician-006",
+      "operation_id": "getClinician",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 2",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {
+          "clinicianId": "189"
+        },
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "getClinician-007",
+      "operation_id": "getClinician",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 3",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {
+          "clinicianId": "355"
+        },
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "getClinician-008",
+      "operation_id": "getClinician",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 4",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {
+          "clinicianId": "436"
+        },
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "getClinician-009",
+      "operation_id": "getClinician",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 5",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {
+          "clinicianId": "188"
+        },
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "getClinician-010",
+      "operation_id": "getClinician",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 6",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {
+          "clinicianId": "721"
+        },
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "getClinician-011",
+      "operation_id": "getClinician",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 7",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {
+          "clinicianId": "511"
+        },
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "getClinician-012",
+      "operation_id": "getClinician",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 8",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {
+          "clinicianId": "60"
+        },
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "getClinician-013",
+      "operation_id": "getClinician",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 9",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {
+          "clinicianId": "354"
+        },
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "getClinician-014",
+      "operation_id": "getClinician",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 10",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {
+          "clinicianId": "622"
+        },
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "listAppointments-001",
+      "operation_id": "listAppointments",
+      "kind": "example",
+      "valid": true,
+      "description": "documented examples",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "clinic_id": "1",
+          "date": "2026-11-12"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listAppointments-002",
+      "operation_id": "listAppointments",
+      "kind": "negative",
+      "valid": false,
+      "description": "clinic_id: below minimum 1",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "clinic_id": "0",
+          "date": "2026-11-12"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listAppointments-003",
+      "operation_id": "listAppointments",
+      "kind": "negative",
+      "valid": false,
+      "description": "clinic_id: wrong type",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "clinic_id": "abc",
+          "date": "2026-11-12"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listAppointments-004",
+      "operation_id": "listAppointments",
+      "kind": "negative",
+      "valid": false,
+      "description": "clinic_id: not an integer",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "clinic_id": "1.5",
+          "date": "2026-11-12"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listAppointments-005",
+      "operation_id": "listAppointments",
+      "kind": "negative",
+      "valid": false,
+      "description": "missing required query parameter clinic_id",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "date": "2026-11-12"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listAppointments-006",
+      "operation_id": "listAppointments",
+      "kind": "negative",
+      "valid": false,
+      "description": "date: not a valid date",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "clinic_id": "1",
+          "date": "11/11/2026"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listAppointments-007",
+      "operation_id": "listAppointments",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 1",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "clinic_id": "960"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listAppointments-008",
+      "operation_id": "listAppointments",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 2",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "clinic_id": "809",
+          "date": "2026-03-22"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listAppointments-009",
+      "operation_id": "listAppointments",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 3",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "clinic_id": "845"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listAppointments-010",
+      "operation_id": "listAppointments",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 4",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "clinic_id": "358",
+          "date": "2026-05-17"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listAppointments-011",
+      "operation_id": "listAppointments",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 5",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "clinic_id": "806",
+          "date": "2026-08-07"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listAppointments-012",
+      "operation_id": "listAppointments",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 6",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "clinic_id": "870"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listAppointments-013",
+      "operation_id": "listAppointments",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 7",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "clinic_id": "233"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listAppointments-014",
+      "operation_id": "listAppointments",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 8",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "clinic_id": "255"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listAppointments-015",
+      "operation_id": "listAppointments",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 9",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "clinic_id": "559"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listAppointments-016",
+      "operation_id": "listAppointments",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 10",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "clinic_id": "609",
+          "date": "2026-05-25"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listAppointments-017",
+      "operation_id": "listAppointments",
+      "kind": "no_auth",
+      "valid": true,
+      "description": "the example without credentials",
+      "auth": false,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "clinic_id": "1",
+          "date": "2026-11-12"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "createAppointment-001",
+      "operation_id": "createAppointment",
+      "kind": "example",
+      "valid": true,
+      "description": "documented examples",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "path_params": {},
+        "query": {},
+        "headers": {},
+        "media_type": "application/json",
+        "body": {
+          "patient_name": "Test Patient C",
+          "clinician_id": 1,
+          "date": "2026-11-13",
+          "time": "09:30"
+        }
+      }
+    },
+    {
+      "id": "createAppointment-002",
+      "operation_id": "createAppointment",
+      "kind": "boundary",
+      "valid": true,
+      "description": "body.patient_name: length 1",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "path_params": {},
+        "query": {},
+        "headers": {},
+        "media_type": "application/json",
+        "body": {
+          "patient_name": "x",
+          "clinician_id": 1,
+          "date": "2026-11-13",
+          "time": "09:30"
+        }
+      }
+    },
+    {
+      "id": "createAppointment-003",
+      "operation_id": "createAppointment",
+      "kind": "boundary",
+      "valid": true,
+      "description": "body.patient_name: length 60",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "path_params": {},
+        "query": {},
+        "headers": {},
+        "media_type": "application/json",
+        "body": {
+          "patient_name": "Test xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "clinician_id": 1,
+          "date": "2026-11-13",
+          "time": "09:30"
+        }
+      }
+    },
+    {
+      "id": "createAppointment-004",
+      "operation_id": "createAppointment",
+      "kind": "negative",
+      "valid": false,
+      "description": "body: missing required 'patient_name'",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "path_params": {},
+        "query": {},
+        "headers": {},
+        "media_type": "application/json",
+        "body": {
+          "clinician_id": 1,
+          "date": "2026-11-13",
+          "time": "09:30"
+        }
+      }
+    },
+    {
+      "id": "createAppointment-005",
+      "operation_id": "createAppointment",
+      "kind": "negative",
+      "valid": false,
+      "description": "body: missing required 'clinician_id'",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "path_params": {},
+        "query": {},
+        "headers": {},
+        "media_type": "application/json",
+        "body": {
+          "patient_name": "Test Patient C",
+          "date": "2026-11-13",
+          "time": "09:30"
+        }
+      }
+    },
+    {
+      "id": "createAppointment-006",
+      "operation_id": "createAppointment",
+      "kind": "negative",
+      "valid": false,
+      "description": "body: missing required 'date'",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "path_params": {},
+        "query": {},
+        "headers": {},
+        "media_type": "application/json",
+        "body": {
+          "patient_name": "Test Patient C",
+          "clinician_id": 1,
+          "time": "09:30"
+        }
+      }
+    },
+    {
+      "id": "createAppointment-007",
+      "operation_id": "createAppointment",
+      "kind": "negative",
+      "valid": false,
+      "description": "body: missing required 'time'",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "path_params": {},
+        "query": {},
+        "headers": {},
+        "media_type": "application/json",
+        "body": {
+          "patient_name": "Test Patient C",
+          "clinician_id": 1,
+          "date": "2026-11-13"
+        }
+      }
+    },
+    {
+      "id": "createAppointment-008",
+      "operation_id": "createAppointment",
+      "kind": "negative",
+      "valid": false,
+      "description": "body.patient_name: shorter than minLength 1",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "path_params": {},
+        "query": {},
+        "headers": {},
+        "media_type": "application/json",
+        "body": {
+          "patient_name": "",
+          "clinician_id": 1,
+          "date": "2026-11-13",
+          "time": "09:30"
+        }
+      }
+    },
+    {
+      "id": "createAppointment-009",
+      "operation_id": "createAppointment",
+      "kind": "negative",
+      "valid": false,
+      "description": "body.patient_name: longer than maxLength 60",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "path_params": {},
+        "query": {},
+        "headers": {},
+        "media_type": "application/json",
+        "body": {
+          "patient_name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "clinician_id": 1,
+          "date": "2026-11-13",
+          "time": "09:30"
+        }
+      }
+    },
+    {
+      "id": "createAppointment-010",
+      "operation_id": "createAppointment",
+      "kind": "negative",
+      "valid": false,
+      "description": "body.clinician_id: below minimum 1",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "path_params": {},
+        "query": {},
+        "headers": {},
+        "media_type": "application/json",
+        "body": {
+          "patient_name": "Test Patient C",
+          "clinician_id": 0,
+          "date": "2026-11-13",
+          "time": "09:30"
+        }
+      }
+    },
+    {
+      "id": "createAppointment-011",
+      "operation_id": "createAppointment",
+      "kind": "negative",
+      "valid": false,
+      "description": "body.clinician_id: wrong type",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "path_params": {},
+        "query": {},
+        "headers": {},
+        "media_type": "application/json",
+        "body": {
+          "patient_name": "Test Patient C",
+          "clinician_id": "abc",
+          "date": "2026-11-13",
+          "time": "09:30"
+        }
+      }
+    },
+    {
+      "id": "createAppointment-012",
+      "operation_id": "createAppointment",
+      "kind": "negative",
+      "valid": false,
+      "description": "body.clinician_id: not an integer",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "path_params": {},
+        "query": {},
+        "headers": {},
+        "media_type": "application/json",
+        "body": {
+          "patient_name": "Test Patient C",
+          "clinician_id": 1.5,
+          "date": "2026-11-13",
+          "time": "09:30"
+        }
+      }
+    },
+    {
+      "id": "createAppointment-013",
+      "operation_id": "createAppointment",
+      "kind": "negative",
+      "valid": false,
+      "description": "body.date: not a valid date",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "path_params": {},
+        "query": {},
+        "headers": {},
+        "media_type": "application/json",
+        "body": {
+          "patient_name": "Test Patient C",
+          "clinician_id": 1,
+          "date": "11/11/2026",
+          "time": "09:30"
+        }
+      }
+    },
+    {
+      "id": "createAppointment-014",
+      "operation_id": "createAppointment",
+      "kind": "negative",
+      "valid": false,
+      "description": "body.time: does not match ^([01][0-9]|2[0-3]):[0-5][0-9]$",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "path_params": {},
+        "query": {},
+        "headers": {},
+        "media_type": "application/json",
+        "body": {
+          "patient_name": "Test Patient C",
+          "clinician_id": 1,
+          "date": "2026-11-13",
+          "time": "!!"
+        }
+      }
+    },
+    {
+      "id": "createAppointment-015",
+      "operation_id": "createAppointment",
+      "kind": "negative",
+      "valid": false,
+      "description": "body.portal_pin: does not match ^[0-9]{4}$",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "path_params": {},
+        "query": {},
+        "headers": {},
+        "media_type": "application/json",
+        "body": {
+          "patient_name": "Test Patient C",
+          "clinician_id": 1,
+          "date": "2026-11-13",
+          "time": "09:30",
+          "portal_pin": "!!"
+        }
+      }
+    },
+    {
+      "id": "createAppointment-016",
+      "operation_id": "createAppointment",
+      "kind": "negative",
+      "valid": false,
+      "description": "body: unexpected property",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "path_params": {},
+        "query": {},
+        "headers": {},
+        "media_type": "application/json",
+        "body": {
+          "patient_name": "Test Patient C",
+          "clinician_id": 1,
+          "date": "2026-11-13",
+          "time": "09:30",
+          "unexpected_field": "x"
+        }
+      }
+    },
+    {
+      "id": "createAppointment-017",
+      "operation_id": "createAppointment",
+      "kind": "negative",
+      "valid": false,
+      "description": "body: not an object",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "path_params": {},
+        "query": {},
+        "headers": {},
+        "media_type": "application/json",
+        "body": [
+          "not",
+          "an",
+          "object"
+        ]
+      }
+    },
+    {
+      "id": "createAppointment-018",
+      "operation_id": "createAppointment",
+      "kind": "negative",
+      "valid": false,
+      "description": "body: missing",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "path_params": {},
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "createAppointment-019",
+      "operation_id": "createAppointment",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 1",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "path_params": {},
+        "query": {},
+        "headers": {},
+        "media_type": "application/json",
+        "body": {
+          "patient_name": "e",
+          "clinician_id": 335,
+          "date": "2026-02-20",
+          "time": "09:30"
+        }
+      }
+    },
+    {
+      "id": "createAppointment-020",
+      "operation_id": "createAppointment",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 2",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "path_params": {},
+        "query": {},
+        "headers": {},
+        "media_type": "application/json",
+        "body": {
+          "patient_name": "mczbvapiv",
+          "clinician_id": 149,
+          "date": "2026-03-14",
+          "time": "09:30"
+        }
+      }
+    },
+    {
+      "id": "createAppointment-021",
+      "operation_id": "createAppointment",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 3",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "path_params": {},
+        "query": {},
+        "headers": {},
+        "media_type": "application/json",
+        "body": {
+          "patient_name": "acvepj",
+          "clinician_id": 957,
+          "date": "2026-02-27",
+          "time": "09:30"
+        }
+      }
+    },
+    {
+      "id": "createAppointment-022",
+      "operation_id": "createAppointment",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 4",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "path_params": {},
+        "query": {},
+        "headers": {},
+        "media_type": "application/json",
+        "body": {
+          "patient_name": "gbu",
+          "clinician_id": 430,
+          "date": "2026-07-11",
+          "time": "09:30"
+        }
+      }
+    },
+    {
+      "id": "createAppointment-023",
+      "operation_id": "createAppointment",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 5",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "path_params": {},
+        "query": {},
+        "headers": {},
+        "media_type": "application/json",
+        "body": {
+          "patient_name": "nstcadfpktv",
+          "clinician_id": 976,
+          "date": "2026-05-15",
+          "time": "09:30"
+        }
+      }
+    },
+    {
+      "id": "createAppointment-024",
+      "operation_id": "createAppointment",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 6",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "path_params": {},
+        "query": {},
+        "headers": {},
+        "media_type": "application/json",
+        "body": {
+          "patient_name": "iiofez",
+          "clinician_id": 695,
+          "date": "2026-03-23",
+          "time": "09:30"
+        }
+      }
+    },
+    {
+      "id": "createAppointment-025",
+      "operation_id": "createAppointment",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 7",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "path_params": {},
+        "query": {},
+        "headers": {},
+        "media_type": "application/json",
+        "body": {
+          "patient_name": "zhicxuthph",
+          "clinician_id": 910,
+          "date": "2026-08-22",
+          "time": "09:30"
+        }
+      }
+    },
+    {
+      "id": "createAppointment-026",
+      "operation_id": "createAppointment",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 8",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "path_params": {},
+        "query": {},
+        "headers": {},
+        "media_type": "application/json",
+        "body": {
+          "patient_name": "nuv",
+          "clinician_id": 871,
+          "date": "2026-12-11",
+          "time": "09:30"
+        }
+      }
+    },
+    {
+      "id": "createAppointment-027",
+      "operation_id": "createAppointment",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 9",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "path_params": {},
+        "query": {},
+        "headers": {},
+        "media_type": "application/json",
+        "body": {
+          "patient_name": "pukph",
+          "clinician_id": 126,
+          "date": "2026-07-14",
+          "time": "09:30"
+        }
+      }
+    },
+    {
+      "id": "createAppointment-028",
+      "operation_id": "createAppointment",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 10",
+      "auth": true,
+      "request": {
+        "method": "POST",
+        "path_params": {},
+        "query": {},
+        "headers": {},
+        "media_type": "application/json",
+        "body": {
+          "patient_name": "xbx",
+          "clinician_id": 239,
+          "date": "2026-11-02",
+          "time": "09:30"
+        }
+      }
+    },
+    {
+      "id": "createAppointment-029",
+      "operation_id": "createAppointment",
+      "kind": "no_auth",
+      "valid": true,
+      "description": "the example without credentials",
+      "auth": false,
+      "request": {
+        "method": "POST",
+        "path_params": {},
+        "query": {},
+        "headers": {},
+        "media_type": "application/json",
+        "body": {
+          "patient_name": "Test Patient C",
+          "clinician_id": 1,
+          "date": "2026-11-13",
+          "time": "09:30"
+        }
+      }
+    },
+    {
+      "id": "getAppointment-001",
+      "operation_id": "getAppointment",
+      "kind": "example",
+      "valid": true,
+      "description": "documented examples",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {
+          "appointmentId": "101"
+        },
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "getAppointment-002",
+      "operation_id": "getAppointment",
+      "kind": "boundary",
+      "valid": true,
+      "description": "appointmentId: minimum 1",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {
+          "appointmentId": "1"
+        },
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "getAppointment-003",
+      "operation_id": "getAppointment",
+      "kind": "negative",
+      "valid": false,
+      "description": "appointmentId: below minimum 1",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {
+          "appointmentId": "0"
+        },
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "getAppointment-004",
+      "operation_id": "getAppointment",
+      "kind": "negative",
+      "valid": false,
+      "description": "appointmentId: wrong type",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {
+          "appointmentId": "abc"
+        },
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "getAppointment-005",
+      "operation_id": "getAppointment",
+      "kind": "negative",
+      "valid": false,
+      "description": "appointmentId: not an integer",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {
+          "appointmentId": "1.5"
+        },
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "getAppointment-006",
+      "operation_id": "getAppointment",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 1",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {
+          "appointmentId": "176"
+        },
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "getAppointment-007",
+      "operation_id": "getAppointment",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 2",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {
+          "appointmentId": "15"
+        },
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "getAppointment-008",
+      "operation_id": "getAppointment",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 3",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {
+          "appointmentId": "695"
+        },
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "getAppointment-009",
+      "operation_id": "getAppointment",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 4",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {
+          "appointmentId": "563"
+        },
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "getAppointment-010",
+      "operation_id": "getAppointment",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 5",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {
+          "appointmentId": "153"
+        },
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "getAppointment-011",
+      "operation_id": "getAppointment",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 6",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {
+          "appointmentId": "881"
+        },
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "getAppointment-012",
+      "operation_id": "getAppointment",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 7",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {
+          "appointmentId": "722"
+        },
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "getAppointment-013",
+      "operation_id": "getAppointment",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 8",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {
+          "appointmentId": "660"
+        },
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "getAppointment-014",
+      "operation_id": "getAppointment",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 9",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {
+          "appointmentId": "177"
+        },
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "getAppointment-015",
+      "operation_id": "getAppointment",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 10",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {
+          "appointmentId": "219"
+        },
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "getAppointment-016",
+      "operation_id": "getAppointment",
+      "kind": "no_auth",
+      "valid": true,
+      "description": "the example without credentials",
+      "auth": false,
+      "request": {
+        "method": "GET",
+        "path_params": {
+          "appointmentId": "101"
+        },
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "dailyReport-001",
+      "operation_id": "dailyReport",
+      "kind": "example",
+      "valid": true,
+      "description": "documented examples",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "date": "2026-11-12"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "dailyReport-002",
+      "operation_id": "dailyReport",
+      "kind": "negative",
+      "valid": false,
+      "description": "date: not a valid date",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "date": "11/11/2026"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "dailyReport-003",
+      "operation_id": "dailyReport",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 1",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "date": "2026-08-31"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "dailyReport-004",
+      "operation_id": "dailyReport",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 2",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "dailyReport-005",
+      "operation_id": "dailyReport",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 3",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "dailyReport-006",
+      "operation_id": "dailyReport",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 4",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "dailyReport-007",
+      "operation_id": "dailyReport",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 5",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "date": "2026-01-12"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "dailyReport-008",
+      "operation_id": "dailyReport",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 6",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "dailyReport-009",
+      "operation_id": "dailyReport",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 7",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "dailyReport-010",
+      "operation_id": "dailyReport",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 8",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "date": "2026-04-24"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "dailyReport-011",
+      "operation_id": "dailyReport",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 9",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {},
+        "headers": {}
+      }
+    },
+    {
+      "id": "dailyReport-012",
+      "operation_id": "dailyReport",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 10",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "date": "2026-05-06"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "dailyReport-013",
+      "operation_id": "dailyReport",
+      "kind": "no_auth",
+      "valid": true,
+      "description": "the example without credentials",
+      "auth": false,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "date": "2026-11-12"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listSlots-001",
+      "operation_id": "listSlots",
+      "kind": "example",
+      "valid": true,
+      "description": "documented examples",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "clinician_id": "1",
+          "date": "2026-11-12"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listSlots-002",
+      "operation_id": "listSlots",
+      "kind": "negative",
+      "valid": false,
+      "description": "clinician_id: below minimum 1",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "clinician_id": "0",
+          "date": "2026-11-12"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listSlots-003",
+      "operation_id": "listSlots",
+      "kind": "negative",
+      "valid": false,
+      "description": "clinician_id: wrong type",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "clinician_id": "abc",
+          "date": "2026-11-12"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listSlots-004",
+      "operation_id": "listSlots",
+      "kind": "negative",
+      "valid": false,
+      "description": "clinician_id: not an integer",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "clinician_id": "1.5",
+          "date": "2026-11-12"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listSlots-005",
+      "operation_id": "listSlots",
+      "kind": "negative",
+      "valid": false,
+      "description": "missing required query parameter clinician_id",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "date": "2026-11-12"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listSlots-006",
+      "operation_id": "listSlots",
+      "kind": "negative",
+      "valid": false,
+      "description": "date: not a valid date",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "clinician_id": "1",
+          "date": "11/11/2026"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listSlots-007",
+      "operation_id": "listSlots",
+      "kind": "negative",
+      "valid": false,
+      "description": "missing required query parameter date",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "clinician_id": "1"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listSlots-008",
+      "operation_id": "listSlots",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 1",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "clinician_id": "648",
+          "date": "2026-01-04"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listSlots-009",
+      "operation_id": "listSlots",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 2",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "clinician_id": "646",
+          "date": "2026-02-08"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listSlots-010",
+      "operation_id": "listSlots",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 3",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "clinician_id": "767",
+          "date": "2026-11-15"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listSlots-011",
+      "operation_id": "listSlots",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 4",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "clinician_id": "581",
+          "date": "2026-05-18"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listSlots-012",
+      "operation_id": "listSlots",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 5",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "clinician_id": "466",
+          "date": "2026-05-19"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listSlots-013",
+      "operation_id": "listSlots",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 6",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "clinician_id": "798",
+          "date": "2026-09-13"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listSlots-014",
+      "operation_id": "listSlots",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 7",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "clinician_id": "531",
+          "date": "2026-12-14"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listSlots-015",
+      "operation_id": "listSlots",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 8",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "clinician_id": "520",
+          "date": "2026-11-28"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listSlots-016",
+      "operation_id": "listSlots",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 9",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "clinician_id": "812",
+          "date": "2026-01-23"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "listSlots-017",
+      "operation_id": "listSlots",
+      "kind": "random",
+      "valid": true,
+      "description": "seeded random sample 10",
+      "auth": true,
+      "request": {
+        "method": "GET",
+        "path_params": {},
+        "query": {
+          "clinician_id": "626",
+          "date": "2026-02-09"
+        },
+        "headers": {}
+      }
+    },
+    {
+      "id": "getClinician-015",
+      "operation_id": "getClinician",
+      "kind": "added",
+      "valid": true,
+      "description": "clinicianId 3, from Schemathesis ST108 (response violates schema)",
+      "auth": true,
+      "source": "schemathesis ST108",
+      "request": {
+        "method": "GET",
+        "path_params": {
+          "clinicianId": "3"
+        },
+        "query": {},
+        "headers": {}
+      }
+    }
+  ]
+}

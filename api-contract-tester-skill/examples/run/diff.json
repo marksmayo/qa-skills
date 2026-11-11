@@ -1,0 +1,453 @@
+{
+  "old": {
+    "source": "examples/clinic-api/openapi.v1.yaml",
+    "sha256": "318e8330b0968d6ac3619341c43bc6642c3c6fc6f8b70ebb7e32df2175d038e0",
+    "version": "3.0.3",
+    "api_version": "1.4.0"
+  },
+  "new": {
+    "source": "examples/clinic-api/openapi.yaml",
+    "sha256": "bbc3ac4d3a170c9814594d1d7f45ae2ee781e96699d0ece85bd79dab69b1bcbc",
+    "version": "3.1.0",
+    "api_version": "1.5.0"
+  },
+  "major_bump": false,
+  "tools": [
+    {
+      "name": "spec_diff (stdlib)",
+      "version": "1.0.0",
+      "status": "ran",
+      "note": null
+    },
+    {
+      "name": "oasdiff",
+      "version": null,
+      "status": "not_run",
+      "note": "not installed and no saved output given"
+    }
+  ],
+  "changes": [
+    {
+      "id": "B1",
+      "kind": "response_property_removed",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "response",
+      "operation_ids": [
+        "listAppointments",
+        "createAppointment",
+        "getAppointment"
+      ],
+      "location": "Appointment.room",
+      "detail": "room removed from the response",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B2",
+      "kind": "additional_properties_disallowed",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "request",
+      "operation_ids": [
+        "createAppointment"
+      ],
+      "location": "NewAppointment",
+      "detail": "additionalProperties: false added",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B3",
+      "kind": "bound_tightened",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "request",
+      "operation_ids": [
+        "createAppointment"
+      ],
+      "location": "NewAppointment.clinician_id",
+      "detail": "minimum none -> 1",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B4",
+      "kind": "bound_tightened",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "request",
+      "operation_ids": [
+        "createAppointment"
+      ],
+      "location": "NewAppointment.patient_name",
+      "detail": "minLength none -> 1",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B5",
+      "kind": "bound_tightened",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "request",
+      "operation_ids": [
+        "createAppointment"
+      ],
+      "location": "NewAppointment.patient_name",
+      "detail": "maxLength 80 -> 60",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B6",
+      "kind": "pattern_changed",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "request",
+      "operation_ids": [
+        "createAppointment"
+      ],
+      "location": "NewAppointment.time",
+      "detail": "pattern none -> '^([01][0-9]|2[0-3]):[0-5][0-9]$'",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B7",
+      "kind": "bound_tightened",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "request",
+      "operation_ids": [
+        "getAppointment"
+      ],
+      "location": "parameter path.appointmentId",
+      "detail": "minimum none -> 1",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B8",
+      "kind": "bound_tightened",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "request",
+      "operation_ids": [
+        "getClinician"
+      ],
+      "location": "parameter path.clinicianId",
+      "detail": "minimum none -> 1",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B9",
+      "kind": "required_parameter_added",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "request",
+      "operation_ids": [
+        "listAppointments"
+      ],
+      "location": "parameter query.clinic_id",
+      "detail": "new required query parameter clinic_id",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B10",
+      "kind": "response_status_removed",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "response",
+      "operation_ids": [
+        "getClinician"
+      ],
+      "location": "response 404",
+      "detail": "404 is no longer documented",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B11",
+      "kind": "enum_value_added",
+      "rating": "potentially_breaking",
+      "severity": "Medium",
+      "direction": "response",
+      "operation_ids": [
+        "listAppointments",
+        "createAppointment",
+        "getAppointment"
+      ],
+      "location": "Appointment.status",
+      "detail": "enum gained no_show",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B12",
+      "kind": "property_now_required",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "listAppointments",
+        "createAppointment",
+        "getAppointment"
+      ],
+      "location": "Appointment.clinic_id",
+      "detail": "clinic_id is now always returned",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B13",
+      "kind": "pattern_changed",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "listAppointments",
+        "createAppointment",
+        "getAppointment"
+      ],
+      "location": "Appointment.time",
+      "detail": "pattern none -> '^([01][0-9]|2[0-3]):[0-5][0-9]$'",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B14",
+      "kind": "bound_tightened",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "listClinicians",
+        "getClinician"
+      ],
+      "location": "Clinician.id",
+      "detail": "minimum none -> 1",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B15",
+      "kind": "bound_tightened",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "listClinicians",
+        "getClinician"
+      ],
+      "location": "Clinician.name",
+      "detail": "minLength none -> 1",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B16",
+      "kind": "operation_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "operation",
+      "operation_ids": [
+        "dailyReport"
+      ],
+      "location": "GET /reports/daily",
+      "detail": "dailyReport added",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B17",
+      "kind": "operation_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "operation",
+      "operation_ids": [
+        "listSlots"
+      ],
+      "location": "GET /slots",
+      "detail": "listSlots added",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B18",
+      "kind": "property_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "request",
+      "operation_ids": [
+        "createAppointment"
+      ],
+      "location": "NewAppointment.portal_pin",
+      "detail": "portal_pin added",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B19",
+      "kind": "parameter_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "request",
+      "operation_ids": [
+        "listClinicians"
+      ],
+      "location": "parameter query.limit",
+      "detail": "new optional query parameter limit",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B20",
+      "kind": "response_header_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "getClinician"
+      ],
+      "location": "response 200 header X-Request-Id",
+      "detail": "X-Request-Id is now always sent",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B21",
+      "kind": "enum_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "healthCheck"
+      ],
+      "location": "response 200.status",
+      "detail": "now restricted to ['ok']",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B22",
+      "kind": "property_now_required",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "healthCheck"
+      ],
+      "location": "response 200.status",
+      "detail": "status is now always returned",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B23",
+      "kind": "property_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "healthCheck"
+      ],
+      "location": "response 200.version",
+      "detail": "version added",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B24",
+      "kind": "response_header_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "createAppointment"
+      ],
+      "location": "response 201 header Location",
+      "detail": "Location is now always sent",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B25",
+      "kind": "response_status_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "listClinicians",
+        "getClinician",
+        "listAppointments",
+        "createAppointment",
+        "getAppointment"
+      ],
+      "location": "response 400",
+      "detail": "400 added",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B26",
+      "kind": "response_status_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "listAppointments",
+        "createAppointment",
+        "getAppointment",
+        "cancelAppointment"
+      ],
+      "location": "response 401",
+      "detail": "401 added",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B27",
+      "kind": "response_status_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "cancelAppointment"
+      ],
+      "location": "response 404",
+      "detail": "404 added",
+      "sources": [
+        "stdlib"
+      ]
+    }
+  ]
+}

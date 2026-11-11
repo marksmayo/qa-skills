@@ -1,0 +1,241 @@
+{
+  "schemathesis_version": "4.33.2",
+  "command": "st --config-file examples\\run\\schemathesis\\safe-mode.schemathesis.toml run examples/clinic-api/openapi.yaml --url http://127.0.0.1:8140 --checks all -w 1 -n 20 --rate-limit 5/s --report json,junit,har --report-dir examples\\run\\schemathesis --output-sanitize true --seed 1611 --include-method-regex ^(GET|HEAD|OPTIONS)$ --exclude-checks unsupported_method,use_after_free,ensure_resource_availability,object_level_authorization --phases examples,coverage,fuzzing --exclude-operation-id cancelAppointment -H Authorization: [Filtered]",
+  "seed": 1611,
+  "started_at": "2026-11-11T07:19:35.293720+00:00",
+  "running_time": 16.90643530001398,
+  "stop_reason": "completed",
+  "complete": true,
+  "exit_code": 1,
+  "operations": {
+    "total": 9,
+    "selected": 7,
+    "tested": 7,
+    "errored": 0,
+    "skipped": 0,
+    "skip_reasons": []
+  },
+  "phases": {
+    "examples": {
+      "status": "failure",
+      "skip_reason": null
+    },
+    "coverage": {
+      "status": "failure",
+      "skip_reason": null
+    },
+    "fuzzing": {
+      "status": "failure",
+      "skip_reason": null
+    },
+    "stateful": {
+      "status": "skip",
+      "skip_reason": "disabled"
+    }
+  },
+  "test_cases": {
+    "generated": 75,
+    "with_failures": 8,
+    "unique_failures": 8,
+    "without_checks": 0,
+    "errored": 0
+  },
+  "failures": [
+    {
+      "type": "IgnoredAuth",
+      "code": "ST401",
+      "title": "API accepts requests without authentication",
+      "severity": "critical",
+      "count": 1,
+      "operations": [
+        "GET /reports/daily"
+      ]
+    },
+    {
+      "type": "ServerError",
+      "code": "ST101",
+      "title": "Server error",
+      "severity": "critical",
+      "count": 1,
+      "operations": [
+        "GET /slots"
+      ]
+    },
+    {
+      "type": "JsonSchemaError",
+      "code": "ST108",
+      "title": "Response violates schema",
+      "severity": "high",
+      "count": 2,
+      "operations": [
+        "GET /clinicians",
+        "GET /clinicians/{clinicianId}"
+      ]
+    },
+    {
+      "type": "MissingHeaderNotRejected",
+      "code": "ST203",
+      "title": "Missing required header accepted",
+      "severity": "medium",
+      "count": 1,
+      "operations": [
+        "GET /reports/daily"
+      ]
+    },
+    {
+      "type": "AcceptedNegativeData",
+      "code": "ST201",
+      "title": "Schema-violating request accepted",
+      "severity": "medium",
+      "count": 1,
+      "operations": [
+        "GET /appointments"
+      ]
+    },
+    {
+      "type": "UndefinedContentType",
+      "code": "ST105",
+      "title": "Undocumented Content-Type",
+      "severity": "medium",
+      "count": 1,
+      "operations": [
+        "GET /appointments/{appointmentId}"
+      ]
+    },
+    {
+      "type": "UndefinedStatusCode",
+      "code": "ST103",
+      "title": "Undocumented status code",
+      "severity": "medium",
+      "count": 1,
+      "operations": [
+        "GET /clinicians/{clinicianId}"
+      ]
+    }
+  ],
+  "errors": [],
+  "baseline": null,
+  "filtered": 0,
+  "warnings": {
+    "missing_auth": [],
+    "base_url_mismatch": [],
+    "missing_test_data": [],
+    "validation_mismatch": [],
+    "missing_deserializer": [],
+    "unused_openapi_auth": [],
+    "unsupported_regex": [],
+    "method_not_allowed": [],
+    "constants_extraction": [],
+    "unmatched_filter": [],
+    "unresolvable_reference": [],
+    "unsupported_field": [],
+    "low_valid_rate": [],
+    "rate_limited": [],
+    "not_served": [],
+    "dictionary_mismatch": []
+  },
+  "valid_rates": {
+    "GET /clinicians": {
+      "examples": {
+        "accepted": 1,
+        "unreachable": 0,
+        "conflicts": 0,
+        "rejected": 0
+      },
+      "coverage": {
+        "accepted": 2,
+        "unreachable": 0,
+        "conflicts": 0,
+        "rejected": 0
+      },
+      "fuzzing": {
+        "accepted": 1,
+        "unreachable": 0,
+        "conflicts": 0,
+        "rejected": 0
+      }
+    },
+    "GET /reports/daily": {
+      "examples": {
+        "accepted": 2,
+        "unreachable": 0,
+        "conflicts": 0,
+        "rejected": 0
+      },
+      "fuzzing": {
+        "accepted": 2,
+        "unreachable": 0,
+        "conflicts": 0,
+        "rejected": 0
+      }
+    },
+    "GET /clinicians/{clinicianId}": {
+      "examples": {
+        "accepted": 1,
+        "unreachable": 0,
+        "conflicts": 0,
+        "rejected": 0
+      },
+      "fuzzing": {
+        "accepted": 1,
+        "unreachable": 0,
+        "conflicts": 0,
+        "rejected": 0
+      }
+    },
+    "GET /appointments": {
+      "examples": {
+        "accepted": 3,
+        "unreachable": 0,
+        "conflicts": 0,
+        "rejected": 0
+      },
+      "fuzzing": {
+        "accepted": 19,
+        "unreachable": 0,
+        "conflicts": 0,
+        "rejected": 0
+      }
+    },
+    "GET /slots": {
+      "examples": {
+        "accepted": 3,
+        "unreachable": 0,
+        "conflicts": 0,
+        "rejected": 0
+      },
+      "fuzzing": {
+        "accepted": 7,
+        "unreachable": 0,
+        "conflicts": 0,
+        "rejected": 0
+      }
+    },
+    "GET /appointments/{appointmentId}": {
+      "examples": {
+        "accepted": 2,
+        "unreachable": 0,
+        "conflicts": 0,
+        "rejected": 0
+      }
+    },
+    "GET /health": {
+      "coverage": {
+        "accepted": 1,
+        "unreachable": 0,
+        "conflicts": 0,
+        "rejected": 0
+      },
+      "fuzzing": {
+        "accepted": 1,
+        "unreachable": 0,
+        "conflicts": 0,
+        "rejected": 0
+      }
+    }
+  },
+  "auth": {
+    "reauth_count": 0,
+    "reauth_broke": false
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "case_id": "createAppointment-016",
+  "operation_id": "createAppointment",
+  "kind": "negative",
+  "valid": false,
+  "description": "body: unexpected property",
+  "sent_with_credentials": true,
+  "request": {
+    "method": "POST",
+    "url": "http://127.0.0.1:8140/appointments",
+    "headers": {
+      "Authorization": "[REDACTED]",
+      "Content-Type": "application/json",
+      "Accept": "application/json"
+    },
+    "body": {
+      "patient_name": "Test Patient C",
+      "clinician_id": 1,
+      "date": "2026-11-13",
+      "time": "09:30",
+      "unexpected_field": "x"
+    }
+  },
+  "response": {
+    "status": 201,
+    "headers": {
+      "Server": "clinic-api/1.5.0 Python/3.14.10",
+      "Date": "Wed, 11 Nov 2026 07:20:08 GMT",
+      "Content-Type": "application/json",
+      "Content-Length": "139",
+      "Location": "/appointments/114"
+    },
+    "body": {
+      "json": {
+        "id": 114,
+        "clinic_id": 1,
+        "clinician_id": 1,
+        "date": "2026-11-13",
+        "time": "09:30",
+        "status": "booked",
+        "patient_name": "Test Patient C"
+      },
+      "sha256": "922018d475203743d54bf73a27207ed3d81b0a6f88cb8ab0d5e2d3432ac93ff2",
+      "truncated": false,
+      "bytes": 139
+    }
+  },
+  "elapsed_ms": 24,
+  "failed_checks": [
+    "negative_accepted"
+  ]
+}

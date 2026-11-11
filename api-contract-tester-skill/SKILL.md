@@ -1,0 +1,205 @@
+---
+name: api-contract-tester
+description: Check that a running HTTP API behaves the way its contract says. Read an OpenAPI 3.0/3.1 document or a GraphQL schema, generate requests from it (documented examples, boundary values, one-violation negatives, a seeded random sample, and requests without credentials), send them to a test instance in safe mode, and check every response for undocumented status codes, server errors, wrong content types, schema violations, missing headers, invalid input accepted, valid input rejected and auth not enforced. Every finding has a saved, redacted request and response and is re-sent once to separate repeatable from flaky. With a previous contract it also rates the breaking changes between versions. Uses Schemathesis and oasdiff when installed; works with the standard library alone. No findings never means the API conforms.
+version: 1.0.0
+---
+
+# API contract tester
+
+## Mission
+
+Find where a running API breaks its own contract, with a recorded exchange for every claim. The
+contract is the oracle: when the API and the contract disagree, say which side should change and
+mark that as your judgment. Report what was exercised and what wasn't, so nobody reads "no
+findings" as "conforms".
+
+This skill differs from the code security auditor, which looks for exploitable weaknesses in
+source code: this one looks for the API not doing what it promised. Server errors and missing auth
+may be security relevant, and the report says so (and routes them to the auditor), but it doesn't
+rate them with CVSS. It writes no tests by default; each finding carries a regression-test sketch.
+
+## Non-negotiable rules
+
+1. **No findings is not conformance.** The best verdict is "No contract violations found in N
+   requests over M of K operations; conformance not established". Operations never called are
+   `untested`, a check that couldn't be evaluated is `cantTell`, and neither is ever `passed`.
+2. **Every finding has a saved exchange**: the exact request sent and the response received,
+   under `exchanges/`. Each failing case is sent once more. A failure that doesn't happen again is
+   kept as a flaky finding with low confidence, never dismissed.
+3. **Safe mode is the default.** Only `GET`, `HEAD` and `OPTIONS` are sent (GraphQL queries go
+   over POST but are reads; mutations are writes). Writes need `allow_writes`, `authorised_by` and
+   the user's confirmation that the target is not production, even for operations the contract
+   calls safe. A host on `production_hosts` never receives a write.
+4. **Authorisation for the target.** Loopback needs nothing; any other host needs `authorised_by`
+   (who confirmed testing it is allowed).
+5. **Secrets are redacted before anything is written**: `Authorization`, cookies, API-key headers
+   and query parameters, parameters named like token, secret or password, fields the schema marks
+   `format: password` or `writeOnly`, and every occurrence of a configured secret value. Read
+   credentials from environment variables, never from the command line or the report.
+6. **Respect rate limits**: 5 requests per second by default, back off on `429` and `Retry-After`.
+   A run stopped by limits is `incomplete`.
+7. **The fix direction is judgment.** `fix_api` or `fix_contract`, always with
+   `fix_direction_basis: agent_judgment`.
+8. **Record every tool** as `ran`, `not_run` or `errored`, with versions.
+
+## Inputs
+
+| Input | Default | Notes |
+|---|---|---|
+| `contract` | required | OpenAPI 3.0/3.1 (JSON or YAML) or GraphQL SDL, as a file or URL. Swagger 2.0 needs Schemathesis to convert it; otherwise `not_assessed` |
+| `base_url` | required | The test instance |
+| `authorised_by` | required for non-loopback | Who authorised testing this host |
+| `auth` | none | A bearer token or API key in an environment variable (`--bearer-env`, `--api-key-env`) |
+| `allow_writes` | `false` | Also needs `authorised_by` and a confirmed non-production target |
+| `production_hosts` | `[]` | Hosts that never receive writes |
+| `operations` | all | `--include`/`--exclude` by operationId, `tag:T` or `path:/prefix` |
+| `max_cases_per_operation` | 50 | |
+| `seed` | random, recorded | Makes the generated cases repeatable |
+| `previous_contract` | none | Turns on the breaking-change diff |
+| `repo` | none | Used to point each finding at its handler |
+
+## Workflow
+
+Work in a run directory (`<run>/`). All scripts are stdlib Python 3.9+ (PyYAML is used for YAML
+when installed, otherwise the bundled `yaml_lite.py`). Schemathesis and oasdiff are optional; ask
+before installing them.
+
+### 1. Load and lint the contract
+
+```bash
+python scripts/load_contract.py openapi.yaml --out <run>/contract.json
+python scripts/load_contract.py schema.graphql --introspect-url http://127.0.0.1:8140/graphql --out <run>/contract.json   # GraphQL
+```
+
+It resolves `$ref`s (local, and external files or same-host URLs when the fragment has no local
+refs of its own), lists the operations with their line in the contract, and reports **contract
+issues**: a missing operationId, a 2xx response without a schema, an example that doesn't match
+its own schema, a keyword the checker can't evaluate, an unresolved `$ref`, or (GraphQL) a served
+schema that differs from the SDL. Contract issues are a separate section: they are not API failures.
+
+### 2. Plan and generate
+
+```bash
+python scripts/gen_cases.py <run>/contract.json --out <run>/cases.json --seed 1611 [--exclude cancelAppointment] \
+  [--allow-writes] [--auth-configured] [--add-cases extra.json]
+```
+
+The plan lists every operation as `planned`, `excluded`, `skipped_write` or `skipped_auth`; it is
+the coverage denominator. Cases per operation, in order: the documented example; boundaries (each
+bound and enum value); negatives (one violation at a time); a seeded random sample; and the
+example without credentials for secured operations. A sample the contract says is invalid is never
+sent labelled valid. GraphQL: each query field with every enum value and a few values per scalar
+argument, plus a query missing each required argument.
+
+### 3. Check tooling
+
+Look for Schemathesis (`st`) and oasdiff. Record each as `ran`, `not_run` (not installed, or not
+used) or `errored`. Without Schemathesis the stdlib generator is the only one, and the report says so.
+
+### 4. Optional: Schemathesis
+
+```bash
+python scripts/run_schemathesis.py openapi.yaml --base-url http://127.0.0.1:8140 --out <run>/schemathesis.json \
+  --seed 1611 --rate 5 --bearer-env API_TOKEN [--exclude-operation-id cancelAppointment]
+```
+
+The wrapper enforces the same safe mode. Schemathesis's coverage phase sends PUT, POST, DELETE,
+PATCH and TRACE to every path by default ("unexpected methods"), whatever its method filter says,
+so in safe mode the wrapper turns that off in a config file, and also turns off the stateful phase
+and the checks that create resources. Never run `st` directly against a shared instance without
+those settings.
+
+Its failures have no exchange of ours. For each one the stdlib run didn't also find, write a case
+that reproduces it (`extra_cases.json`: `operation_id`, `description`, `path_params`, `query`,
+`body`, `source`) and regenerate with `--add-cases`; or list it as `needs_review`.
+
+### 5. Probe, send and check
+
+```bash
+python scripts/send_cases.py <run>/contract.json <run>/cases.json --base-url http://127.0.0.1:8140 --out <run>/run.json \
+  --bearer-env API_TOKEN [--allow-writes --authorised-by "who" --confirm-non-production] [--production-host api.example.com]
+```
+
+It probes one `GET` first and stops if the instance is down. Every response is checked:
+
+| Check | Fails when |
+|---|---|
+| `status_documented` | A 2xx/3xx/4xx status isn't in the operation's responses and there's no `default` (5xx is `server_error`'s) |
+| `server_error` | Any 5xx |
+| `content_type` | The `Content-Type` isn't one documented for that status |
+| `schema_conformance` | The body doesn't validate against the response schema (3.0 or 3.1 dialect); `cantTell` when it uses a keyword the stdlib checker doesn't support and nothing else failed |
+| `required_headers` | A documented required header is missing |
+| `negative_accepted` | A request that violates the request schema got a 2xx |
+| `positive_rejected` | A documented example got a 4xx other than 401, 403 or 429 |
+| `auth_enforced` | A secured operation answered 2xx without credentials |
+| `graphql_errors` | A valid query returned `errors`, or data that doesn't match the field types |
+
+Failing exchanges are saved, redacted, and each failing case is re-sent once. Bodies over 2 MB are
+truncated with the full body's SHA-256 kept. Timestamps and ids are checked by schema only, never
+compared between sends.
+
+### 6. Diff contracts (with a previous contract)
+
+```bash
+python scripts/load_contract.py openapi.v1.yaml --out <run>/contract.v1.json
+python scripts/spec_diff.py <run>/contract.v1.json <run>/contract.json --out <run>/diff.json [--run-oasdiff old.yaml new.yaml]
+```
+
+### 7. Merge into candidates
+
+```bash
+python scripts/merge_findings.py <run>/contract.json <run>/cases.json <run>/run.json --out <run>/candidates.json \
+  [--diff <run>/diff.json] [--schemathesis <run>/schemathesis.json]
+```
+
+One candidate per (check, cause); a cause shared by several operations (an undocumented status, a
+fault in a shared component schema, missing auth) is one candidate with a wider reach. Severity,
+confidence, reach, score and priority are computed (`RUBRIC.md`).
+
+### 8. Triage
+
+Every candidate is `promoted` (to a finding), `needs_review`, or `dismissed` with a checkable
+reason (for a Schemathesis candidate: "same failure as K2"). A Schemathesis candidate is promoted
+only through its reproduced stdlib candidate. For each finding write:
+
+- `title`, `expected` (what the contract says) and `actual` (what the exchange shows);
+- `fix_direction` (`fix_api` or `fix_contract`) and the reason, as `agent_judgment`;
+- `handler` (file and line) when the repo is available; `null` otherwise;
+- `remediation`, a `verification_step` (rerun with the same seed and name the case that should
+  pass), and the `regression_test_sketch` from the candidate, adapted to the repo's framework when
+  one is known;
+- `security_relevant`: always for `auth_enforced`; for a 5xx that leaks internals; route those to
+  the code security auditor.
+
+### 9. Write, validate, render
+
+Write `<run>/report.json` (`schemas/api_contract_report.schema.json`), then:
+
+```bash
+python scripts/validate_report.py <run>/report.json --run <run>/run.json --candidates <run>/candidates.json \
+  --contract <run>/contract.json --cases <run>/cases.json [--diff <run>/diff.json] [--repo <repo>] [--write-summary]
+python scripts/render_report.py <run>/report.json [--brief] [--sarif findings.sarif --contract <run>/contract.json]
+```
+
+Fix every validator error; never edit the run or the exchanges to make it pass. Set the secret
+environment variables before validating, so the exchanges are scanned for their values.
+
+## Output fields
+
+- `scope`: the contract (kind, version, API version, source, SHA-256), the previous contract,
+  base URL, `authorised_by`, writes allowed, production hosts, seed, filter and case limit.
+- `metadata`: tools, generator (`stdlib`, `schemathesis` or `both`), requests sent, rate-limit
+  events and backoff, run status, the secret environment variable names, and the run file.
+- `headline`: verdict (`violations_found` or `not_established`), a summary, severity counts, flaky
+  findings, breaking-change counts, operation coverage, evidence completeness and overall confidence.
+- `operations[]`: every operation with status, cases sent and the result of each check.
+- `findings[]`, `needs_review[]`, `triage[]`, `contract_issues[]`, `breaking_changes[]`,
+  `limitations[]`, `next_steps[]`.
+
+## What the validator enforces
+
+The operations, coverage, candidates, ratings and headline are recomputed from the contract, the
+cases and the run. Every finding needs a saved exchange belonging to its candidate. No configured
+secret, credential header, API key or password field may appear unredacted. No write may appear
+when writes weren't allowed, and none may go to a production host. A non-loopback target needs
+`authorised_by`. Every candidate is triaged exactly once. The summary may not claim conformance.

@@ -1,0 +1,85 @@
+{
+  "tool": {
+    "name": "schemathesis",
+    "version": "4.33.2",
+    "status": "ran",
+    "note": "75 test cases, seed 1611"
+  },
+  "command": "st --config-file examples\\run\\schemathesis\\safe-mode.schemathesis.toml run examples/clinic-api/openapi.yaml --url http://127.0.0.1:8140 --checks all -w 1 -n 20 --rate-limit 5/s --report json,junit,har --report-dir examples/run/schemathesis --output-sanitize true --seed 1611 --include-method-regex ^(GET|HEAD|OPTIONS)$ --exclude-checks unsupported_method,use_after_free,ensure_resource_availability,object_level_authorization --phases examples,coverage,fuzzing --exclude-operation-id cancelAppointment -H Authorization: Bearer $CLINIC_TOKEN",
+  "safe_mode": true,
+  "report_dir": "examples/run/schemathesis",
+  "failures": [
+    {
+      "operation": "GET /reports/daily",
+      "code": "ST401",
+      "title": "API accepts requests without authentication",
+      "check": "auth_enforced",
+      "schemathesis_severity": "critical",
+      "message": "API accepts requests without authentication\n\n    Expected 401 or 403, got `200 OK` for `GET /reports/daily`",
+      "evidence": "schemathesis/junit-20261111T201934Z.xml"
+    },
+    {
+      "operation": "GET /slots",
+      "code": "ST101",
+      "title": "Server error",
+      "check": "server_error",
+      "schemathesis_severity": "critical",
+      "message": "Server error",
+      "evidence": "schemathesis/junit-20261111T201934Z.xml"
+    },
+    {
+      "operation": "GET /clinicians",
+      "code": "ST108",
+      "title": "Response violates schema",
+      "check": "schema_conformance",
+      "schemathesis_severity": "high",
+      "message": "Response violates schema\n\n    \"specialty\" is a required property\n\n    Validated against the response schema for status code 200.\n\n    Schema at /components/schemas/Clinician:\n\n        {\n            \"required\": [\n                \"id\",\n                \"name\",\n                \"specialty\"\n            ],\n            \"type\": \"object\",\n            \"properties\": {\n                \"id\": {\n                    \"type\": \"integer\",\n                    \"minimum\": 1\n                },\n                \"name\": {\n                    \"type\": \"string\",\n                    \"minLength\": 1\n                },\n                \"specialty\": {\n                    \"$ref\": \"#/components/schemas/Specialty\"\n                }\n            // Output truncated...\n        }\n\n    Value:\n\n        {\n            \"id\": 3,\n            \"name\": \"Dr Test Three\"\n        }",
+      "evidence": "schemathesis/junit-20261111T201934Z.xml"
+    },
+    {
+      "operation": "GET /clinicians/{clinicianId}",
+      "code": "ST108",
+      "title": "Response violates schema",
+      "check": "schema_conformance",
+      "schemathesis_severity": "high",
+      "message": "Response violates schema\n\n    \"specialty\" is a required property\n\n    Validated against the response schema for status code 200.\n\n    Schema at /components/schemas/Clinician:\n\n        {\n            \"required\": [\n                \"id\",\n                \"name\",\n                \"specialty\"\n            ],\n            \"type\": \"object\",\n            \"properties\": {\n                \"id\": {\n                    \"type\": \"integer\",\n                    \"minimum\": 1\n                },\n                \"name\": {\n                    \"type\": \"string\",\n                    \"minLength\": 1\n                },\n                \"specialty\": {\n                    \"$ref\": \"#/components/schemas/Specialty\"\n                }\n            // Output truncated...\n        }\n\n    Value:\n\n        {\n            \"id\": 3,\n            \"name\": \"Dr Test Three\"\n        }",
+      "evidence": "schemathesis/junit-20261111T201934Z.xml"
+    },
+    {
+      "operation": "GET /reports/daily",
+      "code": "ST203",
+      "title": "Missing required header accepted",
+      "check": "auth_enforced",
+      "schemathesis_severity": "medium",
+      "message": "Missing required header accepted\n\n    Got 200 when missing required 'Authorization' header, expected 401",
+      "evidence": "schemathesis/junit-20261111T201934Z.xml"
+    },
+    {
+      "operation": "GET /appointments",
+      "code": "ST201",
+      "title": "Schema-violating request accepted",
+      "check": "negative_accepted",
+      "schemathesis_severity": "medium",
+      "message": "Schema-violating request accepted\n\n    Invalid data should have been rejected\n    Expected: 400, 401, 403, 404, 405, 406, 409, 415, 422, 428, 429, 5xx\n    Invalid component: parameter `clinic_id` in query - clinic_id: Value smaller than minimum",
+      "evidence": "schemathesis/junit-20261111T201934Z.xml"
+    },
+    {
+      "operation": "GET /appointments/{appointmentId}",
+      "code": "ST105",
+      "title": "Undocumented Content-Type",
+      "check": "required_headers",
+      "schemathesis_severity": "medium",
+      "message": "Undocumented Content-Type\n\n    Received: text/html; charset=utf-8\n    Documented: application/json",
+      "evidence": "schemathesis/junit-20261111T201934Z.xml"
+    },
+    {
+      "operation": "GET /clinicians/{clinicianId}",
+      "code": "ST103",
+      "title": "Undocumented status code",
+      "check": "status_documented",
+      "schemathesis_severity": "medium",
+      "message": "Undocumented status code\n\n    Received: 404\n    Documented: 200, 400",
+      "evidence": "schemathesis/junit-20261111T201934Z.xml"
+    }
+  ]
+}

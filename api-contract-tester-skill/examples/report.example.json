@@ -1,0 +1,1263 @@
+{
+  "skill": {
+    "name": "api-contract-tester",
+    "version": "1.0.0"
+  },
+  "scope": {
+    "contract": {
+      "kind": "openapi",
+      "version": "3.1.0",
+      "api_version": "1.5.0",
+      "source": "examples/clinic-api/openapi.yaml",
+      "sha256": "bbc3ac4d3a170c9814594d1d7f45ae2ee781e96699d0ece85bd79dab69b1bcbc"
+    },
+    "previous_contract": {
+      "source": "examples/clinic-api/openapi.v1.yaml",
+      "sha256": "318e8330b0968d6ac3619341c43bc6642c3c6fc6f8b70ebb7e32df2175d038e0",
+      "api_version": "1.4.0"
+    },
+    "base_url": "http://127.0.0.1:8140",
+    "authorised_by": "repo owner (loopback sample app)",
+    "writes_allowed": true,
+    "production_hosts": [],
+    "seed": 1611,
+    "operations_filter": {
+      "include": [],
+      "exclude": [
+        "cancelAppointment"
+      ]
+    },
+    "max_cases_per_operation": 50
+  },
+  "metadata": {
+    "generated_at": "2026-11-11T07:20:26Z",
+    "tools": [
+      {
+        "name": "gen_cases.py (stdlib generator)",
+        "version": "1.0.0",
+        "status": "ran",
+        "note": "129 cases, seed 1611"
+      },
+      {
+        "name": "send_cases.py",
+        "version": "1.0.0",
+        "status": "ran",
+        "note": "159 requests at 5 per second"
+      },
+      {
+        "name": "schemathesis",
+        "version": "4.33.2",
+        "status": "ran",
+        "note": "75 test cases, seed 1611; safe mode (GET, HEAD and OPTIONS only)"
+      },
+      {
+        "name": "spec_diff (stdlib)",
+        "version": "1.0.0",
+        "status": "ran",
+        "note": null
+      },
+      {
+        "name": "oasdiff",
+        "version": null,
+        "status": "not_run",
+        "note": "not installed and no saved output given"
+      }
+    ],
+    "generator": "both",
+    "requests_sent": 159,
+    "rate_limited": {
+      "events": 0,
+      "backoff_seconds": 0.0
+    },
+    "run_status": "complete",
+    "secret_env": [
+      "CLINIC_TOKEN"
+    ],
+    "run": "run/run.json"
+  },
+  "headline": {
+    "verdict": "violations_found",
+    "summary": "10 contract violations found in 159 requests over 8 of 9 operations (cancelAppointment excluded). The most serious: GET /reports/daily answers without credentials (Critical). Against 1.4.0 the contract has 10 breaking changes without a major version bump. dailyReport's response schema uses a keyword the checker can't evaluate, so it was not fully checked.",
+    "severity_counts": {
+      "Critical": 1,
+      "High": 2,
+      "Medium": 6,
+      "Low": 1
+    },
+    "flaky_findings": 1,
+    "breaking_change_counts": {
+      "breaking": 10,
+      "potentially_breaking": 1,
+      "compatible": 16
+    },
+    "operation_coverage": {
+      "total": 9,
+      "exercised": 8,
+      "excluded": 1,
+      "skipped_write": 0,
+      "skipped_auth": 0,
+      "untested": 0
+    },
+    "evidence_completeness": "partial",
+    "overall_confidence": "medium"
+  },
+  "operations": [
+    {
+      "operation_id": "healthCheck",
+      "method": "GET",
+      "path": "/health",
+      "status": "exercised",
+      "cases_sent": 1,
+      "checks": {
+        "status_documented": "passed",
+        "server_error": "passed",
+        "content_type": "passed",
+        "schema_conformance": "passed",
+        "required_headers": "not_applicable",
+        "negative_accepted": "not_applicable",
+        "positive_rejected": "passed",
+        "auth_enforced": "not_applicable",
+        "graphql_errors": "not_applicable"
+      }
+    },
+    {
+      "operation_id": "listClinicians",
+      "method": "GET",
+      "path": "/clinicians",
+      "status": "exercised",
+      "cases_sent": 21,
+      "checks": {
+        "status_documented": "passed",
+        "server_error": "passed",
+        "content_type": "passed",
+        "schema_conformance": "failed",
+        "required_headers": "not_applicable",
+        "negative_accepted": "passed",
+        "positive_rejected": "passed",
+        "auth_enforced": "not_applicable",
+        "graphql_errors": "not_applicable"
+      }
+    },
+    {
+      "operation_id": "getClinician",
+      "method": "GET",
+      "path": "/clinicians/{clinicianId}",
+      "status": "exercised",
+      "cases_sent": 15,
+      "checks": {
+        "status_documented": "failed",
+        "server_error": "passed",
+        "content_type": "passed",
+        "schema_conformance": "failed",
+        "required_headers": "passed",
+        "negative_accepted": "passed",
+        "positive_rejected": "passed",
+        "auth_enforced": "not_applicable",
+        "graphql_errors": "not_applicable"
+      }
+    },
+    {
+      "operation_id": "listAppointments",
+      "method": "GET",
+      "path": "/appointments",
+      "status": "exercised",
+      "cases_sent": 17,
+      "checks": {
+        "status_documented": "passed",
+        "server_error": "failed",
+        "content_type": "passed",
+        "schema_conformance": "passed",
+        "required_headers": "not_applicable",
+        "negative_accepted": "failed",
+        "positive_rejected": "passed",
+        "auth_enforced": "passed",
+        "graphql_errors": "not_applicable"
+      }
+    },
+    {
+      "operation_id": "createAppointment",
+      "method": "POST",
+      "path": "/appointments",
+      "status": "exercised",
+      "cases_sent": 29,
+      "checks": {
+        "status_documented": "passed",
+        "server_error": "passed",
+        "content_type": "passed",
+        "schema_conformance": "passed",
+        "required_headers": "passed",
+        "negative_accepted": "failed",
+        "positive_rejected": "passed",
+        "auth_enforced": "passed",
+        "graphql_errors": "not_applicable"
+      }
+    },
+    {
+      "operation_id": "getAppointment",
+      "method": "GET",
+      "path": "/appointments/{appointmentId}",
+      "status": "exercised",
+      "cases_sent": 16,
+      "checks": {
+        "status_documented": "passed",
+        "server_error": "passed",
+        "content_type": "failed",
+        "schema_conformance": "passed",
+        "required_headers": "not_applicable",
+        "negative_accepted": "passed",
+        "positive_rejected": "passed",
+        "auth_enforced": "passed",
+        "graphql_errors": "not_applicable"
+      }
+    },
+    {
+      "operation_id": "cancelAppointment",
+      "method": "DELETE",
+      "path": "/appointments/{appointmentId}",
+      "status": "excluded",
+      "cases_sent": 0,
+      "checks": {
+        "status_documented": "untested",
+        "server_error": "untested",
+        "content_type": "untested",
+        "schema_conformance": "untested",
+        "required_headers": "untested",
+        "negative_accepted": "untested",
+        "positive_rejected": "untested",
+        "auth_enforced": "untested",
+        "graphql_errors": "untested"
+      }
+    },
+    {
+      "operation_id": "dailyReport",
+      "method": "GET",
+      "path": "/reports/daily",
+      "status": "exercised",
+      "cases_sent": 13,
+      "checks": {
+        "status_documented": "passed",
+        "server_error": "passed",
+        "content_type": "passed",
+        "schema_conformance": "cantTell",
+        "required_headers": "not_applicable",
+        "negative_accepted": "passed",
+        "positive_rejected": "passed",
+        "auth_enforced": "failed",
+        "graphql_errors": "not_applicable"
+      }
+    },
+    {
+      "operation_id": "listSlots",
+      "method": "GET",
+      "path": "/slots",
+      "status": "exercised",
+      "cases_sent": 17,
+      "checks": {
+        "status_documented": "passed",
+        "server_error": "failed",
+        "content_type": "passed",
+        "schema_conformance": "passed",
+        "required_headers": "not_applicable",
+        "negative_accepted": "failed",
+        "positive_rejected": "passed",
+        "auth_enforced": "not_applicable",
+        "graphql_errors": "not_applicable"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "F1",
+      "candidate_id": "K2",
+      "title": "GET /reports/daily answers without a bearer token",
+      "check": "auth_enforced",
+      "cause": "answers 2xx without credentials",
+      "operation_ids": [
+        "dailyReport"
+      ],
+      "severity": "Critical",
+      "confidence": "high",
+      "reach": 1,
+      "score": 12,
+      "priority": "P1",
+      "repeatable": true,
+      "exchanges": [
+        {
+          "path": "exchanges/dailyReport-013.json",
+          "request_summary": "GET /reports/daily?date=2026-11-12 (no credentials)",
+          "status": 200
+        },
+        {
+          "path": "exchanges/dailyReport-013.resend.json",
+          "request_summary": "GET /reports/daily?date=2026-11-12 (no credentials) (re-send)",
+          "status": 200
+        }
+      ],
+      "expected": "The operation requires bearer auth, so a request without credentials gets 401 (documented) or 403.",
+      "actual": "200 with the day's booked and cancelled counts, on the first send and again on the re-send.",
+      "fix_direction": "fix_api",
+      "fix_direction_basis": "agent_judgment",
+      "handler": {
+        "file": "server.py",
+        "line": 109
+      },
+      "remediation": "Check the token before routing to daily_report, as the /appointments routes do. The report exposes booking volumes, so treat this as an access-control defect and hand it to the code security auditor.",
+      "verification_step": "Rerun send_cases.py with seed 1611: dailyReport-013 (no credentials) returns 401 and auth_enforced passes.",
+      "regression_test_sketch": "def test_dailyreport_auth_enforced(api):\n    \"\"\"auth_enforced: answers 2xx without credentials\"\"\"\n    resp = api.request('GET', '/reports/daily?date=2026-11-12', auth=None)\n    assert resp.status in (401, 403)",
+      "security_relevant": true
+    },
+    {
+      "id": "F2",
+      "candidate_id": "K1",
+      "title": "Clinician 3 is returned without the required specialty",
+      "check": "schema_conformance",
+      "cause": "Clinician: missing required 'specialty'",
+      "operation_ids": [
+        "listClinicians",
+        "getClinician"
+      ],
+      "severity": "High",
+      "confidence": "high",
+      "reach": 2,
+      "score": 18,
+      "priority": "P1",
+      "repeatable": true,
+      "exchanges": [
+        {
+          "path": "exchanges/listClinicians-001.json",
+          "request_summary": "GET /clinicians?limit=10",
+          "status": 200
+        },
+        {
+          "path": "exchanges/listClinicians-001.resend.json",
+          "request_summary": "GET /clinicians?limit=10 (re-send)",
+          "status": 200
+        },
+        {
+          "path": "exchanges/getClinician-015.json",
+          "request_summary": "GET /clinicians/3",
+          "status": 200
+        }
+      ],
+      "expected": "Every Clinician has id, name and specialty (one of gp, physio, dental), in both the list and the single view.",
+      "actual": "GET /clinicians returns clinician 3 with no specialty, and so does GET /clinicians/3. The seeded sample never hit id 3 on getClinician; Schemathesis did (S4), and the added case getClinician-015 reproduced it.",
+      "fix_direction": "fix_api",
+      "fix_direction_basis": "agent_judgment",
+      "handler": {
+        "file": "server.py",
+        "line": 22
+      },
+      "remediation": "Give clinician 3 a specialty, or make the API refuse to store a clinician without one. If some clinicians genuinely have no specialty, change the contract instead (drop it from required, or add a value such as \"unassigned\"), and tell client teams: generated clients reject the current responses.",
+      "verification_step": "Rerun with seed 1611 and extra_cases.json: listClinicians-001 and getClinician-015 pass schema_conformance.",
+      "regression_test_sketch": "def test_listclinicians_schema_conformance(api):\n    \"\"\"schema_conformance: Clinician: missing required 'specialty'\"\"\"\n    resp = api.request('GET', '/clinicians?limit=10')\n    assert not contract_errors(resp)  # validate the body against the response schema",
+      "security_relevant": false
+    },
+    {
+      "id": "F3",
+      "candidate_id": "K5",
+      "title": "An unparseable date on GET /appointments causes a 500",
+      "check": "server_error",
+      "cause": "status 500",
+      "operation_ids": [
+        "listAppointments"
+      ],
+      "severity": "Medium",
+      "confidence": "high",
+      "reach": 1,
+      "score": 6,
+      "priority": "P2",
+      "repeatable": true,
+      "exchanges": [
+        {
+          "path": "exchanges/listAppointments-006.json",
+          "request_summary": "GET /appointments?clinic_id=1&date=11%2F11%2F2026",
+          "status": 500
+        },
+        {
+          "path": "exchanges/listAppointments-006.resend.json",
+          "request_summary": "GET /appointments?clinic_id=1&date=11%2F11%2F2026 (re-send)",
+          "status": 500
+        }
+      ],
+      "expected": "date is format: date, so 11/11/2026 is rejected with the documented 400 Error.",
+      "actual": "500 with {\"error\": \"Internal Server Error\", \"detail\": \"ValueError\"}, repeated on the re-send.",
+      "fix_direction": "fix_api",
+      "fix_direction_basis": "agent_judgment",
+      "handler": {
+        "file": "server.py",
+        "line": 144
+      },
+      "remediation": "Parse date in a try/except and return 400 bad_date, as daily_report and list_slots already do. The 500 body names the exception type; return the documented Error shape instead.",
+      "verification_step": "Rerun with seed 1611: listAppointments-006 returns 400 and server_error passes.",
+      "regression_test_sketch": "def test_listappointments_server_error(api):\n    \"\"\"server_error: status 500\"\"\"\n    resp = api.request('GET', '/appointments?clinic_id=1&date=11%2F11%2F2026')\n    assert resp.status < 500",
+      "security_relevant": true
+    },
+    {
+      "id": "F4",
+      "candidate_id": "K3",
+      "title": "GET /appointments accepts clinic_id=0",
+      "check": "negative_accepted",
+      "cause": "clinic_id: below minimum 1",
+      "operation_ids": [
+        "listAppointments"
+      ],
+      "severity": "Medium",
+      "confidence": "high",
+      "reach": 1,
+      "score": 6,
+      "priority": "P2",
+      "repeatable": true,
+      "exchanges": [
+        {
+          "path": "exchanges/listAppointments-002.json",
+          "request_summary": "GET /appointments?clinic_id=0&date=2026-11-12",
+          "status": 200
+        },
+        {
+          "path": "exchanges/listAppointments-002.resend.json",
+          "request_summary": "GET /appointments?clinic_id=0&date=2026-11-12 (re-send)",
+          "status": 200
+        }
+      ],
+      "expected": "clinic_id has minimum 1, so 0 is rejected with 400.",
+      "actual": "200 with an empty list. isdigit() accepts \"0\".",
+      "fix_direction": "fix_api",
+      "fix_direction_basis": "agent_judgment",
+      "handler": {
+        "file": "server.py",
+        "line": 140
+      },
+      "remediation": "Require int(clinic_id) >= 1. If 0 has a meaning (all clinics), document it and lower the minimum.",
+      "verification_step": "Rerun with seed 1611: listAppointments-002 returns 400.",
+      "regression_test_sketch": "def test_listappointments_negative_accepted(api):\n    \"\"\"negative_accepted: clinic_id: below minimum 1\"\"\"\n    resp = api.request('GET', '/appointments?clinic_id=0&date=2026-11-12')\n    assert 400 <= resp.status < 500",
+      "security_relevant": false
+    },
+    {
+      "id": "F5",
+      "candidate_id": "K4",
+      "title": "GET /slots accepts clinician_id=0",
+      "check": "negative_accepted",
+      "cause": "clinician_id: below minimum 1",
+      "operation_ids": [
+        "listSlots"
+      ],
+      "severity": "Medium",
+      "confidence": "high",
+      "reach": 1,
+      "score": 6,
+      "priority": "P2",
+      "repeatable": true,
+      "exchanges": [
+        {
+          "path": "exchanges/listSlots-002.json",
+          "request_summary": "GET /slots?clinician_id=0&date=2026-11-12",
+          "status": 200
+        },
+        {
+          "path": "exchanges/listSlots-002.resend.json",
+          "request_summary": "GET /slots?clinician_id=0&date=2026-11-12 (re-send)",
+          "status": 200
+        }
+      ],
+      "expected": "clinician_id has minimum 1, so 0 is rejected with 400 (or the documented default Error).",
+      "actual": "200 with four free slots for a clinician that doesn't exist.",
+      "fix_direction": "fix_api",
+      "fix_direction_basis": "agent_judgment",
+      "handler": {
+        "file": "server.py",
+        "line": 202
+      },
+      "remediation": "Check the clinician exists (and is >= 1) before listing slots; otherwise a client can book against a clinician id that will later fail in createAppointment.",
+      "verification_step": "Rerun with seed 1611: listSlots-002 returns 400.",
+      "regression_test_sketch": "def test_listslots_negative_accepted(api):\n    \"\"\"negative_accepted: clinician_id: below minimum 1\"\"\"\n    resp = api.request('GET', '/slots?clinician_id=0&date=2026-11-12')\n    assert 400 <= resp.status < 500",
+      "security_relevant": false
+    },
+    {
+      "id": "F6",
+      "candidate_id": "K6",
+      "title": "GET /clinicians/{id} returns an undocumented 404 with a different body shape",
+      "check": "status_documented",
+      "cause": "status 404",
+      "operation_ids": [
+        "getClinician"
+      ],
+      "severity": "Medium",
+      "confidence": "high",
+      "reach": 1,
+      "score": 6,
+      "priority": "P2",
+      "repeatable": true,
+      "exchanges": [
+        {
+          "path": "exchanges/getClinician-002.json",
+          "request_summary": "GET /clinicians/0",
+          "status": 404
+        },
+        {
+          "path": "exchanges/getClinician-002.resend.json",
+          "request_summary": "GET /clinicians/0 (re-send)",
+          "status": 404
+        },
+        {
+          "path": "exchanges/getClinician-005.json",
+          "request_summary": "GET /clinicians/939",
+          "status": 404
+        },
+        {
+          "path": "exchanges/getClinician-005.resend.json",
+          "request_summary": "GET /clinicians/939 (re-send)",
+          "status": 404
+        }
+      ],
+      "expected": "Every status the API returns is documented. Version 1.5.0 documents only 200 and 400 for getClinician.",
+      "actual": "404 {\"detail\": \"clinician not found\"} for unknown ids (11 cases, all repeated). Version 1.4.0 documented a 404 with the Error schema; 1.5.0 dropped it (breaking change B10 in the diff).",
+      "fix_direction": "fix_contract",
+      "fix_direction_basis": "agent_judgment",
+      "handler": {
+        "file": "server.py",
+        "line": 136
+      },
+      "remediation": "Restore the 404 response with the Error schema in openapi.yaml, and change the handler to return {\"code\": \"not_found\", \"message\": ...} so the body matches it. The 404 itself is correct behaviour.",
+      "verification_step": "Reload the contract and rerun with seed 1611: getClinician status_documented passes, and the 404 bodies pass schema_conformance against Error.",
+      "regression_test_sketch": "def test_getclinician_status_documented(api):\n    \"\"\"status_documented: status 404\"\"\"\n    resp = api.request('GET', '/clinicians/0')\n    assert str(resp.status) in ['200', '400'] or \"default\" in ['200', '400']",
+      "security_relevant": false
+    },
+    {
+      "id": "F7",
+      "candidate_id": "K7",
+      "title": "POST /appointments accepts a 61-character patient_name",
+      "check": "negative_accepted",
+      "cause": "body.patient_name: longer than maxLength 60",
+      "operation_ids": [
+        "createAppointment"
+      ],
+      "severity": "Medium",
+      "confidence": "medium",
+      "reach": 1,
+      "score": 4,
+      "priority": "P3",
+      "repeatable": true,
+      "exchanges": [
+        {
+          "path": "exchanges/createAppointment-009.json",
+          "request_summary": "POST /appointments {\"patient_name\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "status": 201
+        },
+        {
+          "path": "exchanges/createAppointment-009.resend.json",
+          "request_summary": "POST /appointments {\"patient_name\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx (re-send)",
+          "status": 201
+        }
+      ],
+      "expected": "patient_name has maxLength 60 (tightened from 80 in 1.5.0), so 61 characters are rejected with 400.",
+      "actual": "201 and the appointment was created, on both sends.",
+      "fix_direction": "fix_api",
+      "fix_direction_basis": "agent_judgment",
+      "handler": {
+        "file": "server.py",
+        "line": 160
+      },
+      "remediation": "Enforce the 60-character limit in create_appointment. If the store accepts 80, decide which is right: the tightening is itself breaking change B5 for clients that send 61-80 characters.",
+      "verification_step": "Rerun with seed 1611 (writes allowed, test instance): createAppointment-009 returns 400.",
+      "regression_test_sketch": "def test_createappointment_negative_accepted(api):\n    \"\"\"negative_accepted: body.patient_name: longer than maxLength 60\"\"\"\n    resp = api.request('POST', '/appointments', json={\"patient_name\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"clinician_id\": 1, \"date\": \"2026-11-13\", \"time\": \"09:30\"})\n    assert 400 <= resp.status < 500",
+      "security_relevant": false
+    },
+    {
+      "id": "F8",
+      "candidate_id": "K8",
+      "title": "POST /appointments accepts a property the contract forbids",
+      "check": "negative_accepted",
+      "cause": "body: unexpected property",
+      "operation_ids": [
+        "createAppointment"
+      ],
+      "severity": "Medium",
+      "confidence": "medium",
+      "reach": 1,
+      "score": 4,
+      "priority": "P3",
+      "repeatable": true,
+      "exchanges": [
+        {
+          "path": "exchanges/createAppointment-016.json",
+          "request_summary": "POST /appointments {\"patient_name\": \"Test Patient C\", \"clinician_id\": 1, \"date\": \"2026-11",
+          "status": 201
+        },
+        {
+          "path": "exchanges/createAppointment-016.resend.json",
+          "request_summary": "POST /appointments {\"patient_name\": \"Test Patient C\", \"clinician_id\": 1, \"date\": \"2026-11 (re-send)",
+          "status": 201
+        }
+      ],
+      "expected": "NewAppointment has additionalProperties: false (new in 1.5.0), so unexpected_field is rejected.",
+      "actual": "201; the unknown property was ignored.",
+      "fix_direction": "fix_contract",
+      "fix_direction_basis": "agent_judgment",
+      "handler": {
+        "file": "server.py",
+        "line": 156
+      },
+      "remediation": "Ignoring unknown properties is harmless and common; additionalProperties: false in a request schema breaks clients that send extra fields (breaking change B2). Remove it from NewAppointment unless the team wants the API to reject them, in which case add the check to create_appointment.",
+      "verification_step": "After the contract change, reload and rerun: createAppointment-016 is no longer a negative case.",
+      "regression_test_sketch": "def test_createappointment_negative_accepted(api):\n    \"\"\"negative_accepted: body: unexpected property\"\"\"\n    resp = api.request('POST', '/appointments', json={\"patient_name\": \"Test Patient C\", \"clinician_id\": 1, \"date\": \"2026-11-13\", \"time\": \"09:30\", \"unexpected_field\": \"x\"})\n    assert 400 <= resp.status < 500",
+      "security_relevant": false
+    },
+    {
+      "id": "F9",
+      "candidate_id": "K9",
+      "title": "GET /appointments/{id} labels its 400 JSON body as text/html",
+      "check": "content_type",
+      "cause": "status 400: Content-Type text/html",
+      "operation_ids": [
+        "getAppointment"
+      ],
+      "severity": "Low",
+      "confidence": "high",
+      "reach": 1,
+      "score": 3,
+      "priority": "P3",
+      "repeatable": true,
+      "exchanges": [
+        {
+          "path": "exchanges/getAppointment-004.json",
+          "request_summary": "GET /appointments/abc",
+          "status": 400
+        },
+        {
+          "path": "exchanges/getAppointment-004.resend.json",
+          "request_summary": "GET /appointments/abc (re-send)",
+          "status": 400
+        },
+        {
+          "path": "exchanges/getAppointment-005.json",
+          "request_summary": "GET /appointments/1.5",
+          "status": 400
+        },
+        {
+          "path": "exchanges/getAppointment-005.resend.json",
+          "request_summary": "GET /appointments/1.5 (re-send)",
+          "status": 400
+        }
+      ],
+      "expected": "The 400 response is application/json, as documented.",
+      "actual": "Content-Type: text/html; charset=utf-8 with a JSON Error body, for \"abc\" and \"1.5\".",
+      "fix_direction": "fix_api",
+      "fix_direction_basis": "agent_judgment",
+      "handler": {
+        "file": "server.py",
+        "line": 149
+      },
+      "remediation": "Send the 400 with Content-Type application/json, like every other error response.",
+      "verification_step": "Rerun with seed 1611: getAppointment-004 and -005 pass content_type.",
+      "regression_test_sketch": "def test_getappointment_content_type(api):\n    \"\"\"content_type: status 400: Content-Type text/html\"\"\"\n    resp = api.request('GET', '/appointments/abc')\n    assert resp.headers['Content-Type'].split(';')[0] == 'application/json'",
+      "security_relevant": false
+    },
+    {
+      "id": "F10",
+      "candidate_id": "K10",
+      "title": "GET /slots intermittently answers 503",
+      "check": "server_error",
+      "cause": "status 503",
+      "operation_ids": [
+        "listSlots"
+      ],
+      "severity": "High",
+      "confidence": "low",
+      "reach": 1,
+      "score": 3,
+      "priority": "P3",
+      "repeatable": false,
+      "exchanges": [
+        {
+          "path": "exchanges/listSlots-008.json",
+          "request_summary": "GET /slots?clinician_id=648&date=2026-01-04",
+          "status": 503
+        },
+        {
+          "path": "exchanges/listSlots-016.json",
+          "request_summary": "GET /slots?clinician_id=812&date=2026-01-23",
+          "status": 503
+        }
+      ],
+      "expected": "A valid request for slots gets 200; 5xx never appears for valid input.",
+      "actual": "503 {\"code\": \"unavailable\", \"message\": \"Scheduler busy\"} for 2 of 17 requests (listSlots-008 and -016, both valid). Neither repeated on the re-send, so the rate and the trigger are unknown.",
+      "fix_direction": "fix_api",
+      "fix_direction_basis": "agent_judgment",
+      "handler": {
+        "file": "server.py",
+        "line": 200
+      },
+      "remediation": "Find what makes the scheduler busy. Until then, document 503 with Retry-After so clients can back off. The 503 is documented only through default, so status_documented passes, but it is still a server error.",
+      "verification_step": "Send listSlots-001 40 times at 5 per second and count 503s; after the fix there are none.",
+      "regression_test_sketch": "def test_listslots_server_error(api):\n    \"\"\"server_error: status 503\"\"\"\n    resp = api.request('GET', '/slots?clinician_id=648&date=2026-01-04')\n    assert resp.status < 500",
+      "security_relevant": false
+    }
+  ],
+  "needs_review": [],
+  "triage": [
+    {
+      "candidate_id": "K2",
+      "decision": "promoted",
+      "finding_id": "F1",
+      "reason": "Repeated on the re-send; Critical by the rubric."
+    },
+    {
+      "candidate_id": "K1",
+      "decision": "promoted",
+      "finding_id": "F2",
+      "reason": "Repeated on both operations; one shared cause (the Clinician component)."
+    },
+    {
+      "candidate_id": "K5",
+      "decision": "promoted",
+      "finding_id": "F3",
+      "reason": "Repeated; 5xx on invalid input is Medium."
+    },
+    {
+      "candidate_id": "K3",
+      "decision": "promoted",
+      "finding_id": "F4",
+      "reason": "Repeated; the contract gives minimum 1."
+    },
+    {
+      "candidate_id": "K4",
+      "decision": "promoted",
+      "finding_id": "F5",
+      "reason": "Repeated; the contract gives minimum 1."
+    },
+    {
+      "candidate_id": "K6",
+      "decision": "promoted",
+      "finding_id": "F6",
+      "reason": "Repeated in 11 cases; the 404 is undocumented in 1.5.0."
+    },
+    {
+      "candidate_id": "K7",
+      "decision": "promoted",
+      "finding_id": "F7",
+      "reason": "Repeated; write case on a loopback test instance, so confidence is medium."
+    },
+    {
+      "candidate_id": "K8",
+      "decision": "promoted",
+      "finding_id": "F8",
+      "reason": "Repeated; promoted with fix_contract as the suggested direction."
+    },
+    {
+      "candidate_id": "K9",
+      "decision": "promoted",
+      "finding_id": "F9",
+      "reason": "Repeated for both invalid ids; the body is parseable JSON, so Low."
+    },
+    {
+      "candidate_id": "K10",
+      "decision": "promoted",
+      "finding_id": "F10",
+      "reason": "Did not repeat on the re-send: flaky, low confidence, kept rather than dismissed."
+    },
+    {
+      "candidate_id": "S1",
+      "decision": "dismissed",
+      "finding_id": null,
+      "reason": "Same failure as K2 (F1), found by Schemathesis on dailyReport."
+    },
+    {
+      "candidate_id": "S2",
+      "decision": "dismissed",
+      "finding_id": null,
+      "reason": "Same failure as K10 (F10), found by Schemathesis on listSlots."
+    },
+    {
+      "candidate_id": "S3",
+      "decision": "dismissed",
+      "finding_id": null,
+      "reason": "Same failure as K1 (F2), found by Schemathesis on listClinicians."
+    },
+    {
+      "candidate_id": "S4",
+      "decision": "dismissed",
+      "finding_id": null,
+      "reason": "Same failure as K1 (F2), found by Schemathesis on getClinician. Reproduced with the added case getClinician-015 (extra_cases.json), which is now part of that candidate."
+    },
+    {
+      "candidate_id": "S5",
+      "decision": "dismissed",
+      "finding_id": null,
+      "reason": "Same failure as K2 (F1), found by Schemathesis on dailyReport. Schemathesis reports the missing Authorization header separately; it is the same defect."
+    },
+    {
+      "candidate_id": "S6",
+      "decision": "dismissed",
+      "finding_id": null,
+      "reason": "Same failure as K3 (F4), found by Schemathesis on listAppointments."
+    },
+    {
+      "candidate_id": "S7",
+      "decision": "dismissed",
+      "finding_id": null,
+      "reason": "Same failure as K9 (F9), found by Schemathesis on getAppointment. Schemathesis files the undocumented Content-Type under ST105."
+    },
+    {
+      "candidate_id": "S8",
+      "decision": "dismissed",
+      "finding_id": null,
+      "reason": "Same failure as K6 (F6), found by Schemathesis on getClinician."
+    }
+  ],
+  "contract_issues": [
+    {
+      "kind": "example_mismatch",
+      "location": "components.schemas.Clinician.example",
+      "message": "the example for Clinician doesn't match its own schema: $.id: expected integer, got string",
+      "id": "C1",
+      "line": null
+    },
+    {
+      "kind": "unsupported_keyword",
+      "location": "dependentRequired",
+      "message": "response schemas use 'dependentRequired', which the stdlib checker can't evaluate; schema_conformance is cantTell for dailyReport unless another keyword fails",
+      "id": "C2",
+      "line": null
+    }
+  ],
+  "breaking_changes": [
+    {
+      "id": "B1",
+      "kind": "response_property_removed",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "response",
+      "operation_ids": [
+        "listAppointments",
+        "createAppointment",
+        "getAppointment"
+      ],
+      "location": "Appointment.room",
+      "detail": "room removed from the response",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B2",
+      "kind": "additional_properties_disallowed",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "request",
+      "operation_ids": [
+        "createAppointment"
+      ],
+      "location": "NewAppointment",
+      "detail": "additionalProperties: false added",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B3",
+      "kind": "bound_tightened",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "request",
+      "operation_ids": [
+        "createAppointment"
+      ],
+      "location": "NewAppointment.clinician_id",
+      "detail": "minimum none -> 1",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B4",
+      "kind": "bound_tightened",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "request",
+      "operation_ids": [
+        "createAppointment"
+      ],
+      "location": "NewAppointment.patient_name",
+      "detail": "minLength none -> 1",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B5",
+      "kind": "bound_tightened",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "request",
+      "operation_ids": [
+        "createAppointment"
+      ],
+      "location": "NewAppointment.patient_name",
+      "detail": "maxLength 80 -> 60",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B6",
+      "kind": "pattern_changed",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "request",
+      "operation_ids": [
+        "createAppointment"
+      ],
+      "location": "NewAppointment.time",
+      "detail": "pattern none -> '^([01][0-9]|2[0-3]):[0-5][0-9]$'",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B7",
+      "kind": "bound_tightened",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "request",
+      "operation_ids": [
+        "getAppointment"
+      ],
+      "location": "parameter path.appointmentId",
+      "detail": "minimum none -> 1",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B8",
+      "kind": "bound_tightened",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "request",
+      "operation_ids": [
+        "getClinician"
+      ],
+      "location": "parameter path.clinicianId",
+      "detail": "minimum none -> 1",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B9",
+      "kind": "required_parameter_added",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "request",
+      "operation_ids": [
+        "listAppointments"
+      ],
+      "location": "parameter query.clinic_id",
+      "detail": "new required query parameter clinic_id",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B10",
+      "kind": "response_status_removed",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "response",
+      "operation_ids": [
+        "getClinician"
+      ],
+      "location": "response 404",
+      "detail": "404 is no longer documented",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B11",
+      "kind": "enum_value_added",
+      "rating": "potentially_breaking",
+      "severity": "Medium",
+      "direction": "response",
+      "operation_ids": [
+        "listAppointments",
+        "createAppointment",
+        "getAppointment"
+      ],
+      "location": "Appointment.status",
+      "detail": "enum gained no_show",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B12",
+      "kind": "property_now_required",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "listAppointments",
+        "createAppointment",
+        "getAppointment"
+      ],
+      "location": "Appointment.clinic_id",
+      "detail": "clinic_id is now always returned",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B13",
+      "kind": "pattern_changed",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "listAppointments",
+        "createAppointment",
+        "getAppointment"
+      ],
+      "location": "Appointment.time",
+      "detail": "pattern none -> '^([01][0-9]|2[0-3]):[0-5][0-9]$'",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B14",
+      "kind": "bound_tightened",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "listClinicians",
+        "getClinician"
+      ],
+      "location": "Clinician.id",
+      "detail": "minimum none -> 1",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B15",
+      "kind": "bound_tightened",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "listClinicians",
+        "getClinician"
+      ],
+      "location": "Clinician.name",
+      "detail": "minLength none -> 1",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B16",
+      "kind": "operation_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "operation",
+      "operation_ids": [
+        "dailyReport"
+      ],
+      "location": "GET /reports/daily",
+      "detail": "dailyReport added",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B17",
+      "kind": "operation_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "operation",
+      "operation_ids": [
+        "listSlots"
+      ],
+      "location": "GET /slots",
+      "detail": "listSlots added",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B18",
+      "kind": "property_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "request",
+      "operation_ids": [
+        "createAppointment"
+      ],
+      "location": "NewAppointment.portal_pin",
+      "detail": "portal_pin added",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B19",
+      "kind": "parameter_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "request",
+      "operation_ids": [
+        "listClinicians"
+      ],
+      "location": "parameter query.limit",
+      "detail": "new optional query parameter limit",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B20",
+      "kind": "response_header_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "getClinician"
+      ],
+      "location": "response 200 header X-Request-Id",
+      "detail": "X-Request-Id is now always sent",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B21",
+      "kind": "enum_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "healthCheck"
+      ],
+      "location": "response 200.status",
+      "detail": "now restricted to ['ok']",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B22",
+      "kind": "property_now_required",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "healthCheck"
+      ],
+      "location": "response 200.status",
+      "detail": "status is now always returned",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B23",
+      "kind": "property_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "healthCheck"
+      ],
+      "location": "response 200.version",
+      "detail": "version added",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B24",
+      "kind": "response_header_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "createAppointment"
+      ],
+      "location": "response 201 header Location",
+      "detail": "Location is now always sent",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B25",
+      "kind": "response_status_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "listClinicians",
+        "getClinician",
+        "listAppointments",
+        "createAppointment",
+        "getAppointment"
+      ],
+      "location": "response 400",
+      "detail": "400 added",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B26",
+      "kind": "response_status_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "listAppointments",
+        "createAppointment",
+        "getAppointment",
+        "cancelAppointment"
+      ],
+      "location": "response 401",
+      "detail": "401 added",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B27",
+      "kind": "response_status_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "cancelAppointment"
+      ],
+      "location": "response 404",
+      "detail": "404 added",
+      "sources": [
+        "stdlib"
+      ]
+    }
+  ],
+  "limitations": [
+    "cancelAppointment was excluded from scope, so its checks are untested.",
+    "Schemathesis ran in safe mode (GET, HEAD and OPTIONS) while the stdlib sender was allowed writes; createAppointment was exercised only by stdlib cases, and no stateful sequences ran (the contract has no links).",
+    "dailyReport's Report schema uses dependentRequired, which the stdlib checker can't evaluate; its bodies were checked against the other keywords only (schema_conformance is cantTell, contract issue C2).",
+    "oasdiff is not installed: the breaking-change diff is the stdlib one only.",
+    "The stdlib generator can't synthesise strings from a pattern; random createAppointment bodies reuse the documented time.",
+    "Random path ids were drawn from 1-1000, so most getClinician and getAppointment samples hit 404s; the specialty failure on getClinician was found by Schemathesis and reproduced with an added case.",
+    "F10 is intermittent: 2 of 17 listSlots requests, neither repeated. Its rate is unknown.",
+    "One seed (1611) and at most 50 cases per operation: other inputs may fail in ways this run did not see."
+  ],
+  "next_steps": [
+    "Fix F1 first: add the bearer check to /reports/daily and rerun auth_enforced.",
+    "Decide F2 and F6 with the client teams: both change what generated clients see.",
+    "Before releasing 1.5.0, review the 10 breaking changes against 1.4.0 (B1-B10): bump the major version or restore the removed room property, the 404 response and the optional clinic_id.",
+    "Rerun with a second seed and Schemathesis with writes allowed on a disposable instance, to cover createAppointment."
+  ]
+}

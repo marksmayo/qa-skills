@@ -1,0 +1,104 @@
+{
+  "operation": "GET /clinicians/{clinicianId}",
+  "method": "TRACE",
+  "path_template": "/clinicians/{clinicianId}",
+  "fingerprint": "0e06cc53",
+  "case_id": "w47rIm",
+  "code_sample": "curl -X TRACE -H 'Authorization: [Filtered]' http://127.0.0.1:8140/clinicians/1",
+  "sequence": [
+    {
+      "method": "TRACE",
+      "url": "http://127.0.0.1:8140/clinicians/1",
+      "url_template": "http://127.0.0.1:8140/clinicians/{clinicianId}",
+      "headers": {
+        "User-Agent": "schemathesis/4.33.2",
+        "Accept-Encoding": "gzip, deflate, zstd",
+        "Accept": "*/*",
+        "Connection": "keep-alive",
+        "Authorization": "[Filtered]",
+        "X-Schemathesis-TestCaseId": "w47rIm",
+        "Content-Length": "0"
+      },
+      "response": {
+        "status_code": 501,
+        "headers": {
+          "server": "clinic-api/1.5.0 Python/3.14.10",
+          "date": "Wed, 11 Nov 2026 07:15:46 GMT",
+          "connection": "close",
+          "content-type": "text/html;charset=utf-8",
+          "content-length": "483"
+        },
+        "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: 501</p>\n        <p>Message: Unsupported method ('TRACE').</p>\n        <p>Error code explanation: 501 - Server does not support this operation.</p>\n    </body>\n</html>\n"
+      },
+      "link": null,
+      "checks": [
+        {
+          "name": "unsupported_method",
+          "status": "failure",
+          "message": "Wrong response to undeclared method\n\nUnsupported method TRACE returned 501, expected 405 Method Not Allowed\n\nReturn 405 for methods not listed in the OpenAPI spec"
+        }
+      ],
+      "meta": {
+        "generation": {
+          "time": 5.300040356814861e-06,
+          "mode": "negative"
+        },
+        "components": {
+          "PATH": "positive"
+        },
+        "phase": {
+          "name": "coverage",
+          "data": {
+            "type": "CoveragePhaseData",
+            "description": "Unspecified HTTP method: TRACE",
+            "location": null,
+            "parameter": null,
+            "parameter_location": null,
+            "scenario": "unspecified_http_method"
+          }
+        },
+        "pool_draws": [
+          {
+            "location": "path",
+            "parameter_name": "clinicianId",
+            "resource_name": "Clinician",
+            "resource_field": "id",
+            "source_operation": "GET /clinicians",
+            "source_status": 200,
+            "source_identity": null,
+            "source_input": false,
+            "source_query": {
+              "limit": 10
+            }
+          }
+        ],
+        "pool_misses": [],
+        "semantic_draws": [],
+        "dictionary_draws": [],
+        "constants_draws": [],
+        "raw_containers": {
+          "PATH": {
+            "clinicianId": 1
+          }
+        }
+      },
+      "path": "/clinicians/{clinicianId}",
+      "path_parameters": {
+        "clinicianId": "1"
+      },
+      "query": {},
+      "case_headers": {
+        "Authorization": "[Filtered]"
+      },
+      "cookies": {},
+      "case_body": {
+        "encoding": "none"
+      },
+      "media_type": null,
+      "parent_index": null,
+      "auth_identity": null,
+      "operation": "GET /clinicians/{clinicianId}"
+    }
+  ],
+  "aliases": []
+}

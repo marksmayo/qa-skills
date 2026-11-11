@@ -1,0 +1,197 @@
+openapi: 3.0.3
+info:
+  title: Clinic API
+  version: 1.4.0
+  description: The previous release of the contract, kept to diff against.
+servers:
+  - url: http://127.0.0.1:8140
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+    Clinician:
+      type: object
+      required: [id, name, specialty]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        specialty:
+          type: string
+          enum: [gp, physio, dental]
+    Appointment:
+      type: object
+      required: [id, clinician_id, date, time, status]
+      properties:
+        id:
+          type: integer
+        clinic_id:
+          type: integer
+        clinician_id:
+          type: integer
+        date:
+          type: string
+          format: date
+        time:
+          type: string
+        status:
+          type: string
+          enum: [booked, cancelled]
+        room:
+          type: string
+        patient_name:
+          type: string
+          nullable: true
+    NewAppointment:
+      type: object
+      required: [patient_name, clinician_id, date, time]
+      properties:
+        patient_name:
+          type: string
+          maxLength: 80
+        clinician_id:
+          type: integer
+        date:
+          type: string
+          format: date
+        time:
+          type: string
+paths:
+  /health:
+    get:
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Up
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+  /clinicians:
+    get:
+      operationId: listClinicians
+      parameters:
+        - name: specialty
+          in: query
+          schema:
+            type: string
+            enum: [gp, physio, dental]
+      responses:
+        '200':
+          description: Clinicians
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Clinician'
+  /clinicians/{clinicianId}:
+    get:
+      operationId: getClinician
+      parameters:
+        - name: clinicianId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: One clinician
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Clinician'
+        '404':
+          description: No such clinician
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /appointments:
+    get:
+      operationId: listAppointments
+      security:
+        - bearer: []
+      parameters:
+        - name: date
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Appointments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Appointment'
+    post:
+      operationId: createAppointment
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewAppointment'
+      responses:
+        '201':
+          description: Booked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Appointment'
+  /appointments/{appointmentId}:
+    get:
+      operationId: getAppointment
+      security:
+        - bearer: []
+      parameters:
+        - name: appointmentId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: One appointment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Appointment'
+        '404':
+          description: No such appointment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      operationId: cancelAppointment
+      security:
+        - bearer: []
+      parameters:
+        - name: appointmentId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Cancelled

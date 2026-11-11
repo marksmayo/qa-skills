@@ -1,0 +1,53 @@
+{
+  "case_id": "listSlots-002",
+  "operation_id": "listSlots",
+  "kind": "negative",
+  "valid": false,
+  "description": "clinician_id: below minimum 1",
+  "sent_with_credentials": true,
+  "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:8140/slots?clinician_id=0&date=2026-11-12",
+    "headers": {
+      "Authorization": "[REDACTED]",
+      "Accept": "application/json"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Server": "clinic-api/1.5.0 Python/3.14.10",
+      "Date": "Wed, 11 Nov 2026 07:20:25 GMT",
+      "Content-Type": "application/json",
+      "Content-Length": "132"
+    },
+    "body": {
+      "json": [
+        {
+          "time": "09:00",
+          "free": true
+        },
+        {
+          "time": "09:30",
+          "free": true
+        },
+        {
+          "time": "10:00",
+          "free": true
+        },
+        {
+          "time": "10:30",
+          "free": true
+        }
+      ],
+      "sha256": "80e81e46055a886bc916b58c739d646b9c9560ea4628456ff7fdde18ed35f226",
+      "truncated": false,
+      "bytes": 132
+    }
+  },
+  "elapsed_ms": 2,
+  "failed_checks": [
+    "negative_accepted"
+  ]
+}

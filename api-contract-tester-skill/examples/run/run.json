@@ -1,0 +1,4711 @@
+{
+  "base_url": "http://127.0.0.1:8140",
+  "host": "127.0.0.1",
+  "loopback": true,
+  "authorised_by": "repo owner (loopback sample app)",
+  "writes_allowed": true,
+  "production_hosts": [],
+  "rate_per_second": 5.0,
+  "contract_sha256": "bbc3ac4d3a170c9814594d1d7f45ae2ee781e96699d0ece85bd79dab69b1bcbc",
+  "seed": 1611,
+  "generator": "stdlib",
+  "secret_env": [
+    "CLINIC_TOKEN"
+  ],
+  "started_at": "2026-11-11T07:19:54Z",
+  "probe": {
+    "path": "/health",
+    "status": 200,
+    "elapsed_ms": 27
+  },
+  "status": "complete",
+  "results": [
+    {
+      "case_id": "healthCheck-001",
+      "operation_id": "healthCheck",
+      "kind": "example",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 16,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "positive_rejected": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listClinicians-001",
+      "operation_id": "listClinicians",
+      "kind": "example",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 17,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "failed",
+          "detail": "$[2]: missing required 'specialty'",
+          "errors": [
+            "$[2]: missing required 'specialty'"
+          ],
+          "schema": "Clinician"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "positive_rejected": {
+          "result": "passed"
+        }
+      },
+      "failed": [
+        "schema_conformance"
+      ],
+      "exchange": "exchanges/listClinicians-001.json",
+      "resend": {
+        "status": 200,
+        "failed": [
+          "schema_conformance"
+        ],
+        "exchange": "exchanges/listClinicians-001.resend.json",
+        "repeated": {
+          "schema_conformance": true
+        }
+      }
+    },
+    {
+      "case_id": "listClinicians-002",
+      "operation_id": "listClinicians",
+      "kind": "boundary",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 20,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listClinicians-003",
+      "operation_id": "listClinicians",
+      "kind": "boundary",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 21,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listClinicians-004",
+      "operation_id": "listClinicians",
+      "kind": "boundary",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 24,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listClinicians-005",
+      "operation_id": "listClinicians",
+      "kind": "boundary",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listClinicians-006",
+      "operation_id": "listClinicians",
+      "kind": "boundary",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "failed",
+          "detail": "$[2]: missing required 'specialty'",
+          "errors": [
+            "$[2]: missing required 'specialty'"
+          ],
+          "schema": "Clinician"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [
+        "schema_conformance"
+      ],
+      "exchange": "exchanges/listClinicians-006.json",
+      "resend": {
+        "status": 200,
+        "failed": [
+          "schema_conformance"
+        ],
+        "exchange": "exchanges/listClinicians-006.resend.json",
+        "repeated": {
+          "schema_conformance": true
+        }
+      }
+    },
+    {
+      "case_id": "listClinicians-007",
+      "operation_id": "listClinicians",
+      "kind": "negative",
+      "valid": false,
+      "method": "GET",
+      "write": false,
+      "status": 400,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listClinicians-008",
+      "operation_id": "listClinicians",
+      "kind": "negative",
+      "valid": false,
+      "method": "GET",
+      "write": false,
+      "status": 400,
+      "elapsed_ms": 20,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listClinicians-009",
+      "operation_id": "listClinicians",
+      "kind": "negative",
+      "valid": false,
+      "method": "GET",
+      "write": false,
+      "status": 400,
+      "elapsed_ms": 21,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listClinicians-010",
+      "operation_id": "listClinicians",
+      "kind": "negative",
+      "valid": false,
+      "method": "GET",
+      "write": false,
+      "status": 400,
+      "elapsed_ms": 24,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listClinicians-011",
+      "operation_id": "listClinicians",
+      "kind": "negative",
+      "valid": false,
+      "method": "GET",
+      "write": false,
+      "status": 400,
+      "elapsed_ms": 13,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listClinicians-012",
+      "operation_id": "listClinicians",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 13,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "failed",
+          "detail": "$[2]: missing required 'specialty'",
+          "errors": [
+            "$[2]: missing required 'specialty'"
+          ],
+          "schema": "Clinician"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [
+        "schema_conformance"
+      ],
+      "exchange": "exchanges/listClinicians-012.json",
+      "resend": {
+        "status": 200,
+        "failed": [
+          "schema_conformance"
+        ],
+        "exchange": "exchanges/listClinicians-012.resend.json",
+        "repeated": {
+          "schema_conformance": true
+        }
+      }
+    },
+    {
+      "case_id": "listClinicians-013",
+      "operation_id": "listClinicians",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 17,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listClinicians-014",
+      "operation_id": "listClinicians",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 19,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "failed",
+          "detail": "$[2]: missing required 'specialty'",
+          "errors": [
+            "$[2]: missing required 'specialty'"
+          ],
+          "schema": "Clinician"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [
+        "schema_conformance"
+      ],
+      "exchange": "exchanges/listClinicians-014.json",
+      "resend": {
+        "status": 200,
+        "failed": [
+          "schema_conformance"
+        ],
+        "exchange": "exchanges/listClinicians-014.resend.json",
+        "repeated": {
+          "schema_conformance": true
+        }
+      }
+    },
+    {
+      "case_id": "listClinicians-015",
+      "operation_id": "listClinicians",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "failed",
+          "detail": "$[2]: missing required 'specialty'",
+          "errors": [
+            "$[2]: missing required 'specialty'"
+          ],
+          "schema": "Clinician"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [
+        "schema_conformance"
+      ],
+      "exchange": "exchanges/listClinicians-015.json",
+      "resend": {
+        "status": 200,
+        "failed": [
+          "schema_conformance"
+        ],
+        "exchange": "exchanges/listClinicians-015.resend.json",
+        "repeated": {
+          "schema_conformance": true
+        }
+      }
+    },
+    {
+      "case_id": "listClinicians-016",
+      "operation_id": "listClinicians",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "failed",
+          "detail": "$[2]: missing required 'specialty'",
+          "errors": [
+            "$[2]: missing required 'specialty'"
+          ],
+          "schema": "Clinician"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [
+        "schema_conformance"
+      ],
+      "exchange": "exchanges/listClinicians-016.json",
+      "resend": {
+        "status": 200,
+        "failed": [
+          "schema_conformance"
+        ],
+        "exchange": "exchanges/listClinicians-016.resend.json",
+        "repeated": {
+          "schema_conformance": true
+        }
+      }
+    },
+    {
+      "case_id": "listClinicians-017",
+      "operation_id": "listClinicians",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "failed",
+          "detail": "$[2]: missing required 'specialty'",
+          "errors": [
+            "$[2]: missing required 'specialty'"
+          ],
+          "schema": "Clinician"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [
+        "schema_conformance"
+      ],
+      "exchange": "exchanges/listClinicians-017.json",
+      "resend": {
+        "status": 200,
+        "failed": [
+          "schema_conformance"
+        ],
+        "exchange": "exchanges/listClinicians-017.resend.json",
+        "repeated": {
+          "schema_conformance": true
+        }
+      }
+    },
+    {
+      "case_id": "listClinicians-018",
+      "operation_id": "listClinicians",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listClinicians-019",
+      "operation_id": "listClinicians",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 3,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listClinicians-020",
+      "operation_id": "listClinicians",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listClinicians-021",
+      "operation_id": "listClinicians",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "getClinician-001",
+      "operation_id": "getClinician",
+      "kind": "example",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "passed"
+        },
+        "positive_rejected": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "getClinician-002",
+      "operation_id": "getClinician",
+      "kind": "negative",
+      "valid": false,
+      "method": "GET",
+      "write": false,
+      "status": 404,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "failed",
+          "detail": "status 404 is not in responses ['200', '400'] and there is no default"
+        },
+        "content_type": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        },
+        "schema_conformance": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        },
+        "required_headers": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [
+        "status_documented"
+      ],
+      "exchange": "exchanges/getClinician-002.json",
+      "resend": {
+        "status": 404,
+        "failed": [
+          "status_documented"
+        ],
+        "exchange": "exchanges/getClinician-002.resend.json",
+        "repeated": {
+          "status_documented": true
+        }
+      }
+    },
+    {
+      "case_id": "getClinician-003",
+      "operation_id": "getClinician",
+      "kind": "negative",
+      "valid": false,
+      "method": "GET",
+      "write": false,
+      "status": 400,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "getClinician-004",
+      "operation_id": "getClinician",
+      "kind": "negative",
+      "valid": false,
+      "method": "GET",
+      "write": false,
+      "status": 400,
+      "elapsed_ms": 3,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "getClinician-005",
+      "operation_id": "getClinician",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 404,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "failed",
+          "detail": "status 404 is not in responses ['200', '400'] and there is no default"
+        },
+        "content_type": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        },
+        "schema_conformance": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        },
+        "required_headers": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        }
+      },
+      "failed": [
+        "status_documented"
+      ],
+      "exchange": "exchanges/getClinician-005.json",
+      "resend": {
+        "status": 404,
+        "failed": [
+          "status_documented"
+        ],
+        "exchange": "exchanges/getClinician-005.resend.json",
+        "repeated": {
+          "status_documented": true
+        }
+      }
+    },
+    {
+      "case_id": "getClinician-006",
+      "operation_id": "getClinician",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 404,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "failed",
+          "detail": "status 404 is not in responses ['200', '400'] and there is no default"
+        },
+        "content_type": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        },
+        "schema_conformance": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        },
+        "required_headers": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        }
+      },
+      "failed": [
+        "status_documented"
+      ],
+      "exchange": "exchanges/getClinician-006.json",
+      "resend": {
+        "status": 404,
+        "failed": [
+          "status_documented"
+        ],
+        "exchange": "exchanges/getClinician-006.resend.json",
+        "repeated": {
+          "status_documented": true
+        }
+      }
+    },
+    {
+      "case_id": "getClinician-007",
+      "operation_id": "getClinician",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 404,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "failed",
+          "detail": "status 404 is not in responses ['200', '400'] and there is no default"
+        },
+        "content_type": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        },
+        "schema_conformance": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        },
+        "required_headers": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        }
+      },
+      "failed": [
+        "status_documented"
+      ],
+      "exchange": "exchanges/getClinician-007.json",
+      "resend": {
+        "status": 404,
+        "failed": [
+          "status_documented"
+        ],
+        "exchange": "exchanges/getClinician-007.resend.json",
+        "repeated": {
+          "status_documented": true
+        }
+      }
+    },
+    {
+      "case_id": "getClinician-008",
+      "operation_id": "getClinician",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 404,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "failed",
+          "detail": "status 404 is not in responses ['200', '400'] and there is no default"
+        },
+        "content_type": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        },
+        "schema_conformance": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        },
+        "required_headers": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        }
+      },
+      "failed": [
+        "status_documented"
+      ],
+      "exchange": "exchanges/getClinician-008.json",
+      "resend": {
+        "status": 404,
+        "failed": [
+          "status_documented"
+        ],
+        "exchange": "exchanges/getClinician-008.resend.json",
+        "repeated": {
+          "status_documented": true
+        }
+      }
+    },
+    {
+      "case_id": "getClinician-009",
+      "operation_id": "getClinician",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 404,
+      "elapsed_ms": 18,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "failed",
+          "detail": "status 404 is not in responses ['200', '400'] and there is no default"
+        },
+        "content_type": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        },
+        "schema_conformance": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        },
+        "required_headers": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        }
+      },
+      "failed": [
+        "status_documented"
+      ],
+      "exchange": "exchanges/getClinician-009.json",
+      "resend": {
+        "status": 404,
+        "failed": [
+          "status_documented"
+        ],
+        "exchange": "exchanges/getClinician-009.resend.json",
+        "repeated": {
+          "status_documented": true
+        }
+      }
+    },
+    {
+      "case_id": "getClinician-010",
+      "operation_id": "getClinician",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 404,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "failed",
+          "detail": "status 404 is not in responses ['200', '400'] and there is no default"
+        },
+        "content_type": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        },
+        "schema_conformance": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        },
+        "required_headers": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        }
+      },
+      "failed": [
+        "status_documented"
+      ],
+      "exchange": "exchanges/getClinician-010.json",
+      "resend": {
+        "status": 404,
+        "failed": [
+          "status_documented"
+        ],
+        "exchange": "exchanges/getClinician-010.resend.json",
+        "repeated": {
+          "status_documented": true
+        }
+      }
+    },
+    {
+      "case_id": "getClinician-011",
+      "operation_id": "getClinician",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 404,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "failed",
+          "detail": "status 404 is not in responses ['200', '400'] and there is no default"
+        },
+        "content_type": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        },
+        "schema_conformance": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        },
+        "required_headers": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        }
+      },
+      "failed": [
+        "status_documented"
+      ],
+      "exchange": "exchanges/getClinician-011.json",
+      "resend": {
+        "status": 404,
+        "failed": [
+          "status_documented"
+        ],
+        "exchange": "exchanges/getClinician-011.resend.json",
+        "repeated": {
+          "status_documented": true
+        }
+      }
+    },
+    {
+      "case_id": "getClinician-012",
+      "operation_id": "getClinician",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 404,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "failed",
+          "detail": "status 404 is not in responses ['200', '400'] and there is no default"
+        },
+        "content_type": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        },
+        "schema_conformance": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        },
+        "required_headers": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        }
+      },
+      "failed": [
+        "status_documented"
+      ],
+      "exchange": "exchanges/getClinician-012.json",
+      "resend": {
+        "status": 404,
+        "failed": [
+          "status_documented"
+        ],
+        "exchange": "exchanges/getClinician-012.resend.json",
+        "repeated": {
+          "status_documented": true
+        }
+      }
+    },
+    {
+      "case_id": "getClinician-013",
+      "operation_id": "getClinician",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 404,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "failed",
+          "detail": "status 404 is not in responses ['200', '400'] and there is no default"
+        },
+        "content_type": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        },
+        "schema_conformance": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        },
+        "required_headers": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        }
+      },
+      "failed": [
+        "status_documented"
+      ],
+      "exchange": "exchanges/getClinician-013.json",
+      "resend": {
+        "status": 404,
+        "failed": [
+          "status_documented"
+        ],
+        "exchange": "exchanges/getClinician-013.resend.json",
+        "repeated": {
+          "status_documented": true
+        }
+      }
+    },
+    {
+      "case_id": "getClinician-014",
+      "operation_id": "getClinician",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 404,
+      "elapsed_ms": 13,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "failed",
+          "detail": "status 404 is not in responses ['200', '400'] and there is no default"
+        },
+        "content_type": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        },
+        "schema_conformance": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        },
+        "required_headers": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        }
+      },
+      "failed": [
+        "status_documented"
+      ],
+      "exchange": "exchanges/getClinician-014.json",
+      "resend": {
+        "status": 404,
+        "failed": [
+          "status_documented"
+        ],
+        "exchange": "exchanges/getClinician-014.resend.json",
+        "repeated": {
+          "status_documented": true
+        }
+      }
+    },
+    {
+      "case_id": "listAppointments-001",
+      "operation_id": "listAppointments",
+      "kind": "example",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "positive_rejected": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listAppointments-002",
+      "operation_id": "listAppointments",
+      "kind": "negative",
+      "valid": false,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 19,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "failed",
+          "detail": "clinic_id: below minimum 1: answered 200"
+        }
+      },
+      "failed": [
+        "negative_accepted"
+      ],
+      "exchange": "exchanges/listAppointments-002.json",
+      "resend": {
+        "status": 200,
+        "failed": [
+          "negative_accepted"
+        ],
+        "exchange": "exchanges/listAppointments-002.resend.json",
+        "repeated": {
+          "negative_accepted": true
+        }
+      }
+    },
+    {
+      "case_id": "listAppointments-003",
+      "operation_id": "listAppointments",
+      "kind": "negative",
+      "valid": false,
+      "method": "GET",
+      "write": false,
+      "status": 400,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listAppointments-004",
+      "operation_id": "listAppointments",
+      "kind": "negative",
+      "valid": false,
+      "method": "GET",
+      "write": false,
+      "status": 400,
+      "elapsed_ms": 22,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listAppointments-005",
+      "operation_id": "listAppointments",
+      "kind": "negative",
+      "valid": false,
+      "method": "GET",
+      "write": false,
+      "status": 400,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listAppointments-006",
+      "operation_id": "listAppointments",
+      "kind": "negative",
+      "valid": false,
+      "method": "GET",
+      "write": false,
+      "status": 500,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "failed",
+          "detail": "status 500"
+        },
+        "status_documented": {
+          "result": "not_applicable",
+          "detail": "5xx is reported by server_error"
+        },
+        "content_type": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        },
+        "schema_conformance": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        },
+        "required_headers": {
+          "result": "not_applicable",
+          "detail": "response not documented"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [
+        "server_error"
+      ],
+      "exchange": "exchanges/listAppointments-006.json",
+      "resend": {
+        "status": 500,
+        "failed": [
+          "server_error"
+        ],
+        "exchange": "exchanges/listAppointments-006.resend.json",
+        "repeated": {
+          "server_error": true
+        }
+      }
+    },
+    {
+      "case_id": "listAppointments-007",
+      "operation_id": "listAppointments",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listAppointments-008",
+      "operation_id": "listAppointments",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listAppointments-009",
+      "operation_id": "listAppointments",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listAppointments-010",
+      "operation_id": "listAppointments",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listAppointments-011",
+      "operation_id": "listAppointments",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 25,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listAppointments-012",
+      "operation_id": "listAppointments",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listAppointments-013",
+      "operation_id": "listAppointments",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listAppointments-014",
+      "operation_id": "listAppointments",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listAppointments-015",
+      "operation_id": "listAppointments",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listAppointments-016",
+      "operation_id": "listAppointments",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listAppointments-017",
+      "operation_id": "listAppointments",
+      "kind": "no_auth",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 401,
+      "elapsed_ms": 24,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 401"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "auth_enforced": {
+          "result": "passed",
+          "detail": "401"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "createAppointment-001",
+      "operation_id": "createAppointment",
+      "kind": "example",
+      "valid": true,
+      "method": "POST",
+      "write": true,
+      "status": 201,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 201"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "passed"
+        },
+        "positive_rejected": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "createAppointment-002",
+      "operation_id": "createAppointment",
+      "kind": "boundary",
+      "valid": true,
+      "method": "POST",
+      "write": true,
+      "status": 201,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 201"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "createAppointment-003",
+      "operation_id": "createAppointment",
+      "kind": "boundary",
+      "valid": true,
+      "method": "POST",
+      "write": true,
+      "status": 201,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 201"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "createAppointment-004",
+      "operation_id": "createAppointment",
+      "kind": "negative",
+      "valid": false,
+      "method": "POST",
+      "write": true,
+      "status": 400,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "createAppointment-005",
+      "operation_id": "createAppointment",
+      "kind": "negative",
+      "valid": false,
+      "method": "POST",
+      "write": true,
+      "status": 400,
+      "elapsed_ms": 20,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "createAppointment-006",
+      "operation_id": "createAppointment",
+      "kind": "negative",
+      "valid": false,
+      "method": "POST",
+      "write": true,
+      "status": 400,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "createAppointment-007",
+      "operation_id": "createAppointment",
+      "kind": "negative",
+      "valid": false,
+      "method": "POST",
+      "write": true,
+      "status": 400,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "createAppointment-008",
+      "operation_id": "createAppointment",
+      "kind": "negative",
+      "valid": false,
+      "method": "POST",
+      "write": true,
+      "status": 400,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "createAppointment-009",
+      "operation_id": "createAppointment",
+      "kind": "negative",
+      "valid": false,
+      "method": "POST",
+      "write": true,
+      "status": 201,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 201"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "passed"
+        },
+        "negative_accepted": {
+          "result": "failed",
+          "detail": "body.patient_name: longer than maxLength 60: answered 201"
+        }
+      },
+      "failed": [
+        "negative_accepted"
+      ],
+      "exchange": "exchanges/createAppointment-009.json",
+      "resend": {
+        "status": 201,
+        "failed": [
+          "negative_accepted"
+        ],
+        "exchange": "exchanges/createAppointment-009.resend.json",
+        "repeated": {
+          "negative_accepted": true
+        }
+      }
+    },
+    {
+      "case_id": "createAppointment-010",
+      "operation_id": "createAppointment",
+      "kind": "negative",
+      "valid": false,
+      "method": "POST",
+      "write": true,
+      "status": 400,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "createAppointment-011",
+      "operation_id": "createAppointment",
+      "kind": "negative",
+      "valid": false,
+      "method": "POST",
+      "write": true,
+      "status": 400,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "createAppointment-012",
+      "operation_id": "createAppointment",
+      "kind": "negative",
+      "valid": false,
+      "method": "POST",
+      "write": true,
+      "status": 400,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "createAppointment-013",
+      "operation_id": "createAppointment",
+      "kind": "negative",
+      "valid": false,
+      "method": "POST",
+      "write": true,
+      "status": 400,
+      "elapsed_ms": 16,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "createAppointment-014",
+      "operation_id": "createAppointment",
+      "kind": "negative",
+      "valid": false,
+      "method": "POST",
+      "write": true,
+      "status": 400,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "createAppointment-015",
+      "operation_id": "createAppointment",
+      "kind": "negative",
+      "valid": false,
+      "method": "POST",
+      "write": true,
+      "status": 400,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "createAppointment-016",
+      "operation_id": "createAppointment",
+      "kind": "negative",
+      "valid": false,
+      "method": "POST",
+      "write": true,
+      "status": 201,
+      "elapsed_ms": 24,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 201"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "passed"
+        },
+        "negative_accepted": {
+          "result": "failed",
+          "detail": "body: unexpected property: answered 201"
+        }
+      },
+      "failed": [
+        "negative_accepted"
+      ],
+      "exchange": "exchanges/createAppointment-016.json",
+      "resend": {
+        "status": 201,
+        "failed": [
+          "negative_accepted"
+        ],
+        "exchange": "exchanges/createAppointment-016.resend.json",
+        "repeated": {
+          "negative_accepted": true
+        }
+      }
+    },
+    {
+      "case_id": "createAppointment-017",
+      "operation_id": "createAppointment",
+      "kind": "negative",
+      "valid": false,
+      "method": "POST",
+      "write": true,
+      "status": 400,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "createAppointment-018",
+      "operation_id": "createAppointment",
+      "kind": "negative",
+      "valid": false,
+      "method": "POST",
+      "write": true,
+      "status": 400,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "createAppointment-019",
+      "operation_id": "createAppointment",
+      "kind": "random",
+      "valid": true,
+      "method": "POST",
+      "write": true,
+      "status": 400,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "createAppointment-020",
+      "operation_id": "createAppointment",
+      "kind": "random",
+      "valid": true,
+      "method": "POST",
+      "write": true,
+      "status": 400,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "createAppointment-021",
+      "operation_id": "createAppointment",
+      "kind": "random",
+      "valid": true,
+      "method": "POST",
+      "write": true,
+      "status": 400,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "createAppointment-022",
+      "operation_id": "createAppointment",
+      "kind": "random",
+      "valid": true,
+      "method": "POST",
+      "write": true,
+      "status": 400,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "createAppointment-023",
+      "operation_id": "createAppointment",
+      "kind": "random",
+      "valid": true,
+      "method": "POST",
+      "write": true,
+      "status": 400,
+      "elapsed_ms": 25,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "createAppointment-024",
+      "operation_id": "createAppointment",
+      "kind": "random",
+      "valid": true,
+      "method": "POST",
+      "write": true,
+      "status": 400,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "createAppointment-025",
+      "operation_id": "createAppointment",
+      "kind": "random",
+      "valid": true,
+      "method": "POST",
+      "write": true,
+      "status": 400,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "createAppointment-026",
+      "operation_id": "createAppointment",
+      "kind": "random",
+      "valid": true,
+      "method": "POST",
+      "write": true,
+      "status": 400,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "createAppointment-027",
+      "operation_id": "createAppointment",
+      "kind": "random",
+      "valid": true,
+      "method": "POST",
+      "write": true,
+      "status": 400,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "createAppointment-028",
+      "operation_id": "createAppointment",
+      "kind": "random",
+      "valid": true,
+      "method": "POST",
+      "write": true,
+      "status": 400,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "createAppointment-029",
+      "operation_id": "createAppointment",
+      "kind": "no_auth",
+      "valid": true,
+      "method": "POST",
+      "write": true,
+      "status": 401,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 401"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "auth_enforced": {
+          "result": "passed",
+          "detail": "401"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "getAppointment-001",
+      "operation_id": "getAppointment",
+      "kind": "example",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 12,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "positive_rejected": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "getAppointment-002",
+      "operation_id": "getAppointment",
+      "kind": "boundary",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 404,
+      "elapsed_ms": 15,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 404"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "getAppointment-003",
+      "operation_id": "getAppointment",
+      "kind": "negative",
+      "valid": false,
+      "method": "GET",
+      "write": false,
+      "status": 404,
+      "elapsed_ms": 3,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 404"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "getAppointment-004",
+      "operation_id": "getAppointment",
+      "kind": "negative",
+      "valid": false,
+      "method": "GET",
+      "write": false,
+      "status": 400,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "failed",
+          "detail": "Content-Type text/html; documented ['application/json']"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [
+        "content_type"
+      ],
+      "exchange": "exchanges/getAppointment-004.json",
+      "resend": {
+        "status": 400,
+        "failed": [
+          "content_type"
+        ],
+        "exchange": "exchanges/getAppointment-004.resend.json",
+        "repeated": {
+          "content_type": true
+        }
+      }
+    },
+    {
+      "case_id": "getAppointment-005",
+      "operation_id": "getAppointment",
+      "kind": "negative",
+      "valid": false,
+      "method": "GET",
+      "write": false,
+      "status": 400,
+      "elapsed_ms": 22,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "failed",
+          "detail": "Content-Type text/html; documented ['application/json']"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [
+        "content_type"
+      ],
+      "exchange": "exchanges/getAppointment-005.json",
+      "resend": {
+        "status": 400,
+        "failed": [
+          "content_type"
+        ],
+        "exchange": "exchanges/getAppointment-005.resend.json",
+        "repeated": {
+          "content_type": true
+        }
+      }
+    },
+    {
+      "case_id": "getAppointment-006",
+      "operation_id": "getAppointment",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 404,
+      "elapsed_ms": 20,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 404"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "getAppointment-007",
+      "operation_id": "getAppointment",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 404,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 404"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "getAppointment-008",
+      "operation_id": "getAppointment",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 404,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 404"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "getAppointment-009",
+      "operation_id": "getAppointment",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 404,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 404"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "getAppointment-010",
+      "operation_id": "getAppointment",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 404,
+      "elapsed_ms": 16,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 404"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "getAppointment-011",
+      "operation_id": "getAppointment",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 404,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 404"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "getAppointment-012",
+      "operation_id": "getAppointment",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 404,
+      "elapsed_ms": 20,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 404"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "getAppointment-013",
+      "operation_id": "getAppointment",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 404,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 404"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "getAppointment-014",
+      "operation_id": "getAppointment",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 404,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 404"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "getAppointment-015",
+      "operation_id": "getAppointment",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 404,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 404"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "getAppointment-016",
+      "operation_id": "getAppointment",
+      "kind": "no_auth",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 401,
+      "elapsed_ms": 20,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 401"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "auth_enforced": {
+          "result": "passed",
+          "detail": "401"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "dailyReport-001",
+      "operation_id": "dailyReport",
+      "kind": "example",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "cantTell",
+          "detail": "unsupported keyword(s): dependentRequired"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "positive_rejected": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "dailyReport-002",
+      "operation_id": "dailyReport",
+      "kind": "negative",
+      "valid": false,
+      "method": "GET",
+      "write": false,
+      "status": 400,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 400"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "dailyReport-003",
+      "operation_id": "dailyReport",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "cantTell",
+          "detail": "unsupported keyword(s): dependentRequired"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "dailyReport-004",
+      "operation_id": "dailyReport",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "cantTell",
+          "detail": "unsupported keyword(s): dependentRequired"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "dailyReport-005",
+      "operation_id": "dailyReport",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "cantTell",
+          "detail": "unsupported keyword(s): dependentRequired"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "dailyReport-006",
+      "operation_id": "dailyReport",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "cantTell",
+          "detail": "unsupported keyword(s): dependentRequired"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "dailyReport-007",
+      "operation_id": "dailyReport",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "cantTell",
+          "detail": "unsupported keyword(s): dependentRequired"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "dailyReport-008",
+      "operation_id": "dailyReport",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "cantTell",
+          "detail": "unsupported keyword(s): dependentRequired"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "dailyReport-009",
+      "operation_id": "dailyReport",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "cantTell",
+          "detail": "unsupported keyword(s): dependentRequired"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "dailyReport-010",
+      "operation_id": "dailyReport",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 13,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "cantTell",
+          "detail": "unsupported keyword(s): dependentRequired"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "dailyReport-011",
+      "operation_id": "dailyReport",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 16,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "cantTell",
+          "detail": "unsupported keyword(s): dependentRequired"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "dailyReport-012",
+      "operation_id": "dailyReport",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "cantTell",
+          "detail": "unsupported keyword(s): dependentRequired"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "dailyReport-013",
+      "operation_id": "dailyReport",
+      "kind": "no_auth",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "cantTell",
+          "detail": "unsupported keyword(s): dependentRequired"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "auth_enforced": {
+          "result": "failed",
+          "detail": "answered 200 without credentials"
+        }
+      },
+      "failed": [
+        "auth_enforced"
+      ],
+      "exchange": "exchanges/dailyReport-013.json",
+      "resend": {
+        "status": 200,
+        "failed": [
+          "auth_enforced"
+        ],
+        "exchange": "exchanges/dailyReport-013.resend.json",
+        "repeated": {
+          "auth_enforced": true
+        }
+      }
+    },
+    {
+      "case_id": "listSlots-001",
+      "operation_id": "listSlots",
+      "kind": "example",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "positive_rejected": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listSlots-002",
+      "operation_id": "listSlots",
+      "kind": "negative",
+      "valid": false,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 25,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "failed",
+          "detail": "clinician_id: below minimum 1: answered 200"
+        }
+      },
+      "failed": [
+        "negative_accepted"
+      ],
+      "exchange": "exchanges/listSlots-002.json",
+      "resend": {
+        "status": 200,
+        "failed": [
+          "negative_accepted"
+        ],
+        "exchange": "exchanges/listSlots-002.resend.json",
+        "repeated": {
+          "negative_accepted": true
+        }
+      }
+    },
+    {
+      "case_id": "listSlots-003",
+      "operation_id": "listSlots",
+      "kind": "negative",
+      "valid": false,
+      "method": "GET",
+      "write": false,
+      "status": 400,
+      "elapsed_ms": 12,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched default"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listSlots-004",
+      "operation_id": "listSlots",
+      "kind": "negative",
+      "valid": false,
+      "method": "GET",
+      "write": false,
+      "status": 400,
+      "elapsed_ms": 15,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched default"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listSlots-005",
+      "operation_id": "listSlots",
+      "kind": "negative",
+      "valid": false,
+      "method": "GET",
+      "write": false,
+      "status": 400,
+      "elapsed_ms": 17,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched default"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listSlots-006",
+      "operation_id": "listSlots",
+      "kind": "negative",
+      "valid": false,
+      "method": "GET",
+      "write": false,
+      "status": 400,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched default"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listSlots-007",
+      "operation_id": "listSlots",
+      "kind": "negative",
+      "valid": false,
+      "method": "GET",
+      "write": false,
+      "status": 400,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched default"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        },
+        "negative_accepted": {
+          "result": "passed"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listSlots-008",
+      "operation_id": "listSlots",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 503,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "failed",
+          "detail": "status 503"
+        },
+        "status_documented": {
+          "result": "not_applicable",
+          "detail": "5xx is reported by server_error"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [
+        "server_error"
+      ],
+      "exchange": "exchanges/listSlots-008.json",
+      "resend": {
+        "status": 200,
+        "failed": [],
+        "exchange": null,
+        "repeated": {
+          "server_error": false
+        }
+      }
+    },
+    {
+      "case_id": "listSlots-009",
+      "operation_id": "listSlots",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listSlots-010",
+      "operation_id": "listSlots",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listSlots-011",
+      "operation_id": "listSlots",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 12,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listSlots-012",
+      "operation_id": "listSlots",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listSlots-013",
+      "operation_id": "listSlots",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listSlots-014",
+      "operation_id": "listSlots",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 16,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listSlots-015",
+      "operation_id": "listSlots",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 17,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "listSlots-016",
+      "operation_id": "listSlots",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 503,
+      "elapsed_ms": 2,
+      "checks": {
+        "server_error": {
+          "result": "failed",
+          "detail": "status 503"
+        },
+        "status_documented": {
+          "result": "not_applicable",
+          "detail": "5xx is reported by server_error"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [
+        "server_error"
+      ],
+      "exchange": "exchanges/listSlots-016.json",
+      "resend": {
+        "status": 200,
+        "failed": [],
+        "exchange": null,
+        "repeated": {
+          "server_error": false
+        }
+      }
+    },
+    {
+      "case_id": "listSlots-017",
+      "operation_id": "listSlots",
+      "kind": "random",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 21,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "passed"
+        },
+        "required_headers": {
+          "result": "not_applicable"
+        }
+      },
+      "failed": [],
+      "exchange": null,
+      "resend": null
+    },
+    {
+      "case_id": "getClinician-015",
+      "operation_id": "getClinician",
+      "kind": "added",
+      "valid": true,
+      "method": "GET",
+      "write": false,
+      "status": 200,
+      "elapsed_ms": 22,
+      "checks": {
+        "server_error": {
+          "result": "passed"
+        },
+        "status_documented": {
+          "result": "passed",
+          "detail": "matched 200"
+        },
+        "content_type": {
+          "result": "passed",
+          "detail": "application/json"
+        },
+        "schema_conformance": {
+          "result": "failed",
+          "detail": "$: missing required 'specialty'",
+          "errors": [
+            "$: missing required 'specialty'"
+          ],
+          "schema": "Clinician"
+        },
+        "required_headers": {
+          "result": "passed"
+        }
+      },
+      "failed": [
+        "schema_conformance"
+      ],
+      "exchange": "exchanges/getClinician-015.json",
+      "resend": {
+        "status": 200,
+        "failed": [
+          "schema_conformance"
+        ],
+        "exchange": "exchanges/getClinician-015.resend.json",
+        "repeated": {
+          "schema_conformance": true
+        }
+      }
+    }
+  ],
+  "blocked": [],
+  "requests_sent": 159,
+  "rate_limited": {
+    "events": 0,
+    "backoff_seconds": 0.0
+  },
+  "finished_at": "2026-11-11T07:20:26Z"
+}

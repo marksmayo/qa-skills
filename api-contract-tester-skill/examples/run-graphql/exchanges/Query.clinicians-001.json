@@ -1,0 +1,66 @@
+{
+  "case_id": "Query.clinicians-001",
+  "operation_id": "Query.clinicians",
+  "kind": "graphql",
+  "valid": true,
+  "description": "no arguments",
+  "sent_with_credentials": true,
+  "request": {
+    "method": "POST",
+    "url": "http://127.0.0.1:8140/graphql",
+    "headers": {
+      "Content-Type": "application/json",
+      "Accept": "application/json"
+    },
+    "body": {
+      "query": "{ clinicians { id name specialty rooms } }"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Server": "clinic-api/1.5.0 Python/3.14.10",
+      "Date": "Wed, 11 Nov 2026 07:20:29 GMT",
+      "Content-Type": "application/json",
+      "Content-Length": "250"
+    },
+    "body": {
+      "json": {
+        "data": {
+          "clinicians": [
+            {
+              "id": "1",
+              "name": "Dr Test One",
+              "specialty": "GP",
+              "rooms": [
+                "1A"
+              ]
+            },
+            {
+              "id": "2",
+              "name": "Dr Test Two",
+              "specialty": "PHYSIO",
+              "rooms": [
+                "2B",
+                "2C"
+              ]
+            },
+            {
+              "id": "3",
+              "name": "Dr Test Three",
+              "specialty": null,
+              "rooms": []
+            }
+          ]
+        }
+      },
+      "sha256": "9e6f5ba3357eb42623fee72eb460d16b1a01d8ee536b2143e327d1c4603de769",
+      "truncated": false,
+      "bytes": 250
+    }
+  },
+  "elapsed_ms": 21,
+  "failed_checks": [
+    "graphql_errors"
+  ]
+}

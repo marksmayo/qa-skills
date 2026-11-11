@@ -192,6 +192,18 @@ python bug-reproducer-skill/scripts/dupes.py --ticket bug-reproducer-skill/examp
 
 Re-running the attempts needs Playwright with Chromium, Firefox and WebKit (`pip install -r bug-reproducer-skill/requirements.txt`) and the app served on loopback (`python -m http.server 8141 --bind 127.0.0.1 --directory bug-reproducer-skill/examples/tasklist`). TASK-12 is a race, so its counts change on every run. The report quotes `examples/tasklist/src/` by line, and `examples/tasklist/tests/due_today_timezone.test.mjs` is the red regression test, meant to fail. Editing the app, the reports or the specs invalidates the example until `commands.sh` is rerun.
 
+API contract tester (`examples/clinic-api/` is the sample stdlib API with planted contract breaks, its OpenAPI 3.1 contract, the previous 3.0 contract and a GraphQL schema; `examples/run/` and `examples/run-graphql/` are real runs with redacted exchanges, listed in `examples/run/commands.sh`; the validator recomputes operations, candidates, ratings and the headline from the run, and scans the exchanges for credentials):
+
+```bash
+python api-contract-tester-skill/scripts/validate_report.py api-contract-tester-skill/examples/report.example.json --run api-contract-tester-skill/examples/run/run.json --candidates api-contract-tester-skill/examples/run/candidates.json --contract api-contract-tester-skill/examples/run/contract.json --cases api-contract-tester-skill/examples/run/cases.json --diff api-contract-tester-skill/examples/run/diff.json --repo api-contract-tester-skill/examples/clinic-api
+python api-contract-tester-skill/scripts/validate_report.py api-contract-tester-skill/examples/report.graphql.example.json --run api-contract-tester-skill/examples/run-graphql/run.json --candidates api-contract-tester-skill/examples/run-graphql/candidates.json --contract api-contract-tester-skill/examples/run-graphql/contract.json --cases api-contract-tester-skill/examples/run-graphql/cases.json --repo api-contract-tester-skill/examples/clinic-api
+python api-contract-tester-skill/scripts/render_report.py api-contract-tester-skill/examples/report.example.json [--brief] [--sarif out.sarif --contract api-contract-tester-skill/examples/run/contract.json]
+python api-contract-tester-skill/scripts/load_contract.py api-contract-tester-skill/examples/clinic-api/openapi.yaml --out contract.json
+python api-contract-tester-skill/scripts/spec_diff.py api-contract-tester-skill/examples/run/contract.v1.json api-contract-tester-skill/examples/run/contract.json --out diff.json
+```
+
+`commands.sh` runs from `api-contract-tester-skill/`, so the recorded contract sources are relative to it. Re-running needs the server on loopback (`python api-contract-tester-skill/examples/clinic-api/server.py --port 8140`, token `fake-clinic-token` in `CLINIC_TOKEN`), restarted before each sending step because its planted 503 counts calls. Schemathesis is optional (set `ST`). The report cites `examples/clinic-api/server.py` by line, so editing the server, the contracts or the cases invalidates the example until `commands.sh` is rerun.
+
 Shared files:
 
 ```bash

@@ -1,0 +1,39 @@
+{
+  "case_id": "getAppointment-005",
+  "operation_id": "getAppointment",
+  "kind": "negative",
+  "valid": false,
+  "description": "appointmentId: not an integer",
+  "sent_with_credentials": true,
+  "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:8140/appointments/1.5",
+    "headers": {
+      "Authorization": "[REDACTED]",
+      "Accept": "application/json"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "Server": "clinic-api/1.5.0 Python/3.14.10",
+      "Date": "Wed, 11 Nov 2026 07:20:25 GMT",
+      "Content-Type": "text/html; charset=utf-8",
+      "Content-Length": "65"
+    },
+    "body": {
+      "json": {
+        "code": "bad_id",
+        "message": "appointmentId must be an integer"
+      },
+      "sha256": "c2649aadae590c82482015a5df3caf414b064a9c2add1e901e85abe6f7e0fb4e",
+      "truncated": false,
+      "bytes": 65
+    }
+  },
+  "elapsed_ms": 2,
+  "failed_checks": [
+    "content_type"
+  ]
+}

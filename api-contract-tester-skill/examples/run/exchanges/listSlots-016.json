@@ -1,0 +1,39 @@
+{
+  "case_id": "listSlots-016",
+  "operation_id": "listSlots",
+  "kind": "random",
+  "valid": true,
+  "description": "seeded random sample 9",
+  "sent_with_credentials": true,
+  "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:8140/slots?clinician_id=812&date=2026-01-23",
+    "headers": {
+      "Authorization": "[REDACTED]",
+      "Accept": "application/json"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 503,
+    "headers": {
+      "Server": "clinic-api/1.5.0 Python/3.14.10",
+      "Date": "Wed, 11 Nov 2026 07:20:20 GMT",
+      "Content-Type": "application/json",
+      "Content-Length": "52"
+    },
+    "body": {
+      "json": {
+        "code": "unavailable",
+        "message": "Scheduler busy"
+      },
+      "sha256": "422d38ac8ca72c33446f0a921c51c5a0b41dc6ee81be6f6c15c9e3c4915de56d",
+      "truncated": false,
+      "bytes": 52
+    }
+  },
+  "elapsed_ms": 2,
+  "failed_checks": [
+    "server_error"
+  ]
+}
