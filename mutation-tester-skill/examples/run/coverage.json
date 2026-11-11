@@ -1,0 +1,163 @@
+{
+ "command": "python -m pytest -q -p no:cacheprovider -p mt_cov_plugin",
+ "exit_code": 0,
+ "pytest_exit": 0,
+ "duration_s": 2.941,
+ "files": [
+  "fare_calc/manifest.py",
+  "fare_calc/pricing.py",
+  "fare_calc/refunds.py"
+ ],
+ "lines": {
+  "fare_calc/manifest.py": {
+   "0": [
+    "<import>"
+   ],
+   "1": [
+    "<import>"
+   ],
+   "4": [
+    "<import>",
+    "tests/test_manifest.py::test_empty_manifest",
+    "tests/test_manifest.py::test_manifest_numbers_passengers_in_order"
+   ],
+   "6": [
+    "tests/test_manifest.py::test_empty_manifest",
+    "tests/test_manifest.py::test_manifest_numbers_passengers_in_order"
+   ],
+   "7": [
+    "tests/test_manifest.py::test_empty_manifest",
+    "tests/test_manifest.py::test_manifest_numbers_passengers_in_order"
+   ],
+   "8": [
+    "tests/test_manifest.py::test_empty_manifest",
+    "tests/test_manifest.py::test_manifest_numbers_passengers_in_order"
+   ],
+   "9": [
+    "tests/test_manifest.py::test_manifest_numbers_passengers_in_order"
+   ],
+   "10": [
+    "tests/test_manifest.py::test_manifest_numbers_passengers_in_order"
+   ],
+   "11": [
+    "tests/test_manifest.py::test_empty_manifest",
+    "tests/test_manifest.py::test_manifest_numbers_passengers_in_order"
+   ]
+  },
+  "fare_calc/pricing.py": {
+   "0": [
+    "<import>"
+   ],
+   "1": [
+    "<import>"
+   ],
+   "2": [
+    "<import>"
+   ],
+   "4": [
+    "<import>"
+   ],
+   "6": [
+    "<import>"
+   ],
+   "7": [
+    "<import>"
+   ],
+   "10": [
+    "<import>",
+    "tests/test_pricing.py::test_adult_pays_full_fare",
+    "tests/test_pricing.py::test_senior_pays_half_fare",
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "17": [
+    "<import>",
+    "tests/test_pricing.py::test_adult_pays_full_fare",
+    "tests/test_pricing.py::test_senior_pays_half_fare",
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "21": [
+    "<import>",
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "12": [
+    "tests/test_pricing.py::test_adult_pays_full_fare",
+    "tests/test_pricing.py::test_senior_pays_half_fare",
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "14": [
+    "tests/test_pricing.py::test_adult_pays_full_fare",
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "18": [
+    "tests/test_pricing.py::test_adult_pays_full_fare",
+    "tests/test_pricing.py::test_senior_pays_half_fare",
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "13": [
+    "tests/test_pricing.py::test_senior_pays_half_fare",
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "23": [
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "24": [
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "25": [
+    "tests/test_pricing.py::test_total_for_a_family"
+   ]
+  },
+  "fare_calc/refunds.py": {
+   "0": [
+    "<import>"
+   ],
+   "1": [
+    "<import>"
+   ],
+   "2": [
+    "<import>"
+   ],
+   "4": [
+    "<import>"
+   ],
+   "6": [
+    "<import>"
+   ],
+   "9": [
+    "<import>",
+    "tests/test_refunds.py::test_full_refund_from_24_hours",
+    "tests/test_refunds.py::test_half_refund_below_24_hours",
+    "tests/test_refunds.py::test_half_refund_down_to_2_hours",
+    "tests/test_refunds.py::test_no_refund_under_2_hours"
+   ],
+   "14": [
+    "tests/test_refunds.py::test_full_refund_from_24_hours",
+    "tests/test_refunds.py::test_half_refund_below_24_hours",
+    "tests/test_refunds.py::test_half_refund_down_to_2_hours",
+    "tests/test_refunds.py::test_no_refund_under_2_hours"
+   ],
+   "18": [
+    "tests/test_refunds.py::test_full_refund_from_24_hours",
+    "tests/test_refunds.py::test_half_refund_below_24_hours",
+    "tests/test_refunds.py::test_half_refund_down_to_2_hours",
+    "tests/test_refunds.py::test_no_refund_under_2_hours"
+   ],
+   "19": [
+    "tests/test_refunds.py::test_full_refund_from_24_hours"
+   ],
+   "20": [
+    "tests/test_refunds.py::test_half_refund_below_24_hours",
+    "tests/test_refunds.py::test_half_refund_down_to_2_hours",
+    "tests/test_refunds.py::test_no_refund_under_2_hours"
+   ],
+   "21": [
+    "tests/test_refunds.py::test_half_refund_below_24_hours",
+    "tests/test_refunds.py::test_half_refund_down_to_2_hours"
+   ],
+   "22": [
+    "tests/test_refunds.py::test_no_refund_under_2_hours"
+   ]
+  }
+ },
+ "method": "sys.settrace in a pytest plugin, per test (lines run at import are under \"<import>\")"
+}

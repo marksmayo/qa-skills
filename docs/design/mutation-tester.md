@@ -1,6 +1,6 @@
 # Design: `mutation-tester-skill`
 
-Status: Designed; not built. Build order: 9.
+Status: Built (v1.0.0), see "As built" at the end. Build order: 9.
 
 ## Mission
 
@@ -205,3 +205,56 @@ Agreed with the user before the build.
 1. **Allow whole-repo runs in v1?** Only when asked; the default scope is changed code.
 2. **Add the mutation tool to the repo's dev dependencies?** No: always run it from a scratch config.
 3. **Default budget?** 30 minutes.
+
+## As built (v1.0.0)
+
+- **Shared files.** `diff_scope.py` is new in `shared/`. It reads git ranges (the merge base
+  against the working tree by default, including untracked files; `--committed-only` for
+  `base...HEAD`) or a unified diff (`--diff`), and handles renames, `-p0` and `-p1` paths and
+  deletion-only hunks. Hunk line counts decide where a hunk ends, so a deleted line starting
+  `--` isn't mistaken for a file header. Each file gets a kind (source, test, generated,
+  migration, vendored, types, config, docs, binary) with the reason. Python functions come from
+  `ast`, others from a brace/indent heuristic. The skill also carries `run_tests.py`,
+  `parse_results.py` and `detect_conventions.py`.
+- **Engines run:**
+  - **Built-in** (`builtin_mutator.py`): AST operators on the scoped lines, each replacing one
+    node's source text.
+  - **mutmut 3** (`run_engine.py`): runs in a scratch copy, with a scratch `[tool.mutmut]` when the
+    repo has none. mutmut reads its config even for `--version`, so the version check runs
+    inside the configured copy.
+  - **Stryker/PIT:** `normalize_results.py` reads mutation-testing-elements JSON. No example
+    exercises this reader.
+- **Coverage.** The built-in engine records per-test line coverage with a `sys.settrace` pytest
+  plugin it writes to the run directory. Lines run only at import are recorded under `<import>`,
+  so a module-level mutant runs every test that touched its file.
+  - mutmut tracks tests per function, not per line. Its survivors on lines no test executed are
+    reclassified as `no_coverage`, and keep `reclassified_from`.
+- **Timeouts.** The per-mutant timeout is 3× one untraced suite run, with a 10 s minimum. The
+  traced coverage run isn't used for timing: in a trial run it took 12.6 s against about 0.5 s
+  for the plain suite. In the example run the two were close (2.9 s and 3.1 s).
+- **Stale bytecode.** Bytecode is redirected to an empty cache (`PYTHONPYCACHEPREFIX`) and never
+  written, so a stale `.pyc` can't stand in for a mutant.
+- **Ids.** `normalize_results.py` assigns the report's ids (B.., M.., S..), ordered by file and
+  line. The raw ids are kept as `raw_id`. The first proofs used raw built-in ids and tested the
+  wrong mutants; `commands.sh` now uses the normalised ids.
+- **Findings group mutants.** A finding is one weakness and lists every survived mutant it
+  explains, from either engine. Every survivor is in exactly one finding, and every
+  `no_coverage` mutant is in exactly one coverage gap.
+- **Scores.** They are per engine and never added together, because the engines' operators
+  differ. `accepted` mutants stay in the denominator.
+- **Proximity is computed.** It is 2 when a covering test's body calls the mutated function
+  directly, and always 1 for module-level mutants.
+- **Proofs.** `prove_kill.py` proves a suggested test in a scratch copy: it must pass on the
+  original and fail on each mutant. This gives evidence without writing to the repo, and
+  `write_tests` adds `--in-place`.
+- **Baseline JUnit bug.** The built-in engine first cleaned up `<run-dir>/junit`, which deleted
+  the baseline's JUnit files. It now uses a private directory, and the example was rerun.
+- **Example** (Windows for the baseline, the built-in engine and the proofs; WSL for mutmut 3.8.1):
+  - **Built-in:** 18 of 29 killed (62.1%).
+  - **mutmut:** 17 of 33 killed (51.5%); 7 of its mutants fell outside the scope.
+  - **Findings:** F1 weak assertion (P0, score 12), F2 missing case (P1, 9), F3 missing case
+    (P2, 6), F4 equivalent, F5 accepted.
+  - **Coverage gap:** G1 holds 12 mutants.
+  - **Timeouts:** one per engine.
+  - **Proofs:** all four kill every mutant they target.
+- **Validator:** 47 of 47 seeded violations are caught.

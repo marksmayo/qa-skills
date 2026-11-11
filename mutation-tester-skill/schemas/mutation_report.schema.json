@@ -1,0 +1,233 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Mutation testing report",
+  "description": "Output of the mutation-tester skill. Fields marked (computed) are filled by validate_mutation_report.py --write-summary.",
+  "type": "object",
+  "required": ["schema_version", "metadata", "tools", "baseline", "mutants", "findings", "coverage_gaps", "summary", "limitations", "files_changed"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "metadata": {
+      "type": "object",
+      "required": ["repo", "commit", "code_hash", "scope", "engines", "coverage", "budget_minutes", "write_tests", "platform", "generated_at"],
+      "additionalProperties": false,
+      "properties": {
+        "repo": {"type": "string", "minLength": 1},
+        "commit": {"type": ["string", "null"]},
+        "code_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "run_tests.py code_hash of the repo the mutants were made from"},
+        "scope": {
+          "type": "object",
+          "required": ["mode", "base_ref", "diff_file", "files", "excluded"],
+          "additionalProperties": false,
+          "properties": {
+            "mode": {"enum": ["changed", "path", "all"]},
+            "base_ref": {"type": ["string", "null"]},
+            "diff_file": {"type": ["string", "null"]},
+            "paths": {"type": "array", "items": {"type": "string"}},
+            "files": {"type": "array", "items": {"$ref": "#/$defs/scope_file"}},
+            "excluded": {"type": "array", "items": {"$ref": "#/$defs/excluded"}}
+          }
+        },
+        "engines": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/engine"}},
+        "coverage": {
+          "type": ["object", "null"],
+          "required": ["file", "method"],
+          "additionalProperties": false,
+          "properties": {"file": {"type": "string"}, "method": {"type": "string"}}
+        },
+        "budget_minutes": {"type": "number", "minimum": 0},
+        "write_tests": {"type": "boolean"},
+        "critical_paths": {"type": "array", "items": {"type": "string"}, "description": "functions or files the user marked critical (journey-mapper P0/P1 steps)"},
+        "platform": {"type": "string"},
+        "generated_at": {"type": "string"}
+      }
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "version", "status", "reason"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {"type": "string"},
+          "version": {"type": ["string", "null"]},
+          "status": {"enum": ["ran", "not_run", "errored", "not_applicable"]},
+          "reason": {"type": "string"}
+        }
+      }
+    },
+    "baseline": {
+      "type": "object",
+      "required": ["run_ids", "passed", "flaky_tests", "note"],
+      "additionalProperties": false,
+      "properties": {
+        "run_ids": {"type": "array", "items": {"type": "string"}},
+        "passed": {"type": "boolean"},
+        "flaky_tests": {"type": "array", "items": {"type": "string"}},
+        "note": {"type": "string"}
+      }
+    },
+    "mutants": {"type": "array", "items": {"$ref": "#/$defs/mutant"}},
+    "findings": {"type": "array", "items": {"$ref": "#/$defs/finding"}},
+    "coverage_gaps": {"type": "array", "items": {"$ref": "#/$defs/gap"}},
+    "summary": {
+      "type": "object",
+      "required": ["headline", "by_engine", "findings", "by_priority", "coverage_gaps", "evidence_completeness"],
+      "additionalProperties": false,
+      "properties": {
+        "headline": {"type": "string", "minLength": 20},
+        "by_engine": {"type": "array", "items": {"$ref": "#/$defs/engine_summary"}},
+        "findings": {
+          "type": "object",
+          "required": ["weak_assertion", "missing_case", "equivalent", "accepted"],
+          "additionalProperties": false,
+          "properties": {
+            "weak_assertion": {"type": "integer"}, "missing_case": {"type": "integer"},
+            "equivalent": {"type": "integer"}, "accepted": {"type": "integer"}
+          }
+        },
+        "by_priority": {
+          "type": "object",
+          "required": ["P0", "P1", "P2", "P3"],
+          "additionalProperties": false,
+          "properties": {"P0": {"type": "integer"}, "P1": {"type": "integer"}, "P2": {"type": "integer"}, "P3": {"type": "integer"}}
+        },
+        "coverage_gaps": {"type": "integer"},
+        "evidence_completeness": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    },
+    "limitations": {"type": "array", "items": {"type": "string"}},
+    "files_changed": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {
+    "scope_file": {
+      "type": "object",
+      "required": ["path", "ranges"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {"type": "string"},
+        "ranges": {"type": "array", "items": {"type": "array", "items": {"type": "integer"}}}
+      }
+    },
+    "excluded": {
+      "type": "object",
+      "required": ["path", "kind", "why"],
+      "additionalProperties": false,
+      "properties": {"path": {"type": "string"}, "kind": {"type": "string"}, "why": {"type": "string", "minLength": 3}}
+    },
+    "engine": {
+      "type": "object",
+      "required": ["name", "version", "command", "config_source", "config", "status", "reason", "raw", "generated", "in_scope", "out_of_scope", "sampled", "timeout_s", "tree_changed", "counts"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string"},
+        "version": {"type": ["string", "null"]},
+        "command": {"type": ["string", "null"]},
+        "config_source": {"enum": ["repo", "scratch", "builtin", null]},
+        "config": {"type": ["string", "null"]},
+        "status": {"enum": ["ran", "not_run", "errored"]},
+        "reason": {"type": "string"},
+        "raw": {"type": "string"},
+        "generated": {"type": "integer"},
+        "in_scope": {"type": "integer"},
+        "out_of_scope": {"type": "integer"},
+        "sampled": {"type": ["object", "null"]},
+        "timeout_s": {"type": ["number", "null"]},
+        "tree_changed": {"type": ["array", "null"], "items": {"type": "string"}},
+        "counts": {"type": "object"}
+      }
+    },
+    "mutant": {
+      "type": "object",
+      "required": ["id", "engine", "raw_id", "file", "line", "end_line", "function", "operator", "kind", "original", "mutated", "status", "engine_status", "covering_tests", "killed_by"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "pattern": "^[A-Z]\\d+$"},
+        "engine": {"type": "string"},
+        "raw_id": {"type": "string"},
+        "file": {"type": "string"},
+        "line": {"type": "integer", "minimum": 1},
+        "end_line": {"type": "integer", "minimum": 1},
+        "function": {"type": ["string", "null"]},
+        "operator": {"type": "string"},
+        "kind": {"enum": ["branch", "value", "display"]},
+        "original": {"type": "string"},
+        "mutated": {"type": "string"},
+        "status": {"enum": ["killed", "survived", "no_coverage", "timeout", "runtime_error", "compile_error", "not_run"]},
+        "engine_status": {"type": ["string", "null"]},
+        "reclassified_from": {"type": "string"},
+        "covering_tests": {"type": "array", "items": {"type": "string"}},
+        "killed_by": {"type": ["string", "null"]},
+        "note": {"type": "string"}
+      }
+    },
+    "finding": {
+      "type": "object",
+      "required": ["id", "triage", "mutant_ids", "file", "function", "summary", "reason", "should_have_caught", "suggestion", "proof_ids", "criticality", "criticality_reason", "kind_factor", "proximity", "score", "priority"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "pattern": "^F\\d+$"},
+        "triage": {"enum": ["weak_assertion", "missing_case", "equivalent", "accepted"]},
+        "mutant_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "file": {"type": "string"},
+        "function": {"type": ["string", "null"]},
+        "summary": {"type": "string", "minLength": 10},
+        "reason": {"type": "string", "minLength": 10},
+        "should_have_caught": {"type": ["string", "null"]},
+        "suggestion": {
+          "type": ["object", "null"],
+          "required": ["test_file", "assertion_or_input", "code"],
+          "additionalProperties": false,
+          "properties": {
+            "test_file": {"type": "string"},
+            "assertion_or_input": {"type": "string", "minLength": 5},
+            "code": {"type": ["string", "null"]}
+          }
+        },
+        "proof_ids": {"type": "array", "items": {"type": "string"}},
+        "criticality": {"enum": [1, 2, 3, null]},
+        "criticality_reason": {"type": ["string", "null"]},
+        "kind_factor": {"enum": [1, 2, 3, null], "description": "(computed)"},
+        "proximity": {"enum": [1, 2, null], "description": "(computed)"},
+        "score": {"type": ["integer", "null"], "description": "(computed)"},
+        "priority": {"enum": ["P0", "P1", "P2", "P3", null], "description": "(computed)"}
+      }
+    },
+    "gap": {
+      "type": "object",
+      "required": ["id", "file", "function", "lines", "mutant_ids", "note", "suggestion", "proof_ids"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "pattern": "^G\\d+$"},
+        "file": {"type": "string"},
+        "function": {"type": ["string", "null"]},
+        "lines": {"type": "array", "items": {"type": "integer"}},
+        "mutant_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "note": {"type": "string", "minLength": 10},
+        "suggestion": {"type": ["string", "null"]},
+        "proof_ids": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "score": {
+      "type": "object",
+      "required": ["killed", "of", "value"],
+      "additionalProperties": false,
+      "properties": {"killed": {"type": "integer"}, "of": {"type": "integer"}, "value": {"type": ["number", "null"]}}
+    },
+    "engine_summary": {
+      "type": "object",
+      "required": ["engine", "total", "killed", "survived", "no_coverage", "timeout", "runtime_error", "compile_error", "not_run", "equivalent", "accepted", "score_excluding_timeouts", "score_including_timeouts", "score_text"],
+      "additionalProperties": false,
+      "properties": {
+        "engine": {"type": "string"},
+        "total": {"type": "integer"}, "killed": {"type": "integer"}, "survived": {"type": "integer"},
+        "no_coverage": {"type": "integer"}, "timeout": {"type": "integer"}, "runtime_error": {"type": "integer"},
+        "compile_error": {"type": "integer"}, "not_run": {"type": "integer"}, "equivalent": {"type": "integer"},
+        "accepted": {"type": "integer"},
+        "score_excluding_timeouts": {"$ref": "#/$defs/score"},
+        "score_including_timeouts": {"$ref": "#/$defs/score"},
+        "score_text": {"type": "string"}
+      }
+    }
+  }
+}

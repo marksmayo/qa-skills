@@ -1,0 +1,56 @@
+{
+  "description": "Common mutation operators, the ranking kind each one has, and how each engine's operator names map onto them. kind_factor is the 'mutant kind' factor of the survivor ranking (RUBRIC.md).",
+  "kinds": {
+    "branch": {"factor": 3, "meaning": "changes a branch or boundary: comparison, negation, condition, logical operator, loop control"},
+    "value": {"factor": 2, "meaning": "changes a computed value, a returned value, an argument, or removes a call"},
+    "display": {"factor": 1, "meaning": "changes a string literal (usually text shown or logged)"}
+  },
+  "operators": {
+    "comparison_boundary": {"kind": "branch", "example": "a < b -> a <= b"},
+    "comparison_relational": {"kind": "branch", "example": "a < b -> a != b"},
+    "comparison_negate": {"kind": "branch", "example": "a == b -> a != b"},
+    "negate_condition": {"kind": "branch", "example": "if x: -> if not (x):"},
+    "logical": {"kind": "branch", "example": "a and b -> a or b"},
+    "boolean_constant": {"kind": "branch", "example": "True -> False"},
+    "control_flow": {"kind": "branch", "example": "break -> return"},
+    "arithmetic": {"kind": "value", "example": "a + b -> a - b; i += 1 -> i -= 1"},
+    "constant_number": {"kind": "value", "example": "150 -> 151; 1 -> 0"},
+    "return_value": {"kind": "value", "example": "return x -> return None"},
+    "value_none": {"kind": "value", "example": "credit = a + b -> credit = None"},
+    "call_args": {"kind": "value", "example": "f(a, b) -> f(a)"},
+    "default_arg": {"kind": "value", "example": "def f(x=False) -> def f(x=True)"},
+    "remove_call": {"kind": "value", "example": "log.info(...) -> pass"},
+    "remove_block": {"kind": "value", "example": "{ ... } -> {}"},
+    "constant_string": {"kind": "display", "example": "\"priced\" -> \"\""},
+    "other": {"kind": "value", "example": "anything not matched above"}
+  },
+  "engines": {
+    "builtin": {
+      "note": "builtin_mutator.py emits the common names directly.",
+      "names": {}
+    },
+    "mutmut": {
+      "note": "mutmut 3 does not name its operators; normalize_results.py infers the common operator from each mutant's diff by comparing tokens.",
+      "names": {}
+    },
+    "stryker": {
+      "note": "Stryker (JS/TS, .NET, Scala) and PIT write the mutation-testing-elements JSON report; mutatorName is mapped here. EqualityOperator is refined from the replacement text (== / != is a negation, < / <= a boundary).",
+      "names": {
+        "ArithmeticOperator": "arithmetic", "AssignmentOperator": "arithmetic", "UpdateOperator": "arithmetic",
+        "UnaryOperator": "arithmetic", "EqualityOperator": "comparison_boundary", "ConditionalExpression": "negate_condition",
+        "LogicalOperator": "logical", "BooleanLiteral": "boolean_constant", "StringLiteral": "constant_string",
+        "Regex": "constant_string", "ArrayDeclaration": "value_none", "ObjectLiteral": "value_none",
+        "OptionalChaining": "value_none", "BlockStatement": "remove_block", "MethodExpression": "call_args",
+        "ArrowFunction": "return_value", "Statement": "remove_call", "NullCoalescing": "logical",
+        "ConditionalsBoundaryMutator": "comparison_boundary", "ConditionalsBoundary": "comparison_boundary",
+        "NegateConditionalsMutator": "comparison_negate", "NegateConditionals": "comparison_negate",
+        "RemoveConditionalMutator": "negate_condition", "MathMutator": "arithmetic", "Math": "arithmetic",
+        "IncrementsMutator": "arithmetic", "Increments": "arithmetic", "InvertNegsMutator": "arithmetic",
+        "ReturnValsMutator": "return_value", "EmptyObjectReturnValsMutator": "return_value",
+        "NullReturnValsMutator": "return_value", "PrimitiveReturnsMutator": "return_value",
+        "BooleanTrueReturnValsMutator": "return_value", "BooleanFalseReturnValsMutator": "return_value",
+        "VoidMethodCallMutator": "remove_call", "VoidMethodCall": "remove_call"
+      }
+    }
+  }
+}

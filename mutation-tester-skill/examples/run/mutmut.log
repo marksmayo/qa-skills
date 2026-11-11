@@ -1,0 +1,11 @@
+⠼ Generating mutants
+    done in 618ms (5 files mutated, 0 ignored, 0 unmodified)
+⠦ Running stats
+    done
+⠋ Running clean tests
+    done
+⠦ Running forced fail test
+    done
+Running mutation testing
+⠇ 41/41  🎉 24 🫥 0  ⏰ 1  🤔 0  🙁 16  🔇 0  🧙 0
+0.55 mutations/second

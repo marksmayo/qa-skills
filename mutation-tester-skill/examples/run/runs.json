@@ -1,0 +1,294 @@
+{
+  "runs": [
+    {
+      "id": "G-1",
+      "command": "python -m pytest -q -p no:cacheprovider --junitxml=junit/G-1.xml",
+      "exit_code": 0,
+      "junit_paths": [
+        "junit/G-1.xml"
+      ],
+      "started_at": "2026-11-10T23:29:24Z",
+      "totals": {
+        "tests": 9,
+        "passed": 9,
+        "failed": 0,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {},
+      "notes": [],
+      "duration_s": 1.457,
+      "timed_out": false,
+      "label": "baseline",
+      "preset": "pytest",
+      "tests_selected": [],
+      "variation": {
+        "order": "given",
+        "seed": null,
+        "hash_seed": null,
+        "workers": null,
+        "tz": null,
+        "tz_applied": null,
+        "locale": null,
+        "cpu_load": 0,
+        "isolate": false,
+        "env": {}
+      },
+      "code_hash": "f36596a867b80ef922f15349d6ace98a5ef6ceb9b6e0384b52346a82f40e409d"
+    },
+    {
+      "id": "G-2",
+      "command": "python -m pytest -q -p no:cacheprovider --junitxml=junit/G-2.xml",
+      "exit_code": 0,
+      "junit_paths": [
+        "junit/G-2.xml"
+      ],
+      "started_at": "2026-11-10T23:29:26Z",
+      "totals": {
+        "tests": 9,
+        "passed": 9,
+        "failed": 0,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {},
+      "notes": [],
+      "duration_s": 1.371,
+      "timed_out": false,
+      "label": "baseline",
+      "preset": "pytest",
+      "tests_selected": [],
+      "variation": {
+        "order": "given",
+        "seed": null,
+        "hash_seed": null,
+        "workers": null,
+        "tz": null,
+        "tz_applied": null,
+        "locale": null,
+        "cpu_load": 0,
+        "isolate": false,
+        "env": {}
+      },
+      "code_hash": "f36596a867b80ef922f15349d6ace98a5ef6ceb9b6e0384b52346a82f40e409d"
+    }
+  ],
+  "cases": [
+    {
+      "run_id": "G-1",
+      "id": "tests.test_manifest::test_manifest_numbers_passengers_in_order",
+      "name": "test_manifest_numbers_passengers_in_order",
+      "classname": "tests.test_manifest",
+      "file": "tests/test_manifest.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.001
+    },
+    {
+      "run_id": "G-1",
+      "id": "tests.test_manifest::test_empty_manifest",
+      "name": "test_empty_manifest",
+      "classname": "tests.test_manifest",
+      "file": "tests/test_manifest.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "G-1",
+      "id": "tests.test_pricing::test_adult_pays_full_fare",
+      "name": "test_adult_pays_full_fare",
+      "classname": "tests.test_pricing",
+      "file": "tests/test_pricing.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "G-1",
+      "id": "tests.test_pricing::test_senior_pays_half_fare",
+      "name": "test_senior_pays_half_fare",
+      "classname": "tests.test_pricing",
+      "file": "tests/test_pricing.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "G-1",
+      "id": "tests.test_pricing::test_total_for_a_family",
+      "name": "test_total_for_a_family",
+      "classname": "tests.test_pricing",
+      "file": "tests/test_pricing.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.001
+    },
+    {
+      "run_id": "G-1",
+      "id": "tests.test_refunds::test_full_refund_from_24_hours",
+      "name": "test_full_refund_from_24_hours",
+      "classname": "tests.test_refunds",
+      "file": "tests/test_refunds.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "G-1",
+      "id": "tests.test_refunds::test_half_refund_below_24_hours",
+      "name": "test_half_refund_below_24_hours",
+      "classname": "tests.test_refunds",
+      "file": "tests/test_refunds.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "G-1",
+      "id": "tests.test_refunds::test_half_refund_down_to_2_hours",
+      "name": "test_half_refund_down_to_2_hours",
+      "classname": "tests.test_refunds",
+      "file": "tests/test_refunds.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "G-1",
+      "id": "tests.test_refunds::test_no_refund_under_2_hours",
+      "name": "test_no_refund_under_2_hours",
+      "classname": "tests.test_refunds",
+      "file": "tests/test_refunds.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "G-2",
+      "id": "tests.test_manifest::test_manifest_numbers_passengers_in_order",
+      "name": "test_manifest_numbers_passengers_in_order",
+      "classname": "tests.test_manifest",
+      "file": "tests/test_manifest.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.001
+    },
+    {
+      "run_id": "G-2",
+      "id": "tests.test_manifest::test_empty_manifest",
+      "name": "test_empty_manifest",
+      "classname": "tests.test_manifest",
+      "file": "tests/test_manifest.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "G-2",
+      "id": "tests.test_pricing::test_adult_pays_full_fare",
+      "name": "test_adult_pays_full_fare",
+      "classname": "tests.test_pricing",
+      "file": "tests/test_pricing.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "G-2",
+      "id": "tests.test_pricing::test_senior_pays_half_fare",
+      "name": "test_senior_pays_half_fare",
+      "classname": "tests.test_pricing",
+      "file": "tests/test_pricing.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "G-2",
+      "id": "tests.test_pricing::test_total_for_a_family",
+      "name": "test_total_for_a_family",
+      "classname": "tests.test_pricing",
+      "file": "tests/test_pricing.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.001
+    },
+    {
+      "run_id": "G-2",
+      "id": "tests.test_refunds::test_full_refund_from_24_hours",
+      "name": "test_full_refund_from_24_hours",
+      "classname": "tests.test_refunds",
+      "file": "tests/test_refunds.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "G-2",
+      "id": "tests.test_refunds::test_half_refund_below_24_hours",
+      "name": "test_half_refund_below_24_hours",
+      "classname": "tests.test_refunds",
+      "file": "tests/test_refunds.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "G-2",
+      "id": "tests.test_refunds::test_half_refund_down_to_2_hours",
+      "name": "test_half_refund_down_to_2_hours",
+      "classname": "tests.test_refunds",
+      "file": "tests/test_refunds.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "G-2",
+      "id": "tests.test_refunds::test_no_refund_under_2_hours",
+      "name": "test_no_refund_under_2_hours",
+      "classname": "tests.test_refunds",
+      "file": "tests/test_refunds.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    }
+  ]
+}

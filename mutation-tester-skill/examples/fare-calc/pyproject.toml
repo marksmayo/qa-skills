@@ -1,0 +1,7 @@
+[project]
+name = "fare-calc"
+version = "0.3.0"
+requires-python = ">=3.9"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

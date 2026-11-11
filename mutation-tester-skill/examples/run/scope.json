@@ -1,0 +1,305 @@
+{
+  "generated_at": "2026-11-10T23:10:20Z",
+  "repo": "fare-calc",
+  "source": {
+    "kind": "diff",
+    "diff_file": "examples/fare-calc/change.diff",
+    "base_ref": null,
+    "merge_base": null,
+    "head": null
+  },
+  "files": [
+    {
+      "path": "fare_calc/_version.py",
+      "old_path": null,
+      "status": "modified",
+      "kind": "generated",
+      "kind_reason": "file header says it is generated",
+      "ranges": [
+        [
+          3,
+          3
+        ]
+      ],
+      "deleted_at": [
+        3
+      ],
+      "lines_added": 1,
+      "lines_deleted": 1,
+      "present": true,
+      "functions": [],
+      "function_method": "ast"
+    },
+    {
+      "path": "fare_calc/manifest.py",
+      "old_path": null,
+      "status": "added",
+      "kind": "source",
+      "kind_reason": "source code",
+      "ranges": [
+        [
+          1,
+          11
+        ]
+      ],
+      "deleted_at": [],
+      "lines_added": 11,
+      "lines_deleted": 0,
+      "present": true,
+      "functions": [
+        {
+          "name": "manifest_lines",
+          "qualname": "manifest_lines",
+          "start": 4,
+          "end": 11,
+          "changed": [
+            [
+              4,
+              11
+            ]
+          ],
+          "deletions": 0
+        }
+      ],
+      "function_method": "ast"
+    },
+    {
+      "path": "fare_calc/pricing.py",
+      "old_path": null,
+      "status": "modified",
+      "kind": "source",
+      "kind_reason": "source code",
+      "ranges": [
+        [
+          2,
+          14
+        ],
+        [
+          18,
+          25
+        ]
+      ],
+      "deleted_at": [
+        18
+      ],
+      "lines_added": 21,
+      "lines_deleted": 1,
+      "present": true,
+      "functions": [
+        {
+          "name": "concession_rate",
+          "qualname": "concession_rate",
+          "start": 10,
+          "end": 14,
+          "changed": [
+            [
+              10,
+              14
+            ]
+          ],
+          "deletions": 0
+        },
+        {
+          "name": "fare_cents",
+          "qualname": "fare_cents",
+          "start": 17,
+          "end": 18,
+          "changed": [
+            [
+              18,
+              18
+            ]
+          ],
+          "deletions": 1
+        },
+        {
+          "name": "total",
+          "qualname": "total",
+          "start": 21,
+          "end": 25,
+          "changed": [
+            [
+              21,
+              25
+            ]
+          ],
+          "deletions": 0
+        }
+      ],
+      "function_method": "ast"
+    },
+    {
+      "path": "fare_calc/refunds.py",
+      "old_path": null,
+      "status": "modified",
+      "kind": "source",
+      "kind_reason": "source code",
+      "ranges": [
+        [
+          2,
+          6
+        ],
+        [
+          9,
+          17
+        ]
+      ],
+      "deleted_at": [
+        9
+      ],
+      "lines_added": 14,
+      "lines_deleted": 2,
+      "present": true,
+      "functions": [
+        {
+          "name": "refund_cents",
+          "qualname": "refund_cents",
+          "start": 9,
+          "end": 22,
+          "changed": [
+            [
+              9,
+              17
+            ]
+          ],
+          "deletions": 1
+        }
+      ],
+      "function_method": "ast"
+    },
+    {
+      "path": "pyproject.toml",
+      "old_path": null,
+      "status": "modified",
+      "kind": "config",
+      "kind_reason": "configuration or build file",
+      "ranges": [
+        [
+          3,
+          3
+        ]
+      ],
+      "deleted_at": [
+        3
+      ],
+      "lines_added": 1,
+      "lines_deleted": 1,
+      "present": true,
+      "functions": [],
+      "function_method": "none"
+    },
+    {
+      "path": "tests/test_manifest.py",
+      "old_path": null,
+      "status": "added",
+      "kind": "test",
+      "kind_reason": "test file or directory",
+      "ranges": [
+        [
+          1,
+          9
+        ]
+      ],
+      "deleted_at": [],
+      "lines_added": 9,
+      "lines_deleted": 0,
+      "present": true,
+      "functions": [
+        {
+          "name": "test_manifest_numbers_passengers_in_order",
+          "qualname": "test_manifest_numbers_passengers_in_order",
+          "start": 4,
+          "end": 5,
+          "changed": [
+            [
+              4,
+              5
+            ]
+          ],
+          "deletions": 0
+        },
+        {
+          "name": "test_empty_manifest",
+          "qualname": "test_empty_manifest",
+          "start": 8,
+          "end": 9,
+          "changed": [
+            [
+              8,
+              9
+            ]
+          ],
+          "deletions": 0
+        }
+      ],
+      "function_method": "ast"
+    },
+    {
+      "path": "tests/test_pricing.py",
+      "old_path": null,
+      "status": "modified",
+      "kind": "test",
+      "kind_reason": "test file or directory",
+      "ranges": [
+        [
+          1,
+          1
+        ],
+        [
+          6,
+          15
+        ]
+      ],
+      "deleted_at": [
+        1
+      ],
+      "lines_added": 11,
+      "lines_deleted": 1,
+      "present": true,
+      "functions": [
+        {
+          "name": "test_senior_pays_half_fare",
+          "qualname": "test_senior_pays_half_fare",
+          "start": 8,
+          "end": 9,
+          "changed": [
+            [
+              8,
+              9
+            ]
+          ],
+          "deletions": 0
+        },
+        {
+          "name": "test_total_for_a_family",
+          "qualname": "test_total_for_a_family",
+          "start": 12,
+          "end": 15,
+          "changed": [
+            [
+              12,
+              15
+            ]
+          ],
+          "deletions": 0
+        }
+      ],
+      "function_method": "ast"
+    }
+  ],
+  "summary": {
+    "files": 7,
+    "by_status": {
+      "modified": 5,
+      "added": 2
+    },
+    "by_kind": {
+      "generated": 1,
+      "source": 3,
+      "config": 1,
+      "test": 2
+    },
+    "lines_added": 68,
+    "lines_deleted": 6
+  }
+}

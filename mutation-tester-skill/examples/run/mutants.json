@@ -1,0 +1,1452 @@
+{
+ "generated_at": "2026-11-10T23:30:45Z",
+ "scope": {
+  "source": {
+   "kind": "diff",
+   "diff_file": "examples/fare-calc/change.diff",
+   "base_ref": null,
+   "merge_base": null,
+   "head": null
+  },
+  "files": [
+   {
+    "path": "fare_calc/manifest.py",
+    "ranges": [
+     [
+      1,
+      11
+     ]
+    ]
+   },
+   {
+    "path": "fare_calc/pricing.py",
+    "ranges": [
+     [
+      2,
+      14
+     ],
+     [
+      18,
+      25
+     ]
+    ]
+   },
+   {
+    "path": "fare_calc/refunds.py",
+    "ranges": [
+     [
+      2,
+      6
+     ],
+     [
+      9,
+      17
+     ]
+    ]
+   }
+  ],
+  "excluded": [
+   {
+    "path": "fare_calc/_version.py",
+    "kind": "generated",
+    "why": "file header says it is generated"
+   },
+   {
+    "path": "pyproject.toml",
+    "kind": "config",
+    "why": "configuration or build file"
+   },
+   {
+    "path": "tests/test_manifest.py",
+    "kind": "test",
+    "why": "test file or directory"
+   },
+   {
+    "path": "tests/test_pricing.py",
+    "kind": "test",
+    "why": "test file or directory"
+   }
+  ]
+ },
+ "coverage": {
+  "file": "coverage.json",
+  "method": "sys.settrace in a pytest plugin, per test (lines run at import are under \"<import>\")"
+ },
+ "engines": [
+  {
+   "name": "builtin",
+   "raw": "builtin.json",
+   "status": "ran",
+   "reason": "",
+   "version": "1.0.0",
+   "command": "python scripts/builtin_mutator.py --repo <repo> --scope <scope> --run-dir <dir>",
+   "config_source": "builtin",
+   "config": null,
+   "timeout_s": 10.0,
+   "sampled": {
+    "generated": 31,
+    "runnable": 27,
+    "chosen": 27,
+    "skipped": 0,
+    "seed": 1
+   },
+   "tree_changed": [],
+   "generated": 31,
+   "in_scope": 31,
+   "out_of_scope": 0,
+   "counts": {
+    "killed": 18,
+    "survived": 8,
+    "timeout": 1,
+    "no_coverage": 4
+   }
+  },
+  {
+   "name": "mutmut",
+   "raw": "mutmut.json",
+   "status": "ran",
+   "reason": "",
+   "version": "3.8.1",
+   "command": "mutmut run",
+   "config_source": "scratch",
+   "config": "[tool.mutmut]\nsource_paths = [\"fare_calc/\"]\npytest_add_cli_args_test_selection = [\"tests/\"]",
+   "timeout_s": null,
+   "sampled": null,
+   "tree_changed": [],
+   "generated": 41,
+   "in_scope": 34,
+   "out_of_scope": 7,
+   "counts": {
+    "killed": 17,
+    "timeout": 1,
+    "survived": 8,
+    "no_coverage": 8
+   }
+  }
+ ],
+ "problems": [],
+ "mutants": [
+  {
+   "id": "B1",
+   "engine": "builtin",
+   "raw_id": "B3",
+   "file": "fare_calc/manifest.py",
+   "line": 7,
+   "end_line": 7,
+   "function": "manifest_lines",
+   "operator": "constant_number",
+   "kind": "value",
+   "original": "    i = 0",
+   "mutated": "    i = 1",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_manifest.py::test_empty_manifest",
+    "tests/test_manifest.py::test_manifest_numbers_passengers_in_order"
+   ],
+   "killed_by": "tests.test_manifest::test_manifest_numbers_passengers_in_order"
+  },
+  {
+   "id": "B2",
+   "engine": "builtin",
+   "raw_id": "B1",
+   "file": "fare_calc/manifest.py",
+   "line": 8,
+   "end_line": 8,
+   "function": "manifest_lines",
+   "operator": "negate_condition",
+   "kind": "branch",
+   "original": "    while i < len(passengers):",
+   "mutated": "    while not (i < len(passengers)):",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_manifest.py::test_empty_manifest",
+    "tests/test_manifest.py::test_manifest_numbers_passengers_in_order"
+   ],
+   "killed_by": "tests.test_manifest::test_empty_manifest"
+  },
+  {
+   "id": "B3",
+   "engine": "builtin",
+   "raw_id": "B4",
+   "file": "fare_calc/manifest.py",
+   "line": 8,
+   "end_line": 8,
+   "function": "manifest_lines",
+   "operator": "comparison_boundary",
+   "kind": "branch",
+   "original": "    while i < len(passengers):",
+   "mutated": "    while (i <= len(passengers)):",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_manifest.py::test_empty_manifest",
+    "tests/test_manifest.py::test_manifest_numbers_passengers_in_order"
+   ],
+   "killed_by": "tests.test_manifest::test_empty_manifest"
+  },
+  {
+   "id": "B4",
+   "engine": "builtin",
+   "raw_id": "B5",
+   "file": "fare_calc/manifest.py",
+   "line": 8,
+   "end_line": 8,
+   "function": "manifest_lines",
+   "operator": "comparison_relational",
+   "kind": "branch",
+   "original": "    while i < len(passengers):",
+   "mutated": "    while (i != len(passengers)):",
+   "status": "survived",
+   "engine_status": "survived",
+   "covering_tests": [
+    "tests/test_manifest.py::test_empty_manifest",
+    "tests/test_manifest.py::test_manifest_numbers_passengers_in_order"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "B5",
+   "engine": "builtin",
+   "raw_id": "B10",
+   "file": "fare_calc/manifest.py",
+   "line": 9,
+   "end_line": 9,
+   "function": "manifest_lines",
+   "operator": "constant_number",
+   "kind": "value",
+   "original": "        lines.append(f\"{i + 1}. {passengers[i]}\")",
+   "mutated": "        lines.append(f\"{i + 0}. {passengers[i]}\")",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_manifest.py::test_manifest_numbers_passengers_in_order"
+   ],
+   "killed_by": "tests.test_manifest::test_manifest_numbers_passengers_in_order"
+  },
+  {
+   "id": "B6",
+   "engine": "builtin",
+   "raw_id": "B6",
+   "file": "fare_calc/manifest.py",
+   "line": 9,
+   "end_line": 9,
+   "function": "manifest_lines",
+   "operator": "remove_call",
+   "kind": "value",
+   "original": "        lines.append(f\"{i + 1}. {passengers[i]}\")",
+   "mutated": "        pass",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_manifest.py::test_manifest_numbers_passengers_in_order"
+   ],
+   "killed_by": "tests.test_manifest::test_manifest_numbers_passengers_in_order"
+  },
+  {
+   "id": "B7",
+   "engine": "builtin",
+   "raw_id": "B9",
+   "file": "fare_calc/manifest.py",
+   "line": 9,
+   "end_line": 9,
+   "function": "manifest_lines",
+   "operator": "arithmetic",
+   "kind": "value",
+   "original": "        lines.append(f\"{i + 1}. {passengers[i]}\")",
+   "mutated": "        lines.append(f\"{(i - 1)}. {passengers[i]}\")",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_manifest.py::test_manifest_numbers_passengers_in_order"
+   ],
+   "killed_by": "tests.test_manifest::test_manifest_numbers_passengers_in_order"
+  },
+  {
+   "id": "B8",
+   "engine": "builtin",
+   "raw_id": "B7",
+   "file": "fare_calc/manifest.py",
+   "line": 10,
+   "end_line": 10,
+   "function": "manifest_lines",
+   "operator": "arithmetic",
+   "kind": "value",
+   "original": "        i += 1",
+   "mutated": "        i -= 1",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_manifest.py::test_manifest_numbers_passengers_in_order"
+   ],
+   "killed_by": "tests.test_manifest::test_manifest_numbers_passengers_in_order"
+  },
+  {
+   "id": "B9",
+   "engine": "builtin",
+   "raw_id": "B8",
+   "file": "fare_calc/manifest.py",
+   "line": 10,
+   "end_line": 10,
+   "function": "manifest_lines",
+   "operator": "constant_number",
+   "kind": "value",
+   "original": "        i += 1",
+   "mutated": "        i += 0",
+   "status": "timeout",
+   "engine_status": "timeout",
+   "covering_tests": [
+    "tests/test_manifest.py::test_manifest_numbers_passengers_in_order"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "B10",
+   "engine": "builtin",
+   "raw_id": "B2",
+   "file": "fare_calc/manifest.py",
+   "line": 11,
+   "end_line": 11,
+   "function": "manifest_lines",
+   "operator": "return_value",
+   "kind": "value",
+   "original": "    return lines",
+   "mutated": "    return None",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_manifest.py::test_empty_manifest",
+    "tests/test_manifest.py::test_manifest_numbers_passengers_in_order"
+   ],
+   "killed_by": "tests.test_manifest::test_empty_manifest"
+  },
+  {
+   "id": "B11",
+   "engine": "builtin",
+   "raw_id": "B11",
+   "file": "fare_calc/pricing.py",
+   "line": 6,
+   "end_line": 6,
+   "function": null,
+   "operator": "constant_number",
+   "kind": "value",
+   "original": "BOOKING_FEE_CENTS = 150",
+   "mutated": "BOOKING_FEE_CENTS = 151",
+   "status": "survived",
+   "engine_status": "survived",
+   "covering_tests": [
+    "tests/test_pricing.py::test_adult_pays_full_fare",
+    "tests/test_pricing.py::test_senior_pays_half_fare",
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "B12",
+   "engine": "builtin",
+   "raw_id": "B12",
+   "file": "fare_calc/pricing.py",
+   "line": 7,
+   "end_line": 7,
+   "function": null,
+   "operator": "constant_number",
+   "kind": "value",
+   "original": "CONCESSION_AGE = 65",
+   "mutated": "CONCESSION_AGE = 66",
+   "status": "survived",
+   "engine_status": "survived",
+   "covering_tests": [
+    "tests/test_pricing.py::test_adult_pays_full_fare",
+    "tests/test_pricing.py::test_senior_pays_half_fare",
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "B13",
+   "engine": "builtin",
+   "raw_id": "B13",
+   "file": "fare_calc/pricing.py",
+   "line": 12,
+   "end_line": 12,
+   "function": "concession_rate",
+   "operator": "negate_condition",
+   "kind": "branch",
+   "original": "    if age >= CONCESSION_AGE:",
+   "mutated": "    if not (age >= CONCESSION_AGE):",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_pricing.py::test_adult_pays_full_fare",
+    "tests/test_pricing.py::test_senior_pays_half_fare",
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "killed_by": "tests.test_pricing::test_adult_pays_full_fare"
+  },
+  {
+   "id": "B14",
+   "engine": "builtin",
+   "raw_id": "B18",
+   "file": "fare_calc/pricing.py",
+   "line": 12,
+   "end_line": 12,
+   "function": "concession_rate",
+   "operator": "comparison_boundary",
+   "kind": "branch",
+   "original": "    if age >= CONCESSION_AGE:",
+   "mutated": "    if (age > CONCESSION_AGE):",
+   "status": "survived",
+   "engine_status": "survived",
+   "covering_tests": [
+    "tests/test_pricing.py::test_adult_pays_full_fare",
+    "tests/test_pricing.py::test_senior_pays_half_fare",
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "B15",
+   "engine": "builtin",
+   "raw_id": "B19",
+   "file": "fare_calc/pricing.py",
+   "line": 13,
+   "end_line": 13,
+   "function": "concession_rate",
+   "operator": "return_value",
+   "kind": "value",
+   "original": "        return 0.5",
+   "mutated": "        return None",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_pricing.py::test_senior_pays_half_fare",
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "killed_by": "tests.test_pricing::test_senior_pays_half_fare"
+  },
+  {
+   "id": "B16",
+   "engine": "builtin",
+   "raw_id": "B22",
+   "file": "fare_calc/pricing.py",
+   "line": 13,
+   "end_line": 13,
+   "function": "concession_rate",
+   "operator": "constant_number",
+   "kind": "value",
+   "original": "        return 0.5",
+   "mutated": "        return 1.5",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_pricing.py::test_senior_pays_half_fare",
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "killed_by": "tests.test_pricing::test_senior_pays_half_fare"
+  },
+  {
+   "id": "B17",
+   "engine": "builtin",
+   "raw_id": "B14",
+   "file": "fare_calc/pricing.py",
+   "line": 14,
+   "end_line": 14,
+   "function": "concession_rate",
+   "operator": "return_value",
+   "kind": "value",
+   "original": "    return 1.0",
+   "mutated": "    return None",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_pricing.py::test_adult_pays_full_fare",
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "killed_by": "tests.test_pricing::test_adult_pays_full_fare"
+  },
+  {
+   "id": "B18",
+   "engine": "builtin",
+   "raw_id": "B20",
+   "file": "fare_calc/pricing.py",
+   "line": 14,
+   "end_line": 14,
+   "function": "concession_rate",
+   "operator": "constant_number",
+   "kind": "value",
+   "original": "    return 1.0",
+   "mutated": "    return 2.0",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_pricing.py::test_adult_pays_full_fare",
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "killed_by": "tests.test_pricing::test_adult_pays_full_fare"
+  },
+  {
+   "id": "B19",
+   "engine": "builtin",
+   "raw_id": "B15",
+   "file": "fare_calc/pricing.py",
+   "line": 18,
+   "end_line": 18,
+   "function": "fare_cents",
+   "operator": "return_value",
+   "kind": "value",
+   "original": "    return round(base_cents * concession_rate(age))",
+   "mutated": "    return None",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_pricing.py::test_adult_pays_full_fare",
+    "tests/test_pricing.py::test_senior_pays_half_fare",
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "killed_by": "tests.test_pricing::test_adult_pays_full_fare"
+  },
+  {
+   "id": "B20",
+   "engine": "builtin",
+   "raw_id": "B23",
+   "file": "fare_calc/pricing.py",
+   "line": 18,
+   "end_line": 18,
+   "function": "fare_cents",
+   "operator": "arithmetic",
+   "kind": "value",
+   "original": "    return round(base_cents * concession_rate(age))",
+   "mutated": "    return round((base_cents / concession_rate(age)))",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_pricing.py::test_adult_pays_full_fare",
+    "tests/test_pricing.py::test_senior_pays_half_fare",
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "killed_by": "tests.test_pricing::test_senior_pays_half_fare"
+  },
+  {
+   "id": "B21",
+   "engine": "builtin",
+   "raw_id": "B16",
+   "file": "fare_calc/pricing.py",
+   "line": 24,
+   "end_line": 24,
+   "function": "total",
+   "operator": "remove_call",
+   "kind": "value",
+   "original": "    log.info(\"priced %d fares\", len(fares))",
+   "mutated": "    pass",
+   "status": "survived",
+   "engine_status": "survived",
+   "covering_tests": [
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "B22",
+   "engine": "builtin",
+   "raw_id": "B24",
+   "file": "fare_calc/pricing.py",
+   "line": 24,
+   "end_line": 24,
+   "function": "total",
+   "operator": "constant_string",
+   "kind": "display",
+   "original": "    log.info(\"priced %d fares\", len(fares))",
+   "mutated": "    log.info('', len(fares))",
+   "status": "survived",
+   "engine_status": "survived",
+   "covering_tests": [
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "B23",
+   "engine": "builtin",
+   "raw_id": "B17",
+   "file": "fare_calc/pricing.py",
+   "line": 25,
+   "end_line": 25,
+   "function": "total",
+   "operator": "return_value",
+   "kind": "value",
+   "original": "    return subtotal + BOOKING_FEE_CENTS",
+   "mutated": "    return None",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "killed_by": "tests.test_pricing::test_total_for_a_family"
+  },
+  {
+   "id": "B24",
+   "engine": "builtin",
+   "raw_id": "B21",
+   "file": "fare_calc/pricing.py",
+   "line": 25,
+   "end_line": 25,
+   "function": "total",
+   "operator": "arithmetic",
+   "kind": "value",
+   "original": "    return subtotal + BOOKING_FEE_CENTS",
+   "mutated": "    return (subtotal - BOOKING_FEE_CENTS)",
+   "status": "survived",
+   "engine_status": "survived",
+   "covering_tests": [
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "B25",
+   "engine": "builtin",
+   "raw_id": "B25",
+   "file": "fare_calc/refunds.py",
+   "line": 6,
+   "end_line": 6,
+   "function": null,
+   "operator": "constant_number",
+   "kind": "value",
+   "original": "GOODWILL_CENTS = 500",
+   "mutated": "GOODWILL_CENTS = 501",
+   "status": "survived",
+   "engine_status": "survived",
+   "covering_tests": [
+    "tests/test_refunds.py::test_full_refund_from_24_hours",
+    "tests/test_refunds.py::test_half_refund_below_24_hours",
+    "tests/test_refunds.py::test_half_refund_down_to_2_hours",
+    "tests/test_refunds.py::test_no_refund_under_2_hours"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "B26",
+   "engine": "builtin",
+   "raw_id": "B27",
+   "file": "fare_calc/refunds.py",
+   "line": 9,
+   "end_line": 9,
+   "function": "refund_cents",
+   "operator": "boolean_constant",
+   "kind": "branch",
+   "original": "def refund_cents(paid_cents: int, hours_before: int, cancelled_by_operator: bool = False) -> int:",
+   "mutated": "def refund_cents(paid_cents: int, hours_before: int, cancelled_by_operator: bool = True) -> int:",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_refunds.py::test_full_refund_from_24_hours",
+    "tests/test_refunds.py::test_half_refund_below_24_hours",
+    "tests/test_refunds.py::test_half_refund_down_to_2_hours",
+    "tests/test_refunds.py::test_no_refund_under_2_hours"
+   ],
+   "killed_by": "tests.test_refunds::test_full_refund_from_24_hours"
+  },
+  {
+   "id": "B27",
+   "engine": "builtin",
+   "raw_id": "B26",
+   "file": "fare_calc/refunds.py",
+   "line": 14,
+   "end_line": 14,
+   "function": "refund_cents",
+   "operator": "negate_condition",
+   "kind": "branch",
+   "original": "    if cancelled_by_operator:",
+   "mutated": "    if not (cancelled_by_operator):",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_refunds.py::test_full_refund_from_24_hours",
+    "tests/test_refunds.py::test_half_refund_below_24_hours",
+    "tests/test_refunds.py::test_half_refund_down_to_2_hours",
+    "tests/test_refunds.py::test_no_refund_under_2_hours"
+   ],
+   "killed_by": "tests.test_refunds::test_full_refund_from_24_hours"
+  },
+  {
+   "id": "B28",
+   "engine": "builtin",
+   "raw_id": "B30",
+   "file": "fare_calc/refunds.py",
+   "line": 15,
+   "end_line": 15,
+   "function": "refund_cents",
+   "operator": "arithmetic",
+   "kind": "value",
+   "original": "        credit = paid_cents + GOODWILL_CENTS",
+   "mutated": "        credit = (paid_cents - GOODWILL_CENTS)",
+   "status": "no_coverage",
+   "engine_status": "no_coverage",
+   "covering_tests": [],
+   "killed_by": null
+  },
+  {
+   "id": "B29",
+   "engine": "builtin",
+   "raw_id": "B28",
+   "file": "fare_calc/refunds.py",
+   "line": 16,
+   "end_line": 16,
+   "function": "refund_cents",
+   "operator": "remove_call",
+   "kind": "value",
+   "original": "        log.warning(\"operator cancellation: refunding %d cents\", credit)",
+   "mutated": "        pass",
+   "status": "no_coverage",
+   "engine_status": "no_coverage",
+   "covering_tests": [],
+   "killed_by": null
+  },
+  {
+   "id": "B30",
+   "engine": "builtin",
+   "raw_id": "B31",
+   "file": "fare_calc/refunds.py",
+   "line": 16,
+   "end_line": 16,
+   "function": "refund_cents",
+   "operator": "constant_string",
+   "kind": "display",
+   "original": "        log.warning(\"operator cancellation: refunding %d cents\", credit)",
+   "mutated": "        log.warning('', credit)",
+   "status": "no_coverage",
+   "engine_status": "no_coverage",
+   "covering_tests": [],
+   "killed_by": null
+  },
+  {
+   "id": "B31",
+   "engine": "builtin",
+   "raw_id": "B29",
+   "file": "fare_calc/refunds.py",
+   "line": 17,
+   "end_line": 17,
+   "function": "refund_cents",
+   "operator": "return_value",
+   "kind": "value",
+   "original": "        return credit",
+   "mutated": "        return None",
+   "status": "no_coverage",
+   "engine_status": "no_coverage",
+   "covering_tests": [],
+   "killed_by": null
+  },
+  {
+   "id": "M1",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.manifest.x_manifest_lines__mutmut_1",
+   "file": "fare_calc/manifest.py",
+   "line": 6,
+   "end_line": 6,
+   "function": "manifest_lines",
+   "operator": "value_none",
+   "kind": "value",
+   "original": "    lines = []",
+   "mutated": "    lines = None",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_manifest.py::test_empty_manifest",
+    "tests/test_manifest.py::test_manifest_numbers_passengers_in_order"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "M2",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.manifest.x_manifest_lines__mutmut_2",
+   "file": "fare_calc/manifest.py",
+   "line": 7,
+   "end_line": 7,
+   "function": "manifest_lines",
+   "operator": "value_none",
+   "kind": "value",
+   "original": "    i = 0",
+   "mutated": "    i = None",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_manifest.py::test_empty_manifest",
+    "tests/test_manifest.py::test_manifest_numbers_passengers_in_order"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "M3",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.manifest.x_manifest_lines__mutmut_3",
+   "file": "fare_calc/manifest.py",
+   "line": 7,
+   "end_line": 7,
+   "function": "manifest_lines",
+   "operator": "constant_number",
+   "kind": "value",
+   "original": "    i = 0",
+   "mutated": "    i = 1",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_manifest.py::test_empty_manifest",
+    "tests/test_manifest.py::test_manifest_numbers_passengers_in_order"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "M4",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.manifest.x_manifest_lines__mutmut_4",
+   "file": "fare_calc/manifest.py",
+   "line": 8,
+   "end_line": 8,
+   "function": "manifest_lines",
+   "operator": "comparison_boundary",
+   "kind": "branch",
+   "original": "    while i < len(passengers):",
+   "mutated": "    while i <= len(passengers):",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_manifest.py::test_empty_manifest",
+    "tests/test_manifest.py::test_manifest_numbers_passengers_in_order"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "M5",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.manifest.x_manifest_lines__mutmut_5",
+   "file": "fare_calc/manifest.py",
+   "line": 9,
+   "end_line": 9,
+   "function": "manifest_lines",
+   "operator": "value_none",
+   "kind": "value",
+   "original": "        lines.append(f\"{i + 1}. {passengers[i]}\")",
+   "mutated": "        lines.append(None)",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_manifest.py::test_empty_manifest",
+    "tests/test_manifest.py::test_manifest_numbers_passengers_in_order"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "M6",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.manifest.x_manifest_lines__mutmut_6",
+   "file": "fare_calc/manifest.py",
+   "line": 9,
+   "end_line": 9,
+   "function": "manifest_lines",
+   "operator": "arithmetic",
+   "kind": "value",
+   "original": "        lines.append(f\"{i + 1}. {passengers[i]}\")",
+   "mutated": "        lines.append(f\"{i - 1}. {passengers[i]}\")",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_manifest.py::test_empty_manifest",
+    "tests/test_manifest.py::test_manifest_numbers_passengers_in_order"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "M7",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.manifest.x_manifest_lines__mutmut_7",
+   "file": "fare_calc/manifest.py",
+   "line": 9,
+   "end_line": 9,
+   "function": "manifest_lines",
+   "operator": "constant_number",
+   "kind": "value",
+   "original": "        lines.append(f\"{i + 1}. {passengers[i]}\")",
+   "mutated": "        lines.append(f\"{i + 2}. {passengers[i]}\")",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_manifest.py::test_empty_manifest",
+    "tests/test_manifest.py::test_manifest_numbers_passengers_in_order"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "M8",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.manifest.x_manifest_lines__mutmut_10",
+   "file": "fare_calc/manifest.py",
+   "line": 10,
+   "end_line": 10,
+   "function": "manifest_lines",
+   "operator": "constant_number",
+   "kind": "value",
+   "original": "        i += 1",
+   "mutated": "        i += 2",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_manifest.py::test_empty_manifest",
+    "tests/test_manifest.py::test_manifest_numbers_passengers_in_order"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "M9",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.manifest.x_manifest_lines__mutmut_8",
+   "file": "fare_calc/manifest.py",
+   "line": 10,
+   "end_line": 10,
+   "function": "manifest_lines",
+   "operator": "arithmetic",
+   "kind": "value",
+   "original": "        i += 1",
+   "mutated": "        i = 1",
+   "status": "timeout",
+   "engine_status": "timeout",
+   "covering_tests": [
+    "tests/test_manifest.py::test_empty_manifest",
+    "tests/test_manifest.py::test_manifest_numbers_passengers_in_order"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "M10",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.manifest.x_manifest_lines__mutmut_9",
+   "file": "fare_calc/manifest.py",
+   "line": 10,
+   "end_line": 10,
+   "function": "manifest_lines",
+   "operator": "arithmetic",
+   "kind": "value",
+   "original": "        i += 1",
+   "mutated": "        i -= 1",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_manifest.py::test_empty_manifest",
+    "tests/test_manifest.py::test_manifest_numbers_passengers_in_order"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "M11",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.pricing.x_concession_rate__mutmut_1",
+   "file": "fare_calc/pricing.py",
+   "line": 12,
+   "end_line": 12,
+   "function": "concession_rate",
+   "operator": "comparison_boundary",
+   "kind": "branch",
+   "original": "    if age >= CONCESSION_AGE:",
+   "mutated": "    if age > CONCESSION_AGE:",
+   "status": "survived",
+   "engine_status": "survived",
+   "covering_tests": [
+    "tests/test_pricing.py::test_adult_pays_full_fare",
+    "tests/test_pricing.py::test_senior_pays_half_fare",
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "M12",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.pricing.x_concession_rate__mutmut_2",
+   "file": "fare_calc/pricing.py",
+   "line": 13,
+   "end_line": 13,
+   "function": "concession_rate",
+   "operator": "constant_number",
+   "kind": "value",
+   "original": "        return 0.5",
+   "mutated": "        return 1.5",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_pricing.py::test_adult_pays_full_fare",
+    "tests/test_pricing.py::test_senior_pays_half_fare",
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "M13",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.pricing.x_concession_rate__mutmut_3",
+   "file": "fare_calc/pricing.py",
+   "line": 14,
+   "end_line": 14,
+   "function": "concession_rate",
+   "operator": "constant_number",
+   "kind": "value",
+   "original": "    return 1.0",
+   "mutated": "    return 2.0",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_pricing.py::test_adult_pays_full_fare",
+    "tests/test_pricing.py::test_senior_pays_half_fare",
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "M14",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.pricing.x_fare_cents__mutmut_1",
+   "file": "fare_calc/pricing.py",
+   "line": 18,
+   "end_line": 18,
+   "function": "fare_cents",
+   "operator": "value_none",
+   "kind": "value",
+   "original": "    return round(base_cents * concession_rate(age))",
+   "mutated": "    return round(None)",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_pricing.py::test_adult_pays_full_fare",
+    "tests/test_pricing.py::test_senior_pays_half_fare",
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "M15",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.pricing.x_fare_cents__mutmut_2",
+   "file": "fare_calc/pricing.py",
+   "line": 18,
+   "end_line": 18,
+   "function": "fare_cents",
+   "operator": "arithmetic",
+   "kind": "value",
+   "original": "    return round(base_cents * concession_rate(age))",
+   "mutated": "    return round(base_cents / concession_rate(age))",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_pricing.py::test_adult_pays_full_fare",
+    "tests/test_pricing.py::test_senior_pays_half_fare",
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "M16",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.pricing.x_fare_cents__mutmut_3",
+   "file": "fare_calc/pricing.py",
+   "line": 18,
+   "end_line": 18,
+   "function": "fare_cents",
+   "operator": "value_none",
+   "kind": "value",
+   "original": "    return round(base_cents * concession_rate(age))",
+   "mutated": "    return round(base_cents * concession_rate(None))",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_pricing.py::test_adult_pays_full_fare",
+    "tests/test_pricing.py::test_senior_pays_half_fare",
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "M17",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.pricing.x_total__mutmut_1",
+   "file": "fare_calc/pricing.py",
+   "line": 23,
+   "end_line": 23,
+   "function": "total",
+   "operator": "value_none",
+   "kind": "value",
+   "original": "    subtotal = sum(fares)",
+   "mutated": "    subtotal = None",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "M18",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.pricing.x_total__mutmut_2",
+   "file": "fare_calc/pricing.py",
+   "line": 23,
+   "end_line": 23,
+   "function": "total",
+   "operator": "value_none",
+   "kind": "value",
+   "original": "    subtotal = sum(fares)",
+   "mutated": "    subtotal = sum(None)",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "M19",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.pricing.x_total__mutmut_3",
+   "file": "fare_calc/pricing.py",
+   "line": 24,
+   "end_line": 24,
+   "function": "total",
+   "operator": "value_none",
+   "kind": "value",
+   "original": "    log.info(\"priced %d fares\", len(fares))",
+   "mutated": "    log.info(None, len(fares))",
+   "status": "survived",
+   "engine_status": "survived",
+   "covering_tests": [
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "M20",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.pricing.x_total__mutmut_4",
+   "file": "fare_calc/pricing.py",
+   "line": 24,
+   "end_line": 24,
+   "function": "total",
+   "operator": "value_none",
+   "kind": "value",
+   "original": "    log.info(\"priced %d fares\", len(fares))",
+   "mutated": "    log.info(\"priced %d fares\", None)",
+   "status": "survived",
+   "engine_status": "survived",
+   "covering_tests": [
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "M21",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.pricing.x_total__mutmut_5",
+   "file": "fare_calc/pricing.py",
+   "line": 24,
+   "end_line": 24,
+   "function": "total",
+   "operator": "call_args",
+   "kind": "value",
+   "original": "    log.info(\"priced %d fares\", len(fares))",
+   "mutated": "    log.info(len(fares))",
+   "status": "survived",
+   "engine_status": "survived",
+   "covering_tests": [
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "M22",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.pricing.x_total__mutmut_6",
+   "file": "fare_calc/pricing.py",
+   "line": 24,
+   "end_line": 24,
+   "function": "total",
+   "operator": "call_args",
+   "kind": "value",
+   "original": "    log.info(\"priced %d fares\", len(fares))",
+   "mutated": "    log.info(\"priced %d fares\", )",
+   "status": "survived",
+   "engine_status": "survived",
+   "covering_tests": [
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "M23",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.pricing.x_total__mutmut_7",
+   "file": "fare_calc/pricing.py",
+   "line": 24,
+   "end_line": 24,
+   "function": "total",
+   "operator": "constant_string",
+   "kind": "display",
+   "original": "    log.info(\"priced %d fares\", len(fares))",
+   "mutated": "    log.info(\"XXpriced %d faresXX\", len(fares))",
+   "status": "survived",
+   "engine_status": "survived",
+   "covering_tests": [
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "M24",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.pricing.x_total__mutmut_8",
+   "file": "fare_calc/pricing.py",
+   "line": 24,
+   "end_line": 24,
+   "function": "total",
+   "operator": "constant_string",
+   "kind": "display",
+   "original": "    log.info(\"priced %d fares\", len(fares))",
+   "mutated": "    log.info(\"PRICED %D FARES\", len(fares))",
+   "status": "survived",
+   "engine_status": "survived",
+   "covering_tests": [
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "M25",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.pricing.x_total__mutmut_9",
+   "file": "fare_calc/pricing.py",
+   "line": 25,
+   "end_line": 25,
+   "function": "total",
+   "operator": "arithmetic",
+   "kind": "value",
+   "original": "    return subtotal + BOOKING_FEE_CENTS",
+   "mutated": "    return subtotal - BOOKING_FEE_CENTS",
+   "status": "survived",
+   "engine_status": "survived",
+   "covering_tests": [
+    "tests/test_pricing.py::test_total_for_a_family"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "M26",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.refunds.x_refund_cents__mutmut_1",
+   "file": "fare_calc/refunds.py",
+   "line": 9,
+   "end_line": 9,
+   "function": "refund_cents",
+   "operator": "default_arg",
+   "kind": "value",
+   "original": "def refund_cents(paid_cents: int, hours_before: int, cancelled_by_operator: bool = False) -> int:",
+   "mutated": "def refund_cents(paid_cents: int, hours_before: int, cancelled_by_operator: bool = True) -> int:",
+   "status": "killed",
+   "engine_status": "killed",
+   "covering_tests": [
+    "tests/test_refunds.py::test_full_refund_from_24_hours",
+    "tests/test_refunds.py::test_half_refund_below_24_hours",
+    "tests/test_refunds.py::test_half_refund_down_to_2_hours",
+    "tests/test_refunds.py::test_no_refund_under_2_hours"
+   ],
+   "killed_by": null
+  },
+  {
+   "id": "M27",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.refunds.x_refund_cents__mutmut_2",
+   "file": "fare_calc/refunds.py",
+   "line": 15,
+   "end_line": 15,
+   "function": "refund_cents",
+   "operator": "value_none",
+   "kind": "value",
+   "original": "        credit = paid_cents + GOODWILL_CENTS",
+   "mutated": "        credit = None",
+   "status": "no_coverage",
+   "engine_status": "survived",
+   "reclassified_from": "survived",
+   "covering_tests": [
+    "tests/test_refunds.py::test_full_refund_from_24_hours",
+    "tests/test_refunds.py::test_half_refund_below_24_hours",
+    "tests/test_refunds.py::test_half_refund_down_to_2_hours",
+    "tests/test_refunds.py::test_no_refund_under_2_hours"
+   ],
+   "killed_by": null,
+   "note": "no test executed this line (per-test line coverage); the engine only tracks functions"
+  },
+  {
+   "id": "M28",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.refunds.x_refund_cents__mutmut_3",
+   "file": "fare_calc/refunds.py",
+   "line": 15,
+   "end_line": 15,
+   "function": "refund_cents",
+   "operator": "arithmetic",
+   "kind": "value",
+   "original": "        credit = paid_cents + GOODWILL_CENTS",
+   "mutated": "        credit = paid_cents - GOODWILL_CENTS",
+   "status": "no_coverage",
+   "engine_status": "survived",
+   "reclassified_from": "survived",
+   "covering_tests": [
+    "tests/test_refunds.py::test_full_refund_from_24_hours",
+    "tests/test_refunds.py::test_half_refund_below_24_hours",
+    "tests/test_refunds.py::test_half_refund_down_to_2_hours",
+    "tests/test_refunds.py::test_no_refund_under_2_hours"
+   ],
+   "killed_by": null,
+   "note": "no test executed this line (per-test line coverage); the engine only tracks functions"
+  },
+  {
+   "id": "M29",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.refunds.x_refund_cents__mutmut_4",
+   "file": "fare_calc/refunds.py",
+   "line": 16,
+   "end_line": 16,
+   "function": "refund_cents",
+   "operator": "value_none",
+   "kind": "value",
+   "original": "        log.warning(\"operator cancellation: refunding %d cents\", credit)",
+   "mutated": "        log.warning(None, credit)",
+   "status": "no_coverage",
+   "engine_status": "survived",
+   "reclassified_from": "survived",
+   "covering_tests": [
+    "tests/test_refunds.py::test_full_refund_from_24_hours",
+    "tests/test_refunds.py::test_half_refund_below_24_hours",
+    "tests/test_refunds.py::test_half_refund_down_to_2_hours",
+    "tests/test_refunds.py::test_no_refund_under_2_hours"
+   ],
+   "killed_by": null,
+   "note": "no test executed this line (per-test line coverage); the engine only tracks functions"
+  },
+  {
+   "id": "M30",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.refunds.x_refund_cents__mutmut_5",
+   "file": "fare_calc/refunds.py",
+   "line": 16,
+   "end_line": 16,
+   "function": "refund_cents",
+   "operator": "value_none",
+   "kind": "value",
+   "original": "        log.warning(\"operator cancellation: refunding %d cents\", credit)",
+   "mutated": "        log.warning(\"operator cancellation: refunding %d cents\", None)",
+   "status": "no_coverage",
+   "engine_status": "survived",
+   "reclassified_from": "survived",
+   "covering_tests": [
+    "tests/test_refunds.py::test_full_refund_from_24_hours",
+    "tests/test_refunds.py::test_half_refund_below_24_hours",
+    "tests/test_refunds.py::test_half_refund_down_to_2_hours",
+    "tests/test_refunds.py::test_no_refund_under_2_hours"
+   ],
+   "killed_by": null,
+   "note": "no test executed this line (per-test line coverage); the engine only tracks functions"
+  },
+  {
+   "id": "M31",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.refunds.x_refund_cents__mutmut_6",
+   "file": "fare_calc/refunds.py",
+   "line": 16,
+   "end_line": 16,
+   "function": "refund_cents",
+   "operator": "call_args",
+   "kind": "value",
+   "original": "        log.warning(\"operator cancellation: refunding %d cents\", credit)",
+   "mutated": "        log.warning(credit)",
+   "status": "no_coverage",
+   "engine_status": "survived",
+   "reclassified_from": "survived",
+   "covering_tests": [
+    "tests/test_refunds.py::test_full_refund_from_24_hours",
+    "tests/test_refunds.py::test_half_refund_below_24_hours",
+    "tests/test_refunds.py::test_half_refund_down_to_2_hours",
+    "tests/test_refunds.py::test_no_refund_under_2_hours"
+   ],
+   "killed_by": null,
+   "note": "no test executed this line (per-test line coverage); the engine only tracks functions"
+  },
+  {
+   "id": "M32",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.refunds.x_refund_cents__mutmut_7",
+   "file": "fare_calc/refunds.py",
+   "line": 16,
+   "end_line": 16,
+   "function": "refund_cents",
+   "operator": "call_args",
+   "kind": "value",
+   "original": "        log.warning(\"operator cancellation: refunding %d cents\", credit)",
+   "mutated": "        log.warning(\"operator cancellation: refunding %d cents\", )",
+   "status": "no_coverage",
+   "engine_status": "survived",
+   "reclassified_from": "survived",
+   "covering_tests": [
+    "tests/test_refunds.py::test_full_refund_from_24_hours",
+    "tests/test_refunds.py::test_half_refund_below_24_hours",
+    "tests/test_refunds.py::test_half_refund_down_to_2_hours",
+    "tests/test_refunds.py::test_no_refund_under_2_hours"
+   ],
+   "killed_by": null,
+   "note": "no test executed this line (per-test line coverage); the engine only tracks functions"
+  },
+  {
+   "id": "M33",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.refunds.x_refund_cents__mutmut_8",
+   "file": "fare_calc/refunds.py",
+   "line": 16,
+   "end_line": 16,
+   "function": "refund_cents",
+   "operator": "constant_string",
+   "kind": "display",
+   "original": "        log.warning(\"operator cancellation: refunding %d cents\", credit)",
+   "mutated": "        log.warning(\"XXoperator cancellation: refunding %d centsXX\", credit)",
+   "status": "no_coverage",
+   "engine_status": "survived",
+   "reclassified_from": "survived",
+   "covering_tests": [
+    "tests/test_refunds.py::test_full_refund_from_24_hours",
+    "tests/test_refunds.py::test_half_refund_below_24_hours",
+    "tests/test_refunds.py::test_half_refund_down_to_2_hours",
+    "tests/test_refunds.py::test_no_refund_under_2_hours"
+   ],
+   "killed_by": null,
+   "note": "no test executed this line (per-test line coverage); the engine only tracks functions"
+  },
+  {
+   "id": "M34",
+   "engine": "mutmut",
+   "raw_id": "fare_calc.refunds.x_refund_cents__mutmut_9",
+   "file": "fare_calc/refunds.py",
+   "line": 16,
+   "end_line": 16,
+   "function": "refund_cents",
+   "operator": "constant_string",
+   "kind": "display",
+   "original": "        log.warning(\"operator cancellation: refunding %d cents\", credit)",
+   "mutated": "        log.warning(\"OPERATOR CANCELLATION: REFUNDING %D CENTS\", credit)",
+   "status": "no_coverage",
+   "engine_status": "survived",
+   "reclassified_from": "survived",
+   "covering_tests": [
+    "tests/test_refunds.py::test_full_refund_from_24_hours",
+    "tests/test_refunds.py::test_half_refund_below_24_hours",
+    "tests/test_refunds.py::test_half_refund_down_to_2_hours",
+    "tests/test_refunds.py::test_no_refund_under_2_hours"
+   ],
+   "killed_by": null,
+   "note": "no test executed this line (per-test line coverage); the engine only tracks functions"
+  }
+ ]
+}

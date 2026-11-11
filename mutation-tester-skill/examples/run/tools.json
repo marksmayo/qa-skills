@@ -1,0 +1,89 @@
+{
+  "repo": "fare-calc",
+  "platform": "win32",
+  "languages": [
+    "python"
+  ],
+  "tools": [
+    {
+      "name": "mutmut",
+      "licence": "BSD-3-Clause",
+      "configured": null,
+      "available": false,
+      "version": null,
+      "note": "mutmut 3 needs fork(): Linux, macOS or WSL only"
+    },
+    {
+      "name": "cosmic-ray",
+      "licence": "MIT",
+      "configured": null,
+      "available": false,
+      "version": null,
+      "note": ""
+    },
+    {
+      "name": "stryker",
+      "licence": "Apache-2.0",
+      "configured": null,
+      "available": false,
+      "version": null,
+      "note": ""
+    },
+    {
+      "name": "stryker-net",
+      "licence": "Apache-2.0",
+      "configured": null,
+      "available": false,
+      "version": null,
+      "note": ""
+    },
+    {
+      "name": "pit",
+      "licence": "Apache-2.0",
+      "configured": null,
+      "available": false,
+      "version": null,
+      "note": ""
+    },
+    {
+      "name": "cargo-mutants",
+      "licence": "MIT",
+      "configured": null,
+      "available": false,
+      "version": null,
+      "note": ""
+    },
+    {
+      "name": "go-mutesting",
+      "licence": "MIT",
+      "configured": null,
+      "available": false,
+      "version": null,
+      "note": ""
+    },
+    {
+      "name": "muter",
+      "licence": "MIT",
+      "configured": null,
+      "available": false,
+      "version": null,
+      "note": ""
+    },
+    {
+      "name": "mutation_test",
+      "licence": "BSD-3-Clause",
+      "configured": null,
+      "available": false,
+      "version": null,
+      "note": ""
+    }
+  ],
+  "recommended": [
+    {
+      "language": "python",
+      "engine": "builtin",
+      "config_source": "builtin",
+      "why": "mutmut 3 does not run on Windows; use the builtin engine (stdlib, pytest only), or mutmut under WSL"
+    }
+  ]
+}

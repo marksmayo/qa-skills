@@ -1,0 +1,205 @@
+{
+ "proofs": [
+  {
+   "id": "P1",
+   "finding": "F1",
+   "gap": null,
+   "test_id": "tests/test_pricing.py::test_total_adds_one_booking_fee",
+   "test_file": "tests/test_pricing.py",
+   "test_code": "def test_total_adds_one_booking_fee():\n    # 1000 (adult) + 500 (senior) + 150 booking fee\n    assert total([fare_cents(1000, 30), fare_cents(1000, 70)]) == 1650",
+   "test_code_sha256": "48824fae0d141f78644063b8572ab4082ba7cc84f33b6921ed5b1a9831f7351a",
+   "applied_to": "scratch",
+   "original_run": {
+    "command": "python -m pytest -q -p no:cacheprovider tests/test_pricing.py::test_total_adds_one_booking_fee",
+    "exit_code": 0,
+    "test_status": "passed",
+    "duration_s": 2.154
+   },
+   "mutants": [
+    {
+     "mutant_id": "B11",
+     "engine": "builtin",
+     "run": {
+      "command": "python -m pytest -q -p no:cacheprovider tests/test_pricing.py::test_total_adds_one_booking_fee",
+      "exit_code": 1,
+      "test_status": "failed",
+      "duration_s": 2.158
+     },
+     "verdict": "kills"
+    },
+    {
+     "mutant_id": "B24",
+     "engine": "builtin",
+     "run": {
+      "command": "python -m pytest -q -p no:cacheprovider tests/test_pricing.py::test_total_adds_one_booking_fee",
+      "exit_code": 1,
+      "test_status": "failed",
+      "duration_s": 2.042
+     },
+     "verdict": "kills"
+    },
+    {
+     "mutant_id": "M25",
+     "engine": "mutmut",
+     "run": {
+      "command": "python -m pytest -q -p no:cacheprovider tests/test_pricing.py::test_total_adds_one_booking_fee",
+      "exit_code": 1,
+      "test_status": "failed",
+      "duration_s": 2.441
+     },
+     "verdict": "kills"
+    }
+   ],
+   "repo_files_changed": [],
+   "proved_at": "2026-11-10T23:30:54Z"
+  },
+  {
+   "id": "P2",
+   "finding": "F2",
+   "gap": null,
+   "test_id": "tests/test_pricing.py::test_concession_starts_at_65",
+   "test_file": "tests/test_pricing.py",
+   "test_code": "def test_concession_starts_at_65():\n    assert fare_cents(1000, 64) == 1000\n    assert fare_cents(1000, 65) == 500",
+   "test_code_sha256": "404434dc4463b2f57d0110372bece2a08de4052e3ef85b145057a683fee05db7",
+   "applied_to": "scratch",
+   "original_run": {
+    "command": "python -m pytest -q -p no:cacheprovider tests/test_pricing.py::test_concession_starts_at_65",
+    "exit_code": 0,
+    "test_status": "passed",
+    "duration_s": 2.345
+   },
+   "mutants": [
+    {
+     "mutant_id": "B12",
+     "engine": "builtin",
+     "run": {
+      "command": "python -m pytest -q -p no:cacheprovider tests/test_pricing.py::test_concession_starts_at_65",
+      "exit_code": 1,
+      "test_status": "failed",
+      "duration_s": 2.253
+     },
+     "verdict": "kills"
+    },
+    {
+     "mutant_id": "B14",
+     "engine": "builtin",
+     "run": {
+      "command": "python -m pytest -q -p no:cacheprovider tests/test_pricing.py::test_concession_starts_at_65",
+      "exit_code": 1,
+      "test_status": "failed",
+      "duration_s": 2.391
+     },
+     "verdict": "kills"
+    },
+    {
+     "mutant_id": "M11",
+     "engine": "mutmut",
+     "run": {
+      "command": "python -m pytest -q -p no:cacheprovider tests/test_pricing.py::test_concession_starts_at_65",
+      "exit_code": 1,
+      "test_status": "failed",
+      "duration_s": 2.437
+     },
+     "verdict": "kills"
+    }
+   ],
+   "repo_files_changed": [],
+   "proved_at": "2026-11-10T23:31:04Z"
+  },
+  {
+   "id": "P3",
+   "finding": "F3",
+   "gap": null,
+   "test_id": "tests/test_refunds.py::test_operator_cancellation_refunds_everything_plus_goodwill",
+   "test_file": "tests/test_refunds.py",
+   "test_code": "def test_operator_cancellation_refunds_everything_plus_goodwill():\n    assert refund_cents(999, 1, cancelled_by_operator=True) == 1499",
+   "test_code_sha256": "53eb4bb540e7799e17f835173c393b77a47d454addb93d98db3e5884606c18ab",
+   "applied_to": "scratch",
+   "original_run": {
+    "command": "python -m pytest -q -p no:cacheprovider tests/test_refunds.py::test_operator_cancellation_refunds_everything_plus_goodwill",
+    "exit_code": 0,
+    "test_status": "passed",
+    "duration_s": 2.432
+   },
+   "mutants": [
+    {
+     "mutant_id": "B25",
+     "engine": "builtin",
+     "run": {
+      "command": "python -m pytest -q -p no:cacheprovider tests/test_refunds.py::test_operator_cancellation_refunds_everything_plus_goodwill",
+      "exit_code": 1,
+      "test_status": "failed",
+      "duration_s": 2.702
+     },
+     "verdict": "kills"
+    }
+   ],
+   "repo_files_changed": [],
+   "proved_at": "2026-11-10T23:31:10Z"
+  },
+  {
+   "id": "P4",
+   "finding": null,
+   "gap": "G1",
+   "test_id": "tests/test_refunds.py::test_operator_cancellation_refunds_everything_plus_goodwill",
+   "test_file": "tests/test_refunds.py",
+   "test_code": "def test_operator_cancellation_refunds_everything_plus_goodwill():\n    assert refund_cents(999, 1, cancelled_by_operator=True) == 1499",
+   "test_code_sha256": "53eb4bb540e7799e17f835173c393b77a47d454addb93d98db3e5884606c18ab",
+   "applied_to": "scratch",
+   "original_run": {
+    "command": "python -m pytest -q -p no:cacheprovider tests/test_refunds.py::test_operator_cancellation_refunds_everything_plus_goodwill",
+    "exit_code": 0,
+    "test_status": "passed",
+    "duration_s": 2.389
+   },
+   "mutants": [
+    {
+     "mutant_id": "B28",
+     "engine": "builtin",
+     "run": {
+      "command": "python -m pytest -q -p no:cacheprovider tests/test_refunds.py::test_operator_cancellation_refunds_everything_plus_goodwill",
+      "exit_code": 1,
+      "test_status": "failed",
+      "duration_s": 2.556
+     },
+     "verdict": "kills"
+    },
+    {
+     "mutant_id": "B31",
+     "engine": "builtin",
+     "run": {
+      "command": "python -m pytest -q -p no:cacheprovider tests/test_refunds.py::test_operator_cancellation_refunds_everything_plus_goodwill",
+      "exit_code": 1,
+      "test_status": "failed",
+      "duration_s": 2.415
+     },
+     "verdict": "kills"
+    },
+    {
+     "mutant_id": "M27",
+     "engine": "mutmut",
+     "run": {
+      "command": "python -m pytest -q -p no:cacheprovider tests/test_refunds.py::test_operator_cancellation_refunds_everything_plus_goodwill",
+      "exit_code": 1,
+      "test_status": "failed",
+      "duration_s": 2.377
+     },
+     "verdict": "kills"
+    },
+    {
+     "mutant_id": "M28",
+     "engine": "mutmut",
+     "run": {
+      "command": "python -m pytest -q -p no:cacheprovider tests/test_refunds.py::test_operator_cancellation_refunds_everything_plus_goodwill",
+      "exit_code": 1,
+      "test_status": "failed",
+      "duration_s": 2.286
+     },
+     "verdict": "kills"
+    }
+   ],
+   "repo_files_changed": [],
+   "proved_at": "2026-11-10T23:31:22Z"
+  }
+ ]
+}
