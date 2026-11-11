@@ -1,0 +1,8 @@
+{
+  "source": "built-in defaults: Google's 'good' thresholds for LCP, CLS and INP; TBT and weight figures are this skill's starting points",
+  "profiles": {
+    "mobile-mid": {"LCP": 2500, "CLS": 0.1, "INP": 200, "TBT": 300, "transfer_total": 1600000, "transfer_script": 400000},
+    "desktop": {"LCP": 2500, "CLS": 0.1, "INP": 200, "TBT": 200, "transfer_total": 2500000, "transfer_script": 600000}
+  },
+  "units": {"LCP": "ms", "CLS": "score", "INP": "ms", "TBT": "ms", "FCP": "ms", "TTFB": "ms", "transfer_total": "bytes", "transfer_script": "bytes"}
+}

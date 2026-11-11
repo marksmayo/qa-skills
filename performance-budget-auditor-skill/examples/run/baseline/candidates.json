@@ -1,0 +1,1427 @@
+{
+ "measurements_file": "measurements.json",
+ "budget": {
+  "source": "budget.json",
+  "note": "the bakery's budget: the skill's defaults per profile, plus a Lighthouse-format entry for the menu pages' server response time"
+ },
+ "measurements": [
+  {
+   "url": "http://127.0.0.1:8142/",
+   "template": "home",
+   "profile": "mobile-mid",
+   "cache": "cold",
+   "browser": "chromium",
+   "metric": "LCP",
+   "unit": "ms",
+   "runs": [
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r1",
+     "value": 2236
+    },
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r2",
+     "value": 2260
+    },
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r3",
+     "value": 2232
+    },
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r4",
+     "value": 2264
+    },
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r5",
+     "value": 2248
+    }
+   ],
+   "n": 5,
+   "median": 2248,
+   "min": 2232,
+   "max": 2264,
+   "cv": 0.0063,
+   "budget": 2500,
+   "status": "within",
+   "bimodal": false,
+   "source": "web-vitals onLCP",
+   "note": null
+  },
+  {
+   "url": "http://127.0.0.1:8142/",
+   "template": "home",
+   "profile": "mobile-mid",
+   "cache": "cold",
+   "browser": "chromium",
+   "metric": "CLS",
+   "unit": "score",
+   "runs": [
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r1",
+     "value": 0.131
+    },
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r2",
+     "value": 0.131
+    },
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r3",
+     "value": 0.131
+    },
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r4",
+     "value": 0.131
+    },
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r5",
+     "value": 0.131
+    }
+   ],
+   "n": 5,
+   "median": 0.131,
+   "min": 0.131,
+   "max": 0.131,
+   "cv": 0.0,
+   "budget": 0.1,
+   "status": "over",
+   "bimodal": false,
+   "source": "web-vitals onCLS",
+   "note": null
+  },
+  {
+   "url": "http://127.0.0.1:8142/",
+   "template": "home",
+   "profile": "mobile-mid",
+   "cache": "cold",
+   "browser": "chromium",
+   "metric": "INP",
+   "unit": "ms",
+   "runs": [
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r1",
+     "value": null
+    },
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r2",
+     "value": null
+    },
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r3",
+     "value": null
+    },
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r4",
+     "value": null
+    },
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r5",
+     "value": null
+    }
+   ],
+   "n": 0,
+   "median": null,
+   "min": null,
+   "max": null,
+   "cv": null,
+   "budget": 200,
+   "status": "untested",
+   "bimodal": false,
+   "source": "untested: no interaction",
+   "note": null
+  },
+  {
+   "url": "http://127.0.0.1:8142/",
+   "template": "home",
+   "profile": "mobile-mid",
+   "cache": "cold",
+   "browser": "chromium",
+   "metric": "TBT",
+   "unit": "ms",
+   "runs": [
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r1",
+     "value": 0.0
+    },
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r2",
+     "value": 0.0
+    },
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r3",
+     "value": 0.0
+    },
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r4",
+     "value": 0.0
+    },
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r5",
+     "value": 0.0
+    }
+   ],
+   "n": 5,
+   "median": 0.0,
+   "min": 0.0,
+   "max": 0.0,
+   "cv": 0.0,
+   "budget": 300,
+   "status": "within",
+   "bimodal": false,
+   "source": "Long Tasks API after FCP",
+   "note": null
+  },
+  {
+   "url": "http://127.0.0.1:8142/",
+   "template": "home",
+   "profile": "mobile-mid",
+   "cache": "cold",
+   "browser": "chromium",
+   "metric": "FCP",
+   "unit": "ms",
+   "runs": [
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r1",
+     "value": 600
+    },
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r2",
+     "value": 608
+    },
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r3",
+     "value": 584
+    },
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r4",
+     "value": 584
+    },
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r5",
+     "value": 584
+    }
+   ],
+   "n": 5,
+   "median": 584,
+   "min": 584,
+   "max": 608,
+   "cv": 0.0191,
+   "budget": null,
+   "status": "measured",
+   "bimodal": false,
+   "source": "web-vitals onFCP",
+   "note": null
+  },
+  {
+   "url": "http://127.0.0.1:8142/",
+   "template": "home",
+   "profile": "mobile-mid",
+   "cache": "cold",
+   "browser": "chromium",
+   "metric": "TTFB",
+   "unit": "ms",
+   "runs": [
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r1",
+     "value": 154.6
+    },
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r2",
+     "value": 154.7
+    },
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r3",
+     "value": 154.3
+    },
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r4",
+     "value": 155.4
+    },
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r5",
+     "value": 154.7
+    }
+   ],
+   "n": 5,
+   "median": 154.7,
+   "min": 154.3,
+   "max": 155.4,
+   "cv": 0.0026,
+   "budget": null,
+   "status": "measured",
+   "bimodal": false,
+   "source": "web-vitals onTTFB",
+   "note": null
+  },
+  {
+   "url": "http://127.0.0.1:8142/",
+   "template": "home",
+   "profile": "mobile-mid",
+   "cache": "cold",
+   "browser": "chromium",
+   "metric": "transfer_total",
+   "unit": "bytes",
+   "runs": [
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r1",
+     "value": 366412
+    },
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r2",
+     "value": 366412
+    },
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r3",
+     "value": 366412
+    },
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r4",
+     "value": 366412
+    },
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r5",
+     "value": 366412
+    }
+   ],
+   "n": 5,
+   "median": 366412,
+   "min": 366412,
+   "max": 366412,
+   "cv": 0.0,
+   "budget": 1600000,
+   "status": "within",
+   "bimodal": false,
+   "source": "DevTools Network encodedDataLength",
+   "note": null
+  },
+  {
+   "url": "http://127.0.0.1:8142/",
+   "template": "home",
+   "profile": "mobile-mid",
+   "cache": "cold",
+   "browser": "chromium",
+   "metric": "transfer_script",
+   "unit": "bytes",
+   "runs": [
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r1",
+     "value": 0
+    },
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r2",
+     "value": 0
+    },
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r3",
+     "value": 0
+    },
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r4",
+     "value": 0
+    },
+    {
+     "run_id": "home/mobile-mid/cold/chromium/r5",
+     "value": 0
+    }
+   ],
+   "n": 5,
+   "median": 0,
+   "min": 0,
+   "max": 0,
+   "cv": 0.0,
+   "budget": 400000,
+   "status": "within",
+   "bimodal": false,
+   "source": "DevTools Network encodedDataLength",
+   "note": null
+  },
+  {
+   "url": "http://127.0.0.1:8142/",
+   "template": "home",
+   "profile": "desktop",
+   "cache": "cold",
+   "browser": "chromium",
+   "metric": "LCP",
+   "unit": "ms",
+   "runs": [
+    {
+     "run_id": "home/desktop/cold/chromium/r1",
+     "value": 424
+    },
+    {
+     "run_id": "home/desktop/cold/chromium/r2",
+     "value": 424
+    },
+    {
+     "run_id": "home/desktop/cold/chromium/r3",
+     "value": 420
+    },
+    {
+     "run_id": "home/desktop/cold/chromium/r4",
+     "value": 420
+    },
+    {
+     "run_id": "home/desktop/cold/chromium/r5",
+     "value": 420
+    }
+   ],
+   "n": 5,
+   "median": 420,
+   "min": 420,
+   "max": 424,
+   "cv": 0.0052,
+   "budget": 2500,
+   "status": "within",
+   "bimodal": false,
+   "source": "web-vitals onLCP",
+   "note": null
+  },
+  {
+   "url": "http://127.0.0.1:8142/",
+   "template": "home",
+   "profile": "desktop",
+   "cache": "cold",
+   "browser": "chromium",
+   "metric": "CLS",
+   "unit": "score",
+   "runs": [
+    {
+     "run_id": "home/desktop/cold/chromium/r1",
+     "value": 0.0868
+    },
+    {
+     "run_id": "home/desktop/cold/chromium/r2",
+     "value": 0.0868
+    },
+    {
+     "run_id": "home/desktop/cold/chromium/r3",
+     "value": 0.0868
+    },
+    {
+     "run_id": "home/desktop/cold/chromium/r4",
+     "value": 0.0868
+    },
+    {
+     "run_id": "home/desktop/cold/chromium/r5",
+     "value": 0.0868
+    }
+   ],
+   "n": 5,
+   "median": 0.0868,
+   "min": 0.0868,
+   "max": 0.0868,
+   "cv": 0.0,
+   "budget": 0.1,
+   "status": "within",
+   "bimodal": false,
+   "source": "web-vitals onCLS",
+   "note": null
+  },
+  {
+   "url": "http://127.0.0.1:8142/",
+   "template": "home",
+   "profile": "desktop",
+   "cache": "cold",
+   "browser": "chromium",
+   "metric": "INP",
+   "unit": "ms",
+   "runs": [
+    {
+     "run_id": "home/desktop/cold/chromium/r1",
+     "value": null
+    },
+    {
+     "run_id": "home/desktop/cold/chromium/r2",
+     "value": null
+    },
+    {
+     "run_id": "home/desktop/cold/chromium/r3",
+     "value": null
+    },
+    {
+     "run_id": "home/desktop/cold/chromium/r4",
+     "value": null
+    },
+    {
+     "run_id": "home/desktop/cold/chromium/r5",
+     "value": null
+    }
+   ],
+   "n": 0,
+   "median": null,
+   "min": null,
+   "max": null,
+   "cv": null,
+   "budget": 200,
+   "status": "untested",
+   "bimodal": false,
+   "source": "untested: no interaction",
+   "note": null
+  },
+  {
+   "url": "http://127.0.0.1:8142/",
+   "template": "home",
+   "profile": "desktop",
+   "cache": "cold",
+   "browser": "chromium",
+   "metric": "TBT",
+   "unit": "ms",
+   "runs": [
+    {
+     "run_id": "home/desktop/cold/chromium/r1",
+     "value": 0.0
+    },
+    {
+     "run_id": "home/desktop/cold/chromium/r2",
+     "value": 0.0
+    },
+    {
+     "run_id": "home/desktop/cold/chromium/r3",
+     "value": 0.0
+    },
+    {
+     "run_id": "home/desktop/cold/chromium/r4",
+     "value": 0.0
+    },
+    {
+     "run_id": "home/desktop/cold/chromium/r5",
+     "value": 0.0
+    }
+   ],
+   "n": 5,
+   "median": 0.0,
+   "min": 0.0,
+   "max": 0.0,
+   "cv": 0.0,
+   "budget": 200,
+   "status": "within",
+   "bimodal": false,
+   "source": "Long Tasks API after FCP",
+   "note": null
+  },
+  {
+   "url": "http://127.0.0.1:8142/",
+   "template": "home",
+   "profile": "desktop",
+   "cache": "cold",
+   "browser": "chromium",
+   "metric": "FCP",
+   "unit": "ms",
+   "runs": [
+    {
+     "run_id": "home/desktop/cold/chromium/r1",
+     "value": 412
+    },
+    {
+     "run_id": "home/desktop/cold/chromium/r2",
+     "value": 424
+    },
+    {
+     "run_id": "home/desktop/cold/chromium/r3",
+     "value": 420
+    },
+    {
+     "run_id": "home/desktop/cold/chromium/r4",
+     "value": 420
+    },
+    {
+     "run_id": "home/desktop/cold/chromium/r5",
+     "value": 420
+    }
+   ],
+   "n": 5,
+   "median": 420,
+   "min": 412,
+   "max": 424,
+   "cv": 0.0105,
+   "budget": null,
+   "status": "measured",
+   "bimodal": false,
+   "source": "web-vitals onFCP",
+   "note": null
+  },
+  {
+   "url": "http://127.0.0.1:8142/",
+   "template": "home",
+   "profile": "desktop",
+   "cache": "cold",
+   "browser": "chromium",
+   "metric": "TTFB",
+   "unit": "ms",
+   "runs": [
+    {
+     "run_id": "home/desktop/cold/chromium/r1",
+     "value": 44.2
+    },
+    {
+     "run_id": "home/desktop/cold/chromium/r2",
+     "value": 44.8
+    },
+    {
+     "run_id": "home/desktop/cold/chromium/r3",
+     "value": 44.7
+    },
+    {
+     "run_id": "home/desktop/cold/chromium/r4",
+     "value": 45
+    },
+    {
+     "run_id": "home/desktop/cold/chromium/r5",
+     "value": 44.6
+    }
+   ],
+   "n": 5,
+   "median": 44.7,
+   "min": 44.2,
+   "max": 45,
+   "cv": 0.0066,
+   "budget": null,
+   "status": "measured",
+   "bimodal": false,
+   "source": "web-vitals onTTFB",
+   "note": null
+  },
+  {
+   "url": "http://127.0.0.1:8142/",
+   "template": "home",
+   "profile": "desktop",
+   "cache": "cold",
+   "browser": "chromium",
+   "metric": "transfer_total",
+   "unit": "bytes",
+   "runs": [
+    {
+     "run_id": "home/desktop/cold/chromium/r1",
+     "value": 366412
+    },
+    {
+     "run_id": "home/desktop/cold/chromium/r2",
+     "value": 366412
+    },
+    {
+     "run_id": "home/desktop/cold/chromium/r3",
+     "value": 366412
+    },
+    {
+     "run_id": "home/desktop/cold/chromium/r4",
+     "value": 366412
+    },
+    {
+     "run_id": "home/desktop/cold/chromium/r5",
+     "value": 366412
+    }
+   ],
+   "n": 5,
+   "median": 366412,
+   "min": 366412,
+   "max": 366412,
+   "cv": 0.0,
+   "budget": 2500000,
+   "status": "within",
+   "bimodal": false,
+   "source": "DevTools Network encodedDataLength",
+   "note": null
+  },
+  {
+   "url": "http://127.0.0.1:8142/",
+   "template": "home",
+   "profile": "desktop",
+   "cache": "cold",
+   "browser": "chromium",
+   "metric": "transfer_script",
+   "unit": "bytes",
+   "runs": [
+    {
+     "run_id": "home/desktop/cold/chromium/r1",
+     "value": 0
+    },
+    {
+     "run_id": "home/desktop/cold/chromium/r2",
+     "value": 0
+    },
+    {
+     "run_id": "home/desktop/cold/chromium/r3",
+     "value": 0
+    },
+    {
+     "run_id": "home/desktop/cold/chromium/r4",
+     "value": 0
+    },
+    {
+     "run_id": "home/desktop/cold/chromium/r5",
+     "value": 0
+    }
+   ],
+   "n": 5,
+   "median": 0,
+   "min": 0,
+   "max": 0,
+   "cv": 0.0,
+   "budget": 600000,
+   "status": "within",
+   "bimodal": false,
+   "source": "DevTools Network encodedDataLength",
+   "note": null
+  },
+  {
+   "url": "http://127.0.0.1:8142/about",
+   "template": "about",
+   "profile": "mobile-mid",
+   "cache": "cold",
+   "browser": "chromium",
+   "metric": "LCP",
+   "unit": "ms",
+   "runs": [
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r1",
+     "value": 464
+    },
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r2",
+     "value": 448
+    },
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r3",
+     "value": 436
+    },
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r4",
+     "value": 444
+    },
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r5",
+     "value": 436
+    }
+   ],
+   "n": 5,
+   "median": 444,
+   "min": 436,
+   "max": 464,
+   "cv": 0.0259,
+   "budget": 2500,
+   "status": "within",
+   "bimodal": false,
+   "source": "web-vitals onLCP",
+   "note": null
+  },
+  {
+   "url": "http://127.0.0.1:8142/about",
+   "template": "about",
+   "profile": "mobile-mid",
+   "cache": "cold",
+   "browser": "chromium",
+   "metric": "CLS",
+   "unit": "score",
+   "runs": [
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r1",
+     "value": 0
+    },
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r2",
+     "value": 0
+    },
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r3",
+     "value": 0
+    },
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r4",
+     "value": 0
+    },
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r5",
+     "value": 0
+    }
+   ],
+   "n": 5,
+   "median": 0,
+   "min": 0,
+   "max": 0,
+   "cv": 0.0,
+   "budget": 0.1,
+   "status": "within",
+   "bimodal": false,
+   "source": "web-vitals onCLS",
+   "note": null
+  },
+  {
+   "url": "http://127.0.0.1:8142/about",
+   "template": "about",
+   "profile": "mobile-mid",
+   "cache": "cold",
+   "browser": "chromium",
+   "metric": "INP",
+   "unit": "ms",
+   "runs": [
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r1",
+     "value": null
+    },
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r2",
+     "value": null
+    },
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r3",
+     "value": null
+    },
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r4",
+     "value": null
+    },
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r5",
+     "value": null
+    }
+   ],
+   "n": 0,
+   "median": null,
+   "min": null,
+   "max": null,
+   "cv": null,
+   "budget": 200,
+   "status": "untested",
+   "bimodal": false,
+   "source": "untested: no interaction",
+   "note": null
+  },
+  {
+   "url": "http://127.0.0.1:8142/about",
+   "template": "about",
+   "profile": "mobile-mid",
+   "cache": "cold",
+   "browser": "chromium",
+   "metric": "TBT",
+   "unit": "ms",
+   "runs": [
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r1",
+     "value": 0.0
+    },
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r2",
+     "value": 0.0
+    },
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r3",
+     "value": 0.0
+    },
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r4",
+     "value": 0.0
+    },
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r5",
+     "value": 0.0
+    }
+   ],
+   "n": 5,
+   "median": 0.0,
+   "min": 0.0,
+   "max": 0.0,
+   "cv": 0.0,
+   "budget": 300,
+   "status": "within",
+   "bimodal": false,
+   "source": "Long Tasks API after FCP",
+   "note": null
+  },
+  {
+   "url": "http://127.0.0.1:8142/about",
+   "template": "about",
+   "profile": "mobile-mid",
+   "cache": "cold",
+   "browser": "chromium",
+   "metric": "FCP",
+   "unit": "ms",
+   "runs": [
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r1",
+     "value": 464
+    },
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r2",
+     "value": 448
+    },
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r3",
+     "value": 436
+    },
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r4",
+     "value": 444
+    },
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r5",
+     "value": 436
+    }
+   ],
+   "n": 5,
+   "median": 444,
+   "min": 436,
+   "max": 464,
+   "cv": 0.0259,
+   "budget": null,
+   "status": "measured",
+   "bimodal": false,
+   "source": "web-vitals onFCP",
+   "note": null
+  },
+  {
+   "url": "http://127.0.0.1:8142/about",
+   "template": "about",
+   "profile": "mobile-mid",
+   "cache": "cold",
+   "browser": "chromium",
+   "metric": "TTFB",
+   "unit": "ms",
+   "runs": [
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r1",
+     "value": 154.6
+    },
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r2",
+     "value": 154.4
+    },
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r3",
+     "value": 154.2
+    },
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r4",
+     "value": 153.1
+    },
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r5",
+     "value": 154.7
+    }
+   ],
+   "n": 5,
+   "median": 154.4,
+   "min": 153.1,
+   "max": 154.7,
+   "cv": 0.0042,
+   "budget": null,
+   "status": "measured",
+   "bimodal": false,
+   "source": "web-vitals onTTFB",
+   "note": null
+  },
+  {
+   "url": "http://127.0.0.1:8142/about",
+   "template": "about",
+   "profile": "mobile-mid",
+   "cache": "cold",
+   "browser": "chromium",
+   "metric": "transfer_total",
+   "unit": "bytes",
+   "runs": [
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r1",
+     "value": 1380
+    },
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r2",
+     "value": 1380
+    },
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r3",
+     "value": 1380
+    },
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r4",
+     "value": 1380
+    },
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r5",
+     "value": 1380
+    }
+   ],
+   "n": 5,
+   "median": 1380,
+   "min": 1380,
+   "max": 1380,
+   "cv": 0.0,
+   "budget": 1600000,
+   "status": "within",
+   "bimodal": false,
+   "source": "DevTools Network encodedDataLength",
+   "note": null
+  },
+  {
+   "url": "http://127.0.0.1:8142/about",
+   "template": "about",
+   "profile": "mobile-mid",
+   "cache": "cold",
+   "browser": "chromium",
+   "metric": "transfer_script",
+   "unit": "bytes",
+   "runs": [
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r1",
+     "value": 0
+    },
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r2",
+     "value": 0
+    },
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r3",
+     "value": 0
+    },
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r4",
+     "value": 0
+    },
+    {
+     "run_id": "about/mobile-mid/cold/chromium/r5",
+     "value": 0
+    }
+   ],
+   "n": 5,
+   "median": 0,
+   "min": 0,
+   "max": 0,
+   "cv": 0.0,
+   "budget": 400000,
+   "status": "within",
+   "bimodal": false,
+   "source": "DevTools Network encodedDataLength",
+   "note": null
+  },
+  {
+   "url": "http://127.0.0.1:8142/about",
+   "template": "about",
+   "profile": "desktop",
+   "cache": "cold",
+   "browser": "chromium",
+   "metric": "LCP",
+   "unit": "ms",
+   "runs": [
+    {
+     "run_id": "about/desktop/cold/chromium/r1",
+     "value": 164
+    },
+    {
+     "run_id": "about/desktop/cold/chromium/r2",
+     "value": 164
+    },
+    {
+     "run_id": "about/desktop/cold/chromium/r3",
+     "value": 172
+    },
+    {
+     "run_id": "about/desktop/cold/chromium/r4",
+     "value": 164
+    },
+    {
+     "run_id": "about/desktop/cold/chromium/r5",
+     "value": 168
+    }
+   ],
+   "n": 5,
+   "median": 164,
+   "min": 164,
+   "max": 172,
+   "cv": 0.0215,
+   "budget": 2500,
+   "status": "within",
+   "bimodal": false,
+   "source": "web-vitals onLCP",
+   "note": null
+  },
+  {
+   "url": "http://127.0.0.1:8142/about",
+   "template": "about",
+   "profile": "desktop",
+   "cache": "cold",
+   "browser": "chromium",
+   "metric": "CLS",
+   "unit": "score",
+   "runs": [
+    {
+     "run_id": "about/desktop/cold/chromium/r1",
+     "value": 0
+    },
+    {
+     "run_id": "about/desktop/cold/chromium/r2",
+     "value": 0
+    },
+    {
+     "run_id": "about/desktop/cold/chromium/r3",
+     "value": 0
+    },
+    {
+     "run_id": "about/desktop/cold/chromium/r4",
+     "value": 0
+    },
+    {
+     "run_id": "about/desktop/cold/chromium/r5",
+     "value": 0
+    }
+   ],
+   "n": 5,
+   "median": 0,
+   "min": 0,
+   "max": 0,
+   "cv": 0.0,
+   "budget": 0.1,
+   "status": "within",
+   "bimodal": false,
+   "source": "web-vitals onCLS",
+   "note": null
+  },
+  {
+   "url": "http://127.0.0.1:8142/about",
+   "template": "about",
+   "profile": "desktop",
+   "cache": "cold",
+   "browser": "chromium",
+   "metric": "INP",
+   "unit": "ms",
+   "runs": [
+    {
+     "run_id": "about/desktop/cold/chromium/r1",
+     "value": null
+    },
+    {
+     "run_id": "about/desktop/cold/chromium/r2",
+     "value": null
+    },
+    {
+     "run_id": "about/desktop/cold/chromium/r3",
+     "value": null
+    },
+    {
+     "run_id": "about/desktop/cold/chromium/r4",
+     "value": null
+    },
+    {
+     "run_id": "about/desktop/cold/chromium/r5",
+     "value": null
+    }
+   ],
+   "n": 0,
+   "median": null,
+   "min": null,
+   "max": null,
+   "cv": null,
+   "budget": 200,
+   "status": "untested",
+   "bimodal": false,
+   "source": "untested: no interaction",
+   "note": null
+  },
+  {
+   "url": "http://127.0.0.1:8142/about",
+   "template": "about",
+   "profile": "desktop",
+   "cache": "cold",
+   "browser": "chromium",
+   "metric": "TBT",
+   "unit": "ms",
+   "runs": [
+    {
+     "run_id": "about/desktop/cold/chromium/r1",
+     "value": 0.0
+    },
+    {
+     "run_id": "about/desktop/cold/chromium/r2",
+     "value": 0.0
+    },
+    {
+     "run_id": "about/desktop/cold/chromium/r3",
+     "value": 0.0
+    },
+    {
+     "run_id": "about/desktop/cold/chromium/r4",
+     "value": 0.0
+    },
+    {
+     "run_id": "about/desktop/cold/chromium/r5",
+     "value": 0.0
+    }
+   ],
+   "n": 5,
+   "median": 0.0,
+   "min": 0.0,
+   "max": 0.0,
+   "cv": 0.0,
+   "budget": 200,
+   "status": "within",
+   "bimodal": false,
+   "source": "Long Tasks API after FCP",
+   "note": null
+  },
+  {
+   "url": "http://127.0.0.1:8142/about",
+   "template": "about",
+   "profile": "desktop",
+   "cache": "cold",
+   "browser": "chromium",
+   "metric": "FCP",
+   "unit": "ms",
+   "runs": [
+    {
+     "run_id": "about/desktop/cold/chromium/r1",
+     "value": 164
+    },
+    {
+     "run_id": "about/desktop/cold/chromium/r2",
+     "value": 164
+    },
+    {
+     "run_id": "about/desktop/cold/chromium/r3",
+     "value": 172
+    },
+    {
+     "run_id": "about/desktop/cold/chromium/r4",
+     "value": 164
+    },
+    {
+     "run_id": "about/desktop/cold/chromium/r5",
+     "value": 168
+    }
+   ],
+   "n": 5,
+   "median": 164,
+   "min": 164,
+   "max": 172,
+   "cv": 0.0215,
+   "budget": null,
+   "status": "measured",
+   "bimodal": false,
+   "source": "web-vitals onFCP",
+   "note": null
+  },
+  {
+   "url": "http://127.0.0.1:8142/about",
+   "template": "about",
+   "profile": "desktop",
+   "cache": "cold",
+   "browser": "chromium",
+   "metric": "TTFB",
+   "unit": "ms",
+   "runs": [
+    {
+     "run_id": "about/desktop/cold/chromium/r1",
+     "value": 44.5
+    },
+    {
+     "run_id": "about/desktop/cold/chromium/r2",
+     "value": 44.8
+    },
+    {
+     "run_id": "about/desktop/cold/chromium/r3",
+     "value": 44.6
+    },
+    {
+     "run_id": "about/desktop/cold/chromium/r4",
+     "value": 44.6
+    },
+    {
+     "run_id": "about/desktop/cold/chromium/r5",
+     "value": 44.8
+    }
+   ],
+   "n": 5,
+   "median": 44.6,
+   "min": 44.5,
+   "max": 44.8,
+   "cv": 0.003,
+   "budget": null,
+   "status": "measured",
+   "bimodal": false,
+   "source": "web-vitals onTTFB",
+   "note": null
+  },
+  {
+   "url": "http://127.0.0.1:8142/about",
+   "template": "about",
+   "profile": "desktop",
+   "cache": "cold",
+   "browser": "chromium",
+   "metric": "transfer_total",
+   "unit": "bytes",
+   "runs": [
+    {
+     "run_id": "about/desktop/cold/chromium/r1",
+     "value": 1380
+    },
+    {
+     "run_id": "about/desktop/cold/chromium/r2",
+     "value": 1380
+    },
+    {
+     "run_id": "about/desktop/cold/chromium/r3",
+     "value": 1380
+    },
+    {
+     "run_id": "about/desktop/cold/chromium/r4",
+     "value": 1380
+    },
+    {
+     "run_id": "about/desktop/cold/chromium/r5",
+     "value": 1380
+    }
+   ],
+   "n": 5,
+   "median": 1380,
+   "min": 1380,
+   "max": 1380,
+   "cv": 0.0,
+   "budget": 2500000,
+   "status": "within",
+   "bimodal": false,
+   "source": "DevTools Network encodedDataLength",
+   "note": null
+  },
+  {
+   "url": "http://127.0.0.1:8142/about",
+   "template": "about",
+   "profile": "desktop",
+   "cache": "cold",
+   "browser": "chromium",
+   "metric": "transfer_script",
+   "unit": "bytes",
+   "runs": [
+    {
+     "run_id": "about/desktop/cold/chromium/r1",
+     "value": 0
+    },
+    {
+     "run_id": "about/desktop/cold/chromium/r2",
+     "value": 0
+    },
+    {
+     "run_id": "about/desktop/cold/chromium/r3",
+     "value": 0
+    },
+    {
+     "run_id": "about/desktop/cold/chromium/r4",
+     "value": 0
+    },
+    {
+     "run_id": "about/desktop/cold/chromium/r5",
+     "value": 0
+    }
+   ],
+   "n": 5,
+   "median": 0,
+   "min": 0,
+   "max": 0,
+   "cv": 0.0,
+   "budget": 600000,
+   "status": "within",
+   "bimodal": false,
+   "source": "DevTools Network encodedDataLength",
+   "note": null
+  }
+ ],
+ "server_timing": [
+  {
+   "route": "/",
+   "ttfb_median": 99.65,
+   "runs": 10,
+   "entries": [
+    {
+     "name": "db",
+     "dur_median": 0.0,
+     "desc": null
+    },
+    {
+     "name": "render",
+     "dur_median": 0.3,
+     "desc": null
+    }
+   ]
+  },
+  {
+   "route": "/about",
+   "ttfb_median": 98.95,
+   "runs": 10,
+   "entries": [
+    {
+     "name": "db",
+     "dur_median": 0.0,
+     "desc": null
+    },
+    {
+     "name": "render",
+     "dur_median": 0.3,
+     "desc": null
+    }
+   ]
+  }
+ ],
+ "candidates": [
+  {
+   "id": "K1",
+   "template": "home",
+   "metric": "CLS",
+   "cause": "layout shift moving html>body>main",
+   "cause_key": "html>body>main",
+   "pages": [
+    "http://127.0.0.1:8142/"
+   ],
+   "measurements": [
+    {
+     "url": "http://127.0.0.1:8142/",
+     "profile": "mobile-mid",
+     "cache": "cold",
+     "browser": "chromium",
+     "median": 0.131,
+     "budget": 0.1,
+     "cv": 0.0,
+     "status": "over",
+     "ratio": 1.31
+    }
+   ],
+   "attribution": {
+    "largest_shift_target": "html>body>main",
+    "largest_shift_value": 0.1,
+    "largest_shift_time_ms": 1597.4,
+    "shifts": [
+     {
+      "start": 1612.2,
+      "value": 0.131,
+      "sources": [
+       "main",
+       "footer"
+      ]
+     }
+    ]
+   },
+   "evidence": [
+    {
+     "run_ids": [
+      "home/mobile-mid/cold/chromium/r1",
+      "home/mobile-mid/cold/chromium/r2",
+      "home/mobile-mid/cold/chromium/r3",
+      "home/mobile-mid/cold/chromium/r4",
+      "home/mobile-mid/cold/chromium/r5"
+     ],
+     "diagnostic_run": null,
+     "trace": null,
+     "filmstrip": []
+    }
+   ],
+   "worst": {
+    "url": "http://127.0.0.1:8142/",
+    "profile": "mobile-mid",
+    "cache": "cold",
+    "browser": "chromium",
+    "median": 0.131,
+    "budget": 0.1,
+    "ratio": 1.31
+   },
+   "critical_path": false,
+   "severity": "Medium",
+   "confidence": "high",
+   "reach": 1,
+   "leverage": 1,
+   "score": 2,
+   "priority": "P3"
+  }
+ ]
+}

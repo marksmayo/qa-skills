@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/qa-skills/performance-budget-auditor/perf_report.schema.json",
+  "title": "Performance budget report (lab data)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["skill", "scope", "metadata", "headline", "measurements", "server_timing", "findings", "regressions",
+               "field_data", "needs_review", "triage", "limitations", "next_steps"],
+  "properties": {
+    "skill": {"type": "object", "additionalProperties": false, "required": ["name", "version"],
+              "properties": {"name": {"enum": ["performance-budget-auditor"]}, "version": {"type": "string"}}},
+    "scope": {
+      "type": "object", "additionalProperties": false,
+      "required": ["targets", "profiles", "budget", "runs", "cache", "browsers", "authorised_by"],
+      "properties": {
+        "targets": {"type": "array", "minItems": 1, "items": {
+          "type": "object", "additionalProperties": false, "required": ["url", "template", "reason", "critical_path", "interaction"],
+          "properties": {"url": {"type": "string"}, "template": {"type": "string"}, "reason": {"type": "string", "minLength": 3},
+                         "critical_path": {"type": "boolean"}, "interaction": {"type": "boolean"}}}},
+        "profiles": {"type": "object"},
+        "budget": {"type": "object", "additionalProperties": false, "required": ["source", "note"],
+                   "properties": {"source": {"type": "string"}, "note": {"type": ["string", "null"]}}},
+        "runs": {"type": "integer", "minimum": 1},
+        "cache": {"type": "array", "minItems": 1, "items": {"enum": ["cold", "warm"]}},
+        "browsers": {"type": "array", "minItems": 1, "items": {"enum": ["chromium", "firefox", "webkit"]}},
+        "authorised_by": {"type": ["string", "null"]}
+      }
+    },
+    "metadata": {
+      "type": "object", "additionalProperties": false,
+      "required": ["generated_at", "machine", "calibration", "tools", "measurements_file"],
+      "properties": {
+        "generated_at": {"type": "string"},
+        "machine": {"type": "object", "required": ["cpu", "cores", "os"]},
+        "calibration": {"type": "object", "required": ["runs_ms", "median_ms", "cv", "busy"]},
+        "tools": {"type": "array", "minItems": 1, "items": {
+          "type": "object", "additionalProperties": false, "required": ["name", "version", "sha256", "status", "note"],
+          "properties": {"name": {"type": "string"}, "version": {"type": ["string", "null"]}, "sha256": {"type": ["string", "null"]},
+                         "status": {"enum": ["ran", "not_run", "errored"]}, "note": {"type": ["string", "null"]}}}},
+        "measurements_file": {"type": "string"}
+      }
+    },
+    "headline": {
+      "type": "object", "additionalProperties": false,
+      "required": ["verdict", "data_kind", "summary", "over_budget_counts", "unstable_metrics", "evidence_completeness",
+                   "overall_confidence"],
+      "properties": {
+        "verdict": {"enum": ["over_budget", "within_budget_in_lab"]},
+        "data_kind": {"enum": ["lab"]},
+        "summary": {"type": "string", "minLength": 20},
+        "over_budget_counts": {"type": "object"},
+        "unstable_metrics": {"type": "integer", "minimum": 0},
+        "evidence_completeness": {"enum": ["complete", "partial"]},
+        "overall_confidence": {"enum": ["high", "medium", "low"]}
+      }
+    },
+    "measurements": {"type": "array", "items": {"$ref": "#/$defs/measurement"}},
+    "server_timing": {"type": "array", "items": {"type": "object", "required": ["route", "ttfb_median", "runs", "entries"]}},
+    "findings": {"type": "array", "items": {"$ref": "#/$defs/finding"}},
+    "regressions": {"type": "array", "items": {"type": "object", "required": ["url", "profile", "metric", "baseline_median",
+                                                                               "current_median", "direction"]}},
+    "field_data": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "object", "additionalProperties": false, "required": ["kind", "source", "period", "metrics"],
+         "properties": {"kind": {"enum": ["field"]}, "source": {"type": "string"}, "period": {"type": "string"}, "metrics": {"type": "object"}}}
+      ]
+    },
+    "needs_review": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["candidate_id", "reason"],
+                                                "properties": {"candidate_id": {"type": "string"}, "reason": {"type": "string", "minLength": 10}}}},
+    "triage": {"type": "array", "items": {
+      "type": "object", "additionalProperties": false, "required": ["candidate_id", "decision", "finding_id", "reason"],
+      "properties": {"candidate_id": {"type": "string"}, "decision": {"enum": ["promoted", "needs_review", "dismissed"]},
+                     "finding_id": {"type": ["string", "null"]}, "reason": {"type": "string", "minLength": 10}}}},
+    "limitations": {"type": "array", "items": {"type": "string"}},
+    "next_steps": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {
+    "measurement": {
+      "type": "object", "required": ["url", "template", "profile", "cache", "browser", "metric", "unit", "runs", "n", "median", "min",
+                                     "max", "cv", "budget", "status", "bimodal", "source", "note"],
+      "properties": {
+        "metric": {"enum": ["LCP", "CLS", "INP", "TBT", "FCP", "TTFB", "transfer_total", "transfer_script"]},
+        "status": {"enum": ["within", "over", "unstable", "measured", "untested", "not_supported"]},
+        "runs": {"type": "array", "items": {"type": "object", "required": ["run_id", "value"]}}
+      }
+    },
+    "finding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "candidate_id", "title", "metric", "template", "pages", "cause", "severity", "confidence", "reach", "leverage",
+                   "score", "priority", "critical_path", "worst", "measurements", "attribution", "evidence", "remediation",
+                   "verification_step"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^F[0-9]+$"},
+        "candidate_id": {"type": "string"},
+        "title": {"type": "string", "minLength": 10},
+        "metric": {"type": "string"},
+        "template": {"type": ["string", "null"]},
+        "pages": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "cause": {"type": "string"},
+        "severity": {"enum": ["Critical", "High", "Medium", "Low"]},
+        "confidence": {"enum": ["high", "medium"]},
+        "reach": {"type": "integer", "minimum": 1, "maximum": 3},
+        "leverage": {"enum": [1, 2]},
+        "score": {"type": "integer"},
+        "priority": {"enum": ["P0", "P1", "P2", "P3"]},
+        "critical_path": {"type": "boolean"},
+        "worst": {"type": "object"},
+        "measurements": {"type": "array", "minItems": 1},
+        "attribution": {"type": "object"},
+        "evidence": {"type": "array", "minItems": 1},
+        "remediation": {"type": "string", "minLength": 10},
+        "verification_step": {"type": "string", "minLength": 10}
+      }
+    }
+  }
+}

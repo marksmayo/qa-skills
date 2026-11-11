@@ -1,0 +1,5 @@
+# Only needed for scripts/measure.py, which drives a real browser. Every other script is stdlib-only.
+# Install with the user's agreement:
+#   pip install -r requirements.txt
+#   python -m playwright install chromium        (add firefox / webkit for load timings and weight there)
+playwright>=1.49,<2

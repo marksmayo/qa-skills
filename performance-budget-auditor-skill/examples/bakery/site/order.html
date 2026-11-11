@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Order - Harbour Bakery</title>
+  <link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+  <header><nav><a href="/">Home</a><a href="/menu">Menu</a><a href="/order">Order</a><a href="/about">About</a></nav></header>
+  <main>
+    <h1>Order for pick-up</h1>
+    <div class="item">Sourdough loaf <button id="add" type="button">Add to basket</button></div>
+    <p id="basket">Basket: 0 items</p>
+  </main>
+  <footer>Harbour Bakery (sample site, invented)</footer>
+  <script>
+    var count = 0;
+    document.getElementById('add').addEventListener('click', function () {
+      var x = 0;
+      for (var i = 0; i < 37000000; i++) { x += Math.sqrt(i) % 7; }   // recalculates the whole basket on every click
+      count += x > 0 ? 1 : 0;
+      document.getElementById('basket').textContent = 'Basket: ' + count + ' item' + (count === 1 ? '' : 's');
+    });
+  </script>
+</body>
+</html>

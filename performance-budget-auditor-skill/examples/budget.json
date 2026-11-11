@@ -1,0 +1,10 @@
+{
+  "source": "the bakery's budget: the skill's defaults per profile, plus a Lighthouse-format entry for the menu pages' server response time",
+  "profiles": {
+    "mobile-mid": {"LCP": 2500, "CLS": 0.1, "INP": 200, "TBT": 300, "transfer_total": 1600000, "transfer_script": 400000},
+    "desktop": {"LCP": 2500, "CLS": 0.1, "INP": 200, "TBT": 200, "transfer_total": 2500000, "transfer_script": 600000}
+  },
+  "lighthouse": [
+    {"path": "/menu*", "timings": [{"metric": "server-response-time", "budget": 300}]}
+  ]
+}

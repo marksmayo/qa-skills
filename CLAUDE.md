@@ -204,6 +204,17 @@ python api-contract-tester-skill/scripts/spec_diff.py api-contract-tester-skill/
 
 `commands.sh` runs from `api-contract-tester-skill/`, so the recorded contract sources are relative to it. Re-running needs the server on loopback (`python api-contract-tester-skill/examples/clinic-api/server.py --port 8140`, token `fake-clinic-token` in `CLINIC_TOKEN`), restarted before each sending step because its planted 503 counts calls. Schemathesis is optional (set `ST`). The report cites `examples/clinic-api/server.py` by line, so editing the server, the contracts or the cases invalidates the example until `commands.sh` is rerun.
 
+Performance budget auditor (`examples/bakery/` is the sample site with planted problems, `examples/plan.json` and `examples/budget.json` the inputs; `examples/run/` is a real run, listed in `examples/run/commands.sh`, with traces, filmstrips and coverage; the validator is structural: it recomputes every statistic, status, candidate and rating from the recorded runs, not the timings themselves):
+
+```bash
+python performance-budget-auditor-skill/scripts/validate_report.py performance-budget-auditor-skill/examples/perf_report.example.json --measurements performance-budget-auditor-skill/examples/run/measurements.json --candidates performance-budget-auditor-skill/examples/run/candidates.json --budget performance-budget-auditor-skill/examples/budget.json --regressions performance-budget-auditor-skill/examples/run/regressions.json
+python performance-budget-auditor-skill/scripts/render_report.py performance-budget-auditor-skill/examples/perf_report.example.json [--brief]
+python performance-budget-auditor-skill/scripts/attribute.py performance-budget-auditor-skill/examples/run/measurements.json --budget performance-budget-auditor-skill/examples/budget.json --out candidates.json
+python performance-budget-auditor-skill/scripts/fetch_assets.py --check
+```
+
+Re-measuring needs Playwright with Chromium and Firefox, web-vitals in the cache (`fetch_assets.py`), and the site on loopback (`python performance-budget-auditor-skill/examples/bakery/serve.py`, which refuses a busy port); run `commands.sh` from `performance-budget-auditor-skill/`. Lab numbers depend on the machine, so a rerun changes every value and invalidates the report until it is rebuilt.
+
 Shared files:
 
 ```bash

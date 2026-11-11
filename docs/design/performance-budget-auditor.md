@@ -1,6 +1,6 @@
 # Design: `performance-budget-auditor-skill`
 
-Status: Designed; not built. Build order: 17.
+Status: Built (v1.0.0). Build order: 17.
 
 ## Mission
 
@@ -185,3 +185,35 @@ Agreed with the user before the build.
 1. **Budgets?** Default weight budgets, overridden by the user's budget file when given.
 2. **Lighthouse in the default stack?** No: optional.
 3. **Server-side timing breakdown?** Yes: Server-Timing headers and TTFB by route, read passively.
+
+## As built (v1.0.0)
+
+Where the build differs from the design above, and what the example showed.
+
+- **Diagnostic runs are separate.** The trace (with screenshots), the filmstrip and JavaScript
+  coverage come from one extra run per page and profile that no statistic counts, because tracing
+  and coverage slow the page. The saved trace drops screenshots (kept as the filmstrip) and tasks
+  under 1 ms to stay small; it still opens in DevTools.
+- **Transfer bytes come from DevTools Network events** (`encodedDataLength`) in Chromium, and from
+  Resource Timing in Firefox and WebKit. Long tasks feed TBT; long animation frames name the
+  scripts.
+- **INP:** web-vitals reports INP only once the browser is idle, so the runner polls for up to 3 s
+  after the interaction and falls back to Event Timing entries, recording which source gave the value.
+- **Leverage** is 2 when the same cause (a URL, an element, a server step) is behind candidates for
+  more than one metric. **A Critical candidate is at least P1**: without that floor, a 14x INP on
+  the critical ordering page came out P3.
+- **TTFB is keyed by the Server-Timing entry**, so the same slow step on several pages is one candidate.
+- **Budgets:** the skill's format, a Lighthouse `budget.json`, or both in one file (`"lighthouse"`).
+- **The comparison** has a floor (10 ms, 0.01 CLS, 1 KB) so tiny metrics near zero don't count as
+  regressions, and flags comparisons across machines.
+- **The shared harness** gained custom network profiles, blocked service workers for cold runs,
+  mobile emulation, the page's CDP session and trace recording.
+- **Not built:** warm-cache runs in the example (the runner supports them), consent-banner
+  dismissal (a scripted step does it), and Lighthouse integration (recorded `not_run`).
+- **Example results** (one Windows machine, 20 cores; Chromium 158, Firefox 159; web-vitals 6.2.3):
+  - 16 of 88 measurements over budget; 7 findings, all high confidence; nothing unstable.
+  - LCP 10.3 s on mobile from the 1.8 MB hero (2.25 s in the 1.0 baseline); INP 2.8 s on the
+    ordering page; TBT about 4 s from analytics.js on both menu pages; TTFB 456 ms from a 450 ms
+    `db` step; CLS 0.13 from the banner; /about within on both profiles.
+  - The /order mobile diagnostic run timed out on its click while tracing; it is recorded, not rerun.
+- **Testing:** 33 of 33 seeded report violations are caught.

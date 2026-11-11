@@ -27,7 +27,9 @@ Actions (act): {"click": sel} {"dblclick": sel} {"hover": sel} {"press": key} {"
 
 Throttling uses the Chrome DevTools Protocol, so it is Chromium only; on another browser it is
 recorded as not applied. Network presets: slow3g (400 kbit/s, 400 ms), fast3g (1.6 Mbit/s, 150 ms),
-offline. The clock uses Playwright's page.clock (1.45+): the page sees that fixed time, and
+offline, or a dict {download_kbps, upload_kbps, rtt_ms}. new_page(service_workers='block') keeps
+a cold run cold; mobile=True sets is_mobile and has_touch (Chromium). h.cdp(page) returns the
+page's CDP session, and h.start_trace(page) / h.stop_trace() record a DevTools performance trace. The clock uses Playwright's page.clock (1.45+): the page sees that fixed time, and
 time runs on from it.
 """
 from __future__ import annotations
@@ -148,6 +150,7 @@ class Harness:
         self._pw = self._browser = None
         self._logs: dict[int, dict] = {}
         self._contexts: dict[int, object] = {}
+        self._cdp: dict[int, object] = {}
 
     def __enter__(self):
         from playwright.sync_api import sync_playwright
@@ -175,9 +178,13 @@ class Harness:
 
     def new_page(self, viewport: str = '1280x800', timezone: str | None = None, locale: str | None = None,
                  clock: str | None = None, cpu_throttle: float | None = None, network: str | None = None,
-                 reduced_motion: str = 'no-preference', trace: bool = False, user_agent: str | None = None):
+                 reduced_motion: str = 'no-preference', trace: bool = False, user_agent: str | None = None,
+                 service_workers: str = 'allow', mobile: bool = False):
         w, h = parse_vp(viewport)
-        kw = {'viewport': {'width': w, 'height': h}, 'reduced_motion': reduced_motion, 'storage_state': self.storage_state}
+        kw = {'viewport': {'width': w, 'height': h}, 'reduced_motion': reduced_motion, 'storage_state': self.storage_state,
+              'service_workers': service_workers}
+        if mobile and self.browser_name == 'chromium':
+            kw.update(is_mobile=True, has_touch=True)
         if timezone:
             kw['timezone_id'] = timezone
         if locale:
@@ -190,8 +197,11 @@ class Harness:
             ctx.tracing.start(screenshots=True, snapshots=True)
         page = ctx.new_page()
         log = {'console': [], 'page_errors': [], 'failed_requests': [], 'applied': {'viewport': viewport, 'timezone': timezone,
-                                                                                    'locale': locale, 'clock': clock},
+                                                                                    'locale': locale, 'clock': clock,
+                                                                                    'service_workers': service_workers},
                'not_applied': [], 'trace': trace}
+        if mobile and self.browser_name != 'chromium':
+            log['not_applied'].append('mobile: is_mobile/has_touch emulation is Chromium only')
         page.on('console', lambda m: log['console'].append({'type': m.type, 'text': m.text}))
         page.on('pageerror', lambda e: log['page_errors'].append({'name': getattr(e, 'name', 'Error'), 'message': str(e)}))
         page.on('requestfailed', lambda r: log['failed_requests'].append({'method': r.method, 'url': r.url.split('?')[0],
@@ -203,11 +213,15 @@ class Harness:
                 log['not_applied'].append('cpu_throttle/network: CDP throttling is Chromium only')
             else:
                 cdp = ctx.new_cdp_session(page)
+                self._cdp[id(page)] = cdp
                 if cpu_throttle:
                     cdp.send('Emulation.setCPUThrottlingRate', {'rate': float(cpu_throttle)})
                     log['applied']['cpu_throttle'] = cpu_throttle
                 if network:
-                    preset = NETWORK[network]
+                    # a preset name, or {"download_kbps", "upload_kbps", "rtt_ms"}
+                    preset = NETWORK[network] if isinstance(network, str) else {
+                        'download': network['download_kbps'] * 1000 / 8, 'upload': network['upload_kbps'] * 1000 / 8,
+                        'latency': network['rtt_ms']}
                     cdp.send('Network.enable')
                     cdp.send('Network.emulateNetworkConditions', {
                         'offline': preset is None, 'latency': (preset or {}).get('latency', 0),
@@ -217,11 +231,27 @@ class Harness:
         self._contexts[id(page)] = ctx
         return page
 
+    def cdp(self, page):
+        """The page's Chrome DevTools Protocol session (Chromium only; created on first use)."""
+        if self.browser_name != 'chromium':
+            raise RuntimeError('CDP is Chromium only')
+        if id(page) not in self._cdp:
+            self._cdp[id(page)] = self._contexts[id(page)].new_cdp_session(page)
+        return self._cdp[id(page)]
+
+    def start_trace(self, page, screenshots: bool = True, categories: list[str] | None = None):
+        """Start a Chromium performance trace (the DevTools timeline) for this page."""
+        self._browser.start_tracing(page=page, screenshots=screenshots, categories=categories)
+
+    def stop_trace(self) -> bytes:
+        return self._browser.stop_tracing()
+
     def log(self, page) -> dict:
         return self._logs[id(page)]
 
     def close_page(self, page, trace_path: Path | None = None) -> None:
         ctx = self._contexts.pop(id(page))
+        self._cdp.pop(id(page), None)
         if self._logs[id(page)]['trace']:
             if trace_path:
                 ctx.tracing.stop(path=str(trace_path))

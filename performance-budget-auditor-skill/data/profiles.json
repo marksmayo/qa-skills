@@ -1,0 +1,6 @@
+{
+  "mobile-mid": {"viewport": "412x915", "download_kbps": 1600, "upload_kbps": 750, "rtt_ms": 150, "cpu_slowdown": 4, "mobile": true,
+                 "note": "a mid-range phone on a slow 4G connection; emulated, not a real device"},
+  "desktop": {"viewport": "1350x940", "download_kbps": 10000, "upload_kbps": 10000, "rtt_ms": 40, "cpu_slowdown": 1, "mobile": false,
+              "note": "a desktop on a typical broadband connection"}
+}

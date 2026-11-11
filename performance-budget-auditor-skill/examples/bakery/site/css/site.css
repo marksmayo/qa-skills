@@ -1,0 +1,7 @@
+body { margin: 0; font-family: "Bakery", Georgia, serif; color: #2b2118; background: #fffaf3; }
+header, main, footer { padding: 16px 24px; }
+nav a { margin-right: 16px; color: #7a3e12; }
+.hero { display: block; max-width: 100%; }
+.promo { background: #f6d7a7; padding: 24px; font-size: 1.4em; height: 120px; }
+.item { padding: 8px 0; border-bottom: 1px solid #eadfce; }
+button { font-size: 1.1em; padding: 10px 18px; }

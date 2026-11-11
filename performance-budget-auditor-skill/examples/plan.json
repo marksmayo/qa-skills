@@ -1,0 +1,15 @@
+{
+  "targets": [
+    {"url": "http://127.0.0.1:8142/", "template": "home", "reason": "landing page and the most visited", "critical_path": false},
+    {"url": "http://127.0.0.1:8142/menu", "template": "menu", "reason": "one page per template: menu", "critical_path": false},
+    {"url": "http://127.0.0.1:8142/menu/breads", "template": "menu", "reason": "second menu page, to see what the template shares", "critical_path": false},
+    {"url": "http://127.0.0.1:8142/order", "template": "order", "reason": "critical path: ordering; has the Add to basket interaction", "critical_path": true,
+     "interaction": [{"click": "#add"}]},
+    {"url": "http://127.0.0.1:8142/about", "template": "about", "reason": "one page per template: about", "critical_path": false}
+  ],
+  "profiles": ["mobile-mid", "desktop"],
+  "runs": 5,
+  "cache": "cold",
+  "budget": "budget.json",
+  "authorised_by": null
+}

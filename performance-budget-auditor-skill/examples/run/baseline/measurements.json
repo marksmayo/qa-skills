@@ -1,0 +1,3383 @@
+{
+ "schema": 1,
+ "generated_at": "2026-11-11T07:53:53Z",
+ "machine": {
+  "cpu": "Intel64 Family 6 Model 154 Stepping 3, GenuineIntel",
+  "cores": 20,
+  "os": "Windows-11-10.0.26300-SP0",
+  "python": "3.14.10"
+ },
+ "calibration": {
+  "workload": "2e7 iterations of Math.sqrt, no throttling",
+  "runs_ms": [
+   143.9,
+   141.3,
+   148.1
+  ],
+  "median_ms": 143.9,
+  "cv": 0.0238,
+  "busy": false
+ },
+ "tools": [
+  {
+   "name": "playwright-chromium",
+   "version": "158.0.8127.18",
+   "sha256": null,
+   "status": "ran",
+   "note": null
+  },
+  {
+   "name": "web-vitals",
+   "version": "6.2.3",
+   "sha256": "42d0cfd64b5cf19408e19c0393ce59eef6cc09317e94faaca6d3a032d4112e48",
+   "status": "ran",
+   "note": "attribution IIFE build, injected before page scripts"
+  }
+ ],
+ "config": {
+  "runs": 5,
+  "warmup": 1,
+  "cv_limit": 0.25,
+  "max_runs": 10,
+  "profiles": {
+   "mobile-mid": {
+    "viewport": "412x915",
+    "download_kbps": 1600,
+    "upload_kbps": 750,
+    "rtt_ms": 150,
+    "cpu_slowdown": 4,
+    "mobile": true,
+    "note": "a mid-range phone on a slow 4G connection; emulated, not a real device"
+   },
+   "desktop": {
+    "viewport": "1350x940",
+    "download_kbps": 10000,
+    "upload_kbps": 10000,
+    "rtt_ms": 40,
+    "cpu_slowdown": 1,
+    "mobile": false,
+    "note": "a desktop on a typical broadband connection"
+   }
+  },
+  "cache": [
+   "cold"
+  ]
+ },
+ "sample": [
+  {
+   "url": "http://127.0.0.1:8142/",
+   "template": "home",
+   "reason": "landing page and the most visited",
+   "critical_path": false,
+   "interaction": false
+  },
+  {
+   "url": "http://127.0.0.1:8142/menu",
+   "template": "menu",
+   "reason": "one page per template: menu",
+   "critical_path": false,
+   "interaction": false
+  },
+  {
+   "url": "http://127.0.0.1:8142/menu/breads",
+   "template": "menu",
+   "reason": "second menu page, to see what the template shares",
+   "critical_path": false,
+   "interaction": false
+  },
+  {
+   "url": "http://127.0.0.1:8142/order",
+   "template": "order",
+   "reason": "critical path: ordering; has the Add to basket interaction",
+   "critical_path": true,
+   "interaction": true
+  },
+  {
+   "url": "http://127.0.0.1:8142/about",
+   "template": "about",
+   "reason": "one page per template: about",
+   "critical_path": false,
+   "interaction": false
+  }
+ ],
+ "runs": [
+  {
+   "id": "home/mobile-mid/cold/chromium/w",
+   "url": "http://127.0.0.1:8142/",
+   "template": "home",
+   "profile": "mobile-mid",
+   "cache": "cold",
+   "browser": "chromium",
+   "kind": "warmup",
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "started_at": "2026-11-11T07:52:41Z",
+   "wall_ms": 4286,
+   "metrics": {
+    "FCP": 664,
+    "TTFB": 155.6,
+    "LCP": 2244,
+    "CLS": 0.131,
+    "INP": null,
+    "TBT": 0.0,
+    "transfer_total": 366412,
+    "transfer_script": 0
+   },
+   "metric_sources": {
+    "FCP": "web-vitals onFCP",
+    "TTFB": "web-vitals onTTFB",
+    "LCP": "web-vitals onLCP",
+    "CLS": "web-vitals onCLS",
+    "INP": "untested: no interaction",
+    "TBT": "Long Tasks API after FCP",
+    "transfer_total": "DevTools Network encodedDataLength",
+    "transfer_script": "DevTools Network encodedDataLength"
+   },
+   "transfer_by_type": {
+    "document": 1220,
+    "image": 304178,
+    "stylesheet": 849,
+    "font": 60165
+   },
+   "attribution": {
+    "LCP": {
+     "timeToFirstByte": 155.6,
+     "resourceLoadDelay": 65.3,
+     "resourceLoadDuration": 2016.4,
+     "elementRenderDelay": 6.7,
+     "target": "html>body>main>img.hero",
+     "url": "http://127.0.0.1:8142/img/hero.png",
+     "resourceTransferSize": 304313,
+     "resourceRenderBlocking": "non-blocking",
+     "element": {
+      "tag": "img",
+      "fetchpriority": null,
+      "loading": null,
+      "width_attr": null,
+      "height_attr": null,
+      "natural": [
+       400,
+       240
+      ],
+      "rendered": [
+       364,
+       218
+      ]
+     }
+    },
+    "CLS": {
+     "largestShiftTarget": "html>body>main",
+     "largestShiftTime": 1555.8,
+     "largestShiftValue": 0.131,
+     "loadState": "dom-content-loaded",
+     "shifts": [
+      {
+       "start": 1555.8,
+       "value": 0.131,
+       "sources": [
+        "main",
+        "footer"
+       ]
+      }
+     ]
+    },
+    "INP": null,
+    "long_tasks": [],
+    "loaf_scripts": [],
+    "render_blocking": [
+     {
+      "url": "http://127.0.0.1:8142/css/site.css",
+      "duration": 183
+     },
+     {
+      "url": "http://127.0.0.1:8142/fonts/fonts.css",
+      "duration": 322
+     }
+    ]
+   },
+   "resources": [
+    {
+     "url": "http://127.0.0.1:8142/img/hero.png",
+     "type": "image",
+     "bytes": 304178,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/fonts/bakery.woff2",
+     "type": "font",
+     "bytes": 60165,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/",
+     "type": "document",
+     "bytes": 1220,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/css/site.css",
+     "type": "stylesheet",
+     "bytes": 580,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/fonts/fonts.css",
+     "type": "stylesheet",
+     "bytes": 269,
+     "from_cache": false,
+     "third_party": false
+    }
+   ],
+   "server_timing": [
+    {
+     "name": "db",
+     "dur": 0,
+     "desc": ""
+    },
+    {
+     "name": "render",
+     "dur": 0.2,
+     "desc": ""
+    }
+   ],
+   "throttling": {
+    "applied": {
+     "viewport": "412x915",
+     "service_workers": "block",
+     "cpu_throttle": 4,
+     "network": {
+      "download_kbps": 1600,
+      "upload_kbps": 750,
+      "rtt_ms": 150
+     }
+    },
+    "not_applied": []
+   },
+   "console_errors": [],
+   "page_errors": []
+  },
+  {
+   "id": "home/mobile-mid/cold/chromium/r1",
+   "url": "http://127.0.0.1:8142/",
+   "template": "home",
+   "profile": "mobile-mid",
+   "cache": "cold",
+   "browser": "chromium",
+   "kind": "measured",
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "started_at": "2026-11-11T07:52:46Z",
+   "wall_ms": 4267,
+   "metrics": {
+    "FCP": 600,
+    "TTFB": 154.6,
+    "LCP": 2236,
+    "CLS": 0.131,
+    "INP": null,
+    "TBT": 0.0,
+    "transfer_total": 366412,
+    "transfer_script": 0
+   },
+   "metric_sources": {
+    "FCP": "web-vitals onFCP",
+    "TTFB": "web-vitals onTTFB",
+    "LCP": "web-vitals onLCP",
+    "CLS": "web-vitals onCLS",
+    "INP": "untested: no interaction",
+    "TBT": "Long Tasks API after FCP",
+    "transfer_total": "DevTools Network encodedDataLength",
+    "transfer_script": "DevTools Network encodedDataLength"
+   },
+   "transfer_by_type": {
+    "document": 1220,
+    "stylesheet": 849,
+    "image": 304178,
+    "font": 60165
+   },
+   "attribution": {
+    "LCP": {
+     "timeToFirstByte": 154.6,
+     "resourceLoadDelay": 58,
+     "resourceLoadDuration": 2018.8,
+     "elementRenderDelay": 4.6,
+     "target": "html>body>main>img.hero",
+     "url": "http://127.0.0.1:8142/img/hero.png",
+     "resourceTransferSize": 304313,
+     "resourceRenderBlocking": "non-blocking",
+     "element": {
+      "tag": "img",
+      "fetchpriority": null,
+      "loading": null,
+      "width_attr": null,
+      "height_attr": null,
+      "natural": [
+       400,
+       240
+      ],
+      "rendered": [
+       364,
+       218
+      ]
+     }
+    },
+    "CLS": {
+     "largestShiftTarget": "html>body>main",
+     "largestShiftTime": 1612.2,
+     "largestShiftValue": 0.131,
+     "loadState": "dom-content-loaded",
+     "shifts": [
+      {
+       "start": 1612.2,
+       "value": 0.131,
+       "sources": [
+        "main",
+        "footer"
+       ]
+      }
+     ]
+    },
+    "INP": null,
+    "long_tasks": [],
+    "loaf_scripts": [],
+    "render_blocking": [
+     {
+      "url": "http://127.0.0.1:8142/css/site.css",
+      "duration": 174
+     },
+     {
+      "url": "http://127.0.0.1:8142/fonts/fonts.css",
+      "duration": 328
+     }
+    ]
+   },
+   "resources": [
+    {
+     "url": "http://127.0.0.1:8142/img/hero.png",
+     "type": "image",
+     "bytes": 304178,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/fonts/bakery.woff2",
+     "type": "font",
+     "bytes": 60165,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/",
+     "type": "document",
+     "bytes": 1220,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/css/site.css",
+     "type": "stylesheet",
+     "bytes": 580,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/fonts/fonts.css",
+     "type": "stylesheet",
+     "bytes": 269,
+     "from_cache": false,
+     "third_party": false
+    }
+   ],
+   "server_timing": [
+    {
+     "name": "db",
+     "dur": 0,
+     "desc": ""
+    },
+    {
+     "name": "render",
+     "dur": 0.3,
+     "desc": ""
+    }
+   ],
+   "throttling": {
+    "applied": {
+     "viewport": "412x915",
+     "service_workers": "block",
+     "cpu_throttle": 4,
+     "network": {
+      "download_kbps": 1600,
+      "upload_kbps": 750,
+      "rtt_ms": 150
+     }
+    },
+    "not_applied": []
+   },
+   "console_errors": [],
+   "page_errors": []
+  },
+  {
+   "id": "home/mobile-mid/cold/chromium/r2",
+   "url": "http://127.0.0.1:8142/",
+   "template": "home",
+   "profile": "mobile-mid",
+   "cache": "cold",
+   "browser": "chromium",
+   "kind": "measured",
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "started_at": "2026-11-11T07:52:50Z",
+   "wall_ms": 4323,
+   "metrics": {
+    "FCP": 608,
+    "TTFB": 154.7,
+    "LCP": 2260,
+    "CLS": 0.131,
+    "INP": null,
+    "TBT": 0.0,
+    "transfer_total": 366412,
+    "transfer_script": 0
+   },
+   "metric_sources": {
+    "FCP": "web-vitals onFCP",
+    "TTFB": "web-vitals onTTFB",
+    "LCP": "web-vitals onLCP",
+    "CLS": "web-vitals onCLS",
+    "INP": "untested: no interaction",
+    "TBT": "Long Tasks API after FCP",
+    "transfer_total": "DevTools Network encodedDataLength",
+    "transfer_script": "DevTools Network encodedDataLength"
+   },
+   "transfer_by_type": {
+    "document": 1220,
+    "image": 304178,
+    "stylesheet": 849,
+    "font": 60165
+   },
+   "attribution": {
+    "LCP": {
+     "timeToFirstByte": 154.7,
+     "resourceLoadDelay": 63.9,
+     "resourceLoadDuration": 2035,
+     "elementRenderDelay": 6.4,
+     "target": "html>body>main>img.hero",
+     "url": "http://127.0.0.1:8142/img/hero.png",
+     "resourceTransferSize": 304313,
+     "resourceRenderBlocking": "non-blocking",
+     "element": {
+      "tag": "img",
+      "fetchpriority": null,
+      "loading": null,
+      "width_attr": null,
+      "height_attr": null,
+      "natural": [
+       400,
+       240
+      ],
+      "rendered": [
+       364,
+       218
+      ]
+     }
+    },
+    "CLS": {
+     "largestShiftTarget": "html>body>main",
+     "largestShiftTime": 1606.1,
+     "largestShiftValue": 0.131,
+     "loadState": "dom-content-loaded",
+     "shifts": [
+      {
+       "start": 1606.1,
+       "value": 0.131,
+       "sources": [
+        "main",
+        "footer"
+       ]
+      }
+     ]
+    },
+    "INP": null,
+    "long_tasks": [],
+    "loaf_scripts": [],
+    "render_blocking": [
+     {
+      "url": "http://127.0.0.1:8142/css/site.css",
+      "duration": 188
+     },
+     {
+      "url": "http://127.0.0.1:8142/fonts/fonts.css",
+      "duration": 326
+     }
+    ]
+   },
+   "resources": [
+    {
+     "url": "http://127.0.0.1:8142/img/hero.png",
+     "type": "image",
+     "bytes": 304178,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/fonts/bakery.woff2",
+     "type": "font",
+     "bytes": 60165,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/",
+     "type": "document",
+     "bytes": 1220,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/css/site.css",
+     "type": "stylesheet",
+     "bytes": 580,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/fonts/fonts.css",
+     "type": "stylesheet",
+     "bytes": 269,
+     "from_cache": false,
+     "third_party": false
+    }
+   ],
+   "server_timing": [
+    {
+     "name": "db",
+     "dur": 0.1,
+     "desc": ""
+    },
+    {
+     "name": "render",
+     "dur": 0.3,
+     "desc": ""
+    }
+   ],
+   "throttling": {
+    "applied": {
+     "viewport": "412x915",
+     "service_workers": "block",
+     "cpu_throttle": 4,
+     "network": {
+      "download_kbps": 1600,
+      "upload_kbps": 750,
+      "rtt_ms": 150
+     }
+    },
+    "not_applied": []
+   },
+   "console_errors": [],
+   "page_errors": []
+  },
+  {
+   "id": "home/mobile-mid/cold/chromium/r3",
+   "url": "http://127.0.0.1:8142/",
+   "template": "home",
+   "profile": "mobile-mid",
+   "cache": "cold",
+   "browser": "chromium",
+   "kind": "measured",
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "started_at": "2026-11-11T07:52:55Z",
+   "wall_ms": 4266,
+   "metrics": {
+    "FCP": 584,
+    "TTFB": 154.3,
+    "LCP": 2232,
+    "CLS": 0.131,
+    "INP": null,
+    "TBT": 0.0,
+    "transfer_total": 366412,
+    "transfer_script": 0
+   },
+   "metric_sources": {
+    "FCP": "web-vitals onFCP",
+    "TTFB": "web-vitals onTTFB",
+    "LCP": "web-vitals onLCP",
+    "CLS": "web-vitals onCLS",
+    "INP": "untested: no interaction",
+    "TBT": "Long Tasks API after FCP",
+    "transfer_total": "DevTools Network encodedDataLength",
+    "transfer_script": "DevTools Network encodedDataLength"
+   },
+   "transfer_by_type": {
+    "document": 1220,
+    "image": 304178,
+    "stylesheet": 849,
+    "font": 60165
+   },
+   "attribution": {
+    "LCP": {
+     "timeToFirstByte": 154.3,
+     "resourceLoadDelay": 52.4,
+     "resourceLoadDuration": 2018.8,
+     "elementRenderDelay": 6.5,
+     "target": "html>body>main>img.hero",
+     "url": "http://127.0.0.1:8142/img/hero.png",
+     "resourceTransferSize": 304313,
+     "resourceRenderBlocking": "non-blocking",
+     "element": {
+      "tag": "img",
+      "fetchpriority": null,
+      "loading": null,
+      "width_attr": null,
+      "height_attr": null,
+      "natural": [
+       400,
+       240
+      ],
+      "rendered": [
+       364,
+       218
+      ]
+     }
+    },
+    "CLS": {
+     "largestShiftTarget": "html>body>main",
+     "largestShiftTime": 1597.4,
+     "largestShiftValue": 0.131,
+     "loadState": "dom-content-loaded",
+     "shifts": [
+      {
+       "start": 1597.4,
+       "value": 0.131,
+       "sources": [
+        "main",
+        "footer"
+       ]
+      }
+     ]
+    },
+    "INP": null,
+    "long_tasks": [],
+    "loaf_scripts": [],
+    "render_blocking": [
+     {
+      "url": "http://127.0.0.1:8142/css/site.css",
+      "duration": 177
+     },
+     {
+      "url": "http://127.0.0.1:8142/fonts/fonts.css",
+      "duration": 330
+     }
+    ]
+   },
+   "resources": [
+    {
+     "url": "http://127.0.0.1:8142/img/hero.png",
+     "type": "image",
+     "bytes": 304178,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/fonts/bakery.woff2",
+     "type": "font",
+     "bytes": 60165,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/",
+     "type": "document",
+     "bytes": 1220,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/css/site.css",
+     "type": "stylesheet",
+     "bytes": 580,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/fonts/fonts.css",
+     "type": "stylesheet",
+     "bytes": 269,
+     "from_cache": false,
+     "third_party": false
+    }
+   ],
+   "server_timing": [
+    {
+     "name": "db",
+     "dur": 0,
+     "desc": ""
+    },
+    {
+     "name": "render",
+     "dur": 0.3,
+     "desc": ""
+    }
+   ],
+   "throttling": {
+    "applied": {
+     "viewport": "412x915",
+     "service_workers": "block",
+     "cpu_throttle": 4,
+     "network": {
+      "download_kbps": 1600,
+      "upload_kbps": 750,
+      "rtt_ms": 150
+     }
+    },
+    "not_applied": []
+   },
+   "console_errors": [],
+   "page_errors": []
+  },
+  {
+   "id": "home/mobile-mid/cold/chromium/r4",
+   "url": "http://127.0.0.1:8142/",
+   "template": "home",
+   "profile": "mobile-mid",
+   "cache": "cold",
+   "browser": "chromium",
+   "kind": "measured",
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "started_at": "2026-11-11T07:52:59Z",
+   "wall_ms": 4300,
+   "metrics": {
+    "FCP": 584,
+    "TTFB": 155.4,
+    "LCP": 2264,
+    "CLS": 0.131,
+    "INP": null,
+    "TBT": 0.0,
+    "transfer_total": 366412,
+    "transfer_script": 0
+   },
+   "metric_sources": {
+    "FCP": "web-vitals onFCP",
+    "TTFB": "web-vitals onTTFB",
+    "LCP": "web-vitals onLCP",
+    "CLS": "web-vitals onCLS",
+    "INP": "untested: no interaction",
+    "TBT": "Long Tasks API after FCP",
+    "transfer_total": "DevTools Network encodedDataLength",
+    "transfer_script": "DevTools Network encodedDataLength"
+   },
+   "transfer_by_type": {
+    "document": 1220,
+    "stylesheet": 849,
+    "image": 304178,
+    "font": 60165
+   },
+   "attribution": {
+    "LCP": {
+     "timeToFirstByte": 155.4,
+     "resourceLoadDelay": 66.9,
+     "resourceLoadDuration": 2034,
+     "elementRenderDelay": 7.7,
+     "target": "html>body>main>img.hero",
+     "url": "http://127.0.0.1:8142/img/hero.png",
+     "resourceTransferSize": 304313,
+     "resourceRenderBlocking": "non-blocking",
+     "element": {
+      "tag": "img",
+      "fetchpriority": null,
+      "loading": null,
+      "width_attr": null,
+      "height_attr": null,
+      "natural": [
+       400,
+       240
+      ],
+      "rendered": [
+       364,
+       218
+      ]
+     }
+    },
+    "CLS": {
+     "largestShiftTarget": "html>body>main",
+     "largestShiftTime": 1595.6,
+     "largestShiftValue": 0.131,
+     "loadState": "dom-content-loaded",
+     "shifts": [
+      {
+       "start": 1595.6,
+       "value": 0.131,
+       "sources": [
+        "main",
+        "footer"
+       ]
+      }
+     ]
+    },
+    "INP": null,
+    "long_tasks": [],
+    "loaf_scripts": [],
+    "render_blocking": [
+     {
+      "url": "http://127.0.0.1:8142/css/site.css",
+      "duration": 173
+     },
+     {
+      "url": "http://127.0.0.1:8142/fonts/fonts.css",
+      "duration": 313
+     }
+    ]
+   },
+   "resources": [
+    {
+     "url": "http://127.0.0.1:8142/img/hero.png",
+     "type": "image",
+     "bytes": 304178,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/fonts/bakery.woff2",
+     "type": "font",
+     "bytes": 60165,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/",
+     "type": "document",
+     "bytes": 1220,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/css/site.css",
+     "type": "stylesheet",
+     "bytes": 580,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/fonts/fonts.css",
+     "type": "stylesheet",
+     "bytes": 269,
+     "from_cache": false,
+     "third_party": false
+    }
+   ],
+   "server_timing": [
+    {
+     "name": "db",
+     "dur": 0,
+     "desc": ""
+    },
+    {
+     "name": "render",
+     "dur": 0.3,
+     "desc": ""
+    }
+   ],
+   "throttling": {
+    "applied": {
+     "viewport": "412x915",
+     "service_workers": "block",
+     "cpu_throttle": 4,
+     "network": {
+      "download_kbps": 1600,
+      "upload_kbps": 750,
+      "rtt_ms": 150
+     }
+    },
+    "not_applied": []
+   },
+   "console_errors": [],
+   "page_errors": []
+  },
+  {
+   "id": "home/mobile-mid/cold/chromium/r5",
+   "url": "http://127.0.0.1:8142/",
+   "template": "home",
+   "profile": "mobile-mid",
+   "cache": "cold",
+   "browser": "chromium",
+   "kind": "measured",
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "started_at": "2026-11-11T07:53:03Z",
+   "wall_ms": 4282,
+   "metrics": {
+    "FCP": 584,
+    "TTFB": 154.7,
+    "LCP": 2248,
+    "CLS": 0.131,
+    "INP": null,
+    "TBT": 0.0,
+    "transfer_total": 366412,
+    "transfer_script": 0
+   },
+   "metric_sources": {
+    "FCP": "web-vitals onFCP",
+    "TTFB": "web-vitals onTTFB",
+    "LCP": "web-vitals onLCP",
+    "CLS": "web-vitals onCLS",
+    "INP": "untested: no interaction",
+    "TBT": "Long Tasks API after FCP",
+    "transfer_total": "DevTools Network encodedDataLength",
+    "transfer_script": "DevTools Network encodedDataLength"
+   },
+   "transfer_by_type": {
+    "document": 1220,
+    "stylesheet": 849,
+    "image": 304178,
+    "font": 60165
+   },
+   "attribution": {
+    "LCP": {
+     "timeToFirstByte": 154.7,
+     "resourceLoadDelay": 57.6,
+     "resourceLoadDuration": 2027.2,
+     "elementRenderDelay": 8.5,
+     "target": "html>body>main>img.hero",
+     "url": "http://127.0.0.1:8142/img/hero.png",
+     "resourceTransferSize": 304313,
+     "resourceRenderBlocking": "non-blocking",
+     "element": {
+      "tag": "img",
+      "fetchpriority": null,
+      "loading": null,
+      "width_attr": null,
+      "height_attr": null,
+      "natural": [
+       400,
+       240
+      ],
+      "rendered": [
+       364,
+       218
+      ]
+     }
+    },
+    "CLS": {
+     "largestShiftTarget": "html>body>main",
+     "largestShiftTime": 1589.2,
+     "largestShiftValue": 0.131,
+     "loadState": "dom-content-loaded",
+     "shifts": [
+      {
+       "start": 1589.2,
+       "value": 0.131,
+       "sources": [
+        "main",
+        "footer"
+       ]
+      }
+     ]
+    },
+    "INP": null,
+    "long_tasks": [],
+    "loaf_scripts": [],
+    "render_blocking": [
+     {
+      "url": "http://127.0.0.1:8142/css/site.css",
+      "duration": 177
+     },
+     {
+      "url": "http://127.0.0.1:8142/fonts/fonts.css",
+      "duration": 318
+     }
+    ]
+   },
+   "resources": [
+    {
+     "url": "http://127.0.0.1:8142/img/hero.png",
+     "type": "image",
+     "bytes": 304178,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/fonts/bakery.woff2",
+     "type": "font",
+     "bytes": 60165,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/",
+     "type": "document",
+     "bytes": 1220,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/css/site.css",
+     "type": "stylesheet",
+     "bytes": 580,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/fonts/fonts.css",
+     "type": "stylesheet",
+     "bytes": 269,
+     "from_cache": false,
+     "third_party": false
+    }
+   ],
+   "server_timing": [
+    {
+     "name": "db",
+     "dur": 0.1,
+     "desc": ""
+    },
+    {
+     "name": "render",
+     "dur": 0.4,
+     "desc": ""
+    }
+   ],
+   "throttling": {
+    "applied": {
+     "viewport": "412x915",
+     "service_workers": "block",
+     "cpu_throttle": 4,
+     "network": {
+      "download_kbps": 1600,
+      "upload_kbps": 750,
+      "rtt_ms": 150
+     }
+    },
+    "not_applied": []
+   },
+   "console_errors": [],
+   "page_errors": []
+  },
+  {
+   "id": "home/desktop/cold/chromium/w",
+   "url": "http://127.0.0.1:8142/",
+   "template": "home",
+   "profile": "desktop",
+   "cache": "cold",
+   "browser": "chromium",
+   "kind": "warmup",
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "started_at": "2026-11-11T07:53:08Z",
+   "wall_ms": 2551,
+   "metrics": {
+    "FCP": 440,
+    "TTFB": 44.9,
+    "LCP": 440,
+    "CLS": 0.0868,
+    "INP": null,
+    "TBT": 0.0,
+    "transfer_total": 366412,
+    "transfer_script": 0
+   },
+   "metric_sources": {
+    "FCP": "web-vitals onFCP",
+    "TTFB": "web-vitals onTTFB",
+    "LCP": "web-vitals onLCP",
+    "CLS": "web-vitals onCLS",
+    "INP": "untested: no interaction",
+    "TBT": "Long Tasks API after FCP",
+    "transfer_total": "DevTools Network encodedDataLength",
+    "transfer_script": "DevTools Network encodedDataLength"
+   },
+   "transfer_by_type": {
+    "document": 1220,
+    "image": 304178,
+    "stylesheet": 849,
+    "font": 60165
+   },
+   "attribution": {
+    "LCP": {
+     "timeToFirstByte": 44.9,
+     "resourceLoadDelay": 45.8,
+     "resourceLoadDuration": 313.1,
+     "elementRenderDelay": 36.2,
+     "target": "html>body>main>img.hero",
+     "url": "http://127.0.0.1:8142/img/hero.png",
+     "resourceTransferSize": 304313,
+     "resourceRenderBlocking": "non-blocking",
+     "element": {
+      "tag": "img",
+      "fetchpriority": null,
+      "loading": null,
+      "width_attr": null,
+      "height_attr": null,
+      "natural": [
+       400,
+       240
+      ],
+      "rendered": [
+       400,
+       240
+      ]
+     }
+    },
+    "CLS": {
+     "largestShiftTarget": "html>body>main",
+     "largestShiftTime": 1419.1,
+     "largestShiftValue": 0.0868,
+     "loadState": "complete",
+     "shifts": [
+      {
+       "start": 1419.1,
+       "value": 0.0868,
+       "sources": [
+        "main",
+        "footer"
+       ]
+      }
+     ]
+    },
+    "INP": null,
+    "long_tasks": [],
+    "loaf_scripts": [],
+    "render_blocking": [
+     {
+      "url": "http://127.0.0.1:8142/css/site.css",
+      "duration": 75
+     },
+     {
+      "url": "http://127.0.0.1:8142/fonts/fonts.css",
+      "duration": 324
+     }
+    ]
+   },
+   "resources": [
+    {
+     "url": "http://127.0.0.1:8142/img/hero.png",
+     "type": "image",
+     "bytes": 304178,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/fonts/bakery.woff2",
+     "type": "font",
+     "bytes": 60165,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/",
+     "type": "document",
+     "bytes": 1220,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/css/site.css",
+     "type": "stylesheet",
+     "bytes": 580,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/fonts/fonts.css",
+     "type": "stylesheet",
+     "bytes": 269,
+     "from_cache": false,
+     "third_party": false
+    }
+   ],
+   "server_timing": [
+    {
+     "name": "db",
+     "dur": 0,
+     "desc": ""
+    },
+    {
+     "name": "render",
+     "dur": 0.3,
+     "desc": ""
+    }
+   ],
+   "throttling": {
+    "applied": {
+     "viewport": "1350x940",
+     "service_workers": "block",
+     "network": {
+      "download_kbps": 10000,
+      "upload_kbps": 10000,
+      "rtt_ms": 40
+     }
+    },
+    "not_applied": []
+   },
+   "console_errors": [],
+   "page_errors": []
+  },
+  {
+   "id": "home/desktop/cold/chromium/r1",
+   "url": "http://127.0.0.1:8142/",
+   "template": "home",
+   "profile": "desktop",
+   "cache": "cold",
+   "browser": "chromium",
+   "kind": "measured",
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "started_at": "2026-11-11T07:53:10Z",
+   "wall_ms": 2542,
+   "metrics": {
+    "FCP": 412,
+    "TTFB": 44.2,
+    "LCP": 424,
+    "CLS": 0.0868,
+    "INP": null,
+    "TBT": 0.0,
+    "transfer_total": 366412,
+    "transfer_script": 0
+   },
+   "metric_sources": {
+    "FCP": "web-vitals onFCP",
+    "TTFB": "web-vitals onTTFB",
+    "LCP": "web-vitals onLCP",
+    "CLS": "web-vitals onCLS",
+    "INP": "untested: no interaction",
+    "TBT": "Long Tasks API after FCP",
+    "transfer_total": "DevTools Network encodedDataLength",
+    "transfer_script": "DevTools Network encodedDataLength"
+   },
+   "transfer_by_type": {
+    "document": 1220,
+    "image": 304178,
+    "stylesheet": 849,
+    "font": 60165
+   },
+   "attribution": {
+    "LCP": {
+     "timeToFirstByte": 44.2,
+     "resourceLoadDelay": 40.1,
+     "resourceLoadDuration": 307.6,
+     "elementRenderDelay": 32.1,
+     "target": "html>body>main>img.hero",
+     "url": "http://127.0.0.1:8142/img/hero.png",
+     "resourceTransferSize": 304313,
+     "resourceRenderBlocking": "non-blocking",
+     "element": {
+      "tag": "img",
+      "fetchpriority": null,
+      "loading": null,
+      "width_attr": null,
+      "height_attr": null,
+      "natural": [
+       400,
+       240
+      ],
+      "rendered": [
+       400,
+       240
+      ]
+     }
+    },
+    "CLS": {
+     "largestShiftTarget": "html>body>main",
+     "largestShiftTime": 1392.1,
+     "largestShiftValue": 0.0868,
+     "loadState": "complete",
+     "shifts": [
+      {
+       "start": 1392.1,
+       "value": 0.0868,
+       "sources": [
+        "main",
+        "footer"
+       ]
+      }
+     ]
+    },
+    "INP": null,
+    "long_tasks": [],
+    "loaf_scripts": [],
+    "render_blocking": [
+     {
+      "url": "http://127.0.0.1:8142/css/site.css",
+      "duration": 75
+     },
+     {
+      "url": "http://127.0.0.1:8142/fonts/fonts.css",
+      "duration": 312
+     }
+    ]
+   },
+   "resources": [
+    {
+     "url": "http://127.0.0.1:8142/img/hero.png",
+     "type": "image",
+     "bytes": 304178,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/fonts/bakery.woff2",
+     "type": "font",
+     "bytes": 60165,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/",
+     "type": "document",
+     "bytes": 1220,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/css/site.css",
+     "type": "stylesheet",
+     "bytes": 580,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/fonts/fonts.css",
+     "type": "stylesheet",
+     "bytes": 269,
+     "from_cache": false,
+     "third_party": false
+    }
+   ],
+   "server_timing": [
+    {
+     "name": "db",
+     "dur": 0,
+     "desc": ""
+    },
+    {
+     "name": "render",
+     "dur": 0.3,
+     "desc": ""
+    }
+   ],
+   "throttling": {
+    "applied": {
+     "viewport": "1350x940",
+     "service_workers": "block",
+     "network": {
+      "download_kbps": 10000,
+      "upload_kbps": 10000,
+      "rtt_ms": 40
+     }
+    },
+    "not_applied": []
+   },
+   "console_errors": [],
+   "page_errors": []
+  },
+  {
+   "id": "home/desktop/cold/chromium/r2",
+   "url": "http://127.0.0.1:8142/",
+   "template": "home",
+   "profile": "desktop",
+   "cache": "cold",
+   "browser": "chromium",
+   "kind": "measured",
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "started_at": "2026-11-11T07:53:13Z",
+   "wall_ms": 2544,
+   "metrics": {
+    "FCP": 424,
+    "TTFB": 44.8,
+    "LCP": 424,
+    "CLS": 0.0868,
+    "INP": null,
+    "TBT": 0.0,
+    "transfer_total": 366412,
+    "transfer_script": 0
+   },
+   "metric_sources": {
+    "FCP": "web-vitals onFCP",
+    "TTFB": "web-vitals onTTFB",
+    "LCP": "web-vitals onLCP",
+    "CLS": "web-vitals onCLS",
+    "INP": "untested: no interaction",
+    "TBT": "Long Tasks API after FCP",
+    "transfer_total": "DevTools Network encodedDataLength",
+    "transfer_script": "DevTools Network encodedDataLength"
+   },
+   "transfer_by_type": {
+    "document": 1220,
+    "stylesheet": 849,
+    "image": 304178,
+    "font": 60165
+   },
+   "attribution": {
+    "LCP": {
+     "timeToFirstByte": 44.8,
+     "resourceLoadDelay": 37.6,
+     "resourceLoadDuration": 316.2,
+     "elementRenderDelay": 25.4,
+     "target": "html>body>main>img.hero",
+     "url": "http://127.0.0.1:8142/img/hero.png",
+     "resourceTransferSize": 304313,
+     "resourceRenderBlocking": "non-blocking",
+     "element": {
+      "tag": "img",
+      "fetchpriority": null,
+      "loading": null,
+      "width_attr": null,
+      "height_attr": null,
+      "natural": [
+       400,
+       240
+      ],
+      "rendered": [
+       400,
+       240
+      ]
+     }
+    },
+    "CLS": {
+     "largestShiftTarget": "html>body>main",
+     "largestShiftTime": 1414.7,
+     "largestShiftValue": 0.0868,
+     "loadState": "complete",
+     "shifts": [
+      {
+       "start": 1414.7,
+       "value": 0.0868,
+       "sources": [
+        "main",
+        "footer"
+       ]
+      }
+     ]
+    },
+    "INP": null,
+    "long_tasks": [],
+    "loaf_scripts": [],
+    "render_blocking": [
+     {
+      "url": "http://127.0.0.1:8142/css/site.css",
+      "duration": 77
+     },
+     {
+      "url": "http://127.0.0.1:8142/fonts/fonts.css",
+      "duration": 326
+     }
+    ]
+   },
+   "resources": [
+    {
+     "url": "http://127.0.0.1:8142/img/hero.png",
+     "type": "image",
+     "bytes": 304178,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/fonts/bakery.woff2",
+     "type": "font",
+     "bytes": 60165,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/",
+     "type": "document",
+     "bytes": 1220,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/css/site.css",
+     "type": "stylesheet",
+     "bytes": 580,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/fonts/fonts.css",
+     "type": "stylesheet",
+     "bytes": 269,
+     "from_cache": false,
+     "third_party": false
+    }
+   ],
+   "server_timing": [
+    {
+     "name": "db",
+     "dur": 0,
+     "desc": ""
+    },
+    {
+     "name": "render",
+     "dur": 0.3,
+     "desc": ""
+    }
+   ],
+   "throttling": {
+    "applied": {
+     "viewport": "1350x940",
+     "service_workers": "block",
+     "network": {
+      "download_kbps": 10000,
+      "upload_kbps": 10000,
+      "rtt_ms": 40
+     }
+    },
+    "not_applied": []
+   },
+   "console_errors": [],
+   "page_errors": []
+  },
+  {
+   "id": "home/desktop/cold/chromium/r3",
+   "url": "http://127.0.0.1:8142/",
+   "template": "home",
+   "profile": "desktop",
+   "cache": "cold",
+   "browser": "chromium",
+   "kind": "measured",
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "started_at": "2026-11-11T07:53:15Z",
+   "wall_ms": 2551,
+   "metrics": {
+    "FCP": 420,
+    "TTFB": 44.7,
+    "LCP": 420,
+    "CLS": 0.0868,
+    "INP": null,
+    "TBT": 0.0,
+    "transfer_total": 366412,
+    "transfer_script": 0
+   },
+   "metric_sources": {
+    "FCP": "web-vitals onFCP",
+    "TTFB": "web-vitals onTTFB",
+    "LCP": "web-vitals onLCP",
+    "CLS": "web-vitals onCLS",
+    "INP": "untested: no interaction",
+    "TBT": "Long Tasks API after FCP",
+    "transfer_total": "DevTools Network encodedDataLength",
+    "transfer_script": "DevTools Network encodedDataLength"
+   },
+   "transfer_by_type": {
+    "document": 1220,
+    "image": 304178,
+    "stylesheet": 849,
+    "font": 60165
+   },
+   "attribution": {
+    "LCP": {
+     "timeToFirstByte": 44.7,
+     "resourceLoadDelay": 40.9,
+     "resourceLoadDuration": 304.4,
+     "elementRenderDelay": 30,
+     "target": "html>body>main>img.hero",
+     "url": "http://127.0.0.1:8142/img/hero.png",
+     "resourceTransferSize": 304313,
+     "resourceRenderBlocking": "non-blocking",
+     "element": {
+      "tag": "img",
+      "fetchpriority": null,
+      "loading": null,
+      "width_attr": null,
+      "height_attr": null,
+      "natural": [
+       400,
+       240
+      ],
+      "rendered": [
+       400,
+       240
+      ]
+     }
+    },
+    "CLS": {
+     "largestShiftTarget": "html>body>main",
+     "largestShiftTime": 1417.4,
+     "largestShiftValue": 0.0868,
+     "loadState": "complete",
+     "shifts": [
+      {
+       "start": 1417.4,
+       "value": 0.0868,
+       "sources": [
+        "main",
+        "footer"
+       ]
+      }
+     ]
+    },
+    "INP": null,
+    "long_tasks": [],
+    "loaf_scripts": [],
+    "render_blocking": [
+     {
+      "url": "http://127.0.0.1:8142/css/site.css",
+      "duration": 75
+     },
+     {
+      "url": "http://127.0.0.1:8142/fonts/fonts.css",
+      "duration": 324
+     }
+    ]
+   },
+   "resources": [
+    {
+     "url": "http://127.0.0.1:8142/img/hero.png",
+     "type": "image",
+     "bytes": 304178,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/fonts/bakery.woff2",
+     "type": "font",
+     "bytes": 60165,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/",
+     "type": "document",
+     "bytes": 1220,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/css/site.css",
+     "type": "stylesheet",
+     "bytes": 580,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/fonts/fonts.css",
+     "type": "stylesheet",
+     "bytes": 269,
+     "from_cache": false,
+     "third_party": false
+    }
+   ],
+   "server_timing": [
+    {
+     "name": "db",
+     "dur": 0,
+     "desc": ""
+    },
+    {
+     "name": "render",
+     "dur": 0.4,
+     "desc": ""
+    }
+   ],
+   "throttling": {
+    "applied": {
+     "viewport": "1350x940",
+     "service_workers": "block",
+     "network": {
+      "download_kbps": 10000,
+      "upload_kbps": 10000,
+      "rtt_ms": 40
+     }
+    },
+    "not_applied": []
+   },
+   "console_errors": [],
+   "page_errors": []
+  },
+  {
+   "id": "home/desktop/cold/chromium/r4",
+   "url": "http://127.0.0.1:8142/",
+   "template": "home",
+   "profile": "desktop",
+   "cache": "cold",
+   "browser": "chromium",
+   "kind": "measured",
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "started_at": "2026-11-11T07:53:18Z",
+   "wall_ms": 2555,
+   "metrics": {
+    "FCP": 420,
+    "TTFB": 45,
+    "LCP": 420,
+    "CLS": 0.0868,
+    "INP": null,
+    "TBT": 0.0,
+    "transfer_total": 366412,
+    "transfer_script": 0
+   },
+   "metric_sources": {
+    "FCP": "web-vitals onFCP",
+    "TTFB": "web-vitals onTTFB",
+    "LCP": "web-vitals onLCP",
+    "CLS": "web-vitals onCLS",
+    "INP": "untested: no interaction",
+    "TBT": "Long Tasks API after FCP",
+    "transfer_total": "DevTools Network encodedDataLength",
+    "transfer_script": "DevTools Network encodedDataLength"
+   },
+   "transfer_by_type": {
+    "document": 1220,
+    "stylesheet": 849,
+    "image": 304178,
+    "font": 60165
+   },
+   "attribution": {
+    "LCP": {
+     "timeToFirstByte": 45,
+     "resourceLoadDelay": 35.8,
+     "resourceLoadDuration": 312.3,
+     "elementRenderDelay": 26.9,
+     "target": "html>body>main>img.hero",
+     "url": "http://127.0.0.1:8142/img/hero.png",
+     "resourceTransferSize": 304313,
+     "resourceRenderBlocking": "non-blocking",
+     "element": {
+      "tag": "img",
+      "fetchpriority": null,
+      "loading": null,
+      "width_attr": null,
+      "height_attr": null,
+      "natural": [
+       400,
+       240
+      ],
+      "rendered": [
+       400,
+       240
+      ]
+     }
+    },
+    "CLS": {
+     "largestShiftTarget": "html>body>main",
+     "largestShiftTime": 1409,
+     "largestShiftValue": 0.0868,
+     "loadState": "complete",
+     "shifts": [
+      {
+       "start": 1409,
+       "value": 0.0868,
+       "sources": [
+        "main",
+        "footer"
+       ]
+      }
+     ]
+    },
+    "INP": null,
+    "long_tasks": [],
+    "loaf_scripts": [],
+    "render_blocking": [
+     {
+      "url": "http://127.0.0.1:8142/css/site.css",
+      "duration": 74
+     },
+     {
+      "url": "http://127.0.0.1:8142/fonts/fonts.css",
+      "duration": 323
+     }
+    ]
+   },
+   "resources": [
+    {
+     "url": "http://127.0.0.1:8142/img/hero.png",
+     "type": "image",
+     "bytes": 304178,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/fonts/bakery.woff2",
+     "type": "font",
+     "bytes": 60165,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/",
+     "type": "document",
+     "bytes": 1220,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/css/site.css",
+     "type": "stylesheet",
+     "bytes": 580,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/fonts/fonts.css",
+     "type": "stylesheet",
+     "bytes": 269,
+     "from_cache": false,
+     "third_party": false
+    }
+   ],
+   "server_timing": [
+    {
+     "name": "db",
+     "dur": 0,
+     "desc": ""
+    },
+    {
+     "name": "render",
+     "dur": 0.3,
+     "desc": ""
+    }
+   ],
+   "throttling": {
+    "applied": {
+     "viewport": "1350x940",
+     "service_workers": "block",
+     "network": {
+      "download_kbps": 10000,
+      "upload_kbps": 10000,
+      "rtt_ms": 40
+     }
+    },
+    "not_applied": []
+   },
+   "console_errors": [],
+   "page_errors": []
+  },
+  {
+   "id": "home/desktop/cold/chromium/r5",
+   "url": "http://127.0.0.1:8142/",
+   "template": "home",
+   "profile": "desktop",
+   "cache": "cold",
+   "browser": "chromium",
+   "kind": "measured",
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "started_at": "2026-11-11T07:53:21Z",
+   "wall_ms": 2548,
+   "metrics": {
+    "FCP": 420,
+    "TTFB": 44.6,
+    "LCP": 420,
+    "CLS": 0.0868,
+    "INP": null,
+    "TBT": 0.0,
+    "transfer_total": 366412,
+    "transfer_script": 0
+   },
+   "metric_sources": {
+    "FCP": "web-vitals onFCP",
+    "TTFB": "web-vitals onTTFB",
+    "LCP": "web-vitals onLCP",
+    "CLS": "web-vitals onCLS",
+    "INP": "untested: no interaction",
+    "TBT": "Long Tasks API after FCP",
+    "transfer_total": "DevTools Network encodedDataLength",
+    "transfer_script": "DevTools Network encodedDataLength"
+   },
+   "transfer_by_type": {
+    "document": 1220,
+    "image": 304178,
+    "stylesheet": 849,
+    "font": 60165
+   },
+   "attribution": {
+    "LCP": {
+     "timeToFirstByte": 44.6,
+     "resourceLoadDelay": 37.8,
+     "resourceLoadDuration": 317.2,
+     "elementRenderDelay": 20.4,
+     "target": "html>body>main>img.hero",
+     "url": "http://127.0.0.1:8142/img/hero.png",
+     "resourceTransferSize": 304313,
+     "resourceRenderBlocking": "non-blocking",
+     "element": {
+      "tag": "img",
+      "fetchpriority": null,
+      "loading": null,
+      "width_attr": null,
+      "height_attr": null,
+      "natural": [
+       400,
+       240
+      ],
+      "rendered": [
+       400,
+       240
+      ]
+     }
+    },
+    "CLS": {
+     "largestShiftTarget": "html>body>main",
+     "largestShiftTime": 1412.7,
+     "largestShiftValue": 0.0868,
+     "loadState": "complete",
+     "shifts": [
+      {
+       "start": 1412.7,
+       "value": 0.0868,
+       "sources": [
+        "main",
+        "footer"
+       ]
+      }
+     ]
+    },
+    "INP": null,
+    "long_tasks": [],
+    "loaf_scripts": [],
+    "render_blocking": [
+     {
+      "url": "http://127.0.0.1:8142/css/site.css",
+      "duration": 74
+     },
+     {
+      "url": "http://127.0.0.1:8142/fonts/fonts.css",
+      "duration": 327
+     }
+    ]
+   },
+   "resources": [
+    {
+     "url": "http://127.0.0.1:8142/img/hero.png",
+     "type": "image",
+     "bytes": 304178,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/fonts/bakery.woff2",
+     "type": "font",
+     "bytes": 60165,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/",
+     "type": "document",
+     "bytes": 1220,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/css/site.css",
+     "type": "stylesheet",
+     "bytes": 580,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/fonts/fonts.css",
+     "type": "stylesheet",
+     "bytes": 269,
+     "from_cache": false,
+     "third_party": false
+    }
+   ],
+   "server_timing": [
+    {
+     "name": "db",
+     "dur": 0,
+     "desc": ""
+    },
+    {
+     "name": "render",
+     "dur": 0.3,
+     "desc": ""
+    }
+   ],
+   "throttling": {
+    "applied": {
+     "viewport": "1350x940",
+     "service_workers": "block",
+     "network": {
+      "download_kbps": 10000,
+      "upload_kbps": 10000,
+      "rtt_ms": 40
+     }
+    },
+    "not_applied": []
+   },
+   "console_errors": [],
+   "page_errors": []
+  },
+  {
+   "id": "about/mobile-mid/cold/chromium/w",
+   "url": "http://127.0.0.1:8142/about",
+   "template": "about",
+   "profile": "mobile-mid",
+   "cache": "cold",
+   "browser": "chromium",
+   "kind": "warmup",
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "started_at": "2026-11-11T07:53:23Z",
+   "wall_ms": 2440,
+   "metrics": {
+    "FCP": 456,
+    "TTFB": 154.2,
+    "LCP": 456,
+    "CLS": 0,
+    "INP": null,
+    "TBT": 0.0,
+    "transfer_total": 1380,
+    "transfer_script": 0
+   },
+   "metric_sources": {
+    "FCP": "web-vitals onFCP",
+    "TTFB": "web-vitals onTTFB",
+    "LCP": "web-vitals onLCP",
+    "CLS": "web-vitals onCLS",
+    "INP": "untested: no interaction",
+    "TBT": "Long Tasks API after FCP",
+    "transfer_total": "DevTools Network encodedDataLength",
+    "transfer_script": "DevTools Network encodedDataLength"
+   },
+   "transfer_by_type": {
+    "document": 800,
+    "stylesheet": 580
+   },
+   "attribution": {
+    "LCP": {
+     "timeToFirstByte": 154.2,
+     "resourceLoadDelay": 0,
+     "resourceLoadDuration": 0,
+     "elementRenderDelay": 301.8,
+     "target": "html>body>main>p",
+     "element": {
+      "tag": "p",
+      "fetchpriority": null,
+      "loading": null,
+      "width_attr": null,
+      "height_attr": null,
+      "natural": null,
+      "rendered": [
+       364,
+       38
+      ]
+     }
+    },
+    "CLS": {
+     "shifts": []
+    },
+    "INP": null,
+    "long_tasks": [],
+    "loaf_scripts": [],
+    "render_blocking": [
+     {
+      "url": "http://127.0.0.1:8142/css/site.css",
+      "duration": 172
+     }
+    ]
+   },
+   "resources": [
+    {
+     "url": "http://127.0.0.1:8142/about",
+     "type": "document",
+     "bytes": 800,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/css/site.css",
+     "type": "stylesheet",
+     "bytes": 580,
+     "from_cache": false,
+     "third_party": false
+    }
+   ],
+   "server_timing": [
+    {
+     "name": "db",
+     "dur": 0,
+     "desc": ""
+    },
+    {
+     "name": "render",
+     "dur": 0.3,
+     "desc": ""
+    }
+   ],
+   "throttling": {
+    "applied": {
+     "viewport": "412x915",
+     "service_workers": "block",
+     "cpu_throttle": 4,
+     "network": {
+      "download_kbps": 1600,
+      "upload_kbps": 750,
+      "rtt_ms": 150
+     }
+    },
+    "not_applied": []
+   },
+   "console_errors": [],
+   "page_errors": []
+  },
+  {
+   "id": "about/mobile-mid/cold/chromium/r1",
+   "url": "http://127.0.0.1:8142/about",
+   "template": "about",
+   "profile": "mobile-mid",
+   "cache": "cold",
+   "browser": "chromium",
+   "kind": "measured",
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "started_at": "2026-11-11T07:53:26Z",
+   "wall_ms": 2447,
+   "metrics": {
+    "FCP": 464,
+    "TTFB": 154.6,
+    "LCP": 464,
+    "CLS": 0,
+    "INP": null,
+    "TBT": 0.0,
+    "transfer_total": 1380,
+    "transfer_script": 0
+   },
+   "metric_sources": {
+    "FCP": "web-vitals onFCP",
+    "TTFB": "web-vitals onTTFB",
+    "LCP": "web-vitals onLCP",
+    "CLS": "web-vitals onCLS",
+    "INP": "untested: no interaction",
+    "TBT": "Long Tasks API after FCP",
+    "transfer_total": "DevTools Network encodedDataLength",
+    "transfer_script": "DevTools Network encodedDataLength"
+   },
+   "transfer_by_type": {
+    "document": 800,
+    "stylesheet": 580
+   },
+   "attribution": {
+    "LCP": {
+     "timeToFirstByte": 154.6,
+     "resourceLoadDelay": 0,
+     "resourceLoadDuration": 0,
+     "elementRenderDelay": 309.4,
+     "target": "html>body>main>p",
+     "element": {
+      "tag": "p",
+      "fetchpriority": null,
+      "loading": null,
+      "width_attr": null,
+      "height_attr": null,
+      "natural": null,
+      "rendered": [
+       364,
+       38
+      ]
+     }
+    },
+    "CLS": {
+     "shifts": []
+    },
+    "INP": null,
+    "long_tasks": [],
+    "loaf_scripts": [],
+    "render_blocking": [
+     {
+      "url": "http://127.0.0.1:8142/css/site.css",
+      "duration": 187
+     }
+    ]
+   },
+   "resources": [
+    {
+     "url": "http://127.0.0.1:8142/about",
+     "type": "document",
+     "bytes": 800,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/css/site.css",
+     "type": "stylesheet",
+     "bytes": 580,
+     "from_cache": false,
+     "third_party": false
+    }
+   ],
+   "server_timing": [
+    {
+     "name": "db",
+     "dur": 0,
+     "desc": ""
+    },
+    {
+     "name": "render",
+     "dur": 0.3,
+     "desc": ""
+    }
+   ],
+   "throttling": {
+    "applied": {
+     "viewport": "412x915",
+     "service_workers": "block",
+     "cpu_throttle": 4,
+     "network": {
+      "download_kbps": 1600,
+      "upload_kbps": 750,
+      "rtt_ms": 150
+     }
+    },
+    "not_applied": []
+   },
+   "console_errors": [],
+   "page_errors": []
+  },
+  {
+   "id": "about/mobile-mid/cold/chromium/r2",
+   "url": "http://127.0.0.1:8142/about",
+   "template": "about",
+   "profile": "mobile-mid",
+   "cache": "cold",
+   "browser": "chromium",
+   "kind": "measured",
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "started_at": "2026-11-11T07:53:28Z",
+   "wall_ms": 2416,
+   "metrics": {
+    "FCP": 448,
+    "TTFB": 154.4,
+    "LCP": 448,
+    "CLS": 0,
+    "INP": null,
+    "TBT": 0.0,
+    "transfer_total": 1380,
+    "transfer_script": 0
+   },
+   "metric_sources": {
+    "FCP": "web-vitals onFCP",
+    "TTFB": "web-vitals onTTFB",
+    "LCP": "web-vitals onLCP",
+    "CLS": "web-vitals onCLS",
+    "INP": "untested: no interaction",
+    "TBT": "Long Tasks API after FCP",
+    "transfer_total": "DevTools Network encodedDataLength",
+    "transfer_script": "DevTools Network encodedDataLength"
+   },
+   "transfer_by_type": {
+    "document": 800,
+    "stylesheet": 580
+   },
+   "attribution": {
+    "LCP": {
+     "timeToFirstByte": 154.4,
+     "resourceLoadDelay": 0,
+     "resourceLoadDuration": 0,
+     "elementRenderDelay": 293.6,
+     "target": "html>body>main>p",
+     "element": {
+      "tag": "p",
+      "fetchpriority": null,
+      "loading": null,
+      "width_attr": null,
+      "height_attr": null,
+      "natural": null,
+      "rendered": [
+       364,
+       38
+      ]
+     }
+    },
+    "CLS": {
+     "shifts": []
+    },
+    "INP": null,
+    "long_tasks": [],
+    "loaf_scripts": [],
+    "render_blocking": [
+     {
+      "url": "http://127.0.0.1:8142/css/site.css",
+      "duration": 173
+     }
+    ]
+   },
+   "resources": [
+    {
+     "url": "http://127.0.0.1:8142/about",
+     "type": "document",
+     "bytes": 800,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/css/site.css",
+     "type": "stylesheet",
+     "bytes": 580,
+     "from_cache": false,
+     "third_party": false
+    }
+   ],
+   "server_timing": [
+    {
+     "name": "db",
+     "dur": 0.1,
+     "desc": ""
+    },
+    {
+     "name": "render",
+     "dur": 0.8,
+     "desc": ""
+    }
+   ],
+   "throttling": {
+    "applied": {
+     "viewport": "412x915",
+     "service_workers": "block",
+     "cpu_throttle": 4,
+     "network": {
+      "download_kbps": 1600,
+      "upload_kbps": 750,
+      "rtt_ms": 150
+     }
+    },
+    "not_applied": []
+   },
+   "console_errors": [],
+   "page_errors": []
+  },
+  {
+   "id": "about/mobile-mid/cold/chromium/r3",
+   "url": "http://127.0.0.1:8142/about",
+   "template": "about",
+   "profile": "mobile-mid",
+   "cache": "cold",
+   "browser": "chromium",
+   "kind": "measured",
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "started_at": "2026-11-11T07:53:31Z",
+   "wall_ms": 2432,
+   "metrics": {
+    "FCP": 436,
+    "TTFB": 154.2,
+    "LCP": 436,
+    "CLS": 0,
+    "INP": null,
+    "TBT": 0.0,
+    "transfer_total": 1380,
+    "transfer_script": 0
+   },
+   "metric_sources": {
+    "FCP": "web-vitals onFCP",
+    "TTFB": "web-vitals onTTFB",
+    "LCP": "web-vitals onLCP",
+    "CLS": "web-vitals onCLS",
+    "INP": "untested: no interaction",
+    "TBT": "Long Tasks API after FCP",
+    "transfer_total": "DevTools Network encodedDataLength",
+    "transfer_script": "DevTools Network encodedDataLength"
+   },
+   "transfer_by_type": {
+    "document": 800,
+    "stylesheet": 580
+   },
+   "attribution": {
+    "LCP": {
+     "timeToFirstByte": 154.2,
+     "resourceLoadDelay": 0,
+     "resourceLoadDuration": 0,
+     "elementRenderDelay": 281.8,
+     "target": "html>body>main>p",
+     "element": {
+      "tag": "p",
+      "fetchpriority": null,
+      "loading": null,
+      "width_attr": null,
+      "height_attr": null,
+      "natural": null,
+      "rendered": [
+       364,
+       38
+      ]
+     }
+    },
+    "CLS": {
+     "shifts": []
+    },
+    "INP": null,
+    "long_tasks": [],
+    "loaf_scripts": [],
+    "render_blocking": [
+     {
+      "url": "http://127.0.0.1:8142/css/site.css",
+      "duration": 172
+     }
+    ]
+   },
+   "resources": [
+    {
+     "url": "http://127.0.0.1:8142/about",
+     "type": "document",
+     "bytes": 800,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/css/site.css",
+     "type": "stylesheet",
+     "bytes": 580,
+     "from_cache": false,
+     "third_party": false
+    }
+   ],
+   "server_timing": [
+    {
+     "name": "db",
+     "dur": 0,
+     "desc": ""
+    },
+    {
+     "name": "render",
+     "dur": 0.3,
+     "desc": ""
+    }
+   ],
+   "throttling": {
+    "applied": {
+     "viewport": "412x915",
+     "service_workers": "block",
+     "cpu_throttle": 4,
+     "network": {
+      "download_kbps": 1600,
+      "upload_kbps": 750,
+      "rtt_ms": 150
+     }
+    },
+    "not_applied": []
+   },
+   "console_errors": [],
+   "page_errors": []
+  },
+  {
+   "id": "about/mobile-mid/cold/chromium/r4",
+   "url": "http://127.0.0.1:8142/about",
+   "template": "about",
+   "profile": "mobile-mid",
+   "cache": "cold",
+   "browser": "chromium",
+   "kind": "measured",
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "started_at": "2026-11-11T07:53:33Z",
+   "wall_ms": 2432,
+   "metrics": {
+    "FCP": 444,
+    "TTFB": 153.1,
+    "LCP": 444,
+    "CLS": 0,
+    "INP": null,
+    "TBT": 0.0,
+    "transfer_total": 1380,
+    "transfer_script": 0
+   },
+   "metric_sources": {
+    "FCP": "web-vitals onFCP",
+    "TTFB": "web-vitals onTTFB",
+    "LCP": "web-vitals onLCP",
+    "CLS": "web-vitals onCLS",
+    "INP": "untested: no interaction",
+    "TBT": "Long Tasks API after FCP",
+    "transfer_total": "DevTools Network encodedDataLength",
+    "transfer_script": "DevTools Network encodedDataLength"
+   },
+   "transfer_by_type": {
+    "document": 800,
+    "stylesheet": 580
+   },
+   "attribution": {
+    "LCP": {
+     "timeToFirstByte": 153.1,
+     "resourceLoadDelay": 0,
+     "resourceLoadDuration": 0,
+     "elementRenderDelay": 290.9,
+     "target": "html>body>main>p",
+     "element": {
+      "tag": "p",
+      "fetchpriority": null,
+      "loading": null,
+      "width_attr": null,
+      "height_attr": null,
+      "natural": null,
+      "rendered": [
+       364,
+       38
+      ]
+     }
+    },
+    "CLS": {
+     "shifts": []
+    },
+    "INP": null,
+    "long_tasks": [],
+    "loaf_scripts": [],
+    "render_blocking": [
+     {
+      "url": "http://127.0.0.1:8142/css/site.css",
+      "duration": 185
+     }
+    ]
+   },
+   "resources": [
+    {
+     "url": "http://127.0.0.1:8142/about",
+     "type": "document",
+     "bytes": 800,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/css/site.css",
+     "type": "stylesheet",
+     "bytes": 580,
+     "from_cache": false,
+     "third_party": false
+    }
+   ],
+   "server_timing": [
+    {
+     "name": "db",
+     "dur": 0,
+     "desc": ""
+    },
+    {
+     "name": "render",
+     "dur": 0.3,
+     "desc": ""
+    }
+   ],
+   "throttling": {
+    "applied": {
+     "viewport": "412x915",
+     "service_workers": "block",
+     "cpu_throttle": 4,
+     "network": {
+      "download_kbps": 1600,
+      "upload_kbps": 750,
+      "rtt_ms": 150
+     }
+    },
+    "not_applied": []
+   },
+   "console_errors": [],
+   "page_errors": []
+  },
+  {
+   "id": "about/mobile-mid/cold/chromium/r5",
+   "url": "http://127.0.0.1:8142/about",
+   "template": "about",
+   "profile": "mobile-mid",
+   "cache": "cold",
+   "browser": "chromium",
+   "kind": "measured",
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "started_at": "2026-11-11T07:53:36Z",
+   "wall_ms": 2425,
+   "metrics": {
+    "FCP": 436,
+    "TTFB": 154.7,
+    "LCP": 436,
+    "CLS": 0,
+    "INP": null,
+    "TBT": 0.0,
+    "transfer_total": 1380,
+    "transfer_script": 0
+   },
+   "metric_sources": {
+    "FCP": "web-vitals onFCP",
+    "TTFB": "web-vitals onTTFB",
+    "LCP": "web-vitals onLCP",
+    "CLS": "web-vitals onCLS",
+    "INP": "untested: no interaction",
+    "TBT": "Long Tasks API after FCP",
+    "transfer_total": "DevTools Network encodedDataLength",
+    "transfer_script": "DevTools Network encodedDataLength"
+   },
+   "transfer_by_type": {
+    "document": 800,
+    "stylesheet": 580
+   },
+   "attribution": {
+    "LCP": {
+     "timeToFirstByte": 154.7,
+     "resourceLoadDelay": 0,
+     "resourceLoadDuration": 0,
+     "elementRenderDelay": 281.3,
+     "target": "html>body>main>p",
+     "element": {
+      "tag": "p",
+      "fetchpriority": null,
+      "loading": null,
+      "width_attr": null,
+      "height_attr": null,
+      "natural": null,
+      "rendered": [
+       364,
+       38
+      ]
+     }
+    },
+    "CLS": {
+     "shifts": []
+    },
+    "INP": null,
+    "long_tasks": [],
+    "loaf_scripts": [],
+    "render_blocking": [
+     {
+      "url": "http://127.0.0.1:8142/css/site.css",
+      "duration": 171
+     }
+    ]
+   },
+   "resources": [
+    {
+     "url": "http://127.0.0.1:8142/about",
+     "type": "document",
+     "bytes": 800,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/css/site.css",
+     "type": "stylesheet",
+     "bytes": 580,
+     "from_cache": false,
+     "third_party": false
+    }
+   ],
+   "server_timing": [
+    {
+     "name": "db",
+     "dur": 0.1,
+     "desc": ""
+    },
+    {
+     "name": "render",
+     "dur": 0.3,
+     "desc": ""
+    }
+   ],
+   "throttling": {
+    "applied": {
+     "viewport": "412x915",
+     "service_workers": "block",
+     "cpu_throttle": 4,
+     "network": {
+      "download_kbps": 1600,
+      "upload_kbps": 750,
+      "rtt_ms": 150
+     }
+    },
+    "not_applied": []
+   },
+   "console_errors": [],
+   "page_errors": []
+  },
+  {
+   "id": "about/desktop/cold/chromium/w",
+   "url": "http://127.0.0.1:8142/about",
+   "template": "about",
+   "profile": "desktop",
+   "cache": "cold",
+   "browser": "chromium",
+   "kind": "warmup",
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "started_at": "2026-11-11T07:53:38Z",
+   "wall_ms": 2188,
+   "metrics": {
+    "FCP": 164,
+    "TTFB": 44.3,
+    "LCP": 164,
+    "CLS": 0,
+    "INP": null,
+    "TBT": 0.0,
+    "transfer_total": 1380,
+    "transfer_script": 0
+   },
+   "metric_sources": {
+    "FCP": "web-vitals onFCP",
+    "TTFB": "web-vitals onTTFB",
+    "LCP": "web-vitals onLCP",
+    "CLS": "web-vitals onCLS",
+    "INP": "untested: no interaction",
+    "TBT": "Long Tasks API after FCP",
+    "transfer_total": "DevTools Network encodedDataLength",
+    "transfer_script": "DevTools Network encodedDataLength"
+   },
+   "transfer_by_type": {
+    "document": 800,
+    "stylesheet": 580
+   },
+   "attribution": {
+    "LCP": {
+     "timeToFirstByte": 44.3,
+     "resourceLoadDelay": 0,
+     "resourceLoadDuration": 0,
+     "elementRenderDelay": 119.7,
+     "target": "html>body>main>p",
+     "element": {
+      "tag": "p",
+      "fetchpriority": null,
+      "loading": null,
+      "width_attr": null,
+      "height_attr": null,
+      "natural": null,
+      "rendered": [
+       1302,
+       19
+      ]
+     }
+    },
+    "CLS": {
+     "shifts": []
+    },
+    "INP": null,
+    "long_tasks": [],
+    "loaf_scripts": [],
+    "render_blocking": [
+     {
+      "url": "http://127.0.0.1:8142/css/site.css",
+      "duration": 72
+     }
+    ]
+   },
+   "resources": [
+    {
+     "url": "http://127.0.0.1:8142/about",
+     "type": "document",
+     "bytes": 800,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/css/site.css",
+     "type": "stylesheet",
+     "bytes": 580,
+     "from_cache": false,
+     "third_party": false
+    }
+   ],
+   "server_timing": [
+    {
+     "name": "db",
+     "dur": 0,
+     "desc": ""
+    },
+    {
+     "name": "render",
+     "dur": 0.3,
+     "desc": ""
+    }
+   ],
+   "throttling": {
+    "applied": {
+     "viewport": "1350x940",
+     "service_workers": "block",
+     "network": {
+      "download_kbps": 10000,
+      "upload_kbps": 10000,
+      "rtt_ms": 40
+     }
+    },
+    "not_applied": []
+   },
+   "console_errors": [],
+   "page_errors": []
+  },
+  {
+   "id": "about/desktop/cold/chromium/r1",
+   "url": "http://127.0.0.1:8142/about",
+   "template": "about",
+   "profile": "desktop",
+   "cache": "cold",
+   "browser": "chromium",
+   "kind": "measured",
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "started_at": "2026-11-11T07:53:41Z",
+   "wall_ms": 2185,
+   "metrics": {
+    "FCP": 164,
+    "TTFB": 44.5,
+    "LCP": 164,
+    "CLS": 0,
+    "INP": null,
+    "TBT": 0.0,
+    "transfer_total": 1380,
+    "transfer_script": 0
+   },
+   "metric_sources": {
+    "FCP": "web-vitals onFCP",
+    "TTFB": "web-vitals onTTFB",
+    "LCP": "web-vitals onLCP",
+    "CLS": "web-vitals onCLS",
+    "INP": "untested: no interaction",
+    "TBT": "Long Tasks API after FCP",
+    "transfer_total": "DevTools Network encodedDataLength",
+    "transfer_script": "DevTools Network encodedDataLength"
+   },
+   "transfer_by_type": {
+    "document": 800,
+    "stylesheet": 580
+   },
+   "attribution": {
+    "LCP": {
+     "timeToFirstByte": 44.5,
+     "resourceLoadDelay": 0,
+     "resourceLoadDuration": 0,
+     "elementRenderDelay": 119.5,
+     "target": "html>body>main>p",
+     "element": {
+      "tag": "p",
+      "fetchpriority": null,
+      "loading": null,
+      "width_attr": null,
+      "height_attr": null,
+      "natural": null,
+      "rendered": [
+       1302,
+       19
+      ]
+     }
+    },
+    "CLS": {
+     "shifts": []
+    },
+    "INP": null,
+    "long_tasks": [],
+    "loaf_scripts": [],
+    "render_blocking": [
+     {
+      "url": "http://127.0.0.1:8142/css/site.css",
+      "duration": 74
+     }
+    ]
+   },
+   "resources": [
+    {
+     "url": "http://127.0.0.1:8142/about",
+     "type": "document",
+     "bytes": 800,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/css/site.css",
+     "type": "stylesheet",
+     "bytes": 580,
+     "from_cache": false,
+     "third_party": false
+    }
+   ],
+   "server_timing": [
+    {
+     "name": "db",
+     "dur": 0,
+     "desc": ""
+    },
+    {
+     "name": "render",
+     "dur": 0.4,
+     "desc": ""
+    }
+   ],
+   "throttling": {
+    "applied": {
+     "viewport": "1350x940",
+     "service_workers": "block",
+     "network": {
+      "download_kbps": 10000,
+      "upload_kbps": 10000,
+      "rtt_ms": 40
+     }
+    },
+    "not_applied": []
+   },
+   "console_errors": [],
+   "page_errors": []
+  },
+  {
+   "id": "about/desktop/cold/chromium/r2",
+   "url": "http://127.0.0.1:8142/about",
+   "template": "about",
+   "profile": "desktop",
+   "cache": "cold",
+   "browser": "chromium",
+   "kind": "measured",
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "started_at": "2026-11-11T07:53:43Z",
+   "wall_ms": 2166,
+   "metrics": {
+    "FCP": 164,
+    "TTFB": 44.8,
+    "LCP": 164,
+    "CLS": 0,
+    "INP": null,
+    "TBT": 0.0,
+    "transfer_total": 1380,
+    "transfer_script": 0
+   },
+   "metric_sources": {
+    "FCP": "web-vitals onFCP",
+    "TTFB": "web-vitals onTTFB",
+    "LCP": "web-vitals onLCP",
+    "CLS": "web-vitals onCLS",
+    "INP": "untested: no interaction",
+    "TBT": "Long Tasks API after FCP",
+    "transfer_total": "DevTools Network encodedDataLength",
+    "transfer_script": "DevTools Network encodedDataLength"
+   },
+   "transfer_by_type": {
+    "document": 800,
+    "stylesheet": 580
+   },
+   "attribution": {
+    "LCP": {
+     "timeToFirstByte": 44.8,
+     "resourceLoadDelay": 0,
+     "resourceLoadDuration": 0,
+     "elementRenderDelay": 119.2,
+     "target": "html>body>main>p",
+     "element": {
+      "tag": "p",
+      "fetchpriority": null,
+      "loading": null,
+      "width_attr": null,
+      "height_attr": null,
+      "natural": null,
+      "rendered": [
+       1302,
+       19
+      ]
+     }
+    },
+    "CLS": {
+     "shifts": []
+    },
+    "INP": null,
+    "long_tasks": [],
+    "loaf_scripts": [],
+    "render_blocking": [
+     {
+      "url": "http://127.0.0.1:8142/css/site.css",
+      "duration": 76
+     }
+    ]
+   },
+   "resources": [
+    {
+     "url": "http://127.0.0.1:8142/about",
+     "type": "document",
+     "bytes": 800,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/css/site.css",
+     "type": "stylesheet",
+     "bytes": 580,
+     "from_cache": false,
+     "third_party": false
+    }
+   ],
+   "server_timing": [
+    {
+     "name": "db",
+     "dur": 0,
+     "desc": ""
+    },
+    {
+     "name": "render",
+     "dur": 0.4,
+     "desc": ""
+    }
+   ],
+   "throttling": {
+    "applied": {
+     "viewport": "1350x940",
+     "service_workers": "block",
+     "network": {
+      "download_kbps": 10000,
+      "upload_kbps": 10000,
+      "rtt_ms": 40
+     }
+    },
+    "not_applied": []
+   },
+   "console_errors": [],
+   "page_errors": []
+  },
+  {
+   "id": "about/desktop/cold/chromium/r3",
+   "url": "http://127.0.0.1:8142/about",
+   "template": "about",
+   "profile": "desktop",
+   "cache": "cold",
+   "browser": "chromium",
+   "kind": "measured",
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "started_at": "2026-11-11T07:53:45Z",
+   "wall_ms": 2181,
+   "metrics": {
+    "FCP": 172,
+    "TTFB": 44.6,
+    "LCP": 172,
+    "CLS": 0,
+    "INP": null,
+    "TBT": 0.0,
+    "transfer_total": 1380,
+    "transfer_script": 0
+   },
+   "metric_sources": {
+    "FCP": "web-vitals onFCP",
+    "TTFB": "web-vitals onTTFB",
+    "LCP": "web-vitals onLCP",
+    "CLS": "web-vitals onCLS",
+    "INP": "untested: no interaction",
+    "TBT": "Long Tasks API after FCP",
+    "transfer_total": "DevTools Network encodedDataLength",
+    "transfer_script": "DevTools Network encodedDataLength"
+   },
+   "transfer_by_type": {
+    "document": 800,
+    "stylesheet": 580
+   },
+   "attribution": {
+    "LCP": {
+     "timeToFirstByte": 44.6,
+     "resourceLoadDelay": 0,
+     "resourceLoadDuration": 0,
+     "elementRenderDelay": 127.4,
+     "target": "html>body>main>p",
+     "element": {
+      "tag": "p",
+      "fetchpriority": null,
+      "loading": null,
+      "width_attr": null,
+      "height_attr": null,
+      "natural": null,
+      "rendered": [
+       1302,
+       19
+      ]
+     }
+    },
+    "CLS": {
+     "shifts": []
+    },
+    "INP": null,
+    "long_tasks": [],
+    "loaf_scripts": [],
+    "render_blocking": [
+     {
+      "url": "http://127.0.0.1:8142/css/site.css",
+      "duration": 73
+     }
+    ]
+   },
+   "resources": [
+    {
+     "url": "http://127.0.0.1:8142/about",
+     "type": "document",
+     "bytes": 800,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/css/site.css",
+     "type": "stylesheet",
+     "bytes": 580,
+     "from_cache": false,
+     "third_party": false
+    }
+   ],
+   "server_timing": [
+    {
+     "name": "db",
+     "dur": 0,
+     "desc": ""
+    },
+    {
+     "name": "render",
+     "dur": 0.3,
+     "desc": ""
+    }
+   ],
+   "throttling": {
+    "applied": {
+     "viewport": "1350x940",
+     "service_workers": "block",
+     "network": {
+      "download_kbps": 10000,
+      "upload_kbps": 10000,
+      "rtt_ms": 40
+     }
+    },
+    "not_applied": []
+   },
+   "console_errors": [],
+   "page_errors": []
+  },
+  {
+   "id": "about/desktop/cold/chromium/r4",
+   "url": "http://127.0.0.1:8142/about",
+   "template": "about",
+   "profile": "desktop",
+   "cache": "cold",
+   "browser": "chromium",
+   "kind": "measured",
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "started_at": "2026-11-11T07:53:47Z",
+   "wall_ms": 2180,
+   "metrics": {
+    "FCP": 164,
+    "TTFB": 44.6,
+    "LCP": 164,
+    "CLS": 0,
+    "INP": null,
+    "TBT": 0.0,
+    "transfer_total": 1380,
+    "transfer_script": 0
+   },
+   "metric_sources": {
+    "FCP": "web-vitals onFCP",
+    "TTFB": "web-vitals onTTFB",
+    "LCP": "web-vitals onLCP",
+    "CLS": "web-vitals onCLS",
+    "INP": "untested: no interaction",
+    "TBT": "Long Tasks API after FCP",
+    "transfer_total": "DevTools Network encodedDataLength",
+    "transfer_script": "DevTools Network encodedDataLength"
+   },
+   "transfer_by_type": {
+    "document": 800,
+    "stylesheet": 580
+   },
+   "attribution": {
+    "LCP": {
+     "timeToFirstByte": 44.6,
+     "resourceLoadDelay": 0,
+     "resourceLoadDuration": 0,
+     "elementRenderDelay": 119.4,
+     "target": "html>body>main>p",
+     "element": {
+      "tag": "p",
+      "fetchpriority": null,
+      "loading": null,
+      "width_attr": null,
+      "height_attr": null,
+      "natural": null,
+      "rendered": [
+       1302,
+       19
+      ]
+     }
+    },
+    "CLS": {
+     "shifts": []
+    },
+    "INP": null,
+    "long_tasks": [],
+    "loaf_scripts": [],
+    "render_blocking": [
+     {
+      "url": "http://127.0.0.1:8142/css/site.css",
+      "duration": 73
+     }
+    ]
+   },
+   "resources": [
+    {
+     "url": "http://127.0.0.1:8142/about",
+     "type": "document",
+     "bytes": 800,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/css/site.css",
+     "type": "stylesheet",
+     "bytes": 580,
+     "from_cache": false,
+     "third_party": false
+    }
+   ],
+   "server_timing": [
+    {
+     "name": "db",
+     "dur": 0,
+     "desc": ""
+    },
+    {
+     "name": "render",
+     "dur": 0.3,
+     "desc": ""
+    }
+   ],
+   "throttling": {
+    "applied": {
+     "viewport": "1350x940",
+     "service_workers": "block",
+     "network": {
+      "download_kbps": 10000,
+      "upload_kbps": 10000,
+      "rtt_ms": 40
+     }
+    },
+    "not_applied": []
+   },
+   "console_errors": [],
+   "page_errors": []
+  },
+  {
+   "id": "about/desktop/cold/chromium/r5",
+   "url": "http://127.0.0.1:8142/about",
+   "template": "about",
+   "profile": "desktop",
+   "cache": "cold",
+   "browser": "chromium",
+   "kind": "measured",
+   "ok": true,
+   "status": 200,
+   "error": null,
+   "started_at": "2026-11-11T07:53:49Z",
+   "wall_ms": 2180,
+   "metrics": {
+    "FCP": 168,
+    "TTFB": 44.8,
+    "LCP": 168,
+    "CLS": 0,
+    "INP": null,
+    "TBT": 0.0,
+    "transfer_total": 1380,
+    "transfer_script": 0
+   },
+   "metric_sources": {
+    "FCP": "web-vitals onFCP",
+    "TTFB": "web-vitals onTTFB",
+    "LCP": "web-vitals onLCP",
+    "CLS": "web-vitals onCLS",
+    "INP": "untested: no interaction",
+    "TBT": "Long Tasks API after FCP",
+    "transfer_total": "DevTools Network encodedDataLength",
+    "transfer_script": "DevTools Network encodedDataLength"
+   },
+   "transfer_by_type": {
+    "document": 800,
+    "stylesheet": 580
+   },
+   "attribution": {
+    "LCP": {
+     "timeToFirstByte": 44.8,
+     "resourceLoadDelay": 0,
+     "resourceLoadDuration": 0,
+     "elementRenderDelay": 123.2,
+     "target": "html>body>main>p",
+     "element": {
+      "tag": "p",
+      "fetchpriority": null,
+      "loading": null,
+      "width_attr": null,
+      "height_attr": null,
+      "natural": null,
+      "rendered": [
+       1302,
+       19
+      ]
+     }
+    },
+    "CLS": {
+     "shifts": []
+    },
+    "INP": null,
+    "long_tasks": [],
+    "loaf_scripts": [],
+    "render_blocking": [
+     {
+      "url": "http://127.0.0.1:8142/css/site.css",
+      "duration": 74
+     }
+    ]
+   },
+   "resources": [
+    {
+     "url": "http://127.0.0.1:8142/about",
+     "type": "document",
+     "bytes": 800,
+     "from_cache": false,
+     "third_party": false
+    },
+    {
+     "url": "http://127.0.0.1:8142/css/site.css",
+     "type": "stylesheet",
+     "bytes": 580,
+     "from_cache": false,
+     "third_party": false
+    }
+   ],
+   "server_timing": [
+    {
+     "name": "db",
+     "dur": 0,
+     "desc": ""
+    },
+    {
+     "name": "render",
+     "dur": 0.3,
+     "desc": ""
+    }
+   ],
+   "throttling": {
+    "applied": {
+     "viewport": "1350x940",
+     "service_workers": "block",
+     "network": {
+      "download_kbps": 10000,
+      "upload_kbps": 10000,
+      "rtt_ms": 40
+     }
+    },
+    "not_applied": []
+   },
+   "console_errors": [],
+   "page_errors": []
+  }
+ ],
+ "events": [],
+ "blocked_requests": []
+}

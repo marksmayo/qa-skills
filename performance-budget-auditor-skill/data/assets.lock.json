@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "cache_default": "~/.cache/qa-skills/perf-assets",
+  "assets": [
+    {
+      "name": "web-vitals",
+      "version": "6.2.3",
+      "license": "Apache-2.0",
+      "published": "2026-10-05",
+      "tarball": "https://registry.npmjs.org/web-vitals/-/web-vitals-6.2.3.tgz",
+      "tarball_integrity": "sha512-Dmy+vdO1UPMqXiAtZSNayhl4f794Bxfd94W4HIj2HlYtczEQfEOon969memlcpcHrTuOKLa5baFjX7WbgmOq+A==",
+      "member": "package/dist/web-vitals.attribution.iife.js",
+      "file": "web-vitals.attribution.iife.js",
+      "sha256": "42d0cfd64b5cf19408e19c0393ce59eef6cc09317e94faaca6d3a032d4112e48",
+      "mirror": "https://cdn.jsdelivr.net/npm/web-vitals@6.2.3/dist/web-vitals.attribution.iife.js"
+    }
+  ]
+}
