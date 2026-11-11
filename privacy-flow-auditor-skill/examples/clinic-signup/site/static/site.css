@@ -1,0 +1,6 @@
+body { font-family: system-ui, sans-serif; margin: 0; }
+header { display: flex; gap: 1rem; padding: 1rem; background: #0b4f6c; }
+header a { color: #fff; }
+main { max-width: 36rem; margin: 2rem auto; padding: 0 1rem; }
+form { display: grid; gap: .4rem; }
+#consent { position: fixed; bottom: 0; left: 0; right: 0; padding: 1rem; background: #fff; border-top: 2px solid #0b4f6c; }

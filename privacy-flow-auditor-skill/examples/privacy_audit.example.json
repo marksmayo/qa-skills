@@ -1,0 +1,1268 @@
+{
+ "schema_version": "1.0.0",
+ "skill": "privacy-flow-auditor",
+ "skill_version": "1.0.0",
+ "generated": "2026-11-11",
+ "scope": {
+  "repo": "examples/clinic-signup",
+  "repo_excluded": [
+   "stub-vendors (stands in for third-party code)"
+  ],
+  "targets": [
+   "http://www.clinic-signup.test:8152/"
+  ],
+  "authorised_by": null,
+  "authorisation_note": "loopback sample app; *.test hostnames mapped to 127.0.0.1",
+  "regions": [
+   "AU",
+   "EU"
+  ],
+  "flows": [
+   {
+    "id": "home",
+    "reach": 3,
+    "steps": [
+     "home"
+    ]
+   },
+   {
+    "id": "signup",
+    "reach": 3,
+    "steps": [
+     "open",
+     "fill",
+     "submit"
+    ]
+   }
+  ],
+  "consent_states_tested": [
+   "before",
+   "reject",
+   "accept"
+  ],
+  "allow_form_submission": true,
+  "covered": [
+   "3 pages (/, /signup, /welcome) in three consent states, with canaries typed into all five sign-up fields",
+   "every request, cookie and storage entry, searched for each canary raw, URL-encoded (single and double), Base64 and hashed (SHA-256, SHA-1, MD5)",
+   "the server log of the local run",
+   "static scan of site/ and serve.py: collection points, sinks, script hosts"
+  ],
+  "not_covered": [
+   "what the vendors do with the data once received (server side)",
+   "native apps",
+   "salted or keyed hashes (they cannot be matched)",
+   "other pages and flows (contact, booking) that the sample does not have"
+  ]
+ },
+ "metadata": {
+  "browser": "chromium 158.0.8127.18",
+  "canary_set": "7f3a",
+  "capture": {
+   "started": "2026-11-11T09:54:46Z",
+   "finished": "2026-11-11T09:55:17Z"
+  },
+  "lists": "example list for the made-up .test vendors of examples/clinic-signup (stands in for the fetched EasyPrivacy and Open Cookie Database lists; regions are invented)",
+  "declared_processors": "Harbourside Clinic privacy policy, section 7 (Who we share information with), version 2026-08",
+  "tools": [
+   {
+    "name": "scan_privacy.py",
+    "status": "ran"
+   },
+   {
+    "name": "capture_flows.py",
+    "status": "ran"
+   },
+   {
+    "name": "merge_candidates.py",
+    "status": "ran"
+   },
+   {
+    "name": "semgrep",
+    "status": "not_installed"
+   }
+  ],
+  "evidence": {
+   "capture": "run/capture.json",
+   "static": "run/static.json",
+   "candidates": "run/candidates.json",
+   "screenshots": "run/screenshots/"
+  }
+ },
+ "inventory": [
+  {
+   "field": "name",
+   "category": "identity",
+   "collected_at": [
+    "serve.py:59",
+    "site/signup.html:25"
+   ],
+   "stored": [
+    "server memory (PATIENTS list, serve.py)"
+   ],
+   "logged": [],
+   "in_urls": [],
+   "recipients": [
+    {
+     "domain": "replayr.test",
+     "vendor": "Replayr",
+     "kind": "declared_processor",
+     "states": [
+      "accept"
+     ],
+     "encodings": [
+      "raw"
+     ]
+    }
+   ]
+  },
+  {
+   "field": "email",
+   "category": "contact",
+   "collected_at": [
+    "serve.py:59",
+    "site/signup.html:26"
+   ],
+   "stored": [
+    "server memory (PATIENTS list, serve.py)",
+    "localStorage signup_email"
+   ],
+   "logged": [
+    "server log (serve.py:62)"
+   ],
+   "in_urls": [
+    "/welcome?email="
+   ],
+   "recipients": [
+    {
+     "domain": "adnetic.test",
+     "vendor": "Adnetic",
+     "kind": "declared_processor",
+     "states": [
+      "accept"
+     ],
+     "encodings": [
+      "sha256"
+     ]
+    },
+    {
+     "domain": "chatterbox.test",
+     "vendor": "Chatterbox",
+     "kind": "third_party",
+     "states": [
+      "accept",
+      "before",
+      "reject"
+     ],
+     "encodings": [
+      "raw",
+      "url"
+     ]
+    },
+    {
+     "domain": "replayr.test",
+     "vendor": "Replayr",
+     "kind": "declared_processor",
+     "states": [
+      "accept"
+     ],
+     "encodings": [
+      "raw"
+     ]
+    },
+    {
+     "domain": "trackly.test",
+     "vendor": "Trackly",
+     "kind": "declared_processor",
+     "states": [
+      "accept",
+      "before",
+      "reject"
+     ],
+     "encodings": [
+      "url",
+      "url_double"
+     ]
+    }
+   ]
+  },
+  {
+   "field": "phone",
+   "category": "contact",
+   "collected_at": [
+    "serve.py:59",
+    "site/signup.html:27"
+   ],
+   "stored": [
+    "server memory (PATIENTS list, serve.py)"
+   ],
+   "logged": [],
+   "in_urls": [],
+   "recipients": [
+    {
+     "domain": "replayr.test",
+     "vendor": "Replayr",
+     "kind": "declared_processor",
+     "states": [
+      "accept"
+     ],
+     "encodings": [
+      "raw"
+     ]
+    }
+   ]
+  },
+  {
+   "field": "dob",
+   "category": "date_of_birth",
+   "collected_at": [
+    "serve.py:60",
+    "site/signup.html:28"
+   ],
+   "stored": [
+    "server memory (PATIENTS list, serve.py)"
+   ],
+   "logged": [
+    "server log (serve.py:62)"
+   ],
+   "in_urls": [],
+   "recipients": [
+    {
+     "domain": "replayr.test",
+     "vendor": "Replayr",
+     "kind": "declared_processor",
+     "states": [
+      "accept"
+     ],
+     "encodings": [
+      "raw"
+     ]
+    }
+   ]
+  },
+  {
+   "field": "reason",
+   "category": "health",
+   "collected_at": [
+    "serve.py:60",
+    "site/signup.html:29"
+   ],
+   "stored": [
+    "server memory (PATIENTS list, serve.py)"
+   ],
+   "logged": [
+    "server log (serve.py:62)"
+   ],
+   "in_urls": [],
+   "recipients": [
+    {
+     "domain": "replayr.test",
+     "vendor": "Replayr",
+     "kind": "declared_processor",
+     "states": [
+      "accept"
+     ],
+     "encodings": [
+      "raw"
+     ]
+    }
+   ]
+  }
+ ],
+ "recipients": [
+  {
+   "domain": "adnetic.test",
+   "hosts": [
+    "cdn.adnetic.test",
+    "px.adnetic.test"
+   ],
+   "vendor": "Adnetic",
+   "vendor_category": "advertising",
+   "region": "US",
+   "kind": "declared_processor",
+   "states": [
+    "accept"
+   ],
+   "categories": [
+    "contact"
+   ],
+   "fields": [
+    "email"
+   ],
+   "named_by": "domain list"
+  },
+  {
+   "domain": "bugcatch.test",
+   "hosts": [
+    "cdn.bugcatch.test"
+   ],
+   "vendor": "Bugcatch",
+   "vendor_category": "error_tracking",
+   "region": "AU",
+   "kind": "declared_processor",
+   "states": [
+    "accept",
+    "before",
+    "reject"
+   ],
+   "categories": [],
+   "fields": [],
+   "named_by": "domain list"
+  },
+  {
+   "domain": "chatterbox.test",
+   "hosts": [
+    "api.chatterbox.test",
+    "widget.chatterbox.test"
+   ],
+   "vendor": "Chatterbox",
+   "vendor_category": "support_chat",
+   "region": "US",
+   "kind": "third_party",
+   "states": [
+    "accept",
+    "before",
+    "reject"
+   ],
+   "categories": [
+    "contact"
+   ],
+   "fields": [
+    "email"
+   ],
+   "named_by": "domain list"
+  },
+  {
+   "domain": "clinic-signup.test",
+   "hosts": [
+    "www.clinic-signup.test"
+   ],
+   "vendor": null,
+   "vendor_category": null,
+   "region": null,
+   "kind": "first_party",
+   "states": [
+    "accept",
+    "before",
+    "reject"
+   ],
+   "categories": [
+    "contact",
+    "date_of_birth",
+    "health",
+    "identity"
+   ],
+   "fields": [
+    "dob",
+    "email",
+    "name",
+    "phone",
+    "reason"
+   ],
+   "named_by": null
+  },
+  {
+   "domain": "replayr.test",
+   "hosts": [
+    "cdn.replayr.test",
+    "rec.replayr.test"
+   ],
+   "vendor": "Replayr",
+   "vendor_category": "session_replay",
+   "region": "EU",
+   "kind": "declared_processor",
+   "states": [
+    "accept"
+   ],
+   "categories": [
+    "contact",
+    "date_of_birth",
+    "health",
+    "identity"
+   ],
+   "fields": [
+    "dob",
+    "email",
+    "name",
+    "phone",
+    "reason"
+   ],
+   "named_by": "domain list"
+  },
+  {
+   "domain": "trackly.test",
+   "hosts": [
+    "cdn.trackly.test",
+    "px.trackly.test"
+   ],
+   "vendor": "Trackly",
+   "vendor_category": "analytics",
+   "region": "US",
+   "kind": "declared_processor",
+   "states": [
+    "accept",
+    "before",
+    "reject"
+   ],
+   "categories": [
+    "contact"
+   ],
+   "fields": [
+    "email"
+   ],
+   "named_by": "domain list"
+  }
+ ],
+ "consent_matrix": [
+  {
+   "state": "before",
+   "status": "tested",
+   "third_party_domains": [
+    "bugcatch.test",
+    "chatterbox.test",
+    "trackly.test"
+   ],
+   "cookies": [
+    "_tk",
+    "sid"
+   ],
+   "canaries_to_third_parties": [
+    "email"
+   ]
+  },
+  {
+   "state": "reject",
+   "status": "tested",
+   "third_party_domains": [
+    "bugcatch.test",
+    "chatterbox.test",
+    "trackly.test"
+   ],
+   "cookies": [
+    "_tk",
+    "sid"
+   ],
+   "canaries_to_third_parties": [
+    "email"
+   ]
+  },
+  {
+   "state": "accept",
+   "status": "tested",
+   "third_party_domains": [
+    "adnetic.test",
+    "bugcatch.test",
+    "chatterbox.test",
+    "replayr.test",
+    "trackly.test"
+   ],
+   "cookies": [
+    "_tk",
+    "sid"
+   ],
+   "canaries_to_third_parties": [
+    "dob",
+    "email",
+    "name",
+    "phone",
+    "reason"
+   ]
+  }
+ ],
+ "findings": [
+  {
+   "id": "F01",
+   "type": "session_replay_unmasked",
+   "title": "Session replay records every sign-up field, including the reason for visit, unmasked",
+   "candidates": [
+    "L013",
+    "S003"
+   ],
+   "categories": [
+    "contact",
+    "date_of_birth",
+    "health",
+    "identity"
+   ],
+   "fields": [
+    "dob",
+    "email",
+    "name",
+    "phone",
+    "reason"
+   ],
+   "vendor": "Replayr",
+   "domain": "replayr.test",
+   "recipient_kind": "declared_processor",
+   "consent_states": [
+    "accept"
+   ],
+   "flow_basis": "declared_unexpected",
+   "reach": 3,
+   "reach_source": "flows.json: home and signup are both reach 3 (every visitor; every new patient)",
+   "confidence": "observed",
+   "evidence": {
+    "requests": [
+     {
+      "state": "accept",
+      "n": 33,
+      "phase": "signup/fill",
+      "url": "http://rec.replayr.test:8153/rec"
+     }
+    ],
+    "code_path": [
+     {
+      "file": "site/static/consent.js",
+      "line": 14,
+      "what": "replayr.init({maskAllInputs: false})"
+     }
+    ],
+    "summary": "After \"Accept all\", the sign-up form's change events go to rec.replayr.test in a POST body: name, email, phone, date of birth and the reason-for-visit text (all as raw canary values)."
+   },
+   "references": {
+    "EU": [
+     "GDPR Art. 5(1)(c)",
+     "GDPR Art. 25",
+     "GDPR Art. 28",
+     "ePrivacy Art. 5(3)"
+    ],
+    "AU": [
+     "APP 3",
+     "APP 6",
+     "APP 11"
+    ]
+   },
+   "fix": "Initialise Replayr with input masking on (maskAllInputs: true), and exclude the sign-up form from recording entirely; health details should never reach a replay vendor.",
+   "verification": "Re-run capture_flows.py: in the accept state no request to replayr.test carries a canary, and the replay body shows masked values only.",
+   "sensitivity": 4,
+   "flow": 2,
+   "score": 24,
+   "priority": "P0",
+   "floor": "special_category_to_third_party",
+   "cap": null
+  },
+  {
+   "id": "F02",
+   "type": "sensitive_category_flow",
+   "title": "The server log records the email, date of birth and reason for visit of every new patient",
+   "candidates": [
+    "L019",
+    "S001"
+   ],
+   "categories": [
+    "contact",
+    "date_of_birth",
+    "health"
+   ],
+   "fields": [
+    "dob",
+    "email",
+    "reason"
+   ],
+   "vendor": null,
+   "domain": null,
+   "recipient_kind": null,
+   "consent_states": [],
+   "flow_basis": "logs",
+   "reach": 3,
+   "reach_source": "flows.json: home and signup are both reach 3 (every visitor; every new patient)",
+   "confidence": "observed",
+   "evidence": {
+    "log_lines": [
+     1,
+     2,
+     3
+    ],
+    "log_example": "2026-11-11 22:54:54,018 INFO clinic new patient signup email=<canary:email:raw> dob=<canary:dob:raw> reason=<canary:reason:raw>",
+    "code_path": [
+     {
+      "file": "serve.py",
+      "line": 59,
+      "what": "form fields read"
+     },
+     {
+      "file": "serve.py",
+      "line": 62,
+      "what": "logger.info(... email, dob, reason)"
+     }
+    ],
+    "summary": "Every sign-up writes one INFO line carrying the email, date of birth and reason for visit; the capture found the canary values in all three lines."
+   },
+   "references": {
+    "EU": [
+     "GDPR Art. 9",
+     "GDPR Art. 5(1)(f)",
+     "GDPR Art. 32"
+    ],
+    "AU": [
+     "APP 3.3",
+     "APP 6.2",
+     "APP 11"
+    ]
+   },
+   "fix": "Log an opaque patient id instead of the fields, and never log the reason for visit. Purge existing logs that hold these fields.",
+   "verification": "Submit the sign-up with canaries and search the server log for them: no line matches.",
+   "sensitivity": 4,
+   "flow": 2,
+   "score": 24,
+   "priority": "P1",
+   "floor": null,
+   "cap": null
+  },
+  {
+   "id": "F03",
+   "type": "tracking_after_reject",
+   "title": "Trackly analytics still runs after \"Reject all\": page views and a 2-year client-id cookie",
+   "candidates": [
+    "L007"
+   ],
+   "categories": [
+    "online_identifier",
+    "browsing_behaviour"
+   ],
+   "fields": null,
+   "vendor": "Trackly",
+   "domain": "trackly.test",
+   "recipient_kind": "declared_processor",
+   "consent_states": [
+    "reject"
+   ],
+   "flow_basis": "after_reject",
+   "reach": 3,
+   "reach_source": "flows.json: home and signup are both reach 3 (every visitor; every new patient)",
+   "confidence": "observed",
+   "evidence": {
+    "requests": [
+     {
+      "state": "reject",
+      "n": 12,
+      "phase": "home/home",
+      "url": "http://cdn.trackly.test:8153/t.js"
+     },
+     {
+      "state": "reject",
+      "n": 15,
+      "phase": "home/home",
+      "url": "http://px.trackly.test:8153/collect?ev=page_view&cid=tk.86otmyt072&dl=http%3A%2F%2Fwww.clinic-signup.test%3A8152%2F&dt=Welcome%20-%20Harbourside%20Clinic"
+     },
+     {
+      "state": "reject",
+      "n": 20,
+      "phase": "signup/open",
+      "url": "http://cdn.trackly.test:8153/t.js"
+     }
+    ],
+    "cookies": [
+     "_tk"
+    ],
+    "code_path": [
+     {
+      "file": "site/index.html",
+      "line": 9,
+      "what": "Trackly script loaded unconditionally in every page head"
+     }
+    ],
+    "summary": "After \"Reject all\", every page still loads t.js, sets _tk and sends px.trackly.test/collect with the client id, page URL and title."
+   },
+   "references": {
+    "EU": [
+     "ePrivacy Art. 5(3)",
+     "GDPR Art. 6(1)(a)",
+     "GDPR Art. 7(3)"
+    ],
+    "AU": [
+     "APP 3",
+     "APP 6"
+    ]
+   },
+   "fix": "Load Trackly only from the consent handler after \"Accept all\", as the advertising and replay scripts already are, and delete _tk on rejection.",
+   "verification": "Re-run the capture: in the reject state, no request goes to trackly.test after the choice and no _tk cookie is set.",
+   "sensitivity": 2,
+   "flow": 3,
+   "score": 18,
+   "priority": "P1",
+   "floor": null,
+   "cap": null
+  },
+  {
+   "id": "F04",
+   "type": "tracking_before_consent",
+   "title": "Trackly analytics runs before the visitor answers the consent banner",
+   "candidates": [
+    "L003"
+   ],
+   "categories": [
+    "online_identifier",
+    "browsing_behaviour"
+   ],
+   "fields": null,
+   "vendor": "Trackly",
+   "domain": "trackly.test",
+   "recipient_kind": "declared_processor",
+   "consent_states": [
+    "before"
+   ],
+   "flow_basis": "before_consent",
+   "reach": 3,
+   "reach_source": "flows.json: home and signup are both reach 3 (every visitor; every new patient)",
+   "confidence": "observed",
+   "evidence": {
+    "requests": [
+     {
+      "state": "before",
+      "n": 4,
+      "phase": "initial",
+      "url": "http://cdn.trackly.test:8153/t.js"
+     },
+     {
+      "state": "before",
+      "n": 7,
+      "phase": "initial",
+      "url": "http://px.trackly.test:8153/collect?ev=page_view&cid=tk.936sfide8h&dl=http%3A%2F%2Fwww.clinic-signup.test%3A8152%2F&dt=Welcome%20-%20Harbourside%20Clinic"
+     },
+     {
+      "state": "before",
+      "n": 12,
+      "phase": "home/home",
+      "url": "http://cdn.trackly.test:8153/t.js"
+     }
+    ],
+    "cookies": [
+     "_tk"
+    ],
+    "summary": "On first load, before any choice, the page sets _tk and sends a page view to px.trackly.test."
+   },
+   "references": {
+    "EU": [
+     "ePrivacy Art. 5(3)",
+     "GDPR Art. 6(1)(a)",
+     "GDPR Art. 7"
+    ],
+    "AU": [
+     "APP 3",
+     "APP 5"
+    ]
+   },
+   "fix": "Same fix as F03: Trackly waits for \"Accept all\".",
+   "verification": "Re-run the capture: in the before state, the initial phase has no request to trackly.test and no _tk cookie.",
+   "sensitivity": 2,
+   "flow": 3,
+   "score": 18,
+   "priority": "P1",
+   "floor": null,
+   "cap": null
+  },
+  {
+   "id": "F05",
+   "type": "personal_data_to_third_party",
+   "title": "The new patient's email reaches Trackly in the page URL, in every consent state",
+   "candidates": [
+    "L014"
+   ],
+   "categories": [
+    "contact"
+   ],
+   "fields": [
+    "email"
+   ],
+   "vendor": "Trackly",
+   "domain": "trackly.test",
+   "recipient_kind": "declared_processor",
+   "consent_states": [
+    "accept",
+    "before",
+    "reject"
+   ],
+   "flow_basis": "after_reject",
+   "reach": 3,
+   "reach_source": "flows.json: home and signup are both reach 3 (every visitor; every new patient)",
+   "confidence": "observed",
+   "evidence": {
+    "requests": [
+     {
+      "state": "before",
+      "n": 34,
+      "phase": "signup/submit",
+      "url": "http://px.trackly.test:8153/collect?ev=page_view&cid=tk.936sfide8h&dl=http%3A%2F%2Fwww.clinic-signup.test%3A8152%2Fwelcome%3Femail%3D<canary:email:url_double>&dt=Registered%20-%20Harbourside%20Clinic"
+     },
+     {
+      "state": "reject",
+      "n": 34,
+      "phase": "signup/submit",
+      "url": "http://px.trackly.test:8153/collect?ev=page_view&cid=tk.86otmyt072&dl=http%3A%2F%2Fwww.clinic-signup.test%3A8152%2Fwelcome%3Femail%3D<canary:email:url_double>&dt=Registered%20-%20Harbourside%20Clinic"
+     },
+     {
+      "state": "accept",
+      "n": 42,
+      "phase": "signup/submit",
+      "url": "http://px.trackly.test:8153/collect?ev=page_view&cid=tk.lelvb97c2b&dl=http%3A%2F%2Fwww.clinic-signup.test%3A8152%2Fwelcome%3Femail%3D<canary:email:url_double>&dt=Registered%20-%20Harbourside%20Clinic"
+     }
+    ],
+    "summary": "The welcome page URL carries the email (F06), and Trackly's page view sends the full URL as dl, so the email goes to Trackly even after \"Reject all\"."
+   },
+   "references": {
+    "EU": [
+     "GDPR Art. 5(1)(a)",
+     "GDPR Art. 6",
+     "GDPR Art. 13(1)(e)",
+     "GDPR Art. 28"
+    ],
+    "AU": [
+     "APP 5",
+     "APP 6"
+    ]
+   },
+   "fix": "Remove the email from the welcome URL (F06) and send Trackly the path only, without the query string.",
+   "verification": "Re-run the capture: no request to trackly.test carries the email canary in any encoding.",
+   "sensitivity": 2,
+   "flow": 3,
+   "score": 18,
+   "priority": "P1",
+   "floor": null,
+   "cap": null
+  },
+  {
+   "id": "F06",
+   "type": "undeclared_processor",
+   "title": "The Chatterbox support chat receives the new patient's email but is not in the privacy policy's list of processors",
+   "candidates": [
+    "L011",
+    "L010",
+    "L012",
+    "L002",
+    "L006",
+    "S006"
+   ],
+   "categories": [
+    "contact"
+   ],
+   "fields": [
+    "email"
+   ],
+   "vendor": "Chatterbox",
+   "domain": "chatterbox.test",
+   "recipient_kind": "third_party",
+   "consent_states": [
+    "accept",
+    "before",
+    "reject"
+   ],
+   "flow_basis": "undeclared_third_party",
+   "reach": 3,
+   "reach_source": "flows.json: home and signup are both reach 3 (every visitor; every new patient)",
+   "confidence": "observed",
+   "evidence": {
+    "requests": [
+     {
+      "state": "before",
+      "n": 36,
+      "phase": "signup/submit",
+      "url": "http://api.chatterbox.test:8153/identify?email=<canary:email:url>"
+     },
+     {
+      "state": "reject",
+      "n": 36,
+      "phase": "signup/submit",
+      "url": "http://api.chatterbox.test:8153/identify?email=<canary:email:url>"
+     }
+    ],
+    "code_path": [
+     {
+      "file": "site/static/welcome.js",
+      "line": 3,
+      "what": "email read from the URL"
+     },
+     {
+      "file": "site/static/welcome.js",
+      "line": 5,
+      "what": "chatterbox.identify({email})"
+     }
+    ],
+    "summary": "Chatterbox loads on every page in every state and, on the welcome page, identify() sends the email to api.chatterbox.test. The declared processor list (privacy policy section 7) names Trackly, Adnetic, Replayr and Bugcatch only; the list gives Chatterbox's region as US, outside AU and EU."
+   },
+   "references": {
+    "EU": [
+     "GDPR Art. 13(1)(e)",
+     "GDPR Art. 28",
+     "GDPR Art. 30"
+    ],
+    "AU": [
+     "APP 1",
+     "APP 5",
+     "APP 8"
+    ]
+   },
+   "fix": "Add Chatterbox to the privacy policy and the processor records with its purpose and region, or stop sending it the email; identify the visitor only when they open the chat.",
+   "verification": "Re-run merge_candidates.py with the updated declared_processors.json: no undeclared_processor candidate for chatterbox.test.",
+   "sensitivity": 2,
+   "flow": 3,
+   "score": 18,
+   "priority": "P1",
+   "floor": null,
+   "cap": null
+  },
+  {
+   "id": "F07",
+   "type": "personal_data_in_url",
+   "title": "The sign-up redirect puts the email in the welcome page's query string",
+   "candidates": [
+    "L016"
+   ],
+   "categories": [
+    "contact"
+   ],
+   "fields": [
+    "email"
+   ],
+   "vendor": null,
+   "domain": "clinic-signup.test",
+   "recipient_kind": null,
+   "consent_states": [
+    "accept",
+    "before",
+    "reject"
+   ],
+   "flow_basis": "url",
+   "reach": 3,
+   "reach_source": "flows.json: home and signup are both reach 3 (every visitor; every new patient)",
+   "confidence": "observed",
+   "evidence": {
+    "requests": [
+     {
+      "state": "before",
+      "n": 27,
+      "phase": "signup/submit",
+      "url": "http://www.clinic-signup.test:8152/welcome?email=<canary:email:url>"
+     },
+     {
+      "state": "reject",
+      "n": 27,
+      "phase": "signup/submit",
+      "url": "http://www.clinic-signup.test:8152/welcome?email=<canary:email:url>"
+     },
+     {
+      "state": "accept",
+      "n": 35,
+      "phase": "signup/submit",
+      "url": "http://www.clinic-signup.test:8152/welcome?email=<canary:email:url>"
+     }
+    ],
+    "code_path": [
+     {
+      "file": "serve.py",
+      "line": 64,
+      "what": "Location: /welcome?email=..."
+     }
+    ],
+    "summary": "The 303 after POST /signup goes to /welcome?email=<email>; the address lands in server and proxy logs, browser history, and the Referer of every asset on the page."
+   },
+   "references": {
+    "EU": [
+     "GDPR Art. 5(1)(f)",
+     "GDPR Art. 25",
+     "GDPR Art. 32"
+    ],
+    "AU": [
+     "APP 6",
+     "APP 11"
+    ]
+   },
+   "fix": "Redirect to /welcome without parameters; keep what the page needs in the server-side session.",
+   "verification": "Re-run the capture: no first-party URL carries the email canary.",
+   "sensitivity": 2,
+   "flow": 2,
+   "score": 12,
+   "priority": "P2",
+   "floor": null,
+   "cap": null
+  },
+  {
+   "id": "F08",
+   "type": "personal_data_to_third_party",
+   "title": "A SHA-256 hash of the email goes to Adnetic as a conversion signal",
+   "candidates": [
+    "L008",
+    "S005"
+   ],
+   "categories": [
+    "contact"
+   ],
+   "fields": [
+    "email"
+   ],
+   "vendor": "Adnetic",
+   "domain": "adnetic.test",
+   "recipient_kind": "declared_processor",
+   "consent_states": [
+    "accept"
+   ],
+   "flow_basis": "declared_unexpected",
+   "reach": 3,
+   "reach_source": "flows.json: home and signup are both reach 3 (every visitor; every new patient)",
+   "confidence": "observed",
+   "evidence": {
+    "requests": [
+     {
+      "state": "accept",
+      "n": 32,
+      "phase": "signup/fill",
+      "url": "http://px.adnetic.test:8153/ev?e=lead&em=<canary:email:sha256>"
+     }
+    ],
+    "code_path": [
+     {
+      "file": "site/static/signup.js",
+      "line": 45,
+      "what": "email lowercased"
+     },
+     {
+      "file": "site/static/signup.js",
+      "line": 47,
+      "what": "adnetic.track('lead', {em: sha256(value)})"
+     }
+    ],
+    "summary": "After \"Accept all\", leaving the email field sends px.adnetic.test/ev?e=lead&em=<sha256 of the lowercased email>. A hashed email is still personal data: the ad platform can match it."
+   },
+   "references": {
+    "EU": [
+     "GDPR Art. 5(1)(a)",
+     "GDPR Art. 6",
+     "GDPR Art. 13(1)(e)",
+     "GDPR Art. 28"
+    ],
+    "AU": [
+     "APP 5",
+     "APP 6"
+    ]
+   },
+   "fix": "Say in the consent text and the privacy policy that a hashed email is shared with Adnetic for advertising, or remove the em parameter.",
+   "verification": "Re-run the capture: the accept state shows the em parameter only if the consent text was updated (a human check), or no email:sha256 match at all.",
+   "sensitivity": 2,
+   "flow": 2,
+   "score": 12,
+   "priority": "P2",
+   "floor": null,
+   "cap": null
+  },
+  {
+   "id": "F09",
+   "type": "insecure_storage",
+   "title": "The email is kept in localStorage after sign-up",
+   "candidates": [
+    "L018",
+    "S004"
+   ],
+   "categories": [
+    "contact"
+   ],
+   "fields": [
+    "email"
+   ],
+   "vendor": null,
+   "domain": null,
+   "recipient_kind": null,
+   "consent_states": [
+    "accept",
+    "before",
+    "reject"
+   ],
+   "flow_basis": "insecure_storage",
+   "reach": 3,
+   "reach_source": "flows.json: home and signup are both reach 3 (every visitor; every new patient)",
+   "confidence": "observed",
+   "evidence": {
+    "storage": {
+     "kind": "localStorage",
+     "key": "signup_email"
+    },
+    "code_path": [
+     {
+      "file": "site/static/signup.js",
+      "line": 45,
+      "what": "localStorage.setItem('signup_email', value)"
+     }
+    ],
+    "summary": "The email stays in localStorage with no expiry, readable by every script on the origin, including the third-party scripts above."
+   },
+   "references": {
+    "EU": [
+     "GDPR Art. 5(1)(f)",
+     "GDPR Art. 25",
+     "GDPR Art. 32"
+    ],
+    "AU": [
+     "APP 11"
+    ]
+   },
+   "fix": "Don't store the email in the browser; if the form needs to resume, keep it in the server session.",
+   "verification": "Re-run the capture: no storage snapshot carries the email canary.",
+   "sensitivity": 2,
+   "flow": 2,
+   "score": 12,
+   "priority": "P2",
+   "floor": null,
+   "cap": null
+  }
+ ],
+ "triage": [
+  {
+   "candidate": "L001",
+   "decision": "dismissed",
+   "reason_code": "functional_no_identifier",
+   "reason": "Only the Bugcatch script file is fetched; no cookie, no identifier and no canary goes to bugcatch.test, and nothing is sent unless an error is reported."
+  },
+  {
+   "candidate": "L002",
+   "decision": "promoted",
+   "finding": "F06"
+  },
+  {
+   "candidate": "L003",
+   "decision": "promoted",
+   "finding": "F04"
+  },
+  {
+   "candidate": "L004",
+   "decision": "dismissed",
+   "reason_code": "strictly_necessary",
+   "reason": "sid is set by the site itself (HttpOnly, SameSite=Lax, session-only) for the sign-up form; it carries a random id and no tracking purpose."
+  },
+  {
+   "candidate": "L005",
+   "decision": "dismissed",
+   "reason_code": "functional_no_identifier",
+   "reason": "As for the before state: the script file only, no cookie, identifier or canary."
+  },
+  {
+   "candidate": "L006",
+   "decision": "promoted",
+   "finding": "F06"
+  },
+  {
+   "candidate": "L007",
+   "decision": "promoted",
+   "finding": "F03"
+  },
+  {
+   "candidate": "L008",
+   "decision": "promoted",
+   "finding": "F08"
+  },
+  {
+   "candidate": "L009",
+   "decision": "inventory",
+   "reason": "Adnetic is a declared processor in the US (from the domain list); the transfer mechanism is for the privacy team."
+  },
+  {
+   "candidate": "L010",
+   "decision": "promoted",
+   "finding": "F06"
+  },
+  {
+   "candidate": "L011",
+   "decision": "promoted",
+   "finding": "F06"
+  },
+  {
+   "candidate": "L012",
+   "decision": "promoted",
+   "finding": "F06"
+  },
+  {
+   "candidate": "L013",
+   "decision": "promoted",
+   "finding": "F01"
+  },
+  {
+   "candidate": "L014",
+   "decision": "promoted",
+   "finding": "F05"
+  },
+  {
+   "candidate": "L015",
+   "decision": "inventory",
+   "reason": "Trackly is a declared processor; the domain list gives its region as US. Whether a transfer mechanism covers it is for the privacy team (references: GDPR Art. 44-46, APP 8)."
+  },
+  {
+   "candidate": "L016",
+   "decision": "promoted",
+   "finding": "F07"
+  },
+  {
+   "candidate": "L017",
+   "decision": "dismissed",
+   "reason_code": "constant_in_source",
+   "reason": "The 64-hex value is the cache key in the ad script URL, written literally in site/static/consent.js and the same in every request: a build id, not a hashed identifier."
+  },
+  {
+   "candidate": "L018",
+   "decision": "promoted",
+   "finding": "F09"
+  },
+  {
+   "candidate": "L019",
+   "decision": "promoted",
+   "finding": "F02"
+  },
+  {
+   "candidate": "S001",
+   "decision": "promoted",
+   "finding": "F02"
+  },
+  {
+   "candidate": "S002",
+   "decision": "dismissed",
+   "reason_code": "pii_disabled",
+   "reason": "Bugcatch is initialised with sendDefaultPii: false and a beforeSend scrubber that removes the user's email (same line on all three pages)."
+  },
+  {
+   "candidate": "S003",
+   "decision": "promoted",
+   "finding": "F01"
+  },
+  {
+   "candidate": "S004",
+   "decision": "promoted",
+   "finding": "F09"
+  },
+  {
+   "candidate": "S005",
+   "decision": "promoted",
+   "finding": "F08"
+  },
+  {
+   "candidate": "S006",
+   "decision": "promoted",
+   "finding": "F06"
+  }
+ ],
+ "headline": {
+  "statement": "Health details typed into the sign-up form reach the session-replay vendor unmasked (P0), and the server logs them. Trackly analytics runs before any consent choice and after \"Reject all\", and receives the new patient's email through the page URL. An undeclared chat vendor also receives the email.",
+  "disclaimer": "These are references for a qualified privacy professional, who decides whether there is a breach. This report is not legal advice and does not say the app is or isn't compliant.",
+  "counts": {
+   "P0": 1,
+   "P1": 5,
+   "P2": 3,
+   "P3": 0
+  },
+  "third_parties_before_consent": [
+   "bugcatch.test",
+   "chatterbox.test",
+   "trackly.test"
+  ],
+  "third_parties_after_reject": [
+   "bugcatch.test",
+   "chatterbox.test",
+   "trackly.test"
+  ],
+  "special_category_flows": [
+   "F01",
+   "F02"
+  ]
+ },
+ "limitations": [
+  "The vendors are stubs on loopback with made-up .test hostnames; the example list stands in for EasyPrivacy and the Open Cookie Database, and its regions are invented.",
+  "Form submission was allowed because the target is the sample app on loopback; on a real test environment it stays blocked unless allowed.",
+  "Server-side processing is not visible beyond the local server log.",
+  "Semgrep was not installed; only the built-in static patterns ran."
+ ]
+}

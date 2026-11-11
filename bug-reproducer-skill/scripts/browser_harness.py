@@ -21,6 +21,8 @@ Config (dict):
     auth                  {"storage_state": file} or {"login": {"url", "steps": [...], "wait_for"}};
                           login steps use {"fill": sel, "env": NAME}, so credentials never appear in output
     headless              true (default)
+    host_map              {"*.shop.test": "127.0.0.1"}: resolve these hosts to loopback (Chromium only), so a
+                          sample app can use made-up hostnames for itself and its stub vendors
 
 Actions (act): {"click": sel} {"dblclick": sel} {"hover": sel} {"press": key} {"fill": sel, "value"|"env"}
 {"select": sel, "value"} {"check": sel} {"uncheck": sel} {"wait": ms} {"wait_for": sel} {"goto": url}
@@ -156,7 +158,12 @@ class Harness:
         from playwright.sync_api import sync_playwright
         self._pw = sync_playwright().start()
         launcher = getattr(self._pw, self.browser_name)
-        self._browser = launcher.launch(headless=self.cfg.get('headless', True))
+        args = []
+        if self.cfg.get('host_map'):
+            if self.browser_name != 'chromium':
+                raise RuntimeError('host_map is Chromium only')
+            args.append('--host-resolver-rules=' + ', '.join(f'MAP {h} {ip}' for h, ip in self.cfg['host_map'].items()))
+        self._browser = launcher.launch(headless=self.cfg.get('headless', True), args=args)
         self.version = self._browser.version
         self.login()
         return self

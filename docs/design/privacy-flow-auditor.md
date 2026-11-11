@@ -1,6 +1,6 @@
 # Design: `privacy-flow-auditor-skill`
 
-Status: Designed; not built. Build order: 23.
+Status: Built (v1.0.0). Build order: 23.
 
 ## Mission
 
@@ -249,3 +249,31 @@ Agreed with the user before the build.
 1. **Which laws to reference?** GDPR, UK GDPR and the Australian Privacy Principles.
 2. **Compare the privacy policy with observed traffic?** Yes, labelled as agent judgment.
 3. **Example's stub vendors?** Made-up hostnames.
+
+## As built (v1.0.0)
+
+Where the build differs from the design above, and what the example showed.
+
+- **Vendor names come from a curated `data/vendors.json`**, not from the Open Cookie Database's domain
+  column: that column is mostly empty and named hotjar.com after the wrong platform. EasyPrivacy gives the
+  tracker flag, the Open Cookie Database names cookies. Neither list has regions, so cross-border
+  candidates need regions from the user (`fetch_lists.py --extra`). The lists are downloaded to a cache,
+  pinned by hash in `data/lists.lock.json`, and not committed (EasyPrivacy is GPL/CC BY-SA).
+- **`merge_candidates.py`** (not in the design's file list) turns the capture and the static scan into
+  candidates, recipients and the consent matrix; the validator's `--recompute` re-runs it.
+- **Matching happens during the capture**, so raw values never reach disk; `match_canaries.py scan`
+  searches a HAR from elsewhere. Encodings include double URL-encoding, which is how the email reached
+  the analytics vendor through the page URL in the example.
+- **The special-category floor applies to any finding type** that sends a special category to a third
+  party or processor (the example's P0 is a `session_replay_unmasked` finding carrying health text).
+- **Triage has three outcomes:** promoted, `inventory` (expected flows, such as a declared processor's
+  region) and dismissed with a checked reason code.
+- **The browser harness gained `host_map`** (Chromium host-resolver rules), so the sample site and its
+  stub vendors use made-up `.test` hostnames on loopback.
+- **Not built:** reading the privacy policy (left to the agent, as judgment), server-side tagging
+  detection, the mobile manifest checks beyond permissions and usage strings, and Semgrep rules (only the
+  SARIF merge).
+- **Example results:** 3 consent states tested; 25 candidates; 9 findings (1 P0, 5 P1, 3 P2), matching
+  the eight planted problems plus the email reaching Trackly through the URL; all three decoys dismissed.
+- **Testing:** 34 of 34 seeded violations are caught, including personal data and secrets planted in
+  evidence files.

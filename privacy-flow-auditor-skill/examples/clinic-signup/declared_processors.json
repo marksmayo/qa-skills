@@ -1,0 +1,9 @@
+{
+  "source": "Harbourside Clinic privacy policy, section 7 (Who we share information with), version 2026-08",
+  "processors": [
+    {"vendor": "Trackly", "purpose": "website analytics"},
+    {"vendor": "Adnetic", "purpose": "advertising"},
+    {"vendor": "Replayr", "purpose": "session recording to improve the website"},
+    {"vendor": "Bugcatch", "purpose": "error reporting"}
+  ]
+}

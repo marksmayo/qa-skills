@@ -268,6 +268,17 @@ python db-migration-reviewer-skill/scripts/scan_migrations.py --migrations migra
 
 The candidates and the review cite lines in `examples/ledger/`, and the sizes come from `examples/ledger/table_stats.json`; editing either (or `data/rules.json`) changes the candidates and invalidates the example until `commands.sh` is rerun. `dynamic_check.py` needs psycopg and Docker, Podman or a loopback PostgreSQL; it refuses any other host and only works in a `qa_migrate_` database it creates.
 
+Privacy flow auditor (`examples/clinic-signup/` is the sample sign-up site with stub vendors on made-up `.test` hostnames; `examples/run/` is a real three-state capture, listed in `examples/run/commands.sh`, with every value redacted; `--recompute` re-runs the merge, `--evidence` scans every evidence file for personal data):
+
+```bash
+python privacy-flow-auditor-skill/scripts/validate_privacy_audit.py privacy-flow-auditor-skill/examples/privacy_audit.example.json --candidates privacy-flow-auditor-skill/examples/run/candidates.json --capture privacy-flow-auditor-skill/examples/run/capture.json --canaries privacy-flow-auditor-skill/examples/run/canaries.json --evidence privacy-flow-auditor-skill/examples/run --repo privacy-flow-auditor-skill/examples/clinic-signup --recompute
+python privacy-flow-auditor-skill/scripts/render_report.py privacy-flow-auditor-skill/examples/privacy_audit.example.json [--brief]
+python privacy-flow-auditor-skill/scripts/scan_privacy.py privacy-flow-auditor-skill/examples/clinic-signup --exclude stub-vendors --out static.json
+python privacy-flow-auditor-skill/scripts/fetch_lists.py --check
+```
+
+Run these from the repo root: `candidates.json` records its inputs relative to it. The audit cites request numbers and redacted URLs from `examples/run/capture.json` and lines in `examples/clinic-signup/`; re-running the capture changes the client ids and invalidates the audit until it is rebuilt. Capturing needs Playwright with Chromium. `fetch_lists.py` downloads EasyPrivacy and the Open Cookie Database to `~/.cache/qa-skills/privacy-lists` (not committed) and checks them against `data/lists.lock.json`; `--update` re-pins.
+
 Shared files:
 
 ```bash

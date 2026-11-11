@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Register - Harbourside Clinic</title>
+<link rel="stylesheet" href="/static/site.css">
+<script src="/static/consent.js"></script>
+<script src="http://cdn.trackly.test:8153/t.js"></script>
+<script src="http://widget.chatterbox.test:8153/c.js"></script>
+<script src="http://cdn.bugcatch.test:8153/b.js"></script>
+<script>
+  bugcatch.init({dsn: 'http://ingest.bugcatch.test:8153/1', sendDefaultPii: false, beforeSend: siteScrub});
+</script>
+</head>
+<body>
+<header><a href="/">Harbourside Clinic</a> <a href="/signup">Register as a patient</a></header>
+<div id="consent" hidden>
+  <p>We use cookies for analytics and advertising.</p>
+  <button id="consent-reject">Reject all</button> <button id="consent-accept">Accept all</button>
+</div>
+<main>
+<h1>Register as a new patient</h1>
+<form id="signup" method="post" action="/signup">
+  <label for="name">Full name</label> <input id="name" name="name" autocomplete="name" required>
+  <label for="email">Email</label> <input id="email" name="email" type="email" autocomplete="email" required>
+  <label for="phone">Mobile</label> <input id="phone" name="phone" type="tel" autocomplete="tel">
+  <label for="dob">Date of birth</label> <input id="dob" name="dob" autocomplete="bday" placeholder="YYYY-MM-DD">
+  <label for="reason">Reason for your first visit</label> <textarea id="reason" name="reason"></textarea>
+  <button type="submit">Register</button>
+</form>
+</main>
+<script src="/static/signup.js"></script>
+</body>
+</html>

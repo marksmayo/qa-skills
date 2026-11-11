@@ -1,0 +1,13 @@
+{
+  "source": "example list for the made-up .test vendors of examples/clinic-signup (stands in for the fetched EasyPrivacy and Open Cookie Database lists; regions are invented)",
+  "domains": {
+    "trackly.test": {"vendor": "Trackly", "category": "analytics", "region": "US", "tracker": true},
+    "adnetic.test": {"vendor": "Adnetic", "category": "advertising", "region": "US", "tracker": true},
+    "replayr.test": {"vendor": "Replayr", "category": "session_replay", "region": "EU", "tracker": true},
+    "chatterbox.test": {"vendor": "Chatterbox", "category": "support_chat", "region": "US", "tracker": false},
+    "bugcatch.test": {"vendor": "Bugcatch", "category": "error_tracking", "region": "AU", "tracker": false}
+  },
+  "cookies": {
+    "_tk": {"vendor": "Trackly", "domain": "trackly.test", "purpose": "analytics", "retention": "2 years"}
+  }
+}

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Registered - Harbourside Clinic</title>
+<link rel="stylesheet" href="/static/site.css">
+<script src="/static/consent.js"></script>
+<script src="http://cdn.trackly.test:8153/t.js"></script>
+<script src="http://widget.chatterbox.test:8153/c.js"></script>
+<script src="http://cdn.bugcatch.test:8153/b.js"></script>
+<script>
+  bugcatch.init({dsn: 'http://ingest.bugcatch.test:8153/1', sendDefaultPii: false, beforeSend: siteScrub});
+</script>
+</head>
+<body>
+<header><a href="/">Harbourside Clinic</a> <a href="/signup">Register as a patient</a></header>
+<div id="consent" hidden>
+  <p>We use cookies for analytics and advertising.</p>
+  <button id="consent-reject">Reject all</button> <button id="consent-accept">Accept all</button>
+</div>
+<main>
+<h1>Thanks, you're registered</h1>
+<p>We'll be in touch to book your first visit. Questions? Use the chat in the corner.</p>
+</main>
+<script src="/static/welcome.js"></script>
+</body>
+</html>

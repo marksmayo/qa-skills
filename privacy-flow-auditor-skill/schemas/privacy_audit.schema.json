@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/qa-skills/privacy-flow-auditor/privacy_audit.schema.json",
+  "title": "Privacy flow audit",
+  "type": "object",
+  "required": ["schema_version", "skill", "skill_version", "generated", "scope", "metadata", "inventory", "recipients", "consent_matrix", "findings", "triage", "headline", "limitations"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "skill": {"const": "privacy-flow-auditor"},
+    "skill_version": {"type": "string"},
+    "generated": {"type": "string", "format": "date"},
+    "scope": {
+      "type": "object",
+      "required": ["targets", "regions", "flows", "consent_states_tested", "covered", "not_covered"],
+      "properties": {
+        "repo": {"type": ["string", "null"]},
+        "repo_excluded": {"type": "array", "items": {"type": "string"}},
+        "targets": {"type": "array", "items": {"type": "string"}},
+        "authorised_by": {"type": ["string", "null"]},
+        "authorisation_note": {"type": "string"},
+        "regions": {"type": "array", "items": {"enum": ["AU", "EU", "UK"]}, "minItems": 1},
+        "flows": {"type": "array", "items": {"type": "object", "required": ["id", "reach"], "properties": {"id": {"type": "string"}, "reach": {"enum": [1, 2, 3]}, "steps": {"type": "array"}}}},
+        "consent_states_tested": {"type": "array", "items": {"enum": ["before", "reject", "accept"]}},
+        "allow_form_submission": {"type": "boolean"},
+        "covered": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+        "not_covered": {"type": "array", "items": {"type": "string"}, "minItems": 1}
+      }
+    },
+    "metadata": {"type": "object", "required": ["canary_set"], "properties": {"browser": {"type": ["string", "null"]}, "canary_set": {"type": "string"}, "lists": {"type": ["string", "null"]}, "declared_processors": {"type": ["string", "null"]}, "tools": {"type": "array"}, "evidence": {"type": "object"}}},
+    "inventory": {"type": "array", "items": {"type": "object", "required": ["field", "category", "collected_at", "recipients"],
+      "properties": {"field": {"type": "string"}, "category": {"type": "string"}, "collected_at": {"type": "array"}, "stored": {"type": "array"}, "logged": {"type": "array"},
+                     "in_urls": {"type": "array"}, "recipients": {"type": "array", "items": {"type": "object", "required": ["domain"]}}}}},
+    "recipients": {"type": "array", "items": {"type": "object", "required": ["domain", "vendor", "kind", "states", "categories"],
+      "properties": {"domain": {"type": "string"}, "hosts": {"type": "array"}, "vendor": {"type": ["string", "null"]}, "vendor_category": {"type": ["string", "null"]},
+                     "region": {"type": ["string", "null"]}, "kind": {"enum": ["first_party", "declared_processor", "third_party"]}, "states": {"type": "array"},
+                     "categories": {"type": "array"}, "fields": {"type": "array"}, "named_by": {"type": ["string", "null"]}}}},
+    "consent_matrix": {"type": "array", "items": {"type": "object", "required": ["state", "status"],
+      "properties": {"state": {"enum": ["before", "reject", "accept"]}, "status": {"enum": ["tested", "untested", "not_run"]}, "reason": {"type": ["string", "null"]},
+                     "third_party_domains": {"type": "array"}, "cookies": {"type": "array"}, "canaries_to_third_parties": {"type": "array"}}}},
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "type", "title", "candidates", "categories", "flow_basis", "reach", "reach_source", "sensitivity", "flow", "score", "priority", "floor", "cap",
+                     "confidence", "evidence", "references", "fix", "verification"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^F\\d{2,}$"},
+          "type": {"enum": ["tracking_before_consent", "tracking_after_reject", "personal_data_to_third_party", "personal_data_in_url", "personal_data_in_logs",
+                            "session_replay_unmasked", "sensitive_category_flow", "insecure_storage", "undeclared_processor", "excess_collection",
+                            "cross_border_transfer", "missing_usage_description"]},
+          "title": {"type": "string"},
+          "candidates": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+          "categories": {"type": "array", "items": {"type": "string"}},
+          "fields": {"type": ["array", "null"], "items": {"type": "string"}},
+          "vendor": {"type": ["string", "null"]}, "domain": {"type": ["string", "null"]},
+          "recipient_kind": {"enum": [null, "first_party", "declared_processor", "third_party"]},
+          "consent_states": {"type": "array", "items": {"enum": ["before", "reject", "accept"]}},
+          "children": {"type": "boolean"},
+          "flow_basis": {"enum": ["undeclared_third_party", "before_consent", "after_reject", "declared_unexpected", "logs", "insecure_storage", "url", "no_use"]},
+          "reach": {"enum": [1, 2, 3]}, "reach_source": {"type": "string"},
+          "sensitivity": {"enum": [1, 2, 3, 4]}, "flow": {"enum": [1, 2, 3]}, "score": {"type": "integer"},
+          "priority": {"enum": ["P0", "P1", "P2", "P3"]},
+          "floor": {"enum": [null, "special_category_to_third_party", "tracking_after_reject"]},
+          "cap": {"enum": [null, "pattern_not_P0"]},
+          "confidence": {"enum": ["observed", "traced", "pattern"]},
+          "evidence": {"type": "object", "properties": {
+            "summary": {"type": "string"},
+            "requests": {"type": "array", "items": {"type": "object", "required": ["state", "n"]}},
+            "code_path": {"type": "array", "items": {"type": "object", "required": ["file", "line"]}},
+            "cookies": {"type": "array"}, "storage": {"type": "object"}, "log_lines": {"type": "array"}, "log_example": {"type": "string"}}},
+          "references": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}},
+          "fix": {"type": "string", "minLength": 1}, "verification": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "triage": {"type": "array", "items": {"type": "object", "required": ["candidate", "decision"],
+      "properties": {"candidate": {"type": "string"}, "decision": {"enum": ["promoted", "inventory", "dismissed"]}, "finding": {"type": "string"},
+                     "reason_code": {"enum": ["strictly_necessary", "functional_no_identifier", "constant_in_source", "pii_disabled", "duplicate", "false_match", "not_personal_data"]},
+                     "reason": {"type": "string"}}}},
+    "headline": {"type": "object", "required": ["counts", "third_parties_before_consent", "third_parties_after_reject", "special_category_flows", "statement", "disclaimer"],
+      "properties": {"counts": {"type": "object", "required": ["P0", "P1", "P2", "P3"]}, "third_parties_before_consent": {"type": "array"},
+                     "third_parties_after_reject": {"type": "array"}, "special_category_flows": {"type": "array"}, "statement": {"type": "string"}, "disclaimer": {"type": "string"}}},
+    "limitations": {"type": "array", "items": {"type": "string"}}
+  }
+}

@@ -1,0 +1,19 @@
+{
+ "note": "Pinned tracker and cookie lists. fetch_lists.py downloads them to a cache outside the repository and fails if a hash differs; --update re-pins. The lists are not committed: EasyPrivacy is GPL-3.0-or-later / CC BY-SA 3.0, the Open Cookie Database Apache-2.0.",
+ "lists": {
+  "easyprivacy": {
+   "url": "https://easylist.to/easylist/easyprivacy.txt",
+   "file": "easyprivacy.txt",
+   "licence": "GPL-3.0-or-later OR CC-BY-SA-3.0",
+   "version": "202611110941",
+   "sha256": "0de5a42dd3356ba8464f85f7c376ff57bca0c1c0e088ea2241f0b7825d0ba1c9"
+  },
+  "open_cookie_database": {
+   "url": "https://raw.githubusercontent.com/jkwakman/Open-Cookie-Database/7786335566460016f07a50705a92fc781c976f6f/open-cookie-database.csv",
+   "ref": "7786335566460016f07a50705a92fc781c976f6f",
+   "file": "open-cookie-database.csv",
+   "licence": "Apache-2.0",
+   "sha256": "ed4836ea285719d77c7340582be68d355f7358edded50e6b96bb3139fc0eb8c0"
+  }
+ }
+}

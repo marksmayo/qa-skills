@@ -1,0 +1,2859 @@
+{
+ "site": "http://www.clinic-signup.test:8152/",
+ "canary_set": "7f3a",
+ "started": "2026-11-11T09:54:46Z",
+ "states": [
+  {
+   "state": "before",
+   "status": "tested",
+   "snapshots": [
+    {
+     "phase": "initial",
+     "cookies": [
+      {
+       "name": "sid",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": true,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": false,
+       "expires_days": null,
+       "value_length": 32,
+       "matches": [],
+       "value": null
+      },
+      {
+       "name": "_tk",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": false,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": true,
+       "expires_days": 400,
+       "value_length": 13,
+       "matches": [],
+       "value": null
+      }
+     ],
+     "storage": []
+    },
+    {
+     "phase": "home/home",
+     "ok": true,
+     "url": "http://www.clinic-signup.test:8152/",
+     "cookies": [
+      {
+       "name": "_tk",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": false,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": true,
+       "expires_days": 400,
+       "value_length": 13,
+       "matches": [],
+       "value": null
+      },
+      {
+       "name": "sid",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": true,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": false,
+       "expires_days": null,
+       "value_length": 32,
+       "matches": [],
+       "value": null
+      }
+     ],
+     "storage": []
+    },
+    {
+     "phase": "signup/open",
+     "ok": true,
+     "url": "http://www.clinic-signup.test:8152/signup",
+     "cookies": [
+      {
+       "name": "_tk",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": false,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": true,
+       "expires_days": 400,
+       "value_length": 13,
+       "matches": [],
+       "value": null
+      },
+      {
+       "name": "sid",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": true,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": false,
+       "expires_days": null,
+       "value_length": 32,
+       "matches": [],
+       "value": null
+      }
+     ],
+     "storage": []
+    },
+    {
+     "phase": "signup/fill",
+     "ok": true,
+     "url": "http://www.clinic-signup.test:8152/signup",
+     "cookies": [
+      {
+       "name": "_tk",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": false,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": true,
+       "expires_days": 400,
+       "value_length": 13,
+       "matches": [],
+       "value": null
+      },
+      {
+       "name": "sid",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": true,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": false,
+       "expires_days": null,
+       "value_length": 32,
+       "matches": [],
+       "value": null
+      }
+     ],
+     "storage": [
+      {
+       "kind": "localStorage",
+       "origin": "www.clinic-signup.test",
+       "key": "signup_email",
+       "value_length": 30,
+       "matches": [
+        {
+         "field": "email",
+         "category": "contact",
+         "encoding": "raw"
+        }
+       ],
+       "value": "<canary:email:raw>"
+      }
+     ]
+    },
+    {
+     "phase": "signup/submit",
+     "ok": true,
+     "url": "http://www.clinic-signup.test:8152/welcome?email=<canary:email:url>",
+     "cookies": [
+      {
+       "name": "_tk",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": false,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": true,
+       "expires_days": 400,
+       "value_length": 13,
+       "matches": [],
+       "value": null
+      },
+      {
+       "name": "sid",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": true,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": false,
+       "expires_days": null,
+       "value_length": 32,
+       "matches": [],
+       "value": null
+      }
+     ],
+     "storage": [
+      {
+       "kind": "localStorage",
+       "origin": "www.clinic-signup.test",
+       "key": "signup_email",
+       "value_length": 30,
+       "matches": [
+        {
+         "field": "email",
+         "category": "contact",
+         "encoding": "raw"
+        }
+       ],
+       "value": "<canary:email:raw>"
+      }
+     ]
+    }
+   ],
+   "start": {
+    "ok": true,
+    "status": 200
+   },
+   "requests": [
+    {
+     "n": 1,
+     "phase": "initial",
+     "method": "GET",
+     "resource_type": "document",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/",
+     "path": "/",
+     "referer": null,
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 2,
+     "phase": "initial",
+     "method": "GET",
+     "resource_type": "stylesheet",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/static/site.css",
+     "path": "/static/site.css",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 3,
+     "phase": "initial",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/static/consent.js",
+     "path": "/static/consent.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 4,
+     "phase": "initial",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "cdn.trackly.test",
+     "url": "http://cdn.trackly.test:8153/t.js",
+     "path": "/t.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 5,
+     "phase": "initial",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "widget.chatterbox.test",
+     "url": "http://widget.chatterbox.test:8153/c.js",
+     "path": "/c.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 6,
+     "phase": "initial",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "cdn.bugcatch.test",
+     "url": "http://cdn.bugcatch.test:8153/b.js",
+     "path": "/b.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 7,
+     "phase": "initial",
+     "method": "GET",
+     "resource_type": "image",
+     "host": "px.trackly.test",
+     "url": "http://px.trackly.test:8153/collect?ev=page_view&cid=tk.936sfide8h&dl=http%3A%2F%2Fwww.clinic-signup.test%3A8152%2F&dt=Welcome%20-%20Harbourside%20Clinic",
+     "path": "/collect",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 8,
+     "phase": "initial",
+     "method": "GET",
+     "resource_type": "image",
+     "host": "api.chatterbox.test",
+     "url": "http://api.chatterbox.test:8153/hello?page=%2F",
+     "path": "/hello",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 9,
+     "phase": "home/home",
+     "method": "GET",
+     "resource_type": "document",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/",
+     "path": "/",
+     "referer": null,
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 10,
+     "phase": "home/home",
+     "method": "GET",
+     "resource_type": "stylesheet",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/static/site.css",
+     "path": "/static/site.css",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 11,
+     "phase": "home/home",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/static/consent.js",
+     "path": "/static/consent.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 12,
+     "phase": "home/home",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "cdn.trackly.test",
+     "url": "http://cdn.trackly.test:8153/t.js",
+     "path": "/t.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 13,
+     "phase": "home/home",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "widget.chatterbox.test",
+     "url": "http://widget.chatterbox.test:8153/c.js",
+     "path": "/c.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 14,
+     "phase": "home/home",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "cdn.bugcatch.test",
+     "url": "http://cdn.bugcatch.test:8153/b.js",
+     "path": "/b.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 15,
+     "phase": "home/home",
+     "method": "GET",
+     "resource_type": "image",
+     "host": "px.trackly.test",
+     "url": "http://px.trackly.test:8153/collect?ev=page_view&cid=tk.936sfide8h&dl=http%3A%2F%2Fwww.clinic-signup.test%3A8152%2F&dt=Welcome%20-%20Harbourside%20Clinic",
+     "path": "/collect",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 16,
+     "phase": "home/home",
+     "method": "GET",
+     "resource_type": "image",
+     "host": "api.chatterbox.test",
+     "url": "http://api.chatterbox.test:8153/hello?page=%2F",
+     "path": "/hello",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 17,
+     "phase": "signup/open",
+     "method": "GET",
+     "resource_type": "document",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/signup",
+     "path": "/signup",
+     "referer": null,
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 18,
+     "phase": "signup/open",
+     "method": "GET",
+     "resource_type": "stylesheet",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/static/site.css",
+     "path": "/static/site.css",
+     "referer": "http://www.clinic-signup.test:8152/signup",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 19,
+     "phase": "signup/open",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/static/consent.js",
+     "path": "/static/consent.js",
+     "referer": "http://www.clinic-signup.test:8152/signup",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 20,
+     "phase": "signup/open",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "cdn.trackly.test",
+     "url": "http://cdn.trackly.test:8153/t.js",
+     "path": "/t.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 21,
+     "phase": "signup/open",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "widget.chatterbox.test",
+     "url": "http://widget.chatterbox.test:8153/c.js",
+     "path": "/c.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 22,
+     "phase": "signup/open",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "cdn.bugcatch.test",
+     "url": "http://cdn.bugcatch.test:8153/b.js",
+     "path": "/b.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 23,
+     "phase": "signup/open",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/static/signup.js",
+     "path": "/static/signup.js",
+     "referer": "http://www.clinic-signup.test:8152/signup",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 24,
+     "phase": "signup/open",
+     "method": "GET",
+     "resource_type": "image",
+     "host": "px.trackly.test",
+     "url": "http://px.trackly.test:8153/collect?ev=page_view&cid=tk.936sfide8h&dl=http%3A%2F%2Fwww.clinic-signup.test%3A8152%2Fsignup&dt=Register%20-%20Harbourside%20Clinic",
+     "path": "/collect",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 25,
+     "phase": "signup/open",
+     "method": "GET",
+     "resource_type": "image",
+     "host": "api.chatterbox.test",
+     "url": "http://api.chatterbox.test:8153/hello?page=%2Fsignup",
+     "path": "/hello",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 26,
+     "phase": "signup/submit",
+     "method": "POST",
+     "resource_type": "document",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/signup",
+     "path": "/signup",
+     "referer": "http://www.clinic-signup.test:8152/signup",
+     "body": "name=<canary:name:url_plus>&email=<canary:email:url>&phone=<canary:phone:url_plus>&dob=<canary:dob:raw>&reason=<canary:reason:url_plus>",
+     "matches": [
+      {
+       "field": "reason",
+       "category": "health",
+       "encoding": "raw",
+       "where": "body"
+      },
+      {
+       "field": "reason",
+       "category": "health",
+       "encoding": "url_plus",
+       "where": "body"
+      },
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "url",
+       "where": "body"
+      },
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "raw",
+       "where": "body"
+      },
+      {
+       "field": "name",
+       "category": "identity",
+       "encoding": "raw",
+       "where": "body"
+      },
+      {
+       "field": "name",
+       "category": "identity",
+       "encoding": "url_plus",
+       "where": "body"
+      },
+      {
+       "field": "phone",
+       "category": "contact",
+       "encoding": "raw",
+       "where": "body"
+      },
+      {
+       "field": "phone",
+       "category": "contact",
+       "encoding": "url_plus",
+       "where": "body"
+      },
+      {
+       "field": "dob",
+       "category": "date_of_birth",
+       "encoding": "raw",
+       "where": "body"
+      }
+     ],
+     "unmatched_hex": []
+    },
+    {
+     "n": 27,
+     "phase": "signup/submit",
+     "method": "GET",
+     "resource_type": "document",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/welcome?email=<canary:email:url>",
+     "path": "/welcome",
+     "referer": "http://www.clinic-signup.test:8152/signup",
+     "body": null,
+     "matches": [
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "url",
+       "where": "url"
+      },
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "raw",
+       "where": "url"
+      }
+     ],
+     "unmatched_hex": []
+    },
+    {
+     "n": 28,
+     "phase": "signup/submit",
+     "method": "GET",
+     "resource_type": "stylesheet",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/static/site.css",
+     "path": "/static/site.css",
+     "referer": "http://www.clinic-signup.test:8152/welcome?email=<canary:email:url>",
+     "body": null,
+     "matches": [
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "url",
+       "where": "referer"
+      },
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "raw",
+       "where": "referer"
+      }
+     ],
+     "unmatched_hex": []
+    },
+    {
+     "n": 29,
+     "phase": "signup/submit",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/static/consent.js",
+     "path": "/static/consent.js",
+     "referer": "http://www.clinic-signup.test:8152/welcome?email=<canary:email:url>",
+     "body": null,
+     "matches": [
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "url",
+       "where": "referer"
+      },
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "raw",
+       "where": "referer"
+      }
+     ],
+     "unmatched_hex": []
+    },
+    {
+     "n": 30,
+     "phase": "signup/submit",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "cdn.trackly.test",
+     "url": "http://cdn.trackly.test:8153/t.js",
+     "path": "/t.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 31,
+     "phase": "signup/submit",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "widget.chatterbox.test",
+     "url": "http://widget.chatterbox.test:8153/c.js",
+     "path": "/c.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 32,
+     "phase": "signup/submit",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "cdn.bugcatch.test",
+     "url": "http://cdn.bugcatch.test:8153/b.js",
+     "path": "/b.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 33,
+     "phase": "signup/submit",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/static/welcome.js",
+     "path": "/static/welcome.js",
+     "referer": "http://www.clinic-signup.test:8152/welcome?email=<canary:email:url>",
+     "body": null,
+     "matches": [
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "url",
+       "where": "referer"
+      },
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "raw",
+       "where": "referer"
+      }
+     ],
+     "unmatched_hex": []
+    },
+    {
+     "n": 34,
+     "phase": "signup/submit",
+     "method": "GET",
+     "resource_type": "image",
+     "host": "px.trackly.test",
+     "url": "http://px.trackly.test:8153/collect?ev=page_view&cid=tk.936sfide8h&dl=http%3A%2F%2Fwww.clinic-signup.test%3A8152%2Fwelcome%3Femail%3D<canary:email:url_double>&dt=Registered%20-%20Harbourside%20Clinic",
+     "path": "/collect",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "url_double",
+       "where": "url"
+      },
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "url",
+       "where": "url"
+      }
+     ],
+     "unmatched_hex": []
+    },
+    {
+     "n": 35,
+     "phase": "signup/submit",
+     "method": "GET",
+     "resource_type": "image",
+     "host": "api.chatterbox.test",
+     "url": "http://api.chatterbox.test:8153/hello?page=%2Fwelcome",
+     "path": "/hello",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 36,
+     "phase": "signup/submit",
+     "method": "GET",
+     "resource_type": "image",
+     "host": "api.chatterbox.test",
+     "url": "http://api.chatterbox.test:8153/identify?email=<canary:email:url>",
+     "path": "/identify",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "url",
+       "where": "url"
+      },
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "raw",
+       "where": "url"
+      }
+     ],
+     "unmatched_hex": []
+    }
+   ],
+   "blocked_writes": 0
+  },
+  {
+   "state": "reject",
+   "status": "tested",
+   "snapshots": [
+    {
+     "phase": "initial",
+     "cookies": [
+      {
+       "name": "sid",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": true,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": false,
+       "expires_days": null,
+       "value_length": 32,
+       "matches": [],
+       "value": null
+      },
+      {
+       "name": "_tk",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": false,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": true,
+       "expires_days": 400,
+       "value_length": 13,
+       "matches": [],
+       "value": null
+      }
+     ],
+     "storage": []
+    },
+    {
+     "phase": "after_reject",
+     "cookies": [
+      {
+       "name": "sid",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": true,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": false,
+       "expires_days": null,
+       "value_length": 32,
+       "matches": [],
+       "value": null
+      },
+      {
+       "name": "_tk",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": false,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": true,
+       "expires_days": 400,
+       "value_length": 13,
+       "matches": [],
+       "value": null
+      }
+     ],
+     "storage": [
+      {
+       "kind": "localStorage",
+       "origin": "www.clinic-signup.test",
+       "key": "consent",
+       "value_length": 6,
+       "matches": [],
+       "value": "denied"
+      }
+     ]
+    },
+    {
+     "phase": "home/home",
+     "ok": true,
+     "url": "http://www.clinic-signup.test:8152/",
+     "cookies": [
+      {
+       "name": "_tk",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": false,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": true,
+       "expires_days": 400,
+       "value_length": 13,
+       "matches": [],
+       "value": null
+      },
+      {
+       "name": "sid",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": true,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": false,
+       "expires_days": null,
+       "value_length": 32,
+       "matches": [],
+       "value": null
+      }
+     ],
+     "storage": [
+      {
+       "kind": "localStorage",
+       "origin": "www.clinic-signup.test",
+       "key": "consent",
+       "value_length": 6,
+       "matches": [],
+       "value": "denied"
+      }
+     ]
+    },
+    {
+     "phase": "signup/open",
+     "ok": true,
+     "url": "http://www.clinic-signup.test:8152/signup",
+     "cookies": [
+      {
+       "name": "_tk",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": false,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": true,
+       "expires_days": 400,
+       "value_length": 13,
+       "matches": [],
+       "value": null
+      },
+      {
+       "name": "sid",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": true,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": false,
+       "expires_days": null,
+       "value_length": 32,
+       "matches": [],
+       "value": null
+      }
+     ],
+     "storage": [
+      {
+       "kind": "localStorage",
+       "origin": "www.clinic-signup.test",
+       "key": "consent",
+       "value_length": 6,
+       "matches": [],
+       "value": "denied"
+      }
+     ]
+    },
+    {
+     "phase": "signup/fill",
+     "ok": true,
+     "url": "http://www.clinic-signup.test:8152/signup",
+     "cookies": [
+      {
+       "name": "_tk",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": false,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": true,
+       "expires_days": 400,
+       "value_length": 13,
+       "matches": [],
+       "value": null
+      },
+      {
+       "name": "sid",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": true,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": false,
+       "expires_days": null,
+       "value_length": 32,
+       "matches": [],
+       "value": null
+      }
+     ],
+     "storage": [
+      {
+       "kind": "localStorage",
+       "origin": "www.clinic-signup.test",
+       "key": "consent",
+       "value_length": 6,
+       "matches": [],
+       "value": "denied"
+      },
+      {
+       "kind": "localStorage",
+       "origin": "www.clinic-signup.test",
+       "key": "signup_email",
+       "value_length": 30,
+       "matches": [
+        {
+         "field": "email",
+         "category": "contact",
+         "encoding": "raw"
+        }
+       ],
+       "value": "<canary:email:raw>"
+      }
+     ]
+    },
+    {
+     "phase": "signup/submit",
+     "ok": true,
+     "url": "http://www.clinic-signup.test:8152/welcome?email=<canary:email:url>",
+     "cookies": [
+      {
+       "name": "_tk",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": false,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": true,
+       "expires_days": 400,
+       "value_length": 13,
+       "matches": [],
+       "value": null
+      },
+      {
+       "name": "sid",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": true,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": false,
+       "expires_days": null,
+       "value_length": 32,
+       "matches": [],
+       "value": null
+      }
+     ],
+     "storage": [
+      {
+       "kind": "localStorage",
+       "origin": "www.clinic-signup.test",
+       "key": "consent",
+       "value_length": 6,
+       "matches": [],
+       "value": "denied"
+      },
+      {
+       "kind": "localStorage",
+       "origin": "www.clinic-signup.test",
+       "key": "signup_email",
+       "value_length": 30,
+       "matches": [
+        {
+         "field": "email",
+         "category": "contact",
+         "encoding": "raw"
+        }
+       ],
+       "value": "<canary:email:raw>"
+      }
+     ]
+    }
+   ],
+   "start": {
+    "ok": true,
+    "status": 200
+   },
+   "requests": [
+    {
+     "n": 1,
+     "phase": "initial",
+     "method": "GET",
+     "resource_type": "document",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/",
+     "path": "/",
+     "referer": null,
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 2,
+     "phase": "initial",
+     "method": "GET",
+     "resource_type": "stylesheet",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/static/site.css",
+     "path": "/static/site.css",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 3,
+     "phase": "initial",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/static/consent.js",
+     "path": "/static/consent.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 4,
+     "phase": "initial",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "cdn.trackly.test",
+     "url": "http://cdn.trackly.test:8153/t.js",
+     "path": "/t.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 5,
+     "phase": "initial",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "widget.chatterbox.test",
+     "url": "http://widget.chatterbox.test:8153/c.js",
+     "path": "/c.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 6,
+     "phase": "initial",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "cdn.bugcatch.test",
+     "url": "http://cdn.bugcatch.test:8153/b.js",
+     "path": "/b.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 7,
+     "phase": "initial",
+     "method": "GET",
+     "resource_type": "image",
+     "host": "px.trackly.test",
+     "url": "http://px.trackly.test:8153/collect?ev=page_view&cid=tk.86otmyt072&dl=http%3A%2F%2Fwww.clinic-signup.test%3A8152%2F&dt=Welcome%20-%20Harbourside%20Clinic",
+     "path": "/collect",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 8,
+     "phase": "initial",
+     "method": "GET",
+     "resource_type": "image",
+     "host": "api.chatterbox.test",
+     "url": "http://api.chatterbox.test:8153/hello?page=%2F",
+     "path": "/hello",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 9,
+     "phase": "home/home",
+     "method": "GET",
+     "resource_type": "document",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/",
+     "path": "/",
+     "referer": null,
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 10,
+     "phase": "home/home",
+     "method": "GET",
+     "resource_type": "stylesheet",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/static/site.css",
+     "path": "/static/site.css",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 11,
+     "phase": "home/home",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/static/consent.js",
+     "path": "/static/consent.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 12,
+     "phase": "home/home",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "cdn.trackly.test",
+     "url": "http://cdn.trackly.test:8153/t.js",
+     "path": "/t.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 13,
+     "phase": "home/home",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "widget.chatterbox.test",
+     "url": "http://widget.chatterbox.test:8153/c.js",
+     "path": "/c.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 14,
+     "phase": "home/home",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "cdn.bugcatch.test",
+     "url": "http://cdn.bugcatch.test:8153/b.js",
+     "path": "/b.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 15,
+     "phase": "home/home",
+     "method": "GET",
+     "resource_type": "image",
+     "host": "px.trackly.test",
+     "url": "http://px.trackly.test:8153/collect?ev=page_view&cid=tk.86otmyt072&dl=http%3A%2F%2Fwww.clinic-signup.test%3A8152%2F&dt=Welcome%20-%20Harbourside%20Clinic",
+     "path": "/collect",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 16,
+     "phase": "home/home",
+     "method": "GET",
+     "resource_type": "image",
+     "host": "api.chatterbox.test",
+     "url": "http://api.chatterbox.test:8153/hello?page=%2F",
+     "path": "/hello",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 17,
+     "phase": "signup/open",
+     "method": "GET",
+     "resource_type": "document",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/signup",
+     "path": "/signup",
+     "referer": null,
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 18,
+     "phase": "signup/open",
+     "method": "GET",
+     "resource_type": "stylesheet",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/static/site.css",
+     "path": "/static/site.css",
+     "referer": "http://www.clinic-signup.test:8152/signup",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 19,
+     "phase": "signup/open",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/static/consent.js",
+     "path": "/static/consent.js",
+     "referer": "http://www.clinic-signup.test:8152/signup",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 20,
+     "phase": "signup/open",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "cdn.trackly.test",
+     "url": "http://cdn.trackly.test:8153/t.js",
+     "path": "/t.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 21,
+     "phase": "signup/open",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "widget.chatterbox.test",
+     "url": "http://widget.chatterbox.test:8153/c.js",
+     "path": "/c.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 22,
+     "phase": "signup/open",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "cdn.bugcatch.test",
+     "url": "http://cdn.bugcatch.test:8153/b.js",
+     "path": "/b.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 23,
+     "phase": "signup/open",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/static/signup.js",
+     "path": "/static/signup.js",
+     "referer": "http://www.clinic-signup.test:8152/signup",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 24,
+     "phase": "signup/open",
+     "method": "GET",
+     "resource_type": "image",
+     "host": "px.trackly.test",
+     "url": "http://px.trackly.test:8153/collect?ev=page_view&cid=tk.86otmyt072&dl=http%3A%2F%2Fwww.clinic-signup.test%3A8152%2Fsignup&dt=Register%20-%20Harbourside%20Clinic",
+     "path": "/collect",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 25,
+     "phase": "signup/open",
+     "method": "GET",
+     "resource_type": "image",
+     "host": "api.chatterbox.test",
+     "url": "http://api.chatterbox.test:8153/hello?page=%2Fsignup",
+     "path": "/hello",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 26,
+     "phase": "signup/submit",
+     "method": "POST",
+     "resource_type": "document",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/signup",
+     "path": "/signup",
+     "referer": "http://www.clinic-signup.test:8152/signup",
+     "body": "name=<canary:name:url_plus>&email=<canary:email:url>&phone=<canary:phone:url_plus>&dob=<canary:dob:raw>&reason=<canary:reason:url_plus>",
+     "matches": [
+      {
+       "field": "reason",
+       "category": "health",
+       "encoding": "raw",
+       "where": "body"
+      },
+      {
+       "field": "reason",
+       "category": "health",
+       "encoding": "url_plus",
+       "where": "body"
+      },
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "url",
+       "where": "body"
+      },
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "raw",
+       "where": "body"
+      },
+      {
+       "field": "name",
+       "category": "identity",
+       "encoding": "raw",
+       "where": "body"
+      },
+      {
+       "field": "name",
+       "category": "identity",
+       "encoding": "url_plus",
+       "where": "body"
+      },
+      {
+       "field": "phone",
+       "category": "contact",
+       "encoding": "raw",
+       "where": "body"
+      },
+      {
+       "field": "phone",
+       "category": "contact",
+       "encoding": "url_plus",
+       "where": "body"
+      },
+      {
+       "field": "dob",
+       "category": "date_of_birth",
+       "encoding": "raw",
+       "where": "body"
+      }
+     ],
+     "unmatched_hex": []
+    },
+    {
+     "n": 27,
+     "phase": "signup/submit",
+     "method": "GET",
+     "resource_type": "document",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/welcome?email=<canary:email:url>",
+     "path": "/welcome",
+     "referer": "http://www.clinic-signup.test:8152/signup",
+     "body": null,
+     "matches": [
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "url",
+       "where": "url"
+      },
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "raw",
+       "where": "url"
+      }
+     ],
+     "unmatched_hex": []
+    },
+    {
+     "n": 28,
+     "phase": "signup/submit",
+     "method": "GET",
+     "resource_type": "stylesheet",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/static/site.css",
+     "path": "/static/site.css",
+     "referer": "http://www.clinic-signup.test:8152/welcome?email=<canary:email:url>",
+     "body": null,
+     "matches": [
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "url",
+       "where": "referer"
+      },
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "raw",
+       "where": "referer"
+      }
+     ],
+     "unmatched_hex": []
+    },
+    {
+     "n": 29,
+     "phase": "signup/submit",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/static/consent.js",
+     "path": "/static/consent.js",
+     "referer": "http://www.clinic-signup.test:8152/welcome?email=<canary:email:url>",
+     "body": null,
+     "matches": [
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "url",
+       "where": "referer"
+      },
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "raw",
+       "where": "referer"
+      }
+     ],
+     "unmatched_hex": []
+    },
+    {
+     "n": 30,
+     "phase": "signup/submit",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "cdn.trackly.test",
+     "url": "http://cdn.trackly.test:8153/t.js",
+     "path": "/t.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 31,
+     "phase": "signup/submit",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "widget.chatterbox.test",
+     "url": "http://widget.chatterbox.test:8153/c.js",
+     "path": "/c.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 32,
+     "phase": "signup/submit",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "cdn.bugcatch.test",
+     "url": "http://cdn.bugcatch.test:8153/b.js",
+     "path": "/b.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 33,
+     "phase": "signup/submit",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/static/welcome.js",
+     "path": "/static/welcome.js",
+     "referer": "http://www.clinic-signup.test:8152/welcome?email=<canary:email:url>",
+     "body": null,
+     "matches": [
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "url",
+       "where": "referer"
+      },
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "raw",
+       "where": "referer"
+      }
+     ],
+     "unmatched_hex": []
+    },
+    {
+     "n": 34,
+     "phase": "signup/submit",
+     "method": "GET",
+     "resource_type": "image",
+     "host": "px.trackly.test",
+     "url": "http://px.trackly.test:8153/collect?ev=page_view&cid=tk.86otmyt072&dl=http%3A%2F%2Fwww.clinic-signup.test%3A8152%2Fwelcome%3Femail%3D<canary:email:url_double>&dt=Registered%20-%20Harbourside%20Clinic",
+     "path": "/collect",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "url_double",
+       "where": "url"
+      },
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "url",
+       "where": "url"
+      }
+     ],
+     "unmatched_hex": []
+    },
+    {
+     "n": 35,
+     "phase": "signup/submit",
+     "method": "GET",
+     "resource_type": "image",
+     "host": "api.chatterbox.test",
+     "url": "http://api.chatterbox.test:8153/hello?page=%2Fwelcome",
+     "path": "/hello",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 36,
+     "phase": "signup/submit",
+     "method": "GET",
+     "resource_type": "image",
+     "host": "api.chatterbox.test",
+     "url": "http://api.chatterbox.test:8153/identify?email=<canary:email:url>",
+     "path": "/identify",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "url",
+       "where": "url"
+      },
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "raw",
+       "where": "url"
+      }
+     ],
+     "unmatched_hex": []
+    }
+   ],
+   "blocked_writes": 0
+  },
+  {
+   "state": "accept",
+   "status": "tested",
+   "snapshots": [
+    {
+     "phase": "initial",
+     "cookies": [
+      {
+       "name": "sid",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": true,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": false,
+       "expires_days": null,
+       "value_length": 32,
+       "matches": [],
+       "value": null
+      },
+      {
+       "name": "_tk",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": false,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": true,
+       "expires_days": 400,
+       "value_length": 13,
+       "matches": [],
+       "value": null
+      }
+     ],
+     "storage": []
+    },
+    {
+     "phase": "after_accept",
+     "cookies": [
+      {
+       "name": "sid",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": true,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": false,
+       "expires_days": null,
+       "value_length": 32,
+       "matches": [],
+       "value": null
+      },
+      {
+       "name": "_tk",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": false,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": true,
+       "expires_days": 400,
+       "value_length": 13,
+       "matches": [],
+       "value": null
+      }
+     ],
+     "storage": [
+      {
+       "kind": "localStorage",
+       "origin": "www.clinic-signup.test",
+       "key": "consent",
+       "value_length": 7,
+       "matches": [],
+       "value": "granted"
+      }
+     ]
+    },
+    {
+     "phase": "home/home",
+     "ok": true,
+     "url": "http://www.clinic-signup.test:8152/",
+     "cookies": [
+      {
+       "name": "_tk",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": false,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": true,
+       "expires_days": 400,
+       "value_length": 13,
+       "matches": [],
+       "value": null
+      },
+      {
+       "name": "sid",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": true,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": false,
+       "expires_days": null,
+       "value_length": 32,
+       "matches": [],
+       "value": null
+      }
+     ],
+     "storage": [
+      {
+       "kind": "localStorage",
+       "origin": "www.clinic-signup.test",
+       "key": "consent",
+       "value_length": 7,
+       "matches": [],
+       "value": "granted"
+      }
+     ]
+    },
+    {
+     "phase": "signup/open",
+     "ok": true,
+     "url": "http://www.clinic-signup.test:8152/signup",
+     "cookies": [
+      {
+       "name": "_tk",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": false,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": true,
+       "expires_days": 400,
+       "value_length": 13,
+       "matches": [],
+       "value": null
+      },
+      {
+       "name": "sid",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": true,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": false,
+       "expires_days": null,
+       "value_length": 32,
+       "matches": [],
+       "value": null
+      }
+     ],
+     "storage": [
+      {
+       "kind": "localStorage",
+       "origin": "www.clinic-signup.test",
+       "key": "consent",
+       "value_length": 7,
+       "matches": [],
+       "value": "granted"
+      }
+     ]
+    },
+    {
+     "phase": "signup/fill",
+     "ok": true,
+     "url": "http://www.clinic-signup.test:8152/signup",
+     "cookies": [
+      {
+       "name": "_tk",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": false,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": true,
+       "expires_days": 400,
+       "value_length": 13,
+       "matches": [],
+       "value": null
+      },
+      {
+       "name": "sid",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": true,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": false,
+       "expires_days": null,
+       "value_length": 32,
+       "matches": [],
+       "value": null
+      }
+     ],
+     "storage": [
+      {
+       "kind": "localStorage",
+       "origin": "www.clinic-signup.test",
+       "key": "consent",
+       "value_length": 7,
+       "matches": [],
+       "value": "granted"
+      },
+      {
+       "kind": "localStorage",
+       "origin": "www.clinic-signup.test",
+       "key": "signup_email",
+       "value_length": 30,
+       "matches": [
+        {
+         "field": "email",
+         "category": "contact",
+         "encoding": "raw"
+        }
+       ],
+       "value": "<canary:email:raw>"
+      }
+     ]
+    },
+    {
+     "phase": "signup/submit",
+     "ok": true,
+     "url": "http://www.clinic-signup.test:8152/welcome?email=<canary:email:url>",
+     "cookies": [
+      {
+       "name": "_tk",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": false,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": true,
+       "expires_days": 400,
+       "value_length": 13,
+       "matches": [],
+       "value": null
+      },
+      {
+       "name": "sid",
+       "domain": "www.clinic-signup.test",
+       "path": "/",
+       "http_only": true,
+       "secure": false,
+       "same_site": "Lax",
+       "persistent": false,
+       "expires_days": null,
+       "value_length": 32,
+       "matches": [],
+       "value": null
+      }
+     ],
+     "storage": [
+      {
+       "kind": "localStorage",
+       "origin": "www.clinic-signup.test",
+       "key": "consent",
+       "value_length": 7,
+       "matches": [],
+       "value": "granted"
+      },
+      {
+       "kind": "localStorage",
+       "origin": "www.clinic-signup.test",
+       "key": "signup_email",
+       "value_length": 30,
+       "matches": [
+        {
+         "field": "email",
+         "category": "contact",
+         "encoding": "raw"
+        }
+       ],
+       "value": "<canary:email:raw>"
+      }
+     ]
+    }
+   ],
+   "start": {
+    "ok": true,
+    "status": 200
+   },
+   "requests": [
+    {
+     "n": 1,
+     "phase": "initial",
+     "method": "GET",
+     "resource_type": "document",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/",
+     "path": "/",
+     "referer": null,
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 2,
+     "phase": "initial",
+     "method": "GET",
+     "resource_type": "stylesheet",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/static/site.css",
+     "path": "/static/site.css",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 3,
+     "phase": "initial",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/static/consent.js",
+     "path": "/static/consent.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 4,
+     "phase": "initial",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "cdn.trackly.test",
+     "url": "http://cdn.trackly.test:8153/t.js",
+     "path": "/t.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 5,
+     "phase": "initial",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "widget.chatterbox.test",
+     "url": "http://widget.chatterbox.test:8153/c.js",
+     "path": "/c.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 6,
+     "phase": "initial",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "cdn.bugcatch.test",
+     "url": "http://cdn.bugcatch.test:8153/b.js",
+     "path": "/b.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 7,
+     "phase": "initial",
+     "method": "GET",
+     "resource_type": "image",
+     "host": "px.trackly.test",
+     "url": "http://px.trackly.test:8153/collect?ev=page_view&cid=tk.lelvb97c2b&dl=http%3A%2F%2Fwww.clinic-signup.test%3A8152%2F&dt=Welcome%20-%20Harbourside%20Clinic",
+     "path": "/collect",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 8,
+     "phase": "initial",
+     "method": "GET",
+     "resource_type": "image",
+     "host": "api.chatterbox.test",
+     "url": "http://api.chatterbox.test:8153/hello?page=%2F",
+     "path": "/hello",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 9,
+     "phase": "after_accept",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "cdn.adnetic.test",
+     "url": "http://cdn.adnetic.test:8153/a.js?v=5d41402abc4b2a76b9719d911017c5925d41402abc4b2a76b9719d911017c592",
+     "path": "/a.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": [
+      "5d41402abc4b2a76b9719d911017c5925d41402abc4b2a76b9719d911017c592"
+     ]
+    },
+    {
+     "n": 10,
+     "phase": "after_accept",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "cdn.replayr.test",
+     "url": "http://cdn.replayr.test:8153/r.js",
+     "path": "/r.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 11,
+     "phase": "home/home",
+     "method": "GET",
+     "resource_type": "document",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/",
+     "path": "/",
+     "referer": null,
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 12,
+     "phase": "home/home",
+     "method": "GET",
+     "resource_type": "stylesheet",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/static/site.css",
+     "path": "/static/site.css",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 13,
+     "phase": "home/home",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/static/consent.js",
+     "path": "/static/consent.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 14,
+     "phase": "home/home",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "cdn.trackly.test",
+     "url": "http://cdn.trackly.test:8153/t.js",
+     "path": "/t.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 15,
+     "phase": "home/home",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "widget.chatterbox.test",
+     "url": "http://widget.chatterbox.test:8153/c.js",
+     "path": "/c.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 16,
+     "phase": "home/home",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "cdn.bugcatch.test",
+     "url": "http://cdn.bugcatch.test:8153/b.js",
+     "path": "/b.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 17,
+     "phase": "home/home",
+     "method": "GET",
+     "resource_type": "image",
+     "host": "px.trackly.test",
+     "url": "http://px.trackly.test:8153/collect?ev=page_view&cid=tk.lelvb97c2b&dl=http%3A%2F%2Fwww.clinic-signup.test%3A8152%2F&dt=Welcome%20-%20Harbourside%20Clinic",
+     "path": "/collect",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 18,
+     "phase": "home/home",
+     "method": "GET",
+     "resource_type": "image",
+     "host": "api.chatterbox.test",
+     "url": "http://api.chatterbox.test:8153/hello?page=%2F",
+     "path": "/hello",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 19,
+     "phase": "home/home",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "cdn.adnetic.test",
+     "url": "http://cdn.adnetic.test:8153/a.js?v=5d41402abc4b2a76b9719d911017c5925d41402abc4b2a76b9719d911017c592",
+     "path": "/a.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": [
+      "5d41402abc4b2a76b9719d911017c5925d41402abc4b2a76b9719d911017c592"
+     ]
+    },
+    {
+     "n": 20,
+     "phase": "home/home",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "cdn.replayr.test",
+     "url": "http://cdn.replayr.test:8153/r.js",
+     "path": "/r.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 21,
+     "phase": "signup/open",
+     "method": "GET",
+     "resource_type": "document",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/signup",
+     "path": "/signup",
+     "referer": null,
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 22,
+     "phase": "signup/open",
+     "method": "GET",
+     "resource_type": "stylesheet",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/static/site.css",
+     "path": "/static/site.css",
+     "referer": "http://www.clinic-signup.test:8152/signup",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 23,
+     "phase": "signup/open",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/static/consent.js",
+     "path": "/static/consent.js",
+     "referer": "http://www.clinic-signup.test:8152/signup",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 24,
+     "phase": "signup/open",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "cdn.trackly.test",
+     "url": "http://cdn.trackly.test:8153/t.js",
+     "path": "/t.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 25,
+     "phase": "signup/open",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "widget.chatterbox.test",
+     "url": "http://widget.chatterbox.test:8153/c.js",
+     "path": "/c.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 26,
+     "phase": "signup/open",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "cdn.bugcatch.test",
+     "url": "http://cdn.bugcatch.test:8153/b.js",
+     "path": "/b.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 27,
+     "phase": "signup/open",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/static/signup.js",
+     "path": "/static/signup.js",
+     "referer": "http://www.clinic-signup.test:8152/signup",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 28,
+     "phase": "signup/open",
+     "method": "GET",
+     "resource_type": "image",
+     "host": "px.trackly.test",
+     "url": "http://px.trackly.test:8153/collect?ev=page_view&cid=tk.lelvb97c2b&dl=http%3A%2F%2Fwww.clinic-signup.test%3A8152%2Fsignup&dt=Register%20-%20Harbourside%20Clinic",
+     "path": "/collect",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 29,
+     "phase": "signup/open",
+     "method": "GET",
+     "resource_type": "image",
+     "host": "api.chatterbox.test",
+     "url": "http://api.chatterbox.test:8153/hello?page=%2Fsignup",
+     "path": "/hello",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 30,
+     "phase": "signup/open",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "cdn.adnetic.test",
+     "url": "http://cdn.adnetic.test:8153/a.js?v=5d41402abc4b2a76b9719d911017c5925d41402abc4b2a76b9719d911017c592",
+     "path": "/a.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": [
+      "5d41402abc4b2a76b9719d911017c5925d41402abc4b2a76b9719d911017c592"
+     ]
+    },
+    {
+     "n": 31,
+     "phase": "signup/open",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "cdn.replayr.test",
+     "url": "http://cdn.replayr.test:8153/r.js",
+     "path": "/r.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 32,
+     "phase": "signup/fill",
+     "method": "GET",
+     "resource_type": "image",
+     "host": "px.adnetic.test",
+     "url": "http://px.adnetic.test:8153/ev?e=lead&em=<canary:email:sha256>",
+     "path": "/ev",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "sha256",
+       "where": "url"
+      }
+     ],
+     "unmatched_hex": []
+    },
+    {
+     "n": 33,
+     "phase": "signup/fill",
+     "method": "POST",
+     "resource_type": "fetch",
+     "host": "rec.replayr.test",
+     "url": "http://rec.replayr.test:8153/rec",
+     "path": "/rec",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": "{\"events\":[{\"type\":\"input\",\"id\":\"name\",\"value\":\"<canary:name:raw>\"},{\"type\":\"input\",\"id\":\"email\",\"value\":\"<canary:email:raw>\"},{\"type\":\"input\",\"id\":\"phone\",\"value\":\"<canary:phone:raw>\"},{\"type\":\"input\",\"id\":\"dob\",\"value\":\"<canary:dob:raw>\"},{\"type\":\"input\",\"id\":\"reason\",\"value\":\"<canary:reason:raw>\"}]}",
+     "matches": [
+      {
+       "field": "reason",
+       "category": "health",
+       "encoding": "raw",
+       "where": "body"
+      },
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "raw",
+       "where": "body"
+      },
+      {
+       "field": "name",
+       "category": "identity",
+       "encoding": "raw",
+       "where": "body"
+      },
+      {
+       "field": "phone",
+       "category": "contact",
+       "encoding": "raw",
+       "where": "body"
+      },
+      {
+       "field": "dob",
+       "category": "date_of_birth",
+       "encoding": "raw",
+       "where": "body"
+      }
+     ],
+     "unmatched_hex": []
+    },
+    {
+     "n": 34,
+     "phase": "signup/submit",
+     "method": "POST",
+     "resource_type": "document",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/signup",
+     "path": "/signup",
+     "referer": "http://www.clinic-signup.test:8152/signup",
+     "body": "name=<canary:name:url_plus>&email=<canary:email:url>&phone=<canary:phone:url_plus>&dob=<canary:dob:raw>&reason=<canary:reason:url_plus>",
+     "matches": [
+      {
+       "field": "reason",
+       "category": "health",
+       "encoding": "raw",
+       "where": "body"
+      },
+      {
+       "field": "reason",
+       "category": "health",
+       "encoding": "url_plus",
+       "where": "body"
+      },
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "url",
+       "where": "body"
+      },
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "raw",
+       "where": "body"
+      },
+      {
+       "field": "name",
+       "category": "identity",
+       "encoding": "raw",
+       "where": "body"
+      },
+      {
+       "field": "name",
+       "category": "identity",
+       "encoding": "url_plus",
+       "where": "body"
+      },
+      {
+       "field": "phone",
+       "category": "contact",
+       "encoding": "raw",
+       "where": "body"
+      },
+      {
+       "field": "phone",
+       "category": "contact",
+       "encoding": "url_plus",
+       "where": "body"
+      },
+      {
+       "field": "dob",
+       "category": "date_of_birth",
+       "encoding": "raw",
+       "where": "body"
+      }
+     ],
+     "unmatched_hex": []
+    },
+    {
+     "n": 35,
+     "phase": "signup/submit",
+     "method": "GET",
+     "resource_type": "document",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/welcome?email=<canary:email:url>",
+     "path": "/welcome",
+     "referer": "http://www.clinic-signup.test:8152/signup",
+     "body": null,
+     "matches": [
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "url",
+       "where": "url"
+      },
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "raw",
+       "where": "url"
+      }
+     ],
+     "unmatched_hex": []
+    },
+    {
+     "n": 36,
+     "phase": "signup/submit",
+     "method": "GET",
+     "resource_type": "stylesheet",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/static/site.css",
+     "path": "/static/site.css",
+     "referer": "http://www.clinic-signup.test:8152/welcome?email=<canary:email:url>",
+     "body": null,
+     "matches": [
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "url",
+       "where": "referer"
+      },
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "raw",
+       "where": "referer"
+      }
+     ],
+     "unmatched_hex": []
+    },
+    {
+     "n": 37,
+     "phase": "signup/submit",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/static/consent.js",
+     "path": "/static/consent.js",
+     "referer": "http://www.clinic-signup.test:8152/welcome?email=<canary:email:url>",
+     "body": null,
+     "matches": [
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "url",
+       "where": "referer"
+      },
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "raw",
+       "where": "referer"
+      }
+     ],
+     "unmatched_hex": []
+    },
+    {
+     "n": 38,
+     "phase": "signup/submit",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "cdn.trackly.test",
+     "url": "http://cdn.trackly.test:8153/t.js",
+     "path": "/t.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 39,
+     "phase": "signup/submit",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "widget.chatterbox.test",
+     "url": "http://widget.chatterbox.test:8153/c.js",
+     "path": "/c.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 40,
+     "phase": "signup/submit",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "cdn.bugcatch.test",
+     "url": "http://cdn.bugcatch.test:8153/b.js",
+     "path": "/b.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 41,
+     "phase": "signup/submit",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "www.clinic-signup.test",
+     "url": "http://www.clinic-signup.test:8152/static/welcome.js",
+     "path": "/static/welcome.js",
+     "referer": "http://www.clinic-signup.test:8152/welcome?email=<canary:email:url>",
+     "body": null,
+     "matches": [
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "url",
+       "where": "referer"
+      },
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "raw",
+       "where": "referer"
+      }
+     ],
+     "unmatched_hex": []
+    },
+    {
+     "n": 42,
+     "phase": "signup/submit",
+     "method": "GET",
+     "resource_type": "image",
+     "host": "px.trackly.test",
+     "url": "http://px.trackly.test:8153/collect?ev=page_view&cid=tk.lelvb97c2b&dl=http%3A%2F%2Fwww.clinic-signup.test%3A8152%2Fwelcome%3Femail%3D<canary:email:url_double>&dt=Registered%20-%20Harbourside%20Clinic",
+     "path": "/collect",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "url_double",
+       "where": "url"
+      },
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "url",
+       "where": "url"
+      }
+     ],
+     "unmatched_hex": []
+    },
+    {
+     "n": 43,
+     "phase": "signup/submit",
+     "method": "GET",
+     "resource_type": "image",
+     "host": "api.chatterbox.test",
+     "url": "http://api.chatterbox.test:8153/hello?page=%2Fwelcome",
+     "path": "/hello",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    },
+    {
+     "n": 44,
+     "phase": "signup/submit",
+     "method": "GET",
+     "resource_type": "image",
+     "host": "api.chatterbox.test",
+     "url": "http://api.chatterbox.test:8153/identify?email=<canary:email:url>",
+     "path": "/identify",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "url",
+       "where": "url"
+      },
+      {
+       "field": "email",
+       "category": "contact",
+       "encoding": "raw",
+       "where": "url"
+      }
+     ],
+     "unmatched_hex": []
+    },
+    {
+     "n": 45,
+     "phase": "signup/submit",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "cdn.adnetic.test",
+     "url": "http://cdn.adnetic.test:8153/a.js?v=5d41402abc4b2a76b9719d911017c5925d41402abc4b2a76b9719d911017c592",
+     "path": "/a.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": [
+      "5d41402abc4b2a76b9719d911017c5925d41402abc4b2a76b9719d911017c592"
+     ]
+    },
+    {
+     "n": 46,
+     "phase": "signup/submit",
+     "method": "GET",
+     "resource_type": "script",
+     "host": "cdn.replayr.test",
+     "url": "http://cdn.replayr.test:8153/r.js",
+     "path": "/r.js",
+     "referer": "http://www.clinic-signup.test:8152/",
+     "body": null,
+     "matches": [],
+     "unmatched_hex": []
+    }
+   ],
+   "blocked_writes": 0
+  }
+ ],
+ "browser": "chromium 158.0.8127.18",
+ "allow_form_submission": true,
+ "flows": [
+  {
+   "id": "home",
+   "reach": 3,
+   "steps": [
+    "home"
+   ]
+  },
+  {
+   "id": "signup",
+   "reach": 3,
+   "steps": [
+    "open",
+    "fill",
+    "submit"
+   ]
+  }
+ ],
+ "server_log": {
+  "file": "server.log",
+  "lines_read": 3,
+  "hits": [
+   {
+    "line": 1,
+    "matches": [
+     {
+      "field": "reason",
+      "category": "health",
+      "encoding": "raw"
+     },
+     {
+      "field": "email",
+      "category": "contact",
+      "encoding": "raw"
+     },
+     {
+      "field": "dob",
+      "category": "date_of_birth",
+      "encoding": "raw"
+     }
+    ],
+    "text": "2026-11-11 22:54:54,018 INFO clinic new patient signup email=<canary:email:raw> dob=<canary:dob:raw> reason=<canary:reason:raw>"
+   },
+   {
+    "line": 2,
+    "matches": [
+     {
+      "field": "reason",
+      "category": "health",
+      "encoding": "raw"
+     },
+     {
+      "field": "email",
+      "category": "contact",
+      "encoding": "raw"
+     },
+     {
+      "field": "dob",
+      "category": "date_of_birth",
+      "encoding": "raw"
+     }
+    ],
+    "text": "2026-11-11 22:55:04,600 INFO clinic new patient signup email=<canary:email:raw> dob=<canary:dob:raw> reason=<canary:reason:raw>"
+   },
+   {
+    "line": 3,
+    "matches": [
+     {
+      "field": "reason",
+      "category": "health",
+      "encoding": "raw"
+     },
+     {
+      "field": "email",
+      "category": "contact",
+      "encoding": "raw"
+     },
+     {
+      "field": "dob",
+      "category": "date_of_birth",
+      "encoding": "raw"
+     }
+    ],
+    "text": "2026-11-11 22:55:15,216 INFO clinic new patient signup email=<canary:email:raw> dob=<canary:dob:raw> reason=<canary:reason:raw>"
+   }
+  ]
+ },
+ "finished": "2026-11-11T09:55:17Z"
+}

@@ -1,0 +1,1064 @@
+{
+ "capture": "privacy-flow-auditor-skill/examples/run/capture.json",
+ "static": "privacy-flow-auditor-skill/examples/run/static.json",
+ "inputs": {
+  "flows": "privacy-flow-auditor-skill/examples/flows.json",
+  "lists": "privacy-flow-auditor-skill/examples/lists.example.json",
+  "declared": "privacy-flow-auditor-skill/examples/clinic-signup/declared_processors.json",
+  "regions": "AU,EU"
+ },
+ "lists": "example list for the made-up .test vendors of examples/clinic-signup (stands in for the fetched EasyPrivacy and Open Cookie Database lists; regions are invented)",
+ "declared": "Harbourside Clinic privacy policy, section 7 (Who we share information with), version 2026-08",
+ "regions": [
+  "AU",
+  "EU"
+ ],
+ "first_party": [
+  "clinic-signup.test"
+ ],
+ "recipients": [
+  {
+   "domain": "adnetic.test",
+   "hosts": [
+    "cdn.adnetic.test",
+    "px.adnetic.test"
+   ],
+   "vendor": "Adnetic",
+   "vendor_category": "advertising",
+   "region": "US",
+   "kind": "declared_processor",
+   "states": [
+    "accept"
+   ],
+   "categories": [
+    "contact"
+   ],
+   "fields": [
+    "email"
+   ],
+   "named_by": "domain list"
+  },
+  {
+   "domain": "bugcatch.test",
+   "hosts": [
+    "cdn.bugcatch.test"
+   ],
+   "vendor": "Bugcatch",
+   "vendor_category": "error_tracking",
+   "region": "AU",
+   "kind": "declared_processor",
+   "states": [
+    "accept",
+    "before",
+    "reject"
+   ],
+   "categories": [],
+   "fields": [],
+   "named_by": "domain list"
+  },
+  {
+   "domain": "chatterbox.test",
+   "hosts": [
+    "api.chatterbox.test",
+    "widget.chatterbox.test"
+   ],
+   "vendor": "Chatterbox",
+   "vendor_category": "support_chat",
+   "region": "US",
+   "kind": "third_party",
+   "states": [
+    "accept",
+    "before",
+    "reject"
+   ],
+   "categories": [
+    "contact"
+   ],
+   "fields": [
+    "email"
+   ],
+   "named_by": "domain list"
+  },
+  {
+   "domain": "clinic-signup.test",
+   "hosts": [
+    "www.clinic-signup.test"
+   ],
+   "vendor": null,
+   "vendor_category": null,
+   "region": null,
+   "kind": "first_party",
+   "states": [
+    "accept",
+    "before",
+    "reject"
+   ],
+   "categories": [
+    "contact",
+    "date_of_birth",
+    "health",
+    "identity"
+   ],
+   "fields": [
+    "dob",
+    "email",
+    "name",
+    "phone",
+    "reason"
+   ],
+   "named_by": null
+  },
+  {
+   "domain": "replayr.test",
+   "hosts": [
+    "cdn.replayr.test",
+    "rec.replayr.test"
+   ],
+   "vendor": "Replayr",
+   "vendor_category": "session_replay",
+   "region": "EU",
+   "kind": "declared_processor",
+   "states": [
+    "accept"
+   ],
+   "categories": [
+    "contact",
+    "date_of_birth",
+    "health",
+    "identity"
+   ],
+   "fields": [
+    "dob",
+    "email",
+    "name",
+    "phone",
+    "reason"
+   ],
+   "named_by": "domain list"
+  },
+  {
+   "domain": "trackly.test",
+   "hosts": [
+    "cdn.trackly.test",
+    "px.trackly.test"
+   ],
+   "vendor": "Trackly",
+   "vendor_category": "analytics",
+   "region": "US",
+   "kind": "declared_processor",
+   "states": [
+    "accept",
+    "before",
+    "reject"
+   ],
+   "categories": [
+    "contact"
+   ],
+   "fields": [
+    "email"
+   ],
+   "named_by": "domain list"
+  }
+ ],
+ "consent_matrix": [
+  {
+   "state": "before",
+   "status": "tested",
+   "third_party_domains": [
+    "bugcatch.test",
+    "chatterbox.test",
+    "trackly.test"
+   ],
+   "cookies": [
+    "_tk",
+    "sid"
+   ],
+   "canaries_to_third_parties": [
+    "email"
+   ]
+  },
+  {
+   "state": "reject",
+   "status": "tested",
+   "third_party_domains": [
+    "bugcatch.test",
+    "chatterbox.test",
+    "trackly.test"
+   ],
+   "cookies": [
+    "_tk",
+    "sid"
+   ],
+   "canaries_to_third_parties": [
+    "email"
+   ]
+  },
+  {
+   "state": "accept",
+   "status": "tested",
+   "third_party_domains": [
+    "adnetic.test",
+    "bugcatch.test",
+    "chatterbox.test",
+    "replayr.test",
+    "trackly.test"
+   ],
+   "cookies": [
+    "_tk",
+    "sid"
+   ],
+   "canaries_to_third_parties": [
+    "dob",
+    "email",
+    "name",
+    "phone",
+    "reason"
+   ]
+  }
+ ],
+ "candidates": [
+  {
+   "id": "L001",
+   "source": "live",
+   "type": "tracking_before_consent",
+   "state": "before",
+   "domain": "bugcatch.test",
+   "vendor": "Bugcatch",
+   "vendor_category": "error_tracking",
+   "recipient": "declared_processor",
+   "requests": 4,
+   "paths": [
+    "/b.js"
+   ],
+   "phases": [
+    "home/home",
+    "initial",
+    "signup/open",
+    "signup/submit"
+   ],
+   "cookies": [],
+   "example_requests": [
+    {
+     "state": "before",
+     "n": 6,
+     "phase": "initial",
+     "method": "GET",
+     "url": "http://cdn.bugcatch.test:8153/b.js"
+    },
+    {
+     "state": "before",
+     "n": 14,
+     "phase": "home/home",
+     "method": "GET",
+     "url": "http://cdn.bugcatch.test:8153/b.js"
+    },
+    {
+     "state": "before",
+     "n": 22,
+     "phase": "signup/open",
+     "method": "GET",
+     "url": "http://cdn.bugcatch.test:8153/b.js"
+    }
+   ]
+  },
+  {
+   "id": "L002",
+   "source": "live",
+   "type": "tracking_before_consent",
+   "state": "before",
+   "domain": "chatterbox.test",
+   "vendor": "Chatterbox",
+   "vendor_category": "support_chat",
+   "recipient": "third_party",
+   "requests": 9,
+   "paths": [
+    "/c.js",
+    "/hello",
+    "/identify"
+   ],
+   "phases": [
+    "home/home",
+    "initial",
+    "signup/open",
+    "signup/submit"
+   ],
+   "cookies": [],
+   "example_requests": [
+    {
+     "state": "before",
+     "n": 5,
+     "phase": "initial",
+     "method": "GET",
+     "url": "http://widget.chatterbox.test:8153/c.js"
+    },
+    {
+     "state": "before",
+     "n": 8,
+     "phase": "initial",
+     "method": "GET",
+     "url": "http://api.chatterbox.test:8153/hello?page=%2F"
+    },
+    {
+     "state": "before",
+     "n": 13,
+     "phase": "home/home",
+     "method": "GET",
+     "url": "http://widget.chatterbox.test:8153/c.js"
+    }
+   ]
+  },
+  {
+   "id": "L003",
+   "source": "live",
+   "type": "tracking_before_consent",
+   "state": "before",
+   "domain": "trackly.test",
+   "vendor": "Trackly",
+   "vendor_category": "analytics",
+   "recipient": "declared_processor",
+   "requests": 8,
+   "paths": [
+    "/collect",
+    "/t.js"
+   ],
+   "phases": [
+    "home/home",
+    "initial",
+    "signup/open",
+    "signup/submit"
+   ],
+   "cookies": [
+    "_tk"
+   ],
+   "example_requests": [
+    {
+     "state": "before",
+     "n": 4,
+     "phase": "initial",
+     "method": "GET",
+     "url": "http://cdn.trackly.test:8153/t.js"
+    },
+    {
+     "state": "before",
+     "n": 7,
+     "phase": "initial",
+     "method": "GET",
+     "url": "http://px.trackly.test:8153/collect?ev=page_view&cid=tk.936sfide8h&dl=http%3A%2F%2Fwww.clinic-signup.test%3A8152%2F&dt=Welcome%20-%20Harbourside%20Clinic"
+    },
+    {
+     "state": "before",
+     "n": 12,
+     "phase": "home/home",
+     "method": "GET",
+     "url": "http://cdn.trackly.test:8153/t.js"
+    }
+   ]
+  },
+  {
+   "id": "L004",
+   "source": "live",
+   "type": "tracking_before_consent",
+   "state": "before",
+   "domain": "clinic-signup.test",
+   "vendor": null,
+   "recipient": "first_party",
+   "cookie": "sid",
+   "cookie_flags": {
+    "http_only": true,
+    "secure": false,
+    "same_site": "Lax",
+    "persistent": false,
+    "expires_days": null,
+    "value_length": 32
+   },
+   "requests": 0,
+   "paths": [],
+   "phases": [
+    "initial"
+   ],
+   "cookies": [
+    "sid"
+   ],
+   "example_requests": []
+  },
+  {
+   "id": "L005",
+   "source": "live",
+   "type": "tracking_after_reject",
+   "state": "reject",
+   "domain": "bugcatch.test",
+   "vendor": "Bugcatch",
+   "vendor_category": "error_tracking",
+   "recipient": "declared_processor",
+   "requests": 3,
+   "paths": [
+    "/b.js"
+   ],
+   "phases": [
+    "home/home",
+    "signup/open",
+    "signup/submit"
+   ],
+   "cookies": [],
+   "example_requests": [
+    {
+     "state": "reject",
+     "n": 14,
+     "phase": "home/home",
+     "method": "GET",
+     "url": "http://cdn.bugcatch.test:8153/b.js"
+    },
+    {
+     "state": "reject",
+     "n": 22,
+     "phase": "signup/open",
+     "method": "GET",
+     "url": "http://cdn.bugcatch.test:8153/b.js"
+    },
+    {
+     "state": "reject",
+     "n": 32,
+     "phase": "signup/submit",
+     "method": "GET",
+     "url": "http://cdn.bugcatch.test:8153/b.js"
+    }
+   ]
+  },
+  {
+   "id": "L006",
+   "source": "live",
+   "type": "tracking_after_reject",
+   "state": "reject",
+   "domain": "chatterbox.test",
+   "vendor": "Chatterbox",
+   "vendor_category": "support_chat",
+   "recipient": "third_party",
+   "requests": 7,
+   "paths": [
+    "/c.js",
+    "/hello",
+    "/identify"
+   ],
+   "phases": [
+    "home/home",
+    "signup/open",
+    "signup/submit"
+   ],
+   "cookies": [],
+   "example_requests": [
+    {
+     "state": "reject",
+     "n": 13,
+     "phase": "home/home",
+     "method": "GET",
+     "url": "http://widget.chatterbox.test:8153/c.js"
+    },
+    {
+     "state": "reject",
+     "n": 16,
+     "phase": "home/home",
+     "method": "GET",
+     "url": "http://api.chatterbox.test:8153/hello?page=%2F"
+    },
+    {
+     "state": "reject",
+     "n": 21,
+     "phase": "signup/open",
+     "method": "GET",
+     "url": "http://widget.chatterbox.test:8153/c.js"
+    }
+   ]
+  },
+  {
+   "id": "L007",
+   "source": "live",
+   "type": "tracking_after_reject",
+   "state": "reject",
+   "domain": "trackly.test",
+   "vendor": "Trackly",
+   "vendor_category": "analytics",
+   "recipient": "declared_processor",
+   "requests": 6,
+   "paths": [
+    "/collect",
+    "/t.js"
+   ],
+   "phases": [
+    "home/home",
+    "signup/open",
+    "signup/submit"
+   ],
+   "cookies": [
+    "_tk"
+   ],
+   "example_requests": [
+    {
+     "state": "reject",
+     "n": 12,
+     "phase": "home/home",
+     "method": "GET",
+     "url": "http://cdn.trackly.test:8153/t.js"
+    },
+    {
+     "state": "reject",
+     "n": 15,
+     "phase": "home/home",
+     "method": "GET",
+     "url": "http://px.trackly.test:8153/collect?ev=page_view&cid=tk.86otmyt072&dl=http%3A%2F%2Fwww.clinic-signup.test%3A8152%2F&dt=Welcome%20-%20Harbourside%20Clinic"
+    },
+    {
+     "state": "reject",
+     "n": 20,
+     "phase": "signup/open",
+     "method": "GET",
+     "url": "http://cdn.trackly.test:8153/t.js"
+    }
+   ]
+  },
+  {
+   "id": "L008",
+   "source": "live",
+   "type": "personal_data_to_third_party",
+   "domain": "adnetic.test",
+   "vendor": "Adnetic",
+   "vendor_category": "advertising",
+   "recipient": "declared_processor",
+   "states": [
+    "accept"
+   ],
+   "fields": [
+    "email"
+   ],
+   "categories": [
+    "contact"
+   ],
+   "encodings": [
+    "email:sha256"
+   ],
+   "example_requests": [
+    {
+     "state": "accept",
+     "n": 32,
+     "phase": "signup/fill",
+     "method": "GET",
+     "url": "http://px.adnetic.test:8153/ev?e=lead&em=<canary:email:sha256>",
+     "where": [
+      "url"
+     ],
+     "body": null
+    }
+   ],
+   "requests": 1
+  },
+  {
+   "id": "L009",
+   "source": "live",
+   "type": "cross_border_transfer",
+   "domain": "adnetic.test",
+   "vendor": "Adnetic",
+   "recipient": "declared_processor",
+   "region": "US",
+   "regions": [
+    "AU",
+    "EU"
+   ],
+   "states": [
+    "accept"
+   ],
+   "fields": [
+    "email"
+   ],
+   "categories": [
+    "contact"
+   ],
+   "region_source": "example list for the made-up .test vendors of examples/clinic-signup (stands in for the fetched EasyPrivacy and Open Cookie Database lists; regions are invented)"
+  },
+  {
+   "id": "L010",
+   "source": "live",
+   "type": "personal_data_to_third_party",
+   "domain": "chatterbox.test",
+   "vendor": "Chatterbox",
+   "vendor_category": "support_chat",
+   "recipient": "third_party",
+   "states": [
+    "accept",
+    "before",
+    "reject"
+   ],
+   "fields": [
+    "email"
+   ],
+   "categories": [
+    "contact"
+   ],
+   "encodings": [
+    "email:raw",
+    "email:url"
+   ],
+   "example_requests": [
+    {
+     "state": "before",
+     "n": 36,
+     "phase": "signup/submit",
+     "method": "GET",
+     "url": "http://api.chatterbox.test:8153/identify?email=<canary:email:url>",
+     "where": [
+      "url"
+     ],
+     "body": null
+    },
+    {
+     "state": "reject",
+     "n": 36,
+     "phase": "signup/submit",
+     "method": "GET",
+     "url": "http://api.chatterbox.test:8153/identify?email=<canary:email:url>",
+     "where": [
+      "url"
+     ],
+     "body": null
+    },
+    {
+     "state": "accept",
+     "n": 44,
+     "phase": "signup/submit",
+     "method": "GET",
+     "url": "http://api.chatterbox.test:8153/identify?email=<canary:email:url>",
+     "where": [
+      "url"
+     ],
+     "body": null
+    }
+   ],
+   "requests": 3
+  },
+  {
+   "id": "L011",
+   "source": "live",
+   "type": "undeclared_processor",
+   "domain": "chatterbox.test",
+   "vendor": "Chatterbox",
+   "vendor_category": "support_chat",
+   "recipient": "third_party",
+   "states": [
+    "accept",
+    "before",
+    "reject"
+   ],
+   "fields": [
+    "email"
+   ],
+   "categories": [
+    "contact"
+   ],
+   "declared_source": "Harbourside Clinic privacy policy, section 7 (Who we share information with), version 2026-08",
+   "example_requests": [
+    {
+     "state": "before",
+     "n": 36,
+     "phase": "signup/submit",
+     "method": "GET",
+     "url": "http://api.chatterbox.test:8153/identify?email=<canary:email:url>",
+     "where": [
+      "url"
+     ],
+     "body": null
+    },
+    {
+     "state": "reject",
+     "n": 36,
+     "phase": "signup/submit",
+     "method": "GET",
+     "url": "http://api.chatterbox.test:8153/identify?email=<canary:email:url>",
+     "where": [
+      "url"
+     ],
+     "body": null
+    }
+   ]
+  },
+  {
+   "id": "L012",
+   "source": "live",
+   "type": "cross_border_transfer",
+   "domain": "chatterbox.test",
+   "vendor": "Chatterbox",
+   "recipient": "third_party",
+   "region": "US",
+   "regions": [
+    "AU",
+    "EU"
+   ],
+   "states": [
+    "accept",
+    "before",
+    "reject"
+   ],
+   "fields": [
+    "email"
+   ],
+   "categories": [
+    "contact"
+   ],
+   "region_source": "example list for the made-up .test vendors of examples/clinic-signup (stands in for the fetched EasyPrivacy and Open Cookie Database lists; regions are invented)"
+  },
+  {
+   "id": "L013",
+   "source": "live",
+   "type": "session_replay_unmasked",
+   "domain": "replayr.test",
+   "vendor": "Replayr",
+   "vendor_category": "session_replay",
+   "recipient": "declared_processor",
+   "states": [
+    "accept"
+   ],
+   "fields": [
+    "dob",
+    "email",
+    "name",
+    "phone",
+    "reason"
+   ],
+   "categories": [
+    "contact",
+    "date_of_birth",
+    "health",
+    "identity"
+   ],
+   "encodings": [
+    "dob:raw",
+    "email:raw",
+    "name:raw",
+    "phone:raw",
+    "reason:raw"
+   ],
+   "example_requests": [
+    {
+     "state": "accept",
+     "n": 33,
+     "phase": "signup/fill",
+     "method": "POST",
+     "url": "http://rec.replayr.test:8153/rec",
+     "where": [
+      "body"
+     ],
+     "body": "{\"events\":[{\"type\":\"input\",\"id\":\"name\",\"value\":\"<canary:name:raw>\"},{\"type\":\"input\",\"id\":\"email\",\"value\":\"<canary:email:raw>\"},{\"type\":\"input\",\"id\":\"phone\",\"value\":\"<canary:phone:raw>\"},{\"type\":\"input\",\"id\":\"dob\",\"value\":\"<canary:dob:raw>\"},{\"type\":\"input\",\"id\":\"reason\",\"value\":\"<canary:reason:raw>\""
+    }
+   ],
+   "requests": 1
+  },
+  {
+   "id": "L014",
+   "source": "live",
+   "type": "personal_data_to_third_party",
+   "domain": "trackly.test",
+   "vendor": "Trackly",
+   "vendor_category": "analytics",
+   "recipient": "declared_processor",
+   "states": [
+    "accept",
+    "before",
+    "reject"
+   ],
+   "fields": [
+    "email"
+   ],
+   "categories": [
+    "contact"
+   ],
+   "encodings": [
+    "email:url",
+    "email:url_double"
+   ],
+   "example_requests": [
+    {
+     "state": "before",
+     "n": 34,
+     "phase": "signup/submit",
+     "method": "GET",
+     "url": "http://px.trackly.test:8153/collect?ev=page_view&cid=tk.936sfide8h&dl=http%3A%2F%2Fwww.clinic-signup.test%3A8152%2Fwelcome%3Femail%3D<canary:email:url_double>&dt=Registered%20-%20Harbourside%20Clinic",
+     "where": [
+      "url"
+     ],
+     "body": null
+    },
+    {
+     "state": "reject",
+     "n": 34,
+     "phase": "signup/submit",
+     "method": "GET",
+     "url": "http://px.trackly.test:8153/collect?ev=page_view&cid=tk.86otmyt072&dl=http%3A%2F%2Fwww.clinic-signup.test%3A8152%2Fwelcome%3Femail%3D<canary:email:url_double>&dt=Registered%20-%20Harbourside%20Clinic",
+     "where": [
+      "url"
+     ],
+     "body": null
+    },
+    {
+     "state": "accept",
+     "n": 42,
+     "phase": "signup/submit",
+     "method": "GET",
+     "url": "http://px.trackly.test:8153/collect?ev=page_view&cid=tk.lelvb97c2b&dl=http%3A%2F%2Fwww.clinic-signup.test%3A8152%2Fwelcome%3Femail%3D<canary:email:url_double>&dt=Registered%20-%20Harbourside%20Clinic",
+     "where": [
+      "url"
+     ],
+     "body": null
+    }
+   ],
+   "requests": 3
+  },
+  {
+   "id": "L015",
+   "source": "live",
+   "type": "cross_border_transfer",
+   "domain": "trackly.test",
+   "vendor": "Trackly",
+   "recipient": "declared_processor",
+   "region": "US",
+   "regions": [
+    "AU",
+    "EU"
+   ],
+   "states": [
+    "accept",
+    "before",
+    "reject"
+   ],
+   "fields": [
+    "email"
+   ],
+   "categories": [
+    "contact"
+   ],
+   "region_source": "example list for the made-up .test vendors of examples/clinic-signup (stands in for the fetched EasyPrivacy and Open Cookie Database lists; regions are invented)"
+  },
+  {
+   "id": "L016",
+   "source": "live",
+   "type": "personal_data_in_url",
+   "domain": "clinic-signup.test",
+   "path": "/welcome",
+   "states": [
+    "accept",
+    "before",
+    "reject"
+   ],
+   "fields": [
+    "email"
+   ],
+   "categories": [
+    "contact"
+   ],
+   "example_requests": [
+    {
+     "state": "before",
+     "n": 27,
+     "phase": "signup/submit",
+     "url": "http://www.clinic-signup.test:8152/welcome?email=<canary:email:url>"
+    },
+    {
+     "state": "reject",
+     "n": 27,
+     "phase": "signup/submit",
+     "url": "http://www.clinic-signup.test:8152/welcome?email=<canary:email:url>"
+    },
+    {
+     "state": "accept",
+     "n": 35,
+     "phase": "signup/submit",
+     "url": "http://www.clinic-signup.test:8152/welcome?email=<canary:email:url>"
+    }
+   ],
+   "requests": 3
+  },
+  {
+   "id": "L017",
+   "source": "live",
+   "type": "personal_data_to_third_party",
+   "subtype": "possible_hashed_identifier",
+   "domain": "adnetic.test",
+   "vendor": "Adnetic",
+   "recipient": "declared_processor",
+   "value": "5d41402abc4b2a76b9719d911017c5925d41402abc4b2a76b9719d911017c592",
+   "length": 64,
+   "states": [
+    "accept"
+   ],
+   "fields": [],
+   "categories": [],
+   "requests": 4,
+   "example_requests": [
+    {
+     "state": "accept",
+     "n": 9,
+     "phase": "after_accept",
+     "url": "http://cdn.adnetic.test:8153/a.js?v=5d41402abc4b2a76b9719d911017c5925d41402abc4b2a76b9719d911017c592"
+    },
+    {
+     "state": "accept",
+     "n": 19,
+     "phase": "home/home",
+     "url": "http://cdn.adnetic.test:8153/a.js?v=5d41402abc4b2a76b9719d911017c5925d41402abc4b2a76b9719d911017c592"
+    }
+   ],
+   "facts": {
+    "same_value_in_every_request": true,
+    "states_seen": [
+     "accept"
+    ]
+   }
+  },
+  {
+   "id": "L018",
+   "source": "live",
+   "type": "insecure_storage",
+   "storage": "localStorage",
+   "origin": "www.clinic-signup.test",
+   "key": "signup_email",
+   "states": [
+    "accept",
+    "before",
+    "reject"
+   ],
+   "fields": [
+    "email"
+   ],
+   "categories": [
+    "contact"
+   ],
+   "first_seen": "signup/fill",
+   "flags": null
+  },
+  {
+   "id": "L019",
+   "source": "live",
+   "type": "sensitive_category_flow",
+   "sink": "server_log",
+   "log_file": "server.log",
+   "lines": [
+    1,
+    2,
+    3
+   ],
+   "fields": [
+    "dob",
+    "email",
+    "reason"
+   ],
+   "categories": [
+    "contact",
+    "date_of_birth",
+    "health"
+   ],
+   "example_line": "2026-11-11 22:54:54,018 INFO clinic new patient signup email=<canary:email:raw> dob=<canary:dob:raw> reason=<canary:reason:raw>"
+  },
+  {
+   "type": "sensitive_category_flow",
+   "file": "serve.py",
+   "line": 62,
+   "sink": "py-logging",
+   "excerpt": "logger.info('new patient signup email=%s dob=%s reason=%s', patient['email'], patient['dob'], patient['reason'])",
+   "fields": [
+    "dob",
+    "email",
+    "reason"
+   ],
+   "categories": [
+    "contact",
+    "date_of_birth",
+    "health"
+   ],
+   "confidence": "pattern",
+   "vendor": null,
+   "id": "S001",
+   "source": "static"
+  },
+  {
+   "type": "personal_data_to_third_party",
+   "file": "site/index.html",
+   "line": 13,
+   "sink": "default-pii",
+   "excerpt": "bugcatch.init({dsn: 'http://ingest.bugcatch.test:8153/1', sendDefaultPii: false, beforeSend: siteScrub});",
+   "fields": [],
+   "categories": [],
+   "confidence": "pattern",
+   "note": "error tracker default PII off",
+   "facts": {
+    "default_pii": false,
+    "scrubber": true
+   },
+   "id": "S002",
+   "source": "static",
+   "also_at": [
+    "site/signup.html:13",
+    "site/welcome.html:13"
+   ]
+  },
+  {
+   "type": "session_replay_unmasked",
+   "file": "site/static/consent.js",
+   "line": 14,
+   "sink": "replay-masking-off",
+   "excerpt": "replayr.init({maskAllInputs: false});",
+   "fields": [],
+   "categories": [],
+   "confidence": "pattern",
+   "note": "input masking switched off in a session-replay configuration",
+   "id": "S003",
+   "source": "static"
+  },
+  {
+   "type": "insecure_storage",
+   "file": "site/static/signup.js",
+   "line": 45,
+   "sink": "local-storage",
+   "excerpt": "localStorage.setItem('signup_email', value);",
+   "fields": [
+    "email"
+   ],
+   "categories": [
+    "contact"
+   ],
+   "confidence": "pattern",
+   "vendor": null,
+   "id": "S004",
+   "source": "static"
+  },
+  {
+   "type": "personal_data_to_third_party",
+   "file": "site/static/signup.js",
+   "line": 47,
+   "sink": "generic-track",
+   "excerpt": "adnetic.track('lead', {em: sha256(value)});",
+   "fields": [
+    "email"
+   ],
+   "categories": [
+    "contact"
+   ],
+   "confidence": "pattern",
+   "vendor": null,
+   "id": "S005",
+   "source": "static"
+  },
+  {
+   "type": "personal_data_to_third_party",
+   "file": "site/static/welcome.js",
+   "line": 5,
+   "sink": "generic-identify",
+   "excerpt": "chatterbox.identify({email: email});",
+   "fields": [
+    "email"
+   ],
+   "categories": [
+    "contact"
+   ],
+   "confidence": "pattern",
+   "vendor": null,
+   "id": "S006",
+   "source": "static"
+  }
+ ]
+}

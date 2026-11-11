@@ -1,0 +1,20 @@
+{
+  "site": "http://www.clinic-signup.test:8152/",
+  "host_map": {"*.test": "127.0.0.1"},
+  "allow_form_submission": true,
+  "allow_form_submission_reason": "the sample app on loopback, with stub vendors that keep nothing",
+  "first_party_domains": ["clinic-signup.test"],
+  "consent": {"accept": "#consent-accept", "reject": "#consent-reject"},
+  "flows": [
+    {"id": "home", "reach": 3, "reach_reason": "the landing page every visitor sees", "steps": [
+      {"name": "home", "actions": [{"goto": "/"}]}
+    ]},
+    {"id": "signup", "reach": 3, "reach_reason": "every new patient registers", "steps": [
+      {"name": "open", "actions": [{"goto": "/signup"}]},
+      {"name": "fill", "actions": [
+        {"fill": "#name", "canary": "name"}, {"fill": "#email", "canary": "email"}, {"fill": "#phone", "canary": "phone"},
+        {"fill": "#dob", "canary": "dob"}, {"fill": "#reason", "canary": "reason"}, {"click": "h1"}, {"wait": 800}]},
+      {"name": "submit", "actions": [{"click": "#signup button[type=submit]"}, {"wait_for": "h1"}, {"wait": 800}]}
+    ]}
+  ]
+}

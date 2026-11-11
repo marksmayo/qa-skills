@@ -1,0 +1,27 @@
+{
+ "id": "7f3a",
+ "synthetic": true,
+ "note": "Synthetic canary values; none belongs to a real person.",
+ "fields": {
+  "name": {
+   "category": "identity",
+   "value": "Qa Canary 7f3a"
+  },
+  "email": {
+   "category": "contact",
+   "value": "qa.canary.7f3a@example.invalid"
+  },
+  "phone": {
+   "category": "contact",
+   "value": "0491 570 156"
+  },
+  "dob": {
+   "category": "date_of_birth",
+   "value": "1961-07-13"
+  },
+  "reason": {
+   "category": "health",
+   "value": "canary 7f3a knee pain after a fall"
+  }
+ }
+}
