@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name" translatable="false">Bookclub</string>
+    <string name="books_count">You have %d books</string>
+    <string name="greeting">Hello, %1$s!</string>
+    <plurals name="events_count">
+        <item quantity="one">%d event this month</item>
+        <item quantity="other">%d events this month</item>
+    </plurals>
+</resources>

@@ -30,7 +30,7 @@ SHARED = {
     'scripts/sarif.py': ['ui-crash-hunter-skill', 'code-security-auditor-skill', 'api-contract-tester-skill'],
     'scripts/fetch_ticket.py': ['ticket-to-tdd-skill', 'ticket-readiness-reviewer-skill', 'dead-test-finder-skill', 'risk-based-test-planner-skill', 'exploratory-charter-writer-skill', 'bug-reproducer-skill'],
     'scripts/browser_harness.py': ['bug-reproducer-skill', 'performance-budget-auditor-skill', 'visual-regression-reviewer-skill',
-                                   'cross-browser-checker-skill'],
+                                   'cross-browser-checker-skill', 'i18n-checker-skill'],
     'scripts/png_io.py': ['visual-regression-reviewer-skill', 'cross-browser-checker-skill'],
 }
 

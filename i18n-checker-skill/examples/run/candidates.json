@@ -1,0 +1,966 @@
+{
+ "source_locale": "en",
+ "shipped_locales": [
+  "ar",
+  "de",
+  "fr"
+ ],
+ "candidates": [
+  {
+   "id": "K1",
+   "kind": "fixed_width",
+   "source": "static",
+   "status": "confirmed",
+   "set": null,
+   "locales": [
+    "ar",
+    "de",
+    "fr"
+   ],
+   "keys": [],
+   "locations": [
+    {
+     "file": "site/css/site.css",
+     "line": 3
+    }
+   ],
+   "details": [
+    ".tabs a has a fixed width and hides overflow without an ellipsis"
+   ],
+   "evidence": [
+    {
+     "page": "home",
+     "locale": "de",
+     "mode": "locale",
+     "screenshot": "home.locale.de.1280x800.png",
+     "element": "a:in(nav)",
+     "text": "Veranstaltungen",
+     "box": [
+      120,
+      15,
+      96,
+      18
+     ],
+     "measure": {
+      "overflow_px": 20,
+      "box_width": 96,
+      "text_width": 116
+     },
+     "critical_path": false
+    },
+    {
+     "page": "events",
+     "locale": "de",
+     "mode": "locale",
+     "screenshot": "events.locale.de.1280x800.png",
+     "element": "a:in(nav)",
+     "text": "Veranstaltungen",
+     "box": [
+      120,
+      15,
+      96,
+      18
+     ],
+     "measure": {
+      "overflow_px": 20,
+      "box_width": 96,
+      "text_width": 116
+     },
+     "critical_path": true
+    }
+   ],
+   "text": null,
+   "note": null,
+   "selector": ".tabs a",
+   "runtime_kind": "truncation",
+   "reach": 3,
+   "leverage": 2,
+   "severity": "High",
+   "confidence": "high",
+   "score": 18,
+   "priority": "P1"
+  },
+  {
+   "id": "K2",
+   "kind": "hardcoded_string",
+   "source": "static",
+   "status": "confirmed",
+   "set": null,
+   "locales": [
+    "ar",
+    "de",
+    "fr"
+   ],
+   "keys": [],
+   "locations": [
+    {
+     "file": "site/events.html",
+     "line": 7
+    },
+    {
+     "file": "site/index.html",
+     "line": 7
+    }
+   ],
+   "details": [
+    "button.signin shows 'Sign in' with no translation attribute",
+    "button.signin shows 'Sign in' with no translation attribute"
+   ],
+   "evidence": [
+    {
+     "page": "home",
+     "locale": "en",
+     "mode": "pseudo",
+     "screenshot": "home.pseudo.en.1280x800.png",
+     "element": "button.signin:in(header)",
+     "text": "Sign in",
+     "box": [
+      1187,
+      12,
+      69,
+      27
+     ],
+     "measure": {
+      "outside_pseudo": "Sign in",
+      "partly_translated": false
+     },
+     "critical_path": false
+    },
+    {
+     "page": "events",
+     "locale": "en",
+     "mode": "pseudo",
+     "screenshot": "events.pseudo.en.1280x800.png",
+     "element": "button.signin:in(header)",
+     "text": "Sign in",
+     "box": [
+      1187,
+      12,
+      69,
+      27
+     ],
+     "measure": {
+      "outside_pseudo": "Sign in",
+      "partly_translated": false
+     },
+     "critical_path": true
+    }
+   ],
+   "text": "Sign in",
+   "note": null,
+   "selector": null,
+   "reach": 3,
+   "leverage": 2,
+   "severity": "High",
+   "confidence": "medium",
+   "score": 18,
+   "priority": "P1"
+  },
+  {
+   "id": "K3",
+   "kind": "rtl_physical",
+   "source": "static",
+   "status": "confirmed",
+   "set": null,
+   "locales": [
+    "ar",
+    "de",
+    "fr"
+   ],
+   "keys": [],
+   "locations": [
+    {
+     "file": "site/css/site.css",
+     "line": 6
+    }
+   ],
+   "details": [
+    "physical direction property; use logical properties (margin-inline-start) so RTL mirrors"
+   ],
+   "evidence": [
+    {
+     "page": "home",
+     "locale": "ar",
+     "mode": "rtl",
+     "screenshot": "home.rtl.ar.1280x800.png",
+     "element": "span.icon:in(p)",
+     "text": "",
+     "box": [
+      1182,
+      257,
+      16,
+      17
+     ],
+     "measure": {
+      "property": "margin-left",
+      "px": 6,
+      "expected": "the inline-start side (right in RTL)"
+     },
+     "critical_path": false
+    },
+    {
+     "page": "events",
+     "locale": "ar",
+     "mode": "rtl",
+     "screenshot": "events.rtl.ar.1280x800.png",
+     "element": "span.icon:in(p)",
+     "text": "",
+     "box": [
+      1182,
+      189,
+      16,
+      17
+     ],
+     "measure": {
+      "property": "margin-left",
+      "px": 6,
+      "expected": "the inline-start side (right in RTL)"
+     },
+     "critical_path": true
+    }
+   ],
+   "text": null,
+   "note": null,
+   "selector": ".cta .icon",
+   "runtime_kind": "rtl_mirroring",
+   "reach": 3,
+   "leverage": 2,
+   "severity": "Medium",
+   "confidence": "high",
+   "score": 12,
+   "priority": "P1"
+  },
+  {
+   "id": "K4",
+   "kind": "missing_key",
+   "source": "static",
+   "status": "confirmed",
+   "set": "site/locales",
+   "locales": [
+    "de"
+   ],
+   "keys": [
+    "events.title",
+    "events.rsvp"
+   ],
+   "locations": [
+    {
+     "file": "site/locales/en.json",
+     "line": 7
+    },
+    {
+     "file": "site/locales/en.json",
+     "line": 7
+    }
+   ],
+   "details": [
+    "events.title is missing from site/locales/de.json (source: 'Upcoming events')",
+    "events.rsvp is missing from site/locales/de.json (source: 'Reserve a seat')"
+   ],
+   "evidence": [
+    {
+     "page": "home",
+     "locale": "de",
+     "mode": "locale",
+     "screenshot": "home.locale.de.1280x800.png",
+     "element": "a:in(p)",
+     "text": "events.rsvp",
+     "box": [
+      24,
+      257,
+      82,
+      17
+     ],
+     "measure": {
+      "key_shown": "events.rsvp"
+     },
+     "critical_path": false
+    },
+    {
+     "page": "events",
+     "locale": "de",
+     "mode": "locale",
+     "screenshot": "events.locale.de.1280x800.png",
+     "element": "h1:in(main)",
+     "text": "events.title",
+     "box": [
+      24,
+      96,
+      1232,
+      37
+     ],
+     "measure": {
+      "key_shown": "events.title"
+     },
+     "critical_path": true
+    },
+    {
+     "page": "events",
+     "locale": "de",
+     "mode": "locale",
+     "screenshot": "events.locale.de.1280x800.png",
+     "element": "a:in(p)",
+     "text": "events.rsvp",
+     "box": [
+      24,
+      189,
+      82,
+      17
+     ],
+     "measure": {
+      "key_shown": "events.rsvp"
+     },
+     "critical_path": true
+    }
+   ],
+   "has_other": true,
+   "missing_in": "site/locales/de.json",
+   "reach": 1,
+   "leverage": 2,
+   "severity": "Critical",
+   "confidence": "high",
+   "score": 8,
+   "priority": "P1"
+  },
+  {
+   "id": "K5",
+   "kind": "concatenation",
+   "source": "static",
+   "status": "confirmed",
+   "set": null,
+   "locales": [
+    "ar",
+    "de",
+    "fr"
+   ],
+   "keys": [],
+   "locations": [
+    {
+     "file": "site/js/app.js",
+     "line": 6
+    }
+   ],
+   "details": [
+    "concatenation: document.getElementById('greeting') && (document.getElementById('greeting').textContent = i18n.t('gr"
+   ],
+   "evidence": [
+    {
+     "page": "home",
+     "locale": "en",
+     "mode": "pseudo",
+     "screenshot": "home.pseudo.en.1280x800.png",
+     "element": "h1#greeting:in(main)",
+     "text": "⟦Héļļö··⟧, Robin!",
+     "box": [
+      24,
+      96,
+      1232,
+      39
+     ],
+     "measure": {
+      "outside_pseudo": ", Robin!",
+      "partly_translated": true
+     },
+     "critical_path": false
+    }
+   ],
+   "text": null,
+   "note": null,
+   "selector": null,
+   "reach": 3,
+   "leverage": 1,
+   "severity": "Medium",
+   "confidence": "high",
+   "score": 6,
+   "priority": "P2"
+  },
+  {
+   "id": "K6",
+   "kind": "format",
+   "source": "static",
+   "status": "confirmed",
+   "set": null,
+   "locales": [
+    "ar",
+    "de",
+    "fr"
+   ],
+   "keys": [],
+   "locations": [
+    {
+     "file": "site/js/app.js",
+     "line": 12
+    }
+   ],
+   "details": [
+    "date formatted by hand (use Intl.DateTimeFormat with the locale)"
+   ],
+   "evidence": [
+    {
+     "page": "events",
+     "locale": "de",
+     "mode": "locale",
+     "screenshot": "events.locale.de.1280x800.png",
+     "element": "p#next.next:in(main)",
+     "text": "Nächstes Treffen: 12/3/2026",
+     "box": [
+      24,
+      155,
+      1232,
+      18
+     ],
+     "measure": {
+      "value": "12/3/2026",
+      "problems": [
+       "date separator '/'; CLDR de short date is dd.MM.yy"
+      ],
+      "cldr": {
+       "date_short": "dd.MM.yy"
+      }
+     },
+     "critical_path": true
+    }
+   ],
+   "text": null,
+   "note": null,
+   "selector": null,
+   "reach": 3,
+   "leverage": 1,
+   "severity": "Medium",
+   "confidence": "high",
+   "score": 6,
+   "priority": "P2"
+  },
+  {
+   "id": "K7",
+   "kind": "format",
+   "source": "static",
+   "status": "confirmed",
+   "set": null,
+   "locales": [
+    "ar",
+    "de",
+    "fr"
+   ],
+   "keys": [],
+   "locations": [
+    {
+     "file": "site/js/app.js",
+     "line": 9
+    }
+   ],
+   "details": [
+    "number or currency formatted by hand (use Intl.NumberFormat with the locale)"
+   ],
+   "evidence": [
+    {
+     "page": "home",
+     "locale": "de",
+     "mode": "locale",
+     "screenshot": "home.locale.de.1280x800.png",
+     "element": "p#price:in(main)",
+     "text": "Mitgliedschaft: $12.50 pro Jahr",
+     "box": [
+      24,
+      223,
+      1232,
+      18
+     ],
+     "measure": {
+      "value": "$12.50",
+      "problems": [
+       "decimal separator '.', CLDR de uses ','",
+       "currency symbol before the number; CLDR de puts it after (#,##0.00 ¤)"
+      ],
+      "cldr": {
+       "decimal": ",",
+       "group": ".",
+       "currency_pattern": "#,##0.00 ¤"
+      }
+     },
+     "critical_path": false
+    },
+    {
+     "page": "home",
+     "locale": "fr",
+     "mode": "locale",
+     "screenshot": "home.locale.fr.1280x800.png",
+     "element": "p#price:in(main)",
+     "text": "Adhésion : $12.50 par an",
+     "box": [
+      24,
+      223,
+      1232,
+      18
+     ],
+     "measure": {
+      "value": "$12.50",
+      "problems": [
+       "decimal separator '.', CLDR fr uses ','",
+       "currency symbol before the number; CLDR fr puts it after (#,##0.00 ¤)"
+      ],
+      "cldr": {
+       "decimal": ",",
+       "group": " ",
+       "currency_pattern": "#,##0.00 ¤"
+      }
+     },
+     "critical_path": false
+    },
+    {
+     "page": "home",
+     "locale": "ar",
+     "mode": "rtl",
+     "screenshot": "home.rtl.ar.1280x800.png",
+     "element": "p#price:in(main)",
+     "text": "العضوية: $12.50 سنويًا",
+     "box": [
+      24,
+      223,
+      1232,
+      18
+     ],
+     "measure": {
+      "value": "$12.50",
+      "problems": [
+       "currency symbol before the number; CLDR ar puts it after (‏#,##0.00 ¤)"
+      ],
+      "cldr": {
+       "decimal": ".",
+       "group": ",",
+       "currency_pattern": "‏#,##0.00 ¤;‏-#,##0.00 ¤"
+      }
+     },
+     "critical_path": false
+    }
+   ],
+   "text": null,
+   "note": null,
+   "selector": null,
+   "reach": 3,
+   "leverage": 1,
+   "severity": "Medium",
+   "confidence": "high",
+   "score": 6,
+   "priority": "P2"
+  },
+  {
+   "id": "K8",
+   "kind": "hardcoded_string",
+   "source": "static",
+   "status": "possible",
+   "set": null,
+   "locales": [
+    "ar",
+    "de",
+    "fr"
+   ],
+   "keys": [],
+   "locations": [
+    {
+     "file": "site/events.html",
+     "line": 11
+    }
+   ],
+   "details": [
+    "p#next shows 'Next meeting: 12/3/2026' with no translation attribute"
+   ],
+   "evidence": [],
+   "text": "Next meeting: 12/3/2026",
+   "note": "set by a script at runtime?",
+   "selector": null,
+   "reach": 3,
+   "leverage": 1,
+   "severity": "Medium",
+   "confidence": "low",
+   "score": 6,
+   "priority": "P2"
+  },
+  {
+   "id": "K9",
+   "kind": "hardcoded_string",
+   "source": "static",
+   "status": "possible",
+   "set": null,
+   "locales": [
+    "ar",
+    "de",
+    "fr"
+   ],
+   "keys": [],
+   "locations": [
+    {
+     "file": "site/index.html",
+     "line": 10
+    }
+   ],
+   "details": [
+    "h1#greeting shows 'Hello, Robin!' with no translation attribute"
+   ],
+   "evidence": [],
+   "text": "Hello, Robin!",
+   "note": "set by a script at runtime?",
+   "selector": null,
+   "reach": 3,
+   "leverage": 1,
+   "severity": "Medium",
+   "confidence": "low",
+   "score": 6,
+   "priority": "P2"
+  },
+  {
+   "id": "K10",
+   "kind": "hardcoded_string",
+   "source": "static",
+   "status": "possible",
+   "set": null,
+   "locales": [
+    "ar",
+    "de",
+    "fr"
+   ],
+   "keys": [],
+   "locations": [
+    {
+     "file": "site/index.html",
+     "line": 13
+    }
+   ],
+   "details": [
+    "p#price shows 'Membership: $12.50 a year' with no translation attribute"
+   ],
+   "evidence": [],
+   "text": "Membership: $12.50 a year",
+   "note": "set by a script at runtime?",
+   "selector": null,
+   "reach": 3,
+   "leverage": 1,
+   "severity": "Medium",
+   "confidence": "low",
+   "score": 6,
+   "priority": "P2"
+  },
+  {
+   "id": "K11",
+   "kind": "rtl_physical",
+   "source": "static",
+   "status": "confirmed",
+   "set": null,
+   "locales": [
+    "ar",
+    "de",
+    "fr"
+   ],
+   "keys": [],
+   "locations": [
+    {
+     "file": "site/css/site.css",
+     "line": 7
+    }
+   ],
+   "details": [
+    "physical direction property; use logical properties (margin-inline-start) so RTL mirrors"
+   ],
+   "evidence": [
+    {
+     "page": "events",
+     "locale": "ar",
+     "mode": "rtl",
+     "screenshot": "events.rtl.ar.1280x800.png",
+     "element": "p#next.next:in(main)",
+     "text": "",
+     "box": [
+      24,
+      155,
+      1232,
+      18
+     ],
+     "measure": {
+      "property": "padding-left",
+      "px": 12,
+      "expected": "the inline-start side (right in RTL)"
+     },
+     "critical_path": true
+    },
+    {
+     "page": "events",
+     "locale": "ar",
+     "mode": "rtl",
+     "screenshot": "events.rtl.ar.1280x800.png",
+     "element": "p#next.next:in(main)",
+     "text": "",
+     "box": [
+      24,
+      155,
+      1232,
+      18
+     ],
+     "measure": {
+      "property": "border-left-width",
+      "px": 4,
+      "expected": "the inline-start side (right in RTL)"
+     },
+     "critical_path": true
+    }
+   ],
+   "text": null,
+   "note": null,
+   "selector": ".next",
+   "runtime_kind": "rtl_mirroring",
+   "reach": 3,
+   "leverage": 1,
+   "severity": "Medium",
+   "confidence": "high",
+   "score": 6,
+   "priority": "P2"
+  },
+  {
+   "id": "K12",
+   "kind": "rtl_mirroring",
+   "source": "runtime",
+   "status": "confirmed",
+   "set": null,
+   "locales": [
+    "ar"
+   ],
+   "keys": [],
+   "locations": [],
+   "details": [
+    "rtl_mirroring on span.icon:in(p): {\"glyph\": \"→\", \"expected\": \"a glyph pointing left in RTL\"}",
+    "rtl_mirroring on span.icon:in(p): {\"glyph\": \"→\", \"expected\": \"a glyph pointing left in RTL\"}"
+   ],
+   "evidence": [
+    {
+     "page": "home",
+     "locale": "ar",
+     "mode": "rtl",
+     "screenshot": "home.rtl.ar.1280x800.png",
+     "element": "span.icon:in(p)",
+     "text": "→",
+     "box": [
+      1182,
+      257,
+      16,
+      17
+     ],
+     "measure": {
+      "glyph": "→",
+      "expected": "a glyph pointing left in RTL"
+     },
+     "critical_path": false
+    },
+    {
+     "page": "events",
+     "locale": "ar",
+     "mode": "rtl",
+     "screenshot": "events.rtl.ar.1280x800.png",
+     "element": "span.icon:in(p)",
+     "text": "→",
+     "box": [
+      1182,
+      189,
+      16,
+      17
+     ],
+     "measure": {
+      "glyph": "→",
+      "expected": "a glyph pointing left in RTL"
+     },
+     "critical_path": true
+    }
+   ],
+   "reach": 1,
+   "leverage": 2,
+   "severity": "Medium",
+   "confidence": "high",
+   "score": 4,
+   "priority": "P3"
+  },
+  {
+   "id": "K13",
+   "kind": "placeholder_mismatch",
+   "source": "static",
+   "status": "confirmed",
+   "set": "android/res",
+   "locales": [
+    "de"
+   ],
+   "keys": [
+    "books_count"
+   ],
+   "locations": [
+    {
+     "file": "android/res/values-de/strings.xml",
+     "line": 3
+    }
+   ],
+   "details": [
+    "default has ['1$d'] (printf), de has ['1$s'] (printf)"
+   ],
+   "evidence": [],
+   "has_other": true,
+   "missing_in": null,
+   "reach": 1,
+   "leverage": 1,
+   "severity": "High",
+   "confidence": "high",
+   "score": 3,
+   "priority": "P3"
+  },
+  {
+   "id": "K14",
+   "kind": "placeholder_mismatch",
+   "source": "static",
+   "status": "confirmed",
+   "set": "site/locales",
+   "locales": [
+    "fr"
+   ],
+   "keys": [
+    "welcome"
+   ],
+   "locations": [
+    {
+     "file": "site/locales/fr.json",
+     "line": 4
+    }
+   ],
+   "details": [
+    "en has ['name'] (icu), fr has ['nom'] (icu)"
+   ],
+   "evidence": [
+    {
+     "page": "home",
+     "locale": "fr",
+     "mode": "locale",
+     "screenshot": "home.locale.fr.1280x800.png",
+     "element": "p:in(main)",
+     "text": "Bon retour, {nom} !",
+     "box": [
+      24,
+      155,
+      1232,
+      18
+     ],
+     "measure": {
+      "placeholders": [
+       "{nom}"
+      ]
+     },
+     "critical_path": false
+    }
+   ],
+   "has_other": true,
+   "missing_in": null,
+   "reach": 1,
+   "leverage": 1,
+   "severity": "High",
+   "confidence": "high",
+   "score": 3,
+   "priority": "P3"
+  },
+  {
+   "id": "K15",
+   "kind": "plural_categories",
+   "source": "static",
+   "status": "confirmed",
+   "set": "site/locales",
+   "locales": [
+    "ar"
+   ],
+   "keys": [
+    "books.count"
+   ],
+   "locations": [
+    {
+     "file": "site/locales/ar.json",
+     "line": 5
+    }
+   ],
+   "details": [
+    "{count, plural} lacks few, many (CLDR ar: few, many, one, other, two, zero)"
+   ],
+   "evidence": [],
+   "has_other": true,
+   "missing_in": null,
+   "reach": 1,
+   "leverage": 1,
+   "severity": "High",
+   "confidence": "high",
+   "score": 3,
+   "priority": "P3"
+  },
+  {
+   "id": "K16",
+   "kind": "untranslated",
+   "source": "static",
+   "status": "possible",
+   "set": "site/locales",
+   "locales": [
+    "de"
+   ],
+   "keys": [
+    "footer.newsletter"
+   ],
+   "locations": [
+    {
+     "file": "site/locales/de.json",
+     "line": 8
+    }
+   ],
+   "details": [
+    "same text as en: 'Newsletter'"
+   ],
+   "evidence": [],
+   "has_other": true,
+   "missing_in": null,
+   "reach": 1,
+   "leverage": 1,
+   "severity": "Medium",
+   "confidence": "low",
+   "score": 2,
+   "priority": "P3"
+  },
+  {
+   "id": "K17",
+   "kind": "unused_key",
+   "source": "static",
+   "status": "confirmed",
+   "set": "site/locales",
+   "locales": [
+    "en"
+   ],
+   "keys": [
+    "legacy.banner"
+   ],
+   "locations": [
+    {
+     "file": "site/locales/en.json",
+     "line": 9
+    }
+   ],
+   "details": [
+    "no code mentions 'legacy.banner'"
+   ],
+   "evidence": [],
+   "has_other": true,
+   "missing_in": null,
+   "reach": 1,
+   "leverage": 1,
+   "severity": "Low",
+   "confidence": "high",
+   "score": 1,
+   "priority": "P3"
+  }
+ ],
+ "proposed_patch": {
+  "path": "missing_keys.patch",
+  "keys_added": {
+   "site/locales/de.json": [
+    "events.title",
+    "events.rsvp"
+   ]
+  },
+  "applied": false
+ }
+}

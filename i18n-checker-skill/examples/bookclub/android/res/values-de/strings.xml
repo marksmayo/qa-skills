@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="books_count">Du hast %s Bücher</string>
+    <string name="greeting">Hallo, %1$s!</string>
+    <plurals name="events_count">
+        <item quantity="one">%d Veranstaltung diesen Monat</item>
+        <item quantity="other">%d Veranstaltungen diesen Monat</item>
+    </plurals>
+</resources>

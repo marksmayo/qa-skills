@@ -1,0 +1,10 @@
+{
+  "nav": {"home": "الرئيسية", "events": "الفعاليات", "books": "الكتب", "about": "من نحن"},
+  "greeting": "مرحبا",
+  "welcome": "مرحبًا بعودتك، {name}!",
+  "books": {"count": "{count, plural, zero {ليس لديك كتب} one {لديك كتاب واحد} two {لديك كتابان} other {لديك # كتاب}}"},
+  "membership": {"price": "العضوية: {price} سنويًا"},
+  "events": {"title": "الفعاليات القادمة", "rsvp": "احجز مقعدًا", "next": "الاجتماع القادم: {date}"},
+  "footer": {"newsletter": "النشرة الإخبارية", "contact": "اتصل بنا"},
+  "legacy": {"banner": "انتقل موقعنا القديم"}
+}

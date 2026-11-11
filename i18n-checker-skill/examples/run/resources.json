@@ -1,0 +1,506 @@
+{
+ "repo": "examples/bookclub",
+ "source_locale": "en",
+ "library": "android-resources + web (custom)",
+ "sets": {
+  "android/res": {
+   "format": "android",
+   "locales": {
+    "default": {
+     "files": [
+      "android/res/values/strings.xml"
+     ],
+     "keys": 3
+    },
+    "de": {
+     "files": [
+      "android/res/values-de/strings.xml"
+     ],
+     "keys": 3
+    }
+   },
+   "source_locale": "default",
+   "source_is": "en"
+  },
+  "site/locales": {
+   "format": "json",
+   "locales": {
+    "ar": {
+     "files": [
+      "site/locales/ar.json"
+     ],
+     "keys": 14
+    },
+    "de": {
+     "files": [
+      "site/locales/de.json"
+     ],
+     "keys": 12
+    },
+    "en": {
+     "files": [
+      "site/locales/en.json"
+     ],
+     "keys": 14
+    },
+    "fr": {
+     "files": [
+      "site/locales/fr.json"
+     ],
+     "keys": 14
+    }
+   },
+   "source_locale": "en"
+  }
+ },
+ "entries": {
+  "android/res": {
+   "default": [
+    {
+     "key": "books_count",
+     "value": "You have %d books",
+     "file": "android/res/values/strings.xml",
+     "line": 4,
+     "kind": "string"
+    },
+    {
+     "key": "greeting",
+     "value": "Hello, %1$s!",
+     "file": "android/res/values/strings.xml",
+     "line": 5,
+     "kind": "string"
+    },
+    {
+     "key": "events_count",
+     "value": null,
+     "file": "android/res/values/strings.xml",
+     "line": 6,
+     "kind": "plural",
+     "forms": {
+      "one": "%d event this month",
+      "other": "%d events this month"
+     },
+     "style": "android"
+    }
+   ],
+   "de": [
+    {
+     "key": "books_count",
+     "value": "Du hast %s Bücher",
+     "file": "android/res/values-de/strings.xml",
+     "line": 3,
+     "kind": "string"
+    },
+    {
+     "key": "greeting",
+     "value": "Hallo, %1$s!",
+     "file": "android/res/values-de/strings.xml",
+     "line": 4,
+     "kind": "string"
+    },
+    {
+     "key": "events_count",
+     "value": null,
+     "file": "android/res/values-de/strings.xml",
+     "line": 5,
+     "kind": "plural",
+     "forms": {
+      "one": "%d Veranstaltung diesen Monat",
+      "other": "%d Veranstaltungen diesen Monat"
+     },
+     "style": "android"
+    }
+   ]
+  },
+  "site/locales": {
+   "ar": [
+    {
+     "key": "nav.home",
+     "value": "الرئيسية",
+     "file": "site/locales/ar.json",
+     "line": 2,
+     "kind": "string"
+    },
+    {
+     "key": "nav.events",
+     "value": "الفعاليات",
+     "file": "site/locales/ar.json",
+     "line": 2,
+     "kind": "string"
+    },
+    {
+     "key": "nav.books",
+     "value": "الكتب",
+     "file": "site/locales/ar.json",
+     "line": 2,
+     "kind": "string"
+    },
+    {
+     "key": "nav.about",
+     "value": "من نحن",
+     "file": "site/locales/ar.json",
+     "line": 2,
+     "kind": "string"
+    },
+    {
+     "key": "greeting",
+     "value": "مرحبا",
+     "file": "site/locales/ar.json",
+     "line": 3,
+     "kind": "string"
+    },
+    {
+     "key": "welcome",
+     "value": "مرحبًا بعودتك، {name}!",
+     "file": "site/locales/ar.json",
+     "line": 4,
+     "kind": "string"
+    },
+    {
+     "key": "books.count",
+     "value": "{count, plural, zero {ليس لديك كتب} one {لديك كتاب واحد} two {لديك كتابان} other {لديك # كتاب}}",
+     "file": "site/locales/ar.json",
+     "line": 5,
+     "kind": "string"
+    },
+    {
+     "key": "membership.price",
+     "value": "العضوية: {price} سنويًا",
+     "file": "site/locales/ar.json",
+     "line": 6,
+     "kind": "string"
+    },
+    {
+     "key": "events.title",
+     "value": "الفعاليات القادمة",
+     "file": "site/locales/ar.json",
+     "line": 7,
+     "kind": "string"
+    },
+    {
+     "key": "events.rsvp",
+     "value": "احجز مقعدًا",
+     "file": "site/locales/ar.json",
+     "line": 7,
+     "kind": "string"
+    },
+    {
+     "key": "events.next",
+     "value": "الاجتماع القادم: {date}",
+     "file": "site/locales/ar.json",
+     "line": 7,
+     "kind": "string"
+    },
+    {
+     "key": "footer.newsletter",
+     "value": "النشرة الإخبارية",
+     "file": "site/locales/ar.json",
+     "line": 8,
+     "kind": "string"
+    },
+    {
+     "key": "footer.contact",
+     "value": "اتصل بنا",
+     "file": "site/locales/ar.json",
+     "line": 8,
+     "kind": "string"
+    },
+    {
+     "key": "legacy.banner",
+     "value": "انتقل موقعنا القديم",
+     "file": "site/locales/ar.json",
+     "line": 9,
+     "kind": "string"
+    }
+   ],
+   "de": [
+    {
+     "key": "nav.home",
+     "value": "Startseite",
+     "file": "site/locales/de.json",
+     "line": 2,
+     "kind": "string"
+    },
+    {
+     "key": "nav.events",
+     "value": "Veranstaltungen",
+     "file": "site/locales/de.json",
+     "line": 2,
+     "kind": "string"
+    },
+    {
+     "key": "nav.books",
+     "value": "Bücher",
+     "file": "site/locales/de.json",
+     "line": 2,
+     "kind": "string"
+    },
+    {
+     "key": "nav.about",
+     "value": "Über uns",
+     "file": "site/locales/de.json",
+     "line": 2,
+     "kind": "string"
+    },
+    {
+     "key": "greeting",
+     "value": "Hallo",
+     "file": "site/locales/de.json",
+     "line": 3,
+     "kind": "string"
+    },
+    {
+     "key": "welcome",
+     "value": "Willkommen zurück, {name}!",
+     "file": "site/locales/de.json",
+     "line": 4,
+     "kind": "string"
+    },
+    {
+     "key": "books.count",
+     "value": "{count, plural, one {Du hast # Buch im Regal} other {Du hast # Bücher im Regal}}",
+     "file": "site/locales/de.json",
+     "line": 5,
+     "kind": "string"
+    },
+    {
+     "key": "membership.price",
+     "value": "Mitgliedschaft: {price} pro Jahr",
+     "file": "site/locales/de.json",
+     "line": 6,
+     "kind": "string"
+    },
+    {
+     "key": "events.next",
+     "value": "Nächstes Treffen: {date}",
+     "file": "site/locales/de.json",
+     "line": 7,
+     "kind": "string"
+    },
+    {
+     "key": "footer.newsletter",
+     "value": "Newsletter",
+     "file": "site/locales/de.json",
+     "line": 8,
+     "kind": "string"
+    },
+    {
+     "key": "footer.contact",
+     "value": "Kontakt",
+     "file": "site/locales/de.json",
+     "line": 8,
+     "kind": "string"
+    },
+    {
+     "key": "legacy.banner",
+     "value": "Unsere alte Website ist umgezogen",
+     "file": "site/locales/de.json",
+     "line": 9,
+     "kind": "string"
+    }
+   ],
+   "en": [
+    {
+     "key": "nav.home",
+     "value": "Home",
+     "file": "site/locales/en.json",
+     "line": 2,
+     "kind": "string"
+    },
+    {
+     "key": "nav.events",
+     "value": "Events",
+     "file": "site/locales/en.json",
+     "line": 2,
+     "kind": "string"
+    },
+    {
+     "key": "nav.books",
+     "value": "Books",
+     "file": "site/locales/en.json",
+     "line": 2,
+     "kind": "string"
+    },
+    {
+     "key": "nav.about",
+     "value": "About",
+     "file": "site/locales/en.json",
+     "line": 2,
+     "kind": "string"
+    },
+    {
+     "key": "greeting",
+     "value": "Hello",
+     "file": "site/locales/en.json",
+     "line": 3,
+     "kind": "string"
+    },
+    {
+     "key": "welcome",
+     "value": "Welcome back, {name}!",
+     "file": "site/locales/en.json",
+     "line": 4,
+     "kind": "string"
+    },
+    {
+     "key": "books.count",
+     "value": "{count, plural, one {You have # book on your shelf} other {You have # books on your shelf}}",
+     "file": "site/locales/en.json",
+     "line": 5,
+     "kind": "string"
+    },
+    {
+     "key": "membership.price",
+     "value": "Membership: {price} a year",
+     "file": "site/locales/en.json",
+     "line": 6,
+     "kind": "string"
+    },
+    {
+     "key": "events.title",
+     "value": "Upcoming events",
+     "file": "site/locales/en.json",
+     "line": 7,
+     "kind": "string"
+    },
+    {
+     "key": "events.rsvp",
+     "value": "Reserve a seat",
+     "file": "site/locales/en.json",
+     "line": 7,
+     "kind": "string"
+    },
+    {
+     "key": "events.next",
+     "value": "Next meeting: {date}",
+     "file": "site/locales/en.json",
+     "line": 7,
+     "kind": "string"
+    },
+    {
+     "key": "footer.newsletter",
+     "value": "Newsletter",
+     "file": "site/locales/en.json",
+     "line": 8,
+     "kind": "string"
+    },
+    {
+     "key": "footer.contact",
+     "value": "Contact us",
+     "file": "site/locales/en.json",
+     "line": 8,
+     "kind": "string"
+    },
+    {
+     "key": "legacy.banner",
+     "value": "Our old site has moved",
+     "file": "site/locales/en.json",
+     "line": 9,
+     "kind": "string"
+    }
+   ],
+   "fr": [
+    {
+     "key": "nav.home",
+     "value": "Accueil",
+     "file": "site/locales/fr.json",
+     "line": 2,
+     "kind": "string"
+    },
+    {
+     "key": "nav.events",
+     "value": "Événements",
+     "file": "site/locales/fr.json",
+     "line": 2,
+     "kind": "string"
+    },
+    {
+     "key": "nav.books",
+     "value": "Livres",
+     "file": "site/locales/fr.json",
+     "line": 2,
+     "kind": "string"
+    },
+    {
+     "key": "nav.about",
+     "value": "À propos",
+     "file": "site/locales/fr.json",
+     "line": 2,
+     "kind": "string"
+    },
+    {
+     "key": "greeting",
+     "value": "Bonjour",
+     "file": "site/locales/fr.json",
+     "line": 3,
+     "kind": "string"
+    },
+    {
+     "key": "welcome",
+     "value": "Bon retour, {nom} !",
+     "file": "site/locales/fr.json",
+     "line": 4,
+     "kind": "string"
+    },
+    {
+     "key": "books.count",
+     "value": "{count, plural, one {Vous avez # livre sur votre étagère} many {Vous avez # de livres sur votre étagère} other {Vous avez # livres sur votre étagère}}",
+     "file": "site/locales/fr.json",
+     "line": 5,
+     "kind": "string"
+    },
+    {
+     "key": "membership.price",
+     "value": "Adhésion : {price} par an",
+     "file": "site/locales/fr.json",
+     "line": 6,
+     "kind": "string"
+    },
+    {
+     "key": "events.title",
+     "value": "Événements à venir",
+     "file": "site/locales/fr.json",
+     "line": 7,
+     "kind": "string"
+    },
+    {
+     "key": "events.rsvp",
+     "value": "Réserver une place",
+     "file": "site/locales/fr.json",
+     "line": 7,
+     "kind": "string"
+    },
+    {
+     "key": "events.next",
+     "value": "Prochaine réunion : {date}",
+     "file": "site/locales/fr.json",
+     "line": 7,
+     "kind": "string"
+    },
+    {
+     "key": "footer.newsletter",
+     "value": "Lettre d'information",
+     "file": "site/locales/fr.json",
+     "line": 8,
+     "kind": "string"
+    },
+    {
+     "key": "footer.contact",
+     "value": "Nous contacter",
+     "file": "site/locales/fr.json",
+     "line": 8,
+     "kind": "string"
+    },
+    {
+     "key": "legacy.banner",
+     "value": "Notre ancien site a déménagé",
+     "file": "site/locales/fr.json",
+     "line": 9,
+     "kind": "string"
+    }
+   ]
+  }
+ },
+ "duplicates": [],
+ "not_parsed": []
+}

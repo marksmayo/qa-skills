@@ -1,0 +1,5 @@
+# Only needed for scripts/render_locales.py, which drives a real browser. Every other script is stdlib-only.
+# Install with the user's agreement:
+#   pip install -r requirements.txt
+#   python -m playwright install chromium
+playwright>=1.49,<2

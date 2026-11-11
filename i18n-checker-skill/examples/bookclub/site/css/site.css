@@ -1,0 +1,8 @@
+body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #222; }
+header { background: #3b2f63; color: #fff; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
+.tabs a { display: inline-block; width: 96px; white-space: nowrap; overflow: hidden; color: #fff; text-decoration: none; }
+.signin { background: #fff; color: #3b2f63; border: 0; padding: 6px 14px; }
+main { padding: 24px; }
+.cta .icon { margin-left: 6px; }
+.next { padding-left: 12px; border-left: 4px solid #3b2f63; }
+footer { padding: 16px 24px; border-top: 1px solid #ddd; }

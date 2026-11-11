@@ -1,0 +1,10 @@
+{
+  "nav": {"home": "Home", "events": "Events", "books": "Books", "about": "About"},
+  "greeting": "Hello",
+  "welcome": "Welcome back, {name}!",
+  "books": {"count": "{count, plural, one {You have # book on your shelf} other {You have # books on your shelf}}"},
+  "membership": {"price": "Membership: {price} a year"},
+  "events": {"title": "Upcoming events", "rsvp": "Reserve a seat", "next": "Next meeting: {date}"},
+  "footer": {"newsletter": "Newsletter", "contact": "Contact us"},
+  "legacy": {"banner": "Our old site has moved"}
+}

@@ -236,6 +236,17 @@ python cross-browser-checker-skill/scripts/browserslist_lite.py --repo cross-bro
 
 `features.json` records the repo path relative to `cross-browser-checker-skill/`, so run `feature_scan.py` and `commands.sh` from there. Re-capturing needs Playwright with Chromium, Firefox and WebKit; the flaky banner is random, so a rerun changes the flaky counts and invalidates the report until it is rebuilt.
 
+i18n checker (`examples/bookclub/` is the sample site with en, de, fr and ar resources plus an Android resource set, all with planted problems; `examples/run/` is a real run, listed in `examples/run/commands.sh`, with runtime screenshots and the proposed `missing_keys.patch`; the CLDR subsets in `data/` are committed and pinned):
+
+```bash
+python i18n-checker-skill/scripts/validate_report.py i18n-checker-skill/examples/report.example.json --candidates i18n-checker-skill/examples/run/candidates.json --keys i18n-checker-skill/examples/run/keys.json --resources i18n-checker-skill/examples/run/resources.json --repo i18n-checker-skill/examples/bookclub --runtime i18n-checker-skill/examples/run/runtime/runtime.json
+python i18n-checker-skill/scripts/render_report.py i18n-checker-skill/examples/report.example.json [--brief]
+python i18n-checker-skill/scripts/fetch_cldr.py --check
+python i18n-checker-skill/scripts/icu_lite.py "{count, plural, one {# book} other {# books}}"
+```
+
+The report cites `examples/bookclub/` by file and line, so editing the site or its resources invalidates it until `commands.sh` is rerun from `i18n-checker-skill/` (the runtime step needs Playwright with Chromium).
+
 Shared files:
 
 ```bash

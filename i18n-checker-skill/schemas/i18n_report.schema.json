@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/qa-skills/i18n-checker/i18n_report.schema.json",
+  "title": "Internationalisation report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["skill", "scope", "metadata", "headline", "findings", "proposed_patch", "needs_review", "triage", "limitations"],
+  "properties": {
+    "skill": {"type": "object", "additionalProperties": false, "required": ["name", "version"],
+              "properties": {"name": {"enum": ["i18n-checker"]}, "version": {"type": "string"}}},
+    "scope": {
+      "type": "object", "additionalProperties": false,
+      "required": ["repo", "site", "pages", "viewports", "source_locale", "locales", "rtl_locales", "pseudo"],
+      "properties": {
+        "repo": {"type": ["string", "null"]},
+        "site": {"type": ["string", "null"]},
+        "pages": {"type": "array", "items": {"type": "string"}},
+        "viewports": {"type": "array", "items": {"type": "string"}},
+        "source_locale": {"type": "string"},
+        "locales": {"type": "array", "minItems": 1, "items": {
+          "type": "object", "additionalProperties": false, "required": ["code", "status", "reason", "files", "keys"],
+          "properties": {"code": {"type": "string"}, "status": {"enum": ["checked", "not_run", "excluded"]}, "reason": {"type": ["string", "null"]},
+                         "files": {"type": "array", "items": {"type": "string"}}, "keys": {"type": "integer"}}}},
+        "rtl_locales": {"type": "array", "items": {"type": "string"}},
+        "pseudo": {"oneOf": [{"type": "null"}, {"type": "object", "additionalProperties": false, "required": ["expansion", "method"],
+                                                "properties": {"expansion": {"type": "string"}, "method": {"enum": ["intercept", "text_walk"]}}}]}
+      }
+    },
+    "metadata": {
+      "type": "object", "additionalProperties": false, "required": ["generated_at", "library", "tools", "cldr"],
+      "properties": {
+        "generated_at": {"type": "string"}, "library": {"type": "string"},
+        "tools": {"type": "array", "items": {"type": "object", "required": ["name", "version", "status", "note"]}},
+        "cldr": {"type": "object", "required": ["version", "subsets"]}
+      }
+    },
+    "headline": {
+      "type": "object", "additionalProperties": false,
+      "required": ["verdict", "summary", "severity_counts", "key_coverage", "translation_quality", "evidence_completeness", "overall_confidence"],
+      "properties": {
+        "verdict": {"enum": ["issues_found", "none_detected"]},
+        "summary": {"type": "string", "minLength": 20},
+        "severity_counts": {"type": "object"},
+        "key_coverage": {"type": "object"},
+        "translation_quality": {"enum": ["untested", "reviewed"]},
+        "evidence_completeness": {"enum": ["complete", "partial"]},
+        "overall_confidence": {"enum": ["high", "medium", "low"]}
+      }
+    },
+    "findings": {"type": "array", "items": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "candidate_id", "title", "kind", "status", "locales", "severity", "confidence", "priority", "score", "reach", "leverage",
+                   "locations", "keys", "evidence", "remediation", "verification_step"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^F[0-9]+$"},
+        "candidate_id": {"type": "string"},
+        "title": {"type": "string", "minLength": 10},
+        "kind": {"enum": ["missing_key", "untranslated", "empty_value", "placeholder_mismatch", "icu_syntax", "plural_categories", "duplicate_key",
+                          "unused_key", "hardcoded_string", "concatenation", "format", "fixed_width", "rtl_physical", "truncation", "overlap",
+                          "rtl_mirroring", "raw_placeholder"]},
+        "status": {"enum": ["confirmed", "possible"]},
+        "locales": {"type": "array", "items": {"type": "string"}},
+        "severity": {"enum": ["Critical", "High", "Medium", "Low"]},
+        "confidence": {"enum": ["high", "medium", "low"]},
+        "priority": {"enum": ["P0", "P1", "P2", "P3"]},
+        "score": {"type": "integer"}, "reach": {"enum": [1, 2, 3]}, "leverage": {"enum": [1, 2]},
+        "locations": {"type": "array", "items": {"type": "object", "required": ["file", "line"]}},
+        "keys": {"type": "array", "items": {"type": "string"}},
+        "evidence": {"type": "array", "items": {"type": "object", "required": ["page", "locale", "mode", "screenshot", "element", "measure"]}},
+        "remediation": {"type": "string", "minLength": 10},
+        "verification_step": {"type": "string", "minLength": 10}
+      }
+    }},
+    "proposed_patch": {"oneOf": [{"type": "null"}, {"type": "object", "additionalProperties": false, "required": ["path", "keys_added", "applied"],
+                                                    "properties": {"path": {"type": "string"}, "keys_added": {"type": "object"}, "applied": {"enum": [false]}}}]},
+    "needs_review": {"type": "array", "items": {"type": "object", "required": ["candidate_id", "reason"]}},
+    "triage": {"type": "array", "items": {
+      "type": "object", "additionalProperties": false, "required": ["candidate_id", "decision", "finding_id", "reason"],
+      "properties": {"candidate_id": {"type": "string"}, "decision": {"enum": ["promoted", "needs_review", "dismissed"]},
+                     "finding_id": {"type": ["string", "null"]}, "reason": {"type": "string", "minLength": 10}}}},
+    "limitations": {"type": "array", "items": {"type": "string"}}
+  }
+}

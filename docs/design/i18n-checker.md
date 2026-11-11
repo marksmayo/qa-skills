@@ -1,6 +1,6 @@
 # Design: `i18n-checker-skill`
 
-Status: Designed; not built. Build order: 20.
+Status: Built (v1.0.0). Build order: 20.
 
 ## Mission
 
@@ -184,3 +184,32 @@ Agreed with the user before the build.
 1. **Write fixes?** Propose missing keys as a patch; never apply it.
 2. **Translation memory or machine-translation comparison?** No: it would send text to an outside service.
 3. **Which RTL locale?** Arabic first, with Hebrew as a second check.
+
+## As built (v1.0.0)
+
+Where the build differs from the design above, and what the example showed.
+
+- **CLDR 49.0.0 subsets are committed** (`data/cldr-plurals.json` for every locale's plural categories,
+  `data/cldr-formats.json` for 30 locales' separators, currency, percent and date patterns), built by
+  `fetch_cldr.py` from the cldr-core, cldr-numbers-full and cldr-dates-full packages file by file and
+  pinned by SHA-256 in `data/cldr.lock.json`. Nothing is downloaded in normal use.
+- **Runtime detections** gained `raw_placeholder` and `missing_key` (text that is a key), which link
+  to the static placeholder and missing-key findings; partly translated text in the pseudo run links to
+  concatenation.
+- **Overlap is measured in the page** with `contains()`, so ancestors never count as overlapping their
+  children (the first version reported a footer overlapping its own spans).
+- **Linking runtime to static** uses the CSS rule's selector against the element's tag, id and class, so
+  `#next` (class `next`) confirms the `.next` rule.
+- **A Critical finding is at least P1**, as in the other skills: a missing key shown on a critical page
+  otherwise came out P2.
+- **The missing-keys patch** inserts each key into its parent object textually, in source order, keeping
+  the file's formatting; JSON only. Other formats are listed in the report, not patched.
+- **Formats** compare separators and currency position with CLDR; date order can't be told from text
+  when the separators match (fr and ar), which the report states.
+- **Not built:** YAML (Rails) resources (listed as not parsed), locale negotiation by cookie and
+  Accept-Language beyond what `locale_strategy` passes, running the project's own i18n linters, and
+  fixed-width checks for iOS.
+- **Example results:** 17 candidates; 13 findings (1 Critical, 5 High, 6 Medium, 1 Low), 3 dismissed
+  (script-filled placeholder text), 1 needs review (de "Newsletter"); Hebrew not run (no resources).
+  The pseudo-locale fitted the tab bar; real German text overflowed it.
+- **Testing:** 16 of 16 seeded report violations are caught.

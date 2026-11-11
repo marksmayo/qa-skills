@@ -1,0 +1,123 @@
+{
+ "findings": [
+  {
+   "kind": "hardcoded_string",
+   "file": "site/events.html",
+   "line": 7,
+   "detail": "button.signin shows 'Sign in' with no translation attribute",
+   "status": "possible",
+   "text": "Sign in",
+   "element": "button.signin",
+   "note": null,
+   "framework": "html"
+  },
+  {
+   "kind": "hardcoded_string",
+   "file": "site/events.html",
+   "line": 11,
+   "detail": "p#next shows 'Next meeting: 12/3/2026' with no translation attribute",
+   "status": "possible",
+   "text": "Next meeting: 12/3/2026",
+   "element": "p#next",
+   "note": "set by a script at runtime?",
+   "framework": "html"
+  },
+  {
+   "kind": "hardcoded_string",
+   "file": "site/index.html",
+   "line": 7,
+   "detail": "button.signin shows 'Sign in' with no translation attribute",
+   "status": "possible",
+   "text": "Sign in",
+   "element": "button.signin",
+   "note": null,
+   "framework": "html"
+  },
+  {
+   "kind": "hardcoded_string",
+   "file": "site/index.html",
+   "line": 10,
+   "detail": "h1#greeting shows 'Hello, Robin!' with no translation attribute",
+   "status": "possible",
+   "text": "Hello, Robin!",
+   "element": "h1#greeting",
+   "note": "set by a script at runtime?",
+   "framework": "html"
+  },
+  {
+   "kind": "hardcoded_string",
+   "file": "site/index.html",
+   "line": 13,
+   "detail": "p#price shows 'Membership: $12.50 a year' with no translation attribute",
+   "status": "possible",
+   "text": "Membership: $12.50 a year",
+   "element": "p#price",
+   "note": "set by a script at runtime?",
+   "framework": "html"
+  },
+  {
+   "kind": "concatenation",
+   "file": "site/js/app.js",
+   "line": 6,
+   "detail": "concatenation: document.getElementById('greeting') && (document.getElementById('greeting').textContent = i18n.t('gr",
+   "status": "possible",
+   "snippet": "document.getElementById('greeting') && (document.getElementById('greeting').textContent = i18n.t('greeting') + ', ' + user.name + '!');",
+   "match": "i18n.t('greeting') +"
+  },
+  {
+   "kind": "format",
+   "file": "site/js/app.js",
+   "line": 9,
+   "detail": "number or currency formatted by hand (use Intl.NumberFormat with the locale)",
+   "status": "possible",
+   "snippet": "if (p) p.textContent = i18n.t('membership.price', {price: '$' + price.toFixed(2)});",
+   "match": "'$' +"
+  },
+  {
+   "kind": "format",
+   "file": "site/js/app.js",
+   "line": 12,
+   "detail": "date formatted by hand (use Intl.DateTimeFormat with the locale)",
+   "status": "possible",
+   "snippet": "if (d) d.textContent = i18n.t('events.next', {date: (meeting.getMonth() + 1) + '/' + meeting.getDate() + '/' + meeting.getFullYear()});",
+   "match": "getMonth() + 1"
+  },
+  {
+   "kind": "rtl_physical",
+   "file": "site/css/site.css",
+   "line": 6,
+   "detail": "physical direction property; use logical properties (margin-inline-start) so RTL mirrors",
+   "status": "possible",
+   "snippet": ".cta .icon { margin-left: 6px; }",
+   "match": "margin-left:"
+  },
+  {
+   "kind": "rtl_physical",
+   "file": "site/css/site.css",
+   "line": 7,
+   "detail": "physical direction property; use logical properties (margin-inline-start) so RTL mirrors",
+   "status": "possible",
+   "snippet": ".next { padding-left: 12px; border-left: 4px solid #3b2f63; }",
+   "match": "padding-left:"
+  },
+  {
+   "kind": "fixed_width",
+   "file": "site/css/site.css",
+   "line": 3,
+   "detail": ".tabs a has a fixed width and hides overflow without an ellipsis",
+   "status": "possible",
+   "selector": ".tabs a",
+   "snippet": "display: inline-block; width: 96px; white-space: nowrap; overflow: hidden; color: #fff; text-decoration: none;"
+  }
+ ],
+ "allow_list": [
+  "API",
+  "Bookclub",
+  "ID",
+  "OK",
+  "PDF",
+  "STOREFRONT",
+  "URL",
+  "Wander"
+ ]
+}

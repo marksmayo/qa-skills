@@ -1,0 +1,15 @@
+{
+  "site": "http://127.0.0.1:8146/",
+  "pages": [
+    {"name": "home", "path": "index.html", "critical_path": false},
+    {"name": "events", "path": "events.html", "critical_path": true}
+  ],
+  "viewports": ["1280x800"],
+  "source_locale": "en",
+  "locales": ["en", "de", "fr", "ar"],
+  "rtl_locales": ["ar", "he"],
+  "locale_strategy": {"query": "lang"},
+  "resources": "locales/{locale}.json",
+  "pseudo": true,
+  "authorised_by": null
+}

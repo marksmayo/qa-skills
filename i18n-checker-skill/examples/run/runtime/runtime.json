@@ -1,0 +1,474 @@
+{
+ "site": "http://127.0.0.1:8146/",
+ "captured_at": "2026-11-11T08:54:05Z",
+ "pseudo_method": "intercept",
+ "runs": [
+  {
+   "page": "home",
+   "viewport": "1280x800",
+   "mode": "source",
+   "locale": "en",
+   "critical_path": false,
+   "method": null,
+   "ok": true,
+   "findings": [],
+   "screenshot": "home.source.en.1280x800.png",
+   "dir": "ltr",
+   "lang": "en"
+  },
+  {
+   "page": "home",
+   "viewport": "1280x800",
+   "mode": "pseudo",
+   "locale": "en",
+   "critical_path": false,
+   "method": "intercept",
+   "ok": true,
+   "findings": [
+    {
+     "kind": "untranslated",
+     "element": "button.signin:in(header)",
+     "text": "Sign in",
+     "box": [
+      1187,
+      12,
+      69,
+      27
+     ],
+     "measure": {
+      "outside_pseudo": "Sign in",
+      "partly_translated": false
+     }
+    },
+    {
+     "kind": "untranslated",
+     "element": "h1#greeting:in(main)",
+     "text": "⟦Héļļö··⟧, Robin!",
+     "box": [
+      24,
+      96,
+      1232,
+      39
+     ],
+     "measure": {
+      "outside_pseudo": ", Robin!",
+      "partly_translated": true
+     }
+    }
+   ],
+   "screenshot": "home.pseudo.en.1280x800.png",
+   "dir": "ltr",
+   "lang": "en"
+  },
+  {
+   "page": "home",
+   "viewport": "1280x800",
+   "mode": "locale",
+   "locale": "de",
+   "critical_path": false,
+   "method": null,
+   "ok": true,
+   "findings": [
+    {
+     "kind": "truncation",
+     "element": "a:in(nav)",
+     "text": "Veranstaltungen",
+     "box": [
+      120,
+      15,
+      96,
+      18
+     ],
+     "measure": {
+      "overflow_px": 20,
+      "box_width": 96,
+      "text_width": 116
+     }
+    },
+    {
+     "kind": "format",
+     "element": "p#price:in(main)",
+     "text": "Mitgliedschaft: $12.50 pro Jahr",
+     "box": [
+      24,
+      223,
+      1232,
+      18
+     ],
+     "measure": {
+      "value": "$12.50",
+      "problems": [
+       "decimal separator '.', CLDR de uses ','",
+       "currency symbol before the number; CLDR de puts it after (#,##0.00 ¤)"
+      ],
+      "cldr": {
+       "decimal": ",",
+       "group": ".",
+       "currency_pattern": "#,##0.00 ¤"
+      }
+     }
+    },
+    {
+     "kind": "missing_key",
+     "element": "a:in(p)",
+     "text": "events.rsvp",
+     "box": [
+      24,
+      257,
+      82,
+      17
+     ],
+     "measure": {
+      "key_shown": "events.rsvp"
+     }
+    }
+   ],
+   "screenshot": "home.locale.de.1280x800.png",
+   "dir": "ltr",
+   "lang": "de"
+  },
+  {
+   "page": "home",
+   "viewport": "1280x800",
+   "mode": "locale",
+   "locale": "fr",
+   "critical_path": false,
+   "method": null,
+   "ok": true,
+   "findings": [
+    {
+     "kind": "raw_placeholder",
+     "element": "p:in(main)",
+     "text": "Bon retour, {nom} !",
+     "box": [
+      24,
+      155,
+      1232,
+      18
+     ],
+     "measure": {
+      "placeholders": [
+       "{nom}"
+      ]
+     }
+    },
+    {
+     "kind": "format",
+     "element": "p#price:in(main)",
+     "text": "Adhésion : $12.50 par an",
+     "box": [
+      24,
+      223,
+      1232,
+      18
+     ],
+     "measure": {
+      "value": "$12.50",
+      "problems": [
+       "decimal separator '.', CLDR fr uses ','",
+       "currency symbol before the number; CLDR fr puts it after (#,##0.00 ¤)"
+      ],
+      "cldr": {
+       "decimal": ",",
+       "group": " ",
+       "currency_pattern": "#,##0.00 ¤"
+      }
+     }
+    }
+   ],
+   "screenshot": "home.locale.fr.1280x800.png",
+   "dir": "ltr",
+   "lang": "fr"
+  },
+  {
+   "page": "home",
+   "viewport": "1280x800",
+   "mode": "rtl",
+   "locale": "ar",
+   "critical_path": false,
+   "method": null,
+   "ok": true,
+   "findings": [
+    {
+     "kind": "format",
+     "element": "p#price:in(main)",
+     "text": "العضوية: $12.50 سنويًا",
+     "box": [
+      24,
+      223,
+      1232,
+      18
+     ],
+     "measure": {
+      "value": "$12.50",
+      "problems": [
+       "currency symbol before the number; CLDR ar puts it after (‏#,##0.00 ¤)"
+      ],
+      "cldr": {
+       "decimal": ".",
+       "group": ",",
+       "currency_pattern": "‏#,##0.00 ¤;‏-#,##0.00 ¤"
+      }
+     }
+    },
+    {
+     "kind": "rtl_mirroring",
+     "element": "span.icon:in(p)",
+     "text": "",
+     "box": [
+      1182,
+      257,
+      16,
+      17
+     ],
+     "measure": {
+      "property": "margin-left",
+      "px": 6,
+      "expected": "the inline-start side (right in RTL)"
+     }
+    },
+    {
+     "kind": "rtl_mirroring",
+     "element": "span.icon:in(p)",
+     "text": "→",
+     "box": [
+      1182,
+      257,
+      16,
+      17
+     ],
+     "measure": {
+      "glyph": "→",
+      "expected": "a glyph pointing left in RTL"
+     }
+    }
+   ],
+   "screenshot": "home.rtl.ar.1280x800.png",
+   "dir": "rtl",
+   "lang": "ar"
+  },
+  {
+   "page": "events",
+   "viewport": "1280x800",
+   "mode": "source",
+   "locale": "en",
+   "critical_path": true,
+   "method": null,
+   "ok": true,
+   "findings": [],
+   "screenshot": "events.source.en.1280x800.png",
+   "dir": "ltr",
+   "lang": "en"
+  },
+  {
+   "page": "events",
+   "viewport": "1280x800",
+   "mode": "pseudo",
+   "locale": "en",
+   "critical_path": true,
+   "method": "intercept",
+   "ok": true,
+   "findings": [
+    {
+     "kind": "untranslated",
+     "element": "button.signin:in(header)",
+     "text": "Sign in",
+     "box": [
+      1187,
+      12,
+      69,
+      27
+     ],
+     "measure": {
+      "outside_pseudo": "Sign in",
+      "partly_translated": false
+     }
+    }
+   ],
+   "screenshot": "events.pseudo.en.1280x800.png",
+   "dir": "ltr",
+   "lang": "en"
+  },
+  {
+   "page": "events",
+   "viewport": "1280x800",
+   "mode": "locale",
+   "locale": "de",
+   "critical_path": true,
+   "method": null,
+   "ok": true,
+   "findings": [
+    {
+     "kind": "truncation",
+     "element": "a:in(nav)",
+     "text": "Veranstaltungen",
+     "box": [
+      120,
+      15,
+      96,
+      18
+     ],
+     "measure": {
+      "overflow_px": 20,
+      "box_width": 96,
+      "text_width": 116
+     }
+    },
+    {
+     "kind": "missing_key",
+     "element": "h1:in(main)",
+     "text": "events.title",
+     "box": [
+      24,
+      96,
+      1232,
+      37
+     ],
+     "measure": {
+      "key_shown": "events.title"
+     }
+    },
+    {
+     "kind": "format",
+     "element": "p#next.next:in(main)",
+     "text": "Nächstes Treffen: 12/3/2026",
+     "box": [
+      24,
+      155,
+      1232,
+      18
+     ],
+     "measure": {
+      "value": "12/3/2026",
+      "problems": [
+       "date separator '/'; CLDR de short date is dd.MM.yy"
+      ],
+      "cldr": {
+       "date_short": "dd.MM.yy"
+      }
+     }
+    },
+    {
+     "kind": "missing_key",
+     "element": "a:in(p)",
+     "text": "events.rsvp",
+     "box": [
+      24,
+      189,
+      82,
+      17
+     ],
+     "measure": {
+      "key_shown": "events.rsvp"
+     }
+    }
+   ],
+   "screenshot": "events.locale.de.1280x800.png",
+   "dir": "ltr",
+   "lang": "de"
+  },
+  {
+   "page": "events",
+   "viewport": "1280x800",
+   "mode": "locale",
+   "locale": "fr",
+   "critical_path": true,
+   "method": null,
+   "ok": true,
+   "findings": [],
+   "screenshot": "events.locale.fr.1280x800.png",
+   "dir": "ltr",
+   "lang": "fr"
+  },
+  {
+   "page": "events",
+   "viewport": "1280x800",
+   "mode": "rtl",
+   "locale": "ar",
+   "critical_path": true,
+   "method": null,
+   "ok": true,
+   "findings": [
+    {
+     "kind": "rtl_mirroring",
+     "element": "p#next.next:in(main)",
+     "text": "",
+     "box": [
+      24,
+      155,
+      1232,
+      18
+     ],
+     "measure": {
+      "property": "padding-left",
+      "px": 12,
+      "expected": "the inline-start side (right in RTL)"
+     }
+    },
+    {
+     "kind": "rtl_mirroring",
+     "element": "p#next.next:in(main)",
+     "text": "",
+     "box": [
+      24,
+      155,
+      1232,
+      18
+     ],
+     "measure": {
+      "property": "border-left-width",
+      "px": 4,
+      "expected": "the inline-start side (right in RTL)"
+     }
+    },
+    {
+     "kind": "rtl_mirroring",
+     "element": "span.icon:in(p)",
+     "text": "",
+     "box": [
+      1182,
+      189,
+      16,
+      17
+     ],
+     "measure": {
+      "property": "margin-left",
+      "px": 6,
+      "expected": "the inline-start side (right in RTL)"
+     }
+    },
+    {
+     "kind": "rtl_mirroring",
+     "element": "span.icon:in(p)",
+     "text": "→",
+     "box": [
+      1182,
+      189,
+      16,
+      17
+     ],
+     "measure": {
+      "glyph": "→",
+      "expected": "a glyph pointing left in RTL"
+     }
+    }
+   ],
+   "screenshot": "events.rtl.ar.1280x800.png",
+   "dir": "rtl",
+   "lang": "ar"
+  }
+ ],
+ "not_run": [
+  {
+   "locale": "he",
+   "reason": "no resources at locales/he.json (HTTP 404)"
+  }
+ ],
+ "locale_strategy": {
+  "query": "lang"
+ },
+ "browser": {
+  "name": "chromium",
+  "version": "158.0.8127.18"
+ }
+}

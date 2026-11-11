@@ -1,0 +1,112 @@
+{
+ "source_locale": "en",
+ "findings": [
+  {
+   "kind": "placeholder_mismatch",
+   "set": "android/res",
+   "locale": "de",
+   "key": "books_count",
+   "file": "android/res/values-de/strings.xml",
+   "line": 3,
+   "detail": "default has ['1$d'] (printf), de has ['1$s'] (printf)",
+   "source_placeholders": [
+    "1$d"
+   ],
+   "placeholders": [
+    "1$s"
+   ],
+   "value": "Du hast %s Bücher"
+  },
+  {
+   "kind": "plural_categories",
+   "set": "site/locales",
+   "locale": "ar",
+   "key": "books.count",
+   "file": "site/locales/ar.json",
+   "line": 5,
+   "detail": "{count, plural} lacks few, many (CLDR ar: few, many, one, other, two, zero)",
+   "missing": [
+    "few",
+    "many"
+   ],
+   "has_other": true
+  },
+  {
+   "kind": "missing_key",
+   "set": "site/locales",
+   "locale": "de",
+   "key": "events.title",
+   "file": "site/locales/en.json",
+   "line": 7,
+   "detail": "events.title is missing from site/locales/de.json (source: 'Upcoming events')",
+   "missing_in": "site/locales/de.json",
+   "source_value": "Upcoming events",
+   "source_forms": null
+  },
+  {
+   "kind": "missing_key",
+   "set": "site/locales",
+   "locale": "de",
+   "key": "events.rsvp",
+   "file": "site/locales/en.json",
+   "line": 7,
+   "detail": "events.rsvp is missing from site/locales/de.json (source: 'Reserve a seat')",
+   "missing_in": "site/locales/de.json",
+   "source_value": "Reserve a seat",
+   "source_forms": null
+  },
+  {
+   "kind": "untranslated",
+   "set": "site/locales",
+   "locale": "de",
+   "key": "footer.newsletter",
+   "file": "site/locales/de.json",
+   "line": 8,
+   "detail": "same text as en: 'Newsletter'"
+  },
+  {
+   "kind": "placeholder_mismatch",
+   "set": "site/locales",
+   "locale": "fr",
+   "key": "welcome",
+   "file": "site/locales/fr.json",
+   "line": 4,
+   "detail": "en has ['name'] (icu), fr has ['nom'] (icu)",
+   "source_placeholders": [
+    "name"
+   ],
+   "placeholders": [
+    "nom"
+   ],
+   "value": "Bon retour, {nom} !"
+  },
+  {
+   "kind": "unused_key",
+   "set": "site/locales",
+   "locale": "en",
+   "key": "legacy.banner",
+   "file": "site/locales/en.json",
+   "line": 9,
+   "detail": "no code mentions 'legacy.banner'"
+  }
+ ],
+ "unused_check": [
+  {
+   "set": "android/res",
+   "status": "not_assessed",
+   "reason": "no android code in the repository to search"
+  },
+  {
+   "set": "site/locales",
+   "status": "assessed",
+   "dynamic_prefixes": [],
+   "cant_tell": []
+  }
+ ],
+ "key_coverage": {
+  "android/res:de": 1.0,
+  "site/locales:ar": 1.0,
+  "site/locales:de": 0.857,
+  "site/locales:fr": 1.0
+ }
+}

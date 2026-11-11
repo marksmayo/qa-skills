@@ -1,0 +1,10 @@
+{
+  "nav": {"home": "Accueil", "events": "Événements", "books": "Livres", "about": "À propos"},
+  "greeting": "Bonjour",
+  "welcome": "Bon retour, {nom} !",
+  "books": {"count": "{count, plural, one {Vous avez # livre sur votre étagère} many {Vous avez # de livres sur votre étagère} other {Vous avez # livres sur votre étagère}}"},
+  "membership": {"price": "Adhésion : {price} par an"},
+  "events": {"title": "Événements à venir", "rsvp": "Réserver une place", "next": "Prochaine réunion : {date}"},
+  "footer": {"newsletter": "Lettre d'information", "contact": "Nous contacter"},
+  "legacy": {"banner": "Notre ancien site a déménagé"}
+}

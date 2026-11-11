@@ -1,0 +1,888 @@
+{
+ "skill": {
+  "name": "i18n-checker",
+  "version": "1.0.0"
+ },
+ "scope": {
+  "repo": "examples/bookclub",
+  "site": "http://127.0.0.1:8146/",
+  "pages": [
+   "home",
+   "events"
+  ],
+  "viewports": [
+   "1280x800"
+  ],
+  "source_locale": "en",
+  "locales": [
+   {
+    "code": "ar",
+    "status": "checked",
+    "reason": null,
+    "files": [
+     "site/locales/ar.json"
+    ],
+    "keys": 14
+   },
+   {
+    "code": "de",
+    "status": "checked",
+    "reason": null,
+    "files": [
+     "android/res/values-de/strings.xml",
+     "site/locales/de.json"
+    ],
+    "keys": 15
+   },
+   {
+    "code": "en",
+    "status": "checked",
+    "reason": null,
+    "files": [
+     "android/res/values/strings.xml",
+     "site/locales/en.json"
+    ],
+    "keys": 17
+   },
+   {
+    "code": "fr",
+    "status": "checked",
+    "reason": null,
+    "files": [
+     "site/locales/fr.json"
+    ],
+    "keys": 14
+   },
+   {
+    "code": "he",
+    "status": "not_run",
+    "reason": "no resources at locales/he.json (HTTP 404)",
+    "files": [],
+    "keys": 0
+   }
+  ],
+  "rtl_locales": [
+   "ar",
+   "he"
+  ],
+  "pseudo": {
+   "expansion": "30-50% (50% up to 10 letters, 40% up to 20, 30% above)",
+   "method": "intercept"
+  }
+ },
+ "metadata": {
+  "generated_at": "2026-11-11T08:54:05Z",
+  "library": "android-resources + web (custom)",
+  "tools": [
+   {
+    "name": "playwright-chromium",
+    "version": "158.0.8127.18",
+    "status": "ran",
+    "note": "runtime locale renders"
+   },
+   {
+    "name": "check_keys.py, scan_code.py (stdlib)",
+    "version": "1.0.0",
+    "status": "ran",
+    "note": null
+   },
+   {
+    "name": "i18next-parser / Android Lint MissingTranslation",
+    "version": null,
+    "status": "not_run",
+    "note": "not configured in this repository"
+   }
+  ],
+  "cldr": {
+   "version": "49.0.0",
+   "subsets": {
+    "cldr-plurals.json": "4e43ec7c5617f7c7d8296be85e52d053858b1ac135279902a55c69a528f55fc5",
+    "cldr-formats.json": "1e0ca62bf54cfc5e937f41916c6847bc02ef309b2b8edb6dff0bbd4b9b9d71c8"
+   }
+  }
+ },
+ "headline": {
+  "verdict": "issues_found",
+  "summary": "13 issues: 12 in the web site (its resources, code and rendered pages in en, de, fr and ar) and one in the Android resources. The worst: German shows raw keys on the events page, \"Sign in\" is hard-coded everywhere, the German tab label is cut off, and French shows a raw {nom}. Hebrew has no resources and was not run. Translation quality was not reviewed.",
+  "severity_counts": {
+   "High": 5,
+   "Medium": 6,
+   "Critical": 1,
+   "Low": 1
+  },
+  "key_coverage": {
+   "android/res:de": 1.0,
+   "site/locales:ar": 1.0,
+   "site/locales:de": 0.857,
+   "site/locales:fr": 1.0
+  },
+  "translation_quality": "untested",
+  "evidence_completeness": "partial",
+  "overall_confidence": "medium"
+ },
+ "findings": [
+  {
+   "id": "F1",
+   "candidate_id": "K1",
+   "title": "The tab bar cuts off \"Veranstaltungen\" in German",
+   "kind": "fixed_width",
+   "status": "confirmed",
+   "locales": [
+    "ar",
+    "de",
+    "fr"
+   ],
+   "severity": "High",
+   "confidence": "high",
+   "priority": "P1",
+   "score": 18,
+   "reach": 3,
+   "leverage": 2,
+   "locations": [
+    {
+     "file": "site/css/site.css",
+     "line": 3
+    }
+   ],
+   "keys": [],
+   "evidence": [
+    {
+     "page": "home",
+     "locale": "de",
+     "mode": "locale",
+     "screenshot": "home.locale.de.1280x800.png",
+     "element": "a:in(nav)",
+     "measure": {
+      "overflow_px": 20,
+      "box_width": 96,
+      "text_width": 116
+     },
+     "text": "Veranstaltungen"
+    },
+    {
+     "page": "events",
+     "locale": "de",
+     "mode": "locale",
+     "screenshot": "events.locale.de.1280x800.png",
+     "element": "a:in(nav)",
+     "measure": {
+      "overflow_px": 20,
+      "box_width": 96,
+      "text_width": 116
+     },
+     "text": "Veranstaltungen"
+    }
+   ],
+   "remediation": "Each tab is 96 px wide with white-space: nowrap and overflow: hidden, so the German \"Veranstaltungen\" loses 20 px on both pages; the pseudo-locale fitted, a real locale did not. Let tabs size to their content (min-width instead of width), or add text-overflow: ellipsis and a title, in site/css/site.css.",
+   "verification_step": "Rerun render_locales.py for de: no truncation on the nav links."
+  },
+  {
+   "id": "F2",
+   "candidate_id": "K2",
+   "title": "\"Sign in\" is hard-coded on every page",
+   "kind": "hardcoded_string",
+   "status": "confirmed",
+   "locales": [
+    "ar",
+    "de",
+    "fr"
+   ],
+   "severity": "High",
+   "confidence": "medium",
+   "priority": "P1",
+   "score": 18,
+   "reach": 3,
+   "leverage": 2,
+   "locations": [
+    {
+     "file": "site/events.html",
+     "line": 7
+    },
+    {
+     "file": "site/index.html",
+     "line": 7
+    }
+   ],
+   "keys": [],
+   "evidence": [
+    {
+     "page": "home",
+     "locale": "en",
+     "mode": "pseudo",
+     "screenshot": "home.pseudo.en.1280x800.png",
+     "element": "button.signin:in(header)",
+     "measure": {
+      "outside_pseudo": "Sign in",
+      "partly_translated": false
+     },
+     "text": "Sign in"
+    },
+    {
+     "page": "events",
+     "locale": "en",
+     "mode": "pseudo",
+     "screenshot": "events.pseudo.en.1280x800.png",
+     "element": "button.signin:in(header)",
+     "measure": {
+      "outside_pseudo": "Sign in",
+      "partly_translated": false
+     },
+     "text": "Sign in"
+    }
+   ],
+   "remediation": "The button has no data-i18n key, so it stays English in every locale (the pseudo-locale run shows it outside the brackets on both pages). Add a key (auth.signIn) to every locale file and data-i18n=\"auth.signIn\" to both buttons.",
+   "verification_step": "Rerun the pseudo-locale: the button text is inside the brackets."
+  },
+  {
+   "id": "F3",
+   "candidate_id": "K3",
+   "title": "The arrow icon keeps its spacing on the left in Arabic",
+   "kind": "rtl_physical",
+   "status": "confirmed",
+   "locales": [
+    "ar",
+    "de",
+    "fr"
+   ],
+   "severity": "Medium",
+   "confidence": "high",
+   "priority": "P1",
+   "score": 12,
+   "reach": 3,
+   "leverage": 2,
+   "locations": [
+    {
+     "file": "site/css/site.css",
+     "line": 6
+    }
+   ],
+   "keys": [],
+   "evidence": [
+    {
+     "page": "home",
+     "locale": "ar",
+     "mode": "rtl",
+     "screenshot": "home.rtl.ar.1280x800.png",
+     "element": "span.icon:in(p)",
+     "measure": {
+      "property": "margin-left",
+      "px": 6,
+      "expected": "the inline-start side (right in RTL)"
+     },
+     "text": ""
+    },
+    {
+     "page": "events",
+     "locale": "ar",
+     "mode": "rtl",
+     "screenshot": "events.rtl.ar.1280x800.png",
+     "element": "span.icon:in(p)",
+     "measure": {
+      "property": "margin-left",
+      "px": 6,
+      "expected": "the inline-start side (right in RTL)"
+     },
+     "text": ""
+    }
+   ],
+   "remediation": ".cta .icon uses margin-left, so in RTL the gap stays on the wrong side of the link (6 px measured on both pages). Use margin-inline-start.",
+   "verification_step": "Rerun the ar run: span.icon has margin on the right."
+  },
+  {
+   "id": "F4",
+   "candidate_id": "K4",
+   "title": "German is missing events.title and events.rsvp",
+   "kind": "missing_key",
+   "status": "confirmed",
+   "locales": [
+    "de"
+   ],
+   "severity": "Critical",
+   "confidence": "high",
+   "priority": "P1",
+   "score": 8,
+   "reach": 1,
+   "leverage": 2,
+   "locations": [
+    {
+     "file": "site/locales/en.json",
+     "line": 7
+    },
+    {
+     "file": "site/locales/en.json",
+     "line": 7
+    }
+   ],
+   "keys": [
+    "events.title",
+    "events.rsvp"
+   ],
+   "evidence": [
+    {
+     "page": "home",
+     "locale": "de",
+     "mode": "locale",
+     "screenshot": "home.locale.de.1280x800.png",
+     "element": "a:in(p)",
+     "measure": {
+      "key_shown": "events.rsvp"
+     },
+     "text": "events.rsvp"
+    },
+    {
+     "page": "events",
+     "locale": "de",
+     "mode": "locale",
+     "screenshot": "events.locale.de.1280x800.png",
+     "element": "h1:in(main)",
+     "measure": {
+      "key_shown": "events.title"
+     },
+     "text": "events.title"
+    },
+    {
+     "page": "events",
+     "locale": "de",
+     "mode": "locale",
+     "screenshot": "events.locale.de.1280x800.png",
+     "element": "a:in(p)",
+     "measure": {
+      "key_shown": "events.rsvp"
+     },
+     "text": "events.rsvp"
+    }
+   ],
+   "remediation": "Both keys are absent from site/locales/de.json, so the German pages show the raw keys \"events.title\" (the events page heading, a critical path) and \"events.rsvp\". missing_keys.patch adds them with the English text copied in for translation; it has not been applied.",
+   "verification_step": "Rerun check_keys.py and the de run: no missing keys, and the events heading shows German text."
+  },
+  {
+   "id": "F5",
+   "candidate_id": "K5",
+   "title": "The greeting is assembled from fragments",
+   "kind": "concatenation",
+   "status": "confirmed",
+   "locales": [
+    "ar",
+    "de",
+    "fr"
+   ],
+   "severity": "Medium",
+   "confidence": "high",
+   "priority": "P2",
+   "score": 6,
+   "reach": 3,
+   "leverage": 1,
+   "locations": [
+    {
+     "file": "site/js/app.js",
+     "line": 6
+    }
+   ],
+   "keys": [],
+   "evidence": [
+    {
+     "page": "home",
+     "locale": "en",
+     "mode": "pseudo",
+     "screenshot": "home.pseudo.en.1280x800.png",
+     "element": "h1#greeting:in(main)",
+     "measure": {
+      "outside_pseudo": ", Robin!",
+      "partly_translated": true
+     },
+     "text": "⟦Héļļö··⟧, Robin!"
+    }
+   ],
+   "remediation": "app.js builds the greeting as t(\"greeting\") + \", \" + name + \"!\", so translators never see the sentence and can't move the name or the punctuation (the pseudo run shows \", Robin!\" outside the brackets). Use one message with a placeholder: \"Hello, {name}!\".",
+   "verification_step": "Rerun the pseudo-locale: the greeting is entirely inside the brackets."
+  },
+  {
+   "id": "F6",
+   "candidate_id": "K6",
+   "title": "The meeting date is formatted by hand as month/day/year",
+   "kind": "format",
+   "status": "confirmed",
+   "locales": [
+    "ar",
+    "de",
+    "fr"
+   ],
+   "severity": "Medium",
+   "confidence": "high",
+   "priority": "P2",
+   "score": 6,
+   "reach": 3,
+   "leverage": 1,
+   "locations": [
+    {
+     "file": "site/js/app.js",
+     "line": 12
+    }
+   ],
+   "keys": [],
+   "evidence": [
+    {
+     "page": "events",
+     "locale": "de",
+     "mode": "locale",
+     "screenshot": "events.locale.de.1280x800.png",
+     "element": "p#next.next:in(main)",
+     "measure": {
+      "value": "12/3/2026",
+      "problems": [
+       "date separator '/'; CLDR de short date is dd.MM.yy"
+      ],
+      "cldr": {
+       "date_short": "dd.MM.yy"
+      }
+     },
+     "text": "Nächstes Treffen: 12/3/2026"
+    }
+   ],
+   "remediation": "app.js builds the date from getMonth() + 1, getDate() and getFullYear(), so German shows 12/3/2026 where CLDR expects dd.MM.yy, and French and Arabic read it as 12 March. Use Intl.DateTimeFormat(i18n.lang).",
+   "verification_step": "Rerun the de run: the date shows 03.12.26."
+  },
+  {
+   "id": "F7",
+   "candidate_id": "K7",
+   "title": "The membership price is always \"$12.50\"",
+   "kind": "format",
+   "status": "confirmed",
+   "locales": [
+    "ar",
+    "de",
+    "fr"
+   ],
+   "severity": "Medium",
+   "confidence": "high",
+   "priority": "P2",
+   "score": 6,
+   "reach": 3,
+   "leverage": 1,
+   "locations": [
+    {
+     "file": "site/js/app.js",
+     "line": 9
+    }
+   ],
+   "keys": [],
+   "evidence": [
+    {
+     "page": "home",
+     "locale": "de",
+     "mode": "locale",
+     "screenshot": "home.locale.de.1280x800.png",
+     "element": "p#price:in(main)",
+     "measure": {
+      "value": "$12.50",
+      "problems": [
+       "decimal separator '.', CLDR de uses ','",
+       "currency symbol before the number; CLDR de puts it after (#,##0.00 ¤)"
+      ],
+      "cldr": {
+       "decimal": ",",
+       "group": ".",
+       "currency_pattern": "#,##0.00 ¤"
+      }
+     },
+     "text": "Mitgliedschaft: $12.50 pro Jahr"
+    },
+    {
+     "page": "home",
+     "locale": "fr",
+     "mode": "locale",
+     "screenshot": "home.locale.fr.1280x800.png",
+     "element": "p#price:in(main)",
+     "measure": {
+      "value": "$12.50",
+      "problems": [
+       "decimal separator '.', CLDR fr uses ','",
+       "currency symbol before the number; CLDR fr puts it after (#,##0.00 ¤)"
+      ],
+      "cldr": {
+       "decimal": ",",
+       "group": " ",
+       "currency_pattern": "#,##0.00 ¤"
+      }
+     },
+     "text": "Adhésion : $12.50 par an"
+    },
+    {
+     "page": "home",
+     "locale": "ar",
+     "mode": "rtl",
+     "screenshot": "home.rtl.ar.1280x800.png",
+     "element": "p#price:in(main)",
+     "measure": {
+      "value": "$12.50",
+      "problems": [
+       "currency symbol before the number; CLDR ar puts it after (‏#,##0.00 ¤)"
+      ],
+      "cldr": {
+       "decimal": ".",
+       "group": ",",
+       "currency_pattern": "‏#,##0.00 ¤;‏-#,##0.00 ¤"
+      }
+     },
+     "text": "العضوية: $12.50 سنويًا"
+    }
+   ],
+   "remediation": "app.js formats the price as \"$\" + toFixed(2), so German and French show a full stop as the decimal separator and every locale puts the symbol first, against CLDR (de and fr: 12,50 with the symbol after). Use Intl.NumberFormat(i18n.lang, {style: \"currency\", currency}).",
+   "verification_step": "Rerun the de, fr and ar runs: no format findings on #price."
+  },
+  {
+   "id": "F8",
+   "candidate_id": "K11",
+   "title": "The \"next meeting\" bar stays on the left in Arabic",
+   "kind": "rtl_physical",
+   "status": "confirmed",
+   "locales": [
+    "ar",
+    "de",
+    "fr"
+   ],
+   "severity": "Medium",
+   "confidence": "high",
+   "priority": "P2",
+   "score": 6,
+   "reach": 3,
+   "leverage": 1,
+   "locations": [
+    {
+     "file": "site/css/site.css",
+     "line": 7
+    }
+   ],
+   "keys": [],
+   "evidence": [
+    {
+     "page": "events",
+     "locale": "ar",
+     "mode": "rtl",
+     "screenshot": "events.rtl.ar.1280x800.png",
+     "element": "p#next.next:in(main)",
+     "measure": {
+      "property": "padding-left",
+      "px": 12,
+      "expected": "the inline-start side (right in RTL)"
+     },
+     "text": ""
+    },
+    {
+     "page": "events",
+     "locale": "ar",
+     "mode": "rtl",
+     "screenshot": "events.rtl.ar.1280x800.png",
+     "element": "p#next.next:in(main)",
+     "measure": {
+      "property": "border-left-width",
+      "px": 4,
+      "expected": "the inline-start side (right in RTL)"
+     },
+     "text": ""
+    }
+   ],
+   "remediation": ".next uses padding-left and border-left, so in RTL the accent bar and padding stay on the left (4 px border and 12 px padding measured). Use padding-inline-start and border-inline-start.",
+   "verification_step": "Rerun the ar run on events: #next has its border and padding on the right."
+  },
+  {
+   "id": "F9",
+   "candidate_id": "K12",
+   "title": "The arrow points the wrong way in Arabic",
+   "kind": "rtl_mirroring",
+   "status": "confirmed",
+   "locales": [
+    "ar"
+   ],
+   "severity": "Medium",
+   "confidence": "high",
+   "priority": "P3",
+   "score": 4,
+   "reach": 1,
+   "leverage": 2,
+   "locations": [],
+   "keys": [],
+   "evidence": [
+    {
+     "page": "home",
+     "locale": "ar",
+     "mode": "rtl",
+     "screenshot": "home.rtl.ar.1280x800.png",
+     "element": "span.icon:in(p)",
+     "measure": {
+      "glyph": "→",
+      "expected": "a glyph pointing left in RTL"
+     },
+     "text": "→"
+    },
+    {
+     "page": "events",
+     "locale": "ar",
+     "mode": "rtl",
+     "screenshot": "events.rtl.ar.1280x800.png",
+     "element": "span.icon:in(p)",
+     "measure": {
+      "glyph": "→",
+      "expected": "a glyph pointing left in RTL"
+     },
+     "text": "→"
+    }
+   ],
+   "remediation": "The → glyph after \"Reserve a seat\" still points right in RTL, away from the reading direction, on both pages. Use a direction-aware icon or flip it with [dir=rtl] .icon { transform: scaleX(-1) }.",
+   "verification_step": "Rerun the ar run: no rtl_mirroring glyph findings."
+  },
+  {
+   "id": "F10",
+   "candidate_id": "K13",
+   "title": "Android German books_count uses %s where English uses %d",
+   "kind": "placeholder_mismatch",
+   "status": "confirmed",
+   "locales": [
+    "de"
+   ],
+   "severity": "High",
+   "confidence": "high",
+   "priority": "P3",
+   "score": 3,
+   "reach": 1,
+   "leverage": 1,
+   "locations": [
+    {
+     "file": "android/res/values-de/strings.xml",
+     "line": 3
+    }
+   ],
+   "keys": [
+    "books_count"
+   ],
+   "evidence": [],
+   "remediation": "values-de/strings.xml formats the count with %s, the English source with %d; getString(R.string.books_count, n) with an int works for both at runtime but the lint and type checks differ, and a format change in one breaks the other. Use %d (or %1$d) in German.",
+   "verification_step": "Rerun check_keys.py: no placeholder mismatch for books_count."
+  },
+  {
+   "id": "F11",
+   "candidate_id": "K14",
+   "title": "French renames the {name} placeholder to {nom}",
+   "kind": "placeholder_mismatch",
+   "status": "confirmed",
+   "locales": [
+    "fr"
+   ],
+   "severity": "High",
+   "confidence": "high",
+   "priority": "P3",
+   "score": 3,
+   "reach": 1,
+   "leverage": 1,
+   "locations": [
+    {
+     "file": "site/locales/fr.json",
+     "line": 4
+    }
+   ],
+   "keys": [
+    "welcome"
+   ],
+   "evidence": [
+    {
+     "page": "home",
+     "locale": "fr",
+     "mode": "locale",
+     "screenshot": "home.locale.fr.1280x800.png",
+     "element": "p:in(main)",
+     "measure": {
+      "placeholders": [
+       "{nom}"
+      ]
+     },
+     "text": "Bon retour, {nom} !"
+    }
+   ],
+   "remediation": "fr.json has \"Bon retour, {nom} !\", so the page shows the raw \"{nom}\" instead of the name. Placeholders must keep the source names.",
+   "verification_step": "Rerun check_keys.py and the fr run: no placeholder findings."
+  },
+  {
+   "id": "F12",
+   "candidate_id": "K15",
+   "title": "The Arabic book count lacks the few and many forms",
+   "kind": "plural_categories",
+   "status": "confirmed",
+   "locales": [
+    "ar"
+   ],
+   "severity": "High",
+   "confidence": "high",
+   "priority": "P3",
+   "score": 3,
+   "reach": 1,
+   "leverage": 1,
+   "locations": [
+    {
+     "file": "site/locales/ar.json",
+     "line": 5
+    }
+   ],
+   "keys": [
+    "books.count"
+   ],
+   "evidence": [],
+   "remediation": "CLDR gives Arabic six plural categories; books.count has zero, one, two and other, so counts like 3 to 10 (few) and 11 to 99 (many) fall back to the other form, which is grammatically wrong for them. Add few and many branches.",
+   "verification_step": "Rerun check_keys.py: no plural_categories finding for ar."
+  },
+  {
+   "id": "F13",
+   "candidate_id": "K17",
+   "title": "legacy.banner is not used anywhere",
+   "kind": "unused_key",
+   "status": "confirmed",
+   "locales": [
+    "en"
+   ],
+   "severity": "Low",
+   "confidence": "high",
+   "priority": "P3",
+   "score": 1,
+   "reach": 1,
+   "leverage": 1,
+   "locations": [
+    {
+     "file": "site/locales/en.json",
+     "line": 9
+    }
+   ],
+   "keys": [
+    "legacy.banner"
+   ],
+   "evidence": [],
+   "remediation": "No code or markup mentions legacy.banner, and the code has no dynamic key prefixes that could build it. Remove it from every locale file, or keep it if something outside this repository uses it.",
+   "verification_step": "Rerun check_keys.py: no unused keys."
+  }
+ ],
+ "proposed_patch": {
+  "path": "missing_keys.patch",
+  "keys_added": {
+   "site/locales/de.json": [
+    "events.title",
+    "events.rsvp"
+   ]
+  },
+  "applied": false
+ },
+ "needs_review": [
+  {
+   "candidate_id": "K16",
+   "reason": "\"Newsletter\" is identical in English and German, which is normal German usage; a German reviewer should confirm it (agent judgment: probably correct)."
+  }
+ ],
+ "triage": [
+  {
+   "candidate_id": "K1",
+   "decision": "promoted",
+   "finding_id": "F1",
+   "reason": "Confirmed in the rendered pages with a measurement."
+  },
+  {
+   "candidate_id": "K2",
+   "decision": "promoted",
+   "finding_id": "F2",
+   "reason": "Confirmed in the rendered pages with a measurement."
+  },
+  {
+   "candidate_id": "K3",
+   "decision": "promoted",
+   "finding_id": "F3",
+   "reason": "Confirmed in the rendered pages with a measurement."
+  },
+  {
+   "candidate_id": "K4",
+   "decision": "promoted",
+   "finding_id": "F4",
+   "reason": "Confirmed in the rendered pages with a measurement."
+  },
+  {
+   "candidate_id": "K5",
+   "decision": "promoted",
+   "finding_id": "F5",
+   "reason": "Confirmed in the rendered pages with a measurement."
+  },
+  {
+   "candidate_id": "K6",
+   "decision": "promoted",
+   "finding_id": "F6",
+   "reason": "Confirmed in the rendered pages with a measurement."
+  },
+  {
+   "candidate_id": "K7",
+   "decision": "promoted",
+   "finding_id": "F7",
+   "reason": "Confirmed in the rendered pages with a measurement."
+  },
+  {
+   "candidate_id": "K8",
+   "decision": "dismissed",
+   "finding_id": null,
+   "reason": "'Next meeting: 12/3/2026' is placeholder text that app.js replaces through i18n.t() at runtime; the pseudo-locale run shows it translated."
+  },
+  {
+   "candidate_id": "K9",
+   "decision": "dismissed",
+   "finding_id": null,
+   "reason": "'Hello, Robin!' is placeholder text that app.js replaces through i18n.t() at runtime; the pseudo-locale run shows it translated apart from the concatenation reported separately."
+  },
+  {
+   "candidate_id": "K10",
+   "decision": "dismissed",
+   "finding_id": null,
+   "reason": "'Membership: $12.50 a year' is placeholder text that app.js replaces through i18n.t() at runtime; the pseudo-locale run shows it translated."
+  },
+  {
+   "candidate_id": "K11",
+   "decision": "promoted",
+   "finding_id": "F8",
+   "reason": "Confirmed in the rendered pages with a measurement."
+  },
+  {
+   "candidate_id": "K12",
+   "decision": "promoted",
+   "finding_id": "F9",
+   "reason": "Confirmed in the rendered pages with a measurement."
+  },
+  {
+   "candidate_id": "K13",
+   "decision": "promoted",
+   "finding_id": "F10",
+   "reason": "Verified by the parser."
+  },
+  {
+   "candidate_id": "K14",
+   "decision": "promoted",
+   "finding_id": "F11",
+   "reason": "Confirmed in the rendered pages with a measurement."
+  },
+  {
+   "candidate_id": "K15",
+   "decision": "promoted",
+   "finding_id": "F12",
+   "reason": "Verified by the parser."
+  },
+  {
+   "candidate_id": "K16",
+   "decision": "needs_review",
+   "finding_id": null,
+   "reason": "Same text in both languages; may be correct."
+  },
+  {
+   "candidate_id": "K17",
+   "decision": "promoted",
+   "finding_id": "F13",
+   "reason": "Verified by the parser."
+  }
+ ],
+ "limitations": [
+  "Translation quality (is the German right?) is untested: no reviewer checked it, and no outside service was used.",
+  "Hebrew is in rtl_locales but has no resources, so the second RTL check was not run.",
+  "Android resources were checked statically only; there is no Android code here, so unused Android keys were not assessed, and native screens were not rendered (the mobile app auditor covers that).",
+  "Dates whose separators match the locale (fr and ar use \"/\") can still be in the wrong order; the runtime check compares separators only, and the static format finding covers the cause.",
+  "One viewport (1280x800) and two pages; the pseudo-locale fitted the tab bar, so truncation was found with real German text."
+ ]
+}

@@ -1,0 +1,13 @@
+# Proposed: add the keys missing from these locale files, with the source text copied in for translation.
+# Translate the values before applying. Nothing has been applied.
+--- a/site/locales/de.json
++++ b/site/locales/de.json
+@@ -4,7 +4,7 @@
+   "welcome": "Willkommen zurück, {name}!",
+   "books": {"count": "{count, plural, one {Du hast # Buch im Regal} other {Du hast # Bücher im Regal}}"},
+   "membership": {"price": "Mitgliedschaft: {price} pro Jahr"},
+-  "events": {"next": "Nächstes Treffen: {date}"},
++  "events": {"title": "Upcoming events", "rsvp": "Reserve a seat", "next": "Nächstes Treffen: {date}"},
+   "footer": {"newsletter": "Newsletter", "contact": "Kontakt"},
+   "legacy": {"banner": "Unsere alte Website ist umgezogen"}
+ }

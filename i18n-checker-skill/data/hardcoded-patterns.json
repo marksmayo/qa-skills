@@ -1,0 +1,31 @@
+{
+  "note": "Heuristic patterns for user-facing text that bypasses translation, and for code that breaks it. Every match is 'possible' until the rendered UI confirms it. The allow-list holds text that is never translated.",
+  "hardcoded": [
+    {"framework": "html", "ext": [".html", ".htm"], "kind": "html-text", "translated_attrs": ["data-i18n", "i18n", "translate", "v-t", "data-l10n-id"]},
+    {"framework": "jsx", "ext": [".jsx", ".tsx"], "kind": "regex", "match": ">\\s*([A-Z][A-Za-z ,.'!?-]{2,})\\s*<"},
+    {"framework": "vue", "ext": [".vue"], "kind": "regex", "match": ">\\s*([A-Z][A-Za-z ,.'!?-]{2,})\\s*<"},
+    {"framework": "android-layout", "ext": [".xml"], "kind": "regex", "match": "android:(?:text|hint|contentDescription)=\"([^@\"][^\"]+)\""},
+    {"framework": "swiftui", "ext": [".swift"], "kind": "regex", "match": "Text\\(verbatim:\\s*\"([^\"]+)\"\\)"},
+    {"framework": "js-dom", "ext": [".js", ".mjs", ".ts"], "kind": "regex", "match": "\\.(?:textContent|innerText|innerHTML|title|placeholder)\\s*=\\s*['\"]([A-Z][^'\"]{2,})['\"]"}
+  ],
+  "concatenation": [
+    {"ext": [".js", ".mjs", ".ts", ".jsx", ".tsx", ".vue"], "match": "\\b(?:t|i18n\\.t|\\$t|translate)\\(\\s*['\"][^'\"]*['\"]\\s*\\)\\s*\\+|\\+\\s*\\b(?:t|i18n\\.t|\\$t|translate)\\(\\s*['\"]"},
+    {"ext": [".kt", ".java"], "match": "getString\\([^)]*\\)\\s*\\+|\\+\\s*getString\\("},
+    {"ext": [".swift"], "match": "NSLocalizedString\\([^)]*\\)\\s*\\+|\\+\\s*NSLocalizedString\\("}
+  ],
+  "format": [
+    {"ext": [".js", ".mjs", ".ts", ".jsx", ".tsx", ".vue"], "match": "['\"`][$€£¥]['\"`]\\s*\\+|\\.toFixed\\(\\d\\)", "what": "number or currency formatted by hand (use Intl.NumberFormat with the locale)"},
+    {"ext": [".js", ".mjs", ".ts", ".jsx", ".tsx", ".vue"], "match": "getMonth\\(\\)\\s*\\+\\s*1|\\.toDateString\\(\\)|\\bnew Date\\(\\)\\.toString\\(\\)", "what": "date formatted by hand (use Intl.DateTimeFormat with the locale)"},
+    {"ext": [".kt", ".java"], "match": "String\\.format\\(\\s*\"", "what": "String.format without a Locale"},
+    {"ext": [".swift"], "match": "String\\(format:\\s*\"%\\.\\d+f", "what": "String(format:) without a locale"}
+  ],
+  "fixed_width": [
+    {"ext": [".css", ".scss"], "kind": "css-fixed-width"},
+    {"ext": [".xml"], "kind": "regex", "match": "android:maxLines=\"\\d+\"(?![^>]*android:ellipsize)", "what": "maxLines without ellipsize"}
+  ],
+  "rtl_physical": [
+    {"ext": [".css", ".scss"], "match": "(?<![-\\w])(margin-left|margin-right|padding-left|padding-right|border-left|border-right|left|right)\\s*:", "what": "physical direction property; use logical properties (margin-inline-start) so RTL mirrors"},
+    {"ext": [".css", ".scss"], "match": "text-align\\s*:\\s*(left|right)\\b", "what": "physical text alignment; use start or end so RTL mirrors"}
+  ],
+  "allow_list": ["OK", "Bookclub", "Wander", "STOREFRONT", "PDF", "API", "URL", "ID"]
+}
