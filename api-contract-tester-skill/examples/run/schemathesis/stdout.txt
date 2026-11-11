@@ -1,33 +1,33 @@
 Schemathesis v4.33.2
 ━━━━━━━━━━━━━━━━━━━━
 
- ✅  Loaded specification from examples/clinic-api/openapi.yaml (in 0.33s)
+ ✅  Loaded specification from examples/clinic-api/openapi.yaml (in 0.43s)
 
      Base URL:         http://127.0.0.1:8140
      Specification:    Open API 3.1.0
      Operations:       7 selected / 9 total
-     Configuration:    examples/run/schemathesis/safe-mode.schemathesis.toml
+     Configuration:    examples/run/schemathesis\safe-mode.schemathesis.toml
 
  ✅  API capabilities:
 
      Supports NULL byte in headers:                            ✓
      Accepts backslash and control characters in URL paths:    ✓
 
- ❌  Examples (in 3.17s)
+ ❌  Examples (in 3.18s)
 
      ✅ 3 passed  ❌ 3 failed  ⏭  1 skipped
 
- ❌  Coverage (in 7.01s)
+ ❌  Coverage (in 7.00s)
 
      ✅ 1 passed  ❌ 6 failed
 
- ❌  Fuzzing (in 6.65s)
+ ❌  Fuzzing (in 6.66s)
 
      ✅ 2 passed  ❌ 5 failed
 
-=================================== FAILURES ===================================
-______________________________ GET /appointments _______________________________
-1. Test Case ID: kXXqCO
+=================================================================================================================================================================================================== FAILURES ===================================================================================================================================================================================================
+______________________________________________________________________________________________________________________________________________________________________________________________ GET /appointments _______________________________________________________________________________________________________________________________________________________________________________________________
+1. Test Case ID: fM44LX
 
 - ST201 Schema-violating request accepted
 
@@ -43,10 +43,10 @@ Reproduce with:
 
     curl -X GET -H 'Authorization: [Filtered]' 'http://127.0.0.1:8140/appointments?clinic_id=0'
 
-    st replay kXXqCO
+    st replay fM44LX
 
-______________________ GET /appointments/{appointmentId} _______________________
-1. Test Case ID: bhtuNr
+______________________________________________________________________________________________________________________________________________________________________________________ GET /appointments/{appointmentId} _______________________________________________________________________________________________________________________________________________________________________________________
+1. Test Case ID: M1gYQB
 
 - ST105 Undocumented Content-Type
 
@@ -61,10 +61,10 @@ Reproduce with:
 
     curl -X GET -H 'Authorization: [Filtered]' http://127.0.0.1:8140/appointments/%20
 
-    st replay bhtuNr
+    st replay M1gYQB
 
-_______________________________ GET /clinicians ________________________________
-1. Test Case ID: hvPPbL
+_______________________________________________________________________________________________________________________________________________________________________________________________ GET /clinicians ________________________________________________________________________________________________________________________________________________________________________________________________
+1. Test Case ID: Ca2WYZ
 
 - ST108 Response violates schema
 
@@ -111,10 +111,10 @@ Reproduce with:
 
     curl -X GET -H 'Authorization: [Filtered]' 'http://127.0.0.1:8140/clinicians?limit=10'
 
-    st replay hvPPbL
+    st replay Ca2WYZ
 
-________________________ GET /clinicians/{clinicianId} _________________________
-1. Test Case ID: WZEYPP
+________________________________________________________________________________________________________________________________________________________________________________________ GET /clinicians/{clinicianId} _________________________________________________________________________________________________________________________________________________________________________________________
+1. Test Case ID: v7jHgV
 
 - ST108 Response violates schema
 
@@ -161,9 +161,9 @@ Reproduce with:
 
     curl -X GET -H 'Authorization: [Filtered]' http://127.0.0.1:8140/clinicians/3
 
-    st replay WZEYPP
+    st replay v7jHgV
 
-2. Test Case ID: kQwFT7
+2. Test Case ID: kRTKJb
 
 - ST103 Undocumented status code
 
@@ -178,10 +178,10 @@ Reproduce with:
 
     curl -X GET -H 'Authorization: [Filtered]' http://127.0.0.1:8140/clinicians/0
 
-    st replay kQwFT7
+    st replay kRTKJb
 
-______________________________ GET /reports/daily ______________________________
-1. Test Case ID: LfwW8Q
+______________________________________________________________________________________________________________________________________________________________________________________________ GET /reports/daily ______________________________________________________________________________________________________________________________________________________________________________________________
+1. Test Case ID: cUfOKH
 
 - ST401 API accepts requests without authentication
 
@@ -195,9 +195,9 @@ Reproduce with:
 
     curl -X GET 'http://127.0.0.1:8140/reports/daily?date=2026-11-12'
 
-    st replay LfwW8Q
+    st replay cUfOKH
 
-2. Test Case ID: XXJ7d6
+2. Test Case ID: WrM7MU
 
 - ST203 Missing required header accepted
 
@@ -211,10 +211,10 @@ Reproduce with:
 
     curl -X GET 'http://127.0.0.1:8140/reports/daily?date=2026-11-12'
 
-    st replay XXJ7d6
+    st replay WrM7MU
 
-__________________________________ GET /slots __________________________________
-1. Test Case ID: WcqjCn
+__________________________________________________________________________________________________________________________________________________________________________________________________ GET /slots __________________________________________________________________________________________________________________________________________________________________________________________________
+1. Test Case ID: hqsHjs
 
 - ST101 Server error
 
@@ -226,9 +226,9 @@ Reproduce with:
 
     curl -X GET -H 'Authorization: [Filtered]' 'http://127.0.0.1:8140/slots?clinician_id=3&date=null'
 
-    st replay WcqjCn
+    st replay hqsHjs
 
-=================================== SUMMARY ====================================
+=================================================================================================================================================================================================== SUMMARY ====================================================================================================================================================================================================
 
 API Operations:
   Selected: 7/9
@@ -255,10 +255,10 @@ Test cases:
   75 generated, 8 found 8 unique failures
 
 Reports:
-  - JUnit: examples\run\schemathesis\junit-20261111T201934Z.xml
-  - HAR: examples\run\schemathesis\har-20261111T201934Z.json
-  - JSON: examples\run\schemathesis\json-20261111T201934Z.json
+  - JUnit: examples\run\schemathesis\junit-20261111T205032Z.xml
+  - HAR: examples\run\schemathesis\har-20261111T205032Z.json
+  - JSON: examples\run\schemathesis\json-20261111T205032Z.json
 
 Seed: 1611
 
-============================= 8 failures in 16.91s =============================
+============================================================================================================================================================================================= 8 failures in 16.94s =============================================================================================================================================================================================

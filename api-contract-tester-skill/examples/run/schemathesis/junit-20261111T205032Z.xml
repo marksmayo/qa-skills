@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<testsuites errors="0" failures="6" skipped="0" tests="7" time="16.804407">
-  <testsuite name="schemathesis" hostname="MM-Terem" errors="0" failures="6" skipped="0" tests="7" time="16.804407">
-    <testcase name="GET /clinicians" time="3.940239">
-      <failure type="failure" message="ST108">1. Test Case ID: hvPPbL
+<testsuites errors="0" failures="6" skipped="0" tests="7" time="16.808297">
+  <testsuite name="schemathesis" hostname="MM-Terem" errors="0" failures="6" skipped="0" tests="7" time="16.808297">
+    <testcase name="GET /clinicians" time="3.949239">
+      <failure type="failure" message="ST108">1. Test Case ID: Ca2WYZ
 
 - ST108 Response violates schema
 
@@ -49,9 +49,9 @@ Reproduce with:
 
     curl -X GET -H 'Authorization: [Filtered]' 'http://127.0.0.1:8140/clinicians?limit=10'</failure>
     </testcase>
-    <testcase name="GET /health" time="0.033567" />
-    <testcase name="GET /reports/daily" time="0.629724">
-      <failure type="failure" message="ST401">1. Test Case ID: LfwW8Q
+    <testcase name="GET /health" time="0.041348" />
+    <testcase name="GET /reports/daily" time="0.636891">
+      <failure type="failure" message="ST401">1. Test Case ID: cUfOKH
 
 - ST401 API accepts requests without authentication
 
@@ -64,7 +64,7 @@ Reproduce with:
 Reproduce with:
 
     curl -X GET 'http://127.0.0.1:8140/reports/daily?date=2026-11-12'</failure>
-      <failure type="failure" message="ST203">1. Test Case ID: XXJ7d6
+      <failure type="failure" message="ST203">1. Test Case ID: WrM7MU
 
 - ST203 Missing required header accepted
 
@@ -78,8 +78,8 @@ Reproduce with:
 
     curl -X GET 'http://127.0.0.1:8140/reports/daily?date=2026-11-12'</failure>
     </testcase>
-    <testcase name="GET /clinicians/{clinicianId}" time="1.454604">
-      <failure type="failure" message="ST108">1. Test Case ID: WZEYPP
+    <testcase name="GET /clinicians/{clinicianId}" time="1.409128">
+      <failure type="failure" message="ST108">1. Test Case ID: v7jHgV
 
 - ST108 Response violates schema
 
@@ -125,7 +125,7 @@ Reproduce with:
 Reproduce with:
 
     curl -X GET -H 'Authorization: [Filtered]' http://127.0.0.1:8140/clinicians/3</failure>
-      <failure type="failure" message="ST103">1. Test Case ID: kQwFT7
+      <failure type="failure" message="ST103">1. Test Case ID: kRTKJb
 
 - ST103 Undocumented status code
 
@@ -140,8 +140,8 @@ Reproduce with:
 
     curl -X GET -H 'Authorization: [Filtered]' http://127.0.0.1:8140/clinicians/0</failure>
     </testcase>
-    <testcase name="GET /appointments" time="5.248076">
-      <failure type="failure" message="ST201">1. Test Case ID: kXXqCO
+    <testcase name="GET /appointments" time="5.259861">
+      <failure type="failure" message="ST201">1. Test Case ID: fM44LX
 
 - ST201 Schema-violating request accepted
 
@@ -157,8 +157,8 @@ Reproduce with:
 
     curl -X GET -H 'Authorization: [Filtered]' 'http://127.0.0.1:8140/appointments?clinic_id=0'</failure>
     </testcase>
-    <testcase name="GET /slots" time="3.269516">
-      <failure type="failure" message="ST101">1. Test Case ID: WcqjCn
+    <testcase name="GET /slots" time="3.155257">
+      <failure type="failure" message="ST101">1. Test Case ID: hqsHjs
 
 - ST101 Server error
 
@@ -170,8 +170,8 @@ Reproduce with:
 
     curl -X GET -H 'Authorization: [Filtered]' 'http://127.0.0.1:8140/slots?clinician_id=3&amp;date=null'</failure>
     </testcase>
-    <testcase name="GET /appointments/{appointmentId}" time="2.228683">
-      <failure type="failure" message="ST105">1. Test Case ID: bhtuNr
+    <testcase name="GET /appointments/{appointmentId}" time="2.356572">
+      <failure type="failure" message="ST105">1. Test Case ID: M1gYQB
 
 - ST105 Undocumented Content-Type
 

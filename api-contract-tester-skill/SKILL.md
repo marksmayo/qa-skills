@@ -107,7 +107,8 @@ The wrapper enforces the same safe mode. Schemathesis's coverage phase sends PUT
 PATCH and TRACE to every path by default ("unexpected methods"), whatever its method filter says,
 so in safe mode the wrapper turns that off in a config file, and also turns off the stateful phase
 and the checks that create resources. Never run `st` directly against a shared instance without
-those settings.
+those settings. Schemathesis also writes a `.schemathesis/` cache in the working directory; keep it
+out of version control.
 
 Its failures have no exchange of ours. For each one the stdlib run didn't also find, write a case
 that reproduces it (`extra_cases.json`: `operation_id`, `description`, `path_params`, `query`,

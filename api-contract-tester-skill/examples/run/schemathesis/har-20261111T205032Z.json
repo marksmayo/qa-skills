@@ -1,0 +1,663 @@
+{
+    "log": {
+        "version": "1.2",
+        "creator": {
+            "name": "harfile",
+            "version": "0.6.0"
+        },
+        "browser": {
+            "name": "",
+            "version": ""
+        },
+        "entries": [
+            {
+                "startedDateTime": "2026-11-11T07:50:33.715365+00:00",
+                "time": 18.84,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/clinicians?limit=10", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "Ca2WYZ"}], "queryString": [{"name": "limit", "value": "10"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:33 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "146"}], "content": {"size": 146, "mimeType": "application/json", "text": "[{\"id\": 1, \"name\": \"Dr Test One\", \"specialty\": \"gp\"}, {\"id\": 2, \"name\": \"Dr Test Two\", \"specialty\": \"physio\"}, {\"id\": 3, \"name\": \"Dr Test Three\"}]"}, "redirectURL": "", "headersSize": 131, "bodySize": 146},
+                "timings": {"send": 0, "wait": 0, "receive": 18.84, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:33.752453+00:00",
+                "time": 1.82,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/reports/daily?date=2026-11-12", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "VWga11"}], "queryString": [{"name": "date", "value": "2026-11-12"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:33 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "51"}], "content": {"size": 51, "mimeType": "application/json", "text": "{\"date\": \"2026-11-12\", \"booked\": 1, \"cancelled\": 1}"}, "redirectURL": "", "headersSize": 130, "bodySize": 51},
+                "timings": {"send": 0, "wait": 0, "receive": 1.82, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:33.755733+00:00",
+                "time": 1.75,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/reports/daily?date=2026-11-12", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "X-Schemathesis-TestCaseId", "value": "cUfOKH"}], "queryString": [{"name": "date", "value": "2026-11-12"}], "headersSize": 143, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:33 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "51"}], "content": {"size": 51, "mimeType": "application/json", "text": "{\"date\": \"2026-11-12\", \"booked\": 1, \"cancelled\": 1}"}, "redirectURL": "", "headersSize": 130, "bodySize": 51},
+                "timings": {"send": 0, "wait": 0, "receive": 1.75, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:33.764520+00:00",
+                "time": 1.82,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/clinicians/3", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "v7jHgV"}], "queryString": [], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:33 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "34"}, {"name": "x-request-id", "value": "req-0003"}], "content": {"size": 34, "mimeType": "application/json", "text": "{\"id\": 3, \"name\": \"Dr Test Three\"}"}, "redirectURL": "", "headersSize": 154, "bodySize": 34},
+                "timings": {"send": 0, "wait": 0, "receive": 1.82, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:33.794395+00:00",
+                "time": 22.69,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments?clinic_id=3&date=2026-11-12", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "4FQfxb"}], "queryString": [{"name": "clinic_id", "value": "3"}, {"name": "date", "value": "2026-11-12"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:33 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "2"}], "content": {"size": 2, "mimeType": "application/json", "text": "[]"}, "redirectURL": "", "headersSize": 129, "bodySize": 2},
+                "timings": {"send": 0, "wait": 0, "receive": 22.69, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:34.749160+00:00",
+                "time": 1.68,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments?clinic_id=3&date=2026-11-12", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "X-Schemathesis-TestCaseId", "value": "j67YHa"}], "queryString": [{"name": "clinic_id", "value": "3"}, {"name": "date", "value": "2026-11-12"}], "headersSize": 143, "bodySize": 0},
+                "response": {"status": 401, "statusText": "Unauthorized", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:34 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "60"}], "content": {"size": 60, "mimeType": "application/json", "text": "{\"code\": \"unauthorised\", \"message\": \"Bearer token required\"}"}, "redirectURL": "", "headersSize": 130, "bodySize": 60},
+                "timings": {"send": 0, "wait": 0, "receive": 1.68, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:34.751359+00:00",
+                "time": 1.35,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments?clinic_id=3&date=2026-11-12", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "JiaSXm"}], "queryString": [{"name": "clinic_id", "value": "3"}, {"name": "date", "value": "2026-11-12"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 401, "statusText": "Unauthorized", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:34 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "60"}], "content": {"size": 60, "mimeType": "application/json", "text": "{\"code\": \"unauthorised\", \"message\": \"Bearer token required\"}"}, "redirectURL": "", "headersSize": 130, "bodySize": 60},
+                "timings": {"send": 0, "wait": 0, "receive": 1.35, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:34.807130+00:00",
+                "time": 1.57,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments?clinic_id=2&date=2026-11-12", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "ibDDlY"}], "queryString": [{"name": "clinic_id", "value": "2"}, {"name": "date", "value": "2026-11-12"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:34 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "2"}], "content": {"size": 2, "mimeType": "application/json", "text": "[]"}, "redirectURL": "", "headersSize": 129, "bodySize": 2},
+                "timings": {"send": 0, "wait": 0, "receive": 1.57, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:34.809279+00:00",
+                "time": 1.27,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments?clinic_id=1&date=2026-11-12", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "jlW6QZ"}], "queryString": [{"name": "clinic_id", "value": "1"}, {"name": "date", "value": "2026-11-12"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:34 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "285"}], "content": {"size": 285, "mimeType": "application/json", "text": "[{\"id\": 101, \"clinic_id\": 1, \"clinician_id\": 1, \"date\": \"2026-11-12\", \"time\": \"09:00\", \"status\": \"booked\", \"patient_name\": \"Test Patient A\"}, {\"id\": 102, \"clinic_id\": 1, \"clinician_id\": 2, \"date\": \"2026-11-12\", \"time\": \"10:30\", \"status\": \"cancelled\", \"patient_name\": \"Test Patient B\"}]"}, "redirectURL": "", "headersSize": 131, "bodySize": 285},
+                "timings": {"send": 0, "wait": 0, "receive": 1.27, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:34.835068+00:00",
+                "time": 18.08,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/slots?clinician_id=3&date=2026-11-12", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "PxgAUM"}], "queryString": [{"name": "clinician_id", "value": "3"}, {"name": "date", "value": "2026-11-12"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:34 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "132"}], "content": {"size": 132, "mimeType": "application/json", "text": "[{\"time\": \"09:00\", \"free\": true}, {\"time\": \"09:30\", \"free\": true}, {\"time\": \"10:00\", \"free\": true}, {\"time\": \"10:30\", \"free\": true}]"}, "redirectURL": "", "headersSize": 131, "bodySize": 132},
+                "timings": {"send": 0, "wait": 0, "receive": 18.08, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:35.800923+00:00",
+                "time": 1.85,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/slots?clinician_id=2&date=2026-11-12", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "zIin4s"}], "queryString": [{"name": "clinician_id", "value": "2"}, {"name": "date", "value": "2026-11-12"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:35 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "133"}], "content": {"size": 133, "mimeType": "application/json", "text": "[{\"time\": \"09:00\", \"free\": true}, {\"time\": \"09:30\", \"free\": true}, {\"time\": \"10:00\", \"free\": true}, {\"time\": \"10:30\", \"free\": false}]"}, "redirectURL": "", "headersSize": 131, "bodySize": 133},
+                "timings": {"send": 0, "wait": 0, "receive": 1.85, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:35.818206+00:00",
+                "time": 15.64,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/slots?clinician_id=1&date=2026-11-12", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "HS3yy8"}], "queryString": [{"name": "clinician_id", "value": "1"}, {"name": "date", "value": "2026-11-12"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:35 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "133"}], "content": {"size": 133, "mimeType": "application/json", "text": "[{\"time\": \"09:00\", \"free\": false}, {\"time\": \"09:30\", \"free\": true}, {\"time\": \"10:00\", \"free\": true}, {\"time\": \"10:30\", \"free\": true}]"}, "redirectURL": "", "headersSize": 131, "bodySize": 133},
+                "timings": {"send": 0, "wait": 0, "receive": 15.64, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:35.828144+00:00",
+                "time": 2.12,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments/102", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "bqyGs1"}], "queryString": [], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:35 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "142"}], "content": {"size": 142, "mimeType": "application/json", "text": "{\"id\": 102, \"clinic_id\": 1, \"clinician_id\": 2, \"date\": \"2026-11-12\", \"time\": \"10:30\", \"status\": \"cancelled\", \"patient_name\": \"Test Patient B\"}"}, "redirectURL": "", "headersSize": 131, "bodySize": 142},
+                "timings": {"send": 0, "wait": 0, "receive": 2.12, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:35.832016+00:00",
+                "time": 1.91,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments/102", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "X-Schemathesis-TestCaseId", "value": "OOCLm4"}], "queryString": [], "headersSize": 143, "bodySize": 0},
+                "response": {"status": 401, "statusText": "Unauthorized", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:35 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "60"}], "content": {"size": 60, "mimeType": "application/json", "text": "{\"code\": \"unauthorised\", \"message\": \"Bearer token required\"}"}, "redirectURL": "", "headersSize": 130, "bodySize": 60},
+                "timings": {"send": 0, "wait": 0, "receive": 1.91, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:35.849631+00:00",
+                "time": 16.42,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments/102", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "SdJePQ"}], "queryString": [], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 401, "statusText": "Unauthorized", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:35 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "60"}], "content": {"size": 60, "mimeType": "application/json", "text": "{\"code\": \"unauthorised\", \"message\": \"Bearer token required\"}"}, "redirectURL": "", "headersSize": 130, "bodySize": 60},
+                "timings": {"send": 0, "wait": 0, "receive": 16.42, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:36.852324+00:00",
+                "time": 1.84,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments/101", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "oRhWZr"}], "queryString": [], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:36 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "139"}], "content": {"size": 139, "mimeType": "application/json", "text": "{\"id\": 101, \"clinic_id\": 1, \"clinician_id\": 1, \"date\": \"2026-11-12\", \"time\": \"09:00\", \"status\": \"booked\", \"patient_name\": \"Test Patient A\"}"}, "redirectURL": "", "headersSize": 131, "bodySize": 139},
+                "timings": {"send": 0, "wait": 0, "receive": 1.84, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:37.546358+00:00",
+                "time": 2.31,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/clinicians?specialty=gp&x-schemathesis-unknown-property=42", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "QLhySY"}], "queryString": [{"name": "specialty", "value": "gp"}, {"name": "x-schemathesis-unknown-property", "value": "42"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:37 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "53"}], "content": {"size": 53, "mimeType": "application/json", "text": "[{\"id\": 1, \"name\": \"Dr Test One\", \"specialty\": \"gp\"}]"}, "redirectURL": "", "headersSize": 130, "bodySize": 53},
+                "timings": {"send": 0, "wait": 0, "receive": 2.31, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:37.549609+00:00",
+                "time": 1.76,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/clinicians?specialty=AAA", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "7n8uG7"}], "queryString": [{"name": "specialty", "value": "AAA"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 400, "statusText": "Bad Request", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:37 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "57"}], "content": {"size": 57, "mimeType": "application/json", "text": "{\"code\": \"bad_specialty\", \"message\": \"Unknown specialty\"}"}, "redirectURL": "", "headersSize": 130, "bodySize": 57},
+                "timings": {"send": 0, "wait": 0, "receive": 1.76, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:37.577260+00:00",
+                "time": 26.1,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/clinicians?specialty=null&specialty=null", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "Y62rIU"}], "queryString": [{"name": "specialty", "value": "null"}, {"name": "specialty", "value": "null"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 400, "statusText": "Bad Request", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:37 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "57"}], "content": {"size": 57, "mimeType": "application/json", "text": "{\"code\": \"bad_specialty\", \"message\": \"Unknown specialty\"}"}, "redirectURL": "", "headersSize": 130, "bodySize": 57},
+                "timings": {"send": 0, "wait": 0, "receive": 26.1, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:37.580395+00:00",
+                "time": 1.68,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/clinicians?specialty=null", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "LboeR6"}], "queryString": [{"name": "specialty", "value": "null"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 400, "statusText": "Bad Request", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:37 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "57"}], "content": {"size": 57, "mimeType": "application/json", "text": "{\"code\": \"bad_specialty\", \"message\": \"Unknown specialty\"}"}, "redirectURL": "", "headersSize": 130, "bodySize": 57},
+                "timings": {"send": 0, "wait": 0, "receive": 1.68, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:37.903006+00:00",
+                "time": 1.94,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/clinicians?specialty=true", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "ILC3z0"}], "queryString": [{"name": "specialty", "value": "true"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 400, "statusText": "Bad Request", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:37 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "57"}], "content": {"size": 57, "mimeType": "application/json", "text": "{\"code\": \"bad_specialty\", \"message\": \"Unknown specialty\"}"}, "redirectURL": "", "headersSize": 130, "bodySize": 57},
+                "timings": {"send": 0, "wait": 0, "receive": 1.94, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:38.597507+00:00",
+                "time": 2.19,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/clinicians?specialty=0.5", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "SDqN1A"}], "queryString": [{"name": "specialty", "value": "0.5"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 400, "statusText": "Bad Request", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:38 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "57"}], "content": {"size": 57, "mimeType": "application/json", "text": "{\"code\": \"bad_specialty\", \"message\": \"Unknown specialty\"}"}, "redirectURL": "", "headersSize": 130, "bodySize": 57},
+                "timings": {"send": 0, "wait": 0, "receive": 2.19, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:38.600588+00:00",
+                "time": 1.77,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/clinicians?specialty=0", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "12PIyM"}], "queryString": [{"name": "specialty", "value": "0"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 400, "statusText": "Bad Request", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:38 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "57"}], "content": {"size": 57, "mimeType": "application/json", "text": "{\"code\": \"bad_specialty\", \"message\": \"Unknown specialty\"}"}, "redirectURL": "", "headersSize": 130, "bodySize": 57},
+                "timings": {"send": 0, "wait": 0, "receive": 1.77, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:38.603819+00:00",
+                "time": 1.91,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/clinicians?specialty=gp", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "Ts4zxU"}], "queryString": [{"name": "specialty", "value": "gp"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:38 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "53"}], "content": {"size": 53, "mimeType": "application/json", "text": "[{\"id\": 1, \"name\": \"Dr Test One\", \"specialty\": \"gp\"}]"}, "redirectURL": "", "headersSize": 130, "bodySize": 53},
+                "timings": {"send": 0, "wait": 0, "receive": 1.91, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:38.607032+00:00",
+                "time": 1.82,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/clinicians?limit=1&x-schemathesis-unknown-property=42", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "664wtM"}], "queryString": [{"name": "limit", "value": "1"}, {"name": "x-schemathesis-unknown-property", "value": "42"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:38 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "53"}], "content": {"size": 53, "mimeType": "application/json", "text": "[{\"id\": 1, \"name\": \"Dr Test One\", \"specialty\": \"gp\"}]"}, "redirectURL": "", "headersSize": 130, "bodySize": 53},
+                "timings": {"send": 0, "wait": 0, "receive": 1.82, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:38.953772+00:00",
+                "time": 1.79,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/clinicians?limit=51", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "mE7dBK"}], "queryString": [{"name": "limit", "value": "51"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 400, "statusText": "Bad Request", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:38 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "54"}], "content": {"size": 54, "mimeType": "application/json", "text": "{\"code\": \"bad_limit\", \"message\": \"limit must be 1-50\"}"}, "redirectURL": "", "headersSize": 130, "bodySize": 54},
+                "timings": {"send": 0, "wait": 0, "receive": 1.79, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:39.664378+00:00",
+                "time": 18.78,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/clinicians?limit=0", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "sijoVf"}], "queryString": [{"name": "limit", "value": "0"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 400, "statusText": "Bad Request", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:39 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "54"}], "content": {"size": 54, "mimeType": "application/json", "text": "{\"code\": \"bad_limit\", \"message\": \"limit must be 1-50\"}"}, "redirectURL": "", "headersSize": 130, "bodySize": 54},
+                "timings": {"send": 0, "wait": 0, "receive": 18.78, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:39.667378+00:00",
+                "time": 1.7,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/clinicians?limit=null&limit=null", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "Ma7ifk"}], "queryString": [{"name": "limit", "value": "null"}, {"name": "limit", "value": "null"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 400, "statusText": "Bad Request", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:39 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "54"}], "content": {"size": 54, "mimeType": "application/json", "text": "{\"code\": \"bad_limit\", \"message\": \"limit must be 1-50\"}"}, "redirectURL": "", "headersSize": 130, "bodySize": 54},
+                "timings": {"send": 0, "wait": 0, "receive": 1.7, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:39.694449+00:00",
+                "time": 25.7,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/clinicians?limit=AAA", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "Bi11RE"}], "queryString": [{"name": "limit", "value": "AAA"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 400, "statusText": "Bad Request", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:39 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "54"}], "content": {"size": 54, "mimeType": "application/json", "text": "{\"code\": \"bad_limit\", \"message\": \"limit must be 1-50\"}"}, "redirectURL": "", "headersSize": 130, "bodySize": 54},
+                "timings": {"send": 0, "wait": 0, "receive": 25.7, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:39.697654+00:00",
+                "time": 1.82,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/clinicians?limit=null", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "PMo522"}], "queryString": [{"name": "limit", "value": "null"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 400, "statusText": "Bad Request", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:39 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "54"}], "content": {"size": 54, "mimeType": "application/json", "text": "{\"code\": \"bad_limit\", \"message\": \"limit must be 1-50\"}"}, "redirectURL": "", "headersSize": 130, "bodySize": 54},
+                "timings": {"send": 0, "wait": 0, "receive": 1.82, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:40.023394+00:00",
+                "time": 20.7,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/clinicians?limit=true", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "d7NOSO"}], "queryString": [{"name": "limit", "value": "true"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 400, "statusText": "Bad Request", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:40 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "54"}], "content": {"size": 54, "mimeType": "application/json", "text": "{\"code\": \"bad_limit\", \"message\": \"limit must be 1-50\"}"}, "redirectURL": "", "headersSize": 130, "bodySize": 54},
+                "timings": {"send": 0, "wait": 0, "receive": 20.7, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:40.710939+00:00",
+                "time": 12.84,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/clinicians?limit=0.5", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "XRcgWR"}], "queryString": [{"name": "limit", "value": "0.5"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 400, "statusText": "Bad Request", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:40 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "54"}], "content": {"size": 54, "mimeType": "application/json", "text": "{\"code\": \"bad_limit\", \"message\": \"limit must be 1-50\"}"}, "redirectURL": "", "headersSize": 130, "bodySize": 54},
+                "timings": {"send": 0, "wait": 0, "receive": 12.84, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:40.714255+00:00",
+                "time": 1.75,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/clinicians?limit=10", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "lxl5Ul"}], "queryString": [{"name": "limit", "value": "10"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:40 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "146"}], "content": {"size": 146, "mimeType": "application/json", "text": "[{\"id\": 1, \"name\": \"Dr Test One\", \"specialty\": \"gp\"}, {\"id\": 2, \"name\": \"Dr Test Two\", \"specialty\": \"physio\"}, {\"id\": 3, \"name\": \"Dr Test Three\"}]"}, "redirectURL": "", "headersSize": 131, "bodySize": 146},
+                "timings": {"send": 0, "wait": 0, "receive": 1.75, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:40.741416+00:00",
+                "time": 20.95,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/health", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "QrAAZE"}], "queryString": [], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:40 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "36"}], "content": {"size": 36, "mimeType": "application/json", "text": "{\"status\": \"ok\", \"version\": \"1.5.0\"}"}, "redirectURL": "", "headersSize": 130, "bodySize": 36},
+                "timings": {"send": 0, "wait": 0, "receive": 20.95, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:40.745433+00:00",
+                "time": 2.39,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/health", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Content-Type", "value": "multipart/form-data"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "zEUACL"}], "queryString": [], "headersSize": 205, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:40 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "36"}], "content": {"size": 36, "mimeType": "application/json", "text": "{\"status\": \"ok\", \"version\": \"1.5.0\"}"}, "redirectURL": "", "headersSize": 130, "bodySize": 36},
+                "timings": {"send": 0, "wait": 0, "receive": 2.39, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:41.056413+00:00",
+                "time": 1.78,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/reports/daily?date=2026-11-12", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "X-Schemathesis-TestCaseId", "value": "WrM7MU"}], "queryString": [{"name": "date", "value": "2026-11-12"}], "headersSize": 143, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:41 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "51"}], "content": {"size": 51, "mimeType": "application/json", "text": "{\"date\": \"2026-11-12\", \"booked\": 1, \"cancelled\": 1}"}, "redirectURL": "", "headersSize": 130, "bodySize": 51},
+                "timings": {"send": 0, "wait": 0, "receive": 1.78, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:41.750275+00:00",
+                "time": 1.81,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/clinicians/0", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "kRTKJb"}], "queryString": [], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 404, "statusText": "Not Found", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:41 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "33"}], "content": {"size": 33, "mimeType": "application/json", "text": "{\"detail\": \"clinician not found\"}"}, "redirectURL": "", "headersSize": 130, "bodySize": 33},
+                "timings": {"send": 0, "wait": 0, "receive": 1.81, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:41.762574+00:00",
+                "time": 2.54,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments?clinic_id=1&x-schemathesis-unknown-property=42", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "iyfcLS"}], "queryString": [{"name": "clinic_id", "value": "1"}, {"name": "x-schemathesis-unknown-property", "value": "42"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:41 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "285"}], "content": {"size": 285, "mimeType": "application/json", "text": "[{\"id\": 101, \"clinic_id\": 1, \"clinician_id\": 1, \"date\": \"2026-11-12\", \"time\": \"09:00\", \"status\": \"booked\", \"patient_name\": \"Test Patient A\"}, {\"id\": 102, \"clinic_id\": 1, \"clinician_id\": 2, \"date\": \"2026-11-12\", \"time\": \"10:30\", \"status\": \"cancelled\", \"patient_name\": \"Test Patient B\"}]"}, "redirectURL": "", "headersSize": 131, "bodySize": 285},
+                "timings": {"send": 0, "wait": 0, "receive": 2.54, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:41.765854+00:00",
+                "time": 1.68,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments?clinic_id=0", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "fM44LX"}], "queryString": [{"name": "clinic_id", "value": "0"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:41 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "2"}], "content": {"size": 2, "mimeType": "application/json", "text": "[]"}, "redirectURL": "", "headersSize": 129, "bodySize": 2},
+                "timings": {"send": 0, "wait": 0, "receive": 1.68, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:41.774729+00:00",
+                "time": 1.94,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/slots?clinician_id=3", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "nQLbCs"}], "queryString": [{"name": "clinician_id", "value": "3"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 400, "statusText": "Bad Request", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:41 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "58"}], "content": {"size": 58, "mimeType": "application/json", "text": "{\"code\": \"bad_date\", \"message\": \"date must be YYYY-MM-DD\"}"}, "redirectURL": "", "headersSize": 130, "bodySize": 58},
+                "timings": {"send": 0, "wait": 0, "receive": 1.94, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:42.107075+00:00",
+                "time": 2.06,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/slots?date=2026-11-12", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "k6PKmS"}], "queryString": [{"name": "date", "value": "2026-11-12"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 400, "statusText": "Bad Request", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:42 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "64"}], "content": {"size": 64, "mimeType": "application/json", "text": "{\"code\": \"bad_clinician\", \"message\": \"clinician_id is required\"}"}, "redirectURL": "", "headersSize": 130, "bodySize": 64},
+                "timings": {"send": 0, "wait": 0, "receive": 2.06, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:42.816002+00:00",
+                "time": 16.82,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/slots?clinician_id=3&date=", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "y6OSUN"}], "queryString": [{"name": "clinician_id", "value": "3"}, {"name": "date", "value": ""}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 400, "statusText": "Bad Request", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:42 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "58"}], "content": {"size": 58, "mimeType": "application/json", "text": "{\"code\": \"bad_date\", \"message\": \"date must be YYYY-MM-DD\"}"}, "redirectURL": "", "headersSize": 130, "bodySize": 58},
+                "timings": {"send": 0, "wait": 0, "receive": 16.82, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:42.831229+00:00",
+                "time": 13.69,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/slots?clinician_id=3&date=null&date=null", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "snA8T2"}], "queryString": [{"name": "clinician_id", "value": "3"}, {"name": "date", "value": "null"}, {"name": "date", "value": "null"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 400, "statusText": "Bad Request", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:42 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "58"}], "content": {"size": 58, "mimeType": "application/json", "text": "{\"code\": \"bad_date\", \"message\": \"date must be YYYY-MM-DD\"}"}, "redirectURL": "", "headersSize": 130, "bodySize": 58},
+                "timings": {"send": 0, "wait": 0, "receive": 13.69, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:42.834435+00:00",
+                "time": 1.79,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/slots?clinician_id=3&date=null", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "hqsHjs"}], "queryString": [{"name": "clinician_id", "value": "3"}, {"name": "date", "value": "null"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 503, "statusText": "Service Unavailable", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:42 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "52"}], "content": {"size": 52, "mimeType": "application/json", "text": "{\"code\": \"unavailable\", \"message\": \"Scheduler busy\"}"}, "redirectURL": "", "headersSize": 130, "bodySize": 52},
+                "timings": {"send": 0, "wait": 0, "receive": 1.79, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:42.843810+00:00",
+                "time": 1.88,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments/101", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "X-Schemathesis-TestCaseId", "value": "RPzXf8"}], "queryString": [], "headersSize": 143, "bodySize": 0},
+                "response": {"status": 401, "statusText": "Unauthorized", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:42 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "60"}], "content": {"size": 60, "mimeType": "application/json", "text": "{\"code\": \"unauthorised\", \"message\": \"Bearer token required\"}"}, "redirectURL": "", "headersSize": 130, "bodySize": 60},
+                "timings": {"send": 0, "wait": 0, "receive": 1.88, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:43.157958+00:00",
+                "time": 2.15,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments/0", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "YVwmSg"}], "queryString": [], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 404, "statusText": "Not Found", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:43 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "57"}], "content": {"size": 57, "mimeType": "application/json", "text": "{\"code\": \"not_found\", \"message\": \"appointment not found\"}"}, "redirectURL": "", "headersSize": 130, "bodySize": 57},
+                "timings": {"send": 0, "wait": 0, "receive": 2.15, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:43.852135+00:00",
+                "time": 1.92,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments/%20", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "M1gYQB"}], "queryString": [], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 400, "statusText": "Bad Request", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:43 GMT"}, {"name": "content-type", "value": "text/html; charset=utf-8"}, {"name": "content-length", "value": "65"}], "content": {"size": 65, "mimeType": "text/html; charset=utf-8", "text": "{\"code\": \"bad_id\", \"message\": \"appointmentId must be an integer\"}"}, "redirectURL": "", "headersSize": 138, "bodySize": 65},
+                "timings": {"send": 0, "wait": 0, "receive": 1.92, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:43.884897+00:00",
+                "time": 1.99,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/clinicians", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "JLfxbf"}], "queryString": [], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:43 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "146"}], "content": {"size": 146, "mimeType": "application/json", "text": "[{\"id\": 1, \"name\": \"Dr Test One\", \"specialty\": \"gp\"}, {\"id\": 2, \"name\": \"Dr Test Two\", \"specialty\": \"physio\"}, {\"id\": 3, \"name\": \"Dr Test Three\"}]"}, "redirectURL": "", "headersSize": 131, "bodySize": 146},
+                "timings": {"send": 0, "wait": 0, "receive": 1.99, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:43.897184+00:00",
+                "time": 1.99,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/health", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "HsWYNY"}], "queryString": [], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:43 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "36"}], "content": {"size": 36, "mimeType": "application/json", "text": "{\"status\": \"ok\", \"version\": \"1.5.0\"}"}, "redirectURL": "", "headersSize": 130, "bodySize": 36},
+                "timings": {"send": 0, "wait": 0, "receive": 1.99, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:43.911597+00:00",
+                "time": 2.04,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/reports/daily", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "E70rWe"}], "queryString": [], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:43 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "51"}], "content": {"size": 51, "mimeType": "application/json", "text": "{\"date\": \"2026-11-12\", \"booked\": 1, \"cancelled\": 1}"}, "redirectURL": "", "headersSize": 130, "bodySize": 51},
+                "timings": {"send": 0, "wait": 0, "receive": 2.04, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:44.209207+00:00",
+                "time": 2.19,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/reports/daily", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "X-Schemathesis-TestCaseId", "value": "UrwYr1"}], "queryString": [], "headersSize": 143, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:44 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "51"}], "content": {"size": 51, "mimeType": "application/json", "text": "{\"date\": \"2026-11-12\", \"booked\": 1, \"cancelled\": 1}"}, "redirectURL": "", "headersSize": 130, "bodySize": 51},
+                "timings": {"send": 0, "wait": 0, "receive": 2.19, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:44.921328+00:00",
+                "time": 20.12,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/clinicians/3", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "lXOpsf"}], "queryString": [], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:44 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "34"}, {"name": "x-request-id", "value": "req-0003"}], "content": {"size": 34, "mimeType": "application/json", "text": "{\"id\": 3, \"name\": \"Dr Test Three\"}"}, "redirectURL": "", "headersSize": 154, "bodySize": 34},
+                "timings": {"send": 0, "wait": 0, "receive": 20.12, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:44.945606+00:00",
+                "time": 2.32,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments?clinic_id=2", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "M0UwNh"}], "queryString": [{"name": "clinic_id", "value": "2"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:44 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "2"}], "content": {"size": 2, "mimeType": "application/json", "text": "[]"}, "redirectURL": "", "headersSize": 129, "bodySize": 2},
+                "timings": {"send": 0, "wait": 0, "receive": 2.32, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:44.967004+00:00",
+                "time": 12.25,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments?clinic_id=3&date=5013-11-23", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "Mgeus8"}], "queryString": [{"name": "clinic_id", "value": "3"}, {"name": "date", "value": "5013-11-23"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:44 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "2"}], "content": {"size": 2, "mimeType": "application/json", "text": "[]"}, "redirectURL": "", "headersSize": 129, "bodySize": 2},
+                "timings": {"send": 0, "wait": 0, "receive": 12.25, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:44.974473+00:00",
+                "time": 2.15,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments?clinic_id=1", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "45Xl9j"}], "queryString": [{"name": "clinic_id", "value": "1"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:44 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "285"}], "content": {"size": 285, "mimeType": "application/json", "text": "[{\"id\": 101, \"clinic_id\": 1, \"clinician_id\": 1, \"date\": \"2026-11-12\", \"time\": \"09:00\", \"status\": \"booked\", \"patient_name\": \"Test Patient A\"}, {\"id\": 102, \"clinic_id\": 1, \"clinician_id\": 2, \"date\": \"2026-11-12\", \"time\": \"10:30\", \"status\": \"cancelled\", \"patient_name\": \"Test Patient B\"}]"}, "redirectURL": "", "headersSize": 131, "bodySize": 285},
+                "timings": {"send": 0, "wait": 0, "receive": 2.15, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:45.261534+00:00",
+                "time": 2.96,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments?clinic_id=-343&date=%F2%91%96%92E_%C3%9C%C2%99%00%C2%A9%C3%B4a", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "tX8v7o"}], "queryString": [{"name": "clinic_id", "value": "-343"}, {"name": "date", "value": "\uda05\udd92E_\u00dc\u0099\u0000\u00a9\u00f4a"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 400, "statusText": "Bad Request", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:45 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "61"}], "content": {"size": 61, "mimeType": "application/json", "text": "{\"code\": \"bad_clinic_id\", \"message\": \"clinic_id is required\"}"}, "redirectURL": "", "headersSize": 130, "bodySize": 61},
+                "timings": {"send": 0, "wait": 0, "receive": 2.96, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:45.954203+00:00",
+                "time": 2.03,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments?clinic_id=883529401577578496&date=1154-06-17&%F2%80%95%BA%C3%AER%C2%B0%21%C2%8C%C2%AC=", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "60tpW7"}], "queryString": [{"name": "clinic_id", "value": "883529401577578496"}, {"name": "date", "value": "1154-06-17"}, {"name": "\ud9c1\udd7a\u00eeR\u00b0!\u008c\u00ac", "value": ""}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:45 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "2"}], "content": {"size": 2, "mimeType": "application/json", "text": "[]"}, "redirectURL": "", "headersSize": 129, "bodySize": 2},
+                "timings": {"send": 0, "wait": 0, "receive": 2.03, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:45.964296+00:00",
+                "time": 2.2,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments?clinic_id=2", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "is23nj"}], "queryString": [{"name": "clinic_id", "value": "2"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:45 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "2"}], "content": {"size": 2, "mimeType": "application/json", "text": "[]"}, "redirectURL": "", "headersSize": 129, "bodySize": 2},
+                "timings": {"send": 0, "wait": 0, "receive": 2.2, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:45.971038+00:00",
+                "time": 1.81,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments?date=2026-11-12&clinic_id=1", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "kOjl2d"}], "queryString": [{"name": "date", "value": "2026-11-12"}, {"name": "clinic_id", "value": "1"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:45 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "285"}], "content": {"size": 285, "mimeType": "application/json", "text": "[{\"id\": 101, \"clinic_id\": 1, \"clinician_id\": 1, \"date\": \"2026-11-12\", \"time\": \"09:00\", \"status\": \"booked\", \"patient_name\": \"Test Patient A\"}, {\"id\": 102, \"clinic_id\": 1, \"clinician_id\": 2, \"date\": \"2026-11-12\", \"time\": \"10:30\", \"status\": \"cancelled\", \"patient_name\": \"Test Patient B\"}]"}, "redirectURL": "", "headersSize": 131, "bodySize": 285},
+                "timings": {"send": 0, "wait": 0, "receive": 1.81, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:45.985521+00:00",
+                "time": 1.88,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments?date=0632-03-01&clinic_id=null", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "Mp7d9L"}], "queryString": [{"name": "date", "value": "0632-03-01"}, {"name": "clinic_id", "value": "null"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 400, "statusText": "Bad Request", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:45 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "61"}], "content": {"size": 61, "mimeType": "application/json", "text": "{\"code\": \"bad_clinic_id\", \"message\": \"clinic_id is required\"}"}, "redirectURL": "", "headersSize": 130, "bodySize": 61},
+                "timings": {"send": 0, "wait": 0, "receive": 1.88, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:46.311431+00:00",
+                "time": 2.05,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments?date=2364-05-25&clinic_id=3", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "W7T2E8"}], "queryString": [{"name": "date", "value": "2364-05-25"}, {"name": "clinic_id", "value": "3"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:46 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "2"}], "content": {"size": 2, "mimeType": "application/json", "text": "[]"}, "redirectURL": "", "headersSize": 129, "bodySize": 2},
+                "timings": {"send": 0, "wait": 0, "receive": 2.05, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:47.023659+00:00",
+                "time": 20.23,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments?clinic_id=1&date=2026-11-12", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "uRTaJA"}], "queryString": [{"name": "clinic_id", "value": "1"}, {"name": "date", "value": "2026-11-12"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:47 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "285"}], "content": {"size": 285, "mimeType": "application/json", "text": "[{\"id\": 101, \"clinic_id\": 1, \"clinician_id\": 1, \"date\": \"2026-11-12\", \"time\": \"09:00\", \"status\": \"booked\", \"patient_name\": \"Test Patient A\"}, {\"id\": 102, \"clinic_id\": 1, \"clinician_id\": 2, \"date\": \"2026-11-12\", \"time\": \"10:30\", \"status\": \"cancelled\", \"patient_name\": \"Test Patient B\"}]"}, "redirectURL": "", "headersSize": 131, "bodySize": 285},
+                "timings": {"send": 0, "wait": 0, "receive": 20.23, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:47.037209+00:00",
+                "time": 2.11,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments?clinic_id=25841531", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "K8Y65t"}], "queryString": [{"name": "clinic_id", "value": "25841531"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:47 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "2"}], "content": {"size": 2, "mimeType": "application/json", "text": "[]"}, "redirectURL": "", "headersSize": 129, "bodySize": 2},
+                "timings": {"send": 0, "wait": 0, "receive": 2.11, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:47.046815+00:00",
+                "time": 3.7,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments?clinic_id=25841531&date=2026-11-12", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "wFMY2c"}], "queryString": [{"name": "clinic_id", "value": "25841531"}, {"name": "date", "value": "2026-11-12"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:47 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "2"}], "content": {"size": 2, "mimeType": "application/json", "text": "[]"}, "redirectURL": "", "headersSize": 129, "bodySize": 2},
+                "timings": {"send": 0, "wait": 0, "receive": 3.7, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:47.054999+00:00",
+                "time": 2.27,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments?clinic_id=25841531", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "x8YT6l"}], "queryString": [{"name": "clinic_id", "value": "25841531"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:47 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "2"}], "content": {"size": 2, "mimeType": "application/json", "text": "[]"}, "redirectURL": "", "headersSize": 129, "bodySize": 2},
+                "timings": {"send": 0, "wait": 0, "receive": 2.27, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:47.382471+00:00",
+                "time": 20.94,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments?clinic_id=25841531", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "GB0W9I"}], "queryString": [{"name": "clinic_id", "value": "25841531"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:47 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "2"}], "content": {"size": 2, "mimeType": "application/json", "text": "[]"}, "redirectURL": "", "headersSize": 129, "bodySize": 2},
+                "timings": {"send": 0, "wait": 0, "receive": 20.94, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:48.056180+00:00",
+                "time": 1.94,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments?clinic_id=1", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "mDaOun"}], "queryString": [{"name": "clinic_id", "value": "1"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:48 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "285"}], "content": {"size": 285, "mimeType": "application/json", "text": "[{\"id\": 101, \"clinic_id\": 1, \"clinician_id\": 1, \"date\": \"2026-11-12\", \"time\": \"09:00\", \"status\": \"booked\", \"patient_name\": \"Test Patient A\"}, {\"id\": 102, \"clinic_id\": 1, \"clinician_id\": 2, \"date\": \"2026-11-12\", \"time\": \"10:30\", \"status\": \"cancelled\", \"patient_name\": \"Test Patient B\"}]"}, "redirectURL": "", "headersSize": 131, "bodySize": 285},
+                "timings": {"send": 0, "wait": 0, "receive": 1.94, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:48.075764+00:00",
+                "time": 13.7,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments?clinic_id=25841531&date=2026-11-12", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "dqa0oL"}], "queryString": [{"name": "clinic_id", "value": "25841531"}, {"name": "date", "value": "2026-11-12"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:48 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "2"}], "content": {"size": 2, "mimeType": "application/json", "text": "[]"}, "redirectURL": "", "headersSize": 129, "bodySize": 2},
+                "timings": {"send": 0, "wait": 0, "receive": 13.7, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:48.107832+00:00",
+                "time": 26.24,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments?clinic_id=1", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "W7HsAL"}], "queryString": [{"name": "clinic_id", "value": "1"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:48 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "285"}], "content": {"size": 285, "mimeType": "application/json", "text": "[{\"id\": 101, \"clinic_id\": 1, \"clinician_id\": 1, \"date\": \"2026-11-12\", \"time\": \"09:00\", \"status\": \"booked\", \"patient_name\": \"Test Patient A\"}, {\"id\": 102, \"clinic_id\": 1, \"clinician_id\": 2, \"date\": \"2026-11-12\", \"time\": \"10:30\", \"status\": \"cancelled\", \"patient_name\": \"Test Patient B\"}]"}, "redirectURL": "", "headersSize": 131, "bodySize": 285},
+                "timings": {"send": 0, "wait": 0, "receive": 26.24, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:48.139658+00:00",
+                "time": 26.53,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments?clinic_id=1&date=2026-11-12", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "gAmhhA"}], "queryString": [{"name": "clinic_id", "value": "1"}, {"name": "date", "value": "2026-11-12"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:48 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "285"}], "content": {"size": 285, "mimeType": "application/json", "text": "[{\"id\": 101, \"clinic_id\": 1, \"clinician_id\": 1, \"date\": \"2026-11-12\", \"time\": \"09:00\", \"status\": \"booked\", \"patient_name\": \"Test Patient A\"}, {\"id\": 102, \"clinic_id\": 1, \"clinician_id\": 2, \"date\": \"2026-11-12\", \"time\": \"10:30\", \"status\": \"cancelled\", \"patient_name\": \"Test Patient B\"}]"}, "redirectURL": "", "headersSize": 131, "bodySize": 285},
+                "timings": {"send": 0, "wait": 0, "receive": 26.53, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:48.434664+00:00",
+                "time": 22.88,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments?clinic_id=25841531", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "PbO71q"}], "queryString": [{"name": "clinic_id", "value": "25841531"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:48 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "2"}], "content": {"size": 2, "mimeType": "application/json", "text": "[]"}, "redirectURL": "", "headersSize": 129, "bodySize": 2},
+                "timings": {"send": 0, "wait": 0, "receive": 22.88, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:49.119999+00:00",
+                "time": 14.38,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments?clinic_id=25841531", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "i7LPxM"}], "queryString": [{"name": "clinic_id", "value": "25841531"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:49 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "2"}], "content": {"size": 2, "mimeType": "application/json", "text": "[]"}, "redirectURL": "", "headersSize": 129, "bodySize": 2},
+                "timings": {"send": 0, "wait": 0, "receive": 14.38, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:49.139193+00:00",
+                "time": 1.74,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/slots?clinician_id=1&date=2026-11-12", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "eZi9r2"}], "queryString": [{"name": "clinician_id", "value": "1"}, {"name": "date", "value": "2026-11-12"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:49 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "133"}], "content": {"size": 133, "mimeType": "application/json", "text": "[{\"time\": \"09:00\", \"free\": false}, {\"time\": \"09:30\", \"free\": true}, {\"time\": \"10:00\", \"free\": true}, {\"time\": \"10:30\", \"free\": true}]"}, "redirectURL": "", "headersSize": 131, "bodySize": 133},
+                "timings": {"send": 0, "wait": 0, "receive": 1.74, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:49.162462+00:00",
+                "time": 2.6,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/slots?date=1001-06-17&clinician_id=3", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "VYgasZ"}], "queryString": [{"name": "date", "value": "1001-06-17"}, {"name": "clinician_id", "value": "3"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:49 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "132"}], "content": {"size": 132, "mimeType": "application/json", "text": "[{\"time\": \"09:00\", \"free\": true}, {\"time\": \"09:30\", \"free\": true}, {\"time\": \"10:00\", \"free\": true}, {\"time\": \"10:30\", \"free\": true}]"}, "redirectURL": "", "headersSize": 131, "bodySize": 132},
+                "timings": {"send": 0, "wait": 0, "receive": 2.6, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:49.169737+00:00",
+                "time": 1.94,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/slots?clinician_id=1&date=2026-11-12", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "7Ntneb"}], "queryString": [{"name": "clinician_id", "value": "1"}, {"name": "date", "value": "2026-11-12"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:49 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "133"}], "content": {"size": 133, "mimeType": "application/json", "text": "[{\"time\": \"09:00\", \"free\": false}, {\"time\": \"09:30\", \"free\": true}, {\"time\": \"10:00\", \"free\": true}, {\"time\": \"10:30\", \"free\": true}]"}, "redirectURL": "", "headersSize": 131, "bodySize": 133},
+                "timings": {"send": 0, "wait": 0, "receive": 1.94, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:49.464814+00:00",
+                "time": 2.69,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/slots?date=2026-11-12&clinician_id=1", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "13CHtl"}], "queryString": [{"name": "date", "value": "2026-11-12"}, {"name": "clinician_id", "value": "1"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:49 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "133"}], "content": {"size": 133, "mimeType": "application/json", "text": "[{\"time\": \"09:00\", \"free\": false}, {\"time\": \"09:30\", \"free\": true}, {\"time\": \"10:00\", \"free\": true}, {\"time\": \"10:30\", \"free\": true}]"}, "redirectURL": "", "headersSize": 131, "bodySize": 133},
+                "timings": {"send": 0, "wait": 0, "receive": 2.69, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:50.158803+00:00",
+                "time": 1.83,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/slots?clinician_id=65091&date=%C2%B7%F3%9A%84%BC", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "aZ9LRc"}], "queryString": [{"name": "clinician_id", "value": "65091"}, {"name": "date", "value": "\u00b7\udb28\udd3c"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 400, "statusText": "Bad Request", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:50 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "58"}], "content": {"size": 58, "mimeType": "application/json", "text": "{\"code\": \"bad_date\", \"message\": \"date must be YYYY-MM-DD\"}"}, "redirectURL": "", "headersSize": 130, "bodySize": 58},
+                "timings": {"send": 0, "wait": 0, "receive": 1.83, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:50.186561+00:00",
+                "time": 20.55,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/slots?clinician_id=260&date=0052-04-21", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "BvTj1B"}], "queryString": [{"name": "clinician_id", "value": "260"}, {"name": "date", "value": "0052-04-21"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:50 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "132"}], "content": {"size": 132, "mimeType": "application/json", "text": "[{\"time\": \"09:00\", \"free\": true}, {\"time\": \"09:30\", \"free\": true}, {\"time\": \"10:00\", \"free\": true}, {\"time\": \"10:30\", \"free\": true}]"}, "redirectURL": "", "headersSize": 131, "bodySize": 132},
+                "timings": {"send": 0, "wait": 0, "receive": 20.55, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:50.195956+00:00",
+                "time": 2.48,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/slots?clinician_id=2&date=2026-11-12", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "TVmC2D"}], "queryString": [{"name": "clinician_id", "value": "2"}, {"name": "date", "value": "2026-11-12"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 200, "statusText": "OK", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:50 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "133"}], "content": {"size": 133, "mimeType": "application/json", "text": "[{\"time\": \"09:00\", \"free\": true}, {\"time\": \"09:30\", \"free\": true}, {\"time\": \"10:00\", \"free\": true}, {\"time\": \"10:30\", \"free\": false}]"}, "redirectURL": "", "headersSize": 131, "bodySize": 133},
+                "timings": {"send": 0, "wait": 0, "receive": 2.48, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:50.203089+00:00",
+                "time": 1.91,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/slots?date=2026-11-12&clinician_id=1", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "5f1STc"}], "queryString": [{"name": "date", "value": "2026-11-12"}, {"name": "clinician_id", "value": "1"}], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 503, "statusText": "Service Unavailable", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:50 GMT"}, {"name": "content-type", "value": "application/json"}, {"name": "content-length", "value": "52"}], "content": {"size": 52, "mimeType": "application/json", "text": "{\"code\": \"unavailable\", \"message\": \"Scheduler busy\"}"}, "redirectURL": "", "headersSize": 130, "bodySize": 52},
+                "timings": {"send": 0, "wait": 0, "receive": 1.91, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            },
+            {
+                "startedDateTime": "2026-11-11T07:50:50.515382+00:00",
+                "time": 1.97,
+                "request": {"method": "GET", "url": "http://127.0.0.1:8140/appointments/null", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "User-Agent", "value": "schemathesis/4.33.2"}, {"name": "Accept-Encoding", "value": "gzip, deflate, zstd"}, {"name": "Accept", "value": "*/*"}, {"name": "Connection", "value": "keep-alive"}, {"name": "Authorization", "value": "[Filtered]"}, {"name": "X-Schemathesis-TestCaseId", "value": "kKbhK1"}], "queryString": [], "headersSize": 170, "bodySize": 0},
+                "response": {"status": 400, "statusText": "Bad Request", "httpVersion": "HTTP/1.0", "cookies": [], "headers": [{"name": "server", "value": "clinic-api/1.5.0 Python/3.14.10"}, {"name": "date", "value": "Wed, 11 Nov 2026 07:50:50 GMT"}, {"name": "content-type", "value": "text/html; charset=utf-8"}, {"name": "content-length", "value": "65"}], "content": {"size": 65, "mimeType": "text/html; charset=utf-8", "text": "{\"code\": \"bad_id\", \"message\": \"appointmentId must be an integer\"}"}, "redirectURL": "", "headersSize": 138, "bodySize": 65},
+                "timings": {"send": 0, "wait": 0, "receive": 1.97, "blocked": 0, "dns": 0, "connect": 0, "ssl": 0},
+                "cache": {}
+            }
+        ]
+    }
+}

@@ -8,7 +8,7 @@ export CLINIC_TOKEN=fake-clinic-token          # the sample API's token; obvious
 ST=${ST:-st}
 R=examples/run
 G=examples/run-graphql
-start_server() { python examples/clinic-api/server.py --port 8140 > /dev/null 2>&1 & SERVER=$!; sleep 1; }
+start_server() { python examples/clinic-api/server.py --port 8140 > /dev/null 2>&1 & SERVER=$!; sleep 1; kill -0 $SERVER || { echo "server did not start (port 8140 in use?)"; exit 1; }; }
 stop_server() { kill $SERVER 2>/dev/null || true; sleep 1; }
 
 python scripts/load_contract.py examples/clinic-api/openapi.yaml --out $R/contract.json

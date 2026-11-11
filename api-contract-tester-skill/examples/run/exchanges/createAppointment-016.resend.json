@@ -25,14 +25,14 @@
     "status": 201,
     "headers": {
       "Server": "clinic-api/1.5.0 Python/3.14.10",
-      "Date": "Wed, 11 Nov 2026 07:20:25 GMT",
+      "Date": "Wed, 11 Nov 2026 07:51:23 GMT",
       "Content-Type": "application/json",
       "Content-Length": "139",
-      "Location": "/appointments/116"
+      "Location": "/appointments/109"
     },
     "body": {
       "json": {
-        "id": 116,
+        "id": 109,
         "clinic_id": 1,
         "clinician_id": 1,
         "date": "2026-11-13",
@@ -40,7 +40,7 @@
         "status": "booked",
         "patient_name": "Test Patient C"
       },
-      "sha256": "bb2afba1577c5612b64aa65b796864858348b23dc753f44646b287a04bb3ee6c",
+      "sha256": "de5e3ebf581225c690d113adbcf1785bf6804e76b38c75553d482a2583fdee8e",
       "truncated": false,
       "bytes": 139
     }

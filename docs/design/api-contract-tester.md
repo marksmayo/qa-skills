@@ -248,6 +248,11 @@ Where the build differs from the design above, and what the example showed.
     the seeded sample had missed, reproduced with an added case.
   - 27 contract changes against 1.4.0: 10 breaking, 1 potentially breaking.
   - GraphQL: 2 findings and the served-schema mismatch.
+- **The example servers refuse a port that is in use.** On Windows, Python's `HTTPServer` sets
+  `SO_REUSEADDR`, which lets a second server bind a busy port while the first keeps answering. The
+  first published run of this example reached a server left over from trial runs (its appointment
+  ids showed it); it was rerun against a fresh server with the same findings, and `server.py` now
+  refuses a busy port while `commands.sh` checks the server started.
 - **Testing:** 36 of 36 seeded report violations are caught. The sender refuses a non-loopback
   host without `authorised_by` and writes without authorisation or to a production host, blocks
   every write case in safe mode, and backs off on 429.

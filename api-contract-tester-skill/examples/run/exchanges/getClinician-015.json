@@ -18,7 +18,7 @@
     "status": 200,
     "headers": {
       "Server": "clinic-api/1.5.0 Python/3.14.10",
-      "Date": "Wed, 11 Nov 2026 07:20:20 GMT",
+      "Date": "Wed, 11 Nov 2026 07:51:19 GMT",
       "Content-Type": "application/json",
       "Content-Length": "34",
       "X-Request-Id": "req-0003"
@@ -33,7 +33,7 @@
       "bytes": 34
     }
   },
-  "elapsed_ms": 22,
+  "elapsed_ms": 2,
   "failed_checks": [
     "schema_conformance"
   ]

@@ -2,8 +2,8 @@
   "schemathesis_version": "4.33.2",
   "command": "st --config-file examples\\run\\schemathesis\\safe-mode.schemathesis.toml run examples/clinic-api/openapi.yaml --url http://127.0.0.1:8140 --checks all -w 1 -n 20 --rate-limit 5/s --report json,junit,har --report-dir examples\\run\\schemathesis --output-sanitize true --seed 1611 --include-method-regex ^(GET|HEAD|OPTIONS)$ --exclude-checks unsupported_method,use_after_free,ensure_resource_availability,object_level_authorization --phases examples,coverage,fuzzing --exclude-operation-id cancelAppointment -H Authorization: [Filtered]",
   "seed": 1611,
-  "started_at": "2026-11-11T07:19:35.293720+00:00",
-  "running_time": 16.90643530001398,
+  "started_at": "2026-11-11T07:50:33.585914+00:00",
+  "running_time": 16.937125399999786,
   "stop_reason": "completed",
   "complete": true,
   "exit_code": 1,
@@ -191,7 +191,7 @@
         "rejected": 0
       },
       "fuzzing": {
-        "accepted": 19,
+        "accepted": 17,
         "unreachable": 0,
         "conflicts": 0,
         "rejected": 0
@@ -205,7 +205,7 @@
         "rejected": 0
       },
       "fuzzing": {
-        "accepted": 7,
+        "accepted": 6,
         "unreachable": 0,
         "conflicts": 0,
         "rejected": 0

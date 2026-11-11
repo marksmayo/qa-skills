@@ -8,7 +8,7 @@ README.md. Stdlib only; all data is invented and lives in memory. The bearer tok
 CLINIC_TOKEN environment variable (default "fake-clinic-token").
 """
 from __future__ import annotations
-import argparse, datetime as dt, json, os, re, threading, time
+import argparse, datetime as dt, json, os, re, sys, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
@@ -311,11 +311,17 @@ INTROSPECTION = {
 }
 
 
+class Server(ThreadingHTTPServer):
+    # On Windows, SO_REUSEADDR lets a second server bind a port that is already in use, and requests then
+    # reach whichever bound first. Refuse instead, so a stale server can never answer for this one.
+    allow_reuse_address = sys.platform != 'win32'
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument('--port', type=int, default=8140)
     args = ap.parse_args()
-    httpd = ThreadingHTTPServer(('127.0.0.1', args.port), Handler)
+    httpd = Server(('127.0.0.1', args.port), Handler)
     print(f'clinic-api {VERSION} on http://127.0.0.1:{args.port}', flush=True)
     try:
         httpd.serve_forever()

@@ -30,7 +30,7 @@
     "max_cases_per_operation": 50
   },
   "metadata": {
-    "generated_at": "2026-11-11T07:20:26Z",
+    "generated_at": "2026-11-11T07:51:24Z",
     "tools": [
       {
         "name": "gen_cases.py (stdlib generator)",
