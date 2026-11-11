@@ -282,11 +282,43 @@ def match_paren(text: str, i: int) -> int:
     return n - 1
 
 
+def js_mask(text: str) -> str:
+    """The text with comments and string contents blanked (quotes and newlines kept, offsets unchanged), so a call
+    pattern can't match words in a comment ("before each test (order matters)") or inside a string."""
+    out, i, n = list(text), 0, len(text)
+
+    def blank(a: int, b: int):
+        for k in range(a, b):
+            if out[k] != '\n':
+                out[k] = ' '
+    while i < n:
+        if text.startswith('//', i):
+            j = text.find('\n', i)
+            j = n if j < 0 else j
+            blank(i, j)
+            i = j
+        elif text.startswith('/*', i):
+            j = text.find('*/', i + 2)
+            j = n if j < 0 else j + 2
+            blank(i, j)
+            i = j
+        elif text[i] in '"\'`':
+            q, j = text[i], i + 1
+            while j < n and text[j] != q:
+                j += 2 if text[j] == '\\' else 1
+            blank(i + 1, min(j, n))
+            i = j + 1
+        else:
+            i += 1
+    return ''.join(out)
+
+
 def js_scan(root: Path, rel: str, pkg: str, add, defs):
     text = (root / rel).read_text(encoding='utf-8', errors='replace')
+    code = js_mask(text)                                    # calls are found in code; names are read from the text
     line_of = lambda pos: text.count('\n', 0, pos) + 1  # noqa: E731
     blocks = []                                             # (start, end, name) of describe blocks
-    for m in re.finditer(JS['describe_call'], text):
+    for m in re.finditer(JS['describe_call'], code):
         open_i = m.end() - 1
         close = match_paren(text, open_i)
         nm = re.match(r'\s*["\'`]([^"\'`]*)["\'`]', text[open_i + 1:])
@@ -296,7 +328,7 @@ def js_scan(root: Path, rel: str, pkg: str, add, defs):
                 'other test in the file', {'marker': 'describe.only'})
         if m.group(3) == 'skip':
             add('skipped', 'describe.skip', [f'{rel}::*'], line_of(m.start()), 'describe.skip skips the whole block', {'kind': 'describe.skip'})
-    for m in re.finditer(JS['test_call'], text):
+    for m in re.finditer(JS['test_call'], code):
         open_i = m.end() - 1
         close = match_paren(text, open_i)
         call = text[open_i + 1:close]

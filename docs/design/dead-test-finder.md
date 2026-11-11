@@ -252,6 +252,11 @@ Where the build differs from the design above, and what the example showed.
     becoming a can't-fail, as the design's answer key assumed.
   - **The five strengthening and un-skip patches** are all proved. The merge and the deletion
     are only proposed.
+- **Found on a real repository, and fixed:** the JavaScript scan matched `it(`, `test(` and `describe(` in
+  comments and strings, so the comment "before each test (order matters ...)" inside a `beforeEach` became
+  a test with no assertion. Calls are now found in the source with comments and string contents blanked
+  (names are still read from the original), and a call on an object (`regex.test(`, `obj.it(`) doesn't
+  count.
 - **Testing:**
   - The validator catches 31 of 31 seeded violations.
   - 18 scanner, similarity and skip scenarios pass:
