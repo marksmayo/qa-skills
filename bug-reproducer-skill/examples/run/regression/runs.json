@@ -1,0 +1,66 @@
+{
+  "runs": [
+    {
+      "id": "R-1",
+      "command": "node --test --test-reporter=junit --test-reporter-destination=junit/R-1.xml tests/due_today_timezone.test.mjs",
+      "exit_code": 1,
+      "junit_paths": [
+        "junit/R-1.xml"
+      ],
+      "started_at": "2026-11-11T05:01:27Z",
+      "totals": {
+        "tests": 2,
+        "passed": 0,
+        "failed": 2,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {},
+      "notes": [],
+      "duration_s": 0.116,
+      "timed_out": false,
+      "label": "TASK-11 regression test, red",
+      "preset": "custom",
+      "tests_selected": [],
+      "variation": {
+        "order": "given",
+        "seed": null,
+        "hash_seed": null,
+        "workers": null,
+        "tz": null,
+        "tz_applied": null,
+        "locale": null,
+        "cpu_load": 0,
+        "isolate": false,
+        "env": {}
+      },
+      "code_hash": "8752a5b20ce332e2c61e67022825f24b802252b7c8f02061a7edf7537d96ebb3"
+    }
+  ],
+  "cases": [
+    {
+      "run_id": "R-1",
+      "id": "test::TASK-11: at 8am in Sydney, a task due today is due today",
+      "name": "TASK-11: at 8am in Sydney, a task due today is due today",
+      "classname": "test",
+      "file": "~/Github/qa-skills/bug-reproducer-skill/examples/tasklist/tests/due_today_timezone.test.mjs",
+      "status": "failed",
+      "failure_type": "assertion",
+      "signals": [],
+      "message_excerpt": "testCodeFailure: Expected values to be strictly equal:\n\nfalse !== true\n\n[Error [ERR_TEST_FAILURE]: Expected values to be strictly equal:\n\nfalse !== true\n] {\n  code: 'ERR_TEST_FAILURE',\n  failureType: 'testCodeFailure',\n  cause: AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n  \n  false !== true\n  \n      at TestContext.<anonymous> (file:///~/Github/qa-skills/bug-reproducer-skill/examples/tasklist/tests/due_today_timezone.test.mjs:10:10)\n      at Test.runInAsyncScope (node:async_hooks:226:14)\n      at Test.run (node:internal/test_runner/test:1402:25)\n      at Test.start (no …",
+      "time": 0.001341
+    },
+    {
+      "run_id": "R-1",
+      "id": "test::TASK-11: at 8am in Sydney, a task due yesterday is not due today",
+      "name": "TASK-11: at 8am in Sydney, a task due yesterday is not due today",
+      "classname": "test",
+      "file": "~/Github/qa-skills/bug-reproducer-skill/examples/tasklist/tests/due_today_timezone.test.mjs",
+      "status": "failed",
+      "failure_type": "assertion",
+      "signals": [],
+      "message_excerpt": "testCodeFailure: Expected values to be strictly equal:\n\ntrue !== false\n\n[Error [ERR_TEST_FAILURE]: Expected values to be strictly equal:\n\ntrue !== false\n] {\n  code: 'ERR_TEST_FAILURE',\n  failureType: 'testCodeFailure',\n  cause: AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n  \n  true !== false\n  \n      at TestContext.<anonymous> (file:///~/Github/qa-skills/bug-reproducer-skill/examples/tasklist/tests/due_today_timezone.test.mjs:15:10)\n      at Test.runInAsyncScope (node:async_hooks:226:14)\n      at Test.run (node:internal/test_runner/test:1402:25)\n      at Test.processPe …",
+      "time": 0.000214
+    }
+  ]
+}

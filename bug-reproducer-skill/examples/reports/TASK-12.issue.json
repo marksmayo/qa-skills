@@ -1,0 +1,73 @@
+{
+  "key": "TASK-12",
+  "fields": {
+    "summary": "Double-click Add creates two tasks",
+    "issuetype": {
+      "name": "Bug"
+    },
+    "status": {
+      "name": "Open",
+      "statusCategory": {
+        "key": "new"
+      }
+    },
+    "priority": {
+      "name": "Minor"
+    },
+    "labels": [
+      "tasks"
+    ],
+    "components": [
+      {
+        "name": "tasks"
+      }
+    ],
+    "fixVersions": [],
+    "description": {
+      "type": "doc",
+      "version": 1,
+      "content": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "Version: 1.2.0. Browser: Firefox."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "Steps: 1. Type \"Buy milk\" in Task. 2. Double-click Add."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "Expected: one \"Buy milk\" task."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "Actual: two identical \"Buy milk\" tasks appear. Not every time, but most times when I double-click quickly."
+            }
+          ]
+        }
+      ]
+    },
+    "comment": {
+      "comments": [],
+      "total": 0
+    }
+  }
+}

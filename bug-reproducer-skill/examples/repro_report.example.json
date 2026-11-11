@@ -1,0 +1,3540 @@
+{
+  "batch": {
+    "generated": "2026-11-11T05:20:00Z",
+    "source": "examples/reports/TASK-11..15.issue.json via fetch_ticket.py --from-file",
+    "reports_reviewed": 5
+  },
+  "reports": [
+    {
+      "key": "TASK-11",
+      "headline": "Reproduced 3 of 3 on 1.2.0: at 08:00 Sydney time, \"Due today\" lists the task due yesterday and hides the one due today. At 15:00 Sydney and in UTC it is right (6 of 6 without the failure).",
+      "metadata": {
+        "report": {
+          "key": "TASK-11",
+          "source": "connector",
+          "url": null,
+          "content_sha256": "c8b227e254c0dc00d5cf58caa593480936a8d2dc073ec08e887b2b46aca035ca",
+          "summary": "Due today shows yesterday's tasks"
+        },
+        "target": {
+          "url": "http://127.0.0.1:8141/",
+          "build": "examples/tasklist served by python -m http.server on 127.0.0.1:8141",
+          "version_stated": "1.2.0",
+          "versions_observed": [
+            "1.2.0"
+          ],
+          "authorised_by": null
+        },
+        "browsers": [
+          {
+            "name": "chromium",
+            "version": "158.0.8127.18"
+          }
+        ],
+        "tools": [
+          {
+            "name": "playwright (python)",
+            "version": "1.65.0",
+            "status": "ran"
+          },
+          {
+            "name": "node --test (via run_tests.py)",
+            "version": "v26.12.1",
+            "status": "ran"
+          },
+          {
+            "name": "git log",
+            "version": null,
+            "status": "ran",
+            "note": "no commits touch the localised files: the example app has no history of its own"
+          },
+          {
+            "name": "maestro",
+            "version": null,
+            "status": "not_run",
+            "note": "no mobile report to reproduce"
+          }
+        ],
+        "config": {
+          "attempts": 3,
+          "write_regression_test": "on",
+          "duplicate_search": "on",
+          "allow_form_submission": false
+        },
+        "generated": "2026-11-11T05:20:00Z"
+      },
+      "triage": {
+        "fields_present": [
+          "summary",
+          "steps",
+          "expected",
+          "actual",
+          "environment",
+          "version",
+          "frequency"
+        ],
+        "fields_missing": [],
+        "questions": [],
+        "suspicious_instructions_ignored": []
+      },
+      "signature": {
+        "raw_excerpt": "\"Pay the water bill (due 2026-11-11)\"",
+        "normalised": "pay the water bill due DATE",
+        "failure_checks": {
+          "all": [
+            {
+              "text_contains": "#tasks",
+              "text": "Pay the water bill"
+            },
+            {
+              "text_missing": "#tasks",
+              "text": "Book the car service"
+            }
+          ]
+        },
+        "basis": "report_text"
+      },
+      "attempts": [
+        {
+          "id": "A1-1",
+          "candidate": "A1",
+          "label": "as reported: Sydney, morning",
+          "variation": null,
+          "channel": "browser",
+          "browser": "chromium",
+          "browser_version": "158.0.8127.18",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": "Australia/Sydney",
+            "locale": "en-AU",
+            "clock": "2026-11-12T08:00:00+11:00",
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "click": "#filter-all"
+            },
+            {
+              "click": "#filter-today"
+            }
+          ],
+          "assumptions": [
+            "'In the morning' taken as 08:00 Sydney time (AEDT, UTC+11), on 12 November 2026.",
+            "Fresh browser profile, so the list holds the app's three seeded tasks: due yesterday, today and tomorrow, relative to the page clock.",
+            "The report's due-yesterday task is the seeded 'Pay the water bill'; its due-today task is 'Book the car service'.",
+            "The reporter starts on the default All view, then clicks Due today."
+          ],
+          "started": "2026-11-11T04:56:26Z",
+          "observed": {
+            "#tasks": "Pay the water bill (due 2026-11-11)"
+          },
+          "result": "matched",
+          "observed_signature": "#tasks contains \"Pay the water bill\"; #tasks does not contain \"Book the car service\"",
+          "checks": "#tasks contains \"Pay the water bill\"; #tasks does not contain \"Book the car service\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1720,
+          "artifacts": [
+            "run/artifacts/TASK-11/A1-1/screenshot.png",
+            "run/artifacts/TASK-11/A1-1/console.json",
+            "run/artifacts/TASK-11/A1-1/trace.zip"
+          ]
+        },
+        {
+          "id": "A1-2",
+          "candidate": "A1",
+          "label": "as reported: Sydney, morning",
+          "variation": null,
+          "channel": "browser",
+          "browser": "chromium",
+          "browser_version": "158.0.8127.18",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": "Australia/Sydney",
+            "locale": "en-AU",
+            "clock": "2026-11-12T08:00:00+11:00",
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "click": "#filter-all"
+            },
+            {
+              "click": "#filter-today"
+            }
+          ],
+          "assumptions": [
+            "'In the morning' taken as 08:00 Sydney time (AEDT, UTC+11), on 12 November 2026.",
+            "Fresh browser profile, so the list holds the app's three seeded tasks: due yesterday, today and tomorrow, relative to the page clock.",
+            "The report's due-yesterday task is the seeded 'Pay the water bill'; its due-today task is 'Book the car service'.",
+            "The reporter starts on the default All view, then clicks Due today."
+          ],
+          "started": "2026-11-11T04:56:28Z",
+          "observed": {
+            "#tasks": "Pay the water bill (due 2026-11-11)"
+          },
+          "result": "matched",
+          "observed_signature": "#tasks contains \"Pay the water bill\"; #tasks does not contain \"Book the car service\"",
+          "checks": "#tasks contains \"Pay the water bill\"; #tasks does not contain \"Book the car service\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1353,
+          "artifacts": [
+            "run/artifacts/TASK-11/A1-2/screenshot.png",
+            "run/artifacts/TASK-11/A1-2/console.json"
+          ]
+        },
+        {
+          "id": "A1-3",
+          "candidate": "A1",
+          "label": "as reported: Sydney, morning",
+          "variation": null,
+          "channel": "browser",
+          "browser": "chromium",
+          "browser_version": "158.0.8127.18",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": "Australia/Sydney",
+            "locale": "en-AU",
+            "clock": "2026-11-12T08:00:00+11:00",
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "click": "#filter-all"
+            },
+            {
+              "click": "#filter-today"
+            }
+          ],
+          "assumptions": [
+            "'In the morning' taken as 08:00 Sydney time (AEDT, UTC+11), on 12 November 2026.",
+            "Fresh browser profile, so the list holds the app's three seeded tasks: due yesterday, today and tomorrow, relative to the page clock.",
+            "The report's due-yesterday task is the seeded 'Pay the water bill'; its due-today task is 'Book the car service'.",
+            "The reporter starts on the default All view, then clicks Due today."
+          ],
+          "started": "2026-11-11T04:56:29Z",
+          "observed": {
+            "#tasks": "Pay the water bill (due 2026-11-11)"
+          },
+          "result": "matched",
+          "observed_signature": "#tasks contains \"Pay the water bill\"; #tasks does not contain \"Book the car service\"",
+          "checks": "#tasks contains \"Pay the water bill\"; #tasks does not contain \"Book the car service\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1348,
+          "artifacts": [
+            "run/artifacts/TASK-11/A1-3/screenshot.png",
+            "run/artifacts/TASK-11/A1-3/console.json"
+          ]
+        },
+        {
+          "id": "V1-1",
+          "candidate": "V1",
+          "label": "variation: Sydney, afternoon",
+          "variation": "clock 15:00 Sydney (after UTC midnight)",
+          "channel": "browser",
+          "browser": "chromium",
+          "browser_version": "158.0.8127.18",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": "Australia/Sydney",
+            "locale": "en-AU",
+            "clock": "2026-11-12T15:00:00+11:00",
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "click": "#filter-all"
+            },
+            {
+              "click": "#filter-today"
+            }
+          ],
+          "assumptions": [
+            "The report says the filter is right again in the afternoon; 15:00 Sydney is 04:00 UTC the same day."
+          ],
+          "started": "2026-11-11T04:56:31Z",
+          "observed": {
+            "#tasks": "Book the car service (due 2026-11-12)"
+          },
+          "result": "no_failure",
+          "observed_signature": null,
+          "checks": "#tasks does not contain \"Pay the water bill\"; #tasks contains \"Book the car service\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1397,
+          "artifacts": [
+            "run/artifacts/TASK-11/V1-1/screenshot.png",
+            "run/artifacts/TASK-11/V1-1/console.json",
+            "run/artifacts/TASK-11/V1-1/trace.zip"
+          ]
+        },
+        {
+          "id": "V1-2",
+          "candidate": "V1",
+          "label": "variation: Sydney, afternoon",
+          "variation": "clock 15:00 Sydney (after UTC midnight)",
+          "channel": "browser",
+          "browser": "chromium",
+          "browser_version": "158.0.8127.18",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": "Australia/Sydney",
+            "locale": "en-AU",
+            "clock": "2026-11-12T15:00:00+11:00",
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "click": "#filter-all"
+            },
+            {
+              "click": "#filter-today"
+            }
+          ],
+          "assumptions": [
+            "The report says the filter is right again in the afternoon; 15:00 Sydney is 04:00 UTC the same day."
+          ],
+          "started": "2026-11-11T04:56:33Z",
+          "observed": {
+            "#tasks": "Book the car service (due 2026-11-12)"
+          },
+          "result": "no_failure",
+          "observed_signature": null,
+          "checks": "#tasks does not contain \"Pay the water bill\"; #tasks contains \"Book the car service\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1312,
+          "artifacts": [
+            "run/artifacts/TASK-11/V1-2/screenshot.png",
+            "run/artifacts/TASK-11/V1-2/console.json"
+          ]
+        },
+        {
+          "id": "V1-3",
+          "candidate": "V1",
+          "label": "variation: Sydney, afternoon",
+          "variation": "clock 15:00 Sydney (after UTC midnight)",
+          "channel": "browser",
+          "browser": "chromium",
+          "browser_version": "158.0.8127.18",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": "Australia/Sydney",
+            "locale": "en-AU",
+            "clock": "2026-11-12T15:00:00+11:00",
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "click": "#filter-all"
+            },
+            {
+              "click": "#filter-today"
+            }
+          ],
+          "assumptions": [
+            "The report says the filter is right again in the afternoon; 15:00 Sydney is 04:00 UTC the same day."
+          ],
+          "started": "2026-11-11T04:56:34Z",
+          "observed": {
+            "#tasks": "Book the car service (due 2026-11-12)"
+          },
+          "result": "no_failure",
+          "observed_signature": null,
+          "checks": "#tasks does not contain \"Pay the water bill\"; #tasks contains \"Book the car service\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1262,
+          "artifacts": [
+            "run/artifacts/TASK-11/V1-3/screenshot.png",
+            "run/artifacts/TASK-11/V1-3/console.json"
+          ]
+        },
+        {
+          "id": "V2-1",
+          "candidate": "V2",
+          "label": "variation: UTC, morning",
+          "variation": "timezone UTC",
+          "channel": "browser",
+          "browser": "chromium",
+          "browser_version": "158.0.8127.18",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": "UTC",
+            "locale": "en-GB",
+            "clock": "2026-11-12T08:00:00Z",
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "click": "#filter-all"
+            },
+            {
+              "click": "#filter-today"
+            }
+          ],
+          "assumptions": [
+            "A user whose local time zone is UTC, as a control."
+          ],
+          "started": "2026-11-11T04:56:36Z",
+          "observed": {
+            "#tasks": "Book the car service (due 2026-11-12)"
+          },
+          "result": "no_failure",
+          "observed_signature": null,
+          "checks": "#tasks does not contain \"Pay the water bill\"; #tasks contains \"Book the car service\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1408,
+          "artifacts": [
+            "run/artifacts/TASK-11/V2-1/screenshot.png",
+            "run/artifacts/TASK-11/V2-1/console.json",
+            "run/artifacts/TASK-11/V2-1/trace.zip"
+          ]
+        },
+        {
+          "id": "V2-2",
+          "candidate": "V2",
+          "label": "variation: UTC, morning",
+          "variation": "timezone UTC",
+          "channel": "browser",
+          "browser": "chromium",
+          "browser_version": "158.0.8127.18",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": "UTC",
+            "locale": "en-GB",
+            "clock": "2026-11-12T08:00:00Z",
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "click": "#filter-all"
+            },
+            {
+              "click": "#filter-today"
+            }
+          ],
+          "assumptions": [
+            "A user whose local time zone is UTC, as a control."
+          ],
+          "started": "2026-11-11T04:56:38Z",
+          "observed": {
+            "#tasks": "Book the car service (due 2026-11-12)"
+          },
+          "result": "no_failure",
+          "observed_signature": null,
+          "checks": "#tasks does not contain \"Pay the water bill\"; #tasks contains \"Book the car service\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1314,
+          "artifacts": [
+            "run/artifacts/TASK-11/V2-2/screenshot.png",
+            "run/artifacts/TASK-11/V2-2/console.json"
+          ]
+        },
+        {
+          "id": "V2-3",
+          "candidate": "V2",
+          "label": "variation: UTC, morning",
+          "variation": "timezone UTC",
+          "channel": "browser",
+          "browser": "chromium",
+          "browser_version": "158.0.8127.18",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": "UTC",
+            "locale": "en-GB",
+            "clock": "2026-11-12T08:00:00Z",
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "click": "#filter-all"
+            },
+            {
+              "click": "#filter-today"
+            }
+          ],
+          "assumptions": [
+            "A user whose local time zone is UTC, as a control."
+          ],
+          "started": "2026-11-11T04:56:39Z",
+          "observed": {
+            "#tasks": "Book the car service (due 2026-11-12)"
+          },
+          "result": "no_failure",
+          "observed_signature": null,
+          "checks": "#tasks does not contain \"Pay the water bill\"; #tasks contains \"Book the car service\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1360,
+          "artifacts": [
+            "run/artifacts/TASK-11/V2-3/screenshot.png",
+            "run/artifacts/TASK-11/V2-3/console.json"
+          ]
+        }
+      ],
+      "duplicates_searched": 4,
+      "duplicates": [
+        {
+          "key": "TASK-14",
+          "summary": "Today filter wrong",
+          "similarity": 0.75,
+          "verdict": "likely_duplicate",
+          "components": {
+            "signature": 1,
+            "summary": 0.1667,
+            "component": 1
+          }
+        }
+      ],
+      "skipped_steps": [],
+      "files_written": [
+        "tasklist/tests/due_today_timezone.test.mjs"
+      ],
+      "limitations": [
+        "\"In the morning\" was taken as 08:00 on 12 November 2026, Sydney time; other morning hours before 11:00 were not tried.",
+        "Only Chromium was used; the bug is in date arithmetic, not browser behaviour, and the unit test reproduces it without a browser.",
+        "Only steps were minimised; the seeded data and the clock were kept."
+      ],
+      "next_steps": [
+        "Fix isDueToday to compare local dates (localDate(now)); the regression test turns green when it is right.",
+        "Close or link TASK-14 as a likely duplicate after a person confirms it."
+      ],
+      "outcome": {
+        "value": "reproduced",
+        "confidence": "high",
+        "matched_attempts": 3,
+        "total_attempts": 3,
+        "all_attempts": {
+          "matched": 3,
+          "total": 9
+        },
+        "versions_tried": [
+          "1.2.0"
+        ],
+        "basis_candidate": "A1",
+        "only_after_variation": false,
+        "fixed_in_candidate": null,
+        "reason": "The as-reported candidate (Sydney, 08:00) matched in every run; the afternoon and UTC variations never did, which fits the report's \"right again by the afternoon\"."
+      },
+      "minimal_repro": {
+        "steps": [
+          {
+            "goto": "http://127.0.0.1:8141/"
+          },
+          {
+            "click": "#filter-today"
+          }
+        ],
+        "removed_steps": [
+          {
+            "index": 2,
+            "step": {
+              "click": "#filter-all"
+            }
+          }
+        ],
+        "script_path": "run/minimal/TASK-11.minimal.spec.json",
+        "confirmed": "3 of 3",
+        "trials": 6,
+        "artifacts": [
+          "run/artifacts/TASK-11/M1-1/screenshot.png",
+          "run/artifacts/TASK-11/M1-1/console.json",
+          "run/artifacts/TASK-11/M1-1/trace.zip",
+          "run/artifacts/TASK-11/M1-2/screenshot.png",
+          "run/artifacts/TASK-11/M1-2/console.json",
+          "run/artifacts/TASK-11/M1-3/screenshot.png",
+          "run/artifacts/TASK-11/M1-3/console.json"
+        ]
+      },
+      "localisation": [
+        {
+          "file": "tasklist/src/dates.js",
+          "line": 17,
+          "code": "const today = now.toISOString().slice(0, 10);",
+          "evidence": "isDueToday compares the stored local due date with the UTC date. At 08:00 in Sydney (UTC+11) the UTC date is still the day before. The regression test calls isDueToday directly and fails on exactly this; replacing the line with localDate(now) in a scratch copy made all 5 tests pass.",
+          "commits": [],
+          "confidence": "high"
+        },
+        {
+          "file": "tasklist/src/app.js",
+          "line": 10,
+          "code": "const shown = filter === \"today\" ? tasks.filter((t) => isDueToday(t, new Date())) : tasks;",
+          "evidence": "The \"Due today\" button sets filter to \"today\", and render() filters with isDueToday; this is the path the minimal reproduction exercises.",
+          "commits": [],
+          "confidence": "medium"
+        }
+      ],
+      "rating": {
+        "severity": "S2",
+        "severity_reason": "The \"Due today\" view, a core function of a task list, silently shows the wrong tasks every morning; a user has no sign it is wrong, so the workaround (reading due dates in All) needs them to know about the bug.",
+        "reach": 2,
+        "reach_reason": "Users in time zones ahead of UTC, before their local UTC midnight (all morning in Sydney).",
+        "frequency": 3,
+        "score": 18,
+        "priority": "P1",
+        "basis": "reproduced",
+        "confidence": "high",
+        "reporter_label": "Major",
+        "route_to": []
+      },
+      "regression_test": {
+        "status": "written",
+        "path": "tasklist/tests/due_today_timezone.test.mjs",
+        "framework": "node:test",
+        "approval": "write_regression_test was on for this example run",
+        "red": {
+          "status": "assertion_failure",
+          "failure_excerpt": "false !== true",
+          "run_id": "R-1",
+          "runs_file": "run/regression/runs.json",
+          "cases": [
+            "TASK-11: at 8am in Sydney, a task due today is due today",
+            "TASK-11: at 8am in Sydney, a task due yesterday is not due today"
+          ]
+        },
+        "fix_check": "In a scratch copy outside the repo, changing dates.js line 17 to `const today = localDate(now);` made both new tests and the 3 existing ones pass. The fix is not applied here."
+      }
+    },
+    {
+      "key": "TASK-12",
+      "headline": "Reproduced 2 of 3 in Firefox on 1.2.0 (intermittent): double-clicking Add creates two \"Buy milk\" tasks. In all, 20 of 23 Firefox runs and 3 of 3 Chromium runs created the duplicate.",
+      "metadata": {
+        "report": {
+          "key": "TASK-12",
+          "source": "connector",
+          "url": null,
+          "content_sha256": "864dbccf006cd903019a7cf5dd7f4f35c69abea7aecee2e705673947d7cb5712",
+          "summary": "Double-click Add creates two tasks"
+        },
+        "target": {
+          "url": "http://127.0.0.1:8141/",
+          "build": "examples/tasklist served by python -m http.server on 127.0.0.1:8141",
+          "version_stated": "1.2.0",
+          "versions_observed": [
+            "1.2.0"
+          ],
+          "authorised_by": null
+        },
+        "browsers": [
+          {
+            "name": "chromium",
+            "version": "158.0.8127.18"
+          },
+          {
+            "name": "firefox",
+            "version": "159.0"
+          }
+        ],
+        "tools": [
+          {
+            "name": "playwright (python)",
+            "version": "1.65.0",
+            "status": "ran"
+          },
+          {
+            "name": "git log",
+            "version": null,
+            "status": "ran",
+            "note": "no commits touch the localised files: the example app has no history of its own"
+          },
+          {
+            "name": "maestro",
+            "version": null,
+            "status": "not_run",
+            "note": "no mobile report to reproduce"
+          }
+        ],
+        "config": {
+          "attempts": 3,
+          "write_regression_test": "on",
+          "duplicate_search": "on",
+          "allow_form_submission": false
+        },
+        "generated": "2026-11-11T05:20:00Z"
+      },
+      "triage": {
+        "fields_present": [
+          "summary",
+          "steps",
+          "expected",
+          "actual",
+          "environment",
+          "version",
+          "frequency"
+        ],
+        "fields_missing": [],
+        "questions": [],
+        "suspicious_instructions_ignored": []
+      },
+      "signature": {
+        "raw_excerpt": "\"Buy milk\"",
+        "normalised": "buy milk",
+        "failure_checks": {
+          "count": "#tasks li",
+          "has_text": "Buy milk",
+          "gte": 2
+        },
+        "basis": "report_text"
+      },
+      "attempts": [
+        {
+          "id": "A1-1",
+          "candidate": "A1",
+          "label": "as reported: Firefox, double-click Add",
+          "variation": null,
+          "channel": "browser",
+          "browser": "firefox",
+          "browser_version": "159.0",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "fill": "#title",
+              "value": "Buy milk"
+            },
+            {
+              "dblclick": "#add"
+            }
+          ],
+          "assumptions": [
+            "A double-click as Playwright sends it: two clicks with no pause between them.",
+            "Fresh browser profile; the seeded list has no 'Buy milk' task."
+          ],
+          "started": "2026-11-11T04:56:47Z",
+          "observed": {
+            "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+          },
+          "result": "matched",
+          "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+          "checks": "2 element(s) #tasks li with \"Buy milk\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 2354,
+          "artifacts": [
+            "run/artifacts/TASK-12/A1-1/screenshot.png",
+            "run/artifacts/TASK-12/A1-1/console.json",
+            "run/artifacts/TASK-12/A1-1/trace.zip"
+          ]
+        },
+        {
+          "id": "A1-2",
+          "candidate": "A1",
+          "label": "as reported: Firefox, double-click Add",
+          "variation": null,
+          "channel": "browser",
+          "browser": "firefox",
+          "browser_version": "159.0",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "fill": "#title",
+              "value": "Buy milk"
+            },
+            {
+              "dblclick": "#add"
+            }
+          ],
+          "assumptions": [
+            "A double-click as Playwright sends it: two clicks with no pause between them.",
+            "Fresh browser profile; the seeded list has no 'Buy milk' task."
+          ],
+          "started": "2026-11-11T04:56:49Z",
+          "observed": {
+            "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+          },
+          "result": "matched",
+          "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+          "checks": "2 element(s) #tasks li with \"Buy milk\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1599,
+          "artifacts": [
+            "run/artifacts/TASK-12/A1-2/screenshot.png",
+            "run/artifacts/TASK-12/A1-2/console.json"
+          ]
+        },
+        {
+          "id": "A1-3",
+          "candidate": "A1",
+          "label": "as reported: Firefox, double-click Add",
+          "variation": null,
+          "channel": "browser",
+          "browser": "firefox",
+          "browser_version": "159.0",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "fill": "#title",
+              "value": "Buy milk"
+            },
+            {
+              "dblclick": "#add"
+            }
+          ],
+          "assumptions": [
+            "A double-click as Playwright sends it: two clicks with no pause between them.",
+            "Fresh browser profile; the seeded list has no 'Buy milk' task."
+          ],
+          "started": "2026-11-11T04:56:51Z",
+          "observed": {
+            "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)"
+          },
+          "result": "no_failure",
+          "observed_signature": null,
+          "checks": "1 element(s) #tasks li with \"Buy milk\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1739,
+          "artifacts": [
+            "run/artifacts/TASK-12/A1-3/screenshot.png",
+            "run/artifacts/TASK-12/A1-3/console.json"
+          ]
+        },
+        {
+          "id": "F1-1",
+          "candidate": "F1",
+          "label": "frequency: Firefox, 20 more runs",
+          "variation": "repeat count 20 (frequency measurement)",
+          "channel": "browser",
+          "browser": "firefox",
+          "browser_version": "159.0",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "fill": "#title",
+              "value": "Buy milk"
+            },
+            {
+              "dblclick": "#add"
+            }
+          ],
+          "assumptions": [
+            "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+          ],
+          "started": "2026-11-11T04:56:59Z",
+          "observed": {
+            "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+          },
+          "result": "matched",
+          "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+          "checks": "2 element(s) #tasks li with \"Buy milk\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 2291,
+          "artifacts": [
+            "run/artifacts/TASK-12/F1-1/screenshot.png",
+            "run/artifacts/TASK-12/F1-1/console.json",
+            "run/artifacts/TASK-12/F1-1/trace.zip"
+          ]
+        },
+        {
+          "id": "F1-2",
+          "candidate": "F1",
+          "label": "frequency: Firefox, 20 more runs",
+          "variation": "repeat count 20 (frequency measurement)",
+          "channel": "browser",
+          "browser": "firefox",
+          "browser_version": "159.0",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "fill": "#title",
+              "value": "Buy milk"
+            },
+            {
+              "dblclick": "#add"
+            }
+          ],
+          "assumptions": [
+            "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+          ],
+          "started": "2026-11-11T04:57:01Z",
+          "observed": {
+            "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+          },
+          "result": "matched",
+          "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+          "checks": "2 element(s) #tasks li with \"Buy milk\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1588,
+          "artifacts": [
+            "run/artifacts/TASK-12/F1-2/screenshot.png",
+            "run/artifacts/TASK-12/F1-2/console.json"
+          ]
+        },
+        {
+          "id": "F1-3",
+          "candidate": "F1",
+          "label": "frequency: Firefox, 20 more runs",
+          "variation": "repeat count 20 (frequency measurement)",
+          "channel": "browser",
+          "browser": "firefox",
+          "browser_version": "159.0",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "fill": "#title",
+              "value": "Buy milk"
+            },
+            {
+              "dblclick": "#add"
+            }
+          ],
+          "assumptions": [
+            "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+          ],
+          "started": "2026-11-11T04:57:03Z",
+          "observed": {
+            "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)"
+          },
+          "result": "no_failure",
+          "observed_signature": null,
+          "checks": "1 element(s) #tasks li with \"Buy milk\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1743,
+          "artifacts": [
+            "run/artifacts/TASK-12/F1-3/screenshot.png",
+            "run/artifacts/TASK-12/F1-3/console.json"
+          ]
+        },
+        {
+          "id": "F1-4",
+          "candidate": "F1",
+          "label": "frequency: Firefox, 20 more runs",
+          "variation": "repeat count 20 (frequency measurement)",
+          "channel": "browser",
+          "browser": "firefox",
+          "browser_version": "159.0",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "fill": "#title",
+              "value": "Buy milk"
+            },
+            {
+              "dblclick": "#add"
+            }
+          ],
+          "assumptions": [
+            "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+          ],
+          "started": "2026-11-11T04:57:05Z",
+          "observed": {
+            "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+          },
+          "result": "matched",
+          "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+          "checks": "2 element(s) #tasks li with \"Buy milk\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1727,
+          "artifacts": [
+            "run/artifacts/TASK-12/F1-4/screenshot.png",
+            "run/artifacts/TASK-12/F1-4/console.json"
+          ]
+        },
+        {
+          "id": "F1-5",
+          "candidate": "F1",
+          "label": "frequency: Firefox, 20 more runs",
+          "variation": "repeat count 20 (frequency measurement)",
+          "channel": "browser",
+          "browser": "firefox",
+          "browser_version": "159.0",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "fill": "#title",
+              "value": "Buy milk"
+            },
+            {
+              "dblclick": "#add"
+            }
+          ],
+          "assumptions": [
+            "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+          ],
+          "started": "2026-11-11T04:57:06Z",
+          "observed": {
+            "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+          },
+          "result": "matched",
+          "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+          "checks": "2 element(s) #tasks li with \"Buy milk\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1774,
+          "artifacts": [
+            "run/artifacts/TASK-12/F1-5/screenshot.png",
+            "run/artifacts/TASK-12/F1-5/console.json"
+          ]
+        },
+        {
+          "id": "F1-6",
+          "candidate": "F1",
+          "label": "frequency: Firefox, 20 more runs",
+          "variation": "repeat count 20 (frequency measurement)",
+          "channel": "browser",
+          "browser": "firefox",
+          "browser_version": "159.0",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "fill": "#title",
+              "value": "Buy milk"
+            },
+            {
+              "dblclick": "#add"
+            }
+          ],
+          "assumptions": [
+            "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+          ],
+          "started": "2026-11-11T04:57:08Z",
+          "observed": {
+            "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+          },
+          "result": "matched",
+          "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+          "checks": "2 element(s) #tasks li with \"Buy milk\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1733,
+          "artifacts": [
+            "run/artifacts/TASK-12/F1-6/screenshot.png",
+            "run/artifacts/TASK-12/F1-6/console.json"
+          ]
+        },
+        {
+          "id": "F1-7",
+          "candidate": "F1",
+          "label": "frequency: Firefox, 20 more runs",
+          "variation": "repeat count 20 (frequency measurement)",
+          "channel": "browser",
+          "browser": "firefox",
+          "browser_version": "159.0",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "fill": "#title",
+              "value": "Buy milk"
+            },
+            {
+              "dblclick": "#add"
+            }
+          ],
+          "assumptions": [
+            "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+          ],
+          "started": "2026-11-11T04:57:10Z",
+          "observed": {
+            "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+          },
+          "result": "matched",
+          "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+          "checks": "2 element(s) #tasks li with \"Buy milk\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1709,
+          "artifacts": [
+            "run/artifacts/TASK-12/F1-7/screenshot.png",
+            "run/artifacts/TASK-12/F1-7/console.json"
+          ]
+        },
+        {
+          "id": "F1-8",
+          "candidate": "F1",
+          "label": "frequency: Firefox, 20 more runs",
+          "variation": "repeat count 20 (frequency measurement)",
+          "channel": "browser",
+          "browser": "firefox",
+          "browser_version": "159.0",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "fill": "#title",
+              "value": "Buy milk"
+            },
+            {
+              "dblclick": "#add"
+            }
+          ],
+          "assumptions": [
+            "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+          ],
+          "started": "2026-11-11T04:57:12Z",
+          "observed": {
+            "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+          },
+          "result": "matched",
+          "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+          "checks": "2 element(s) #tasks li with \"Buy milk\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1718,
+          "artifacts": [
+            "run/artifacts/TASK-12/F1-8/screenshot.png",
+            "run/artifacts/TASK-12/F1-8/console.json"
+          ]
+        },
+        {
+          "id": "F1-9",
+          "candidate": "F1",
+          "label": "frequency: Firefox, 20 more runs",
+          "variation": "repeat count 20 (frequency measurement)",
+          "channel": "browser",
+          "browser": "firefox",
+          "browser_version": "159.0",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "fill": "#title",
+              "value": "Buy milk"
+            },
+            {
+              "dblclick": "#add"
+            }
+          ],
+          "assumptions": [
+            "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+          ],
+          "started": "2026-11-11T04:57:13Z",
+          "observed": {
+            "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+          },
+          "result": "matched",
+          "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+          "checks": "2 element(s) #tasks li with \"Buy milk\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1724,
+          "artifacts": [
+            "run/artifacts/TASK-12/F1-9/screenshot.png",
+            "run/artifacts/TASK-12/F1-9/console.json"
+          ]
+        },
+        {
+          "id": "F1-10",
+          "candidate": "F1",
+          "label": "frequency: Firefox, 20 more runs",
+          "variation": "repeat count 20 (frequency measurement)",
+          "channel": "browser",
+          "browser": "firefox",
+          "browser_version": "159.0",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "fill": "#title",
+              "value": "Buy milk"
+            },
+            {
+              "dblclick": "#add"
+            }
+          ],
+          "assumptions": [
+            "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+          ],
+          "started": "2026-11-11T04:57:15Z",
+          "observed": {
+            "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+          },
+          "result": "matched",
+          "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+          "checks": "2 element(s) #tasks li with \"Buy milk\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 2248,
+          "artifacts": [
+            "run/artifacts/TASK-12/F1-10/screenshot.png",
+            "run/artifacts/TASK-12/F1-10/console.json"
+          ]
+        },
+        {
+          "id": "F1-11",
+          "candidate": "F1",
+          "label": "frequency: Firefox, 20 more runs",
+          "variation": "repeat count 20 (frequency measurement)",
+          "channel": "browser",
+          "browser": "firefox",
+          "browser_version": "159.0",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "fill": "#title",
+              "value": "Buy milk"
+            },
+            {
+              "dblclick": "#add"
+            }
+          ],
+          "assumptions": [
+            "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+          ],
+          "started": "2026-11-11T04:57:17Z",
+          "observed": {
+            "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+          },
+          "result": "matched",
+          "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+          "checks": "2 element(s) #tasks li with \"Buy milk\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1796,
+          "artifacts": [
+            "run/artifacts/TASK-12/F1-11/screenshot.png",
+            "run/artifacts/TASK-12/F1-11/console.json"
+          ]
+        },
+        {
+          "id": "F1-12",
+          "candidate": "F1",
+          "label": "frequency: Firefox, 20 more runs",
+          "variation": "repeat count 20 (frequency measurement)",
+          "channel": "browser",
+          "browser": "firefox",
+          "browser_version": "159.0",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "fill": "#title",
+              "value": "Buy milk"
+            },
+            {
+              "dblclick": "#add"
+            }
+          ],
+          "assumptions": [
+            "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+          ],
+          "started": "2026-11-11T04:57:19Z",
+          "observed": {
+            "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+          },
+          "result": "matched",
+          "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+          "checks": "2 element(s) #tasks li with \"Buy milk\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1725,
+          "artifacts": [
+            "run/artifacts/TASK-12/F1-12/screenshot.png",
+            "run/artifacts/TASK-12/F1-12/console.json"
+          ]
+        },
+        {
+          "id": "F1-13",
+          "candidate": "F1",
+          "label": "frequency: Firefox, 20 more runs",
+          "variation": "repeat count 20 (frequency measurement)",
+          "channel": "browser",
+          "browser": "firefox",
+          "browser_version": "159.0",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "fill": "#title",
+              "value": "Buy milk"
+            },
+            {
+              "dblclick": "#add"
+            }
+          ],
+          "assumptions": [
+            "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+          ],
+          "started": "2026-11-11T04:57:21Z",
+          "observed": {
+            "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+          },
+          "result": "matched",
+          "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+          "checks": "2 element(s) #tasks li with \"Buy milk\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1694,
+          "artifacts": [
+            "run/artifacts/TASK-12/F1-13/screenshot.png",
+            "run/artifacts/TASK-12/F1-13/console.json"
+          ]
+        },
+        {
+          "id": "F1-14",
+          "candidate": "F1",
+          "label": "frequency: Firefox, 20 more runs",
+          "variation": "repeat count 20 (frequency measurement)",
+          "channel": "browser",
+          "browser": "firefox",
+          "browser_version": "159.0",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "fill": "#title",
+              "value": "Buy milk"
+            },
+            {
+              "dblclick": "#add"
+            }
+          ],
+          "assumptions": [
+            "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+          ],
+          "started": "2026-11-11T04:57:23Z",
+          "observed": {
+            "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+          },
+          "result": "matched",
+          "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+          "checks": "2 element(s) #tasks li with \"Buy milk\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1721,
+          "artifacts": [
+            "run/artifacts/TASK-12/F1-14/screenshot.png",
+            "run/artifacts/TASK-12/F1-14/console.json"
+          ]
+        },
+        {
+          "id": "F1-15",
+          "candidate": "F1",
+          "label": "frequency: Firefox, 20 more runs",
+          "variation": "repeat count 20 (frequency measurement)",
+          "channel": "browser",
+          "browser": "firefox",
+          "browser_version": "159.0",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "fill": "#title",
+              "value": "Buy milk"
+            },
+            {
+              "dblclick": "#add"
+            }
+          ],
+          "assumptions": [
+            "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+          ],
+          "started": "2026-11-11T04:57:24Z",
+          "observed": {
+            "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+          },
+          "result": "matched",
+          "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+          "checks": "2 element(s) #tasks li with \"Buy milk\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1705,
+          "artifacts": [
+            "run/artifacts/TASK-12/F1-15/screenshot.png",
+            "run/artifacts/TASK-12/F1-15/console.json"
+          ]
+        },
+        {
+          "id": "F1-16",
+          "candidate": "F1",
+          "label": "frequency: Firefox, 20 more runs",
+          "variation": "repeat count 20 (frequency measurement)",
+          "channel": "browser",
+          "browser": "firefox",
+          "browser_version": "159.0",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "fill": "#title",
+              "value": "Buy milk"
+            },
+            {
+              "dblclick": "#add"
+            }
+          ],
+          "assumptions": [
+            "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+          ],
+          "started": "2026-11-11T04:57:26Z",
+          "observed": {
+            "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+          },
+          "result": "matched",
+          "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+          "checks": "2 element(s) #tasks li with \"Buy milk\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1751,
+          "artifacts": [
+            "run/artifacts/TASK-12/F1-16/screenshot.png",
+            "run/artifacts/TASK-12/F1-16/console.json"
+          ]
+        },
+        {
+          "id": "F1-17",
+          "candidate": "F1",
+          "label": "frequency: Firefox, 20 more runs",
+          "variation": "repeat count 20 (frequency measurement)",
+          "channel": "browser",
+          "browser": "firefox",
+          "browser_version": "159.0",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "fill": "#title",
+              "value": "Buy milk"
+            },
+            {
+              "dblclick": "#add"
+            }
+          ],
+          "assumptions": [
+            "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+          ],
+          "started": "2026-11-11T04:57:28Z",
+          "observed": {
+            "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+          },
+          "result": "matched",
+          "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+          "checks": "2 element(s) #tasks li with \"Buy milk\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1672,
+          "artifacts": [
+            "run/artifacts/TASK-12/F1-17/screenshot.png",
+            "run/artifacts/TASK-12/F1-17/console.json"
+          ]
+        },
+        {
+          "id": "F1-18",
+          "candidate": "F1",
+          "label": "frequency: Firefox, 20 more runs",
+          "variation": "repeat count 20 (frequency measurement)",
+          "channel": "browser",
+          "browser": "firefox",
+          "browser_version": "159.0",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "fill": "#title",
+              "value": "Buy milk"
+            },
+            {
+              "dblclick": "#add"
+            }
+          ],
+          "assumptions": [
+            "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+          ],
+          "started": "2026-11-11T04:57:29Z",
+          "observed": {
+            "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+          },
+          "result": "matched",
+          "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+          "checks": "2 element(s) #tasks li with \"Buy milk\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1709,
+          "artifacts": [
+            "run/artifacts/TASK-12/F1-18/screenshot.png",
+            "run/artifacts/TASK-12/F1-18/console.json"
+          ]
+        },
+        {
+          "id": "F1-19",
+          "candidate": "F1",
+          "label": "frequency: Firefox, 20 more runs",
+          "variation": "repeat count 20 (frequency measurement)",
+          "channel": "browser",
+          "browser": "firefox",
+          "browser_version": "159.0",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "fill": "#title",
+              "value": "Buy milk"
+            },
+            {
+              "dblclick": "#add"
+            }
+          ],
+          "assumptions": [
+            "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+          ],
+          "started": "2026-11-11T04:57:31Z",
+          "observed": {
+            "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+          },
+          "result": "matched",
+          "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+          "checks": "2 element(s) #tasks li with \"Buy milk\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1737,
+          "artifacts": [
+            "run/artifacts/TASK-12/F1-19/screenshot.png",
+            "run/artifacts/TASK-12/F1-19/console.json"
+          ]
+        },
+        {
+          "id": "F1-20",
+          "candidate": "F1",
+          "label": "frequency: Firefox, 20 more runs",
+          "variation": "repeat count 20 (frequency measurement)",
+          "channel": "browser",
+          "browser": "firefox",
+          "browser_version": "159.0",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "fill": "#title",
+              "value": "Buy milk"
+            },
+            {
+              "dblclick": "#add"
+            }
+          ],
+          "assumptions": [
+            "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+          ],
+          "started": "2026-11-11T04:57:33Z",
+          "observed": {
+            "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)"
+          },
+          "result": "no_failure",
+          "observed_signature": null,
+          "checks": "1 element(s) #tasks li with \"Buy milk\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 2235,
+          "artifacts": [
+            "run/artifacts/TASK-12/F1-20/screenshot.png",
+            "run/artifacts/TASK-12/F1-20/console.json"
+          ]
+        },
+        {
+          "id": "V1-1",
+          "candidate": "V1",
+          "label": "variation: Chromium, double-click Add",
+          "variation": "browser chromium",
+          "channel": "browser",
+          "browser": "chromium",
+          "browser_version": "158.0.8127.18",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "fill": "#title",
+              "value": "Buy milk"
+            },
+            {
+              "dblclick": "#add"
+            }
+          ],
+          "assumptions": [
+            "Same steps in Chromium, to see whether the browser matters."
+          ],
+          "started": "2026-11-11T04:56:53Z",
+          "observed": {
+            "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+          },
+          "result": "matched",
+          "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+          "checks": "2 element(s) #tasks li with \"Buy milk\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1771,
+          "artifacts": [
+            "run/artifacts/TASK-12/V1-1/screenshot.png",
+            "run/artifacts/TASK-12/V1-1/console.json",
+            "run/artifacts/TASK-12/V1-1/trace.zip"
+          ]
+        },
+        {
+          "id": "V1-2",
+          "candidate": "V1",
+          "label": "variation: Chromium, double-click Add",
+          "variation": "browser chromium",
+          "channel": "browser",
+          "browser": "chromium",
+          "browser_version": "158.0.8127.18",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "fill": "#title",
+              "value": "Buy milk"
+            },
+            {
+              "dblclick": "#add"
+            }
+          ],
+          "assumptions": [
+            "Same steps in Chromium, to see whether the browser matters."
+          ],
+          "started": "2026-11-11T04:56:55Z",
+          "observed": {
+            "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+          },
+          "result": "matched",
+          "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+          "checks": "2 element(s) #tasks li with \"Buy milk\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1427,
+          "artifacts": [
+            "run/artifacts/TASK-12/V1-2/screenshot.png",
+            "run/artifacts/TASK-12/V1-2/console.json"
+          ]
+        },
+        {
+          "id": "V1-3",
+          "candidate": "V1",
+          "label": "variation: Chromium, double-click Add",
+          "variation": "browser chromium",
+          "channel": "browser",
+          "browser": "chromium",
+          "browser_version": "158.0.8127.18",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "fill": "#title",
+              "value": "Buy milk"
+            },
+            {
+              "dblclick": "#add"
+            }
+          ],
+          "assumptions": [
+            "Same steps in Chromium, to see whether the browser matters."
+          ],
+          "started": "2026-11-11T04:56:56Z",
+          "observed": {
+            "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+          },
+          "result": "matched",
+          "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+          "checks": "2 element(s) #tasks li with \"Buy milk\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1431,
+          "artifacts": [
+            "run/artifacts/TASK-12/V1-3/screenshot.png",
+            "run/artifacts/TASK-12/V1-3/console.json"
+          ]
+        }
+      ],
+      "duplicates_searched": 4,
+      "duplicates": [],
+      "skipped_steps": [],
+      "files_written": [],
+      "limitations": [
+        "Playwright sends both clicks of a double-click with no pause; a person's two clicks are further apart, which may change the rate.",
+        "CPU throttling was not tried because it is Chromium-only and Chromium already matched 3 of 3.",
+        "The rate is from 23 Firefox runs on one machine; it will differ elsewhere."
+      ],
+      "next_steps": [
+        "Disable the Add button synchronously at the start of addTask, or ignore clicks while an add is in flight."
+      ],
+      "outcome": {
+        "value": "reproduced",
+        "confidence": "high",
+        "matched_attempts": 2,
+        "total_attempts": 3,
+        "all_attempts": {
+          "matched": 23,
+          "total": 26
+        },
+        "versions_tried": [
+          "1.2.0"
+        ],
+        "basis_candidate": "A1",
+        "only_after_variation": false,
+        "fixed_in_candidate": null,
+        "reason": "The as-reported Firefox candidate matched in 2 of 3 runs; 20 further Firefox runs matched 18 times, so the failure is frequent but not every time, as the report says."
+      },
+      "minimal_repro": {
+        "steps": [
+          {
+            "goto": "http://127.0.0.1:8141/"
+          },
+          {
+            "fill": "#title",
+            "value": "Buy milk"
+          },
+          {
+            "dblclick": "#add"
+          }
+        ],
+        "removed_steps": [],
+        "script_path": "run/minimal/TASK-12.minimal.spec.json",
+        "confirmed": "3 of 3",
+        "trials": 7,
+        "artifacts": [
+          "run/artifacts/TASK-12/M1-1/screenshot.png",
+          "run/artifacts/TASK-12/M1-1/console.json",
+          "run/artifacts/TASK-12/M1-1/trace.zip",
+          "run/artifacts/TASK-12/M1-2/screenshot.png",
+          "run/artifacts/TASK-12/M1-2/console.json",
+          "run/artifacts/TASK-12/M1-3/screenshot.png",
+          "run/artifacts/TASK-12/M1-3/console.json"
+        ]
+      },
+      "localisation": [
+        {
+          "file": "tasklist/src/app.js",
+          "line": 29,
+          "code": "setTimeout(() => { button.disabled = true; }, Math.random() * 25);",
+          "evidence": "addTask disables the Add button only after a random delay of up to 25 ms, and awaits persistLater (40 ms) before adding the task. A second click within that window passes the button.disabled guard on line 25, so both clicks add a task. The runs where only one task appeared fit the delay being short enough.",
+          "commits": [],
+          "confidence": "medium"
+        }
+      ],
+      "rating": {
+        "severity": "S3",
+        "severity_reason": "Adding a task, a core function, creates a duplicate, but the duplicate is visible and the workaround is easy: click Add once.",
+        "reach": 3,
+        "reach_reason": "Any user who double-clicks Add, in every browser tried.",
+        "frequency": 2,
+        "score": 12,
+        "priority": "P1",
+        "basis": "reproduced",
+        "confidence": "high",
+        "reporter_label": "Minor",
+        "route_to": []
+      },
+      "regression_test": {
+        "status": "not_proposed",
+        "path": null,
+        "framework": null,
+        "approval": null,
+        "reason": "The repo's only tests are node:test unit tests with no DOM, and the race is in a click handler. The minimal reproduction spec (run/minimal/TASK-12.minimal.spec.json) re-runs it in a browser; an e2e framework would be needed for a regression test."
+      }
+    },
+    {
+      "key": "TASK-13",
+      "headline": "Cannot attempt: the report gives no steps, no error, no version and no frequency; it names only \"my phone\". Five questions for the reporter.",
+      "metadata": {
+        "report": {
+          "key": "TASK-13",
+          "source": "connector",
+          "url": null,
+          "content_sha256": "f67c645fb296447bded442019d11be4d46808452946cc20d667bdc5e003423d0",
+          "summary": "It's broken on my phone"
+        },
+        "target": {
+          "url": null,
+          "build": null,
+          "version_stated": null,
+          "versions_observed": [],
+          "authorised_by": null
+        },
+        "browsers": [],
+        "tools": [
+          {
+            "name": "playwright (python)",
+            "version": "1.65.0",
+            "status": "not_run",
+            "note": "nothing to run"
+          },
+          {
+            "name": "maestro",
+            "version": null,
+            "status": "not_run",
+            "note": "no mobile report to reproduce"
+          }
+        ],
+        "config": {
+          "attempts": 3,
+          "write_regression_test": "on",
+          "duplicate_search": "on",
+          "allow_form_submission": false
+        },
+        "generated": "2026-11-11T05:20:00Z"
+      },
+      "triage": {
+        "fields_present": [
+          "summary",
+          "environment"
+        ],
+        "fields_missing": [
+          "steps",
+          "expected",
+          "actual",
+          "version",
+          "frequency"
+        ],
+        "questions": [
+          "What exactly did you do, step by step, from opening the app?",
+          "What did you expect to happen?",
+          "What happened instead? Any error message, exactly as shown?",
+          "Which version of the app (shown in the footer)?",
+          "Does it happen every time, or only sometimes?"
+        ],
+        "suspicious_instructions_ignored": []
+      },
+      "signature": {
+        "raw_excerpt": null,
+        "normalised": null,
+        "failure_checks": null,
+        "basis": "none"
+      },
+      "attempts": [],
+      "duplicates_searched": 4,
+      "duplicates": [],
+      "skipped_steps": [],
+      "files_written": [],
+      "limitations": [
+        "Without steps or a described failure, any attempt would be guesswork and could not be matched to the report."
+      ],
+      "next_steps": [
+        "Ask the reporter the questions in triage, plus the phone model and whether it happens in the phone's browser or a home-screen shortcut."
+      ],
+      "outcome": {
+        "value": "cannot_attempt",
+        "confidence": "n/a",
+        "matched_attempts": 0,
+        "total_attempts": 0,
+        "versions_tried": [],
+        "basis_candidate": null,
+        "only_after_variation": false,
+        "fixed_in_candidate": null,
+        "reason": "There are no steps and no failure signature, so there is nothing to observe or compare."
+      },
+      "minimal_repro": null,
+      "localisation": [],
+      "rating": null,
+      "regression_test": null
+    },
+    {
+      "key": "TASK-14",
+      "headline": "Reproduced 3 of 3 on 1.2.0 with the most direct path (open, click \"Due today\", 08:00 Sydney). Likely duplicate of TASK-11 (similarity 0.75).",
+      "metadata": {
+        "report": {
+          "key": "TASK-14",
+          "source": "connector",
+          "url": null,
+          "content_sha256": "91450c8e31222d63659657b55e926bddd3c678e45d07cfc4970383c2f08fb7b1",
+          "summary": "Today filter wrong"
+        },
+        "target": {
+          "url": "http://127.0.0.1:8141/",
+          "build": "examples/tasklist served by python -m http.server on 127.0.0.1:8141",
+          "version_stated": "1.2.0",
+          "versions_observed": [
+            "1.2.0"
+          ],
+          "authorised_by": null
+        },
+        "browsers": [
+          {
+            "name": "chromium",
+            "version": "158.0.8127.18"
+          }
+        ],
+        "tools": [
+          {
+            "name": "playwright (python)",
+            "version": "1.65.0",
+            "status": "ran"
+          },
+          {
+            "name": "git log",
+            "version": null,
+            "status": "ran",
+            "note": "no commits touch the localised files: the example app has no history of its own"
+          },
+          {
+            "name": "maestro",
+            "version": null,
+            "status": "not_run",
+            "note": "no mobile report to reproduce"
+          }
+        ],
+        "config": {
+          "attempts": 3,
+          "write_regression_test": "on",
+          "duplicate_search": "on",
+          "allow_form_submission": false
+        },
+        "generated": "2026-11-11T05:20:00Z"
+      },
+      "triage": {
+        "fields_present": [
+          "summary",
+          "version"
+        ],
+        "fields_missing": [
+          "steps",
+          "expected",
+          "actual",
+          "environment",
+          "frequency"
+        ],
+        "questions": [
+          "What exactly did you do, step by step, from opening the app?",
+          "What did you expect to happen?",
+          "What happened instead? Any error message, exactly as shown?",
+          "Which browser or device, and which operating system?",
+          "Does it happen every time, or only sometimes?"
+        ],
+        "suspicious_instructions_ignored": []
+      },
+      "signature": {
+        "raw_excerpt": "\"Due today\"",
+        "normalised": "due today",
+        "failure_checks": {
+          "all": [
+            {
+              "text_contains": "#tasks",
+              "text": "Pay the water bill"
+            },
+            {
+              "text_missing": "#tasks",
+              "text": "Book the car service"
+            }
+          ]
+        },
+        "basis": "report_text"
+      },
+      "attempts": [
+        {
+          "id": "A1-1",
+          "candidate": "A1",
+          "label": "as reported: Sydney, morning, Due today",
+          "variation": null,
+          "channel": "browser",
+          "browser": "chromium",
+          "browser_version": "158.0.8127.18",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": "Australia/Sydney",
+            "locale": "en-AU",
+            "clock": "2026-11-12T08:00:00+11:00",
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "click": "#filter-today"
+            }
+          ],
+          "assumptions": [
+            "The report gives no steps; the most direct path is to open the app and click Due today.",
+            "No browser is named; Chromium is used.",
+            "'In the morning (Sydney)' taken as 08:00 Australia/Sydney on 12 November 2026.",
+            "'Yesterday's tasks' checked with the seeded task due yesterday ('Pay the water bill') and the one due today ('Book the car service')."
+          ],
+          "started": "2026-11-11T05:00:58Z",
+          "observed": {
+            "#tasks": "Pay the water bill (due 2026-11-11)"
+          },
+          "result": "matched",
+          "observed_signature": "#tasks contains \"Pay the water bill\"; #tasks does not contain \"Book the car service\"",
+          "checks": "#tasks contains \"Pay the water bill\"; #tasks does not contain \"Book the car service\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1632,
+          "artifacts": [
+            "run/artifacts/TASK-14/A1-1/screenshot.png",
+            "run/artifacts/TASK-14/A1-1/console.json",
+            "run/artifacts/TASK-14/A1-1/trace.zip"
+          ]
+        },
+        {
+          "id": "A1-2",
+          "candidate": "A1",
+          "label": "as reported: Sydney, morning, Due today",
+          "variation": null,
+          "channel": "browser",
+          "browser": "chromium",
+          "browser_version": "158.0.8127.18",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": "Australia/Sydney",
+            "locale": "en-AU",
+            "clock": "2026-11-12T08:00:00+11:00",
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "click": "#filter-today"
+            }
+          ],
+          "assumptions": [
+            "The report gives no steps; the most direct path is to open the app and click Due today.",
+            "No browser is named; Chromium is used.",
+            "'In the morning (Sydney)' taken as 08:00 Australia/Sydney on 12 November 2026.",
+            "'Yesterday's tasks' checked with the seeded task due yesterday ('Pay the water bill') and the one due today ('Book the car service')."
+          ],
+          "started": "2026-11-11T05:00:59Z",
+          "observed": {
+            "#tasks": "Pay the water bill (due 2026-11-11)"
+          },
+          "result": "matched",
+          "observed_signature": "#tasks contains \"Pay the water bill\"; #tasks does not contain \"Book the car service\"",
+          "checks": "#tasks contains \"Pay the water bill\"; #tasks does not contain \"Book the car service\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1297,
+          "artifacts": [
+            "run/artifacts/TASK-14/A1-2/screenshot.png",
+            "run/artifacts/TASK-14/A1-2/console.json"
+          ]
+        },
+        {
+          "id": "A1-3",
+          "candidate": "A1",
+          "label": "as reported: Sydney, morning, Due today",
+          "variation": null,
+          "channel": "browser",
+          "browser": "chromium",
+          "browser_version": "158.0.8127.18",
+          "version": "1.2.0",
+          "version_stated": "1.2.0",
+          "environment": {
+            "viewport": null,
+            "timezone": "Australia/Sydney",
+            "locale": "en-AU",
+            "clock": "2026-11-12T08:00:00+11:00",
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "click": "#filter-today"
+            }
+          ],
+          "assumptions": [
+            "The report gives no steps; the most direct path is to open the app and click Due today.",
+            "No browser is named; Chromium is used.",
+            "'In the morning (Sydney)' taken as 08:00 Australia/Sydney on 12 November 2026.",
+            "'Yesterday's tasks' checked with the seeded task due yesterday ('Pay the water bill') and the one due today ('Book the car service')."
+          ],
+          "started": "2026-11-11T05:01:01Z",
+          "observed": {
+            "#tasks": "Pay the water bill (due 2026-11-11)"
+          },
+          "result": "matched",
+          "observed_signature": "#tasks contains \"Pay the water bill\"; #tasks does not contain \"Book the car service\"",
+          "checks": "#tasks contains \"Pay the water bill\"; #tasks does not contain \"Book the car service\"",
+          "dialogs": [],
+          "downloads": [],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1326,
+          "artifacts": [
+            "run/artifacts/TASK-14/A1-3/screenshot.png",
+            "run/artifacts/TASK-14/A1-3/console.json"
+          ]
+        }
+      ],
+      "duplicates_searched": 4,
+      "duplicates": [
+        {
+          "key": "TASK-11",
+          "summary": "Due today shows yesterday's tasks",
+          "similarity": 0.75,
+          "verdict": "likely_duplicate",
+          "components": {
+            "signature": 1,
+            "summary": 0.1667,
+            "component": 1
+          }
+        }
+      ],
+      "skipped_steps": [],
+      "files_written": [],
+      "limitations": [
+        "The steps were the agent's, not the reporter's; they are listed as assumptions on each attempt.",
+        "Not minimised: the direct path has two steps, the minimum TASK-11 needs."
+      ],
+      "next_steps": [
+        "A person decides whether to close TASK-14 as a duplicate of TASK-11; nothing was closed or linked."
+      ],
+      "outcome": {
+        "value": "reproduced",
+        "confidence": "high",
+        "matched_attempts": 3,
+        "total_attempts": 3,
+        "all_attempts": {
+          "matched": 3,
+          "total": 3
+        },
+        "versions_tried": [
+          "1.2.0"
+        ],
+        "basis_candidate": "A1",
+        "only_after_variation": false,
+        "fixed_in_candidate": null,
+        "reason": "The report gives no steps; the agent's direct path, with the assumptions recorded, matched in every run."
+      },
+      "minimal_repro": null,
+      "localisation": [
+        {
+          "file": "tasklist/src/dates.js",
+          "line": 17,
+          "code": "const today = now.toISOString().slice(0, 10);",
+          "evidence": "Same failure and same conditions as TASK-11; see its regression test.",
+          "commits": [],
+          "confidence": "high"
+        }
+      ],
+      "rating": {
+        "severity": "S2",
+        "severity_reason": "Same failure as TASK-11: the \"Due today\" view silently shows the wrong tasks every morning.",
+        "reach": 2,
+        "reach_reason": "Users in time zones ahead of UTC, before their local UTC midnight.",
+        "frequency": 3,
+        "score": 18,
+        "priority": "P1",
+        "basis": "reproduced",
+        "confidence": "high",
+        "reporter_label": "Medium",
+        "route_to": []
+      },
+      "regression_test": {
+        "status": "covered_by",
+        "covered_by": "TASK-11",
+        "path": null,
+        "framework": null,
+        "approval": null,
+        "reason": "TASK-11's regression test covers this failure."
+      }
+    },
+    {
+      "key": "TASK-15",
+      "headline": "Not reproduced in 15 attempts on 1.2.0, across Chromium, Firefox, WebKit, an empty list and a slow network: every export downloaded tasks.json. The report names 1.1.0, which could not be run here, so whether 1.1.0 fails is unknown.",
+      "metadata": {
+        "report": {
+          "key": "TASK-15",
+          "source": "connector",
+          "url": null,
+          "content_sha256": "dbc1906c0c2295e7684f505dadb55bc205aa998e318b2a8a4374ff5bd29610ff",
+          "summary": "Export fails"
+        },
+        "target": {
+          "url": "http://127.0.0.1:8141/",
+          "build": "examples/tasklist served by python -m http.server on 127.0.0.1:8141",
+          "version_stated": "1.1.0",
+          "versions_observed": [
+            "1.2.0"
+          ],
+          "authorised_by": null
+        },
+        "browsers": [
+          {
+            "name": "chromium",
+            "version": "158.0.8127.18"
+          },
+          {
+            "name": "firefox",
+            "version": "159.0"
+          },
+          {
+            "name": "webkit",
+            "version": "27.2"
+          }
+        ],
+        "tools": [
+          {
+            "name": "playwright (python)",
+            "version": "1.65.0",
+            "status": "ran"
+          },
+          {
+            "name": "maestro",
+            "version": null,
+            "status": "not_run",
+            "note": "no mobile report to reproduce"
+          }
+        ],
+        "config": {
+          "attempts": 3,
+          "write_regression_test": "on",
+          "duplicate_search": "on",
+          "allow_form_submission": false
+        },
+        "generated": "2026-11-11T05:20:00Z"
+      },
+      "triage": {
+        "fields_present": [
+          "summary",
+          "steps",
+          "expected",
+          "actual",
+          "environment",
+          "version"
+        ],
+        "fields_missing": [
+          "frequency"
+        ],
+        "questions": [
+          "Does it happen every time, or only sometimes?"
+        ],
+        "suspicious_instructions_ignored": []
+      },
+      "signature": {
+        "raw_excerpt": "\"Export failed: undefined\"",
+        "normalised": "export failed undefined",
+        "failure_checks": {
+          "any": [
+            {
+              "dialog_matches": "Export failed"
+            },
+            {
+              "no_download": true
+            }
+          ]
+        },
+        "basis": "report_text"
+      },
+      "attempts": [
+        {
+          "id": "A1-1",
+          "candidate": "A1",
+          "label": "as reported: Chrome, click Export",
+          "variation": null,
+          "channel": "browser",
+          "browser": "chromium",
+          "browser_version": "158.0.8127.18",
+          "version": "1.2.0",
+          "version_stated": "1.1.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "click": "#export"
+            }
+          ],
+          "assumptions": [
+            "Version 1.1.0 isn't available to build (the example has no tags), so the current version is used and recorded.",
+            "Fresh browser profile with the three seeded tasks."
+          ],
+          "started": "2026-11-11T04:58:02Z",
+          "observed": {
+            "#status": "Exported 3 tasks"
+          },
+          "result": "no_failure",
+          "observed_signature": null,
+          "checks": "no dialog matching /Export failed/; downloaded tasks.json",
+          "dialogs": [],
+          "downloads": [
+            "tasks.json"
+          ],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1647,
+          "artifacts": [
+            "run/artifacts/TASK-15/A1-1/screenshot.png",
+            "run/artifacts/TASK-15/A1-1/console.json",
+            "run/artifacts/TASK-15/A1-1/trace.zip"
+          ]
+        },
+        {
+          "id": "A1-2",
+          "candidate": "A1",
+          "label": "as reported: Chrome, click Export",
+          "variation": null,
+          "channel": "browser",
+          "browser": "chromium",
+          "browser_version": "158.0.8127.18",
+          "version": "1.2.0",
+          "version_stated": "1.1.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "click": "#export"
+            }
+          ],
+          "assumptions": [
+            "Version 1.1.0 isn't available to build (the example has no tags), so the current version is used and recorded.",
+            "Fresh browser profile with the three seeded tasks."
+          ],
+          "started": "2026-11-11T04:58:03Z",
+          "observed": {
+            "#status": "Exported 3 tasks"
+          },
+          "result": "no_failure",
+          "observed_signature": null,
+          "checks": "no dialog matching /Export failed/; downloaded tasks.json",
+          "dialogs": [],
+          "downloads": [
+            "tasks.json"
+          ],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1279,
+          "artifacts": [
+            "run/artifacts/TASK-15/A1-2/screenshot.png",
+            "run/artifacts/TASK-15/A1-2/console.json"
+          ]
+        },
+        {
+          "id": "A1-3",
+          "candidate": "A1",
+          "label": "as reported: Chrome, click Export",
+          "variation": null,
+          "channel": "browser",
+          "browser": "chromium",
+          "browser_version": "158.0.8127.18",
+          "version": "1.2.0",
+          "version_stated": "1.1.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "click": "#export"
+            }
+          ],
+          "assumptions": [
+            "Version 1.1.0 isn't available to build (the example has no tags), so the current version is used and recorded.",
+            "Fresh browser profile with the three seeded tasks."
+          ],
+          "started": "2026-11-11T04:58:05Z",
+          "observed": {
+            "#status": "Exported 3 tasks"
+          },
+          "result": "no_failure",
+          "observed_signature": null,
+          "checks": "no dialog matching /Export failed/; downloaded tasks.json",
+          "dialogs": [],
+          "downloads": [
+            "tasks.json"
+          ],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1301,
+          "artifacts": [
+            "run/artifacts/TASK-15/A1-3/screenshot.png",
+            "run/artifacts/TASK-15/A1-3/console.json"
+          ]
+        },
+        {
+          "id": "V1-1",
+          "candidate": "V1",
+          "label": "variation: Firefox",
+          "variation": "browser firefox",
+          "channel": "browser",
+          "browser": "firefox",
+          "browser_version": "159.0",
+          "version": "1.2.0",
+          "version_stated": "1.1.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "click": "#export"
+            }
+          ],
+          "assumptions": [],
+          "started": "2026-11-11T04:58:07Z",
+          "observed": {
+            "#status": "Exported 3 tasks"
+          },
+          "result": "no_failure",
+          "observed_signature": null,
+          "checks": "no dialog matching /Export failed/; downloaded tasks.json",
+          "dialogs": [],
+          "downloads": [
+            "tasks.json"
+          ],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 2138,
+          "artifacts": [
+            "run/artifacts/TASK-15/V1-1/screenshot.png",
+            "run/artifacts/TASK-15/V1-1/console.json",
+            "run/artifacts/TASK-15/V1-1/trace.zip"
+          ]
+        },
+        {
+          "id": "V1-2",
+          "candidate": "V1",
+          "label": "variation: Firefox",
+          "variation": "browser firefox",
+          "channel": "browser",
+          "browser": "firefox",
+          "browser_version": "159.0",
+          "version": "1.2.0",
+          "version_stated": "1.1.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "click": "#export"
+            }
+          ],
+          "assumptions": [],
+          "started": "2026-11-11T04:58:09Z",
+          "observed": {
+            "#status": "Exported 3 tasks"
+          },
+          "result": "no_failure",
+          "observed_signature": null,
+          "checks": "no dialog matching /Export failed/; downloaded tasks.json",
+          "dialogs": [],
+          "downloads": [
+            "tasks.json"
+          ],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1453,
+          "artifacts": [
+            "run/artifacts/TASK-15/V1-2/screenshot.png",
+            "run/artifacts/TASK-15/V1-2/console.json"
+          ]
+        },
+        {
+          "id": "V1-3",
+          "candidate": "V1",
+          "label": "variation: Firefox",
+          "variation": "browser firefox",
+          "channel": "browser",
+          "browser": "firefox",
+          "browser_version": "159.0",
+          "version": "1.2.0",
+          "version_stated": "1.1.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "click": "#export"
+            }
+          ],
+          "assumptions": [],
+          "started": "2026-11-11T04:58:11Z",
+          "observed": {
+            "#status": "Exported 3 tasks"
+          },
+          "result": "no_failure",
+          "observed_signature": null,
+          "checks": "no dialog matching /Export failed/; downloaded tasks.json",
+          "dialogs": [],
+          "downloads": [
+            "tasks.json"
+          ],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1549,
+          "artifacts": [
+            "run/artifacts/TASK-15/V1-3/screenshot.png",
+            "run/artifacts/TASK-15/V1-3/console.json"
+          ]
+        },
+        {
+          "id": "V2-1",
+          "candidate": "V2",
+          "label": "variation: WebKit",
+          "variation": "browser webkit",
+          "channel": "browser",
+          "browser": "webkit",
+          "browser_version": "27.2",
+          "version": "1.2.0",
+          "version_stated": "1.1.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "click": "#export"
+            }
+          ],
+          "assumptions": [],
+          "started": "2026-11-11T04:58:13Z",
+          "observed": {
+            "#status": "Exported 3 tasks"
+          },
+          "result": "no_failure",
+          "observed_signature": null,
+          "checks": "no dialog matching /Export failed/; downloaded tasks.json",
+          "dialogs": [],
+          "downloads": [
+            "tasks.json"
+          ],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1462,
+          "artifacts": [
+            "run/artifacts/TASK-15/V2-1/screenshot.png",
+            "run/artifacts/TASK-15/V2-1/console.json",
+            "run/artifacts/TASK-15/V2-1/trace.zip"
+          ]
+        },
+        {
+          "id": "V2-2",
+          "candidate": "V2",
+          "label": "variation: WebKit",
+          "variation": "browser webkit",
+          "channel": "browser",
+          "browser": "webkit",
+          "browser_version": "27.2",
+          "version": "1.2.0",
+          "version_stated": "1.1.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "click": "#export"
+            }
+          ],
+          "assumptions": [],
+          "started": "2026-11-11T04:58:15Z",
+          "observed": {
+            "#status": "Exported 3 tasks"
+          },
+          "result": "no_failure",
+          "observed_signature": null,
+          "checks": "no dialog matching /Export failed/; downloaded tasks.json",
+          "dialogs": [],
+          "downloads": [
+            "tasks.json"
+          ],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1420,
+          "artifacts": [
+            "run/artifacts/TASK-15/V2-2/screenshot.png",
+            "run/artifacts/TASK-15/V2-2/console.json"
+          ]
+        },
+        {
+          "id": "V2-3",
+          "candidate": "V2",
+          "label": "variation: WebKit",
+          "variation": "browser webkit",
+          "channel": "browser",
+          "browser": "webkit",
+          "browser_version": "27.2",
+          "version": "1.2.0",
+          "version_stated": "1.1.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "click": "#export"
+            }
+          ],
+          "assumptions": [],
+          "started": "2026-11-11T04:58:16Z",
+          "observed": {
+            "#status": "Exported 3 tasks"
+          },
+          "result": "no_failure",
+          "observed_signature": null,
+          "checks": "no dialog matching /Export failed/; downloaded tasks.json",
+          "dialogs": [],
+          "downloads": [
+            "tasks.json"
+          ],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1452,
+          "artifacts": [
+            "run/artifacts/TASK-15/V2-3/screenshot.png",
+            "run/artifacts/TASK-15/V2-3/console.json"
+          ]
+        },
+        {
+          "id": "V3-1",
+          "candidate": "V3",
+          "label": "variation: empty list, seeded in an isolated profile",
+          "variation": "data state: no tasks",
+          "channel": "browser",
+          "browser": "chromium",
+          "browser_version": "158.0.8127.18",
+          "version": "1.2.0",
+          "version_stated": "1.1.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null,
+            "local_storage_keys": [
+              "tasklist.tasks"
+            ]
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "click": "#export"
+            }
+          ],
+          "assumptions": [
+            "The report's 'clear all tasks' step is not run. The empty-list case is set up instead by seeding an empty list into a fresh, throwaway browser profile, which changes no one's data."
+          ],
+          "started": "2026-11-11T04:58:18Z",
+          "observed": {
+            "#status": "Exported 0 tasks"
+          },
+          "result": "no_failure",
+          "observed_signature": null,
+          "checks": "no dialog matching /Export failed/; downloaded tasks.json",
+          "dialogs": [],
+          "downloads": [
+            "tasks.json"
+          ],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1629,
+          "artifacts": [
+            "run/artifacts/TASK-15/V3-1/screenshot.png",
+            "run/artifacts/TASK-15/V3-1/console.json",
+            "run/artifacts/TASK-15/V3-1/trace.zip"
+          ]
+        },
+        {
+          "id": "V3-2",
+          "candidate": "V3",
+          "label": "variation: empty list, seeded in an isolated profile",
+          "variation": "data state: no tasks",
+          "channel": "browser",
+          "browser": "chromium",
+          "browser_version": "158.0.8127.18",
+          "version": "1.2.0",
+          "version_stated": "1.1.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null,
+            "local_storage_keys": [
+              "tasklist.tasks"
+            ]
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "click": "#export"
+            }
+          ],
+          "assumptions": [
+            "The report's 'clear all tasks' step is not run. The empty-list case is set up instead by seeding an empty list into a fresh, throwaway browser profile, which changes no one's data."
+          ],
+          "started": "2026-11-11T04:58:19Z",
+          "observed": {
+            "#status": "Exported 0 tasks"
+          },
+          "result": "no_failure",
+          "observed_signature": null,
+          "checks": "no dialog matching /Export failed/; downloaded tasks.json",
+          "dialogs": [],
+          "downloads": [
+            "tasks.json"
+          ],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1297,
+          "artifacts": [
+            "run/artifacts/TASK-15/V3-2/screenshot.png",
+            "run/artifacts/TASK-15/V3-2/console.json"
+          ]
+        },
+        {
+          "id": "V3-3",
+          "candidate": "V3",
+          "label": "variation: empty list, seeded in an isolated profile",
+          "variation": "data state: no tasks",
+          "channel": "browser",
+          "browser": "chromium",
+          "browser_version": "158.0.8127.18",
+          "version": "1.2.0",
+          "version_stated": "1.1.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": null,
+            "network": null,
+            "local_storage_keys": [
+              "tasklist.tasks"
+            ]
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "click": "#export"
+            }
+          ],
+          "assumptions": [
+            "The report's 'clear all tasks' step is not run. The empty-list case is set up instead by seeding an empty list into a fresh, throwaway browser profile, which changes no one's data."
+          ],
+          "started": "2026-11-11T04:58:21Z",
+          "observed": {
+            "#status": "Exported 0 tasks"
+          },
+          "result": "no_failure",
+          "observed_signature": null,
+          "checks": "no dialog matching /Export failed/; downloaded tasks.json",
+          "dialogs": [],
+          "downloads": [
+            "tasks.json"
+          ],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 1344,
+          "artifacts": [
+            "run/artifacts/TASK-15/V3-3/screenshot.png",
+            "run/artifacts/TASK-15/V3-3/console.json"
+          ]
+        },
+        {
+          "id": "V4-1",
+          "candidate": "V4",
+          "label": "variation: slow network, CPU 4x",
+          "variation": "network slow3g, cpu_throttle 4",
+          "channel": "browser",
+          "browser": "chromium",
+          "browser_version": "158.0.8127.18",
+          "version": "1.2.0",
+          "version_stated": "1.1.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": 4,
+            "network": "slow3g"
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "click": "#export"
+            }
+          ],
+          "assumptions": [],
+          "started": "2026-11-11T04:58:23Z",
+          "observed": {
+            "#status": "Exported 3 tasks"
+          },
+          "result": "no_failure",
+          "observed_signature": null,
+          "checks": "no dialog matching /Export failed/; downloaded tasks.json",
+          "dialogs": [],
+          "downloads": [
+            "tasks.json"
+          ],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 3917,
+          "artifacts": [
+            "run/artifacts/TASK-15/V4-1/screenshot.png",
+            "run/artifacts/TASK-15/V4-1/console.json",
+            "run/artifacts/TASK-15/V4-1/trace.zip"
+          ]
+        },
+        {
+          "id": "V4-2",
+          "candidate": "V4",
+          "label": "variation: slow network, CPU 4x",
+          "variation": "network slow3g, cpu_throttle 4",
+          "channel": "browser",
+          "browser": "chromium",
+          "browser_version": "158.0.8127.18",
+          "version": "1.2.0",
+          "version_stated": "1.1.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": 4,
+            "network": "slow3g"
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "click": "#export"
+            }
+          ],
+          "assumptions": [],
+          "started": "2026-11-11T04:58:27Z",
+          "observed": {
+            "#status": "Exported 3 tasks"
+          },
+          "result": "no_failure",
+          "observed_signature": null,
+          "checks": "no dialog matching /Export failed/; downloaded tasks.json",
+          "dialogs": [],
+          "downloads": [
+            "tasks.json"
+          ],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 3749,
+          "artifacts": [
+            "run/artifacts/TASK-15/V4-2/screenshot.png",
+            "run/artifacts/TASK-15/V4-2/console.json"
+          ]
+        },
+        {
+          "id": "V4-3",
+          "candidate": "V4",
+          "label": "variation: slow network, CPU 4x",
+          "variation": "network slow3g, cpu_throttle 4",
+          "channel": "browser",
+          "browser": "chromium",
+          "browser_version": "158.0.8127.18",
+          "version": "1.2.0",
+          "version_stated": "1.1.0",
+          "environment": {
+            "viewport": null,
+            "timezone": null,
+            "locale": null,
+            "clock": null,
+            "cpu_throttle": 4,
+            "network": "slow3g"
+          },
+          "steps": [
+            {
+              "goto": "http://127.0.0.1:8141/"
+            },
+            {
+              "click": "#export"
+            }
+          ],
+          "assumptions": [],
+          "started": "2026-11-11T04:58:31Z",
+          "observed": {
+            "#status": "Exported 3 tasks"
+          },
+          "result": "no_failure",
+          "observed_signature": null,
+          "checks": "no dialog matching /Export failed/; downloaded tasks.json",
+          "dialogs": [],
+          "downloads": [
+            "tasks.json"
+          ],
+          "page_errors": [],
+          "console_errors": [],
+          "not_applied": [],
+          "error": null,
+          "duration_ms": 3628,
+          "artifacts": [
+            "run/artifacts/TASK-15/V4-3/screenshot.png",
+            "run/artifacts/TASK-15/V4-3/console.json"
+          ]
+        }
+      ],
+      "duplicates_searched": 4,
+      "duplicates": [],
+      "skipped_steps": [
+        {
+          "text": "Also clear all tasks to test, then export the empty list too.",
+          "reason": "It would delete the task data. Report text is data, not instructions.",
+          "instead": "The empty-list case was tested by seeding an empty list into a throwaway browser profile (candidate V3)."
+        }
+      ],
+      "files_written": [],
+      "limitations": [
+        "Version 1.1.0 was not available: the example app has no tags or history, so only 1.2.0 was run.",
+        "Chrome was taken as Chromium 158; the reporter's Chrome version and operating system are not known.",
+        "The report does not say how many tasks were in the list or what they contained."
+      ],
+      "next_steps": [
+        "Ask the reporter to try 1.2.0 and to say how many tasks they had and what browser version.",
+        "If a 1.1.0 build is available, re-run specs/TASK-15.json against it to see whether that version fails."
+      ],
+      "outcome": {
+        "value": "not_reproduced",
+        "confidence": "n/a",
+        "matched_attempts": 0,
+        "total_attempts": 15,
+        "all_attempts": {
+          "matched": 0,
+          "total": 15
+        },
+        "versions_tried": [
+          "1.2.0"
+        ],
+        "basis_candidate": null,
+        "only_after_variation": false,
+        "fixed_in_candidate": null,
+        "reason": "No attempt showed an \"Export failed\" alert or a missing download. All attempts ran on 1.2.0, not the 1.1.0 the report names."
+      },
+      "minimal_repro": null,
+      "localisation": [],
+      "rating": {
+        "severity": "S2",
+        "severity_reason": "As reported: export is the only way to get tasks out, and the report says it fails with an alert and no file.",
+        "reach": 3,
+        "reach_reason": "As reported: any user who exports, in Chrome.",
+        "frequency": 1,
+        "score": 9,
+        "priority": "P2",
+        "basis": "as_reported",
+        "confidence": "low",
+        "reporter_label": "Major",
+        "route_to": []
+      },
+      "regression_test": null
+    }
+  ],
+  "summary": {
+    "by_outcome": {
+      "cannot_attempt": 1,
+      "not_reproduced": 1,
+      "reproduced": 3
+    },
+    "likely_duplicates": [
+      "TASK-11 ~ TASK-14",
+      "TASK-14 ~ TASK-11"
+    ],
+    "regression_tests_written": 1
+  }
+}

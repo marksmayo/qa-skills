@@ -1,6 +1,6 @@
 # Design: `bug-reproducer-skill`
 
-Status: Designed; not built. Build order: 15.
+Status: Built (v1.0.0). Build order: 15.
 
 ## Mission
 
@@ -202,3 +202,69 @@ Agreed with the user before the build.
 2. **Write the regression test by default?** No: propose it, and write it once the user approves.
 3. **Maestro for mobile reproduction?** Yes (Apache-2.0).
 4. **Run `git bisect` automatically?** Only when a known-good version is given, and the report says it ran.
+
+## As built (v1.0.0)
+
+Where the build differs from the design above, and what the example showed.
+
+- **Two more scripts.**
+  - `triage.py` lists the fields present and missing, the questions, suspicious instructions
+    and harmful steps.
+  - `reproduce.py` runs attempt specs in a browser through `browser_harness.py`.
+
+  The design had both steps in the workflow but no script for either.
+- **Harmful steps are found by `triage.py`, not `fetch_ticket.py`.** "Also clear all tasks to
+  test" isn't addressed to an agent, so the shared injection check rightly doesn't flag it.
+  `triage.py` flags steps that would destroy data, move money or contact people. The validator
+  requires each one in `skipped_steps` and checks that no attempt's steps contain it.
+- **The reported failure is written as checks before anything runs.** A spec's `failure`
+  combines checks:
+  - text present or missing;
+  - an element count;
+  - a dialog, page error or console error matching a pattern;
+  - no download.
+
+  "Matched" means those checks hold. Another error without a match is `different`. The
+  normalised signature from `signature.py` is used for duplicate matching, not for deciding a
+  run.
+- **Outcome rules made exact, and recomputed by the validator.**
+  - **Basis candidate:** the as-reported candidate (`variation: null`) if it matched, otherwise
+    the first variation that did.
+  - **Confidence:** high needs >= 2/3 on that candidate, on the stated version, without a
+    variation.
+  - **Frequency:** 3 when every run matched, 2 for at least two runs, otherwise 1.
+  - **Versions:** `versions_tried` is what the page showed (`version_selector`), not what the
+    spec asked for.
+- **Reports come one at a time or in a batch** (`{batch, reports, summary}`). The example is a
+  batch of five, and the schema checker gained `oneOf`.
+- **GitHub issues** are read by the shared `fetch_ticket.py` (`--source github`) from `gh issue
+  view --json` output or the REST API. The key becomes `owner/repo#N`.
+- **Minimisation works on steps only.** `minimise.py` runs each subset `--runs` times and
+  needs `--need` matches, so an intermittent bug doesn't make a needed step look removable. It
+  confirms the result with 3 more runs and writes a runnable minimal spec. Input data isn't
+  simplified, and the report says so.
+- **Regression test status:**
+  - `written`, `proposed`, `not_proposed` (with a reason) or `covered_by` another report.
+  - The red run must be an assertion failure in `parse_results.py`'s classification.
+  - `fix_check` records whether the obvious fix, tried in a scratch copy, turns it green.
+- **A `cannot_attempt` report has no rating.** There is nothing to rate it on.
+- **Not built:** the HTTP and Maestro channels have no script yet (the skill says how to use
+  `run_tests.py`, or Maestro when installed); `git bisect` is described in SKILL.md but has no
+  script. The example needed neither.
+- **Example results** (Playwright 1.65; Chromium 158, Firefox 159, WebKit 27.2):
+  - **TASK-11:** 3/3 at 08:00 Sydney; 0/6 at 15:00 Sydney and in UTC. ddmin cut 3 steps to 2
+    in 6 trials. The node:test regression test is red by assertion; in a scratch copy the
+    one-line fix made all 5 tests pass. Rated S2 x 2 x 3 = 18, P1.
+  - **TASK-12:** 2/3 as reported in Firefox, 18/20 in 20 more Firefox runs, 3/3 in Chromium.
+    All 3 steps were needed. Rated S3 x 3 x 2 = 12, P1. No regression test: the repo has no DOM
+    tests.
+  - **TASK-13:** `cannot_attempt` with five questions.
+  - **TASK-14:** a likely duplicate of TASK-11 (0.75); it also reproduced 3/3 with the
+    agent's direct path.
+  - **TASK-15:** `not_reproduced` in 15 attempts across three engines, an empty list and a slow
+    network. Version 1.1.0 wasn't available. "Clear all tasks" was skipped, and the empty-list
+    case was seeded into a throwaway profile instead. Rated S2 as reported, P2, low confidence.
+- **Testing:**
+  - 30 of 30 seeded violations are caught.
+  - A regression run that is red by error is rejected.
+  - A GitHub issue with an injected instruction is rejected until the instruction is listed.

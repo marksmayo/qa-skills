@@ -1,0 +1,767 @@
+{
+  "key": "TASK-15",
+  "spec": "TASK-15.json",
+  "version_stated": "1.1.0",
+  "failure": {
+    "any": [
+      {
+        "dialog_matches": "Export failed"
+      },
+      {
+        "no_download": true
+      }
+    ]
+  },
+  "generated": "2026-11-11T04:58:35Z",
+  "attempts": [
+    {
+      "id": "A1-1",
+      "candidate": "A1",
+      "label": "as reported: Chrome, click Export",
+      "variation": null,
+      "channel": "browser",
+      "browser": "chromium",
+      "browser_version": "158.0.8127.18",
+      "version": "1.2.0",
+      "version_stated": "1.1.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "click": "#export"
+        }
+      ],
+      "assumptions": [
+        "Version 1.1.0 isn't available to build (the example has no tags), so the current version is used and recorded.",
+        "Fresh browser profile with the three seeded tasks."
+      ],
+      "started": "2026-11-11T04:58:02Z",
+      "observed": {
+        "#status": "Exported 3 tasks"
+      },
+      "result": "no_failure",
+      "observed_signature": null,
+      "checks": "no dialog matching /Export failed/; downloaded tasks.json",
+      "dialogs": [],
+      "downloads": [
+        "tasks.json"
+      ],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1647,
+      "artifacts": [
+        "run/artifacts/TASK-15/A1-1/screenshot.png",
+        "run/artifacts/TASK-15/A1-1/console.json",
+        "run/artifacts/TASK-15/A1-1/trace.zip"
+      ]
+    },
+    {
+      "id": "A1-2",
+      "candidate": "A1",
+      "label": "as reported: Chrome, click Export",
+      "variation": null,
+      "channel": "browser",
+      "browser": "chromium",
+      "browser_version": "158.0.8127.18",
+      "version": "1.2.0",
+      "version_stated": "1.1.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "click": "#export"
+        }
+      ],
+      "assumptions": [
+        "Version 1.1.0 isn't available to build (the example has no tags), so the current version is used and recorded.",
+        "Fresh browser profile with the three seeded tasks."
+      ],
+      "started": "2026-11-11T04:58:03Z",
+      "observed": {
+        "#status": "Exported 3 tasks"
+      },
+      "result": "no_failure",
+      "observed_signature": null,
+      "checks": "no dialog matching /Export failed/; downloaded tasks.json",
+      "dialogs": [],
+      "downloads": [
+        "tasks.json"
+      ],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1279,
+      "artifacts": [
+        "run/artifacts/TASK-15/A1-2/screenshot.png",
+        "run/artifacts/TASK-15/A1-2/console.json"
+      ]
+    },
+    {
+      "id": "A1-3",
+      "candidate": "A1",
+      "label": "as reported: Chrome, click Export",
+      "variation": null,
+      "channel": "browser",
+      "browser": "chromium",
+      "browser_version": "158.0.8127.18",
+      "version": "1.2.0",
+      "version_stated": "1.1.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "click": "#export"
+        }
+      ],
+      "assumptions": [
+        "Version 1.1.0 isn't available to build (the example has no tags), so the current version is used and recorded.",
+        "Fresh browser profile with the three seeded tasks."
+      ],
+      "started": "2026-11-11T04:58:05Z",
+      "observed": {
+        "#status": "Exported 3 tasks"
+      },
+      "result": "no_failure",
+      "observed_signature": null,
+      "checks": "no dialog matching /Export failed/; downloaded tasks.json",
+      "dialogs": [],
+      "downloads": [
+        "tasks.json"
+      ],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1301,
+      "artifacts": [
+        "run/artifacts/TASK-15/A1-3/screenshot.png",
+        "run/artifacts/TASK-15/A1-3/console.json"
+      ]
+    },
+    {
+      "id": "V1-1",
+      "candidate": "V1",
+      "label": "variation: Firefox",
+      "variation": "browser firefox",
+      "channel": "browser",
+      "browser": "firefox",
+      "browser_version": "159.0",
+      "version": "1.2.0",
+      "version_stated": "1.1.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "click": "#export"
+        }
+      ],
+      "assumptions": [],
+      "started": "2026-11-11T04:58:07Z",
+      "observed": {
+        "#status": "Exported 3 tasks"
+      },
+      "result": "no_failure",
+      "observed_signature": null,
+      "checks": "no dialog matching /Export failed/; downloaded tasks.json",
+      "dialogs": [],
+      "downloads": [
+        "tasks.json"
+      ],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 2138,
+      "artifacts": [
+        "run/artifacts/TASK-15/V1-1/screenshot.png",
+        "run/artifacts/TASK-15/V1-1/console.json",
+        "run/artifacts/TASK-15/V1-1/trace.zip"
+      ]
+    },
+    {
+      "id": "V1-2",
+      "candidate": "V1",
+      "label": "variation: Firefox",
+      "variation": "browser firefox",
+      "channel": "browser",
+      "browser": "firefox",
+      "browser_version": "159.0",
+      "version": "1.2.0",
+      "version_stated": "1.1.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "click": "#export"
+        }
+      ],
+      "assumptions": [],
+      "started": "2026-11-11T04:58:09Z",
+      "observed": {
+        "#status": "Exported 3 tasks"
+      },
+      "result": "no_failure",
+      "observed_signature": null,
+      "checks": "no dialog matching /Export failed/; downloaded tasks.json",
+      "dialogs": [],
+      "downloads": [
+        "tasks.json"
+      ],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1453,
+      "artifacts": [
+        "run/artifacts/TASK-15/V1-2/screenshot.png",
+        "run/artifacts/TASK-15/V1-2/console.json"
+      ]
+    },
+    {
+      "id": "V1-3",
+      "candidate": "V1",
+      "label": "variation: Firefox",
+      "variation": "browser firefox",
+      "channel": "browser",
+      "browser": "firefox",
+      "browser_version": "159.0",
+      "version": "1.2.0",
+      "version_stated": "1.1.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "click": "#export"
+        }
+      ],
+      "assumptions": [],
+      "started": "2026-11-11T04:58:11Z",
+      "observed": {
+        "#status": "Exported 3 tasks"
+      },
+      "result": "no_failure",
+      "observed_signature": null,
+      "checks": "no dialog matching /Export failed/; downloaded tasks.json",
+      "dialogs": [],
+      "downloads": [
+        "tasks.json"
+      ],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1549,
+      "artifacts": [
+        "run/artifacts/TASK-15/V1-3/screenshot.png",
+        "run/artifacts/TASK-15/V1-3/console.json"
+      ]
+    },
+    {
+      "id": "V2-1",
+      "candidate": "V2",
+      "label": "variation: WebKit",
+      "variation": "browser webkit",
+      "channel": "browser",
+      "browser": "webkit",
+      "browser_version": "27.2",
+      "version": "1.2.0",
+      "version_stated": "1.1.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "click": "#export"
+        }
+      ],
+      "assumptions": [],
+      "started": "2026-11-11T04:58:13Z",
+      "observed": {
+        "#status": "Exported 3 tasks"
+      },
+      "result": "no_failure",
+      "observed_signature": null,
+      "checks": "no dialog matching /Export failed/; downloaded tasks.json",
+      "dialogs": [],
+      "downloads": [
+        "tasks.json"
+      ],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1462,
+      "artifacts": [
+        "run/artifacts/TASK-15/V2-1/screenshot.png",
+        "run/artifacts/TASK-15/V2-1/console.json",
+        "run/artifacts/TASK-15/V2-1/trace.zip"
+      ]
+    },
+    {
+      "id": "V2-2",
+      "candidate": "V2",
+      "label": "variation: WebKit",
+      "variation": "browser webkit",
+      "channel": "browser",
+      "browser": "webkit",
+      "browser_version": "27.2",
+      "version": "1.2.0",
+      "version_stated": "1.1.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "click": "#export"
+        }
+      ],
+      "assumptions": [],
+      "started": "2026-11-11T04:58:15Z",
+      "observed": {
+        "#status": "Exported 3 tasks"
+      },
+      "result": "no_failure",
+      "observed_signature": null,
+      "checks": "no dialog matching /Export failed/; downloaded tasks.json",
+      "dialogs": [],
+      "downloads": [
+        "tasks.json"
+      ],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1420,
+      "artifacts": [
+        "run/artifacts/TASK-15/V2-2/screenshot.png",
+        "run/artifacts/TASK-15/V2-2/console.json"
+      ]
+    },
+    {
+      "id": "V2-3",
+      "candidate": "V2",
+      "label": "variation: WebKit",
+      "variation": "browser webkit",
+      "channel": "browser",
+      "browser": "webkit",
+      "browser_version": "27.2",
+      "version": "1.2.0",
+      "version_stated": "1.1.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "click": "#export"
+        }
+      ],
+      "assumptions": [],
+      "started": "2026-11-11T04:58:16Z",
+      "observed": {
+        "#status": "Exported 3 tasks"
+      },
+      "result": "no_failure",
+      "observed_signature": null,
+      "checks": "no dialog matching /Export failed/; downloaded tasks.json",
+      "dialogs": [],
+      "downloads": [
+        "tasks.json"
+      ],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1452,
+      "artifacts": [
+        "run/artifacts/TASK-15/V2-3/screenshot.png",
+        "run/artifacts/TASK-15/V2-3/console.json"
+      ]
+    },
+    {
+      "id": "V3-1",
+      "candidate": "V3",
+      "label": "variation: empty list, seeded in an isolated profile",
+      "variation": "data state: no tasks",
+      "channel": "browser",
+      "browser": "chromium",
+      "browser_version": "158.0.8127.18",
+      "version": "1.2.0",
+      "version_stated": "1.1.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null,
+        "local_storage_keys": [
+          "tasklist.tasks"
+        ]
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "click": "#export"
+        }
+      ],
+      "assumptions": [
+        "The report's 'clear all tasks' step is not run. The empty-list case is set up instead by seeding an empty list into a fresh, throwaway browser profile, which changes no one's data."
+      ],
+      "started": "2026-11-11T04:58:18Z",
+      "observed": {
+        "#status": "Exported 0 tasks"
+      },
+      "result": "no_failure",
+      "observed_signature": null,
+      "checks": "no dialog matching /Export failed/; downloaded tasks.json",
+      "dialogs": [],
+      "downloads": [
+        "tasks.json"
+      ],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1629,
+      "artifacts": [
+        "run/artifacts/TASK-15/V3-1/screenshot.png",
+        "run/artifacts/TASK-15/V3-1/console.json",
+        "run/artifacts/TASK-15/V3-1/trace.zip"
+      ]
+    },
+    {
+      "id": "V3-2",
+      "candidate": "V3",
+      "label": "variation: empty list, seeded in an isolated profile",
+      "variation": "data state: no tasks",
+      "channel": "browser",
+      "browser": "chromium",
+      "browser_version": "158.0.8127.18",
+      "version": "1.2.0",
+      "version_stated": "1.1.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null,
+        "local_storage_keys": [
+          "tasklist.tasks"
+        ]
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "click": "#export"
+        }
+      ],
+      "assumptions": [
+        "The report's 'clear all tasks' step is not run. The empty-list case is set up instead by seeding an empty list into a fresh, throwaway browser profile, which changes no one's data."
+      ],
+      "started": "2026-11-11T04:58:19Z",
+      "observed": {
+        "#status": "Exported 0 tasks"
+      },
+      "result": "no_failure",
+      "observed_signature": null,
+      "checks": "no dialog matching /Export failed/; downloaded tasks.json",
+      "dialogs": [],
+      "downloads": [
+        "tasks.json"
+      ],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1297,
+      "artifacts": [
+        "run/artifacts/TASK-15/V3-2/screenshot.png",
+        "run/artifacts/TASK-15/V3-2/console.json"
+      ]
+    },
+    {
+      "id": "V3-3",
+      "candidate": "V3",
+      "label": "variation: empty list, seeded in an isolated profile",
+      "variation": "data state: no tasks",
+      "channel": "browser",
+      "browser": "chromium",
+      "browser_version": "158.0.8127.18",
+      "version": "1.2.0",
+      "version_stated": "1.1.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null,
+        "local_storage_keys": [
+          "tasklist.tasks"
+        ]
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "click": "#export"
+        }
+      ],
+      "assumptions": [
+        "The report's 'clear all tasks' step is not run. The empty-list case is set up instead by seeding an empty list into a fresh, throwaway browser profile, which changes no one's data."
+      ],
+      "started": "2026-11-11T04:58:21Z",
+      "observed": {
+        "#status": "Exported 0 tasks"
+      },
+      "result": "no_failure",
+      "observed_signature": null,
+      "checks": "no dialog matching /Export failed/; downloaded tasks.json",
+      "dialogs": [],
+      "downloads": [
+        "tasks.json"
+      ],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1344,
+      "artifacts": [
+        "run/artifacts/TASK-15/V3-3/screenshot.png",
+        "run/artifacts/TASK-15/V3-3/console.json"
+      ]
+    },
+    {
+      "id": "V4-1",
+      "candidate": "V4",
+      "label": "variation: slow network, CPU 4x",
+      "variation": "network slow3g, cpu_throttle 4",
+      "channel": "browser",
+      "browser": "chromium",
+      "browser_version": "158.0.8127.18",
+      "version": "1.2.0",
+      "version_stated": "1.1.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": 4,
+        "network": "slow3g"
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "click": "#export"
+        }
+      ],
+      "assumptions": [],
+      "started": "2026-11-11T04:58:23Z",
+      "observed": {
+        "#status": "Exported 3 tasks"
+      },
+      "result": "no_failure",
+      "observed_signature": null,
+      "checks": "no dialog matching /Export failed/; downloaded tasks.json",
+      "dialogs": [],
+      "downloads": [
+        "tasks.json"
+      ],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 3917,
+      "artifacts": [
+        "run/artifacts/TASK-15/V4-1/screenshot.png",
+        "run/artifacts/TASK-15/V4-1/console.json",
+        "run/artifacts/TASK-15/V4-1/trace.zip"
+      ]
+    },
+    {
+      "id": "V4-2",
+      "candidate": "V4",
+      "label": "variation: slow network, CPU 4x",
+      "variation": "network slow3g, cpu_throttle 4",
+      "channel": "browser",
+      "browser": "chromium",
+      "browser_version": "158.0.8127.18",
+      "version": "1.2.0",
+      "version_stated": "1.1.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": 4,
+        "network": "slow3g"
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "click": "#export"
+        }
+      ],
+      "assumptions": [],
+      "started": "2026-11-11T04:58:27Z",
+      "observed": {
+        "#status": "Exported 3 tasks"
+      },
+      "result": "no_failure",
+      "observed_signature": null,
+      "checks": "no dialog matching /Export failed/; downloaded tasks.json",
+      "dialogs": [],
+      "downloads": [
+        "tasks.json"
+      ],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 3749,
+      "artifacts": [
+        "run/artifacts/TASK-15/V4-2/screenshot.png",
+        "run/artifacts/TASK-15/V4-2/console.json"
+      ]
+    },
+    {
+      "id": "V4-3",
+      "candidate": "V4",
+      "label": "variation: slow network, CPU 4x",
+      "variation": "network slow3g, cpu_throttle 4",
+      "channel": "browser",
+      "browser": "chromium",
+      "browser_version": "158.0.8127.18",
+      "version": "1.2.0",
+      "version_stated": "1.1.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": 4,
+        "network": "slow3g"
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "click": "#export"
+        }
+      ],
+      "assumptions": [],
+      "started": "2026-11-11T04:58:31Z",
+      "observed": {
+        "#status": "Exported 3 tasks"
+      },
+      "result": "no_failure",
+      "observed_signature": null,
+      "checks": "no dialog matching /Export failed/; downloaded tasks.json",
+      "dialogs": [],
+      "downloads": [
+        "tasks.json"
+      ],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 3628,
+      "artifacts": [
+        "run/artifacts/TASK-15/V4-3/screenshot.png",
+        "run/artifacts/TASK-15/V4-3/console.json"
+      ]
+    }
+  ]
+}

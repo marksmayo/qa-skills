@@ -181,6 +181,17 @@ python exploratory-charter-writer-skill/scripts/parse_notes.py exploratory-chart
 
 The debrief fingerprints `examples/notes/session-01.md` and quotes it by line number, so editing the notes invalidates the debrief. Editing the inputs or `run/draft.json` changes the sources and rankings; rerun `commands.sh`.
 
+Bug reproducer (`examples/tasklist/` is the sample static app with two planted bugs and `examples/reports/` five Jira issues about it; `examples/run/` is a real run, listed in `examples/run/commands.sh`, with screenshots, console logs and Playwright traces; `--run` checks every attempt equals its record, `--tickets` re-checks triage, harmful steps and injected instructions):
+
+```bash
+python bug-reproducer-skill/scripts/validate_repro.py bug-reproducer-skill/examples/repro_report.example.json --tickets bug-reproducer-skill/examples/run/tickets.json --run bug-reproducer-skill/examples/run
+python bug-reproducer-skill/scripts/render_report.py bug-reproducer-skill/examples/repro_report.example.json [--brief] [--comment TASK-13]
+python bug-reproducer-skill/scripts/triage.py --ticket bug-reproducer-skill/examples/run/tickets.json
+python bug-reproducer-skill/scripts/dupes.py --ticket bug-reproducer-skill/examples/run/tickets.json --key TASK-14 --candidates bug-reproducer-skill/examples/run/tickets.json
+```
+
+Re-running the attempts needs Playwright with Chromium, Firefox and WebKit (`pip install -r bug-reproducer-skill/requirements.txt`) and the app served on loopback (`python -m http.server 8141 --bind 127.0.0.1 --directory bug-reproducer-skill/examples/tasklist`). TASK-12 is a race, so its counts change on every run. The report quotes `examples/tasklist/src/` by line, and `examples/tasklist/tests/due_today_timezone.test.mjs` is the red regression test, meant to fail. Editing the app, the reports or the specs invalidates the example until `commands.sh` is rerun.
+
 Shared files:
 
 ```bash
@@ -190,7 +201,7 @@ python tools/check_shared.py --fix  # copy canonical files from shared/ into ski
 
 ## Shared files
 
-Files used by more than one skill (the Journey Markdown spec `JOURNEY_FORMAT.md`, its front-matter schema, `journey_md.py`, `detect_conventions.py`, `parse_results.py`, `sarif.py`, `fetch_ticket.py`, `run_tests.py`, `stats.py`, `diff_scope.py` and `unified_diff.py`) have their canonical copy in `shared/`. Each skill carries an identical copy because skills are installed by copying a single directory. Edit only the copy in `shared/`, then run `python tools/check_shared.py --fix`; the mapping of shared files to skills lives in `tools/check_shared.py`.
+Files used by more than one skill (the Journey Markdown spec `JOURNEY_FORMAT.md`, its front-matter schema, `journey_md.py`, `detect_conventions.py`, `parse_results.py`, `sarif.py`, `fetch_ticket.py`, `run_tests.py`, `stats.py`, `diff_scope.py`, `unified_diff.py` and `browser_harness.py`) have their canonical copy in `shared/`. Each skill carries an identical copy because skills are installed by copying a single directory. Edit only the copy in `shared/`, then run `python tools/check_shared.py --fix`; the mapping of shared files to skills lives in `tools/check_shared.py`.
 
 Design documents for each skill (with an "As built" section), and the agreed build order, are in `docs/design/`.
 

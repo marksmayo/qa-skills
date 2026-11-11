@@ -1,0 +1,26 @@
+{
+  "key": "TASK-15",
+  "version": "1.1.0",
+  "version_selector": "#version",
+  "authorised_by": null,
+  "failure": {"any": [{"dialog_matches": "Export failed"}, {"no_download": true}]},
+  "observe": ["#status"],
+  "candidates": [
+    {"id": "A1", "label": "as reported: Chrome, click Export", "variation": null, "runs": 3, "browser": "chromium",
+     "environment": {},
+     "steps": [{"goto": "http://127.0.0.1:8141/"}, {"click": "#export"}],
+     "assumptions": ["Version 1.1.0 isn't available to build (the example has no tags), so the current version is used and recorded.",
+                     "Fresh browser profile with the three seeded tasks."]},
+    {"id": "V1", "label": "variation: Firefox", "variation": "browser firefox", "runs": 3, "browser": "firefox",
+     "environment": {}, "steps": [{"goto": "http://127.0.0.1:8141/"}, {"click": "#export"}], "assumptions": []},
+    {"id": "V2", "label": "variation: WebKit", "variation": "browser webkit", "runs": 3, "browser": "webkit",
+     "environment": {}, "steps": [{"goto": "http://127.0.0.1:8141/"}, {"click": "#export"}], "assumptions": []},
+    {"id": "V3", "label": "variation: empty list, seeded in an isolated profile", "variation": "data state: no tasks", "runs": 3, "browser": "chromium",
+     "environment": {"local_storage": {"tasklist.tasks": "[]"}},
+     "steps": [{"goto": "http://127.0.0.1:8141/"}, {"click": "#export"}],
+     "assumptions": ["The report's 'clear all tasks' step is not run. The empty-list case is set up instead by seeding an empty list into a fresh, throwaway browser profile, which changes no one's data."]},
+    {"id": "V4", "label": "variation: slow network, CPU 4x", "variation": "network slow3g, cpu_throttle 4", "runs": 3, "browser": "chromium",
+     "environment": {"network": "slow3g", "cpu_throttle": 4},
+     "steps": [{"goto": "http://127.0.0.1:8141/"}, {"click": "#export"}], "assumptions": []}
+  ]
+}

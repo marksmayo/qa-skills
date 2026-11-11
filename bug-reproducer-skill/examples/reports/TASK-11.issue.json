@@ -1,0 +1,82 @@
+{
+  "key": "TASK-11",
+  "fields": {
+    "summary": "Due today shows yesterday's tasks",
+    "issuetype": {
+      "name": "Bug"
+    },
+    "status": {
+      "name": "Open",
+      "statusCategory": {
+        "key": "new"
+      }
+    },
+    "priority": {
+      "name": "Major"
+    },
+    "labels": [
+      "filters"
+    ],
+    "components": [
+      {
+        "name": "filters"
+      }
+    ],
+    "fixVersions": [],
+    "description": {
+      "type": "doc",
+      "version": 1,
+      "content": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "Version: 1.2.0. Browser: Chrome on Windows, Sydney time."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "Steps: 1. Open the task list in the morning. 2. Click \"Due today\"."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "Expected: only \"Book the car service\", which is due today."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "Actual: the list shows \"Pay the water bill (due 2026-11-11)\", which was due yesterday, and not the task due today."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "Happens every morning before about 11am; by the afternoon the filter is right again."
+            }
+          ]
+        }
+      ]
+    },
+    "comment": {
+      "comments": [],
+      "total": 0
+    }
+  }
+}

@@ -1,0 +1,1371 @@
+{
+  "key": "TASK-12",
+  "spec": "TASK-12.json",
+  "version_stated": "1.2.0",
+  "failure": {
+    "count": "#tasks li",
+    "has_text": "Buy milk",
+    "gte": 2
+  },
+  "generated": "2026-11-11T04:57:36Z",
+  "attempts": [
+    {
+      "id": "A1-1",
+      "candidate": "A1",
+      "label": "as reported: Firefox, double-click Add",
+      "variation": null,
+      "channel": "browser",
+      "browser": "firefox",
+      "browser_version": "159.0",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "fill": "#title",
+          "value": "Buy milk"
+        },
+        {
+          "dblclick": "#add"
+        }
+      ],
+      "assumptions": [
+        "A double-click as Playwright sends it: two clicks with no pause between them.",
+        "Fresh browser profile; the seeded list has no 'Buy milk' task."
+      ],
+      "started": "2026-11-11T04:56:47Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+      },
+      "result": "matched",
+      "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+      "checks": "2 element(s) #tasks li with \"Buy milk\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 2354,
+      "artifacts": [
+        "run/artifacts/TASK-12/A1-1/screenshot.png",
+        "run/artifacts/TASK-12/A1-1/console.json",
+        "run/artifacts/TASK-12/A1-1/trace.zip"
+      ]
+    },
+    {
+      "id": "A1-2",
+      "candidate": "A1",
+      "label": "as reported: Firefox, double-click Add",
+      "variation": null,
+      "channel": "browser",
+      "browser": "firefox",
+      "browser_version": "159.0",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "fill": "#title",
+          "value": "Buy milk"
+        },
+        {
+          "dblclick": "#add"
+        }
+      ],
+      "assumptions": [
+        "A double-click as Playwright sends it: two clicks with no pause between them.",
+        "Fresh browser profile; the seeded list has no 'Buy milk' task."
+      ],
+      "started": "2026-11-11T04:56:49Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+      },
+      "result": "matched",
+      "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+      "checks": "2 element(s) #tasks li with \"Buy milk\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1599,
+      "artifacts": [
+        "run/artifacts/TASK-12/A1-2/screenshot.png",
+        "run/artifacts/TASK-12/A1-2/console.json"
+      ]
+    },
+    {
+      "id": "A1-3",
+      "candidate": "A1",
+      "label": "as reported: Firefox, double-click Add",
+      "variation": null,
+      "channel": "browser",
+      "browser": "firefox",
+      "browser_version": "159.0",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "fill": "#title",
+          "value": "Buy milk"
+        },
+        {
+          "dblclick": "#add"
+        }
+      ],
+      "assumptions": [
+        "A double-click as Playwright sends it: two clicks with no pause between them.",
+        "Fresh browser profile; the seeded list has no 'Buy milk' task."
+      ],
+      "started": "2026-11-11T04:56:51Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)"
+      },
+      "result": "no_failure",
+      "observed_signature": null,
+      "checks": "1 element(s) #tasks li with \"Buy milk\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1739,
+      "artifacts": [
+        "run/artifacts/TASK-12/A1-3/screenshot.png",
+        "run/artifacts/TASK-12/A1-3/console.json"
+      ]
+    },
+    {
+      "id": "F1-1",
+      "candidate": "F1",
+      "label": "frequency: Firefox, 20 more runs",
+      "variation": "repeat count 20 (frequency measurement)",
+      "channel": "browser",
+      "browser": "firefox",
+      "browser_version": "159.0",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "fill": "#title",
+          "value": "Buy milk"
+        },
+        {
+          "dblclick": "#add"
+        }
+      ],
+      "assumptions": [
+        "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+      ],
+      "started": "2026-11-11T04:56:59Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+      },
+      "result": "matched",
+      "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+      "checks": "2 element(s) #tasks li with \"Buy milk\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 2291,
+      "artifacts": [
+        "run/artifacts/TASK-12/F1-1/screenshot.png",
+        "run/artifacts/TASK-12/F1-1/console.json",
+        "run/artifacts/TASK-12/F1-1/trace.zip"
+      ]
+    },
+    {
+      "id": "F1-2",
+      "candidate": "F1",
+      "label": "frequency: Firefox, 20 more runs",
+      "variation": "repeat count 20 (frequency measurement)",
+      "channel": "browser",
+      "browser": "firefox",
+      "browser_version": "159.0",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "fill": "#title",
+          "value": "Buy milk"
+        },
+        {
+          "dblclick": "#add"
+        }
+      ],
+      "assumptions": [
+        "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+      ],
+      "started": "2026-11-11T04:57:01Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+      },
+      "result": "matched",
+      "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+      "checks": "2 element(s) #tasks li with \"Buy milk\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1588,
+      "artifacts": [
+        "run/artifacts/TASK-12/F1-2/screenshot.png",
+        "run/artifacts/TASK-12/F1-2/console.json"
+      ]
+    },
+    {
+      "id": "F1-3",
+      "candidate": "F1",
+      "label": "frequency: Firefox, 20 more runs",
+      "variation": "repeat count 20 (frequency measurement)",
+      "channel": "browser",
+      "browser": "firefox",
+      "browser_version": "159.0",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "fill": "#title",
+          "value": "Buy milk"
+        },
+        {
+          "dblclick": "#add"
+        }
+      ],
+      "assumptions": [
+        "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+      ],
+      "started": "2026-11-11T04:57:03Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)"
+      },
+      "result": "no_failure",
+      "observed_signature": null,
+      "checks": "1 element(s) #tasks li with \"Buy milk\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1743,
+      "artifacts": [
+        "run/artifacts/TASK-12/F1-3/screenshot.png",
+        "run/artifacts/TASK-12/F1-3/console.json"
+      ]
+    },
+    {
+      "id": "F1-4",
+      "candidate": "F1",
+      "label": "frequency: Firefox, 20 more runs",
+      "variation": "repeat count 20 (frequency measurement)",
+      "channel": "browser",
+      "browser": "firefox",
+      "browser_version": "159.0",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "fill": "#title",
+          "value": "Buy milk"
+        },
+        {
+          "dblclick": "#add"
+        }
+      ],
+      "assumptions": [
+        "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+      ],
+      "started": "2026-11-11T04:57:05Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+      },
+      "result": "matched",
+      "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+      "checks": "2 element(s) #tasks li with \"Buy milk\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1727,
+      "artifacts": [
+        "run/artifacts/TASK-12/F1-4/screenshot.png",
+        "run/artifacts/TASK-12/F1-4/console.json"
+      ]
+    },
+    {
+      "id": "F1-5",
+      "candidate": "F1",
+      "label": "frequency: Firefox, 20 more runs",
+      "variation": "repeat count 20 (frequency measurement)",
+      "channel": "browser",
+      "browser": "firefox",
+      "browser_version": "159.0",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "fill": "#title",
+          "value": "Buy milk"
+        },
+        {
+          "dblclick": "#add"
+        }
+      ],
+      "assumptions": [
+        "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+      ],
+      "started": "2026-11-11T04:57:06Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+      },
+      "result": "matched",
+      "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+      "checks": "2 element(s) #tasks li with \"Buy milk\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1774,
+      "artifacts": [
+        "run/artifacts/TASK-12/F1-5/screenshot.png",
+        "run/artifacts/TASK-12/F1-5/console.json"
+      ]
+    },
+    {
+      "id": "F1-6",
+      "candidate": "F1",
+      "label": "frequency: Firefox, 20 more runs",
+      "variation": "repeat count 20 (frequency measurement)",
+      "channel": "browser",
+      "browser": "firefox",
+      "browser_version": "159.0",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "fill": "#title",
+          "value": "Buy milk"
+        },
+        {
+          "dblclick": "#add"
+        }
+      ],
+      "assumptions": [
+        "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+      ],
+      "started": "2026-11-11T04:57:08Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+      },
+      "result": "matched",
+      "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+      "checks": "2 element(s) #tasks li with \"Buy milk\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1733,
+      "artifacts": [
+        "run/artifacts/TASK-12/F1-6/screenshot.png",
+        "run/artifacts/TASK-12/F1-6/console.json"
+      ]
+    },
+    {
+      "id": "F1-7",
+      "candidate": "F1",
+      "label": "frequency: Firefox, 20 more runs",
+      "variation": "repeat count 20 (frequency measurement)",
+      "channel": "browser",
+      "browser": "firefox",
+      "browser_version": "159.0",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "fill": "#title",
+          "value": "Buy milk"
+        },
+        {
+          "dblclick": "#add"
+        }
+      ],
+      "assumptions": [
+        "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+      ],
+      "started": "2026-11-11T04:57:10Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+      },
+      "result": "matched",
+      "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+      "checks": "2 element(s) #tasks li with \"Buy milk\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1709,
+      "artifacts": [
+        "run/artifacts/TASK-12/F1-7/screenshot.png",
+        "run/artifacts/TASK-12/F1-7/console.json"
+      ]
+    },
+    {
+      "id": "F1-8",
+      "candidate": "F1",
+      "label": "frequency: Firefox, 20 more runs",
+      "variation": "repeat count 20 (frequency measurement)",
+      "channel": "browser",
+      "browser": "firefox",
+      "browser_version": "159.0",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "fill": "#title",
+          "value": "Buy milk"
+        },
+        {
+          "dblclick": "#add"
+        }
+      ],
+      "assumptions": [
+        "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+      ],
+      "started": "2026-11-11T04:57:12Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+      },
+      "result": "matched",
+      "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+      "checks": "2 element(s) #tasks li with \"Buy milk\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1718,
+      "artifacts": [
+        "run/artifacts/TASK-12/F1-8/screenshot.png",
+        "run/artifacts/TASK-12/F1-8/console.json"
+      ]
+    },
+    {
+      "id": "F1-9",
+      "candidate": "F1",
+      "label": "frequency: Firefox, 20 more runs",
+      "variation": "repeat count 20 (frequency measurement)",
+      "channel": "browser",
+      "browser": "firefox",
+      "browser_version": "159.0",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "fill": "#title",
+          "value": "Buy milk"
+        },
+        {
+          "dblclick": "#add"
+        }
+      ],
+      "assumptions": [
+        "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+      ],
+      "started": "2026-11-11T04:57:13Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+      },
+      "result": "matched",
+      "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+      "checks": "2 element(s) #tasks li with \"Buy milk\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1724,
+      "artifacts": [
+        "run/artifacts/TASK-12/F1-9/screenshot.png",
+        "run/artifacts/TASK-12/F1-9/console.json"
+      ]
+    },
+    {
+      "id": "F1-10",
+      "candidate": "F1",
+      "label": "frequency: Firefox, 20 more runs",
+      "variation": "repeat count 20 (frequency measurement)",
+      "channel": "browser",
+      "browser": "firefox",
+      "browser_version": "159.0",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "fill": "#title",
+          "value": "Buy milk"
+        },
+        {
+          "dblclick": "#add"
+        }
+      ],
+      "assumptions": [
+        "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+      ],
+      "started": "2026-11-11T04:57:15Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+      },
+      "result": "matched",
+      "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+      "checks": "2 element(s) #tasks li with \"Buy milk\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 2248,
+      "artifacts": [
+        "run/artifacts/TASK-12/F1-10/screenshot.png",
+        "run/artifacts/TASK-12/F1-10/console.json"
+      ]
+    },
+    {
+      "id": "F1-11",
+      "candidate": "F1",
+      "label": "frequency: Firefox, 20 more runs",
+      "variation": "repeat count 20 (frequency measurement)",
+      "channel": "browser",
+      "browser": "firefox",
+      "browser_version": "159.0",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "fill": "#title",
+          "value": "Buy milk"
+        },
+        {
+          "dblclick": "#add"
+        }
+      ],
+      "assumptions": [
+        "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+      ],
+      "started": "2026-11-11T04:57:17Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+      },
+      "result": "matched",
+      "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+      "checks": "2 element(s) #tasks li with \"Buy milk\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1796,
+      "artifacts": [
+        "run/artifacts/TASK-12/F1-11/screenshot.png",
+        "run/artifacts/TASK-12/F1-11/console.json"
+      ]
+    },
+    {
+      "id": "F1-12",
+      "candidate": "F1",
+      "label": "frequency: Firefox, 20 more runs",
+      "variation": "repeat count 20 (frequency measurement)",
+      "channel": "browser",
+      "browser": "firefox",
+      "browser_version": "159.0",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "fill": "#title",
+          "value": "Buy milk"
+        },
+        {
+          "dblclick": "#add"
+        }
+      ],
+      "assumptions": [
+        "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+      ],
+      "started": "2026-11-11T04:57:19Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+      },
+      "result": "matched",
+      "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+      "checks": "2 element(s) #tasks li with \"Buy milk\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1725,
+      "artifacts": [
+        "run/artifacts/TASK-12/F1-12/screenshot.png",
+        "run/artifacts/TASK-12/F1-12/console.json"
+      ]
+    },
+    {
+      "id": "F1-13",
+      "candidate": "F1",
+      "label": "frequency: Firefox, 20 more runs",
+      "variation": "repeat count 20 (frequency measurement)",
+      "channel": "browser",
+      "browser": "firefox",
+      "browser_version": "159.0",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "fill": "#title",
+          "value": "Buy milk"
+        },
+        {
+          "dblclick": "#add"
+        }
+      ],
+      "assumptions": [
+        "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+      ],
+      "started": "2026-11-11T04:57:21Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+      },
+      "result": "matched",
+      "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+      "checks": "2 element(s) #tasks li with \"Buy milk\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1694,
+      "artifacts": [
+        "run/artifacts/TASK-12/F1-13/screenshot.png",
+        "run/artifacts/TASK-12/F1-13/console.json"
+      ]
+    },
+    {
+      "id": "F1-14",
+      "candidate": "F1",
+      "label": "frequency: Firefox, 20 more runs",
+      "variation": "repeat count 20 (frequency measurement)",
+      "channel": "browser",
+      "browser": "firefox",
+      "browser_version": "159.0",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "fill": "#title",
+          "value": "Buy milk"
+        },
+        {
+          "dblclick": "#add"
+        }
+      ],
+      "assumptions": [
+        "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+      ],
+      "started": "2026-11-11T04:57:23Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+      },
+      "result": "matched",
+      "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+      "checks": "2 element(s) #tasks li with \"Buy milk\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1721,
+      "artifacts": [
+        "run/artifacts/TASK-12/F1-14/screenshot.png",
+        "run/artifacts/TASK-12/F1-14/console.json"
+      ]
+    },
+    {
+      "id": "F1-15",
+      "candidate": "F1",
+      "label": "frequency: Firefox, 20 more runs",
+      "variation": "repeat count 20 (frequency measurement)",
+      "channel": "browser",
+      "browser": "firefox",
+      "browser_version": "159.0",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "fill": "#title",
+          "value": "Buy milk"
+        },
+        {
+          "dblclick": "#add"
+        }
+      ],
+      "assumptions": [
+        "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+      ],
+      "started": "2026-11-11T04:57:24Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+      },
+      "result": "matched",
+      "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+      "checks": "2 element(s) #tasks li with \"Buy milk\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1705,
+      "artifacts": [
+        "run/artifacts/TASK-12/F1-15/screenshot.png",
+        "run/artifacts/TASK-12/F1-15/console.json"
+      ]
+    },
+    {
+      "id": "F1-16",
+      "candidate": "F1",
+      "label": "frequency: Firefox, 20 more runs",
+      "variation": "repeat count 20 (frequency measurement)",
+      "channel": "browser",
+      "browser": "firefox",
+      "browser_version": "159.0",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "fill": "#title",
+          "value": "Buy milk"
+        },
+        {
+          "dblclick": "#add"
+        }
+      ],
+      "assumptions": [
+        "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+      ],
+      "started": "2026-11-11T04:57:26Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+      },
+      "result": "matched",
+      "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+      "checks": "2 element(s) #tasks li with \"Buy milk\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1751,
+      "artifacts": [
+        "run/artifacts/TASK-12/F1-16/screenshot.png",
+        "run/artifacts/TASK-12/F1-16/console.json"
+      ]
+    },
+    {
+      "id": "F1-17",
+      "candidate": "F1",
+      "label": "frequency: Firefox, 20 more runs",
+      "variation": "repeat count 20 (frequency measurement)",
+      "channel": "browser",
+      "browser": "firefox",
+      "browser_version": "159.0",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "fill": "#title",
+          "value": "Buy milk"
+        },
+        {
+          "dblclick": "#add"
+        }
+      ],
+      "assumptions": [
+        "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+      ],
+      "started": "2026-11-11T04:57:28Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+      },
+      "result": "matched",
+      "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+      "checks": "2 element(s) #tasks li with \"Buy milk\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1672,
+      "artifacts": [
+        "run/artifacts/TASK-12/F1-17/screenshot.png",
+        "run/artifacts/TASK-12/F1-17/console.json"
+      ]
+    },
+    {
+      "id": "F1-18",
+      "candidate": "F1",
+      "label": "frequency: Firefox, 20 more runs",
+      "variation": "repeat count 20 (frequency measurement)",
+      "channel": "browser",
+      "browser": "firefox",
+      "browser_version": "159.0",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "fill": "#title",
+          "value": "Buy milk"
+        },
+        {
+          "dblclick": "#add"
+        }
+      ],
+      "assumptions": [
+        "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+      ],
+      "started": "2026-11-11T04:57:29Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+      },
+      "result": "matched",
+      "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+      "checks": "2 element(s) #tasks li with \"Buy milk\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1709,
+      "artifacts": [
+        "run/artifacts/TASK-12/F1-18/screenshot.png",
+        "run/artifacts/TASK-12/F1-18/console.json"
+      ]
+    },
+    {
+      "id": "F1-19",
+      "candidate": "F1",
+      "label": "frequency: Firefox, 20 more runs",
+      "variation": "repeat count 20 (frequency measurement)",
+      "channel": "browser",
+      "browser": "firefox",
+      "browser_version": "159.0",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "fill": "#title",
+          "value": "Buy milk"
+        },
+        {
+          "dblclick": "#add"
+        }
+      ],
+      "assumptions": [
+        "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+      ],
+      "started": "2026-11-11T04:57:31Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+      },
+      "result": "matched",
+      "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+      "checks": "2 element(s) #tasks li with \"Buy milk\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1737,
+      "artifacts": [
+        "run/artifacts/TASK-12/F1-19/screenshot.png",
+        "run/artifacts/TASK-12/F1-19/console.json"
+      ]
+    },
+    {
+      "id": "F1-20",
+      "candidate": "F1",
+      "label": "frequency: Firefox, 20 more runs",
+      "variation": "repeat count 20 (frequency measurement)",
+      "channel": "browser",
+      "browser": "firefox",
+      "browser_version": "159.0",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "fill": "#title",
+          "value": "Buy milk"
+        },
+        {
+          "dblclick": "#add"
+        }
+      ],
+      "assumptions": [
+        "The report says 'not every time, but most times'; 20 more runs of the as-reported steps measure how often."
+      ],
+      "started": "2026-11-11T04:57:33Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)"
+      },
+      "result": "no_failure",
+      "observed_signature": null,
+      "checks": "1 element(s) #tasks li with \"Buy milk\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 2235,
+      "artifacts": [
+        "run/artifacts/TASK-12/F1-20/screenshot.png",
+        "run/artifacts/TASK-12/F1-20/console.json"
+      ]
+    },
+    {
+      "id": "V1-1",
+      "candidate": "V1",
+      "label": "variation: Chromium, double-click Add",
+      "variation": "browser chromium",
+      "channel": "browser",
+      "browser": "chromium",
+      "browser_version": "158.0.8127.18",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "fill": "#title",
+          "value": "Buy milk"
+        },
+        {
+          "dblclick": "#add"
+        }
+      ],
+      "assumptions": [
+        "Same steps in Chromium, to see whether the browser matters."
+      ],
+      "started": "2026-11-11T04:56:53Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+      },
+      "result": "matched",
+      "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+      "checks": "2 element(s) #tasks li with \"Buy milk\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1771,
+      "artifacts": [
+        "run/artifacts/TASK-12/V1-1/screenshot.png",
+        "run/artifacts/TASK-12/V1-1/console.json",
+        "run/artifacts/TASK-12/V1-1/trace.zip"
+      ]
+    },
+    {
+      "id": "V1-2",
+      "candidate": "V1",
+      "label": "variation: Chromium, double-click Add",
+      "variation": "browser chromium",
+      "channel": "browser",
+      "browser": "chromium",
+      "browser_version": "158.0.8127.18",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "fill": "#title",
+          "value": "Buy milk"
+        },
+        {
+          "dblclick": "#add"
+        }
+      ],
+      "assumptions": [
+        "Same steps in Chromium, to see whether the browser matters."
+      ],
+      "started": "2026-11-11T04:56:55Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+      },
+      "result": "matched",
+      "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+      "checks": "2 element(s) #tasks li with \"Buy milk\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1427,
+      "artifacts": [
+        "run/artifacts/TASK-12/V1-2/screenshot.png",
+        "run/artifacts/TASK-12/V1-2/console.json"
+      ]
+    },
+    {
+      "id": "V1-3",
+      "candidate": "V1",
+      "label": "variation: Chromium, double-click Add",
+      "variation": "browser chromium",
+      "channel": "browser",
+      "browser": "chromium",
+      "browser_version": "158.0.8127.18",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "fill": "#title",
+          "value": "Buy milk"
+        },
+        {
+          "dblclick": "#add"
+        }
+      ],
+      "assumptions": [
+        "Same steps in Chromium, to see whether the browser matters."
+      ],
+      "started": "2026-11-11T04:56:56Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+      },
+      "result": "matched",
+      "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+      "checks": "2 element(s) #tasks li with \"Buy milk\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1431,
+      "artifacts": [
+        "run/artifacts/TASK-12/V1-3/screenshot.png",
+        "run/artifacts/TASK-12/V1-3/console.json"
+      ]
+    }
+  ]
+}

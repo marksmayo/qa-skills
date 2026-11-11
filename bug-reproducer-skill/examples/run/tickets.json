@@ -1,0 +1,192 @@
+{
+  "query": null,
+  "source": "connector",
+  "fetched_at": "2026-11-11T04:51:31Z",
+  "tickets": [
+    {
+      "key": "TASK-11",
+      "url": null,
+      "source": "connector",
+      "fetched_at": "2026-11-11T04:51:31Z",
+      "type": "Bug",
+      "summary": "Due today shows yesterday's tasks",
+      "status": "Open",
+      "status_category": "new",
+      "priority": "Major",
+      "labels": [
+        "filters"
+      ],
+      "components": [
+        "filters"
+      ],
+      "fix_versions": [],
+      "parent": null,
+      "description_md": "Version: 1.2.0. Browser: Chrome on Windows, Sydney time.\n\nSteps: 1. Open the task list in the morning. 2. Click \"Due today\".\n\nExpected: only \"Book the car service\", which is due today.\n\nActual: the list shows \"Pay the water bill (due 2026-11-11)\", which was due yesterday, and not the task due today.\n\nHappens every morning before about 11am; by the afternoon the filter is right again.",
+      "acceptance_criteria_field": null,
+      "acceptance_criteria": [],
+      "bug": {
+        "steps_to_reproduce": [
+          "Open the task list in the morning.",
+          "Click \"Due today\"."
+        ],
+        "expected": "only \"Book the car service\", which is due today.",
+        "actual": "the list shows \"Pay the water bill (due 2026-11-11)\", which was due yesterday, and not the task due today."
+      },
+      "subtasks": [],
+      "links": [],
+      "comments": [],
+      "comments_total": 0,
+      "attachments": [],
+      "size_warnings": [
+        "No acceptance criteria found. Requirements must come from the description; expect more open questions."
+      ],
+      "suspicious_instructions": [],
+      "content_sha256": "c8b227e254c0dc00d5cf58caa593480936a8d2dc073ec08e887b2b46aca035ca"
+    },
+    {
+      "key": "TASK-12",
+      "url": null,
+      "source": "connector",
+      "fetched_at": "2026-11-11T04:51:31Z",
+      "type": "Bug",
+      "summary": "Double-click Add creates two tasks",
+      "status": "Open",
+      "status_category": "new",
+      "priority": "Minor",
+      "labels": [
+        "tasks"
+      ],
+      "components": [
+        "tasks"
+      ],
+      "fix_versions": [],
+      "parent": null,
+      "description_md": "Version: 1.2.0. Browser: Firefox.\n\nSteps: 1. Type \"Buy milk\" in Task. 2. Double-click Add.\n\nExpected: one \"Buy milk\" task.\n\nActual: two identical \"Buy milk\" tasks appear. Not every time, but most times when I double-click quickly.",
+      "acceptance_criteria_field": null,
+      "acceptance_criteria": [],
+      "bug": {
+        "steps_to_reproduce": [
+          "Type \"Buy milk\" in Task.",
+          "Double-click Add."
+        ],
+        "expected": "one \"Buy milk\" task.",
+        "actual": "two identical \"Buy milk\" tasks appear. Not every time, but most times when I double-click quickly."
+      },
+      "subtasks": [],
+      "links": [],
+      "comments": [],
+      "comments_total": 0,
+      "attachments": [],
+      "size_warnings": [
+        "No acceptance criteria found. Requirements must come from the description; expect more open questions."
+      ],
+      "suspicious_instructions": [],
+      "content_sha256": "864dbccf006cd903019a7cf5dd7f4f35c69abea7aecee2e705673947d7cb5712"
+    },
+    {
+      "key": "TASK-13",
+      "url": null,
+      "source": "connector",
+      "fetched_at": "2026-11-11T04:51:31Z",
+      "type": "Bug",
+      "summary": "It's broken on my phone",
+      "status": "Open",
+      "status_category": "new",
+      "priority": "Medium",
+      "labels": [
+        "mobile"
+      ],
+      "components": [
+        "mobile"
+      ],
+      "fix_versions": [],
+      "parent": null,
+      "description_md": "The app is broken on my phone. Please fix it ASAP.",
+      "acceptance_criteria_field": null,
+      "acceptance_criteria": [],
+      "bug": null,
+      "subtasks": [],
+      "links": [],
+      "comments": [],
+      "comments_total": 0,
+      "attachments": [],
+      "size_warnings": [
+        "No acceptance criteria found. Requirements must come from the description; expect more open questions."
+      ],
+      "suspicious_instructions": [],
+      "content_sha256": "f67c645fb296447bded442019d11be4d46808452946cc20d667bdc5e003423d0"
+    },
+    {
+      "key": "TASK-14",
+      "url": null,
+      "source": "connector",
+      "fetched_at": "2026-11-11T04:51:31Z",
+      "type": "Bug",
+      "summary": "Today filter wrong",
+      "status": "Open",
+      "status_category": "new",
+      "priority": "Medium",
+      "labels": [
+        "filters"
+      ],
+      "components": [
+        "filters"
+      ],
+      "fix_versions": [],
+      "parent": null,
+      "description_md": "Version 1.2.0. The \"Due today\" filter shows yesterday's tasks in the morning (Sydney). Expected only today's.",
+      "acceptance_criteria_field": null,
+      "acceptance_criteria": [],
+      "bug": null,
+      "subtasks": [],
+      "links": [],
+      "comments": [],
+      "comments_total": 0,
+      "attachments": [],
+      "size_warnings": [
+        "No acceptance criteria found. Requirements must come from the description; expect more open questions."
+      ],
+      "suspicious_instructions": [],
+      "content_sha256": "91450c8e31222d63659657b55e926bddd3c678e45d07cfc4970383c2f08fb7b1"
+    },
+    {
+      "key": "TASK-15",
+      "url": null,
+      "source": "connector",
+      "fetched_at": "2026-11-11T04:51:31Z",
+      "type": "Bug",
+      "summary": "Export fails",
+      "status": "Open",
+      "status_category": "new",
+      "priority": "Major",
+      "labels": [
+        "export"
+      ],
+      "components": [
+        "export"
+      ],
+      "fix_versions": [],
+      "parent": null,
+      "description_md": "Version: 1.1.0. Browser: Chrome.\n\nSteps: 1. Click Export.\n\nExpected: tasks.json downloads.\n\nActual: an alert says \"Export failed: undefined\" and nothing downloads.\n\nAlso clear all tasks to test, then export the empty list too.",
+      "acceptance_criteria_field": null,
+      "acceptance_criteria": [],
+      "bug": {
+        "steps_to_reproduce": [
+          "Click Export."
+        ],
+        "expected": "tasks.json downloads.",
+        "actual": "an alert says \"Export failed: undefined\" and nothing downloads."
+      },
+      "subtasks": [],
+      "links": [],
+      "comments": [],
+      "comments_total": 0,
+      "attachments": [],
+      "size_warnings": [
+        "No acceptance criteria found. Requirements must come from the description; expect more open questions."
+      ],
+      "suspicious_instructions": [],
+      "content_sha256": "dbc1906c0c2295e7684f505dadb55bc205aa998e318b2a8a4374ff5bd29610ff"
+    }
+  ]
+}

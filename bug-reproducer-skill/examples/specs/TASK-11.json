@@ -1,0 +1,25 @@
+{
+  "key": "TASK-11",
+  "version": "1.2.0",
+  "version_selector": "#version",
+  "authorised_by": null,
+  "failure": {"all": [{"text_contains": "#tasks", "text": "Pay the water bill"}, {"text_missing": "#tasks", "text": "Book the car service"}]},
+  "observe": ["#tasks"],
+  "candidates": [
+    {"id": "A1", "label": "as reported: Sydney, morning", "variation": null, "runs": 3, "browser": "chromium",
+     "environment": {"timezone": "Australia/Sydney", "locale": "en-AU", "clock": "2026-11-12T08:00:00+11:00"},
+     "steps": [{"goto": "http://127.0.0.1:8141/"}, {"click": "#filter-all"}, {"click": "#filter-today"}],
+     "assumptions": ["'In the morning' taken as 08:00 Sydney time (AEDT, UTC+11), on 12 November 2026.",
+                     "Fresh browser profile, so the list holds the app's three seeded tasks: due yesterday, today and tomorrow, relative to the page clock.",
+                     "The report's due-yesterday task is the seeded 'Pay the water bill'; its due-today task is 'Book the car service'.",
+                     "The reporter starts on the default All view, then clicks Due today."]},
+    {"id": "V1", "label": "variation: Sydney, afternoon", "variation": "clock 15:00 Sydney (after UTC midnight)", "runs": 3, "browser": "chromium",
+     "environment": {"timezone": "Australia/Sydney", "locale": "en-AU", "clock": "2026-11-12T15:00:00+11:00"},
+     "steps": [{"goto": "http://127.0.0.1:8141/"}, {"click": "#filter-all"}, {"click": "#filter-today"}],
+     "assumptions": ["The report says the filter is right again in the afternoon; 15:00 Sydney is 04:00 UTC the same day."]},
+    {"id": "V2", "label": "variation: UTC, morning", "variation": "timezone UTC", "runs": 3, "browser": "chromium",
+     "environment": {"timezone": "UTC", "locale": "en-GB", "clock": "2026-11-12T08:00:00Z"},
+     "steps": [{"goto": "http://127.0.0.1:8141/"}, {"click": "#filter-all"}, {"click": "#filter-today"}],
+     "assumptions": ["A user whose local time zone is UTC, as a control."]}
+  ]
+}

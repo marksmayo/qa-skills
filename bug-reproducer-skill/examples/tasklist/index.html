@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tasks</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <h1>Tasks</h1>
+    <form id="new-task">
+      <label for="title">Task</label>
+      <input id="title" name="title" autocomplete="off">
+      <label for="due">Due</label>
+      <input id="due" name="due" type="date">
+      <button id="add" type="button">Add</button>
+    </form>
+    <div role="group" aria-label="Filter">
+      <button id="filter-all" type="button" aria-pressed="true">All</button>
+      <button id="filter-today" type="button" aria-pressed="false">Due today</button>
+    </div>
+    <ul id="tasks"></ul>
+    <p><button id="export" type="button">Export</button> <button id="clear" type="button">Clear all tasks</button></p>
+    <p id="status" role="status"></p>
+  </main>
+  <footer>tasklist <span id="version">1.2.0</span></footer>
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>

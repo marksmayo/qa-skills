@@ -1,0 +1,46 @@
+{
+  "key": "TASK-13",
+  "fields": {
+    "summary": "It's broken on my phone",
+    "issuetype": {
+      "name": "Bug"
+    },
+    "status": {
+      "name": "Open",
+      "statusCategory": {
+        "key": "new"
+      }
+    },
+    "priority": {
+      "name": "Medium"
+    },
+    "labels": [
+      "mobile"
+    ],
+    "components": [
+      {
+        "name": "mobile"
+      }
+    ],
+    "fixVersions": [],
+    "description": {
+      "type": "doc",
+      "version": 1,
+      "content": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "The app is broken on my phone. Please fix it ASAP."
+            }
+          ]
+        }
+      ]
+    },
+    "comment": {
+      "comments": [],
+      "total": 0
+    }
+  }
+}

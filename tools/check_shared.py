@@ -19,16 +19,17 @@ SHARED = {
     'schemas/journey.schema.json': ['journey-mapper-skill', 'journey-to-tests-skill'],
     'scripts/journey_md.py': ['journey-mapper-skill', 'journey-to-tests-skill'],
     'scripts/detect_conventions.py': ['journey-to-tests-skill', 'ticket-to-tdd-skill', 'flaky-test-hunter-skill',
-                                      'mutation-tester-skill', 'test-impact-selector-skill', 'test-data-auditor-skill', 'dead-test-finder-skill', 'risk-based-test-planner-skill'],
+                                      'mutation-tester-skill', 'test-impact-selector-skill', 'test-data-auditor-skill', 'dead-test-finder-skill', 'risk-based-test-planner-skill', 'bug-reproducer-skill'],
     'scripts/parse_results.py': ['journey-to-tests-skill', 'ticket-to-tdd-skill', 'flaky-test-hunter-skill',
-                                 'mutation-tester-skill', 'test-impact-selector-skill', 'test-data-auditor-skill', 'dead-test-finder-skill'],
+                                 'mutation-tester-skill', 'test-impact-selector-skill', 'test-data-auditor-skill', 'dead-test-finder-skill', 'bug-reproducer-skill'],
     'scripts/run_tests.py': ['flaky-test-hunter-skill', 'mutation-tester-skill', 'test-impact-selector-skill',
-                             'test-data-auditor-skill', 'dead-test-finder-skill'],
+                             'test-data-auditor-skill', 'dead-test-finder-skill', 'bug-reproducer-skill'],
     'scripts/diff_scope.py': ['mutation-tester-skill', 'test-impact-selector-skill', 'dead-test-finder-skill', 'risk-based-test-planner-skill'],
     'scripts/unified_diff.py': ['test-impact-selector-skill', 'dead-test-finder-skill'],
     'scripts/stats.py': ['flaky-test-hunter-skill', 'test-impact-selector-skill'],
     'scripts/sarif.py': ['ui-crash-hunter-skill', 'code-security-auditor-skill'],
-    'scripts/fetch_ticket.py': ['ticket-to-tdd-skill', 'ticket-readiness-reviewer-skill', 'dead-test-finder-skill', 'risk-based-test-planner-skill', 'exploratory-charter-writer-skill'],
+    'scripts/fetch_ticket.py': ['ticket-to-tdd-skill', 'ticket-readiness-reviewer-skill', 'dead-test-finder-skill', 'risk-based-test-planner-skill', 'exploratory-charter-writer-skill', 'bug-reproducer-skill'],
+    'scripts/browser_harness.py': ['bug-reproducer-skill'],
 }
 
 def normalised(path: Path) -> bytes:

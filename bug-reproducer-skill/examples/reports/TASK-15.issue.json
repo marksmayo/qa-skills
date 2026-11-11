@@ -1,0 +1,82 @@
+{
+  "key": "TASK-15",
+  "fields": {
+    "summary": "Export fails",
+    "issuetype": {
+      "name": "Bug"
+    },
+    "status": {
+      "name": "Open",
+      "statusCategory": {
+        "key": "new"
+      }
+    },
+    "priority": {
+      "name": "Major"
+    },
+    "labels": [
+      "export"
+    ],
+    "components": [
+      {
+        "name": "export"
+      }
+    ],
+    "fixVersions": [],
+    "description": {
+      "type": "doc",
+      "version": 1,
+      "content": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "Version: 1.1.0. Browser: Chrome."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "Steps: 1. Click Export."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "Expected: tasks.json downloads."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "Actual: an alert says \"Export failed: undefined\" and nothing downloads."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "Also clear all tasks to test, then export the empty list too."
+            }
+          ]
+        }
+      ]
+    },
+    "comment": {
+      "comments": [],
+      "total": 0
+    }
+  }
+}

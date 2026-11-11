@@ -1,0 +1,262 @@
+[
+  {
+    "key": "TASK-11",
+    "fields_present": [
+      "summary",
+      "steps",
+      "expected",
+      "actual",
+      "environment",
+      "version",
+      "frequency"
+    ],
+    "fields_missing": [],
+    "questions": [],
+    "version": "1.2.0",
+    "environment": [
+      "chrome",
+      "windows"
+    ],
+    "frequency": "every morning",
+    "signature": {
+      "raw_excerpt": "\"Pay the water bill (due 2026-11-11)\"",
+      "error": "pay the water bill due DATE",
+      "kind": "quoted_message",
+      "terms": [
+        "about",
+        "afternoon",
+        "before",
+        "bill",
+        "book",
+        "car",
+        "chrome",
+        "due",
+        "filter",
+        "list",
+        "morn",
+        "pay",
+        "right",
+        "service",
+        "sydney",
+        "task",
+        "today",
+        "water",
+        "window",
+        "yesterday"
+      ],
+      "from": "actual result"
+    },
+    "steps": [
+      "Open the task list in the morning.",
+      "Click \"Due today\"."
+    ],
+    "expected": "only \"Book the car service\", which is due today.",
+    "actual": "the list shows \"Pay the water bill (due 2026-11-11)\", which was due yesterday, and not the task due today.",
+    "suspicious_instructions": [],
+    "harmful_steps": [],
+    "can_attempt": true,
+    "content_sha256": "c8b227e254c0dc00d5cf58caa593480936a8d2dc073ec08e887b2b46aca035ca"
+  },
+  {
+    "key": "TASK-12",
+    "fields_present": [
+      "summary",
+      "steps",
+      "expected",
+      "actual",
+      "environment",
+      "version",
+      "frequency"
+    ],
+    "fields_missing": [],
+    "questions": [],
+    "version": "1.2.0",
+    "environment": [
+      "firefox"
+    ],
+    "frequency": "Not every time",
+    "signature": {
+      "raw_excerpt": "\"Buy milk\"",
+      "error": "buy milk",
+      "kind": "quoted_message",
+      "terms": [
+        "add",
+        "appear",
+        "buy",
+        "creat",
+        "double",
+        "firefox",
+        "identical",
+        "milk",
+        "one",
+        "quickly",
+        "task",
+        "two",
+        "type"
+      ],
+      "from": "actual result"
+    },
+    "steps": [
+      "Type \"Buy milk\" in Task.",
+      "Double-click Add."
+    ],
+    "expected": "one \"Buy milk\" task.",
+    "actual": "two identical \"Buy milk\" tasks appear. Not every time, but most times when I double-click quickly.",
+    "suspicious_instructions": [],
+    "harmful_steps": [],
+    "can_attempt": true,
+    "content_sha256": "864dbccf006cd903019a7cf5dd7f4f35c69abea7aecee2e705673947d7cb5712"
+  },
+  {
+    "key": "TASK-13",
+    "fields_present": [
+      "summary",
+      "environment"
+    ],
+    "fields_missing": [
+      "steps",
+      "expected",
+      "actual",
+      "version",
+      "frequency"
+    ],
+    "questions": [
+      "What exactly did you do, step by step, from opening the app?",
+      "What did you expect to happen?",
+      "What happened instead? Any error message, exactly as shown?",
+      "Which version of the app (shown in the footer)?",
+      "Does it happen every time, or only sometimes?"
+    ],
+    "version": null,
+    "environment": [
+      "phone"
+    ],
+    "frequency": null,
+    "signature": {
+      "raw_excerpt": null,
+      "error": null,
+      "kind": null,
+      "terms": [
+        "asap",
+        "broken",
+        "fix",
+        "phone"
+      ],
+      "from": "summary and description"
+    },
+    "steps": [],
+    "expected": null,
+    "actual": null,
+    "suspicious_instructions": [],
+    "harmful_steps": [],
+    "can_attempt": false,
+    "content_sha256": "f67c645fb296447bded442019d11be4d46808452946cc20d667bdc5e003423d0"
+  },
+  {
+    "key": "TASK-14",
+    "fields_present": [
+      "summary",
+      "version"
+    ],
+    "fields_missing": [
+      "steps",
+      "expected",
+      "actual",
+      "environment",
+      "frequency"
+    ],
+    "questions": [
+      "What exactly did you do, step by step, from opening the app?",
+      "What did you expect to happen?",
+      "What happened instead? Any error message, exactly as shown?",
+      "Which browser or device, and which operating system?",
+      "Does it happen every time, or only sometimes?"
+    ],
+    "version": "1.2.0",
+    "environment": [],
+    "frequency": null,
+    "signature": {
+      "raw_excerpt": "\"Due today\"",
+      "error": "due today",
+      "kind": "quoted_message",
+      "terms": [
+        "due",
+        "filter",
+        "morn",
+        "sydney",
+        "task",
+        "today",
+        "wrong",
+        "yesterday"
+      ],
+      "from": "summary and description"
+    },
+    "steps": [],
+    "expected": null,
+    "actual": null,
+    "suspicious_instructions": [],
+    "harmful_steps": [],
+    "can_attempt": true,
+    "content_sha256": "91450c8e31222d63659657b55e926bddd3c678e45d07cfc4970383c2f08fb7b1"
+  },
+  {
+    "key": "TASK-15",
+    "fields_present": [
+      "summary",
+      "steps",
+      "expected",
+      "actual",
+      "environment",
+      "version"
+    ],
+    "fields_missing": [
+      "frequency"
+    ],
+    "questions": [
+      "Does it happen every time, or only sometimes?"
+    ],
+    "version": "1.1.0",
+    "environment": [
+      "chrome"
+    ],
+    "frequency": null,
+    "signature": {
+      "raw_excerpt": "\"Export failed: undefined\"",
+      "error": "export failed undefined",
+      "kind": "quoted_message",
+      "terms": [
+        "alert",
+        "all",
+        "chrome",
+        "clear",
+        "download",
+        "empty",
+        "export",
+        "fail",
+        "json",
+        "list",
+        "noth",
+        "say",
+        "task",
+        "test",
+        "undefin"
+      ],
+      "from": "actual result"
+    },
+    "steps": [
+      "Click Export."
+    ],
+    "expected": "tasks.json downloads.",
+    "actual": "an alert says \"Export failed: undefined\" and nothing downloads.",
+    "suspicious_instructions": [],
+    "harmful_steps": [
+      {
+        "text": "Also clear all tasks to test, then export the empty list too.",
+        "match": "clear all tasks",
+        "reason": "would destroy data, move money or contact people"
+      }
+    ],
+    "can_attempt": true,
+    "content_sha256": "dbc1906c0c2295e7684f505dadb55bc205aa998e318b2a8a4374ff5bd29610ff"
+  }
+]

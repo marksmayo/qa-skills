@@ -1,0 +1,269 @@
+{
+  "key": "TASK-12",
+  "candidate": "A1",
+  "minimised": true,
+  "runs_per_trial": 3,
+  "need": 2,
+  "original_steps": [
+    {
+      "goto": "http://127.0.0.1:8141/"
+    },
+    {
+      "fill": "#title",
+      "value": "Buy milk"
+    },
+    {
+      "dblclick": "#add"
+    }
+  ],
+  "steps": [
+    {
+      "goto": "http://127.0.0.1:8141/"
+    },
+    {
+      "fill": "#title",
+      "value": "Buy milk"
+    },
+    {
+      "dblclick": "#add"
+    }
+  ],
+  "removed_steps": [],
+  "trials": [
+    {
+      "trial": "T1",
+      "steps": [
+        1,
+        2,
+        3
+      ],
+      "matched": 2,
+      "runs": 3,
+      "still_fails": true
+    },
+    {
+      "trial": "T2",
+      "steps": [
+        1
+      ],
+      "matched": 0,
+      "runs": 3,
+      "still_fails": false
+    },
+    {
+      "trial": "T3",
+      "steps": [
+        2,
+        3
+      ],
+      "matched": 0,
+      "runs": 3,
+      "still_fails": false
+    },
+    {
+      "trial": "T4",
+      "steps": [
+        2
+      ],
+      "matched": 0,
+      "runs": 3,
+      "still_fails": false
+    },
+    {
+      "trial": "T5",
+      "steps": [
+        1,
+        3
+      ],
+      "matched": 0,
+      "runs": 3,
+      "still_fails": false
+    },
+    {
+      "trial": "T6",
+      "steps": [
+        3
+      ],
+      "matched": 0,
+      "runs": 3,
+      "still_fails": false
+    },
+    {
+      "trial": "T7",
+      "steps": [
+        1,
+        2
+      ],
+      "matched": 0,
+      "runs": 3,
+      "still_fails": false
+    }
+  ],
+  "confirmation": [
+    {
+      "id": "M1-1",
+      "candidate": "M1",
+      "label": "minimal reproduction of A1",
+      "variation": null,
+      "channel": "browser",
+      "browser": "firefox",
+      "browser_version": "159.0",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "fill": "#title",
+          "value": "Buy milk"
+        },
+        {
+          "dblclick": "#add"
+        }
+      ],
+      "assumptions": [
+        "A double-click as Playwright sends it: two clicks with no pause between them.",
+        "Fresh browser profile; the seeded list has no 'Buy milk' task."
+      ],
+      "started": "2026-11-11T05:05:51Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+      },
+      "result": "matched",
+      "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+      "checks": "2 element(s) #tasks li with \"Buy milk\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 2323,
+      "artifacts": [
+        "run/artifacts/TASK-12/M1-1/screenshot.png",
+        "run/artifacts/TASK-12/M1-1/console.json",
+        "run/artifacts/TASK-12/M1-1/trace.zip"
+      ]
+    },
+    {
+      "id": "M1-2",
+      "candidate": "M1",
+      "label": "minimal reproduction of A1",
+      "variation": null,
+      "channel": "browser",
+      "browser": "firefox",
+      "browser_version": "159.0",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "fill": "#title",
+          "value": "Buy milk"
+        },
+        {
+          "dblclick": "#add"
+        }
+      ],
+      "assumptions": [
+        "A double-click as Playwright sends it: two clicks with no pause between them.",
+        "Fresh browser profile; the seeded list has no 'Buy milk' task."
+      ],
+      "started": "2026-11-11T05:05:53Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+      },
+      "result": "matched",
+      "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+      "checks": "2 element(s) #tasks li with \"Buy milk\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1608,
+      "artifacts": [
+        "run/artifacts/TASK-12/M1-2/screenshot.png",
+        "run/artifacts/TASK-12/M1-2/console.json"
+      ]
+    },
+    {
+      "id": "M1-3",
+      "candidate": "M1",
+      "label": "minimal reproduction of A1",
+      "variation": null,
+      "channel": "browser",
+      "browser": "firefox",
+      "browser_version": "159.0",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": null,
+        "locale": null,
+        "clock": null,
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "fill": "#title",
+          "value": "Buy milk"
+        },
+        {
+          "dblclick": "#add"
+        }
+      ],
+      "assumptions": [
+        "A double-click as Playwright sends it: two clicks with no pause between them.",
+        "Fresh browser profile; the seeded list has no 'Buy milk' task."
+      ],
+      "started": "2026-11-11T05:05:55Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-10)\nBook the car service (due 2026-11-11)\nReturn library books (due 2026-11-12)\nBuy milk (due 2026-11-11)\nBuy milk (due 2026-11-11)"
+      },
+      "result": "matched",
+      "observed_signature": "2 element(s) #tasks li with \"Buy milk\"",
+      "checks": "2 element(s) #tasks li with \"Buy milk\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1711,
+      "artifacts": [
+        "run/artifacts/TASK-12/M1-3/screenshot.png",
+        "run/artifacts/TASK-12/M1-3/console.json"
+      ]
+    }
+  ],
+  "confirmed": 3,
+  "script_path": "run/minimal/TASK-12.minimal.spec.json",
+  "limitations": [
+    "Only steps were minimised; input data and environment were kept as in the candidate."
+  ]
+}

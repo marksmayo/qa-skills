@@ -1,0 +1,5 @@
+# Only needed for scripts/reproduce.py and scripts/minimise.py, which drive a real browser.
+# Every other script is stdlib-only. Install with the user's agreement:
+#   pip install -r requirements.txt
+#   python -m playwright install chromium firefox webkit
+playwright>=1.49,<2

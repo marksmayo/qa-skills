@@ -1,0 +1,17 @@
+{
+  "key": "TASK-14",
+  "version": "1.2.0",
+  "version_selector": "#version",
+  "authorised_by": null,
+  "failure": {"all": [{"text_contains": "#tasks", "text": "Pay the water bill"}, {"text_missing": "#tasks", "text": "Book the car service"}]},
+  "observe": ["#tasks"],
+  "candidates": [
+    {"id": "A1", "label": "as reported: Sydney, morning, Due today", "variation": null, "runs": 3, "browser": "chromium",
+     "environment": {"timezone": "Australia/Sydney", "locale": "en-AU", "clock": "2026-11-12T08:00:00+11:00"},
+     "steps": [{"goto": "http://127.0.0.1:8141/"}, {"click": "#filter-today"}],
+     "assumptions": ["The report gives no steps; the most direct path is to open the app and click Due today.",
+                     "No browser is named; Chromium is used.",
+                     "'In the morning (Sydney)' taken as 08:00 Australia/Sydney on 12 November 2026.",
+                     "'Yesterday's tasks' checked with the seeded task due yesterday ('Pay the water bill') and the one due today ('Book the car service')."]}
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "key": "TASK-12",
+  "version": "1.2.0",
+  "version_selector": "#version",
+  "authorised_by": null,
+  "failure": {
+    "count": "#tasks li",
+    "has_text": "Buy milk",
+    "gte": 2
+  },
+  "observe": [
+    "#tasks"
+  ],
+  "settle_ms": 400,
+  "candidates": [
+    {
+      "id": "M1",
+      "label": "minimal reproduction of A1",
+      "variation": null,
+      "runs": 3,
+      "browser": "firefox",
+      "environment": {},
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "fill": "#title",
+          "value": "Buy milk"
+        },
+        {
+          "dblclick": "#add"
+        }
+      ],
+      "assumptions": [
+        "A double-click as Playwright sends it: two clicks with no pause between them.",
+        "Fresh browser profile; the seeded list has no 'Buy milk' task."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "key": "TASK-14",
+  "fields": {
+    "summary": "Today filter wrong",
+    "issuetype": {
+      "name": "Bug"
+    },
+    "status": {
+      "name": "Open",
+      "statusCategory": {
+        "key": "new"
+      }
+    },
+    "priority": {
+      "name": "Medium"
+    },
+    "labels": [
+      "filters"
+    ],
+    "components": [
+      {
+        "name": "filters"
+      }
+    ],
+    "fixVersions": [],
+    "description": {
+      "type": "doc",
+      "version": 1,
+      "content": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "Version 1.2.0. The \"Due today\" filter shows yesterday's tasks in the morning (Sydney). Expected only today's."
+            }
+          ]
+        }
+      ]
+    },
+    "comment": {
+      "comments": [],
+      "total": 0
+    }
+  }
+}

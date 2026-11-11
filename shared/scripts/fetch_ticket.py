@@ -16,6 +16,10 @@
     python fetch_ticket.py --from-file search.json --source connector --out tickets.json
     python fetch_ticket.py --from-file issues/ --source connector --out tickets.json
 
+    # A GitHub issue (read-only): gh issue view 42 --json number,title,body,labels,state,url,comments > issue.json,
+    # the REST API's issue JSON, or a list from gh issue list --json ... (key becomes owner/repo#42)
+    python fetch_ticket.py --from-file issue.json --source github --out ticket.json
+
 Output (ticket.json): key, type, summary, status and status_category (Jira's new, indeterminate or done), description_md (Atlassian Document Format and wiki
 markup converted to Markdown), acceptance_criteria[{id, text, source}], bug sections, subtasks,
 links, parent, recent comments, attachments (listed, never downloaded), suspicious_instructions
@@ -271,9 +275,27 @@ def bug_sections(md: str) -> dict | None:
     expected = pick('expected result', 'expected behaviour', 'expected behavior', 'expected')
     actual = pick('actual result', 'actual behaviour', 'actual behavior', 'actual', 'observed')
     if not (steps or expected or actual):
+        steps, expected, actual = inline_labels(md)          # "Steps: ...", "Expected: ...", "Actual: ..." paragraphs
+    if not (steps or expected or actual):
         return None
     return {'steps_to_reproduce': list_items((steps or '').split('\n')) or ([steps] if steps else []),
             'expected': expected, 'actual': actual}
+
+def inline_labels(md: str) -> tuple[str | None, str | None, str | None]:
+    """Bug fields written as labelled paragraphs rather than headed sections."""
+    found = {}
+    for line in md.split('\n'):
+        m = re.match(r'^\s*(?:\*\*)?(steps(?: to reproduce)?|expected(?: result| behaviou?r)?|actual(?: result| behaviou?r)?|observed)'
+                     r'(?:\*\*)?\s*:\s*(.+)$', line, re.I)
+        if m:
+            key = m.group(1).lower().split()[0]
+            key = 'actual' if key == 'observed' else key
+            found.setdefault(key, m.group(2).strip())
+    steps = found.get('steps')
+    if steps:
+        parts = [p.strip() for p in re.split(r'\s*\d+[.)]\s+', steps) if p.strip()]
+        steps = '\n'.join(f'- {p}' for p in parts) if len(parts) > 1 else steps
+    return steps, found.get('expected'), found.get('actual')
 
 def suspicious(fields: dict[str, str]) -> list[dict]:
     hits = []
@@ -341,6 +363,35 @@ def normalise_issue(issue: dict, source: str, base_url: str | None, ac_field_nam
                         for a in f.get('attachment') or []],
     }
     return finish(ticket)
+
+def normalise_github(issue: dict, source: str, max_comments: int) -> dict:
+    """A GitHub issue from `gh issue view N --json number,title,body,labels,state,url,comments` or the REST API."""
+    url = issue.get('url') or issue.get('html_url')
+    m = re.search(r'github\.com/([^/]+/[^/]+)/issues/(\d+)', url or '')
+    key = f'{m.group(1)}#{m.group(2)}' if m else f'#{issue.get("number")}'
+    labels = [l.get('name') if isinstance(l, dict) else l for l in issue.get('labels') or []]
+    body = (issue.get('body') or '').replace('\r\n', '\n').strip()
+    is_bug = any(re.search(r'bug|defect|regression', l or '', re.I) for l in labels) or \
+        bool(re.search(r'steps to reproduce|expected|actual', body, re.I))
+    raw_comments = issue.get('comments') if isinstance(issue.get('comments'), list) else []
+    comments = [{'author': (c.get('author') or c.get('user') or {}).get('login'), 'created': c.get('createdAt') or c.get('created_at'),
+                 'body_md': c.get('body') or ''} for c in raw_comments[-max_comments:]]
+    state = (issue.get('state') or '').lower() or None
+    ticket = {'key': key, 'url': url, 'source': source,
+              'fetched_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+              'type': 'Bug' if is_bug else 'Issue', 'summary': issue.get('title') or '', 'status': state,
+              'status_category': {'open': 'new', 'closed': 'done'}.get(state), 'priority': None, 'labels': labels,
+              'components': [], 'fix_versions': [((issue.get('milestone') or {}).get('title'))] if issue.get('milestone') else [],
+              'parent': None, 'description_md': body, 'acceptance_criteria_field': None,
+              'acceptance_criteria': extract_criteria(None, body, None),
+              'bug': bug_sections(body) if is_bug else None,
+              'subtasks': [], 'links': [], 'comments': comments,
+              'comments_total': len(raw_comments) if raw_comments else (issue.get('comments') if isinstance(issue.get('comments'), int) else 0),
+              'attachments': []}
+    return finish(ticket)
+
+def is_github_issue(d) -> bool:
+    return isinstance(d, dict) and 'number' in d and 'title' in d and 'fields' not in d
 
 def from_text(text: str, key: str | None, source: str) -> dict:
     lines = text.replace('\r\n', '\n').strip().split('\n')
@@ -480,6 +531,10 @@ def from_files(path: Path, source: str, base_url: str | None, ac_field_name: str
         return [normalise_issue(i, source, base_url, ac_field_name, ac_field_id, names, max_comments) for i in data['issues']]
     if isinstance(data, dict) and 'fields' in data:
         return normalise_issue(data, source, base_url, ac_field_name, ac_field_id, None, max_comments)
+    if is_github_issue(data):
+        return normalise_github(data, source, max_comments)
+    if isinstance(data, list) and data and all(is_github_issue(d) for d in data):
+        return [normalise_github(d, source, max_comments) for d in data]
     return from_text(raw, None, source)
 
 def _as_list(x) -> list[dict]:
@@ -502,7 +557,7 @@ def main(argv=None) -> int:
                                         'of issue JSON files, or pasted text/Markdown')
     ap.add_argument('--jql', help='read-only search; writes tickets.json with every matching ticket')
     ap.add_argument('--limit', type=int, default=50, help='maximum tickets for --jql (default 50)')
-    ap.add_argument('--source', choices=['connector', 'rest', 'pasted'], help='how the --from-file content was obtained')
+    ap.add_argument('--source', choices=['connector', 'rest', 'pasted', 'github'], help='how the --from-file content was obtained')
     ap.add_argument('--key', help='issue key, when pasted text does not include it')
     ap.add_argument('--base-url', default=os.environ.get('JIRA_BASE_URL'))
     ap.add_argument('--ac-field-name', default='Acceptance Criteria')
@@ -517,7 +572,7 @@ def main(argv=None) -> int:
             t = search(args.jql, args.base_url, args.ac_field_name, args.ac_field_id, args.max_comments, args.limit)
         elif args.from_file:
             path = Path(args.from_file)
-            is_text = path.is_file() and not path.read_text(encoding='utf-8').lstrip().startswith('{')
+            is_text = path.is_file() and not path.read_text(encoding='utf-8').lstrip().startswith(('{', '['))
             t = from_text(path.read_text(encoding='utf-8'), args.key, args.source or 'pasted') if is_text else \
                 from_files(path, args.source or 'connector', args.base_url, args.ac_field_name, args.ac_field_id,
                            args.max_comments)

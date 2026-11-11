@@ -1,0 +1,174 @@
+{
+  "key": "TASK-14",
+  "spec": "TASK-14.json",
+  "version_stated": "1.2.0",
+  "failure": {
+    "all": [
+      {
+        "text_contains": "#tasks",
+        "text": "Pay the water bill"
+      },
+      {
+        "text_missing": "#tasks",
+        "text": "Book the car service"
+      }
+    ]
+  },
+  "generated": "2026-11-11T05:01:03Z",
+  "attempts": [
+    {
+      "id": "A1-1",
+      "candidate": "A1",
+      "label": "as reported: Sydney, morning, Due today",
+      "variation": null,
+      "channel": "browser",
+      "browser": "chromium",
+      "browser_version": "158.0.8127.18",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": "Australia/Sydney",
+        "locale": "en-AU",
+        "clock": "2026-11-12T08:00:00+11:00",
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "click": "#filter-today"
+        }
+      ],
+      "assumptions": [
+        "The report gives no steps; the most direct path is to open the app and click Due today.",
+        "No browser is named; Chromium is used.",
+        "'In the morning (Sydney)' taken as 08:00 Australia/Sydney on 12 November 2026.",
+        "'Yesterday's tasks' checked with the seeded task due yesterday ('Pay the water bill') and the one due today ('Book the car service')."
+      ],
+      "started": "2026-11-11T05:00:58Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-11)"
+      },
+      "result": "matched",
+      "observed_signature": "#tasks contains \"Pay the water bill\"; #tasks does not contain \"Book the car service\"",
+      "checks": "#tasks contains \"Pay the water bill\"; #tasks does not contain \"Book the car service\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1632,
+      "artifacts": [
+        "run/artifacts/TASK-14/A1-1/screenshot.png",
+        "run/artifacts/TASK-14/A1-1/console.json",
+        "run/artifacts/TASK-14/A1-1/trace.zip"
+      ]
+    },
+    {
+      "id": "A1-2",
+      "candidate": "A1",
+      "label": "as reported: Sydney, morning, Due today",
+      "variation": null,
+      "channel": "browser",
+      "browser": "chromium",
+      "browser_version": "158.0.8127.18",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": "Australia/Sydney",
+        "locale": "en-AU",
+        "clock": "2026-11-12T08:00:00+11:00",
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "click": "#filter-today"
+        }
+      ],
+      "assumptions": [
+        "The report gives no steps; the most direct path is to open the app and click Due today.",
+        "No browser is named; Chromium is used.",
+        "'In the morning (Sydney)' taken as 08:00 Australia/Sydney on 12 November 2026.",
+        "'Yesterday's tasks' checked with the seeded task due yesterday ('Pay the water bill') and the one due today ('Book the car service')."
+      ],
+      "started": "2026-11-11T05:00:59Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-11)"
+      },
+      "result": "matched",
+      "observed_signature": "#tasks contains \"Pay the water bill\"; #tasks does not contain \"Book the car service\"",
+      "checks": "#tasks contains \"Pay the water bill\"; #tasks does not contain \"Book the car service\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1297,
+      "artifacts": [
+        "run/artifacts/TASK-14/A1-2/screenshot.png",
+        "run/artifacts/TASK-14/A1-2/console.json"
+      ]
+    },
+    {
+      "id": "A1-3",
+      "candidate": "A1",
+      "label": "as reported: Sydney, morning, Due today",
+      "variation": null,
+      "channel": "browser",
+      "browser": "chromium",
+      "browser_version": "158.0.8127.18",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": "Australia/Sydney",
+        "locale": "en-AU",
+        "clock": "2026-11-12T08:00:00+11:00",
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "click": "#filter-today"
+        }
+      ],
+      "assumptions": [
+        "The report gives no steps; the most direct path is to open the app and click Due today.",
+        "No browser is named; Chromium is used.",
+        "'In the morning (Sydney)' taken as 08:00 Australia/Sydney on 12 November 2026.",
+        "'Yesterday's tasks' checked with the seeded task due yesterday ('Pay the water bill') and the one due today ('Book the car service')."
+      ],
+      "started": "2026-11-11T05:01:01Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-11)"
+      },
+      "result": "matched",
+      "observed_signature": "#tasks contains \"Pay the water bill\"; #tasks does not contain \"Book the car service\"",
+      "checks": "#tasks contains \"Pay the water bill\"; #tasks does not contain \"Book the car service\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1326,
+      "artifacts": [
+        "run/artifacts/TASK-14/A1-3/screenshot.png",
+        "run/artifacts/TASK-14/A1-3/console.json"
+      ]
+    }
+  ]
+}

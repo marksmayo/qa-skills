@@ -1,0 +1,26 @@
+{
+  "key": "TASK-14",
+  "candidates_searched": 4,
+  "results": [
+    {
+      "key": "TASK-11",
+      "summary": "Due today shows yesterday's tasks",
+      "similarity": 0.75,
+      "components": {
+        "signature": 1,
+        "summary": 0.1667,
+        "component": 1
+      },
+      "verdict": "likely_duplicate",
+      "shared_terms": [
+        "due",
+        "filter",
+        "morn",
+        "sydney",
+        "task",
+        "today",
+        "yesterday"
+      ]
+    }
+  ]
+}

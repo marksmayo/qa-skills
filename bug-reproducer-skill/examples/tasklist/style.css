@@ -1,0 +1,5 @@
+body { font-family: system-ui, sans-serif; margin: 2rem; }
+main { max-width: 32rem; }
+label { display: block; margin-top: .5rem; }
+#tasks li { padding: .25rem 0; }
+footer { margin-top: 2rem; color: #555; }

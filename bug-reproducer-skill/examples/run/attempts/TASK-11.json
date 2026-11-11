@@ -1,0 +1,491 @@
+{
+  "key": "TASK-11",
+  "spec": "TASK-11.json",
+  "version_stated": "1.2.0",
+  "failure": {
+    "all": [
+      {
+        "text_contains": "#tasks",
+        "text": "Pay the water bill"
+      },
+      {
+        "text_missing": "#tasks",
+        "text": "Book the car service"
+      }
+    ]
+  },
+  "generated": "2026-11-11T04:56:41Z",
+  "attempts": [
+    {
+      "id": "A1-1",
+      "candidate": "A1",
+      "label": "as reported: Sydney, morning",
+      "variation": null,
+      "channel": "browser",
+      "browser": "chromium",
+      "browser_version": "158.0.8127.18",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": "Australia/Sydney",
+        "locale": "en-AU",
+        "clock": "2026-11-12T08:00:00+11:00",
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "click": "#filter-all"
+        },
+        {
+          "click": "#filter-today"
+        }
+      ],
+      "assumptions": [
+        "'In the morning' taken as 08:00 Sydney time (AEDT, UTC+11), on 12 November 2026.",
+        "Fresh browser profile, so the list holds the app's three seeded tasks: due yesterday, today and tomorrow, relative to the page clock.",
+        "The report's due-yesterday task is the seeded 'Pay the water bill'; its due-today task is 'Book the car service'.",
+        "The reporter starts on the default All view, then clicks Due today."
+      ],
+      "started": "2026-11-11T04:56:26Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-11)"
+      },
+      "result": "matched",
+      "observed_signature": "#tasks contains \"Pay the water bill\"; #tasks does not contain \"Book the car service\"",
+      "checks": "#tasks contains \"Pay the water bill\"; #tasks does not contain \"Book the car service\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1720,
+      "artifacts": [
+        "run/artifacts/TASK-11/A1-1/screenshot.png",
+        "run/artifacts/TASK-11/A1-1/console.json",
+        "run/artifacts/TASK-11/A1-1/trace.zip"
+      ]
+    },
+    {
+      "id": "A1-2",
+      "candidate": "A1",
+      "label": "as reported: Sydney, morning",
+      "variation": null,
+      "channel": "browser",
+      "browser": "chromium",
+      "browser_version": "158.0.8127.18",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": "Australia/Sydney",
+        "locale": "en-AU",
+        "clock": "2026-11-12T08:00:00+11:00",
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "click": "#filter-all"
+        },
+        {
+          "click": "#filter-today"
+        }
+      ],
+      "assumptions": [
+        "'In the morning' taken as 08:00 Sydney time (AEDT, UTC+11), on 12 November 2026.",
+        "Fresh browser profile, so the list holds the app's three seeded tasks: due yesterday, today and tomorrow, relative to the page clock.",
+        "The report's due-yesterday task is the seeded 'Pay the water bill'; its due-today task is 'Book the car service'.",
+        "The reporter starts on the default All view, then clicks Due today."
+      ],
+      "started": "2026-11-11T04:56:28Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-11)"
+      },
+      "result": "matched",
+      "observed_signature": "#tasks contains \"Pay the water bill\"; #tasks does not contain \"Book the car service\"",
+      "checks": "#tasks contains \"Pay the water bill\"; #tasks does not contain \"Book the car service\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1353,
+      "artifacts": [
+        "run/artifacts/TASK-11/A1-2/screenshot.png",
+        "run/artifacts/TASK-11/A1-2/console.json"
+      ]
+    },
+    {
+      "id": "A1-3",
+      "candidate": "A1",
+      "label": "as reported: Sydney, morning",
+      "variation": null,
+      "channel": "browser",
+      "browser": "chromium",
+      "browser_version": "158.0.8127.18",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": "Australia/Sydney",
+        "locale": "en-AU",
+        "clock": "2026-11-12T08:00:00+11:00",
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "click": "#filter-all"
+        },
+        {
+          "click": "#filter-today"
+        }
+      ],
+      "assumptions": [
+        "'In the morning' taken as 08:00 Sydney time (AEDT, UTC+11), on 12 November 2026.",
+        "Fresh browser profile, so the list holds the app's three seeded tasks: due yesterday, today and tomorrow, relative to the page clock.",
+        "The report's due-yesterday task is the seeded 'Pay the water bill'; its due-today task is 'Book the car service'.",
+        "The reporter starts on the default All view, then clicks Due today."
+      ],
+      "started": "2026-11-11T04:56:29Z",
+      "observed": {
+        "#tasks": "Pay the water bill (due 2026-11-11)"
+      },
+      "result": "matched",
+      "observed_signature": "#tasks contains \"Pay the water bill\"; #tasks does not contain \"Book the car service\"",
+      "checks": "#tasks contains \"Pay the water bill\"; #tasks does not contain \"Book the car service\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1348,
+      "artifacts": [
+        "run/artifacts/TASK-11/A1-3/screenshot.png",
+        "run/artifacts/TASK-11/A1-3/console.json"
+      ]
+    },
+    {
+      "id": "V1-1",
+      "candidate": "V1",
+      "label": "variation: Sydney, afternoon",
+      "variation": "clock 15:00 Sydney (after UTC midnight)",
+      "channel": "browser",
+      "browser": "chromium",
+      "browser_version": "158.0.8127.18",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": "Australia/Sydney",
+        "locale": "en-AU",
+        "clock": "2026-11-12T15:00:00+11:00",
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "click": "#filter-all"
+        },
+        {
+          "click": "#filter-today"
+        }
+      ],
+      "assumptions": [
+        "The report says the filter is right again in the afternoon; 15:00 Sydney is 04:00 UTC the same day."
+      ],
+      "started": "2026-11-11T04:56:31Z",
+      "observed": {
+        "#tasks": "Book the car service (due 2026-11-12)"
+      },
+      "result": "no_failure",
+      "observed_signature": null,
+      "checks": "#tasks does not contain \"Pay the water bill\"; #tasks contains \"Book the car service\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1397,
+      "artifacts": [
+        "run/artifacts/TASK-11/V1-1/screenshot.png",
+        "run/artifacts/TASK-11/V1-1/console.json",
+        "run/artifacts/TASK-11/V1-1/trace.zip"
+      ]
+    },
+    {
+      "id": "V1-2",
+      "candidate": "V1",
+      "label": "variation: Sydney, afternoon",
+      "variation": "clock 15:00 Sydney (after UTC midnight)",
+      "channel": "browser",
+      "browser": "chromium",
+      "browser_version": "158.0.8127.18",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": "Australia/Sydney",
+        "locale": "en-AU",
+        "clock": "2026-11-12T15:00:00+11:00",
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "click": "#filter-all"
+        },
+        {
+          "click": "#filter-today"
+        }
+      ],
+      "assumptions": [
+        "The report says the filter is right again in the afternoon; 15:00 Sydney is 04:00 UTC the same day."
+      ],
+      "started": "2026-11-11T04:56:33Z",
+      "observed": {
+        "#tasks": "Book the car service (due 2026-11-12)"
+      },
+      "result": "no_failure",
+      "observed_signature": null,
+      "checks": "#tasks does not contain \"Pay the water bill\"; #tasks contains \"Book the car service\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1312,
+      "artifacts": [
+        "run/artifacts/TASK-11/V1-2/screenshot.png",
+        "run/artifacts/TASK-11/V1-2/console.json"
+      ]
+    },
+    {
+      "id": "V1-3",
+      "candidate": "V1",
+      "label": "variation: Sydney, afternoon",
+      "variation": "clock 15:00 Sydney (after UTC midnight)",
+      "channel": "browser",
+      "browser": "chromium",
+      "browser_version": "158.0.8127.18",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": "Australia/Sydney",
+        "locale": "en-AU",
+        "clock": "2026-11-12T15:00:00+11:00",
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "click": "#filter-all"
+        },
+        {
+          "click": "#filter-today"
+        }
+      ],
+      "assumptions": [
+        "The report says the filter is right again in the afternoon; 15:00 Sydney is 04:00 UTC the same day."
+      ],
+      "started": "2026-11-11T04:56:34Z",
+      "observed": {
+        "#tasks": "Book the car service (due 2026-11-12)"
+      },
+      "result": "no_failure",
+      "observed_signature": null,
+      "checks": "#tasks does not contain \"Pay the water bill\"; #tasks contains \"Book the car service\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1262,
+      "artifacts": [
+        "run/artifacts/TASK-11/V1-3/screenshot.png",
+        "run/artifacts/TASK-11/V1-3/console.json"
+      ]
+    },
+    {
+      "id": "V2-1",
+      "candidate": "V2",
+      "label": "variation: UTC, morning",
+      "variation": "timezone UTC",
+      "channel": "browser",
+      "browser": "chromium",
+      "browser_version": "158.0.8127.18",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": "UTC",
+        "locale": "en-GB",
+        "clock": "2026-11-12T08:00:00Z",
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "click": "#filter-all"
+        },
+        {
+          "click": "#filter-today"
+        }
+      ],
+      "assumptions": [
+        "A user whose local time zone is UTC, as a control."
+      ],
+      "started": "2026-11-11T04:56:36Z",
+      "observed": {
+        "#tasks": "Book the car service (due 2026-11-12)"
+      },
+      "result": "no_failure",
+      "observed_signature": null,
+      "checks": "#tasks does not contain \"Pay the water bill\"; #tasks contains \"Book the car service\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1408,
+      "artifacts": [
+        "run/artifacts/TASK-11/V2-1/screenshot.png",
+        "run/artifacts/TASK-11/V2-1/console.json",
+        "run/artifacts/TASK-11/V2-1/trace.zip"
+      ]
+    },
+    {
+      "id": "V2-2",
+      "candidate": "V2",
+      "label": "variation: UTC, morning",
+      "variation": "timezone UTC",
+      "channel": "browser",
+      "browser": "chromium",
+      "browser_version": "158.0.8127.18",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": "UTC",
+        "locale": "en-GB",
+        "clock": "2026-11-12T08:00:00Z",
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "click": "#filter-all"
+        },
+        {
+          "click": "#filter-today"
+        }
+      ],
+      "assumptions": [
+        "A user whose local time zone is UTC, as a control."
+      ],
+      "started": "2026-11-11T04:56:38Z",
+      "observed": {
+        "#tasks": "Book the car service (due 2026-11-12)"
+      },
+      "result": "no_failure",
+      "observed_signature": null,
+      "checks": "#tasks does not contain \"Pay the water bill\"; #tasks contains \"Book the car service\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1314,
+      "artifacts": [
+        "run/artifacts/TASK-11/V2-2/screenshot.png",
+        "run/artifacts/TASK-11/V2-2/console.json"
+      ]
+    },
+    {
+      "id": "V2-3",
+      "candidate": "V2",
+      "label": "variation: UTC, morning",
+      "variation": "timezone UTC",
+      "channel": "browser",
+      "browser": "chromium",
+      "browser_version": "158.0.8127.18",
+      "version": "1.2.0",
+      "version_stated": "1.2.0",
+      "environment": {
+        "viewport": null,
+        "timezone": "UTC",
+        "locale": "en-GB",
+        "clock": "2026-11-12T08:00:00Z",
+        "cpu_throttle": null,
+        "network": null
+      },
+      "steps": [
+        {
+          "goto": "http://127.0.0.1:8141/"
+        },
+        {
+          "click": "#filter-all"
+        },
+        {
+          "click": "#filter-today"
+        }
+      ],
+      "assumptions": [
+        "A user whose local time zone is UTC, as a control."
+      ],
+      "started": "2026-11-11T04:56:39Z",
+      "observed": {
+        "#tasks": "Book the car service (due 2026-11-12)"
+      },
+      "result": "no_failure",
+      "observed_signature": null,
+      "checks": "#tasks does not contain \"Pay the water bill\"; #tasks contains \"Book the car service\"",
+      "dialogs": [],
+      "downloads": [],
+      "page_errors": [],
+      "console_errors": [],
+      "not_applied": [],
+      "error": null,
+      "duration_ms": 1360,
+      "artifacts": [
+        "run/artifacts/TASK-11/V2-3/screenshot.png",
+        "run/artifacts/TASK-11/V2-3/console.json"
+      ]
+    }
+  ]
+}
