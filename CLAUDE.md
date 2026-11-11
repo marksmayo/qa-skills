@@ -99,7 +99,7 @@ python ticket-readiness-reviewer-skill/scripts/fetch_ticket.py --from-file ticke
 python ticket-readiness-reviewer-skill/scripts/lint_criteria.py ticket-readiness-reviewer-skill/examples/tickets.json --out lint.json
 ```
 
-The example reviews fingerprint `examples/tickets.json` and cite lint ids from `examples/lint.json`; editing the tickets, `data/ambiguity-lexicon.json` or the lint changes them and invalidates the examples.
+The example reviews fingerprint `examples/tickets.json` and cite lint ids from `examples/lint.json`; editing the tickets, `data/ambiguity-lexicon.json` (shared with the test case designer, canonical in `shared/data/`) or the lint changes them and invalidates the examples.
 
 Flaky test hunter (`examples/ferry-booking/` is the sample package with planted flakes; `examples/run/` holds the real pytest runs, listed in `examples/run/commands.sh`; `--runs` recomputes every count, interval and status from them, `--repo` checks every proposed fix applies):
 
@@ -311,6 +311,17 @@ python ci-failure-triager-skill/scripts/classify.py --run ci-failure-triager-ski
 
 The triage quotes `examples/run/logs/` by line and names commits of the sample history, so editing `make_repo.py` or the recordings invalidates it until `commands.sh` is rerun from `ci-failure-triager-skill/` (it needs `TW`, an empty directory for the sample repository). `record_example_run.py` makes new real runs, which change the flaky test's picks and the line numbers. Live fetches need `GITHUB_TOKEN`/`GH_TOKEN` or `AZURE_DEVOPS_EXT_PAT`; `rerun.py` starts CI jobs and refuses without `--authorised-by`.
 
+Test case designer (`examples/SHOP-310.issue.json` is a loyalty-points story whose five criteria need five techniques; `examples/model.json` is the agent's model per criterion; `examples/run/` holds the normalised ticket, the analysis and the generated rows, listed in `examples/commands.sh`; the validator regenerates the rows from the model and checks every row is covered, the model answers the text, and the exports equal the cases):
+
+```bash
+python test-case-designer-skill/scripts/validate_cases.py test-case-designer-skill/examples/test_cases.example.json --ticket test-case-designer-skill/examples/run/ticket.json --model test-case-designer-skill/examples/model.json --rows test-case-designer-skill/examples/run/rows.json --xray test-case-designer-skill/examples/xray.json --csv test-case-designer-skill/examples/cases.csv
+python test-case-designer-skill/scripts/render_report.py test-case-designer-skill/examples/test_cases.example.json [--brief | --markdown cases.md]
+python test-case-designer-skill/scripts/analyse_criteria.py test-case-designer-skill/examples/run/ticket.json --out analysis.json
+python test-case-designer-skill/scripts/design_rows.py test-case-designer-skill/examples/model.json --out rows.json
+```
+
+The cases fingerprint the normalised ticket and cite row ids generated from `examples/model.json`, so editing the issue, the model or the generators invalidates the example until `commands.sh` is rerun from `test-case-designer-skill/` and the cases are rebuilt. Exports are files for a person to import; nothing is written to a tracker.
+
 Shared files:
 
 ```bash
@@ -320,7 +331,7 @@ python tools/check_shared.py --fix  # copy canonical files from shared/ into ski
 
 ## Shared files
 
-Files used by more than one skill (the Journey Markdown spec `JOURNEY_FORMAT.md`, its front-matter schema, `journey_md.py`, `detect_conventions.py`, `parse_results.py`, `sarif.py`, `fetch_ticket.py`, `run_tests.py`, `stats.py`, `diff_scope.py`, `unified_diff.py`, `browser_harness.py`, `png_io.py`, and the WCAG data files `data/wcag-sc.json` and `data/en301549-map.json`) have their canonical copy in `shared/`. Each skill carries an identical copy because skills are installed by copying a single directory. Edit only the copy in `shared/`, then run `python tools/check_shared.py --fix`; the mapping of shared files to skills lives in `tools/check_shared.py`.
+Files used by more than one skill (the Journey Markdown spec `JOURNEY_FORMAT.md`, its front-matter schema, `journey_md.py`, `detect_conventions.py`, `parse_results.py`, `sarif.py`, `fetch_ticket.py`, `run_tests.py`, `stats.py`, `diff_scope.py`, `unified_diff.py`, `browser_harness.py`, `png_io.py`, the WCAG data files `data/wcag-sc.json` and `data/en301549-map.json`, and `data/ambiguity-lexicon.json`) have their canonical copy in `shared/`. Each skill carries an identical copy because skills are installed by copying a single directory. Edit only the copy in `shared/`, then run `python tools/check_shared.py --fix`; the mapping of shared files to skills lives in `tools/check_shared.py`.
 
 Design documents for each skill (with an "As built" section), and the agreed build order, are in `docs/design/`.
 

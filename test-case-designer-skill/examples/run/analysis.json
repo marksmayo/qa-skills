@@ -1,0 +1,178 @@
+{
+ "ticket": "SHOP-310",
+ "content_sha256": "0e058e2b816a1a6a3c788eb78169079318b4f513d46bdd876872ee1061f30b1a",
+ "lexicon_version": "1.0.0",
+ "criteria": [
+  {
+   "id": "AC-1",
+   "text": "Members earn 1 point per whole dollar of the order subtotal for orders from $10.00 to $500.00 inclusive. Orders below $10.00 earn no points, and orders above $500.00 earn 500 points.",
+   "signals": {
+    "limits": [
+     {
+      "kind": "range",
+      "low": 10.0,
+      "high": 500.0,
+      "inclusive": true,
+      "text": "from $10.00 to $500.00 "
+     },
+     {
+      "kind": "max_exclusive",
+      "value": 10.0,
+      "text": "below $10.00 "
+     },
+     {
+      "kind": "min_exclusive",
+      "value": 500.0,
+      "text": "above $500.00 "
+     }
+    ],
+    "values": [],
+    "conditions": [],
+    "states": [],
+    "changes": 0,
+    "combination": false,
+    "sequence": false
+   },
+   "vague": [],
+   "suggested": [
+    {
+     "technique": "boundary",
+     "reason": "numeric limits: from $10.00 to $500.00 ; below $10.00 ; above $500.00 "
+    },
+    {
+     "technique": "partition",
+     "reason": "classes either side of the limits"
+    }
+   ]
+  },
+  {
+   "id": "AC-2",
+   "text": "Gold members earn double points and Silver members earn 1.5 times the points, rounded down; Bronze members earn the base points. When the DOUBLEUP promotion is active, every tier earns 1 extra point per whole dollar, but the promotion never applies to an order paid entirely with a gift card.",
+   "signals": {
+    "limits": [],
+    "values": [],
+    "conditions": [
+     "but",
+     "never",
+     "when"
+    ],
+    "states": [
+     "active",
+     "paid"
+    ],
+    "changes": 0,
+    "combination": false,
+    "sequence": false
+   },
+   "vague": [],
+   "suggested": [
+    {
+     "technique": "decision_table",
+     "reason": "conditions (but, never, when)"
+    }
+   ]
+  },
+  {
+   "id": "AC-3",
+   "text": "Points are pending when the order is placed, become available when it is delivered, and are removed if the order is cancelled before it ships or returned after delivery. A shipped order can't be cancelled.",
+   "signals": {
+    "limits": [],
+    "values": [],
+    "conditions": [
+     "if",
+     "when"
+    ],
+    "states": [
+     "cancelled",
+     "delivered",
+     "pending",
+     "placed",
+     "returned",
+     "shipped"
+    ],
+    "changes": 5,
+    "combination": false,
+    "sequence": false
+   },
+   "vague": [
+    {
+     "term": "available",
+     "kind": "unquantified_nfr",
+     "question": "\"available\" needs a number and a unit (for example a p95 time, a rate or a limit)."
+    }
+   ],
+   "suggested": [
+    {
+     "technique": "state_transition",
+     "reason": "status words (cancelled, delivered, pending, placed, returned, shipped) with changes (after delivery, become, before it, can't be, when it is)"
+    },
+    {
+     "technique": "decision_table",
+     "reason": "conditions (if, when)"
+    }
+   ]
+  },
+  {
+   "id": "AC-4",
+   "text": "Points are earned with every payment method (card, PayPal, gift card), every delivery option (standard, express, click and collect) and every member tier (Gold, Silver, Bronze).",
+   "signals": {
+    "limits": [],
+    "values": [
+     [
+      "card",
+      "PayPal",
+      "gift card"
+     ],
+     [
+      "standard",
+      "express",
+      "click and collect"
+     ],
+     [
+      "Gold",
+      "Silver",
+      "Bronze"
+     ]
+    ],
+    "conditions": [],
+    "states": [],
+    "changes": 0,
+    "combination": true,
+    "sequence": false
+   },
+   "vague": [],
+   "suggested": [
+    {
+     "technique": "pairwise",
+     "reason": "\"every\" over 3 lists of values: 3 x 3 x 3"
+    }
+   ]
+  },
+  {
+   "id": "AC-5",
+   "text": "The points balance on the account page updates promptly after delivery.",
+   "signals": {
+    "limits": [],
+    "values": [],
+    "conditions": [],
+    "states": [],
+    "changes": 1,
+    "combination": false,
+    "sequence": false
+   },
+   "vague": [
+    {
+     "term": "promptly",
+     "kind": "timing_without_number",
+     "question": "\"promptly\" needs a number and a unit: within how many seconds or minutes?"
+    }
+   ],
+   "suggested": [
+    {
+     "technique": "scenario",
+     "reason": "no limit, rule, state or parameter list found: one scenario per outcome"
+    }
+   ]
+  }
+ ]
+}

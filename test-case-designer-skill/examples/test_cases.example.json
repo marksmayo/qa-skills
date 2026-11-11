@@ -1,0 +1,2130 @@
+{
+ "schema_version": "1.0.0",
+ "skill": {
+  "name": "test-case-designer",
+  "version": "1.0.0"
+ },
+ "generated_at": "2026-11-12T05:00:00Z",
+ "ticket": {
+  "key": "SHOP-310",
+  "summary": "Members earn loyalty points at checkout",
+  "priority": "High",
+  "content_sha256": "0e058e2b816a1a6a3c788eb78169079318b4f513d46bdd876872ee1061f30b1a"
+ },
+ "criteria": [
+  {
+   "id": "AC-1",
+   "text": "Members earn 1 point per whole dollar of the order subtotal for orders from $10.00 to $500.00 inclusive. Orders below $10.00 earn no points, and orders above $500.00 earn 500 points.",
+   "techniques": [
+    {
+     "technique": "boundary",
+     "reason": "A points range on the subtotal, $10.00 to $500.00 inclusive, with different outcomes either side of each limit."
+    },
+    {
+     "technique": "partition",
+     "reason": "Three classes with three outcomes: no points below $10.00, 1 per whole dollar within, a cap of 500 above $500.00."
+    }
+   ],
+   "case_ids": [
+    "TC-001",
+    "TC-002",
+    "TC-003",
+    "TC-004",
+    "TC-005",
+    "TC-006",
+    "TC-007",
+    "TC-008",
+    "TC-009"
+   ],
+   "status": "covered",
+   "questions": []
+  },
+  {
+   "id": "AC-2",
+   "text": "Gold members earn double points and Silver members earn 1.5 times the points, rounded down; Bronze members earn the base points. When the DOUBLEUP promotion is active, every tier earns 1 extra point per whole dollar, but the promotion never applies to an order paid entirely with a gift card.",
+   "techniques": [
+    {
+     "technique": "decision_table",
+     "reason": "The points depend on three conditions together: the tier, whether DOUBLEUP is active, and whether a gift card paid the whole order (which switches the promotion off)."
+    }
+   ],
+   "case_ids": [
+    "TC-010",
+    "TC-011",
+    "TC-012",
+    "TC-013",
+    "TC-014",
+    "TC-015",
+    "TC-016",
+    "TC-017",
+    "TC-018",
+    "TC-019",
+    "TC-020",
+    "TC-021"
+   ],
+   "status": "covered_with_questions",
+   "questions": [
+    "Q-2"
+   ]
+  },
+  {
+   "id": "AC-3",
+   "text": "Points are pending when the order is placed, become available when it is delivered, and are removed if the order is cancelled before it ships or returned after delivery. A shipped order can't be cancelled.",
+   "techniques": [
+    {
+     "technique": "state_transition",
+     "reason": "Points follow the order's lifecycle (placed, shipped, delivered, cancelled, returned), and one transition is forbidden (cancelling a shipped order)."
+    }
+   ],
+   "case_ids": [
+    "TC-022",
+    "TC-023",
+    "TC-024",
+    "TC-025",
+    "TC-026",
+    "TC-027",
+    "TC-028",
+    "TC-029",
+    "TC-030",
+    "TC-031"
+   ],
+   "status": "covered",
+   "questions": []
+  },
+  {
+   "id": "AC-4",
+   "text": "Points are earned with every payment method (card, PayPal, gift card), every delivery option (standard, express, click and collect) and every member tier (Gold, Silver, Bronze).",
+   "techniques": [
+    {
+     "technique": "pairwise",
+     "reason": "Three independent parameters of three values each (27 combinations); all pairs of values are covered by 10 orders (greedy all-pairs)."
+    }
+   ],
+   "case_ids": [
+    "TC-032",
+    "TC-033",
+    "TC-034",
+    "TC-035",
+    "TC-036",
+    "TC-037",
+    "TC-038",
+    "TC-039",
+    "TC-040",
+    "TC-041"
+   ],
+   "status": "covered",
+   "questions": []
+  },
+  {
+   "id": "AC-5",
+   "text": "The points balance on the account page updates promptly after delivery.",
+   "techniques": [
+    {
+     "technique": "scenario",
+     "reason": "One observable flow (deliver an order, then look at the account page); the timing has no number yet, so the case depends on Q-1."
+    }
+   ],
+   "case_ids": [
+    "TC-042"
+   ],
+   "status": "covered_with_questions",
+   "questions": [
+    "Q-1"
+   ]
+  }
+ ],
+ "cases": [
+  {
+   "id": "TC-001",
+   "title": "Subtotal $9.99 earns 0 points (below the $10.00 limit)",
+   "criterion_ids": [
+    "AC-1"
+   ],
+   "technique": "boundary",
+   "row_ids": [
+    "AC-1-BVA-01"
+   ],
+   "type": "boundary",
+   "priority": "P0",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as bronze.member@example.test",
+     "data": "",
+     "expected": "The account page shows the member's tier and a points balance of 0"
+    },
+    {
+     "action": "Add items to the basket until the subtotal is exact",
+     "data": "subtotal $9.99",
+     "expected": "The basket shows a subtotal of $9.99"
+    },
+    {
+     "action": "Check out with standard delivery and pay by card (test card 4111 1111 1111 1111)",
+     "data": "card (test card 4111 1111 1111 1111)",
+     "expected": "The order confirmation page shows an order number"
+    },
+    {
+     "action": "Open the order in the account page",
+     "data": "",
+     "expected": "The order shows 0 pending points"
+    }
+   ],
+   "test_data": {
+    "member": "bronze.member@example.test",
+    "subtotal": 9.99,
+    "promotion": "DOUBLEUP off"
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-002",
+   "title": "Subtotal $10.00 earns 10 points (on the $10.00 limit)",
+   "criterion_ids": [
+    "AC-1"
+   ],
+   "technique": "boundary",
+   "row_ids": [
+    "AC-1-BVA-02"
+   ],
+   "type": "boundary",
+   "priority": "P0",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as bronze.member@example.test",
+     "data": "",
+     "expected": "The account page shows the member's tier and a points balance of 0"
+    },
+    {
+     "action": "Add items to the basket until the subtotal is exact",
+     "data": "subtotal $10.00",
+     "expected": "The basket shows a subtotal of $10.00"
+    },
+    {
+     "action": "Check out with standard delivery and pay by card (test card 4111 1111 1111 1111)",
+     "data": "card (test card 4111 1111 1111 1111)",
+     "expected": "The order confirmation page shows an order number"
+    },
+    {
+     "action": "Open the order in the account page",
+     "data": "",
+     "expected": "The order shows 10 pending points"
+    }
+   ],
+   "test_data": {
+    "member": "bronze.member@example.test",
+    "subtotal": 10.0,
+    "promotion": "DOUBLEUP off"
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-003",
+   "title": "Subtotal $10.01 earns 10 points (above the $10.00 limit)",
+   "criterion_ids": [
+    "AC-1"
+   ],
+   "technique": "boundary",
+   "row_ids": [
+    "AC-1-BVA-03"
+   ],
+   "type": "boundary",
+   "priority": "P0",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as bronze.member@example.test",
+     "data": "",
+     "expected": "The account page shows the member's tier and a points balance of 0"
+    },
+    {
+     "action": "Add items to the basket until the subtotal is exact",
+     "data": "subtotal $10.01",
+     "expected": "The basket shows a subtotal of $10.01"
+    },
+    {
+     "action": "Check out with standard delivery and pay by card (test card 4111 1111 1111 1111)",
+     "data": "card (test card 4111 1111 1111 1111)",
+     "expected": "The order confirmation page shows an order number"
+    },
+    {
+     "action": "Open the order in the account page",
+     "data": "",
+     "expected": "The order shows 10 pending points"
+    }
+   ],
+   "test_data": {
+    "member": "bronze.member@example.test",
+    "subtotal": 10.01,
+    "promotion": "DOUBLEUP off"
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-004",
+   "title": "Subtotal $499.99 earns 499 points (below the $500.00 limit)",
+   "criterion_ids": [
+    "AC-1"
+   ],
+   "technique": "boundary",
+   "row_ids": [
+    "AC-1-BVA-04"
+   ],
+   "type": "boundary",
+   "priority": "P0",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as bronze.member@example.test",
+     "data": "",
+     "expected": "The account page shows the member's tier and a points balance of 0"
+    },
+    {
+     "action": "Add items to the basket until the subtotal is exact",
+     "data": "subtotal $499.99",
+     "expected": "The basket shows a subtotal of $499.99"
+    },
+    {
+     "action": "Check out with standard delivery and pay by card (test card 4111 1111 1111 1111)",
+     "data": "card (test card 4111 1111 1111 1111)",
+     "expected": "The order confirmation page shows an order number"
+    },
+    {
+     "action": "Open the order in the account page",
+     "data": "",
+     "expected": "The order shows 499 pending points"
+    }
+   ],
+   "test_data": {
+    "member": "bronze.member@example.test",
+    "subtotal": 499.99,
+    "promotion": "DOUBLEUP off"
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-005",
+   "title": "Subtotal $500.00 earns 500 points (on the $500.00 limit)",
+   "criterion_ids": [
+    "AC-1"
+   ],
+   "technique": "boundary",
+   "row_ids": [
+    "AC-1-BVA-05"
+   ],
+   "type": "boundary",
+   "priority": "P0",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as bronze.member@example.test",
+     "data": "",
+     "expected": "The account page shows the member's tier and a points balance of 0"
+    },
+    {
+     "action": "Add items to the basket until the subtotal is exact",
+     "data": "subtotal $500.00",
+     "expected": "The basket shows a subtotal of $500.00"
+    },
+    {
+     "action": "Check out with standard delivery and pay by card (test card 4111 1111 1111 1111)",
+     "data": "card (test card 4111 1111 1111 1111)",
+     "expected": "The order confirmation page shows an order number"
+    },
+    {
+     "action": "Open the order in the account page",
+     "data": "",
+     "expected": "The order shows 500 pending points"
+    }
+   ],
+   "test_data": {
+    "member": "bronze.member@example.test",
+    "subtotal": 500.0,
+    "promotion": "DOUBLEUP off"
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-006",
+   "title": "Subtotal $500.01 earns 500 points (above the $500.00 limit)",
+   "criterion_ids": [
+    "AC-1"
+   ],
+   "technique": "boundary",
+   "row_ids": [
+    "AC-1-BVA-06"
+   ],
+   "type": "boundary",
+   "priority": "P0",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as bronze.member@example.test",
+     "data": "",
+     "expected": "The account page shows the member's tier and a points balance of 0"
+    },
+    {
+     "action": "Add items to the basket until the subtotal is exact",
+     "data": "subtotal $500.01",
+     "expected": "The basket shows a subtotal of $500.01"
+    },
+    {
+     "action": "Check out with standard delivery and pay by card (test card 4111 1111 1111 1111)",
+     "data": "card (test card 4111 1111 1111 1111)",
+     "expected": "The order confirmation page shows an order number"
+    },
+    {
+     "action": "Open the order in the account page",
+     "data": "",
+     "expected": "The order shows 500 pending points"
+    }
+   ],
+   "test_data": {
+    "member": "bronze.member@example.test",
+    "subtotal": 500.01,
+    "promotion": "DOUBLEUP off"
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-007",
+   "title": "Subtotal below $10.00: $4.50 earns 0 points",
+   "criterion_ids": [
+    "AC-1"
+   ],
+   "technique": "partition",
+   "row_ids": [
+    "AC-1-EP-01"
+   ],
+   "type": "negative",
+   "priority": "P0",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as bronze.member@example.test",
+     "data": "",
+     "expected": "The account page shows the member's tier and a points balance of 0"
+    },
+    {
+     "action": "Add items to the basket until the subtotal is exact",
+     "data": "subtotal $4.50",
+     "expected": "The basket shows a subtotal of $4.50"
+    },
+    {
+     "action": "Check out with standard delivery and pay by card (test card 4111 1111 1111 1111)",
+     "data": "card (test card 4111 1111 1111 1111)",
+     "expected": "The order confirmation page shows an order number"
+    },
+    {
+     "action": "Open the order in the account page",
+     "data": "",
+     "expected": "The order shows 0 pending points"
+    }
+   ],
+   "test_data": {
+    "member": "bronze.member@example.test",
+    "subtotal": 4.5,
+    "promotion": "DOUBLEUP off"
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-008",
+   "title": "Subtotal from $10.00 to $500.00: $123.45 earns 123 points",
+   "criterion_ids": [
+    "AC-1"
+   ],
+   "technique": "partition",
+   "row_ids": [
+    "AC-1-EP-02"
+   ],
+   "type": "positive",
+   "priority": "P1",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as bronze.member@example.test",
+     "data": "",
+     "expected": "The account page shows the member's tier and a points balance of 0"
+    },
+    {
+     "action": "Add items to the basket until the subtotal is exact",
+     "data": "subtotal $123.45",
+     "expected": "The basket shows a subtotal of $123.45"
+    },
+    {
+     "action": "Check out with standard delivery and pay by card (test card 4111 1111 1111 1111)",
+     "data": "card (test card 4111 1111 1111 1111)",
+     "expected": "The order confirmation page shows an order number"
+    },
+    {
+     "action": "Open the order in the account page",
+     "data": "",
+     "expected": "The order shows 123 pending points"
+    }
+   ],
+   "test_data": {
+    "member": "bronze.member@example.test",
+    "subtotal": 123.45,
+    "promotion": "DOUBLEUP off"
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-009",
+   "title": "Subtotal above $500.00: $842.10 earns 500 points",
+   "criterion_ids": [
+    "AC-1"
+   ],
+   "technique": "partition",
+   "row_ids": [
+    "AC-1-EP-03"
+   ],
+   "type": "positive",
+   "priority": "P1",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as bronze.member@example.test",
+     "data": "",
+     "expected": "The account page shows the member's tier and a points balance of 0"
+    },
+    {
+     "action": "Add items to the basket until the subtotal is exact",
+     "data": "subtotal $842.10",
+     "expected": "The basket shows a subtotal of $842.10"
+    },
+    {
+     "action": "Check out with standard delivery and pay by card (test card 4111 1111 1111 1111)",
+     "data": "card (test card 4111 1111 1111 1111)",
+     "expected": "The order confirmation page shows an order number"
+    },
+    {
+     "action": "Open the order in the account page",
+     "data": "",
+     "expected": "The order shows 500 pending points"
+    }
+   ],
+   "test_data": {
+    "member": "bronze.member@example.test",
+    "subtotal": 842.1,
+    "promotion": "DOUBLEUP off"
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-010",
+   "title": "Gold, DOUBLEUP on, all gift card: $100.00 earns 200 points",
+   "criterion_ids": [
+    "AC-2"
+   ],
+   "technique": "decision_table",
+   "row_ids": [
+    "AC-2-DT-01"
+   ],
+   "type": "negative",
+   "priority": "P0",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points",
+    "DOUBLEUP promotion active in the admin console"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as gold.member@example.test",
+     "data": "",
+     "expected": "The account page shows the member's tier and a points balance of 0"
+    },
+    {
+     "action": "Add items to the basket until the subtotal is exact",
+     "data": "subtotal $100.00",
+     "expected": "The basket shows a subtotal of $100.00"
+    },
+    {
+     "action": "Check out with standard delivery and pay by gift card (test gift card GC-TEST-0100, balance $100.00)",
+     "data": "gift card (test gift card GC-TEST-0100, balance $100.00)",
+     "expected": "The order confirmation page shows an order number"
+    },
+    {
+     "action": "Open the order in the account page",
+     "data": "",
+     "expected": "The order shows 200 pending points (the promotion does not apply to an order paid entirely by gift card)"
+    }
+   ],
+   "test_data": {
+    "member": "gold.member@example.test",
+    "subtotal": 100.0,
+    "promotion": "DOUBLEUP on",
+    "payment": "gift card (test gift card GC-TEST-0100, balance $100.00)"
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-011",
+   "title": "Gold, DOUBLEUP on, card: $100.00 earns 300 points",
+   "criterion_ids": [
+    "AC-2"
+   ],
+   "technique": "decision_table",
+   "row_ids": [
+    "AC-2-DT-02"
+   ],
+   "type": "positive",
+   "priority": "P1",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points",
+    "DOUBLEUP promotion active in the admin console"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as gold.member@example.test",
+     "data": "",
+     "expected": "The account page shows the member's tier and a points balance of 0"
+    },
+    {
+     "action": "Add items to the basket until the subtotal is exact",
+     "data": "subtotal $100.00",
+     "expected": "The basket shows a subtotal of $100.00"
+    },
+    {
+     "action": "Check out with standard delivery and pay by card (test card 4111 1111 1111 1111)",
+     "data": "card (test card 4111 1111 1111 1111)",
+     "expected": "The order confirmation page shows an order number"
+    },
+    {
+     "action": "Open the order in the account page",
+     "data": "",
+     "expected": "The order shows 300 pending points (Gold rate plus 1 DOUBLEUP point per dollar)"
+    }
+   ],
+   "test_data": {
+    "member": "gold.member@example.test",
+    "subtotal": 100.0,
+    "promotion": "DOUBLEUP on",
+    "payment": "card (test card 4111 1111 1111 1111)"
+   },
+   "automation_candidate": true,
+   "depends_on_questions": [
+    "Q-2"
+   ]
+  },
+  {
+   "id": "TC-012",
+   "title": "Gold, DOUBLEUP off, all gift card: $100.00 earns 200 points",
+   "criterion_ids": [
+    "AC-2"
+   ],
+   "technique": "decision_table",
+   "row_ids": [
+    "AC-2-DT-03"
+   ],
+   "type": "positive",
+   "priority": "P1",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points",
+    "DOUBLEUP promotion switched off in the admin console"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as gold.member@example.test",
+     "data": "",
+     "expected": "The account page shows the member's tier and a points balance of 0"
+    },
+    {
+     "action": "Add items to the basket until the subtotal is exact",
+     "data": "subtotal $100.00",
+     "expected": "The basket shows a subtotal of $100.00"
+    },
+    {
+     "action": "Check out with standard delivery and pay by gift card (test gift card GC-TEST-0100, balance $100.00)",
+     "data": "gift card (test gift card GC-TEST-0100, balance $100.00)",
+     "expected": "The order confirmation page shows an order number"
+    },
+    {
+     "action": "Open the order in the account page",
+     "data": "",
+     "expected": "The order shows 200 pending points (Gold rate)"
+    }
+   ],
+   "test_data": {
+    "member": "gold.member@example.test",
+    "subtotal": 100.0,
+    "promotion": "DOUBLEUP off",
+    "payment": "gift card (test gift card GC-TEST-0100, balance $100.00)"
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-013",
+   "title": "Gold, DOUBLEUP off, card: $100.00 earns 200 points",
+   "criterion_ids": [
+    "AC-2"
+   ],
+   "technique": "decision_table",
+   "row_ids": [
+    "AC-2-DT-04"
+   ],
+   "type": "positive",
+   "priority": "P1",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points",
+    "DOUBLEUP promotion switched off in the admin console"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as gold.member@example.test",
+     "data": "",
+     "expected": "The account page shows the member's tier and a points balance of 0"
+    },
+    {
+     "action": "Add items to the basket until the subtotal is exact",
+     "data": "subtotal $100.00",
+     "expected": "The basket shows a subtotal of $100.00"
+    },
+    {
+     "action": "Check out with standard delivery and pay by card (test card 4111 1111 1111 1111)",
+     "data": "card (test card 4111 1111 1111 1111)",
+     "expected": "The order confirmation page shows an order number"
+    },
+    {
+     "action": "Open the order in the account page",
+     "data": "",
+     "expected": "The order shows 200 pending points (Gold rate)"
+    }
+   ],
+   "test_data": {
+    "member": "gold.member@example.test",
+    "subtotal": 100.0,
+    "promotion": "DOUBLEUP off",
+    "payment": "card (test card 4111 1111 1111 1111)"
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-014",
+   "title": "Silver, DOUBLEUP on, all gift card: $100.00 earns 150 points",
+   "criterion_ids": [
+    "AC-2"
+   ],
+   "technique": "decision_table",
+   "row_ids": [
+    "AC-2-DT-05"
+   ],
+   "type": "negative",
+   "priority": "P0",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points",
+    "DOUBLEUP promotion active in the admin console"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as silver.member@example.test",
+     "data": "",
+     "expected": "The account page shows the member's tier and a points balance of 0"
+    },
+    {
+     "action": "Add items to the basket until the subtotal is exact",
+     "data": "subtotal $100.00",
+     "expected": "The basket shows a subtotal of $100.00"
+    },
+    {
+     "action": "Check out with standard delivery and pay by gift card (test gift card GC-TEST-0100, balance $100.00)",
+     "data": "gift card (test gift card GC-TEST-0100, balance $100.00)",
+     "expected": "The order confirmation page shows an order number"
+    },
+    {
+     "action": "Open the order in the account page",
+     "data": "",
+     "expected": "The order shows 150 pending points (the promotion does not apply to an order paid entirely by gift card)"
+    }
+   ],
+   "test_data": {
+    "member": "silver.member@example.test",
+    "subtotal": 100.0,
+    "promotion": "DOUBLEUP on",
+    "payment": "gift card (test gift card GC-TEST-0100, balance $100.00)"
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-015",
+   "title": "Silver, DOUBLEUP on, card: $100.00 earns 250 points",
+   "criterion_ids": [
+    "AC-2"
+   ],
+   "technique": "decision_table",
+   "row_ids": [
+    "AC-2-DT-06"
+   ],
+   "type": "positive",
+   "priority": "P1",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points",
+    "DOUBLEUP promotion active in the admin console"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as silver.member@example.test",
+     "data": "",
+     "expected": "The account page shows the member's tier and a points balance of 0"
+    },
+    {
+     "action": "Add items to the basket until the subtotal is exact",
+     "data": "subtotal $100.00",
+     "expected": "The basket shows a subtotal of $100.00"
+    },
+    {
+     "action": "Check out with standard delivery and pay by card (test card 4111 1111 1111 1111)",
+     "data": "card (test card 4111 1111 1111 1111)",
+     "expected": "The order confirmation page shows an order number"
+    },
+    {
+     "action": "Open the order in the account page",
+     "data": "",
+     "expected": "The order shows 250 pending points (Silver rate plus 1 DOUBLEUP point per dollar)"
+    }
+   ],
+   "test_data": {
+    "member": "silver.member@example.test",
+    "subtotal": 100.0,
+    "promotion": "DOUBLEUP on",
+    "payment": "card (test card 4111 1111 1111 1111)"
+   },
+   "automation_candidate": true,
+   "depends_on_questions": [
+    "Q-2"
+   ]
+  },
+  {
+   "id": "TC-016",
+   "title": "Silver, DOUBLEUP off, all gift card: $100.00 earns 150 points",
+   "criterion_ids": [
+    "AC-2"
+   ],
+   "technique": "decision_table",
+   "row_ids": [
+    "AC-2-DT-07"
+   ],
+   "type": "positive",
+   "priority": "P1",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points",
+    "DOUBLEUP promotion switched off in the admin console"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as silver.member@example.test",
+     "data": "",
+     "expected": "The account page shows the member's tier and a points balance of 0"
+    },
+    {
+     "action": "Add items to the basket until the subtotal is exact",
+     "data": "subtotal $100.00",
+     "expected": "The basket shows a subtotal of $100.00"
+    },
+    {
+     "action": "Check out with standard delivery and pay by gift card (test gift card GC-TEST-0100, balance $100.00)",
+     "data": "gift card (test gift card GC-TEST-0100, balance $100.00)",
+     "expected": "The order confirmation page shows an order number"
+    },
+    {
+     "action": "Open the order in the account page",
+     "data": "",
+     "expected": "The order shows 150 pending points (Silver rate)"
+    }
+   ],
+   "test_data": {
+    "member": "silver.member@example.test",
+    "subtotal": 100.0,
+    "promotion": "DOUBLEUP off",
+    "payment": "gift card (test gift card GC-TEST-0100, balance $100.00)"
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-017",
+   "title": "Silver, DOUBLEUP off, card: $100.00 earns 150 points",
+   "criterion_ids": [
+    "AC-2"
+   ],
+   "technique": "decision_table",
+   "row_ids": [
+    "AC-2-DT-08"
+   ],
+   "type": "positive",
+   "priority": "P1",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points",
+    "DOUBLEUP promotion switched off in the admin console"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as silver.member@example.test",
+     "data": "",
+     "expected": "The account page shows the member's tier and a points balance of 0"
+    },
+    {
+     "action": "Add items to the basket until the subtotal is exact",
+     "data": "subtotal $100.00",
+     "expected": "The basket shows a subtotal of $100.00"
+    },
+    {
+     "action": "Check out with standard delivery and pay by card (test card 4111 1111 1111 1111)",
+     "data": "card (test card 4111 1111 1111 1111)",
+     "expected": "The order confirmation page shows an order number"
+    },
+    {
+     "action": "Open the order in the account page",
+     "data": "",
+     "expected": "The order shows 150 pending points (Silver rate)"
+    }
+   ],
+   "test_data": {
+    "member": "silver.member@example.test",
+    "subtotal": 100.0,
+    "promotion": "DOUBLEUP off",
+    "payment": "card (test card 4111 1111 1111 1111)"
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-018",
+   "title": "Bronze, DOUBLEUP on, all gift card: $100.00 earns 100 points",
+   "criterion_ids": [
+    "AC-2"
+   ],
+   "technique": "decision_table",
+   "row_ids": [
+    "AC-2-DT-09"
+   ],
+   "type": "negative",
+   "priority": "P0",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points",
+    "DOUBLEUP promotion active in the admin console"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as bronze.member@example.test",
+     "data": "",
+     "expected": "The account page shows the member's tier and a points balance of 0"
+    },
+    {
+     "action": "Add items to the basket until the subtotal is exact",
+     "data": "subtotal $100.00",
+     "expected": "The basket shows a subtotal of $100.00"
+    },
+    {
+     "action": "Check out with standard delivery and pay by gift card (test gift card GC-TEST-0100, balance $100.00)",
+     "data": "gift card (test gift card GC-TEST-0100, balance $100.00)",
+     "expected": "The order confirmation page shows an order number"
+    },
+    {
+     "action": "Open the order in the account page",
+     "data": "",
+     "expected": "The order shows 100 pending points (the promotion does not apply to an order paid entirely by gift card)"
+    }
+   ],
+   "test_data": {
+    "member": "bronze.member@example.test",
+    "subtotal": 100.0,
+    "promotion": "DOUBLEUP on",
+    "payment": "gift card (test gift card GC-TEST-0100, balance $100.00)"
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-019",
+   "title": "Bronze, DOUBLEUP on, card: $100.00 earns 200 points",
+   "criterion_ids": [
+    "AC-2"
+   ],
+   "technique": "decision_table",
+   "row_ids": [
+    "AC-2-DT-10"
+   ],
+   "type": "positive",
+   "priority": "P1",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points",
+    "DOUBLEUP promotion active in the admin console"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as bronze.member@example.test",
+     "data": "",
+     "expected": "The account page shows the member's tier and a points balance of 0"
+    },
+    {
+     "action": "Add items to the basket until the subtotal is exact",
+     "data": "subtotal $100.00",
+     "expected": "The basket shows a subtotal of $100.00"
+    },
+    {
+     "action": "Check out with standard delivery and pay by card (test card 4111 1111 1111 1111)",
+     "data": "card (test card 4111 1111 1111 1111)",
+     "expected": "The order confirmation page shows an order number"
+    },
+    {
+     "action": "Open the order in the account page",
+     "data": "",
+     "expected": "The order shows 200 pending points (Bronze rate plus 1 DOUBLEUP point per dollar)"
+    }
+   ],
+   "test_data": {
+    "member": "bronze.member@example.test",
+    "subtotal": 100.0,
+    "promotion": "DOUBLEUP on",
+    "payment": "card (test card 4111 1111 1111 1111)"
+   },
+   "automation_candidate": true,
+   "depends_on_questions": [
+    "Q-2"
+   ]
+  },
+  {
+   "id": "TC-020",
+   "title": "Bronze, DOUBLEUP off, all gift card: $100.00 earns 100 points",
+   "criterion_ids": [
+    "AC-2"
+   ],
+   "technique": "decision_table",
+   "row_ids": [
+    "AC-2-DT-11"
+   ],
+   "type": "positive",
+   "priority": "P1",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points",
+    "DOUBLEUP promotion switched off in the admin console"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as bronze.member@example.test",
+     "data": "",
+     "expected": "The account page shows the member's tier and a points balance of 0"
+    },
+    {
+     "action": "Add items to the basket until the subtotal is exact",
+     "data": "subtotal $100.00",
+     "expected": "The basket shows a subtotal of $100.00"
+    },
+    {
+     "action": "Check out with standard delivery and pay by gift card (test gift card GC-TEST-0100, balance $100.00)",
+     "data": "gift card (test gift card GC-TEST-0100, balance $100.00)",
+     "expected": "The order confirmation page shows an order number"
+    },
+    {
+     "action": "Open the order in the account page",
+     "data": "",
+     "expected": "The order shows 100 pending points (Bronze rate)"
+    }
+   ],
+   "test_data": {
+    "member": "bronze.member@example.test",
+    "subtotal": 100.0,
+    "promotion": "DOUBLEUP off",
+    "payment": "gift card (test gift card GC-TEST-0100, balance $100.00)"
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-021",
+   "title": "Bronze, DOUBLEUP off, card: $100.00 earns 100 points",
+   "criterion_ids": [
+    "AC-2"
+   ],
+   "technique": "decision_table",
+   "row_ids": [
+    "AC-2-DT-12"
+   ],
+   "type": "positive",
+   "priority": "P1",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points",
+    "DOUBLEUP promotion switched off in the admin console"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as bronze.member@example.test",
+     "data": "",
+     "expected": "The account page shows the member's tier and a points balance of 0"
+    },
+    {
+     "action": "Add items to the basket until the subtotal is exact",
+     "data": "subtotal $100.00",
+     "expected": "The basket shows a subtotal of $100.00"
+    },
+    {
+     "action": "Check out with standard delivery and pay by card (test card 4111 1111 1111 1111)",
+     "data": "card (test card 4111 1111 1111 1111)",
+     "expected": "The order confirmation page shows an order number"
+    },
+    {
+     "action": "Open the order in the account page",
+     "data": "",
+     "expected": "The order shows 100 pending points (Bronze rate)"
+    }
+   ],
+   "test_data": {
+    "member": "bronze.member@example.test",
+    "subtotal": 100.0,
+    "promotion": "DOUBLEUP off",
+    "payment": "card (test card 4111 1111 1111 1111)"
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-022",
+   "title": "Placed order, ship: points become pending",
+   "criterion_ids": [
+    "AC-3"
+   ],
+   "technique": "state_transition",
+   "row_ids": [
+    "AC-3-ST-01"
+   ],
+   "type": "positive",
+   "priority": "P1",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as bronze.member@example.test and place an order with a subtotal of $80.00",
+     "data": "subtotal $80.00",
+     "expected": "The order is placed and shows 80 pending points"
+    },
+    {
+     "action": "Mark the order as shipped in the admin console",
+     "data": "",
+     "expected": "The order status is shipped; the account page shows the 80 points as pending; the points balance is 0"
+    }
+   ],
+   "test_data": {
+    "member": "bronze.member@example.test",
+    "subtotal": 80.0
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-023",
+   "title": "Shipped order, deliver: points become available",
+   "criterion_ids": [
+    "AC-3"
+   ],
+   "technique": "state_transition",
+   "row_ids": [
+    "AC-3-ST-02"
+   ],
+   "type": "positive",
+   "priority": "P1",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as bronze.member@example.test and place an order with a subtotal of $80.00",
+     "data": "subtotal $80.00",
+     "expected": "The order is placed and shows 80 pending points"
+    },
+    {
+     "action": "Mark the order as shipped in the admin console",
+     "data": "",
+     "expected": "The order status is shipped and its 80 points are pending"
+    },
+    {
+     "action": "Mark the order as delivered in the admin console",
+     "data": "",
+     "expected": "The order status is delivered; the account page shows the 80 points as available; the points balance is 80"
+    }
+   ],
+   "test_data": {
+    "member": "bronze.member@example.test",
+    "subtotal": 80.0
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-024",
+   "title": "Placed order, cancel: points become removed",
+   "criterion_ids": [
+    "AC-3"
+   ],
+   "technique": "state_transition",
+   "row_ids": [
+    "AC-3-ST-03"
+   ],
+   "type": "positive",
+   "priority": "P1",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as bronze.member@example.test and place an order with a subtotal of $80.00",
+     "data": "subtotal $80.00",
+     "expected": "The order is placed and shows 80 pending points"
+    },
+    {
+     "action": "Cancel the order from the account page",
+     "data": "",
+     "expected": "The order status is cancelled; the account page shows the 80 points as removed; the points balance is 0"
+    }
+   ],
+   "test_data": {
+    "member": "bronze.member@example.test",
+    "subtotal": 80.0
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-025",
+   "title": "Delivered order, return: points become removed",
+   "criterion_ids": [
+    "AC-3"
+   ],
+   "technique": "state_transition",
+   "row_ids": [
+    "AC-3-ST-04"
+   ],
+   "type": "positive",
+   "priority": "P1",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as bronze.member@example.test and place an order with a subtotal of $80.00",
+     "data": "subtotal $80.00",
+     "expected": "The order is placed and shows 80 pending points"
+    },
+    {
+     "action": "Mark the order as shipped in the admin console",
+     "data": "",
+     "expected": "The order status is shipped and its 80 points are pending"
+    },
+    {
+     "action": "Mark the order as delivered in the admin console",
+     "data": "",
+     "expected": "The order status is delivered and its 80 points are available"
+    },
+    {
+     "action": "Record a return for the order in the admin console",
+     "data": "",
+     "expected": "The order status is returned; the account page shows the 80 points as removed; the points balance is 0"
+    }
+   ],
+   "test_data": {
+    "member": "bronze.member@example.test",
+    "subtotal": 80.0
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-026",
+   "title": "A shipped order can't be cancelled, and its points stay pending",
+   "criterion_ids": [
+    "AC-3"
+   ],
+   "technique": "state_transition",
+   "row_ids": [
+    "AC-3-ST-08"
+   ],
+   "type": "negative",
+   "priority": "P1",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as bronze.member@example.test and place an order with a subtotal of $80.00",
+     "data": "subtotal $80.00",
+     "expected": "The order is placed and shows 80 pending points"
+    },
+    {
+     "action": "Mark the order as shipped in the admin console",
+     "data": "",
+     "expected": "The order status is shipped and its 80 points are pending"
+    },
+    {
+     "action": "Try to cancel the order from the account page",
+     "data": "",
+     "expected": "There is no Cancel button, or cancelling shows \"This order has shipped and can't be cancelled\"; the status stays shipped and the 80 points stay pending"
+    }
+   ],
+   "test_data": {
+    "member": "bronze.member@example.test",
+    "subtotal": 80.0
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-027",
+   "title": "Placed order refuses deliver, return",
+   "criterion_ids": [
+    "AC-3"
+   ],
+   "technique": "state_transition",
+   "row_ids": [
+    "AC-3-ST-05",
+    "AC-3-ST-06"
+   ],
+   "type": "negative",
+   "priority": "P1",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as bronze.member@example.test and place an order with a subtotal of $80.00",
+     "data": "subtotal $80.00",
+     "expected": "The order is placed and shows 80 pending points"
+    },
+    {
+     "action": "In the admin console and the account page, look for deliver, return on the order",
+     "data": "",
+     "expected": "None of deliver, return is offered (or each is refused with a message); the status stays placed and the points stay pending"
+    }
+   ],
+   "test_data": {
+    "member": "bronze.member@example.test",
+    "subtotal": 80.0
+   },
+   "automation_candidate": false,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-028",
+   "title": "Shipped order refuses ship, return",
+   "criterion_ids": [
+    "AC-3"
+   ],
+   "technique": "state_transition",
+   "row_ids": [
+    "AC-3-ST-07",
+    "AC-3-ST-09"
+   ],
+   "type": "negative",
+   "priority": "P1",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as bronze.member@example.test and place an order with a subtotal of $80.00",
+     "data": "subtotal $80.00",
+     "expected": "The order is placed and shows 80 pending points"
+    },
+    {
+     "action": "Mark the order as shipped in the admin console",
+     "data": "",
+     "expected": "The order status is shipped and its 80 points are pending"
+    },
+    {
+     "action": "In the admin console and the account page, look for ship, return on the order",
+     "data": "",
+     "expected": "None of ship, return is offered (or each is refused with a message); the status stays shipped and the points stay pending"
+    }
+   ],
+   "test_data": {
+    "member": "bronze.member@example.test",
+    "subtotal": 80.0
+   },
+   "automation_candidate": false,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-029",
+   "title": "Delivered order refuses ship, deliver, cancel",
+   "criterion_ids": [
+    "AC-3"
+   ],
+   "technique": "state_transition",
+   "row_ids": [
+    "AC-3-ST-10",
+    "AC-3-ST-11",
+    "AC-3-ST-12"
+   ],
+   "type": "negative",
+   "priority": "P1",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as bronze.member@example.test and place an order with a subtotal of $80.00",
+     "data": "subtotal $80.00",
+     "expected": "The order is placed and shows 80 pending points"
+    },
+    {
+     "action": "Mark the order as shipped in the admin console",
+     "data": "",
+     "expected": "The order status is shipped and its 80 points are pending"
+    },
+    {
+     "action": "Mark the order as delivered in the admin console",
+     "data": "",
+     "expected": "The order status is delivered and its 80 points are available"
+    },
+    {
+     "action": "In the admin console and the account page, look for ship, deliver, cancel on the order",
+     "data": "",
+     "expected": "None of ship, deliver, cancel is offered (or each is refused with a message); the status stays delivered and the points stay available"
+    }
+   ],
+   "test_data": {
+    "member": "bronze.member@example.test",
+    "subtotal": 80.0
+   },
+   "automation_candidate": false,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-030",
+   "title": "Cancelled order refuses ship, deliver, cancel, return",
+   "criterion_ids": [
+    "AC-3"
+   ],
+   "technique": "state_transition",
+   "row_ids": [
+    "AC-3-ST-13",
+    "AC-3-ST-14",
+    "AC-3-ST-15",
+    "AC-3-ST-16"
+   ],
+   "type": "negative",
+   "priority": "P1",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as bronze.member@example.test and place an order with a subtotal of $80.00",
+     "data": "subtotal $80.00",
+     "expected": "The order is placed and shows 80 pending points"
+    },
+    {
+     "action": "Cancel the order from the account page",
+     "data": "",
+     "expected": "The order status is cancelled and its 80 points are removed"
+    },
+    {
+     "action": "In the admin console and the account page, look for ship, deliver, cancel, return on the order",
+     "data": "",
+     "expected": "None of ship, deliver, cancel, return is offered (or each is refused with a message); the status stays cancelled and the points stay removed"
+    }
+   ],
+   "test_data": {
+    "member": "bronze.member@example.test",
+    "subtotal": 80.0
+   },
+   "automation_candidate": false,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-031",
+   "title": "Returned order refuses ship, deliver, cancel, return",
+   "criterion_ids": [
+    "AC-3"
+   ],
+   "technique": "state_transition",
+   "row_ids": [
+    "AC-3-ST-17",
+    "AC-3-ST-18",
+    "AC-3-ST-19",
+    "AC-3-ST-20"
+   ],
+   "type": "negative",
+   "priority": "P1",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as bronze.member@example.test and place an order with a subtotal of $80.00",
+     "data": "subtotal $80.00",
+     "expected": "The order is placed and shows 80 pending points"
+    },
+    {
+     "action": "Mark the order as shipped in the admin console",
+     "data": "",
+     "expected": "The order status is shipped and its 80 points are pending"
+    },
+    {
+     "action": "Mark the order as delivered in the admin console",
+     "data": "",
+     "expected": "The order status is delivered and its 80 points are available"
+    },
+    {
+     "action": "Record a return for the order in the admin console",
+     "data": "",
+     "expected": "The order status is returned and its 80 points are removed"
+    },
+    {
+     "action": "In the admin console and the account page, look for ship, deliver, cancel, return on the order",
+     "data": "",
+     "expected": "None of ship, deliver, cancel, return is offered (or each is refused with a message); the status stays returned and the points stay removed"
+    }
+   ],
+   "test_data": {
+    "member": "bronze.member@example.test",
+    "subtotal": 80.0
+   },
+   "automation_candidate": false,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-032",
+   "title": "Gold member, card, standard: $120.00 earns 240 points",
+   "criterion_ids": [
+    "AC-4"
+   ],
+   "technique": "pairwise",
+   "row_ids": [
+    "AC-4-PW-01"
+   ],
+   "type": "positive",
+   "priority": "P1",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as gold.member@example.test",
+     "data": "",
+     "expected": "The account page shows the member's tier and a points balance of 0"
+    },
+    {
+     "action": "Add items to the basket until the subtotal is exact",
+     "data": "subtotal $120.00",
+     "expected": "The basket shows a subtotal of $120.00"
+    },
+    {
+     "action": "Check out with standard delivery and pay by card (test card 4111 1111 1111 1111)",
+     "data": "card (test card 4111 1111 1111 1111)",
+     "expected": "The order confirmation page shows an order number"
+    },
+    {
+     "action": "Open the order in the account page",
+     "data": "",
+     "expected": "The order shows 240 pending points"
+    }
+   ],
+   "test_data": {
+    "member": "gold.member@example.test",
+    "subtotal": 120.0,
+    "payment": "card (test card 4111 1111 1111 1111)",
+    "delivery": "standard",
+    "promotion": "DOUBLEUP off"
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-033",
+   "title": "Silver member, card, express: $120.00 earns 180 points",
+   "criterion_ids": [
+    "AC-4"
+   ],
+   "technique": "pairwise",
+   "row_ids": [
+    "AC-4-PW-02"
+   ],
+   "type": "positive",
+   "priority": "P1",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as silver.member@example.test",
+     "data": "",
+     "expected": "The account page shows the member's tier and a points balance of 0"
+    },
+    {
+     "action": "Add items to the basket until the subtotal is exact",
+     "data": "subtotal $120.00",
+     "expected": "The basket shows a subtotal of $120.00"
+    },
+    {
+     "action": "Check out with express delivery and pay by card (test card 4111 1111 1111 1111)",
+     "data": "card (test card 4111 1111 1111 1111)",
+     "expected": "The order confirmation page shows an order number"
+    },
+    {
+     "action": "Open the order in the account page",
+     "data": "",
+     "expected": "The order shows 180 pending points"
+    }
+   ],
+   "test_data": {
+    "member": "silver.member@example.test",
+    "subtotal": 120.0,
+    "payment": "card (test card 4111 1111 1111 1111)",
+    "delivery": "express",
+    "promotion": "DOUBLEUP off"
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-034",
+   "title": "Bronze member, card, click and collect: $120.00 earns 120 points",
+   "criterion_ids": [
+    "AC-4"
+   ],
+   "technique": "pairwise",
+   "row_ids": [
+    "AC-4-PW-03"
+   ],
+   "type": "positive",
+   "priority": "P1",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as bronze.member@example.test",
+     "data": "",
+     "expected": "The account page shows the member's tier and a points balance of 0"
+    },
+    {
+     "action": "Add items to the basket until the subtotal is exact",
+     "data": "subtotal $120.00",
+     "expected": "The basket shows a subtotal of $120.00"
+    },
+    {
+     "action": "Check out with click and collect delivery and pay by card (test card 4111 1111 1111 1111)",
+     "data": "card (test card 4111 1111 1111 1111)",
+     "expected": "The order confirmation page shows an order number"
+    },
+    {
+     "action": "Open the order in the account page",
+     "data": "",
+     "expected": "The order shows 120 pending points"
+    }
+   ],
+   "test_data": {
+    "member": "bronze.member@example.test",
+    "subtotal": 120.0,
+    "payment": "card (test card 4111 1111 1111 1111)",
+    "delivery": "click and collect",
+    "promotion": "DOUBLEUP off"
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-035",
+   "title": "Silver member, PayPal, standard: $120.00 earns 180 points",
+   "criterion_ids": [
+    "AC-4"
+   ],
+   "technique": "pairwise",
+   "row_ids": [
+    "AC-4-PW-04"
+   ],
+   "type": "positive",
+   "priority": "P1",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as silver.member@example.test",
+     "data": "",
+     "expected": "The account page shows the member's tier and a points balance of 0"
+    },
+    {
+     "action": "Add items to the basket until the subtotal is exact",
+     "data": "subtotal $120.00",
+     "expected": "The basket shows a subtotal of $120.00"
+    },
+    {
+     "action": "Check out with standard delivery and pay by PayPal (sandbox buyer paypal.buyer@example.test)",
+     "data": "PayPal (sandbox buyer paypal.buyer@example.test)",
+     "expected": "The order confirmation page shows an order number"
+    },
+    {
+     "action": "Open the order in the account page",
+     "data": "",
+     "expected": "The order shows 180 pending points"
+    }
+   ],
+   "test_data": {
+    "member": "silver.member@example.test",
+    "subtotal": 120.0,
+    "payment": "PayPal (sandbox buyer paypal.buyer@example.test)",
+    "delivery": "standard",
+    "promotion": "DOUBLEUP off"
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-036",
+   "title": "Gold member, PayPal, express: $120.00 earns 240 points",
+   "criterion_ids": [
+    "AC-4"
+   ],
+   "technique": "pairwise",
+   "row_ids": [
+    "AC-4-PW-05"
+   ],
+   "type": "positive",
+   "priority": "P1",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as gold.member@example.test",
+     "data": "",
+     "expected": "The account page shows the member's tier and a points balance of 0"
+    },
+    {
+     "action": "Add items to the basket until the subtotal is exact",
+     "data": "subtotal $120.00",
+     "expected": "The basket shows a subtotal of $120.00"
+    },
+    {
+     "action": "Check out with express delivery and pay by PayPal (sandbox buyer paypal.buyer@example.test)",
+     "data": "PayPal (sandbox buyer paypal.buyer@example.test)",
+     "expected": "The order confirmation page shows an order number"
+    },
+    {
+     "action": "Open the order in the account page",
+     "data": "",
+     "expected": "The order shows 240 pending points"
+    }
+   ],
+   "test_data": {
+    "member": "gold.member@example.test",
+    "subtotal": 120.0,
+    "payment": "PayPal (sandbox buyer paypal.buyer@example.test)",
+    "delivery": "express",
+    "promotion": "DOUBLEUP off"
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-037",
+   "title": "Bronze member, gift card, standard: $120.00 earns 120 points",
+   "criterion_ids": [
+    "AC-4"
+   ],
+   "technique": "pairwise",
+   "row_ids": [
+    "AC-4-PW-06"
+   ],
+   "type": "positive",
+   "priority": "P1",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as bronze.member@example.test",
+     "data": "",
+     "expected": "The account page shows the member's tier and a points balance of 0"
+    },
+    {
+     "action": "Add items to the basket until the subtotal is exact",
+     "data": "subtotal $120.00",
+     "expected": "The basket shows a subtotal of $120.00"
+    },
+    {
+     "action": "Check out with standard delivery and pay by gift card (test gift card GC-TEST-0120, balance $120.00)",
+     "data": "gift card (test gift card GC-TEST-0120, balance $120.00)",
+     "expected": "The order confirmation page shows an order number"
+    },
+    {
+     "action": "Open the order in the account page",
+     "data": "",
+     "expected": "The order shows 120 pending points"
+    }
+   ],
+   "test_data": {
+    "member": "bronze.member@example.test",
+    "subtotal": 120.0,
+    "payment": "gift card (test gift card GC-TEST-0120, balance $120.00)",
+    "delivery": "standard",
+    "promotion": "DOUBLEUP off"
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-038",
+   "title": "Gold member, gift card, click and collect: $120.00 earns 240 points",
+   "criterion_ids": [
+    "AC-4"
+   ],
+   "technique": "pairwise",
+   "row_ids": [
+    "AC-4-PW-07"
+   ],
+   "type": "positive",
+   "priority": "P1",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as gold.member@example.test",
+     "data": "",
+     "expected": "The account page shows the member's tier and a points balance of 0"
+    },
+    {
+     "action": "Add items to the basket until the subtotal is exact",
+     "data": "subtotal $120.00",
+     "expected": "The basket shows a subtotal of $120.00"
+    },
+    {
+     "action": "Check out with click and collect delivery and pay by gift card (test gift card GC-TEST-0120, balance $120.00)",
+     "data": "gift card (test gift card GC-TEST-0120, balance $120.00)",
+     "expected": "The order confirmation page shows an order number"
+    },
+    {
+     "action": "Open the order in the account page",
+     "data": "",
+     "expected": "The order shows 240 pending points"
+    }
+   ],
+   "test_data": {
+    "member": "gold.member@example.test",
+    "subtotal": 120.0,
+    "payment": "gift card (test gift card GC-TEST-0120, balance $120.00)",
+    "delivery": "click and collect",
+    "promotion": "DOUBLEUP off"
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-039",
+   "title": "Bronze member, PayPal, express: $120.00 earns 120 points",
+   "criterion_ids": [
+    "AC-4"
+   ],
+   "technique": "pairwise",
+   "row_ids": [
+    "AC-4-PW-08"
+   ],
+   "type": "positive",
+   "priority": "P1",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as bronze.member@example.test",
+     "data": "",
+     "expected": "The account page shows the member's tier and a points balance of 0"
+    },
+    {
+     "action": "Add items to the basket until the subtotal is exact",
+     "data": "subtotal $120.00",
+     "expected": "The basket shows a subtotal of $120.00"
+    },
+    {
+     "action": "Check out with express delivery and pay by PayPal (sandbox buyer paypal.buyer@example.test)",
+     "data": "PayPal (sandbox buyer paypal.buyer@example.test)",
+     "expected": "The order confirmation page shows an order number"
+    },
+    {
+     "action": "Open the order in the account page",
+     "data": "",
+     "expected": "The order shows 120 pending points"
+    }
+   ],
+   "test_data": {
+    "member": "bronze.member@example.test",
+    "subtotal": 120.0,
+    "payment": "PayPal (sandbox buyer paypal.buyer@example.test)",
+    "delivery": "express",
+    "promotion": "DOUBLEUP off"
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-040",
+   "title": "Silver member, PayPal, click and collect: $120.00 earns 180 points",
+   "criterion_ids": [
+    "AC-4"
+   ],
+   "technique": "pairwise",
+   "row_ids": [
+    "AC-4-PW-09"
+   ],
+   "type": "positive",
+   "priority": "P1",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as silver.member@example.test",
+     "data": "",
+     "expected": "The account page shows the member's tier and a points balance of 0"
+    },
+    {
+     "action": "Add items to the basket until the subtotal is exact",
+     "data": "subtotal $120.00",
+     "expected": "The basket shows a subtotal of $120.00"
+    },
+    {
+     "action": "Check out with click and collect delivery and pay by PayPal (sandbox buyer paypal.buyer@example.test)",
+     "data": "PayPal (sandbox buyer paypal.buyer@example.test)",
+     "expected": "The order confirmation page shows an order number"
+    },
+    {
+     "action": "Open the order in the account page",
+     "data": "",
+     "expected": "The order shows 180 pending points"
+    }
+   ],
+   "test_data": {
+    "member": "silver.member@example.test",
+    "subtotal": 120.0,
+    "payment": "PayPal (sandbox buyer paypal.buyer@example.test)",
+    "delivery": "click and collect",
+    "promotion": "DOUBLEUP off"
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-041",
+   "title": "Silver member, gift card, express: $120.00 earns 180 points",
+   "criterion_ids": [
+    "AC-4"
+   ],
+   "technique": "pairwise",
+   "row_ids": [
+    "AC-4-PW-10"
+   ],
+   "type": "positive",
+   "priority": "P1",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as silver.member@example.test",
+     "data": "",
+     "expected": "The account page shows the member's tier and a points balance of 0"
+    },
+    {
+     "action": "Add items to the basket until the subtotal is exact",
+     "data": "subtotal $120.00",
+     "expected": "The basket shows a subtotal of $120.00"
+    },
+    {
+     "action": "Check out with express delivery and pay by gift card (test gift card GC-TEST-0120, balance $120.00)",
+     "data": "gift card (test gift card GC-TEST-0120, balance $120.00)",
+     "expected": "The order confirmation page shows an order number"
+    },
+    {
+     "action": "Open the order in the account page",
+     "data": "",
+     "expected": "The order shows 180 pending points"
+    }
+   ],
+   "test_data": {
+    "member": "silver.member@example.test",
+    "subtotal": 120.0,
+    "payment": "gift card (test gift card GC-TEST-0120, balance $120.00)",
+    "delivery": "express",
+    "promotion": "DOUBLEUP off"
+   },
+   "automation_candidate": true,
+   "depends_on_questions": []
+  },
+  {
+   "id": "TC-042",
+   "title": "Balance shows the new points after delivery, within the time agreed in Q-1",
+   "criterion_ids": [
+    "AC-5"
+   ],
+   "technique": "scenario",
+   "row_ids": [
+    "AC-5-SC-01"
+   ],
+   "type": "positive",
+   "priority": "P1",
+   "preconditions": [
+    "Staging shop with the loyalty programme on",
+    "Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+   ],
+   "steps": [
+    {
+     "action": "Sign in as bronze.member@example.test; note the points balance",
+     "data": "",
+     "expected": "The account page shows the current balance, B"
+    },
+    {
+     "action": "Place an order with a subtotal of $60.00 and mark it delivered in the admin console; note the time",
+     "data": "subtotal $60.00",
+     "expected": "The order status is delivered"
+    },
+    {
+     "action": "Reload the account page until the balance changes, noting the time",
+     "data": "",
+     "expected": "The balance is B + 60, and the time since delivery is within the limit agreed in Q-1"
+    }
+   ],
+   "test_data": {
+    "member": "bronze.member@example.test",
+    "subtotal": 60.0
+   },
+   "automation_candidate": true,
+   "depends_on_questions": [
+    "Q-1"
+   ]
+  }
+ ],
+ "questions": [
+  {
+   "id": "Q-1",
+   "criterion_id": "AC-5",
+   "term": "promptly",
+   "source": "lexicon",
+   "question": "\"Promptly\" needs a number and a unit: within how many seconds or minutes of delivery must the balance show the new points?",
+   "blocks_cases": [
+    "TC-042"
+   ]
+  },
+  {
+   "id": "Q-2",
+   "criterion_id": "AC-2",
+   "term": "1 extra point per whole dollar",
+   "source": "agent_judgment",
+   "question": "Is the DOUBLEUP extra point added after the tier multiplier (Gold: 2 + 1 = 3 points per dollar) or multiplied by it (Gold: 2 x (1 + 1) = 4)? The cases assume added after.",
+   "blocks_cases": [
+    "TC-011",
+    "TC-015",
+    "TC-019"
+   ]
+  }
+ ],
+ "summary": {
+  "criteria": 5,
+  "criteria_with_cases": 5,
+  "cases": 42,
+  "rows_total": 52,
+  "rows_covered": 52,
+  "rows_infeasible": 0,
+  "questions": 2,
+  "by_technique": {
+   "boundary": 6,
+   "decision_table": 12,
+   "pairwise": 10,
+   "partition": 3,
+   "scenario": 1,
+   "state_transition": 10
+  },
+  "by_priority": {
+   "P0": 10,
+   "P1": 32,
+   "P2": 0,
+   "P3": 0
+  }
+ },
+ "limitations": [
+  "The cases were designed from the ticket alone; no running shop was used, so the screens and messages named in the steps are as the ticket and the comment describe them.",
+  "Cases for the DOUBLEUP rows assume the extra point is added after the tier multiplier (Q-2); if the answer is the other reading, those 3 cases change their expected points.",
+  "The balance timing in AC-5 has no number yet (Q-1); its case can be run, but not passed or failed, until it is answered.",
+  "Pairwise covers every pair of payment, delivery and tier, not every triple (27 combinations, 10 cases)."
+ ],
+ "files_written": [
+  "examples/test_cases.example.json",
+  "examples/xray.json",
+  "examples/cases.csv",
+  "examples/cases.md"
+ ]
+}

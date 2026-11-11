@@ -1,0 +1,1663 @@
+[
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-001 Subtotal $9.99 earns 0 points (below the $10.00 limit)",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "Highest"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "boundary"
+   ],
+   "description": "Covers SHOP-310 AC-1 (boundary; rows AC-1-BVA-01).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+  },
+  "steps": [
+   {
+    "action": "Sign in as bronze.member@example.test",
+    "data": "",
+    "result": "The account page shows the member's tier and a points balance of 0"
+   },
+   {
+    "action": "Add items to the basket until the subtotal is exact",
+    "data": "subtotal $9.99",
+    "result": "The basket shows a subtotal of $9.99"
+   },
+   {
+    "action": "Check out with standard delivery and pay by card (test card 4111 1111 1111 1111)",
+    "data": "card (test card 4111 1111 1111 1111)",
+    "result": "The order confirmation page shows an order number"
+   },
+   {
+    "action": "Open the order in the account page",
+    "data": "",
+    "result": "The order shows 0 pending points"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-002 Subtotal $10.00 earns 10 points (on the $10.00 limit)",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "Highest"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "boundary"
+   ],
+   "description": "Covers SHOP-310 AC-1 (boundary; rows AC-1-BVA-02).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+  },
+  "steps": [
+   {
+    "action": "Sign in as bronze.member@example.test",
+    "data": "",
+    "result": "The account page shows the member's tier and a points balance of 0"
+   },
+   {
+    "action": "Add items to the basket until the subtotal is exact",
+    "data": "subtotal $10.00",
+    "result": "The basket shows a subtotal of $10.00"
+   },
+   {
+    "action": "Check out with standard delivery and pay by card (test card 4111 1111 1111 1111)",
+    "data": "card (test card 4111 1111 1111 1111)",
+    "result": "The order confirmation page shows an order number"
+   },
+   {
+    "action": "Open the order in the account page",
+    "data": "",
+    "result": "The order shows 10 pending points"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-003 Subtotal $10.01 earns 10 points (above the $10.00 limit)",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "Highest"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "boundary"
+   ],
+   "description": "Covers SHOP-310 AC-1 (boundary; rows AC-1-BVA-03).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+  },
+  "steps": [
+   {
+    "action": "Sign in as bronze.member@example.test",
+    "data": "",
+    "result": "The account page shows the member's tier and a points balance of 0"
+   },
+   {
+    "action": "Add items to the basket until the subtotal is exact",
+    "data": "subtotal $10.01",
+    "result": "The basket shows a subtotal of $10.01"
+   },
+   {
+    "action": "Check out with standard delivery and pay by card (test card 4111 1111 1111 1111)",
+    "data": "card (test card 4111 1111 1111 1111)",
+    "result": "The order confirmation page shows an order number"
+   },
+   {
+    "action": "Open the order in the account page",
+    "data": "",
+    "result": "The order shows 10 pending points"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-004 Subtotal $499.99 earns 499 points (below the $500.00 limit)",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "Highest"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "boundary"
+   ],
+   "description": "Covers SHOP-310 AC-1 (boundary; rows AC-1-BVA-04).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+  },
+  "steps": [
+   {
+    "action": "Sign in as bronze.member@example.test",
+    "data": "",
+    "result": "The account page shows the member's tier and a points balance of 0"
+   },
+   {
+    "action": "Add items to the basket until the subtotal is exact",
+    "data": "subtotal $499.99",
+    "result": "The basket shows a subtotal of $499.99"
+   },
+   {
+    "action": "Check out with standard delivery and pay by card (test card 4111 1111 1111 1111)",
+    "data": "card (test card 4111 1111 1111 1111)",
+    "result": "The order confirmation page shows an order number"
+   },
+   {
+    "action": "Open the order in the account page",
+    "data": "",
+    "result": "The order shows 499 pending points"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-005 Subtotal $500.00 earns 500 points (on the $500.00 limit)",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "Highest"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "boundary"
+   ],
+   "description": "Covers SHOP-310 AC-1 (boundary; rows AC-1-BVA-05).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+  },
+  "steps": [
+   {
+    "action": "Sign in as bronze.member@example.test",
+    "data": "",
+    "result": "The account page shows the member's tier and a points balance of 0"
+   },
+   {
+    "action": "Add items to the basket until the subtotal is exact",
+    "data": "subtotal $500.00",
+    "result": "The basket shows a subtotal of $500.00"
+   },
+   {
+    "action": "Check out with standard delivery and pay by card (test card 4111 1111 1111 1111)",
+    "data": "card (test card 4111 1111 1111 1111)",
+    "result": "The order confirmation page shows an order number"
+   },
+   {
+    "action": "Open the order in the account page",
+    "data": "",
+    "result": "The order shows 500 pending points"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-006 Subtotal $500.01 earns 500 points (above the $500.00 limit)",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "Highest"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "boundary"
+   ],
+   "description": "Covers SHOP-310 AC-1 (boundary; rows AC-1-BVA-06).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+  },
+  "steps": [
+   {
+    "action": "Sign in as bronze.member@example.test",
+    "data": "",
+    "result": "The account page shows the member's tier and a points balance of 0"
+   },
+   {
+    "action": "Add items to the basket until the subtotal is exact",
+    "data": "subtotal $500.01",
+    "result": "The basket shows a subtotal of $500.01"
+   },
+   {
+    "action": "Check out with standard delivery and pay by card (test card 4111 1111 1111 1111)",
+    "data": "card (test card 4111 1111 1111 1111)",
+    "result": "The order confirmation page shows an order number"
+   },
+   {
+    "action": "Open the order in the account page",
+    "data": "",
+    "result": "The order shows 500 pending points"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-007 Subtotal below $10.00: $4.50 earns 0 points",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "Highest"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "negative",
+    "partition"
+   ],
+   "description": "Covers SHOP-310 AC-1 (partition; rows AC-1-EP-01).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+  },
+  "steps": [
+   {
+    "action": "Sign in as bronze.member@example.test",
+    "data": "",
+    "result": "The account page shows the member's tier and a points balance of 0"
+   },
+   {
+    "action": "Add items to the basket until the subtotal is exact",
+    "data": "subtotal $4.50",
+    "result": "The basket shows a subtotal of $4.50"
+   },
+   {
+    "action": "Check out with standard delivery and pay by card (test card 4111 1111 1111 1111)",
+    "data": "card (test card 4111 1111 1111 1111)",
+    "result": "The order confirmation page shows an order number"
+   },
+   {
+    "action": "Open the order in the account page",
+    "data": "",
+    "result": "The order shows 0 pending points"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-008 Subtotal from $10.00 to $500.00: $123.45 earns 123 points",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "High"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "partition",
+    "positive"
+   ],
+   "description": "Covers SHOP-310 AC-1 (partition; rows AC-1-EP-02).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+  },
+  "steps": [
+   {
+    "action": "Sign in as bronze.member@example.test",
+    "data": "",
+    "result": "The account page shows the member's tier and a points balance of 0"
+   },
+   {
+    "action": "Add items to the basket until the subtotal is exact",
+    "data": "subtotal $123.45",
+    "result": "The basket shows a subtotal of $123.45"
+   },
+   {
+    "action": "Check out with standard delivery and pay by card (test card 4111 1111 1111 1111)",
+    "data": "card (test card 4111 1111 1111 1111)",
+    "result": "The order confirmation page shows an order number"
+   },
+   {
+    "action": "Open the order in the account page",
+    "data": "",
+    "result": "The order shows 123 pending points"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-009 Subtotal above $500.00: $842.10 earns 500 points",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "High"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "partition",
+    "positive"
+   ],
+   "description": "Covers SHOP-310 AC-1 (partition; rows AC-1-EP-03).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+  },
+  "steps": [
+   {
+    "action": "Sign in as bronze.member@example.test",
+    "data": "",
+    "result": "The account page shows the member's tier and a points balance of 0"
+   },
+   {
+    "action": "Add items to the basket until the subtotal is exact",
+    "data": "subtotal $842.10",
+    "result": "The basket shows a subtotal of $842.10"
+   },
+   {
+    "action": "Check out with standard delivery and pay by card (test card 4111 1111 1111 1111)",
+    "data": "card (test card 4111 1111 1111 1111)",
+    "result": "The order confirmation page shows an order number"
+   },
+   {
+    "action": "Open the order in the account page",
+    "data": "",
+    "result": "The order shows 500 pending points"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-010 Gold, DOUBLEUP on, all gift card: $100.00 earns 200 points",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "Highest"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "decision_table",
+    "negative"
+   ],
+   "description": "Covers SHOP-310 AC-2 (decision table; rows AC-2-DT-01).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points; DOUBLEUP promotion active in the admin console"
+  },
+  "steps": [
+   {
+    "action": "Sign in as gold.member@example.test",
+    "data": "",
+    "result": "The account page shows the member's tier and a points balance of 0"
+   },
+   {
+    "action": "Add items to the basket until the subtotal is exact",
+    "data": "subtotal $100.00",
+    "result": "The basket shows a subtotal of $100.00"
+   },
+   {
+    "action": "Check out with standard delivery and pay by gift card (test gift card GC-TEST-0100, balance $100.00)",
+    "data": "gift card (test gift card GC-TEST-0100, balance $100.00)",
+    "result": "The order confirmation page shows an order number"
+   },
+   {
+    "action": "Open the order in the account page",
+    "data": "",
+    "result": "The order shows 200 pending points (the promotion does not apply to an order paid entirely by gift card)"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-011 Gold, DOUBLEUP on, card: $100.00 earns 300 points",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "High"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "decision_table",
+    "positive"
+   ],
+   "description": "Covers SHOP-310 AC-2 (decision table; rows AC-2-DT-02).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points; DOUBLEUP promotion active in the admin console\nDepends on open question(s) Q-2."
+  },
+  "steps": [
+   {
+    "action": "Sign in as gold.member@example.test",
+    "data": "",
+    "result": "The account page shows the member's tier and a points balance of 0"
+   },
+   {
+    "action": "Add items to the basket until the subtotal is exact",
+    "data": "subtotal $100.00",
+    "result": "The basket shows a subtotal of $100.00"
+   },
+   {
+    "action": "Check out with standard delivery and pay by card (test card 4111 1111 1111 1111)",
+    "data": "card (test card 4111 1111 1111 1111)",
+    "result": "The order confirmation page shows an order number"
+   },
+   {
+    "action": "Open the order in the account page",
+    "data": "",
+    "result": "The order shows 300 pending points (Gold rate plus 1 DOUBLEUP point per dollar)"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-012 Gold, DOUBLEUP off, all gift card: $100.00 earns 200 points",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "High"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "decision_table",
+    "positive"
+   ],
+   "description": "Covers SHOP-310 AC-2 (decision table; rows AC-2-DT-03).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points; DOUBLEUP promotion switched off in the admin console"
+  },
+  "steps": [
+   {
+    "action": "Sign in as gold.member@example.test",
+    "data": "",
+    "result": "The account page shows the member's tier and a points balance of 0"
+   },
+   {
+    "action": "Add items to the basket until the subtotal is exact",
+    "data": "subtotal $100.00",
+    "result": "The basket shows a subtotal of $100.00"
+   },
+   {
+    "action": "Check out with standard delivery and pay by gift card (test gift card GC-TEST-0100, balance $100.00)",
+    "data": "gift card (test gift card GC-TEST-0100, balance $100.00)",
+    "result": "The order confirmation page shows an order number"
+   },
+   {
+    "action": "Open the order in the account page",
+    "data": "",
+    "result": "The order shows 200 pending points (Gold rate)"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-013 Gold, DOUBLEUP off, card: $100.00 earns 200 points",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "High"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "decision_table",
+    "positive"
+   ],
+   "description": "Covers SHOP-310 AC-2 (decision table; rows AC-2-DT-04).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points; DOUBLEUP promotion switched off in the admin console"
+  },
+  "steps": [
+   {
+    "action": "Sign in as gold.member@example.test",
+    "data": "",
+    "result": "The account page shows the member's tier and a points balance of 0"
+   },
+   {
+    "action": "Add items to the basket until the subtotal is exact",
+    "data": "subtotal $100.00",
+    "result": "The basket shows a subtotal of $100.00"
+   },
+   {
+    "action": "Check out with standard delivery and pay by card (test card 4111 1111 1111 1111)",
+    "data": "card (test card 4111 1111 1111 1111)",
+    "result": "The order confirmation page shows an order number"
+   },
+   {
+    "action": "Open the order in the account page",
+    "data": "",
+    "result": "The order shows 200 pending points (Gold rate)"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-014 Silver, DOUBLEUP on, all gift card: $100.00 earns 150 points",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "Highest"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "decision_table",
+    "negative"
+   ],
+   "description": "Covers SHOP-310 AC-2 (decision table; rows AC-2-DT-05).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points; DOUBLEUP promotion active in the admin console"
+  },
+  "steps": [
+   {
+    "action": "Sign in as silver.member@example.test",
+    "data": "",
+    "result": "The account page shows the member's tier and a points balance of 0"
+   },
+   {
+    "action": "Add items to the basket until the subtotal is exact",
+    "data": "subtotal $100.00",
+    "result": "The basket shows a subtotal of $100.00"
+   },
+   {
+    "action": "Check out with standard delivery and pay by gift card (test gift card GC-TEST-0100, balance $100.00)",
+    "data": "gift card (test gift card GC-TEST-0100, balance $100.00)",
+    "result": "The order confirmation page shows an order number"
+   },
+   {
+    "action": "Open the order in the account page",
+    "data": "",
+    "result": "The order shows 150 pending points (the promotion does not apply to an order paid entirely by gift card)"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-015 Silver, DOUBLEUP on, card: $100.00 earns 250 points",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "High"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "decision_table",
+    "positive"
+   ],
+   "description": "Covers SHOP-310 AC-2 (decision table; rows AC-2-DT-06).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points; DOUBLEUP promotion active in the admin console\nDepends on open question(s) Q-2."
+  },
+  "steps": [
+   {
+    "action": "Sign in as silver.member@example.test",
+    "data": "",
+    "result": "The account page shows the member's tier and a points balance of 0"
+   },
+   {
+    "action": "Add items to the basket until the subtotal is exact",
+    "data": "subtotal $100.00",
+    "result": "The basket shows a subtotal of $100.00"
+   },
+   {
+    "action": "Check out with standard delivery and pay by card (test card 4111 1111 1111 1111)",
+    "data": "card (test card 4111 1111 1111 1111)",
+    "result": "The order confirmation page shows an order number"
+   },
+   {
+    "action": "Open the order in the account page",
+    "data": "",
+    "result": "The order shows 250 pending points (Silver rate plus 1 DOUBLEUP point per dollar)"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-016 Silver, DOUBLEUP off, all gift card: $100.00 earns 150 points",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "High"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "decision_table",
+    "positive"
+   ],
+   "description": "Covers SHOP-310 AC-2 (decision table; rows AC-2-DT-07).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points; DOUBLEUP promotion switched off in the admin console"
+  },
+  "steps": [
+   {
+    "action": "Sign in as silver.member@example.test",
+    "data": "",
+    "result": "The account page shows the member's tier and a points balance of 0"
+   },
+   {
+    "action": "Add items to the basket until the subtotal is exact",
+    "data": "subtotal $100.00",
+    "result": "The basket shows a subtotal of $100.00"
+   },
+   {
+    "action": "Check out with standard delivery and pay by gift card (test gift card GC-TEST-0100, balance $100.00)",
+    "data": "gift card (test gift card GC-TEST-0100, balance $100.00)",
+    "result": "The order confirmation page shows an order number"
+   },
+   {
+    "action": "Open the order in the account page",
+    "data": "",
+    "result": "The order shows 150 pending points (Silver rate)"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-017 Silver, DOUBLEUP off, card: $100.00 earns 150 points",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "High"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "decision_table",
+    "positive"
+   ],
+   "description": "Covers SHOP-310 AC-2 (decision table; rows AC-2-DT-08).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points; DOUBLEUP promotion switched off in the admin console"
+  },
+  "steps": [
+   {
+    "action": "Sign in as silver.member@example.test",
+    "data": "",
+    "result": "The account page shows the member's tier and a points balance of 0"
+   },
+   {
+    "action": "Add items to the basket until the subtotal is exact",
+    "data": "subtotal $100.00",
+    "result": "The basket shows a subtotal of $100.00"
+   },
+   {
+    "action": "Check out with standard delivery and pay by card (test card 4111 1111 1111 1111)",
+    "data": "card (test card 4111 1111 1111 1111)",
+    "result": "The order confirmation page shows an order number"
+   },
+   {
+    "action": "Open the order in the account page",
+    "data": "",
+    "result": "The order shows 150 pending points (Silver rate)"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-018 Bronze, DOUBLEUP on, all gift card: $100.00 earns 100 points",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "Highest"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "decision_table",
+    "negative"
+   ],
+   "description": "Covers SHOP-310 AC-2 (decision table; rows AC-2-DT-09).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points; DOUBLEUP promotion active in the admin console"
+  },
+  "steps": [
+   {
+    "action": "Sign in as bronze.member@example.test",
+    "data": "",
+    "result": "The account page shows the member's tier and a points balance of 0"
+   },
+   {
+    "action": "Add items to the basket until the subtotal is exact",
+    "data": "subtotal $100.00",
+    "result": "The basket shows a subtotal of $100.00"
+   },
+   {
+    "action": "Check out with standard delivery and pay by gift card (test gift card GC-TEST-0100, balance $100.00)",
+    "data": "gift card (test gift card GC-TEST-0100, balance $100.00)",
+    "result": "The order confirmation page shows an order number"
+   },
+   {
+    "action": "Open the order in the account page",
+    "data": "",
+    "result": "The order shows 100 pending points (the promotion does not apply to an order paid entirely by gift card)"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-019 Bronze, DOUBLEUP on, card: $100.00 earns 200 points",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "High"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "decision_table",
+    "positive"
+   ],
+   "description": "Covers SHOP-310 AC-2 (decision table; rows AC-2-DT-10).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points; DOUBLEUP promotion active in the admin console\nDepends on open question(s) Q-2."
+  },
+  "steps": [
+   {
+    "action": "Sign in as bronze.member@example.test",
+    "data": "",
+    "result": "The account page shows the member's tier and a points balance of 0"
+   },
+   {
+    "action": "Add items to the basket until the subtotal is exact",
+    "data": "subtotal $100.00",
+    "result": "The basket shows a subtotal of $100.00"
+   },
+   {
+    "action": "Check out with standard delivery and pay by card (test card 4111 1111 1111 1111)",
+    "data": "card (test card 4111 1111 1111 1111)",
+    "result": "The order confirmation page shows an order number"
+   },
+   {
+    "action": "Open the order in the account page",
+    "data": "",
+    "result": "The order shows 200 pending points (Bronze rate plus 1 DOUBLEUP point per dollar)"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-020 Bronze, DOUBLEUP off, all gift card: $100.00 earns 100 points",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "High"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "decision_table",
+    "positive"
+   ],
+   "description": "Covers SHOP-310 AC-2 (decision table; rows AC-2-DT-11).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points; DOUBLEUP promotion switched off in the admin console"
+  },
+  "steps": [
+   {
+    "action": "Sign in as bronze.member@example.test",
+    "data": "",
+    "result": "The account page shows the member's tier and a points balance of 0"
+   },
+   {
+    "action": "Add items to the basket until the subtotal is exact",
+    "data": "subtotal $100.00",
+    "result": "The basket shows a subtotal of $100.00"
+   },
+   {
+    "action": "Check out with standard delivery and pay by gift card (test gift card GC-TEST-0100, balance $100.00)",
+    "data": "gift card (test gift card GC-TEST-0100, balance $100.00)",
+    "result": "The order confirmation page shows an order number"
+   },
+   {
+    "action": "Open the order in the account page",
+    "data": "",
+    "result": "The order shows 100 pending points (Bronze rate)"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-021 Bronze, DOUBLEUP off, card: $100.00 earns 100 points",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "High"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "decision_table",
+    "positive"
+   ],
+   "description": "Covers SHOP-310 AC-2 (decision table; rows AC-2-DT-12).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points; DOUBLEUP promotion switched off in the admin console"
+  },
+  "steps": [
+   {
+    "action": "Sign in as bronze.member@example.test",
+    "data": "",
+    "result": "The account page shows the member's tier and a points balance of 0"
+   },
+   {
+    "action": "Add items to the basket until the subtotal is exact",
+    "data": "subtotal $100.00",
+    "result": "The basket shows a subtotal of $100.00"
+   },
+   {
+    "action": "Check out with standard delivery and pay by card (test card 4111 1111 1111 1111)",
+    "data": "card (test card 4111 1111 1111 1111)",
+    "result": "The order confirmation page shows an order number"
+   },
+   {
+    "action": "Open the order in the account page",
+    "data": "",
+    "result": "The order shows 100 pending points (Bronze rate)"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-022 Placed order, ship: points become pending",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "High"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "positive",
+    "state_transition"
+   ],
+   "description": "Covers SHOP-310 AC-3 (state transition; rows AC-3-ST-01).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+  },
+  "steps": [
+   {
+    "action": "Sign in as bronze.member@example.test and place an order with a subtotal of $80.00",
+    "data": "subtotal $80.00",
+    "result": "The order is placed and shows 80 pending points"
+   },
+   {
+    "action": "Mark the order as shipped in the admin console",
+    "data": "",
+    "result": "The order status is shipped; the account page shows the 80 points as pending; the points balance is 0"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-023 Shipped order, deliver: points become available",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "High"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "positive",
+    "state_transition"
+   ],
+   "description": "Covers SHOP-310 AC-3 (state transition; rows AC-3-ST-02).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+  },
+  "steps": [
+   {
+    "action": "Sign in as bronze.member@example.test and place an order with a subtotal of $80.00",
+    "data": "subtotal $80.00",
+    "result": "The order is placed and shows 80 pending points"
+   },
+   {
+    "action": "Mark the order as shipped in the admin console",
+    "data": "",
+    "result": "The order status is shipped and its 80 points are pending"
+   },
+   {
+    "action": "Mark the order as delivered in the admin console",
+    "data": "",
+    "result": "The order status is delivered; the account page shows the 80 points as available; the points balance is 80"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-024 Placed order, cancel: points become removed",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "High"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "positive",
+    "state_transition"
+   ],
+   "description": "Covers SHOP-310 AC-3 (state transition; rows AC-3-ST-03).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+  },
+  "steps": [
+   {
+    "action": "Sign in as bronze.member@example.test and place an order with a subtotal of $80.00",
+    "data": "subtotal $80.00",
+    "result": "The order is placed and shows 80 pending points"
+   },
+   {
+    "action": "Cancel the order from the account page",
+    "data": "",
+    "result": "The order status is cancelled; the account page shows the 80 points as removed; the points balance is 0"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-025 Delivered order, return: points become removed",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "High"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "positive",
+    "state_transition"
+   ],
+   "description": "Covers SHOP-310 AC-3 (state transition; rows AC-3-ST-04).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+  },
+  "steps": [
+   {
+    "action": "Sign in as bronze.member@example.test and place an order with a subtotal of $80.00",
+    "data": "subtotal $80.00",
+    "result": "The order is placed and shows 80 pending points"
+   },
+   {
+    "action": "Mark the order as shipped in the admin console",
+    "data": "",
+    "result": "The order status is shipped and its 80 points are pending"
+   },
+   {
+    "action": "Mark the order as delivered in the admin console",
+    "data": "",
+    "result": "The order status is delivered and its 80 points are available"
+   },
+   {
+    "action": "Record a return for the order in the admin console",
+    "data": "",
+    "result": "The order status is returned; the account page shows the 80 points as removed; the points balance is 0"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-026 A shipped order can't be cancelled, and its points stay pending",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "High"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "negative",
+    "state_transition"
+   ],
+   "description": "Covers SHOP-310 AC-3 (state transition; rows AC-3-ST-08).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+  },
+  "steps": [
+   {
+    "action": "Sign in as bronze.member@example.test and place an order with a subtotal of $80.00",
+    "data": "subtotal $80.00",
+    "result": "The order is placed and shows 80 pending points"
+   },
+   {
+    "action": "Mark the order as shipped in the admin console",
+    "data": "",
+    "result": "The order status is shipped and its 80 points are pending"
+   },
+   {
+    "action": "Try to cancel the order from the account page",
+    "data": "",
+    "result": "There is no Cancel button, or cancelling shows \"This order has shipped and can't be cancelled\"; the status stays shipped and the 80 points stay pending"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-027 Placed order refuses deliver, return",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "High"
+   },
+   "labels": [
+    "SHOP-310",
+    "negative",
+    "state_transition"
+   ],
+   "description": "Covers SHOP-310 AC-3 (state transition; rows AC-3-ST-05, AC-3-ST-06).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+  },
+  "steps": [
+   {
+    "action": "Sign in as bronze.member@example.test and place an order with a subtotal of $80.00",
+    "data": "subtotal $80.00",
+    "result": "The order is placed and shows 80 pending points"
+   },
+   {
+    "action": "In the admin console and the account page, look for deliver, return on the order",
+    "data": "",
+    "result": "None of deliver, return is offered (or each is refused with a message); the status stays placed and the points stay pending"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-028 Shipped order refuses ship, return",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "High"
+   },
+   "labels": [
+    "SHOP-310",
+    "negative",
+    "state_transition"
+   ],
+   "description": "Covers SHOP-310 AC-3 (state transition; rows AC-3-ST-07, AC-3-ST-09).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+  },
+  "steps": [
+   {
+    "action": "Sign in as bronze.member@example.test and place an order with a subtotal of $80.00",
+    "data": "subtotal $80.00",
+    "result": "The order is placed and shows 80 pending points"
+   },
+   {
+    "action": "Mark the order as shipped in the admin console",
+    "data": "",
+    "result": "The order status is shipped and its 80 points are pending"
+   },
+   {
+    "action": "In the admin console and the account page, look for ship, return on the order",
+    "data": "",
+    "result": "None of ship, return is offered (or each is refused with a message); the status stays shipped and the points stay pending"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-029 Delivered order refuses ship, deliver, cancel",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "High"
+   },
+   "labels": [
+    "SHOP-310",
+    "negative",
+    "state_transition"
+   ],
+   "description": "Covers SHOP-310 AC-3 (state transition; rows AC-3-ST-10, AC-3-ST-11, AC-3-ST-12).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+  },
+  "steps": [
+   {
+    "action": "Sign in as bronze.member@example.test and place an order with a subtotal of $80.00",
+    "data": "subtotal $80.00",
+    "result": "The order is placed and shows 80 pending points"
+   },
+   {
+    "action": "Mark the order as shipped in the admin console",
+    "data": "",
+    "result": "The order status is shipped and its 80 points are pending"
+   },
+   {
+    "action": "Mark the order as delivered in the admin console",
+    "data": "",
+    "result": "The order status is delivered and its 80 points are available"
+   },
+   {
+    "action": "In the admin console and the account page, look for ship, deliver, cancel on the order",
+    "data": "",
+    "result": "None of ship, deliver, cancel is offered (or each is refused with a message); the status stays delivered and the points stay available"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-030 Cancelled order refuses ship, deliver, cancel, return",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "High"
+   },
+   "labels": [
+    "SHOP-310",
+    "negative",
+    "state_transition"
+   ],
+   "description": "Covers SHOP-310 AC-3 (state transition; rows AC-3-ST-13, AC-3-ST-14, AC-3-ST-15, AC-3-ST-16).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+  },
+  "steps": [
+   {
+    "action": "Sign in as bronze.member@example.test and place an order with a subtotal of $80.00",
+    "data": "subtotal $80.00",
+    "result": "The order is placed and shows 80 pending points"
+   },
+   {
+    "action": "Cancel the order from the account page",
+    "data": "",
+    "result": "The order status is cancelled and its 80 points are removed"
+   },
+   {
+    "action": "In the admin console and the account page, look for ship, deliver, cancel, return on the order",
+    "data": "",
+    "result": "None of ship, deliver, cancel, return is offered (or each is refused with a message); the status stays cancelled and the points stay removed"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-031 Returned order refuses ship, deliver, cancel, return",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "High"
+   },
+   "labels": [
+    "SHOP-310",
+    "negative",
+    "state_transition"
+   ],
+   "description": "Covers SHOP-310 AC-3 (state transition; rows AC-3-ST-17, AC-3-ST-18, AC-3-ST-19, AC-3-ST-20).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+  },
+  "steps": [
+   {
+    "action": "Sign in as bronze.member@example.test and place an order with a subtotal of $80.00",
+    "data": "subtotal $80.00",
+    "result": "The order is placed and shows 80 pending points"
+   },
+   {
+    "action": "Mark the order as shipped in the admin console",
+    "data": "",
+    "result": "The order status is shipped and its 80 points are pending"
+   },
+   {
+    "action": "Mark the order as delivered in the admin console",
+    "data": "",
+    "result": "The order status is delivered and its 80 points are available"
+   },
+   {
+    "action": "Record a return for the order in the admin console",
+    "data": "",
+    "result": "The order status is returned and its 80 points are removed"
+   },
+   {
+    "action": "In the admin console and the account page, look for ship, deliver, cancel, return on the order",
+    "data": "",
+    "result": "None of ship, deliver, cancel, return is offered (or each is refused with a message); the status stays returned and the points stay removed"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-032 Gold member, card, standard: $120.00 earns 240 points",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "High"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "pairwise",
+    "positive"
+   ],
+   "description": "Covers SHOP-310 AC-4 (pairwise; rows AC-4-PW-01).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+  },
+  "steps": [
+   {
+    "action": "Sign in as gold.member@example.test",
+    "data": "",
+    "result": "The account page shows the member's tier and a points balance of 0"
+   },
+   {
+    "action": "Add items to the basket until the subtotal is exact",
+    "data": "subtotal $120.00",
+    "result": "The basket shows a subtotal of $120.00"
+   },
+   {
+    "action": "Check out with standard delivery and pay by card (test card 4111 1111 1111 1111)",
+    "data": "card (test card 4111 1111 1111 1111)",
+    "result": "The order confirmation page shows an order number"
+   },
+   {
+    "action": "Open the order in the account page",
+    "data": "",
+    "result": "The order shows 240 pending points"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-033 Silver member, card, express: $120.00 earns 180 points",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "High"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "pairwise",
+    "positive"
+   ],
+   "description": "Covers SHOP-310 AC-4 (pairwise; rows AC-4-PW-02).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+  },
+  "steps": [
+   {
+    "action": "Sign in as silver.member@example.test",
+    "data": "",
+    "result": "The account page shows the member's tier and a points balance of 0"
+   },
+   {
+    "action": "Add items to the basket until the subtotal is exact",
+    "data": "subtotal $120.00",
+    "result": "The basket shows a subtotal of $120.00"
+   },
+   {
+    "action": "Check out with express delivery and pay by card (test card 4111 1111 1111 1111)",
+    "data": "card (test card 4111 1111 1111 1111)",
+    "result": "The order confirmation page shows an order number"
+   },
+   {
+    "action": "Open the order in the account page",
+    "data": "",
+    "result": "The order shows 180 pending points"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-034 Bronze member, card, click and collect: $120.00 earns 120 points",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "High"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "pairwise",
+    "positive"
+   ],
+   "description": "Covers SHOP-310 AC-4 (pairwise; rows AC-4-PW-03).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+  },
+  "steps": [
+   {
+    "action": "Sign in as bronze.member@example.test",
+    "data": "",
+    "result": "The account page shows the member's tier and a points balance of 0"
+   },
+   {
+    "action": "Add items to the basket until the subtotal is exact",
+    "data": "subtotal $120.00",
+    "result": "The basket shows a subtotal of $120.00"
+   },
+   {
+    "action": "Check out with click and collect delivery and pay by card (test card 4111 1111 1111 1111)",
+    "data": "card (test card 4111 1111 1111 1111)",
+    "result": "The order confirmation page shows an order number"
+   },
+   {
+    "action": "Open the order in the account page",
+    "data": "",
+    "result": "The order shows 120 pending points"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-035 Silver member, PayPal, standard: $120.00 earns 180 points",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "High"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "pairwise",
+    "positive"
+   ],
+   "description": "Covers SHOP-310 AC-4 (pairwise; rows AC-4-PW-04).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+  },
+  "steps": [
+   {
+    "action": "Sign in as silver.member@example.test",
+    "data": "",
+    "result": "The account page shows the member's tier and a points balance of 0"
+   },
+   {
+    "action": "Add items to the basket until the subtotal is exact",
+    "data": "subtotal $120.00",
+    "result": "The basket shows a subtotal of $120.00"
+   },
+   {
+    "action": "Check out with standard delivery and pay by PayPal (sandbox buyer paypal.buyer@example.test)",
+    "data": "PayPal (sandbox buyer paypal.buyer@example.test)",
+    "result": "The order confirmation page shows an order number"
+   },
+   {
+    "action": "Open the order in the account page",
+    "data": "",
+    "result": "The order shows 180 pending points"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-036 Gold member, PayPal, express: $120.00 earns 240 points",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "High"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "pairwise",
+    "positive"
+   ],
+   "description": "Covers SHOP-310 AC-4 (pairwise; rows AC-4-PW-05).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+  },
+  "steps": [
+   {
+    "action": "Sign in as gold.member@example.test",
+    "data": "",
+    "result": "The account page shows the member's tier and a points balance of 0"
+   },
+   {
+    "action": "Add items to the basket until the subtotal is exact",
+    "data": "subtotal $120.00",
+    "result": "The basket shows a subtotal of $120.00"
+   },
+   {
+    "action": "Check out with express delivery and pay by PayPal (sandbox buyer paypal.buyer@example.test)",
+    "data": "PayPal (sandbox buyer paypal.buyer@example.test)",
+    "result": "The order confirmation page shows an order number"
+   },
+   {
+    "action": "Open the order in the account page",
+    "data": "",
+    "result": "The order shows 240 pending points"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-037 Bronze member, gift card, standard: $120.00 earns 120 points",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "High"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "pairwise",
+    "positive"
+   ],
+   "description": "Covers SHOP-310 AC-4 (pairwise; rows AC-4-PW-06).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+  },
+  "steps": [
+   {
+    "action": "Sign in as bronze.member@example.test",
+    "data": "",
+    "result": "The account page shows the member's tier and a points balance of 0"
+   },
+   {
+    "action": "Add items to the basket until the subtotal is exact",
+    "data": "subtotal $120.00",
+    "result": "The basket shows a subtotal of $120.00"
+   },
+   {
+    "action": "Check out with standard delivery and pay by gift card (test gift card GC-TEST-0120, balance $120.00)",
+    "data": "gift card (test gift card GC-TEST-0120, balance $120.00)",
+    "result": "The order confirmation page shows an order number"
+   },
+   {
+    "action": "Open the order in the account page",
+    "data": "",
+    "result": "The order shows 120 pending points"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-038 Gold member, gift card, click and collect: $120.00 earns 240 points",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "High"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "pairwise",
+    "positive"
+   ],
+   "description": "Covers SHOP-310 AC-4 (pairwise; rows AC-4-PW-07).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+  },
+  "steps": [
+   {
+    "action": "Sign in as gold.member@example.test",
+    "data": "",
+    "result": "The account page shows the member's tier and a points balance of 0"
+   },
+   {
+    "action": "Add items to the basket until the subtotal is exact",
+    "data": "subtotal $120.00",
+    "result": "The basket shows a subtotal of $120.00"
+   },
+   {
+    "action": "Check out with click and collect delivery and pay by gift card (test gift card GC-TEST-0120, balance $120.00)",
+    "data": "gift card (test gift card GC-TEST-0120, balance $120.00)",
+    "result": "The order confirmation page shows an order number"
+   },
+   {
+    "action": "Open the order in the account page",
+    "data": "",
+    "result": "The order shows 240 pending points"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-039 Bronze member, PayPal, express: $120.00 earns 120 points",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "High"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "pairwise",
+    "positive"
+   ],
+   "description": "Covers SHOP-310 AC-4 (pairwise; rows AC-4-PW-08).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+  },
+  "steps": [
+   {
+    "action": "Sign in as bronze.member@example.test",
+    "data": "",
+    "result": "The account page shows the member's tier and a points balance of 0"
+   },
+   {
+    "action": "Add items to the basket until the subtotal is exact",
+    "data": "subtotal $120.00",
+    "result": "The basket shows a subtotal of $120.00"
+   },
+   {
+    "action": "Check out with express delivery and pay by PayPal (sandbox buyer paypal.buyer@example.test)",
+    "data": "PayPal (sandbox buyer paypal.buyer@example.test)",
+    "result": "The order confirmation page shows an order number"
+   },
+   {
+    "action": "Open the order in the account page",
+    "data": "",
+    "result": "The order shows 120 pending points"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-040 Silver member, PayPal, click and collect: $120.00 earns 180 points",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "High"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "pairwise",
+    "positive"
+   ],
+   "description": "Covers SHOP-310 AC-4 (pairwise; rows AC-4-PW-09).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+  },
+  "steps": [
+   {
+    "action": "Sign in as silver.member@example.test",
+    "data": "",
+    "result": "The account page shows the member's tier and a points balance of 0"
+   },
+   {
+    "action": "Add items to the basket until the subtotal is exact",
+    "data": "subtotal $120.00",
+    "result": "The basket shows a subtotal of $120.00"
+   },
+   {
+    "action": "Check out with click and collect delivery and pay by PayPal (sandbox buyer paypal.buyer@example.test)",
+    "data": "PayPal (sandbox buyer paypal.buyer@example.test)",
+    "result": "The order confirmation page shows an order number"
+   },
+   {
+    "action": "Open the order in the account page",
+    "data": "",
+    "result": "The order shows 180 pending points"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-041 Silver member, gift card, express: $120.00 earns 180 points",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "High"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "pairwise",
+    "positive"
+   ],
+   "description": "Covers SHOP-310 AC-4 (pairwise; rows AC-4-PW-10).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points"
+  },
+  "steps": [
+   {
+    "action": "Sign in as silver.member@example.test",
+    "data": "",
+    "result": "The account page shows the member's tier and a points balance of 0"
+   },
+   {
+    "action": "Add items to the basket until the subtotal is exact",
+    "data": "subtotal $120.00",
+    "result": "The basket shows a subtotal of $120.00"
+   },
+   {
+    "action": "Check out with express delivery and pay by gift card (test gift card GC-TEST-0120, balance $120.00)",
+    "data": "gift card (test gift card GC-TEST-0120, balance $120.00)",
+    "result": "The order confirmation page shows an order number"
+   },
+   {
+    "action": "Open the order in the account page",
+    "data": "",
+    "result": "The order shows 180 pending points"
+   }
+  ]
+ },
+ {
+  "testtype": "Manual",
+  "fields": {
+   "summary": "TC-042 Balance shows the new points after delivery, within the time agreed in Q-1",
+   "project": {
+    "key": "SHOP"
+   },
+   "priority": {
+    "name": "High"
+   },
+   "labels": [
+    "SHOP-310",
+    "automation-candidate",
+    "positive",
+    "scenario"
+   ],
+   "description": "Covers SHOP-310 AC-5 (scenario; rows AC-5-SC-01).\nPreconditions: Staging shop with the loyalty programme on; Test members gold.member@example.test, silver.member@example.test and bronze.member@example.test, each with 0 points\nDepends on open question(s) Q-1."
+  },
+  "steps": [
+   {
+    "action": "Sign in as bronze.member@example.test; note the points balance",
+    "data": "",
+    "result": "The account page shows the current balance, B"
+   },
+   {
+    "action": "Place an order with a subtotal of $60.00 and mark it delivered in the admin console; note the time",
+    "data": "subtotal $60.00",
+    "result": "The order status is delivered"
+   },
+   {
+    "action": "Reload the account page until the balance changes, noting the time",
+    "data": "",
+    "result": "The balance is B + 60, and the time since delivery is within the limit agreed in Q-1"
+   }
+  ]
+ }
+]

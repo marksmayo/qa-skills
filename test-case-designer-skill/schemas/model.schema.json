@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/qa-skills/test-case-designer/model.schema.json",
+  "title": "Test design model",
+  "description": "The agent's model per criterion: the technique(s), why, and the values, rules or states design_rows.py generates rows from.",
+  "type": "object",
+  "required": ["ticket", "content_sha256", "criteria", "infeasible", "dismissed_signals", "questions"],
+  "properties": {
+    "criteria": {"type": "array", "items": {"type": "object", "required": ["id", "techniques"],
+      "properties": {
+        "money": {"type": "boolean", "description": "the outcome is money or monetary value: boundary and negative cases go up one priority"},
+        "techniques": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["technique", "reason", "model"],
+          "oneOf": [
+            {"properties": {"technique": {"const": "boundary"}, "model": {"type": "object", "required": ["variable", "step", "limits"],
+              "properties": {"limits": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["value", "kind"],
+                "properties": {"kind": {"enum": ["min_inclusive", "max_inclusive", "min_exclusive", "max_exclusive"]}}}}}}}},
+            {"properties": {"technique": {"const": "partition"}, "model": {"type": "object", "required": ["variable", "classes"]}}},
+            {"properties": {"technique": {"const": "decision_table"}, "model": {"type": "object", "required": ["conditions"]}}},
+            {"properties": {"technique": {"const": "pairwise"}, "model": {"type": "object", "required": ["parameters"],
+              "properties": {"strength": {"const": 2}, "constraints": {"type": "array", "items": {"type": "object", "required": ["not"]}}}}}},
+            {"properties": {"technique": {"const": "state_transition"}, "model": {"type": "object", "required": ["states", "events", "transitions"]}}},
+            {"properties": {"technique": {"const": "scenario"}, "model": {"type": "object", "required": ["flows"]}}}]}}}}},
+    "infeasible": {"type": "array", "items": {"type": "object", "required": ["row_id", "reason"]}},
+    "dismissed_signals": {"type": "array", "items": {"type": "object", "required": ["criterion_id", "reason"]}},
+    "questions": {"type": "array", "items": {"type": "object", "required": ["id", "criterion_id", "term", "source", "question"],
+      "properties": {"source": {"enum": ["lexicon", "agent_judgment"]}}}}
+  }
+}

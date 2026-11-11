@@ -95,7 +95,7 @@ python scripts/render_report.py examples/batch.example.json --brief
 
 - `SKILL.md`: complete agent instructions
 - `RUBRIC.md`: dimensions, caps, verdict, flags, suggestions and ranking
-- `data/ambiguity-lexicon.json`: the terms and patterns the lint looks for
+- `data/ambiguity-lexicon.json`: the terms and patterns the lint looks for (shared with the test case designer; edit it in `shared/`)
 - `schemas/readiness.schema.json`: output contract
 - `scripts/fetch_ticket.py`: Jira connector, REST, JQL or pasted ticket to `ticket.json` (shared with ticket-to-tdd)
 - `scripts/lint_criteria.py`: mechanical lint of the criteria

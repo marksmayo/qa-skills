@@ -1,0 +1,7 @@
+{
+ "note": "Phrases that make an expected result unobservable, and timing words that need a number. Used by validate_cases.py on every expected result and by analyse_criteria.py on the criteria, in addition to the shared ambiguity lexicon (data/ambiguity-lexicon.json, shared with the ticket readiness reviewer; edit it in shared/).",
+ "vague_expected": ["works", "working", "correct", "correctly", "as expected", "as designed", "properly", "fine", "ok", "okay", "successful", "successfully", "appropriate", "appropriately", "valid response", "no errors", "behaves", "should work", "is handled", "handled", "nothing breaks"],
+ "timing_without_number": ["promptly", "immediately", "instantly", "quickly", "soon", "in a timely manner", "in real time", "without delay", "right away"],
+ "reserved_email_domains": ["example.test", "example.com", "example.org", "example.net", "test", "invalid", "example"],
+ "test_card_numbers": ["4111111111111111", "4242424242424242", "5555555555554444", "378282246310005", "6011111111111117", "4000056655665556", "5105105105105100"]
+}

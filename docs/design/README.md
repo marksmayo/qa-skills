@@ -33,7 +33,7 @@ anatomy described in the root `CLAUDE.md` (`SKILL.md`, `RUBRIC.md`, `schemas/`, 
 | 24 | [Mobile app auditor](mobile-app-auditor.md) | `mobile-app-auditor-skill/` | Built (v1.0.0) |
 | 25 | [Release readiness gate](release-readiness-gate.md) | `release-readiness-gate-skill/` | Built (v1.0.0) |
 | 26 | [CI failure triager](ci-failure-triager.md) | `ci-failure-triager-skill/` | Built (v1.0.0) |
-| 27 | Test case designer | `test-case-designer-skill/` | Agreed; design not written |
+| 27 | [Test case designer](test-case-designer.md) | `test-case-designer-skill/` | Built (v1.0.0) |
 | 28 | Post-deploy validator | `post-deploy-validator-skill/` | Agreed; design not written |
 | 29 | Hypercare anomaly watcher | `hypercare-anomaly-watcher-skill/` | Agreed; design not written |
 | 30 | Requirements traceability auditor | `requirements-traceability-auditor-skill/` | Agreed; design not written |

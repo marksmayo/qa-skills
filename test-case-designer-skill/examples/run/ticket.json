@@ -1,0 +1,71 @@
+{
+  "key": "SHOP-310",
+  "url": null,
+  "source": "connector",
+  "fetched_at": "2026-11-11T13:47:11Z",
+  "type": "Story",
+  "summary": "Members earn loyalty points at checkout",
+  "status": "Ready for Development",
+  "status_category": null,
+  "priority": "High",
+  "labels": [
+    "loyalty",
+    "checkout"
+  ],
+  "components": [
+    "storefront",
+    "loyalty"
+  ],
+  "fix_versions": [
+    "2026.12"
+  ],
+  "parent": {
+    "key": "SHOP-300",
+    "summary": "Loyalty programme",
+    "type": "Epic"
+  },
+  "description_md": "Members of the loyalty programme earn points on orders placed in the web shop. Points are shown on the account page and can be redeemed later (out of scope here). Tiers are Gold, Silver and Bronze; the DOUBLEUP promotion is switched on by marketing in the admin console.\n\n### Out of scope\n\n- Redeeming points.\n- Orders placed by phone.",
+  "acceptance_criteria_field": "Acceptance Criteria",
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "text": "Members earn 1 point per whole dollar of the order subtotal for orders from $10.00 to $500.00 inclusive. Orders below $10.00 earn no points, and orders above $500.00 earn 500 points.",
+      "source": "field:Acceptance Criteria"
+    },
+    {
+      "id": "AC-2",
+      "text": "Gold members earn double points and Silver members earn 1.5 times the points, rounded down; Bronze members earn the base points. When the DOUBLEUP promotion is active, every tier earns 1 extra point per whole dollar, but the promotion never applies to an order paid entirely with a gift card.",
+      "source": "field:Acceptance Criteria"
+    },
+    {
+      "id": "AC-3",
+      "text": "Points are pending when the order is placed, become available when it is delivered, and are removed if the order is cancelled before it ships or returned after delivery. A shipped order can't be cancelled.",
+      "source": "field:Acceptance Criteria"
+    },
+    {
+      "id": "AC-4",
+      "text": "Points are earned with every payment method (card, PayPal, gift card), every delivery option (standard, express, click and collect) and every member tier (Gold, Silver, Bronze).",
+      "source": "field:Acceptance Criteria"
+    },
+    {
+      "id": "AC-5",
+      "text": "The points balance on the account page updates promptly after delivery.",
+      "source": "field:Acceptance Criteria"
+    }
+  ],
+  "bug": null,
+  "subtasks": [],
+  "links": [],
+  "comments": [
+    {
+      "author": "Sam (Product)",
+      "created": "2026-11-10T22:40:00.000+0000",
+      "body_md": "Rounding for Silver is always down to a whole point. Points are never negative."
+    }
+  ],
+  "comments_total": 1,
+  "attachments": [],
+  "size_warnings": [],
+  "suspicious_instructions": [],
+  "content_sha256": "0e058e2b816a1a6a3c788eb78169079318b4f513d46bdd876872ee1061f30b1a"
+}

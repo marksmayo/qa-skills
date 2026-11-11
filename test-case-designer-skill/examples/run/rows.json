@@ -1,0 +1,612 @@
+{
+ "ticket": "SHOP-310",
+ "rows": [
+  {
+   "id": "AC-1-BVA-01",
+   "criterion": "AC-1",
+   "technique": "boundary",
+   "values": {
+    "subtotal": 9.99
+   },
+   "limit": 10.0,
+   "limit_kind": "min_inclusive",
+   "side": "below",
+   "in_range": false,
+   "label": "subtotal = $9.99 (below the min inclusive limit $10.00)"
+  },
+  {
+   "id": "AC-1-BVA-02",
+   "criterion": "AC-1",
+   "technique": "boundary",
+   "values": {
+    "subtotal": 10.0
+   },
+   "limit": 10.0,
+   "limit_kind": "min_inclusive",
+   "side": "on",
+   "in_range": true,
+   "label": "subtotal = $10.00 (on the min inclusive limit $10.00)"
+  },
+  {
+   "id": "AC-1-BVA-03",
+   "criterion": "AC-1",
+   "technique": "boundary",
+   "values": {
+    "subtotal": 10.01
+   },
+   "limit": 10.0,
+   "limit_kind": "min_inclusive",
+   "side": "above",
+   "in_range": true,
+   "label": "subtotal = $10.01 (above the min inclusive limit $10.00)"
+  },
+  {
+   "id": "AC-1-BVA-04",
+   "criterion": "AC-1",
+   "technique": "boundary",
+   "values": {
+    "subtotal": 499.99
+   },
+   "limit": 500.0,
+   "limit_kind": "max_inclusive",
+   "side": "below",
+   "in_range": true,
+   "label": "subtotal = $499.99 (below the max inclusive limit $500.00)"
+  },
+  {
+   "id": "AC-1-BVA-05",
+   "criterion": "AC-1",
+   "technique": "boundary",
+   "values": {
+    "subtotal": 500.0
+   },
+   "limit": 500.0,
+   "limit_kind": "max_inclusive",
+   "side": "on",
+   "in_range": true,
+   "label": "subtotal = $500.00 (on the max inclusive limit $500.00)"
+  },
+  {
+   "id": "AC-1-BVA-06",
+   "criterion": "AC-1",
+   "technique": "boundary",
+   "values": {
+    "subtotal": 500.01
+   },
+   "limit": 500.0,
+   "limit_kind": "max_inclusive",
+   "side": "above",
+   "in_range": false,
+   "label": "subtotal = $500.01 (above the max inclusive limit $500.00)"
+  },
+  {
+   "id": "AC-1-EP-01",
+   "criterion": "AC-1",
+   "technique": "partition",
+   "values": {
+    "subtotal": 4.5
+   },
+   "class": "below",
+   "valid": true,
+   "label": "Subtotal below $10.00 (e.g. $4.5)"
+  },
+  {
+   "id": "AC-1-EP-02",
+   "criterion": "AC-1",
+   "technique": "partition",
+   "values": {
+    "subtotal": 123.45
+   },
+   "class": "within",
+   "valid": true,
+   "label": "Subtotal from $10.00 to $500.00 (e.g. $123.45)"
+  },
+  {
+   "id": "AC-1-EP-03",
+   "criterion": "AC-1",
+   "technique": "partition",
+   "values": {
+    "subtotal": 842.1
+   },
+   "class": "above",
+   "valid": true,
+   "label": "Subtotal above $500.00 (e.g. $842.1)"
+  },
+  {
+   "id": "AC-2-DT-01",
+   "criterion": "AC-2",
+   "technique": "decision_table",
+   "values": {
+    "tier": "Gold",
+    "DOUBLEUP active": "yes",
+    "paid entirely by gift card": "yes"
+   },
+   "label": "tier = Gold, DOUBLEUP active = yes, paid entirely by gift card = yes"
+  },
+  {
+   "id": "AC-2-DT-02",
+   "criterion": "AC-2",
+   "technique": "decision_table",
+   "values": {
+    "tier": "Gold",
+    "DOUBLEUP active": "yes",
+    "paid entirely by gift card": "no"
+   },
+   "label": "tier = Gold, DOUBLEUP active = yes, paid entirely by gift card = no"
+  },
+  {
+   "id": "AC-2-DT-03",
+   "criterion": "AC-2",
+   "technique": "decision_table",
+   "values": {
+    "tier": "Gold",
+    "DOUBLEUP active": "no",
+    "paid entirely by gift card": "yes"
+   },
+   "label": "tier = Gold, DOUBLEUP active = no, paid entirely by gift card = yes"
+  },
+  {
+   "id": "AC-2-DT-04",
+   "criterion": "AC-2",
+   "technique": "decision_table",
+   "values": {
+    "tier": "Gold",
+    "DOUBLEUP active": "no",
+    "paid entirely by gift card": "no"
+   },
+   "label": "tier = Gold, DOUBLEUP active = no, paid entirely by gift card = no"
+  },
+  {
+   "id": "AC-2-DT-05",
+   "criterion": "AC-2",
+   "technique": "decision_table",
+   "values": {
+    "tier": "Silver",
+    "DOUBLEUP active": "yes",
+    "paid entirely by gift card": "yes"
+   },
+   "label": "tier = Silver, DOUBLEUP active = yes, paid entirely by gift card = yes"
+  },
+  {
+   "id": "AC-2-DT-06",
+   "criterion": "AC-2",
+   "technique": "decision_table",
+   "values": {
+    "tier": "Silver",
+    "DOUBLEUP active": "yes",
+    "paid entirely by gift card": "no"
+   },
+   "label": "tier = Silver, DOUBLEUP active = yes, paid entirely by gift card = no"
+  },
+  {
+   "id": "AC-2-DT-07",
+   "criterion": "AC-2",
+   "technique": "decision_table",
+   "values": {
+    "tier": "Silver",
+    "DOUBLEUP active": "no",
+    "paid entirely by gift card": "yes"
+   },
+   "label": "tier = Silver, DOUBLEUP active = no, paid entirely by gift card = yes"
+  },
+  {
+   "id": "AC-2-DT-08",
+   "criterion": "AC-2",
+   "technique": "decision_table",
+   "values": {
+    "tier": "Silver",
+    "DOUBLEUP active": "no",
+    "paid entirely by gift card": "no"
+   },
+   "label": "tier = Silver, DOUBLEUP active = no, paid entirely by gift card = no"
+  },
+  {
+   "id": "AC-2-DT-09",
+   "criterion": "AC-2",
+   "technique": "decision_table",
+   "values": {
+    "tier": "Bronze",
+    "DOUBLEUP active": "yes",
+    "paid entirely by gift card": "yes"
+   },
+   "label": "tier = Bronze, DOUBLEUP active = yes, paid entirely by gift card = yes"
+  },
+  {
+   "id": "AC-2-DT-10",
+   "criterion": "AC-2",
+   "technique": "decision_table",
+   "values": {
+    "tier": "Bronze",
+    "DOUBLEUP active": "yes",
+    "paid entirely by gift card": "no"
+   },
+   "label": "tier = Bronze, DOUBLEUP active = yes, paid entirely by gift card = no"
+  },
+  {
+   "id": "AC-2-DT-11",
+   "criterion": "AC-2",
+   "technique": "decision_table",
+   "values": {
+    "tier": "Bronze",
+    "DOUBLEUP active": "no",
+    "paid entirely by gift card": "yes"
+   },
+   "label": "tier = Bronze, DOUBLEUP active = no, paid entirely by gift card = yes"
+  },
+  {
+   "id": "AC-2-DT-12",
+   "criterion": "AC-2",
+   "technique": "decision_table",
+   "values": {
+    "tier": "Bronze",
+    "DOUBLEUP active": "no",
+    "paid entirely by gift card": "no"
+   },
+   "label": "tier = Bronze, DOUBLEUP active = no, paid entirely by gift card = no"
+  },
+  {
+   "id": "AC-3-ST-01",
+   "criterion": "AC-3",
+   "technique": "state_transition",
+   "values": {
+    "state": "placed",
+    "event": "ship"
+   },
+   "to": "shipped",
+   "valid": true,
+   "label": "placed --ship--> shipped"
+  },
+  {
+   "id": "AC-3-ST-02",
+   "criterion": "AC-3",
+   "technique": "state_transition",
+   "values": {
+    "state": "shipped",
+    "event": "deliver"
+   },
+   "to": "delivered",
+   "valid": true,
+   "label": "shipped --deliver--> delivered"
+  },
+  {
+   "id": "AC-3-ST-03",
+   "criterion": "AC-3",
+   "technique": "state_transition",
+   "values": {
+    "state": "placed",
+    "event": "cancel"
+   },
+   "to": "cancelled",
+   "valid": true,
+   "label": "placed --cancel--> cancelled"
+  },
+  {
+   "id": "AC-3-ST-04",
+   "criterion": "AC-3",
+   "technique": "state_transition",
+   "values": {
+    "state": "delivered",
+    "event": "return"
+   },
+   "to": "returned",
+   "valid": true,
+   "label": "delivered --return--> returned"
+  },
+  {
+   "id": "AC-3-ST-05",
+   "criterion": "AC-3",
+   "technique": "state_transition",
+   "values": {
+    "state": "placed",
+    "event": "deliver"
+   },
+   "to": "placed",
+   "valid": false,
+   "label": "deliver is not allowed when placed (stays placed)"
+  },
+  {
+   "id": "AC-3-ST-06",
+   "criterion": "AC-3",
+   "technique": "state_transition",
+   "values": {
+    "state": "placed",
+    "event": "return"
+   },
+   "to": "placed",
+   "valid": false,
+   "label": "return is not allowed when placed (stays placed)"
+  },
+  {
+   "id": "AC-3-ST-07",
+   "criterion": "AC-3",
+   "technique": "state_transition",
+   "values": {
+    "state": "shipped",
+    "event": "ship"
+   },
+   "to": "shipped",
+   "valid": false,
+   "label": "ship is not allowed when shipped (stays shipped)"
+  },
+  {
+   "id": "AC-3-ST-08",
+   "criterion": "AC-3",
+   "technique": "state_transition",
+   "values": {
+    "state": "shipped",
+    "event": "cancel"
+   },
+   "to": "shipped",
+   "valid": false,
+   "label": "cancel is not allowed when shipped (stays shipped)"
+  },
+  {
+   "id": "AC-3-ST-09",
+   "criterion": "AC-3",
+   "technique": "state_transition",
+   "values": {
+    "state": "shipped",
+    "event": "return"
+   },
+   "to": "shipped",
+   "valid": false,
+   "label": "return is not allowed when shipped (stays shipped)"
+  },
+  {
+   "id": "AC-3-ST-10",
+   "criterion": "AC-3",
+   "technique": "state_transition",
+   "values": {
+    "state": "delivered",
+    "event": "ship"
+   },
+   "to": "delivered",
+   "valid": false,
+   "label": "ship is not allowed when delivered (stays delivered)"
+  },
+  {
+   "id": "AC-3-ST-11",
+   "criterion": "AC-3",
+   "technique": "state_transition",
+   "values": {
+    "state": "delivered",
+    "event": "deliver"
+   },
+   "to": "delivered",
+   "valid": false,
+   "label": "deliver is not allowed when delivered (stays delivered)"
+  },
+  {
+   "id": "AC-3-ST-12",
+   "criterion": "AC-3",
+   "technique": "state_transition",
+   "values": {
+    "state": "delivered",
+    "event": "cancel"
+   },
+   "to": "delivered",
+   "valid": false,
+   "label": "cancel is not allowed when delivered (stays delivered)"
+  },
+  {
+   "id": "AC-3-ST-13",
+   "criterion": "AC-3",
+   "technique": "state_transition",
+   "values": {
+    "state": "cancelled",
+    "event": "ship"
+   },
+   "to": "cancelled",
+   "valid": false,
+   "label": "ship is not allowed when cancelled (stays cancelled)"
+  },
+  {
+   "id": "AC-3-ST-14",
+   "criterion": "AC-3",
+   "technique": "state_transition",
+   "values": {
+    "state": "cancelled",
+    "event": "deliver"
+   },
+   "to": "cancelled",
+   "valid": false,
+   "label": "deliver is not allowed when cancelled (stays cancelled)"
+  },
+  {
+   "id": "AC-3-ST-15",
+   "criterion": "AC-3",
+   "technique": "state_transition",
+   "values": {
+    "state": "cancelled",
+    "event": "cancel"
+   },
+   "to": "cancelled",
+   "valid": false,
+   "label": "cancel is not allowed when cancelled (stays cancelled)"
+  },
+  {
+   "id": "AC-3-ST-16",
+   "criterion": "AC-3",
+   "technique": "state_transition",
+   "values": {
+    "state": "cancelled",
+    "event": "return"
+   },
+   "to": "cancelled",
+   "valid": false,
+   "label": "return is not allowed when cancelled (stays cancelled)"
+  },
+  {
+   "id": "AC-3-ST-17",
+   "criterion": "AC-3",
+   "technique": "state_transition",
+   "values": {
+    "state": "returned",
+    "event": "ship"
+   },
+   "to": "returned",
+   "valid": false,
+   "label": "ship is not allowed when returned (stays returned)"
+  },
+  {
+   "id": "AC-3-ST-18",
+   "criterion": "AC-3",
+   "technique": "state_transition",
+   "values": {
+    "state": "returned",
+    "event": "deliver"
+   },
+   "to": "returned",
+   "valid": false,
+   "label": "deliver is not allowed when returned (stays returned)"
+  },
+  {
+   "id": "AC-3-ST-19",
+   "criterion": "AC-3",
+   "technique": "state_transition",
+   "values": {
+    "state": "returned",
+    "event": "cancel"
+   },
+   "to": "returned",
+   "valid": false,
+   "label": "cancel is not allowed when returned (stays returned)"
+  },
+  {
+   "id": "AC-3-ST-20",
+   "criterion": "AC-3",
+   "technique": "state_transition",
+   "values": {
+    "state": "returned",
+    "event": "return"
+   },
+   "to": "returned",
+   "valid": false,
+   "label": "return is not allowed when returned (stays returned)"
+  },
+  {
+   "id": "AC-4-PW-01",
+   "criterion": "AC-4",
+   "technique": "pairwise",
+   "values": {
+    "payment": "card",
+    "delivery": "standard",
+    "tier": "Gold"
+   },
+   "label": "payment = card, delivery = standard, tier = Gold"
+  },
+  {
+   "id": "AC-4-PW-02",
+   "criterion": "AC-4",
+   "technique": "pairwise",
+   "values": {
+    "payment": "card",
+    "delivery": "express",
+    "tier": "Silver"
+   },
+   "label": "payment = card, delivery = express, tier = Silver"
+  },
+  {
+   "id": "AC-4-PW-03",
+   "criterion": "AC-4",
+   "technique": "pairwise",
+   "values": {
+    "payment": "card",
+    "delivery": "click and collect",
+    "tier": "Bronze"
+   },
+   "label": "payment = card, delivery = click and collect, tier = Bronze"
+  },
+  {
+   "id": "AC-4-PW-04",
+   "criterion": "AC-4",
+   "technique": "pairwise",
+   "values": {
+    "payment": "PayPal",
+    "delivery": "standard",
+    "tier": "Silver"
+   },
+   "label": "payment = PayPal, delivery = standard, tier = Silver"
+  },
+  {
+   "id": "AC-4-PW-05",
+   "criterion": "AC-4",
+   "technique": "pairwise",
+   "values": {
+    "payment": "PayPal",
+    "delivery": "express",
+    "tier": "Gold"
+   },
+   "label": "payment = PayPal, delivery = express, tier = Gold"
+  },
+  {
+   "id": "AC-4-PW-06",
+   "criterion": "AC-4",
+   "technique": "pairwise",
+   "values": {
+    "payment": "gift card",
+    "delivery": "standard",
+    "tier": "Bronze"
+   },
+   "label": "payment = gift card, delivery = standard, tier = Bronze"
+  },
+  {
+   "id": "AC-4-PW-07",
+   "criterion": "AC-4",
+   "technique": "pairwise",
+   "values": {
+    "payment": "gift card",
+    "delivery": "click and collect",
+    "tier": "Gold"
+   },
+   "label": "payment = gift card, delivery = click and collect, tier = Gold"
+  },
+  {
+   "id": "AC-4-PW-08",
+   "criterion": "AC-4",
+   "technique": "pairwise",
+   "values": {
+    "payment": "PayPal",
+    "delivery": "express",
+    "tier": "Bronze"
+   },
+   "label": "payment = PayPal, delivery = express, tier = Bronze"
+  },
+  {
+   "id": "AC-4-PW-09",
+   "criterion": "AC-4",
+   "technique": "pairwise",
+   "values": {
+    "payment": "PayPal",
+    "delivery": "click and collect",
+    "tier": "Silver"
+   },
+   "label": "payment = PayPal, delivery = click and collect, tier = Silver"
+  },
+  {
+   "id": "AC-4-PW-10",
+   "criterion": "AC-4",
+   "technique": "pairwise",
+   "values": {
+    "payment": "gift card",
+    "delivery": "express",
+    "tier": "Silver"
+   },
+   "label": "payment = gift card, delivery = express, tier = Silver"
+  },
+  {
+   "id": "AC-5-SC-01",
+   "criterion": "AC-5",
+   "technique": "scenario",
+   "values": {
+    "flow": "main"
+   },
+   "label": "Balance after delivery",
+   "steps": [
+    "Deliver an order that earned points",
+    "Open the account page",
+    "Read the points balance"
+   ]
+  }
+ ]
+}

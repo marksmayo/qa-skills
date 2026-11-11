@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/qa-skills/test-case-designer/test_cases.schema.json",
+  "title": "Designed test cases",
+  "type": "object",
+  "required": ["schema_version", "skill", "generated_at", "ticket", "criteria", "cases", "questions", "summary", "limitations", "files_written"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "skill": {"type": "object", "required": ["name", "version"], "properties": {"name": {"const": "test-case-designer"}}},
+    "ticket": {"type": "object", "required": ["key", "summary", "content_sha256"]},
+    "criteria": {"type": "array", "items": {"type": "object", "required": ["id", "text", "techniques", "case_ids", "status", "questions"],
+      "properties": {"status": {"enum": ["covered", "covered_with_questions", "handed_off", "blocked"]},
+                     "techniques": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["technique", "reason"]}}}}},
+    "cases": {"type": "array", "items": {"type": "object",
+      "required": ["id", "title", "criterion_ids", "technique", "row_ids", "type", "priority", "preconditions", "steps", "test_data", "automation_candidate", "depends_on_questions"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^TC-\\d{3,}$"},
+        "criterion_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "technique": {"enum": ["boundary", "partition", "decision_table", "pairwise", "state_transition", "scenario", "error_guessing"]},
+        "row_ids": {"type": "array", "items": {"type": "string"}},
+        "type": {"enum": ["positive", "negative", "boundary"]},
+        "priority": {"enum": ["P0", "P1", "P2", "P3"]},
+        "steps": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["action", "data", "expected"]}},
+        "automation_candidate": {"type": "boolean"}}}},
+    "questions": {"type": "array", "items": {"type": "object", "required": ["id", "criterion_id", "term", "question", "blocks_cases"]}},
+    "summary": {"type": "object", "required": ["criteria", "criteria_with_cases", "cases", "rows_total", "rows_covered", "rows_infeasible", "questions", "by_technique", "by_priority"]},
+    "limitations": {"type": "array", "items": {"type": "string"}},
+    "files_written": {"type": "array", "items": {"type": "string"}}
+  }
+}

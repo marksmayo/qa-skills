@@ -1,0 +1,37 @@
+{
+ "key": "SHOP-310",
+ "names": {"customfield_10034": "Acceptance Criteria"},
+ "fields": {
+  "summary": "Members earn loyalty points at checkout",
+  "issuetype": {"name": "Story"},
+  "status": {"name": "Ready for Development"},
+  "priority": {"name": "High"},
+  "labels": ["loyalty", "checkout"],
+  "components": [{"name": "storefront"}, {"name": "loyalty"}],
+  "fixVersions": [{"name": "2026.12"}],
+  "description": {"type": "doc", "version": 1, "content": [
+   {"type": "paragraph", "content": [{"type": "text", "text": "Members of the loyalty programme earn points on orders placed in the web shop. Points are shown on the account page and can be redeemed later (out of scope here). Tiers are Gold, Silver and Bronze; the DOUBLEUP promotion is switched on by marketing in the admin console."}]},
+   {"type": "heading", "attrs": {"level": 3}, "content": [{"type": "text", "text": "Out of scope"}]},
+   {"type": "bulletList", "content": [
+    {"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Redeeming points."}]}]},
+    {"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Orders placed by phone."}]}]}]}
+  ]},
+  "customfield_10034": {"type": "doc", "version": 1, "content": [
+   {"type": "orderedList", "content": [
+    {"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Members earn 1 point per whole dollar of the order subtotal for orders from $10.00 to $500.00 inclusive. Orders below $10.00 earn no points, and orders above $500.00 earn 500 points."}]}]},
+    {"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Gold members earn double points and Silver members earn 1.5 times the points, rounded down; Bronze members earn the base points. When the DOUBLEUP promotion is active, every tier earns 1 extra point per whole dollar, but the promotion never applies to an order paid entirely with a gift card."}]}]},
+    {"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Points are pending when the order is placed, become available when it is delivered, and are removed if the order is cancelled before it ships or returned after delivery. A shipped order can't be cancelled."}]}]},
+    {"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Points are earned with every payment method (card, PayPal, gift card), every delivery option (standard, express, click and collect) and every member tier (Gold, Silver, Bronze)."}]}]},
+    {"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "The points balance on the account page updates promptly after delivery."}]}]}
+   ]}
+  ]},
+  "subtasks": [],
+  "issuelinks": [],
+  "attachment": [],
+  "comment": {"comments": [
+   {"author": {"displayName": "Sam (Product)"}, "created": "2026-11-10T22:40:00.000+0000",
+    "body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Rounding for Silver is always down to a whole point. Points are never negative."}]}]}}],
+   "total": 1},
+  "parent": {"key": "SHOP-300", "fields": {"summary": "Loyalty programme", "issuetype": {"name": "Epic"}}}
+ }
+}
