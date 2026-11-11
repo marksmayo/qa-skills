@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/qa-skills/ci-suite-runner/suite_run.schema.json",
+  "title": "CI suite run record",
+  "type": "object",
+  "required": ["schema_version", "skill", "catalogue", "request", "api_base", "plan", "authorisations", "trigger", "run", "polling", "outcome", "results", "artifacts", "logs", "next_steps", "limitations"],
+  "properties": {
+    "skill": {"type": "object", "properties": {"name": {"const": "ci-suite-runner"}}},
+    "request": {"type": "object", "required": ["suite", "system", "pipeline", "environment", "protected", "tags", "ref", "inputs"]},
+    "plan": {"type": "object", "required": ["method", "url", "body"]},
+    "authorisations": {"type": "array", "items": {"type": "object", "required": ["at", "decision"],
+      "properties": {"decision": {"enum": ["sent", "refused"]}, "kind": {"enum": ["preauth", "confirmation"]}}}},
+    "trigger": {"type": ["object", "null"], "required": ["sent", "at"]},
+    "run": {"type": ["object", "null"], "required": ["id", "url", "attempt", "found_by"]},
+    "polling": {"type": "array", "items": {"type": "object", "required": ["at", "status"]}},
+    "outcome": {"type": "object", "required": ["status", "conclusion"], "properties": {"status": {"enum": ["not_started", "in_progress", "completed", "timed_out"]}}},
+    "results": {"type": ["object", "null"], "required": ["status", "junit", "totals", "failed_tests"], "properties": {"status": {"enum": ["collected", "not_collected"]}}},
+    "summary": {"type": "object", "properties": {"headline": {"type": "string"}}}
+  }
+}

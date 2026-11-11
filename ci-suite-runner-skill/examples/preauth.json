@@ -1,0 +1,8 @@
+{
+ "schema_version": "1.0.0",
+ "note": "Standing permission to start these suites without asking each time. Protected environments are never covered.",
+ "grants": [
+  {"id": "PA-1", "granted_by": "QA lead", "granted_at": "2026-11-10", "expires": "2026-11-30",
+   "suites": ["checkout-regression", "smoke"], "environments": ["staging", "uat"], "reason": "Release 2026.12 regression cycle"}
+ ]
+}

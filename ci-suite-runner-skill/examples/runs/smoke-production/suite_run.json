@@ -1,0 +1,132 @@
+{
+ "schema_version": "1.0.0",
+ "skill": {
+  "name": "ci-suite-runner",
+  "version": "1.0.0"
+ },
+ "catalogue": "examples/suites.json",
+ "request": {
+  "suite": "smoke",
+  "system": "azure",
+  "pipeline": "example-org/harbour-shop pipeline 12",
+  "environment": "production",
+  "protected": true,
+  "tags": "smoke",
+  "ref": "refs/heads/main",
+  "inputs": {
+   "environment": "production",
+   "tags": "smoke"
+  }
+ },
+ "api_base": "http://127.0.0.1:8170/azure",
+ "plan": {
+  "method": "POST",
+  "url": "http://127.0.0.1:8170/azure/example-org/harbour-shop/_apis/pipelines/12/runs?api-version=7.1",
+  "body": {
+   "resources": {
+    "repositories": {
+     "self": {
+      "refName": "refs/heads/main"
+     }
+    }
+   },
+   "templateParameters": {
+    "environment": "production",
+    "tags": "smoke"
+   }
+  }
+ },
+ "authorisations": [
+  {
+   "at": "2026-11-11T14:14:47Z",
+   "decision": "refused",
+   "reason": "production is protected: a pre-authorisation never covers it; confirm this run with --confirmed-by"
+  },
+  {
+   "kind": "confirmation",
+   "by": "Release manager, in chat on 2026-11-12, for the 2.4.0 post-deploy smoke",
+   "at": "2026-11-11T14:14:47Z",
+   "decision": "sent"
+  }
+ ],
+ "trigger": {
+  "sent": true,
+  "method": "POST",
+  "url": "http://127.0.0.1:8170/azure/example-org/harbour-shop/_apis/pipelines/12/runs?api-version=7.1",
+  "body": {
+   "resources": {
+    "repositories": {
+     "self": {
+      "refName": "refs/heads/main"
+     }
+    }
+   },
+   "templateParameters": {
+    "environment": "production",
+    "tags": "smoke"
+   }
+  },
+  "status": 200,
+  "at": "2026-11-11T14:14:47Z"
+ },
+ "run": {
+  "id": 3301,
+  "url": "https://dev.azure.com/example-org/harbour-shop/_build/results?buildId=3301",
+  "attempt": 1,
+  "found_by": "returned by the trigger"
+ },
+ "polling": [
+  {
+   "at": "2026-11-11T14:14:48Z",
+   "status": "in_progress",
+   "conclusion": null
+  },
+  {
+   "at": "2026-11-11T14:14:52Z",
+   "status": "completed",
+   "conclusion": "success"
+  }
+ ],
+ "outcome": {
+  "status": "completed",
+  "conclusion": "success"
+ },
+ "results": {
+  "status": "collected",
+  "junit": [
+   "artifacts/junit/junit.xml"
+  ],
+  "totals": {
+   "tests": 2,
+   "passed": 2,
+   "failed": 0,
+   "errors": 0,
+   "skipped": 0
+  },
+  "failed_tests": []
+ },
+ "artifacts": [
+  {
+   "name": "junit",
+   "size": null,
+   "downloaded_to": "artifacts/junit"
+  }
+ ],
+ "logs": [],
+ "next_steps": [
+  "Attach run 3301 to the release record; the post-deploy validator covers the production checks beyond these two smoke tests."
+ ],
+ "limitations": [
+  "The CI API is the example's loopback stub; the two smoke tests are real pytest runs but check only trivial things."
+ ],
+ "jobs": [
+  {
+   "id": "job-1",
+   "name": "tests",
+   "conclusion": "success"
+  }
+ ],
+ "summary": {
+  "headline": "smoke on production was first refused (production is protected and grant PA-1 does not cover it), then triggered with the release manager's confirmation: 2 of 2 smoke tests passed in run 3301."
+ }
+}

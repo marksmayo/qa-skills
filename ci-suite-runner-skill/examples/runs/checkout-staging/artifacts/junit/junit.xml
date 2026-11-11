@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="3" time="0.071" timestamp="2026-11-12T03:14:44.094441+13:00" hostname="ci-runner"><testcase classname="tests.test_checkout" name="test_total_sums_lines" time="0.000" /><testcase classname="tests.test_checkout" name="test_discount_code_takes_ten_percent" time="0.000" /><testcase classname="tests.test_checkout" name="test_discount_code_is_case_insensitive" time="0.000"><failure message="AssertionError: assert 40.0 == 36.0&#10; +  where 40.0 = basket_total([(40.0, 1)], code='save10')">@pytest.mark.checkout
+    def test_discount_code_is_case_insensitive():
+        # planted failure: the code is compared case-sensitively
+&gt;       assert basket_total([(40.00, 1)], code="save10") == 36.00
+E       AssertionError: assert 40.0 == 36.0
+E        +  where 40.0 = basket_total([(40.0, 1)], code='save10')
+
+tests\test_checkout.py:26: AssertionError</failure></testcase></testsuite></testsuites>

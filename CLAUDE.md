@@ -352,6 +352,16 @@ python requirements-traceability-auditor-skill/scripts/build_matrix.py --require
 
 Run `commands.sh` from `requirements-traceability-auditor-skill/` with `HL` set to an empty directory for the sample repository (fixed commit ids). The report cites lines of that repository and its commits, so editing `make_repo.py`, the tickets, the document or the export invalidates the example until `commands.sh` is rerun and the report rebuilt.
 
+CI suite runner (`examples/suites.json` catalogues a GitHub workflow and an Azure DevOps pipeline; `examples/preauth.json` grants staging and UAT runs; `examples/ci-stub/server.py` stands in for both CI APIs on loopback and runs the requested tests for real with pytest; `examples/runs/` holds two real runs against it and the stub's request log, listed in `examples/commands.sh`; the validator checks authority, the catalogue, the polling and the JUnit totals, and `--stub-log` that the CI received exactly the triggers sent):
+
+```bash
+python ci-suite-runner-skill/scripts/validate_suite_run.py ci-suite-runner-skill/examples/runs/checkout-staging/suite_run.json --preauth ci-suite-runner-skill/examples/preauth.json --stub-log ci-suite-runner-skill/examples/runs/stub_log.json
+python ci-suite-runner-skill/scripts/validate_suite_run.py ci-suite-runner-skill/examples/runs/smoke-production/suite_run.json --preauth ci-suite-runner-skill/examples/preauth.json --stub-log ci-suite-runner-skill/examples/runs/stub_log.json
+python ci-suite-runner-skill/scripts/render_report.py ci-suite-runner-skill/examples/runs/checkout-staging/suite_run.json ci-suite-runner-skill/examples/runs/smoke-production/suite_run.json
+```
+
+Run `commands.sh` from `ci-suite-runner-skill/`: the records name the catalogue relative to it. It starts the stub on port 8170 with fake tokens; the agent's headline, next steps and limitations are added afterwards, then the records are validated. `run_suite.py trigger` starts real CI jobs when pointed at GitHub or Azure DevOps, and refuses without a covering grant or `--confirmed-by`; production needs the confirmation.
+
 Shared files:
 
 ```bash

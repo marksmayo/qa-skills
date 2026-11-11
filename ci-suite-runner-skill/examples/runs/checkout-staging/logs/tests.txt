@@ -1,0 +1,25 @@
+============================= test session starts =============================
+platform win32 -- Python 3.14.10, pytest-9.2.0, pluggy-1.7.0
+rootdir: /home/runner/work/suites
+configfile: pytest.ini
+testpaths: tests
+plugins: hypothesis-6.170.15, platformdirs-4.14.5, xdist-3.8.0
+collected 7 items / 4 deselected / 3 selected
+
+tests/test_checkout.py ..F
+
+================================== FAILURES ===================================
+___________________ test_discount_code_is_case_insensitive ____________________
+
+    @pytest.mark.checkout
+    def test_discount_code_is_case_insensitive():
+        # planted failure: the code is compared case-sensitively
+>       assert basket_total([(40.00, 1)], code="save10") == 36.00
+E       AssertionError: assert 40.0 == 36.0
+E        +  where 40.0 = basket_total([(40.0, 1)], code='save10')
+
+tests/test_checkout.py:26: AssertionError
+- generated xml file: /home/runner/work/_temp/junit.xml -
+=========================== short test summary info ===========================
+FAILED tests/test_checkout.py::test_discount_code_is_case_insensitive - Asser...
+================== 1 failed, 2 passed, 4 deselected in 0.33s ==================

@@ -1,0 +1,12 @@
+{
+ "schema_version": "1.0.0",
+ "note": "The team's catalogue of suites the runner may start: which pipeline, which inputs carry the environment and the tags, which environments are allowed and which are protected, and the test markers a tag expression may use.",
+ "suites": {
+  "checkout-regression": {"system": "github", "repo": "example-org/harbour-shop", "workflow": "regression.yml", "default_ref": "main",
+                          "inputs": {"environment": "environment", "tags": "tags"}, "environments": ["staging", "uat", "production"], "protected": ["production"],
+                          "markers": ["checkout", "payments", "slow", "smoke"], "default_tags": "checkout and not slow", "junit_artifacts": ["junit"], "secret_inputs": []},
+  "smoke": {"system": "azure", "org": "example-org", "project": "harbour-shop", "pipeline_id": 12, "default_ref": "refs/heads/main",
+            "inputs": {"environment": "environment", "tags": "tags"}, "environments": ["staging", "production"], "protected": ["production"],
+            "markers": ["smoke"], "default_tags": "smoke", "junit_artifacts": ["junit"], "secret_inputs": []}
+ }
+}

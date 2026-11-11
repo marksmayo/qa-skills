@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/qa-skills/ci-suite-runner/suites.schema.json",
+  "title": "Suite catalogue",
+  "type": "object",
+  "required": ["schema_version", "suites"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "suites": {"type": "object", "additionalProperties": {"type": "object",
+      "required": ["system", "default_ref", "inputs", "environments", "protected", "markers", "junit_artifacts"],
+      "properties": {
+        "system": {"enum": ["github", "azure"]},
+        "repo": {"type": "string", "description": "github: owner/name"}, "workflow": {"type": "string", "description": "github: the workflow file with workflow_dispatch"},
+        "org": {"type": "string"}, "project": {"type": "string"}, "pipeline_id": {"type": "integer"},
+        "inputs": {"type": "object", "required": ["environment", "tags"], "additionalProperties": {"type": "string"}},
+        "environments": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "protected": {"type": "array", "items": {"type": "string"}, "description": "always need a confirmation; never covered by a pre-authorisation"},
+        "markers": {"type": "array", "items": {"type": "string"}}, "default_tags": {"type": "string"},
+        "junit_artifacts": {"type": "array", "items": {"type": "string"}}, "secret_inputs": {"type": "array", "items": {"type": "string"}}},
+      "allOf": [{"if": {"properties": {"system": {"const": "github"}}}, "then": {"required": ["repo", "workflow"]}},
+                {"if": {"properties": {"system": {"const": "azure"}}}, "then": {"required": ["org", "project", "pipeline_id"]}}]}}
+  }
+}

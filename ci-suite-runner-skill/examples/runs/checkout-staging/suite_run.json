@@ -1,0 +1,145 @@
+{
+ "schema_version": "1.0.0",
+ "skill": {
+  "name": "ci-suite-runner",
+  "version": "1.0.0"
+ },
+ "catalogue": "examples/suites.json",
+ "request": {
+  "suite": "checkout-regression",
+  "system": "github",
+  "pipeline": "example-org/harbour-shop regression.yml",
+  "environment": "staging",
+  "protected": false,
+  "tags": "checkout and not slow",
+  "ref": "main",
+  "inputs": {
+   "environment": "staging",
+   "tags": "checkout and not slow"
+  }
+ },
+ "api_base": "http://127.0.0.1:8170/github",
+ "plan": {
+  "method": "POST",
+  "url": "http://127.0.0.1:8170/github/repos/example-org/harbour-shop/actions/workflows/regression.yml/dispatches",
+  "body": {
+   "ref": "main",
+   "inputs": {
+    "environment": "staging",
+    "tags": "checkout and not slow"
+   }
+  }
+ },
+ "authorisations": [
+  {
+   "kind": "preauth",
+   "by": "QA lead",
+   "at": "2026-11-11T14:14:42Z",
+   "grant_id": "PA-1",
+   "scope": {
+    "suites": [
+     "checkout-regression",
+     "smoke"
+    ],
+    "environments": [
+     "staging",
+     "uat"
+    ]
+   },
+   "expires": "2026-11-30",
+   "preauth_file": "examples/preauth.json",
+   "decision": "sent"
+  }
+ ],
+ "trigger": {
+  "sent": true,
+  "method": "POST",
+  "url": "http://127.0.0.1:8170/github/repos/example-org/harbour-shop/actions/workflows/regression.yml/dispatches",
+  "body": {
+   "ref": "main",
+   "inputs": {
+    "environment": "staging",
+    "tags": "checkout and not slow"
+   }
+  },
+  "status": 204,
+  "at": "2026-11-11T14:14:42Z"
+ },
+ "run": {
+  "id": 7001,
+  "url": "https://github.com/example-org/harbour-shop/actions/runs/7001",
+  "attempt": 1,
+  "found_by": "newest workflow_dispatch run on the ref created after the trigger"
+ },
+ "polling": [
+  {
+   "at": "2026-11-11T14:14:42Z",
+   "status": "queued",
+   "conclusion": null
+  },
+  {
+   "at": "2026-11-11T14:14:44Z",
+   "status": "in_progress",
+   "conclusion": null
+  },
+  {
+   "at": "2026-11-11T14:14:47Z",
+   "status": "completed",
+   "conclusion": "failure"
+  }
+ ],
+ "outcome": {
+  "status": "completed",
+  "conclusion": "failure"
+ },
+ "results": {
+  "status": "collected",
+  "junit": [
+   "artifacts/junit/junit.xml"
+  ],
+  "totals": {
+   "tests": 3,
+   "passed": 2,
+   "failed": 1,
+   "errors": 0,
+   "skipped": 0
+  },
+  "failed_tests": [
+   {
+    "id": "tests.test_checkout::test_discount_code_is_case_insensitive",
+    "status": "failed",
+    "message": "AssertionError: assert 40.0 == 36.0"
+   }
+  ]
+ },
+ "artifacts": [
+  {
+   "name": "junit",
+   "size": 1029,
+   "downloaded_to": "artifacts/junit"
+  }
+ ],
+ "logs": [
+  {
+   "job": "tests",
+   "path": "logs/tests.txt"
+  }
+ ],
+ "next_steps": [
+  "Hand run 7001 to ci-failure-triager to classify tests.test_checkout::test_discount_code_is_case_insensitive (real, flaky, environment or data).",
+  "The slow checkout test was excluded by the tags; run \"checkout\" alone before the release if it matters."
+ ],
+ "limitations": [
+  "The CI API is the example's loopback stub (examples/ci-stub/server.py); the tests it ran are real pytest runs of examples/ci-stub/suites."
+ ],
+ "jobs": [
+  {
+   "id": 70010,
+   "name": "tests",
+   "conclusion": "failure"
+  }
+ ],
+ "summary": {
+  "headline": "checkout-regression on staging (tags \"checkout and not slow\") ran under grant PA-1: 2 of 3 tests passed and 1 failed (the discount code is compared case-sensitively). The slow and payments tests were not selected."
+ }
+}
