@@ -1,6 +1,6 @@
 # Design: `db-migration-reviewer-skill`
 
-Status: Designed; not built. Build order: 22.
+Status: Built (v1.0.0). Build order: 22.
 
 ## Mission
 
@@ -244,3 +244,29 @@ Agreed with the user before the build.
 1. **Docker or Podman for the dynamic check?** Yes, when present; otherwise the review is static only and says so.
 2. **Which engines in v1?** PostgreSQL and MySQL first; SQLite and MariaDB later.
 3. **Unknown table sizes?** Treated as large, and the report says so.
+
+## As built (v1.0.0)
+
+Where the build differs from the design above, and what the example showed.
+
+- **The example is static only.** The build machine had no Docker, no Podman and no loopback
+  PostgreSQL, and downloading PostgreSQL binaries was not authorised, so `dynamic_check.py` is written
+  but has not been run. The example review says `dynamic: not_run` with the reason, every finding is
+  `matched`, and the limitations and scope statement say durations and rollback fidelity weren't measured.
+  The design's "real dynamic run on a container" is still to do.
+- **Dynamic check is PostgreSQL only.** It runs the statements `detect_migrations.py` derived (not the
+  tool itself), so Alembic's own SQL may differ in details. MySQL dynamic runs, and `PyMySQL`, are not built.
+- **Parsed tools:** Alembic, Django operations, Flyway, Prisma and raw SQL. Rails, Knex and Liquibase are
+  listed as not parsed.
+- **No lock_timeout is one finding per release**, not per migration: it names the migrations and tables
+  it affects and rates by the largest table. Comments in `env.py` don't count as setting it.
+- **Facts on candidates drive dismissals.** The validator checks a dismissal code against the facts
+  (`table_created_in_release`, constant default on PostgreSQL 11+, zero code readers for an intended
+  drop). A data-loss candidate may only be dismissed as an intended contract step.
+- **`recoverable`** on data-loss findings decides the P0 floor.
+- **Squawk, django-migration-linter and strong_migrations** were not installed; only the Squawk SARIF
+  merge is built, and it is untested against real Squawk output.
+- **Images are pinned by tag** in `data/images.lock.json`; record digests on first pull.
+- **Example results:** 7 pending migrations, 13 candidates, 10 findings (6 P0, 4 P1) matching every
+  planted problem, and all three decoys dismissed with checkable reasons.
+- **Testing:** 30 of 30 seeded review violations are caught.

@@ -1,0 +1,11 @@
+{
+  "note": "Database images for the dynamic check, pinned by tag. Record the digest the first time an image is pulled (docker image inspect --format '{{index .RepoDigests 0}}') and use it in place of the tag.",
+  "postgresql_default": "16",
+  "postgresql": {
+    "13": "postgres:13.16",
+    "14": "postgres:14.13",
+    "15": "postgres:15.8",
+    "16": "postgres:16.4",
+    "17": "postgres:17.0"
+  }
+}

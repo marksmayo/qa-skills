@@ -1,0 +1,278 @@
+{
+ "repo": "db-migration-reviewer-skill/examples/ledger",
+ "tool": "alembic",
+ "engine": {
+  "name": "postgresql",
+  "version": "16.4",
+  "source": "alembic.ini and docker-compose.yml",
+  "assumed": false
+ },
+ "heads": [
+  "0009"
+ ],
+ "since": "0002",
+ "migrations": [
+  {
+   "revision": "0001",
+   "down_revision": null,
+   "up": [
+    {
+     "line": 14,
+     "sql": "CREATE TABLE accounts (id INTEGER PRIMARY KEY, name VARCHAR(80) NOT NULL, legacy_code VARCHAR(20))",
+     "via": "op.create_table"
+    },
+    {
+     "line": 18,
+     "sql": "CREATE TABLE transactions (id INTEGER PRIMARY KEY, account_id INTEGER NOT NULL REFERENCES accounts (id), amount NUMERIC(12,2) NOT NULL)",
+     "via": "op.create_table"
+    }
+   ],
+   "down": [
+    {
+     "line": 25,
+     "sql": "DROP TABLE transactions",
+     "via": "op.drop_table"
+    },
+    {
+     "line": 26,
+     "sql": "DROP TABLE accounts",
+     "via": "op.drop_table"
+    }
+   ],
+   "transactional": true,
+   "not_analysed": [],
+   "down_state": "ok",
+   "down_line": 24,
+   "id": "0001",
+   "file": "migrations/versions/0001_initial.py",
+   "parsed": true,
+   "created_tables": [
+    "accounts",
+    "transactions"
+   ],
+   "pending": false
+  },
+  {
+   "revision": "0002",
+   "down_revision": "0001",
+   "up": [
+    {
+     "line": 14,
+     "sql": "ALTER TABLE transactions ADD COLUMN category VARCHAR(40)",
+     "via": "op.add_column"
+    }
+   ],
+   "down": [
+    {
+     "line": 18,
+     "sql": "ALTER TABLE transactions DROP COLUMN category",
+     "via": "op.drop_column"
+    }
+   ],
+   "transactional": true,
+   "not_analysed": [],
+   "down_state": "ok",
+   "down_line": 17,
+   "id": "0002",
+   "file": "migrations/versions/0002_category.py",
+   "parsed": true,
+   "created_tables": [],
+   "pending": false
+  },
+  {
+   "revision": "0003",
+   "down_revision": "0002",
+   "up": [
+    {
+     "line": 14,
+     "sql": "CREATE TABLE budgets (id INTEGER PRIMARY KEY, account_id INTEGER NOT NULL, limit_cents INTEGER NOT NULL)",
+     "via": "op.create_table"
+    },
+    {
+     "line": 18,
+     "sql": "CREATE INDEX ix_budgets_account ON budgets (account_id)",
+     "via": "op.create_index"
+    }
+   ],
+   "down": [
+    {
+     "line": 22,
+     "sql": "DROP INDEX ix_budgets_account",
+     "via": "op.drop_index"
+    },
+    {
+     "line": 23,
+     "sql": "DROP TABLE budgets",
+     "via": "op.drop_table"
+    }
+   ],
+   "transactional": true,
+   "not_analysed": [],
+   "down_state": "ok",
+   "down_line": 21,
+   "id": "0003",
+   "file": "migrations/versions/0003_budgets.py",
+   "parsed": true,
+   "created_tables": [
+    "budgets"
+   ],
+   "pending": true
+  },
+  {
+   "revision": "0004",
+   "down_revision": "0003",
+   "up": [
+    {
+     "line": 13,
+     "sql": "CREATE INDEX ix_transactions_account ON transactions (account_id)",
+     "via": "op.create_index"
+    }
+   ],
+   "down": [
+    {
+     "line": 17,
+     "sql": "DROP INDEX ix_transactions_account",
+     "via": "op.drop_index"
+    }
+   ],
+   "transactional": true,
+   "not_analysed": [],
+   "down_state": "ok",
+   "down_line": 16,
+   "id": "0004",
+   "file": "migrations/versions/0004_tx_account_index.py",
+   "parsed": true,
+   "created_tables": [],
+   "pending": true
+  },
+  {
+   "revision": "0005",
+   "down_revision": "0004",
+   "up": [
+    {
+     "line": 14,
+     "sql": "ALTER TABLE transactions RENAME COLUMN amount TO amount_cents",
+     "via": "op.alter_column"
+    },
+    {
+     "line": 15,
+     "sql": "ALTER TABLE transactions ALTER COLUMN amount_cents TYPE INTEGER /* from NUMERIC(12,2) */",
+     "via": "op.alter_column"
+    }
+   ],
+   "down": [],
+   "transactional": true,
+   "not_analysed": [],
+   "down_state": "pass",
+   "down_line": 18,
+   "id": "0005",
+   "file": "migrations/versions/0005_rename_amount.py",
+   "parsed": true,
+   "created_tables": [],
+   "pending": true
+  },
+  {
+   "revision": "0006",
+   "down_revision": "0005",
+   "up": [
+    {
+     "line": 13,
+     "sql": "UPDATE transactions SET category = 'general' WHERE category IS NULL",
+     "via": "op.execute"
+    }
+   ],
+   "down": [],
+   "transactional": true,
+   "not_analysed": [],
+   "down_state": "pass",
+   "down_line": 16,
+   "id": "0006",
+   "file": "migrations/versions/0006_backfill_category.py",
+   "parsed": true,
+   "created_tables": [],
+   "pending": true
+  },
+  {
+   "revision": "0007",
+   "down_revision": "0006",
+   "up": [
+    {
+     "line": 14,
+     "sql": "ALTER TABLE transactions ALTER COLUMN category SET NOT NULL",
+     "via": "op.alter_column"
+    }
+   ],
+   "down": [
+    {
+     "line": 18,
+     "sql": "ALTER TABLE transactions ALTER COLUMN category DROP NOT NULL",
+     "via": "op.alter_column"
+    }
+   ],
+   "transactional": true,
+   "not_analysed": [],
+   "down_state": "ok",
+   "down_line": 17,
+   "id": "0007",
+   "file": "migrations/versions/0007_category_required.py",
+   "parsed": true,
+   "created_tables": [],
+   "pending": true
+  },
+  {
+   "revision": "0008",
+   "down_revision": "0007",
+   "up": [
+    {
+     "line": 14,
+     "sql": "ALTER TABLE accounts ADD COLUMN currency VARCHAR(3) NOT NULL DEFAULT 'AUD'",
+     "via": "op.add_column"
+    }
+   ],
+   "down": [
+    {
+     "line": 18,
+     "sql": "ALTER TABLE accounts DROP COLUMN currency",
+     "via": "op.drop_column"
+    }
+   ],
+   "transactional": true,
+   "not_analysed": [],
+   "down_state": "ok",
+   "down_line": 17,
+   "id": "0008",
+   "file": "migrations/versions/0008_account_currency.py",
+   "parsed": true,
+   "created_tables": [],
+   "pending": true
+  },
+  {
+   "revision": "0009",
+   "down_revision": "0008",
+   "up": [
+    {
+     "line": 14,
+     "sql": "ALTER TABLE accounts DROP COLUMN legacy_code",
+     "via": "op.drop_column"
+    }
+   ],
+   "down": [
+    {
+     "line": 18,
+     "sql": "ALTER TABLE accounts ADD COLUMN legacy_code VARCHAR(20)",
+     "via": "op.add_column"
+    }
+   ],
+   "transactional": true,
+   "not_analysed": [],
+   "down_state": "ok",
+   "down_line": 17,
+   "id": "0009",
+   "file": "migrations/versions/0009_drop_legacy_code.py",
+   "parsed": true,
+   "created_tables": [],
+   "pending": true
+  }
+ ],
+ "not_parsed": []
+}

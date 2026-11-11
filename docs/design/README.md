@@ -28,7 +28,7 @@ anatomy described in the root `CLAUDE.md` (`SKILL.md`, `RUBRIC.md`, `schemas/`, 
 | 19 | [Cross-browser checker](cross-browser-checker.md) | `cross-browser-checker-skill/` | Built (v1.0.0) |
 | 20 | [Internationalisation checker](i18n-checker.md) | `i18n-checker-skill/` | Built (v1.0.0) |
 | 21 | [Resilience prober](resilience-prober.md) | `resilience-prober-skill/` | Built (v1.0.0) |
-| 22 | [Database migration reviewer](db-migration-reviewer.md) | `db-migration-reviewer-skill/` | Designed |
+| 22 | [Database migration reviewer](db-migration-reviewer.md) | `db-migration-reviewer-skill/` | Built (v1.0.0) |
 | 23 | [Privacy flow auditor](privacy-flow-auditor.md) | `privacy-flow-auditor-skill/` | Designed |
 | 24 | [Mobile app auditor](mobile-app-auditor.md) | `mobile-app-auditor-skill/` | Designed |
 | 25 | [Release readiness gate](release-readiness-gate.md) | `release-readiness-gate-skill/` | Designed |
@@ -62,7 +62,8 @@ frames). They fill the gaps that comparison found:
 | 32 | QA orchestrator | The gate-aware orchestrator: it chains the skills across the gates and keeps a human in the loop |
 
 The orchestrator comes last because it calls the others. Each design is written, and its open
-questions are put to the user, before that skill is built.
+questions are put to the user, before that skill is built. The user's answers for 26–32 are in
+[decisions-26-32.md](decisions-26-32.md).
 
 ## How the skills fit together
 

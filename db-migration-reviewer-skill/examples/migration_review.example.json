@@ -1,0 +1,632 @@
+{
+ "schema_version": "1.0.0",
+ "skill": "db-migration-reviewer",
+ "skill_version": "1.0.0",
+ "generated": "2026-11-11",
+ "scope": {
+  "repo": "examples/ledger",
+  "tool": "alembic",
+  "engine": {
+   "name": "postgresql",
+   "version": "16.4",
+   "source": "alembic.ini and docker-compose.yml",
+   "assumed": false
+  },
+  "deploy_model": "rolling",
+  "deploy_model_source": "user: the app runs on three instances updated one at a time",
+  "since": "0002",
+  "migrations_reviewed": [
+   "0003",
+   "0004",
+   "0005",
+   "0006",
+   "0007",
+   "0008",
+   "0009"
+  ],
+  "checked": [
+   "every op.* call and op.execute statement in upgrade() and downgrade() of 0003-0009",
+   "migrations/env.py for lock_timeout and statement_timeout",
+   "readers of renamed and dropped columns, and writers missing a column made NOT NULL, in ledger/ (tests and migrations listed apart)",
+   "table sizes from table_stats.json (staging export, 2026-11-10)"
+  ],
+  "not_checked": [
+   "other services or reporting jobs that use the same database (none were named)",
+   "how long each statement takes, which locks it really holds, and whether the downgrades restore the data: the dynamic check did not run",
+   "SQL built at runtime (none was found)"
+  ]
+ },
+ "metadata": {
+  "tools": [
+   {
+    "name": "detect_migrations.py",
+    "version": "1.0.0",
+    "status": "ran"
+   },
+   {
+    "name": "scan_migrations.py",
+    "version": "1.0.0",
+    "status": "ran"
+   },
+   {
+    "name": "squawk",
+    "version": null,
+    "status": "not_installed"
+   },
+   {
+    "name": "dynamic_check.py",
+    "version": "1.0.0",
+    "status": "not_run"
+   }
+  ],
+  "table_stats": {
+   "file": "examples/ledger/table_stats.json",
+   "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+  },
+  "inputs": {
+   "migrations": "run/migrations.json",
+   "candidates": "run/candidates.json"
+  }
+ },
+ "migrations": [
+  {
+   "id": "0003",
+   "file": "migrations/versions/0003_budgets.py",
+   "transactional": true,
+   "down_state": "ok",
+   "statements": 2,
+   "findings": []
+  },
+  {
+   "id": "0004",
+   "file": "migrations/versions/0004_tx_account_index.py",
+   "transactional": true,
+   "down_state": "ok",
+   "statements": 1,
+   "findings": [
+    "F01",
+    "F10"
+   ]
+  },
+  {
+   "id": "0005",
+   "file": "migrations/versions/0005_rename_amount.py",
+   "transactional": true,
+   "down_state": "pass",
+   "statements": 2,
+   "findings": [
+    "F02",
+    "F03",
+    "F04",
+    "F05"
+   ]
+  },
+  {
+   "id": "0006",
+   "file": "migrations/versions/0006_backfill_category.py",
+   "transactional": true,
+   "down_state": "pass",
+   "statements": 1,
+   "findings": [
+    "F06",
+    "F07"
+   ]
+  },
+  {
+   "id": "0007",
+   "file": "migrations/versions/0007_category_required.py",
+   "transactional": true,
+   "down_state": "ok",
+   "statements": 1,
+   "findings": [
+    "F08",
+    "F09"
+   ]
+  },
+  {
+   "id": "0008",
+   "file": "migrations/versions/0008_account_currency.py",
+   "transactional": true,
+   "down_state": "ok",
+   "statements": 1,
+   "findings": []
+  },
+  {
+   "id": "0009",
+   "file": "migrations/versions/0009_drop_legacy_code.py",
+   "transactional": true,
+   "down_state": "ok",
+   "statements": 1,
+   "findings": []
+  }
+ ],
+ "findings": [
+  {
+   "id": "F01",
+   "candidates": [
+    "C002"
+   ],
+   "rule": "PG-INDEX-LOCKS-WRITES",
+   "category": "blocking_lock",
+   "hazard": 3,
+   "migration": "0004",
+   "file": "migrations/versions/0004_tx_account_index.py",
+   "line": 13,
+   "statement": "CREATE INDEX ix_transactions_account ON transactions (account_id)",
+   "table": "transactions",
+   "column": null,
+   "engine": "postgresql",
+   "engine_range": "postgresql: all versions",
+   "effect": "CREATE INDEX takes a SHARE lock on transactions: inserts, updates and deletes wait until the index is built",
+   "size": {
+    "class": "large",
+    "rows": 4200000,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "size_factor": 3,
+   "exposure": 3,
+   "score": 27,
+   "confidence": "matched",
+   "code_hits": [],
+   "priority": "P0",
+   "floor": null,
+   "cap": null,
+   "rewrite": "Build the index with CREATE INDEX CONCURRENTLY outside the transaction: `with op.get_context().autocommit_block(): op.create_index('ix_transactions_account', 'transactions', ['account_id'], postgresql_concurrently=True)`. Check afterwards that the index is valid (pg_index.indisvalid); a failed concurrent build leaves an invalid index to drop and retry.",
+   "verification": "On a copy with production-sized transactions, run 0004 while a second session inserts a row: the insert waits until the index is built. With the rewrite, the insert goes through."
+  },
+  {
+   "id": "F02",
+   "candidates": [
+    "C003"
+   ],
+   "rule": "RENAME-WHILE-READ",
+   "category": "compatibility",
+   "hazard": 3,
+   "migration": "0005",
+   "file": "migrations/versions/0005_rename_amount.py",
+   "line": 14,
+   "statement": "ALTER TABLE transactions RENAME COLUMN amount TO amount_cents",
+   "table": "transactions",
+   "column": "amount",
+   "engine": "postgresql",
+   "engine_range": "postgresql: all versions",
+   "effect": "Renaming transactions.amount breaks code that still uses the old name during the deploy",
+   "size": {
+    "class": "large",
+    "rows": 4200000,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "size_factor": 3,
+   "exposure": 3,
+   "score": 27,
+   "confidence": "matched",
+   "code_hits": [
+    {
+     "file": "ledger/app.py",
+     "line": 11,
+     "kind": "keyword_or_assignment",
+     "excerpt": "tx = Transaction(account_id=account_id, amount=request.json[\"amount\"])"
+    },
+    {
+     "file": "ledger/models.py",
+     "line": 18,
+     "kind": "orm_field",
+     "excerpt": "amount = Column(Numeric(12, 2), nullable=False)"
+    },
+    {
+     "file": "ledger/queries.py",
+     "line": 5,
+     "kind": "raw_sql",
+     "excerpt": "return session.execute(text(\"SELECT SUM(amount) FROM transactions WHERE account_id = :a\"), {\"a\": acc"
+    },
+    {
+     "file": "ledger/queries.py",
+     "line": 9,
+     "kind": "raw_sql",
+     "excerpt": "return session.execute(text(\"SELECT id, amount FROM transactions WHERE amount > :l ORDER BY amount D"
+    }
+   ],
+   "priority": "P0",
+   "floor": null,
+   "cap": null,
+   "rewrite": "Expand and contract over three releases. Release 1: add amount_cents (nullable), write both columns from the app, backfill amount_cents = amount * 100 in batches. Release 2: switch every read (models.py, queries.py, app.py) to amount_cents. Release 3: drop amount.",
+   "verification": "Deploy 0005 on staging while the current release still serves traffic: GET /accounts/<id>/balance fails with \"column amount does not exist\" until the new code is out."
+  },
+  {
+   "id": "F03",
+   "candidates": [
+    "C004"
+   ],
+   "rule": "PG-TYPE-CHANGE-REWRITE",
+   "category": "blocking_lock",
+   "hazard": 3,
+   "migration": "0005",
+   "file": "migrations/versions/0005_rename_amount.py",
+   "line": 15,
+   "statement": "ALTER TABLE transactions ALTER COLUMN amount_cents TYPE INTEGER /* from NUMERIC(12,2) */",
+   "table": "transactions",
+   "column": "amount_cents",
+   "engine": "postgresql",
+   "engine_range": "postgresql: all versions (most type changes rewrite)",
+   "effect": "ALTER COLUMN TYPE rewrites transactions under an ACCESS EXCLUSIVE lock: reads and writes wait for the whole rewrite",
+   "size": {
+    "class": "large",
+    "rows": 4200000,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "size_factor": 3,
+   "exposure": 3,
+   "score": 27,
+   "confidence": "matched",
+   "code_hits": [],
+   "priority": "P0",
+   "floor": null,
+   "cap": null,
+   "rewrite": "Do not change the type in place. Add a new BIGINT column, backfill it in batches, and switch to it (the same expand and contract steps as F02).",
+   "verification": "On a copy, time ALTER COLUMN TYPE on 4.2 million rows while a second session runs SELECT: the SELECT waits for the whole rewrite."
+  },
+  {
+   "id": "F04",
+   "candidates": [
+    "C005"
+   ],
+   "rule": "TYPE-NARROWING",
+   "category": "data_loss",
+   "hazard": 4,
+   "migration": "0005",
+   "file": "migrations/versions/0005_rename_amount.py",
+   "line": 15,
+   "statement": "ALTER TABLE transactions ALTER COLUMN amount_cents TYPE INTEGER /* from NUMERIC(12,2) */",
+   "table": "transactions",
+   "column": "amount_cents",
+   "engine": "postgresql",
+   "engine_range": "postgresql: all versions",
+   "effect": "NUMERIC(12,2) to INTEGER narrows the column: values that don't fit are rounded, truncated or rejected",
+   "size": {
+    "class": "large",
+    "rows": 4200000,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "recoverable": false,
+   "size_factor": 3,
+   "exposure": 3,
+   "score": 36,
+   "confidence": "matched",
+   "code_hits": [],
+   "priority": "P0",
+   "floor": "unrecoverable_data_loss",
+   "cap": null,
+   "rewrite": "Convert to cents explicitly when copying into the new column: amount_cents = round(amount * 100)::bigint, then check SELECT count(*) FROM transactions WHERE amount_cents <> amount * 100 is 0 before dropping amount.",
+   "verification": "On a copy: SELECT count(*) FROM transactions WHERE amount <> round(amount) before 0005 is the number of rows whose cents are lost (and every amount loses its scale, since 12.34 becomes 12, not 1234)."
+  },
+  {
+   "id": "F05",
+   "candidates": [
+    "C006"
+   ],
+   "rule": "IRREVERSIBLE",
+   "category": "irreversible",
+   "hazard": 2,
+   "migration": "0005",
+   "file": "migrations/versions/0005_rename_amount.py",
+   "line": 18,
+   "statement": "down migration: only pass",
+   "table": "transactions",
+   "column": null,
+   "engine": "postgresql",
+   "engine_range": "postgresql: all versions",
+   "effect": "The down migration is only pass: this migration can't be rolled back",
+   "size": {
+    "class": "large",
+    "rows": 4200000,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "size_factor": 3,
+   "exposure": 3,
+   "score": 18,
+   "confidence": "matched",
+   "code_hits": [],
+   "priority": "P1",
+   "floor": null,
+   "cap": null,
+   "rewrite": "Write a downgrade that renames amount_cents back to amount and restores NUMERIC(12,2). Once the type change has lost the cents it cannot be undone, which is one more reason to keep the old column until the new one is verified (F02, F04).",
+   "verification": "Run alembic downgrade 0004 on a copy after 0005: it does nothing, and the schema stays at amount_cents INTEGER."
+  },
+  {
+   "id": "F06",
+   "candidates": [
+    "C007"
+   ],
+   "rule": "BACKFILL-UNBATCHED",
+   "category": "backfill_cost",
+   "hazard": 2,
+   "migration": "0006",
+   "file": "migrations/versions/0006_backfill_category.py",
+   "line": 13,
+   "statement": "UPDATE transactions SET category = 'general' WHERE category IS NULL",
+   "table": "transactions",
+   "column": null,
+   "engine": "postgresql",
+   "engine_range": "postgresql: all versions",
+   "effect": "One UPDATE over transactions in a single transaction: row locks on every matching row until it commits, and a long-running transaction",
+   "size": {
+    "class": "large",
+    "rows": 4200000,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "size_factor": 3,
+   "exposure": 3,
+   "score": 18,
+   "confidence": "matched",
+   "code_hits": [],
+   "priority": "P1",
+   "floor": null,
+   "cap": null,
+   "rewrite": "Move the backfill out of the schema migration into a batched job: UPDATE transactions SET category = 'general' WHERE id BETWEEN :lo AND :hi AND category IS NULL, committing every 10 000 rows.",
+   "verification": "On a copy with production-sized data, count the rows WHERE category IS NULL, run 0006, and watch pg_stat_activity for the transaction time and blocked updates."
+  },
+  {
+   "id": "F07",
+   "candidates": [
+    "C008"
+   ],
+   "rule": "IRREVERSIBLE",
+   "category": "irreversible",
+   "hazard": 2,
+   "migration": "0006",
+   "file": "migrations/versions/0006_backfill_category.py",
+   "line": 16,
+   "statement": "down migration: only pass",
+   "table": "transactions",
+   "column": null,
+   "engine": "postgresql",
+   "engine_range": "postgresql: all versions",
+   "effect": "The down migration is only pass: this migration can't be rolled back",
+   "size": {
+    "class": "large",
+    "rows": 4200000,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "size_factor": 3,
+   "exposure": 3,
+   "score": 18,
+   "confidence": "matched",
+   "code_hits": [],
+   "priority": "P1",
+   "floor": null,
+   "cap": null,
+   "rewrite": "If restoring the NULLs matters, record the backfilled ids (or tag them) so the downgrade can set them back to NULL. Otherwise say in the migration that the downgrade deliberately leaves the values, and why.",
+   "verification": "Run alembic downgrade 0005 after 0006 on a copy: the rows that were NULL stay 'general'."
+  },
+  {
+   "id": "F08",
+   "candidates": [
+    "C009"
+   ],
+   "rule": "PG-SET-NOT-NULL-SCAN",
+   "category": "blocking_lock",
+   "hazard": 3,
+   "migration": "0007",
+   "file": "migrations/versions/0007_category_required.py",
+   "line": 14,
+   "statement": "ALTER TABLE transactions ALTER COLUMN category SET NOT NULL",
+   "table": "transactions",
+   "column": "category",
+   "engine": "postgresql",
+   "engine_range": "postgresql: all versions (12+ skips the scan after a validated CHECK)",
+   "effect": "SET NOT NULL scans all of transactions under an ACCESS EXCLUSIVE lock",
+   "size": {
+    "class": "large",
+    "rows": 4200000,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "size_factor": 3,
+   "exposure": 3,
+   "score": 27,
+   "confidence": "matched",
+   "code_hits": [],
+   "priority": "P0",
+   "floor": null,
+   "cap": null,
+   "rewrite": "Add CHECK (category IS NOT NULL) NOT VALID, VALIDATE CONSTRAINT in the next migration (it takes a weaker lock), then SET NOT NULL: PostgreSQL 12 and later uses the validated check and skips the scan.",
+   "verification": "On a copy, time 0007 while a second session runs SELECT on transactions: the SELECT waits for the scan."
+  },
+  {
+   "id": "F09",
+   "candidates": [
+    "C010"
+   ],
+   "rule": "NOT-NULL-WHILE-WRITTEN-WITHOUT",
+   "category": "compatibility",
+   "hazard": 3,
+   "migration": "0007",
+   "file": "migrations/versions/0007_category_required.py",
+   "line": 14,
+   "statement": "ALTER TABLE transactions ALTER COLUMN category SET NOT NULL",
+   "table": "transactions",
+   "column": "category",
+   "engine": "postgresql",
+   "engine_range": "postgresql: all versions",
+   "effect": "transactions.category becomes NOT NULL while code still inserts rows without it",
+   "size": {
+    "class": "large",
+    "rows": 4200000,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "size_factor": 3,
+   "exposure": 3,
+   "score": 27,
+   "confidence": "matched",
+   "code_hits": [
+    {
+     "file": "ledger/app.py",
+     "line": 11,
+     "kind": "constructor_without_column",
+     "excerpt": "Transaction(account_id, amount)"
+    }
+   ],
+   "priority": "P0",
+   "floor": null,
+   "cap": null,
+   "rewrite": "First ship code that always sets category (app.py:11), or give the column a server default; make it NOT NULL one release later.",
+   "verification": "With 0007 applied, POST /accounts/<id>/transactions from the current release fails with a not-null violation."
+  },
+  {
+   "id": "F10",
+   "candidates": [
+    "C013"
+   ],
+   "rule": "PG-NO-LOCK-TIMEOUT",
+   "category": "lock_queueing",
+   "hazard": 2,
+   "migration": "0004",
+   "file": "migrations/env.py",
+   "line": 4,
+   "statement": "CREATE INDEX ix_transactions_account ON transactions (account_id)",
+   "table": "transactions",
+   "column": null,
+   "engine": "postgresql",
+   "engine_range": "postgresql: all versions",
+   "effect": "DDL runs with no lock_timeout: if a long query holds transactions, the migration waits and every later query queues behind it",
+   "size": {
+    "class": "large",
+    "rows": 4200000,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "size_factor": 3,
+   "exposure": 3,
+   "score": 18,
+   "confidence": "matched",
+   "code_hits": [],
+   "priority": "P1",
+   "floor": null,
+   "cap": null,
+   "rewrite": "Set a lock timeout for migrations in env.py, for example connection.execute(text(\"SET lock_timeout = '5s'\")) and a statement_timeout, and retry the deploy step on timeout.",
+   "verification": "On a copy, hold a long SELECT on transactions in one session and run 0004 in another: without a lock_timeout the migration waits, and new SELECTs queue behind it."
+  }
+ ],
+ "triage": [
+  {
+   "candidate": "C001",
+   "decision": "dismissed",
+   "reason_code": "table_created_in_release",
+   "reason": "budgets is created by 0003, the same migration that indexes it, so the table is empty when the index is built and nothing else uses it yet."
+  },
+  {
+   "candidate": "C002",
+   "decision": "promoted",
+   "finding": "F01"
+  },
+  {
+   "candidate": "C003",
+   "decision": "promoted",
+   "finding": "F02"
+  },
+  {
+   "candidate": "C004",
+   "decision": "promoted",
+   "finding": "F03"
+  },
+  {
+   "candidate": "C005",
+   "decision": "promoted",
+   "finding": "F04"
+  },
+  {
+   "candidate": "C006",
+   "decision": "promoted",
+   "finding": "F05"
+  },
+  {
+   "candidate": "C007",
+   "decision": "promoted",
+   "finding": "F06"
+  },
+  {
+   "candidate": "C008",
+   "decision": "promoted",
+   "finding": "F07"
+  },
+  {
+   "candidate": "C009",
+   "decision": "promoted",
+   "finding": "F08"
+  },
+  {
+   "candidate": "C010",
+   "decision": "promoted",
+   "finding": "F09"
+  },
+  {
+   "candidate": "C011",
+   "decision": "dismissed",
+   "reason_code": "constant_default_pg11",
+   "reason": "The default 'AUD' is a constant and the engine is PostgreSQL 16.4: since PostgreSQL 11 the default is stored in the catalogue and the table is not rewritten."
+  },
+  {
+   "candidate": "C012",
+   "decision": "dismissed",
+   "reason_code": "intended_contract_step",
+   "reason": "legacy_code was excluded from the Account model in release 2.3 and no code reads it (find_readers: 0 code hits; 2 in migrations only). This drop is the planned contract step. The data does go: the downgrade re-adds the column empty, so take a backup of accounts.legacy_code before deploying if it may be needed."
+  },
+  {
+   "candidate": "C013",
+   "decision": "promoted",
+   "finding": "F10"
+  }
+ ],
+ "dynamic": {
+  "status": "not_run",
+  "reason": "No Docker or Podman on the review machine and no loopback PostgreSQL was named, so no throwaway database could be started. Every finding is matched from the statements, not measured."
+ },
+ "safe_sequence": [
+  {
+   "release": "A (with the current code)",
+   "steps": [
+    "env.py: SET lock_timeout and statement_timeout for migrations (F10)",
+    "0003 as written",
+    "0004 rewritten: CREATE INDEX CONCURRENTLY in an autocommit block (F01)",
+    "new: ADD COLUMN amount_cents BIGINT (nullable, no default)",
+    "0008 and 0009 as written (take a backup of accounts.legacy_code first)"
+   ]
+  },
+  {
+   "release": "B (code writes amount_cents and category)",
+   "steps": [
+    "app.py and models.py write both amount and amount_cents, and always set category (F09)",
+    "batched job: amount_cents = round(amount * 100) and category = 'general' where NULL (F04, F06)",
+    "new: ADD CONSTRAINT category_not_null CHECK (category IS NOT NULL) NOT VALID; then VALIDATE CONSTRAINT (F08)"
+   ]
+  },
+  {
+   "release": "C (code reads amount_cents)",
+   "steps": [
+    "models.py, queries.py and app.py read amount_cents only (F02)",
+    "0007 as written: SET NOT NULL now skips the scan",
+    "new: DROP COLUMN amount, with a downgrade that restores it from amount_cents / 100 (F03, F05)"
+   ]
+  }
+ ],
+ "headline": {
+  "statement": "Do not deploy 0003-0009 as written. Four of the seven migrations would block writes or reads on transactions (4.2 million rows) during a rolling deploy, 0005 loses the cents of every amount and cannot be rolled back, and the current release breaks against the new schema (reads of amount, inserts without category). The three-release sequence below avoids all of these.",
+  "scope_statement": "Static review of the seven pending Alembic migrations and the ledger/ code against PostgreSQL 16.4 with staging row counts. Durations, lock times and rollback fidelity were not measured, and no other service using the database was checked.",
+  "counts": {
+   "P0": 6,
+   "P1": 4,
+   "P2": 0,
+   "P3": 0
+  },
+  "migrations_with_p0": [
+   "0004",
+   "0005",
+   "0007"
+  ],
+  "verdict": "do_not_deploy"
+ },
+ "limitations": [
+  "The dynamic check did not run (no Docker, Podman or loopback PostgreSQL), so no finding is measured: lock durations and rollback fidelity are inferred from the statements.",
+  "Squawk was not installed; only the built-in rules ran.",
+  "Table sizes come from a staging export of 2026-11-10; production may be larger.",
+  "Only ledger/ was searched for readers; no other service or reporting job was named."
+ ]
+}

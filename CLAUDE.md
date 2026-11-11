@@ -257,6 +257,17 @@ python resilience-prober-skill/scripts/plan_scenarios.py resilience-prober-skill
 
 Re-running needs Playwright with Chromium and the app on loopback (`commands.sh` starts it); rerunning the plan rewrites `planned_at`, so rebuild the report afterwards.
 
+Database migration reviewer (`examples/ledger/` is the sample Flask app with Alembic migrations, 0003–0009 pending, and planted problems; `examples/run/` holds the detection and candidates, listed in `examples/run/commands.sh`; the dynamic check was not run, so the example is static only):
+
+```bash
+python db-migration-reviewer-skill/scripts/validate_migration_review.py db-migration-reviewer-skill/examples/migration_review.example.json --candidates db-migration-reviewer-skill/examples/run/candidates.json --migrations db-migration-reviewer-skill/examples/run/migrations.json --repo db-migration-reviewer-skill/examples/ledger
+python db-migration-reviewer-skill/scripts/render_report.py db-migration-reviewer-skill/examples/migration_review.example.json [--brief]
+python db-migration-reviewer-skill/scripts/detect_migrations.py --repo db-migration-reviewer-skill/examples/ledger --since 0002 --out migrations.json
+python db-migration-reviewer-skill/scripts/scan_migrations.py --migrations migrations.json --repo db-migration-reviewer-skill/examples/ledger --table-stats db-migration-reviewer-skill/examples/ledger/table_stats.json --out candidates.json
+```
+
+The candidates and the review cite lines in `examples/ledger/`, and the sizes come from `examples/ledger/table_stats.json`; editing either (or `data/rules.json`) changes the candidates and invalidates the example until `commands.sh` is rerun. `dynamic_check.py` needs psycopg and Docker, Podman or a loopback PostgreSQL; it refuses any other host and only works in a `qa_migrate_` database it creates.
+
 Shared files:
 
 ```bash

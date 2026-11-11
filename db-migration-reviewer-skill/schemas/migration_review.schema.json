@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/qa-skills/db-migration-reviewer/migration_review.schema.json",
+  "title": "Database migration review",
+  "type": "object",
+  "required": ["schema_version", "skill", "skill_version", "generated", "scope", "metadata", "migrations", "findings", "triage", "dynamic", "headline", "limitations"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "skill": {"const": "db-migration-reviewer"},
+    "skill_version": {"type": "string"},
+    "generated": {"type": "string", "format": "date"},
+    "scope": {
+      "type": "object",
+      "required": ["repo", "tool", "engine", "deploy_model", "migrations_reviewed", "checked", "not_checked"],
+      "properties": {
+        "repo": {"type": "string"},
+        "tool": {"enum": ["alembic", "django", "flyway", "prisma", "sql", "rails", "knex", "liquibase"]},
+        "engine": {
+          "type": "object", "required": ["name", "version", "source", "assumed"],
+          "properties": {
+            "name": {"enum": ["postgresql", "mysql", "mariadb", "sqlite"]},
+            "version": {"type": ["string", "null"]},
+            "source": {"type": "string", "minLength": 1},
+            "assumed": {"type": "boolean"}
+          }
+        },
+        "deploy_model": {"enum": ["rolling", "blue_green", "stop_the_world"]},
+        "deploy_model_source": {"type": "string"},
+        "since": {"type": ["string", "null"]},
+        "migrations_reviewed": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+        "checked": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+        "not_checked": {"type": "array", "items": {"type": "string"}, "minItems": 1}
+      }
+    },
+    "metadata": {
+      "type": "object", "required": ["tools"],
+      "properties": {
+        "tools": {"type": "array", "items": {"type": "object", "required": ["name", "status"],
+          "properties": {"name": {"type": "string"}, "version": {"type": ["string", "null"]},
+                         "status": {"enum": ["ran", "not_installed", "not_run", "failed"]}}}},
+        "table_stats": {"type": ["object", "null"]},
+        "inputs": {"type": "object"}
+      }
+    },
+    "migrations": {
+      "type": "array",
+      "items": {"type": "object", "required": ["id", "file", "transactional", "down_state", "statements", "findings"],
+        "properties": {
+          "id": {"type": "string"}, "file": {"type": "string"}, "transactional": {"type": "boolean"},
+          "down_state": {"enum": ["ok", "empty", "pass", "raises", "missing"]},
+          "statements": {"type": "integer", "minimum": 0},
+          "findings": {"type": "array", "items": {"type": "string"}}
+        }}
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "candidates", "rule", "category", "hazard", "migration", "file", "line", "statement", "table", "engine", "engine_range",
+                     "effect", "size", "size_factor", "exposure", "score", "priority", "floor", "cap", "confidence", "code_hits", "rewrite", "verification"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^F\\d{2,}$"},
+          "candidates": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+          "rule": {"type": "string"},
+          "category": {"enum": ["data_loss", "blocking_lock", "compatibility", "irreversible", "lock_queueing", "transaction_mistake", "backfill_cost", "ordering"]},
+          "hazard": {"type": "integer", "minimum": 1, "maximum": 4},
+          "migration": {"type": ["string", "null"]},
+          "file": {"type": "string"}, "line": {"type": "integer", "minimum": 1},
+          "statement": {"type": "string", "minLength": 1},
+          "table": {"type": ["string", "null"]}, "column": {"type": ["string", "null"]},
+          "engine": {"type": "string"}, "engine_range": {"type": "string", "minLength": 1},
+          "effect": {"type": "string"},
+          "size": {"type": "object", "required": ["class", "source"],
+            "properties": {"class": {"enum": ["small", "medium", "large", "unknown"]}, "rows": {"type": ["integer", "null"]}, "source": {"type": "string", "minLength": 1}}},
+          "recoverable": {"type": "boolean"},
+          "size_factor": {"enum": [1, 2, 3]}, "exposure": {"enum": [1, 2, 3]},
+          "score": {"type": "integer"},
+          "priority": {"enum": ["P0", "P1", "P2", "P3"]},
+          "floor": {"enum": [null, "unrecoverable_data_loss", "compatibility_with_code_hits"]},
+          "cap": {"enum": [null, "assumed_capped_at_P1"]},
+          "confidence": {"enum": ["measured", "matched", "assumed"]},
+          "code_hits": {"type": "array", "items": {"type": "object", "required": ["file", "line", "kind"],
+            "properties": {"file": {"type": "string"}, "line": {"type": "integer"}, "kind": {"type": "string"}, "excerpt": {"type": "string"}}}},
+          "rewrite": {"type": "string", "minLength": 1},
+          "verification": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "triage": {
+      "type": "array",
+      "items": {"type": "object", "required": ["candidate", "decision"],
+        "properties": {
+          "candidate": {"type": "string"},
+          "decision": {"enum": ["promoted", "dismissed"]},
+          "finding": {"type": "string"},
+          "reason_code": {"enum": ["table_created_in_release", "constant_default_pg11", "intended_contract_step", "validated_check_present",
+                                   "online_schema_tool", "not_applicable_engine_version", "duplicate", "false_match"]},
+          "reason": {"type": "string"}
+        }}
+    },
+    "dynamic": {
+      "type": "object", "required": ["status"],
+      "properties": {
+        "status": {"enum": ["ran", "not_run"]},
+        "reason": {"type": "string"},
+        "host": {"type": "string"}, "database": {"type": "string", "pattern": "^qa_migrate_"},
+        "created_by_skill": {"const": true},
+        "container": {"type": ["string", "null"]}, "image": {"type": ["string", "null"]},
+        "seed_rows": {"type": "integer"},
+        "migrations": {"type": "array", "items": {"type": "object", "additionalProperties": false,
+          "properties": {"id": {"type": "string"}, "up": {"type": "object"}, "down": {"type": "object"}, "locks": {"type": "object"},
+                         "probes": {"type": "array"}, "rows_changed": {"type": "object"}}}}
+      }
+    },
+    "safe_sequence": {"type": "array", "items": {"type": "object", "required": ["release", "steps"],
+      "properties": {"release": {"type": "string"}, "steps": {"type": "array", "items": {"type": "string"}}}}},
+    "headline": {
+      "type": "object", "required": ["counts", "migrations_with_p0", "verdict", "statement", "scope_statement"],
+      "properties": {
+        "counts": {"type": "object", "required": ["P0", "P1", "P2", "P3"]},
+        "migrations_with_p0": {"type": "array", "items": {"type": "string"}},
+        "verdict": {"enum": ["do_not_deploy", "deploy_with_changes", "no_blocking_findings"]},
+        "statement": {"type": "string"},
+        "scope_statement": {"type": "string", "minLength": 1}
+      }
+    },
+    "limitations": {"type": "array", "items": {"type": "string"}}
+  }
+}

@@ -1,0 +1,4 @@
+# Only needed for scripts/dynamic_check.py, which runs migrations on a throwaway PostgreSQL database.
+# Every other script is stdlib-only. Install with the user's agreement:
+#   pip install -r requirements.txt
+psycopg[binary]>=3.2,<4
