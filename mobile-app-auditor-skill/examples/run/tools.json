@@ -1,0 +1,61 @@
+{
+ "host": {
+  "os": "Windows",
+  "release": "11",
+  "python": "3.14.10"
+ },
+ "device": {
+  "serial": "emulator-5554",
+  "model": "sdk_gphone64_x86_64",
+  "android": "16",
+  "api": "36",
+  "emulator": true,
+  "size_px": [
+   1080,
+   2400
+  ],
+  "density": 420
+ },
+ "tools": [
+  {
+   "name": "adb",
+   "version": "37.0.1-15733141",
+   "license": "Android SDK licence",
+   "status": "ran",
+   "reason": null
+  },
+  {
+   "name": "mobile-checks",
+   "version": "1.0.0",
+   "license": "repo licence",
+   "status": "ran",
+   "reason": null
+  },
+  {
+   "name": "accessibility-test-framework",
+   "version": null,
+   "license": "Apache-2.0",
+   "status": "not_run",
+   "reason": "the ATF instrumentation APK is not built in this version; the skill's own checks cover labels, target size and contrast"
+  },
+  {
+   "name": "appium",
+   "version": null,
+   "license": "Apache-2.0",
+   "status": "not_run",
+   "reason": "installed but not used: the Android run uses adb and uiautomator"
+  },
+  {
+   "name": "xcode-accessibility-audit",
+   "version": null,
+   "license": "Apple Xcode licence",
+   "status": "not_run",
+   "reason": "iOS needs macOS with Xcode 15 or later; this host is Windows"
+  }
+ ],
+ "appium_drivers": [],
+ "platforms": {
+  "android": "ran",
+  "ios": "not_run"
+ }
+}

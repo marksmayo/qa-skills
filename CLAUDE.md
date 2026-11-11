@@ -279,6 +279,17 @@ python privacy-flow-auditor-skill/scripts/fetch_lists.py --check
 
 Run these from the repo root: `candidates.json` records its inputs relative to it. The audit cites request numbers and redacted URLs from `examples/run/capture.json` and lines in `examples/clinic-signup/`; re-running the capture changes the client ids and invalidates the audit until it is rebuilt. Capturing needs Playwright with Chromium. `fetch_lists.py` downloads EasyPrivacy and the Open Cookie Database to `~/.cache/qa-skills/privacy-lists` (not committed) and checks them against `data/lists.lock.json`; `--update` re-pins.
 
+Mobile app auditor (`examples/harbour-dental-app/` is the sample Kotlin and Compose app with planted barriers, a crash and an ANR; `examples/run/` is a real run on an Android 16 emulator, listed in `examples/run/commands.sh`, with the APK it tested, screenshots, logs and crash replays; the validator checks tools, checks, sample and settings against the run, every screenshot hash, and every candidate triaged):
+
+```bash
+python mobile-app-auditor-skill/scripts/validate_mobile_audit.py mobile-app-auditor-skill/examples/mobile_audit.example.json --run mobile-app-auditor-skill/examples/run
+python mobile-app-auditor-skill/scripts/render_report.py mobile-app-auditor-skill/examples/mobile_audit.example.json [--brief]
+python mobile-app-auditor-skill/scripts/check_tools.py --out tools.json
+python mobile-app-auditor-skill/scripts/merge_findings.py --run mobile-app-auditor-skill/examples/run --out candidates.json
+```
+
+Re-running needs the Android SDK platform tools and one emulator; run `commands.sh` from the repo root. Exploration, probes and replay change device settings (rotation, font scale, display size, dark mode) and restore them; each script records what it changed and what it put back. A rerun changes screenshots and hashes and invalidates the audit until it is rebuilt. The APK is built from `examples/harbour-dental-app/` (`gradle assembleRelease`, JDK 17, SDK 36); rebuilding changes its hash. `data/wcag-sc.json` and `data/en301549-map.json` are shared with the WCAG auditor (edit them in `shared/data/`).
+
 Shared files:
 
 ```bash
@@ -288,7 +299,7 @@ python tools/check_shared.py --fix  # copy canonical files from shared/ into ski
 
 ## Shared files
 
-Files used by more than one skill (the Journey Markdown spec `JOURNEY_FORMAT.md`, its front-matter schema, `journey_md.py`, `detect_conventions.py`, `parse_results.py`, `sarif.py`, `fetch_ticket.py`, `run_tests.py`, `stats.py`, `diff_scope.py`, `unified_diff.py`, `browser_harness.py` and `png_io.py`) have their canonical copy in `shared/`. Each skill carries an identical copy because skills are installed by copying a single directory. Edit only the copy in `shared/`, then run `python tools/check_shared.py --fix`; the mapping of shared files to skills lives in `tools/check_shared.py`.
+Files used by more than one skill (the Journey Markdown spec `JOURNEY_FORMAT.md`, its front-matter schema, `journey_md.py`, `detect_conventions.py`, `parse_results.py`, `sarif.py`, `fetch_ticket.py`, `run_tests.py`, `stats.py`, `diff_scope.py`, `unified_diff.py`, `browser_harness.py`, `png_io.py`, and the WCAG data files `data/wcag-sc.json` and `data/en301549-map.json`) have their canonical copy in `shared/`. Each skill carries an identical copy because skills are installed by copying a single directory. Edit only the copy in `shared/`, then run `python tools/check_shared.py --fix`; the mapping of shared files to skills lives in `tools/check_shared.py`.
 
 Design documents for each skill (with an "As built" section), and the agreed build order, are in `docs/design/`.
 

@@ -1,0 +1,106 @@
+{
+ "replays": [
+  {
+   "crash": "C01",
+   "status": "reproduced",
+   "attempts": [
+    {
+     "attempt": 1,
+     "at": "2026-11-11T13:02:48Z",
+     "steps_replayed": true,
+     "reproduced": true,
+     "got": "Input dispatching timed out (Application does not have a focused window)."
+    },
+    {
+     "attempt": 2,
+     "at": "2026-11-11T13:03:30Z",
+     "steps_replayed": true,
+     "reproduced": true,
+     "got": "Input dispatching timed out (Application does not have a focused window)."
+    }
+   ],
+   "fresh_state": "pm clear before each attempt"
+  },
+  {
+   "crash": "C02",
+   "status": "reproduced",
+   "attempts": [
+    {
+     "attempt": 1,
+     "at": "2026-11-11T13:04:13Z",
+     "steps_replayed": true,
+     "reproduced": true,
+     "got": "Input dispatching timed out (Application does not have a focused window)."
+    },
+    {
+     "attempt": 2,
+     "at": "2026-11-11T13:04:59Z",
+     "steps_replayed": true,
+     "reproduced": true,
+     "got": "Input dispatching timed out (Application does not have a focused window)."
+    }
+   ],
+   "fresh_state": "pm clear before each attempt"
+  },
+  {
+   "crash": "C03",
+   "status": "reproduced",
+   "attempts": [
+    {
+     "attempt": 1,
+     "at": "2026-11-11T13:05:52Z",
+     "steps_replayed": true,
+     "reproduced": true,
+     "got": "Input dispatching timed out (Application does not have a focused window)."
+    },
+    {
+     "attempt": 2,
+     "at": "2026-11-11T13:06:46Z",
+     "steps_replayed": true,
+     "reproduced": true,
+     "got": "Input dispatching timed out (Application does not have a focused window)."
+    }
+   ],
+   "fresh_state": "pm clear before each attempt"
+  },
+  {
+   "crash": "C04",
+   "status": "reproduced",
+   "attempts": [
+    {
+     "attempt": 1,
+     "at": "2026-11-11T13:07:22Z",
+     "steps_replayed": true,
+     "reproduced": true,
+     "got": "java.lang.RuntimeException: Unable to start activity ComponentInfo{au.example.harbourdental/au.example.harbourdental.BookingActivity}: java.lang.NullPointerException: Attempt to invoke virtual method 'java.lang.Class java.lang.Object.getClass()' on a null object reference"
+    },
+    {
+     "attempt": 2,
+     "at": "2026-11-11T13:07:57Z",
+     "steps_replayed": true,
+     "reproduced": true,
+     "got": "java.lang.RuntimeException: Unable to start activity ComponentInfo{au.example.harbourdental/au.example.harbourdental.BookingActivity}: java.lang.NullPointerException: Attempt to invoke virtual method 'java.lang.Class java.lang.Object.getClass()' on a null object reference"
+    }
+   ],
+   "fresh_state": "pm clear before each attempt"
+  }
+ ],
+ "settings_changed": [
+  {
+   "kind": "setting",
+   "ns": "system",
+   "key": "accelerometer_rotation",
+   "before": "1",
+   "restored": true,
+   "after": "1"
+  },
+  {
+   "kind": "setting",
+   "ns": "system",
+   "key": "user_rotation",
+   "before": "0",
+   "restored": true,
+   "after": "0"
+  }
+ ]
+}

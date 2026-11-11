@@ -32,7 +32,9 @@ SHARED = {
     'scripts/browser_harness.py': ['bug-reproducer-skill', 'performance-budget-auditor-skill', 'visual-regression-reviewer-skill',
                                    'cross-browser-checker-skill', 'i18n-checker-skill',
                                    'resilience-prober-skill', 'privacy-flow-auditor-skill'],
-    'scripts/png_io.py': ['visual-regression-reviewer-skill', 'cross-browser-checker-skill'],
+    'scripts/png_io.py': ['visual-regression-reviewer-skill', 'cross-browser-checker-skill', 'mobile-app-auditor-skill'],
+    'data/wcag-sc.json': ['wcag-auditor-skill', 'mobile-app-auditor-skill'],
+    'data/en301549-map.json': ['wcag-auditor-skill', 'mobile-app-auditor-skill'],
 }
 
 def normalised(path: Path) -> bytes:

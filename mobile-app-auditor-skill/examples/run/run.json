@@ -1,0 +1,644 @@
+{
+ "package": "au.example.harbourdental",
+ "device": {
+  "serial": "emulator-5554",
+  "model": "sdk_gphone64_x86_64",
+  "android": "16",
+  "api": "36",
+  "emulator": true,
+  "size_px": [
+   1080,
+   2400
+  ],
+  "density": 420
+ },
+ "started": "2026-11-11T12:40:39Z",
+ "finished": "2026-11-11T12:52:33Z",
+ "sample": [
+  {
+   "id": "S01",
+   "activity": "au.example.harbourdental/.MainActivity",
+   "title": "Harbour Dental",
+   "reason": "structured",
+   "steps": [],
+   "note": "every distinct screen found by guided exploration"
+  },
+  {
+   "id": "S02",
+   "activity": "au.example.harbourdental/.MapActivity",
+   "title": "Map: 24 tiles",
+   "reason": "structured",
+   "steps": [
+    {
+     "rid": "clinic_northside",
+     "label": "Northside Tue to Sat, 9am to 5pm"
+    }
+   ],
+   "note": "every distinct screen found by guided exploration"
+  },
+  {
+   "id": "S03",
+   "activity": "au.example.harbourdental/.BookingActivity",
+   "title": "Book a visit",
+   "reason": "structured",
+   "steps": [
+    {
+     "rid": "book_fab",
+     "label": ""
+    }
+   ],
+   "note": "every distinct screen found by guided exploration"
+  },
+  {
+   "id": "S04",
+   "activity": "au.example.harbourdental/.BookingActivity",
+   "title": "Pick a day",
+   "reason": "structured",
+   "steps": [
+    {
+     "rid": "book_fab",
+     "label": ""
+    },
+    {
+     "rid": "pick_date",
+     "label": "Pick a date"
+    }
+   ],
+   "note": "every distinct screen found by guided exploration"
+  }
+ ],
+ "checks": [
+  {
+   "screen": "S01",
+   "kind": "engine",
+   "name": "mobile-checks:labels",
+   "status": "ran"
+  },
+  {
+   "screen": "S01",
+   "kind": "engine",
+   "name": "mobile-checks:target_size",
+   "status": "ran"
+  },
+  {
+   "screen": "S01",
+   "kind": "engine",
+   "name": "mobile-checks:contrast",
+   "status": "ran"
+  },
+  {
+   "screen": "S01",
+   "kind": "probe",
+   "name": "text_scaling",
+   "status": "ran"
+  },
+  {
+   "screen": "S01",
+   "kind": "probe",
+   "name": "display_size",
+   "status": "ran"
+  },
+  {
+   "screen": "S01",
+   "kind": "probe",
+   "name": "orientation",
+   "status": "ran"
+  },
+  {
+   "screen": "S01",
+   "kind": "probe",
+   "name": "keyboard",
+   "status": "ran"
+  },
+  {
+   "screen": "S01",
+   "kind": "probe",
+   "name": "motion",
+   "status": "ran"
+  },
+  {
+   "screen": "S01",
+   "kind": "probe",
+   "name": "dark_mode",
+   "status": "ran"
+  },
+  {
+   "screen": "S02",
+   "kind": "engine",
+   "name": "mobile-checks:labels",
+   "status": "ran"
+  },
+  {
+   "screen": "S02",
+   "kind": "engine",
+   "name": "mobile-checks:target_size",
+   "status": "ran"
+  },
+  {
+   "screen": "S02",
+   "kind": "engine",
+   "name": "mobile-checks:contrast",
+   "status": "ran"
+  },
+  {
+   "screen": "S02",
+   "kind": "probe",
+   "name": "text_scaling",
+   "status": "ran"
+  },
+  {
+   "screen": "S02",
+   "kind": "probe",
+   "name": "display_size",
+   "status": "ran"
+  },
+  {
+   "screen": "S02",
+   "kind": "probe",
+   "name": "orientation",
+   "status": "blocked",
+   "reason": "rotating this screen crashes the app (C03)"
+  },
+  {
+   "screen": "S02",
+   "kind": "probe",
+   "name": "keyboard",
+   "status": "ran"
+  },
+  {
+   "screen": "S02",
+   "kind": "probe",
+   "name": "motion",
+   "status": "errored",
+   "reason": "RuntimeError: uiautomator dump failed: "
+  },
+  {
+   "screen": "S02",
+   "kind": "probe",
+   "name": "dark_mode",
+   "status": "errored",
+   "reason": "RuntimeError: uiautomator dump failed: "
+  },
+  {
+   "screen": "S03",
+   "kind": "engine",
+   "name": "mobile-checks:labels",
+   "status": "ran"
+  },
+  {
+   "screen": "S03",
+   "kind": "engine",
+   "name": "mobile-checks:target_size",
+   "status": "ran"
+  },
+  {
+   "screen": "S03",
+   "kind": "engine",
+   "name": "mobile-checks:contrast",
+   "status": "ran"
+  },
+  {
+   "screen": "S03",
+   "kind": "probe",
+   "name": "text_scaling",
+   "status": "ran"
+  },
+  {
+   "screen": "S03",
+   "kind": "probe",
+   "name": "display_size",
+   "status": "ran"
+  },
+  {
+   "screen": "S03",
+   "kind": "probe",
+   "name": "orientation",
+   "status": "ran"
+  },
+  {
+   "screen": "S03",
+   "kind": "probe",
+   "name": "keyboard",
+   "status": "ran"
+  },
+  {
+   "screen": "S03",
+   "kind": "probe",
+   "name": "motion",
+   "status": "ran"
+  },
+  {
+   "screen": "S03",
+   "kind": "probe",
+   "name": "dark_mode",
+   "status": "ran"
+  },
+  {
+   "screen": "S04",
+   "kind": "engine",
+   "name": "mobile-checks:labels",
+   "status": "ran"
+  },
+  {
+   "screen": "S04",
+   "kind": "engine",
+   "name": "mobile-checks:target_size",
+   "status": "ran"
+  },
+  {
+   "screen": "S04",
+   "kind": "engine",
+   "name": "mobile-checks:contrast",
+   "status": "ran"
+  },
+  {
+   "screen": "S04",
+   "kind": "probe",
+   "name": "text_scaling",
+   "status": "ran"
+  },
+  {
+   "screen": "S04",
+   "kind": "probe",
+   "name": "display_size",
+   "status": "ran"
+  },
+  {
+   "screen": "S04",
+   "kind": "probe",
+   "name": "orientation",
+   "status": "blocked",
+   "reason": "rotating this screen crashes the app (C04)"
+  },
+  {
+   "screen": "S04",
+   "kind": "probe",
+   "name": "keyboard",
+   "status": "ran"
+  },
+  {
+   "screen": "S04",
+   "kind": "probe",
+   "name": "motion",
+   "status": "ran"
+  },
+  {
+   "screen": "S04",
+   "kind": "probe",
+   "name": "dark_mode",
+   "status": "ran"
+  }
+ ],
+ "results": [
+  {
+   "check": "label.control-no-name",
+   "screen": "S01",
+   "status": "failed",
+   "element": {
+    "resource_id": "book_fab",
+    "class": "android.widget.Button",
+    "label": "",
+    "bounds": [
+     870,
+     2190,
+     1017,
+     2337
+    ],
+    "size_dp": [
+     56.0,
+     56.0
+    ]
+   },
+   "measured": {},
+   "screenshot": "evidence/S01-label_control-no-name-57dedc86.png",
+   "sha256": "0dc0fb9245ca7a5600ec660adf2eeb2cf3e0c38aa4039bd2630f8724b5c6bd8a"
+  },
+  {
+   "check": "label.icon-button-no-name",
+   "screen": "S01",
+   "status": "failed",
+   "element": {
+    "resource_id": "book_fab",
+    "class": "android.widget.Button",
+    "label": "",
+    "bounds": [
+     870,
+     2190,
+     1017,
+     2337
+    ],
+    "size_dp": [
+     56.0,
+     56.0
+    ]
+   },
+   "measured": {},
+   "screenshot": "evidence/S01-label_icon-button-no-name-2c1a1dbc.png",
+   "sha256": "0dc0fb9245ca7a5600ec660adf2eeb2cf3e0c38aa4039bd2630f8724b5c6bd8a"
+  },
+  {
+   "check": "contrast.text",
+   "screen": "S01",
+   "status": "failed",
+   "element": {
+    "resource_id": "booking_hint",
+    "class": "android.widget.TextView",
+    "label": "Bookings open six weeks ahead",
+    "bounds": [
+     42,
+     1099,
+     561,
+     1162
+    ],
+    "size_dp": [
+     197.7,
+     24.0
+    ]
+   },
+   "measured": {
+    "fg": "#aaaaaa",
+    "bg": "#ffffff",
+    "ratio": 2.32,
+    "required": 4.5,
+    "large_text": false
+   },
+   "screenshot": "evidence/S01-contrast_text-3436e660.png",
+   "sha256": "65241673937295f047a9a6f4d445895e67e176db0790db4958fbc6f0960e2ba5"
+  },
+  {
+   "check": "orientation.locked",
+   "screen": "S01",
+   "status": "failed",
+   "element": {
+    "resource_id": null,
+    "class": "android.widget.FrameLayout",
+    "label": "Harbour Dental Gentle care for nervous patients Our clinics Harbour Street Mon to Fri, 8am to 6pm Northside Tue to Sat, ",
+    "bounds": [
+     0,
+     0,
+     1080,
+     2400
+    ],
+    "size_dp": [
+     411.4,
+     914.3
+    ]
+   },
+   "measured": {
+    "requested": "landscape",
+    "screen_px": [
+     1080,
+     2400
+    ]
+   },
+   "screenshot": "evidence/S01-orientation_locked-7a9391d6.png",
+   "sha256": "42571f9224d94b1404ba7e217d8408548551d84b96203ad26ee554e167ca3d92"
+  },
+  {
+   "check": "keyboard.sequence",
+   "screen": "S01",
+   "status": "info",
+   "measured": {
+    "tab_sequence": [
+     "clinic_harbour",
+     "clinic_northside",
+     "book_fab",
+     "clinic_harbour",
+     "clinic_northside",
+     "book_fab"
+    ]
+   }
+  },
+  {
+   "check": "motion.auto-advance",
+   "screen": "S01",
+   "status": "failed",
+   "element": {
+    "resource_id": "promo_banner",
+    "class": "android.view.View",
+    "label": "Late appointments on Thursdays",
+    "bounds": [
+     42,
+     447,
+     1038,
+     510
+    ],
+    "size_dp": [
+     379.4,
+     24.0
+    ]
+   },
+   "measured": {
+    "changed_between_s": [
+     5,
+     7.5
+    ],
+    "pause_control": false
+   },
+   "screenshot": "evidence/S01-motion_auto-advance-1e1a81e5.png",
+   "sha256": "a1d689a9610289a8daa80032b42878a9f0241e307fb94b650baa400bd9463c82"
+  },
+  {
+   "check": "contrast.text-dark",
+   "screen": "S01",
+   "status": "failed",
+   "element": {
+    "resource_id": "booking_hint",
+    "class": "android.widget.TextView",
+    "label": "Bookings open six weeks ahead",
+    "bounds": [
+     42,
+     1099,
+     561,
+     1162
+    ],
+    "size_dp": [
+     197.7,
+     24.0
+    ]
+   },
+   "measured": {
+    "fg": "#aaaaaa",
+    "bg": "#ffffff",
+    "ratio": 2.32,
+    "required": 4.5,
+    "large_text": false
+   },
+   "screenshot": "evidence/S01-contrast_text-dark-cf6d45e3.png",
+   "sha256": "0dcfaef7a860cabd191b8afd69b1b0dcd83251abddb17e04e7c1d2cc863700ba"
+  },
+  {
+   "check": "keyboard.sequence",
+   "screen": "S02",
+   "status": "info",
+   "measured": {
+    "tab_sequence": [
+     null,
+     null,
+     null
+    ]
+   }
+  },
+  {
+   "check": "target.below-48dp",
+   "screen": "S03",
+   "status": "advisory",
+   "element": {
+    "resource_id": "help_button",
+    "class": "android.view.View",
+    "label": "Help",
+    "bounds": [
+     885,
+     6,
+     949,
+     132
+    ],
+    "size_dp": [
+     24.4,
+     48.0
+    ]
+   },
+   "measured": {
+    "size_dp": [
+     24.4,
+     48.0
+    ]
+   },
+   "screenshot": null,
+   "sha256": null
+  },
+  {
+   "check": "text-scale.not-enlarged",
+   "screen": "S03",
+   "status": "failed",
+   "element": {
+    "resource_id": "intro_text",
+    "class": "android.widget.TextView",
+    "label": "Choose a day and we will call you to confirm the time.",
+    "bounds": [
+     42,
+     170,
+     1038,
+     254
+    ],
+    "size_dp": [
+     379.4,
+     32.0
+    ]
+   },
+   "measured": {
+    "font_scale": 2.0,
+    "height_ratio": 1.33,
+    "typical_ratio": 1.66,
+    "clipped_by": "intro_box",
+    "container_height_px": [
+     84,
+     84
+    ]
+   },
+   "screenshot": "evidence/S03-text-scale_not-enlarged-06a886a1.png",
+   "sha256": "1432ae2d2746abfaa066bfa8be17089ba4d4bd70a6a19ff5239c9d560d114a92"
+  },
+  {
+   "check": "keyboard.sequence",
+   "screen": "S03",
+   "status": "info",
+   "measured": {
+    "tab_sequence": [
+     "help_button",
+     "close_button",
+     "pick_date",
+     "help_button",
+     "close_button",
+     "pick_date"
+    ]
+   }
+  },
+  {
+   "check": "keyboard.trap",
+   "screen": "S04",
+   "status": "failed",
+   "element": {
+    "resource_id": "day_0",
+    "class": "android.widget.TextView",
+    "label": "Mon 16 Nov",
+    "bounds": [
+     162,
+     1077,
+     918,
+     1204
+    ],
+    "size_dp": [
+     288.0,
+     48.4
+    ]
+   },
+   "measured": {
+    "tab_sequence": [
+     "day_0",
+     "day_0",
+     "day_0",
+     "day_0",
+     "day_0",
+     "day_0"
+    ],
+    "escape_and_back": "stayed on the screen"
+   },
+   "screenshot": "evidence/S04-keyboard_trap-4908a42b.png",
+   "sha256": "0e5f682012b722f7d7e4bb76f3a56cac0d9cc4f1f0baaa04491a3434622d1908"
+  },
+  {
+   "check": "keyboard.sequence",
+   "screen": "S04",
+   "status": "info",
+   "measured": {
+    "tab_sequence": [
+     "day_0",
+     "day_0",
+     "day_0",
+     "day_0",
+     "day_0",
+     "day_0"
+    ]
+   }
+  }
+ ],
+ "settings_changed": [
+  {
+   "kind": "setting",
+   "ns": "system",
+   "key": "accelerometer_rotation",
+   "before": "1",
+   "restored": true,
+   "after": "1"
+  },
+  {
+   "kind": "setting",
+   "ns": "system",
+   "key": "user_rotation",
+   "before": "0",
+   "restored": true,
+   "after": "0"
+  },
+  {
+   "kind": "setting",
+   "ns": "system",
+   "key": "font_scale",
+   "before": "1.0",
+   "restored": true,
+   "after": "1.0"
+  },
+  {
+   "kind": "density",
+   "before": "reset",
+   "restored": true
+  },
+  {
+   "kind": "night_mode",
+   "before": "no",
+   "restored": true,
+   "after": "no"
+  }
+ ],
+ "apk_sha256": "ecd0d1ab9537f5ccce8c5add8426f82b53b0247c5f45052cbcc79179c82cbb1d"
+}

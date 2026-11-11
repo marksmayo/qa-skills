@@ -1,0 +1,225 @@
+[
+ {
+  "event": "screen",
+  "screen": "S01",
+  "steps": [],
+  "at": "2026-11-11T12:09:13Z"
+ },
+ {
+  "event": "action",
+  "screen": "S01",
+  "action": {
+   "rid": "clinic_harbour",
+   "label": "Harbour Street Mon to Fri, 8am to 6pm"
+  },
+  "ok": true,
+  "at": "2026-11-11T12:09:24Z"
+ },
+ {
+  "event": "anr",
+  "crash": "C01",
+  "steps": [
+   {
+    "rid": "clinic_harbour",
+    "label": "Harbour Street Mon to Fri, 8am to 6pm"
+   }
+  ],
+  "at": "2026-11-11T12:09:52Z"
+ },
+ {
+  "event": "action",
+  "screen": "S01",
+  "action": {
+   "rid": "clinic_northside",
+   "label": "Northside Tue to Sat, 9am to 5pm"
+  },
+  "ok": true,
+  "at": "2026-11-11T12:10:04Z"
+ },
+ {
+  "event": "anr",
+  "crash": "C02",
+  "steps": [
+   {
+    "rid": "clinic_northside",
+    "label": "Northside Tue to Sat, 9am to 5pm"
+   }
+  ],
+  "at": "2026-11-11T12:10:29Z"
+ },
+ {
+  "event": "screen",
+  "screen": "S02",
+  "steps": [
+   {
+    "rid": "clinic_northside",
+    "label": "Northside Tue to Sat, 9am to 5pm"
+   }
+  ],
+  "at": "2026-11-11T12:10:32Z"
+ },
+ {
+  "event": "action",
+  "screen": "S01",
+  "action": {
+   "rid": "book_fab",
+   "label": ""
+  },
+  "ok": true,
+  "at": "2026-11-11T12:10:40Z"
+ },
+ {
+  "event": "screen",
+  "screen": "S03",
+  "steps": [
+   {
+    "rid": "book_fab",
+    "label": ""
+   }
+  ],
+  "at": "2026-11-11T12:10:52Z"
+ },
+ {
+  "event": "action",
+  "screen": "S01",
+  "action": {
+   "rotate": "landscape"
+  },
+  "ok": true,
+  "at": "2026-11-11T12:11:00Z"
+ },
+ {
+  "event": "action",
+  "screen": "S02",
+  "action": {
+   "rotate": "landscape"
+  },
+  "ok": true,
+  "at": "2026-11-11T12:11:26Z"
+ },
+ {
+  "event": "anr",
+  "crash": "C03",
+  "steps": [
+   {
+    "rid": "clinic_northside",
+    "label": "Northside Tue to Sat, 9am to 5pm"
+   },
+   {
+    "rotate": "landscape"
+   }
+  ],
+  "at": "2026-11-11T12:11:54Z"
+ },
+ {
+  "event": "action",
+  "screen": "S03",
+  "action": {
+   "rid": "help_button",
+   "label": "Help"
+  },
+  "ok": true,
+  "at": "2026-11-11T12:12:12Z"
+ },
+ {
+  "event": "action",
+  "screen": "S03",
+  "action": {
+   "rid": "close_button",
+   "label": "Close"
+  },
+  "ok": true,
+  "at": "2026-11-11T12:12:39Z"
+ },
+ {
+  "event": "action",
+  "screen": "S03",
+  "action": {
+   "rid": "pick_date",
+   "label": "Pick a date"
+  },
+  "ok": true,
+  "at": "2026-11-11T12:13:06Z"
+ },
+ {
+  "event": "screen",
+  "screen": "S04",
+  "steps": [
+   {
+    "rid": "book_fab",
+    "label": ""
+   },
+   {
+    "rid": "pick_date",
+    "label": "Pick a date"
+   }
+  ],
+  "at": "2026-11-11T12:13:19Z"
+ },
+ {
+  "event": "action",
+  "screen": "S03",
+  "action": {
+   "rotate": "landscape"
+  },
+  "ok": true,
+  "at": "2026-11-11T12:13:34Z"
+ },
+ {
+  "event": "action",
+  "screen": "S04",
+  "action": {
+   "rid": "day_0",
+   "label": "Mon 16 Nov"
+  },
+  "ok": true,
+  "at": "2026-11-11T12:14:08Z"
+ },
+ {
+  "event": "action",
+  "screen": "S04",
+  "action": {
+   "rid": "day_1",
+   "label": "Tue 17 Nov"
+  },
+  "ok": true,
+  "at": "2026-11-11T12:14:42Z"
+ },
+ {
+  "event": "action",
+  "screen": "S04",
+  "action": {
+   "rid": "day_2",
+   "label": "Wed 18 Nov"
+  },
+  "ok": true,
+  "at": "2026-11-11T12:15:17Z"
+ },
+ {
+  "event": "action",
+  "screen": "S04",
+  "action": {
+   "rotate": "landscape"
+  },
+  "ok": true,
+  "at": "2026-11-11T12:15:49Z"
+ },
+ {
+  "event": "crash",
+  "crash": "C04",
+  "steps": [
+   {
+    "rid": "book_fab",
+    "label": ""
+   },
+   {
+    "rid": "pick_date",
+    "label": "Pick a date"
+   },
+   {
+    "rotate": "landscape"
+   }
+  ],
+  "at": "2026-11-11T12:16:04Z"
+ }
+]

@@ -1,6 +1,6 @@
 # Design: `mobile-app-auditor-skill`
 
-Status: Designed; not built. Build order: 24.
+Status: Built (v1.0.0); see "As built" at the end. Build order: 24.
 
 ## Mission
 
@@ -249,3 +249,31 @@ Agreed with the user before the build.
 2. **Example app?** Kotlin and Compose.
 3. **Driver?** `adb` and `uiautomator` first; Appium optional.
 4. **Random (monkey) exploration?** Off by default.
+
+## As built (v1.0.0)
+
+Where the build differs from the design above, and what the example showed.
+
+- **Android only, through `adb` and `uiautomator`.** Appium is detected but not used; iOS is `not_run` off
+  macOS. Google's ATF is not run (its instrumentation APK isn't built in this version): the skill's own
+  checks cover labels, target size and contrast, and `tools.json` says so. There is no
+  `data/tools.lock.json` and no separate `normalize.py`: `merge_findings.py` maps results through
+  `data/rule-map.json` and merges them.
+- **Settings are tracked and restored by `adb_device.py`.** A setting changed again after a restore is
+  reopened, so it is restored again. Records are written only after the restore, so they say what the
+  device was actually left with. The first example run found both bugs: auto-rotate was left off while the
+  records said it had been restored.
+- **Text scaling also catches clipping:** Android 14+ scales large text non-linearly, so a text that grew
+  1.33x can still be cut off. A text reaching the bottom of a parent that kept its height is a failure,
+  as long as the median text grew 1.5x.
+- **Exploration records ANRs with what Wait did** (`recovered` or `killed`). It replays crashes after
+  `pm clear`. A probe that would repeat a recorded crash is `blocked`.
+- **The example APK is a shrunk release build** (1.3 MB) rather than a debug build (11.6 MB). It isn't
+  obfuscated, but R8 rewrites line numbers, so crash frames need the mapping file to match the source.
+- **Example results:** 4 screens, 36 checks (4 blocked or errored), 10 accessibility and 2 crash
+  candidates, 7 findings (1 P0, 4 P1, 1 P2, 1 P3), one advisory, one needs-review item. There are two crash
+  findings: the map ANR is P0, because the app was killed once after Wait, making it B1; the rotation crash
+  is P1, also B1, since the process dies. The planted 20 dp targets didn't fail 2.5.8: Compose gave them
+  24.4 dp and 48 dp touch areas, leaving a 48 dp advisory. Both decoys raised no candidate.
+- **Testing:** 38 of 38 seeded violations are caught, including unrestored settings, a crash log that mixes
+  processes, and a replay that didn't reproduce.

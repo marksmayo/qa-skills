@@ -1,0 +1,485 @@
+{
+ "run": "mobile-app-auditor-skill/examples/run",
+ "candidates": [
+  {
+   "id": "M001",
+   "check": "label.icon-button-no-name",
+   "sc": "1.1.1",
+   "pattern": "1.1.1-functional-image-no-name",
+   "kind": "failure",
+   "probe": "a11y_tree",
+   "component": "book_fab",
+   "instances": [
+    {
+     "screen": "S01",
+     "element": {
+      "resource_id": "book_fab",
+      "class": "android.widget.Button",
+      "label": "",
+      "bounds": [
+       870,
+       2190,
+       1017,
+       2337
+      ],
+      "size_dp": [
+       56.0,
+       56.0
+      ]
+     },
+     "screenshot": "evidence/S01-label_icon-button-no-name-2c1a1dbc.png",
+     "sha256": "0dc0fb9245ca7a5600ec660adf2eeb2cf3e0c38aa4039bd2630f8724b5c6bd8a",
+     "measured": {}
+    }
+   ],
+   "screens": [
+    "S01"
+   ],
+   "sources": [
+    {
+     "tool": "mobile-checks",
+     "rule_id": "label.icon-button-no-name"
+    }
+   ]
+  },
+  {
+   "id": "M002",
+   "check": "orientation.locked",
+   "sc": "1.3.4",
+   "pattern": "1.3.4-orientation-locked",
+   "kind": "failure",
+   "probe": "orientation",
+   "component": "android.widget.FrameLayout:Harbour Dental Gentle care for nervous patients Our clinics Harbour Street Mon to Fri, 8am to 6pm Northside Tue to Sat, ",
+   "instances": [
+    {
+     "screen": "S01",
+     "element": {
+      "resource_id": null,
+      "class": "android.widget.FrameLayout",
+      "label": "Harbour Dental Gentle care for nervous patients Our clinics Harbour Street Mon to Fri, 8am to 6pm Northside Tue to Sat, ",
+      "bounds": [
+       0,
+       0,
+       1080,
+       2400
+      ],
+      "size_dp": [
+       411.4,
+       914.3
+      ]
+     },
+     "screenshot": "evidence/S01-orientation_locked-7a9391d6.png",
+     "sha256": "42571f9224d94b1404ba7e217d8408548551d84b96203ad26ee554e167ca3d92",
+     "measured": {
+      "requested": "landscape",
+      "screen_px": [
+       1080,
+       2400
+      ]
+     }
+    }
+   ],
+   "screens": [
+    "S01"
+   ],
+   "sources": [
+    {
+     "tool": "mobile-checks",
+     "rule_id": "orientation.locked"
+    }
+   ]
+  },
+  {
+   "id": "M003",
+   "check": "contrast.text",
+   "sc": "1.4.3",
+   "pattern": "1.4.3-secondary-text-low-contrast",
+   "kind": "failure",
+   "probe": "contrast",
+   "component": "booking_hint",
+   "instances": [
+    {
+     "screen": "S01",
+     "element": {
+      "resource_id": "booking_hint",
+      "class": "android.widget.TextView",
+      "label": "Bookings open six weeks ahead",
+      "bounds": [
+       42,
+       1099,
+       561,
+       1162
+      ],
+      "size_dp": [
+       197.7,
+       24.0
+      ]
+     },
+     "screenshot": "evidence/S01-contrast_text-3436e660.png",
+     "sha256": "65241673937295f047a9a6f4d445895e67e176db0790db4958fbc6f0960e2ba5",
+     "measured": {
+      "fg": "#aaaaaa",
+      "bg": "#ffffff",
+      "ratio": 2.32,
+      "required": 4.5,
+      "large_text": false
+     }
+    }
+   ],
+   "screens": [
+    "S01"
+   ],
+   "sources": [
+    {
+     "tool": "mobile-checks",
+     "rule_id": "contrast.text"
+    }
+   ]
+  },
+  {
+   "id": "M004",
+   "check": "contrast.text-dark",
+   "sc": "1.4.3",
+   "pattern": "1.4.3-secondary-text-low-contrast",
+   "kind": "failure",
+   "probe": "dark_mode",
+   "component": "booking_hint",
+   "instances": [
+    {
+     "screen": "S01",
+     "element": {
+      "resource_id": "booking_hint",
+      "class": "android.widget.TextView",
+      "label": "Bookings open six weeks ahead",
+      "bounds": [
+       42,
+       1099,
+       561,
+       1162
+      ],
+      "size_dp": [
+       197.7,
+       24.0
+      ]
+     },
+     "screenshot": "evidence/S01-contrast_text-dark-cf6d45e3.png",
+     "sha256": "0dcfaef7a860cabd191b8afd69b1b0dcd83251abddb17e04e7c1d2cc863700ba",
+     "measured": {
+      "fg": "#aaaaaa",
+      "bg": "#ffffff",
+      "ratio": 2.32,
+      "required": 4.5,
+      "large_text": false
+     }
+    }
+   ],
+   "screens": [
+    "S01"
+   ],
+   "sources": [
+    {
+     "tool": "mobile-checks",
+     "rule_id": "contrast.text-dark"
+    }
+   ]
+  },
+  {
+   "id": "M005",
+   "check": "text-scale.not-enlarged",
+   "sc": "1.4.4",
+   "pattern": "1.4.4-text-lost-at-200",
+   "kind": "failure",
+   "probe": "text_scaling",
+   "component": "intro_text",
+   "instances": [
+    {
+     "screen": "S03",
+     "element": {
+      "resource_id": "intro_text",
+      "class": "android.widget.TextView",
+      "label": "Choose a day and we will call you to confirm the time.",
+      "bounds": [
+       42,
+       170,
+       1038,
+       254
+      ],
+      "size_dp": [
+       379.4,
+       32.0
+      ]
+     },
+     "screenshot": "evidence/S03-text-scale_not-enlarged-06a886a1.png",
+     "sha256": "1432ae2d2746abfaa066bfa8be17089ba4d4bd70a6a19ff5239c9d560d114a92",
+     "measured": {
+      "font_scale": 2.0,
+      "height_ratio": 1.33,
+      "typical_ratio": 1.66,
+      "clipped_by": "intro_box",
+      "container_height_px": [
+       84,
+       84
+      ]
+     }
+    }
+   ],
+   "screens": [
+    "S03"
+   ],
+   "sources": [
+    {
+     "tool": "mobile-checks",
+     "rule_id": "text-scale.not-enlarged"
+    }
+   ]
+  },
+  {
+   "id": "M006",
+   "check": "keyboard.trap",
+   "sc": "2.1.2",
+   "pattern": "2.1.2-keyboard-trap",
+   "kind": "failure",
+   "probe": "keyboard",
+   "component": "day_0",
+   "instances": [
+    {
+     "screen": "S04",
+     "element": {
+      "resource_id": "day_0",
+      "class": "android.widget.TextView",
+      "label": "Mon 16 Nov",
+      "bounds": [
+       162,
+       1077,
+       918,
+       1204
+      ],
+      "size_dp": [
+       288.0,
+       48.4
+      ]
+     },
+     "screenshot": "evidence/S04-keyboard_trap-4908a42b.png",
+     "sha256": "0e5f682012b722f7d7e4bb76f3a56cac0d9cc4f1f0baaa04491a3434622d1908",
+     "measured": {
+      "tab_sequence": [
+       "day_0",
+       "day_0",
+       "day_0",
+       "day_0",
+       "day_0",
+       "day_0"
+      ],
+      "escape_and_back": "stayed on the screen"
+     }
+    }
+   ],
+   "screens": [
+    "S04"
+   ],
+   "sources": [
+    {
+     "tool": "mobile-checks",
+     "rule_id": "keyboard.trap"
+    }
+   ]
+  },
+  {
+   "id": "M007",
+   "check": "motion.auto-advance",
+   "sc": "2.2.2",
+   "pattern": "2.2.2-moving-content-no-pause",
+   "kind": "failure",
+   "probe": "motion",
+   "component": "promo_banner",
+   "instances": [
+    {
+     "screen": "S01",
+     "element": {
+      "resource_id": "promo_banner",
+      "class": "android.view.View",
+      "label": "Late appointments on Thursdays",
+      "bounds": [
+       42,
+       447,
+       1038,
+       510
+      ],
+      "size_dp": [
+       379.4,
+       24.0
+      ]
+     },
+     "screenshot": "evidence/S01-motion_auto-advance-1e1a81e5.png",
+     "sha256": "a1d689a9610289a8daa80032b42878a9f0241e307fb94b650baa400bd9463c82",
+     "measured": {
+      "changed_between_s": [
+       5,
+       7.5
+      ],
+      "pause_control": false
+     }
+    }
+   ],
+   "screens": [
+    "S01"
+   ],
+   "sources": [
+    {
+     "tool": "mobile-checks",
+     "rule_id": "motion.auto-advance"
+    }
+   ]
+  },
+  {
+   "id": "M008",
+   "check": "target.below-48dp",
+   "sc": "2.5.8",
+   "pattern": null,
+   "kind": "advisory",
+   "probe": "target_size",
+   "component": "help_button",
+   "instances": [
+    {
+     "screen": "S03",
+     "element": {
+      "resource_id": "help_button",
+      "class": "android.view.View",
+      "label": "Help",
+      "bounds": [
+       885,
+       6,
+       949,
+       132
+      ],
+      "size_dp": [
+       24.4,
+       48.0
+      ]
+     },
+     "screenshot": null,
+     "sha256": null,
+     "measured": {
+      "size_dp": [
+       24.4,
+       48.0
+      ]
+     }
+    }
+   ],
+   "screens": [
+    "S03"
+   ],
+   "sources": [
+    {
+     "tool": "mobile-checks",
+     "rule_id": "target.below-48dp"
+    }
+   ]
+  },
+  {
+   "id": "M009",
+   "check": "label.control-no-name",
+   "sc": "4.1.2",
+   "pattern": "4.1.2-control-no-name",
+   "kind": "failure",
+   "probe": "a11y_tree",
+   "component": "book_fab",
+   "instances": [
+    {
+     "screen": "S01",
+     "element": {
+      "resource_id": "book_fab",
+      "class": "android.widget.Button",
+      "label": "",
+      "bounds": [
+       870,
+       2190,
+       1017,
+       2337
+      ],
+      "size_dp": [
+       56.0,
+       56.0
+      ]
+     },
+     "screenshot": "evidence/S01-label_control-no-name-57dedc86.png",
+     "sha256": "0dc0fb9245ca7a5600ec660adf2eeb2cf3e0c38aa4039bd2630f8724b5c6bd8a",
+     "measured": {}
+    }
+   ],
+   "screens": [
+    "S01"
+   ],
+   "sources": [
+    {
+     "tool": "mobile-checks",
+     "rule_id": "label.control-no-name"
+    }
+   ]
+  },
+  {
+   "id": "M010",
+   "check": "heading.not-exposed",
+   "sc": "1.3.1",
+   "pattern": null,
+   "kind": "review",
+   "probe": "a11y_tree",
+   "component": "all screens",
+   "instances": [],
+   "screens": [
+    "S01",
+    "S02",
+    "S03",
+    "S04"
+   ],
+   "sources": [
+    {
+     "tool": "mobile-checks",
+     "rule_id": "heading.not-exposed"
+    }
+   ]
+  }
+ ],
+ "crash_candidates": [
+  {
+   "id": "K01",
+   "kind": "anr",
+   "signature": {
+    "what": "Input dispatching timed out (Application does not have a focused window).",
+    "top_app_frame": "at au.example.harbourdental.MapActivity.onCreate(r8-map-id-c0cfa8f623f6bcc768e8cbae602280d8c00749c31dd2ae8dc4985381e62e8033:6)"
+   },
+   "crash_ids": [
+    "C01",
+    "C02",
+    "C03"
+   ],
+   "screens": [
+    "S01",
+    "S02"
+   ],
+   "events": [
+    "{\"label\": \"Harbour Street Mon to Fri, 8am to 6pm\", \"rid\": \"clinic_harbour\"}",
+    "{\"label\": \"Northside Tue to Sat, 9am to 5pm\", \"rid\": \"clinic_northside\"}",
+    "{\"rotate\": \"landscape\"}"
+   ]
+  },
+  {
+   "id": "K02",
+   "kind": "crash",
+   "signature": {
+    "what": "java.lang.RuntimeException: Unable to start activity ComponentInfo{au.example.harbourdental/au.example.harbourdental.BookingActivity}: java.lang.NullPointerException: Attempt to invoke virtual method 'java.lang.Class java.lang.Object.getClass()' on a null object reference",
+    "top_app_frame": "at au.example.harbourdental.BookingActivity.onCreate(r8-map-id-0fff129add27b1271ffcecdee6ce8756f61930da934958d1cc2178c641221872:21)"
+   },
+   "crash_ids": [
+    "C04"
+   ],
+   "screens": [
+    "S04"
+   ],
+   "events": [
+    "{\"rotate\": \"landscape\"}"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,2557 @@
+{
+ "schema_version": "1.0.0",
+ "skill": "mobile-app-auditor",
+ "generated_at": "2026-11-12T00:30:00Z",
+ "scope": {
+  "app": {
+   "package": "au.example.harbourdental",
+   "version": "1.2.0 (3), release build, minified, signed with the debug key",
+   "apk_sha256": "ecd0d1ab9537f5ccce8c5add8426f82b53b0247c5f45052cbcc79179c82cbb1d"
+  },
+  "platforms": {
+   "android": "ran",
+   "ios": "not_run"
+  },
+  "devices": [
+   {
+    "model": "Pixel 7 emulator (sdk_gphone64_x86_64)",
+    "android": "16",
+    "api": "36",
+    "density": 420,
+    "size_px": [
+     1080,
+     2400
+    ]
+   }
+  ],
+  "wcag_version": "2.2",
+  "level": "AA",
+  "exploration": "guided",
+  "authorised_by": null,
+  "backend": "none: the sample app has no network calls",
+  "sample": [
+   {
+    "id": "S01",
+    "activity": "au.example.harbourdental/.MainActivity",
+    "title": "Harbour Dental",
+    "reason": "structured",
+    "steps": [],
+    "note": "every distinct screen found by guided exploration"
+   },
+   {
+    "id": "S02",
+    "activity": "au.example.harbourdental/.MapActivity",
+    "title": "Map: 24 tiles",
+    "reason": "structured",
+    "steps": [
+     {
+      "rid": "clinic_northside",
+      "label": "Northside Tue to Sat, 9am to 5pm"
+     }
+    ],
+    "note": "every distinct screen found by guided exploration"
+   },
+   {
+    "id": "S03",
+    "activity": "au.example.harbourdental/.BookingActivity",
+    "title": "Book a visit",
+    "reason": "structured",
+    "steps": [
+     {
+      "rid": "book_fab",
+      "label": ""
+     }
+    ],
+    "note": "every distinct screen found by guided exploration"
+   },
+   {
+    "id": "S04",
+    "activity": "au.example.harbourdental/.BookingActivity",
+    "title": "Pick a day",
+    "reason": "structured",
+    "steps": [
+     {
+      "rid": "book_fab",
+      "label": ""
+     },
+     {
+      "rid": "pick_date",
+      "label": "Pick a date"
+     }
+    ],
+    "note": "every distinct screen found by guided exploration"
+   }
+  ],
+  "critical_paths": [
+   {
+    "name": "Book a visit",
+    "steps": [
+     {
+      "rid": "book_fab"
+     },
+     {
+      "rid": "pick_date"
+     },
+     {
+      "rid": "day_0"
+     }
+    ],
+    "screens": [
+     "S01",
+     "S03",
+     "S04"
+    ]
+   }
+  ]
+ },
+ "metadata": {
+  "host": {
+   "os": "Windows",
+   "release": "11",
+   "python": "3.14.10"
+  },
+  "tools": [
+   {
+    "name": "adb",
+    "version": "37.0.1-15733141",
+    "license": "Android SDK licence",
+    "status": "ran",
+    "reason": null
+   },
+   {
+    "name": "mobile-checks",
+    "version": "1.0.0",
+    "license": "repo licence",
+    "status": "ran",
+    "reason": null
+   },
+   {
+    "name": "accessibility-test-framework",
+    "version": null,
+    "license": "Apache-2.0",
+    "status": "not_run",
+    "reason": "the ATF instrumentation APK is not built in this version; the skill's own checks cover labels, target size and contrast"
+   },
+   {
+    "name": "appium",
+    "version": null,
+    "license": "Apache-2.0",
+    "status": "not_run",
+    "reason": "installed but not used: the Android run uses adb and uiautomator"
+   },
+   {
+    "name": "xcode-accessibility-audit",
+    "version": null,
+    "license": "Apple Xcode licence",
+    "status": "not_run",
+    "reason": "iOS needs macOS with Xcode 15 or later; this host is Windows"
+   }
+  ],
+  "checks": [
+   {
+    "screen": "S01",
+    "kind": "engine",
+    "name": "mobile-checks:labels",
+    "status": "ran"
+   },
+   {
+    "screen": "S01",
+    "kind": "engine",
+    "name": "mobile-checks:target_size",
+    "status": "ran"
+   },
+   {
+    "screen": "S01",
+    "kind": "engine",
+    "name": "mobile-checks:contrast",
+    "status": "ran"
+   },
+   {
+    "screen": "S01",
+    "kind": "probe",
+    "name": "text_scaling",
+    "status": "ran"
+   },
+   {
+    "screen": "S01",
+    "kind": "probe",
+    "name": "display_size",
+    "status": "ran"
+   },
+   {
+    "screen": "S01",
+    "kind": "probe",
+    "name": "orientation",
+    "status": "ran"
+   },
+   {
+    "screen": "S01",
+    "kind": "probe",
+    "name": "keyboard",
+    "status": "ran"
+   },
+   {
+    "screen": "S01",
+    "kind": "probe",
+    "name": "motion",
+    "status": "ran"
+   },
+   {
+    "screen": "S01",
+    "kind": "probe",
+    "name": "dark_mode",
+    "status": "ran"
+   },
+   {
+    "screen": "S02",
+    "kind": "engine",
+    "name": "mobile-checks:labels",
+    "status": "ran"
+   },
+   {
+    "screen": "S02",
+    "kind": "engine",
+    "name": "mobile-checks:target_size",
+    "status": "ran"
+   },
+   {
+    "screen": "S02",
+    "kind": "engine",
+    "name": "mobile-checks:contrast",
+    "status": "ran"
+   },
+   {
+    "screen": "S02",
+    "kind": "probe",
+    "name": "text_scaling",
+    "status": "ran"
+   },
+   {
+    "screen": "S02",
+    "kind": "probe",
+    "name": "display_size",
+    "status": "ran"
+   },
+   {
+    "screen": "S02",
+    "kind": "probe",
+    "name": "orientation",
+    "status": "blocked",
+    "reason": "rotating this screen crashes the app (C03)"
+   },
+   {
+    "screen": "S02",
+    "kind": "probe",
+    "name": "keyboard",
+    "status": "ran"
+   },
+   {
+    "screen": "S02",
+    "kind": "probe",
+    "name": "motion",
+    "status": "errored",
+    "reason": "RuntimeError: uiautomator dump failed: "
+   },
+   {
+    "screen": "S02",
+    "kind": "probe",
+    "name": "dark_mode",
+    "status": "errored",
+    "reason": "RuntimeError: uiautomator dump failed: "
+   },
+   {
+    "screen": "S03",
+    "kind": "engine",
+    "name": "mobile-checks:labels",
+    "status": "ran"
+   },
+   {
+    "screen": "S03",
+    "kind": "engine",
+    "name": "mobile-checks:target_size",
+    "status": "ran"
+   },
+   {
+    "screen": "S03",
+    "kind": "engine",
+    "name": "mobile-checks:contrast",
+    "status": "ran"
+   },
+   {
+    "screen": "S03",
+    "kind": "probe",
+    "name": "text_scaling",
+    "status": "ran"
+   },
+   {
+    "screen": "S03",
+    "kind": "probe",
+    "name": "display_size",
+    "status": "ran"
+   },
+   {
+    "screen": "S03",
+    "kind": "probe",
+    "name": "orientation",
+    "status": "ran"
+   },
+   {
+    "screen": "S03",
+    "kind": "probe",
+    "name": "keyboard",
+    "status": "ran"
+   },
+   {
+    "screen": "S03",
+    "kind": "probe",
+    "name": "motion",
+    "status": "ran"
+   },
+   {
+    "screen": "S03",
+    "kind": "probe",
+    "name": "dark_mode",
+    "status": "ran"
+   },
+   {
+    "screen": "S04",
+    "kind": "engine",
+    "name": "mobile-checks:labels",
+    "status": "ran"
+   },
+   {
+    "screen": "S04",
+    "kind": "engine",
+    "name": "mobile-checks:target_size",
+    "status": "ran"
+   },
+   {
+    "screen": "S04",
+    "kind": "engine",
+    "name": "mobile-checks:contrast",
+    "status": "ran"
+   },
+   {
+    "screen": "S04",
+    "kind": "probe",
+    "name": "text_scaling",
+    "status": "ran"
+   },
+   {
+    "screen": "S04",
+    "kind": "probe",
+    "name": "display_size",
+    "status": "ran"
+   },
+   {
+    "screen": "S04",
+    "kind": "probe",
+    "name": "orientation",
+    "status": "blocked",
+    "reason": "rotating this screen crashes the app (C04)"
+   },
+   {
+    "screen": "S04",
+    "kind": "probe",
+    "name": "keyboard",
+    "status": "ran"
+   },
+   {
+    "screen": "S04",
+    "kind": "probe",
+    "name": "motion",
+    "status": "ran"
+   },
+   {
+    "screen": "S04",
+    "kind": "probe",
+    "name": "dark_mode",
+    "status": "ran"
+   }
+  ],
+  "settings_changed": [
+   {
+    "kind": "setting",
+    "ns": "system",
+    "key": "accelerometer_rotation",
+    "before": "1",
+    "restored": true,
+    "after": "1",
+    "step": "explore"
+   },
+   {
+    "kind": "setting",
+    "ns": "system",
+    "key": "user_rotation",
+    "before": "0",
+    "restored": true,
+    "after": "0",
+    "step": "explore"
+   },
+   {
+    "kind": "setting",
+    "ns": "system",
+    "key": "accelerometer_rotation",
+    "before": "1",
+    "restored": true,
+    "after": "1",
+    "step": "checks and probes"
+   },
+   {
+    "kind": "setting",
+    "ns": "system",
+    "key": "user_rotation",
+    "before": "0",
+    "restored": true,
+    "after": "0",
+    "step": "checks and probes"
+   },
+   {
+    "kind": "setting",
+    "ns": "system",
+    "key": "font_scale",
+    "before": "1.0",
+    "restored": true,
+    "after": "1.0",
+    "step": "checks and probes"
+   },
+   {
+    "kind": "density",
+    "before": "reset",
+    "restored": true,
+    "step": "checks and probes"
+   },
+   {
+    "kind": "night_mode",
+    "before": "no",
+    "restored": true,
+    "after": "no",
+    "step": "checks and probes"
+   },
+   {
+    "kind": "setting",
+    "ns": "system",
+    "key": "accelerometer_rotation",
+    "before": "1",
+    "restored": true,
+    "after": "1",
+    "step": "replay"
+   },
+   {
+    "kind": "setting",
+    "ns": "system",
+    "key": "user_rotation",
+    "before": "0",
+    "restored": true,
+    "after": "0",
+    "step": "replay"
+   }
+  ],
+  "run": {
+   "explored": [
+    "2026-11-11T12:09:13Z",
+    "2026-11-11T12:16:06Z"
+   ],
+   "probed": [
+    "2026-11-11T12:40:39Z",
+    "2026-11-11T12:52:33Z"
+   ],
+   "actions": 13
+  }
+ },
+ "headline": {
+  "conformance_verdict": "does_not_conform",
+  "verdict_text": "Does not conform to WCAG 2.2 AA: seven criteria failed on four screens, including a keyboard trap that blocks booking. Two crash findings (an ANR on the clinic map and a crash on rotation during booking).",
+  "severity_counts": {
+   "critical": 5,
+   "serious": 1,
+   "moderate": 1,
+   "minor": 0
+  },
+  "sc_coverage": {
+   "total": 55,
+   "failed": 7,
+   "passed": 2,
+   "cantTell": 1,
+   "inapplicable": 16,
+   "untested": 29
+  },
+  "evidence_completeness": 0.89,
+  "overall_confidence": "medium",
+  "blocked_critical_paths": [
+   "Book a visit"
+  ],
+  "crash_counts": {
+   "P0": 1,
+   "P1": 1,
+   "P2": 0,
+   "P3": 0
+  }
+ },
+ "sc_results": [
+  {
+   "sc": "1.1.1",
+   "title": "Non-text Content",
+   "level": "A",
+   "principle": "Perceivable",
+   "outcome": "failed",
+   "confidence": "high",
+   "automatable": "partial",
+   "finding_ids": [
+    "F-1"
+   ],
+   "basis": "tool",
+   "evidence_note": "F-1 Book a visit button is an icon with no accessible name",
+   "en301549_clause": "11.1.1.1"
+  },
+  {
+   "sc": "1.2.1",
+   "title": "Audio-only and Video-only (Prerecorded)",
+   "level": "A",
+   "principle": "Perceivable",
+   "outcome": "inapplicable",
+   "confidence": "medium",
+   "automatable": "partial",
+   "finding_ids": [],
+   "basis": "agent_judgment",
+   "evidence_note": "No audio or video on any of the four screens (agent read every screenshot and hierarchy).",
+   "en301549_clause": "11.1.2.1"
+  },
+  {
+   "sc": "1.2.2",
+   "title": "Captions (Prerecorded)",
+   "level": "A",
+   "principle": "Perceivable",
+   "outcome": "inapplicable",
+   "confidence": "medium",
+   "automatable": "partial",
+   "finding_ids": [],
+   "basis": "agent_judgment",
+   "evidence_note": "No audio or video on any of the four screens (agent read every screenshot and hierarchy).",
+   "en301549_clause": "11.1.2.2"
+  },
+  {
+   "sc": "1.2.3",
+   "title": "Audio Description or Media Alternative (Prerecorded)",
+   "level": "A",
+   "principle": "Perceivable",
+   "outcome": "inapplicable",
+   "confidence": "medium",
+   "automatable": "partial",
+   "finding_ids": [],
+   "basis": "agent_judgment",
+   "evidence_note": "No audio or video on any of the four screens (agent read every screenshot and hierarchy).",
+   "en301549_clause": "11.1.2.3"
+  },
+  {
+   "sc": "1.2.4",
+   "title": "Captions (Live)",
+   "level": "AA",
+   "principle": "Perceivable",
+   "outcome": "inapplicable",
+   "confidence": "medium",
+   "automatable": "none",
+   "finding_ids": [],
+   "basis": "agent_judgment",
+   "evidence_note": "No audio or video on any of the four screens (agent read every screenshot and hierarchy).",
+   "en301549_clause": "11.1.2.4"
+  },
+  {
+   "sc": "1.2.5",
+   "title": "Audio Description (Prerecorded)",
+   "level": "AA",
+   "principle": "Perceivable",
+   "outcome": "inapplicable",
+   "confidence": "medium",
+   "automatable": "partial",
+   "finding_ids": [],
+   "basis": "agent_judgment",
+   "evidence_note": "No audio or video on any of the four screens (agent read every screenshot and hierarchy).",
+   "en301549_clause": "11.1.2.5"
+  },
+  {
+   "sc": "1.3.1",
+   "title": "Info and Relationships",
+   "level": "A",
+   "principle": "Perceivable",
+   "outcome": "cantTell",
+   "confidence": "low",
+   "automatable": "partial",
+   "finding_ids": [],
+   "basis": "none",
+   "evidence_note": "uiautomator does not expose headings; see NR-1.",
+   "en301549_clause": "11.1.3.1",
+   "needs_review_ids": [
+    "NR-1"
+   ]
+  },
+  {
+   "sc": "1.3.2",
+   "title": "Meaningful Sequence",
+   "level": "A",
+   "principle": "Perceivable",
+   "outcome": "untested",
+   "confidence": "low",
+   "automatable": "partial",
+   "finding_ids": [],
+   "basis": "none",
+   "evidence_note": "No automated check covers this criterion on Android in this version.",
+   "en301549_clause": "11.1.3.2"
+  },
+  {
+   "sc": "1.3.3",
+   "title": "Sensory Characteristics",
+   "level": "A",
+   "principle": "Perceivable",
+   "outcome": "untested",
+   "confidence": "low",
+   "automatable": "none",
+   "finding_ids": [],
+   "basis": "none",
+   "evidence_note": "No automated check covers this criterion on Android in this version.",
+   "en301549_clause": "11.1.3.3"
+  },
+  {
+   "sc": "1.3.4",
+   "title": "Orientation",
+   "level": "AA",
+   "principle": "Perceivable",
+   "outcome": "failed",
+   "confidence": "high",
+   "automatable": "partial",
+   "finding_ids": [
+    "F-5"
+   ],
+   "basis": "probe",
+   "evidence_note": "F-5 Home screen is locked to portrait",
+   "en301549_clause": "11.1.3.4"
+  },
+  {
+   "sc": "1.3.5",
+   "title": "Identify Input Purpose",
+   "level": "AA",
+   "principle": "Perceivable",
+   "outcome": "inapplicable",
+   "confidence": "medium",
+   "automatable": "partial",
+   "finding_ids": [],
+   "basis": "agent_judgment",
+   "evidence_note": "No input field collects information about the user on any screen (the booking flow only picks a day).",
+   "en301549_clause": "11.1.3.5"
+  },
+  {
+   "sc": "1.4.1",
+   "title": "Use of Color",
+   "level": "A",
+   "principle": "Perceivable",
+   "outcome": "untested",
+   "confidence": "low",
+   "automatable": "partial",
+   "finding_ids": [],
+   "basis": "none",
+   "evidence_note": "No automated check covers this criterion on Android in this version.",
+   "en301549_clause": "11.1.4.1"
+  },
+  {
+   "sc": "1.4.2",
+   "title": "Audio Control",
+   "level": "A",
+   "principle": "Perceivable",
+   "outcome": "inapplicable",
+   "confidence": "medium",
+   "automatable": "partial",
+   "finding_ids": [],
+   "basis": "agent_judgment",
+   "evidence_note": "No audio or video on any of the four screens (agent read every screenshot and hierarchy).",
+   "en301549_clause": "11.1.4.2"
+  },
+  {
+   "sc": "1.4.3",
+   "title": "Contrast (Minimum)",
+   "level": "AA",
+   "principle": "Perceivable",
+   "outcome": "failed",
+   "confidence": "high",
+   "automatable": "partial",
+   "finding_ids": [
+    "F-3"
+   ],
+   "basis": "tool",
+   "evidence_note": "F-3 Booking hint text is light grey on white (2.32:1)",
+   "en301549_clause": "11.1.4.3"
+  },
+  {
+   "sc": "1.4.4",
+   "title": "Resize Text",
+   "level": "AA",
+   "principle": "Perceivable",
+   "outcome": "failed",
+   "confidence": "high",
+   "automatable": "partial",
+   "finding_ids": [
+    "F-4"
+   ],
+   "basis": "probe",
+   "evidence_note": "F-4 Booking instructions are cut off at a large font size",
+   "en301549_clause": "11.1.4.4"
+  },
+  {
+   "sc": "1.4.5",
+   "title": "Images of Text",
+   "level": "AA",
+   "principle": "Perceivable",
+   "outcome": "untested",
+   "confidence": "low",
+   "automatable": "none",
+   "finding_ids": [],
+   "basis": "none",
+   "evidence_note": "No automated check covers this criterion on Android in this version.",
+   "en301549_clause": "11.1.4.5"
+  },
+  {
+   "sc": "1.4.10",
+   "title": "Reflow",
+   "level": "AA",
+   "principle": "Perceivable",
+   "outcome": "passed",
+   "confidence": "medium",
+   "automatable": "partial",
+   "finding_ids": [],
+   "basis": "probe",
+   "evidence_note": "display_size ran on all four screens at density 546 (x 1.3): no control or text ended up off screen. Not a full 320 px reflow test; landscape not checked on S02 and S04 (crashes).",
+   "en301549_clause": "11.1.4.10"
+  },
+  {
+   "sc": "1.4.11",
+   "title": "Non-text Contrast",
+   "level": "AA",
+   "principle": "Perceivable",
+   "outcome": "untested",
+   "confidence": "low",
+   "automatable": "partial",
+   "finding_ids": [],
+   "basis": "none",
+   "evidence_note": "No automated check covers this criterion on Android in this version.",
+   "en301549_clause": "11.1.4.11"
+  },
+  {
+   "sc": "1.4.12",
+   "title": "Text Spacing",
+   "level": "AA",
+   "principle": "Perceivable",
+   "outcome": "untested",
+   "confidence": "low",
+   "automatable": "partial",
+   "finding_ids": [],
+   "basis": "none",
+   "evidence_note": "No automated check covers this criterion on Android in this version.",
+   "en301549_clause": "11.1.4.12"
+  },
+  {
+   "sc": "1.4.13",
+   "title": "Content on Hover or Focus",
+   "level": "AA",
+   "principle": "Perceivable",
+   "outcome": "untested",
+   "confidence": "low",
+   "automatable": "partial",
+   "finding_ids": [],
+   "basis": "none",
+   "evidence_note": "No automated check covers this criterion on Android in this version.",
+   "en301549_clause": "11.1.4.13"
+  },
+  {
+   "sc": "2.1.1",
+   "title": "Keyboard",
+   "level": "A",
+   "principle": "Operable",
+   "outcome": "untested",
+   "confidence": "low",
+   "automatable": "partial",
+   "finding_ids": [],
+   "basis": "none",
+   "evidence_note": "keyboard probe reached every control on S01 and S03 in a full Tab cycle; on S04 the trap (F-6) keeps day_1 and day_2 out of reach, which a person should confirm with the dialog fixed.",
+   "en301549_clause": "11.2.1.1"
+  },
+  {
+   "sc": "2.1.2",
+   "title": "No Keyboard Trap",
+   "level": "A",
+   "principle": "Operable",
+   "outcome": "failed",
+   "confidence": "high",
+   "automatable": "partial",
+   "finding_ids": [
+    "F-6"
+   ],
+   "basis": "probe",
+   "evidence_note": "F-6 Date picker traps keyboard focus and ignores Back",
+   "en301549_clause": "11.2.1.2"
+  },
+  {
+   "sc": "2.1.4",
+   "title": "Character Key Shortcuts",
+   "level": "A",
+   "principle": "Operable",
+   "outcome": "untested",
+   "confidence": "low",
+   "automatable": "none",
+   "finding_ids": [],
+   "basis": "none",
+   "evidence_note": "No automated check covers this criterion on Android in this version.",
+   "en301549_clause": "11.2.1.4"
+  },
+  {
+   "sc": "2.2.1",
+   "title": "Timing Adjustable",
+   "level": "A",
+   "principle": "Operable",
+   "outcome": "untested",
+   "confidence": "low",
+   "automatable": "partial",
+   "finding_ids": [],
+   "basis": "none",
+   "evidence_note": "No time limits were seen, but the 12 s map freeze (X-1) means S02 could not be inspected.",
+   "en301549_clause": "11.2.2.1"
+  },
+  {
+   "sc": "2.2.2",
+   "title": "Pause, Stop, Hide",
+   "level": "A",
+   "principle": "Operable",
+   "outcome": "failed",
+   "confidence": "high",
+   "automatable": "partial",
+   "finding_ids": [
+    "F-7"
+   ],
+   "basis": "probe",
+   "evidence_note": "F-7 Promotion banner changes by itself with no way to pause it",
+   "en301549_clause": "11.2.2.2"
+  },
+  {
+   "sc": "2.3.1",
+   "title": "Three Flashes or Below Threshold",
+   "level": "A",
+   "principle": "Operable",
+   "outcome": "untested",
+   "confidence": "low",
+   "automatable": "none",
+   "finding_ids": [],
+   "basis": "none",
+   "evidence_note": "No automated check covers this criterion on Android in this version.",
+   "en301549_clause": "11.2.3.1"
+  },
+  {
+   "sc": "2.4.1",
+   "title": "Bypass Blocks",
+   "level": "A",
+   "principle": "Operable",
+   "outcome": "inapplicable",
+   "confidence": "high",
+   "automatable": "partial",
+   "finding_ids": [],
+   "basis": "agent_judgment",
+   "evidence_note": "EN 301 549 clause 11 treats this web criterion as not applicable to non-web software.",
+   "en301549_clause": null
+  },
+  {
+   "sc": "2.4.2",
+   "title": "Page Titled",
+   "level": "A",
+   "principle": "Operable",
+   "outcome": "untested",
+   "confidence": "low",
+   "automatable": "partial",
+   "finding_ids": [],
+   "basis": "none",
+   "evidence_note": "No automated check covers this criterion on Android in this version.",
+   "en301549_clause": "11.2.4.2"
+  },
+  {
+   "sc": "2.4.3",
+   "title": "Focus Order",
+   "level": "A",
+   "principle": "Operable",
+   "outcome": "untested",
+   "confidence": "low",
+   "automatable": "partial",
+   "finding_ids": [],
+   "basis": "none",
+   "evidence_note": "Tab order on S01 and S03 followed the visual order; screen-reader swipe order needs TalkBack.",
+   "en301549_clause": "11.2.4.3"
+  },
+  {
+   "sc": "2.4.4",
+   "title": "Link Purpose (In Context)",
+   "level": "A",
+   "principle": "Operable",
+   "outcome": "untested",
+   "confidence": "low",
+   "automatable": "partial",
+   "finding_ids": [],
+   "basis": "none",
+   "evidence_note": "No automated check covers this criterion on Android in this version.",
+   "en301549_clause": "11.2.4.4"
+  },
+  {
+   "sc": "2.4.5",
+   "title": "Multiple Ways",
+   "level": "AA",
+   "principle": "Operable",
+   "outcome": "inapplicable",
+   "confidence": "high",
+   "automatable": "none",
+   "finding_ids": [],
+   "basis": "agent_judgment",
+   "evidence_note": "EN 301 549 clause 11 treats this web criterion as not applicable to non-web software.",
+   "en301549_clause": null
+  },
+  {
+   "sc": "2.4.6",
+   "title": "Headings and Labels",
+   "level": "AA",
+   "principle": "Operable",
+   "outcome": "untested",
+   "confidence": "low",
+   "automatable": "partial",
+   "finding_ids": [],
+   "basis": "none",
+   "evidence_note": "No automated check covers this criterion on Android in this version.",
+   "en301549_clause": "11.2.4.6"
+  },
+  {
+   "sc": "2.4.7",
+   "title": "Focus Visible",
+   "level": "AA",
+   "principle": "Operable",
+   "outcome": "untested",
+   "confidence": "low",
+   "automatable": "partial",
+   "finding_ids": [],
+   "basis": "none",
+   "evidence_note": "No automated check covers this criterion on Android in this version.",
+   "en301549_clause": "11.2.4.7"
+  },
+  {
+   "sc": "2.4.11",
+   "title": "Focus Not Obscured (Minimum)",
+   "level": "AA",
+   "principle": "Operable",
+   "outcome": "untested",
+   "confidence": "low",
+   "automatable": "partial",
+   "finding_ids": [],
+   "basis": "none",
+   "evidence_note": "No automated check covers this criterion on Android in this version.",
+   "en301549_clause": null
+  },
+  {
+   "sc": "2.5.1",
+   "title": "Pointer Gestures",
+   "level": "A",
+   "principle": "Operable",
+   "outcome": "untested",
+   "confidence": "low",
+   "automatable": "none",
+   "finding_ids": [],
+   "basis": "none",
+   "evidence_note": "No automated check covers this criterion on Android in this version.",
+   "en301549_clause": "11.2.5.1"
+  },
+  {
+   "sc": "2.5.2",
+   "title": "Pointer Cancellation",
+   "level": "A",
+   "principle": "Operable",
+   "outcome": "untested",
+   "confidence": "low",
+   "automatable": "none",
+   "finding_ids": [],
+   "basis": "none",
+   "evidence_note": "No automated check covers this criterion on Android in this version.",
+   "en301549_clause": "11.2.5.2"
+  },
+  {
+   "sc": "2.5.3",
+   "title": "Label in Name",
+   "level": "A",
+   "principle": "Operable",
+   "outcome": "untested",
+   "confidence": "low",
+   "automatable": "partial",
+   "finding_ids": [],
+   "basis": "none",
+   "evidence_note": "No automated check covers this criterion on Android in this version.",
+   "en301549_clause": "11.2.5.3"
+  },
+  {
+   "sc": "2.5.4",
+   "title": "Motion Actuation",
+   "level": "A",
+   "principle": "Operable",
+   "outcome": "untested",
+   "confidence": "low",
+   "automatable": "none",
+   "finding_ids": [],
+   "basis": "none",
+   "evidence_note": "No automated check covers this criterion on Android in this version.",
+   "en301549_clause": "11.2.5.4"
+  },
+  {
+   "sc": "2.5.7",
+   "title": "Dragging Movements",
+   "level": "AA",
+   "principle": "Operable",
+   "outcome": "untested",
+   "confidence": "low",
+   "automatable": "partial",
+   "finding_ids": [],
+   "basis": "none",
+   "evidence_note": "No automated check covers this criterion on Android in this version.",
+   "en301549_clause": null
+  },
+  {
+   "sc": "2.5.8",
+   "title": "Target Size (Minimum)",
+   "level": "AA",
+   "principle": "Operable",
+   "outcome": "passed",
+   "confidence": "medium",
+   "automatable": "partial",
+   "finding_ids": [],
+   "basis": "probe",
+   "evidence_note": "target_size ran on all four screens: every clickable element is at least 24 dp or spaced (help_button 24.4 x 48 dp, advisory A-1 for the 48 dp guideline).",
+   "en301549_clause": null
+  },
+  {
+   "sc": "3.1.1",
+   "title": "Language of Page",
+   "level": "A",
+   "principle": "Understandable",
+   "outcome": "untested",
+   "confidence": "low",
+   "automatable": "full",
+   "finding_ids": [],
+   "basis": "none",
+   "evidence_note": "No automated check covers this criterion on Android in this version.",
+   "en301549_clause": "11.3.1.1"
+  },
+  {
+   "sc": "3.1.2",
+   "title": "Language of Parts",
+   "level": "AA",
+   "principle": "Understandable",
+   "outcome": "untested",
+   "confidence": "low",
+   "automatable": "partial",
+   "finding_ids": [],
+   "basis": "none",
+   "evidence_note": "No automated check covers this criterion on Android in this version.",
+   "en301549_clause": "11.3.1.2"
+  },
+  {
+   "sc": "3.2.1",
+   "title": "On Focus",
+   "level": "A",
+   "principle": "Understandable",
+   "outcome": "untested",
+   "confidence": "low",
+   "automatable": "none",
+   "finding_ids": [],
+   "basis": "none",
+   "evidence_note": "No automated check covers this criterion on Android in this version.",
+   "en301549_clause": "11.3.2.1"
+  },
+  {
+   "sc": "3.2.2",
+   "title": "On Input",
+   "level": "A",
+   "principle": "Understandable",
+   "outcome": "untested",
+   "confidence": "low",
+   "automatable": "partial",
+   "finding_ids": [],
+   "basis": "none",
+   "evidence_note": "No automated check covers this criterion on Android in this version.",
+   "en301549_clause": "11.3.2.2"
+  },
+  {
+   "sc": "3.2.3",
+   "title": "Consistent Navigation",
+   "level": "AA",
+   "principle": "Understandable",
+   "outcome": "inapplicable",
+   "confidence": "high",
+   "automatable": "none",
+   "finding_ids": [],
+   "basis": "agent_judgment",
+   "evidence_note": "EN 301 549 clause 11 treats this web criterion as not applicable to non-web software.",
+   "en301549_clause": null
+  },
+  {
+   "sc": "3.2.4",
+   "title": "Consistent Identification",
+   "level": "AA",
+   "principle": "Understandable",
+   "outcome": "inapplicable",
+   "confidence": "high",
+   "automatable": "none",
+   "finding_ids": [],
+   "basis": "agent_judgment",
+   "evidence_note": "EN 301 549 clause 11 treats this web criterion as not applicable to non-web software.",
+   "en301549_clause": null
+  },
+  {
+   "sc": "3.2.6",
+   "title": "Consistent Help",
+   "level": "A",
+   "principle": "Understandable",
+   "outcome": "untested",
+   "confidence": "low",
+   "automatable": "none",
+   "finding_ids": [],
+   "basis": "none",
+   "evidence_note": "No automated check covers this criterion on Android in this version.",
+   "en301549_clause": null
+  },
+  {
+   "sc": "3.3.1",
+   "title": "Error Identification",
+   "level": "A",
+   "principle": "Understandable",
+   "outcome": "inapplicable",
+   "confidence": "medium",
+   "automatable": "partial",
+   "finding_ids": [],
+   "basis": "agent_judgment",
+   "evidence_note": "No text entry, submission, authentication or repeated entry on any of the four screens; the picker offers fixed days.",
+   "en301549_clause": "11.3.3.1"
+  },
+  {
+   "sc": "3.3.2",
+   "title": "Labels or Instructions",
+   "level": "A",
+   "principle": "Understandable",
+   "outcome": "untested",
+   "confidence": "low",
+   "automatable": "partial",
+   "finding_ids": [],
+   "basis": "none",
+   "evidence_note": "No automated check covers this criterion on Android in this version.",
+   "en301549_clause": "11.3.3.2"
+  },
+  {
+   "sc": "3.3.3",
+   "title": "Error Suggestion",
+   "level": "AA",
+   "principle": "Understandable",
+   "outcome": "inapplicable",
+   "confidence": "medium",
+   "automatable": "none",
+   "finding_ids": [],
+   "basis": "agent_judgment",
+   "evidence_note": "No text entry, submission, authentication or repeated entry on any of the four screens; the picker offers fixed days.",
+   "en301549_clause": "11.3.3.3"
+  },
+  {
+   "sc": "3.3.4",
+   "title": "Error Prevention (Legal, Financial, Data)",
+   "level": "AA",
+   "principle": "Understandable",
+   "outcome": "inapplicable",
+   "confidence": "medium",
+   "automatable": "none",
+   "finding_ids": [],
+   "basis": "agent_judgment",
+   "evidence_note": "No text entry, submission, authentication or repeated entry on any of the four screens; the picker offers fixed days.",
+   "en301549_clause": "11.3.3.4"
+  },
+  {
+   "sc": "3.3.7",
+   "title": "Redundant Entry",
+   "level": "A",
+   "principle": "Understandable",
+   "outcome": "inapplicable",
+   "confidence": "medium",
+   "automatable": "none",
+   "finding_ids": [],
+   "basis": "agent_judgment",
+   "evidence_note": "No text entry, submission, authentication or repeated entry on any of the four screens; the picker offers fixed days.",
+   "en301549_clause": null
+  },
+  {
+   "sc": "3.3.8",
+   "title": "Accessible Authentication (Minimum)",
+   "level": "AA",
+   "principle": "Understandable",
+   "outcome": "inapplicable",
+   "confidence": "medium",
+   "automatable": "none",
+   "finding_ids": [],
+   "basis": "agent_judgment",
+   "evidence_note": "No text entry, submission, authentication or repeated entry on any of the four screens; the picker offers fixed days.",
+   "en301549_clause": null
+  },
+  {
+   "sc": "4.1.2",
+   "title": "Name, Role, Value",
+   "level": "A",
+   "principle": "Robust",
+   "outcome": "failed",
+   "confidence": "high",
+   "automatable": "partial",
+   "finding_ids": [
+    "F-2"
+   ],
+   "basis": "tool",
+   "evidence_note": "F-2 Book a visit button exposes no name to assistive technology",
+   "en301549_clause": "11.4.1.2"
+  },
+  {
+   "sc": "4.1.3",
+   "title": "Status Messages",
+   "level": "AA",
+   "principle": "Robust",
+   "outcome": "untested",
+   "confidence": "low",
+   "automatable": "none",
+   "finding_ids": [],
+   "basis": "none",
+   "evidence_note": "No automated check covers this criterion on Android in this version.",
+   "en301549_clause": "11.4.1.3"
+  }
+ ],
+ "findings": [
+  {
+   "id": "F-1",
+   "title": "Book a visit button is an icon with no accessible name",
+   "sc": "1.1.1",
+   "level": "A",
+   "pattern": "1.1.1-functional-image-no-name",
+   "base_severity": "critical",
+   "severity": "critical",
+   "severity_rationale": "Rubric default Critical for a functional image with no name; it is the first step of the Book a visit path and already the top level.",
+   "confidence": "high",
+   "priority": {
+    "weight": 4,
+    "reach": 1,
+    "leverage": 1,
+    "score": 4,
+    "band": "P1"
+   },
+   "evidence_type": "tool",
+   "sources": [
+    {
+     "tool": "mobile-checks",
+     "rule_id": "label.icon-button-no-name",
+     "outcome": "failed"
+    }
+   ],
+   "candidate_ids": [
+    "M001"
+   ],
+   "component": "book_fab (MainActivity floating action button)",
+   "screens": [
+    "S01"
+   ],
+   "instances": [
+    {
+     "screen": "S01",
+     "element": {
+      "resource_id": "book_fab",
+      "class": "android.widget.Button",
+      "label": "",
+      "bounds": [
+       870,
+       2190,
+       1017,
+       2337
+      ],
+      "size_dp": [
+       56.0,
+       56.0
+      ]
+     },
+     "screenshot": "evidence/S01-label_icon-button-no-name-2c1a1dbc.png",
+     "sha256": "0dc0fb9245ca7a5600ec660adf2eeb2cf3e0c38aa4039bd2630f8724b5c6bd8a",
+     "device": "Pixel 7 emulator (sdk_gphone64_x86_64), Android 16, API 36, 420 dpi, 1080x2400 px",
+     "measured": {}
+    }
+   ],
+   "user_impact": "The only way into booking is a \"+\" icon button with no content description and no text. TalkBack announces it as \"Button\" (or \"Unlabelled, button\"), so a screen reader user has to guess that it books a visit.",
+   "affected_users": [
+    "Screen reader users (TalkBack)",
+    "Voice Access users, who have no name to say"
+   ],
+   "remediation": "Give the FloatingActionButton a label: Icon(Icons.Default.Add, contentDescription = \"Book a visit\"), or an ExtendedFloatingActionButton with visible text.",
+   "verification_step": "Re-run run_mobile_audit.py on S01: label.icon-button-no-name and label.control-no-name pass for book_fab; with TalkBack on, the FAB is read as \"Book a visit, button\".",
+   "non_interference": false,
+   "critical_path": "Book a visit",
+   "blocks_critical_path": false,
+   "en301549": "11.1.1.1"
+  },
+  {
+   "id": "F-2",
+   "title": "Book a visit button exposes no name to assistive technology",
+   "sc": "4.1.2",
+   "level": "A",
+   "pattern": "4.1.2-control-no-name",
+   "base_severity": "serious",
+   "severity": "critical",
+   "severity_rationale": "Rubric default Serious for a control with no name, one level up because book_fab starts the Book a visit path.",
+   "confidence": "high",
+   "priority": {
+    "weight": 4,
+    "reach": 1,
+    "leverage": 1,
+    "score": 4,
+    "band": "P1"
+   },
+   "evidence_type": "tool",
+   "sources": [
+    {
+     "tool": "mobile-checks",
+     "rule_id": "label.control-no-name",
+     "outcome": "failed"
+    }
+   ],
+   "candidate_ids": [
+    "M009"
+   ],
+   "component": "book_fab (MainActivity floating action button)",
+   "screens": [
+    "S01"
+   ],
+   "instances": [
+    {
+     "screen": "S01",
+     "element": {
+      "resource_id": "book_fab",
+      "class": "android.widget.Button",
+      "label": "",
+      "bounds": [
+       870,
+       2190,
+       1017,
+       2337
+      ],
+      "size_dp": [
+       56.0,
+       56.0
+      ]
+     },
+     "screenshot": "evidence/S01-label_control-no-name-57dedc86.png",
+     "sha256": "0dc0fb9245ca7a5600ec660adf2eeb2cf3e0c38aa4039bd2630f8724b5c6bd8a",
+     "device": "Pixel 7 emulator (sdk_gphone64_x86_64), Android 16, API 36, 420 dpi, 1080x2400 px",
+     "measured": {}
+    }
+   ],
+   "user_impact": "The same control as F-1, under 4.1.2: the button's role is exposed but its name is empty, so assistive technology cannot tell users or voice commands what it does.",
+   "affected_users": [
+    "Screen reader users",
+    "Voice Access and switch users"
+   ],
+   "remediation": "The fix for F-1 fixes this too: one content description on the FAB.",
+   "verification_step": "As F-1: uiautomator shows content-desc \"Book a visit\" on the clickable node.",
+   "non_interference": false,
+   "critical_path": "Book a visit",
+   "blocks_critical_path": false,
+   "en301549": "11.4.1.2"
+  },
+  {
+   "id": "F-3",
+   "title": "Booking hint text is light grey on white (2.32:1)",
+   "sc": "1.4.3",
+   "level": "AA",
+   "pattern": "1.4.3-secondary-text-low-contrast",
+   "base_severity": "moderate",
+   "severity": "moderate",
+   "severity_rationale": "Rubric default Moderate for low-contrast secondary text; the hint is information about booking, not a step on the path.",
+   "confidence": "high",
+   "priority": {
+    "weight": 2,
+    "reach": 1,
+    "leverage": 1,
+    "score": 2,
+    "band": "P3"
+   },
+   "evidence_type": "tool",
+   "sources": [
+    {
+     "tool": "mobile-checks",
+     "rule_id": "contrast.text",
+     "outcome": "failed"
+    },
+    {
+     "tool": "mobile-checks",
+     "rule_id": "contrast.text-dark",
+     "outcome": "failed"
+    }
+   ],
+   "candidate_ids": [
+    "M003",
+    "M004"
+   ],
+   "component": "booking_hint (MainActivity)",
+   "screens": [
+    "S01"
+   ],
+   "instances": [
+    {
+     "screen": "S01",
+     "element": {
+      "resource_id": "booking_hint",
+      "class": "android.widget.TextView",
+      "label": "Bookings open six weeks ahead",
+      "bounds": [
+       42,
+       1099,
+       561,
+       1162
+      ],
+      "size_dp": [
+       197.7,
+       24.0
+      ]
+     },
+     "screenshot": "evidence/S01-contrast_text-3436e660.png",
+     "sha256": "65241673937295f047a9a6f4d445895e67e176db0790db4958fbc6f0960e2ba5",
+     "device": "Pixel 7 emulator (sdk_gphone64_x86_64), Android 16, API 36, 420 dpi, 1080x2400 px",
+     "measured": {
+      "fg": "#aaaaaa",
+      "bg": "#ffffff",
+      "ratio": 2.32,
+      "required": 4.5,
+      "large_text": false
+     }
+    }
+   ],
+   "user_impact": "\"Bookings open six weeks ahead\" is #AAAAAA on #FFFFFF, 2.32:1 against the 4.5:1 minimum. With the system dark theme on, the app keeps its light colours, so the same ratio was measured in dark mode (M004).",
+   "affected_users": [
+    "People with low vision",
+    "Anyone using the phone in bright light"
+   ],
+   "remediation": "Use a darker grey, #767676 or darker (4.5:1 on white), or the theme's onSurfaceVariant colour; follow the system dark theme so the hint stays legible there too.",
+   "verification_step": "Re-run run_mobile_audit.py on S01: contrast.text and contrast.text-dark pass for booking_hint.",
+   "non_interference": false,
+   "critical_path": null,
+   "blocks_critical_path": false,
+   "en301549": "11.1.4.3"
+  },
+  {
+   "id": "F-4",
+   "title": "Booking instructions are cut off at a large font size",
+   "sc": "1.4.4",
+   "level": "AA",
+   "pattern": "1.4.4-text-lost-at-200",
+   "base_severity": "serious",
+   "severity": "critical",
+   "severity_rationale": "Rubric default Serious for text lost when enlarged, one level up because the instructions are on the booking screen of the Book a visit path.",
+   "confidence": "high",
+   "priority": {
+    "weight": 4,
+    "reach": 1,
+    "leverage": 1,
+    "score": 4,
+    "band": "P1"
+   },
+   "evidence_type": "probe",
+   "sources": [
+    {
+     "tool": "mobile-checks",
+     "rule_id": "text-scale.not-enlarged",
+     "outcome": "failed"
+    }
+   ],
+   "candidate_ids": [
+    "M005"
+   ],
+   "component": "intro_text inside intro_box (BookingActivity)",
+   "screens": [
+    "S03"
+   ],
+   "instances": [
+    {
+     "screen": "S03",
+     "element": {
+      "resource_id": "intro_text",
+      "class": "android.widget.TextView",
+      "label": "Choose a day and we will call you to confirm the time.",
+      "bounds": [
+       42,
+       170,
+       1038,
+       254
+      ],
+      "size_dp": [
+       379.4,
+       32.0
+      ]
+     },
+     "screenshot": "evidence/S03-text-scale_not-enlarged-06a886a1.png",
+     "sha256": "1432ae2d2746abfaa066bfa8be17089ba4d4bd70a6a19ff5239c9d560d114a92",
+     "device": "Pixel 7 emulator (sdk_gphone64_x86_64), Android 16, API 36, 420 dpi, 1080x2400 px",
+     "measured": {
+      "font_scale": 2.0,
+      "height_ratio": 1.33,
+      "typical_ratio": 1.66,
+      "clipped_by": "intro_box",
+      "container_height_px": [
+       84,
+       84
+      ]
+     }
+    }
+   ],
+   "user_impact": "At font scale 2.0 \"Choose a day and we will call you to confirm the time.\" is clipped to its first line: intro_box has a fixed 40 dp height (84 px of it for the text, at both scales) while the other text on the screen grew 1.66 times. The part people lose is the line saying the clinic will call to confirm.",
+   "affected_users": [
+    "People who use large fonts (low vision, older users)"
+   ],
+   "remediation": "Remove the fixed height(40.dp) on intro_box (use heightIn(min = 40.dp)) so the text can wrap to more lines.",
+   "verification_step": "Re-run run_mobile_audit.py on S03: text_scaling records no text-scale.not-enlarged result; at font scale 2.0 the whole sentence is visible in the screenshot.",
+   "non_interference": false,
+   "critical_path": "Book a visit",
+   "blocks_critical_path": false,
+   "en301549": "11.1.4.4"
+  },
+  {
+   "id": "F-5",
+   "title": "Home screen is locked to portrait",
+   "sc": "1.3.4",
+   "level": "AA",
+   "pattern": "1.3.4-orientation-locked",
+   "base_severity": "serious",
+   "severity": "serious",
+   "severity_rationale": "Rubric default Serious for an orientation lock; the lock is on the home screen only (Booking rotates), and the path still works in portrait, so no critical-path step.",
+   "confidence": "high",
+   "priority": {
+    "weight": 3,
+    "reach": 1,
+    "leverage": 1,
+    "score": 3,
+    "band": "P2"
+   },
+   "evidence_type": "probe",
+   "sources": [
+    {
+     "tool": "mobile-checks",
+     "rule_id": "orientation.locked",
+     "outcome": "failed"
+    }
+   ],
+   "candidate_ids": [
+    "M002"
+   ],
+   "component": "MainActivity (android:screenOrientation=\"portrait\")",
+   "screens": [
+    "S01"
+   ],
+   "instances": [
+    {
+     "screen": "S01",
+     "element": {
+      "resource_id": null,
+      "class": "android.widget.FrameLayout",
+      "label": "Harbour Dental Gentle care for nervous patients Our clinics Harbour Street Mon to Fri, 8am to 6pm Northside Tue to Sat, ",
+      "bounds": [
+       0,
+       0,
+       1080,
+       2400
+      ],
+      "size_dp": [
+       411.4,
+       914.3
+      ]
+     },
+     "screenshot": "evidence/S01-orientation_locked-7a9391d6.png",
+     "sha256": "42571f9224d94b1404ba7e217d8408548551d84b96203ad26ee554e167ca3d92",
+     "device": "Pixel 7 emulator (sdk_gphone64_x86_64), Android 16, API 36, 420 dpi, 1080x2400 px",
+     "measured": {
+      "requested": "landscape",
+      "screen_px": [
+       1080,
+       2400
+      ]
+     }
+    }
+   ],
+   "user_impact": "With landscape requested the home screen stays portrait. The manifest sets android:screenOrientation=\"portrait\" on MainActivity. People with a device mounted in landscape (wheelchair mounts) have to read the home screen sideways.",
+   "affected_users": [
+    "People with the device mounted in a fixed orientation"
+   ],
+   "remediation": "Remove android:screenOrientation=\"portrait\" from MainActivity in AndroidManifest.xml and check the layout in landscape.",
+   "verification_step": "Re-run run_mobile_audit.py on S01: the orientation probe finds a landscape screenshot.",
+   "non_interference": false,
+   "critical_path": null,
+   "blocks_critical_path": false,
+   "en301549": "11.1.3.4"
+  },
+  {
+   "id": "F-6",
+   "title": "Date picker traps keyboard focus and ignores Back",
+   "sc": "2.1.2",
+   "level": "A",
+   "pattern": "2.1.2-keyboard-trap",
+   "base_severity": "critical",
+   "severity": "critical",
+   "severity_rationale": "Critical: 2.1.2 is a non-interference criterion. It blocks the Book a visit path for keyboard and switch users, so P0.",
+   "confidence": "high",
+   "priority": {
+    "weight": 4,
+    "reach": 1,
+    "leverage": 1,
+    "score": 4,
+    "band": "P0"
+   },
+   "evidence_type": "probe",
+   "sources": [
+    {
+     "tool": "mobile-checks",
+     "rule_id": "keyboard.trap",
+     "outcome": "failed"
+    }
+   ],
+   "candidate_ids": [
+    "M006"
+   ],
+   "component": "date_dialog (BookingActivity day picker)",
+   "screens": [
+    "S04"
+   ],
+   "instances": [
+    {
+     "screen": "S04",
+     "element": {
+      "resource_id": "day_0",
+      "class": "android.widget.TextView",
+      "label": "Mon 16 Nov",
+      "bounds": [
+       162,
+       1077,
+       918,
+       1204
+      ],
+      "size_dp": [
+       288.0,
+       48.4
+      ]
+     },
+     "screenshot": "evidence/S04-keyboard_trap-4908a42b.png",
+     "sha256": "0e5f682012b722f7d7e4bb76f3a56cac0d9cc4f1f0baaa04491a3434622d1908",
+     "device": "Pixel 7 emulator (sdk_gphone64_x86_64), Android 16, API 36, 420 dpi, 1080x2400 px",
+     "measured": {
+      "tab_sequence": [
+       "day_0",
+       "day_0",
+       "day_0",
+       "day_0",
+       "day_0",
+       "day_0"
+      ],
+      "escape_and_back": "stayed on the screen"
+     }
+    }
+   ],
+   "user_impact": "In the Pick a day dialog, Tab keeps focus on \"Mon 16 Nov\" (six presses), and Escape and then Back leave the dialog open: a hardware-keyboard or switch user can neither move to another day nor leave. Tue 17 Nov and Wed 18 Nov are never reached.",
+   "affected_users": [
+    "Hardware keyboard users",
+    "Switch Access users",
+    "TalkBack users navigating with a keyboard"
+   ],
+   "remediation": "Remove the onPreviewKeyEvent handler that consumes Tab, Escape, Back and Down in the dialog, set dismissOnBackPress back to true, and close the dialog in onDismissRequest.",
+   "verification_step": "Re-run run_mobile_audit.py on S04: keyboard.sequence moves through day_0, day_1 and day_2, and Escape closes the dialog.",
+   "non_interference": true,
+   "critical_path": "Book a visit",
+   "blocks_critical_path": true,
+   "en301549": "11.2.1.2"
+  },
+  {
+   "id": "F-7",
+   "title": "Promotion banner changes by itself with no way to pause it",
+   "sc": "2.2.2",
+   "level": "A",
+   "pattern": "2.2.2-moving-content-no-pause",
+   "base_severity": "critical",
+   "severity": "critical",
+   "severity_rationale": "Critical: 2.2.2 is a non-interference criterion. It is not a step of the Book a visit path.",
+   "confidence": "high",
+   "priority": {
+    "weight": 4,
+    "reach": 1,
+    "leverage": 1,
+    "score": 4,
+    "band": "P1"
+   },
+   "evidence_type": "probe",
+   "sources": [
+    {
+     "tool": "mobile-checks",
+     "rule_id": "motion.auto-advance",
+     "outcome": "failed"
+    }
+   ],
+   "candidate_ids": [
+    "M007"
+   ],
+   "component": "promo_banner (MainActivity)",
+   "screens": [
+    "S01"
+   ],
+   "instances": [
+    {
+     "screen": "S01",
+     "element": {
+      "resource_id": "promo_banner",
+      "class": "android.view.View",
+      "label": "Late appointments on Thursdays",
+      "bounds": [
+       42,
+       447,
+       1038,
+       510
+      ],
+      "size_dp": [
+       379.4,
+       24.0
+      ]
+     },
+     "screenshot": "evidence/S01-motion_auto-advance-1e1a81e5.png",
+     "sha256": "a1d689a9610289a8daa80032b42878a9f0241e307fb94b650baa400bd9463c82",
+     "device": "Pixel 7 emulator (sdk_gphone64_x86_64), Android 16, API 36, 420 dpi, 1080x2400 px",
+     "measured": {
+      "changed_between_s": [
+       5,
+       7.5
+      ],
+      "pause_control": false
+     }
+    }
+   ],
+   "user_impact": "The banner advances every 3 seconds through three promotions: its pixels changed between the 5 s and 7.5 s screenshots, and the screen has no pause, stop or hide control. People who read slowly lose the text, and the motion distracts people with attention difficulties.",
+   "affected_users": [
+    "People who read slowly",
+    "People with attention or cognitive disabilities",
+    "Screen magnifier users"
+   ],
+   "remediation": "Stop auto-advance (let people swipe), or add a visible pause button; also stop it when the system \"Remove animations\" setting is on.",
+   "verification_step": "Re-run run_mobile_audit.py on S01: the motion probe records no change between 5 s and 7.5 s, or finds a pause control.",
+   "non_interference": true,
+   "critical_path": null,
+   "blocks_critical_path": false,
+   "en301549": "11.2.2.2"
+  }
+ ],
+ "advisories": [
+  {
+   "id": "A-1",
+   "kind": "platform_guideline",
+   "title": "Help button is below the Android 48 dp target guideline",
+   "sc": "2.5.8",
+   "candidate_ids": [
+    "M008"
+   ],
+   "screens": [
+    "S03"
+   ],
+   "note": "help_button measures 24.4 x 48 dp: it is above the 24 dp minimum of WCAG 2.5.8 but below Android's 48 x 48 dp recommendation. The icon was drawn at 20 dp; Compose's minimum interactive size padded the target.",
+   "remediation": "Give the Help icon a 48 x 48 dp touch target (IconButton does this by default)."
+  }
+ ],
+ "needs_review": [
+  {
+   "id": "NR-1",
+   "sc": "1.3.1",
+   "candidate_ids": [
+    "M010"
+   ],
+   "screens": [
+    "S01",
+    "S02",
+    "S03",
+    "S04"
+   ],
+   "what_to_check": "uiautomator does not expose heading semantics. With TalkBack on, check that \"Harbour Dental\", \"Our clinics\", \"Book a visit\" and \"Pick a day\" are announced as headings and that heading navigation (TalkBack reading controls) moves between them."
+  }
+ ],
+ "triage": [
+  {
+   "candidate_id": "M001",
+   "decision": "finding",
+   "ref": "F-1"
+  },
+  {
+   "candidate_id": "M002",
+   "decision": "finding",
+   "ref": "F-5"
+  },
+  {
+   "candidate_id": "M003",
+   "decision": "finding",
+   "ref": "F-3"
+  },
+  {
+   "candidate_id": "M004",
+   "decision": "finding",
+   "ref": "F-3",
+   "reason": "Same element and colours in dark mode: the app ignores the system theme. Kept as one finding, one instance."
+  },
+  {
+   "candidate_id": "M005",
+   "decision": "finding",
+   "ref": "F-4"
+  },
+  {
+   "candidate_id": "M006",
+   "decision": "finding",
+   "ref": "F-6"
+  },
+  {
+   "candidate_id": "M007",
+   "decision": "finding",
+   "ref": "F-7"
+  },
+  {
+   "candidate_id": "M008",
+   "decision": "advisory",
+   "ref": "A-1"
+  },
+  {
+   "candidate_id": "M009",
+   "decision": "finding",
+   "ref": "F-2"
+  },
+  {
+   "candidate_id": "M010",
+   "decision": "needs_review",
+   "ref": "NR-1"
+  },
+  {
+   "candidate_id": "K01",
+   "decision": "crash",
+   "ref": "X-1"
+  },
+  {
+   "candidate_id": "K02",
+   "decision": "crash",
+   "ref": "X-2"
+  }
+ ],
+ "crashes": [
+  {
+   "id": "X-1",
+   "candidate_id": "K01",
+   "kind": "anr",
+   "title": "Opening a clinic map freezes the app for 12 seconds (ANR)",
+   "crash_ids": [
+    "C01",
+    "C02",
+    "C03"
+   ],
+   "tier": "B1",
+   "reach": 2,
+   "likelihood": "normal_use",
+   "recoverability": "restart",
+   "confidence": "reproduced",
+   "steps": [
+    "Launch the app",
+    "Tap \"Harbour Street\" or \"Northside\" in Our clinics",
+    "Wait: the screen is blank and input is ignored; Android shows \"isn't responding\" after 5 s"
+   ],
+   "log_excerpt": [
+    "705 10701 E ActivityManager: ANR in au.example.harbourdental (au.example.harbourdental/.MapActivity)",
+    "705   848 I WindowManager: ANR in ActivityRecord{52034231 u0 au.example.harbourdental/.MapActivity t30}.  Reason: Input dispatching timed out (Application does not have a focused window)."
+   ],
+   "screenshot": "crashes/C02.png",
+   "replay": "reproduced 2/2 for each of C01, C02 and C03 after pm clear",
+   "fix": "MapActivity.onCreate blocks the main thread (Thread.sleep(12_000) at MapActivity.kt:29 in the source; frame MapActivity.onCreate in the ANR trace). Load the map tiles off the main thread (a coroutine on Dispatchers.IO) and show a progress indicator.",
+   "verification": "Re-run explore.py: tapping either clinic row reaches S02 with no ANR, and replay finds none.",
+   "tier_rationale": "B1: in C01 the app was killed after Wait; in C02 and C03 it recovered. Reach 2: a sampled screen, not the Book a visit path.",
+   "priority": {
+    "score": 48,
+    "band": "P0"
+   }
+  },
+  {
+   "id": "X-2",
+   "candidate_id": "K02",
+   "kind": "crash",
+   "title": "Rotating the booking screen with the date picker open crashes the app",
+   "crash_ids": [
+    "C04"
+   ],
+   "tier": "B1",
+   "reach": 3,
+   "likelihood": "state_change",
+   "recoverability": "restart",
+   "confidence": "reproduced",
+   "steps": [
+    "Launch the app",
+    "Tap the \"+\" button (book_fab)",
+    "Tap \"Pick a date\"",
+    "Rotate the device to landscape"
+   ],
+   "log_excerpt": [
+    "12791 12791 E AndroidRuntime: FATAL EXCEPTION: main",
+    "12791 12791 E AndroidRuntime: Process: au.example.harbourdental, PID: 12791",
+    "12791 12791 E AndroidRuntime: java.lang.RuntimeException: Unable to start activity ComponentInfo{au.example.harbourdental/au.example.harbourdental.BookingActivity}: java.lang.NullPointerException: Attempt to invoke virtual method 'java.lang.Class java.lang.Object.getClass()' on a null object reference",
+    "12791 12791 E AndroidRuntime: \tat au.example.harbourdental.BookingActivity.onCreate(r8-map-id-0fff129add27b1271ffcecdee6ce8756f61930da934958d1cc2178c641221872:21)"
+   ],
+   "screenshot": "crashes/C04.png",
+   "replay": "reproduced 2/2 after pm clear",
+   "fix": "BookingActivity.onCreate dereferences a saved value that is never saved (savedInstanceState.getString(\"draft_day\")!! at BookingActivity.kt:56 in the source). Save draft_day in onSaveInstanceState, or treat a missing value as no draft (getString(\"draft_day\") ?: return).",
+   "verification": "Re-run explore.py and crash_explore.py --replay: rotating S04 reaches a landscape booking screen with the dialog, and no crash is recorded.",
+   "tier_rationale": "B1: the process dies; relaunch works (restart). Reach 3: the dialog is a step of Book a visit. Likelihood state_change: it needs a rotation (or any configuration change, such as a font or dark-mode change, while the picker is open).",
+   "priority": {
+    "score": 36,
+    "band": "P1"
+   }
+  }
+ ],
+ "screen_graph": {
+  "screens": [
+   {
+    "id": "S01",
+    "activity": "au.example.harbourdental/.MainActivity",
+    "title": "Harbour Dental",
+    "via": "launch",
+    "steps": []
+   },
+   {
+    "id": "S02",
+    "activity": "au.example.harbourdental/.MapActivity",
+    "title": "Map: 24 tiles",
+    "via": "tap",
+    "steps": [
+     {
+      "rid": "clinic_northside",
+      "label": "Northside Tue to Sat, 9am to 5pm"
+     }
+    ]
+   },
+   {
+    "id": "S03",
+    "activity": "au.example.harbourdental/.BookingActivity",
+    "title": "Book a visit",
+    "via": "tap",
+    "steps": [
+     {
+      "rid": "book_fab",
+      "label": ""
+     }
+    ]
+   },
+   {
+    "id": "S04",
+    "activity": "au.example.harbourdental/.BookingActivity",
+    "title": "Pick a day",
+    "via": "tap",
+    "steps": [
+     {
+      "rid": "book_fab",
+      "label": ""
+     },
+     {
+      "rid": "pick_date",
+      "label": "Pick a date"
+     }
+    ]
+   }
+  ],
+  "edges": [
+   {
+    "from": "S01",
+    "action": {
+     "rid": "clinic_harbour",
+     "label": "Harbour Street Mon to Fri, 8am to 6pm"
+    },
+    "to": null,
+    "crash": "C01"
+   },
+   {
+    "from": "S01",
+    "action": {
+     "rid": "clinic_northside",
+     "label": "Northside Tue to Sat, 9am to 5pm"
+    },
+    "to": "S02",
+    "crash": "C02"
+   },
+   {
+    "from": "S01",
+    "action": {
+     "rid": "book_fab",
+     "label": ""
+    },
+    "to": "S03",
+    "crash": null
+   },
+   {
+    "from": "S01",
+    "action": {
+     "rotate": "landscape"
+    },
+    "to": "S01",
+    "crash": null
+   },
+   {
+    "from": "S02",
+    "action": {
+     "rotate": "landscape"
+    },
+    "to": "S02",
+    "crash": "C03"
+   },
+   {
+    "from": "S03",
+    "action": {
+     "rid": "help_button",
+     "label": "Help"
+    },
+    "to": "S03",
+    "crash": null
+   },
+   {
+    "from": "S03",
+    "action": {
+     "rid": "close_button",
+     "label": "Close"
+    },
+    "to": "S03",
+    "crash": null
+   },
+   {
+    "from": "S03",
+    "action": {
+     "rid": "pick_date",
+     "label": "Pick a date"
+    },
+    "to": "S04",
+    "crash": null
+   },
+   {
+    "from": "S03",
+    "action": {
+     "rotate": "landscape"
+    },
+    "to": "S03",
+    "crash": null
+   },
+   {
+    "from": "S04",
+    "action": {
+     "rid": "day_0",
+     "label": "Mon 16 Nov"
+    },
+    "to": "S03",
+    "crash": null
+   },
+   {
+    "from": "S04",
+    "action": {
+     "rid": "day_1",
+     "label": "Tue 17 Nov"
+    },
+    "to": "S03",
+    "crash": null
+   },
+   {
+    "from": "S04",
+    "action": {
+     "rid": "day_2",
+     "label": "Wed 18 Nov"
+    },
+    "to": "S03",
+    "crash": null
+   }
+  ]
+ },
+ "manual_test_plan": [
+  {
+   "sc": "4.1.2",
+   "title": "Screen reader order and announcements",
+   "why_untested": "No screen reader is simulated (rule 7).",
+   "steps": [
+    "Turn on TalkBack; swipe through S01, S03 and the Pick a day dialog.",
+    "Check each control is announced with its name, role and state, in reading order.",
+    "Check the dialog takes focus when it opens and returns it to Pick a date when it closes."
+   ],
+   "screens": [
+    "S01",
+    "S03",
+    "S04"
+   ]
+  },
+  {
+   "sc": "1.3.2",
+   "title": "Meaningful Sequence",
+   "why_untested": "No automated check covers this criterion on Android in this version.",
+   "steps": [
+    "Read the page in DOM order (screen reader or CSS off); check the meaning is preserved. Do it on each screen (S01 to S04) with TalkBack on where it applies.",
+    "Record the outcome per screen: passed, failed with a new finding, or inapplicable with why."
+   ],
+   "screens": [
+    "S01",
+    "S02",
+    "S03",
+    "S04"
+   ]
+  },
+  {
+   "sc": "1.3.3",
+   "title": "Sensory Characteristics",
+   "why_untested": "No automated check covers this criterion on Android in this version.",
+   "steps": [
+    "Check instructions do not rely only on shape, colour, size, location, orientation or sound. Do it on each screen (S01 to S04) with TalkBack on where it applies.",
+    "Record the outcome per screen: passed, failed with a new finding, or inapplicable with why."
+   ],
+   "screens": [
+    "S01",
+    "S02",
+    "S03",
+    "S04"
+   ]
+  },
+  {
+   "sc": "1.4.1",
+   "title": "Use of Color",
+   "why_untested": "No automated check covers this criterion on Android in this version.",
+   "steps": [
+    "Check colour is not the only way information is conveyed (links in text, errors, charts, required fields). Do it on each screen (S01 to S04) with TalkBack on where it applies.",
+    "Record the outcome per screen: passed, failed with a new finding, or inapplicable with why."
+   ],
+   "screens": [
+    "S01",
+    "S02",
+    "S03",
+    "S04"
+   ]
+  },
+  {
+   "sc": "1.4.5",
+   "title": "Images of Text",
+   "why_untested": "No automated check covers this criterion on Android in this version.",
+   "steps": [
+    "Check text is not presented as an image unless customisable or essential (logos). Do it on each screen (S01 to S04) with TalkBack on where it applies.",
+    "Record the outcome per screen: passed, failed with a new finding, or inapplicable with why."
+   ],
+   "screens": [
+    "S01",
+    "S02",
+    "S03",
+    "S04"
+   ]
+  },
+  {
+   "sc": "1.4.11",
+   "title": "Non-text Contrast",
+   "why_untested": "No automated check covers this criterion on Android in this version.",
+   "steps": [
+    "Check component boundaries, states, focus indicators and meaningful graphics reach 3:1 against adjacent colours. Do it on each screen (S01 to S04) with TalkBack on where it applies.",
+    "Record the outcome per screen: passed, failed with a new finding, or inapplicable with why."
+   ],
+   "screens": [
+    "S01",
+    "S02",
+    "S03",
+    "S04"
+   ]
+  },
+  {
+   "sc": "1.4.12",
+   "title": "Text Spacing",
+   "why_untested": "No automated check covers this criterion on Android in this version.",
+   "steps": [
+    "Apply the text-spacing bookmarklet; check no text is clipped or overlaps. Do it on each screen (S01 to S04) with TalkBack on where it applies.",
+    "Record the outcome per screen: passed, failed with a new finding, or inapplicable with why."
+   ],
+   "screens": [
+    "S01",
+    "S02",
+    "S03",
+    "S04"
+   ]
+  },
+  {
+   "sc": "1.4.13",
+   "title": "Content on Hover or Focus",
+   "why_untested": "No automated check covers this criterion on Android in this version.",
+   "steps": [
+    "For each tooltip, popover or submenu shown on hover or focus: check it can be dismissed with Esc, can be hovered, and persists until dismissed. Do it on each screen (S01 to S04) with TalkBack on where it applies.",
+    "Record the outcome per screen: passed, failed with a new finding, or inapplicable with why."
+   ],
+   "screens": [
+    "S01",
+    "S02",
+    "S03",
+    "S04"
+   ]
+  },
+  {
+   "sc": "2.1.1",
+   "title": "Keyboard",
+   "why_untested": "keyboard probe reached every control on S01 and S03 in a full Tab cycle; on S04 the trap (F-6) keeps day_1 and day_2 out of reach, which a person should confirm with the dialog fixed.",
+   "steps": [
+    "Operate every function with the keyboard alone, including custom widgets, drag-and-drop and menus. Do it on each screen (S01 to S04) with TalkBack on where it applies.",
+    "Record the outcome per screen: passed, failed with a new finding, or inapplicable with why."
+   ],
+   "screens": [
+    "S01",
+    "S02",
+    "S03",
+    "S04"
+   ]
+  },
+  {
+   "sc": "2.1.4",
+   "title": "Character Key Shortcuts",
+   "why_untested": "No automated check covers this criterion on Android in this version.",
+   "steps": [
+    "Check single-character shortcuts can be turned off, remapped, or only work on focus. Do it on each screen (S01 to S04) with TalkBack on where it applies.",
+    "Record the outcome per screen: passed, failed with a new finding, or inapplicable with why."
+   ],
+   "screens": [
+    "S01",
+    "S02",
+    "S03",
+    "S04"
+   ]
+  },
+  {
+   "sc": "2.2.1",
+   "title": "Timing Adjustable",
+   "why_untested": "No time limits were seen, but the 12 s map freeze (X-1) means S02 could not be inspected.",
+   "steps": [
+    "Check every time limit (session timeout, auto-refresh, carousel advance) can be turned off, adjusted or extended. Do it on each screen (S01 to S04) with TalkBack on where it applies.",
+    "Record the outcome per screen: passed, failed with a new finding, or inapplicable with why."
+   ],
+   "screens": [
+    "S01",
+    "S02",
+    "S03",
+    "S04"
+   ]
+  },
+  {
+   "sc": "2.3.1",
+   "title": "Three Flashes or Below Threshold",
+   "why_untested": "No automated check covers this criterion on Android in this version.",
+   "steps": [
+    "Check nothing flashes more than three times in one second (use PEAT or a frame analysis for video). Do it on each screen (S01 to S04) with TalkBack on where it applies.",
+    "Record the outcome per screen: passed, failed with a new finding, or inapplicable with why."
+   ],
+   "screens": [
+    "S01",
+    "S02",
+    "S03",
+    "S04"
+   ]
+  },
+  {
+   "sc": "2.4.2",
+   "title": "Page Titled",
+   "why_untested": "No automated check covers this criterion on Android in this version.",
+   "steps": [
+    "Check each page title describes its topic or purpose and differs between pages. Do it on each screen (S01 to S04) with TalkBack on where it applies.",
+    "Record the outcome per screen: passed, failed with a new finding, or inapplicable with why."
+   ],
+   "screens": [
+    "S01",
+    "S02",
+    "S03",
+    "S04"
+   ]
+  },
+  {
+   "sc": "2.4.3",
+   "title": "Focus Order",
+   "why_untested": "Tab order on S01 and S03 followed the visual order; screen-reader swipe order needs TalkBack.",
+   "steps": [
+    "Tab through the page; check focus order preserves meaning and operability, including dialogs that open. Do it on each screen (S01 to S04) with TalkBack on where it applies.",
+    "Record the outcome per screen: passed, failed with a new finding, or inapplicable with why."
+   ],
+   "screens": [
+    "S01",
+    "S02",
+    "S03",
+    "S04"
+   ]
+  },
+  {
+   "sc": "2.4.4",
+   "title": "Link Purpose (In Context)",
+   "why_untested": "No automated check covers this criterion on Android in this version.",
+   "steps": [
+    "Check each link purpose is clear from its text or programmatic context. Do it on each screen (S01 to S04) with TalkBack on where it applies.",
+    "Record the outcome per screen: passed, failed with a new finding, or inapplicable with why."
+   ],
+   "screens": [
+    "S01",
+    "S02",
+    "S03",
+    "S04"
+   ]
+  },
+  {
+   "sc": "2.4.6",
+   "title": "Headings and Labels",
+   "why_untested": "No automated check covers this criterion on Android in this version.",
+   "steps": [
+    "Check headings and labels describe their topic or purpose. Do it on each screen (S01 to S04) with TalkBack on where it applies.",
+    "Record the outcome per screen: passed, failed with a new finding, or inapplicable with why."
+   ],
+   "screens": [
+    "S01",
+    "S02",
+    "S03",
+    "S04"
+   ]
+  },
+  {
+   "sc": "2.4.7",
+   "title": "Focus Visible",
+   "why_untested": "No automated check covers this criterion on Android in this version.",
+   "steps": [
+    "Tab through the page; check every focused element has a visible indicator. Do it on each screen (S01 to S04) with TalkBack on where it applies.",
+    "Record the outcome per screen: passed, failed with a new finding, or inapplicable with why."
+   ],
+   "screens": [
+    "S01",
+    "S02",
+    "S03",
+    "S04"
+   ]
+  },
+  {
+   "sc": "2.4.11",
+   "title": "Focus Not Obscured (Minimum)",
+   "why_untested": "No automated check covers this criterion on Android in this version.",
+   "steps": [
+    "Tab through the page with sticky headers, banners and chat widgets visible; check no focused element is entirely hidden. Do it on each screen (S01 to S04) with TalkBack on where it applies.",
+    "Record the outcome per screen: passed, failed with a new finding, or inapplicable with why."
+   ],
+   "screens": [
+    "S01",
+    "S02",
+    "S03",
+    "S04"
+   ]
+  },
+  {
+   "sc": "2.5.1",
+   "title": "Pointer Gestures",
+   "why_untested": "No automated check covers this criterion on Android in this version.",
+   "steps": [
+    "Check multipoint or path-based gestures (pinch, swipe) have a single-pointer alternative. Do it on each screen (S01 to S04) with TalkBack on where it applies.",
+    "Record the outcome per screen: passed, failed with a new finding, or inapplicable with why."
+   ],
+   "screens": [
+    "S01",
+    "S02",
+    "S03",
+    "S04"
+   ]
+  },
+  {
+   "sc": "2.5.2",
+   "title": "Pointer Cancellation",
+   "why_untested": "No automated check covers this criterion on Android in this version.",
+   "steps": [
+    "Check single-pointer actions fire on the up-event or can be aborted or undone. Do it on each screen (S01 to S04) with TalkBack on where it applies.",
+    "Record the outcome per screen: passed, failed with a new finding, or inapplicable with why."
+   ],
+   "screens": [
+    "S01",
+    "S02",
+    "S03",
+    "S04"
+   ]
+  },
+  {
+   "sc": "2.5.3",
+   "title": "Label in Name",
+   "why_untested": "No automated check covers this criterion on Android in this version.",
+   "steps": [
+    "Check the accessible name of each control contains its visible label text. Do it on each screen (S01 to S04) with TalkBack on where it applies.",
+    "Record the outcome per screen: passed, failed with a new finding, or inapplicable with why."
+   ],
+   "screens": [
+    "S01",
+    "S02",
+    "S03",
+    "S04"
+   ]
+  },
+  {
+   "sc": "2.5.4",
+   "title": "Motion Actuation",
+   "why_untested": "No automated check covers this criterion on Android in this version.",
+   "steps": [
+    "Check functions triggered by device motion have a UI alternative and can be disabled. Do it on each screen (S01 to S04) with TalkBack on where it applies.",
+    "Record the outcome per screen: passed, failed with a new finding, or inapplicable with why."
+   ],
+   "screens": [
+    "S01",
+    "S02",
+    "S03",
+    "S04"
+   ]
+  },
+  {
+   "sc": "2.5.7",
+   "title": "Dragging Movements",
+   "why_untested": "No automated check covers this criterion on Android in this version.",
+   "steps": [
+    "Check every drag operation (sliders, sortable lists, maps) has a single-pointer alternative. Do it on each screen (S01 to S04) with TalkBack on where it applies.",
+    "Record the outcome per screen: passed, failed with a new finding, or inapplicable with why."
+   ],
+   "screens": [
+    "S01",
+    "S02",
+    "S03",
+    "S04"
+   ]
+  },
+  {
+   "sc": "3.1.1",
+   "title": "Language of Page",
+   "why_untested": "No automated check covers this criterion on Android in this version.",
+   "steps": [
+    "Check the lang attribute matches the main language of the page. Do it on each screen (S01 to S04) with TalkBack on where it applies.",
+    "Record the outcome per screen: passed, failed with a new finding, or inapplicable with why."
+   ],
+   "screens": [
+    "S01",
+    "S02",
+    "S03",
+    "S04"
+   ]
+  },
+  {
+   "sc": "3.1.2",
+   "title": "Language of Parts",
+   "why_untested": "No automated check covers this criterion on Android in this version.",
+   "steps": [
+    "Check passages in another language are marked with lang. Do it on each screen (S01 to S04) with TalkBack on where it applies.",
+    "Record the outcome per screen: passed, failed with a new finding, or inapplicable with why."
+   ],
+   "screens": [
+    "S01",
+    "S02",
+    "S03",
+    "S04"
+   ]
+  },
+  {
+   "sc": "3.2.1",
+   "title": "On Focus",
+   "why_untested": "No automated check covers this criterion on Android in this version.",
+   "steps": [
+    "Tab through the page; check focus alone never submits a form, opens a window or moves focus unexpectedly. Do it on each screen (S01 to S04) with TalkBack on where it applies.",
+    "Record the outcome per screen: passed, failed with a new finding, or inapplicable with why."
+   ],
+   "screens": [
+    "S01",
+    "S02",
+    "S03",
+    "S04"
+   ]
+  },
+  {
+   "sc": "3.2.2",
+   "title": "On Input",
+   "why_untested": "No automated check covers this criterion on Android in this version.",
+   "steps": [
+    "Change each select, checkbox and field; check no unexpected change of context happens without warning. Do it on each screen (S01 to S04) with TalkBack on where it applies.",
+    "Record the outcome per screen: passed, failed with a new finding, or inapplicable with why."
+   ],
+   "screens": [
+    "S01",
+    "S02",
+    "S03",
+    "S04"
+   ]
+  },
+  {
+   "sc": "3.2.6",
+   "title": "Consistent Help",
+   "why_untested": "No automated check covers this criterion on Android in this version.",
+   "steps": [
+    "Check help mechanisms (contact details, chat, FAQ link) appear in the same relative order on every page that has them. Do it on each screen (S01 to S04) with TalkBack on where it applies.",
+    "Record the outcome per screen: passed, failed with a new finding, or inapplicable with why."
+   ],
+   "screens": [
+    "S01",
+    "S02",
+    "S03",
+    "S04"
+   ]
+  },
+  {
+   "sc": "3.3.2",
+   "title": "Labels or Instructions",
+   "why_untested": "No automated check covers this criterion on Android in this version.",
+   "steps": [
+    "Check every input has a visible label or instructions, including formats and required fields. Do it on each screen (S01 to S04) with TalkBack on where it applies.",
+    "Record the outcome per screen: passed, failed with a new finding, or inapplicable with why."
+   ],
+   "screens": [
+    "S01",
+    "S02",
+    "S03",
+    "S04"
+   ]
+  },
+  {
+   "sc": "4.1.3",
+   "title": "Status Messages",
+   "why_untested": "No automated check covers this criterion on Android in this version.",
+   "steps": [
+    "Trigger status messages (search results count, cart updates, form saved); check they are announced without moving focus. Do it on each screen (S01 to S04) with TalkBack on where it applies.",
+    "Record the outcome per screen: passed, failed with a new finding, or inapplicable with why."
+   ],
+   "screens": [
+    "S01",
+    "S02",
+    "S03",
+    "S04"
+   ]
+  }
+ ],
+ "assisted_review": {
+  "scs_reviewed": [
+   "1.2.1",
+   "1.2.2",
+   "1.2.3",
+   "1.2.4",
+   "1.2.5",
+   "1.3.5",
+   "1.4.2",
+   "3.3.1",
+   "3.3.3",
+   "3.3.4",
+   "3.3.7",
+   "3.3.8"
+  ],
+  "method": "Read the base and marked screenshots and the hierarchy of every sampled screen, the crash screenshots and the replay records.",
+  "notes": [
+   "The hero art (a Canvas drawing with no node in the tree) is decorative and correctly absent from the hierarchy: no candidate.",
+   "The clinic rows' chevrons are small icons inside full-width clickable rows (200 px tall): the row is the target, and the checks did not flag them.",
+   "On S01 the app draws edge to edge and the \"Harbour Dental\" title sits under the status bar clock; not a WCAG failure on its own, worth fixing with window insets.",
+   "Dark mode: the app does not follow the system theme (M004 measured the same colours)."
+  ]
+ },
+ "limitations": [
+  "iOS was not run: it needs macOS with Xcode 15 or later; this host is Windows.",
+  "Google's Accessibility Test Framework was not run (its instrumentation APK is not built in this version); the skill's own checks cover labels, target size and contrast.",
+  "One emulator only (Android 16, API 36); no physical device, no other OS versions or screen sizes.",
+  "S02 (map): the motion and dark-mode probes errored because uiautomator could not dump the frozen screen (X-1); orientation was blocked on S02 and S04 by recorded crashes.",
+  "No screen reader was simulated: reading order and announcements are in the manual test plan.",
+  "Random exploration (monkey) was off; four screens were found by guided exploration within 13 actions.",
+  "The release build is minified: crash and ANR frames show R8 line numbers (MapActivity.onCreate:6, BookingActivity.onCreate:21); the source lines cited in the fixes come from the example's source, which an installed-build audit would not normally have."
+ ],
+ "files_written": [
+  "examples/mobile_audit.example.json"
+ ]
+}

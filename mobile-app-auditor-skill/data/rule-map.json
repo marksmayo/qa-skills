@@ -1,0 +1,26 @@
+{
+  "note": "Check and probe codes -> WCAG SC and failure pattern (patterns and default severities come from data/wcag-sc.json). kind: failure (a candidate for a finding), advisory (platform guideline, never a failure), review (needs a person). Android checks are this skill's own, run on the uiautomator hierarchy and screenshot; Google's Accessibility Test Framework and Xcode's accessibility audit map in the same way when they run.",
+  "checks": {
+    "label.control-no-name":        {"sc": "4.1.2", "pattern": "4.1.2-control-no-name", "kind": "failure", "probe": "a11y_tree", "what": "A clickable element with no text, content description or labelled descendant"},
+    "label.icon-button-no-name":    {"sc": "1.1.1", "pattern": "1.1.1-functional-image-no-name", "kind": "failure", "probe": "a11y_tree", "what": "An icon-only control (no text descendants) with no content description"},
+    "target.below-24dp":            {"sc": "2.5.8", "pattern": "2.5.8-target-too-small", "kind": "failure", "probe": "target_size", "what": "A clickable element smaller than 24 x 24 dp with no 24 dp spacing to its neighbours"},
+    "target.below-48dp":            {"sc": "2.5.8", "pattern": null, "kind": "advisory", "probe": "target_size", "what": "Below the Android 48 x 48 dp guideline (WCAG passes at 24 dp)"},
+    "contrast.text":                {"sc": "1.4.3", "pattern": "1.4.3-secondary-text-low-contrast", "kind": "failure", "probe": "contrast", "what": "Text below 4.5:1 (3:1 at 18.5 dp bold or 24 dp) against its background, measured from screenshot pixels"},
+    "contrast.text-dark":           {"sc": "1.4.3", "pattern": "1.4.3-secondary-text-low-contrast", "kind": "failure", "probe": "dark_mode", "what": "The same, with the system dark theme on"},
+    "text-scale.not-enlarged":      {"sc": "1.4.4", "pattern": "1.4.4-text-lost-at-200", "kind": "failure", "probe": "text_scaling", "what": "At font scale 2.0 a text element keeps its height while the rest grows: text is clipped or cut to one line"},
+    "display-size.offscreen":       {"sc": "1.4.10", "pattern": "1.4.10-content-lost-320", "kind": "failure", "probe": "display_size", "what": "At the largest display size a control or text ends up off screen or overlapping another"},
+    "orientation.locked":           {"sc": "1.3.4", "pattern": "1.3.4-orientation-locked", "kind": "failure", "probe": "orientation", "what": "The screen stays portrait when the device is rotated with auto-rotate off and landscape requested"},
+    "keyboard.trap":                {"sc": "2.1.2", "pattern": "2.1.2-keyboard-trap", "kind": "failure", "probe": "keyboard", "what": "Tab does not move focus and Escape or Back does not leave"},
+    "keyboard.unreachable":         {"sc": "2.1.1", "pattern": "2.1.1-control-not-keyboard", "kind": "failure", "probe": "keyboard", "what": "A clickable control never receives focus with Tab"},
+    "motion.auto-advance":          {"sc": "2.2.2", "pattern": "2.2.2-moving-content-no-pause", "kind": "failure", "probe": "motion", "what": "Content changes by itself between screenshots 5 s and 7.5 s apart, with no pause, stop or hide control on the screen"},
+    "heading.not-exposed":          {"sc": "1.3.1", "pattern": null, "kind": "review", "probe": "a11y_tree", "what": "uiautomator does not expose headings; check heading semantics with TalkBack or source"}
+  },
+  "engines": {
+    "android": [{"name": "mobile-checks", "role": "the skill's own checks on the hierarchy and screenshot"}, {"name": "accessibility-test-framework", "role": "Google ATF checks (instrumentation APK)"}],
+    "ios": [{"name": "xcode-accessibility-audit", "role": "XCUITest performAccessibilityAudit"}]
+  },
+  "not_applicable_software": {
+    "note": "EN 301 549 clause 11 marks these web criteria as not applicable to non-web software (they rely on sets of web pages).",
+    "scs": ["2.4.1", "2.4.5", "3.2.3", "3.2.4"]
+  }
+}

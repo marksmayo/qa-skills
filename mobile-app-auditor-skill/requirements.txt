@@ -1,0 +1,4 @@
+# Nothing is required for the Android run: it uses adb from the Android SDK platform tools and stdlib Python.
+# Optional, only for an Appium-driven run (iOS through XCUITest, which needs macOS and Xcode 15+):
+#   pip install -r requirements.txt
+Appium-Python-Client>=4,<6

@@ -1,0 +1,318 @@
+{
+ "package": "au.example.harbourdental",
+ "activity": ".MainActivity",
+ "device": {
+  "serial": "emulator-5554",
+  "model": "sdk_gphone64_x86_64",
+  "android": "16",
+  "api": "36",
+  "emulator": true,
+  "size_px": [
+   1080,
+   2400
+  ],
+  "density": 420
+ },
+ "started": "2026-11-11T12:09:13Z",
+ "finished": "2026-11-11T12:16:06Z",
+ "actions": 13,
+ "limits": {
+  "max_screens": 25,
+  "max_actions": 30,
+  "budget_min": 20
+ },
+ "excluded_pattern": "\\b(buy|pay|delete|remove account|send|purchase|checkout|sign out|log ?out)\\b",
+ "screens": [
+  {
+   "id": "S01",
+   "signature": "1b065c4729",
+   "activity": "au.example.harbourdental/.MainActivity",
+   "steps": [],
+   "via": "launch",
+   "controls": [
+    {
+     "rid": "clinic_harbour",
+     "label": "Harbour Street Mon to Fri, 8am to 6pm",
+     "class": "android.view.View",
+     "bounds": [
+      0,
+      657,
+      1080,
+      857
+     ],
+     "skipped": false
+    },
+    {
+     "rid": "clinic_northside",
+     "label": "Northside Tue to Sat, 9am to 5pm",
+     "class": "android.view.View",
+     "bounds": [
+      0,
+      857,
+      1080,
+      1057
+     ],
+     "skipped": false
+    },
+    {
+     "rid": "book_fab",
+     "label": "",
+     "class": "android.widget.Button",
+     "bounds": [
+      870,
+      2190,
+      1017,
+      2337
+     ],
+     "skipped": false
+    }
+   ],
+   "title": "Harbour Dental"
+  },
+  {
+   "id": "S02",
+   "signature": "3e534fc399",
+   "activity": "au.example.harbourdental/.MapActivity",
+   "steps": [
+    {
+     "rid": "clinic_northside",
+     "label": "Northside Tue to Sat, 9am to 5pm"
+    }
+   ],
+   "via": "tap",
+   "controls": [],
+   "title": "Map: 24 tiles"
+  },
+  {
+   "id": "S03",
+   "signature": "b2cb5469ea",
+   "activity": "au.example.harbourdental/.BookingActivity",
+   "steps": [
+    {
+     "rid": "book_fab",
+     "label": ""
+    }
+   ],
+   "via": "tap",
+   "controls": [
+    {
+     "rid": "help_button",
+     "label": "Help",
+     "class": "android.view.View",
+     "bounds": [
+      885,
+      6,
+      949,
+      132
+     ],
+     "skipped": false
+    },
+    {
+     "rid": "close_button",
+     "label": "Close",
+     "class": "android.view.View",
+     "bounds": [
+      949,
+      6,
+      1075,
+      132
+     ],
+     "skipped": false
+    },
+    {
+     "rid": "pick_date",
+     "label": "Pick a date",
+     "class": "android.view.View",
+     "bounds": [
+      42,
+      364,
+      349,
+      490
+     ],
+     "skipped": false
+    }
+   ],
+   "title": "Book a visit"
+  },
+  {
+   "id": "S04",
+   "signature": "558256a88e",
+   "activity": "au.example.harbourdental/.BookingActivity",
+   "steps": [
+    {
+     "rid": "book_fab",
+     "label": ""
+    },
+    {
+     "rid": "pick_date",
+     "label": "Pick a date"
+    }
+   ],
+   "via": "tap",
+   "controls": [
+    {
+     "rid": "day_0",
+     "label": "Mon 16 Nov",
+     "class": "android.widget.TextView",
+     "bounds": [
+      162,
+      1077,
+      918,
+      1204
+     ],
+     "skipped": false
+    },
+    {
+     "rid": "day_1",
+     "label": "Tue 17 Nov",
+     "class": "android.widget.TextView",
+     "bounds": [
+      162,
+      1204,
+      918,
+      1331
+     ],
+     "skipped": false
+    },
+    {
+     "rid": "day_2",
+     "label": "Wed 18 Nov",
+     "class": "android.widget.TextView",
+     "bounds": [
+      162,
+      1331,
+      918,
+      1458
+     ],
+     "skipped": false
+    }
+   ],
+   "title": "Pick a day"
+  }
+ ],
+ "edges": [
+  {
+   "from": "S01",
+   "action": {
+    "rid": "clinic_harbour",
+    "label": "Harbour Street Mon to Fri, 8am to 6pm"
+   },
+   "to": null,
+   "crash": "C01"
+  },
+  {
+   "from": "S01",
+   "action": {
+    "rid": "clinic_northside",
+    "label": "Northside Tue to Sat, 9am to 5pm"
+   },
+   "to": "S02",
+   "crash": "C02"
+  },
+  {
+   "from": "S01",
+   "action": {
+    "rid": "book_fab",
+    "label": ""
+   },
+   "to": "S03",
+   "crash": null
+  },
+  {
+   "from": "S01",
+   "action": {
+    "rotate": "landscape"
+   },
+   "to": "S01",
+   "crash": null
+  },
+  {
+   "from": "S02",
+   "action": {
+    "rotate": "landscape"
+   },
+   "to": "S02",
+   "crash": "C03"
+  },
+  {
+   "from": "S03",
+   "action": {
+    "rid": "help_button",
+    "label": "Help"
+   },
+   "to": "S03",
+   "crash": null
+  },
+  {
+   "from": "S03",
+   "action": {
+    "rid": "close_button",
+    "label": "Close"
+   },
+   "to": "S03",
+   "crash": null
+  },
+  {
+   "from": "S03",
+   "action": {
+    "rid": "pick_date",
+    "label": "Pick a date"
+   },
+   "to": "S04",
+   "crash": null
+  },
+  {
+   "from": "S03",
+   "action": {
+    "rotate": "landscape"
+   },
+   "to": "S03",
+   "crash": null
+  },
+  {
+   "from": "S04",
+   "action": {
+    "rid": "day_0",
+    "label": "Mon 16 Nov"
+   },
+   "to": "S03",
+   "crash": null
+  },
+  {
+   "from": "S04",
+   "action": {
+    "rid": "day_1",
+    "label": "Tue 17 Nov"
+   },
+   "to": "S03",
+   "crash": null
+  },
+  {
+   "from": "S04",
+   "action": {
+    "rid": "day_2",
+    "label": "Wed 18 Nov"
+   },
+   "to": "S03",
+   "crash": null
+  }
+ ],
+ "settings_changed": [
+  {
+   "kind": "setting",
+   "ns": "system",
+   "key": "accelerometer_rotation",
+   "before": "1",
+   "restored": true,
+   "after": "1"
+  },
+  {
+   "kind": "setting",
+   "ns": "system",
+   "key": "user_rotation",
+   "before": "0",
+   "restored": true,
+   "after": "0"
+  }
+ ]
+}

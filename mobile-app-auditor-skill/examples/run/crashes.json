@@ -1,0 +1,172 @@
+[
+ {
+  "id": "C01",
+  "kind": "anr",
+  "screen": "S01",
+  "steps": [
+   {
+    "rid": "clinic_harbour",
+    "label": "Harbour Street Mon to Fri, 8am to 6pm"
+   }
+  ],
+  "reason": "Input dispatching timed out (Application does not have a focused window).",
+  "top_app_frame": "at au.example.harbourdental.MapActivity.onCreate(r8-map-id-c0cfa8f623f6bcc768e8cbae602280d8c00749c31dd2ae8dc4985381e62e8033:6)",
+  "main_thread": [
+   "at java.lang.Thread.sleep(Native method)",
+   "at java.lang.Thread.sleep(Thread.java:451)",
+   "at java.lang.Thread.sleep(Thread.java:356)",
+   "at au.example.harbourdental.MapActivity.onCreate(r8-map-id-c0cfa8f623f6bcc768e8cbae602280d8c00749c31dd2ae8dc4985381e62e8033:6)",
+   "at android.app.Activity.performCreate(Activity.java:9155)",
+   "at android.app.Activity.performCreate(Activity.java:9133)",
+   "at android.app.Instrumentation.callActivityOnCreate(Instrumentation.java:1521)",
+   "at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:4262)",
+   "at android.app.ActivityThread.handleLaunchActivity(ActivityThread.java:4467)",
+   "at android.app.servertransaction.LaunchActivityItem.execute(LaunchActivityItem.java:222)",
+   "at android.app.servertransaction.TransactionExecutor.executeNonLifecycleItem(TransactionExecutor.java:133)",
+   "at android.app.servertransaction.TransactionExecutor.executeTransactionItems(TransactionExecutor.java:103)",
+   "at android.app.servertransaction.TransactionExecutor.execute(TransactionExecutor.java:80)",
+   "at android.app.ActivityThread$H.handleMessage(ActivityThread.java:2823)",
+   "at android.os.Handler.dispatchMessage(Handler.java:110)"
+  ],
+  "log_excerpt": [
+   "705   848 I WindowManager: ANR in ActivityRecord{52034231 u0 au.example.harbourdental/.MapActivity t30}.  Reason: Input dispatching timed out (Application does not have a focused window).",
+   "705   848 I WindowManager: ANR in ActivityRecord{52034231 u0 au.example.harbourdental/.MapActivity t30}.  Reason: Input dispatching timed out (Application does not have a focused window)."
+  ],
+  "log_source": "logcat ANR lines and dumpsys dropbox data_app_anr (main thread, app frames)",
+  "after_wait": "killed",
+  "screenshot": "crashes/C01.png",
+  "at": "2026-11-11T12:09:52Z"
+ },
+ {
+  "id": "C02",
+  "kind": "anr",
+  "screen": "S01",
+  "steps": [
+   {
+    "rid": "clinic_northside",
+    "label": "Northside Tue to Sat, 9am to 5pm"
+   }
+  ],
+  "reason": "Input dispatching timed out (Application does not have a focused window).",
+  "top_app_frame": "at au.example.harbourdental.MapActivity.onCreate(r8-map-id-c0cfa8f623f6bcc768e8cbae602280d8c00749c31dd2ae8dc4985381e62e8033:6)",
+  "main_thread": [
+   "at java.lang.Thread.sleep(Native method)",
+   "at java.lang.Thread.sleep(Thread.java:451)",
+   "at java.lang.Thread.sleep(Thread.java:356)",
+   "at au.example.harbourdental.MapActivity.onCreate(r8-map-id-c0cfa8f623f6bcc768e8cbae602280d8c00749c31dd2ae8dc4985381e62e8033:6)",
+   "at android.app.Activity.performCreate(Activity.java:9155)",
+   "at android.app.Activity.performCreate(Activity.java:9133)",
+   "at android.app.Instrumentation.callActivityOnCreate(Instrumentation.java:1521)",
+   "at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:4262)",
+   "at android.app.ActivityThread.handleLaunchActivity(ActivityThread.java:4467)",
+   "at android.app.servertransaction.LaunchActivityItem.execute(LaunchActivityItem.java:222)",
+   "at android.app.servertransaction.TransactionExecutor.executeNonLifecycleItem(TransactionExecutor.java:133)",
+   "at android.app.servertransaction.TransactionExecutor.executeTransactionItems(TransactionExecutor.java:103)",
+   "at android.app.servertransaction.TransactionExecutor.execute(TransactionExecutor.java:80)",
+   "at android.app.ActivityThread$H.handleMessage(ActivityThread.java:2823)",
+   "at android.os.Handler.dispatchMessage(Handler.java:110)"
+  ],
+  "log_excerpt": [
+   "705   848 I WindowManager: ANR in ActivityRecord{33035180 u0 au.example.harbourdental/.MapActivity t31}.  Reason: Input dispatching timed out (Application does not have a focused window).",
+   "705 10701 E ActivityManager: ANR in au.example.harbourdental (au.example.harbourdental/.MapActivity)"
+  ],
+  "log_source": "logcat ANR lines and dumpsys dropbox data_app_anr (main thread, app frames)",
+  "after_wait": "recovered",
+  "screenshot": "crashes/C02.png",
+  "at": "2026-11-11T12:10:29Z"
+ },
+ {
+  "id": "C03",
+  "kind": "anr",
+  "screen": "S02",
+  "steps": [
+   {
+    "rid": "clinic_northside",
+    "label": "Northside Tue to Sat, 9am to 5pm"
+   },
+   {
+    "rotate": "landscape"
+   }
+  ],
+  "reason": "Input dispatching timed out (Application does not have a focused window).",
+  "top_app_frame": "at au.example.harbourdental.MapActivity.onCreate(r8-map-id-c0cfa8f623f6bcc768e8cbae602280d8c00749c31dd2ae8dc4985381e62e8033:6)",
+  "main_thread": [
+   "at java.lang.Thread.sleep(Native method)",
+   "at java.lang.Thread.sleep(Thread.java:451)",
+   "at java.lang.Thread.sleep(Thread.java:356)",
+   "at au.example.harbourdental.MapActivity.onCreate(r8-map-id-c0cfa8f623f6bcc768e8cbae602280d8c00749c31dd2ae8dc4985381e62e8033:6)",
+   "at android.app.Activity.performCreate(Activity.java:9155)",
+   "at android.app.Activity.performCreate(Activity.java:9133)",
+   "at android.app.Instrumentation.callActivityOnCreate(Instrumentation.java:1521)",
+   "at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:4262)",
+   "at android.app.ActivityThread.handleLaunchActivity(ActivityThread.java:4467)",
+   "at android.app.servertransaction.LaunchActivityItem.execute(LaunchActivityItem.java:222)",
+   "at android.app.servertransaction.TransactionExecutor.executeNonLifecycleItem(TransactionExecutor.java:133)",
+   "at android.app.servertransaction.TransactionExecutor.executeTransactionItems(TransactionExecutor.java:103)",
+   "at android.app.servertransaction.TransactionExecutor.execute(TransactionExecutor.java:80)",
+   "at android.app.ActivityThread$H.handleMessage(ActivityThread.java:2823)",
+   "at android.os.Handler.dispatchMessage(Handler.java:110)"
+  ],
+  "log_excerpt": [
+   "705   848 I WindowManager: ANR in ActivityRecord{190471163 u0 au.example.harbourdental/.MapActivity t34}.  Reason: Input dispatching timed out (Application does not have a focused window).",
+   "705 11277 E ActivityManager: ANR in au.example.harbourdental (au.example.harbourdental/.MapActivity)"
+  ],
+  "log_source": "logcat ANR lines and dumpsys dropbox data_app_anr (main thread, app frames)",
+  "after_wait": "recovered",
+  "screenshot": "crashes/C03.png",
+  "at": "2026-11-11T12:11:54Z"
+ },
+ {
+  "id": "C04",
+  "kind": "crash",
+  "screen": "S04",
+  "steps": [
+   {
+    "rid": "book_fab",
+    "label": ""
+   },
+   {
+    "rid": "pick_date",
+    "label": "Pick a date"
+   },
+   {
+    "rotate": "landscape"
+   }
+  ],
+  "exception": "java.lang.RuntimeException: Unable to start activity ComponentInfo{au.example.harbourdental/au.example.harbourdental.BookingActivity}: java.lang.NullPointerException: Attempt to invoke virtual method 'java.lang.Class java.lang.Object.getClass()' on a null object reference",
+  "top_app_frame": "at au.example.harbourdental.BookingActivity.onCreate(r8-map-id-0fff129add27b1271ffcecdee6ce8756f61930da934958d1cc2178c641221872:21)",
+  "log_excerpt": [
+   "12791 12791 E AndroidRuntime: FATAL EXCEPTION: main",
+   "12791 12791 E AndroidRuntime: Process: au.example.harbourdental, PID: 12791",
+   "12791 12791 E AndroidRuntime: java.lang.RuntimeException: Unable to start activity ComponentInfo{au.example.harbourdental/au.example.harbourdental.BookingActivity}: java.lang.NullPointerException: Attempt to invoke virtual method 'java.lang.Class java.lang.Object.getClass()' on a null object reference",
+   "12791 12791 E AndroidRuntime: \tat android.app.ActivityThread.performLaunchActivity(ActivityThread.java:4280)",
+   "12791 12791 E AndroidRuntime: \tat android.app.ActivityThread.handleLaunchActivity(ActivityThread.java:4467)",
+   "12791 12791 E AndroidRuntime: \tat android.app.ActivityThread.handleRelaunchActivityInner(ActivityThread.java:6610)",
+   "12791 12791 E AndroidRuntime: \tat android.app.ActivityThread.handleRelaunchActivity(ActivityThread.java:6501)",
+   "12791 12791 E AndroidRuntime: \tat android.app.servertransaction.ActivityRelaunchItem.execute(ActivityRelaunchItem.java:106)",
+   "12791 12791 E AndroidRuntime: \tat android.app.servertransaction.ActivityTransactionItem.execute(ActivityTransactionItem.java:63)",
+   "12791 12791 E AndroidRuntime: \tat android.app.servertransaction.TransactionExecutor.executeNonLifecycleItem(TransactionExecutor.java:133)",
+   "12791 12791 E AndroidRuntime: \tat android.app.servertransaction.TransactionExecutor.executeTransactionItems(TransactionExecutor.java:103)",
+   "12791 12791 E AndroidRuntime: \tat android.app.servertransaction.TransactionExecutor.execute(TransactionExecutor.java:80)",
+   "12791 12791 E AndroidRuntime: \tat android.app.ActivityThread$H.handleMessage(ActivityThread.java:2823)",
+   "12791 12791 E AndroidRuntime: \tat android.os.Handler.dispatchMessage(Handler.java:110)",
+   "12791 12791 E AndroidRuntime: \tat android.os.Looper.loopOnce(Looper.java:248)",
+   "12791 12791 E AndroidRuntime: \tat android.os.Looper.loop(Looper.java:338)",
+   "12791 12791 E AndroidRuntime: \tat android.app.ActivityThread.main(ActivityThread.java:9067)",
+   "12791 12791 E AndroidRuntime: \tat java.lang.reflect.Method.invoke(Native Method)",
+   "12791 12791 E AndroidRuntime: \tat com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:593)",
+   "12791 12791 E AndroidRuntime: \tat com.android.internal.os.ZygoteInit.main(ZygoteInit.java:932)",
+   "12791 12791 E AndroidRuntime: Caused by: java.lang.NullPointerException: Attempt to invoke virtual method 'java.lang.Class java.lang.Object.getClass()' on a null object reference",
+   "12791 12791 E AndroidRuntime: \tat au.example.harbourdental.BookingActivity.onCreate(r8-map-id-0fff129add27b1271ffcecdee6ce8756f61930da934958d1cc2178c641221872:21)",
+   "12791 12791 E AndroidRuntime: \tat android.app.Activity.performCreate(Activity.java:9155)",
+   "12791 12791 E AndroidRuntime: \tat android.app.Activity.performCreate(Activity.java:9133)",
+   "12791 12791 E AndroidRuntime: \tat android.app.Instrumentation.callActivityOnCreate(Instrumentation.java:1521)",
+   "12791 12791 E AndroidRuntime: \tat android.app.ActivityThread.performLaunchActivity(ActivityThread.java:4262)",
+   "12791 12791 E AndroidRuntime: \t... 16 more"
+  ],
+  "log_source": "logcat -b crash (app process only)",
+  "relaunch": "ok",
+  "screenshot": "crashes/C04.png",
+  "at": "2026-11-11T12:16:04Z"
+ }
+]
