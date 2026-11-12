@@ -37,6 +37,11 @@ BANNED = re.compile(r'\bno dead tests\b|\b(suite|tests?) (is|are) (healthy|effec
 
 # ---------------------------------------------------------------- schema (subset of JSON Schema)
 def schema_errors(value, schema: dict, root: dict, path: str = '$') -> list[str]:
+    if '$ref' in schema:
+        node = root
+        for part in schema['$ref'].lstrip('#/').split('/'):
+            node = node[part]
+        return schema_errors(value, node, root, path)
     errs = []
     if 'enum' in schema and value not in schema['enum']:
         return [f'{path}: {value!r} is not one of {schema["enum"]}']
@@ -184,6 +189,17 @@ def check(rep: dict, ev: dict, repo: Path | None, base: Path) -> list[str]:
         errs.append('collection: must match the collection file')
     for f in rep['findings']:
         w = f['id']
+        if f.get('source', 'tool') == 'agent':
+            if not f.get('basis'):
+                errs.append(f'{w}: a finding found by review needs a basis (file, line and excerpt, or an evidence file)')
+            errs += basis_errors(w, f.get('basis') or [], repo, base)
+            files = {b['file'] for b in f.get('basis') or [] if b.get('file')}
+            if files and f['location']['file'] not in files:
+                errs.append(f'{w}: location is not one of its basis files')
+        elif not f['candidates']:
+            errs.append(f'{w}: cite at least one candidate, or mark it source: agent with a basis')
+        elif f.get('basis'):
+            errs += basis_errors(w, f['basis'], repo, base)
         linked = [cands[c] for c in f['candidates'] if c in cands]
         for c in linked:
             if f['category'] not in CANDIDATE_TO.get(c['category'], set()):
@@ -221,7 +237,16 @@ def check(rep: dict, ev: dict, repo: Path | None, base: Path) -> list[str]:
                 errs.append(f'{w}: raw collect output {col["raw_output"]} is missing')
         if f['category'] in ('duplicate', 'overlap'):
             sim = next((sims[c] for c in f['candidates'] if c in sims), None)
-            if not sim or not e.get('similarity'):
+            if sim and sim.get('verdict') == 'not_assessed':
+                # no per-test coverage (JavaScript pairs): the scanner's token match is the only evidence
+                if f['confidence'] == 'confirmed':
+                    errs.append(f'{w}: coverage was not compared ({sim.get("reason")}), so it cannot be confirmed')
+                if f['category'] == 'duplicate' and sim['similarity'] < 1.0:
+                    errs.append(f'{w}: without a coverage comparison only an identical body is a duplicate; this is an overlap')
+                if (e.get('similarity') or {}).get('coverage_identical'):
+                    errs.append(f'{w}: coverage was not compared, so coverage_identical cannot be true')
+            elif not sim or not e.get('similarity') or 'coverage_identical' not in e['similarity'] or \
+                    'values_identical' not in e['similarity']:
                 errs.append(f'{w}: needs the similarity score and the coverage comparison')
             elif f['category'] == 'duplicate' and sim['verdict'] != 'duplicate':
                 errs.append(f'{w}: coverage or values differ, so this is an overlap, not a duplicate')
@@ -254,11 +279,22 @@ def check(rep: dict, ev: dict, repo: Path | None, base: Path) -> list[str]:
                     errs.append(f'{w}: proof must be {want}, with the failing neutralised runs {failed}')
     for d in rep['dismissed']:
         s = skips.get(d['candidate_id'])
+        wrong = bool(d.get('scanner_error'))
+        if wrong:
+            # the candidate misreads the code (a runtime skip read as a test, a name cut at a quote): the dismissal
+            # must cite the lines that show it, and they are re-read
+            if not d.get('basis'):
+                errs.append(f'{d["candidate_id"]}: a scanner_error dismissal needs a basis citing the lines that show it')
+            elif repo is None and any(b.get('file') for b in d['basis']):
+                errs.append(f'{d["candidate_id"]}: pass --repo so the scanner_error basis can be re-read')
+            errs += basis_errors(d['candidate_id'], d.get('basis') or [], repo, base)
         done_ticket = bool(s and s.get('ticket') and s['ticket'].get('checked'))
-        if s and s['verdict'] == 'stale' and not (s.get('conditional') and not done_ticket):
+        if s and s['verdict'] == 'stale' and not wrong and not (s.get('conditional') and not done_ticket):
             errs.append(f'{d["candidate_id"]}: a stale skip is a finding, not a dismissal')
+        if s and s['verdict'] == 'stale' and wrong and done_ticket:
+            errs.append(f'{d["candidate_id"]}: its ticket is done; a scanner error does not change that')
         c = cands.get(d['candidate_id'])
-        if c and c['category'] == 'never_runs' and c['test_ids'][0] in ev['collection']['not_collected']:
+        if c and c['category'] == 'never_runs' and not wrong and c['test_ids'][0] in ev['collection']['not_collected']:
             errs.append(f'{d["candidate_id"]}: the collect output confirms it never runs; it cannot be dismissed')
     # tree hashes
     for name in ('neutralisations', 'similarity'):
@@ -295,6 +331,35 @@ def check(rep: dict, ev: dict, repo: Path | None, base: Path) -> list[str]:
             errs.append(f'summary.{k}: {rep["summary"].get(k)!r} but computed {v!r} (run --write-summary)')
     if any(f['priority'] == 'P0' for f in rep['findings']) and 'P0' not in rep['summary'].get('headline', ''):
         errs.append('summary.headline: name the P0 findings')
+    return errs
+
+
+def basis_errors(where: str, basis: list[dict], repo: Path | None, base: Path) -> list[str]:
+    """Each basis item is a repo file line whose text contains the excerpt (checked when --repo is given), or an
+    evidence file that exists under the report's directory."""
+    errs = []
+    for b in basis:
+        if b.get('evidence'):
+            if not (base / b['evidence']).is_file():
+                errs.append(f'{where}: basis evidence {b["evidence"]} is missing')
+            continue
+        if not (b.get('file') and isinstance(b.get('line'), int) and b.get('excerpt')):
+            errs.append(f'{where}: a basis item needs file, line and excerpt (or evidence)')
+            continue
+        if repo is None:
+            continue
+        p = repo / b['file']
+        try:
+            lines = p.read_text(encoding='utf-8', errors='replace').splitlines()
+        except OSError:
+            errs.append(f'{where}: basis file {b["file"]} does not exist in the repo')
+            continue
+        if not 0 < b['line'] <= len(lines):
+            errs.append(f'{where}: {b["file"]} has no line {b["line"]}')
+            continue
+        norm = lambda s: ' '.join(s.split())  # noqa: E731
+        if norm(b['excerpt']) not in norm(lines[b['line'] - 1]):
+            errs.append(f'{where}: {b["file"]}:{b["line"]} does not contain the excerpt {b["excerpt"]!r}')
     return errs
 
 

@@ -62,7 +62,10 @@
           "id": {"type": "string", "pattern": "^F\\d+$"},
           "category": {"enum": ["never_runs", "cant_fail", "mock_only", "async_not_awaited", "swallowed_failure", "unreached_assertion",
                                 "stale_skip", "duplicate", "overlap", "weak"]},
-          "candidates": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^C\\d+$"}},
+          "source": {"enum": ["tool", "agent"], "description": "tool (the default): promoted from scan_tests.py candidates; agent: found by review, with basis"},
+          "basis": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/basis"}},
+          "candidates": {"type": "array", "items": {"type": "string", "pattern": "^C\\d+$"},
+                         "description": "at least one for a tool finding; may be empty for an agent finding"},
           "test_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}},
           "location": {"type": "object", "required": ["file", "line"], "properties": {"file": {"type": "string"}, "line": {"type": "integer"}}},
           "confidence": {"enum": ["confirmed", "static", "suspected"]},
@@ -78,7 +81,7 @@
                                                 "checks_no_exception": {"type": "boolean"}}},
               "collection": {"type": "object", "required": ["not_collected", "raw_output"],
                              "properties": {"not_collected": {"type": "boolean"}, "raw_output": {"type": "string"}, "marker": {"type": "string"}}},
-              "similarity": {"type": "object", "required": ["similarity", "coverage_identical", "values_identical"],
+              "similarity": {"type": "object", "required": ["similarity"],
                              "properties": {"similarity": {"type": "number"}, "coverage_identical": {"type": "boolean"},
                                             "values_identical": {"type": "boolean"}}},
               "skip": {"type": "object", "required": ["verdict"],
@@ -110,7 +113,9 @@
     "dismissed": {
       "type": "array",
       "items": {"type": "object", "required": ["candidate_id", "reason"],
-                "properties": {"candidate_id": {"type": "string", "pattern": "^C\\d+$"}, "reason": {"type": "string", "minLength": 20}}}
+                "properties": {"candidate_id": {"type": "string", "pattern": "^C\\d+$"}, "reason": {"type": "string", "minLength": 20},
+                               "scanner_error": {"type": "boolean", "description": "the candidate misreads the code; basis cites the lines that show it"},
+                               "basis": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/basis"}}}}
     },
     "summary": {
       "type": "object",
@@ -125,5 +130,13 @@
     },
     "limitations": {"type": "array", "items": {"type": "string", "minLength": 10}},
     "files_changed": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {
+    "basis": {
+      "type": "object",
+      "description": "A repo file line with an excerpt of it (re-read by the validator with --repo), or an evidence file in the run directory",
+      "properties": {"file": {"type": "string"}, "line": {"type": "integer", "minimum": 1}, "excerpt": {"type": "string", "minLength": 3},
+                     "evidence": {"type": "string"}}
+    }
   }
 }

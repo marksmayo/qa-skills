@@ -8,9 +8,12 @@
       "name": "save > saves a valid entry",
       "lang": "typescript",
       "package": "client",
+      "framework": "js",
       "calls": [
         "save"
-      ]
+      ],
+      "parametrised": false,
+      "name_pattern": null
     },
     {
       "id": "client/src/api.test.ts::save > refuses a zero entry",
@@ -19,9 +22,12 @@
       "name": "save > refuses a zero entry",
       "lang": "typescript",
       "package": "client",
+      "framework": "js",
       "calls": [
         "save"
-      ]
+      ],
+      "parametrised": false,
+      "name_pattern": null
     },
     {
       "id": "client/src/api.test.ts::formatCents > formats negative amounts",
@@ -30,9 +36,12 @@
       "name": "formatCents > formats negative amounts",
       "lang": "typescript",
       "package": "client",
+      "framework": "js",
       "calls": [
         "formatCents"
-      ]
+      ],
+      "parametrised": false,
+      "name_pattern": null
     },
     {
       "id": "core/tests/check_balance.py::test_refund_reduces_the_balance",

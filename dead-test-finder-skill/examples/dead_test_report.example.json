@@ -3,7 +3,7 @@
     "repo": "ledger",
     "commit": null,
     "generated_at": "2026-11-11T05:00:00Z",
-    "skill_version": "1.0.0",
+    "skill_version": "1.1.0",
     "frameworks": [
       {
         "package": "client",
@@ -527,6 +527,42 @@
       "weight": 1,
       "score": 1,
       "priority": "P3"
+    },
+    {
+      "id": "F8",
+      "category": "weak",
+      "source": "agent",
+      "basis": [
+        {
+          "file": "core/tests/test_reports.py",
+          "line": 26,
+          "excerpt": "assert set(trial_balance(journal)) == {\"sales\", \"bank\"}"
+        }
+      ],
+      "candidates": [],
+      "test_ids": [
+        "core/tests/test_reports.py::test_trial_balance_lists_every_account"
+      ],
+      "location": {
+        "file": "core/tests/test_reports.py",
+        "line": 26
+      },
+      "confidence": "suspected",
+      "why": "Found by review, not by a rule: the only assertion compares the set of account names, so the test passes whatever amounts trial_balance() returns. It was not neutralised (no candidate flagged it).",
+      "criticality": 2,
+      "criticality_reason": "The trial balance totals each account; ordinary reporting code.",
+      "evidence": {
+        "note": "Reading the code only; a neutralised trial_balance returning None would fail it, but one returning the right keys with wrong amounts would not."
+      },
+      "proposal": {
+        "action": "investigate",
+        "patch_path": null,
+        "rationale": "Assert the whole mapping ({\"sales\": 100, \"bank\": 100}) so a wrong total fails the test."
+      },
+      "applied": false,
+      "weight": 1,
+      "score": 2,
+      "priority": "P3"
     }
   ],
   "dismissed": [
@@ -536,7 +572,7 @@
     }
   ],
   "summary": {
-    "headline": "P0: check_balance.py is never collected, and test_post_entry_records_a_sale passes with post_entry() neutralised. P1: a tax test that only checks its mock. Four lesser findings; five of the seven fixes are proved by runs.",
+    "headline": "P0: check_balance.py is never collected, and test_post_entry_records_a_sale passes with post_entry() neutralised. P1: a tax test that only checks its mock. Five lesser findings, one of them found by review; five fixes are proved by runs.",
     "tests_defined": 15,
     "collected": 14,
     "neutralised": 3,
@@ -547,13 +583,13 @@
       "mock_only": 1,
       "never_runs": 1,
       "stale_skip": 1,
-      "weak": 1
+      "weak": 2
     },
     "by_priority": {
       "P0": 2,
       "P1": 1,
       "P2": 2,
-      "P3": 2
+      "P3": 3
     },
     "evidence_completeness": 1.0
   },

@@ -41,6 +41,8 @@ def evidence_line(e: dict) -> str | None:
         return f'Collect output ({e["collection"]["raw_output"]}): not collected' if e['collection'].get('not_collected') else None
     if e.get('similarity'):
         s = e['similarity']
+        if 'coverage_identical' not in s:
+            return f'Similarity {100 * s["similarity"]:.0f}%, coverage not compared'
         return (f'Similarity {100 * s["similarity"]:.0f}%, coverage {"identical" if s["coverage_identical"] else "differs"}, '
                 f'values {"identical" if s["values_identical"] else "differ"}')
     if e.get('skip'):
@@ -72,7 +74,8 @@ def main() -> int:
            P('## Findings', BOLD)]
     order = {'P0': 0, 'P1': 1, 'P2': 2, 'P3': 3}
     for f in sorted(d['findings'], key=lambda f: (order[f['priority']], -f['score'], f['id'])):
-        out.append(f'- {P(f["priority"], PRIO[f["priority"]])} {f["id"]} [{LABEL[f["category"]]}, {f["confidence"]}] '
+        out.append(f'- {P(f["priority"], PRIO[f["priority"]])} {f["id"]} [{LABEL[f["category"]]}, {f["confidence"]}'
+                   + (', found by review' if f.get('source') == 'agent' else '') + f'] '
                    f'{f["location"]["file"]}:{f["location"]["line"]}')
         out.append(f'    {f["why"]}')
         p = f['proposal']
@@ -84,11 +87,14 @@ def main() -> int:
             ev = evidence_line(f['evidence'])
             if ev:
                 out.append(P(f'    {ev}', DIM))
+            for b in f.get('basis') or []:
+                out.append(P('    Basis: ' + (f'{b["file"]}:{b["line"]}' if b.get('file') else b.get('evidence', '')), DIM))
             if f['evidence'].get('note'):
                 out.append(P(f'    {f["evidence"]["note"]}', DIM))
             out.append(P(f'    {p["rationale"]}', DIM))
     if d['dismissed']:
-        out += ['', P(f'## Dismissed ({len(d["dismissed"])})', BOLD)] + [f'- {x["candidate_id"]}: {x["reason"]}' for x in d['dismissed']]
+        out += ['', P(f'## Dismissed ({len(d["dismissed"])})', BOLD)] + [f'- {x["candidate_id"]}' + (' (scanner error)' if x.get('scanner_error') else '') + f': {x["reason"]}'
+                                                                     for x in d['dismissed']]
     if not args.brief:
         col = d['collection']
         out += ['', P('## Collection', BOLD), f'- {col["collected"]} of {col["defined"]} defined tests collected']
