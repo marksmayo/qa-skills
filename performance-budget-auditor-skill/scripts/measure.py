@@ -8,13 +8,21 @@
 plan.json:
     {"targets": [{"url", "template", "reason", "critical_path": false, "interaction": [actions]}],
      "profiles": ["mobile-mid", "desktop"], "runs": 5, "cache": "cold", "budget": "budget.json", "authorised_by": null,
-     "allow_form_submission": false, "auth": null}
+     "allow_form_submission": false, "auth": null,
+     "third_party": "block", "allowed_hosts": [], "service_workers": "cold"}
+
+third_party: block (the default) aborts every request to a host that isn't loopback, a target or in
+allowed_hosts, and records it in blocked_requests (reason third_party): analytics, ads and embeds
+are then not measured, so their cost and behaviour are outside the numbers and the report says so.
+allow lets them load and be measured (they are still marked third_party per resource); list a CDN
+the site serves itself from in allowed_hosts. service_workers: cold (the default) blocks them for
+cold runs and allows them for warm runs; block blocks them for every run; allow allows them.
 
 Per page x profile x cache mode (x browser): one discarded warm-up, then N measured runs, each in a
 fresh browser context (so a cold run has an empty cache; service workers are blocked for cold runs).
 A warm run loads the page once in its context and measures the second load. When any budgeted
-metric's coefficient of variation (CV) is above 0.25 after N runs, more runs are added, one at a
-time, up to 10.
+metric is unstable after N runs (CV above 0.25, unless its spread is within the floor or every run
+is at or under half the budget: attribute.is_stable), more runs are added, one at a time, up to 10.
 
 Each measured run records:
   * LCP, CLS, INP, FCP and TTFB from web-vitals 6.2.3 (attribution build, injected before the page
@@ -203,7 +211,7 @@ class Runner:
         chromium = self.browser == 'chromium'
         page = self.h.new_page(viewport=p['viewport'], cpu_throttle=p['cpu_slowdown'] if chromium and p['cpu_slowdown'] > 1 else None,
                                network={'download_kbps': p['download_kbps'], 'upload_kbps': p['upload_kbps'], 'rtt_ms': p['rtt_ms']},
-                               service_workers='block' if cache == 'cold' else 'allow', mobile=p.get('mobile', False))
+                               service_workers=sw_mode(self.plan, cache), mobile=p.get('mobile', False))
         page.add_init_script(self.init)
         return page
 
@@ -413,6 +421,13 @@ def cv(values: list[float]) -> float:
     return round(statistics.stdev(vals) / m, 4) if m else 0.0
 
 
+def sw_mode(plan: dict, cache: str) -> str:
+    mode = plan.get('service_workers', 'cold')
+    if mode == 'cold':
+        return 'block' if cache == 'cold' else 'allow'
+    return mode
+
+
 def budgeted_metrics(budget, profile: str, target: dict) -> list[str]:
     return [m for m in budget.for_(target['url'], profile) if m != 'INP' or target.get('interaction')]
 
@@ -443,14 +458,18 @@ def main() -> int:
     except NotAuthorised as e:
         print(f'error: {e}', file=sys.stderr)
         return 2
-    from attribute import Budget
+    from attribute import Budget, UNITS, is_stable, stats
+    if plan.get('third_party', 'block') not in ('block', 'allow') or plan.get('service_workers', 'cold') not in ('cold', 'block', 'allow'):
+        print('error: third_party must be block or allow; service_workers cold, block or allow', file=sys.stderr)
+        return 2
     budget = Budget((a.plan.parent / plan['budget']) if plan.get('budget') else None)
     lock = load_lock()['assets'][0]
     wv_path = asset_path('web-vitals')
     wv = wv_path.read_text(encoding='utf-8')
     doc = json.loads(a.out.read_text(encoding='utf-8')) if a.append and a.out.exists() else None
     cfg = {'browser': a.browser, 'authorised_by': plan.get('authorised_by'), 'allow_form_submission': plan.get('allow_form_submission', False),
-           'auth': plan.get('auth'), 'rate_limit_seconds': 0.2}
+           'auth': plan.get('auth'), 'rate_limit_seconds': 0.2, 'third_party': plan.get('third_party', 'block'),
+           'allowed_hosts': plan.get('allowed_hosts') or [], 'targets': [t['url'] for t in plan['targets']]}
     with Harness(cfg) as h:
         if doc is None:
             cal_page = h.new_page()
@@ -460,7 +479,9 @@ def main() -> int:
                    'calibration': {'workload': '2e7 iterations of Math.sqrt, no throttling', 'runs_ms': cal,
                                    'median_ms': statistics.median(cal), 'cv': cv(cal), 'busy': cv(cal) > 0.1},
                    'tools': [], 'config': {'runs': runs, 'warmup': 1, 'cv_limit': CV_LIMIT, 'max_runs': MAX_RUNS,
-                                           'profiles': {p: all_profiles[p] for p in profile_names}, 'cache': cache_modes},
+                                           'profiles': {p: all_profiles[p] for p in profile_names}, 'cache': cache_modes,
+                                           'third_party': {'mode': cfg['third_party'], 'allowed_hosts': cfg['allowed_hosts']},
+                                           'service_workers': plan.get('service_workers', 'cold')},
                    'sample': [{k: t.get(k) for k in ('url', 'template', 'reason', 'critical_path')} | {'interaction': bool(t.get('interaction'))}
                               for t in plan['targets']],
                    'runs': [], 'events': [], 'blocked_requests': []}
@@ -486,11 +507,13 @@ def main() -> int:
                         measured.append(rec)
                     names = budgeted_metrics(budget, prof, t)
                     while len(measured) < MAX_RUNS:
-                        unstable = [m for m in names if cv([x.get('metrics', {}).get(m) for x in measured if x['ok']]) > CV_LIMIT]
+                        limits = budget.for_(t['url'], prof)
+                        unstable = [m for m in names if not is_stable(stats([x.get('metrics', {}).get(m) for x in measured if x['ok']]),
+                                                                      UNITS[m], limits.get(m))]
                         if not unstable:
                             break
                         rec = r.one(t, prof, cache, f'{base}/r{len(measured) + 1}', 'extra')
-                        rec['extra_reason'] = f'CV above {CV_LIMIT} for {", ".join(unstable)}'
+                        rec['extra_reason'] = f'unstable (CV above {CV_LIMIT}, spread above the floor) for {", ".join(unstable)}'
                         doc['runs'].append(rec)
                         measured.append(rec)
                     if not a.no_diagnostic:

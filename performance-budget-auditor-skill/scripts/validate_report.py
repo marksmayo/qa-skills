@@ -20,7 +20,12 @@ Also fails when:
   * data_kind isn't lab, field data appears in the measurements, or field data isn't labelled field;
   * INP is reported for a page without an interaction, or LCP/CLS/INP/TBT for a non-Chromium browser;
   * an evidence trace or filmstrip file is missing; a candidate is missing from triage or triaged twice;
-  * web-vitals isn't the pinned version and hash, or Lighthouse isn't recorded as ran/not_run/errored.
+  * web-vitals isn't the pinned version and hash, or Lighthouse isn't recorded as ran/not_run/errored;
+  * the run recorded its third-party mode and scope.third_party doesn't match it, or third-party requests
+    were blocked and no limitation says third-party cost and behaviour were not measured.
+
+Without --budget, the budget file recorded in candidates.json (budget.path, relative to it) is used,
+so the check reads the same budget attribute.py did.
 """
 from __future__ import annotations
 import argparse, json, re, sys
@@ -33,6 +38,8 @@ import compare as cmp  # noqa: E402
 import schema_check  # noqa: E402
 
 PRAISE = re.compile(r'\b(fast|faster|fastest|performant|snappy|speedy|blazing|lightning|quick|instant|optimi[sz]ed)\b', re.I)
+THIRD_PARTY = re.compile(r'third[- ]part', re.I)
+NOT_MEASURED = re.compile(r'\bnot (been )?measured\b|\bunmeasured\b', re.I)
 WITHIN_PHRASE = 'field performance not established'
 FINDING_FIELDS = ('metric', 'template', 'pages', 'cause', 'severity', 'confidence', 'reach', 'leverage', 'score', 'priority',
                   'critical_path', 'worst', 'measurements', 'attribution', 'evidence')
@@ -102,7 +109,13 @@ def main() -> int:
         errs.append('metadata.tools: web-vitals must be the pinned version and SHA-256 from data/assets.lock.json')
     if not any(t['name'].lower().startswith('lighthouse') for t in rep['metadata']['tools']):
         errs.append('metadata.tools: record Lighthouse as ran, not_run or errored')
-    budget = at.Budget(a.budget)
+    bpath = a.budget
+    if bpath is None and cands_doc.get('budget', {}).get('path'):
+        bpath = a.candidates.parent / cands_doc['budget']['path']
+        if not bpath.is_file():
+            errs.append(f'candidates.json names budget {cands_doc["budget"]["path"]}, which does not exist; pass --budget')
+            bpath = None
+    budget = at.Budget(bpath)
     if rep['scope']['budget']['source'] != budget.source:
         errs.append(f'scope.budget.source should be {budget.source!r}')
 
@@ -128,6 +141,13 @@ def main() -> int:
             errs.append(f'measurements: {m["metric"]} in {m["browser"]} must be not_supported')
         if m.get('kind') == 'field' or 'field' in str(m.get('source', '')).lower():
             errs.append('measurements: field data must not be mixed into lab measurements')
+    tp = at.third_party(doc)
+    if tp is not None or rep['scope'].get('third_party') is not None:
+        if rep['scope'].get('third_party') != tp:
+            errs.append(f'scope.third_party should be {json.dumps(tp)[:200]} (from the measurements config and blocked requests)')
+    if tp and tp['blocked'] and not any(THIRD_PARTY.search(x) and NOT_MEASURED.search(x) for x in rep['limitations']):
+        errs.append(f'limitations: {sum(b["requests"] for b in tp["blocked"])} third-party request(s) were blocked; say that '
+                    'third-party cost and behaviour were not measured')
     if cands_doc['measurements'] != meas:
         errs.append('candidates.json is stale; rerun attribute.py')
     if rep['server_timing'] != at.server_timing(doc):

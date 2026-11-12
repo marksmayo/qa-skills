@@ -10,12 +10,18 @@ mean).
 
 | Status | When |
 |---|---|
-| `over` | median > budget and CV ≤ 0.25 |
-| `within` | median ≤ budget and CV ≤ 0.25 |
-| `unstable` | CV > 0.25 after up to 10 runs: it can't pass or fail on its own |
+| `over` | median > budget and stable |
+| `within` | median ≤ budget and stable |
+| `unstable` | not stable after up to 10 runs: it can't pass or fail on its own |
 | `measured` | no budget for this metric |
 | `untested` | INP on a page without an interaction, or no run produced a value |
 | `not_supported` | LCP, CLS, INP or TBT in Firefox or WebKit |
+
+**Stable** means CV ≤ 0.25, or a spread too small to matter for the budget: max − min within
+the floor (10 ms, 0.01 CLS, 1 KB, as in the baseline comparison), or every run at or under half the
+budget. Near-zero metrics (TBT 17 ms with a 39 ms max against 300 ms; CLS 0.003 against 0.1) have
+large CVs that can't change the verdict. `measure.py` adds runs only for metrics that aren't stable
+by this rule.
 
 `bimodal` marks runs that split into two groups of at least two, with a gap more than three times
 the larger group's range.
@@ -38,7 +44,7 @@ A page marked `critical_path` raises the severity one level (Critical stays Crit
 | Confidence | When |
 |---|---|
 | high | CV ≤ 0.1 and every run is over the budget |
-| medium | CV ≤ 0.25 and the median is over |
+| medium | stable and the median is over |
 | low | otherwise, or the measurement is unstable: `needs_review`, never a finding |
 
 ## Reach, leverage and priority

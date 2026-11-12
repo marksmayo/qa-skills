@@ -24,7 +24,9 @@ for targets and forms.
    summaries or titles.
 2. **Variance is reported.** Every metric has its runs, median, min, max and coefficient of
    variation (CV). A metric with CV above 0.25 after up to 10 runs is `unstable`: it neither passes
-   nor fails the budget, and a candidate built on it goes to `needs_review`.
+   nor fails the budget, and a candidate built on it goes to `needs_review`. A spread too small to
+   matter for the budget is stable whatever its CV: max − min within 10 ms, 0.01 CLS or 1 KB, or
+   every run at or under half the budget (TBT of 0–39 ms against 300 ms is not noise that matters).
 3. **Medians decide budgets**, never the best run. Warm-up and diagnostic runs never count.
 4. **Every number has a source**: run ids, the API that produced it (web-vitals, Long Tasks,
    DevTools Network, Server-Timing), and the trace.
@@ -37,17 +39,26 @@ for targets and forms.
 8. **Safe targets.** Loopback needs nothing; any other host needs `authorised_by`. Non-GET requests
    are blocked unless `allow_form_submission` (the harness enforces it).
 9. **Record every tool** as `ran`, `not_run` or `errored`; web-vitals by version and SHA-256.
+10. **Third parties are blocked unless the plan allows them.** By default the harness aborts every
+   request to a host that isn't a target, loopback or in `allowed_hosts` (analytics, ads, embeds,
+   fonts from another host), and records each one. Their cost and behaviour are then **not
+   measured**: the report's `scope.third_party` lists the blocked hosts and a limitation says so.
+   Set `"third_party": "allow"` to measure them (never sends forms either way); list a CDN the site
+   serves its own assets from in `allowed_hosts`.
 
 ## Inputs
 
 | Input | Default | Notes |
 |---|---|---|
 | `targets` | required | URLs with a template name and why each is in the sample (one per template plus critical paths) |
-| `budget` | `data/default-budget.json` | This skill's format (`{"profiles": {name: {metric: value}}}`), a Lighthouse `budget.json`, or both (`"lighthouse": [...]`) |
+| `budget` | `data/default-budget.json` | This skill's format (`{"profiles": {name: {metric: value}}}`), a Lighthouse `budget.json`, or both (`"lighthouse": [...]`). Its `source` field names it in the report (a copy of the defaults keeps saying it is the defaults) |
 | `profiles` | `mobile-mid`, `desktop` | `data/profiles.json` |
 | `runs` | 5 | Per page, profile and cache mode, after one warm-up |
 | `cache` | `cold` | `cold`, `warm` or `both` |
 | `interactions` | none | Steps per page for INP (`[{"click": "#add"}]`) |
+| `third_party` | `block` | `block` aborts and records requests to other hosts; `allow` loads and measures them |
+| `allowed_hosts` | `[]` | Other hosts that are part of the site (its own CDN): `["cdn.example.com", "*.example-cdn.net"]` |
+| `service_workers` | `cold` | `cold` blocks them on cold runs only; `block` on every run (a site whose worker would serve warm runs from its cache); `allow` |
 | `authorised_by`, `auth`, `allow_form_submission` | as in `browser_harness.py` | |
 | `baseline` | none | A previous run's `candidates.json`, for regression comparison |
 | `field_data` | none | CrUX or RUM figures to show alongside, labelled field |
@@ -86,7 +97,9 @@ python scripts/measure.py plan.json --out <run>/measurements.json --append --bro
 It records the machine and a CPU calibration (warning when its CV is above 0.1: the machine is
 busy), then per page, profile and cache mode: a warm-up, N measured runs in fresh contexts, extra
 runs while a budgeted metric's CV is above 0.25 (up to 10), and one diagnostic run with the trace,
-filmstrip and JavaScript coverage. Cold runs block service workers. Interactions run after the page
+filmstrip and JavaScript coverage. Cold runs block service workers (`"service_workers": "block"`
+blocks them for warm runs too). Requests to third-party hosts are blocked and listed in
+`blocked_requests` unless the plan says `"third_party": "allow"`. Interactions run after the page
 settles, for INP.
 
 ### 4. Attribute and rate
@@ -94,6 +107,10 @@ settles, for INP.
 ```bash
 python scripts/attribute.py <run>/measurements.json --budget budget.json --out <run>/candidates.json
 ```
+
+It also records the budget file's path (the validator reads it when not given `--budget`) and the
+third-party summary (`third_party`: mode, allowed hosts, blocked hosts with request counts), which
+goes into the report's `scope.third_party` unchanged.
 
 Statistics and statuses per metric, Server-Timing per route, and one candidate per (template,
 metric, cause), rated by `RUBRIC.md`.
@@ -116,8 +133,9 @@ for that page and say which median should drop below the budget).
 
 Watch for: consent banners (measure with and after dismissing them, and report both); bimodal
 results from A/B tests (`bimodal: true`: report the two groups, don't trust the median); third
-parties (reported by origin; excluding them from the budget is the user's call, but they're still
-measured); mobile web (an emulated profile, not a real device; native apps are out of scope).
+parties (blocked by default, so not measured: say so in the limitations and name the blocked
+hosts; when the plan allows them they're reported by origin, and excluding them from the budget is
+the user's call); mobile web (an emulated profile, not a real device; native apps are out of scope).
 
 ### 7. Write, validate, render
 
@@ -133,8 +151,9 @@ Fix every validator error; never edit the runs.
 
 ## Output fields
 
-- `scope`: targets (template, reason, critical path, interaction), profiles, budget source, runs,
-  cache modes, browsers, `authorised_by`.
+- `scope`: targets (template, reason, critical path, interaction), profiles, budget source and
+  note (as in `candidates.json`), runs, cache modes, browsers, `authorised_by`, and `third_party`
+  (as in `candidates.json`; required when the run recorded it).
 - `metadata`: machine, calibration, tools (web-vitals with SHA-256, Playwright browsers,
   Lighthouse), and the measurements file.
 - `headline`: verdict, `data_kind: "lab"`, a summary, over-budget counts per metric, unstable count,
@@ -147,6 +166,8 @@ Fix every validator error; never edit the runs.
 Every statistic, status, candidate, rating and headline field is recomputed from the runs.
 Unstable metrics never pass or make findings; low-confidence candidates are never findings. The
 verdict follows the measurements and the summary says lab and avoids praise. INP appears only with
-an interaction; Chromium-only metrics are `not_supported` elsewhere. Evidence files exist. Field
+an interaction; Chromium-only metrics are `not_supported` elsewhere. Evidence files exist.
+`scope.third_party` matches the run, and blocked third-party requests are named as not measured in
+the limitations. Field
 data stays out of the measurements. web-vitals is the pinned build. The check is structural:
 timings depend on the machine, so a rerun gives different numbers.

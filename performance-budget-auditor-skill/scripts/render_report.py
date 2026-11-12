@@ -16,6 +16,12 @@ COLS = ['LCP', 'CLS', 'INP', 'TBT', 'FCP', 'TTFB', 'transfer_total', 'transfer_s
 HEAD = {'transfer_total': 'total', 'transfer_script': 'JS'}
 
 
+def path_of(url: str) -> str:
+    """Path and query string, so /search and /search?q=x stay apart."""
+    u = urlparse(url or '')
+    return (u.path or '/') + (('?' + u.query) if u.query else '')
+
+
 def supports_color(mode: str) -> bool:
     if mode == 'always':
         return True
@@ -44,6 +50,18 @@ def cell(m: dict, P) -> str:
     return P(txt + mark, STATUS[m['status']])
 
 
+def third_party_line(tp: dict | None) -> str:
+    if tp is None:
+        return 'Third-party requests: not recorded by this run.'
+    if tp['mode'] == 'allow':
+        return 'Third-party requests: allowed and measured.'
+    if not tp['blocked']:
+        return 'Third-party requests: blocked by the harness; none were attempted.'
+    n = sum(b['requests'] for b in tp['blocked'])
+    return (f'Third-party requests: {n} blocked (' + ', '.join(f'{b["host"]} x{b["requests"]}' for b in tp['blocked'][:6]) +
+            (', ...' if len(tp['blocked']) > 6 else '') + '); their cost and behaviour are not measured.')
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('report', type=Path)
@@ -59,7 +77,8 @@ def main() -> int:
            f'Over budget: ' + (', '.join(f'{k} x{n}' for k, n in hl['over_budget_counts'].items()) or 'none') +
            f'; unstable: {hl["unstable_metrics"]}. Evidence {hl["evidence_completeness"]}, confidence {hl["overall_confidence"]}.',
            f'{sc["runs"]} runs per page and profile after a warm-up; cache {", ".join(sc["cache"])}; browsers {", ".join(sc["browsers"])}. '
-           f'Budget: {sc["budget"]["source"]}.',
+           f'Budget: {sc["budget"]["source"]}' + (f' ({sc["budget"]["note"]})' if sc['budget'].get('note') else '') + '.',
+           third_party_line(sc.get('third_party')),
            f'Machine: {md["machine"]["cpu"]}, {md["machine"]["cores"]} cores, {md["machine"]["os"]}; calibration '
            f'{md["calibration"]["median_ms"]} ms (CV {md["calibration"]["cv"]}){" BUSY" if md["calibration"]["busy"] else ""}.']
     if a.brief:
@@ -76,8 +95,8 @@ def main() -> int:
             '|---|---|' + '---|' * len(COLS)]
     for (url, prof, cache, browser), ms in rows.items():
         label = f'{prof}' + (f' {cache}' if len(sc['cache']) > 1 else '') + (f' ({browser})' if browser != 'chromium' else '')
-        out.append(f'| {urlparse(url).path or "/"} | {label} | ' + ' | '.join(cell(ms[c], P) if c in ms else '-' for c in COLS) + ' |')
-    out += ['', 'OVER: median over budget. ~: unstable (CV above 0.25), can\'t pass or fail on its own. Untested: INP needs an '
+        out.append(f'| {path_of(url)} | {label} | ' + ' | '.join(cell(ms[c], P) if c in ms else '-' for c in COLS) + ' |')
+    out += ['', 'OVER: median over budget. ~: unstable (CV above 0.25 with a spread that matters for the budget), can\'t pass or fail on its own. Untested: INP needs an '
                 'interaction. Not supported: a Chromium-only metric in another browser.']
     if d['findings']:
         out += ['', P('## Findings', BOLD)]
@@ -85,7 +104,7 @@ def main() -> int:
         w = f['worst']
         unit = next((m['unit'] for m in d['measurements'] if m['metric'] == f['metric']), 'ms')
         out += ['', P(f'### {f["id"]} {f["priority"]} {f["severity"]}: {f["title"]}', SEV[f['severity']]), '',
-                f'{f["metric"]} on {", ".join(urlparse(p).path or "/" for p in f["pages"])} (template {f["template"]})'
+                f'{f["metric"]} on {", ".join(path_of(p) for p in f["pages"])} (template {f["template"]})'
                 f'{", critical path" if f["critical_path"] else ""}: worst {fmt(w["median"], unit)} against {fmt(w["budget"], unit)} '
                 f'({w["ratio"]}x, {w["profile"]}); confidence {f["confidence"]}; reach {f["reach"]}, leverage {f["leverage"]}, score {f["score"]}.',
                 '', f'- Cause: {f["cause"]}']
@@ -96,7 +115,7 @@ def main() -> int:
                        f'{b["resourceLoadDuration"]} ms, render delay {b["elementRenderDelay"]} ms; fetchpriority '
                        f'{attr.get("fetchpriority") or "not set"}; size attributes {"set" if attr.get("has_size_attributes") else "missing"}')
         if attr.get('render_blocking'):
-            out.append('- Render-blocking: ' + ', '.join(f'{urlparse(r["url"]).path} ({r["duration"]} ms)' for r in attr['render_blocking']))
+            out.append('- Render-blocking: ' + ', '.join(f'{path_of(r["url"])} ({r["duration"]} ms)' for r in attr['render_blocking']))
         if f['metric'] == 'CLS' and attr.get('shifts'):
             out.append('- Shifts: ' + '; '.join(f'{s["value"]} at {s["start"]} ms moving {", ".join(s["sources"])}' for s in attr['shifts']))
         if f['metric'] == 'INP':
@@ -104,9 +123,9 @@ def main() -> int:
                        f'{attr.get("input_delay_ms")} ms, processing {attr.get("processing_ms")} ms, presentation '
                        f'{attr.get("presentation_delay_ms")} ms')
         if attr.get('scripts'):
-            out.append('- Scripts: ' + ', '.join(f'{urlparse(s["url"]).path} {s["script_ms_median"]} ms' for s in attr['scripts'][:3]))
+            out.append('- Scripts: ' + ', '.join(f'{path_of(s["url"])} {s["script_ms_median"]} ms' for s in attr['scripts'][:3]))
         if attr.get('largest'):
-            out.append('- Largest: ' + ', '.join(f'{urlparse(r["url"]).path} {fmt(r["bytes"], "bytes")}' +
+            out.append('- Largest: ' + ', '.join(f'{path_of(r["url"])} {fmt(r["bytes"], "bytes")}' +
                                                   (f' ({fmt(r["unused_bytes"], "bytes")} unused)' if r.get('unused_bytes') else '')
                                                   for r in attr['largest'][:3]))
         if attr.get('server_timing'):
@@ -121,7 +140,7 @@ def main() -> int:
     if d['regressions']:
         out += ['', P('## Against the baseline', BOLD), '']
         for r in d['regressions']:
-            out.append(f'- {P(r["direction"].upper(), RED if r["direction"] == "regressed" else GREEN)} {urlparse(r["url"]).path or "/"} '
+            out.append(f'- {P(r["direction"].upper(), RED if r["direction"] == "regressed" else GREEN)} {path_of(r["url"])} '
                        f'{r["profile"]} {r["metric"]}: {fmt(r["baseline_median"], r["unit"])} -> {fmt(r["current_median"], r["unit"])} '
                        f'({r["change_pct"]}%; noise threshold {fmt(r["threshold"], r["unit"])})')
     if d['field_data']:

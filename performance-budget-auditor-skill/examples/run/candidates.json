@@ -1,9 +1,11 @@
 {
  "measurements_file": "measurements.json",
  "budget": {
-  "source": "budget.json",
-  "note": "the bakery's budget: the skill's defaults per profile, plus a Lighthouse-format entry for the menu pages' server response time"
+  "source": "the bakery's budget: the skill's defaults per profile, plus a Lighthouse-format entry for the menu pages' server response time",
+  "note": "budget.json",
+  "path": "../budget.json"
  },
+ "third_party": null,
  "measurements": [
   {
    "url": "http://127.0.0.1:8142/",

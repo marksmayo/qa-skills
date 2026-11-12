@@ -9,7 +9,11 @@ overrun:
   FCP, TTFB and bytes per resource type.
 - **Repeated runs** per page under fixed network and CPU profiles (`mobile-mid`, `desktop`), with
   median, min, max and coefficient of variation; noisy metrics get more runs, and stay `unstable`
-  if they don't settle.
+  if they don't settle (a near-zero metric whose spread can't change the budget verdict, such as
+  TBT of 17 ms against 300 ms, counts as stable).
+- **Third parties blocked by default**: analytics, ads and embeds on other hosts are not loaded
+  (the harness records each blocked request), so the numbers leave out their cost and the report
+  says so; `"third_party": "allow"` in the plan measures them.
 - **Attribution**: the LCP element and its resource with the load breakdown, the layout shift's
   target, the scripts in long tasks, the slow interaction handler, the largest downloads and their
   unused JavaScript, and Server-Timing for slow server responses.

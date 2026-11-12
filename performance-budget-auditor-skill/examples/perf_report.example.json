@@ -62,8 +62,8 @@
    }
   },
   "budget": {
-   "source": "budget.json",
-   "note": "the bakery's budget: the skill's defaults per profile, plus a Lighthouse-format entry for the menu pages' server response time"
+   "source": "the bakery's budget: the skill's defaults per profile, plus a Lighthouse-format entry for the menu pages' server response time",
+   "note": "budget.json"
   },
   "runs": 5,
   "cache": [

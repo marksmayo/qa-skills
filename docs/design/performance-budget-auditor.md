@@ -217,3 +217,22 @@ Where the build differs from the design above, and what the example showed.
     `db` step; CLS 0.13 from the banner; /about within on both profiles.
   - The /order mobile diagnostic run timed out on its click while tracing; it is recorded, not rerun.
 - **Testing:** 33 of 33 seeded report violations are caught.
+- **Found on a real static site, fixed:**
+  - *Near-zero metrics counted as unstable.* TBT with a 17 ms median and a 39 ms max against a
+    300 ms budget, and CLS of 0.0027 against 0.1, had CVs far above 0.25, which forced ten runs and
+    "partial" evidence. A metric is now stable when its CV is within 0.25, its spread is within the
+    comparison's floor (10 ms, 0.01 CLS, 1 KB), or every run is at or under half the budget;
+    `attribute.is_stable` decides it for `measure.py`'s extra runs, the statuses and the validator.
+    Confidence for an over-budget measurement is high or medium, since over implies stable.
+  - *The renderer dropped query strings*, so `/search` and `/search?q=x` looked like one page; it
+    now shows path and query everywhere.
+  - *A copied default budget was recorded by its file name*, and a validator run without
+    `--budget` expected the built-in label. The budget's `source` is now the file's own `source`
+    field when present (the file name goes in `note`), `candidates.json` records the budget path,
+    and the validator reads that path when `--budget` isn't given.
+  - *Third parties.* The shared harness now blocks requests to third-party hosts by default. The
+    plan takes `third_party`, `allowed_hosts` and `service_workers` (`cold`, `block`, `allow`);
+    the measurements record the mode and every blocked request, `attribute.py` summarises the
+    blocked hosts, the report carries it as `scope.third_party`, and the validator requires a
+    limitation saying their cost and behaviour were not measured. The example predates this, so
+    its run records no third-party mode (the bakery has no third parties).

@@ -7,12 +7,16 @@ Statistics per (url, profile, cache, browser, metric), over the measured and ext
 (warm-up and diagnostic runs never count): n, median, min, max and coefficient of variation
 (sample standard deviation / mean). Status:
 
-  within          median <= budget, CV <= 0.25
-  over            median > budget, CV <= 0.25
-  unstable        CV > 0.25 (after up to 10 runs): can't pass or fail the budget on its own
+  within          median <= budget, stable
+  over            median > budget, stable
+  unstable        not stable after up to 10 runs: can't pass or fail the budget on its own
   measured        no budget for this metric
   untested        INP on a page without a scripted interaction
   not_supported   LCP, CLS, INP or TBT in Firefox or WebKit
+
+Stable means CV <= 0.25, or a spread too small to matter for the budget: max - min within a floor
+of 10 ms, 0.01 CLS or 1 KB (the floor compare.py uses), or every run at or under half the budget.
+Near-zero metrics (TBT of 17 ms, CLS of 0.003) have large CVs that say nothing about the budget.
 
 `bimodal` is set when the sorted values split into two groups of at least two runs with a gap more
 than three times the larger group's own range: report the groups instead of trusting the median.
@@ -25,10 +29,16 @@ diagnostic run, unused JavaScript bytes; Server-Timing for TTFB. Ratings follow 
 
 The budget is data/default-budget.json unless --budget is given: either this skill's format
 ({"profiles": {name: {metric: value}}}) or a Lighthouse budget.json (a list of {path, timings,
-resourceSizes}; sizes in KB), whose entries apply to every profile.
+resourceSizes}; sizes in KB), whose entries apply to every profile. The budget's recorded source
+is the file's own "source" field when it has one (so a copy of the defaults says what it is), else
+its file name; the output also records the budget file's path, which validate_report.py reads when
+it isn't given --budget.
+
+With the measurements' config recording third_party (measure.py does), the output summarises the
+requests the harness blocked to third-party hosts: their cost and behaviour were not measured.
 """
 from __future__ import annotations
-import argparse, fnmatch, json, statistics, sys
+import argparse, fnmatch, json, os, statistics, sys
 from collections import Counter
 from pathlib import Path
 from urllib.parse import urlparse
@@ -39,6 +49,8 @@ UNITS = {'LCP': 'ms', 'CLS': 'score', 'INP': 'ms', 'TBT': 'ms', 'FCP': 'ms', 'TT
          'transfer_script': 'bytes'}
 CHROMIUM_ONLY = {'LCP', 'CLS', 'INP', 'TBT'}
 CV_LIMIT = 0.25
+SPREAD_FLOOR = {'ms': 10.0, 'score': 0.01, 'bytes': 1024.0}  # as compare.py
+FAR_UNDER = 0.5  # every run at or under half the budget: noise can't change the verdict
 WEIGHT = {'Critical': 4, 'High': 3, 'Medium': 2, 'Low': 1}
 LEVELS = ['Low', 'Medium', 'High', 'Critical']
 LH_TIMINGS = {'largest-contentful-paint': 'LCP', 'cumulative-layout-shift': 'CLS', 'total-blocking-time': 'TBT',
@@ -51,11 +63,15 @@ class Budget:
     def __init__(self, path: Path | None):
         if path is None:
             path = SKILL / 'data' / 'default-budget.json'
-        self.source = path.name if path.resolve().parent != (SKILL / 'data').resolve() else 'data/default-budget.json (built-in defaults)'
+        self.path = path
+        self.builtin = builtin = path.resolve() == (SKILL / 'data' / 'default-budget.json').resolve()
         raw = json.loads(path.read_text(encoding='utf-8'))
         self.profiles = raw.get('profiles') if isinstance(raw, dict) else None
         self.lighthouse = raw if isinstance(raw, list) else (raw.get('lighthouse') if isinstance(raw, dict) else None)
-        self.note = raw.get('source') if isinstance(raw, dict) else 'Lighthouse budget.json'
+        own = raw.get('source') if isinstance(raw, dict) else None
+        label = 'data/default-budget.json (built-in defaults)' if builtin else path.name
+        self.source = own or label
+        self.note = label if own else ('Lighthouse budget.json' if isinstance(raw, list) else None)
 
     def for_(self, url: str, profile: str) -> dict:
         out = dict((self.profiles or {}).get(profile, {}))
@@ -79,6 +95,15 @@ def stats(values: list[float]) -> dict:
     cv = round(statistics.stdev(vals) / m, 4) if len(vals) > 1 and m else 0.0
     med = statistics.median(vals)
     return {'n': len(vals), 'median': round(med, 4) if isinstance(med, float) else med, 'min': min(vals), 'max': max(vals), 'cv': cv}
+
+
+def is_stable(st: dict, unit: str, limit: float | None) -> bool:
+    """CV within the limit, or a spread that can't matter for the budget (see the module docstring)."""
+    if st['n'] == 0 or st['cv'] is None or st['cv'] <= CV_LIMIT:
+        return True
+    if st['max'] - st['min'] <= SPREAD_FLOOR[unit]:
+        return True
+    return limit is not None and st['max'] <= FAR_UNDER * limit
 
 
 def bimodal(values: list[float]) -> bool:
@@ -130,7 +155,7 @@ def measurements(doc: dict, budget: Budget) -> list[dict]:
                 status = 'untested'
             elif limit is None:
                 status = 'measured'
-            elif st['cv'] > CV_LIMIT:
+            elif not is_stable(st, UNITS[metric], limit):
                 status = 'unstable'
             elif st['median'] > limit:
                 status = 'over'
@@ -144,6 +169,16 @@ def measurements(doc: dict, budget: Budget) -> list[dict]:
                         'bimodal': bimodal(vals) if status not in ('not_supported', 'untested') else False,
                         'source': (ok[0].get('metric_sources') or {}).get(metric) if ok else None, 'note': note})
     return out
+
+
+def third_party(doc: dict) -> dict | None:
+    """What the harness did with third-party requests, when the run recorded it: mode, allowed hosts, blocked hosts."""
+    cfg = doc['config'].get('third_party')
+    if cfg is None:
+        return None
+    hosts = Counter(urlparse(b['url']).hostname or b['url'] for b in doc.get('blocked_requests') or [] if b.get('reason') == 'third_party')
+    return {'mode': cfg['mode'], 'allowed_hosts': cfg.get('allowed_hosts') or [],
+            'blocked': [{'host': h, 'requests': n} for h, n in sorted(hosts.items(), key=lambda x: (-x[1], x[0]))]}
 
 
 def server_timing(doc: dict) -> list[dict]:
@@ -276,9 +311,7 @@ def confidence_of(m: dict) -> str:
     all_over = all(r['value'] is not None and r['value'] > m['budget'] for r in m['runs'])
     if m['cv'] <= 0.1 and all_over:
         return 'high'
-    if m['cv'] <= CV_LIMIT:
-        return 'medium'
-    return 'low'
+    return 'medium'  # over implies stable: CV within the limit or a spread under the floor
 
 
 def priority_of(severity: str, reach: int, leverage: int) -> tuple[int, str]:
@@ -335,6 +368,13 @@ def candidates(doc: dict, meas: list[dict]) -> list[dict]:
     return [{'id': c['id'], **{k: v for k, v in c.items() if k != 'id'}} for c in cands]
 
 
+def rel_path(f: Path, out: Path) -> str:
+    try:
+        return Path(os.path.relpath(f.resolve(), out.resolve().parent)).as_posix()
+    except ValueError:  # another drive on Windows
+        return f.resolve().as_posix()
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('measurements', type=Path)
@@ -345,8 +385,10 @@ def main() -> int:
     budget = Budget(a.budget)
     meas = measurements(doc, budget)
     cands = candidates(doc, meas)
-    out = {'measurements_file': a.measurements.name, 'budget': {'source': budget.source, 'note': budget.note},
-           'measurements': meas, 'server_timing': server_timing(doc), 'candidates': cands}
+    out = {'measurements_file': a.measurements.name,
+           'budget': {'source': budget.source, 'note': budget.note,
+                      'path': None if budget.builtin else rel_path(budget.path, a.out)},
+           'third_party': third_party(doc), 'measurements': meas, 'server_timing': server_timing(doc), 'candidates': cands}
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(json.dumps(out, indent=1) + '\n', encoding='utf-8')
     st = Counter(m['status'] for m in meas)
