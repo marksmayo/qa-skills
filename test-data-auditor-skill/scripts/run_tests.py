@@ -45,9 +45,33 @@ Node and Python are asked which zone they actually see before the runs; a TZ the
 ignored is an error, and for other runners the note says the zone was set but not checked.
 LANG and LC_ALL are set as given; many runtimes on Windows ignore them, and each run says so.
 `--env K=V` may be repeated or take several pairs, anywhere on the command line.
+
+Environment values are not copied into runs.json: `variation.env` records every name, but only the
+harness's own variables (clock shift, TZ, locale, PYTHONPATH, PYTEST_ADDOPTS, NODE_OPTIONS, seeds,
+JUnit paths) keep their value, with URL credentials and key=value secrets inside them redacted;
+every other value is `<redacted>`. `--record-env NAME` keeps the value of a further variable that
+is known not to be secret.
+
+A run that did not run the tests is marked `errored: true` with an `error` reason, never left
+looking like a clean empty run: a crashed process (a negative exit, or a Windows NTSTATUS exit such
+as 0xC0000005 access violation or 0xC00000FD stack overflow), a timeout, pytest exit codes 2
+(interrupted, e.g. a collection error), 3 (internal error), 4 (usage error, e.g. an unknown test
+id) and 5 (no tests collected), or no JUnit test cases at all. Its cases, if any, are kept.
+
+pytest ids: reordered and isolated runs collect node ids first. pytest prints them relative to its
+rootdir, which may be an ancestor of --cwd (a pytest.ini higher up) or below it (a package's own
+pyproject.toml); the ids are mapped back to paths relative to --cwd before they are passed on, and
+the run says so. When the ids would make a long command line (Windows allows 32,767 characters),
+the run passes only their files and a small generated plugin (`-p qa_skills_test_ids`, from a
+temporary directory on PYTHONPATH) reads the ids from a file, keeps exactly those tests and puts
+them in the listed order; an id it can't find stops the run with exit 4.
+
+`--hash-path DIR` (repeatable) adds directories outside --cwd to `code_hash`, for code the tests
+import from a sibling package (a monorepo's shared library); `code_hash_basis.extra_paths` lists
+them. Without it the hash covers --cwd only.
 """
 from __future__ import annotations
-import argparse, hashlib, json, os, random, re, shlex, shutil, signal, subprocess, sys, time
+import argparse, hashlib, json, os, random, re, shlex, shutil, signal, subprocess, sys, tempfile, time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -97,6 +121,42 @@ PRESETS = {
     },
     'custom': {'cmd': None, 'tests': 'placeholder'},
 }
+
+
+# ---------------------------------------------------------------- environment values in the record
+# Variables the harness itself sets to control a run; their values are evidence (which clock, which zone).
+RECORDED_ENV = {'TDA_CLOCK_SHIFT', 'TDA_CLOCK_DATE', 'TDA_CLOCK_ANNOUNCED', 'FAKETIME', 'TZ', 'LANG', 'LANGUAGE',
+                'PYTHONPATH', 'PYTEST_ADDOPTS', 'NODE_OPTIONS', 'PYTHONHASHSEED', 'PYTHONDONTWRITEBYTECODE',
+                'PYTHONUNBUFFERED', 'PYTHONIOENCODING', 'PYTHONUTF8', 'CI', 'NODE_ENV', 'FORCE_COLOR', 'NO_COLOR',
+                'JEST_JUNIT_OUTPUT_FILE', 'MOCHA_FILE', 'PLAYWRIGHT_JUNIT_OUTPUT_NAME', 'VITEST_SEED', 'JEST_SEED',
+                'GOFLAGS', 'GOMAXPROCS'}
+SECRET_NAME = re.compile(r'PASS|PWD|SECRET|KEY|TOKEN|CRED|AUTH|COOKIE|SESSION|CONN|DSN|PRIVATE|CERT|SIGNATURE|SAS\b',
+                         re.I)
+URL_CREDENTIALS = re.compile(r'(\b[a-z][a-z0-9+.-]*://)[^/@\s]+@', re.I)
+INLINE_SECRET = re.compile(r'\b((?:password|pwd|passwd|secret|token|apikey|api_key|accountkey|sharedaccesskey|'
+                           r'sharedaccesssignature|sig)\s*=\s*)[^;&\s]+', re.I)
+
+
+def scrub(text: str) -> str:
+    """Credentials inside a value (user:pass@ in URLs, Password=...; in connection strings) and the home directory."""
+    return redact_home(INLINE_SECRET.sub(r'\1<redacted>', URL_CREDENTIALS.sub(r'\1<redacted>@', text)))
+
+
+def recorded_env(name: str, value: str, keep: set[str] = frozenset()) -> str:
+    """The value runs.json records for an environment variable: the scrubbed value for the harness's own variables
+    (and names given with --record-env), `<redacted>` for everything else."""
+    known = name in RECORDED_ENV or name.startswith('LC_') or name in keep
+    if known and (name in keep or not SECRET_NAME.search(name)):
+        return scrub(value)
+    return '<redacted>'
+
+
+def env_pairs(groups) -> list[str]:
+    """Flatten `--env` given as `nargs='+', action='append'` (repeated, several pairs each) into one K=V list."""
+    out = []
+    for g in groups or []:
+        out.extend([g] if isinstance(g, str) else g)
+    return out
 
 
 def redact_home(text: str) -> str:
@@ -176,11 +236,35 @@ def hash_tree(root: Path, notes: list[str] | None = None, basis: dict | None = N
     return h.hexdigest(), per_file
 
 
-def code_hash(root: Path, notes: list[str] | None = None, basis: dict | None = None) -> str:
+def hash_trees(root: Path, extra=(), notes: list[str] | None = None, basis: dict | None = None) -> tuple[str, dict[str, str]]:
+    """hash_tree(root), widened by extra directories (sibling packages the tests import). Without extras it is
+    exactly hash_tree(root); with them, the per-file keys of each extra are prefixed by its path relative to root."""
+    chash, digests = hash_tree(root, notes, basis)
+    if not extra:
+        return chash, digests
+    root = Path(root).resolve()
+    h = hashlib.sha256(b'code_hash with extra paths\0' + chash.encode() + b'\0')
+    shown = []
+    for e in sorted({Path(root, x).resolve() for x in extra}, key=lambda p: p.as_posix()):
+        rel = Path(os.path.relpath(e, root)).as_posix()
+        sub_basis: dict = {}
+        sub, sub_digests = hash_tree(e, notes, sub_basis)
+        h.update(rel.encode('utf-8') + b'\0' + sub.encode() + b'\0')
+        digests.update({f'{rel}/{k}': v for k, v in sub_digests.items()})
+        shown.append(rel)
+        if basis is not None:
+            basis['files'] = basis.get('files', 0) + sub_basis.get('files', 0)
+    if basis is not None:
+        basis['extra_paths'] = shown
+    return h.hexdigest(), digests
+
+
+def code_hash(root: Path, notes: list[str] | None = None, basis: dict | None = None, extra=()) -> str:
     """SHA-256 of every source file's relative path and content (line endings normalised), sorted by POSIX path
     string so the order is the same on every platform (Path ordering is case-insensitive on Windows). Inside git,
-    only files git would track count; otherwise a pruned walk. Never raises for an unreadable file."""
-    return hash_tree(root, notes, basis)[0]
+    only files git would track count; otherwise a pruned walk. Never raises for an unreadable file. `extra`
+    directories (relative to root or absolute) widen the hash; see hash_trees."""
+    return hash_trees(root, extra, notes, basis)[0]
 
 
 def iter_files(root: Path, extra_skip: set[Path] | None = None, errors: list[str] | None = None):
@@ -374,13 +458,112 @@ def vitest_ids(tests: list[str]) -> tuple[list[str], str | None]:
     return files, '^(?:' + '|'.join(dict.fromkeys(names)) + ')$'
 
 
-def collect_pytest(cwd: Path, tests: list[str], env: dict) -> list[str]:
-    res = subprocess.run(PRESETS['pytest']['collect'] + tests, cwd=cwd, env=env, capture_output=True, text=True,
-                         encoding='utf-8', errors='replace')
-    ids = [l.strip() for l in res.stdout.splitlines() if '::' in l and not l.startswith(' ')]
+ARGS_BUDGET = 6000   # characters of test ids on one command line before they go through a file instead
+
+
+def chunks(items: list[str], budget: int = ARGS_BUDGET) -> list[list[str]]:
+    out, cur, size = [], [], 0
+    for x in items:
+        if cur and size + len(x) + 1 > budget:
+            out.append(cur)
+            cur, size = [], 0
+        cur.append(x)
+        size += len(x) + 1
+    return out + ([cur] if cur else [])
+
+
+def map_ids_to_cwd(ids: list[str], cwd: Path, given: list[str]) -> tuple[list[str], str | None]:
+    """pytest prints node ids relative to its rootdir, which need not be --cwd: an ancestor holding pytest.ini, or a
+    package below --cwd whose pyproject.toml the given paths lead to. Map each id's file part to a path relative to
+    cwd, trying cwd, its ancestors and the directories between cwd and each given path. (ids, note or None)."""
+    cwd = cwd.resolve()
+    bases = [cwd, *cwd.parents]
+    for g in given:
+        p = (cwd / g.split('::')[0]).resolve()
+        chain = []
+        while p != cwd and cwd in p.parents:
+            chain.append(p)
+            p = p.parent
+        bases += [q for q in reversed(chain) if q.is_dir()]
+    out, used = [], None
+    for i in ids:
+        f, sep, rest = i.partition('::')
+        if (cwd / f).exists():
+            out.append(i)
+            continue
+        base = used if used is not None and (used / f).exists() else next((b for b in bases if (b / f).exists()), None)
+        if base is None:
+            raise SystemExit(f'pytest collected {i!r}, but no file {f} exists relative to --cwd, its parents or the '
+                             'given test paths; run from pytest\'s rootdir (the directory holding its ini file)')
+        used = base
+        out.append(Path(os.path.relpath(base / f, cwd)).as_posix() + sep + rest)
+    if used is None:
+        return out, None
+    return out, (f'pytest reported node ids relative to its rootdir '
+                 f'{Path(os.path.relpath(used, cwd)).as_posix()}; they were mapped to paths relative to --cwd.')
+
+
+def collect_pytest(cwd: Path, tests: list[str], env: dict) -> tuple[list[str], str | None]:
+    ids, outs = [], []
+    for part in (chunks(tests) or [[]]):   # long --tests lists are collected in pieces, keeping their order
+        res = subprocess.run(PRESETS['pytest']['collect'] + part, cwd=cwd, env=env, capture_output=True, text=True,
+                             encoding='utf-8', errors='replace')
+        ids += [l.strip() for l in res.stdout.splitlines() if '::' in l and not l.startswith(' ')]
+        outs.append(res.stdout[-800:] + res.stderr[-800:])
     if not ids:
-        raise SystemExit(f'pytest collected no tests:\n{res.stdout[-800:]}{res.stderr[-800:]}')
-    return ids
+        raise SystemExit('pytest collected no tests:\n' + '\n'.join(outs)[-1600:])
+    return map_ids_to_cwd(list(dict.fromkeys(ids)), cwd, tests)
+
+
+IDS_PLUGIN = 'qa_skills_test_ids'
+IDS_PLUGIN_SOURCE = r'''"""Generated by run_tests.py: keep exactly the test ids listed in $QA_SKILLS_TEST_IDS, in that order."""
+import os
+import pytest
+
+
+def _key(item, cwd):
+    path = getattr(item, "path", None) or getattr(item, "fspath", None)
+    _, sep, rest = item.nodeid.partition("::")
+    return os.path.relpath(str(path), cwd).replace(os.sep, "/") + sep + rest
+
+
+def pytest_collection_modifyitems(session, config, items):
+    listed = os.environ.get("QA_SKILLS_TEST_IDS")
+    if not listed:
+        return
+    with open(listed, encoding="utf-8") as fh:
+        want = [line.rstrip("\r\n") for line in fh if line.strip()]
+    cwd = os.environ.get("QA_SKILLS_IDS_CWD") or os.getcwd()
+    rank = {w: n for n, w in enumerate(want)}
+    keep, drop, found = [], [], set()
+    for item in items:
+        k = _key(item, cwd)
+        if k in rank and k not in found:
+            keep.append(item)
+            found.add(k)
+        else:
+            drop.append(item)
+    missing = [w for w in want if w not in found]
+    if missing:
+        pytest.exit(f"qa_skills_test_ids: {len(missing)} listed test id(s) were not collected, e.g. {missing[0]}",
+                    returncode=4)
+    keep.sort(key=lambda it: rank[_key(it, cwd)])
+    if drop:
+        config.hook.pytest_deselected(items=drop)
+    items[:] = keep
+'''
+
+
+def ids_by_file(tests: list[str], cwd: Path, budget: int = ARGS_BUDGET) -> list[str]:
+    """The paths to give pytest when the ids themselves go through a file: each test's file, in first-seen order, or
+    their common directory when even the file list is long. Collecting a file or directory then the plugin's filter
+    gives the same rootdir and configuration as naming the ids."""
+    files = list(dict.fromkeys(t.split('::')[0] for t in tests))
+    if sum(len(f) + 1 for f in files) <= budget:
+        return files
+    common = os.path.commonpath([str((cwd / f).resolve()) for f in files])
+    common = Path(common) if os.path.isdir(common) else Path(common).parent
+    return [Path(os.path.relpath(common, cwd)).as_posix()]
 
 
 def kill_tree(proc: subprocess.Popen) -> None:
@@ -456,13 +639,71 @@ def resolve_exe(cmd: list[str], env: dict, cwd: Path) -> list[str]:
     return [found, *cmd[1:]]
 
 
+PYTEST_EXIT = {2: 'pytest exit 2: the session was interrupted (usually a collection error)',
+               3: 'pytest exit 3: internal error', 4: 'pytest exit 4: usage error (an option or test id pytest could not use)',
+               5: 'pytest exit 5: no tests were collected'}
+NTSTATUS = {0xC0000005: 'access violation', 0xC00000FD: 'stack overflow', 0xC0000409: 'stack buffer overrun',
+            0xC0000374: 'heap corruption', 0xC000001D: 'illegal instruction', 0xC0000094: 'integer divide by zero',
+            0xC000013A: 'interrupted (Ctrl-C)', 0xC0000135: 'a DLL was not found', 0xC0000142: 'a DLL failed to initialise'}
+
+
+FATAL_RX = re.compile(r'Fatal Python error|Windows fatal exception|Segmentation fault|core dumped')
+
+
+def run_error(code: int | None, timed_out: bool, cases: list, is_pytest: bool, output: str = '') -> str | None:
+    """Why this run did not run the tests, or None when it did. A crashed or errored run is never a clean empty run."""
+    if timed_out:
+        return 'timed out; the process tree was killed'
+    if code is not None and code >= 0xC0000000:   # Windows NTSTATUS: the process died, usually without a traceback
+        return f'the process crashed (exit 0x{code:08X}, {NTSTATUS.get(code, "an NTSTATUS error")}); no clean result'
+    if code and FATAL_RX.search(output or ''):
+        return f'the interpreter crashed ({FATAL_RX.search(output).group(0)} in the output, exit {code}); no clean result'
+    if code is not None and code < 0:
+        try:
+            name = signal.Signals(-code).name
+        except (ValueError, AttributeError):
+            name = f'signal {-code}'
+        return f'the process was killed by {name}; no clean result'
+    if is_pytest and code in PYTEST_EXIT:
+        return PYTEST_EXIT[code]
+    if not cases:
+        if code in (132, 134, 135, 136, 137, 139):   # a shell reporting 128 + signal
+            return f'the process was killed by signal {code - 128} (exit {code}) and wrote no test results'
+        return f'no test cases were parsed (exit {code}); the tests did not run, or wrote no JUnit'
+    return None
+
+
+def plugin_dir(args) -> str:
+    """A temporary directory holding the generated ids plugin, made once per invocation."""
+    if not getattr(args, 'ids_dir', None):
+        args.ids_dir = tempfile.mkdtemp(prefix='qa-ids-')
+        Path(args.ids_dir, IDS_PLUGIN + '.py').write_text(IDS_PLUGIN_SOURCE, encoding='utf-8')
+    return args.ids_dir
+
+
 def run_one(args, preset, run_id: str, tests: list[str], base_env: dict, junit_dir: Path, cwd: Path,
             seed: int | None, notes: list[str]) -> dict:
     junit = (junit_dir / f'{run_id}.xml').resolve()
     if junit.exists():
         junit.unlink()
-    cmd, extra_env = build(args, preset, junit, tests, seed)
+    notes = list(notes)
+    via_file, argv_tests = None, tests
+    if args.preset == 'pytest' and tests and sum(len(t) + 1 for t in tests) > ARGS_BUDGET:
+        d = plugin_dir(args)
+        via_file = Path(d, f'{run_id}.ids.txt')
+        via_file.write_text('\n'.join(tests) + '\n', encoding='utf-8')
+        argv_tests = ['-p', IDS_PLUGIN, *ids_by_file(tests, cwd)]
+        notes.append(f'{len(tests)} test ids ({sum(len(t) + 1 for t in tests)} characters) were passed through a file '
+                     f'to the generated -p {IDS_PLUGIN} plugin, which kept exactly those tests in the listed order; '
+                     'the command names only their files.')
+    cmd, extra_env = build(args, preset, junit, argv_tests, seed)
     env = {**base_env, **extra_env}
+    if via_file:
+        env['QA_SKILLS_TEST_IDS'], env['QA_SKILLS_IDS_CWD'] = str(via_file), str(cwd)
+        env['PYTHONPATH'] = str(via_file.parent) + (os.pathsep + env['PYTHONPATH'] if env.get('PYTHONPATH') else '')
+    if os.name == 'nt' and len(subprocess.list2cmdline(cmd)) > 32000:
+        raise SystemExit(f'the command for {run_id} is {len(subprocess.list2cmdline(cmd))} characters, over the Windows '
+                         'limit of 32,767; select fewer tests per run, or use --isolate')
     kw = {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == 'nt' else {'start_new_session': True}
     exe = resolve_exe(cmd, env, cwd)
     hogs = start_hogs(args.cpu_load) if args.cpu_load else []
@@ -487,20 +728,25 @@ def run_one(args, preset, run_id: str, tests: list[str], base_env: dict, junit_d
     run_notes = list(notes) + pnotes
     if timed_out:
         run_notes.append(f'Timed out after {args.timeout}s; the process tree was killed.')
-    if not cases:
-        tail = redact_home((out or b'').decode('utf-8', 'replace')[-600:])
-        run_notes.append('No test cases parsed. Treat this run as not having run the tests. Output tail: ' + tail)
+    is_pytest = args.preset == 'pytest' or bool(args.cmd and re.search(r'\bpytest\b', args.cmd))
+    text = (out or b'').decode('utf-8', 'replace')
+    error = run_error(code, timed_out, cases, is_pytest, text)
+    if error:
+        tail = scrub(text[-600:])
+        run_notes.append(f'Errored: {error}. Treat this run as not having run the tests'
+                         + (' (its parsed cases are partial)' if cases else '') + '. Output tail: ' + tail)
     if Path(cmd[0]).name.lower() == 'npx' and Path(exe[0]).name.lower().startswith('node'):   # see resolve_exe
         run_notes.append(f'Started as node {Path(exe[1]).name} (the package CLI) instead of the {cmd[0]} batch shim, '
                          'so cmd.exe could not reinterpret the arguments.')
     shown = ' '.join('python' if c == sys.executable else (shlex.quote(c) if re.search(r'\s', c) else c) for c in cmd)
     rel = os.path.relpath(junit, args.out.resolve().parent).replace(os.sep, '/')
     shown = shown.replace(str(junit), rel)
+    shown = scrub(shown)
     return {'id': run_id, 'command': shown, 'exit_code': code, 'junit_paths': [rel],
             'started_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
             'totals': parse_results.totals(cases), 'file_hashes': {}, 'notes': run_notes,
-            'duration_s': duration, 'timed_out': timed_out, 'label': args.label, 'preset': args.preset,
-            'tests_selected': tests}, cases
+            'duration_s': duration, 'timed_out': timed_out, 'errored': bool(error), 'error': error,
+            'label': args.label, 'preset': args.preset, 'tests_selected': tests}, cases
 
 
 def main(argv=None) -> int:
@@ -524,7 +770,12 @@ def main(argv=None) -> int:
     ap.add_argument('--cpu-load', type=int, default=0, help='number of busy sibling processes during each run')
     ap.add_argument('--isolate', action='store_true', help='each test in its own process')
     ap.add_argument('--env', nargs='+', action='append', default=[], metavar='K=V',
-                    help='environment for the runs; repeat it or give several pairs, anywhere on the command line')
+                    help='environment for the runs; repeat it or give several pairs, anywhere on the command line. '
+                         'Only the harness\'s own variables keep their value in runs.json; others are <redacted>')
+    ap.add_argument('--record-env', nargs='+', action='append', default=[], metavar='NAME',
+                    help='also record the value of these variables in runs.json (only for values that are not secret)')
+    ap.add_argument('--hash-path', action='append', default=[], type=Path, metavar='DIR',
+                    help='add a directory outside --cwd (a sibling package the tests import) to code_hash; repeatable')
     ap.add_argument('--npm-script', metavar='NAME', help="reuse package.json's script NAME (its env prefix and runner "
                                                            'flags) with the jest, vitest or playwright preset')
     ap.add_argument('--runner-args', help='extra flags appended to the preset command, e.g. "--configLoader native"')
@@ -535,7 +786,11 @@ def main(argv=None) -> int:
     stray = [x for x in extra if ENV_PAIR.match(x)]
     if [x for x in extra if not ENV_PAIR.match(x)] or (stray and not args.env):
         ap.error('unrecognized arguments: ' + ' '.join(extra))
-    args.env = [kv for group in args.env for kv in group] + stray   # K=V pairs separated from --env by other flags
+    args.env = env_pairs(args.env) + stray   # K=V pairs separated from --env by other flags
+    keep = set(env_pairs(args.record_env))
+    for hp in args.hash_path:
+        if not (args.cwd / hp).is_dir():
+            ap.error(f'--hash-path {hp}: not a directory (relative paths are taken from --cwd)')
     bad = [kv for kv in args.env if not ENV_PAIR.match(kv)]
     if bad:
         ap.error(f'--env takes K=V pairs, not {bad[0]!r}')
@@ -563,20 +818,20 @@ def main(argv=None) -> int:
             ap.error(str(e))
         for k, v in s_env.items():
             env[k] = v
-            variation['env'][k] = v
-        notes.append(f'From npm script "{args.npm_script}" ({script}): env '
-                     + (', '.join(f'{k}={v}' for k, v in s_env.items()) or 'none') + '; runner flags '
+            variation['env'][k] = recorded_env(k, v, keep)
+        notes.append(f'From npm script "{args.npm_script}" ({scrub(script)}): env '
+                     + (', '.join(f'{k}={recorded_env(k, v, keep)}' for k, v in s_env.items()) or 'none') + '; runner flags '
                      + (' '.join(args.script_args) or 'none') + '.')
     elif args.preset in NODE_RUNNERS and not args.cmd and (cwd / 'package.json').is_file():
         try:
             s_env, s_args, script = npm_script(cwd, 'test', runner)
             given = {kv.partition('=')[0] for kv in args.env} | ({'TZ'} if args.tz else set())
-            left_env = [f'{k}={v}' for k, v in s_env.items() if k not in given]
+            left_env = [f'{k}={recorded_env(k, v, keep)}' for k, v in s_env.items() if k not in given]
             left_args = [a for a in s_args if a not in shlex.split(args.runner_args or '')]
             if left_env or left_args:
                 parts = ([f'env {", ".join(left_env)}'] if left_env else []) + \
                         ([f'runner flags {" ".join(left_args)}'] if left_args else [])
-                msg = (f'npm test ({script}) also sets {" and ".join(parts)}; this run did not use them '
+                msg = (f'npm test ({scrub(script)}) also sets {" and ".join(parts)}; this run did not use them '
                        '(--npm-script test would).')
                 notes.append(msg)
                 print('NOTE: ' + msg)
@@ -585,7 +840,7 @@ def main(argv=None) -> int:
     for kv in args.env:
         k, _, v = kv.partition('=')
         env[k] = v
-        variation['env'][k] = v
+        variation['env'][k] = recorded_env(k, v, keep)
     if args.tz:
         rt = runtime_of(args.preset, args.cmd)
         try:
@@ -620,7 +875,10 @@ def main(argv=None) -> int:
     if preset.get('order') == 'explicit_ids' and (args.order != 'given' or args.isolate):
         if args.preset == 'pytest' and has_module('pytest_randomly', cwd, env):
             preset = {**preset, 'cmd': preset['cmd'] + ['-p', 'no:randomly']}
-        tests = collect_pytest(cwd, tests, env)
+        tests, id_note = collect_pytest(cwd, tests, env)
+        if id_note:
+            notes.append(id_note)
+            print('NOTE: ' + id_note)
 
     data = {'runs': [], 'cases': []}
     if args.out.exists():
@@ -628,7 +886,7 @@ def main(argv=None) -> int:
     existing = {r['id'] for r in data['runs']}
     n0 = sum(1 for r in data['runs'] if r['id'].startswith(args.run_prefix + '-'))
     hash_notes, basis = [], {}
-    chash, digests = hash_tree(cwd, hash_notes, basis)
+    chash, digests = hash_trees(cwd, args.hash_path, hash_notes, basis)
     data['code_hash_basis'] = basis
     for n in hash_notes:
         print('WARN: ' + n)
@@ -664,14 +922,19 @@ def main(argv=None) -> int:
             t = run['totals']
             print(f"{run_id} [{args.label}] {t['passed']} passed, {t['failed']} failed, {t['error']} error, "
                   f"{t['skipped']} skipped; exit {run['exit_code']}; {run['duration_s']}s"
-                  + (' TIMEOUT' if run['timed_out'] else ''))
+                  + (' TIMEOUT' if run['timed_out'] else '') + (f" ERRORED: {run['error']}" if run['errored'] else ''))
         if stopped:
             break
+    if getattr(args, 'ids_dir', None):
+        shutil.rmtree(args.ids_dir, ignore_errors=True)
+    errored = [r['id'] for r in data['runs'][len(data['runs']) - done:] if r.get('errored')] if done else []
+    if errored:
+        print(f'WARN: {len(errored)} of {done} run(s) errored and did not run the tests: {", ".join(errored[:10])}')
     if stopped:
         print(f'Stopped at the {args.minutes}-minute cap after {done} of {planned} planned run(s).')
         data.setdefault('stops', []).append({'label': args.label, 'completed': done, 'planned': planned,
                                              'minutes': args.minutes})
-    after_hash, after_digests = hash_tree(cwd)
+    after_hash, after_digests = hash_trees(cwd, args.hash_path)
     if after_hash != chash:
         moved = sorted(k for k in set(digests) | set(after_digests) if digests.get(k) != after_digests.get(k))
         shown = ', '.join(moved[:10]) + (f' and {len(moved) - 10} more' if len(moved) > 10 else '')
