@@ -16,6 +16,13 @@ For Next.js, each exported handler's auth is read from its body (see nextjs_auth
 guard call, one of the repository's helpers that wraps one (auth_helpers), a machine credential
 (cron_secret, api_key, signature, token), middleware coverage (middleware), or none ('public').
 
+Python routes are read from the syntax tree (see py_routes.py), so multi-line decorators are found
+and decorators quoted in docstrings are not: FastAPI routers with their prefixes and dependencies
+(APIRouter(prefix=, dependencies=), include_router(prefix=, dependencies=), Depends/Security
+parameters), Flask blueprints, and Azure Functions HTTP routes and triggers (blob, queue, Service
+Bus, Event Hub, timer). Azure DevOps pipelines are listed in ci_workflows next to GitHub Actions,
+with their triggers, runtime parameters, service connections and environments.
+
 Everything here is a regex-level first pass. The agent confirms entry points and auth by reading
 the code; an 'unknown' auth value means the script could not tell, not that the route is public.
 """
@@ -28,6 +35,7 @@ from pathlib import Path
 sys.dont_write_bytecode = True  # importing a sibling must not write __pycache__ into the skill folder
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import nextjs_auth  # noqa: E402
+import py_routes  # noqa: E402
 
 SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'out', '.next', '.nuxt', '.svelte-kit', '.turbo', '.cache', 'coverage',
              'vendor', 'Pods', '.gradle', '__pycache__', '.venv', 'venv', '.tox', 'site-packages', 'target', 'bin', 'obj',
@@ -45,7 +53,8 @@ MANIFESTS = {'requirements.txt', 'requirements-dev.txt', 'pyproject.toml', 'Pipf
              'go.sum', 'pom.xml', 'build.gradle', 'build.gradle.kts', 'Gemfile', 'Gemfile.lock', 'composer.json',
              'composer.lock', 'Cargo.toml', 'Cargo.lock', 'Podfile', 'Package.swift', 'pubspec.yaml'}
 FRAMEWORKS = [  # (name, regex over source)
-    ('Flask', r'\bfrom flask import|\bimport flask\b'), ('FastAPI', r'\bfrom fastapi import'),
+    ('Flask', r'\bfrom flask import|\bimport flask\b'), ('FastAPI', r'\bfrom fastapi\b|\bimport fastapi\b'),
+    ('Azure Functions', r'\bimport azure\.functions\b|\bfrom azure\.functions\b|\bfrom azure import functions\b'),
     ('Django', r'\bfrom django\b'), ('Express', r'require\(["\']express["\']\)|from ["\']express["\']'),
     ('Next.js', r'from ["\']next(/|["\'])'), ('NestJS', r'from ["\']@nestjs/'), ('Koa', r'from ["\']koa["\']|require\(["\']koa["\']\)'),
     ('Spring', r'org\.springframework'), ('Gin', r'github\.com/gin-gonic/gin'), ('Echo', r'github\.com/labstack/echo'),
@@ -123,6 +132,107 @@ CI_TRIGGER_AUTH = {
     'workflow_dispatch': ('authenticated', 'repository write access'),
     'schedule': ('authenticated', 'runs on a timer from the default branch'),
 }
+# Azure DevOps pipelines: who can start a run.
+ADO_TRIGGER_AUTH = {
+    'trigger': ('authenticated', 'anyone who can push to a matching branch'),
+    'pr': ('unknown', 'anyone who can open a pull request into a matching branch; for GitHub repositories, fork builds get '
+                      'secrets only if "make secrets available to fork builds" is on'),
+    'schedule': ('authenticated', 'runs on a timer'),
+    'pipeline_completion': ('unknown', 'runs after another pipeline completes, with this pipeline\'s secrets'),
+    'manual': ('authenticated', 'anyone with queue permission; runtime parameters are caller input'),
+}
+ADO_DIRS = {'.azuredevops', '.pipelines', '.azure-pipelines', '.ado'}
+ADO_TOP = re.compile(r'^(trigger|pr|schedules|stages|jobs|steps|pool|extends|resources)\s*:', re.M)
+ADO_STEP = re.compile(r'^\s*-?\s*(task|script|bash|pwsh|powershell|checkout|template|deployment|job|stage)\s*:', re.M)
+ADO_SERVICE_CONN = re.compile(r'^\s*(azureSubscription|connectedServiceName\w*|azureResourceManagerConnection|serviceConnection|'
+                              r'dockerRegistryServiceConnection|kubernetesServiceConnection|externalEndpoint)\s*:\s*["\']?([^"\'#\n]+)', re.M)
+ADO_TEMPLATE_REF = re.compile(r'^\s*-?\s*(?:template|extends)\s*:\s*["\']?([^"\'@#\s]+)', re.M)
+
+def is_ado_pipeline(rel: str, text: str) -> bool:
+    if '.github/workflows/' in '/' + rel or not rel.endswith(('.yml', '.yaml')):
+        return False
+    if re.search(r'(^|/)azure-pipelines[\w.-]*\.ya?ml$', rel):
+        return True
+    if re.search(r'^(apiVersion|services|kind)\s*:', text, re.M) or re.search(r'^\s*runs-on\s*:', text, re.M):
+        return False  # Kubernetes, Compose, GitHub Actions
+    return bool(ADO_TOP.search(text) and ADO_STEP.search(text))
+
+def _yaml_block(lines: list[str], key: str) -> tuple[int, str, list[str]] | None:
+    """(line number, inline value, indented lines below) for a top-level `key:`."""
+    for i, l in enumerate(lines):
+        m = re.match(rf'^{key}\s*:\s*(.*?)\s*(#.*)?$', l)
+        if m:
+            body = []
+            for x in lines[i + 1:]:
+                if x.strip() and not x.startswith((' ', '\t', '-')):
+                    break
+                body.append(x)
+            return i + 1, m.group(1), body
+    return None
+
+def _branches(inline: str, body: list[str]) -> list[str]:
+    if inline.startswith('['):
+        return [b.strip(' "\'') for b in inline.strip('[]').split(',') if b.strip()]
+    if inline:
+        return [inline.strip('"\'')]
+    out, in_exclude = [], False
+    for l in body:
+        if re.match(r'^\s*(exclude|paths|tags)\s*:', l):
+            in_exclude = True
+        elif re.match(r'^\s*(include|branches)\s*:', l):
+            in_exclude = False
+        m = re.match(r'^\s*-\s*["\']?([^"\'#]+?)["\']?\s*(#.*)?$', l)
+        if m and not in_exclude:
+            out.append(m.group(1))
+    return out
+
+def ado_pipeline_info(rel: str, text: str, template: bool) -> tuple[dict, list[dict]]:
+    """ci_workflows row and entry points for an Azure DevOps pipeline (or template) file."""
+    lines = text.splitlines()
+    triggers, entries, all_branches, branches = [], [], False, []
+    def entry(kind, line, why_extra=''):
+        auth, why = ADO_TRIGGER_AUTH[kind]
+        entries.append({'kind': 'ci_workflow', 'framework': 'azure_pipelines', 'method': kind, 'path': rel, 'handler': f'{rel}:{line}',
+                        'function': None, 'auth': auth, 'auth_evidence': why + why_extra})
+    if not template:
+        t = _yaml_block(lines, 'trigger')
+        if t is None:
+            triggers.append('trigger')
+            all_branches = True
+            entry('trigger', 1, '; no trigger key, so Azure Pipelines runs on pushes to every branch')
+        elif t[1].strip('"\'').lower() != 'none':
+            branches = _branches(t[1], t[2])
+            all_branches = not branches or any(b in ('*', 'refs/heads/*') for b in branches) or t[1].lower() == 'true'
+            triggers.append('trigger')
+            entry('trigger', t[0], f" ({'every branch' if all_branches else 'branches ' + ', '.join(branches[:5])})")
+        pr = _yaml_block(lines, 'pr')
+        if pr and pr[1].strip('"\'').lower() != 'none':
+            triggers.append('pr')
+            entry('pr', pr[0])
+        sch = _yaml_block(lines, 'schedules')
+        if sch:
+            triggers.append('schedule')
+            entry('schedule', sch[0])
+        res = _yaml_block(lines, 'resources')
+        if res and re.search(r'^\s+pipelines\s*:', '\n'.join(res[2]), re.M):
+            triggers.append('pipeline_completion')
+            entry('pipeline_completion', res[0])
+    params = []
+    pb = _yaml_block(lines, 'parameters')
+    if pb:
+        params = re.findall(r'^\s*-\s*name\s*:\s*["\']?([\w.-]+)', '\n'.join(pb[2]), re.M)
+        if params and not template:
+            triggers.append('manual')
+            entry('manual', pb[0], f" ({', '.join(params[:6])})")
+    conns = sorted({m.group(2).strip() for m in ADO_SERVICE_CONN.finditer(text)})
+    envs = sorted({m.strip(' "\'') for m in re.findall(r'^\s*environment\s*:[ \t]*([^\n#{]+)', text, re.M) if m.strip(' "\'')} |
+                  set(re.findall(r'^\s*environment\s*:\s*\n\s+name\s*:\s*["\']?([^"\'\s#]+)', text, re.M)))
+    info = {'file': rel, 'system': 'azure_pipelines', 'template': template, 'triggers': triggers, 'all_branches': all_branches,
+            'branches': branches, 'runtime_parameters': params, 'service_connections': conns, 'environments': envs,
+            'deployment_jobs': len(re.findall(r'^\s*-\s*deployment\s*:', text, re.M)),
+            'untrusted_input_triggers': ['pr'] if 'pr' in triggers else [], 'write_permissions': [],
+            'uses_secrets': bool(re.search(r'^\s*-\s*group\s*:|AzureKeyVault@|\$\(\w*(secret|password|token|key)\w*\)', text, re.M | re.I))}
+    return info, entries
 
 def client_sources(rel: str, text: str, base_line: int = 0) -> list[dict]:
     """One entry per client-side source kind per file (first line where it is read)."""
@@ -171,7 +281,7 @@ def walk(root: Path):
             continue
         for p in entries:
             if p.is_dir():
-                if p.name not in SKIP_DIRS and (not p.name.startswith('.') or p.name == '.github'):
+                if p.name not in SKIP_DIRS and (not p.name.startswith('.') or p.name == '.github' or p.name in ADO_DIRS):
                     stack.append(p)
             elif p.is_file():
                 yield p
@@ -205,6 +315,14 @@ def guess_auth(lines: list[str], i: int, framework: str, file_text: str) -> tupl
         return 'unknown', 'file-level auth middleware may apply'
     return 'unknown', None
 
+def classify_decorators(text: str) -> tuple[str, str | None]:
+    """Auth from the decorators stacked on a Python view (Flask login_required, roles_required...)."""
+    for rx, label in ((AUTH_PUBLIC, 'public'), (AUTH_ADMIN, 'admin'), (AUTH_USER, 'authenticated')):
+        m = rx.search(text)
+        if m:
+            return label, m.group(0)
+    return 'unknown', None
+
 def handler_after(lines: list[str], i: int) -> str | None:
     for l in lines[i:i + 8]:
         m = re.search(r'\b(?:async\s+)?def\s+(\w+)|\bfunction\s+(\w+)|\bpublic\s+\S+\s+(\w+)\s*\(|\bfunc\s+(\w+)', l)
@@ -212,7 +330,8 @@ def handler_after(lines: list[str], i: int) -> str | None:
             return next(g for g in m.groups() if g)
     return None
 
-def routes_in(rel: str, text: str) -> list[dict]:
+def routes_in(rel: str, text: str, python_parsed: bool = False) -> list[dict]:
+    """Regex routes. Flask and FastAPI come from py_routes (the syntax tree) unless the file did not parse."""
     out = []
     lines = text.splitlines()
     prefix = ''
@@ -225,6 +344,8 @@ def routes_in(rel: str, text: str) -> list[dict]:
         if fw == 'rails' and not rel.endswith('routes.rb'):
             continue
         if fw == 'django' and not rel.endswith('urls.py'):
+            continue
+        if rel.endswith('.py') and (fw not in ('django', 'flask', 'fastapi') or (python_parsed and fw != 'django')):
             continue
         for i, line in enumerate(lines):
             m = rx.search(line)
@@ -317,19 +438,28 @@ def main() -> int:
     client, ci_entries = [], []
     html_seen: dict = {}
     js_files: dict[str, str] = {}
+    py_files: dict[str, str] = {}
+    ado_files: dict[str, str] = {}
     for p in walk(root):
         rel = p.relative_to(root).as_posix()
         if p.name in MANIFESTS:
             manifests.append(rel)
         if p.name.startswith('.env'):
             env_files.append(rel)
-        if p.name in ('Dockerfile', 'Containerfile', 'docker-compose.yml', 'docker-compose.yaml', 'compose.yaml') or p.suffix in ('.tf', '.bicep') or \
-                re.search(r'(^|/)(k8s|kubernetes|helm|charts|deploy)/.*\.ya?ml$', rel):
+        if p.name in ('Dockerfile', 'Containerfile') or p.name.startswith('Dockerfile.') or \
+                re.match(r'(docker-)?compose([.-][\w-]+)?\.ya?ml$', p.name) or p.suffix in ('.tf', '.bicep', '.bicepparam') or \
+                re.search(r'(^|/)(k8s|kubernetes|helm|charts|deploy)/.*\.ya?ml$', rel) or \
+                (p.suffix == '.json' and re.search(r'deploymentTemplate\.json|deploymentParameters\.json', read(p)[:2000])):
             iac.append(rel)
         if '.github/workflows/' in '/' + rel and p.suffix in ('.yml', '.yaml'):
             wtext = read(p)
             workflows.append(workflow_info(rel, wtext))
             ci_entries += ci_trigger_entries(rel, wtext, workflows[-1]['triggers'])
+            continue
+        if p.suffix in ('.yml', '.yaml'):
+            ytext = read(p)
+            if is_ado_pipeline(rel, ytext):
+                ado_files[rel] = ytext
             continue
         if p.suffix.lower() in HTML_EXT and not TEST_PATH.search(rel):
             for e in html_client_sources(rel, read(p)):
@@ -363,7 +493,9 @@ def main() -> int:
         for name, rx in FRAMEWORKS:
             if re.search(rx, text):
                 frameworks.add(name)
-        entries += routes_in(rel, text)
+        entries += routes_in(rel, text, python_parsed=p.suffix == '.py')
+        if p.suffix == '.py':
+            py_files[rel] = text
         if p.suffix.lower() in CLIENT_EXT:
             js_files[rel] = text
         if p.suffix.lower() in CLIENT_EXT and not p.name.endswith('.min.js') and not CONFIG_FILE.search(rel) \
@@ -389,6 +521,18 @@ def main() -> int:
                              'function': None, 'auth': 'unknown', 'auth_evidence': 'local invocation'})
             if UPLOAD.search(line) and not line.lstrip().startswith(('import ', 'from ')):
                 uploads.append(f'{rel}:{i}')
+    # Python: FastAPI, Flask and Azure Functions from the syntax tree, routers followed across files
+    py_eps, py_failed = py_routes.entries(py_files, root, classify_decorators)
+    entries += py_eps
+    for rel in py_failed:  # Python 2 or broken syntax: fall back to the line patterns
+        entries += [e for e in routes_in(rel, py_files[rel]) if e['framework'] != 'django']
+    # Azure DevOps pipelines: templates are the files other pipelines include
+    referenced = {Path(m).name for t in ado_files.values() for m in ADO_TEMPLATE_REF.findall(t)}
+    for rel, t in sorted(ado_files.items()):
+        template = Path(rel).name in referenced or not re.search(r'^(trigger|pr|schedules|pool|extends|name)\s*:', t, re.M)
+        info, eps = ado_pipeline_info(rel, t, template)
+        workflows.append(info)
+        ci_entries += eps
     # Next.js: route handlers, server actions and middleware, with per-handler auth (helpers found across the repo)
     middleware = [nextjs_auth.parse_middleware(rel, t) for rel, t in js_files.items() if nextjs_auth.MIDDLEWARE_FILE.search(rel)]
     helpers = nextjs_auth.guard_helpers(js_files) if any(
@@ -400,8 +544,8 @@ def main() -> int:
         if mw['auth_check']:
             global_hooks.append(f"{mw['file']}:{mw['line']}")
     entries += queues + clis + client + ci_entries
-    for e in entries:  # decorator frameworks: no decorator and no app-wide hook means no auth check
-        if e['framework'] in ('flask', 'fastapi') and e['auth'] == 'unknown' and not global_hooks:
+    for e in entries:  # Flask: no decorator and no app-wide hook means no auth check (FastAPI's is decided in py_routes)
+        if e['framework'] == 'flask' and e['auth'] == 'unknown' and not global_hooks:
             e['auth'], e['auth_evidence'] = 'public', 'no auth decorator on the route and no app-wide auth hook found'
     for n, e in enumerate(entries, 1):
         e['id'] = f'EP-{n}'
@@ -430,6 +574,22 @@ def main() -> int:
         if w['untrusted_input_triggers']:
             leads.append({'area': 'supply_chain_ci', 'entry_point': None,
                           'why': f"{w['file']} runs on {', '.join(w['untrusted_input_triggers'])}: check for untrusted checkout and expression injection"})
+        if w.get('system') != 'azure_pipelines':
+            continue
+        privileged = w['service_connections'] or w['uses_secrets']
+        what = ', '.join(w['service_connections'][:3]) or 'secrets'
+        if w['all_branches'] and privileged:
+            leads.append({'area': 'supply_chain_ci', 'entry_point': None,
+                          'why': f"{w['file']} runs on pushes to every branch and uses {what}: anyone who can push a branch "
+                                 "runs code with them; limit the trigger or move them behind an environment approval"})
+        if w['runtime_parameters']:
+            leads.append({'area': 'supply_chain_ci', 'entry_point': None,
+                          'why': f"{w['file']} takes runtime parameters ({', '.join(w['runtime_parameters'][:5])}): check none is "
+                                 "expanded into a script (${{ parameters.x }} is pasted in before the shell runs)"})
+        if w['service_connections'] and not w['deployment_jobs'] and not w['template']:
+            leads.append({'area': 'supply_chain_ci', 'entry_point': None,
+                          'why': f"{w['file']} uses service connection(s) {what} outside a deployment job: no environment "
+                                 "approval or check gates them"})
     if uploads:
         leads.append({'area': 'server_side', 'entry_point': None, 'why': f'file uploads at {", ".join(uploads[:5])}: parsing, storage path, type checks'})
     if outbound:
@@ -441,6 +601,9 @@ def main() -> int:
         'languages': dict(langs.most_common()),
         'frameworks': sorted(frameworks),
         'source_files': files_total,
+        # what a reviewer may read: source plus infrastructure and CI definitions (seed_report.py uses it)
+        'files_in_scope': files_total + len({f for f in set(iac) | {w['file'] for w in workflows} if Path(f).suffix not in LANG}),
+        'python_parse_failures': py_failed,
         'entry_points': entries,
         'entry_point_auth': dict(counts),
         'global_auth_hooks': global_hooks,
