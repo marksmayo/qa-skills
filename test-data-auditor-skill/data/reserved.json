@@ -22,7 +22,8 @@
     "uk": {"$source": "Ofcom numbers for drama", "prefixes": [
       "07700900", "01632960", "02079460", "01134960", "01144960", "01154960", "01164960", "01174960", "01184960",
       "01214960", "01314960", "01414960", "01514960", "01614960", "08081570", "09098790"]},
-    "us": {"$source": "NANPA fictitious numbers 555-0100 to 555-0199", "pattern": "^(1)?\\d{3}55501\\d{2}$"}
+    "us": {"$source": "NANPA fictitious numbers 555-0100 to 555-0199, with or without an area code", "pattern": "^(1)?(\\d{3})?55501\\d{2}$"},
+    "nz": {"$source": "None published: New Zealand has no fiction or drama number range like ACMA's or Ofcom's (checked 2026-11). A NZ number is never dismissed by rule; 555 there is a convention, not a reservation (*555 is a real NZ traffic line), so dismiss it by review only when the rest of the number is an obvious placeholder", "prefixes": []}
   },
   "test_cards": {"$source": "Published test card numbers (Stripe, Braintree, Adyen and the card schemes' own examples)", "numbers": [
     "4242424242424242", "4000056655665556", "4111111111111111", "4012888888881881", "4222222222222", "4000000000000002",

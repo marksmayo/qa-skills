@@ -3,7 +3,7 @@
 
     python inventory.py <repo> --out inventory.json [--paths tests db ...] [--markers markers.json]
 
-Finds fixture files (JSON, YAML, CSV, SQL, XML), factories, seed scripts, snapshots, HTTP
+Finds fixture files (JSON, YAML, CSV, SQL, XML, SVG), factories, seed scripts, snapshots, HTTP
 recordings (VCR/Polly cassettes, WireMock mappings, HAR files, MSW handlers), mobile fixture
 assets and the inline literals in test files. Each source gets a kind
 (fixture|factory|seed|snapshot|recording|inline), a format, and `loaded_by`: the pytest test ids
@@ -14,8 +14,11 @@ that load it, found by its file name appearing in
 - a conftest.py fixture (every test requesting that fixture, directly or through other fixtures),
 - a source module (every test in modules that import it).
 
-JavaScript/TypeScript tests are mapped per file (`file::*`). Binary, compressed or encrypted
-files are listed as not_assessed. --markers reads {"anonymised_by": {"path": "reference"}} so a
+JavaScript/TypeScript tests are mapped per file (`file::*`). Setup files (vitest.setup.ts,
+auth.setup.ts, setupTests.js) and helpers in a test area (__tests__/helpers/) are `support`: scanned
+like test code, loaded by the tests that import them (a runner's setup file by every test file in
+its package), and never counted as tests. Binary, compressed or encrypted files, and images, fonts
+and media, are listed as not_assessed. --markers reads {"anonymised_by": {"path": "reference"}} so a
 file anonymised on purpose is recorded with its reference.
 """
 from __future__ import annotations
@@ -26,8 +29,11 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import datafiles, detect_conventions  # noqa: E402
 
-SKIP_DIRS = detect_conventions.SKIP_DIRS | {'.git'}
-DATA_EXT = {'.json', '.yaml', '.yml', '.csv', '.tsv', '.sql', '.xml', '.har', '.snap', '.ambr', '.txt', '.ndjson', '.jsonl'}
+SKIP_DIRS = detect_conventions.SKIP_DIRS | {'.git', '.turbo', '.cache', '.venv', 'venv', '__pycache__'}
+DATA_EXT = {'.json', '.yaml', '.yml', '.csv', '.tsv', '.sql', '.xml', '.har', '.snap', '.ambr', '.txt', '.ndjson', '.jsonl', '.svg'}
+# images, fonts and media in a test area are test data too; their contents are not read, so they are listed as not_assessed
+MEDIA_EXT = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.bmp', '.ico', '.tif', '.tiff', '.heic', '.otf', '.ttf', '.woff',
+             '.woff2', '.eot', '.mp3', '.mp4', '.wav', '.ogg', '.webm', '.mov', '.m4a', '.flac'}
 BINARY_EXT = {'.db', '.sqlite', '.sqlite3', '.dump', '.bak', '.gz', '.zip', '.tar', '.tgz', '.7z', '.enc', '.gpg', '.age',
               '.pgp', '.bin', '.parquet', '.avro', '.xlsx', '.xls', '.pdf'}
 TEST_DIRS = {'tests', 'test', '__tests__', 'spec', 'e2e', 'fixtures', 'testdata', 'test_data', 'androidTest', 'testFixtures'}
@@ -41,6 +47,12 @@ TOOLING = re.compile(r'^(package(-lock)?\.json|npm-shrinkwrap\.json|yarn\.lock|p
                      r'(Pipfile|poetry|Gemfile|Cargo|uv)\.lock|requirements[\w.-]*\.txt|\.pre-commit-config\.yaml|'
                      r'docker-compose[\w.-]*\.ya?ml|\.gitlab-ci\.yml|codecov\.ya?ml|\.?codeclimate\.yml|sonar-project\.properties|'
                      r'cypress\.(json|env\.json)|playwright\.config\.json|jest\.config\.json|vitest\.config\.json|\.\w+rc\.json)$', re.I)
+# setup and helper code that tests share: inventoried as support (scanned like test code), never counted as tests
+SUPPORT_NAME = re.compile(r'^((vitest|jest|mocha|ava|karma|setup[-_.]?tests?|test[-_.]?setup|global[-_.]?setup|'
+                          r'global[-_.]?teardown)([-_.][\w-]+)?\.[cm]?[jt]sx?|[\w-]+\.(setup|teardown)\.[cm]?[jt]sx?|setupTests\.[cm]?[jt]sx?)$', re.I)
+SUPPORT_DIRS = {'helpers', 'helper', 'test-helpers', 'test_helpers', 'support', 'test-support', 'test_support', 'test-utils',
+                'test_utils', 'testutils', 'testing-library', '__helpers__', 'utils'}
+GLOBAL_SETUP = re.compile(r'^(vitest|jest|setup[-_.]?tests?|test[-_.]?setup|setupTests)[-_.]', re.I)
 MOBILE_ASSETS = re.compile(r'(^|/)(androidTest|test)/assets/|\.xctest|TestResources?/|(^|/)Fixtures/')
 
 
@@ -58,10 +70,30 @@ def in_test_area(path: str) -> bool:
     return bool(parts & TEST_DIRS) or detect_conventions.is_test_file(path) or PurePosixPath(path).name == 'conftest.py'
 
 
+def is_support(path: str) -> bool:
+    """Setup files (vitest.setup.ts, auth.setup.ts, setupTests.js) and helpers in a test area (__tests__/helpers/x.ts)."""
+    p = PurePosixPath(path)
+    if p.suffix.lower() not in ('.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.mts', '.cts'):
+        return False
+    if re.search(r'(^|[-_.])config([-_.]|$)', p.stem, re.I):
+        return False                       # vitest.config.ts, jest.config.js: runner configuration, not test data
+    if SUPPORT_NAME.match(p.name) and not re.search(r'\.(test|spec)\.', p.name):
+        return True
+    dirs = [d.lower() for d in p.parts[:-1]]
+    if p.stem.lower() in ('helpers', 'helper', 'utils', 'test-utils', 'test_utils', 'support', 'setup', 'fixtures') and \
+            set(p.parts[:-1]) & TEST_DIRS:
+        return True                        # e2e/helpers.ts, e2e/fixtures.ts (Playwright fixtures)
+    if any(d in ('test-support', 'test_support', 'test-helpers', 'test_helpers', 'test-utils', 'test_utils', 'testutils') for d in dirs):
+        return not re.search(r'\.(test|spec)\.', p.name)
+    return bool(set(dirs) & SUPPORT_DIRS) and (bool(set(p.parts[:-1]) & TEST_DIRS)) and not re.search(r'\.(test|spec)\.', p.name)
+
+
 def kind_of(path: str) -> str | None:
     p = PurePosixPath(path)
     ext = p.suffix.lower()
     parts = set(p.parts[:-1])
+    if is_support(path):
+        return 'support'
     if ext in ('.snap', '.ambr') or '__snapshots__' in parts:
         return 'snapshot'
     if parts & RECORDING_DIRS or ext == '.har' or (p.name.startswith('handlers.') and 'mocks' in parts):
@@ -74,7 +106,7 @@ def kind_of(path: str) -> str | None:
         return 'inline'
     if TOOLING.match(p.name):
         return None
-    if (in_test_area(path) or MOBILE_ASSETS.search(path)) and (ext in DATA_EXT or ext in BINARY_EXT):
+    if (in_test_area(path) or MOBILE_ASSETS.search(path)) and (ext in DATA_EXT or ext in BINARY_EXT or ext in MEDIA_EXT):
         return 'fixture'
     return None
 
@@ -205,7 +237,7 @@ def build(root: Path, paths: list[str] | None, markers: dict) -> dict:
     if paths:
         files = [f for f in files if any(f == p or f.startswith(p.rstrip('/') + '/') for p in paths)]
     py = PyTests(root, walk(root))
-    js_tests = [f for f in files if detect_conventions.is_test_file(f) and not f.endswith('.py')]
+    js_tests = [f for f in files if detect_conventions.is_test_file(f) and not f.endswith('.py') and not is_support(f)]
     anonymised = markers.get('anonymised_by', {})
     items = []
     for rel in files:
@@ -219,6 +251,9 @@ def build(root: Path, paths: list[str] | None, markers: dict) -> dict:
                  'bytes': size, 'loaded_by': [], 'status': 'scanned', 'reason': None}
         if ext in BINARY_EXT:
             entry.update(status='not_assessed', reason='binary, compressed or encrypted file', format=ext[1:])
+        elif ext in MEDIA_EXT:
+            entry.update(status='not_assessed', reason='image, font or media file: its contents (metadata included) are not read',
+                         format=ext[1:])
         else:
             try:
                 text = p.read_text(encoding='utf-8')
@@ -234,6 +269,36 @@ def build(root: Path, paths: list[str] | None, markers: dict) -> dict:
                                                for f in py.requested(fn, py.visible_fixtures(tp)) & mine))
         elif k == 'inline':
             entry['loaded_by'] = ([py.test_id(rel, fn) for fn in py.tests.get(rel, [])] if rel.endswith('.py') else [f'{rel}::*'])
+        elif k == 'support' and GLOBAL_SETUP.match(PurePosixPath(rel).name):
+            # a runner's setup file runs before every test file in its package
+            pkg = PurePosixPath(rel).parent.as_posix()
+            entry['loaded_by'] = sorted(f'{t}::*' for t in js_tests if pkg == '.' or t.startswith(pkg + '/'))
+        elif k == 'support' and re.search(r'\.setup\.[cm]?[jt]sx?$', rel):
+            # a Playwright setup project (auth.setup.ts) runs before the specs in its directory
+            pkg = PurePosixPath(rel).parent.as_posix()
+            entry['loaded_by'] = sorted(f'{t}::*' for t in js_tests if pkg == '.' or t.startswith(pkg + '/'))
+        elif k == 'support':
+            # a helper is loaded by the tests that import it: match the import path's tail (helpers/auth-mock, e2e/helpers)
+            p = PurePosixPath(rel)
+            tail = re.compile(r'''['"][^'"]*''' + re.escape(f'{p.parent.name}/{p.stem}') + r'''(\.[cm]?[jt]sx?)?['"]''')
+            out = []
+            for t in js_tests:
+                try:
+                    if tail.search((root / t).read_text(encoding='utf-8', errors='replace')):
+                        out.append(f'{t}::*')
+                except OSError:
+                    pass
+            if p.parent.name in TEST_DIRS or p.parent.as_posix() == '.':
+                near = re.compile(r'''['"]\.{1,2}/(?:[\w.-]+/)*''' + re.escape(p.stem) + r'''(\.[cm]?[jt]sx?)?['"]''')
+                for t in js_tests:
+                    if f'{t}::*' in out or PurePosixPath(t).parent != p.parent:
+                        continue
+                    try:
+                        if near.search((root / t).read_text(encoding='utf-8', errors='replace')):
+                            out.append(f'{t}::*')
+                    except OSError:
+                        pass
+            entry['loaded_by'] = sorted(out)
         elif k == 'factory' and rel.endswith('.py'):
             entry['loaded_by'] = sorted(importers(py, rel) | set(loaded_by(rel, py, js_tests, root)))
         else:

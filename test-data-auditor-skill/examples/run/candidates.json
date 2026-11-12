@@ -12,9 +12,9 @@
       "data_type": "secret",
       "why": "looks like a secret (authorization header)",
       "fingerprint": "15034dcc631b9720",
-      "auto_dismiss": null,
+      "auto_dismiss": "placeholder secret: the value contains the placeholder word \"example\"",
       "details": {
-        "route_to": "code-security-auditor"
+        "route_to": null
       },
       "affected_tests": [
         "tests/test_insurer.py::test_cover_is_read_from_the_insurer"
@@ -383,7 +383,7 @@
   },
   "summary": {
     "candidates": 16,
-    "auto_dismissed": 3,
+    "auto_dismissed": 4,
     "by_category": {
       "locale_assumption": 1,
       "magic_id": 1,

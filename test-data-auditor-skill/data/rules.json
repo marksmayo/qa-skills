@@ -5,6 +5,7 @@
   "birth_fields": "dob|date_of_birth|birth_?date|birthday|born(_on)?",
   "name_fields": "name|full_?name|display_?name|patient_?name|customer_?name|first_?name|last_?name|surname|given_?name|family_?name",
   "address_fields": "address|address_?line_?1|street|street_?address|home_?address|postal_?address|residential_?address",
+  "not_phone_fields": "(^|_)(id|ids|uuid|guid|key|token|secret|password|passwd|pin|otp|code|hash|sku|ref|reference|nonce|serial|meeting_id|external_id|order_no|invoice_no|version|count|total|amount|price|cost|qty|quantity|postcode|zip|zip_code|postal_code|date|time|timestamp|at|on|d|points|view_box|transform|width|height|x|y|cx|cy|r|rx|ry|x1|x2|y1|y2|path|style|class|class_name)$",
   "phone_fields": "phone|mobile|cell|tel|telephone|fax|contact_?number|phone_?number",
   "email_fields": "e?-?mail|email_?address|contact_?email",
   "id_fields": {
@@ -27,6 +28,8 @@
     "live_token": "\\b(sk|rk|pk)_live_[A-Za-z0-9]{16,}\\b|\\bghp_[A-Za-z0-9]{36}\\b|\\bxox[abp]-[A-Za-z0-9-]{20,}"
   },
   "locale_calls_py": ["locale.currency", "locale.format_string", "locale.str", "locale.atof", "locale.atoi", "locale.nl_langinfo"],
+  "placeholder_secret_words": "test|fake|mock|dummy|example|sample|placeholder|changeme|change_me|change-me|redacted|invalid|wrong|incorrect|notreal|not-a-real|not_a_real|your[-_]|xxxx|<[a-z_-]+>|\\$\\{",
+  "placeholder_secret_max_entropy": 2.5,
   "locale_calls_js": ["toLocaleString()", "toLocaleDateString()", "toLocaleTimeString()", "Intl.NumberFormat()", "Intl.DateTimeFormat()"],
   "mutating_methods": ["append", "extend", "insert", "update", "pop", "popitem", "remove", "clear", "setdefault", "add", "discard", "sort", "reverse"],
   "wide_scopes": ["session", "package", "module", "class"],

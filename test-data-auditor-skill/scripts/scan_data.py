@@ -15,19 +15,29 @@ Ofcom fiction numbers, published test cards, specimen IDs) or with an invalid ch
 dismissed automatically, and the dismissal names the rule.
 """
 from __future__ import annotations
-import argparse, ast, difflib, hashlib, json, re, sys
+import argparse, ast, difflib, hashlib, json, math, re, sys
 from datetime import date, timedelta
 from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import datafiles, detect_conventions, inventory as inv, schema_drift  # noqa: E402
+import datafiles, detect_conventions, inventory as inv, jsparse, schema_drift  # noqa: E402
 
 RULES = json.loads((HERE.parent / 'data' / 'rules.json').read_text(encoding='utf-8'))
 RESERVED = json.loads((HERE.parent / 'data' / 'reserved.json').read_text(encoding='utf-8'))
 F = lambda key: re.compile(rf'^({RULES[key]})$', re.I)  # noqa: E731
-EXPIRY, BIRTH, NAME, ADDRESS, PHONE_F, EMAIL_F = (F(k) for k in ('expiry_fields', 'birth_fields', 'name_fields', 'address_fields',
-                                                                  'phone_fields', 'email_fields'))
+BIRTH, NAME, ADDRESS, PHONE_F, EMAIL_F = (F(k) for k in ('birth_fields', 'name_fields', 'address_fields', 'phone_fields', 'email_fields'))
+# an expiry field may carry a prefix: trial_end_date, certification_expires_at (camelCase is converted first)
+EXPIRY = re.compile(rf'^(?:\w+_)?({RULES["expiry_fields"]})$', re.I)
+# fields whose values are never phone numbers, however phone-shaped (ids, passwords, codes, dates, counts, money)
+NOT_PHONE_FIELD = re.compile(RULES['not_phone_fields'], re.I)
+
+
+def snake(name: str | None) -> str:
+    """camelCase and PascalCase field names as snake_case, so one set of field patterns serves Python and JavaScript."""
+    if not name:
+        return ''
+    return re.sub(r'(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])', '_', str(name)).replace('-', '_').lower()
 ID_FIELDS = {k: re.compile(rf'^({v})$', re.I) for k, v in RULES['id_fields'].items()}
 STREET = re.compile(RULES['street_pattern'])
 EMAIL = re.compile(r'(?<![\w.+-])([A-Za-z0-9._%+-]+)@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)')
@@ -44,6 +54,35 @@ UUID = re.compile(r'\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}
 SECRETS = {k: re.compile(v) for k, v in RULES['secret_patterns'].items()}
 ID_CALL = re.compile(r'^(get|find|fetch|load|lookup|read|retrieve)(_\w+)?$|_by_id$|^by_id$', re.I)
 PLACEHOLDER = re.compile(r'\b(test|example|sample|fake|dummy|placeholder|lorem|foo|bar|demo)\b', re.I)
+# a secret value that announces itself as a placeholder, or has too little entropy to be a real credential
+PLACEHOLDER_SECRET = re.compile(RULES['placeholder_secret_words'], re.I)
+
+# JavaScript and TypeScript (matched on masked source: comments removed, string contents blanked)
+JS_NOW = re.compile(r'\bDate\.now\s*\(\s*\)|\bnew\s+Date\s*\(\s*\)|\b(?:dayjs|moment)\s*\(\s*\)|\bDateTime\.(?:now|utc)\s*\(\s*\)'
+                    r'|\bTemporal\.Now\b')
+JS_NOW_VAR = re.compile(r'\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::\s*[\w.]+\s*)?=\s*(?:Date\.now\s*\(\s*\)|new\s+Date\s*\(\s*\)'
+                        r'(?:\.getTime\(\))?|(?:dayjs|moment)\s*\(\s*\)|DateTime\.(?:now|utc)\s*\(\s*\))\s*;?\s*$')
+JS_CMP = re.compile(r'(?<![=!<>])(<=|>=|<|>)(?![=>])')
+JS_DATE_HELPER = re.compile(r'\b(isPast|isFuture|isBefore|isAfter|isExpired|differenceIn\w+|compareAsc|compareDesc)\s*\(')
+JS_NOT_FIELDS = {'getTime', 'valueOf', 'now', 'Date', 'new', 'Math', 'length', 'toISOString', 'getDate', 'setDate', 'const', 'let',
+                 'var', 'return', 'if', 'await', 'this', 'Number', 'parse', 'utc', 'dayjs', 'moment', 'diff', 'isBefore', 'isAfter',
+                 'isPast', 'isFuture'}
+JS_FROZEN = re.compile(r'useFakeTimers|setSystemTime|MockDate|mockdate|timekeeper|\bclock\.install\(|page\.clock\.|advanceTo\(|'
+                       r'jest\.useFakeTimers|sinon\.useFakeTimers|mockDate\(|freezeTime|tk\.freeze')
+ATTR_BEFORE = re.compile(r'([A-Za-z_:][\w:.-]*)\s*=\s*$')        # an XML/SVG/HTML attribute name before its value
+MARKUP_EXT = ('.svg', '.xml', '.html', '.htm', '.xhtml')
+GEOMETRY_FIELD = re.compile(r'^(d|points|view_box|transform|path)$')
+JS_KEY_BEFORE = re.compile(r'([A-Za-z_$][\w$]*)[\'"]?\s*:\s*(?:new\s+Date\s*\(|[\w$.]+\s*\()?\s*[\'"`]?$')
+JS_ID_CALL = re.compile(r'(?<![\w$])(get|find|findOne|fetch|load|lookup|retrieve|[\w$]*By[Ii]d)\s*\(\s*(\d+)\s*[,)]'
+                        r'|\bwhere\s*:\s*\{\s*()id\s*:\s*(\d+)\s*[,}]')
+JS_AUTO_INC = re.compile(r'expect\s*\(\s*[\w$.]*\.id\s*\)\s*\.\s*(?:toBe|toEqual|toStrictEqual)\s*\(\s*\d+\s*\)')
+FORMATTED_LITERAL = re.compile(r"""['"`][^'"`]*(\d{1,3},\d{3}\b|\d{1,3}\.\d{3},\d{2}\b|\b\d{1,2}[ /](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)"""
+                               r"""|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w* \d{1,2}\b|\b\d{1,2}:\d{2}\s?[AaPp][Mm]\b)""")
+JS_KEYWORDS = {'if', 'for', 'while', 'switch', 'catch', 'with', 'return', 'function', 'else', 'do', 'try'}
+JS_TOP_DECL = re.compile(r'^(?:export\s+)?(let|const|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*(?:\[|\{|new\s+(?:Map|Set|Array|WeakMap)\b)')
+JS_FUNC = re.compile(r'\bfunction\s*\*?\s*([A-Za-z_$][\w$]*)\s*\(|\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*'
+                     r'(?:async\s+)?(?:function\b|\([^)]*\)\s*(?::[^=]+)?=>|[A-Za-z_$][\w$]*\s*=>)|^\s*(?:async\s+)?([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*'
+                     r'(?::[^{]+)?\{')
 
 
 def fp(value) -> str:
@@ -131,16 +170,41 @@ def epoch(d: str, field: str = '') -> bool:
     return len(d) == 10 and 1_000_000_000 <= int(d) < 2_100_000_000 and bool(field and TIME_FIELD.search(field))
 
 
+DATE_SHAPE = re.compile(r'^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}(?:[T ][\d:.]+(?:Z|[+-]\d{2}:?\d{2})?)?$|^\d{1,2}[-/.]\d{1,2}[-/.]\d{4}$')
+SSN_SHAPE = re.compile(r'^\d{3}-\d{2}-\d{4}$')
+
+
 def not_phone(value: str, field: str = '') -> str | None:
     """Why a phone-shaped value is not a phone number, or None."""
     v = value.strip()
     d = digits(v)
     if DATE_TIME.match(v) or (v == d and compact_date(d)):
         return 'a date or time'
+    if DATE_SHAPE.match(v):
+        return 'a date-shaped string (an invalid date in a date-validation test is still not a phone)'
+    if SSN_SHAPE.match(v):
+        return 'a social security number shape (checked by the SSN rule instead)'
     if VERSION.match(v) and '.' in v:
         return 'a version string'
     if v == d and epoch(d, field):
         return 'an epoch timestamp'
+    if field and NOT_PHONE_FIELD.search(snake(field)):
+        return f'the field {field} holds an identifier, code, secret, date or amount, not a phone number'
+    return None
+
+
+def placeholder_digits(d: str) -> str | None:
+    """A phone number whose subscriber part is one repeated digit or a straight run (1234567, 9876543), or None."""
+    tail = d[-7:]
+    if len(tail) < 7:
+        return None
+    if len(set(tail)) == 1:
+        return 'placeholder pattern: one repeated digit'
+    if len(set(tail)) == 2:
+        return 'placeholder pattern: the last seven digits use only two digit values (such as 1112222 or 0000004)'
+    steps = {(int(b) - int(a)) % 10 for a, b in zip(tail, tail[1:])}
+    if steps in ({1}, {9}):
+        return 'placeholder pattern: a run of sequential digits'
     return None
 
 
@@ -170,7 +234,7 @@ def phone_reserved(d: str) -> str | None:
         return 'Ofcom range reserved for drama'
     if re.match(p['us']['pattern'], d):
         return 'NANPA fictitious 555-01xx number'
-    return None
+    return placeholder_digits(d)
 
 
 def email_class(domain: str) -> tuple[str, str]:
@@ -189,6 +253,36 @@ def host_reserved(host: str) -> bool:
     return h in r['exact'] or any(h.endswith(s) for s in r['suffixes']) or any(h.startswith(p) for p in r['ip_prefixes'])
 
 
+def entropy(s: str) -> float:
+    """Shannon entropy in bits per character."""
+    if not s:
+        return 0.0
+    counts = {c: s.count(c) for c in set(s)}
+    return -sum(n / len(s) * math.log2(n / len(s)) for n in counts.values())
+
+
+def placeholder_secret(kind: str, match: str) -> str | None:
+    """Why a matched secret is an obvious placeholder (a placeholder word, or too little entropy), or None.
+
+    Only the value is judged: the quoted string of a key or password field, or the token after the scheme of an
+    authorization header. Private keys are never placeholders (the header line carries no value to judge)."""
+    if kind == 'private_key':
+        return None
+    q = re.findall(r"""["']([^"']+)["']\s*$""", match) or re.findall(r'(?:bearer|basic|token)\s+(\S+)', match, re.I) or [match]
+    value = q[-1]
+    w = PLACEHOLDER_SECRET.search(value)
+    if w:
+        return f'placeholder secret: the value contains the placeholder word "{w.group(0).lower()}"'
+    # a value that names what it stands for: google-access-token, zoom_client_secret, pi_123_secret_abc
+    if re.fullmatch(r'[a-z]+(?:[-_.][a-z0-9]+)+', value) and \
+            re.search(r'(^|[-_.])(secret|token|key|apikey|password|passwd|pass|access|refresh|client|session|auth|bearer)([-_.]|$)', value):
+        return 'placeholder secret: a self-describing value made of lowercase words naming what it stands for'
+    core = re.sub(r'[^A-Za-z0-9]', '', value)
+    if len(set(core)) <= 4 or entropy(core) < RULES['placeholder_secret_max_entropy']:
+        return 'placeholder secret: too little entropy to be a real credential'
+    return None
+
+
 # ---------------------------------------------------------------- scanner
 class Scanner:
     def __init__(self, root: Path, inventory: dict, today: date):
@@ -197,6 +291,9 @@ class Scanner:
         self.by_path = {i['path']: i for i in inventory['inventory']}
         self.files = inv.walk(root)
         self.sources = [f for f in self.files if f.endswith('.py') and not inv.in_test_area(f)]
+        # JS/TS product code and tests (declaration files and bundles are not read)
+        self.js_files = [f for f in self.files if jsparse.is_js(f) and not re.search(r'\.d\.[cm]?ts$|\.min\.js$', f)]
+        self._js: dict[str, tuple] = {}
         self.notes: list[str] = []
 
     def add(self, category: str, rule: str, file: str, line: int, why: str, field: str | None = None, data_type: str | None = None,
@@ -211,16 +308,22 @@ class Scanner:
         self.cands.append(c)
 
     # ---------------- personal data
-    def personal_value(self, file, line, field, value, record_fields=None):
+    def personal_value(self, file, line, field, value, record_fields=None, loose=False):
+        """Check one value. `loose`: the field name came from source code (JavaScript object keys, `key = '...'`), so a
+        phone-shaped value is checked even under a field not named as a phone, unless the field says it is not one."""
         if not isinstance(value, str) or not value.strip():
             return
-        fname = field or ''
+        fname = snake(field)
+        uuids = [(u.start(), u.end()) for u in UUID.finditer(value)]
         for m in EMAIL.finditer(value):
+            if re.search(r'(UID|Message-ID|Content-ID|References|In-Reply-To)\s*:\s*<?$', value[:m.start()], re.I):
+                continue                   # an iCalendar UID or a mail header id, not a mailbox
             cls, why = email_class(m.group(2))
             self.add('personal_data', 'email', file, line, why, field, 'email address', m.group(0),
                      auto_dismiss=why if cls == 'reserved' else None,
                      details={'domain_class': cls, 'domain': m.group(2).lower() if cls != 'other' else None})
-        if (PHONE_F.match(fname) or (not fname and PHONE_TEXT.fullmatch(value.strip()))) and not not_phone(value, fname):
+        phone_shaped = PHONE_TEXT.fullmatch(value.strip()) and (not fname or loose)
+        if (PHONE_F.match(fname) or phone_shaped) and not not_phone(value, fname):
             d = digits(value)
             if 8 <= len(d) <= 13:
                 res = phone_reserved(d)
@@ -244,10 +347,12 @@ class Scanner:
                 self.add('personal_data', idt, file, line, f'{label} with a valid check digit' if valid else f'{label} field',
                          field, label, d, auto_dismiss='published specimen value' if listed else
                          None if valid else f'check digit invalid, so not {label}')
-        if CARD.search(value):
+        if CARD.search(value) and not GEOMETRY_FIELD.match(fname):
             for m in CARD.finditer(value):
                 if not_card(value, m.start(), m.end(), fname):
                     continue
+                if any(a < m.end() and b > m.start() for a, b in uuids):
+                    continue               # part of a UUID: a UUID is never a card number, Luhn or not
                 n = digits(m.group(0))
                 if 13 <= len(n) <= 19 and luhn(n):
                     test = n in RESERVED['test_cards']['numbers']
@@ -274,18 +379,20 @@ class Scanner:
 
     def personal_record(self, rec: dict, file: str):
         fields = rec['fields']
+        loose = rec.get('kind') == 'object_literal'
         for k, v in fields.items():
-            self.personal_value(file, v['line'], k, v['value'], fields)
-        names = [(k, v) for k, v in fields.items() if NAME.match(k) and isinstance(v['value'], str) and v['value'].strip()]
+            if not v.get('date_call'):
+                self.personal_value(file, v['line'], k, v['value'], fields, loose=loose)
+        names = [(k, v) for k, v in fields.items() if NAME.match(snake(k)) and isinstance(v['value'], str) and v['value'].strip()]
         if not names:
             return
         nm = names[0]
         for k, v in fields.items():
-            if ADDRESS.match(k) and isinstance(v['value'], str) and STREET.search(v['value']):
+            if ADDRESS.match(snake(k)) and isinstance(v['value'], str) and STREET.search(v['value']):
                 self.add('personal_data', 'name_and_address', file, v['line'], 'a full name with a street address', k,
                          'name and street address', nm[1]['value'] + '|' + v['value'],
                          details={'name_field': nm[0], 'placeholder_words': bool(PLACEHOLDER.search(v['value'] + ' ' + nm[1]['value']))})
-            if BIRTH.match(k) and isinstance(v['value'], str) and ISO_DATE.match(v['value'].strip()):
+            if BIRTH.match(snake(k)) and isinstance(v['value'], str) and ISO_DATE.match(v['value'].strip()):
                 self.add('personal_data', 'dob_with_name', file, v['line'], 'a date of birth beside a name', k, 'date of birth',
                          nm[1]['value'] + '|' + v['value'],
                          details={'name_field': nm[0], 'placeholder_words': bool(PLACEHOLDER.search(nm[1]['value']))})
@@ -319,7 +426,7 @@ class Scanner:
     def time_bombs(self, rec: dict, file: str, comparisons: dict):
         for k, v in rec['fields'].items():
             val = v['value']
-            if not isinstance(val, str) or not EXPIRY.match(k):
+            if not isinstance(val, str) or not EXPIRY.match(snake(k)):
                 continue
             m = ISO_DATE.match(val.strip())
             if not m:
@@ -327,7 +434,7 @@ class Scanner:
             d = date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
             if d < self.today:
                 continue
-            cmp = comparisons.get(k, [])
+            cmp = comparisons.get(k, []) + (comparisons.get(snake(k), []) if snake(k) != k else [])
             fails = None
             if cmp:
                 c = cmp[0]
@@ -523,10 +630,214 @@ class Scanner:
 
     def secrets(self, rel: str, line_no: int, text: str):
         for kind, rx in SECRETS.items():
-            m = rx.search(text)
-            if m:
+            for m in rx.finditer(text):
+                why = placeholder_secret(kind, m.group(0))
                 self.add('secret', kind, rel, line_no, f'looks like a secret ({kind.replace("_", " ")})', None, 'secret', m.group(0),
-                         details={'route_to': 'code-security-auditor'})
+                         auto_dismiss=why, details={'route_to': None if why else 'code-security-auditor'})
+
+    # ---------------- JavaScript and TypeScript
+    def js_parsed(self, rel: str):
+        """(text, tokens, masked text, masked lines) for a JS/TS file, cached."""
+        if rel not in self._js:
+            text = (self.root / rel).read_text(encoding='utf-8', errors='replace')
+            toks = jsparse.tokenize(text)
+            m = jsparse.masked(text, toks)
+            self._js[rel] = (text, toks, m, m.split('\n'))
+        return self._js[rel]
+
+    def js_now_comparisons(self, out: dict[str, list[dict]]):
+        """Add {field: [{file, line, op}]} for JS/TS lines comparing a property with the clock (Date.now(), new Date(),
+        a variable holding either, or isPast/isBefore/isAfter against now)."""
+        for rel in self.js_files:
+            try:
+                _, _, _, lines = self.js_parsed(rel)
+            except OSError:
+                continue
+            now_vars = set()
+            for ln in lines:
+                m = JS_NOW_VAR.search(ln)
+                if m:
+                    now_vars.add(m.group(1))
+            now_rx = JS_NOW if not now_vars else re.compile(JS_NOW.pattern + r'|\b(?:' + '|'.join(map(re.escape, now_vars)) + r')\b')
+            for n, ln in enumerate(lines, 1):
+                if not now_rx.search(ln) or JS_NOW_VAR.search(ln):
+                    continue
+                op = JS_CMP.search(ln)
+                helper = JS_DATE_HELPER.search(ln)
+                if not op and not helper:
+                    continue
+                kind = {'<': 'Lt', '>': 'Gt', '<=': 'LtE', '>=': 'GtE'}.get(op.group(1) if op else '', 'Lt')
+                names = {m.group(1) for m in re.finditer(r'\.\s*([A-Za-z_$][\w$]*)', ln)} | \
+                    {m.group(1) for m in re.finditer(r'\b([A-Za-z_$][\w$]*)\s*(?:\.getTime\(\)|\.valueOf\(\))?\s*(?:<=?|>=?)(?!=)', ln)} | \
+                    {m.group(1) for m in re.finditer(r'(?:<=?|>=?)\s*([A-Za-z_$][\w$]*)\b', ln)}
+                for name in names - JS_NOT_FIELDS - now_vars:
+                    out.setdefault(name, []).append({'file': rel, 'line': n, 'op': kind, 'field_left': True})
+                    out.setdefault(snake(name), []).append({'file': rel, 'line': n, 'op': kind, 'field_left': True}) \
+                        if snake(name) != name else None
+
+    def js_test_rules(self, rel: str, item: dict, comparisons: dict, seeds: dict, covered: set[int]):
+        """Time bombs, magic ids, unseeded randomness and module-level shared state in one JS/TS test or support file."""
+        text, toks, masked_text, lines = self.js_parsed(rel)
+        tests = item.get('loaded_by') or [f'{rel}::*']
+        frozen = JS_FROZEN.search(text)
+        reads_clock = JS_NOW.search(masked_text)
+        # a future literal date in a test that does not freeze the clock
+        for k, t in enumerate(toks):
+            if t.line in covered or frozen:
+                continue
+            iso = None
+            if t.kind == 'str' and t.value and ISO_DATE.match(t.value.strip()):
+                g = ISO_DATE.match(t.value.strip())
+                try:
+                    iso = date(int(g.group(1)), int(g.group(2)), int(g.group(3)))
+                except ValueError:
+                    iso = None
+            elif t.kind == 'id' and t.text in ('new', 'Date'):
+                dv, _ = jsparse.date_value(toks, k)         # new Date(2027, 4, 12), Date.UTC(...)
+                if dv:                                       # a string argument is the same line and field: add() dedupes
+                    iso = date.fromisoformat(dv[:10])
+            if not iso or iso < self.today or frozen:
+                continue
+            key = JS_KEY_BEFORE.search(lines[t.line - 1][:max(0, t.pos - (text.rfind('\n', 0, t.pos) + 1))])
+            field = key.group(1) if key else None
+            cmp = (comparisons.get(field, []) + comparisons.get(snake(field), [])) if field else []
+            if not (reads_clock or cmp):
+                continue
+            self.add('time_bomb', 'future_literal_with_now', rel, t.line,
+                     f'the fixed date {iso.isoformat()} sits in a test that does not freeze the clock'
+                     + (f'; {field} is compared with now at {cmp[0]["file"]}:{cmp[0]["line"]}' if cmp else
+                        ' and reads the real clock (Date.now() or new Date())'),
+                     field, 'date', details={'date': iso.isoformat(), 'fails_on_date': None, 'days_until': (iso - self.today).days,
+                                             'compared_with_now': cmp[:3]}, tests=tests)
+        if item['kind'] not in ('inline', 'support'):
+            return
+        for t in jsparse.string_literals(toks):
+            if UUID.search(t.value):
+                self.add('magic_id', 'literal_uuid', rel, t.line, 'a literal UUID in test code', None, 'uuid', details={}, tests=tests)
+        for n, ln in enumerate(lines, 1):
+            for m in JS_ID_CALL.finditer(ln):
+                call, v = (m.group(1), int(m.group(2))) if m.group(2) else ('where', int(m.group(4)))
+                if v >= 2:
+                    seed = seeds.get(v)
+                    self.add('magic_id', 'literal_lookup', rel, n, f'{call} looks up id {v} by a literal' +
+                             (f', which matches the seed row at {seed}' if seed else '; no seed row has it'), None, 'id',
+                             details={'id': v, 'seed_row': seed, 'call': call}, tests=tests)
+            if JS_AUTO_INC.search(ln):
+                self.add('magic_id', 'auto_increment', rel, n, 'asserts an auto-increment id', None, 'id', details={}, tests=tests)
+        seeded = re.search(r'faker\.seed\(|seedrandom|\.seed\(\s*\d|spyOn\(\s*Math\s*,\s*[\'"]random', text)
+        for n, ln in enumerate(lines, 1):
+            if seeded:
+                break
+            if re.search(r'\bMath\.random\s*\(', ln):
+                self.add('nondeterministic', 'unseeded_random', rel, n, 'Math.random() with no seed or stub in this file', None, None,
+                         tests=tests)
+            if re.search(r'\bfaker\.\w+', ln) and not re.search(r'^\s*import\b', ln):
+                self.add('nondeterministic', 'unseeded_faker', rel, n, 'faker with no faker.seed() in this file', None, None, tests=tests)
+        self.js_shared_state(rel, lines, tests)
+
+    def js_generated_ids(self, rel: str, item: dict):
+        """crypto.randomUUID(), uuid v4 and nanoid in fixtures, factories and snapshots (JS/TS)."""
+        _, _, _, lines = self.js_parsed(rel)
+        for n, ln in enumerate(lines, 1):
+            m = re.search(r'\b(randomUUID|uuidv4|v4|nanoid|uuid)\s*\(', ln)
+            if m:
+                self.add('nondeterministic', 'generated_uuid', rel, n, f'{m.group(1)}() in test data', None, None)
+
+    def js_shared_state(self, rel: str, lines: list[str], tests: list[str]):
+        """Module-level arrays, objects, maps and sets that tests mutate and no beforeEach/afterEach resets."""
+        hooks = []
+        joined = '\n'.join(lines)
+        starts = [0]
+        for ln in lines:
+            starts.append(starts[-1] + len(ln) + 1)
+        for m in re.finditer(r'\b(beforeEach|afterEach|beforeAll|afterAll)\s*\(', joined):
+            depth, i = 1, m.end()
+            while i < len(joined) and depth:
+                depth += joined[i] == '('
+                depth -= joined[i] == ')'
+                i += 1
+            hooks.append((m.group(1), joined.count('\n', 0, m.start()) + 1, joined.count('\n', 0, i) + 1))
+        for n, ln in enumerate(lines, 1):
+            d = JS_TOP_DECL.match(ln)
+            if not d:
+                continue
+            name, keyword = d.group(2), d.group(1)
+            mut = re.compile(rf'\b{re.escape(name)}\s*\.\s*(push|pop|shift|unshift|splice|set|add|delete|clear|sort|reverse|fill)\s*\('
+                             rf'|\b{re.escape(name)}\s*(\.[\w$]+|\[[^\]]*\])+\s*(=(?!=)|\+=|-=|\+\+|--)|Object\.assign\(\s*{re.escape(name)}\b'
+                             rf'|\bdelete\s+{re.escape(name)}\s*[.\[]' + (rf'|(?<![.\w$]){re.escape(name)}\s*=(?![=>])' if keyword == 'let' else ''))
+            muts, resets = [], []
+            for k, other in enumerate(lines, 1):
+                if k == n or not mut.search(other):
+                    continue
+                hook = next((h for h in hooks if h[1] <= k <= h[2]), None)
+                (resets if hook and hook[0] in ('beforeEach', 'afterEach') else muts if not hook else []).append(k)
+            if muts and not resets:
+                self.add('shared_mutable', 'mutated_module_state', rel, n,
+                         f'module-level {keyword} {name} holds a mutable value that {len(muts)} line(s) change '
+                         f'(first at line {muts[0]}) and no beforeEach/afterEach resets', name, None,
+                         details={'name': name, 'mutated_at': muts[:20], 'shared_by': tests}, tests=tests)
+
+    def js_locale(self):
+        """Tests that compare a literal with JS formatting that uses the machine locale (no explicit locale argument)."""
+        calls = '|'.join(re.escape(c.split('(')[0].split('.')[-1]) for c in RULES['locale_calls_js'])
+        machine = re.compile(rf'(?:\.|\bIntl\.)({calls})\s*\(\s*(\)|undefined\b|\[\s*\])')
+        dependent: dict[str, dict] = {}
+        for rel in self.js_files:
+            if inv.in_test_area(rel):
+                continue
+            _, _, _, lines = self.js_parsed(rel)
+            for n, ln in enumerate(lines, 1):
+                m = machine.search(ln)
+                if not m:
+                    continue
+                indent = len(ln) - len(ln.lstrip())
+                for k in range(n - 1, 0, -1):
+                    prev = lines[k - 1]
+                    f = JS_FUNC.search(prev)
+                    if f and (f.group(1) or f.group(2) or f.group(3)) in JS_KEYWORDS:
+                        f = None
+                    if f and len(prev) - len(prev.lstrip()) <= indent:
+                        dependent.setdefault(f.group(1) or f.group(2) or f.group(3),
+                                             {'file': rel, 'line': n, 'calls': set()})['calls'].add(m.group(1))
+                        break
+        names = '|'.join(map(re.escape, dependent))
+        for item in self.inv['inventory']:
+            rel = item['path']
+            if item['kind'] != 'inline' or not jsparse.is_js(rel) or item['status'] != 'scanned':
+                continue
+            text, _, _, lines = self.js_parsed(rel)
+            raw = text.split('\n')
+            # a rendered component that formats with the machine locale, asserted by formatted text (1,234 or 12 Mar)
+            jsx = [x for x in (re.findall(rf'<({names})\b', text) if names else []) if x[:1].isupper()]
+            for n, ln in enumerate(lines, 1):
+                if jsx and FORMATTED_LITERAL.search(raw[n - 1]) and re.search(r'getByText|findByText|queryByText|toHaveTextContent|'
+                                                                             r'toContain|toBe|toEqual', ln):
+                    info = dependent[jsx[0]]
+                    self.add('locale_assumption', 'machine_locale_literal', rel, n,
+                             f'asserts formatted text from <{jsx[0]}>, which formats with the machine locale '
+                             f'({info["file"]}:{info["line"]}, {", ".join(sorted(info["calls"]))} with no locale argument)', None,
+                             'formatted value', details={'function': f'{info["file"]}:{info["line"]}'},
+                             tests=item.get('loaded_by') or [f'{rel}::*'])
+                    continue
+                if not re.search(r'\.\s*(toBe|toEqual|toStrictEqual|toContain|toMatch|toHaveTextContent)\s*\(\s*$|'
+                                 r'\.\s*(toBe|toEqual|toStrictEqual|toContain|toMatch|toHaveTextContent)\s*\(\s*[\'"`]', ln):
+                    continue
+                if not re.search(r'\.\s*(toBe|toEqual|toStrictEqual|toContain|toMatch|toHaveTextContent)\s*\(\s*[\'"`]', raw[n - 1]):
+                    continue
+                direct = machine.search(ln)
+                dep = re.search(rf'\b({names})\s*\(', ln) if names else None
+                if direct:
+                    self.add('locale_assumption', 'machine_locale_literal', rel, n,
+                             f'compares {direct.group(1)}() with no locale argument against a literal; the output follows the '
+                             'machine locale and time zone', None, 'formatted value', details={'function': None},
+                             tests=item.get('loaded_by') or [f'{rel}::*'])
+                elif dep:
+                    info = dependent[dep.group(1)]
+                    self.add('locale_assumption', 'machine_locale_literal', rel, n,
+                             f'compares {dep.group(1)}() with a literal; it formats with the machine locale '
+                             f'({info["file"]}:{info["line"]}, {", ".join(sorted(info["calls"]))} with no locale argument)', None,
+                             'formatted value', details={'function': f'{info["file"]}:{info["line"]}'},
+                             tests=item.get('loaded_by') or [f'{rel}::*'])
 
     # ---------------- files
     def snapshots_and_duplicates(self):
@@ -578,6 +889,7 @@ class Scanner:
 
     def run(self) -> dict:
         comparisons = self.now_comparisons()
+        self.js_now_comparisons(comparisons)
         seeds = self.seed_ids()
         py = inv.PyTests(self.root, self.files)
         for item in self.inv['inventory']:
@@ -591,13 +903,18 @@ class Scanner:
                 records = []
             else:
                 try:
-                    records = datafiles.load_records(p, rel)
+                    if jsparse.is_js(rel):
+                        js_text, js_toks, _, _ = self.js_parsed(rel)
+                        records = jsparse.records(js_text, rel, js_toks)
+                    else:
+                        records = datafiles.load_records(p, rel)
                 except datafiles.NotAssessed as exc:
                     item['status'], item['reason'] = 'not_assessed', str(exc)
                     records = []
+            n_before = len(self.cands)
             for r in records:
                 self.personal_record(r, rel)
-                if item['kind'] in ('fixture', 'seed', 'recording', 'factory', 'inline'):
+                if item['kind'] in ('fixture', 'seed', 'recording', 'factory', 'inline', 'support'):
                     self.time_bombs(r, rel, comparisons)
             text = p.read_text(encoding='utf-8', errors='replace')
             structured = {(r_line) for r in records for r_line in [v['line'] for v in r['fields'].values()]}
@@ -606,7 +923,14 @@ class Scanner:
                 self.environment(rel, n, line)
                 if n not in structured:
                     for m in re.finditer(r'"([^"\n]{3,200})"|\'([^\'\n]{3,200})\'', line):
-                        self.personal_value(rel, n, None, m.group(1) or m.group(2))
+                        key = JS_KEY_BEFORE.search(line[:m.start()]) if jsparse.is_js(rel) else \
+                            ATTR_BEFORE.search(line[:m.start()]) if rel.lower().endswith(MARKUP_EXT) else None
+                        self.personal_value(rel, n, key.group(1) if key else None, m.group(1) or m.group(2), loose=bool(key))
+            if jsparse.is_js(rel) and size_mb <= RULES['large_file_mb']:
+                covered = {c['line'] for c in self.cands[n_before:] if c['category'] == 'time_bomb'}
+                self.js_test_rules(rel, item, comparisons, seeds, covered)
+                if item['kind'] in ('fixture', 'factory', 'snapshot'):
+                    self.js_generated_ids(rel, item)
             if rel.endswith('.py'):
                 try:
                     tree = ast.parse(text)
@@ -619,6 +943,7 @@ class Scanner:
                         self.code_time_bombs(rel, tree)
         self.shared_mutable(py)
         self.locale(py)
+        self.js_locale()
         for d in schema_drift.drift(self.root, self.inv)['findings']:
             what = {'extra_field': f'with a field {d["field"]} that {d["model"]} ({d["model_source"]}) no longer has',
                     'missing_required': f'without {d["field"]}, which {d["model"]} requires',
