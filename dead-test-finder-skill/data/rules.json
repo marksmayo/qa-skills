@@ -10,12 +10,15 @@
     "patch_calls": ["patch", "patch.object", "MagicMock", "Mock", "create_autospec"]
   },
   "javascript": {
-    "test_files": ["*.test.ts", "*.test.tsx", "*.test.js", "*.test.jsx", "*.spec.ts", "*.spec.tsx", "*.spec.js", "*.spec.jsx", "*.test.mjs", "*.spec.mjs"],
-    "test_call": "(?<![.$])\\b(it|test)(\\.(only|skip|todo|concurrent|each\\([^)]*\\)))?\\s*\\(",
-    "describe_call": "(?<![.$])\\b(describe|suite)(\\.(only|skip|todo|each\\([^)]*\\)))?\\s*\\(",
-    "skip_markers": ["it.skip", "test.skip", "describe.skip", "xit", "xtest", "xdescribe", "it.todo", "test.todo"],
-    "only_markers": ["it.only", "test.only", "describe.only", "fit", "fdescribe"],
-    "assert_pattern": "\\bexpect\\s*\\(|\\bassert(\\.\\w+)?\\s*\\(|\\bexpectTypeOf\\s*\\(|\\.toMatchSnapshot\\s*\\(|\\.toMatchInlineSnapshot\\s*\\("
+    "$comment": "Calls are found by scan_tests.py's lexer and call walker (describe/suite/it/test/xit/xtest/fit/xdescribe/fdescribe, Playwright test.describe, aliases such as `test as setup`); assert_pattern is matched in comment- and string-masked code.",
+    "test_files": ["*.test.ts", "*.test.tsx", "*.test.js", "*.test.jsx", "*.spec.ts", "*.spec.tsx", "*.spec.js", "*.spec.jsx", "*.test.mjs", "*.spec.mjs",
+                   "*.test.mts", "*.spec.mts", "*.test.cjs", "*.spec.cjs"],
+    "playwright_setup_files": ["*.setup.ts", "*.setup.js", "*.setup.mts", "*.setup.mjs"],
+    "skip_markers": ["it.skip", "test.skip", "describe.skip", "xit", "xtest", "xdescribe", "it.todo", "test.todo", "test.fixme", "it.skipIf", "test.skipIf"],
+    "only_markers": ["it.only", "test.only", "describe.only", "fit", "fdescribe", "test.describe.only"],
+    "assert_pattern": "\\bexpect(\\s*\\.\\s*(soft|poll))?\\s*\\(|\\bexpect\\s*\\.\\s*(assertions|hasAssertions)\\s*\\(|\\bassert(\\.\\w+)?\\s*\\(|\\b(expect|assert|verify)[A-Z]\\w*\\s*\\(|\\bexpectTypeOf\\s*\\(|\\bassertType\\s*\\(|\\.toMatchSnapshot\\s*\\(|\\.toMatchInlineSnapshot\\s*\\(|\\.toHaveScreenshot\\s*\\(",
+    "duplicate_min_tokens": 40,
+    "duplicate_similarity": 1.0
   },
   "ticket_key": "\\b([A-Z][A-Z0-9]+-\\d+)\\b",
   "done_categories": ["done"],
