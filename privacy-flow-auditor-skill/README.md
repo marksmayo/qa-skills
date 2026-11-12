@@ -18,8 +18,9 @@ consent or after rejection, personal data to third parties, unmasked session rep
 data in URLs, insecure storage, undeclared processors - each with GDPR, UK GDPR, ePrivacy/PECR and
 Australian Privacy Principles references for a privacy professional.
 
-It never types or stores real personal data (every captured value is redacted), and never says an app
-is compliant.
+It never types or stores real personal data (every captured value is redacted), never lets a test request
+reach a real vendor (third parties are blocked in the browser and recorded as attempts), and never says an
+app is compliant.
 
 ## Install
 
@@ -71,11 +72,11 @@ python scripts/render_report.py examples/privacy_audit.example.json
 - `data/categories.json`: categories, sensitivity and field patterns
 - `data/sinks.json`: logging, analytics, replay, error-tracker, storage and HTTP sinks; SDK packages
 - `data/provisions.json`: finding type to GDPR, UK GDPR, ePrivacy, PECR and APP references
-- `data/vendors.json`: curated domain-to-vendor names
-- `data/lists.lock.json`: pinned EasyPrivacy and Open Cookie Database versions (downloaded, not committed)
-- `scripts/fetch_lists.py`: download, verify and combine the lists
+- `data/vendors.json`: curated domain-to-vendor names, plus vendor aliases and parent companies for matching declared processors
+- `data/lists.lock.json`: EasyPrivacy and the Open Cookie Database pinned to git commits, with hashes (downloaded, not committed)
+- `scripts/fetch_lists.py`: download, verify and combine the lists; `--check` verifies the cache, `--update --write-lock` re-pins into a scratch lock
 - `scripts/match_canaries.py`: canary sets, encodings, search and redaction
-- `scripts/scan_privacy.py`: static collection points, sinks and candidate flows
+- `scripts/scan_privacy.py`: static collection points, sinks, candidate flows and SDK hosts (including scripts injected from JavaScript); lists what it skipped
 - `scripts/capture_flows.py`: the three-state browser capture
 - `scripts/merge_candidates.py`: candidates, recipients and the consent matrix
 - `scripts/validate_privacy_audit.py`, `scripts/render_report.py`

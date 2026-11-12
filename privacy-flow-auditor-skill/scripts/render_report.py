@@ -27,14 +27,27 @@ def main() -> int:
 
     r = json.loads(a.audit.read_text(encoding='utf-8'))
     s, h = r['scope'], r['headline']
+    matrix = {m['state']: m for m in r['consent_matrix']}
+
+    def seen(key: str, state: str) -> str:
+        """The third parties seen in a state, "none" only when the state was tested and showed none."""
+        row = matrix.get(state) or {'status': 'not_run'}
+        if h.get(key) is None or row.get('status') != 'tested':
+            why = (h.get('states_not_tested') or {}).get(state) or row.get('reason') or row.get('status')
+            return f'not tested ({why})'
+        return ', '.join(h[key]) or 'none'
+    blocked = [x['domain'] for x in r['recipients'] if x.get('blocked_requests')]
     out = [c('# Privacy flow audit', 'bold'), '',
            f'Targets {", ".join(s["targets"]) or "-"}; repository `{s.get("repo") or "-"}`; regions {", ".join(s["regions"])}; '
            f'consent states tested: {", ".join(s["consent_states_tested"])}.', '',
            ' '.join(f'{c(p, p)} {n}' for p, n in h['counts'].items()), '', h['statement'], '',
-           f'Third parties before consent: {", ".join(h["third_parties_before_consent"]) or "none"}. '
-           f'After "Reject all": {", ".join(h["third_parties_after_reject"]) or "none"}. '
-           f'Special-category flows: {", ".join(h["special_category_flows"]) or "none"}.', '',
-           c(h['disclaimer'], 'dim'), '', '## Consent matrix', '', '| State | Third-party domains | Cookies | Canaries sent to third parties |', '|---|---|---|---|']
+           f'Third parties before consent: {seen("third_parties_before_consent", "before")}. '
+           f'After "Reject all": {seen("third_parties_after_reject", "reject")}. '
+           f'Special-category flows: {", ".join(h["special_category_flows"]) or "none"}.', '']
+    if blocked:
+        out += [f'Blocked in the browser, so they never reached the vendor and could set no cookies or send follow-up hits: '
+                f'{", ".join(blocked)}.', '']
+    out += [c(h['disclaimer'], 'dim'), '', '## Consent matrix', '','| State | Third-party domains | Cookies | Canaries sent to third parties |', '|---|---|---|---|']
     for m in r['consent_matrix']:
         if m['status'] != 'tested':
             out.append(f'| {m["state"]} | {m["status"]}: {m.get("reason") or ""} | | |')
@@ -59,9 +72,13 @@ def main() -> int:
                 out.append(f'- Code: `{cp["file"]}:{cp["line"]}` {cp.get("what", "")}')
             refs = '; '.join(f'{k}: {", ".join(v)}' for k, v in f['references'].items())
             out += [f'- References (for a privacy professional): {refs}', f'- Fix: {f["fix"]}', f'- Verify: {f["verification"]}', '']
-        out += ['## Recipients', '', '| Domain | Vendor | Kind | Region | States | Categories received |', '|---|---|---|---|---|---|']
+        out += ['## Recipients', '', '| Domain | Vendor | Kind | Declared as | Region | States | Categories received | Requests (blocked) |',
+                '|---|---|---|---|---|---|---|---|']
         for x in r['recipients']:
-            out.append(f'| {x["domain"]} | {x["vendor"] or "-"} | {x["kind"]} | {x["region"] or "-"} | {", ".join(x["states"])} | {", ".join(x["categories"]) or "-"} |')
+            dec = f'{x["declared_as"]["name"]} ({x["declared_as"]["match"]})' if x.get('declared_as') else '-'
+            reqs = f'{x["requests"]} ({x.get("blocked_requests", 0)})' if 'requests' in x else '-'
+            out.append(f'| {x["domain"]} | {x["vendor"] or "-"} | {x["kind"]} | {dec} | {x["region"] or "-"} | {", ".join(x["states"])} '
+                       f'| {", ".join(x["categories"]) or "-"} | {reqs} |')
         out += ['', '## Data inventory', '']
         for i in r['inventory']:
             rec = ', '.join(f'{x["domain"]} ({"/".join(x["encodings"])})' for x in i['recipients']) or 'none seen'

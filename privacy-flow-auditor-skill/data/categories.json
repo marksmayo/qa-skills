@@ -44,5 +44,9 @@
       "apis": ["READ_CONTACTS", "NSContactsUsageDescription", "NSPhotoLibraryUsageDescription", "CAMERA", "NSCameraUsageDescription", "RECORD_AUDIO", "NSMicrophoneUsageDescription"]},
     "browsing_behaviour": {"sensitivity": 1, "label": "Browsing behaviour (derived)", "names": ["page_url", "referrer", "dl", "dr"], "autocomplete": [], "types": []}
   },
-  "special": ["health", "biometric", "racial_or_ethnic_origin", "religion", "sexual_orientation", "criminal_record", "political_opinion", "trade_union", "genetic"]
+  "special": ["health", "biometric", "racial_or_ethnic_origin", "religion", "sexual_orientation", "criminal_record", "political_opinion", "trade_union", "genetic"],
+  "generic_property_names": {
+    "note": "Collected field names that are also everyday property names in code (path.name, el.title, event.type, store.state). scan_privacy.py does not count obj.<name> as naming the field for these; it still counts the bare identifier, a key ('name': or ['name']) and an interpolation of the identifier.",
+    "names": ["name", "title", "type", "state", "region", "country", "city", "timezone", "address", "card", "condition", "reason", "health", "ip", "cid", "dl", "dr", "mail", "tel", "mobile", "zip", "race", "faith", "union_member", "lat", "lng", "gps", "medical", "dna"]
+  }
 }

@@ -45,7 +45,7 @@ is P0 (`special_category_to_third_party`). Tracking after "Reject all" is at lea
 
 | Level | Meaning |
 |---|---|
-| `observed` | A canary, request or cookie seen in the live capture (needs a live candidate) |
+| `observed` | A canary, request or cookie seen in the live capture (needs a live candidate). A request the browser blocked was still attempted by the page, so it is observed; what the vendor would have done next is not, and goes in the limitations |
 | `traced` | A full code path from collection to sink (file and line at each step) |
 | `pattern` | A matching call with an incomplete path; agent judgment (excess collection, policy comparison) is never higher |
 

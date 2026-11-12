@@ -289,3 +289,33 @@ Where the build differs from the design above, and what the example showed.
     in the SDK inventory.
 - **Testing:** 34 of 34 seeded violations are caught, including personal data and secrets planted in
   evidence files.
+- **Gaps found on a real static site, fixed** (a plant-guide site that injects Google Analytics and AdSense
+  from its own scripts, with no consent banner):
+  - `fetch_lists.py` pinned EasyPrivacy's unversioned easylist.to URL, which is rebuilt several times a day,
+    so the hash pin broke within hours. Both lists are now pinned to a git commit of their GitHub repository
+    (EasyPrivacy's built list is committed to the `gh-pages` branch of easylist/easylist), which never
+    changes. `--update` pins each branch's latest commit and can write the lock elsewhere (`--write-lock`),
+    and `--check` with an empty cache says the lists aren't downloaded instead of reporting a hash mismatch.
+  - `scan_privacy.py` found no SDKs because both scripts were injected from JavaScript; it now records
+    hosts from `el.src = "https://..."`, `setAttribute('src', ...)`, URL literals in a file that creates a
+    script element, and URL literals on a listed vendor's domain. Its 51 candidates were all `name` matched
+    on `path.name` and inside strings: a field now matches only as an identifier, a key or an interpolation,
+    property accesses don't count for everyday names (`generic_property_names`), and `data['name']` is no
+    longer a form read (`request.form`, `formData`, `req.body` and similar are). It took 3.5 minutes on
+    about 2,350 files because every line was searched with every pattern; it now reads each file once, runs
+    each pattern over the whole text only when one of its literal `hints` (in `data/sinks.json`) occurs,
+    prunes dependency directories while walking, and lists what it skipped (files over `--max-bytes`,
+    minified or generated files, skipped directories). The same repository takes about 20 seconds and
+    gives no false candidates.
+  - Declared processors matched only by exact vendor name, so a policy naming "Google Analytics" and
+    "Google Ads" left googletagmanager.com ("Google Tag Manager") and googlesyndication.com ("Google
+    AdSense") undeclared. `data/vendors.json` now has vendor aliases and parent companies; a recipient
+    records the declared name and whether it matched exactly, by alias, by company or by a listed domain.
+  - With no consent control, the headline said `After "Reject all": none`. An untested state is now
+    `null` in the headline and listed in `states_not_tested` with its reason; the renderer prints "not
+    tested (reason)", and the validator rejects an empty list or a "none" statement for it.
+  - `registrable()` turned `127.0.0.1` into `0.1`; IP addresses and `localhost` are now returned whole.
+  - The shared browser harness now blocks third parties by default. The capture records each attempted
+    request with `blocked: third_party`, the merge counts blocked requests per recipient and lists the
+    blocked domains, the renderer names them, and the validator requires a limitation saying that blocked
+    vendors set no cookies and sent no follow-up hits. Stub vendors on `*.test` hosts are loopback and still load.

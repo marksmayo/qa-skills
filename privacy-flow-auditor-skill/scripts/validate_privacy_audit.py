@@ -10,8 +10,10 @@ captured request nor a code path; a vendor is named without a list entry or code
 data/categories.json; a sensitivity, flow, reach, score, priority, floor or cap is wrong; agent judgment is
 above pattern, or a pattern finding is P0; a consent-state claim names a state that wasn't tested, or the
 capture doesn't show it; a legal reference list differs from data/provisions.json; a candidate isn't triaged
-exactly once, or a dismissal isn't supported by its facts; the headline counts differ; or any text says the
-app is compliant. --recompute re-runs merge_candidates.py from the recorded inputs and compares.
+exactly once, or a dismissal isn't supported by its facts; the headline counts differ; a consent state that
+wasn't tested is summarised as a list (it must be null, listed in states_not_tested, and the statement must say
+it wasn't tested rather than "none"); requests were blocked in the browser and the limitations don't say so; or
+any text says the app is compliant. --recompute re-runs merge_candidates.py from the recorded inputs and compares.
 """
 from __future__ import annotations
 import argparse, json, re, subprocess, sys, tempfile
@@ -79,11 +81,24 @@ def pii_problems(text: str, where: str, canary_values: list[str]) -> list[str]:
 
 
 def summary(rep: dict, cands: dict) -> dict:
+    """Headline facts recomputed from the findings and the consent matrix. A state that wasn't tested has no list
+    of third parties (null), never an empty one, and is named in states_not_tested with its reason."""
     counts = {p: sum(1 for f in rep['findings'] if f['priority'] == p) for p in ORDER}
     m = {r['state']: r for r in cands['consent_matrix']}
-    third = lambda s: [d for d in m.get(s, {}).get('third_party_domains', [])]  # noqa: E731
+
+    def third(s):
+        row = m.get(s) or {}
+        return list(row.get('third_party_domains', [])) if row.get('status') == 'tested' else None
+    not_tested = {r['state']: (r.get('reason') or r['status']) for r in cands['consent_matrix'] if r['status'] != 'tested'}
     return {'counts': counts, 'third_parties_before_consent': third('before'), 'third_parties_after_reject': third('reject'),
+            'states_not_tested': not_tested,
             'special_category_flows': sorted(f['id'] for f in rep['findings'] if any(c in CATS['special'] for c in f['categories']))}
+
+
+NOT_TESTED = re.compile(r"\b(not tested|untested|could ?n[o']t be tested|was ?n[o']t tested|were ?n[o']t tested|not run)\b", re.I)
+NONE_CLAIM = {'reject': re.compile(r'(after|following|once)\W+(the\W+)?(user\W+)?(rejects?|rejection|reject all|"reject all")[^.;]{0,40}?\b(none|nothing|no (third|tracking|request|vendor))', re.I),
+              'before': re.compile(r'before\W+(any\W+|a\W+)?(consent|choice)[^.;]{0,40}?\b(none|nothing|no (third|tracking|request|vendor))', re.I),
+              'accept': re.compile(r'(after|following|once)\W+(the\W+)?(user\W+)?(accepts?|acceptance|accept all|"accept all")[^.;]{0,40}?\b(none|nothing|no (third|tracking|request|vendor))', re.I)}
 
 
 def main() -> int:
@@ -304,6 +319,20 @@ def main() -> int:
     untested = [r['state'] for r in cfile['consent_matrix'] if r['status'] != 'tested']
     if untested and not any(s in ' '.join(rep['limitations']) for s in untested):
         e(f'consent states {untested} were not tested, but the limitations do not say so')
+    statement = rep['headline'].get('statement', '')
+    if untested and not NOT_TESTED.search(statement):
+        e(f'headline.statement must say that {untested} {"was" if len(untested) == 1 else "were"} not tested')
+    for s_ in untested:
+        mm = NONE_CLAIM[s_].search(statement)
+        if mm:
+            e(f'headline.statement summarises the untested {s_} state as {mm.group(0)!r}: say it was not tested')
+    # requests the browser blocked never reached the vendor: the report must say what that hides
+    blocked = cfile.get('blocked_domains') or sorted({r['host'] for s_ in cap['states'] for r in s_.get('requests', []) if r.get('blocked') == 'third_party'})
+    if blocked and not any(re.search(r'\bblock', x, re.I) and re.search(r'third[- ]part|vendor', x, re.I) for x in rep['limitations']):
+        e(f'requests to {blocked[:5]} were blocked in the browser, but no limitation says so (blocked vendors set no cookies and send no follow-up hits)')
+    for r_ in rep['recipients']:
+        if r_.get('blocked_requests') and r_['blocked_requests'] > r_.get('requests', r_['blocked_requests']):
+            e(f'recipient {r_["domain"]}: more blocked requests than requests')
 
     if a.recompute:
         inp = cfile['inputs']

@@ -18,22 +18,47 @@ Live candidates (L###):
 Static candidates (S###) are carried over unchanged.
 
 Vendors are named only from the domain list (or a code import in the static scan), never from the domain name.
+A declared processor covers a domain when its name is the domain's vendor, one of the vendor's aliases or its
+parent company (data/vendors.json "vendors", plus a "vendors" section in the list), or when the declared entry
+lists the domain under "domains"; each recipient records the declared name and how it matched
+(exact, alias, company or domain), so a loose match can be questioned.
+
+Requests the browser harness blocked (third_party: block, the default) were attempted by the page but never
+reached the vendor; candidates and recipients count them (blocked_requests), and the output lists the blocked
+domains, because a blocked vendor couldn't set cookies or send the hits that would have followed.
 """
 from __future__ import annotations
-import argparse, json, sys
+import argparse, ipaddress, json, re, sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 CATS = json.loads((HERE.parent / 'data' / 'categories.json').read_text(encoding='utf-8'))
+VENDORS = json.loads((HERE.parent / 'data' / 'vendors.json').read_text(encoding='utf-8')).get('vendors', {})
 TWO_LEVEL = ('com.au', 'net.au', 'org.au', 'gov.au', 'edu.au', 'co.uk', 'org.uk', 'gov.uk', 'ac.uk', 'co.nz', 'co.jp', 'com.br')
 
 
 def registrable(host: str | None) -> str:
+    """The registrable domain of a host; IP addresses, localhost and single-label hosts are returned whole."""
     if not host:
         return ''
-    parts = host.lower().split('.')
+    host = host.lower().strip('.').strip('[]')
+    try:
+        ipaddress.ip_address(host)
+        return host
+    except ValueError:
+        pass
+    if host == 'localhost' or host.endswith('.localhost') or '.' not in host:
+        return host
+    parts = host.split('.')
     n = 3 if '.'.join(parts[-2:]) in TWO_LEVEL else 2
     return '.'.join(parts[-n:])
+
+
+def norm(name: str | None) -> str:
+    """A vendor name for comparison: lower case, letters and digits only, a trailing company suffix dropped."""
+    n = re.sub(r'[^a-z0-9]+', ' ', (name or '').lower()).strip()
+    n = re.sub(r'\s+(inc|llc|ltd|limited|pty ltd|pty|corp|corporation|gmbh|plc|ireland|ireland limited)$', '', n)
+    return n.replace(' ', '')
 
 
 def main() -> int:
@@ -50,7 +75,9 @@ def main() -> int:
     flows = json.loads(a.flows.read_text(encoding='utf-8'))
     lists = json.loads(a.lists.read_text(encoding='utf-8'))
     declared = json.loads(a.declared.read_text(encoding='utf-8')) if a.declared else {'processors': []}
-    declared_names = {p['vendor'].lower() for p in declared['processors']}
+    declared_by_name = {norm(p['vendor']): p['vendor'] for p in declared['processors']}
+    declared_by_domain = {registrable(d): p['vendor'] for p in declared['processors'] for d in p.get('domains', [])}
+    known = {**VENDORS, **lists.get('vendors', {})}
     regions = set(a.regions.split(','))
     first = {registrable(d) for d in flows.get('first_party_domains', [])} or {registrable(cap['site'].split('/')[2].split(':')[0])}
     domains, cookie_list = lists.get('domains', {}), lists.get('cookies', {})
@@ -58,11 +85,27 @@ def main() -> int:
     def vendor(dom: str) -> dict:
         return domains.get(dom) or {}
 
+    def declared_as(dom: str) -> dict | None:
+        """The declared processor that covers this domain, and how: exact, alias, company or domain."""
+        if dom in declared_by_domain:
+            return {'name': declared_by_domain[dom], 'match': 'domain'}
+        v = vendor(dom).get('vendor')
+        if not v:
+            return None
+        info = known.get(v) or {}
+        for how, names in (('exact', [v]), ('alias', info.get('aliases', [])), ('company', [info.get('company')])):
+            for n in names:
+                if n and norm(n) in declared_by_name:
+                    return {'name': declared_by_name[norm(n)], 'match': how}
+        return None
+
     def kind(dom: str) -> str:
         if dom in first:
             return 'first_party'
-        v = vendor(dom).get('vendor')
-        return 'declared_processor' if v and v.lower() in declared_names else 'third_party'
+        return 'declared_processor' if declared_as(dom) else 'third_party'
+
+    def blocked(rs) -> int:
+        return sum(1 for r in rs if r.get('blocked'))
 
     cands: list[dict] = []
 
@@ -90,9 +133,11 @@ def main() -> int:
         for d, rs in sorted(by_dom.items()):
             v = vendor(d)
             ck = sorted({c['name'] for c in snap_cookies if (cookie_list.get(c['name']) or {}).get('domain') == d or registrable(c['domain'].lstrip('.')) == d})
-            cand(type=typ, state=st_name, domain=d, vendor=v.get('vendor'), vendor_category=v.get('category'), recipient=kind(d),
-                 requests=len(rs), paths=sorted({r['path'] for r in rs})[:10], phases=sorted({r['phase'] for r in rs}),
-                 cookies=ck, example_requests=[{'state': st_name, 'n': r['n'], 'phase': r['phase'], 'method': r['method'], 'url': r['url'][:300]} for r in rs[:3]])
+            c = cand(type=typ, state=st_name, domain=d, vendor=v.get('vendor'), vendor_category=v.get('category'), recipient=kind(d),
+                     requests=len(rs), paths=sorted({r['path'] for r in rs})[:10], phases=sorted({r['phase'] for r in rs}),
+                     cookies=ck, example_requests=[{'state': st_name, 'n': r['n'], 'phase': r['phase'], 'method': r['method'], 'url': r['url'][:300]} for r in rs[:3]])
+            if blocked(rs):
+                c['blocked_requests'] = blocked(rs)
         if st_name == 'before':
             for c in initial['cookies']:
                 if registrable(c['domain'].lstrip('.')) in first and not cookie_list.get(c['name']):
@@ -107,7 +152,8 @@ def main() -> int:
         for r in states[st_name]['requests']:
             d = registrable(r['host'])
             if r['matches'] and d not in first:
-                e = to_third.setdefault(d, {'states': set(), 'fields': set(), 'encodings': set(), 'requests': []})
+                e = to_third.setdefault(d, {'states': set(), 'fields': set(), 'encodings': set(), 'requests': [], 'blocked': 0})
+                e['blocked'] += 1 if r.get('blocked') else 0
                 e['states'].add(st_name)
                 e['fields'] |= {m['field'] for m in r['matches']}
                 e['encodings'] |= {f'{m["field"]}:{m["encoding"]}' for m in r['matches']}
@@ -135,9 +181,11 @@ def main() -> int:
     for d, e in sorted(to_third.items()):
         v = vendor(d)
         typ = 'session_replay_unmasked' if v.get('category') == 'session_replay' else 'personal_data_to_third_party'
-        cand(type=typ, domain=d, vendor=v.get('vendor'), vendor_category=v.get('category'), recipient=kind(d), states=sorted(e['states']),
-             fields=sorted(e['fields']), categories=cats(e['fields']), encodings=sorted(e['encodings']), example_requests=e['requests'][:4],
-             requests=len(e['requests']))
+        c = cand(type=typ, domain=d, vendor=v.get('vendor'), vendor_category=v.get('category'), recipient=kind(d), states=sorted(e['states']),
+                 fields=sorted(e['fields']), categories=cats(e['fields']), encodings=sorted(e['encodings']), example_requests=e['requests'][:4],
+                 requests=len(e['requests']))
+        if e['blocked']:
+            c['blocked_requests'] = e['blocked']
         if kind(d) == 'third_party':
             cand(type='undeclared_processor', domain=d, vendor=v.get('vendor'), vendor_category=v.get('category'), recipient='third_party',
                  states=sorted(e['states']), fields=sorted(e['fields']), categories=cats(e['fields']),
@@ -185,8 +233,11 @@ def main() -> int:
         for r in states[st_name]['requests']:
             d = registrable(r['host'])
             e = recipients.setdefault(d, {'domain': d, 'hosts': set(), 'vendor': vendor(d).get('vendor'), 'vendor_category': vendor(d).get('category'),
-                                          'region': vendor(d).get('region'), 'kind': kind(d), 'states': set(), 'categories': set(), 'fields': set()})
+                                          'region': vendor(d).get('region'), 'kind': kind(d), 'declared_as': declared_as(d) if d not in first else None,
+                                          'states': set(), 'categories': set(), 'fields': set(), 'requests': 0, 'blocked_requests': 0})
             e['hosts'].add(r['host'])
+            e['requests'] += 1
+            e['blocked_requests'] += 1 if r.get('blocked') else 0
             e['states'].add(st_name)
             e['fields'] |= {m['field'] for m in r['matches']}
     for e in recipients.values():
@@ -208,10 +259,12 @@ def main() -> int:
         canaries = sorted({m['field'] for r in st['requests'] if registrable(r['host']) not in first for m in r['matches']})
         matrix.append({'state': st_name, 'status': 'tested', 'third_party_domains': third,
                        'cookies': sorted(c['name'] for c in last['cookies']), 'canaries_to_third_parties': canaries})
+    blocked_domains = sorted({registrable(r['host']) for st_name in tested for r in states[st_name]['requests'] if r.get('blocked')})
     out = {'capture': a.capture.as_posix(), 'static': a.static.as_posix() if a.static else None,
            'inputs': {'flows': a.flows.as_posix(), 'lists': a.lists.as_posix(), 'declared': a.declared.as_posix() if a.declared else None,
                       'regions': a.regions}, 'lists': lists.get('source'),
            'declared': declared.get('source'), 'regions': sorted(regions), 'first_party': sorted(first),
+           'third_party_mode': cap.get('third_party'), 'blocked_domains': blocked_domains,  # mode null: captured before it was recorded
            'recipients': sorted(recipients.values(), key=lambda e: e['domain']), 'consent_matrix': matrix, 'candidates': cands + static}
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(json.dumps(out, indent=1) + '\n', encoding='utf-8', newline='\n')

@@ -279,6 +279,10 @@
    "vendor_category": "advertising",
    "region": "US",
    "kind": "declared_processor",
+   "declared_as": {
+    "name": "Adnetic",
+    "match": "exact"
+   },
    "states": [
     "accept"
    ],
@@ -288,6 +292,8 @@
    "fields": [
     "email"
    ],
+   "requests": 5,
+   "blocked_requests": 0,
    "named_by": "domain list"
   },
   {
@@ -299,6 +305,10 @@
    "vendor_category": "error_tracking",
    "region": "AU",
    "kind": "declared_processor",
+   "declared_as": {
+    "name": "Bugcatch",
+    "match": "exact"
+   },
    "states": [
     "accept",
     "before",
@@ -306,6 +316,8 @@
    ],
    "categories": [],
    "fields": [],
+   "requests": 12,
+   "blocked_requests": 0,
    "named_by": "domain list"
   },
   {
@@ -318,6 +330,7 @@
    "vendor_category": "support_chat",
    "region": "US",
    "kind": "third_party",
+   "declared_as": null,
    "states": [
     "accept",
     "before",
@@ -329,6 +342,8 @@
    "fields": [
     "email"
    ],
+   "requests": 27,
+   "blocked_requests": 0,
    "named_by": "domain list"
   },
   {
@@ -340,6 +355,7 @@
    "vendor_category": null,
    "region": null,
    "kind": "first_party",
+   "declared_as": null,
    "states": [
     "accept",
     "before",
@@ -358,6 +374,8 @@
     "phone",
     "reason"
    ],
+   "requests": 45,
+   "blocked_requests": 0,
    "named_by": null
   },
   {
@@ -370,6 +388,10 @@
    "vendor_category": "session_replay",
    "region": "EU",
    "kind": "declared_processor",
+   "declared_as": {
+    "name": "Replayr",
+    "match": "exact"
+   },
    "states": [
     "accept"
    ],
@@ -386,6 +408,8 @@
     "phone",
     "reason"
    ],
+   "requests": 5,
+   "blocked_requests": 0,
    "named_by": "domain list"
   },
   {
@@ -398,6 +422,10 @@
    "vendor_category": "analytics",
    "region": "US",
    "kind": "declared_processor",
+   "declared_as": {
+    "name": "Trackly",
+    "match": "exact"
+   },
    "states": [
     "accept",
     "before",
@@ -409,6 +437,8 @@
    "fields": [
     "email"
    ],
+   "requests": 24,
+   "blocked_requests": 0,
    "named_by": "domain list"
   }
  ],
@@ -1257,7 +1287,8 @@
   "special_category_flows": [
    "F01",
    "F02"
-  ]
+  ],
+  "states_not_tested": {}
  },
  "limitations": [
   "The vendors are stubs on loopback with made-up .test hostnames; the example list stands in for EasyPrivacy and the Open Cookie Database, and its regions are invented.",

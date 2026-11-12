@@ -1,18 +1,26 @@
 {
- "note": "Pinned tracker and cookie lists. fetch_lists.py downloads them to a cache outside the repository and fails if a hash differs; --update re-pins. The lists are not committed: EasyPrivacy is GPL-3.0-or-later / CC BY-SA 3.0, the Open Cookie Database Apache-2.0.",
+ "note": "Pinned tracker and cookie lists, each at a git commit of its GitHub repository (raw.githubusercontent.com/<repo>/<ref>/<path> never changes). fetch_lists.py downloads them to a cache outside the repository and fails if a hash differs; --update pins each branch's latest commit (--write-lock writes the new lock elsewhere). The lists are not committed: EasyPrivacy is GPL-3.0-or-later / CC BY-SA 3.0, the Open Cookie Database Apache-2.0. EasyPrivacy's built list is committed to the gh-pages branch of easylist/easylist; easylist.to serves the same file but rebuilds it several times a day.",
  "lists": {
   "easyprivacy": {
-   "url": "https://easylist.to/easylist/easyprivacy.txt",
+   "repo": "easylist/easylist",
+   "branch": "gh-pages",
+   "path": "easyprivacy.txt",
+   "ref": "fc5bdc62ef950198b00486c14a6ab0b468e8732c",
+   "url": "https://raw.githubusercontent.com/easylist/easylist/fc5bdc62ef950198b00486c14a6ab0b468e8732c/easyprivacy.txt",
    "file": "easyprivacy.txt",
    "licence": "GPL-3.0-or-later OR CC-BY-SA-3.0",
-   "version": "202611110941",
-   "sha256": "0de5a42dd3356ba8464f85f7c376ff57bca0c1c0e088ea2241f0b7825d0ba1c9"
+   "version": "202611112354",
+   "sha256": "0106b9ec44e835d7c7461cbd635c5309510f7e5612423f3f78556522346c2f78"
   },
   "open_cookie_database": {
-   "url": "https://raw.githubusercontent.com/jkwakman/Open-Cookie-Database/7786335566460016f07a50705a92fc781c976f6f/open-cookie-database.csv",
+   "repo": "jkwakman/Open-Cookie-Database",
+   "branch": "master",
+   "path": "open-cookie-database.csv",
    "ref": "7786335566460016f07a50705a92fc781c976f6f",
+   "url": "https://raw.githubusercontent.com/jkwakman/Open-Cookie-Database/7786335566460016f07a50705a92fc781c976f6f/open-cookie-database.csv",
    "file": "open-cookie-database.csv",
    "licence": "Apache-2.0",
+   "version": null,
    "sha256": "ed4836ea285719d77c7340582be68d355f7358edded50e6b96bb3139fc0eb8c0"
   }
  }

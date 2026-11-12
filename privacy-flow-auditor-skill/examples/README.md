@@ -32,6 +32,12 @@ static scan, the three-state capture with every value redacted, screenshots, and
 Trackly's and Adnetic's US regions (from the example list) are recorded as `inventory` for the privacy
 team, not as findings: both are declared processors.
 
+The capture was made before the browser harness blocked third parties by default, so it records no
+third-party mode (`third_party_mode: null` in `candidates.json`). Blocking wouldn't change it: the stub
+vendors' `*.test` hosts are mapped to loopback, which the harness always lets through, so no request is
+blocked and every recipient shows `blocked_requests: 0`. Each declared vendor matches by its exact name
+(`declared_as`).
+
 ```bash
 python scripts/validate_privacy_audit.py examples/privacy_audit.example.json --candidates examples/run/candidates.json --capture examples/run/capture.json --canaries examples/run/canaries.json --evidence examples/run --repo examples/clinic-signup
 python scripts/render_report.py examples/privacy_audit.example.json

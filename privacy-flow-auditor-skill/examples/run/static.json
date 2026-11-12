@@ -1,5 +1,14 @@
 {
  "repo": "privacy-flow-auditor-skill/examples/clinic-signup",
+ "files_scanned": 7,
+ "seconds": 0.0,
+ "skipped": [
+  {
+   "file": "stub-vendors/",
+   "bytes": null,
+   "reason": "directory skipped (dependencies, build output or --exclude)"
+  }
+ ],
  "collection": [
   {
    "file": "serve.py",
@@ -195,55 +204,78 @@
    "file": "site/index.html",
    "line": 9,
    "host": "cdn.trackly.test",
-   "source": "script_tag"
+   "source": "script_tag",
+   "vendor": null
   },
   {
    "file": "site/index.html",
    "line": 10,
    "host": "widget.chatterbox.test",
-   "source": "script_tag"
+   "source": "script_tag",
+   "vendor": null
   },
   {
    "file": "site/index.html",
    "line": 11,
    "host": "cdn.bugcatch.test",
-   "source": "script_tag"
+   "source": "script_tag",
+   "vendor": null
   },
   {
    "file": "site/signup.html",
    "line": 9,
    "host": "cdn.trackly.test",
-   "source": "script_tag"
+   "source": "script_tag",
+   "vendor": null
   },
   {
    "file": "site/signup.html",
    "line": 10,
    "host": "widget.chatterbox.test",
-   "source": "script_tag"
+   "source": "script_tag",
+   "vendor": null
   },
   {
    "file": "site/signup.html",
    "line": 11,
    "host": "cdn.bugcatch.test",
-   "source": "script_tag"
+   "source": "script_tag",
+   "vendor": null
+  },
+  {
+   "file": "site/static/consent.js",
+   "line": 12,
+   "host": "cdn.adnetic.test",
+   "source": "injected_script",
+   "vendor": null
+  },
+  {
+   "file": "site/static/consent.js",
+   "line": 13,
+   "host": "cdn.replayr.test",
+   "source": "injected_script",
+   "vendor": null
   },
   {
    "file": "site/welcome.html",
    "line": 9,
    "host": "cdn.trackly.test",
-   "source": "script_tag"
+   "source": "script_tag",
+   "vendor": null
   },
   {
    "file": "site/welcome.html",
    "line": 10,
    "host": "widget.chatterbox.test",
-   "source": "script_tag"
+   "source": "script_tag",
+   "vendor": null
   },
   {
    "file": "site/welcome.html",
    "line": 11,
    "host": "cdn.bugcatch.test",
-   "source": "script_tag"
+   "source": "script_tag",
+   "vendor": null
   }
  ],
  "permissions": [],

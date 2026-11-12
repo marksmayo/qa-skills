@@ -13,9 +13,17 @@ written out redacted: values become <canary:FIELD:ENCODING> or <redacted:TYPE>. 
 With --server-log (local runs only), the app's log is read after the run and the lines carrying a canary
 are recorded, redacted, with their line numbers.
 
-flows.json: {"site", "host_map"?, "authorised_by"?, "allow_form_submission"?, "consent": {"accept": sel,
-"reject": sel}, "flows": [{"id", "reach": 1-3, "steps": [{"name", "actions": [...]}]}]}. If the banner
-can't be operated, that state is recorded as untested with the reason.
+flows.json: {"site", "host_map"?, "authorised_by"?, "allow_form_submission"?, "third_party"?, "allowed_hosts"?,
+"consent": {"accept": sel, "reject": sel}, "flows": [{"id", "reach": 1-3, "steps": [{"name", "actions": [...]}]}]}.
+If the banner can't be operated, that state is recorded as untested with the reason.
+
+Third parties are blocked by default (the browser harness's third_party: block): every request to a host that
+isn't loopback (including *.test and host_map hosts), the site or allowed_hosts is aborted in the browser, so
+no request reaches a real vendor. The page still attempts it, so it is recorded like any other request, with
+"blocked": "third_party" (or "write" for a form submission that wasn't allowed). A blocked vendor never answers,
+so its cookies, its follow-up hits and anything its script would have done are not in the capture: the report
+must say so. "third_party": "allow" lets requests out to real vendors; use it only when the person running the
+audit has agreed that the vendors receive the test's hits (record who in third_party_authorised_by).
 """
 from __future__ import annotations
 import argparse, json, re, sys, time
@@ -24,15 +32,26 @@ from urllib.parse import urljoin, urlparse
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from browser_harness import Harness, check_authorised, now  # noqa: E402
+from browser_harness import SAFE_METHODS, Harness, check_authorised, now  # noqa: E402
 from match_canaries import Matcher  # noqa: E402
 
 HEX = re.compile(r'(?<![0-9a-f])([0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})(?![0-9a-f])', re.I)
 
 
 class Recorder:
-    def __init__(self, m: Matcher):
-        self.m, self.requests, self.phase = m, [], None
+    def __init__(self, m: Matcher, h: Harness | None = None):
+        self.m, self.h, self.requests, self.phase = m, h, [], None
+
+    def blocked(self, req) -> str | None:
+        """Why the harness will abort this request (it routes after the request event), or None."""
+        h = self.h
+        if h is None:
+            return None
+        if getattr(h, 'third_party', 'allow') == 'block' and not h.host_allowed(req.url):
+            return 'third_party'
+        if req.method not in SAFE_METHODS and not h.allow_post:
+            return 'write'
+        return None
 
     def on_request(self, req):
         try:
@@ -49,7 +68,7 @@ class Recorder:
         self.requests.append({'n': len(self.requests) + 1, 'phase': self.phase, 'method': req.method, 'resource_type': req.resource_type,
                               'host': urlparse(url).hostname, 'url': red_url, 'path': urlparse(red_url).path,
                               'referer': self.m.redact(req.headers.get('referer')), 'body': self.m.redact(body)[:2000] if body else None,
-                              'matches': matches, 'unmatched_hex': hexes})
+                              'matches': matches, 'unmatched_hex': hexes, 'blocked': self.blocked(req)})
 
 
 def cookies_and_storage(ctx, page, m: Matcher) -> dict:
@@ -89,14 +108,20 @@ def main() -> int:
     out = {'site': site, 'canary_set': canaries['id'], 'started': now(), 'states': [], 'browser': None,
            'allow_form_submission': bool(cfg.get('allow_form_submission')), 'flows': [{'id': f['id'], 'reach': f.get('reach', 2),
                                                                                        'steps': [s['name'] for s in f['steps']]} for f in cfg['flows']]}
-    hcfg = {k: cfg[k] for k in ('host_map', 'authorised_by', 'allow_form_submission') if k in cfg}
+    hcfg = {k: cfg[k] for k in ('host_map', 'authorised_by', 'allow_form_submission', 'third_party', 'allowed_hosts') if k in cfg}
+    hcfg['targets'] = [site]
+    if cfg.get('third_party') == 'allow' and not (cfg.get('third_party_authorised_by') or '').strip():
+        ap.error('third_party: allow sends the test\'s requests to real vendors; set third_party_authorised_by in flows.json')
     hcfg['rate_limit_seconds'] = cfg.get('rate_limit_seconds', 0.3)
     with Harness(hcfg) as h:
         out['browser'] = f'{h.browser_name} {h.version}'
+        out['third_party'] = getattr(h, 'third_party', 'allow')
+        if cfg.get('third_party_authorised_by'):
+            out['third_party_authorised_by'] = cfg['third_party_authorised_by']
         for state in a.states.split(','):
             page = h.new_page(service_workers='block')
             ctx = page.context
-            rec = Recorder(m)
+            rec = Recorder(m, h)
             page.on('request', rec.on_request)
             st = {'state': state, 'status': 'tested', 'snapshots': []}
             rec.phase = 'initial'
@@ -140,7 +165,9 @@ def main() -> int:
                     if a.screenshots:
                         h.screenshot(page, a.screenshots / f'{state}-{flow["id"]}.png', full_page=False)
             st['requests'] = rec.requests
-            st['blocked_writes'] = len(h.blocked)
+            st['blocked_writes'] = sum(1 for b in h.blocked if b.get('reason', 'write') == 'write')
+            st['blocked_third_party'] = sum(1 for b in h.blocked if b.get('reason') == 'third_party')
+            st['blocked_hosts'] = sorted({urlparse(b['url']).hostname or '' for b in h.blocked if b.get('reason') == 'third_party'})
             h.blocked.clear()
             h.close_page(page)
             out['states'].append(st)
@@ -154,7 +181,8 @@ def main() -> int:
     a.out.write_text(json.dumps(out, indent=1) + '\n', encoding='utf-8', newline='\n')
     for st in out['states']:
         n = sum(1 for r in st['requests'] if r['matches'])
-        print(f'{st["state"]:7} {st["status"]:9} {len(st["requests"]):3} requests, {n} carrying a canary')
+        b = sum(1 for r in st['requests'] if r.get('blocked') == 'third_party')
+        print(f'{st["state"]:7} {st["status"]:9} {len(st["requests"]):3} requests, {n} carrying a canary, {b} to third parties blocked')
     print(f'-> {a.out}')
     return 0
 

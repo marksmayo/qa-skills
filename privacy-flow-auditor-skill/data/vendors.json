@@ -1,5 +1,5 @@
 {
-  "note": "Curated registrable domain -> vendor and category, for naming recipients. Only domains a vendor documents as its own collection or SDK endpoints. No regions: where a vendor processes data depends on the customer's account, so cross-border candidates need regions from the user (fetch_lists.py --extra).",
+  "note": "Curated registrable domain -> vendor and category, for naming recipients. vendors: other names a privacy policy or records of processing use for the same vendor (aliases) and its parent company; merge_candidates.py counts a declared processor as covering a domain when the declared name is the vendor, one of its aliases, or its company, and records which. Only domains a vendor documents as its own collection or SDK endpoints. No regions: where a vendor processes data depends on the customer's account, so cross-border candidates need regions from the user (fetch_lists.py --extra).",
   "domains": {
     "google-analytics.com": {"vendor": "Google Analytics", "category": "analytics"},
     "analytics.google.com": {"vendor": "Google Analytics", "category": "analytics"},
@@ -63,5 +63,26 @@
     "paypal.com": {"vendor": "PayPal", "category": "payments"},
     "recaptcha.net": {"vendor": "Google reCAPTCHA", "category": "security"},
     "hcaptcha.com": {"vendor": "hCaptcha", "category": "security"}
+  },
+  "vendors": {
+    "Google Analytics": {"company": "Google", "aliases": ["GA4", "Google Analytics 4", "Universal Analytics", "Google Analytics for Firebase"]},
+    "Google Tag Manager": {"company": "Google", "aliases": ["GTM", "Google tag", "gtag.js", "Google Analytics", "Google Ads"], "why": "googletagmanager.com serves gtag.js, the loader for Google Analytics 4 and Google Ads tags, as well as Tag Manager containers; a policy that declares either has declared this loader"},
+    "Google Ads (DoubleClick)": {"company": "Google", "aliases": ["Google Ads", "DoubleClick", "Google Marketing Platform", "Campaign Manager 360", "Display & Video 360", "Google AdSense", "AdSense", "Google Ad Manager"], "why": "doubleclick.net serves ad and conversion requests for Google Ads, AdSense and Ad Manager"},
+    "Google Ads": {"company": "Google", "aliases": ["Google AdWords", "AdWords", "Google Ads conversion tracking"]},
+    "Google AdSense": {"company": "Google", "aliases": ["AdSense", "Google Ads", "Google Ad Manager", "Google advertising"], "why": "privacy policies often call AdSense 'Google Ads'; the match is recorded as an alias so the report can say so"},
+    "Google reCAPTCHA": {"company": "Google", "aliases": ["reCAPTCHA"]},
+    "Meta Pixel": {"company": "Meta", "aliases": ["Facebook Pixel", "Facebook", "Meta Platforms", "Meta Ads", "Facebook Ads"]},
+    "Meta": {"company": "Meta", "aliases": ["Facebook", "Meta Platforms", "Meta Pixel", "Facebook Pixel"]},
+    "Microsoft Clarity": {"company": "Microsoft", "aliases": ["Clarity"]},
+    "Microsoft Advertising": {"company": "Microsoft", "aliases": ["Bing Ads", "Microsoft Ads", "Bing UET", "UET"]},
+    "LinkedIn": {"company": "Microsoft", "aliases": ["LinkedIn Insight Tag", "LinkedIn Ads"]},
+    "X (Twitter) Ads": {"company": "X", "aliases": ["Twitter", "Twitter Ads", "X Ads", "X"]},
+    "HubSpot": {"company": "HubSpot", "aliases": ["HubSpot Analytics"]},
+    "Datadog": {"company": "Datadog", "aliases": ["Datadog RUM", "Datadog Real User Monitoring"]},
+    "Cloudflare Web Analytics": {"company": "Cloudflare", "aliases": ["Cloudflare Insights", "Cloudflare"]},
+    "Yandex Metrica": {"company": "Yandex", "aliases": ["Yandex", "Yandex.Metrica", "Metrika"]},
+    "Xandr": {"company": "Microsoft", "aliases": ["AppNexus"]},
+    "Snap": {"company": "Snap", "aliases": ["Snapchat", "Snap Pixel"]},
+    "Zendesk": {"company": "Zendesk", "aliases": ["Zendesk Chat", "Zopim"]}
   }
 }

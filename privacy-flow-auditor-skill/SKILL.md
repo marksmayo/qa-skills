@@ -39,6 +39,15 @@ breach; this is not legal advice.
 8. **Secrets** found along the way are reported by location and type only.
 9. **Safe targets.** Loopback (and `*.test` mapped to it) needs nothing; other hosts need `authorised_by`.
    Form submission stays blocked unless allowed for a test environment.
+10. **No request reaches a real vendor.** The browser harness blocks third parties by default: every request
+   to a host that isn't loopback (including `*.test` and `host_map` hosts), the site or `allowed_hosts` is
+   aborted in the browser before it leaves, GETs included. The page still *attempts* it, so the capture
+   records it (`"blocked": "third_party"`) and it counts as observed tracking. But a blocked vendor never
+   answers: its script doesn't run, so it sets no cookies and sends none of the hits that would follow
+   (a page-view collect, ad requests, a consent message of its own). Findings about blocked vendors are
+   therefore a floor, not the full picture; say so in the limitations, naming the blocked domains (the
+   validator checks). `"third_party": "allow"` in `flows.json` lets requests out, only when the person
+   running the audit agrees the vendors receive the test's hits (`third_party_authorised_by`).
 
 ## Inputs
 
@@ -49,7 +58,7 @@ breach; this is not legal advice.
 | `authorised_by`, `allow_form_submission`, `host_map` | as in `browser_harness.py` | |
 | `regions` | `AU,EU` | Which provision sets to reference (`UK` adds UK GDPR and PECR) |
 | `first_party_domains` | the site's registrable domain | In `flows.json` |
-| `declared_processors` | optional | The organisation's own vendor list (privacy policy section, records of processing) |
+| `declared_processors` | optional | The organisation's own vendor list (privacy policy section, records of processing): `{"source", "processors": [{"vendor", "domains"?}]}`. A declared name covers a domain when it is the domain's vendor, one of the vendor's aliases or its parent company (`data/vendors.json` `vendors`: "Google Analytics" covers the gtag.js loader on googletagmanager.com, "Google Ads" covers AdSense), or when the entry lists the domain; each recipient records the declared name and how it matched |
 | `lists` | `fetch_lists.py` output | EasyPrivacy (tracker domains), Open Cookie Database (cookie names), `data/vendors.json` (vendor names); `--extra` adds regions or corrections |
 | `privacy_policy_url` | optional | Read it and compare vendors and categories with what was observed: agent judgment, at most `pattern` |
 
@@ -58,7 +67,8 @@ breach; this is not legal advice.
 The capture needs Playwright with Chromium (`pip install -r requirements.txt`; ask first). The rest is stdlib.
 
 ```bash
-python scripts/fetch_lists.py                       # download and verify the pinned lists -> ~/.cache/qa-skills/privacy-lists/domains.json
+python scripts/fetch_lists.py                       # download the lists at their pinned commits, verify -> ~/.cache/qa-skills/privacy-lists/domains.json
+python scripts/fetch_lists.py --update --write-lock <run>/lists.lock.json   # newer lists: pin the latest commits in a scratch lock
 python scripts/match_canaries.py new --out <run>/canaries.json
 python scripts/scan_privacy.py <repo> --out <run>/static.json [--exclude vendor] [--semgrep semgrep.sarif]
 python scripts/capture_flows.py flows.json --canaries <run>/canaries.json --out <run>/capture.json [--server-log app.log] --screenshots <run>/screenshots
@@ -79,7 +89,10 @@ python scripts/merge_candidates.py --capture <run>/capture.json --static <run>/s
    show data from an API rather than forms: read what the queries return.
 3. **Live capture.** For each consent state, a fresh context records requests, cookies and storage
    before any interaction, then after the banner choice, then through each flow typing canaries. With
-   `--server-log` on a local run, log lines carrying a canary are recorded too.
+   `--server-log` on a local run, log lines carrying a canary are recorded too. Requests to third parties
+   are recorded and blocked (rule 10). When no consent control can be operated, the reject and accept
+   states are `untested` with the reason: the headline then has `null` (not an empty list) for them and
+   names them in `states_not_tested`, and the statement says they weren't tested, never "none".
 4. **Merge.** Candidates per third-party domain and state, per canary flow, per storage key, per log, plus
    undeclared processors, cross-border transfers (when the list has regions) and unrecognised hashes.
 5. **Triage** every candidate: `promoted` to a finding, `inventory` (an expected flow recorded in the
@@ -100,6 +113,12 @@ python scripts/render_report.py <run>/privacy_audit.json [--brief]
 
 ## Edge cases
 
+- **Scripts injected from JavaScript** (`script.src = "https://..."`, `setAttribute('src', ...)` after
+  `createElement('script')`, a vendor's loader URL in a string) are in the static SDK inventory with
+  `source: injected_script` or `vendor_url`, so a site with no `<script src>` to a vendor still shows them.
+- **Large repositories:** the scan reads each file once; files over `--max-bytes` (2 MB) and minified or
+  generated files are listed under `skipped` (generated files are still searched for SDK hosts), as are
+  dependency and build directories. Say in the limitations what was skipped if it could hold app code.
 - **Server-side tagging** (a first-party path that forwards to vendors) looks first party; list known
   tagging paths as a limitation.
 - **Salted hashes** can't be matched; an unrecognised 32/40/64-hex value in a third-party request is a
@@ -113,10 +132,11 @@ python scripts/render_report.py <run>/privacy_audit.json [--brief]
 
 `scope` (targets, repo, regions, flows with reach, consent states tested, covered, not_covered),
 `metadata` (browser, canary set id, lists, declared processors source, tools), `inventory[]`,
-`recipients[]`, `consent_matrix[]`, `findings[]` (type, title, candidates, categories, fields, vendor,
+`recipients[]` (with `declared_as` and blocked request counts), `consent_matrix[]`, `findings[]` (type, title, candidates, categories, fields, vendor,
 recipient kind, consent states, flow basis, reach, sensitivity, flow, score, priority, floor, cap,
 confidence, evidence, references, fix, verification), `triage[]`, `headline` (counts, third parties
-before consent and after rejection, special-category flows, statement, disclaimer), `limitations[]`.
+before consent and after rejection - `null` for a state that wasn't tested - `states_not_tested`, special-category
+flows, statement, disclaimer), `limitations[]`.
 
 ## What the validator enforces
 
@@ -127,4 +147,6 @@ and code lines that exist in the repo, and carry the references `data/provisions
 regions. Ratings, floors and caps are recomputed; `observed` needs a live candidate and `traced` a code
 path; agent judgment stays `pattern`, and `pattern` is never P0. Every candidate is triaged once, and each
 dismissal code is checked against the candidate's facts. Headline counts are recomputed, the disclaimer
-is present, and no text calls the app compliant.
+is present, and no text calls the app compliant. A state that wasn't tested must be `null` in the headline,
+listed in `states_not_tested`, and described as not tested in the statement (never "none"); when requests were
+blocked in the browser, a limitation must say that third parties were blocked.
