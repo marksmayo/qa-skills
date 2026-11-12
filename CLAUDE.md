@@ -18,6 +18,9 @@ python test-suite-evaluator-skill/scripts/render_report.py evaluation.json --mar
 
 # Validate an evaluation JSON against the schema and the rubric (recomputes weights, scores, caps, band and evidence completeness)
 python test-suite-evaluator-skill/scripts/validate_evaluation.py evaluation.json
+
+# List FastAPI, Flask, Azure Functions, Next.js and Express interfaces and the test files whose URL literals reach them
+python test-suite-evaluator-skill/scripts/list_interfaces.py <repo> --tests <test dir> [--out interfaces.json]
 ```
 
 `examples/evaluation.example.json` is a valid sample input for both scripts; `examples/evaluation.partial-run.example.json` (a synthetic Next.js app) shows execution results, interface coverage and mixed evidence levels.
@@ -26,7 +29,8 @@ Journey mapper (run from the repo root; `examples/journeys/` is a complete sampl
 
 ```bash
 python journey-mapper-skill/scripts/extract_surface.py <repo> --out surface.json [--goal-wrapper trackEvent]
-python journey-mapper-skill/scripts/validate_journey_map.py journey-mapper-skill/examples/journeys/journey_map.json [--repo <repo>]
+python journey-mapper-skill/scripts/extract_surface.py --self-test
+python journey-mapper-skill/scripts/validate_journey_map.py journey-mapper-skill/examples/journeys/journey_map.json [--repo <repo>] [--strict]
 python journey-mapper-skill/scripts/write_journeys.py journey-mapper-skill/examples/journeys/journey_map.json --out journey-mapper-skill/examples/journeys
 python journey-mapper-skill/scripts/journey_md.py lint journey-mapper-skill/examples/journeys --strict
 python journey-mapper-skill/scripts/render_report.py journey-mapper-skill/examples/journeys/journey_map.json [--brief]
@@ -69,7 +73,7 @@ python ui-crash-hunter-skill/scripts/ui_graph.py ui-crash-hunter-skill/examples/
 python ui-crash-hunter-skill/scripts/render_report.py ui-crash-hunter-skill/examples/crash_report.example.json --brief
 ```
 
-The example report quotes source lines of `examples/pantry/src/` by file and line, and its triage covers exactly the candidates in `examples/run/candidates.json`; editing either invalidates the example. `recon.py` models static multi-page sites as well as single-page apps, and probes can reproduce a degradation by an observable effect (`expect`) rather than a stack trace. `probe_web.py` and `strict_overlay.py` need the app built (`npm install && npm run build` in a copy of `examples/pantry/` outside the repo) and are not needed to validate the example. `probe_web.py` refuses a non-loopback target without `--authorised-by` and probes it read-only (writes answered in the browser, third parties blocked). `scan_pitfalls.py` follows imports from the UI entry points (resolving tsconfig `paths`) and excludes tests, route handlers and unreachable modules unless `--all-files` is given.
+The example report quotes source lines of `examples/pantry/src/` by file and line, and its triage covers exactly the candidates in `examples/run/candidates.json`; editing either invalidates the example. `recon.py` models static multi-page sites as well as single-page apps, and probes can reproduce a degradation by an observable effect (`expect`) rather than a stack trace. `probe_web.py` and `strict_overlay.py` need the app built (`npm install && npm run build` in a copy of `examples/pantry/` outside the repo) and are not needed to validate the example. `probe_web.py` refuses a non-loopback target without `--authorised-by` and probes it read-only (writes answered in the browser, third parties blocked); `--storage-state` probes signed in. `contract_diff.py` takes `--discover` (also read the repo's own contracts), `--scope ui|all` and `--defaults-present`. `scan_pitfalls.py` follows imports from the UI entry points (resolving tsconfig `paths`) and excludes tests, route handlers and unreachable modules unless `--all-files` is given.
 
 Code security auditor (`examples/invoicer/` is the sample, deliberately vulnerable Flask app; the scanner outputs in `examples/run/`, the PoC evidence in `examples/evidence/` and the regression runs in `examples/regression/` are real; `--candidates` checks every candidate and dependency advisory was triaged):
 
@@ -82,9 +86,10 @@ python code-security-auditor-skill/scripts/run_poc.py code-security-auditor-skil
 python code-security-auditor-skill/scripts/cvss4.py "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N"
 python code-security-auditor-skill/scripts/self_test.py
 python code-security-auditor-skill/scripts/seed_report.py --recon recon.json --candidates candidates.json --scanners scanners.json --out security_audit.json
+python code-security-auditor-skill/scripts/run_scanners.py <repo> --out-dir <dir> [--offline] [--osv-local-db <dir>]
 ```
 
-`examples/kite-notes/` is a synthetic Next.js, Prisma and NextAuth fixture that `self_test.py` checks against its `expected.json`; editing it or the JavaScript pack in `data/pitfalls.json` means updating `expected.json`. Findings may be `source: "agent"` with a `basis` that `--repo` re-reads.
+`examples/kite-notes/` is a synthetic Next.js, Prisma and NextAuth fixture that `self_test.py` checks against its `expected.json`; editing it or the JavaScript pack in `data/pitfalls.json` means updating `expected.json`. `self_test.py` also checks `examples/ferry-ops/` (a synthetic FastAPI service, Azure Functions, Bicep/ARM and Azure Pipelines) against its own `expected.json`; editing it, the `azure_iac`, `azure_pipelines`, `python` or `javascript` packs, or `py_routes.py` means updating that one. `run_scanners.py` writes `dependencies.json` and records `dependency_advisories` as assessed, partial or not assessed; `render_report.py --sarif` writes only the SARIF file. Findings may be `source: "agent"` with a `basis` that `--repo` re-reads.
 
 The example report quotes source lines of `examples/invoicer/` by file and line, re-reads the planted secret to check its value never appears in the report or evidence, and its triage covers exactly the candidates in `examples/run/candidates.json`; editing either invalidates the example. Re-running the PoCs needs the app running locally (`pip install -r requirements.txt && flask --app invoicer run --port 5057` in a copy outside the repo); the scanners themselves are optional and only `run_scanners.py` uses them. `scripts/cvss4.py` is a port of the FIRST CVSS v4.0 calculator (BSD-2-Clause); keep its licence header.
 
@@ -122,7 +127,7 @@ python flaky-test-hunter-skill/scripts/run_tests.py --preset pytest --cwd flaky-
 python flaky-test-hunter-skill/scripts/stats.py 2 20
 ```
 
-For Node repositories, `run_tests.py --npm-script test` reuses the repository's own test script, and `plugins/clock_shift.mjs` shifts the clock in Vitest or Node runs as `plugins/clock_shift.py` does for pytest.
+`validate_flaky_report.py --bisect` takes several bisect files, and `bisect_polluter.py --relation enabler` finds the earlier test a victim needs when it fails alone. For Node repositories, `run_tests.py --npm-script test` reuses the repository's own test script, and `plugins/clock_shift.mjs` shifts the clock in Vitest or Node runs as `plugins/clock_shift.py` does for pytest.
 
 Every run records a `code_hash` of `examples/ferry-booking/`, and the report counts only runs with its hash, so editing the package invalidates the example until the runs are regenerated with `commands.sh` (which needs pytest and pytest-xdist, and gives different counts on another machine or at another time of day).
 
@@ -134,11 +139,12 @@ python mutation-tester-skill/scripts/render_report.py mutation-tester-skill/exam
 python mutation-tester-skill/scripts/diff_scope.py --repo mutation-tester-skill/examples/fare-calc --diff mutation-tester-skill/examples/fare-calc/change.diff
 python mutation-tester-skill/scripts/detect_tools.py mutation-tester-skill/examples/fare-calc
 python mutation-tester-skill/scripts/run_engine.py ranges --scope <scope.json>
+python mutation-tester-skill/scripts/path_scope.py --repo <repo> --path <dir|file[:a-b]> --out scope.json
 ```
 
-StrykerJS runs with `run_engine.py stryker --repo <repo> --scope <scope.json> --run-dir <dir>`, then `normalize_results.py --stryker <dir>/stryker-report.json --stryker-run <dir>/stryker.run.json`; `prove_kill.py --runner vitest|jest` proves suggested JavaScript tests. No example uses Stryker.
+StrykerJS runs with `run_engine.py stryker --repo <repo> --scope <scope.json> --run-dir <dir>`, then `normalize_results.py --stryker <dir>/stryker-report.json --stryker-run <dir>/stryker.run.json`; `prove_kill.py --runner vitest|jest` proves suggested JavaScript tests, and its `--env` takes several `K=V` pairs per flag. `builtin_mutator.py --tests` limits the engine to named tests and `--pytest-args` passes pytest options. No example uses Stryker.
 
-The report records a `code_hash` of `examples/fare-calc/` and quotes each mutant's original line, so editing the package invalidates the example until the run is repeated. `builtin_mutator.py` edits the scoped source files one mutant at a time and restores them (it checks the tree hash before and after); run it on a copy if in doubt. The mutmut step needs mutmut 3, which needs fork() (Linux, macOS or WSL).
+The report records a `code_hash` of `examples/fare-calc/` and quotes each mutant's original line, so editing the package invalidates the example until the run is repeated. `builtin_mutator.py` edits the scoped source files one mutant at a time and restores them (it checks the tree hash before and after); run it on a copy if in doubt. The mutmut step needs mutmut 3, which needs fork() (Linux, macOS or WSL). The example's `builtin.json` predates position-based mutant ids, so a rerun renumbers the builtin mutants.
 
 Test impact selector (`examples/harbourline/` is the sample monorepo, `examples/changes/` the five changes and `examples/history/` twelve earlier changes with real full-run JUnit; `examples/run/` is the real run, listed in `examples/run/commands.sh`; `--selection` checks the report's computed sections against `select_tests.py`'s output, `--recompute` re-runs the selection from its recorded inputs, `--replay` checks recall and misses, `--runs` checks the verify run):
 
@@ -164,9 +170,9 @@ python test-data-auditor-skill/scripts/redact_evidence.py <run> --candidates <ru
 python test-data-auditor-skill/scripts/residue.py snapshot|diff ...
 ```
 
-Findings may be `source: "agent"` with a `basis` (file and line, or evidence), for example a time bomb confirmed by a clock experiment; `residue` covers files tests leave behind. `scripts/clock_shift.mjs` is the JavaScript counterpart of `clock_shift.py`.
+Findings may be `source: "agent"` with a `basis` (file and line, or evidence), for example a time bomb confirmed by a clock experiment; `residue` covers files tests leave behind. `scripts/clock_shift.mjs` is the JavaScript counterpart of `clock_shift.py`. `inventory.py --data-dir <dir>` (repeatable) adds a test-data tree under a name it does not know, `redact_evidence.py --report <report.json>` honours review dismissals marked `not_personal_data`, `datafiles.py <file> --text` prints the text form findings count lines in (an `.xlsx` workbook as CSV per sheet), and the schema drift output (`drift.json`) holds `unmatched_records` per file plus `unmatched_total`.
 
-The candidates and the report cite lines in `examples/clinic-api/`, and the time-bomb figures count from the audit date `2026-11-11` recorded in the report (pass `--today 2026-11-11` when re-scanning). Editing the package invalidates the example until the run is repeated. The experiments run on a copy with `scripts/clock_shift.py` at its root; the locale run needs Linux or WSL, because Windows ignores `LANG`.
+The candidates and the report cite lines in `examples/clinic-api/`, and the time-bomb figures count from the audit date `2026-11-11` recorded in the report (pass `--today 2026-11-11` when re-scanning). Editing the package invalidates the example until the run is repeated. The experiments run on a copy with `scripts/clock_shift.py` at its root; the locale run needs Linux or WSL, because Windows ignores `LANG`, so the example's locale run C-1 is carried over from an earlier run.
 
 Dead test finder (`examples/ledger/` is the sample app, a Python core with pytest and a TypeScript client with Vitest; `examples/proposals/` holds one patch per finding; `examples/run/` is the real run, listed in `examples/run/commands.sh`; the validator reads the evidence files named in the report, relative to the report's directory, and `--repo` checks every patch still applies):
 
@@ -177,7 +183,7 @@ python dead-test-finder-skill/scripts/scan_tests.py dead-test-finder-skill/examp
 python dead-test-finder-skill/scripts/unified_diff.py check dead-test-finder-skill/examples/proposals/assert-post-entry.diff --root dead-test-finder-skill/examples/ledger
 ```
 
-The candidates, neutralisation runs and proofs cite lines and test ids in `examples/ledger/`, so editing it invalidates the example until `commands.sh` is rerun. Findings may be `source: "agent"` with a `basis` that `--repo` re-reads; `collect_check.py` takes `--env`, `--scope candidates|--files` and `--reuse`, and lists Playwright specs with `playwright test --list`. That needs a scratch copy of `ledger/client` with `npm install` done (`CLIENT=...`). Neutralisation works in copies outside the repo and restores everything it patches.
+The candidates, neutralisation runs and proofs cite lines and test ids in `examples/ledger/`, so editing it invalidates the example until `commands.sh` is rerun. Findings may be `source: "agent"` with a `basis` that `--repo` re-reads; `collect_check.py` takes `--env`, `--scope candidates|--files` and `--reuse`, and lists Playwright specs with `playwright test --list`. That needs a scratch copy of `ledger/client` with `npm install` done (`CLIENT=...`). Neutralisation works in copies outside the repo and restores everything it patches. `collect_check.py`, `similarity.py` and `neutralise.py` take `--package-env PACKAGE:K=V` for one package's runs, and `similarity.json` stores literals as hashes.
 
 Risk-based test planner (`examples/make_sample_repo.py` builds the sample git repository "larder" deterministically, HEAD `d834c7e`, because a `.git` directory can't be shipped; `examples/run/` holds the mined history, complexity, scope and scores, listed in `examples/run/commands.sh`; `--risk` checks the plan's areas against the scores, `--input` checks carried findings keep their source confidence):
 
@@ -188,7 +194,7 @@ python risk-based-test-planner-skill/scripts/render_report.py risk-based-test-pl
 python risk-based-test-planner-skill/examples/make_sample_repo.py <empty dir>
 ```
 
-Re-scoring needs the sample repository: build it with `make_sample_repo.py`, then run `commands.sh` with `LARDER=<that dir>`. The history window is fixed with `--as-of 2026-11-01`, so the scores don't depend on today's date. Editing the trimmed inputs in `examples/inputs/` or `data/surfaces.json` changes the scores and invalidates both plans until they are re-scored and re-validated with `--write-summary`.
+`score_risk.py --finding-area KIND:ID=AREA` carries an input finding on another area when its report cites the wrong file, and several `--input` reports of one kind are allowed. Re-scoring needs the sample repository: build it with `make_sample_repo.py`, then run `commands.sh` with `LARDER=<that dir>`. The history window is fixed with `--as-of 2026-11-01`, so the scores don't depend on today's date. Editing the trimmed inputs in `examples/inputs/` or `data/surfaces.json` changes the scores and invalidates both plans until they are re-scored and re-validated with `--write-summary`.
 
 Exploratory charter writer (`examples/inputs/` holds a gift-card ticket, journey map, risk-plan excerpt and scope excerpt; `examples/run/commands.sh` lists every step; `validate_charters.py` checks each basis excerpt is verbatim from `run/sources.json` and recomputes the ranking; `validate_debrief.py` re-reads the notes so every quote, line, metric and redaction matches them):
 
@@ -220,11 +226,11 @@ python api-contract-tester-skill/scripts/validate_report.py api-contract-tester-
 python api-contract-tester-skill/scripts/render_report.py api-contract-tester-skill/examples/report.example.json [--brief] [--sarif out.sarif --contract api-contract-tester-skill/examples/run/contract.json]
 python api-contract-tester-skill/scripts/load_contract.py api-contract-tester-skill/examples/clinic-api/openapi.yaml --out contract.json
 python api-contract-tester-skill/scripts/spec_diff.py api-contract-tester-skill/examples/run/contract.v1.json api-contract-tester-skill/examples/run/contract.json --out diff.json
-python api-contract-tester-skill/scripts/validate_report.py api-contract-tester-skill/examples/report.static.example.json --contract api-contract-tester-skill/examples/run/contract.json --cases api-contract-tester-skill/examples/run/cases.json --diff api-contract-tester-skill/examples/run/diff.json
+python api-contract-tester-skill/scripts/validate_report.py api-contract-tester-skill/examples/report.static.example.json --contract api-contract-tester-skill/examples/run/contract.json --cases api-contract-tester-skill/examples/run/cases.json --diff api-contract-tester-skill/examples/run/diff.json --repo api-contract-tester-skill/examples/clinic-api
 python api-contract-tester-skill/scripts/handler_map.py --self-test
 ```
 
-A `not_run` (static-only) report validates without `--run`. `handler_map.py` compares the contract with the route handlers (Next.js, Express, Flask, FastAPI). Against a deployed target the sender takes `--on-429 stop-run|stop-path`, `--path-budget`, `--max-requests`, `--resume` and `--cookie-env`.
+A `not_run` (static-only) report validates without `--run`. `handler_map.py` compares the contract with the route handlers (Next.js, Express, Flask, FastAPI); `--handler-prefix` prepends a mount prefix the reader cannot see. Against a deployed target the sender takes `--on-429 stop-run|stop-path`, `--path-budget`, `--max-requests`, `--resume` and `--cookie-env`.
 
 `commands.sh` runs from `api-contract-tester-skill/`, so the recorded contract sources are relative to it. Re-running needs the server on loopback (`python api-contract-tester-skill/examples/clinic-api/server.py --port 8140`, token `fake-clinic-token` in `CLINIC_TOKEN`), restarted before each sending step because its planted 503 counts calls. Schemathesis is optional (set `ST`). The report cites `examples/clinic-api/server.py` by line, so editing the server, the contracts or the cases invalidates the example until `commands.sh` is rerun.
 
@@ -253,13 +259,14 @@ Cross-browser checker (`examples/travel-site/` is the sample site with planted e
 
 ```bash
 python cross-browser-checker-skill/scripts/validate_report.py cross-browser-checker-skill/examples/report.example.json --runs cross-browser-checker-skill/examples/run/capture/runs.json --candidates cross-browser-checker-skill/examples/run/candidates.json --features cross-browser-checker-skill/examples/run/features.json --targets cross-browser-checker-skill/examples/targets.json
+python cross-browser-checker-skill/scripts/validate_report.py cross-browser-checker-skill/examples/report.static.example.json --candidates cross-browser-checker-skill/examples/static-only/candidates.json --features cross-browser-checker-skill/examples/run/features.json --targets cross-browser-checker-skill/examples/targets.json
 python cross-browser-checker-skill/scripts/render_report.py cross-browser-checker-skill/examples/report.example.json [--brief]
 python cross-browser-checker-skill/scripts/fetch_data.py [--check]
 python cross-browser-checker-skill/scripts/feature_scan.py --repo <repo> [--built-css <dir>] --out features.json
 python cross-browser-checker-skill/scripts/browserslist_lite.py --repo cross-browser-checker-skill/examples/travel-site
 ```
 
-`features.json` records the repo path relative to `cross-browser-checker-skill/`, so run `feature_scan.py` and `commands.sh` from there. Re-capturing needs Playwright with Chromium, Firefox and WebKit; the flaky banner is random, so a rerun changes the flaky counts and invalidates the report until it is rebuilt.
+`features.json` records the repo path relative to `cross-browser-checker-skill/`, so run `feature_scan.py` and `commands.sh` from there. `compare_engines.py --static-only` writes the candidates of a feature scan alone (no browser), as in the static-only example. Re-capturing needs Playwright with Chromium, Firefox and WebKit; the flaky banner is random, so a rerun changes the flaky counts and invalidates the report until it is rebuilt.
 
 i18n checker (`examples/bookclub/` is the sample site with en, de, fr and ar resources plus an Android resource set, all with planted problems; `examples/run/` is a real run, listed in `examples/run/commands.sh`, with runtime screenshots and the proposed `missing_keys.patch`; the CLDR subsets in `data/` are committed and pinned):
 
@@ -294,7 +301,7 @@ python db-migration-reviewer-skill/scripts/validate_migration_review.py db-migra
 python db-migration-reviewer-skill/scripts/self_test.py
 ```
 
-`examples/greenhouse/` is the Prisma sample (its run is in `examples/run-prisma/`, regenerated by its `commands.sh`). Findings may be `source: "agent"` with a `basis` that `--repo` re-reads.
+`examples/greenhouse/` is the Prisma sample (its run is in `examples/run-prisma/`, regenerated by its `commands.sh`). Findings may be `source: "agent"` with a `basis` that `--repo` re-reads, and may have direction `down`. `detect_migrations.py --chain <dir>` picks one of several Alembic chains, `--infra <path>` reads the engine version from infrastructure code elsewhere and `--engine-source` records where a given version came from; `scan_migrations.py --base-ref <rev>` also searches the release still running for readers of renamed or dropped columns. Code hits may carry a `rev`, re-read with `git show`, so `--repo` must then be a git checkout.
 
 The candidates and the review cite lines in `examples/ledger/`, and the sizes come from `examples/ledger/table_stats.json`; editing either (or `data/rules.json`) changes the candidates and invalidates the example until `commands.sh` is rerun. `dynamic_check.py` needs psycopg and Docker, Podman or a loopback PostgreSQL; it refuses any other host and only works in a `qa_migrate_` database it creates.
 
@@ -308,7 +315,7 @@ python privacy-flow-auditor-skill/scripts/fetch_lists.py --check
 python privacy-flow-auditor-skill/scripts/validate_privacy_audit.py privacy-flow-auditor-skill/examples/privacy_audit.static-only.example.json --candidates privacy-flow-auditor-skill/examples/static-only/candidates.json --repo privacy-flow-auditor-skill/examples/clinic-signup --recompute
 ```
 
-The static-only example (`run_status: not_run`) is built from `run/static.json` alone. A `domains.json` cached by an older `fetch_lists.py` must be rebuilt by rerunning it, to pick up EasyPrivacy path rules and the pinned shared-hosting suffixes in `data/public-suffix-private.json`.
+The static-only example (`run_status: not_run`) is built from `run/static.json` alone. In `flows.json`, `"consent": {"banner": null}` declares an app with no consent banner and `"storage_state"` a signed-in session file; the validator's `--fix-ratings` rewrites each finding's computed rating fields from its inputs. A `domains.json` cached by an older `fetch_lists.py` must be rebuilt by rerunning it, to pick up EasyPrivacy path rules and the pinned shared-hosting suffixes in `data/public-suffix-private.json`.
 
 Run these from the repo root: `candidates.json` records its inputs relative to it. The audit cites request numbers and redacted URLs from `examples/run/capture.json` and lines in `examples/clinic-signup/`; re-running the capture changes the client ids and invalidates the audit until it is rebuilt. Capturing needs Playwright with Chromium. `fetch_lists.py` downloads EasyPrivacy and the Open Cookie Database at the git commits pinned in `data/lists.lock.json` to `~/.cache/qa-skills/privacy-lists` (not committed) and checks their hashes; `--check` verifies the cache without downloading, `--update` pins each list's latest commit (`--write-lock <file>` writes the new lock elsewhere instead of over the repo's). The capture blocks third-party requests (the shared harness default) and records them as attempts; the example's stub vendors are on loopback `*.test` hosts, so nothing in it is blocked.
 
@@ -412,11 +419,17 @@ Shared files:
 python tools/check_shared.py        # fail if any skill's copy of a shared file has drifted
 python tools/check_shared.py --fix  # copy canonical files from shared/ into skills
 node shared/scripts/clock_shift.mjs --self-test
+python shared/scripts/clock_shift.py --self-test
+python shared/scripts/net_guard.py --self-test
+node shared/scripts/net_guard.cjs --self-test
+python <skill>/scripts/browser_harness.py capture-session --url <app> --out <file outside the repo>
 ```
+
+`capture-session` opens a visible browser for a person to sign in by hand and saves the session (cookies, localStorage, IndexedDB and sessionStorage); a browser skill's config then takes it as `auth: {"storage_state": file}` and records only that a session was used. `diff_scope.py --last-merges N` scopes the last N merges (or squash-merged commits). `run_tests.py` takes `--hash-path <dir>` (a sibling package added to `code_hash`) and `--record-env NAME`, and marks a run that did not run the tests `errored: true` with an `error`; validators never count an errored run as a pass.
 
 ## Shared files
 
-Files used by more than one skill (the Journey Markdown spec `JOURNEY_FORMAT.md`, its front-matter schema, `journey_md.py`, `detect_conventions.py`, `parse_results.py`, `sarif.py`, `fetch_ticket.py`, `run_tests.py`, `stats.py`, `diff_scope.py`, `unified_diff.py`, `browser_harness.py` (read-only, third parties blocked and CSP bypassed by default, with request counts and Retry-After handling), `png_io.py`, `clock_shift.py` and `clock_shift.mjs` (the flaky test hunter keeps its copies in `plugins/`), the WCAG data files `data/wcag-sc.json` and `data/en301549-map.json`, and `data/ambiguity-lexicon.json`) have their canonical copy in `shared/`. Each skill carries an identical copy because skills are installed by copying a single directory. Edit only the copy in `shared/`, then run `python tools/check_shared.py --fix`; the mapping of shared files to skills lives in `tools/check_shared.py`.
+Files used by more than one skill (the Journey Markdown spec `JOURNEY_FORMAT.md`, its front-matter schema, `journey_md.py`, `detect_conventions.py`, `parse_results.py`, `sarif.py`, `fetch_ticket.py`, `run_tests.py`, `stats.py`, `diff_scope.py`, `unified_diff.py`, `browser_harness.py` (read-only, third parties blocked and CSP bypassed by default, with request counts, Retry-After handling and captured sign-in sessions), `png_io.py`, `net_guard.py` and `net_guard.cjs` (network guards for test runs that log a `loaded` line), `py_routes.py` (the ast-based Python route reader for FastAPI, Flask and Azure Functions), `clock_shift.py` and `clock_shift.mjs` (the flaky test hunter keeps its copies in `plugins/`), the WCAG data files `data/wcag-sc.json` and `data/en301549-map.json`, and `data/ambiguity-lexicon.json`) have their canonical copy in `shared/`. Each skill carries an identical copy because skills are installed by copying a single directory. Edit only the copy in `shared/`, then run `python tools/check_shared.py --fix`; the mapping of shared files to skills lives in `tools/check_shared.py`.
 
 Design documents for each skill (with an "As built" section), and the agreed build order, are in `docs/design/`.
 
