@@ -139,7 +139,8 @@ class Differ:
             else:
                 self.add('property_now_required', 'compatible', direction, oid, f'{loc}.{p}', f'{p} is now always returned')
         for p in sorted(oreq - nreq):
-            if p in nprops or req:
+            # a required property that was removed outright is reported once, as removed, below
+            if p in nprops:
                 self.add('property_no_longer_required', 'compatible' if req else 'breaking', direction, oid, f'{loc}.{p}',
                          f'{p} is no longer required')
         for p in sorted(set(oprops) - set(nprops)):
