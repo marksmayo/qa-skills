@@ -8,9 +8,18 @@ overrun:
 - **Core Web Vitals** (LCP, CLS, INP) through the web-vitals library's attribution build, plus TBT,
   FCP, TTFB and bytes per resource type.
 - **Repeated runs** per page under fixed network and CPU profiles (`mobile-mid`, `desktop`), with
-  median, min, max and coefficient of variation; noisy metrics get more runs, and stay `unstable`
-  if they don't settle (a near-zero metric whose spread can't change the budget verdict, such as
-  TBT of 17 ms against 300 ms, counts as stable).
+  median, min, max and coefficient of variation; noisy metrics get more runs, up to a cap the plan
+  sets (`max_runs`), and stay `unstable` if they don't settle (a near-zero metric whose spread can't
+  change the budget verdict, such as TBT of 17 ms against 300 ms, counts as stable, and so does one
+  whose only noise is an isolated outlier or two that can't change the verdict; the outliers are
+  listed). A page that answers with an HTTP error is measured once and stopped.
+- **Variants and setup**: measure a page as a first visit and again with consent stored (or any
+  storage, cookies or clicks before the measured load), so a consent banner that is the LCP
+  doesn't hide the returning visitor's numbers.
+- **Remote targets**: the CDN cache headers of every measured document, a limitation that the
+  warm-up warmed the CDN, framework prefetches (Next.js `?_rsc=`) and client polling summarised
+  apart from the largest downloads, and the site's own beacons and reports the harness blocked.
+- **Site-wide causes**: the same script, stylesheet or banner on several templates is one finding.
 - **Third parties blocked by default**: analytics, ads and embeds on other hosts are not loaded
   (the harness records each blocked request), so the numbers leave out their cost and the report
   says so; `"third_party": "allow"` in the plan measures them.

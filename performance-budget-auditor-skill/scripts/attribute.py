@@ -9,7 +9,9 @@ Statistics per (url, profile, cache, browser, metric), over the measured and ext
 
   within          median <= budget, stable
   over            median > budget, stable
-  unstable        not stable after up to 10 runs: can't pass or fail the budget on its own
+  unstable        not stable within the run cap (max_runs, 10 unless the plan sets it): can't pass or
+                  fail the budget on its own; "unstable at the cap of N runs" in its note when the
+                  cap was reached
   measured        no budget for this metric
   untested        INP on a page without a scripted interaction
   not_supported   LCP, CLS, INP or TBT in Firefox or WebKit
@@ -17,12 +19,22 @@ Statistics per (url, profile, cache, browser, metric), over the measured and ext
 Stable means CV <= 0.25, or a spread too small to matter for the budget: max - min within a floor
 of 10 ms, 0.01 CLS or 1 KB (the floor compare.py uses), or every run at or under half the budget.
 Near-zero metrics (TBT of 17 ms, CLS of 0.003) have large CVs that say nothing about the budget.
+Last, with five or more runs and a budget, a measurement is stable `robust` when at most a quarter
+of its runs (at least one) are isolated outliers (more than 3 robust standard deviations from the
+median), the rest have a CV within 0.25, and their median is on the same side of the budget as the
+median of all runs: two slow network round trips on a remote target can't then block a verdict the
+median already settles. The outliers' run ids are listed (`outliers`), and `stable_by` names the rule.
+Each measurement records `runs_used` and `run_cap`; a group stopped early (an HTTP error page) says
+why in its note, and failed runs are listed with their HTTP status or error.
 
 `bimodal` is set when the sorted values split into two groups of at least two runs with a gap more
 than three times the larger group's own range: report the groups instead of trusting the median.
 
-Candidates: one per (template, metric, cause) for every measurement that is over, or unstable with
-its median over the budget. The cause comes from the runs: the LCP element and its resource with
+Candidates: one per (metric, cause) for every measurement that is over, or unstable with its median
+over the budget. A specific cause (a resource URL, a Server-Timing step, an element with an id or
+class) shared by several templates is one site-wide candidate (`site_wide`, `templates`, `template`
+null) whose reach counts every page; a generic cause (an unattributed long task, weight spread over
+many resources) stays per template. The cause comes from the runs: the LCP element and its resource with
 the web-vitals breakdown; the largest layout shift's target and sources; the scripts in long
 animation frames; the interaction target and its handler; the largest downloads and, from the
 diagnostic run, unused JavaScript bytes; Server-Timing for TTFB. Ratings follow RUBRIC.md.
@@ -36,6 +48,10 @@ it isn't given --budget.
 
 With the measurements' config recording third_party (measure.py does), the output summarises the
 requests the harness blocked to third-party hosts: their cost and behaviour were not measured.
+It also summarises, when the runs recorded them: first-party requests the harness blocked
+(`blocked_first_party`: non-GET beacons, CSP reports, telemetry), the CDN cache headers of each
+measured document (`cdn_cache`), and request classes the top-12 resource list hides
+(`request_summary`: Next.js `?_rsc=` prefetches, fetch/XHR counts, fetch paths repeated in a load).
 """
 from __future__ import annotations
 import argparse, fnmatch, json, os, statistics, sys
@@ -51,6 +67,12 @@ CHROMIUM_ONLY = {'LCP', 'CLS', 'INP', 'TBT'}
 CV_LIMIT = 0.25
 SPREAD_FLOOR = {'ms': 10.0, 'score': 0.01, 'bytes': 1024.0}  # as compare.py
 FAR_UNDER = 0.5  # every run at or under half the budget: noise can't change the verdict
+ROBUST_MIN_RUNS = 5
+DEFAULT_MAX_RUNS = 10
+CDN_HEADERS = ('x-vercel-cache', 'cf-cache-status', 'x-cache', 'x-cache-status', 'cdn-cache-control', 'age', 'x-served-by',
+               'x-vercel-id', 'cf-ray', 'x-amz-cf-pop', 'via')
+CACHE_STATUS_HEADERS = ('x-vercel-cache', 'cf-cache-status', 'x-cache', 'x-cache-status')
+GENERIC_KEYS = {'unknown', 'weight-spread', 'fcp-unattributed', 'unattributed-long-tasks'}
 WEIGHT = {'Critical': 4, 'High': 3, 'Medium': 2, 'Low': 1}
 LEVELS = ['Low', 'Medium', 'High', 'Critical']
 LH_TIMINGS = {'largest-contentful-paint': 'LCP', 'cumulative-layout-shift': 'CLS', 'total-blocking-time': 'TBT',
@@ -99,11 +121,50 @@ def stats(values: list[float]) -> dict:
 
 def is_stable(st: dict, unit: str, limit: float | None) -> bool:
     """CV within the limit, or a spread that can't matter for the budget (see the module docstring)."""
-    if st['n'] == 0 or st['cv'] is None or st['cv'] <= CV_LIMIT:
-        return True
+    return stability(st, None, unit, limit)[0]
+
+
+def robust_outliers(values: list[float], unit: str, limit: float | None) -> list[int] | None:
+    """Indexes of isolated outliers when, without them, the runs are stable and the verdict is the same; else None.
+
+    Needs at least ROBUST_MIN_RUNS runs and a budget. An outlier is further than 3 robust standard
+    deviations (1.4826 x the median absolute deviation, at least the spread floor) from the median;
+    at most a quarter of the runs (at least one) may be outliers. The remaining runs must have a CV
+    within the limit, and their median must fall on the same side of the budget as the median of
+    all runs: two network blips can't then hide or invent an overrun.
+    """
+    vals = [(i, v) for i, v in enumerate(values) if v is not None]
+    if limit is None or len(vals) < ROBUST_MIN_RUNS:
+        return None
+    xs = [v for _, v in vals]
+    med = statistics.median(xs)
+    scale = max(1.4826 * statistics.median(abs(x - med) for x in xs), SPREAD_FLOOR[unit])
+    out = [i for i, v in vals if abs(v - med) > 3 * scale]
+    if not out or len(out) > max(1, len(vals) // 4):
+        return None
+    rest = [v for i, v in vals if i not in out]
+    m = statistics.mean(rest)
+    if len(rest) < 2 or (m and statistics.stdev(rest) / m > CV_LIMIT):
+        return None
+    if (statistics.median(rest) > limit) != (med > limit):
+        return None
+    return out
+
+
+def stability(st: dict, values: list[float] | None, unit: str, limit: float | None) -> tuple[bool, str | None, list[int]]:
+    """(stable, by which rule, outlier indexes into values). Rules in order: cv, spread_floor, far_under, robust."""
+    if st['n'] == 0 or st['cv'] is None:
+        return True, None, []
+    if st['cv'] <= CV_LIMIT:
+        return True, 'cv', []
     if st['max'] - st['min'] <= SPREAD_FLOOR[unit]:
-        return True
-    return limit is not None and st['max'] <= FAR_UNDER * limit
+        return True, 'spread_floor', []
+    if limit is not None and st['max'] <= FAR_UNDER * limit:
+        return True, 'far_under', []
+    out = robust_outliers(values, unit, limit) if values is not None else None
+    if out:
+        return True, 'robust', out
+    return False, None, []
 
 
 def bimodal(values: list[float]) -> bool:
@@ -122,31 +183,54 @@ def counted(runs: list[dict]) -> list[dict]:
     return [r for r in runs if r['kind'] in ('measured', 'extra') and r['ok']]
 
 
+def group_key(r: dict) -> tuple:
+    return (r['url'], r['profile'], r['cache'], r['browser'], r.get('variant'))
+
+
 def groups(doc: dict) -> dict[tuple, list[dict]]:
     out: dict[tuple, list[dict]] = {}
     for r in doc['runs']:
-        out.setdefault((r['url'], r['profile'], r['cache'], r['browser']), []).append(r)
+        out.setdefault(group_key(r), []).append(r)
     return out
+
+
+def run_limits(doc: dict) -> tuple[int, int, int]:
+    """(runs, min_runs, max_runs) from the measurements' config; older runs recorded only runs (cap 10)."""
+    cfg = doc['config']
+    runs = cfg['runs']
+    return runs, cfg.get('min_runs', runs), cfg.get('max_runs', DEFAULT_MAX_RUNS)
+
+
+def failure_label(r: dict) -> str:
+    if r.get('status') and r['status'] >= 400:
+        return f'{r["id"]} (HTTP {r["status"]})'
+    return f'{r["id"]} ({r["error"]})' if r.get('error') else r['id']
 
 
 def measurements(doc: dict, budget: Budget) -> list[dict]:
     sample = {s['url']: s for s in doc['sample']}
-    configured = doc['config']['runs']
+    _, min_runs, cap = run_limits(doc)
     out = []
-    for (url, profile, cache, browser), runs in groups(doc).items():
+    for (url, profile, cache, browser, variant), runs in groups(doc).items():
         ok = counted(runs)
         planned = [r for r in runs if r['kind'] in ('measured', 'extra')]
         b = budget.for_(url, profile)
-        note = None
-        if len([r for r in planned if r['kind'] == 'measured']) < configured:
-            note = f'{len(planned)} run(s) recorded, {configured} configured'
-        failed = [r['id'] for r in planned if not r['ok']]
+        notes = []
+        stops = [r['stop_reason'] for r in runs if r.get('stop_reason')]
+        if stops:
+            notes.append('stopped early: ' + '; '.join(stops))
+        elif len(planned) < min_runs:
+            notes.append(f'{len(planned)} run(s) recorded, {min_runs} configured')
+        failed = [failure_label(r) for r in planned if not r['ok']]
         if failed:
-            note = (note + '; ' if note else '') + f'{len(failed)} run(s) failed: {", ".join(failed)}'
+            notes.append(f'{len(failed)} run(s) failed: {", ".join(failed)}')
+        group_note = '; '.join(notes) or None
         for metric in METRICS:
             vals = [r['metrics'].get(metric) if r.get('metrics') else None for r in ok]
             st = stats(vals)
             limit = b.get(metric)
+            stable, by, outl = stability(st, vals, UNITS[metric], limit)
+            note_parts = [group_note] if group_note else []
             if browser != 'chromium' and metric in CHROMIUM_ONLY:
                 status = 'not_supported'
             elif metric == 'INP' and not sample.get(url, {}).get('interaction'):
@@ -155,19 +239,30 @@ def measurements(doc: dict, budget: Budget) -> list[dict]:
                 status = 'untested'
             elif limit is None:
                 status = 'measured'
-            elif not is_stable(st, UNITS[metric], limit):
+            elif not stable:
                 status = 'unstable'
+                if len(planned) >= cap:
+                    note_parts.append(f'unstable at the cap of {cap} runs')
             elif st['median'] > limit:
                 status = 'over'
             else:
                 status = 'within'
-            out.append({'url': url, 'template': sample.get(url, {}).get('template'), 'profile': profile, 'cache': cache,
-                        'browser': browser, 'metric': metric, 'unit': UNITS[metric],
+            if metric == 'INP' and status not in ('not_supported',):
+                broke = [f'{r["id"]} ({r["interaction_error"]})' for r in planned if r.get('interaction_error')]
+                if broke:
+                    note_parts.append(f'interaction failed in {len(broke)} run(s), load metrics kept: {", ".join(broke)}')
+            measured_status = status not in ('not_supported', 'untested')
+            outliers = [ok[i]['id'] for i in outl] if measured_status and by == 'robust' else []
+            out.append({'url': url, 'template': sample.get(url, {}).get('template'), 'variant': variant, 'profile': profile,
+                        'cache': cache, 'browser': browser, 'metric': metric, 'unit': UNITS[metric],
                         'runs': [{'run_id': r['id'], 'value': r['metrics'].get(metric)} for r in ok] if status not in ('not_supported',) else [],
-                        **(st if status not in ('not_supported', 'untested') else {'n': 0, 'median': None, 'min': None, 'max': None, 'cv': None}),
+                        **(st if measured_status else {'n': 0, 'median': None, 'min': None, 'max': None, 'cv': None}),
                         'budget': limit, 'status': status,
-                        'bimodal': bimodal(vals) if status not in ('not_supported', 'untested') else False,
-                        'source': (ok[0].get('metric_sources') or {}).get(metric) if ok else None, 'note': note})
+                        'stable_by': by if measured_status and status != 'measured' and stable else None,
+                        'outliers': outliers, 'runs_used': len(planned), 'run_cap': cap,
+                        'bimodal': bimodal(vals) if measured_status else False,
+                        'source': (ok[0].get('metric_sources') or {}).get(metric) if ok else None,
+                        'note': '; '.join(note_parts) or None})
     return out
 
 
@@ -179,6 +274,55 @@ def third_party(doc: dict) -> dict | None:
     hosts = Counter(urlparse(b['url']).hostname or b['url'] for b in doc.get('blocked_requests') or [] if b.get('reason') == 'third_party')
     return {'mode': cfg['mode'], 'allowed_hosts': cfg.get('allowed_hosts') or [],
             'blocked': [{'host': h, 'requests': n} for h, n in sorted(hosts.items(), key=lambda x: (-x[1], x[0]))]}
+
+
+def blocked_first_party(doc: dict) -> list[dict]:
+    """Requests the harness blocked that were not third-party (non-GET writes to the site: beacons, CSP reports, telemetry)."""
+    by = Counter((b.get('method') or '?', b.get('reason') or '?', urlparse(b['url']).hostname or '', urlparse(b['url']).path or '/')
+                 for b in doc.get('blocked_requests') or [] if b.get('reason') != 'third_party')
+    return [{'method': m, 'reason': reason, 'host': h, 'path': p, 'requests': n}
+            for (m, reason, h, p), n in sorted(by.items(), key=lambda x: (-x[1], x[0]))]
+
+
+def cdn_cache(doc: dict) -> list[dict]:
+    """Per page, profile and variant: the CDN cache headers the measured documents came back with (when any did)."""
+    out = []
+    for (url, profile, cache, browser, variant), runs in groups(doc).items():
+        ok = counted(runs)
+        heads = [r.get('document_headers') or {} for r in ok]
+        if not any(heads):
+            continue
+        status = Counter(' '.join(f'{h}: {d[h]}' for h in CACHE_STATUS_HEADERS if h in d) or 'no cache-status header' for d in heads)
+        ages = [int(d['age']) for d in heads if str(d.get('age', '')).isdigit()]
+        out.append({'url': url, 'profile': profile, 'cache': cache, 'browser': browser, 'variant': variant, 'runs': len(ok),
+                    'cache_status': [{'value': v, 'runs': n} for v, n in sorted(status.items(), key=lambda x: (-x[1], x[0]))],
+                    'age_min': min(ages) if ages else None, 'age_max': max(ages) if ages else None})
+    return out
+
+
+def request_summary(doc: dict) -> list[dict]:
+    """Per page, profile and variant: median counts and bytes of request classes the top-12 resource list hides
+    (framework prefetches such as Next.js `?_rsc=`, fetch/XHR) and the fetch paths requested more than once per load."""
+    out = []
+    for (url, profile, cache, browser, variant), runs in groups(doc).items():
+        ok = [r for r in counted(runs) if r.get('request_summary')]
+        if not ok:
+            continue
+        classes: dict[str, dict] = {}
+        for r in ok:
+            for cls, v in r['request_summary']['classes'].items():
+                c = classes.setdefault(cls, {'requests': [], 'bytes': []})
+                c['requests'].append(v['requests'])
+                c['bytes'].append(v['bytes'])
+        repeated = Counter()
+        for r in ok:
+            for f in r['request_summary'].get('repeated') or []:
+                repeated[f['path']] += 1
+        out.append({'url': url, 'profile': profile, 'cache': cache, 'browser': browser, 'variant': variant, 'runs': len(ok),
+                    'classes': {k: {'requests_median': med(v['requests'] + [0] * (len(ok) - len(v['requests']))),
+                                    'bytes_median': med(v['bytes'] + [0] * (len(ok) - len(v['bytes'])))} for k, v in sorted(classes.items())},
+                    'repeated_fetches': [{'path': p, 'runs': n} for p, n in sorted(repeated.items(), key=lambda x: (-x[1], x[0]))][:10]})
+    return out
 
 
 def server_timing(doc: dict) -> list[dict]:
@@ -223,7 +367,17 @@ def attribute(metric: str, runs: list[dict], diag: dict | None) -> tuple[str, st
         if url:
             kb = round((attr['resource_bytes'] or 0) / 1024)
             return f'LCP image {path_of(url)} ({kb} KB)', url, attr
-        return f'LCP element {target} (render delay {attr["breakdown_ms"]["elementRenderDelay"]} ms)', target or 'unknown', attr
+        hints = []
+        els = [x.get('element') for x in lcp if x.get('element')]
+        if els and sum(bool(e.get('in_fixed_overlay')) for e in els) * 2 > len(els):
+            attr['in_fixed_overlay'] = True
+            hints.append('inside a position: fixed overlay (a consent banner or modal?)')
+        late = [x.get('after_load') for x in lcp if x.get('after_load') is not None]
+        if late and sum(late) * 2 > len(late):
+            attr['after_load'] = True
+            hints.append('painted more than 500 ms after the load event with no resource (rendered by script, after hydration or a timer)')
+        return (f'LCP element {target} (render delay {attr["breakdown_ms"]["elementRenderDelay"]} ms)' +
+                (': ' + '; '.join(hints) if hints else ''), target or 'unknown', attr)
     if metric == 'CLS':
         cls = [x['CLS'] for x in a if x.get('CLS')]
         target = Counter(x.get('largestShiftTarget') for x in cls).most_common(1)[0][0] if cls else None
@@ -262,6 +416,8 @@ def attribute(metric: str, runs: list[dict], diag: dict | None) -> tuple[str, st
         top = [{'url': r['url'], 'type': r['type'], 'bytes': r['bytes'], 'third_party': r.get('third_party', False),
                 'unused_bytes': (cov.get(r['url']) or {}).get('unused_bytes')} for r in res[:5]]
         attr = {'largest': top, 'by_type_bytes': runs[0].get('transfer_by_type')}
+        if runs[0].get('request_summary'):
+            attr['request_classes'] = runs[0]['request_summary']['classes']
         if top:
             t = top[0]
             extra = f', {round(t["unused_bytes"] / 1024)} KB unused' if t.get('unused_bytes') else ''
@@ -331,16 +487,22 @@ def candidates(doc: dict, meas: list[dict]) -> list[dict]:
             continue
         if not (m['status'] == 'over' or (m['status'] == 'unstable' and m['median'] > m['budget'])):
             continue
-        runs = g[(m['url'], m['profile'], m['cache'], m['browser'])]
+        runs = g[(m['url'], m['profile'], m['cache'], m['browser'], m.get('variant'))]
         ok = counted(runs)
         diag = next((r for r in runs if r['kind'] == 'diagnostic' and r['ok']), None)
         cause, key, attr = attribute(m['metric'], ok, diag)
-        c = out.setdefault((m['template'], m['metric'], key), {'template': m['template'], 'metric': m['metric'], 'cause': cause,
-                                                             'cause_key': key, 'pages': [], 'measurements': [], 'attribution': attr,
-                                                             'evidence': []})
+        # A specific cause (a resource URL, a server step, an element with an id or class) shared by several
+        # templates is one site-wide candidate; generic causes stay per template.
+        shared = key not in GENERIC_KEYS and ('/' in key or key.startswith(('server:', 'interaction:')) or '#' in key or '.' in key)
+        c = out.setdefault((None if shared else m['template'], m['metric'], key),
+                           {'template': m['template'], 'templates': [], 'metric': m['metric'], 'cause': cause,
+                            'cause_key': key, 'pages': [], 'measurements': [], 'attribution': attr, 'evidence': []})
+        if m['template'] not in c['templates']:
+            c['templates'].append(m['template'])
         if m['url'] not in c['pages']:
             c['pages'].append(m['url'])
         c['measurements'].append({k: m[k] for k in ('url', 'profile', 'cache', 'browser', 'median', 'budget', 'cv', 'status')} |
+                                 ({'variant': m['variant']} if m.get('variant') else {}) |
                                  {'ratio': round(m['median'] / m['budget'], 2) if m['budget'] else None})
         c['evidence'].append({'run_ids': [r['id'] for r in ok], 'diagnostic_run': diag['id'] if diag else None,
                               'trace': (diag or {}).get('artifacts', {}).get('trace'),
@@ -349,12 +511,15 @@ def candidates(doc: dict, meas: list[dict]) -> list[dict]:
     metrics_per_key: dict[str, set] = {}
     for c in cands:
         metrics_per_key.setdefault(c['cause_key'], set()).add(c['metric'])
-    meas_index = {(m['url'], m['profile'], m['cache'], m['browser'], m['metric']): m for m in meas}
+    meas_index = {(m['url'], m['profile'], m['cache'], m['browser'], m.get('variant'), m['metric']): m for m in meas}
     for c in cands:
         worst = max(c['measurements'], key=lambda x: (x['status'] == 'over', x['ratio'] or 0))
-        full = meas_index[(worst['url'], worst['profile'], worst['cache'], worst['browser'], c['metric'])]
+        full = meas_index[(worst['url'], worst['profile'], worst['cache'], worst['browser'], worst.get('variant'), c['metric'])]
         crit = any(sample.get(u, {}).get('critical_path') for u in c['pages'])
-        c['worst'] = {k: worst[k] for k in ('url', 'profile', 'cache', 'browser', 'median', 'budget', 'ratio')}
+        c['site_wide'] = len(c['templates']) > 1
+        c['template'] = c['templates'][0] if len(c['templates']) == 1 else None
+        c['worst'] = {k: worst[k] for k in ('url', 'profile', 'cache', 'browser', 'median', 'budget', 'ratio')} | \
+            ({'variant': worst['variant']} if worst.get('variant') else {})
         c['critical_path'] = crit
         c['severity'] = severity_of(c['metric'], worst['median'], worst['budget'], crit)
         c['confidence'] = confidence_of(full)
@@ -388,7 +553,8 @@ def main() -> int:
     out = {'measurements_file': a.measurements.name,
            'budget': {'source': budget.source, 'note': budget.note,
                       'path': None if budget.builtin else rel_path(budget.path, a.out)},
-           'third_party': third_party(doc), 'measurements': meas, 'server_timing': server_timing(doc), 'candidates': cands}
+           'third_party': third_party(doc), 'blocked_first_party': blocked_first_party(doc), 'cdn_cache': cdn_cache(doc),
+           'request_summary': request_summary(doc), 'measurements': meas, 'server_timing': server_timing(doc), 'candidates': cands}
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(json.dumps(out, indent=1) + '\n', encoding='utf-8')
     st = Counter(m['status'] for m in meas)

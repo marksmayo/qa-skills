@@ -22,7 +22,13 @@ Also fails when:
   * an evidence trace or filmstrip file is missing; a candidate is missing from triage or triaged twice;
   * web-vitals isn't the pinned version and hash, or Lighthouse isn't recorded as ran/not_run/errored;
   * the run recorded its third-party mode and scope.third_party doesn't match it, or third-party requests
-    were blocked and no limitation says third-party cost and behaviour were not measured.
+    were blocked and no limitation says third-party cost and behaviour were not measured;
+  * scope.min_runs / max_runs differ from the config, or a target's variants or setup differ from the sample;
+  * first-party requests were blocked (beacons, CSP reports, telemetry) and scope.blocked_first_party
+    doesn't list them or no limitation names them; cdn_cache or request_summary don't follow from the runs;
+  * a target is not on loopback and no limitation says the cold runs had a warm CDN (the warm-up warms it);
+  * an unstable measurement reached the run cap and its note doesn't say so; a finding is site_wide with
+    one template.
 
 Without --budget, the budget file recorded in candidates.json (budget.path, relative to it) is used,
 so the check reads the same budget attribute.py did.
@@ -30,6 +36,7 @@ so the check reads the same budget attribute.py did.
 from __future__ import annotations
 import argparse, json, re, sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -41,8 +48,16 @@ PRAISE = re.compile(r'\b(fast|faster|fastest|performant|snappy|speedy|blazing|li
 THIRD_PARTY = re.compile(r'third[- ]part', re.I)
 NOT_MEASURED = re.compile(r'\bnot (been )?measured\b|\bunmeasured\b', re.I)
 WITHIN_PHRASE = 'field performance not established'
-FINDING_FIELDS = ('metric', 'template', 'pages', 'cause', 'severity', 'confidence', 'reach', 'leverage', 'score', 'priority',
+CDN = re.compile(r'\bCDN\b|edge cache', re.I)
+FIRST_PARTY = re.compile(r'first[- ]party', re.I)
+BLOCKED = re.compile(r'\bblock', re.I)
+FINDING_FIELDS = ('metric', 'template', 'templates', 'site_wide', 'pages', 'cause', 'severity', 'confidence', 'reach', 'leverage', 'score', 'priority',
                   'critical_path', 'worst', 'measurements', 'attribution', 'evidence')
+
+
+def is_loopback(url: str) -> bool:
+    host = (urlparse(url).hostname or '').lower()
+    return host in ('localhost', '::1') or host.startswith('127.') or host.endswith('.localhost')
 
 
 def load(p: Path):
@@ -98,6 +113,20 @@ def main() -> int:
             errs.append(f'scope.targets: {t["url"]} differs from the sample')
     if rep['scope']['runs'] != doc['config']['runs']:
         errs.append('scope.runs does not match the configured runs')
+    _, min_runs, cap = at.run_limits(doc)
+    if rep['scope']['min_runs'] != min_runs or rep['scope']['max_runs'] != cap:
+        errs.append(f'scope.min_runs / max_runs should be {min_runs} / {cap} (from the measurements config)')
+    for t in rep['scope']['targets']:
+        s = sample.get(t['url'], {})
+        want = [v['name'] for v in s.get('variants') or []]
+        if want != (t.get('variants') or []):
+            errs.append(f'scope.targets: {t["url"]} variants should be {want}')
+        if (t.get('setup') or None) != (s.get('setup') or None):
+            errs.append(f'scope.targets: {t["url"]} setup should be {json.dumps(s.get("setup"))}')
+    remote = [t['url'] for t in rep['scope']['targets'] if not is_loopback(t['url'])]
+    if remote and not any(CDN.search(x) for x in rep['limitations']):
+        errs.append('limitations: a remote target is measured; say that "cold" is a cold browser cache, not a cold CDN '
+                    '(the warm-up warms any CDN or edge cache), and point to cdn_cache')
     if rep['metadata']['machine'] != doc['machine'] or rep['metadata']['calibration'] != doc['calibration']:
         errs.append('metadata.machine / calibration do not match the measurements')
     browsers = sorted({r['browser'] for r in doc['runs']})
@@ -139,6 +168,8 @@ def main() -> int:
             errs.append(f'measurements: INP reported for {m["url"]}, which has no interaction')
         if m['browser'] != 'chromium' and m['metric'] in at.CHROMIUM_ONLY and m['status'] != 'not_supported':
             errs.append(f'measurements: {m["metric"]} in {m["browser"]} must be not_supported')
+        if m['status'] == 'unstable' and m['runs_used'] >= m['run_cap'] and 'unstable at the cap' not in (m['note'] or ''):
+            errs.append(f'measurements: {m["url"]} {m["metric"]} is unstable at the run cap; its note must say so')
         if m.get('kind') == 'field' or 'field' in str(m.get('source', '')).lower():
             errs.append('measurements: field data must not be mixed into lab measurements')
     tp = at.third_party(doc)
@@ -148,6 +179,16 @@ def main() -> int:
     if tp and tp['blocked'] and not any(THIRD_PARTY.search(x) and NOT_MEASURED.search(x) for x in rep['limitations']):
         errs.append(f'limitations: {sum(b["requests"] for b in tp["blocked"])} third-party request(s) were blocked; say that '
                     'third-party cost and behaviour were not measured')
+    bfp = at.blocked_first_party(doc)
+    if rep['scope'].get('blocked_first_party', []) != bfp:
+        errs.append(f'scope.blocked_first_party should be {json.dumps(bfp)[:200]} (the blocked non-third-party requests)')
+    if bfp and not any(FIRST_PARTY.search(x) and BLOCKED.search(x) for x in rep['limitations']):
+        errs.append(f'limitations: {sum(b["requests"] for b in bfp)} first-party request(s) were blocked (beacons, reports, '
+                    'telemetry); say so and that their cost and the handling of the failures are not measured')
+    for key, fn in (('cdn_cache', at.cdn_cache), ('request_summary', at.request_summary)):
+        want = fn(doc)
+        if rep.get(key, []) != want:
+            errs.append(f'{key} does not follow from the runs (attribute.{key})')
     if cands_doc['measurements'] != meas:
         errs.append('candidates.json is stale; rerun attribute.py')
     if rep['server_timing'] != at.server_timing(doc):
@@ -202,6 +243,8 @@ def main() -> int:
             for rid in ev['run_ids']:
                 if not any(r['id'] == rid for r in doc['runs']):
                     errs.append(f'{f["id"]}: run {rid} is not in the measurements')
+        if f['site_wide'] != (len(set(f['templates'])) > 1) or (f['template'] is None) != f['site_wide']:
+            errs.append(f'{f["id"]}: site_wide must be true exactly when templates names more than one (and template is then null)')
         if PRAISE.search(f['title']):
             errs.append(f'{f["id"]}: the title uses praise words; describe the measurement instead')
 

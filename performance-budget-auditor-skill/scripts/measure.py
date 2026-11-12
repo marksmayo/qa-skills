@@ -2,14 +2,35 @@
 """Measure pages in a real browser, repeatedly, under fixed network and CPU profiles (lab data).
 
     python measure.py plan.json --out run/measurements.json [--artifacts run/artifacts] [--runs 5]
-        [--profiles mobile-mid,desktop] [--cache cold|warm|both] [--browser chromium|firefox|webkit]
-        [--only URL_SUBSTRING] [--templates home,about] [--append] [--no-diagnostic]
+        [--min-runs 3] [--max-runs 5] [--profiles mobile-mid,desktop] [--cache cold|warm|both]
+        [--browser chromium|firefox|webkit] [--only URL_SUBSTRING] [--templates home,about] [--append] [--no-diagnostic]
 
 plan.json:
-    {"targets": [{"url", "template", "reason", "critical_path": false, "interaction": [actions]}],
-     "profiles": ["mobile-mid", "desktop"], "runs": 5, "cache": "cold", "budget": "budget.json", "authorised_by": null,
-     "allow_form_submission": false, "auth": null,
+    {"targets": [{"url", "template", "reason", "critical_path": false, "interaction": [actions],
+                  "setup": {...} | "variants": [{"name": "first-visit"}, {"name": "after-consent", "setup": {...}}]}],
+     "profiles": ["mobile-mid", "desktop"], "runs": 5, "min_runs": 5, "max_runs": 10, "cache": "cold",
+     "budget": "budget.json", "authorised_by": null, "allow_form_submission": false, "auth": null,
      "third_party": "block", "allowed_hosts": [], "service_workers": "cold"}
+
+Runs: `runs` measured runs, then extra runs while a budgeted metric is unstable, never more than
+`max_runs` in all (default 10; set it equal to `runs` for no extra runs at all). With `min_runs`
+below `runs`, measuring stops as soon as every budgeted metric is stable after `min_runs` runs.
+Each page, profile, cache mode and variant therefore costs one warm-up, between min_runs and
+max_runs measured runs, and one diagnostic run: "runs: 5" means 7 to 12 loads per combination with
+the default cap. A 429 or 503 is retried twice after Retry-After (at most 60 s each) and recorded in
+events. Any other HTTP status of 400 or more stops that page after the first measured run that
+gets it (no extra runs, no diagnostic run), and the run records `stop_reason` with the status.
+
+setup (per target or per variant) puts the browser in a state before the measured load, in the
+same fresh context: `local_storage` / `session_storage` ({key: value}, written by an init script on
+the target's origin before any page script runs), `cookies` (Playwright cookie objects; the target's
+origin is used when they have no url or domain), and `actions` (steps such as
+[{"click": "#accept"}] run on a first load of the page, or of `url`, then `wait_ms`, default 500).
+After setup actions on a cold run the HTTP cache is cleared (Chromium, DevTools
+Network.clearBrowserCache), so the measured load is still cold while the storage and cookies the
+actions set are kept; in other browsers the run records `setup_note`. `variants` measures the same
+target in several states, for example a first visit with the consent banner and a returning visit
+with consent stored; each variant is its own measurement (run ids carry its name).
 
 third_party: block (the default) aborts every request to a host that isn't loopback, a target or in
 allowed_hosts, and records it in blocked_requests (reason third_party): analytics, ads and embeds
@@ -21,8 +42,17 @@ cold runs and allows them for warm runs; block blocks them for every run; allow 
 Per page x profile x cache mode (x browser): one discarded warm-up, then N measured runs, each in a
 fresh browser context (so a cold run has an empty cache; service workers are blocked for cold runs).
 A warm run loads the page once in its context and measures the second load. When any budgeted
-metric is unstable after N runs (CV above 0.25, unless its spread is within the floor or every run
-is at or under half the budget: attribute.is_stable), more runs are added, one at a time, up to 10.
+metric is unstable after N runs (attribute.stability: CV above 0.25, unless its spread is within
+the floor, every run is at or under half the budget, or only isolated outliers break it), more runs
+are added, one at a time, up to max_runs.
+
+The warm-up also warms any CDN or edge cache in front of a remote target, so "cold" means a cold
+browser cache, never a cold CDN. Each run records the document response's CDN cache headers
+(x-vercel-cache, cf-cache-status, x-cache, age, via and similar) in `document_headers`, and a
+`request_summary`: counts and bytes of framework prefetches (`?_rsc=` or an RSC request header,
+Next.js) and fetch/XHR requests, and fetch paths requested more than once in the load, which the
+12 largest resources kept per run would hide. A failed interaction keeps the run's load metrics:
+only INP is lost, and the run records `interaction_error`.
 
 Each measured run records:
   * LCP, CLS, INP, FCP and TTFB from web-vitals 6.2.3 (attribution build, injected before the page
@@ -34,8 +64,10 @@ Each measured run records:
 INP is measured only when the target has an interaction: the steps run after the page settles.
 
 Then one diagnostic run (not counted in any statistic, because tracing and coverage slow the page)
-records a DevTools trace with screenshots (gzipped), a filmstrip of frames 100 ms apart until load,
-and JavaScript coverage.
+records a DevTools trace with screenshots (gzipped), a filmstrip of frames 100 ms apart until the
+later of load and the final LCP plus 500 ms (at most 20 s), and JavaScript coverage. The LCP
+element's record says whether it sits in a position: fixed or sticky overlay (a consent banner or
+modal) and whether a resource-less LCP was painted more than 500 ms after the load event.
 
 The machine (CPU, cores, OS), the browser version, the throttling actually applied, and a CPU
 calibration (a fixed workload timed three times) are recorded with the runs.
@@ -43,7 +75,7 @@ calibration (a fixed workload timed three times) are recorded with the runs.
 from __future__ import annotations
 import argparse, base64, gzip, json, os, platform, statistics, sys, time
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 HERE = Path(__file__).resolve().parent
 SKILL = HERE.parent
@@ -53,7 +85,11 @@ from fetch_assets import asset_path, load_lock  # noqa: E402
 
 VITALS = ('LCP', 'CLS', 'INP', 'FCP', 'TTFB')
 CV_LIMIT = 0.25
-MAX_RUNS = 10
+MAX_RUNS = 10          # default cap; the plan's max_runs (or --max-runs) overrides it
+FILMSTRIP_CAP_MS = 20000
+RETRY_STATUSES = (429, 503)
+CDN_HEADERS = ('x-vercel-cache', 'cf-cache-status', 'x-cache', 'x-cache-status', 'cdn-cache-control', 'age', 'x-served-by',
+               'x-vercel-id', 'cf-ray', 'x-amz-cf-pop', 'via')
 TRACE_CATEGORIES = ['devtools.timeline', 'disabled-by-default-devtools.timeline', 'disabled-by-default-devtools.timeline.frame',
                     'disabled-by-default-devtools.screenshot', 'v8.execute', 'blink.user_timing', 'loading', 'latencyInfo']
 
@@ -118,9 +154,14 @@ LCP_ELEMENT = r"""
   let el = null;
   try { el = target ? document.querySelector(target) : null; } catch (e) {}
   if (!el) return null;
-  return {tag: el.tagName.toLowerCase(), fetchpriority: el.getAttribute('fetchpriority'), loading: el.getAttribute('loading'),
+  let fixed = false;
+  for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
+    const pos = getComputedStyle(n).position;
+    if (pos === 'fixed' || pos === 'sticky') { fixed = true; break; }
+  }
+  return {tag: el.tagName.toLowerCase(), in_fixed_overlay: fixed, poster: el.getAttribute('poster'), fetchpriority: el.getAttribute('fetchpriority'), loading: el.getAttribute('loading'),
           width_attr: el.getAttribute('width'), height_attr: el.getAttribute('height'),
-          natural: el.naturalWidth ? [el.naturalWidth, el.naturalHeight] : null,
+          natural: el.naturalWidth ? [el.naturalWidth, el.naturalHeight] : (el.videoWidth ? [el.videoWidth, el.videoHeight] : null),
           rendered: [Math.round(el.getBoundingClientRect().width), Math.round(el.getBoundingClientRect().height)]};
 }
 """
@@ -143,6 +184,34 @@ def machine() -> dict:
     except OSError:
         pass
     return {'cpu': cpu, 'cores': os.cpu_count(), 'os': platform.platform(), 'python': platform.python_version()}
+
+
+def request_summary(reqs, chromium: bool) -> dict:
+    """Request classes the top-12 resource list hides: framework prefetches (`?_rsc=` or an RSC header),
+    fetch/XHR, and fetch paths requested more than once in the load (client polling)."""
+    classes: dict[str, dict] = {}
+    paths: dict[str, int] = {}
+    for r in reqs:
+        url = r.get('url') or r.get('name') or ''
+        if not url or url.startswith('data:'):
+            continue
+        q = parse_qs(urlparse(url).query)
+        if chromium:
+            kind = classify(r.get('type', ''), r.get('mime', ''), url)
+            size = int(r.get('bytes') or 0)
+        else:
+            kind = 'fetch' if r.get('initiator') in ('fetch', 'xmlhttprequest') else 'other'
+            size = int(r.get('transfer') or 0)
+        cls = 'rsc_prefetch' if ('_rsc' in q or r.get('rsc')) else kind if kind == 'fetch' else None
+        if cls is None:
+            continue
+        c = classes.setdefault(cls, {'requests': 0, 'bytes': 0})
+        c['requests'] += 1
+        c['bytes'] += size
+        if cls == 'fetch':
+            p = urlparse(url).path or '/'
+            paths[p] = paths.get(p, 0) + 1
+    return {'classes': classes, 'repeated': [{'path': p, 'requests': n} for p, n in sorted(paths.items(), key=lambda x: -x[1]) if n > 1]}
 
 
 def classify(rtype: str, mime: str, url: str) -> str:
@@ -215,17 +284,46 @@ class Runner:
         page.add_init_script(self.init)
         return page
 
-    def one(self, target: dict, profile: str, cache: str, run_id: str, kind: str, diag: bool = False) -> dict:
+    def apply_setup(self, page, target: dict, setup: dict | None, cache: str, rec: dict, cdp) -> None:
+        """Put the page in the variant's state before the measured load (see the module docstring)."""
+        if not setup:
+            return
+        origin = '{0.scheme}://{0.netloc}'.format(urlparse(target['url']))
+        if setup.get('cookies'):
+            page.context.add_cookies([c if ('url' in c or 'domain' in c) else dict(c, url=origin) for c in setup['cookies']])
+        storage = {k: setup.get(k) or {} for k in ('local_storage', 'session_storage')}
+        if any(storage.values()):
+            page.add_init_script('(([origin, ls, ss]) => { if (location.origin !== origin) return; try {'
+                                 ' for (const [k, v] of Object.entries(ls)) localStorage.setItem(k, typeof v === "string" ? v : JSON.stringify(v));'
+                                 ' for (const [k, v] of Object.entries(ss)) sessionStorage.setItem(k, typeof v === "string" ? v : JSON.stringify(v));'
+                                 ' } catch (e) {} })(' + json.dumps([origin, storage['local_storage'], storage['session_storage']]) + ')')
+        if setup.get('actions'):
+            self.h.throttle()
+            page.goto(setup.get('url') or target['url'], wait_until='load', timeout=60000)
+            self.h.act(page, setup['actions'])
+            page.wait_for_timeout(int(setup.get('wait_ms', 500)))
+            if cache == 'cold':
+                if cdp is not None:
+                    cdp.send('Network.clearBrowserCache')
+                else:
+                    rec['setup_note'] = 'setup actions loaded the page first and the HTTP cache could not be cleared (Chromium only)'
+
+    def one(self, target: dict, profile: str, cache: str, run_id: str, kind: str, diag: bool = False,
+            variant: dict | None = None) -> dict:
         page = self.page(profile, cache)
         log = self.h.log(page)
         reqs: dict[str, dict] = {}
         rec = {'id': run_id, 'url': target['url'], 'template': target['template'], 'profile': profile, 'cache': cache,
                'browser': self.browser, 'kind': kind, 'ok': False, 'status': None, 'error': None, 'started_at': now()}
+        if variant and variant.get('name'):
+            rec['variant'] = variant['name']
         cdp = None
         try:
             if self.browser == 'chromium':
                 cdp = self.h.cdp(page)
                 cdp.send('Network.enable')
+                cdp.on('Network.requestWillBeSent', lambda e: reqs.setdefault(e['requestId'], {}).update(
+                    method=e['request'].get('method', 'GET'), rsc=any(k.lower() == 'rsc' for k in (e['request'].get('headers') or {}))))
                 cdp.on('Network.responseReceived', lambda e: reqs.setdefault(e['requestId'], {}).update(
                     url=e['response']['url'], type=e.get('type', ''), mime=e['response'].get('mimeType', ''),
                     from_cache=e['response'].get('fromDiskCache', False) or e['response'].get('fromServiceWorker', False)))
@@ -233,17 +331,23 @@ class Runner:
                 if diag:
                     cdp.send('Profiler.enable')
                     cdp.send('Profiler.startPreciseCoverage', {'callCount': True, 'detailed': True})
+            self.apply_setup(page, target, (variant or {}).get('setup'), cache, rec, cdp)
             if cache == 'warm':
                 self.h.throttle()
                 page.goto(target['url'], wait_until='load', timeout=60000)
                 page.wait_for_timeout(500)
-                reqs.clear()
+            reqs.clear()
             if diag:
                 self.h.start_trace(page, screenshots=True, categories=TRACE_CATEGORIES)
             self.h.throttle()
             t0 = time.monotonic()
             resp = page.goto(target['url'], wait_until='load', timeout=90000)
             rec['status'] = resp.status if resp else None
+            if resp is not None:
+                heads = {k.lower(): v for k, v in resp.headers.items()}
+                rec['document_headers'] = {h: heads[h] for h in CDN_HEADERS if h in heads}
+                if rec['status'] in RETRY_STATUSES:
+                    rec['retry_after'] = heads.get('retry-after')
             try:
                 page.wait_for_load_state('networkidle', timeout=15000)
             except Exception:  # noqa: BLE001
@@ -255,14 +359,18 @@ class Runner:
             inp = None
             inp_source = None
             if interaction:
-                self.h.act(page, interaction)
-                for _ in range(30):   # web-vitals reports INP once the browser is idle; give it up to 3 s
+                try:
+                    self.h.act(page, interaction)
+                except Exception as e:  # noqa: BLE001  the load metrics stand; only INP is lost
+                    rec['interaction_error'] = f'{type(e).__name__}: {str(e).splitlines()[0][:200]}'
+                    inp_source = 'interaction failed'
+                for _ in range(30 if 'interaction_error' not in rec else 0):   # web-vitals reports INP once the browser is idle
                     page.wait_for_timeout(100)
                     inp = page.evaluate('() => (window.__perf || {}).vitals.INP || null')
                     if inp:
                         inp_source = 'web-vitals onINP'
                         break
-                if not inp:
+                if not inp and 'interaction_error' not in rec:
                     ev = page.evaluate('() => (window.__perf || {}).events || []')
                     if ev:   # Event Timing directly: the longest interaction (with few interactions INP is the maximum)
                         worst = max(ev, key=lambda e: e['duration'])
@@ -303,7 +411,12 @@ class Runner:
             metrics = {k: (None if v is None else round(v, 4) if k == 'CLS' else round(v, 1) if isinstance(v, float) else v)
                        for k, v in metrics.items()}
             origin = '{0.scheme}://{0.netloc}'.format(urlparse(target['url']))
-            lcp_attr = (v.get('LCP') or {}).get('attribution', {})
+            lcp_attr = dict((v.get('LCP') or {}).get('attribution', {}))
+            load_ms = (snap['nav'] or {}).get('load') or 0
+            if metrics.get('LCP') is not None and load_ms:
+                # a text LCP painted well after load: rendered by script (a timer, hydration), not by the HTML
+                lcp_attr['after_load'] = metrics['LCP'] > load_ms + 500 and not lcp_attr.get('url')
+            rec['request_summary'] = request_summary(reqs.values() if chromium else snap['resources'], chromium)
             rec.update(ok=bool(resp and resp.status < 400), metrics=metrics, metric_sources=sources, transfer_by_type=by_type,
                        attribution={
                            'LCP': dict(lcp_attr, element=page.evaluate(LCP_ELEMENT, lcp_attr.get('target')) if lcp_attr.get('target') else None),
@@ -324,11 +437,12 @@ class Runner:
                        console_errors=[c['text'][:200] for c in log['console'] if c['type'] == 'error'][:5],
                        page_errors=[e['message'][:200] for e in log['page_errors']][:5])
             if diag and self.art:
-                d = self.art / slug(target['url']) / f'{profile}-{cache}-{self.browser}'
+                d = self.art / slug(target['url']) / (f'{rec["variant"]}-' if rec.get('variant') else '') / f'{profile}-{cache}-{self.browser}'
                 d.mkdir(parents=True, exist_ok=True)
                 rec['artifacts'] = {}
                 if trace_bytes:
-                    frames = filmstrip(trace_bytes, d / 'filmstrip', (snap['nav'] or {}).get('load', 0))
+                    # frames until the later of load and the final LCP, plus 500 ms (400 here and one 100 ms step), capped at 20 s
+                    frames = filmstrip(trace_bytes, d / 'filmstrip', min(max(load_ms, metrics.get('LCP') or 0) + 400, FILMSTRIP_CAP_MS))
                     rec['artifacts']['filmstrip'] = [f.as_posix() for f in frames]
                     (d / 'trace.json.gz').write_bytes(gzip.compress(slim_trace(trace_bytes), 6))
                     rec['artifacts']['trace'] = (d / 'trace.json.gz').as_posix()
@@ -385,7 +499,10 @@ def slim_trace(trace: bytes) -> bytes:
 
 
 def filmstrip(trace: bytes, out: Path, load_ms: float, step_ms: int = 100) -> list[Path]:
-    """Frames from the trace's screenshots, one per 100 ms until load (plus one after)."""
+    """Frames from the trace's screenshots, one per 100 ms until load_ms (plus one after).
+
+    The caller passes the later of load and the final LCP (plus 400 ms, capped at 20 s), so a late
+    LCP (a banner rendered by script after load) is in the strip."""
     try:
         events = json.loads(trace.decode('utf-8'))
         events = events.get('traceEvents', events) if isinstance(events, dict) else events
@@ -428,6 +545,43 @@ def sw_mode(plan: dict, cache: str) -> str:
     return mode
 
 
+def variants_of(target: dict) -> list[dict]:
+    """The target's variants ({name, setup}); without `variants`, one unnamed variant with the target's own `setup`."""
+    if target.get('variants'):
+        return [{'name': v['name'], 'setup': v.get('setup')} for v in target['variants']]
+    return [{'name': None, 'setup': target.get('setup')}]
+
+
+SETUP_KEYS = {'local_storage', 'session_storage', 'cookies', 'actions', 'url', 'wait_ms'}
+
+
+def setup_errors(target: dict) -> str | None:
+    names = [v.get('name') for v in target.get('variants') or []]
+    if target.get('variants') and (not all(isinstance(n, str) and n.replace('-', '').replace('_', '').isalnum() for n in names) or
+                                   len(set(names)) != len(names)):
+        return 'variants need distinct names (letters, numbers, - and _)'
+    if target.get('variants') and target.get('setup'):
+        return 'give setup per variant, not both setup and variants'
+    for v in [target] + list(target.get('variants') or []):
+        extra = set(v.get('setup') or {}) - SETUP_KEYS
+        if extra:
+            return f'unknown setup keys {sorted(extra)} (known: {sorted(SETUP_KEYS)})'
+    return None
+
+
+def describe_setup(setup: dict | None) -> dict | None:
+    if not setup:
+        return None
+    return {'local_storage': sorted(setup.get('local_storage') or {}), 'session_storage': sorted(setup.get('session_storage') or {}),
+            'cookies': sorted(c.get('name', '?') for c in setup.get('cookies') or []), 'actions': len(setup.get('actions') or [])}
+
+
+def stable_metric(measured: list[dict], metric: str, limits: dict) -> bool:
+    from attribute import UNITS, stability, stats
+    vals = [x.get('metrics', {}).get(metric) for x in measured if x['ok']]
+    return stability(stats(vals), [v for v in vals if v is not None], UNITS[metric], limits.get(metric))[0]
+
+
 def budgeted_metrics(budget, profile: str, target: dict) -> list[str]:
     return [m for m in budget.for_(target['url'], profile) if m != 'INP' or target.get('interaction')]
 
@@ -438,6 +592,8 @@ def main() -> int:
     ap.add_argument('--out', type=Path, required=True)
     ap.add_argument('--artifacts', type=Path)
     ap.add_argument('--runs', type=int)
+    ap.add_argument('--min-runs', type=int, help='stop at this many runs when every budgeted metric is already stable (default: runs)')
+    ap.add_argument('--max-runs', type=int, help='hard cap on measured plus extra runs per page, profile and variant (default: 10)')
     ap.add_argument('--profiles')
     ap.add_argument('--cache', choices=['cold', 'warm', 'both'])
     ap.add_argument('--browser', default='chromium', choices=['chromium', 'firefox', 'webkit'])
@@ -450,6 +606,11 @@ def main() -> int:
     all_profiles = json.loads((SKILL / 'data' / 'profiles.json').read_text(encoding='utf-8'))
     profile_names = (a.profiles or ','.join(plan.get('profiles') or ['mobile-mid', 'desktop'])).split(',')
     runs = a.runs or plan.get('runs', 5)
+    max_runs = a.max_runs or plan.get('max_runs', max(MAX_RUNS, runs))
+    min_runs = a.min_runs or plan.get('min_runs', runs)
+    if not 1 <= min_runs <= runs <= max_runs:
+        print(f'error: need 1 <= min_runs ({min_runs}) <= runs ({runs}) <= max_runs ({max_runs})', file=sys.stderr)
+        return 2
     cache_modes = {'both': ['cold', 'warm']}.get(a.cache or plan.get('cache', 'cold'), [a.cache or plan.get('cache', 'cold')])
     targets = [t for t in plan['targets'] if (not a.only or a.only in t['url']) and
                (not a.templates or t['template'] in a.templates.split(','))]
@@ -458,7 +619,12 @@ def main() -> int:
     except NotAuthorised as e:
         print(f'error: {e}', file=sys.stderr)
         return 2
-    from attribute import Budget, UNITS, is_stable, stats
+    from attribute import Budget
+    for t in targets:
+        bad = setup_errors(t)
+        if bad:
+            print(f'error: {t["url"]}: {bad}', file=sys.stderr)
+            return 2
     if plan.get('third_party', 'block') not in ('block', 'allow') or plan.get('service_workers', 'cold') not in ('cold', 'block', 'allow'):
         print('error: third_party must be block or allow; service_workers cold, block or allow', file=sys.stderr)
         return 2
@@ -478,11 +644,14 @@ def main() -> int:
             doc = {'schema': 1, 'generated_at': now(), 'machine': machine(),
                    'calibration': {'workload': '2e7 iterations of Math.sqrt, no throttling', 'runs_ms': cal,
                                    'median_ms': statistics.median(cal), 'cv': cv(cal), 'busy': cv(cal) > 0.1},
-                   'tools': [], 'config': {'runs': runs, 'warmup': 1, 'cv_limit': CV_LIMIT, 'max_runs': MAX_RUNS,
+                   'tools': [], 'config': {'runs': runs, 'min_runs': min_runs, 'max_runs': max_runs, 'warmup': 1, 'cv_limit': CV_LIMIT,
                                            'profiles': {p: all_profiles[p] for p in profile_names}, 'cache': cache_modes,
                                            'third_party': {'mode': cfg['third_party'], 'allowed_hosts': cfg['allowed_hosts']},
                                            'service_workers': plan.get('service_workers', 'cold')},
-                   'sample': [{k: t.get(k) for k in ('url', 'template', 'reason', 'critical_path')} | {'interaction': bool(t.get('interaction'))}
+                   'sample': [{k: t.get(k) for k in ('url', 'template', 'reason', 'critical_path')} | {'interaction': bool(t.get('interaction'))} |
+                              ({'variants': [{'name': v['name'], 'setup': describe_setup(v['setup'])} for v in variants_of(t)]}
+                               if t.get('variants') else {}) |
+                              ({'setup': describe_setup(t['setup'])} if t.get('setup') else {})
                               for t in plan['targets']],
                    'runs': [], 'events': [], 'blocked_requests': []}
             if doc['calibration']['busy']:
@@ -494,34 +663,57 @@ def main() -> int:
         for p in profile_names:
             doc['config']['profiles'][p] = all_profiles[p]
         r = Runner(h, plan, all_profiles, wv, a.artifacts, a.browser)
+
+        def run(t, prof, cache, rid, kind, variant, diag=False):
+            """One load; a 429 or 503 is retried twice after Retry-After (at most 60 s) and recorded as an event."""
+            for attempt in range(3):
+                rec = r.one(t, prof, cache, rid, kind, diag=diag, variant=variant)
+                if rec['status'] not in RETRY_STATUSES or attempt == 2:
+                    return rec
+                ra = str(rec.get('retry_after') or '')
+                delay = min(int(ra) if ra.isdigit() else 10 * (attempt + 1), 60)
+                h.events.append({'url': t['url'], 'event': f'{rid}: HTTP {rec["status"]}; backing off {delay} s and retrying', 'at': now()})
+                time.sleep(delay)
+            return rec
+
         for t in targets:
-            for prof in profile_names:
-                for cache in cache_modes:
-                    base = f'{slug(t["url"])}/{prof}/{cache}/{a.browser}'
-                    doc['runs'] = [x for x in doc['runs'] if not x['id'].startswith(base + '/')]
-                    doc['runs'].append(r.one(t, prof, cache, f'{base}/w', 'warmup'))
-                    measured = []
-                    for i in range(1, runs + 1):
-                        rec = r.one(t, prof, cache, f'{base}/r{i}', 'measured')
-                        doc['runs'].append(rec)
-                        measured.append(rec)
-                    names = budgeted_metrics(budget, prof, t)
-                    while len(measured) < MAX_RUNS:
+            for variant in variants_of(t):
+                vpart = f'/{variant["name"]}' if variant.get('name') else ''
+                for prof in profile_names:
+                    for cache in cache_modes:
+                        base = f'{slug(t["url"])}{vpart}/{prof}/{cache}/{a.browser}'
+                        doc['runs'] = [x for x in doc['runs'] if not x['id'].startswith(base + '/')]
+                        warm = run(t, prof, cache, f'{base}/w', 'warmup', variant)
+                        doc['runs'].append(warm)
+                        measured: list[dict] = []
+                        names = budgeted_metrics(budget, prof, t)
                         limits = budget.for_(t['url'], prof)
-                        unstable = [m for m in names if not is_stable(stats([x.get('metrics', {}).get(m) for x in measured if x['ok']]),
-                                                                      UNITS[m], limits.get(m))]
-                        if not unstable:
-                            break
-                        rec = r.one(t, prof, cache, f'{base}/r{len(measured) + 1}', 'extra')
-                        rec['extra_reason'] = f'unstable (CV above {CV_LIMIT}, spread above the floor) for {", ".join(unstable)}'
-                        doc['runs'].append(rec)
-                        measured.append(rec)
-                    if not a.no_diagnostic:
-                        doc['runs'].append(r.one(t, prof, cache, f'{base}/diag', 'diagnostic', diag=True))
-                    oks = [x for x in measured if x['ok']]
-                    print(f'{base}: {len(oks)}/{len(measured)} ok; LCP ' +
-                          ', '.join(str(round(x['metrics']['LCP'])) if x['metrics'].get('LCP') is not None else '-' for x in oks),
-                          file=sys.stderr)
+                        stop = None
+                        unstable: list[str] = []
+                        while len(measured) < max_runs:
+                            if len(measured) >= min_runs:
+                                unstable = [m for m in names if not stable_metric(measured, m, limits)]
+                                if not unstable:
+                                    break
+                            i = len(measured) + 1
+                            rec = run(t, prof, cache, f'{base}/r{i}', 'measured' if i <= runs else 'extra', variant)
+                            if i > runs:
+                                rec['extra_reason'] = f'unstable (CV above {CV_LIMIT}, spread above the floor) for {", ".join(unstable)}'
+                            doc['runs'].append(rec)
+                            measured.append(rec)
+                            if rec['status'] and rec['status'] >= 400:
+                                # an error page: the warm-up and one measured run are enough to say so; don't spend the budget
+                                stop = f'HTTP {rec["status"]} on {rec["id"].rsplit("/", 1)[-1]}' + \
+                                    (f' (the warm-up returned HTTP {warm["status"]})' if warm['status'] and warm['status'] >= 400 else '') + \
+                                    '; stopped measuring this page'
+                                rec['stop_reason'] = stop
+                                break
+                        if not a.no_diagnostic and not stop:
+                            doc['runs'].append(run(t, prof, cache, f'{base}/diag', 'diagnostic', variant, diag=True))
+                        oks = [x for x in measured if x['ok']]
+                        print(f'{base}: {len(oks)}/{len(measured)} ok (cap {max_runs})' + (f'; {stop}' if stop else '') + '; LCP ' +
+                              ', '.join(str(round(x['metrics']['LCP'])) if x['metrics'].get('LCP') is not None else '-' for x in oks),
+                              file=sys.stderr)
         doc['events'] += h.events
         doc['blocked_requests'] += h.blocked
     doc['generated_at'] = now()

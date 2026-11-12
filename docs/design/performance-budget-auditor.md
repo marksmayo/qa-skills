@@ -236,3 +236,54 @@ Where the build differs from the design above, and what the example showed.
     blocked hosts, the report carries it as `scope.third_party`, and the validator requires a
     limitation saying their cost and behaviour were not measured. The example predates this, so
     its run records no third-party mode (the bakery has no third parties).
+
+### Found on a real remote deployment (v1.1.0)
+
+A run against a Next.js site on a CDN (six pages, two profiles, third parties blocked) showed where
+a loopback-tuned design breaks:
+
+- *The run cap.* `MAX_RUNS = 10` was hard-coded, so a plan of "5 runs" became 7 to 10 measured
+  runs per page (111 loads instead of about 84). The plan now takes `max_runs` (default 10; equal
+  to `runs` for no extra runs) and `min_runs` (stop early when everything is stable), the config
+  records both, every measurement records `runs_used` and `run_cap`, a metric still unstable at
+  the cap says "unstable at the cap of N runs", and the renderer prints runs planned, cap and used
+  instead of a fixed "5 runs".
+- *Remote network outliers.* Two slow round trips out of ten (TTFB 859 and 1050 ms against
+  ~200 ms) made TTFB, FCP and LCP unstable although the median was unambiguous. A fourth
+  stability rule, `robust`, sets aside at most a quarter of the runs that sit more than 3 robust
+  standard deviations from the median, when the rest are stable and their median is on the same
+  side of the budget; the outlier run ids are listed in the measurement. Interleaving pages
+  round-robin was considered and not built: the robust rule addresses the verdict, and run order
+  stays simple to read.
+- *CDN state was invisible.* Each run records the document's cache headers (`x-vercel-cache`,
+  `cf-cache-status`, `x-cache`, `age`, `via`, ...), `attribute.py` summarises them as `cdn_cache`,
+  and a report on a non-loopback target must have a limitation saying "cold" meant a cold browser
+  and a warm CDN (the warm-up primes it).
+- *An HTTP 500 page spent the whole budget* and the reason was lost. A run that gets a status of
+  400 or more (other than 429/503, which are retried after Retry-After) stops that page: no extra
+  runs, no diagnostic; the run records `stop_reason`, and failed runs are listed in the note with
+  their HTTP status.
+- *Consent banners* were advice only, and the banner was the first-visit LCP on every page. Targets
+  take `setup` (local/session storage written by an init script before page scripts, cookies, and
+  actions on a first load after which the cold run's HTTP cache is cleared through DevTools) and
+  `variants` (named states, each its own measurement and run-id segment). An LCP element inside a
+  `position: fixed` overlay, or a text LCP painted more than 500 ms after load, is named so in the
+  cause.
+- *Site-wide causes were split per template* (the banner, the shared chunk and the global
+  stylesheet made 12 candidates for 4 problems). Candidates are now keyed by (metric, cause) when
+  the cause is specific (a URL, a server step, an element with an id or class), with `templates`
+  and `site_wide`; reach counts every page.
+- *Blocked first-party writes* (814 CSP reports and telemetry posts) were in the measurements but
+  nowhere in the report. `scope.blocked_first_party` lists them and the validator requires a
+  limitation.
+- *Next.js RSC prefetches and client polling* were hidden by the 12-largest-resources cut. Each
+  run records a `request_summary` (`rsc_prefetch` by `?_rsc=` or the RSC request header, `fetch`,
+  and fetch paths repeated within the load), summarised as `request_summary`.
+- *The filmstrip ended at load*, before a late LCP; it now runs to the later of load and the final
+  LCP plus 500 ms (at most 20 s).
+- *A failed interaction discarded the run.* The interaction is caught on its own: the run keeps its
+  load metrics, records `interaction_error`, and the INP measurement's note lists the failures.
+- The example's measurements predate these fields (no variants, CDN headers or request summaries,
+  config without `min_runs`); `attribute.py` reads them with the defaults, and the regenerated
+  candidates and report carry the new fields. The new paths were checked against a loopback
+  fixture with a delayed consent banner, a 500 page, RSC prefetches, polling and a beacon.

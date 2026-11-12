@@ -1,7 +1,7 @@
 {
  "skill": {
   "name": "performance-budget-auditor",
-  "version": "1.0.0"
+  "version": "1.1.0"
  },
  "scope": {
   "targets": [
@@ -66,6 +66,8 @@
    "note": "budget.json"
   },
   "runs": 5,
+  "min_runs": 5,
+  "max_runs": 10,
   "cache": [
    "cold"
   ],
@@ -147,6 +149,7 @@
   {
    "url": "http://127.0.0.1:8142/",
    "template": "home",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -181,6 +184,10 @@
    "cv": 0.0027,
    "budget": 2500,
    "status": "over",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onLCP",
    "note": null
@@ -188,6 +195,7 @@
   {
    "url": "http://127.0.0.1:8142/",
    "template": "home",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -222,6 +230,10 @@
    "cv": 0.0,
    "budget": 0.1,
    "status": "over",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onCLS",
    "note": null
@@ -229,6 +241,7 @@
   {
    "url": "http://127.0.0.1:8142/",
    "template": "home",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -263,6 +276,10 @@
    "cv": null,
    "budget": 200,
    "status": "untested",
+   "stable_by": null,
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "untested: no interaction",
    "note": null
@@ -270,6 +287,7 @@
   {
    "url": "http://127.0.0.1:8142/",
    "template": "home",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -304,6 +322,10 @@
    "cv": 0.0,
    "budget": 300,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "Long Tasks API after FCP",
    "note": null
@@ -311,6 +333,7 @@
   {
    "url": "http://127.0.0.1:8142/",
    "template": "home",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -345,6 +368,10 @@
    "cv": 0.0218,
    "budget": null,
    "status": "measured",
+   "stable_by": null,
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onFCP",
    "note": null
@@ -352,6 +379,7 @@
   {
    "url": "http://127.0.0.1:8142/",
    "template": "home",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -386,6 +414,10 @@
    "cv": 0.0023,
    "budget": null,
    "status": "measured",
+   "stable_by": null,
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onTTFB",
    "note": null
@@ -393,6 +425,7 @@
   {
    "url": "http://127.0.0.1:8142/",
    "template": "home",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -427,6 +460,10 @@
    "cv": 0.0,
    "budget": 1600000,
    "status": "over",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "DevTools Network encodedDataLength",
    "note": null
@@ -434,6 +471,7 @@
   {
    "url": "http://127.0.0.1:8142/",
    "template": "home",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -468,6 +506,10 @@
    "cv": 0.0,
    "budget": 400000,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "DevTools Network encodedDataLength",
    "note": null
@@ -475,6 +517,7 @@
   {
    "url": "http://127.0.0.1:8142/",
    "template": "home",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -509,6 +552,10 @@
    "cv": 0.0012,
    "budget": 2500,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onLCP",
    "note": null
@@ -516,6 +563,7 @@
   {
    "url": "http://127.0.0.1:8142/",
    "template": "home",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -550,6 +598,10 @@
    "cv": 0.0,
    "budget": 0.1,
    "status": "over",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onCLS",
    "note": null
@@ -557,6 +609,7 @@
   {
    "url": "http://127.0.0.1:8142/",
    "template": "home",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -591,6 +644,10 @@
    "cv": null,
    "budget": 200,
    "status": "untested",
+   "stable_by": null,
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "untested: no interaction",
    "note": null
@@ -598,6 +655,7 @@
   {
    "url": "http://127.0.0.1:8142/",
    "template": "home",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -632,6 +690,10 @@
    "cv": 0.0,
    "budget": 200,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "Long Tasks API after FCP",
    "note": null
@@ -639,6 +701,7 @@
   {
    "url": "http://127.0.0.1:8142/",
    "template": "home",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -673,6 +736,10 @@
    "cv": 0.0122,
    "budget": null,
    "status": "measured",
+   "stable_by": null,
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onFCP",
    "note": null
@@ -680,6 +747,7 @@
   {
    "url": "http://127.0.0.1:8142/",
    "template": "home",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -714,6 +782,10 @@
    "cv": 0.0085,
    "budget": null,
    "status": "measured",
+   "stable_by": null,
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onTTFB",
    "note": null
@@ -721,6 +793,7 @@
   {
    "url": "http://127.0.0.1:8142/",
    "template": "home",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -755,6 +828,10 @@
    "cv": 0.0,
    "budget": 2500000,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "DevTools Network encodedDataLength",
    "note": null
@@ -762,6 +839,7 @@
   {
    "url": "http://127.0.0.1:8142/",
    "template": "home",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -796,6 +874,10 @@
    "cv": 0.0,
    "budget": 600000,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "DevTools Network encodedDataLength",
    "note": null
@@ -803,6 +885,7 @@
   {
    "url": "http://127.0.0.1:8142/menu",
    "template": "menu",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -837,6 +920,10 @@
    "cv": 0.0062,
    "budget": 2500,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onLCP",
    "note": null
@@ -844,6 +931,7 @@
   {
    "url": "http://127.0.0.1:8142/menu",
    "template": "menu",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -878,6 +966,10 @@
    "cv": 0.0,
    "budget": 0.1,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onCLS",
    "note": null
@@ -885,6 +977,7 @@
   {
    "url": "http://127.0.0.1:8142/menu",
    "template": "menu",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -919,6 +1012,10 @@
    "cv": null,
    "budget": 200,
    "status": "untested",
+   "stable_by": null,
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "untested: no interaction",
    "note": null
@@ -926,6 +1023,7 @@
   {
    "url": "http://127.0.0.1:8142/menu",
    "template": "menu",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -960,6 +1058,10 @@
    "cv": 0.0983,
    "budget": 300,
    "status": "over",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "Long Tasks API after FCP",
    "note": null
@@ -967,6 +1069,7 @@
   {
    "url": "http://127.0.0.1:8142/menu",
    "template": "menu",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -1001,6 +1104,10 @@
    "cv": 0.0062,
    "budget": null,
    "status": "measured",
+   "stable_by": null,
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onFCP",
    "note": null
@@ -1008,6 +1115,7 @@
   {
    "url": "http://127.0.0.1:8142/menu",
    "template": "menu",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -1042,6 +1150,10 @@
    "cv": 0.003,
    "budget": 300,
    "status": "over",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onTTFB",
    "note": null
@@ -1049,6 +1161,7 @@
   {
    "url": "http://127.0.0.1:8142/menu",
    "template": "menu",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -1083,6 +1196,10 @@
    "cv": 0.0,
    "budget": 1600000,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "DevTools Network encodedDataLength",
    "note": null
@@ -1090,6 +1207,7 @@
   {
    "url": "http://127.0.0.1:8142/menu",
    "template": "menu",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -1124,6 +1242,10 @@
    "cv": 0.0,
    "budget": 400000,
    "status": "over",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "DevTools Network encodedDataLength",
    "note": null
@@ -1131,6 +1253,7 @@
   {
    "url": "http://127.0.0.1:8142/menu",
    "template": "menu",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -1165,6 +1288,10 @@
    "cv": 0.0146,
    "budget": 2500,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onLCP",
    "note": null
@@ -1172,6 +1299,7 @@
   {
    "url": "http://127.0.0.1:8142/menu",
    "template": "menu",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -1206,6 +1334,10 @@
    "cv": 0.0,
    "budget": 0.1,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onCLS",
    "note": null
@@ -1213,6 +1345,7 @@
   {
    "url": "http://127.0.0.1:8142/menu",
    "template": "menu",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -1247,6 +1380,10 @@
    "cv": null,
    "budget": 200,
    "status": "untested",
+   "stable_by": null,
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "untested: no interaction",
    "note": null
@@ -1254,6 +1391,7 @@
   {
    "url": "http://127.0.0.1:8142/menu",
    "template": "menu",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -1288,6 +1426,10 @@
    "cv": 0.0112,
    "budget": 200,
    "status": "over",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "Long Tasks API after FCP",
    "note": null
@@ -1295,6 +1437,7 @@
   {
    "url": "http://127.0.0.1:8142/menu",
    "template": "menu",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -1329,6 +1472,10 @@
    "cv": 0.0146,
    "budget": null,
    "status": "measured",
+   "stable_by": null,
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onFCP",
    "note": null
@@ -1336,6 +1483,7 @@
   {
    "url": "http://127.0.0.1:8142/menu",
    "template": "menu",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -1370,6 +1518,10 @@
    "cv": 0.0115,
    "budget": 300,
    "status": "over",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onTTFB",
    "note": null
@@ -1377,6 +1529,7 @@
   {
    "url": "http://127.0.0.1:8142/menu",
    "template": "menu",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -1411,6 +1564,10 @@
    "cv": 0.0,
    "budget": 2500000,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "DevTools Network encodedDataLength",
    "note": null
@@ -1418,6 +1575,7 @@
   {
    "url": "http://127.0.0.1:8142/menu",
    "template": "menu",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -1452,6 +1610,10 @@
    "cv": 0.0,
    "budget": 600000,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "DevTools Network encodedDataLength",
    "note": null
@@ -1459,6 +1621,7 @@
   {
    "url": "http://127.0.0.1:8142/menu/breads",
    "template": "menu",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -1493,6 +1656,10 @@
    "cv": 0.0119,
    "budget": 2500,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onLCP",
    "note": null
@@ -1500,6 +1667,7 @@
   {
    "url": "http://127.0.0.1:8142/menu/breads",
    "template": "menu",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -1534,6 +1702,10 @@
    "cv": 0.0,
    "budget": 0.1,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onCLS",
    "note": null
@@ -1541,6 +1713,7 @@
   {
    "url": "http://127.0.0.1:8142/menu/breads",
    "template": "menu",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -1575,6 +1748,10 @@
    "cv": null,
    "budget": 200,
    "status": "untested",
+   "stable_by": null,
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "untested: no interaction",
    "note": null
@@ -1582,6 +1759,7 @@
   {
    "url": "http://127.0.0.1:8142/menu/breads",
    "template": "menu",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -1616,6 +1794,10 @@
    "cv": 0.052,
    "budget": 300,
    "status": "over",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "Long Tasks API after FCP",
    "note": null
@@ -1623,6 +1805,7 @@
   {
    "url": "http://127.0.0.1:8142/menu/breads",
    "template": "menu",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -1657,6 +1840,10 @@
    "cv": 0.0119,
    "budget": null,
    "status": "measured",
+   "stable_by": null,
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onFCP",
    "note": null
@@ -1664,6 +1851,7 @@
   {
    "url": "http://127.0.0.1:8142/menu/breads",
    "template": "menu",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -1698,6 +1886,10 @@
    "cv": 0.0012,
    "budget": 300,
    "status": "over",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onTTFB",
    "note": null
@@ -1705,6 +1897,7 @@
   {
    "url": "http://127.0.0.1:8142/menu/breads",
    "template": "menu",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -1739,6 +1932,10 @@
    "cv": 0.0,
    "budget": 1600000,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "DevTools Network encodedDataLength",
    "note": null
@@ -1746,6 +1943,7 @@
   {
    "url": "http://127.0.0.1:8142/menu/breads",
    "template": "menu",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -1780,6 +1978,10 @@
    "cv": 0.0,
    "budget": 400000,
    "status": "over",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "DevTools Network encodedDataLength",
    "note": null
@@ -1787,6 +1989,7 @@
   {
    "url": "http://127.0.0.1:8142/menu/breads",
    "template": "menu",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -1821,6 +2024,10 @@
    "cv": 0.008,
    "budget": 2500,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onLCP",
    "note": null
@@ -1828,6 +2035,7 @@
   {
    "url": "http://127.0.0.1:8142/menu/breads",
    "template": "menu",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -1862,6 +2070,10 @@
    "cv": 0.0,
    "budget": 0.1,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onCLS",
    "note": null
@@ -1869,6 +2081,7 @@
   {
    "url": "http://127.0.0.1:8142/menu/breads",
    "template": "menu",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -1903,6 +2116,10 @@
    "cv": null,
    "budget": 200,
    "status": "untested",
+   "stable_by": null,
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "untested: no interaction",
    "note": null
@@ -1910,6 +2127,7 @@
   {
    "url": "http://127.0.0.1:8142/menu/breads",
    "template": "menu",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -1944,6 +2162,10 @@
    "cv": 0.019,
    "budget": 200,
    "status": "over",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "Long Tasks API after FCP",
    "note": null
@@ -1951,6 +2173,7 @@
   {
    "url": "http://127.0.0.1:8142/menu/breads",
    "template": "menu",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -1985,6 +2208,10 @@
    "cv": 0.008,
    "budget": null,
    "status": "measured",
+   "stable_by": null,
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onFCP",
    "note": null
@@ -1992,6 +2219,7 @@
   {
    "url": "http://127.0.0.1:8142/menu/breads",
    "template": "menu",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -2026,6 +2254,10 @@
    "cv": 0.0022,
    "budget": 300,
    "status": "over",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onTTFB",
    "note": null
@@ -2033,6 +2265,7 @@
   {
    "url": "http://127.0.0.1:8142/menu/breads",
    "template": "menu",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -2067,6 +2300,10 @@
    "cv": 0.0,
    "budget": 2500000,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "DevTools Network encodedDataLength",
    "note": null
@@ -2074,6 +2311,7 @@
   {
    "url": "http://127.0.0.1:8142/menu/breads",
    "template": "menu",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -2108,6 +2346,10 @@
    "cv": 0.0,
    "budget": 600000,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "DevTools Network encodedDataLength",
    "note": null
@@ -2115,6 +2357,7 @@
   {
    "url": "http://127.0.0.1:8142/order",
    "template": "order",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -2149,6 +2392,10 @@
    "cv": 0.0289,
    "budget": 2500,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onLCP",
    "note": null
@@ -2156,6 +2403,7 @@
   {
    "url": "http://127.0.0.1:8142/order",
    "template": "order",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -2190,6 +2438,10 @@
    "cv": 0.0,
    "budget": 0.1,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onCLS",
    "note": null
@@ -2197,6 +2449,7 @@
   {
    "url": "http://127.0.0.1:8142/order",
    "template": "order",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -2231,6 +2484,10 @@
    "cv": 0.0313,
    "budget": 200,
    "status": "over",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onINP",
    "note": null
@@ -2238,6 +2495,7 @@
   {
    "url": "http://127.0.0.1:8142/order",
    "template": "order",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -2272,6 +2530,10 @@
    "cv": 0.0,
    "budget": 300,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "Long Tasks API after FCP",
    "note": null
@@ -2279,6 +2541,7 @@
   {
    "url": "http://127.0.0.1:8142/order",
    "template": "order",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -2313,6 +2576,10 @@
    "cv": 0.0289,
    "budget": null,
    "status": "measured",
+   "stable_by": null,
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onFCP",
    "note": null
@@ -2320,6 +2587,7 @@
   {
    "url": "http://127.0.0.1:8142/order",
    "template": "order",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -2354,6 +2622,10 @@
    "cv": 0.0028,
    "budget": null,
    "status": "measured",
+   "stable_by": null,
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onTTFB",
    "note": null
@@ -2361,6 +2633,7 @@
   {
    "url": "http://127.0.0.1:8142/order",
    "template": "order",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -2395,6 +2668,10 @@
    "cv": 0.0,
    "budget": 1600000,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "DevTools Network encodedDataLength",
    "note": null
@@ -2402,6 +2679,7 @@
   {
    "url": "http://127.0.0.1:8142/order",
    "template": "order",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -2436,6 +2714,10 @@
    "cv": 0.0,
    "budget": 400000,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "DevTools Network encodedDataLength",
    "note": null
@@ -2443,6 +2725,7 @@
   {
    "url": "http://127.0.0.1:8142/order",
    "template": "order",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -2477,6 +2760,10 @@
    "cv": 0.0508,
    "budget": 2500,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onLCP",
    "note": null
@@ -2484,6 +2771,7 @@
   {
    "url": "http://127.0.0.1:8142/order",
    "template": "order",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -2518,6 +2806,10 @@
    "cv": 0.0,
    "budget": 0.1,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onCLS",
    "note": null
@@ -2525,6 +2817,7 @@
   {
    "url": "http://127.0.0.1:8142/order",
    "template": "order",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -2559,6 +2852,10 @@
    "cv": 0.0164,
    "budget": 200,
    "status": "over",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onINP",
    "note": null
@@ -2566,6 +2863,7 @@
   {
    "url": "http://127.0.0.1:8142/order",
    "template": "order",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -2600,6 +2898,10 @@
    "cv": 0.0,
    "budget": 200,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "Long Tasks API after FCP",
    "note": null
@@ -2607,6 +2909,7 @@
   {
    "url": "http://127.0.0.1:8142/order",
    "template": "order",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -2641,6 +2944,10 @@
    "cv": 0.0508,
    "budget": null,
    "status": "measured",
+   "stable_by": null,
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onFCP",
    "note": null
@@ -2648,6 +2955,7 @@
   {
    "url": "http://127.0.0.1:8142/order",
    "template": "order",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -2682,6 +2990,10 @@
    "cv": 0.0074,
    "budget": null,
    "status": "measured",
+   "stable_by": null,
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onTTFB",
    "note": null
@@ -2689,6 +3001,7 @@
   {
    "url": "http://127.0.0.1:8142/order",
    "template": "order",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -2723,6 +3036,10 @@
    "cv": 0.0,
    "budget": 2500000,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "DevTools Network encodedDataLength",
    "note": null
@@ -2730,6 +3047,7 @@
   {
    "url": "http://127.0.0.1:8142/order",
    "template": "order",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -2764,6 +3082,10 @@
    "cv": 0.0,
    "budget": 600000,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "DevTools Network encodedDataLength",
    "note": null
@@ -2771,6 +3093,7 @@
   {
    "url": "http://127.0.0.1:8142/about",
    "template": "about",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -2805,6 +3128,10 @@
    "cv": 0.0211,
    "budget": 2500,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onLCP",
    "note": null
@@ -2812,6 +3139,7 @@
   {
    "url": "http://127.0.0.1:8142/about",
    "template": "about",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -2846,6 +3174,10 @@
    "cv": 0.0,
    "budget": 0.1,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onCLS",
    "note": null
@@ -2853,6 +3185,7 @@
   {
    "url": "http://127.0.0.1:8142/about",
    "template": "about",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -2887,6 +3220,10 @@
    "cv": null,
    "budget": 200,
    "status": "untested",
+   "stable_by": null,
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "untested: no interaction",
    "note": null
@@ -2894,6 +3231,7 @@
   {
    "url": "http://127.0.0.1:8142/about",
    "template": "about",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -2928,6 +3266,10 @@
    "cv": 0.0,
    "budget": 300,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "Long Tasks API after FCP",
    "note": null
@@ -2935,6 +3277,7 @@
   {
    "url": "http://127.0.0.1:8142/about",
    "template": "about",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -2969,6 +3312,10 @@
    "cv": 0.0211,
    "budget": null,
    "status": "measured",
+   "stable_by": null,
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onFCP",
    "note": null
@@ -2976,6 +3323,7 @@
   {
    "url": "http://127.0.0.1:8142/about",
    "template": "about",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -3010,6 +3358,10 @@
    "cv": 0.0025,
    "budget": null,
    "status": "measured",
+   "stable_by": null,
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onTTFB",
    "note": null
@@ -3017,6 +3369,7 @@
   {
    "url": "http://127.0.0.1:8142/about",
    "template": "about",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -3051,6 +3404,10 @@
    "cv": 0.0,
    "budget": 1600000,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "DevTools Network encodedDataLength",
    "note": null
@@ -3058,6 +3415,7 @@
   {
    "url": "http://127.0.0.1:8142/about",
    "template": "about",
+   "variant": null,
    "profile": "mobile-mid",
    "cache": "cold",
    "browser": "chromium",
@@ -3092,6 +3450,10 @@
    "cv": 0.0,
    "budget": 400000,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "DevTools Network encodedDataLength",
    "note": null
@@ -3099,6 +3461,7 @@
   {
    "url": "http://127.0.0.1:8142/about",
    "template": "about",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -3133,6 +3496,10 @@
    "cv": 0.0285,
    "budget": 2500,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onLCP",
    "note": null
@@ -3140,6 +3507,7 @@
   {
    "url": "http://127.0.0.1:8142/about",
    "template": "about",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -3174,6 +3542,10 @@
    "cv": 0.0,
    "budget": 0.1,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onCLS",
    "note": null
@@ -3181,6 +3553,7 @@
   {
    "url": "http://127.0.0.1:8142/about",
    "template": "about",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -3215,6 +3588,10 @@
    "cv": null,
    "budget": 200,
    "status": "untested",
+   "stable_by": null,
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "untested: no interaction",
    "note": null
@@ -3222,6 +3599,7 @@
   {
    "url": "http://127.0.0.1:8142/about",
    "template": "about",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -3256,6 +3634,10 @@
    "cv": 0.0,
    "budget": 200,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "Long Tasks API after FCP",
    "note": null
@@ -3263,6 +3645,7 @@
   {
    "url": "http://127.0.0.1:8142/about",
    "template": "about",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -3297,6 +3680,10 @@
    "cv": 0.0285,
    "budget": null,
    "status": "measured",
+   "stable_by": null,
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onFCP",
    "note": null
@@ -3304,6 +3691,7 @@
   {
    "url": "http://127.0.0.1:8142/about",
    "template": "about",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -3338,6 +3726,10 @@
    "cv": 0.0198,
    "budget": null,
    "status": "measured",
+   "stable_by": null,
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "web-vitals onTTFB",
    "note": null
@@ -3345,6 +3737,7 @@
   {
    "url": "http://127.0.0.1:8142/about",
    "template": "about",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -3379,6 +3772,10 @@
    "cv": 0.0,
    "budget": 2500000,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "DevTools Network encodedDataLength",
    "note": null
@@ -3386,6 +3783,7 @@
   {
    "url": "http://127.0.0.1:8142/about",
    "template": "about",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "chromium",
@@ -3420,6 +3818,10 @@
    "cv": 0.0,
    "budget": 600000,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "DevTools Network encodedDataLength",
    "note": null
@@ -3427,6 +3829,7 @@
   {
    "url": "http://127.0.0.1:8142/about",
    "template": "about",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "firefox",
@@ -3440,6 +3843,10 @@
    "cv": null,
    "budget": 2500,
    "status": "not_supported",
+   "stable_by": null,
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "not_supported",
    "note": null
@@ -3447,6 +3854,7 @@
   {
    "url": "http://127.0.0.1:8142/about",
    "template": "about",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "firefox",
@@ -3460,6 +3868,10 @@
    "cv": null,
    "budget": 0.1,
    "status": "not_supported",
+   "stable_by": null,
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "not_supported",
    "note": null
@@ -3467,6 +3879,7 @@
   {
    "url": "http://127.0.0.1:8142/about",
    "template": "about",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "firefox",
@@ -3480,6 +3893,10 @@
    "cv": null,
    "budget": 200,
    "status": "not_supported",
+   "stable_by": null,
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "not_supported",
    "note": null
@@ -3487,6 +3904,7 @@
   {
    "url": "http://127.0.0.1:8142/about",
    "template": "about",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "firefox",
@@ -3500,6 +3918,10 @@
    "cv": null,
    "budget": 200,
    "status": "not_supported",
+   "stable_by": null,
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "not_supported",
    "note": null
@@ -3507,6 +3929,7 @@
   {
    "url": "http://127.0.0.1:8142/about",
    "template": "about",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "firefox",
@@ -3541,6 +3964,10 @@
    "cv": 0.132,
    "budget": null,
    "status": "measured",
+   "stable_by": null,
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "Paint Timing",
    "note": null
@@ -3548,6 +3975,7 @@
   {
    "url": "http://127.0.0.1:8142/about",
    "template": "about",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "firefox",
@@ -3582,6 +4010,10 @@
    "cv": 0.1113,
    "budget": null,
    "status": "measured",
+   "stable_by": null,
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "Navigation Timing",
    "note": null
@@ -3589,6 +4021,7 @@
   {
    "url": "http://127.0.0.1:8142/about",
    "template": "about",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "firefox",
@@ -3623,6 +4056,10 @@
    "cv": 0.0,
    "budget": 2500000,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "Resource Timing transferSize",
    "note": null
@@ -3630,6 +4067,7 @@
   {
    "url": "http://127.0.0.1:8142/about",
    "template": "about",
+   "variant": null,
    "profile": "desktop",
    "cache": "cold",
    "browser": "firefox",
@@ -3664,6 +4102,10 @@
    "cv": 0.0,
    "budget": 600000,
    "status": "within",
+   "stable_by": "cv",
+   "outliers": [],
+   "runs_used": 5,
+   "run_cap": 10,
    "bimodal": false,
    "source": "Resource Timing transferSize",
    "note": null
@@ -3763,6 +4205,10 @@
    "title": "analytics.js blocks the main thread on /menu, /menu/breads",
    "metric": "TBT",
    "template": "menu",
+   "templates": [
+    "menu"
+   ],
+   "site_wide": false,
    "pages": [
     "http://127.0.0.1:8142/menu",
     "http://127.0.0.1:8142/menu/breads"
@@ -3909,6 +4355,10 @@
    "title": "The LCP image on / takes 10.3 s on mobile-mid",
    "metric": "LCP",
    "template": "home",
+   "templates": [
+    "home"
+   ],
+   "site_wide": false,
    "pages": [
     "http://127.0.0.1:8142/"
    ],
@@ -3999,6 +4449,10 @@
    "title": "Add to basket takes 2.8 s to respond on mobile-mid",
    "metric": "INP",
    "template": "order",
+   "templates": [
+    "order"
+   ],
+   "site_wide": false,
    "pages": [
     "http://127.0.0.1:8142/order"
    ],
@@ -4092,6 +4546,10 @@
    "title": "The menu pages wait 450.4 ms for the server",
    "metric": "TTFB",
    "template": "menu",
+   "templates": [
+    "menu"
+   ],
+   "site_wide": false,
    "pages": [
     "http://127.0.0.1:8142/menu",
     "http://127.0.0.1:8142/menu/breads"
@@ -4238,6 +4696,10 @@
    "title": "/js/analytics.js is over the JavaScript budget on /menu, /menu/breads",
    "metric": "transfer_script",
    "template": "menu",
+   "templates": [
+    "menu"
+   ],
+   "site_wide": false,
    "pages": [
     "http://127.0.0.1:8142/menu",
     "http://127.0.0.1:8142/menu/breads"
@@ -4338,6 +4800,10 @@
    "title": "/ transfers 1.87 MB on mobile-mid",
    "metric": "transfer_total",
    "template": "home",
+   "templates": [
+    "home"
+   ],
+   "site_wide": false,
    "pages": [
     "http://127.0.0.1:8142/"
    ],
@@ -4441,6 +4907,10 @@
    "title": "A late banner shifts the content of / (CLS 0.131)",
    "metric": "CLS",
    "template": "home",
+   "templates": [
+    "home"
+   ],
+   "site_wide": false,
    "pages": [
     "http://127.0.0.1:8142/"
    ],

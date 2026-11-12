@@ -24,7 +24,7 @@ FLOOR = {'ms': 10.0, 'score': 0.01, 'bytes': 1024.0}
 
 
 def compare(base: dict, cur: dict) -> list[dict]:
-    key = lambda m: (m['url'], m['profile'], m['cache'], m['browser'], m['metric'])  # noqa: E731
+    key = lambda m: (m['url'], m['profile'], m['cache'], m['browser'], m.get('variant'), m['metric'])  # noqa: E731
     b = {key(m): m for m in base['measurements']}
     out = []
     for m in cur['measurements']:
@@ -32,6 +32,7 @@ def compare(base: dict, cur: dict) -> list[dict]:
         if not o or o['median'] is None or m['median'] is None:
             continue
         entry = {'url': m['url'], 'profile': m['profile'], 'cache': m['cache'], 'browser': m['browser'], 'metric': m['metric'],
+                 **({'variant': m['variant']} if m.get('variant') else {}),
                  'unit': m['unit'], 'baseline_median': o['median'], 'current_median': m['median']}
         if 'unstable' in (o['status'], m['status']):
             entry.update(change=None, change_pct=None, threshold=None, direction='not_compared')

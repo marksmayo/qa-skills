@@ -47,6 +47,8 @@ def cell(m: dict, P) -> str:
     mark = {'over': ' OVER', 'unstable': ' ~', 'within': '', 'measured': ''}[m['status']]
     if m.get('bimodal'):
         mark += ' (2 groups)'
+    if m.get('outliers'):
+        mark += f' ({len(m["outliers"])} outlier{"s" if len(m["outliers"]) > 1 else ""})'
     return P(txt + mark, STATUS[m['status']])
 
 
@@ -60,6 +62,33 @@ def third_party_line(tp: dict | None) -> str:
     n = sum(b['requests'] for b in tp['blocked'])
     return (f'Third-party requests: {n} blocked (' + ', '.join(f'{b["host"]} x{b["requests"]}' for b in tp['blocked'][:6]) +
             (', ...' if len(tp['blocked']) > 6 else '') + '); their cost and behaviour are not measured.')
+
+
+def tpl(f: dict) -> str:
+    return f['template'] if not f.get('site_wide') else 'site-wide (' + ', '.join(t or '?' for t in f.get('templates') or []) + ')'
+
+
+def first_party_line(bfp: list[dict] | None) -> str | None:
+    if not bfp:
+        return None
+    n = sum(b['requests'] for b in bfp)
+    return (f'First-party requests blocked by the harness: {n} (' +
+            ', '.join(f'{b["method"]} {b["path"]} x{b["requests"]}' for b in bfp[:6]) + (', ...' if len(bfp) > 6 else '') +
+            "); beacons, reports and telemetry failed at once, so their upload cost and the page's handling of the failure are not "
+            'what production sees.')
+
+
+def runs_line(sc: dict, meas: list[dict]) -> str:
+    used = [m['runs_used'] for m in meas if 'runs_used' in m]
+    span = (f'{min(used)}' if min(used) == max(used) else f'{min(used)}-{max(used)}') if used else '?'
+    early = f', stopping from {sc["min_runs"]} when stable' if sc.get('min_runs', sc['runs']) < sc['runs'] else ''
+    return (f'{sc["runs"]} measured runs planned per page, profile and variant after a warm-up{early}; cap {sc.get("max_runs", 10)} '
+            f'with extra runs; {span} used')
+
+
+def short(text: str, n: int = 90) -> str:
+    first = text.split('. ')[0]
+    return first if len(first) <= n else first[:n - 3] + '...'
 
 
 def main() -> int:
@@ -76,35 +105,41 @@ def main() -> int:
     out = [P('# Performance budget (lab data)', BOLD), '', verdict, '', hl['summary'], '',
            f'Over budget: ' + (', '.join(f'{k} x{n}' for k, n in hl['over_budget_counts'].items()) or 'none') +
            f'; unstable: {hl["unstable_metrics"]}. Evidence {hl["evidence_completeness"]}, confidence {hl["overall_confidence"]}.',
-           f'{sc["runs"]} runs per page and profile after a warm-up; cache {", ".join(sc["cache"])}; browsers {", ".join(sc["browsers"])}. '
-           f'Budget: {sc["budget"]["source"]}' + (f' ({sc["budget"]["note"]})' if sc['budget'].get('note') else '') + '.',
-           third_party_line(sc.get('third_party')),
+           f'{runs_line(sc, d["measurements"])}; cache {", ".join(sc["cache"])}; browsers {", ".join(sc["browsers"])}. '
+           f'Budget: {short(sc["budget"]["source"]) if a.brief else sc["budget"]["source"]}' +
+           (f' ({sc["budget"]["note"]})' if sc['budget'].get('note') else '') + '.',
+           third_party_line(sc.get('third_party'))] + ([first_party_line(sc.get('blocked_first_party'))] if sc.get('blocked_first_party') else []) + [
            f'Machine: {md["machine"]["cpu"]}, {md["machine"]["cores"]} cores, {md["machine"]["os"]}; calibration '
            f'{md["calibration"]["median_ms"]} ms (CV {md["calibration"]["cv"]}){" BUSY" if md["calibration"]["busy"] else ""}.']
     if a.brief:
         out.append('')
         for f in d['findings']:
             out.append(f'{P(f["id"], BOLD)} {P(f["priority"] + " " + f["severity"], SEV[f["severity"]])} {f["metric"]} '
-                       f'{f["template"]}: {f["title"]}')
+                       f'{tpl(f)}: {f["title"]}')
         print('\n'.join(out))
         return 0
     rows: dict[tuple, dict] = {}
     for m in d['measurements']:
-        rows.setdefault((m['url'], m['profile'], m['cache'], m['browser']), {})[m['metric']] = m
+        rows.setdefault((m['url'], m['profile'], m['cache'], m['browser'], m.get('variant')), {})[m['metric']] = m
     out += ['', P('## Medians', BOLD), '', '| Page | Profile | ' + ' | '.join(HEAD.get(c, c) for c in COLS) + ' |',
             '|---|---|' + '---|' * len(COLS)]
-    for (url, prof, cache, browser), ms in rows.items():
-        label = f'{prof}' + (f' {cache}' if len(sc['cache']) > 1 else '') + (f' ({browser})' if browser != 'chromium' else '')
+    for (url, prof, cache, browser, variant), ms in rows.items():
+        label = (f'{variant} ' if variant else '') + f'{prof}' + (f' {cache}' if len(sc['cache']) > 1 else '') + (f' ({browser})' if browser != 'chromium' else '')
         out.append(f'| {path_of(url)} | {label} | ' + ' | '.join(cell(ms[c], P) if c in ms else '-' for c in COLS) + ' |')
     out += ['', 'OVER: median over budget. ~: unstable (CV above 0.25 with a spread that matters for the budget), can\'t pass or fail on its own. Untested: INP needs an '
-                'interaction. Not supported: a Chromium-only metric in another browser.']
+                'interaction. Not supported: a Chromium-only metric in another browser. Outliers: stable by the robust rule, the '
+                'listed runs set aside.']
+    notes = sorted({(path_of(m['url']) + (f' ({m["variant"]})' if m.get('variant') else ''), m['note']) for m in d['measurements'] if m.get('note')})
+    if notes:
+        out += ['', P('## Measurement notes', BOLD), ''] + [f'- {u}: {n}' for u, n in notes]
     if d['findings']:
         out += ['', P('## Findings', BOLD)]
     for f in d['findings']:
         w = f['worst']
         unit = next((m['unit'] for m in d['measurements'] if m['metric'] == f['metric']), 'ms')
         out += ['', P(f'### {f["id"]} {f["priority"]} {f["severity"]}: {f["title"]}', SEV[f['severity']]), '',
-                f'{f["metric"]} on {", ".join(path_of(p) for p in f["pages"])} (template {f["template"]})'
+                f'{f["metric"]} on {", ".join(path_of(p) for p in f["pages"])} ' +
+                (f'(template {f["template"]})' if not f.get('site_wide') else f'(site-wide: templates {", ".join(f["templates"])})') +
                 f'{", critical path" if f["critical_path"] else ""}: worst {fmt(w["median"], unit)} against {fmt(w["budget"], unit)} '
                 f'({w["ratio"]}x, {w["profile"]}); confidence {f["confidence"]}; reach {f["reach"]}, leverage {f["leverage"]}, score {f["score"]}.',
                 '', f'- Cause: {f["cause"]}']
@@ -128,6 +163,8 @@ def main() -> int:
             out.append('- Largest: ' + ', '.join(f'{path_of(r["url"])} {fmt(r["bytes"], "bytes")}' +
                                                   (f' ({fmt(r["unused_bytes"], "bytes")} unused)' if r.get('unused_bytes') else '')
                                                   for r in attr['largest'][:3]))
+        if attr.get('request_classes'):
+            out.append('- Request classes: ' + ', '.join(f'{k} {v["requests"]} ({fmt(v["bytes"], "bytes")})' for k, v in attr['request_classes'].items()))
         if attr.get('server_timing'):
             out.append('- Server-Timing: ' + ', '.join(f'{e["name"]} {e["dur_median"]} ms' for e in attr['server_timing']))
         out += [f'- Fix: {f["remediation"]}', f'- Verify: {f["verification_step"]}',
@@ -137,6 +174,17 @@ def main() -> int:
         out += [f'- {s["route"]}: TTFB median {s["ttfb_median"]} ms; ' + ', '.join(f'{e["name"]} {e["dur_median"]} ms' +
                                                                                 (f' ({e["desc"]})' if e['desc'] else '') for e in s['entries'])
                 for s in d['server_timing']]
+    if d.get('cdn_cache'):
+        out += ['', P('## CDN cache state of the measured documents', BOLD), '']
+        out += [f'- {path_of(c["url"])} {c["profile"]}' + (f' ({c["variant"]})' if c.get('variant') else '') + ': ' +
+                ', '.join(f'{s["value"]} x{s["runs"]}' for s in c['cache_status']) +
+                (f'; age {c["age_min"]}-{c["age_max"]} s' if c.get('age_min') is not None else '') for c in d['cdn_cache']]
+    if d.get('request_summary'):
+        out += ['', P('## Requests the resource list hides (median per load)', BOLD), '']
+        out += [f'- {path_of(r["url"])} {r["profile"]}' + (f' ({r["variant"]})' if r.get('variant') else '') + ': ' +
+                (', '.join(f'{k} {v["requests_median"]} ({fmt(v["bytes_median"], "bytes")})' for k, v in r['classes'].items()) or 'none') +
+                ('; repeated: ' + ', '.join(f'{x["path"]} in {x["runs"]} run(s)' for x in r['repeated_fetches']) if r['repeated_fetches'] else '')
+                for r in d['request_summary']]
     if d['regressions']:
         out += ['', P('## Against the baseline', BOLD), '']
         for r in d['regressions']:
