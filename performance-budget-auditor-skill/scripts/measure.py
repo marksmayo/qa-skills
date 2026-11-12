@@ -80,7 +80,7 @@ from urllib.parse import parse_qs, urlparse
 HERE = Path(__file__).resolve().parent
 SKILL = HERE.parent
 sys.path.insert(0, str(HERE))
-from browser_harness import Harness, check_authorised, NotAuthorised, now  # noqa: E402
+from browser_harness import Harness, check_authorised, NotAuthorised, now, retry_decision  # noqa: E402
 from fetch_assets import asset_path, load_lock  # noqa: E402
 
 VITALS = ('LCP', 'CLS', 'INP', 'FCP', 'TTFB')
@@ -635,7 +635,10 @@ def main() -> int:
     doc = json.loads(a.out.read_text(encoding='utf-8')) if a.append and a.out.exists() else None
     cfg = {'browser': a.browser, 'authorised_by': plan.get('authorised_by'), 'allow_form_submission': plan.get('allow_form_submission', False),
            'auth': plan.get('auth'), 'rate_limit_seconds': 0.2, 'third_party': plan.get('third_party', 'block'),
-           'allowed_hosts': plan.get('allowed_hosts') or [], 'targets': [t['url'] for t in plan['targets']]}
+           'allowed_hosts': plan.get('allowed_hosts') or [], 'targets': [t['url'] for t in plan['targets']],
+           # measure the page as its own Content-Security-Policy makes it behave (web-vitals is injected as an init
+           # script, which CSP doesn't block); "bypass_csp": true in the plan turns enforcement off
+           'bypass_csp': bool(plan.get('bypass_csp', False)), 'stop_on_429': bool(plan.get('stop_on_429', False))}
     with Harness(cfg) as h:
         if doc is None:
             cal_page = h.new_page()
@@ -665,16 +668,23 @@ def main() -> int:
         r = Runner(h, plan, all_profiles, wv, a.artifacts, a.browser)
 
         def run(t, prof, cache, rid, kind, variant, diag=False):
-            """One load; a 429 or 503 is retried twice after Retry-After (at most 60 s) and recorded as an event."""
-            for attempt in range(3):
+            """One load, with the shared harness's 429/503 policy (browser_harness.retry_decision): retried twice after
+            Retry-After (at most 60 s), else the run records why it gave up and the page is stopped."""
+            attempt = 0
+            while True:
                 rec = r.one(t, prof, cache, rid, kind, diag=diag, variant=variant)
-                if rec['status'] not in RETRY_STATUSES or attempt == 2:
-                    return rec
-                ra = str(rec.get('retry_after') or '')
-                delay = min(int(ra) if ra.isdigit() else 10 * (attempt + 1), 60)
-                h.events.append({'url': t['url'], 'event': f'{rid}: HTTP {rec["status"]}; backing off {delay} s and retrying', 'at': now()})
-                time.sleep(delay)
-            return rec
+                action, detail = retry_decision(rec['status'], rec.get('retry_after'), attempt,
+                                                stop_on_429=bool(plan.get('stop_on_429')))
+                if action == 'retry':
+                    h.events.append({'url': t['url'], 'event': f'{rid}: HTTP {rec["status"]}; backing off {detail:.0f} s and retrying',
+                                     'at': now()})
+                    time.sleep(detail)
+                    attempt += 1
+                    continue
+                if action == 'stop':
+                    rec['retry_stop'] = detail
+                    h.events.append({'url': t['url'], 'event': f'{rid}: {detail}', 'at': now()})
+                return rec
 
         for t in targets:
             for variant in variants_of(t):
@@ -705,7 +715,7 @@ def main() -> int:
                                 # an error page: the warm-up and one measured run are enough to say so; don't spend the budget
                                 stop = f'HTTP {rec["status"]} on {rec["id"].rsplit("/", 1)[-1]}' + \
                                     (f' (the warm-up returned HTTP {warm["status"]})' if warm['status'] and warm['status'] >= 400 else '') + \
-                                    '; stopped measuring this page'
+                                    (f' ({rec["retry_stop"]})' if rec.get('retry_stop') else '') + '; stopped measuring this page'
                                 rec['stop_reason'] = stop
                                 break
                         if not a.no_diagnostic and not stop:
@@ -716,6 +726,14 @@ def main() -> int:
                               file=sys.stderr)
         doc['events'] += h.events
         doc['blocked_requests'] += h.blocked
+        meta = h.metadata()
+        prev = doc.get('harness')
+        if prev:   # --append: add this pass's request counts to the earlier ones
+            for k in ('seen', 'sent'):
+                meta['requests'][k] = meta['requests'].get(k, 0) + prev['requests'].get(k, 0)
+            for k, v in prev['requests'].get('blocked', {}).items():
+                meta['requests']['blocked'][k] = meta['requests']['blocked'].get(k, 0) + v
+        doc['harness'] = meta
     doc['generated_at'] = now()
     a.out.parent.mkdir(parents=True, exist_ok=True)
     if a.artifacts:

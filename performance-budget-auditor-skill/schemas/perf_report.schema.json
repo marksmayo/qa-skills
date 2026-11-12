@@ -55,7 +55,9 @@
           "type": "object", "additionalProperties": false, "required": ["name", "version", "sha256", "status", "note"],
           "properties": {"name": {"type": "string"}, "version": {"type": ["string", "null"]}, "sha256": {"type": ["string", "null"]},
                          "status": {"enum": ["ran", "not_run", "errored"]}, "note": {"type": ["string", "null"]}}}},
-        "measurements_file": {"type": "string"}
+        "measurements_file": {"type": "string"},
+        "harness": {"type": "object", "required": ["bypass_csp", "requests"],
+                    "description": "The shared browser harness's metadata as measure.py recorded it (measurements.harness): bypass_csp, read-only mode, third-party mode, request budget and request totals (sent, blocked by reason). Required when the measurements carry it."}
       }
     },
     "headline": {

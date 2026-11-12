@@ -84,6 +84,8 @@ for targets and forms.
 | `third_party` | `block` | `block` aborts and records requests to other hosts; `allow` loads and measures them |
 | `allowed_hosts` | `[]` | Other hosts that are part of the site (its own CDN): `["cdn.example.com", "*.example-cdn.net"]` |
 | `service_workers` | `cold` | `cold` blocks them on cold runs only; `block` on every run (a site whose worker would serve warm runs from its cache); `allow` |
+| `bypass_csp` | `false` | Measure the page under its own Content-Security-Policy (web-vitals is an init script, which CSP doesn't block); `true` bypasses it, and a limitation must then say the CSP was not enforced |
+| `stop_on_429` | `false` | Stop a page at its first 429 instead of retrying after Retry-After (the shared harness's `retry_decision`) |
 | `authorised_by`, `auth`, `allow_form_submission` | as in `browser_harness.py` | |
 | `baseline` | none | A previous run's `candidates.json`, for regression comparison |
 | `field_data` | none | CrUX or RUM figures to show alongside, labelled field |

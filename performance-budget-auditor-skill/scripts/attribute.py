@@ -277,9 +277,13 @@ def third_party(doc: dict) -> dict | None:
 
 
 def blocked_first_party(doc: dict) -> list[dict]:
-    """Requests the harness blocked that were not third-party (non-GET writes to the site: beacons, CSP reports, telemetry)."""
+    """Requests to the site itself that the harness blocked (non-GET writes: beacons, CSP reports, telemetry; or a spent
+    request budget). The harness marks each blocked entry same_site or third_party (`site`); older runs, without it,
+    count every block whose reason isn't third_party."""
+    def first_party(b: dict) -> bool:
+        return b['site'] == 'same_site' if b.get('site') else b.get('reason') != 'third_party'
     by = Counter((b.get('method') or '?', b.get('reason') or '?', urlparse(b['url']).hostname or '', urlparse(b['url']).path or '/')
-                 for b in doc.get('blocked_requests') or [] if b.get('reason') != 'third_party')
+                 for b in doc.get('blocked_requests') or [] if first_party(b))
     return [{'method': m, 'reason': reason, 'host': h, 'path': p, 'requests': n}
             for (m, reason, h, p), n in sorted(by.items(), key=lambda x: (-x[1], x[0]))]
 

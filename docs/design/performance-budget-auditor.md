@@ -287,3 +287,9 @@ a loopback-tuned design breaks:
   config without `min_runs`); `attribute.py` reads them with the defaults, and the regenerated
   candidates and report carry the new fields. The new paths were checked against a loopback
   fixture with a delayed consent banner, a 500 page, RSC prefetches, polling and a beacon.
+- *Shared harness (merged later).* `measure.py` uses the harness's `retry_decision` for 429/503
+  (and `stop_on_429` from the plan), measures with the site's CSP enforced unless the plan sets
+  `bypass_csp`, and records `h.metadata()` with the request totals as `measurements.harness`,
+  which the report copies to `metadata.harness`. Blocked first-party requests use each blocked
+  entry's `site` (same_site) when present. The validator requires a limitation when the CSP was
+  bypassed or the request budget ran out, and a spent budget makes the evidence partial.

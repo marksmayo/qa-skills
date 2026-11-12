@@ -78,6 +78,14 @@ def first_party_line(bfp: list[dict] | None) -> str | None:
             'what production sees.')
 
 
+def harness_line(hm: dict) -> str:
+    r = hm.get('requests') or {}
+    blocked = {k: v for k, v in (r.get('blocked') or {}).items() if v}
+    return (f'Requests: {r.get("sent", 0)} sent, ' + (', '.join(f'{v} blocked ({k})' for k, v in blocked.items()) or 'none blocked') +
+            ('; request budget spent, run incomplete' if r.get('budget_exhausted') else '') +
+            f'. Page CSP {"bypassed (not enforced)" if hm.get("bypass_csp") else "enforced"}.')
+
+
 def runs_line(sc: dict, meas: list[dict]) -> str:
     used = [m['runs_used'] for m in meas if 'runs_used' in m]
     span = (f'{min(used)}' if min(used) == max(used) else f'{min(used)}-{max(used)}') if used else '?'
@@ -109,6 +117,7 @@ def main() -> int:
            f'Budget: {short(sc["budget"]["source"]) if a.brief else sc["budget"]["source"]}' +
            (f' ({sc["budget"]["note"]})' if sc['budget'].get('note') else '') + '.',
            third_party_line(sc.get('third_party'))] + ([first_party_line(sc.get('blocked_first_party'))] if sc.get('blocked_first_party') else []) + [
+           *([harness_line(md['harness'])] if md.get('harness') else []),
            f'Machine: {md["machine"]["cpu"]}, {md["machine"]["cores"]} cores, {md["machine"]["os"]}; calibration '
            f'{md["calibration"]["median_ms"]} ms (CV {md["calibration"]["cv"]}){" BUSY" if md["calibration"]["busy"] else ""}.']
     if a.brief:

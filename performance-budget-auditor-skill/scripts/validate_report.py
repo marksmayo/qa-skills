@@ -49,6 +49,8 @@ THIRD_PARTY = re.compile(r'third[- ]part', re.I)
 NOT_MEASURED = re.compile(r'\bnot (been )?measured\b|\bunmeasured\b', re.I)
 WITHIN_PHRASE = 'field performance not established'
 CDN = re.compile(r'\bCDN\b|edge cache', re.I)
+CSP = re.compile(r'\bCSP\b|Content-Security-Policy', re.I)
+BUDGET_SPENT = re.compile(r'request budget', re.I)
 FIRST_PARTY = re.compile(r'first[- ]party', re.I)
 BLOCKED = re.compile(r'\bblock', re.I)
 FINDING_FIELDS = ('metric', 'template', 'templates', 'site_wide', 'pages', 'cause', 'severity', 'confidence', 'reach', 'leverage', 'score', 'priority',
@@ -71,6 +73,7 @@ def expected_headline(rep: dict, meas: list[dict], doc: dict) -> dict:
             over[m['metric']] = over.get(m['metric'], 0) + 1
     unstable = sum(m['status'] == 'unstable' for m in meas)
     partial = (unstable or any(m['note'] for m in meas) or doc['calibration']['busy'] or
+               bool((doc.get('harness') or {}).get('requests', {}).get('budget_exhausted')) or
                any(t['status'] == 'errored' for t in rep['metadata']['tools']) or bool(rep['needs_review']))
     completeness = 'partial' if partial else 'complete'
     if completeness == 'partial' or any(f['confidence'] != 'high' for f in rep['findings']):
@@ -127,6 +130,13 @@ def main() -> int:
     if remote and not any(CDN.search(x) for x in rep['limitations']):
         errs.append('limitations: a remote target is measured; say that "cold" is a cold browser cache, not a cold CDN '
                     '(the warm-up warms any CDN or edge cache), and point to cdn_cache')
+    harness = doc.get('harness')
+    if rep['metadata'].get('harness') != harness:
+        errs.append('metadata.harness should be the measurements\' harness record (browser_harness metadata and request totals)')
+    if harness and harness.get('bypass_csp') and not any(CSP.search(x) for x in rep['limitations']):
+        errs.append('limitations: the run bypassed the page\'s Content-Security-Policy; say the CSP was not enforced')
+    if harness and harness.get('requests', {}).get('budget_exhausted') and not any(BUDGET_SPENT.search(x) for x in rep['limitations']):
+        errs.append('limitations: the request budget ran out; say requests were cut off and the run is incomplete')
     if rep['metadata']['machine'] != doc['machine'] or rep['metadata']['calibration'] != doc['calibration']:
         errs.append('metadata.machine / calibration do not match the measurements')
     browsers = sorted({r['browser'] for r in doc['runs']})
