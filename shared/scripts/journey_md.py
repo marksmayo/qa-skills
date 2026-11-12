@@ -5,7 +5,7 @@ The canonical copy lives in shared/scripts/journey_md.py. Skills ship identical 
 sync by tools/check_shared.py: edit the canonical copy, then run `python tools/check_shared.py --fix`.
 """
 from __future__ import annotations
-import argparse, json, re, sys
+import argparse, json, os, re, sys
 from pathlib import Path
 
 REQUIRED = ('id', 'title', 'persona', 'priority', 'status', 'entry_point', 'goal')
@@ -296,12 +296,23 @@ def is_journey_file(path: Path) -> bool:
     except (OSError, UnicodeDecodeError):
         return False
 
+PRUNE_DIRS = {'node_modules', '.git', '.hg', '.svn', '.next', '.nuxt', 'dist', 'build', 'out', 'coverage', '.venv',
+              'venv', '__pycache__', '.turbo', '.cache', '.tox', '.pytest_cache'}
+
+def walk_md(root: Path):
+    """Markdown files under root; dependency, VCS, build and cache directories are pruned before descending."""
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in PRUNE_DIRS]
+        for fn in filenames:
+            if fn.endswith('.md'):
+                yield Path(dirpath) / fn
+
 def iter_journey_files(paths) -> tuple[list[Path], list[Path]]:
     """Return (journey files, skipped files). Explicitly named files are never skipped."""
     found, skipped = [], []
     for p in map(Path, paths):
         if p.is_dir():
-            for f in sorted(p.rglob('*.md')):
+            for f in sorted(walk_md(p)):
                 (found if is_journey_file(f) else skipped).append(f)
         else:
             found.append(p)

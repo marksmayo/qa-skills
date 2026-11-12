@@ -18,7 +18,8 @@ from pathlib import Path, PurePosixPath
 SKIP_DIRS = {'.git', 'node_modules', 'vendor', 'dist', 'build', 'out', 'target', '.next', '.nuxt',
              '.svelte-kit', '.venv', 'venv', 'env', '__pycache__', '.tox', '.nox', '.gradle', '.idea',
              'Pods', 'DerivedData', 'coverage', '.dart_tool', 'bin', 'obj', '.terraform', '.cache',
-             'playwright-report', 'test-results', 'site-packages', '.mypy_cache', '.pytest_cache'}
+             'playwright-report', 'test-results', 'site-packages', '.mypy_cache', '.pytest_cache', '.turbo',
+             '.ruff_cache', '.hg', '.svn'}
 MANIFESTS = {'package.json', 'pyproject.toml', 'setup.py', 'setup.cfg', 'requirements.txt',
              'requirements-dev.txt', 'pom.xml', 'build.gradle', 'build.gradle.kts', 'go.mod',
              'Gemfile', 'composer.json', 'Cargo.toml', 'pubspec.yaml', 'Package.swift'}
