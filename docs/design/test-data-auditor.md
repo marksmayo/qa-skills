@@ -382,8 +382,9 @@ cards and phones, and those false positives then made every path in the report "
     the same package root (and only if unique there, unless the directory is named too); data in
     an enclosing root needs the directory named; a path tail always counts. Globs over a named
     directory, code that names a directory and none of its files, and helper functions used by
-    `parametrize` count as loading. Unused files on the repository went from 69 to 46, and every
-    remaining one was checked by hand to be unread.
+    `parametrize` count as loading. Unused files on the repository went from 69 to 46. Those 46
+    were not all checked by hand; each stays a candidate for the agent to confirm unread before
+    it is reported.
 - **New rules.**
   - `customer_extract`: a table of 20 or more rows whose column is named for a person or customer
     and holds mostly names. It is judged by the header and the row count and reports file, header
