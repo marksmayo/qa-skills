@@ -217,6 +217,45 @@ The design docs add these needs:
 - **`jsonschema_lite.py`**, a cut-down JSON Schema checker, starts in the API contract tester.
   It becomes shared when a second skill needs one.
 
+### Monorepo and signed-in app fixes (2026-11-13)
+
+Found by running the skills on a Python monorepo (one virtual environment per package, pytest
+ini files at different levels, a pandas dependency, Azure DevOps pipelines) and on a single-page
+app behind an OIDC sign-in.
+
+- **`clock_shift.py`** no longer crashes the interpreter when a compiled module that binds the
+  datetime C types (pandas, numpy, any Cython module) is imported after it. A meta path finder
+  puts the real `date` and `datetime` classes back while each extension module initialises; the
+  fake classes keep the real instance layout (`__slots__ = ()`) and accept real instances in
+  `isinstance`. Those modules' own clocks (`pandas.Timestamp.now()`) are not moved.
+  `python clock_shift.py --self-test` checks it in the current interpreter, with pandas and
+  numpy when they are installed.
+- **`run_tests.py`**:
+  - marks a run `errored` with an `error` reason when the process crashed (negative or NTSTATUS
+    exit, "Fatal Python error" in the output), timed out, pytest exited 2, 3, 4 or 5, or no JUnit
+    cases were parsed. Such a run is never a clean empty run.
+  - maps pytest node ids from pytest's rootdir to --cwd. The rootdir may be an ancestor (a
+    pytest.ini higher up) or a package below --cwd that the given paths lead to.
+  - passes long id lists through a file read by a generated `-p qa_skills_test_ids` plugin. It
+    names only the files on the command line, so the rootdir and configuration are unchanged.
+  - takes `--hash-path` to widen `code_hash` to sibling packages.
+  - records only the names of environment variables, except its own control variables (clock,
+    time zone, locale, PYTHONPATH, PYTEST_ADDOPTS, NODE_OPTIONS, seeds). Credentials inside those
+    values are redacted. `--record-env NAME` keeps a further value.
+- **`diff_scope.py`** works when `--repo` is a subdirectory of the git repository (`git diff
+  --relative`, and top-level paths in a `--diff` are re-rooted). A changed file it can't find
+  under `--repo` is listed in `warnings`. `--last-merges N` scopes the last N merges on the
+  first-parent history. In a squash-merge history, which has no merge commits, it uses the
+  last N commits instead and says so.
+- **`detect_conventions.py`** finds Azure DevOps pipelines and templates that aren't named
+  `azure-pipelines.yml`. It reads YAML at the top level or under pipeline directories and keeps
+  files shaped like a pipeline. It also reads `workingDirectory`.
+- **`browser_harness.py`** can run read-only probes inside a session that a person captured by
+  signing in by hand. `capture-session` saves cookies, localStorage, IndexedDB and sessionStorage
+  (where OIDC libraries such as MSAL keep tokens), and the harness puts the sessionStorage back on
+  its origin. Metadata records counts only. Pages in a signed-in session aren't
+  Playwright-traced unless `trace_with_auth` is set, because traces hold cookies and tokens.
+
 ---
 
 # Journey Markdown format (`JOURNEY_FORMAT.md`)
