@@ -16,6 +16,7 @@ Dismissed automatically, with the reason recorded:
 | Font metrics | Moved under 16 px, and width and height within 4 px or 5% |
 | Native control rendering | An input, button, select or textarea drawn at another size (not moved over 16 px) |
 | Consequence | A box that changed size because a difference inside it did; a box resized with its container (same width change); an element moved because a box above it grew; an input's box when its type fell back; an element inside another missing element |
+| Cumulative drift | An element that only moved (no size change) when the nearest element above it, overlapping it horizontally, moved by nearly the same amount (within 16 px both ways): small text-metric differences add up down a long page. A step of more than 16 px between neighbours stays a difference, and what's below it moves with it |
 
 Content not rendered: the element's ink (pixels more than 60 levels from its most common colour,
 ignoring a 2 px border) is under 40% of the reference's in every run, and the reference shows at least 2%.
@@ -35,7 +36,7 @@ ignoring a 2 px border) is under 40% of the reference's in every run, and the re
 |---|---|
 | high | Repeated in every run and explained by an engine's error message or a linked feature-support gap |
 | medium | Repeated in every run, not explained |
-| low | Static-only (feature findings that no engine has shown) |
+| low | Static-only (feature findings that no engine has shown), or the candidate matches a known Playwright engine-build limitation (`data/engine-limitations.json`: engine, platform, subkind and a pattern over the image source, element, detail and messages; a capture without a recorded platform matches every platform). These go to `needs_review`, never straight to a difference |
 
 ## Priority
 
@@ -59,6 +60,9 @@ engine family that lacks it), or `not_assessed` (no data).
 
 - **Verdict:** `differences_found` with at least one promoted difference; otherwise
   `no_differences_detected`, never with an engine `not_run`.
+- **Checks planned:** the (page or state, viewport) pairs in `runs.json`'s `planned` (per-page and
+  per-state `viewports` honoured), or from `--targets`, or the pairs that ran for an older capture;
+  times engines and reruns.
 - **Evidence completeness:** `partial` when an engine didn't run, a check didn't run, anything is flaky
   or needs review, or a feature is not assessed.
 - **Overall confidence:** medium when partial or any difference isn't high; otherwise high.

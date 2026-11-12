@@ -204,3 +204,36 @@ Where the build differs from the design above, and what the example showed.
   on the home page (two Critical, from one client-hints call), the deals banner flaky, 42 automatic
   dismissals, 4 feature findings (2 confirmed at runtime, 2 possible).
 - **Testing:** 17 of 17 seeded report violations are caught.
+- **Found on a real static site, fixed:**
+  - *States couldn't be limited to some viewports*, so a mobile-menu state ran (and was counted as
+    planned) at desktop width. Pages and states take `viewports`; `compare_engines.planned_checks`
+    expands targets for capture, and `runs.json` records the plan.
+  - *The planned count ignored viewports without `--targets`.* The validator now counts from the
+    recorded plan, from `--targets` (which must agree), or from the page and viewport pairs that ran.
+  - *`compare_engines.py` took 13.5 minutes* (811 s) on 108 tall screenshots (up to 390x26,579),
+    and the validator reruns it. Profiling showed PNG decoding in `png_io.py` at about three quarters
+    of the time and the per-pixel ink count at the rest. Ink now counts colours a row at a time in C
+    (identical results, ties included), each screenshot is decoded once in a worker process
+    (`--jobs`, default 4), and screenshots of pages the reference didn't capture are skipped. The
+    example's candidates are unchanged. A faster shared decoder (big-integer Up filter, slice-based
+    alpha stripping) would roughly halve the rest; it belongs in `shared/scripts/png_io.py`.
+  - *Full-page capture didn't scroll*, so Firefox and WebKit drew `content-visibility: auto`
+    sections and `loading=lazy` images below the fold blank: hundreds of false "content not
+    rendered" candidates. Capture now scrolls through the page, waits for lazy images, and sets
+    `content-visibility: visible` for the screenshot. On a synthetic 12,000 px page Firefox went from
+    10 false candidates to none.
+  - *Cumulative drift* (elements 17-22 px lower after many small text-metric differences) made
+    separate box candidates. An element that moved with its nearest neighbour above, within 16 px,
+    is now dismissed as cumulative drift; a larger step stays a difference.
+  - *The Safari check split sentences at the "." in "16.4"* and flagged an honest sentence; it now
+    splits at a full stop followed by a space.
+  - *Feature patterns* gained `content-visibility`, `contain-intrinsic-size` and
+    `requestIdleCallback` (none in WebKit), all keyed to web-features ids already in the pinned data.
+  - *AVIF in WebKit on Windows*: 27 differences came from a Playwright build that decodes no AVIF,
+    which says nothing about Safari 16.4 and later. `data/engine-limitations.json` lists known build
+    gaps; matching candidates carry `build_limitations`, get low confidence and go to review.
+    `runs.json` now records the platform.
+  - *Third parties.* The shared harness blocks third-party requests by default; capture takes
+    `third_party`, `allowed_hosts` and `service_workers`, keeps the console errors and failed
+    requests the blocking causes out of the runs, and the report carries the blocked hosts as
+    `scope.third_party` with a limitation. The example's capture predates this and records none.

@@ -20,6 +20,18 @@ def supports_color(mode: str) -> bool:
     return sys.stdout.isatty() and os.environ.get('TERM', '') != 'dumb' and 'NO_COLOR' not in os.environ
 
 
+def third_party_line(tp: dict | None) -> str:
+    if tp is None:
+        return 'Third-party requests: not recorded by this capture.'
+    if tp['mode'] == 'allow':
+        return 'Third-party requests: allowed and compared.'
+    if not tp['blocked']:
+        return 'Third-party requests: blocked by the harness; none were attempted.'
+    n = sum(b['requests'] for b in tp['blocked'])
+    return (f'Third-party requests: {n} blocked (' + ', '.join(f'{b["host"]} x{b["requests"]}' for b in tp['blocked'][:6]) +
+            (', ...' if len(tp['blocked']) > 6 else '') + '); their behaviour was not compared.')
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('report', type=Path)
@@ -36,7 +48,7 @@ def main() -> int:
            f'Engines: {engines}; reference {sc["reference_engine"]}; {sc["reruns"]} runs each. Checks: {hl["checks"]["ran"]} of '
            f'{hl["checks"]["planned"]} ran. Flaky: {hl["flaky_count"]}. Evidence {hl["evidence_completeness"]}, confidence {hl["overall_confidence"]}.',
            f'Targets: {sc["browserslist"]["query"]} ({sc["browserslist"]["resolved_count"]} versions, {sc["browserslist"]["coverage"]}% '
-           f'of global usage).', P('Out of scope: ' + '; '.join(sc['out_of_scope']), DIM)]
+           f'of global usage).', third_party_line(sc.get('third_party')), P('Out of scope: ' + '; '.join(sc['out_of_scope']), DIM)]
     if a.brief:
         out.append('')
         out += [f'{P(x["id"], BOLD)} {P(x["priority"] + " " + x["severity"], SEV[x["severity"]])} {", ".join(x["engines_affected"])}: '
@@ -67,7 +79,10 @@ def main() -> int:
     if d['flaky']:
         out += ['', P('## Flaky (not reported as differences)', BOLD), '']
         out += [f'- {f["page"]} {f["subkind"]} {f["key"]}: ' + '; '.join(f'{k} {sum(v)}/{len(v)}' for k, v in f['runs'].items()) for f in d['flaky']]
-    out += ['', f'{d["dismissed_automatically"]} box differences dismissed automatically (font metrics, native controls, consequences).']
+    if d['needs_review']:
+        out += ['', P('## Needs review', BOLD), ''] + [f'- {n["candidate_id"]}: {n["reason"]}' for n in d['needs_review']]
+    out += ['', f'{d["dismissed_automatically"]} differences dismissed automatically (font metrics, native controls, consequences, '
+                f'cumulative drift).']
     if d['limitations']:
         out += ['', P('## Limitations', BOLD), ''] + [f'- {x}' for x in d['limitations']]
     print('\n'.join(out))

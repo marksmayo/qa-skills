@@ -16,7 +16,16 @@ Also fails when:
   * the verdict is no_differences_detected while a planned engine didn't run, or any text says
     "compatible", "works in all browsers" or similar;
   * a feature finding is confirmed_at_runtime with no linked difference, or possible with one;
-  * a candidate is missing from triage or triaged twice.
+  * a candidate is missing from triage or triaged twice;
+  * a candidate that matches a known Playwright engine-build limitation (data/engine-limitations.json) is promoted:
+    it goes to needs_review until a real browser confirms it;
+  * the capture recorded its third-party mode and scope.third_party doesn't match it, or third-party requests were
+    blocked and no limitation says their behaviour wasn't compared.
+
+Checks planned are the (page or state, viewport) pairs runs.json records as "planned" (capture.py writes them,
+honouring per-page and per-state viewports), or the same pairs from --targets (which must then agree), or, for an
+older capture with neither, the pairs that ran; times engines and reruns. Sentences are split at a full stop followed
+by a space, so "Safari 16.4" stays one sentence.
 """
 from __future__ import annotations
 import argparse, hashlib, json, re, sys
@@ -36,6 +45,12 @@ def load(p: Path):
     return json.loads(p.read_text(encoding='utf-8'))
 
 
+def sentences(text: str) -> list[str]:
+    """Split at ., ! or ? followed by whitespace (and at line breaks), so decimals and versions ("Safari 16.4", "1.5x") stay
+    inside their sentence."""
+    return [x for x in re.split(r'(?<=[.!?])\s+|\n+', text) if x.strip()]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('report', type=Path)
@@ -44,6 +59,7 @@ def main() -> int:
     ap.add_argument('--features', type=Path)
     ap.add_argument('--targets', type=Path)
     ap.add_argument('--write-summary', action='store_true')
+    ap.add_argument('--jobs', type=int, default=ce.default_jobs(), help='screenshots decoded in parallel when recomputing')
     a = ap.parse_args()
     rep, runs, cands_doc = load(a.report), load(a.runs), load(a.candidates)
     errs: list[str] = []
@@ -64,7 +80,7 @@ def main() -> int:
         caniuse = None
         print('warning: caniuse data not in the cache; usage shares are not rechecked')
     critical = {r['page'] for r in runs['runs'] if r.get('critical_path')}
-    diffs, flaky, dismissed = ce.compare(runs, run_dir, cands_doc['reference'])
+    diffs, flaky, dismissed = ce.compare(runs, run_dir, cands_doc['reference'], a.jobs)
     fresh = ce.candidates(diffs, dismissed, runs, caniuse, features, critical)
     if caniuse is not None and json.dumps(fresh, sort_keys=True) != json.dumps(cands_doc['candidates'], sort_keys=True):
         errs.append('candidates.json does not follow from runs.json (and the feature scan); rerun compare_engines.py')
@@ -99,6 +115,10 @@ def main() -> int:
             errs.append(f'triage: candidate {cid} is missing')
     diffs_by_id = {d['id']: d for d in rep['differences']}
     for t in rep['triage']:
+        lim = (cands.get(t['candidate_id']) or {}).get('build_limitations')
+        if t['decision'] == 'promoted' and lim:
+            errs.append(f'triage: {t["candidate_id"]} matches a known Playwright build limitation ({", ".join(lim)}): '
+                        'put it in needs_review and confirm it in the real browser')
         if t['decision'] == 'promoted':
             d = diffs_by_id.get(t['difference_id'] or '')
             if not d or d['candidate_id'] != t['candidate_id']:
@@ -158,12 +178,26 @@ def main() -> int:
             if f['status'] == 'possible' and f['linked_differences']:
                 errs.append(f'feature {f["feature"]}: possible but linked to a difference')
 
+    # third parties
+    tp = ce.third_party(runs)
+    if tp is not None or sc.get('third_party') is not None:
+        if sc.get('third_party') != tp:
+            errs.append(f'scope.third_party should be {json.dumps(tp)[:200]} (from runs.json capture settings and blocked requests)')
+    if tp and tp['blocked'] and not any(re.search(r'third[- ]part', x, re.I) and re.search(r'\bnot\b', x, re.I) for x in rep['limitations']):
+        errs.append(f'limitations: {sum(b["requests"] for b in tp["blocked"])} third-party request(s) were blocked; say that '
+                    'third-party behaviour was not compared')
+
     # headline
     planned_engines = [e for e in sc['engines']]
-    n_states = len({r['page'] for r in runs['runs']}) if runs['runs'] else 0
+    plan = runs.get('planned')
     if a.targets:
-        t = load(a.targets)
-        n_states = sum(1 + len(p.get('states') or []) for p in t['pages']) * len(t['viewports'])
+        t_plan = ce.planned_checks(load(a.targets))
+        if plan is not None and t_plan != plan:
+            errs.append('targets.json plans other checks than runs.json records as planned')
+        plan = t_plan
+    if plan is None:   # a capture that didn't record its plan: count what ran
+        plan = [{'page': p, 'viewport': v} for p, v in sorted({(r['page'], r['viewport']) for r in runs['runs']})]
+    n_states = len(plan)
     exp = {'verdict': 'differences_found' if rep['differences'] else 'no_differences_detected',
            'severity_counts': dict(Counter(d['severity'] for d in rep['differences'])), 'flaky_count': len(rep['flaky']),
            'checks': {'planned': n_states * len(planned_engines) * sc['reruns'], 'ran': sum(1 for r in runs['runs'] if r['ok'])}}
@@ -182,9 +216,9 @@ def main() -> int:
         errs.append(f'no_differences_detected while {", ".join(not_run)} did not run')
     if COMPAT.search(hl['summary']):
         errs.append('headline.summary claims compatibility; the best verdict is "no differences detected" for these pages and engines')
-    for m in re.finditer(r'[^.]*\bsafari\b[^.]*', hl['summary'], re.I):
-        if not re.search(r'\bnot\b|\bisn.t\b|untested', m.group(0), re.I):
-            errs.append('headline.summary mentions Safari as if it was tested')
+    for sentence in sentences(hl['summary']):
+        if re.search(r'\bsafari\b', sentence, re.I) and not re.search(r'\bnot\b|\bisn.t\b|\bwasn.t\b|untested', sentence, re.I):
+            errs.append(f'headline.summary mentions Safari as if it was tested: "{sentence[:120]}"')
 
     if a.write_summary and not errs:
         a.report.write_text(json.dumps(rep, indent=1, ensure_ascii=False) + '\n', encoding='utf-8')

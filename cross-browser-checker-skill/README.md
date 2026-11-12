@@ -10,8 +10,14 @@ where they behave differently:
   undecoded images, each with screenshots and messages from both sides.
 - **Repetition**: every check runs three times per engine; only differences that hold in every run of
   one engine and none of the reference's count. The rest are listed as flaky.
-- **Noise handled**: font metrics, native controls and knock-on box changes are dismissed
-  automatically, with reasons.
+- **Noise handled**: font metrics, native controls, knock-on box changes and cumulative drift down
+  a long page are dismissed automatically, with reasons; pages are scrolled before the full-page
+  screenshot so lazy images and `content-visibility` sections aren't mistaken for missing content.
+- **Build limitations**: differences that match a known gap in Playwright's engine builds (no AVIF
+  in WebKit on Windows, no H.264 in Playwright's Chromium) are marked and sent for review in the
+  real browser.
+- **Third parties blocked by default**, and recorded; the report says their behaviour wasn't
+  compared.
 - **Static feature scan**: CSS, JavaScript and HTML checked against the project's browserslist targets
   with web-features and caniuse data, and linked to the runtime differences they explain.
 
@@ -71,6 +77,7 @@ python scripts/render_report.py examples/report.example.json
 - `schemas/cross_browser_report.schema.json`: output contract
 - `data/data.lock.json`: caniuse-db and web-features versions, integrity and SHA-256
 - `data/feature-patterns.json`: CSS, JS and HTML patterns mapped to web-features ids
+- `data/engine-limitations.json`: known gaps in Playwright's engine builds (AVIF in WebKit on Windows, codecs in Chromium) that mark a candidate for review in the real browser
 - `scripts/fetch_data.py`: download and verify the data
 - `scripts/capture.py`: per-engine reruns with screenshots, messages, DOM boxes and steps
 - `scripts/browserslist_lite.py`: resolve browserslist queries with caniuse data

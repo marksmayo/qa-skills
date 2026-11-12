@@ -22,6 +22,7 @@
   }
  ],
  "reruns": 3,
+ "third_party": null,
  "candidates": [
   {
    "id": "K1",
@@ -29,6 +30,7 @@
    "subkind": "step_failed",
    "key": "1",
    "element": null,
+   "src": null,
    "step": {
     "wait_for": "#recs-list"
    },
@@ -73,6 +75,7 @@
    },
    "ink": {},
    "features": [],
+   "build_limitations": [],
    "severity": "Critical",
    "confidence": "high",
    "usage_share": 20.62,
@@ -88,6 +91,7 @@
    "subkind": "page_error",
    "key": "",
    "element": null,
+   "src": null,
    "step": null,
    "detail": null,
    "element_tag": null,
@@ -148,6 +152,7 @@
    "features": [
     "ua-client-hints"
    ],
+   "build_limitations": [],
    "severity": "Critical",
    "confidence": "high",
    "usage_share": 20.62,
@@ -163,6 +168,7 @@
    "subkind": "content_not_rendered",
    "key": "#depart",
    "element": "#depart",
+   "src": null,
    "step": null,
    "detail": "#depart shows 0.0% ink in firefox against 10.8% in chromium",
    "element_tag": "input",
@@ -232,6 +238,7 @@
    "features": [
     "webkit-pseudo-elements"
    ],
+   "build_limitations": [],
    "severity": "High",
    "confidence": "high",
    "usage_share": 20.62,
@@ -247,6 +254,7 @@
    "subkind": "element_missing",
    "key": "#recs-list",
    "element": "#recs-list",
+   "src": null,
    "step": null,
    "detail": "#recs-list is missing in firefox",
    "element_tag": null,
@@ -282,6 +290,7 @@
    "messages": {},
    "ink": {},
    "features": [],
+   "build_limitations": [],
    "severity": "High",
    "confidence": "medium",
    "usage_share": 20.62,
@@ -297,6 +306,7 @@
    "subkind": "input_type_fallback",
    "key": "#depart",
    "element": "#depart",
+   "src": null,
    "step": null,
    "detail": "#depart is an input of type text in webkit but date in chromium: webkit has no date control",
    "element_tag": "input",
@@ -337,6 +347,7 @@
    "messages": {},
    "ink": {},
    "features": [],
+   "build_limitations": [],
    "severity": "Medium",
    "confidence": "medium",
    "usage_share": 17.9,

@@ -29,9 +29,10 @@ finding whose pattern appears in an error message, or whose CSS selector matches
 is linked and becomes confirmed_at_runtime.
 """
 from __future__ import annotations
-import argparse, json, re, sys
+import argparse, json, os, re, sys
 from collections import Counter
 from pathlib import Path
+from urllib.parse import urlparse
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -45,17 +46,59 @@ INK_TAGS = {'input', 'img', 'button', 'select', 'textarea', 'h1', 'h2', 'h3', 'p
 
 
 def ink(img: png_io.Image, box: list[int]) -> float | None:
+    """Share of the box's pixels (inside a 2 px border) more than 60 levels from its most common colour.
+
+    Colours are counted a row at a time in C (Counter over zip of the row's R, G and B bytes), then the
+    distance test runs once per distinct colour, weighted by its count: the same result as testing every
+    pixel, including which colour wins a tie (the first seen, top to bottom and left to right)."""
     x, y, w, h = box
     x, y, w, h = x + 2, y + 2, w - 4, h - 4
     if w < 6 or h < 6 or x < 0 or y < 0 or x + w > img.width or y + h > img.height:
-        return None
-    px = [img.rows[yy][3 * xx:3 * xx + 3] for yy in range(y, y + h) for xx in range(x, x + w)]
-    bg = Counter(px).most_common(1)[0][0]
-    far = sum(1 for p in px if abs(p[0] - bg[0]) + abs(p[1] - bg[1]) + abs(p[2] - bg[2]) > 60)
-    return far / len(px)
+        return None   # outside the captured area (or too small): no ink
+    counts: Counter = Counter()
+    a, b = 3 * x, 3 * (x + w)
+    for row in img.rows[y:y + h]:
+        s = row[a:b]
+        counts.update(zip(s[0::3], s[1::3], s[2::3]))
+    bg = counts.most_common(1)[0][0]
+    far = sum(n for p, n in counts.items() if abs(p[0] - bg[0]) + abs(p[1] - bg[1]) + abs(p[2] - bg[2]) > 60)
+    return far / (w * h)
 
 
-def observations(run: dict, img: png_io.Image | None) -> dict[tuple, dict]:
+def screenshot_inks(task: tuple) -> list[float | None]:
+    """Decode one screenshot once and measure the ink of every box in it (run in a worker process)."""
+    path, boxes = task
+    img = png_io.read(path)
+    return [ink(img, b) for b in boxes]
+
+
+def ink_boxes(run: dict) -> list[list[int]]:
+    return [e['box'] for e in run.get('elements') or [] if e['tag'] in INK_TAGS]
+
+
+def all_inks(doc: dict, base: Path, ref: str, jobs: int) -> dict[int, list | None]:
+    """Ink per run (aligned with ink_boxes), decoding each screenshot once, in parallel when jobs > 1.
+    Runs on a page and viewport the reference engine didn't capture are never compared, so not decoded."""
+    with_ref = {(r['page'], r['viewport']) for r in doc['runs'] if r['engine'] == ref}
+    tasks = {i: (base / r['screenshot'], ink_boxes(r)) for i, r in enumerate(doc['runs'])
+             if r.get('screenshot') and (r['page'], r['viewport']) in with_ref}
+    out: dict[int, list | None] = {i: None for i in range(len(doc['runs']))}
+    if jobs > 1 and len(tasks) > 1:
+        from concurrent.futures import ProcessPoolExecutor
+        with ProcessPoolExecutor(max_workers=min(jobs, len(tasks))) as ex:
+            for i, v in zip(tasks, ex.map(screenshot_inks, tasks.values())):
+                out[i] = v
+    else:
+        for i, t in tasks.items():
+            out[i] = screenshot_inks(t)
+    return out
+
+
+def default_jobs() -> int:
+    return max(1, min(4, os.cpu_count() or 1))
+
+
+def observations(run: dict, inks: list | None) -> dict[tuple, dict]:
     """Every observation a run makes, keyed so the same thing in another engine has the same key."""
     obs: dict[tuple, dict] = {}
     for e in run.get('page_errors') or []:
@@ -72,26 +115,59 @@ def observations(run: dict, img: png_io.Image | None) -> dict[tuple, dict]:
             obs[('network', 'image_not_decoded', i['sig'])] = {'element': i['sig'], 'src': i['src']}
     if run.get('overflow_x'):
         obs[('layout', 'overflow')] = {'size': run.get('size')}
+    n = 0
     for e in run.get('elements') or []:
         obs[('present', e['sig'])] = e
         if e['tag'] == 'input':
             obs[('type', e['sig'])] = {'type': e.get('type'), 'box': e['box']}
-        if img is not None and e['tag'] in INK_TAGS:
-            v = ink(img, e['box'])
+        if e['tag'] in INK_TAGS:
+            v = inks[n] if inks is not None else None
+            n += 1
             if v is not None:
                 obs[('ink', e['sig'])] = {'ink': round(v, 4), 'box': e['box'], 'tag': e['tag'], 'type': e.get('type')}
     return obs
+
+
+def img_src(runs: list[dict], sig: str) -> str | None:
+    """The image an element shows, when it is an <img>: for matching known engine-build limitations (AVIF in WebKit)."""
+    return next((i['src'] for i in runs[0].get('images') or [] if i['sig'] == sig), None)
+
+
+def planned_checks(targets: dict) -> list[dict]:
+    """Every (page or state, viewport) a targets file asks for, in capture order. A page or state may list "viewports", a
+    subset of the top-level list; a state inherits its page's. The planned run count is len() x engines x reruns."""
+    out = []
+    for p in targets['pages']:
+        page_vps = p.get('viewports') or targets['viewports']
+        for st in [None] + (p.get('states') or []):
+            vps = (st or {}).get('viewports') or page_vps
+            name = p['name'] + (f'~{st["name"]}' if st else '')
+            unknown = [v for v in vps if v not in targets['viewports']]
+            if unknown:
+                raise ValueError(f'{name}: viewports {unknown} are not in the top-level viewports')
+            out += [{'page': name, 'viewport': v} for v in targets['viewports'] if v in vps]
+    return out
+
+
+def third_party(doc: dict) -> dict | None:
+    """What the harness did with third-party requests, when the capture recorded it: mode, allowed hosts, blocked hosts."""
+    cap = doc.get('capture')
+    if not cap or 'third_party' not in cap:
+        return None
+    hosts = Counter(urlparse(b['url']).hostname or b['url'] for b in doc.get('blocked_requests') or [] if b.get('reason') == 'third_party')
+    return {'mode': cap['third_party'], 'allowed_hosts': cap.get('allowed_hosts') or [],
+            'blocked': [{'host': h, 'requests': n} for h, n in sorted(hosts.items(), key=lambda x: (-x[1], x[0]))]}
 
 
 def all_runs(runs: list[dict], key, cond=lambda v: True) -> list[bool]:
     return [key in r['obs'] and cond(r['obs'][key]) for r in runs]
 
 
-def compare(doc: dict, base: Path, ref: str) -> tuple[list[dict], list[dict], list[dict]]:
+def compare(doc: dict, base: Path, ref: str, jobs: int | None = None) -> tuple[list[dict], list[dict], list[dict]]:
+    inks = all_inks(doc, base, ref, default_jobs() if jobs is None else jobs)
     groups: dict[tuple, dict[str, list]] = {}
-    for r in doc['runs']:
-        img = png_io.read(base / r['screenshot']) if r.get('screenshot') else None
-        r = dict(r, obs=observations(r, img))
+    for i, r in enumerate(doc['runs']):
+        r = dict(r, obs=observations(r, inks[i]))
         groups.setdefault((r['page'], r['viewport']), {}).setdefault(r['engine'], []).append(r)
     diffs, flaky, dismissed = [], [], []
     for (page, vp), by in groups.items():
@@ -101,8 +177,14 @@ def compare(doc: dict, base: Path, ref: str) -> tuple[list[dict], list[dict], li
         for eng, E in by.items():
             if eng == ref:
                 continue
+            first = len(diffs)
+            moves: list[tuple[str, list, list]] = []   # (sig, ref box, delta) of every element with a stable box in both
             keys = set().union(*(r['obs'].keys() for r in R + E))
             for k in sorted(keys, key=str):
+                if k[0] == 'present' and all(k in r['obs'] for r in R + E):
+                    rb, eb = R[0]['obs'][k]['box'], E[0]['obs'][k]['box']
+                    if all(r['obs'][k]['box'] == rb for r in R) and all(e['obs'][k]['box'] == eb for e in E):
+                        moves.append((k[1], rb, [eb[i] - rb[i] for i in range(4)]))
                 kind = k[0]
                 if kind == 'ink':
                     continue
@@ -129,8 +211,10 @@ def compare(doc: dict, base: Path, ref: str) -> tuple[list[dict], list[dict], li
                         if all(rin) and all(ein):
                             d = box_diff(R, E, k)
                             if d:
+                                src = img_src(E, k[1])
                                 (diffs if d['report'] else dismissed).append(dict(d['entry'], page=page, viewport=vp, engine=eng, ref=ref,
-                                                                                   runs={ref: [True] * len(R), eng: [True] * len(E)}))
+                                                                                   runs={ref: [True] * len(R), eng: [True] * len(E)},
+                                                                                   **({'src': src} if src else {})))
                         continue
                     else:
                         continue
@@ -155,6 +239,7 @@ def compare(doc: dict, base: Path, ref: str) -> tuple[list[dict], list[dict], li
                 o = src[0]['obs'][k]
                 diffs.append({'page': page, 'viewport': vp, 'engine': who, 'ref': ref if who == eng else eng, 'kind': kind, 'subkind': k[1],
                               'key': '/'.join(map(str, k[2:])), 'element': o.get('element'),
+                              **({'src': o['src']} if o.get('src') else {}),
                               'messages': sorted({m for r in src for m in r['obs'][k].get('messages', [])}),
                               'step': o.get('step'), 'runs': {ref: rin, eng: ein}})
             # content not rendered: ink well below the reference's in every run
@@ -168,13 +253,42 @@ def compare(doc: dict, base: Path, ref: str) -> tuple[list[dict], list[dict], li
                     o = E[0]['obs'][k]
                     diffs.append({'page': page, 'viewport': vp, 'engine': eng, 'ref': ref, 'kind': 'layout', 'subkind': 'content_not_rendered',
                                   'key': k[1], 'element': k[1], 'element_tag': o['tag'], 'element_type': o.get('type'),
-                                  'ref_box': R[0]['obs'][k]['box'],
+                                  'ref_box': R[0]['obs'][k]['box'], **({'src': img_src(E, k[1])} if img_src(E, k[1]) else {}),
                                   'ink': {ref: rv, eng: ev}, 'runs': {ref: [False] * len(R), eng: low},
                                   'detail': f'{k[1]} shows {round(100 * max(ev), 1)}% ink in {eng} against {round(100 * min(rv), 1)}% in {ref}'})
                 elif any(low):
                     flaky.append({'page': page, 'viewport': vp, 'kind': 'layout', 'subkind': 'content_not_rendered', 'key': k[1],
                                   'runs': {ref: [False] * len(R), eng: low}})
+            drift(diffs, first, dismissed, moves)
     return diffs, flaky, dismissed
+
+
+def drift(diffs: list[dict], first: int, dismissed: list[dict], moves: list[tuple[str, list, list]]) -> None:
+    """Cumulative vertical drift: small text-metric differences add up down a page, so an element far down can sit 17-22 px
+    lower in one engine although nothing near it differs. An element that only moved (no size change) is a consequence of
+    the content above it when the nearest element above it (overlapping it horizontally) moved by nearly the same amount:
+    within 16 px, the threshold for a move. A real jump (a step of more than 16 px between neighbours) stays a difference,
+    and the elements below it are dismissed as moving with it."""
+    keep = diffs[:first]
+    for d in diffs[first:]:
+        if d['subkind'] != 'box_differs' or d.get('size') or not d.get('delta'):
+            keep.append(d)
+            continue
+        top, left, right = d['ref_box'][1], d['ref_box'][0], d['ref_box'][0] + d['ref_box'][2]
+        above = [m for m in moves if m[1][1] + m[1][3] <= top and m[1][0] < right and m[1][0] + m[1][2] > left]
+        if not above:
+            keep.append(d)
+            continue
+        bottom = max(m[1][1] + m[1][3] for m in above)
+        near = min((m for m in above if m[1][1] + m[1][3] == bottom),
+                   key=lambda m: (abs(m[2][1] - d['delta'][1]) + abs(m[2][0] - d['delta'][0]), m[0]))
+        ddx, ddy = d['delta'][0] - near[2][0], d['delta'][1] - near[2][1]
+        if max(abs(ddx), abs(ddy)) <= 16 and (near[2][0] or near[2][1]):
+            dismissed.append(dict(d, reason=f'cumulative drift: moved with {near[0]} just above it (dx {near[2][0]}, dy {near[2][1]} '
+                                            f'there; dx {d["delta"][0]}, dy {d["delta"][1]} here), a step under 16 px'))
+        else:
+            keep.append(d)
+    diffs[first:] = keep[first:]
 
 
 def box_diff(R, E, k):
@@ -275,7 +389,7 @@ def candidates(diffs: list[dict], dismissed: list[dict], doc: dict, caniuse: dic
     for d in consequences(diffs, dismissed):
         base = d['page'].split('~')[0]
         k = (base, d['viewport'], d['kind'], d['subkind'], d['key'])
-        c = merged.setdefault(k, {k2: d.get(k2) for k2 in ('kind', 'subkind', 'key', 'element', 'step', 'detail', 'element_tag',
+        c = merged.setdefault(k, {k2: d.get(k2) for k2 in ('kind', 'subkind', 'key', 'element', 'src', 'step', 'detail', 'element_tag',
                                                            'element_type', 'delta')}
                               | {'page': base, 'viewport': d['viewport'], 'states': [], 'engines': [], 'reference': d['ref'], 'runs': {},
                                  'messages': {}, 'ink': {}})
@@ -303,11 +417,13 @@ def candidates(diffs: list[dict], dismissed: list[dict], doc: dict, caniuse: dic
                     affected_families = {ENGINE_FAMILY[e] for e in c['engines']}
                     if affected_families & {u['engine'] for u in f['unsupported_in']}:
                         c['features'].append(f['feature'])
+    platform = doc.get('platform')
     for c in cands:
         c['engines'].sort()
+        c['build_limitations'] = build_limitations(c, platform)
         sev = severity_of(c, cands)
         explained = bool(c['messages']) or bool(c['features'])
-        conf = 'high' if explained else 'medium'
+        conf = 'low' if c['build_limitations'] else 'high' if explained else 'medium'
         sh = share(c['engines'], caniuse)
         band = 1 if sh is None or sh < 5 else 2 if sh <= 20 else 3
         pages = 1
@@ -323,6 +439,20 @@ def candidates(diffs: list[dict], dismissed: list[dict], doc: dict, caniuse: dic
     for i, c in enumerate(cands, 1):
         c['id'] = f'K{i}'
     return [{'id': c['id'], **{k: v for k, v in c.items() if k != 'id'}} for c in cands]
+
+
+def load_limitations() -> list[dict]:
+    return json.loads((HERE.parent / 'data' / 'engine-limitations.json').read_text(encoding='utf-8'))['limitations']
+
+
+def build_limitations(c: dict, platform: str | None) -> list[str]:
+    """Ids of known Playwright engine-build limitations (data/engine-limitations.json) this candidate matches. A capture
+    without a recorded platform matches every platform: the difference may be the build's, not the browser's."""
+    text = ' '.join([c.get('src') or '', c.get('element') or '', c.get('detail') or ''] +
+                    [m for ms in c['messages'].values() for m in ms])
+    return [L['id'] for L in load_limitations()
+            if L['engine'] in c['engines'] and c['subkind'] in L['subkinds']
+            and (platform is None or L['platforms'] is None or platform in L['platforms']) and re.search(L['match'], text)]
 
 
 def selector_matches(selector: str | None, c: dict) -> bool:
@@ -349,6 +479,8 @@ def main() -> int:
     ap.add_argument('--features', type=Path)
     ap.add_argument('--targets', type=Path, help='targets.json, for critical-path states')
     ap.add_argument('--reference', default='chromium')
+    ap.add_argument('--jobs', type=int, default=default_jobs(),
+                    help='screenshots decoded in parallel (default: up to 4); 1 decodes in this process')
     a = ap.parse_args()
     doc = json.loads(a.runs.read_text(encoding='utf-8'))
     try:
@@ -358,14 +490,14 @@ def main() -> int:
         caniuse = None
     features = json.loads(a.features.read_text(encoding='utf-8')) if a.features else None
     critical = {r['page'] for r in doc['runs'] if r.get('critical_path')}
-    diffs, flaky, dismissed = compare(doc, a.runs.parent, a.reference)
+    diffs, flaky, dismissed = compare(doc, a.runs.parent, a.reference, a.jobs)
     cands = candidates(diffs, dismissed, doc, caniuse, features, critical)
     if features:
         for f in features['features']:
             f['linked_differences'] = [c['id'] for c in cands if f['feature'] in c['features']]
             f['status'] = 'confirmed_at_runtime' if f['linked_differences'] else f['status']
     out = {'runs_file': a.runs.name, 'reference': a.reference, 'engines': doc['engines'], 'reruns': doc['reruns'],
-           'candidates': cands, 'flaky': flaky, 'dismissed_automatically': dismissed, 'features': features}
+           'third_party': third_party(doc), 'candidates': cands, 'flaky': flaky, 'dismissed_automatically': dismissed, 'features': features}
     a.out.write_text(json.dumps(out, indent=1) + '\n', encoding='utf-8')
     print(f'{len(cands)} candidate(s), {len(flaky)} flaky, {len(dismissed)} dismissed automatically -> {a.out}', file=sys.stderr)
     return 0

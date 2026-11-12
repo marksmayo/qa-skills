@@ -24,7 +24,12 @@
         "browserslist": {"type": "object", "required": ["query", "source", "resolved_count", "coverage", "unresolved"]},
         "out_of_scope": {"type": "array", "minItems": 2, "items": {"type": "string"}},
         "reruns": {"type": "integer", "minimum": 1},
-        "authorised_by": {"type": ["string", "null"]}
+        "authorised_by": {"type": ["string", "null"]},
+        "third_party": {"type": ["object", "null"], "additionalProperties": false, "required": ["mode", "allowed_hosts", "blocked"],
+                        "description": "What the harness did with requests to third-party hosts, as compare_engines.py summarises runs.json (candidates.json third_party). Required when the capture recorded it. Blocked requests' behaviour was not compared.",
+                        "properties": {"mode": {"enum": ["block", "allow"]}, "allowed_hosts": {"type": "array", "items": {"type": "string"}},
+                                       "blocked": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["host", "requests"],
+                                                                              "properties": {"host": {"type": "string"}, "requests": {"type": "integer", "minimum": 1}}}}}}
       }
     },
     "metadata": {

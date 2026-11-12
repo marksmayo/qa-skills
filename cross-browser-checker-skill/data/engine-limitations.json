@@ -1,0 +1,27 @@
+{
+  "note": "Known ways Playwright's engine builds differ from the browsers people use. compare_engines.py marks a candidate with an entry's id when one of its engines is the entry's engine, the capture platform is one of the entry's platforms (or wasn't recorded), its subkind is listed, and the regex matches its image source, element, detail or messages. A marked candidate has low confidence and goes to needs_review until a real browser confirms it. platforms are Python sys.platform values (win32, linux, darwin); null means every platform.",
+  "limitations": [
+    {
+      "id": "webkit-windows-avif",
+      "engine": "webkit",
+      "platforms": ["win32"],
+      "subkinds": ["image_not_decoded", "content_not_rendered", "box_differs"],
+      "match": "\\.avif\\b|image/avif",
+      "what": "Playwright's WebKit build for Windows decodes no AVIF images: they load but have no pixels or natural size.",
+      "real_browser": "Safari decodes AVIF from 16.4 on macOS 13 and later, and on iOS 16 and later (web-features avif: safari 16.4, safari_ios 16.1). Older Safari doesn't, so a page with AVIF and no fallback is still worth a feature finding.",
+      "source": "Observed by this skill on a real static site with Playwright WebKit on Windows 11 (2026-11): every AVIF image undecoded, WebP and JPEG fine.",
+      "confirm": "Open the page in Safari on macOS or iOS (or Playwright WebKit on macOS) and check the images render."
+    },
+    {
+      "id": "chromium-proprietary-codecs",
+      "engine": "chromium",
+      "platforms": null,
+      "subkinds": ["request_failed", "console_error", "page_error", "element_missing", "content_not_rendered", "box_differs"],
+      "match": "\\.(mp4|m4v|m4a|aac|mov)\\b|video/mp4|audio/mp4|avc1|mp4a|[Hh]\\.?264|HEVC|hvc1",
+      "what": "Playwright's Chromium is an open-source build without proprietary codecs (H.264, AAC, HEVC), so MP4 video and AAC audio may not play in it.",
+      "real_browser": "Google Chrome and Microsoft Edge include these codecs.",
+      "source": "Playwright documentation, Browsers: Google Chrome and Microsoft Edge (media codecs).",
+      "confirm": "Rerun capture with the Chrome or Edge channel, or check the page in Chrome."
+    }
+  ]
+}

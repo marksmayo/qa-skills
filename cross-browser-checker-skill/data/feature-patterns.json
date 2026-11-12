@@ -18,6 +18,9 @@
     {"feature": "dialog", "name": "<dialog>", "kind": "html", "match": "<dialog\\b", "fallback": []},
     {"feature": "popover", "name": "popover attribute", "kind": "html", "match": "\\spopover(=|\\s|>)", "fallback": []},
     {"feature": "webp", "name": "WebP images", "kind": "html", "match": "\\.webp\\b", "fallback": ["<picture"]},
-    {"feature": "avif", "name": "AVIF images", "kind": "html", "match": "\\.avif\\b", "fallback": ["<picture"]}
+    {"feature": "avif", "name": "AVIF images", "kind": "html", "match": "\\.avif\\b", "fallback": ["<picture"]},
+    {"feature": "content-visibility", "name": "content-visibility", "kind": "css-declaration", "property": "content-visibility", "fallback": ["@supports\\s*\\(\\s*content-visibility"]},
+    {"feature": "contain-intrinsic-size", "name": "contain-intrinsic-size", "kind": "css-declaration", "property": "contain-intrinsic-(size|width|height|block-size|inline-size)", "fallback": ["@supports\\s*\\(\\s*contain-intrinsic"]},
+    {"feature": "requestidlecallback", "name": "requestIdleCallback()", "kind": "js-api", "match": "\\brequestIdleCallback\\s*\\(", "fallback": ["['\"]requestIdleCallback['\"]\\s+in\\s+(window|self|globalThis)", "typeof\\s+(window\\.|self\\.|globalThis\\.)?requestIdleCallback", "requestIdleCallback\\s*\\|\\|", "if\\s*\\(\\s*!?\\s*(window\\.|self\\.|globalThis\\.)?requestIdleCallback\\s*\\)"]}
   ]
 }

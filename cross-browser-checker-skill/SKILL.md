@@ -24,7 +24,11 @@ cross-browser finding, even if it's a bug: note it for the crash hunter.
    `untested` unless the user ran them.
 2. **WebKit is not Safari.** Playwright's WebKit lacks Apple's media, font and platform layers (on
    Windows and Linux it is a different build again). Never call a WebKit result a Safari result;
-   `out_of_scope` always lists Safari and real devices.
+   `out_of_scope` always lists Safari and real devices. Some differences come from the Playwright
+   build itself: `data/engine-limitations.json` lists the known ones (WebKit on Windows decodes no
+   AVIF; Playwright's Chromium has no H.264 or AAC). A candidate that matches one is marked
+   `build_limitations`, has low confidence and goes to `needs_review`, never straight to a
+   difference: confirm it in real Safari (macOS or iOS) or the branded browser first, and say so.
 3. **A difference must repeat.** Each check runs 3 times per engine. A difference counts only when it
    holds in every run of the affected engine and in no run of the reference (Chromium). Anything in
    between is `flaky`, listed with its run counts.
@@ -34,12 +38,22 @@ cross-browser finding, even if it's a bug: note it for the crash hunter.
 6. **Safe targets.** Loopback needs nothing; other hosts need `authorised_by`. Non-GET requests are
    blocked unless `allow_form_submission`.
 7. **Record every engine and data file** as `ran`, `not_run` or `errored`, with versions and hashes.
+8. **Third parties are blocked unless the targets allow them.** By default the harness aborts every
+   request to a host that isn't the site, loopback or in `allowed_hosts` (analytics, ads, embeds,
+   fonts from another host) and records each one in `blocked_requests`; console errors and failed
+   requests caused by the blocking are left out of the runs. Their behaviour is then **not
+   compared**: the report's `scope.third_party` lists the blocked hosts and a limitation says so.
+   `"third_party": "allow"` compares them too.
 
 ## Inputs
 
 | Input | Default | Notes |
 |---|---|---|
-| `targets` | required, except static only | `targets.json`: site, pages, states (actions, `critical_path`), viewports |
+| `targets` | required, except static only | `targets.json`: site, pages, states (actions, `critical_path`), viewports. A page or state may list `viewports`, a subset of the top-level list, to run only there (a mobile menu state at the mobile width); a state inherits its page's |
+| `third_party` | `block` | `block` aborts and records requests to other hosts; `allow` lets them load |
+| `allowed_hosts` | `[]` | Other hosts that are part of the site (its own CDN) |
+| `service_workers` | `allow` | `block` blocks them in every run |
+| `scroll` | `true` | Scroll through each page before the full-page screenshot (see Capture) |
 | `engines` | all three | Missing ones are `not_run` |
 | `browserslist` | from the repo, else `defaults` | `package.json` or `.browserslistrc` |
 | `repo` | none | Turns on the static feature scan |
@@ -67,6 +81,13 @@ python scripts/capture.py targets.json --out <run>/capture
 Per page, state, viewport and engine, 3 fresh runs: a full-page screenshot, console and page errors,
 failed requests, visible elements with boxes and input types, images with their natural size,
 horizontal overflow, the scripts loaded (to spot user-agent sniffing), and each step's outcome.
+Before the screenshot it scrolls through the page a viewport at a time, waits up to 5 s for lazy
+images and returns to the top, and sets `content-visibility: visible` while the screenshot is taken:
+Firefox and WebKit draw a full-page screenshot without scrolling, so `loading=lazy` images and
+`content-visibility: auto` sections below the fold would otherwise come out blank and look like
+content that isn't rendered (`"scroll": false` turns this off). `runs.json` records the platform,
+the capture settings, the planned checks (page or state × viewport) and what each scroll did. Run one
+engine at a time (`--engines webkit`) when memory is short.
 
 ### 3. Static feature scan (with a repo)
 
@@ -81,19 +102,25 @@ assess them.
 ### 4. Compare engines
 
 ```bash
-python scripts/compare_engines.py <run>/capture/runs.json --features <run>/features.json --out <run>/candidates.json
+python scripts/compare_engines.py <run>/capture/runs.json --features <run>/features.json --out <run>/candidates.json [--jobs 4]
 ```
 
 Differences: page and console errors, failed steps, failed requests and undecoded images, missing or
 extra elements, input type fallbacks, box differences, overflow, and content not rendered (an element
-with under 40% of the reference's ink). Font metrics, native form controls and consequences of other
-differences (a box that grew because something inside it changed) are dismissed automatically and
-counted, with reasons in `candidates.json`. Ratings follow `RUBRIC.md`.
+with under 40% of the reference's ink). Font metrics, native form controls, consequences of other
+differences (a box that grew because something inside it changed) and cumulative drift (an element
+that moved with the content just above it, by text metrics adding up down a long page) are dismissed
+automatically and counted, with reasons in `candidates.json`. Each screenshot is decoded once, in
+parallel (`--jobs`, default up to 4; the validator takes the same option). Candidates matching a known
+engine-build limitation carry its id in `build_limitations`. Ratings follow `RUBRIC.md`.
 
 ### 5. Triage and write
 
 Every candidate is promoted, `needs_review` (for example media that may play in branded browsers with
-proprietary codecs), or dismissed with a checkable reason. For each difference write a title naming the
+proprietary codecs, and every candidate with `build_limitations`), or dismissed with a checkable
+reason. For a build limitation, the needs-review reason names it and what to check in the real
+browser (its `confirm` text in `data/engine-limitations.json`); in the summary, say that WebKit
+showed it and real Safari wasn't checked, never that Safari has it. For each difference write a title naming the
 engines (never "Safari"), a remediation that addresses the cause (a feature check, a fallback, an
 `@supports` block), and a verification step (rerun capture for that page and name what should pass).
 When a site serves different scripts per engine (compare `scripts` across engines), say so for every
@@ -113,7 +140,8 @@ targets there and compare by hand.
 ## Output fields
 
 - `scope`: site, pages, viewports, engines with versions, reference engine, resolved browserslist,
-  `out_of_scope`, reruns, `authorised_by`.
+  `out_of_scope`, reruns, `authorised_by`, and `third_party` (as in `candidates.json`; required when
+  the capture recorded it).
 - `metadata`: tools, data versions and hashes, runs file.
 - `headline`: verdict, summary, severity counts, flaky count, checks planned and run, evidence
   completeness, overall confidence.
@@ -126,5 +154,10 @@ targets there and compare by hand.
 
 Candidates, ratings, flaky list and feature links are recomputed from the recorded runs. Every
 difference is consistent across its reruns, differs from the reference, and has screenshots (matching
-their hashes) from both sides. Safari is never an engine or a title. No compatibility claims; no
-"no differences" while an engine didn't run. Every candidate is triaged once.
+their hashes) from both sides. Safari is never an engine or a title, and a summary sentence that
+names Safari must say it wasn't tested (sentences split at a full stop and a space, so "Safari 16.4"
+is one sentence). No compatibility claims; no "no differences" while an engine didn't run. Every
+candidate is triaged once, and none with `build_limitations` is promoted. Checks planned come from
+`runs.json`'s recorded plan, `--targets` (which must agree with it), or for an older capture the
+page and viewport pairs that ran, so the count is the same with and without `--targets`. Blocked
+third-party requests need `scope.third_party` and a limitation saying they weren't compared.
