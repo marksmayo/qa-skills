@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a test command once or many times under controlled variations (stdlib only).
+r"""Run a test command once or many times under controlled variations (stdlib only).
 
     python run_tests.py --preset pytest --cwd <repo> --out runs.json [--tests ID ...] [--repeat 20]
         [--minutes 60] [--order given|reverse|shuffle] [--seed N] [--hash-seed N] [--workers N]
@@ -15,21 +15,39 @@ on the run:
     variation {order, seed, hash_seed, workers, tz, tz_applied, locale, cpu_load, isolate, env},
     duration_s, timed_out, code_hash, label, tests_selected, preset
 
-`code_hash` fingerprints the source files under --cwd (VCS, dependency, cache and build
-directories skipped), so "same code" can be checked between runs. Presets know each runner's
-JUnit, ordering, seed and worker flags; a variation a preset can't apply is an error, never
-silently ignored. `--minutes` caps the wall time: repeats stop early and the stop is recorded.
-The user's home directory is replaced with ~ in JUnit files and output.
+`code_hash` fingerprints the source files under --cwd, so "same code" can be checked between
+runs. Inside a git work tree it hashes the files git would track (`git ls-files -co
+--exclude-standard`: tracked plus untracked-but-not-ignored), so files tests write into ignored
+directories (uploads, caches) don't change it; elsewhere it walks the tree, pruning VCS,
+dependency, cache and build directories before descending. Paths longer than Windows' 260
+characters are read through the \\?\ prefix; a file that still can't be read is hashed as
+unreadable and named in the run's warnings, never a crash. runs.json records the basis
+(`code_hash_basis`: method and file count), and a change during the runs names the files.
+
+Presets know each runner's JUnit, ordering, seed and worker flags; a variation a preset can't
+apply is an error, never silently ignored. `--minutes` caps the wall time: repeats stop early and
+the stop is recorded. The user's home directory is replaced with ~ in JUnit files and output.
 `--check-tree` hashes the working tree before and after and exits 3 if anything outside the
 JUnit directory changed. The script never edits test files.
 
-On Windows the C runtime only understands "XXX-hh:mm" TZ strings (a three-letter name, a fixed
-offset, no DST rules), so IANA zone names are translated (Pacific/Kiritimati -> LIN-14) and the
-applied value is recorded. LANG and LC_ALL are set as
-given; many runtimes on Windows ignore them, and each run says so.
+The repo's own test script: `--npm-script test` reads package.json's script and reuses its
+environment (`cross-env TZ=... ` or `TZ=... ` prefixes) and runner flags (`--configLoader
+native`) with the jest, vitest or playwright preset; `--runner-args "..."` appends flags to any
+preset. Without either, a run whose npm test script sets env or flags gets a note saying what was
+left out. Vitest ids from parse_results (`file::Describe > it`) are passed back as the file plus a
+`-t` name pattern, so failed tests can be re-run by id. Vitest shuffles (`--sequence.shuffle`,
+seeded) but cannot reverse, so `--order reverse` is refused for it.
+
+Time zones: IANA names are passed to the child unchanged (Node, Go and Python on POSIX read them).
+Only Python on Windows gets a translation, because its C runtime reads just "XXX-hh[:mm]"
+(Pacific/Kiritimati -> LIN-14, a fixed offset without DST); an unknown zone there is an error.
+Node and Python are asked which zone they actually see before the runs; a TZ the runtime
+ignored is an error, and for other runners the note says the zone was set but not checked.
+LANG and LC_ALL are set as given; many runtimes on Windows ignore them, and each run says so.
+`--env K=V` may be repeated or take several pairs, anywhere on the command line.
 """
 from __future__ import annotations
-import argparse, hashlib, json, os, random, shlex, shutil, signal, subprocess, sys, time
+import argparse, hashlib, json, os, random, re, shlex, shutil, signal, subprocess, sys, time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -38,9 +56,11 @@ sys.path.insert(0, str(HERE))
 import parse_results  # noqa: E402
 
 SKIP_DIRS = {'.git', '.hg', '.svn', 'node_modules', '__pycache__', '.pytest_cache', '.mypy_cache', '.ruff_cache',
-             '.tox', '.nox', '.venv', 'venv', 'env', 'dist', 'build', 'target', '.gradle', '.idea', '.vscode',
-             'coverage', 'htmlcov', '.next', '.nuxt', 'test-results', 'playwright-report', '.junit'}
+             '.tox', '.nox', '.venv', 'venv', 'env', 'dist', 'build', 'out', 'target', '.gradle', '.idea', '.vscode',
+             'coverage', 'htmlcov', '.next', '.nuxt', '.turbo', '.cache', 'test-results', 'playwright-report', '.junit'}
 SKIP_SUFFIXES = {'.pyc', '.pyo', '.log', '.xml'}
+ENV_PAIR = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*=')
+NODE_RUNNERS = {'jest': 'jest', 'vitest': 'vitest', 'playwright': '@playwright/test'}
 
 # IANA name -> TZ string for the Windows C runtime, which reads only "XXX[+|-]hh[:mm]" with a three-letter
 # name and no DST rules. These are fixed standard offsets; daylight saving is not modelled.
@@ -88,43 +108,270 @@ def redact_home(text: str) -> str:
     return text
 
 
-def code_hash(root: Path) -> str:
-    """SHA-256 of every file's relative path and content (line endings normalised), sorted by POSIX path string so
-    the order is the same on every platform (Path ordering is case-insensitive on Windows)."""
-    h = hashlib.sha256()
-    for rel, p in sorted((p.relative_to(root).as_posix(), p) for p in iter_files(root)):
+def long_path(p) -> str:
+    """The path as a string that also works past Windows' 260-character limit (\\\\?\\ prefix); unchanged elsewhere."""
+    s = os.path.abspath(str(p))
+    if os.name != 'nt' or s.startswith('\\\\?\\'):
+        return s
+    return '\\\\?\\UNC\\' + s[2:] if s.startswith('\\\\') else '\\\\?\\' + s
+
+
+def read_bytes(p) -> bytes:
+    with open(long_path(p), 'rb') as fh:
+        return fh.read()
+
+
+def skipped(rel_parts: list[str]) -> bool:
+    return any(d in SKIP_DIRS or d.endswith('.egg-info') for d in rel_parts)
+
+
+def git_files(root: Path) -> list[str] | None:
+    """Files git would track under root (tracked plus untracked-but-not-ignored), relative POSIX paths; None outside
+    a work tree, when git is missing, or when git lists nothing (root itself ignored)."""
+    try:
+        res = subprocess.run(['git', '-C', str(root), '-c', 'core.quotepath=off', 'ls-files', '-co', '--exclude-standard', '-z'],
+                             capture_output=True, timeout=120)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if res.returncode:
+        return None
+    rels = [r for r in res.stdout.decode('utf-8', 'replace').split('\0') if r]
+    return rels or None
+
+
+def hash_tree(root: Path, notes: list[str] | None = None, basis: dict | None = None) -> tuple[str, dict[str, str]]:
+    """(code hash, {relative POSIX path: SHA-256 of the file}) in one pass over the source files."""
+    root = Path(root)
+    rels = git_files(root)
+    method = 'git ls-files -co --exclude-standard' if rels is not None else 'walk'
+    found: dict[str, Path] = {}
+    if rels is None:
+        for p in iter_files(root, errors=notes):
+            found[p.relative_to(root).as_posix()] = p
+    else:
+        for rel in rels:
+            parts = rel.rstrip('/').split('/')
+            if skipped(parts[:-1]) or (rel.endswith('/') and skipped(parts)):
+                continue
+            p = root / rel
+            if rel.endswith('/') or os.path.isdir(long_path(p)):   # a nested repository git lists as a directory
+                for q in iter_files(p, errors=notes):
+                    found[q.relative_to(root).as_posix()] = q
+            elif Path(parts[-1]).suffix not in SKIP_SUFFIXES and os.path.isfile(long_path(p)):
+                found[rel] = p
+    h, per_file = hashlib.sha256(), {}
+    for rel in sorted(found):   # POSIX path string order: the same on every platform
+        try:
+            data = read_bytes(found[rel]).replace(b'\r\n', b'\n')
+        except OSError as e:
+            data = b'\0unreadable\0'
+            if notes is not None:
+                notes.append(f'code_hash: could not read {rel} ({type(e).__name__}); hashed as unreadable')
         h.update(rel.encode('utf-8') + b'\0')
-        h.update(p.read_bytes().replace(b'\r\n', b'\n'))
+        h.update(data)
         h.update(b'\0')
-    return h.hexdigest()
+        per_file[rel] = hashlib.sha256(data).hexdigest()
+    if basis is not None:
+        basis.update({'method': method, 'files': len(per_file)})
+    return h.hexdigest(), per_file
 
 
-def iter_files(root: Path, extra_skip: set[Path] | None = None):
-    for dirpath, dirnames, filenames in os.walk(root):
+def code_hash(root: Path, notes: list[str] | None = None, basis: dict | None = None) -> str:
+    """SHA-256 of every source file's relative path and content (line endings normalised), sorted by POSIX path
+    string so the order is the same on every platform (Path ordering is case-insensitive on Windows). Inside git,
+    only files git would track count; otherwise a pruned walk. Never raises for an unreadable file."""
+    return hash_tree(root, notes, basis)[0]
+
+
+def iter_files(root: Path, extra_skip: set[Path] | None = None, errors: list[str] | None = None):
+    """Files under root, pruning SKIP_DIRS (and extra_skip directories) before descending. Yields ordinary Paths
+    under root; the walk itself goes through the long-path prefix so deep trees are listed on Windows too."""
+    root = Path(root)
+    walk_root = long_path(root)
+    skip = {os.path.normcase(str(Path(s).resolve())) for s in (extra_skip or ())}
+    base = os.path.normcase(str(root.resolve())) if skip else ''
+
+    def onerror(e):
+        if errors is not None:
+            errors.append(f'could not list {os.path.relpath(e.filename, walk_root) if e.filename else root} ({type(e).__name__})')
+    for dirpath, dirnames, filenames in os.walk(walk_root, onerror=onerror):
+        rel_dir = os.path.relpath(dirpath, walk_root)
+        rel_dir = '' if rel_dir == '.' else rel_dir
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.endswith('.egg-info')
-                       and not (extra_skip and (Path(dirpath) / d).resolve() in extra_skip)]
+                       and not (skip and os.path.normcase(os.path.join(base, rel_dir, d)) in skip)]
+        here = root / rel_dir if rel_dir else root
         for f in filenames:
-            p = Path(dirpath) / f
-            if p.suffix not in SKIP_SUFFIXES:
-                yield p
+            if Path(f).suffix not in SKIP_SUFFIXES:
+                yield here / f
 
 
 def tree_snapshot(root: Path, skip: set[Path]) -> dict[str, str]:
     out = {}
     for p in iter_files(root, skip):
         try:
-            out[p.relative_to(root).as_posix()] = hashlib.sha256(p.read_bytes()).hexdigest()
+            out[p.relative_to(root).as_posix()] = hashlib.sha256(read_bytes(p)).hexdigest()
         except OSError:
             pass
     return out
 
 
-def tz_value(tz: str) -> tuple[str, str | None]:
-    if os.name == 'nt' and tz in POSIX_TZ:
-        return POSIX_TZ[tz], f'TZ {tz} applied as {POSIX_TZ[tz]!r}, a fixed standard offset (the Windows C runtime has no IANA zones or DST rules)'
-    if os.name == 'nt' and '/' in tz:
-        return tz, f'TZ {tz} has no POSIX translation here; the Windows C runtime may treat it as UTC'
+def runtime_of(preset_name: str, cmd: str | None) -> str:
+    """Which runtime reads TZ for this run: python, node, go or unknown."""
+    if preset_name == 'pytest':
+        return 'python'
+    if preset_name in NODE_RUNNERS:
+        return 'node'
+    if preset_name == 'gotestsum':
+        return 'go'
+    first = Path(shlex.split(cmd)[0]).name.lower() if cmd and shlex.split(cmd) else ''
+    first = re.sub(r'\.(exe|cmd|bat)$', '', first)
+    if re.match(r'(python[\d.]*|py|pytest)$', first):
+        return 'python'
+    if first in ('node', 'npx', 'npm', 'pnpm', 'yarn', 'bun', 'vitest', 'jest', 'playwright', 'mocha', 'ava'):
+        return 'node'
+    return 'unknown'
+
+
+POSIX_OFFSET = re.compile(r'^[A-Z]{3,}([+-]?)(\d{1,2})(?::(\d\d))?$')
+
+
+def tz_value(tz: str, runtime: str) -> tuple[str, str | None]:
+    """The TZ value to put in the child's environment, and a note. Only Python on Windows needs a translation."""
+    if os.name == 'nt' and runtime == 'python':
+        if tz in POSIX_TZ:
+            return POSIX_TZ[tz], (f'TZ {tz} applied to Python as {POSIX_TZ[tz]!r}, a fixed standard offset '
+                                  '(the Windows C runtime has no IANA zones or DST rules)')
+        if POSIX_OFFSET.match(tz):
+            return tz, None
+        raise ValueError(f'TZ {tz} has no translation for Python on Windows (known: {", ".join(sorted(POSIX_TZ))}); '
+                         'pass a POSIX string such as "XYZ-5:30", or record the time-zone variation as not_run')
     return tz, None
+
+
+def probe_tz(runtime: str, value: str, env: dict, cwd: Path) -> tuple[bool | None, str]:
+    """Ask the runtime which zone it sees under TZ=value: (applied?, note). None when it couldn't be checked."""
+    if runtime == 'node':
+        node = shutil.which('node', path=env.get('PATH'))
+        if not node:
+            return None, f'TZ set to {value}; node was not found, so whether the runner applies it was not checked'
+        res = subprocess.run([node, '-e', 'process.stdout.write(Intl.DateTimeFormat().resolvedOptions().timeZone + " " + '
+                              'String(-new Date(Date.UTC(2026, 0, 15)).getTimezoneOffset()))'],
+                             cwd=cwd, env=env, capture_output=True, text=True, timeout=60)
+        seen = res.stdout.strip()
+        zone = seen.split(' ')[0] if seen else ''
+        if res.returncode or not zone:
+            return None, f'TZ set to {value}; asking node which zone it sees failed, so it was not checked'
+        utcish = {'UTC', 'Etc/UTC', 'GMT', 'Etc/GMT', 'Etc/Universal', 'Universal', 'Zulu', 'Etc/Zulu'}
+        if zone == 'Etc/Unknown' or (zone in utcish and value not in utcish):
+            return False, f'node ignored TZ={value} (it reports {zone})'
+        same = zone == value
+        return True, f'TZ={value}: node reports {zone}' + ('' if same else ' (an alias or link of the requested zone)')
+    if runtime == 'python' and os.name == 'nt':
+        res = subprocess.run([sys.executable, '-c', 'import time; print(-time.timezone // 60)'], cwd=cwd, env=env,
+                             capture_output=True, text=True, timeout=60)
+        m = POSIX_OFFSET.match(value)
+        try:
+            seen = int(res.stdout.strip())
+        except ValueError:
+            return None, f'TZ set to {value}; asking Python for its offset failed, so it was not checked'
+        if m:
+            want = (int(m.group(2)) * 60 + int(m.group(3) or 0)) * (1 if m.group(1) == '-' else -1)
+            if seen != want:
+                return False, f'Python ignored TZ={value} (standard offset {seen:+d} min, expected {want:+d})'
+        return True, f'TZ={value}: Python reports a standard offset of {seen:+d} min'
+    return None, f'TZ set to {value} in the environment; whether this runner applies it was not checked'
+
+
+# ---------------------------------------------------------------- the repo's own npm script
+SCRIPT_PREFIX_OK = {'cross-env', 'cross-env-shell', 'env', 'npx', 'pnpm', 'yarn', 'exec', '--'}
+DROP_FLAGS = re.compile(r'^--(reporter|reporters|outputFile|output-file|watch|ui|coverage\.reporter)(=|$)')
+
+
+def npm_script(cwd: Path, name: str, runner: str, depth: int = 0) -> tuple[dict, list[str], str]:
+    """(env, runner args, script text) from package.json's script `name`, following `npm run x` one level at a time.
+    Raises ValueError when the script doesn't call the runner in a form this can reproduce."""
+    pkg = json.loads((cwd / 'package.json').read_text(encoding='utf-8'))
+    script = (pkg.get('scripts') or {}).get(name)
+    if not script:
+        raise ValueError(f'package.json has no "{name}" script')
+    segments = [s.strip() for s in re.split(r'&&|\|\||;', script) if s.strip()]
+    for seg in segments:
+        try:
+            toks = shlex.split(seg)
+        except ValueError:
+            continue
+        m = None
+        if len(toks) >= 3 and toks[0] in ('npm', 'pnpm', 'yarn') and toks[1] in ('run', 'run-script') and depth < 3:
+            m = toks[2]
+        elif len(toks) == 2 and toks[0] in ('pnpm', 'yarn') and toks[1] in (pkg.get('scripts') or {}) and depth < 3:
+            m = toks[1]
+        if m:
+            env, args, _ = npm_script(cwd, m, runner, depth + 1)
+            return env, args, script
+        bins = {runner, 'playwright'} if runner == 'playwright' else {runner}
+        idx = next((i for i, t in enumerate(toks) if Path(t).name in bins), None)
+        if idx is None:
+            continue
+        env = {}
+        for t in toks[:idx]:
+            if ENV_PAIR.match(t):
+                k, _, v = t.partition('=')
+                env[k] = v
+            elif t not in SCRIPT_PREFIX_OK:
+                raise ValueError(f'script "{name}" runs {runner} behind "{t}", which can\'t be reproduced here; '
+                                 'use --preset custom --cmd with the full command')
+        rest = toks[idx + 1:]
+        if rest and rest[0] in ('run', 'test') and runner in ('vitest', 'playwright'):
+            rest = rest[1:]
+        args, skip_next = [], False
+        for i, t in enumerate(rest):
+            if skip_next:
+                skip_next = False
+                continue
+            if DROP_FLAGS.match(t):
+                skip_next = '=' not in t and t in ('--reporter', '--reporters', '--outputFile', '--output-file')
+                continue
+            args.append(t)
+        return env, args, script
+    raise ValueError(f'script "{name}" ({script!r}) does not call {runner}; use --preset custom --cmd')
+
+
+def node_entry(cwd: Path, pkg: str) -> str | None:
+    """The JavaScript file behind a package's CLI, so it can be started with node instead of a .cmd shim."""
+    pj = cwd / 'node_modules' / pkg / 'package.json'
+    try:
+        meta = json.loads(pj.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    b = meta.get('bin')
+    if isinstance(b, str):
+        rel = b
+    elif isinstance(b, dict):
+        rel = b.get(pkg.split('/')[-1]) or b.get('playwright')
+    else:
+        rel = None
+    if not rel:
+        return None
+    p = (pj.parent / rel).resolve()
+    return str(p) if p.is_file() else None
+
+
+def vitest_ids(tests: list[str]) -> tuple[list[str], str | None]:
+    """parse_results ids (`file::Describe > it`) -> (file filters, a -t pattern matching exactly those names)."""
+    files, names = [], []
+    if len({'::' in t for t in tests}) > 1:
+        raise ValueError('vitest: mix of whole files and test ids in one run; -t would filter the whole files too. '
+                         'Run them separately, or use --isolate')
+    for t in tests:
+        f, sep, name = t.partition('::')
+        if f not in files:
+            files.append(f)
+        if sep and name:
+            name = re.sub(r'#\d+$', '', name)
+            names.append(re.sub(r'[.*+?^${}()|[\]\\/]', lambda m: '\\' + m.group(0), name.replace(' > ', ' ')))
+    if not names:
+        return files, None
+    return files, '^(?:' + '|'.join(dict.fromkeys(names)) + ')$'
 
 
 def collect_pytest(cwd: Path, tests: list[str], env: dict) -> list[str]:
@@ -171,13 +418,42 @@ def build(args, preset: dict, junit: Path, tests: list[str], seed: int | None) -
         cmd = [fill(x) for x in (shlex.split(args.cmd) if args.cmd else preset['cmd'])]
         if args.cmd and '{junit}' not in args.cmd and preset is PRESETS['pytest']:
             cmd += [f'--junitxml={junit}']
+        cmd += getattr(args, 'script_args', [])
+        cmd += shlex.split(args.runner_args or '')
         if args.workers:
             cmd += [fill(x) for x in preset['workers']]
         if args.order == 'shuffle' and 'shuffle' in preset:
             cmd += [fill(x) for x in preset['shuffle']]
-        cmd += tests
+        if args.preset == 'vitest' and not args.cmd:
+            files, pattern = vitest_ids(tests)
+            cmd += files + (['-t', pattern] if pattern else [])
+        else:
+            cmd += tests
     env = {k: fill(v) for k, v in preset.get('env', {}).items()}
     return cmd, env
+
+
+CMD_META = re.compile(r'[\^&|<>()%!"]')
+
+
+def resolve_exe(cmd: list[str], env: dict, cwd: Path) -> list[str]:
+    """On Windows, npx/gradlew etc. are .cmd/.bat shims that cmd.exe parses, and cmd.exe would act on ^ & | < > in
+    arguments (a -t pattern, a test name). Such a command starts the package's own JS entry with node instead."""
+    if os.name != 'nt' or os.path.isabs(cmd[0]):
+        return cmd
+    found = shutil.which(cmd[0], path=env.get('PATH'))
+    if not found:
+        return cmd
+    if found.lower().endswith(('.cmd', '.bat')) and any(CMD_META.search(a) for a in cmd[1:]):
+        if Path(cmd[0]).name.lower() == 'npx' and len(cmd) > 1:
+            pkg = NODE_RUNNERS.get(cmd[1], cmd[1])
+            entry = node_entry(cwd, pkg)
+            node = shutil.which('node', path=env.get('PATH'))
+            if entry and node:
+                return [node, entry, *cmd[2:]]
+        raise SystemExit(f'{cmd[0]} is a batch shim on Windows and an argument holds characters cmd.exe would '
+                         'interpret (^ & | < > ( ) % ! "); run by file instead, or use --preset custom with node')
+    return [found, *cmd[1:]]
 
 
 def run_one(args, preset, run_id: str, tests: list[str], base_env: dict, junit_dir: Path, cwd: Path,
@@ -188,14 +464,11 @@ def run_one(args, preset, run_id: str, tests: list[str], base_env: dict, junit_d
     cmd, extra_env = build(args, preset, junit, tests, seed)
     env = {**base_env, **extra_env}
     kw = {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == 'nt' else {'start_new_session': True}
+    exe = resolve_exe(cmd, env, cwd)
     hogs = start_hogs(args.cpu_load) if args.cpu_load else []
     t0 = time.monotonic()
     timed_out = False
     try:
-        exe = cmd
-        if os.name == 'nt' and not os.path.isabs(cmd[0]):
-            found = shutil.which(cmd[0], path=env.get('PATH'))  # npx, gradlew etc. are .cmd/.bat shims on Windows
-            exe = [found, *cmd[1:]] if found else cmd
         proc = subprocess.Popen(exe, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **kw)
         try:
             out, _ = proc.communicate(timeout=args.timeout)
@@ -217,7 +490,10 @@ def run_one(args, preset, run_id: str, tests: list[str], base_env: dict, junit_d
     if not cases:
         tail = redact_home((out or b'').decode('utf-8', 'replace')[-600:])
         run_notes.append('No test cases parsed. Treat this run as not having run the tests. Output tail: ' + tail)
-    shown = ' '.join('python' if c == sys.executable else c for c in cmd)
+    if Path(cmd[0]).name.lower() == 'npx' and Path(exe[0]).name.lower().startswith('node'):   # see resolve_exe
+        run_notes.append(f'Started as node {Path(exe[1]).name} (the package CLI) instead of the {cmd[0]} batch shim, '
+                         'so cmd.exe could not reinterpret the arguments.')
+    shown = ' '.join('python' if c == sys.executable else (shlex.quote(c) if re.search(r'\s', c) else c) for c in cmd)
     rel = os.path.relpath(junit, args.out.resolve().parent).replace(os.sep, '/')
     shown = shown.replace(str(junit), rel)
     return {'id': run_id, 'command': shown, 'exit_code': code, 'junit_paths': [rel],
@@ -247,11 +523,22 @@ def main(argv=None) -> int:
     ap.add_argument('--locale')
     ap.add_argument('--cpu-load', type=int, default=0, help='number of busy sibling processes during each run')
     ap.add_argument('--isolate', action='store_true', help='each test in its own process')
-    ap.add_argument('--env', nargs='*', default=[], metavar='K=V')
+    ap.add_argument('--env', nargs='+', action='append', default=[], metavar='K=V',
+                    help='environment for the runs; repeat it or give several pairs, anywhere on the command line')
+    ap.add_argument('--npm-script', metavar='NAME', help="reuse package.json's script NAME (its env prefix and runner "
+                                                           'flags) with the jest, vitest or playwright preset')
+    ap.add_argument('--runner-args', help='extra flags appended to the preset command, e.g. "--configLoader native"')
     ap.add_argument('--label', default='run')
     ap.add_argument('--run-prefix', default='R')
     ap.add_argument('--check-tree', action='store_true')
-    args = ap.parse_args(argv)
+    args, extra = ap.parse_known_args(argv)
+    stray = [x for x in extra if ENV_PAIR.match(x)]
+    if [x for x in extra if not ENV_PAIR.match(x)] or (stray and not args.env):
+        ap.error('unrecognized arguments: ' + ' '.join(extra))
+    args.env = [kv for group in args.env for kv in group] + stray   # K=V pairs separated from --env by other flags
+    bad = [kv for kv in args.env if not ENV_PAIR.match(kv)]
+    if bad:
+        ap.error(f'--env takes K=V pairs, not {bad[0]!r}')
     preset = PRESETS[args.preset]
     if preset['cmd'] is None and not args.cmd:
         ap.error('--preset custom needs --cmd')
@@ -265,15 +552,53 @@ def main(argv=None) -> int:
     notes, variation = [], {'order': args.order, 'seed': None, 'hash_seed': args.hash_seed, 'workers': args.workers,
                             'tz': args.tz, 'tz_applied': None, 'locale': args.locale, 'cpu_load': args.cpu_load,
                             'isolate': args.isolate, 'env': {}}
+    args.script_args = []
+    runner = Path(NODE_RUNNERS.get(args.preset, '')).name
+    if args.npm_script:
+        if args.preset not in NODE_RUNNERS or args.cmd:
+            ap.error('--npm-script works with the jest, vitest and playwright presets (without --cmd)')
+        try:
+            s_env, args.script_args, script = npm_script(cwd, args.npm_script, runner)
+        except (OSError, ValueError) as e:
+            ap.error(str(e))
+        for k, v in s_env.items():
+            env[k] = v
+            variation['env'][k] = v
+        notes.append(f'From npm script "{args.npm_script}" ({script}): env '
+                     + (', '.join(f'{k}={v}' for k, v in s_env.items()) or 'none') + '; runner flags '
+                     + (' '.join(args.script_args) or 'none') + '.')
+    elif args.preset in NODE_RUNNERS and not args.cmd and (cwd / 'package.json').is_file():
+        try:
+            s_env, s_args, script = npm_script(cwd, 'test', runner)
+            given = {kv.partition('=')[0] for kv in args.env} | ({'TZ'} if args.tz else set())
+            left_env = [f'{k}={v}' for k, v in s_env.items() if k not in given]
+            left_args = [a for a in s_args if a not in shlex.split(args.runner_args or '')]
+            if left_env or left_args:
+                parts = ([f'env {", ".join(left_env)}'] if left_env else []) + \
+                        ([f'runner flags {" ".join(left_args)}'] if left_args else [])
+                msg = (f'npm test ({script}) also sets {" and ".join(parts)}; this run did not use them '
+                       '(--npm-script test would).')
+                notes.append(msg)
+                print('NOTE: ' + msg)
+        except (OSError, ValueError):
+            pass
     for kv in args.env:
         k, _, v = kv.partition('=')
         env[k] = v
         variation['env'][k] = v
     if args.tz:
-        env['TZ'], note = tz_value(args.tz)
-        variation['tz_applied'] = env['TZ']
+        rt = runtime_of(args.preset, args.cmd)
+        try:
+            env['TZ'], note = tz_value(args.tz, rt)
+        except ValueError as e:
+            ap.error(str(e))
         if note:
             notes.append(note)
+        applied, pnote = probe_tz(rt, env['TZ'], env, cwd)
+        if applied is False:
+            ap.error(pnote + '; record the time-zone variation as not_run')
+        notes.append(pnote)
+        variation['tz_applied'] = env['TZ']
     if args.locale:
         env['LANG'] = env['LC_ALL'] = args.locale
         if os.name == 'nt':
@@ -290,7 +615,8 @@ def main(argv=None) -> int:
     if args.order != 'given' and preset.get('order') != 'explicit_ids' and 'shuffle' not in preset:
         ap.error(f'{args.preset} cannot reorder tests; record the order variation as not_run')
     if args.order == 'reverse' and preset.get('order') != 'explicit_ids':
-        ap.error(f'{args.preset} supports shuffle, not reverse')
+        ap.error(f'{args.preset} supports shuffle, not reverse (the runner orders files itself); use --order shuffle '
+                 'with several seeds, or record the reverse-order variation as not_run')
     if preset.get('order') == 'explicit_ids' and (args.order != 'given' or args.isolate):
         if args.preset == 'pytest' and has_module('pytest_randomly', cwd, env):
             preset = {**preset, 'cmd': preset['cmd'] + ['-p', 'no:randomly']}
@@ -301,7 +627,13 @@ def main(argv=None) -> int:
         data = json.loads(args.out.read_text(encoding='utf-8'))
     existing = {r['id'] for r in data['runs']}
     n0 = sum(1 for r in data['runs'] if r['id'].startswith(args.run_prefix + '-'))
-    chash = code_hash(cwd)
+    hash_notes, basis = [], {}
+    chash, digests = hash_tree(cwd, hash_notes, basis)
+    data['code_hash_basis'] = basis
+    for n in hash_notes:
+        print('WARN: ' + n)
+    if hash_notes:
+        data.setdefault('warnings', []).extend(f'{args.label}: {n}' for n in hash_notes)
     before = tree_snapshot(cwd, {junit_dir, args.out.resolve().parent}) if args.check_tree else None
     deadline = time.monotonic() + args.minutes * 60
     batches = [[t] for t in tests] if args.isolate else [tests]
@@ -339,9 +671,12 @@ def main(argv=None) -> int:
         print(f'Stopped at the {args.minutes}-minute cap after {done} of {planned} planned run(s).')
         data.setdefault('stops', []).append({'label': args.label, 'completed': done, 'planned': planned,
                                              'minutes': args.minutes})
-    if code_hash(cwd) != chash:
-        data.setdefault('warnings', []).append(f'{args.label}: source files changed during the runs')
-        print('WARN: source files changed during the runs; these runs do not share one code version.')
+    after_hash, after_digests = hash_tree(cwd)
+    if after_hash != chash:
+        moved = sorted(k for k in set(digests) | set(after_digests) if digests.get(k) != after_digests.get(k))
+        shown = ', '.join(moved[:10]) + (f' and {len(moved) - 10} more' if len(moved) > 10 else '')
+        data.setdefault('warnings', []).append(f'{args.label}: source files changed during the runs: {shown}')
+        print(f'WARN: source files changed during the runs ({shown}); these runs do not share one code version.')
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(data, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
     if before is not None:
