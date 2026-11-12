@@ -80,7 +80,12 @@ GENERIC = re.compile(
 DOTENV = re.compile(r'^\s*(?:export\s+)?(' + SECRET_NAME + r')\s*=\s*["\']?([^"\'\s#]{8,})', re.I)
 PLACEHOLDER = re.compile(r'(?i)^(changeme|change_me|change-me|password|secret|example|placeholder|dummy|sample|redacted|none|null|'
                          r'undefined|todo|xxx+|\*+|\.+|<.*>|\$\{.*\}|\{\{.*\}\}|%\(.*\)s|your[-_].*|.*[-_]here|test|testing)$|'
-                         r'example\.(com|org)|\$\{|\{\{|^process\.env|^os\.environ')
+                         r'example\.(com|org)|\$\{|\{\{|^process\.env|^os\.environ|'
+                         # a reference to another variable, not a value: $NAME, $(NAME) (also an Azure DevOps macro),
+                         # $env:NAME (PowerShell), %NAME% (cmd), $[variables.NAME]
+                         r'^\$[A-Za-z_]\w*$|^\$\([A-Za-z_][\w.]*\)$|^\$env:\w+$|^%[A-Za-z_]\w*%$|^\$\[[\w.\[\]\'"]+\]$|'
+                         # an ARM template expression ([parameters('x')]) or a setting's state (passwordAuth: 'Disabled')
+                         r'^\[(parameters|variables|reference|listKeys|listSecrets|concat|format|resourceId)\(|^(enabled|disabled)$')
 
 # Fields of service-account and OAuth/OIDC configuration that are public by design.
 PUBLIC_KEYS = {'token_uri', 'auth_uri', 'auth_provider_x509_cert_url', 'client_x509_cert_url', 'universe_domain',
