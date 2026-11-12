@@ -360,6 +360,11 @@
             {
               "file": "mobile/app/product/[id].tsx",
               "line": 1
+            },
+            {
+              "file": "web/src/app/products/[slug]/page.tsx",
+              "line": 1,
+              "note": "product page the home page links to"
             }
           ]
         },
@@ -371,6 +376,11 @@
               "file": "web/src/features/cart/useAddToCart.ts",
               "line": 30,
               "note": "POST /api/cart then updates badge count"
+            },
+            {
+              "file": "web/src/app/api/cart/route.ts",
+              "line": 12,
+              "note": "POST /api/cart adds the item to the cart"
             }
           ]
         },
@@ -412,6 +422,11 @@
               "file": "web/src/app/(shop)/checkout/confirmation/page.tsx",
               "line": 21,
               "note": "track('order_completed')"
+            },
+            {
+              "file": "web/src/app/api/orders/route.ts",
+              "line": 9,
+              "note": "POST /api/orders creates the order"
             }
           ]
         }
@@ -682,7 +697,7 @@
     {
       "path": "journey-mapper-skill/examples/journeys/checkout/JRN-CHK-001-guest-completes-checkout-with-card.md",
       "journey": "JRN-CHK-001",
-      "action": "unchanged"
+      "action": "updated"
     },
     {
       "path": "journey-mapper-skill/examples/journeys/account/JRN-ACC-001-member-signs-in-and-views-their-account.md",

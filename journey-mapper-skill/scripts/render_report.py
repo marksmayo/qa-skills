@@ -31,6 +31,19 @@ def scoped_counts(data):
     out={o['item'] for o in cov['orphans'] if o['reason']=='out_of_scope'}
     return cov['surface_items_total']-len(out), cov['in_journey'], len(out)
 
+def open_questions(data):
+    """(id, question) for every distinct question: journey questions first, then map-level ones whose text
+    no journey already asks (a map that mirrors journey questions must not count them twice)."""
+    out,seen=[],set()
+    for j in data['journeys']:
+        for q in j.get('open_questions',[]):
+            key=' '.join(q.lower().split())
+            if key not in seen: seen.add(key); out.append((j['id'],q))
+    for q in data.get('open_questions',[]):
+        key=' '.join(q['question'].lower().split())
+        if key not in seen: seen.add(key); out.append((q['id'],q['question']))
+    return out
+
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument('json_file', type=Path)
@@ -80,8 +93,7 @@ def main():
             for j in untested: print(paint(f"- {j['id']} {j['title']}",RED,color))
         else:
             print('Untested P1 journeys: none')
-        nq=len(data.get('open_questions',[]))+sum(len(j.get('open_questions',[])) for j in journeys)
-        print(f"Open questions: {nq}")
+        print(f"Open questions: {len(open_questions(data))}")
         print(paint('All journeys are status "inferred": they describe current behaviour and need human review.',DIM,color))
         return 0
     if untested:
@@ -108,8 +120,7 @@ def main():
             code=MAGENTA if reason in ('no_user_path_found','needs_review','not_mapped_this_run') else DIM
             print(paint(f"- {reason}: {len(items)}",code,color)+f"  {', '.join(items[:8])}{' …' if len(items)>8 else ''}")
 
-    questions=[(q['id'],q['question']) for q in data.get('open_questions',[])]
-    questions+=[(j['id'],q) for j in journeys for q in j.get('open_questions',[])]
+    questions=open_questions(data)
     if questions:
         print('\n'+paint('OPEN QUESTIONS',BOLD,color))
         for qid,q in questions: print(f"- {qid}: {q}")

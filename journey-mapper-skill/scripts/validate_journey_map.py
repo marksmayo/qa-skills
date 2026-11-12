@@ -6,7 +6,10 @@ run scope, and the graph is recorded or explicitly declined). With --repo it als
 file and line (missing files, lines past the end, blank lines, excerpts that don't match) and checks
 that each journey's tests exist. Prints every problem, not just the first.
 
-    python validate_journey_map.py journeys/journey_map.json [--repo <repository root>]"""
+Warnings (errors with --strict): a journey covers a surface item whose file none of the journey's
+evidence cites (padded coverage), or a map-level open question repeats a journey's question.
+
+    python validate_journey_map.py journeys/journey_map.json [--repo <repository root>] [--strict]"""
 from __future__ import annotations
 import argparse, json, re, sys
 from pathlib import Path
@@ -63,6 +66,39 @@ class Repo:
 
 def item_domain(o: dict, items: dict) -> str | None:
     return o.get('domain') or (items.get(o.get('item')) or {}).get('domain')
+
+
+def norm_q(text) -> str:
+    return ' '.join(str(text).lower().split())
+
+
+def cited_files(j: dict) -> set[str]:
+    files = set()
+    for s in j.get('steps') or []:
+        files |= {ev.get('file') for ev in s.get('evidence') or [] if isinstance(ev, dict)}
+    for v in j.get('variants') or []:
+        files |= {ev.get('file') for ev in v.get('evidence') or [] if isinstance(ev, dict)}
+    files |= {ev.get('file') for ev in j.get('evidence') or [] if isinstance(ev, dict)}
+    return {f for f in files if f}
+
+
+def warnings_for(d: dict) -> list[str]:
+    """Problems worth a person's look that don't make the map invalid (errors with --strict)."""
+    warns: list[str] = []
+    items = {it.get('id'): it for bucket in BUCKETS for it in (d.get('surface') or {}).get(bucket) or []}
+    for j in d.get('journeys') or []:
+        files = cited_files(j)
+        for c in j.get('covers') or []:
+            it = items.get(c)
+            if it and it.get('file') and it['file'] not in files:
+                warns.append(f'journey {j.get("id")} covers {c} ({it.get("name")}), but no evidence in the journey cites '
+                             f'{it["file"]}; cite the line where the journey reaches it, or drop it from covers')
+    journey_qs = {norm_q(q) for j in d.get('journeys') or [] for q in j.get('open_questions') or []}
+    for q in d.get('open_questions') or []:
+        if norm_q(q.get('question', '')) in journey_qs:
+            warns.append(f'open question {q.get("id")} repeats an open question of a journey; map-level open_questions are '
+                         f'for questions that span journeys (reports count each text once)')
+    return warns
 
 
 def check(d: dict, repo: Repo | None = None) -> list[str]:
@@ -227,6 +263,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description='Validate a journey_map.json.')
     ap.add_argument('journey_map', type=Path)
     ap.add_argument('--repo', type=Path, help='repository root: re-read every cited file and line, and check test paths exist')
+    ap.add_argument('--strict', action='store_true', help='treat warnings (covered items whose file no evidence cites, '
+                                                          'repeated open questions) as errors')
     args = ap.parse_args()
     try:
         d = json.loads(args.journey_map.read_text(encoding='utf-8'))
@@ -235,11 +273,17 @@ def main() -> int:
     if args.repo and not args.repo.is_dir():
         print(f'INVALID: --repo {args.repo} is not a directory', file=sys.stderr); return 1
     errs = check(d, Repo(args.repo) if args.repo else None)
+    warns = warnings_for(d) if not errs or args.strict else []
+    if args.strict:
+        errs += warns
+        warns = []
+    for msg in warns:
+        print(f'WARNING: {msg}', file=sys.stderr)
     if errs:
         for msg in errs: print(f'INVALID: {msg}', file=sys.stderr)
         print(f'{len(errs)} problem(s)', file=sys.stderr)
         return 1
-    print('VALID')
+    print(f'VALID ({len(warns)} warning(s))' if warns else 'VALID')
     return 0
 
 if hasattr(sys.stdout, 'reconfigure'):

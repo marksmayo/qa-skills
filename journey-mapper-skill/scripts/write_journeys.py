@@ -187,8 +187,13 @@ def write_coverage(d: dict) -> str:
             name = it['name'].replace('|', '\\|')
             lines.append(f"| {sid} | `{name}` | `{it['file']}:{it['line']}` | {status} |")
         lines.append('')
-    questions = [(q['id'], q['question']) for q in d.get('open_questions', [])]
-    questions += [(j['id'], q) for j in d['journeys'] for q in j.get('open_questions', [])]
+    questions, seen = [], set()   # each text once: a map-level question that repeats a journey's is not listed twice
+    asked = [(j['id'], q) for j in d['journeys'] for q in j.get('open_questions', [])]
+    for qid, q in asked + [(q['id'], q['question']) for q in d.get('open_questions', [])]:
+        key = ' '.join(q.lower().split())
+        if key not in seen:
+            seen.add(key)
+            questions.append((qid, q))
     if questions:
         lines += ['## Open questions', ''] + [f'- **{qid}:** {q}' for qid, q in questions] + ['']
     return '\n'.join(lines).rstrip() + '\n'

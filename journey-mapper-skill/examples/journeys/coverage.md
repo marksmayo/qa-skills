@@ -58,5 +58,5 @@ Run scope: all domains. Generated 2026-11-09T10:00:00+00:00.
 
 ## Open questions
 
-- **Q-001:** Is the admin reports page (R-007) expected to ship? It is behind admin_reports, which is off everywhere.
 - **JRN-CHK-001:** Confirmation page does not clear the cart badge until reload (CheckoutForm.tsx:130). Intended?
+- **Q-001:** Is the admin reports page (R-007) expected to ship? It is behind admin_reports, which is off everywhere.

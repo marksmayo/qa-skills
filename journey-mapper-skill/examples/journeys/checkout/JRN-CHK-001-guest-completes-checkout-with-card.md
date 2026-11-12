@@ -47,12 +47,15 @@ tests: []
 ## Evidence
 - Step 1: `web/src/app/page.tsx:22` — ProductCard links to /products/[slug]
 - Step 1: `mobile/app/product/[id].tsx:1`
+- Step 1: `web/src/app/products/[slug]/page.tsx:1` — product page the home page links to
 - Step 2: `web/src/features/cart/useAddToCart.ts:30` — POST /api/cart then updates badge count
+- Step 2: `web/src/app/api/cart/route.ts:12` — POST /api/cart adds the item to the cart
 - Step 3: `web/src/app/(shop)/checkout/page.tsx:40`
 - Step 3: `mobile/app/cart.tsx:55`
 - Step 4: `web/src/features/checkout/CheckoutForm.tsx:88` — isValid gates the submit button
 - Step 5: `web/src/features/checkout/CheckoutForm.tsx:112` — POST /api/orders
 - Step 5: `web/src/app/(shop)/checkout/confirmation/page.tsx:21` — track('order_completed')
+- Step 5: `web/src/app/api/orders/route.ts:9` — POST /api/orders creates the order
 - V1: `web/src/features/checkout/CheckoutForm.tsx:120`
 - V2: `web/src/components/AddToCartButton.tsx:14`
 - V3: `mobile/app.json:14`
