@@ -494,5 +494,6 @@
     ]
    }
   }
- ]
+ ],
+ "chain": "migrations"
 }

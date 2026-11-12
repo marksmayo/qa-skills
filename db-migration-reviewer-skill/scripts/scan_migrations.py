@@ -17,6 +17,15 @@ prisma.<model>.create/createMany/upsert calls, and the missing down migrations g
 candidate for the release rather than one per migration.
 Squawk SARIF results join as candidates with source "squawk"; one at the same file and line as a built-in
 candidate is attached to it instead.
+
+Down migrations are scanned for data loss too (direction "down"): UPDATE or DELETE without WHERE, TRUNCATE,
+and drops of tables or columns the up did not create. A value renamed in place (UPDATE t SET c = 'new' WHERE
+c = 'old') is a compatibility candidate with the code that names the old value. --base-ref <rev> also searches
+the previous release (git grep), the code still running during a rolling deploy; those hits carry "rev".
+A migration that reads repository files at run time gives a MIGRATION-READS-FILES candidate with the paths
+that no longer exist. A table statistics entry may be a size hint ({"hint": "...", "class": "small"}) instead of
+row counts; the size then says so ("hinted") and findings resting on it stay assumed. The lock-timeout check reads
+the reviewed chain's own env.py. Steps the detector could not analyse are listed under not_analysed.
 """
 from __future__ import annotations
 import argparse, json, re, sys
@@ -32,6 +41,8 @@ DDL_LOCKING = re.compile(r'^(ALTER TABLE|CREATE INDEX|CREATE UNIQUE INDEX|DROP I
 LOCKED_TABLE = re.compile(r'(?:ALTER TABLE (?:ONLY )?(?:IF EXISTS )?|DROP TABLE (?:IF EXISTS )?|TRUNCATE(?: TABLE)? |'
                           r'CREATE (?:UNIQUE )?INDEX (?:CONCURRENTLY )?(?:IF NOT EXISTS )?\S+ ON (?:ONLY )?)(\S+)', re.I)
 NUM = re.compile(r'(?:NUMERIC|DECIMAL)\s*\(\s*(\d+)\s*(?:,\s*(\d+))?\s*\)', re.I)
+# UPDATE t SET c = 'new' ... WHERE ... c = 'old': a stored value (an enum-like or lookup value) renamed in place
+VALUE_RENAME = re.compile(r"^UPDATE (?:ONLY )?(\S+) SET (\w+)\s*=\s*'([^']*)'.*?\bWHERE\b(?:.*?[\s(])?\2\s*=\s*'([^']*)'", re.I | re.S)
 INT_DIGITS = {'SMALLINT': 4, 'INTEGER': 9, 'INT': 9, 'BIGINT': 18}
 FLOATS = {'DOUBLE PRECISION': 15, 'REAL': 6}
 
@@ -44,6 +55,10 @@ def size_of(table: str, stats: dict, created: dict) -> dict:
         next((v for k, v in tables.items() if sqlshape.ident(k).lower() == table.lower()), None)
     if not t:
         return {'class': 'unknown', 'rows': None, 'source': 'no statistics given; rated as large'}
+    if t.get('rows') is None and t.get('hint'):
+        # a size hint (a seeded config table, rows bounded by seed files): evidence short of statistics, so assumed
+        cls = t.get('class') if t.get('class') in ('small', 'medium') else 'small'
+        return {'class': cls, 'rows': None, 'source': f'size hint: {t["hint"]}', 'hinted': True}
     rows, size_b = t.get('rows'), t.get('bytes') or 0
     cls = 'large' if rows > 1_000_000 or size_b > 1_000_000_000 else 'medium' if rows >= 10_000 else 'small'
     return {'class': cls, 'rows': rows, 'source': stats.get('source', 'table statistics file')}
@@ -115,8 +130,9 @@ def clause_line(lines: list[str], start: int, clause: str, first: bool) -> int:
 
 
 class Scan:
-    def __init__(self, data: dict, repo: Path, stats: dict, other: list[Path]):
+    def __init__(self, data: dict, repo: Path, stats: dict, other: list[Path], base_ref: str | None = None):
         self.data, self.repo, self.stats, self.roots = data, repo, stats, [repo] + other
+        self.base_ref, self.base_failed = base_ref, False
         self.engine = data['engine']
         self.tool = data.get('tool')
         self.pending = [m for m in data['migrations'] if m.get('pending') and m.get('parsed', True)]
@@ -158,27 +174,50 @@ class Scan:
                 hits = find_readers.readers(self.roots, name)
                 for k in res:
                     res[k] += [h for h in hits[k] if (h['file'], h['line']) not in {(x['file'], x['line']) for x in res[k]}]
+                self.add_base(res, name)
+            self._readers[key] = res
+        return self._readers[key]
+
+    def add_base(self, res: dict, name: str, literal: bool = False):
+        """Readers in the previous release (--base-ref): the code still running during a rolling deploy. A hit whose
+        line text is unchanged at HEAD is already listed and is not repeated."""
+        if not self.base_ref:
+            return
+        base = find_readers.readers_at(self.repo, self.base_ref, name, literal)
+        if not base:
+            self.base_failed = True
+            return
+        for k in res:
+            have = {(x['file'], x.get('excerpt')) for x in res[k]}
+            res[k] += [h for h in base[k] if (h['file'], h['excerpt']) not in have]
+
+    def value_readers(self, value: str) -> dict:
+        key = ('=value', value)
+        if key not in self._readers:
+            res = find_readers.literal_readers(self.roots, value)
+            self.add_base(res, value, literal=True)
             self._readers[key] = res
         return self._readers[key]
 
     def add(self, rule: str, mig: dict | None, stmt: dict | None, table: str | None, engine_range: str, facts: dict | None = None,
-            column: str | None = None, hits: list | None = None, file: str | None = None, line: int | None = None, **fmt):
+            column: str | None = None, hits: list | None = None, file: str | None = None, line: int | None = None,
+            direction: str = 'up', **fmt):
         r = RULES[rule]
         effect = r['effect'].format(table=table, column=column, **fmt)
         self.out.append({
             'id': f'C{len(self.out) + 1:03d}', 'source': 'builtin', 'rule': rule, 'category': r['category'], 'hazard': r['hazard'],
             'migration': mig['id'] if mig else None, 'file': file or mig['file'], 'line': line or (stmt or {}).get('line'),
-            'statement': (stmt or {}).get('sql'), 'direction': 'up', 'table': table, 'column': column,
+            'statement': (stmt or {}).get('sql'), 'direction': direction, 'table': table, 'column': column,
             'engine': self.engine['name'], 'engine_version': self.engine.get('version'), 'engine_range': engine_range,
             'engine_assumed': bool(self.engine.get('assumed')),
             'size': size_of(table, self.stats, self.created) if table else None,
             'effect': effect, 'rewrite': r['rewrite'], 'code_hits': hits or [], 'facts': facts or {},
         })
 
-    def statements(self, mig: dict) -> list[dict]:
-        """The migration's up statements, one per clause of a multi-clause ALTER TABLE, each with its normalised form."""
+    def statements(self, mig: dict, key: str = 'up') -> list[dict]:
+        """The migration's up (or down) statements, one per clause of a multi-clause ALTER TABLE, each with its normalised form."""
         out, lines = [], None
-        for st in mig['up']:
+        for st in mig[key]:
             norm = sqlshape.norm_sql(st['sql'])
             parts = sqlshape.clauses(norm)
             if len(parts) == 1:
@@ -334,6 +373,25 @@ class Scan:
                     if verb == 'UPDATE' and not re.search(r'\b(LIMIT|BETWEEN)\b|\bid\s*[<>]', norm, re.I):
                         self.add('BACKFILL-UNBATCHED', mig, st, table, f'{self.engine["name"]}: all versions',
                                  {'in_transaction': mig.get('transactional'), 'has_where': bool(re.search(r'\bWHERE\b', norm, re.I))})
+                    vr = VALUE_RENAME.match(norm)
+                    if vr and vr.group(3) != vr.group(4):
+                        col, new, old = sqlshape.ident(vr.group(2)), vr.group(3), vr.group(4)
+                        hits = self.value_readers(old)
+                        self.add('VALUE-RENAME-WHILE-READ', mig, st, table, f'{self.engine["name"]}: all versions',
+                                 {'old_value': old, 'new_value': new, 'names_searched': [old], 'test_hits': len(hits['test']),
+                                  'migration_hits': len(hits['migration']), 'base_ref': self.base_ref,
+                                  'base_ref_hits': sum(1 for h in hits['code'] if h.get('rev'))},
+                                 column=col, hits=hits['code'], old=old, new=new)
+            self.scan_down(mig)
+            reads = mig.get('reads_files') or []
+            if reads:
+                r0 = reads[0]
+                paths = sorted({p for r in reads for p in r.get('paths', [])})
+                exists = {p: e for r in reads for p, e in (r.get('exists') or {}).items()}
+                self.add('MIGRATION-READS-FILES', mig, {'line': r0['line'], 'sql': f'{r0["call"]}() in {"upgrade" if r0.get("direction", "up") == "up" else "downgrade"}()'},
+                         None, 'any', {'reads': [{k: r.get(k) for k in ('line', 'call', 'direction')} for r in reads], 'paths': paths,
+                                       'missing_paths': sorted(p for p, e in exists.items() if not e)},
+                         direction=r0.get('direction', 'up'), paths=', '.join(paths) or 'paths built at run time')
             if mig['down_state'] in ('pass', 'empty', 'raises', 'missing'):
                 if self.tool == 'prisma':
                     prisma_irreversible.append(mig)
@@ -348,6 +406,44 @@ class Scan:
         if len(self.data.get('heads') or []) > 1:
             self.add('ALEMBIC-MULTIPLE-HEADS', None, None, None, 'any', file='migrations', line=1, heads=', '.join(self.data['heads']))
         return self.out
+
+    def scan_down(self, mig: dict):
+        """Data-loss rules on the down migration: UPDATE or DELETE without WHERE, TRUNCATE, and drops of tables or
+        columns the up did not create (dropping what the up added is the down's job and is not flagged)."""
+        if not mig.get('down'):
+            return
+        made_tables = {sqlshape.ident(t) for t in mig.get('created_tables', [])}
+        made_cols = set()
+        for s in mig['up']:
+            for cl in sqlshape.clauses(sqlshape.norm_sql(s['sql'])):
+                m = re.match(r'ALTER TABLE (?:ONLY )?(?:IF EXISTS )?(\S+) ADD (?:COLUMN )?(?:IF NOT EXISTS )?(\S+)', cl, re.I)
+                if m:
+                    made_cols.add((sqlshape.ident(m.group(1)), sqlshape.ident(m.group(2))))
+                m = re.match(r'ALTER TABLE (?:ONLY )?(?:IF EXISTS )?(\S+) RENAME COLUMN (\S+) TO (\S+)', cl, re.I)
+                if m:
+                    made_cols.add((sqlshape.ident(m.group(1)), sqlshape.ident(m.group(3))))
+        rng = f'{self.engine["name"]}: all versions (down migration)'
+        for st in self.statements(mig, 'down'):
+            norm = st['norm']
+            s = {'line': st['line'], 'sql': st['sql']}
+            m = re.match(r'(UPDATE|DELETE FROM) (?:ONLY )?(\S+)', norm, re.I)
+            if m and not re.search(r'\bWHERE\b', norm, re.I):
+                self.add('DML-WITHOUT-WHERE', mig, s, sqlshape.ident(m.group(2)), rng, {'direction': 'down'}, direction='down',
+                         verb=m.group(1).split()[0].upper())
+            m = re.match(r'TRUNCATE (?:TABLE )?(\S+)', norm, re.I)
+            if m:
+                self.add('TRUNCATE', mig, s, sqlshape.ident(m.group(1)), rng, {'direction': 'down'}, direction='down')
+            m = re.match(r'DROP TABLE (?:IF EXISTS )?(\S+)', norm, re.I)
+            if m and sqlshape.ident(m.group(1)) not in made_tables:
+                self.add('DROP-TABLE', mig, s, sqlshape.ident(m.group(1)), rng, {'direction': 'down', 'created_by_up': False}, direction='down')
+            m = re.match(r'ALTER TABLE (?:ONLY )?(?:IF EXISTS )?(\S+) DROP (?:COLUMN )?(?:IF EXISTS )?(\S+)', norm, re.I)
+            if m and m.group(2).upper() not in ('CONSTRAINT', 'DEFAULT', 'NOT', 'INDEX', 'PRIMARY', 'FOREIGN'):
+                table, col = sqlshape.ident(m.group(1)), sqlshape.ident(m.group(2))
+                if (table, col) not in made_cols and table not in made_tables:
+                    hits = self.readers(table, col)
+                    self.add('DROP-COLUMN', mig, s, table, rng, {'direction': 'down', 'added_by_up': False, 'code_readers': len(hits['code']),
+                                                                 'names_searched': self.field_names(table, col)},
+                             column=col, hits=hits['code'], direction='down')
 
     def irreversible(self, mig: dict, migs: list[dict]):
         """One IRREVERSIBLE candidate per migration; for Prisma (no down migrations by design) one for the release."""
@@ -375,9 +471,14 @@ class Scan:
         affected = [(m, s) for m in self.pending for s in m['up'] if DDL_LOCKING.match(sqlshape.norm_sql(s['sql'])) and locked(s) not in self.created]
         if not affected:
             return
-        env = [p for p in repo_walk.files(self.repo, names=('env.py', 'knexfile.'))
-               if p.name.startswith('knexfile.') or 'migrations' in p.parts or 'alembic' in p.parts]
-        env = [p for p in env if p.name == 'env.py'] + sorted(p for p in env if p.name != 'env.py')
+        chain = self.data.get('chain') or {}
+        if chain.get('env'):
+            # the reviewed chain's own env.py: another chain's settings don't apply to these migrations
+            env = [self.repo / chain['env']]
+        else:
+            env = [p for p in repo_walk.files(self.repo, names=('env.py', 'knexfile.'))
+                   if p.name.startswith('knexfile.') or 'migrations' in p.parts or 'alembic' in p.parts]
+            env = [p for p in env if p.name == 'env.py'] + sorted(p for p in env if p.name != 'env.py')
         configured = any(sets(p.read_text(encoding='utf-8', errors='replace')) for p in env) or \
             any(sets(s['sql']) for m in self.pending for s in m['up'])
         if configured:
@@ -390,10 +491,12 @@ class Scan:
         m0, s0 = next((m, s) for m, s in affected if locked(s) == table)
         f, line = (env[0].relative_to(self.repo).as_posix(), 1) if env else (m0['file'], s0['line'])
         if env:
-            for n, text in enumerate(env[0].read_text(encoding='utf-8').splitlines(), 1):
-                if 'configure(' in text or 'pool' in text or 'connection' in text:
-                    line = n
-                    break
+            # where a timeout would go: the context.configure( call, else where the connection is opened; never an import
+            lines = env[0].read_text(encoding='utf-8').splitlines()
+            code = [(n, t) for n, t in enumerate(lines, 1) if t.strip() and not t.lstrip().startswith(('#', 'import ', 'from ', '//'))]
+            line = next((n for n, t in code if 'configure(' in t), None) or \
+                next((n for n, t in code if re.search(r'\.connect\(|connectable|def run_migrations_online', t)), None) or \
+                (code[0][0] if code else 1)
         self.add('PG-NO-LOCK-TIMEOUT', m0, s0, table, 'postgresql: all versions',
                  {'migrations': sorted({m['id'] for m, _ in affected}), 'tables': {t: sorted(set(v)) for t, v in tables.items()},
                   'checked': [p.relative_to(self.repo).as_posix() for p in env] + ['pending migration statements']},
@@ -421,16 +524,27 @@ def main() -> int:
     ap.add_argument('--table-stats', type=Path)
     ap.add_argument('--squawk', type=Path)
     ap.add_argument('--other-readers', type=Path, action='append', default=[])
+    ap.add_argument('--base-ref', help='git revision of the release still running during the deploy (the deployed tag or commit): '
+                                       'readers of renamed or dropped columns and values are also searched there')
     a = ap.parse_args()
     data = json.loads(a.migrations.read_text(encoding='utf-8'))
     stats = json.loads(a.table_stats.read_text(encoding='utf-8')) if a.table_stats else {}
-    scan = Scan(data, a.repo, stats, a.other_readers)
+    scan = Scan(data, a.repo, stats, a.other_readers, a.base_ref)
     cands = scan.run()
     if a.squawk:
         merge_squawk(cands, a.squawk, a.repo)
     out = {'migrations_file': a.migrations.as_posix(), 'table_stats': a.table_stats.as_posix() if a.table_stats else None,
            'engine': data['engine'], 'pending': [m['id'] for m in data['migrations'] if m.get('pending')],
            'squawk': a.squawk.as_posix() if a.squawk else None, 'not_parsed': scan.not_parsed, 'candidates': cands}
+    if a.base_ref:
+        out['base_ref'] = {'rev': a.base_ref, 'searched': not scan.base_failed}
+        if scan.base_failed:
+            print(f'warning: git could not search {a.base_ref}; readers in the previous release are not checked', file=sys.stderr)
+    if data.get('chain'):
+        out['chain'] = data['chain']['dir']
+    unanalysed = [dict(x, migration=m['id'], file=m['file']) for m in scan.pending for x in m.get('not_analysed', [])]
+    if unanalysed:
+        out['not_analysed'] = unanalysed
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(json.dumps(out, indent=1) + '\n', encoding='utf-8', newline='\n')
     print(f'{len(cands)} candidate(s) from {len(out["pending"])} pending migration(s) -> {a.out}')
@@ -438,6 +552,10 @@ def main() -> int:
         print(f'  {len(scan.not_parsed)} pending migration(s) could not be parsed and have no candidates; review them by hand:')
         for f in scan.not_parsed:
             print(f'    {f}')
+    if unanalysed:
+        print(f'  {len(unanalysed)} step(s) in pending migrations were not analysed; read them by hand:')
+        for x in unanalysed:
+            print(f'    {x["file"]}:{x["line"]} {x["what"]}')
     for c in cands:
         print(f'  {c["id"]} {c["migration"] or "-":5} {c["rule"]:32} {c["table"] or "-":13} {(c["size"] or {}).get("class", "-"):7} hits={len(c["code_hits"])}')
     return 0

@@ -62,6 +62,12 @@
       "rewrite": "ADD CONSTRAINT ... CHECK (...) NOT VALID, then VALIDATE CONSTRAINT in a separate migration"},
     "DELETE-ROWS": {"category": "data_loss", "hazard": 3, "engine": "*", "versions": "*",
       "effect": "DELETE on {table} removes the matching rows, and nothing in the migration keeps a copy",
-      "rewrite": "Copy the rows to a backup table (or export them) in the same migration before deleting, and restore them in the down migration"}
+      "rewrite": "Copy the rows to a backup table (or export them) in the same migration before deleting, and restore them in the down migration"},
+    "VALUE-RENAME-WHILE-READ": {"category": "compatibility", "hazard": 3, "engine": "*", "versions": "*",
+      "effect": "UPDATE renames the value '{old}' of {table}.{column} to '{new}': code still keyed on '{old}' (the previous release, during a rolling deploy) stops matching",
+      "rewrite": "Expand and contract: ship code that accepts both values first, rename the value in a later release, then drop the old value from the code"},
+    "MIGRATION-READS-FILES": {"category": "reproducibility", "hazard": 3, "engine": "*", "versions": "*",
+      "effect": "The migration reads files from the repository at run time ({paths}); when they move or are deleted, the step does nothing or fails on every database built later",
+      "rewrite": "Put the data the step needs in the migration itself (a literal list or VALUES), or fail loudly when the files are missing"}
   }
 }

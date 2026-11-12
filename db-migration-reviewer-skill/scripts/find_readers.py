@@ -77,6 +77,46 @@ def readers(roots: list[Path], ident: str) -> dict:
     return out
 
 
+def literal_readers(roots: list[Path], value: str) -> dict:
+    """Code that names a stored value as a string literal ('old-name' or "old-name"): what breaks when a migration
+    renames the value while code keyed on it is still running."""
+    rx = re.compile(r'([\'"`])' + re.escape(value) + r'\1')
+    out = {'code': [], 'test': [], 'migration': []}
+    for root, p in files(roots):
+        rel = p.relative_to(root).as_posix()
+        for n, line in enumerate(p.read_text(encoding='utf-8', errors='replace').splitlines(), 1):
+            if rx.search(line) and not line.lstrip().startswith(('#', '//', '--')):
+                out[classify(rel)].append({'file': rel, 'line': n, 'kind': 'string_literal', 'excerpt': line.strip()[:100]})
+    return out
+
+
+def readers_at(repo: Path, rev: str, ident: str, literal: bool = False) -> dict:
+    """Readers in the code at another revision (the release still running during a rolling deploy), by git grep.
+    Each hit carries rev; the validator re-reads it with git show <rev>:<file>. Returns {} when git can't answer."""
+    import subprocess
+    ident = ident if literal else sqlshape.ident(ident)
+    rx = re.compile(r'([\'"`])' + re.escape(ident) + r'\1') if literal else re.compile(rf'(?<![\w.]){re.escape(ident)}(?!\w)')
+    try:
+        r = subprocess.run(['git', '-C', str(repo), 'grep', '-n', '-I', '-F', '-e', ident, rev, '--'], capture_output=True, text=True,
+                           encoding='utf-8', errors='replace', timeout=120)
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    if r.returncode not in (0, 1):
+        return {}
+    out = {'code': [], 'test': [], 'migration': []}
+    for row in r.stdout.splitlines():
+        parts = row.split(':', 3)
+        if len(parts) < 4 or not parts[2].isdigit():
+            continue
+        _, rel, n, line = parts
+        if not rel.endswith(CODE) or any(x in repo_walk.PRUNE for x in rel.split('/')[:-1]):
+            continue
+        if rx.search(line) and not line.lstrip().startswith(('#', '//', '--')):
+            out[classify(rel)].append({'file': rel, 'line': int(n), 'kind': 'string_literal' if literal else kind_of(line, ident, Path(rel).suffix),
+                                       'excerpt': line.strip()[:100], 'rev': rev})
+    return out
+
+
 def model_names(roots: list[Path], table: str) -> list[str]:
     names = []
     for root, p in files(roots):
