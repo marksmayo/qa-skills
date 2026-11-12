@@ -44,8 +44,10 @@ Consider flake history, arbitrary sleeps, races, order dependence, clocks, rando
 These anchors decide the reliability cap (below 4 caps the overall at 5), so pick between 3 and 4 by them, not by feel.
 
 - **1–2:** Results change from run to run for most of the suite, or the suite cannot complete without manual intervention.
-- **3:** Any of: the suite was red in every assessed run for non-product reasons (timeouts, order dependence, shared state); known flaky tests with no quarantine, owner or tracking; fixed sleeps are the main synchronisation across many tests; tests depend on execution order or on state left by other tests.
-- **4:** Nondeterminism is present but contained: at least one complete run was green or the flaky tests are few, identified and tracked; sleeps and shared state are local.
+- **3:** Any of: the suite was red in every assessed run for reasons in the suite itself (timeouts, order dependence, shared state); known flaky tests with no quarantine, owner or tracking; fixed sleeps are the main synchronisation across many tests; many tests depend on execution order or on state left by other tests.
+- **4:** Nondeterminism is present but contained: at least one complete run was green, or the flaky or order-dependent tests are few and identified (for example a handful found by a shuffled run), the rest of the suite agreeing across runs; sleeps and shared state are local.
+
+Failures caused by the assessment's own limits are not the suite's: a private dependency the assessor could not fetch, a service deliberately not provided, the assessor's sandbox or tool time limit. They don't make a run "red for reasons in the suite"; classify them `environment` and judge reliability on the tests that could run. A test-class failure that some runs show and others do not is flaky, and 7 or more needs repeated runs that agree **(checked)**.
 - **5–6:** Repeated runs agree apart from rare, explained failures; time, randomness and external dependencies are mostly controlled.
 - **7–8:** Repeated runs agree; clocks, randomness and network are controlled; parallel and random-order runs pass.
 - **9–10:** Historical CI shows a sustained low flake rate, with quarantine and retry data to prove it.
@@ -88,6 +90,8 @@ Never translate inferred scenarios into line or branch percentages.
 - **5–6:** Core features and most interfaces tested; known untested critical interfaces, or measured coverage with large gaps in risky modules.
 - **7–8:** Critical interfaces and risks all tested; gaps are in low-risk areas and known.
 - **9–10:** Coverage measured against source or specification and risk, with no untested critical path.
+
+Below 4 caps the overall score at 4 (`coverage_below_4`), and then reliability, assertions, isolation and performance, which grade the few tests that exist, are `medium` confidence at most **(checked)**.
 
 ## 7. Isolation and state management
 
@@ -223,7 +227,7 @@ Record each item in the evidence inventory with its `kind` (`application_source`
 
 ## What counts as each evidence kind
 
-- **application_source:** the code under test, readable. `partial` when only some services or packages are available.
+- **application_source:** the code under test, readable. `available` when all of the repository's own product code is readable, even when a library it imports lives elsewhere (note it); `partial` when part of the system under test is unreadable: a service, a package, or a private submodule whose code the tests exercise.
 - **test_source:** the test code and its configuration.
 - **ci_configuration:** the pipeline definitions that run the tests (workflow files, pipeline YAML). `partial` when a referenced template or required-check setting is unavailable.
 - **recent_execution:** results from the current code: your own runs (origin `assessor`), or CI or local reports for the assessed commit or one close to it. `partial` when only some layers or tests ran. A committed log from months ago is `other`.
@@ -255,4 +259,4 @@ The words "code", "line", "branch", "statement", "condition", "function", "instr
 - A named measure without a number is allowed when its own clause says it was not available ("Instrumented code coverage was not measurable from the supplied evidence").
 - A configured threshold or target is not a claim that it was reached ("vitest.config.ts sets an 80% coverage threshold").
 - File names, identifiers and backticked text are not claims (`service-form-branch-coverage.test.tsx`).
-- Interface coverage ("121 of 127 route handlers are imported by a test") is not code coverage; record it in `interface_coverage`.
+- Interface coverage ("121 of 127 route handlers are imported by a test", "route coverage is 100% by method and path") is not code coverage; record it in `interface_coverage`. A percentage is read as interface coverage only when the word right before "coverage" names what is counted (route, endpoint, interface, operation, handler, requirement, specification, criteria); "coverage is 80%" and "test coverage is 80%" are still claims.
