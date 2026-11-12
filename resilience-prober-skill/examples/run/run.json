@@ -1,13 +1,382 @@
 {
  "site": "http://127.0.0.1:8147/",
- "started_at": "2026-11-11T09:06:18Z",
+ "started_at": "2026-11-12T06:51:31Z",
+ "runs_per_scenario": 2,
+ "safety": {
+  "allow_form_submission": true,
+  "targets": [
+   "http://127.0.0.1:8147/"
+  ],
+  "allowed_hosts": [],
+  "third_party": "block",
+  "request_budget": 3000,
+  "prefetch": "allow"
+ },
+ "indicators": {
+  "track": {
+   "note": "Default patterns for what the user sees. Do not edit these for one product: put the product's own wording and selectors under `indicators` in flows.json (lists there are added to these; budgets replace them; a flow can carry its own). run.json records the merged set used for each flow.",
+   "spinner_selectors": [
+    "[role=progressbar]",
+    "[aria-busy=true]",
+    ".spinner",
+    ".loading",
+    ".loader",
+    ".skeleton",
+    ".MuiCircularProgress-root",
+    ".animate-spin"
+   ],
+   "loading_words": [],
+   "error_selectors": [
+    "[role=alert]",
+    ".error",
+    ".alert-danger",
+    ".toast-error",
+    ".Mui-error"
+   ],
+   "error_words": [
+    "error",
+    "couldn't",
+    "could not",
+    "can't",
+    "cannot",
+    "failed",
+    "unable",
+    "try again",
+    "something went wrong",
+    "went wrong",
+    "problem",
+    "unavailable",
+    "offline",
+    "no connection",
+    "timed out",
+    "retry"
+   ],
+   "empty_state_words": [
+    "no parcels",
+    "no orders",
+    "nothing here",
+    "no results",
+    "no items",
+    "is empty",
+    "you have no",
+    "none yet"
+   ],
+   "boundary_fallback_words": [
+    "something went wrong",
+    "unexpected error",
+    "please reload",
+    "application error: a client-side exception",
+    "application error: a server-side exception"
+   ],
+   "boundary_selectors": [
+    ".route-error"
+   ],
+   "retry_control_names": [
+    "retry",
+    "try again",
+    "reload",
+    "refresh"
+   ],
+   "budgets": {
+    "message_ms": 10000,
+    "spinner_ms": 30000,
+    "retry_window_ms": 30000,
+    "retry_storm_requests": 10
+   }
+  },
+  "address": {
+   "note": "Default patterns for what the user sees. Do not edit these for one product: put the product's own wording and selectors under `indicators` in flows.json (lists there are added to these; budgets replace them; a flow can carry its own). run.json records the merged set used for each flow.",
+   "spinner_selectors": [
+    "[role=progressbar]",
+    "[aria-busy=true]",
+    ".spinner",
+    ".loading",
+    ".loader",
+    ".skeleton",
+    ".MuiCircularProgress-root",
+    ".animate-spin"
+   ],
+   "loading_words": [],
+   "error_selectors": [
+    "[role=alert]",
+    ".error",
+    ".alert-danger",
+    ".toast-error",
+    ".Mui-error"
+   ],
+   "error_words": [
+    "error",
+    "couldn't",
+    "could not",
+    "can't",
+    "cannot",
+    "failed",
+    "unable",
+    "try again",
+    "something went wrong",
+    "went wrong",
+    "problem",
+    "unavailable",
+    "offline",
+    "no connection",
+    "timed out",
+    "retry"
+   ],
+   "empty_state_words": [
+    "no parcels",
+    "no orders",
+    "nothing here",
+    "no results",
+    "no items",
+    "is empty",
+    "you have no",
+    "none yet"
+   ],
+   "boundary_fallback_words": [
+    "something went wrong",
+    "unexpected error",
+    "please reload",
+    "application error: a client-side exception",
+    "application error: a server-side exception"
+   ],
+   "boundary_selectors": [
+    ".route-error"
+   ],
+   "retry_control_names": [
+    "retry",
+    "try again",
+    "reload",
+    "refresh"
+   ],
+   "budgets": {
+    "message_ms": 10000,
+    "spinner_ms": 30000,
+    "retry_window_ms": 30000,
+    "retry_storm_requests": 10
+   }
+  },
+  "receive": {
+   "note": "Default patterns for what the user sees. Do not edit these for one product: put the product's own wording and selectors under `indicators` in flows.json (lists there are added to these; budgets replace them; a flow can carry its own). run.json records the merged set used for each flow.",
+   "spinner_selectors": [
+    "[role=progressbar]",
+    "[aria-busy=true]",
+    ".spinner",
+    ".loading",
+    ".loader",
+    ".skeleton",
+    ".MuiCircularProgress-root",
+    ".animate-spin"
+   ],
+   "loading_words": [],
+   "error_selectors": [
+    "[role=alert]",
+    ".error",
+    ".alert-danger",
+    ".toast-error",
+    ".Mui-error"
+   ],
+   "error_words": [
+    "error",
+    "couldn't",
+    "could not",
+    "can't",
+    "cannot",
+    "failed",
+    "unable",
+    "try again",
+    "something went wrong",
+    "went wrong",
+    "problem",
+    "unavailable",
+    "offline",
+    "no connection",
+    "timed out",
+    "retry"
+   ],
+   "empty_state_words": [
+    "no parcels",
+    "no orders",
+    "nothing here",
+    "no results",
+    "no items",
+    "is empty",
+    "you have no",
+    "none yet"
+   ],
+   "boundary_fallback_words": [
+    "something went wrong",
+    "unexpected error",
+    "please reload",
+    "application error: a client-side exception",
+    "application error: a server-side exception"
+   ],
+   "boundary_selectors": [
+    ".route-error"
+   ],
+   "retry_control_names": [
+    "retry",
+    "try again",
+    "reload",
+    "refresh"
+   ],
+   "budgets": {
+    "message_ms": 10000,
+    "spinner_ms": 30000,
+    "retry_window_ms": 30000,
+    "retry_storm_requests": 10
+   }
+  },
+  "help": {
+   "note": "Default patterns for what the user sees. Do not edit these for one product: put the product's own wording and selectors under `indicators` in flows.json (lists there are added to these; budgets replace them; a flow can carry its own). run.json records the merged set used for each flow.",
+   "spinner_selectors": [
+    "[role=progressbar]",
+    "[aria-busy=true]",
+    ".spinner",
+    ".loading",
+    ".loader",
+    ".skeleton",
+    ".MuiCircularProgress-root",
+    ".animate-spin"
+   ],
+   "loading_words": [],
+   "error_selectors": [
+    "[role=alert]",
+    ".error",
+    ".alert-danger",
+    ".toast-error",
+    ".Mui-error"
+   ],
+   "error_words": [
+    "error",
+    "couldn't",
+    "could not",
+    "can't",
+    "cannot",
+    "failed",
+    "unable",
+    "try again",
+    "something went wrong",
+    "went wrong",
+    "problem",
+    "unavailable",
+    "offline",
+    "no connection",
+    "timed out",
+    "retry"
+   ],
+   "empty_state_words": [
+    "no parcels",
+    "no orders",
+    "nothing here",
+    "no results",
+    "no items",
+    "is empty",
+    "you have no",
+    "none yet"
+   ],
+   "boundary_fallback_words": [
+    "something went wrong",
+    "unexpected error",
+    "please reload",
+    "application error: a client-side exception",
+    "application error: a server-side exception"
+   ],
+   "boundary_selectors": [
+    ".route-error"
+   ],
+   "retry_control_names": [
+    "retry",
+    "try again",
+    "reload",
+    "refresh"
+   ],
+   "budgets": {
+    "message_ms": 10000,
+    "spinner_ms": 30000,
+    "retry_window_ms": 30000,
+    "retry_storm_requests": 10
+   }
+  },
+  "returns": {
+   "note": "Default patterns for what the user sees. Do not edit these for one product: put the product's own wording and selectors under `indicators` in flows.json (lists there are added to these; budgets replace them; a flow can carry its own). run.json records the merged set used for each flow.",
+   "spinner_selectors": [
+    "[role=progressbar]",
+    "[aria-busy=true]",
+    ".spinner",
+    ".loading",
+    ".loader",
+    ".skeleton",
+    ".MuiCircularProgress-root",
+    ".animate-spin"
+   ],
+   "loading_words": [],
+   "error_selectors": [
+    "[role=alert]",
+    ".error",
+    ".alert-danger",
+    ".toast-error",
+    ".Mui-error"
+   ],
+   "error_words": [
+    "error",
+    "couldn't",
+    "could not",
+    "can't",
+    "cannot",
+    "failed",
+    "unable",
+    "try again",
+    "something went wrong",
+    "went wrong",
+    "problem",
+    "unavailable",
+    "offline",
+    "no connection",
+    "timed out",
+    "retry"
+   ],
+   "empty_state_words": [
+    "no parcels",
+    "no orders",
+    "nothing here",
+    "no results",
+    "no items",
+    "is empty",
+    "you have no",
+    "none yet"
+   ],
+   "boundary_fallback_words": [
+    "something went wrong",
+    "unexpected error",
+    "please reload",
+    "application error: a client-side exception",
+    "application error: a server-side exception"
+   ],
+   "boundary_selectors": [
+    ".route-error"
+   ],
+   "retry_control_names": [
+    "retry",
+    "try again",
+    "reload",
+    "refresh"
+   ],
+   "budgets": {
+    "message_ms": 10000,
+    "spinner_ms": 30000,
+    "retry_window_ms": 30000,
+    "retry_storm_requests": 10
+   }
+  }
+ },
  "baselines": {
   "track": {
    "status": "passed",
+   "critical_path": true,
    "runs": [
     {
      "tag": "baseline1",
-     "started_at": "2026-11-11T09:06:18Z",
+     "started_at": "2026-11-12T06:51:32Z",
      "steps": [
       {
        "name": "open orders",
@@ -18,10 +387,18 @@
         "root_text": "Your parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place",
         "root_len": 119,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Track"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nYour parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place"
        }
       },
@@ -34,10 +411,18 @@
         "root_text": "P1001: In transit\n\nLast scan: Sorting centre\n\nMark as received",
         "root_len": 62,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Mark as received"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nP1001: In transit\n\nLast scan: Sorting centre\n\nMark as received"
        }
       }
@@ -48,11 +433,13 @@
      "console_errors": [
       "Failed to load resource: the server responded with a status of 404 (Not Found)"
      ],
-     "finished_at": "2026-11-11T09:06:19Z"
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:51:34Z",
+     "requests_sent": 10
     },
     {
      "tag": "baseline2",
-     "started_at": "2026-11-11T09:06:19Z",
+     "started_at": "2026-11-12T06:51:34Z",
      "steps": [
       {
        "name": "open orders",
@@ -63,10 +450,18 @@
         "root_text": "Your parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place",
         "root_len": 119,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Track"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nYour parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place"
        }
       },
@@ -79,10 +474,18 @@
         "root_text": "P1001: In transit\n\nLast scan: Sorting centre\n\nMark as received",
         "root_len": 62,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Mark as received"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nP1001: In transit\n\nLast scan: Sorting centre\n\nMark as received"
        }
       }
@@ -93,16 +496,19 @@
      "console_errors": [
       "Failed to load resource: the server responded with a status of 404 (Not Found)"
      ],
-     "finished_at": "2026-11-11T09:06:20Z"
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:51:36Z",
+     "requests_sent": 10
     }
    ]
   },
   "address": {
    "status": "passed",
+   "critical_path": true,
    "runs": [
     {
      "tag": "baseline1",
-     "started_at": "2026-11-11T09:06:20Z",
+     "started_at": "2026-11-12T06:51:36Z",
      "steps": [
       {
        "name": "open form",
@@ -113,10 +519,18 @@
         "root_text": "Delivery address\nStreet  Save",
         "root_len": 29,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Save"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nDelivery address\nStreet  Save"
        }
       },
@@ -129,10 +543,18 @@
         "root_text": "Delivery address\nStreet  Save\n\nAddress saved",
         "root_len": 44,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Save"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nDelivery address\nStreet  Save\n\nAddress saved"
        }
       }
@@ -143,11 +565,13 @@
      "console_errors": [
       "Failed to load resource: the server responded with a status of 404 (Not Found)"
      ],
-     "finished_at": "2026-11-11T09:06:21Z"
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:51:38Z",
+     "requests_sent": 8
     },
     {
      "tag": "baseline2",
-     "started_at": "2026-11-11T09:06:21Z",
+     "started_at": "2026-11-12T06:51:38Z",
      "steps": [
       {
        "name": "open form",
@@ -158,10 +582,18 @@
         "root_text": "Delivery address\nStreet  Save",
         "root_len": 29,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Save"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nDelivery address\nStreet  Save"
        }
       },
@@ -174,10 +606,18 @@
         "root_text": "Delivery address\nStreet  Save\n\nAddress saved",
         "root_len": 44,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Save"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nDelivery address\nStreet  Save\n\nAddress saved"
        }
       }
@@ -188,16 +628,19 @@
      "console_errors": [
       "Failed to load resource: the server responded with a status of 404 (Not Found)"
      ],
-     "finished_at": "2026-11-11T09:06:22Z"
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:51:40Z",
+     "requests_sent": 8
     }
    ]
   },
   "receive": {
    "status": "passed",
+   "critical_path": false,
    "runs": [
     {
      "tag": "baseline1",
-     "started_at": "2026-11-11T09:06:22Z",
+     "started_at": "2026-11-12T06:51:40Z",
      "steps": [
       {
        "name": "open tracking",
@@ -208,10 +651,18 @@
         "root_text": "P1001: In transit\n\nLast scan: Sorting centre\n\nMark as received",
         "root_len": 62,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Mark as received"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nP1001: In transit\n\nLast scan: Sorting centre\n\nMark as received"
        }
       },
@@ -224,10 +675,18 @@
         "root_text": "P1001: In transit\n\nLast scan: Sorting centre\n\nMark as received\n\nMarked as received",
         "root_len": 82,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Mark as received"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nP1001: In transit\n\nLast scan: Sorting centre\n\nMark as received\n\nMarked as received"
        }
       }
@@ -238,11 +697,13 @@
      "console_errors": [
       "Failed to load resource: the server responded with a status of 404 (Not Found)"
      ],
-     "finished_at": "2026-11-11T09:06:23Z"
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:51:41Z",
+     "requests_sent": 9
     },
     {
      "tag": "baseline2",
-     "started_at": "2026-11-11T09:06:23Z",
+     "started_at": "2026-11-12T06:51:41Z",
      "steps": [
       {
        "name": "open tracking",
@@ -253,10 +714,18 @@
         "root_text": "P1001: In transit\n\nLast scan: Sorting centre\n\nMark as received",
         "root_len": 62,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Mark as received"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nP1001: In transit\n\nLast scan: Sorting centre\n\nMark as received"
        }
       },
@@ -269,10 +738,18 @@
         "root_text": "P1001: In transit\n\nLast scan: Sorting centre\n\nMark as received\n\nMarked as received",
         "root_len": 82,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Mark as received"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nP1001: In transit\n\nLast scan: Sorting centre\n\nMark as received\n\nMarked as received"
        }
       }
@@ -283,16 +760,19 @@
      "console_errors": [
       "Failed to load resource: the server responded with a status of 404 (Not Found)"
      ],
-     "finished_at": "2026-11-11T09:06:24Z"
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:51:43Z",
+     "requests_sent": 9
     }
    ]
   },
   "help": {
    "status": "passed",
+   "critical_path": false,
    "runs": [
     {
      "tag": "baseline1",
-     "started_at": "2026-11-11T09:06:24Z",
+     "started_at": "2026-11-12T06:51:43Z",
      "steps": [
       {
        "name": "open orders",
@@ -303,10 +783,18 @@
         "root_text": "Your parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place",
         "root_len": 119,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Track"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nYour parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place"
        }
       },
@@ -319,10 +807,18 @@
         "root_text": "Your parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place",
         "root_len": 119,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Track"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nYour parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place"
        }
       }
@@ -333,11 +829,13 @@
      "console_errors": [
       "Failed to load resource: the server responded with a status of 404 (Not Found)"
      ],
-     "finished_at": "2026-11-11T09:06:25Z"
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:51:45Z",
+     "requests_sent": 9
     },
     {
      "tag": "baseline2",
-     "started_at": "2026-11-11T09:06:25Z",
+     "started_at": "2026-11-12T06:51:45Z",
      "steps": [
       {
        "name": "open orders",
@@ -348,10 +846,18 @@
         "root_text": "Your parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place",
         "root_len": 119,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Track"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nYour parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place"
        }
       },
@@ -364,10 +870,18 @@
         "root_text": "Your parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place",
         "root_len": 119,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Track"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nYour parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place"
        }
       }
@@ -378,7 +892,95 @@
      "console_errors": [
       "Failed to load resource: the server responded with a status of 404 (Not Found)"
      ],
-     "finished_at": "2026-11-11T09:06:26Z"
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:51:47Z",
+     "requests_sent": 9
+    }
+   ]
+  },
+  "returns": {
+   "status": "failed",
+   "critical_path": false,
+   "runs": [
+    {
+     "tag": "baseline1",
+     "started_at": "2026-11-12T06:51:47Z",
+     "steps": [
+      {
+       "name": "open returns",
+       "completed": false,
+       "error": null,
+       "observed": {
+        "body_len": 188,
+        "root_text": "Your parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place",
+        "root_len": 119,
+        "spinner": false,
+        "loading_words": [],
+        "error_element": false,
+        "error_words": [],
+        "empty_words": [],
+        "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Track"
+        ],
+        "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nYour parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place"
+       },
+       "screenshot": "baseline-returns.baseline1.failed-step.png"
+      }
+     ],
+     "ok": false,
+     "requests": [],
+     "page_errors": [],
+     "console_errors": [
+      "Failed to load resource: the server responded with a status of 404 (Not Found)"
+     ],
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:51:59Z",
+     "requests_sent": 9
+    },
+    {
+     "tag": "baseline2",
+     "started_at": "2026-11-12T06:51:59Z",
+     "steps": [
+      {
+       "name": "open returns",
+       "completed": false,
+       "error": null,
+       "observed": {
+        "body_len": 188,
+        "root_text": "Your parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place",
+        "root_len": 119,
+        "spinner": false,
+        "loading_words": [],
+        "error_element": false,
+        "error_words": [],
+        "empty_words": [],
+        "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Track"
+        ],
+        "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nYour parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place"
+       },
+       "screenshot": "baseline-returns.baseline2.failed-step.png"
+      }
+     ],
+     "ok": false,
+     "requests": [],
+     "page_errors": [],
+     "console_errors": [
+      "Failed to load resource: the server responded with a status of 404 (Not Found)"
+     ],
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:52:10Z",
+     "requests_sent": 9
     }
    ]
   }
@@ -390,7 +992,7 @@
    "runs": [
     {
      "tag": "run1",
-     "started_at": "2026-11-11T09:06:26Z",
+     "started_at": "2026-11-12T06:52:10Z",
      "steps": [
       {
        "name": "open orders",
@@ -401,10 +1003,18 @@
         "root_text": "Your parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place",
         "root_len": 119,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Track"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nYour parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place"
        }
       },
@@ -415,16 +1025,23 @@
        "completed_under_fault": false,
        "first_error_ms": null,
        "spinner_seen": true,
-       "watched_ms": 30801,
+       "watched_ms": 30727,
        "observed": {
         "body_len": 68,
         "root_text": "",
         "root_len": 0,
         "spinner": true,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week."
        },
        "inputs": {
@@ -441,12 +1058,18 @@
       }
      ],
      "ok": true,
+     "fault_triggered": true,
+     "faulted_requests": 1,
      "requests": [
       {
        "method": "GET",
-       "t_ms": 934,
+       "t_ms": 1719,
        "url": "http://127.0.0.1:8147/api/status/P1001",
+       "injected": true,
+       "fault_action": "hang",
        "status": 200,
+       "ms": 30706,
+       "held": true,
        "retry_after": null
       }
      ],
@@ -454,11 +1077,13 @@
      "console_errors": [
       "Failed to load resource: the server responded with a status of 404 (Not Found)"
      ],
-     "finished_at": "2026-11-11T09:07:03Z"
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:52:48Z",
+     "requests_sent": 11
     },
     {
      "tag": "run2",
-     "started_at": "2026-11-11T09:07:03Z",
+     "started_at": "2026-11-12T06:52:48Z",
      "steps": [
       {
        "name": "open orders",
@@ -469,10 +1094,18 @@
         "root_text": "Your parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place",
         "root_len": 119,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Track"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nYour parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place"
        }
       },
@@ -483,16 +1116,23 @@
        "completed_under_fault": false,
        "first_error_ms": null,
        "spinner_seen": true,
-       "watched_ms": 30711,
+       "watched_ms": 30724,
        "observed": {
         "body_len": 68,
         "root_text": "",
         "root_len": 0,
         "spinner": true,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week."
        },
        "inputs": {
@@ -509,12 +1149,18 @@
       }
      ],
      "ok": true,
+     "fault_triggered": true,
+     "faulted_requests": 1,
      "requests": [
       {
        "method": "GET",
-       "t_ms": 972,
+       "t_ms": 1717,
        "url": "http://127.0.0.1:8147/api/status/P1001",
+       "injected": true,
+       "fault_action": "hang",
        "status": 200,
+       "ms": 30710,
+       "held": true,
        "retry_after": null
       }
      ],
@@ -522,7 +1168,9 @@
      "console_errors": [
       "Failed to load resource: the server responded with a status of 404 (Not Found)"
      ],
-     "finished_at": "2026-11-11T09:07:40Z"
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:53:25Z",
+     "requests_sent": 11
     }
    ]
   },
@@ -532,7 +1180,7 @@
    "runs": [
     {
      "tag": "run1",
-     "started_at": "2026-11-11T09:07:40Z",
+     "started_at": "2026-11-12T06:53:25Z",
      "steps": [
       {
        "name": "open orders",
@@ -543,10 +1191,18 @@
         "root_text": "Your parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place",
         "root_len": 119,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Track"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nYour parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place"
        }
       },
@@ -557,18 +1213,26 @@
        "completed_under_fault": true,
        "first_error_ms": null,
        "spinner_seen": false,
-       "watched_ms": 2161,
+       "watched_ms": 10644,
        "observed": {
         "body_len": 128,
         "root_text": "undefined: undefined\n\nLast scan: none yet\n\nMark as received",
         "root_len": 59,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [
          "none yet"
         ],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Mark as received"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nundefined: undefined\n\nLast scan: none yet\n\nMark as received"
        },
        "inputs": {
@@ -585,12 +1249,17 @@
       }
      ],
      "ok": true,
+     "fault_triggered": true,
+     "faulted_requests": 1,
      "requests": [
       {
        "method": "GET",
-       "t_ms": 919,
+       "t_ms": 1814,
        "url": "http://127.0.0.1:8147/api/status/P1001",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 500,
+       "ms": 3,
        "retry_after": null
       }
      ],
@@ -599,11 +1268,13 @@
       "Failed to load resource: the server responded with a status of 404 (Not Found)",
       "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
      ],
-     "finished_at": "2026-11-11T09:07:48Z"
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:53:43Z",
+     "requests_sent": 9
     },
     {
      "tag": "run2",
-     "started_at": "2026-11-11T09:07:48Z",
+     "started_at": "2026-11-12T06:53:43Z",
      "steps": [
       {
        "name": "open orders",
@@ -614,10 +1285,18 @@
         "root_text": "Your parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place",
         "root_len": 119,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Track"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nYour parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place"
        }
       },
@@ -628,18 +1307,26 @@
        "completed_under_fault": true,
        "first_error_ms": null,
        "spinner_seen": false,
-       "watched_ms": 2157,
+       "watched_ms": 10599,
        "observed": {
         "body_len": 128,
         "root_text": "undefined: undefined\n\nLast scan: none yet\n\nMark as received",
         "root_len": 59,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [
          "none yet"
         ],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Mark as received"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nundefined: undefined\n\nLast scan: none yet\n\nMark as received"
        },
        "inputs": {
@@ -656,12 +1343,17 @@
       }
      ],
      "ok": true,
+     "fault_triggered": true,
+     "faulted_requests": 1,
      "requests": [
       {
        "method": "GET",
-       "t_ms": 919,
+       "t_ms": 1736,
        "url": "http://127.0.0.1:8147/api/status/P1001",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 500,
+       "ms": 2,
        "retry_after": null
       }
      ],
@@ -670,7 +1362,9 @@
       "Failed to load resource: the server responded with a status of 404 (Not Found)",
       "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
      ],
-     "finished_at": "2026-11-11T09:07:56Z"
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:54:00Z",
+     "requests_sent": 9
     }
    ]
   },
@@ -680,7 +1374,7 @@
    "runs": [
     {
      "tag": "run1",
-     "started_at": "2026-11-11T09:07:56Z",
+     "started_at": "2026-11-12T06:54:00Z",
      "steps": [
       {
        "name": "open orders",
@@ -691,10 +1385,18 @@
         "root_text": "Your parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place",
         "root_len": 119,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Track"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nYour parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place"
        }
       },
@@ -705,16 +1407,24 @@
        "completed_under_fault": true,
        "first_error_ms": null,
        "spinner_seen": true,
-       "watched_ms": 4023,
+       "watched_ms": 4002,
        "observed": {
         "body_len": 131,
         "root_text": "P1001: In transit\n\nLast scan: Sorting centre\n\nMark as received",
         "root_len": 62,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Mark as received"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nP1001: In transit\n\nLast scan: Sorting centre\n\nMark as received"
        },
        "inputs": {
@@ -731,12 +1441,18 @@
       }
      ],
      "ok": true,
+     "fault_triggered": true,
+     "faulted_requests": 1,
      "requests": [
       {
        "method": "GET",
-       "t_ms": 922,
+       "t_ms": 1792,
        "url": "http://127.0.0.1:8147/api/status/P1001",
+       "injected": true,
+       "fault_action": "delay",
        "status": 200,
+       "ms": 3159,
+       "held": true,
        "retry_after": null
       }
      ],
@@ -744,11 +1460,13 @@
      "console_errors": [
       "Failed to load resource: the server responded with a status of 404 (Not Found)"
      ],
-     "finished_at": "2026-11-11T09:08:06Z"
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:54:11Z",
+     "requests_sent": 10
     },
     {
      "tag": "run2",
-     "started_at": "2026-11-11T09:08:06Z",
+     "started_at": "2026-11-12T06:54:11Z",
      "steps": [
       {
        "name": "open orders",
@@ -759,10 +1477,18 @@
         "root_text": "Your parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place",
         "root_len": 119,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Track"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nYour parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place"
        }
       },
@@ -773,16 +1499,24 @@
        "completed_under_fault": true,
        "first_error_ms": null,
        "spinner_seen": true,
-       "watched_ms": 4038,
+       "watched_ms": 3925,
        "observed": {
         "body_len": 131,
         "root_text": "P1001: In transit\n\nLast scan: Sorting centre\n\nMark as received",
         "root_len": 62,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Mark as received"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nP1001: In transit\n\nLast scan: Sorting centre\n\nMark as received"
        },
        "inputs": {
@@ -799,12 +1533,18 @@
       }
      ],
      "ok": true,
+     "fault_triggered": true,
+     "faulted_requests": 1,
      "requests": [
       {
        "method": "GET",
-       "t_ms": 943,
+       "t_ms": 1702,
        "url": "http://127.0.0.1:8147/api/status/P1001",
+       "injected": true,
+       "fault_action": "delay",
        "status": 200,
+       "ms": 3120,
+       "held": true,
        "retry_after": null
       }
      ],
@@ -812,7 +1552,9 @@
      "console_errors": [
       "Failed to load resource: the server responded with a status of 404 (Not Found)"
      ],
-     "finished_at": "2026-11-11T09:08:16Z"
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:54:22Z",
+     "requests_sent": 10
     }
    ]
   },
@@ -822,7 +1564,7 @@
    "runs": [
     {
      "tag": "run1",
-     "started_at": "2026-11-11T09:08:16Z",
+     "started_at": "2026-11-12T06:54:22Z",
      "steps": [
       {
        "name": "open orders",
@@ -831,12 +1573,13 @@
        "completed_under_fault": false,
        "first_error_ms": null,
        "spinner_seen": false,
-       "watched_ms": 10699,
+       "watched_ms": 10584,
        "observed": {
         "body_len": 138,
         "root_text": "You have no parcels yet\nGood to know\nTrack by SMS\nChoose a safe place",
         "root_len": 69,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [
@@ -844,6 +1587,12 @@
          "you have no"
         ],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nYou have no parcels yet\nGood to know\nTrack by SMS\nChoose a safe place"
        },
        "inputs": {
@@ -860,19 +1609,27 @@
       }
      ],
      "ok": true,
+     "fault_triggered": true,
+     "faulted_requests": 2,
      "requests": [
       {
        "method": "GET",
-       "t_ms": 28,
+       "t_ms": 20,
        "url": "http://127.0.0.1:8147/api/orders",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 500,
+       "ms": 2,
        "retry_after": null
       },
       {
        "method": "GET",
-       "t_ms": 551,
+       "t_ms": 534,
        "url": "http://127.0.0.1:8147/api/orders",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 500,
+       "ms": 2,
        "retry_after": null
       }
      ],
@@ -882,11 +1639,13 @@
       "Failed to load resource: the server responded with a status of 404 (Not Found)",
       "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
      ],
-     "finished_at": "2026-11-11T09:08:32Z"
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:54:38Z",
+     "requests_sent": 7
     },
     {
      "tag": "run2",
-     "started_at": "2026-11-11T09:08:32Z",
+     "started_at": "2026-11-12T06:54:38Z",
      "steps": [
       {
        "name": "open orders",
@@ -895,12 +1654,13 @@
        "completed_under_fault": false,
        "first_error_ms": null,
        "spinner_seen": false,
-       "watched_ms": 10719,
+       "watched_ms": 10627,
        "observed": {
         "body_len": 138,
         "root_text": "You have no parcels yet\nGood to know\nTrack by SMS\nChoose a safe place",
         "root_len": 69,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [
@@ -908,6 +1668,12 @@
          "you have no"
         ],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nYou have no parcels yet\nGood to know\nTrack by SMS\nChoose a safe place"
        },
        "inputs": {
@@ -924,19 +1690,27 @@
       }
      ],
      "ok": true,
+     "fault_triggered": true,
+     "faulted_requests": 2,
      "requests": [
       {
        "method": "GET",
-       "t_ms": 28,
+       "t_ms": 27,
        "url": "http://127.0.0.1:8147/api/orders",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 500,
+       "ms": 2,
        "retry_after": null
       },
       {
        "method": "GET",
-       "t_ms": 546,
+       "t_ms": 550,
        "url": "http://127.0.0.1:8147/api/orders",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 500,
+       "ms": 2,
        "retry_after": null
       }
      ],
@@ -946,7 +1720,9 @@
       "Failed to load resource: the server responded with a status of 404 (Not Found)",
       "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
      ],
-     "finished_at": "2026-11-11T09:08:48Z"
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:54:54Z",
+     "requests_sent": 7
     }
    ]
   },
@@ -956,7 +1732,7 @@
    "runs": [
     {
      "tag": "run1",
-     "started_at": "2026-11-11T09:08:48Z",
+     "started_at": "2026-11-12T06:54:54Z",
      "steps": [
       {
        "name": "open orders",
@@ -965,12 +1741,13 @@
        "completed_under_fault": false,
        "first_error_ms": null,
        "spinner_seen": false,
-       "watched_ms": 10683,
+       "watched_ms": 10579,
        "observed": {
         "body_len": 138,
         "root_text": "You have no parcels yet\nGood to know\nTrack by SMS\nChoose a safe place",
         "root_len": 69,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [
@@ -978,6 +1755,12 @@
          "you have no"
         ],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nYou have no parcels yet\nGood to know\nTrack by SMS\nChoose a safe place"
        },
        "inputs": {
@@ -994,19 +1777,27 @@
       }
      ],
      "ok": true,
+     "fault_triggered": true,
+     "faulted_requests": 2,
      "requests": [
       {
        "method": "GET",
-       "t_ms": 22,
+       "t_ms": 20,
        "url": "http://127.0.0.1:8147/api/orders",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 200,
+       "ms": 2,
        "retry_after": null
       },
       {
        "method": "GET",
-       "t_ms": 539,
+       "t_ms": 538,
        "url": "http://127.0.0.1:8147/api/orders",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 200,
+       "ms": 2,
        "retry_after": null
       }
      ],
@@ -1014,11 +1805,13 @@
      "console_errors": [
       "Failed to load resource: the server responded with a status of 404 (Not Found)"
      ],
-     "finished_at": "2026-11-11T09:09:04Z"
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:55:10Z",
+     "requests_sent": 7
     },
     {
      "tag": "run2",
-     "started_at": "2026-11-11T09:09:04Z",
+     "started_at": "2026-11-12T06:55:10Z",
      "steps": [
       {
        "name": "open orders",
@@ -1027,12 +1820,13 @@
        "completed_under_fault": false,
        "first_error_ms": null,
        "spinner_seen": false,
-       "watched_ms": 10709,
+       "watched_ms": 10612,
        "observed": {
         "body_len": 138,
         "root_text": "You have no parcels yet\nGood to know\nTrack by SMS\nChoose a safe place",
         "root_len": 69,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [
@@ -1040,6 +1834,12 @@
          "you have no"
         ],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nYou have no parcels yet\nGood to know\nTrack by SMS\nChoose a safe place"
        },
        "inputs": {
@@ -1056,19 +1856,27 @@
       }
      ],
      "ok": true,
+     "fault_triggered": true,
+     "faulted_requests": 2,
      "requests": [
       {
        "method": "GET",
-       "t_ms": 26,
+       "t_ms": 20,
        "url": "http://127.0.0.1:8147/api/orders",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 200,
+       "ms": 1,
        "retry_after": null
       },
       {
        "method": "GET",
-       "t_ms": 544,
+       "t_ms": 537,
        "url": "http://127.0.0.1:8147/api/orders",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 200,
+       "ms": 2,
        "retry_after": null
       }
      ],
@@ -1076,7 +1884,9 @@
      "console_errors": [
       "Failed to load resource: the server responded with a status of 404 (Not Found)"
      ],
-     "finished_at": "2026-11-11T09:09:20Z"
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:55:26Z",
+     "requests_sent": 7
     }
    ]
   },
@@ -1086,21 +1896,22 @@
    "runs": [
     {
      "tag": "run1",
-     "started_at": "2026-11-11T09:09:20Z",
+     "started_at": "2026-11-12T06:55:26Z",
      "steps": [
       {
        "name": "open orders",
        "target": true,
        "error": null,
        "completed_under_fault": false,
-       "first_error_ms": 1132,
+       "first_error_ms": 1092,
        "spinner_seen": false,
-       "watched_ms": 1697,
+       "watched_ms": 1642,
        "observed": {
         "body_len": 114,
         "root_text": "Something went wrong\n\nPlease reload the page.",
         "root_len": 45,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [
          "something went wrong",
@@ -1110,6 +1921,12 @@
         "fallback_words": [
          "please reload",
          "something went wrong"
+        ],
+        "boundary_element": true,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help"
         ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nSomething went wrong\n\nPlease reload the page."
        },
@@ -1127,19 +1944,27 @@
       }
      ],
      "ok": true,
+     "fault_triggered": true,
+     "faulted_requests": 2,
      "requests": [
       {
        "method": "GET",
-       "t_ms": 36,
+       "t_ms": 18,
        "url": "http://127.0.0.1:8147/api/recommendations",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 500,
+       "ms": 6,
        "retry_after": null
       },
       {
        "method": "GET",
-       "t_ms": 561,
+       "t_ms": 530,
        "url": "http://127.0.0.1:8147/api/recommendations",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 500,
+       "ms": 1,
        "retry_after": null
       }
      ],
@@ -1149,25 +1974,28 @@
       "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
       "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
      ],
-     "finished_at": "2026-11-11T09:09:27Z"
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:55:33Z",
+     "requests_sent": 7
     },
     {
      "tag": "run2",
-     "started_at": "2026-11-11T09:09:28Z",
+     "started_at": "2026-11-12T06:55:33Z",
      "steps": [
       {
        "name": "open orders",
        "target": true,
        "error": null,
        "completed_under_fault": false,
-       "first_error_ms": 1124,
+       "first_error_ms": 1118,
        "spinner_seen": false,
-       "watched_ms": 1689,
+       "watched_ms": 1675,
        "observed": {
         "body_len": 114,
         "root_text": "Something went wrong\n\nPlease reload the page.",
         "root_len": 45,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [
          "something went wrong",
@@ -1177,6 +2005,12 @@
         "fallback_words": [
          "please reload",
          "something went wrong"
+        ],
+        "boundary_element": true,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help"
         ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nSomething went wrong\n\nPlease reload the page."
        },
@@ -1194,19 +2028,27 @@
       }
      ],
      "ok": true,
+     "fault_triggered": true,
+     "faulted_requests": 2,
      "requests": [
       {
        "method": "GET",
-       "t_ms": 36,
+       "t_ms": 23,
        "url": "http://127.0.0.1:8147/api/recommendations",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 500,
+       "ms": 1,
        "retry_after": null
       },
       {
        "method": "GET",
-       "t_ms": 549,
+       "t_ms": 541,
        "url": "http://127.0.0.1:8147/api/recommendations",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 500,
+       "ms": 1,
        "retry_after": null
       }
      ],
@@ -1216,7 +2058,9 @@
       "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
       "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
      ],
-     "finished_at": "2026-11-11T09:09:35Z"
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:55:40Z",
+     "requests_sent": 7
     }
    ]
   },
@@ -1226,7 +2070,7 @@
    "runs": [
     {
      "tag": "run1",
-     "started_at": "2026-11-11T09:09:35Z",
+     "started_at": "2026-11-12T06:55:40Z",
      "steps": [
       {
        "name": "open orders",
@@ -1235,16 +2079,24 @@
        "completed_under_fault": true,
        "first_error_ms": null,
        "spinner_seen": false,
-       "watched_ms": 2200,
+       "watched_ms": 10596,
        "observed": {
         "body_len": 152,
         "root_text": "Your parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place",
         "root_len": 119,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Track"
+        ],
         "text": "My parcels Delivery address Help\nYour parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place"
        },
        "inputs": {
@@ -1261,89 +2113,526 @@
       }
      ],
      "ok": true,
+     "fault_triggered": true,
+     "faulted_requests": 51,
      "requests": [
       {
        "method": "GET",
-       "t_ms": 27,
+       "t_ms": 20,
        "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 503,
+       "ms": 2,
        "retry_after": "5"
       },
       {
        "method": "GET",
-       "t_ms": 239,
+       "t_ms": 225,
        "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 503,
+       "ms": 2,
        "retry_after": "5"
       },
       {
        "method": "GET",
-       "t_ms": 443,
+       "t_ms": 441,
        "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 503,
+       "ms": 2,
        "retry_after": "5"
       },
       {
        "method": "GET",
-       "t_ms": 662,
+       "t_ms": 644,
        "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 503,
+       "ms": 2,
        "retry_after": "5"
       },
       {
        "method": "GET",
-       "t_ms": 880,
+       "t_ms": 861,
        "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 503,
+       "ms": 2,
        "retry_after": "5"
       },
       {
        "method": "GET",
-       "t_ms": 1098,
+       "t_ms": 1070,
        "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 503,
+       "ms": 1,
        "retry_after": "5"
       },
       {
        "method": "GET",
-       "t_ms": 1301,
+       "t_ms": 1276,
        "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 503,
+       "ms": 3,
        "retry_after": "5"
       },
       {
        "method": "GET",
-       "t_ms": 1505,
+       "t_ms": 1492,
        "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 503,
+       "ms": 2,
        "retry_after": "5"
       },
       {
        "method": "GET",
-       "t_ms": 1723,
+       "t_ms": 1700,
        "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 503,
+       "ms": 2,
        "retry_after": "5"
       },
       {
        "method": "GET",
-       "t_ms": 1942,
+       "t_ms": 1916,
        "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 503,
+       "ms": 1,
        "retry_after": "5"
       },
       {
        "method": "GET",
-       "t_ms": 2159,
+       "t_ms": 2133,
        "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 503,
+       "ms": 2,
        "retry_after": "5"
       },
       {
        "method": "GET",
-       "t_ms": 2378,
+       "t_ms": 2342,
        "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 2554,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 2771,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 2978,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 3195,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 3406,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 3609,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 3820,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 4027,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 4236,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 4441,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 4644,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 1,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 4856,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 1,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 5063,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 1,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 5278,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 5485,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 5702,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 5907,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 6111,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 1,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 6319,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 1,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 6535,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 1,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 6753,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 1,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 6958,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 1,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 7167,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 7377,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 1,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 7594,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 1,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 7804,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 1,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 8010,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 8213,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 8419,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 8636,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 8843,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 1,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 9054,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 1,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 9256,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 1,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 9467,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 1,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 9685,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 3,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 9901,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 10111,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 10318,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 10523,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 10726,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": false,
        "status": 200,
+       "ms": 4,
        "retry_after": null
       }
      ],
@@ -1360,13 +2649,55 @@
       "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
       "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
       "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
       "Failed to load resource: the server responded with a status of 503 (Service Unavailable)"
      ],
-     "finished_at": "2026-11-11T09:09:37Z"
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:55:51Z",
+     "requests_sent": 9
     },
     {
      "tag": "run2",
-     "started_at": "2026-11-11T09:09:37Z",
+     "started_at": "2026-11-12T06:55:51Z",
      "steps": [
       {
        "name": "open orders",
@@ -1375,16 +2706,24 @@
        "completed_under_fault": true,
        "first_error_ms": null,
        "spinner_seen": false,
-       "watched_ms": 2222,
+       "watched_ms": 10575,
        "observed": {
         "body_len": 152,
         "root_text": "Your parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place",
         "root_len": 119,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Track"
+        ],
         "text": "My parcels Delivery address Help\nYour parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place"
        },
        "inputs": {
@@ -1401,89 +2740,516 @@
       }
      ],
      "ok": true,
+     "fault_triggered": true,
+     "faulted_requests": 50,
      "requests": [
       {
        "method": "GET",
-       "t_ms": 26,
+       "t_ms": 23,
        "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 503,
+       "ms": 2,
        "retry_after": "5"
       },
       {
        "method": "GET",
-       "t_ms": 231,
+       "t_ms": 237,
        "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 503,
+       "ms": 2,
        "retry_after": "5"
       },
       {
        "method": "GET",
-       "t_ms": 435,
+       "t_ms": 440,
        "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 503,
+       "ms": 1,
        "retry_after": "5"
       },
       {
        "method": "GET",
-       "t_ms": 640,
+       "t_ms": 643,
        "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 503,
+       "ms": 2,
        "retry_after": "5"
       },
       {
        "method": "GET",
-       "t_ms": 855,
+       "t_ms": 849,
        "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 503,
+       "ms": 2,
        "retry_after": "5"
       },
       {
        "method": "GET",
-       "t_ms": 1073,
+       "t_ms": 1068,
        "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 503,
+       "ms": 2,
        "retry_after": "5"
       },
       {
        "method": "GET",
-       "t_ms": 1293,
+       "t_ms": 1278,
        "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 503,
+       "ms": 2,
        "retry_after": "5"
       },
       {
        "method": "GET",
-       "t_ms": 1498,
+       "t_ms": 1492,
        "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 503,
+       "ms": 2,
        "retry_after": "5"
       },
       {
        "method": "GET",
-       "t_ms": 1718,
+       "t_ms": 1703,
        "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 503,
+       "ms": 1,
        "retry_after": "5"
       },
       {
        "method": "GET",
-       "t_ms": 1935,
+       "t_ms": 1919,
        "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 503,
+       "ms": 2,
        "retry_after": "5"
       },
       {
        "method": "GET",
-       "t_ms": 2139,
+       "t_ms": 2123,
        "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 503,
+       "ms": 2,
        "retry_after": "5"
       },
       {
        "method": "GET",
-       "t_ms": 2357,
+       "t_ms": 2352,
        "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 2564,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 1,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 2773,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 1,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 2984,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 1,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 3196,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 3406,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 3625,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 3836,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 4048,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 4256,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 4467,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 4672,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 3,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 4885,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 5089,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 5305,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 3,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 5510,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 1,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 5724,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 5940,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 1,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 6154,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 6358,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 6564,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 6771,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 6988,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 5,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 7205,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 1,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 7420,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 1,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 7635,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 7839,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 8052,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 1,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 8272,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 8487,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 8704,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 1,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 8918,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 9124,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 1,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 9328,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 9536,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 1,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 9745,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 9957,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 17,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 10181,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 2,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 10394,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": true,
+       "fault_action": "fulfill",
+       "status": 503,
+       "ms": 1,
+       "retry_after": "5"
+      },
+      {
+       "method": "GET",
+       "t_ms": 10597,
+       "url": "http://127.0.0.1:8147/api/notices",
+       "injected": false,
        "status": 200,
+       "ms": 4,
        "retry_after": null
       }
      ],
@@ -1500,9 +3266,50 @@
       "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
       "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
       "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
       "Failed to load resource: the server responded with a status of 503 (Service Unavailable)"
      ],
-     "finished_at": "2026-11-11T09:09:40Z"
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:56:02Z",
+     "requests_sent": 9
     }
    ]
   },
@@ -1512,7 +3319,7 @@
    "runs": [
     {
      "tag": "run1",
-     "started_at": "2026-11-11T09:09:40Z",
+     "started_at": "2026-11-12T06:56:02Z",
      "steps": [
       {
        "name": "open form",
@@ -1523,10 +3330,18 @@
         "root_text": "Delivery address\nStreet  Save",
         "root_len": 29,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Save"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nDelivery address\nStreet  Save"
        }
       },
@@ -1537,16 +3352,24 @@
        "completed_under_fault": false,
        "first_error_ms": null,
        "spinner_seen": false,
-       "watched_ms": 10694,
+       "watched_ms": 10586,
        "observed": {
         "body_len": 98,
         "root_text": "Delivery address\nStreet  Save",
         "root_len": 29,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Save"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nDelivery address\nStreet  Save"
        },
        "inputs": {
@@ -1573,19 +3396,26 @@
       }
      ],
      "ok": true,
+     "fault_triggered": true,
+     "faulted_requests": 1,
      "requests": [
       {
        "method": "POST",
-       "t_ms": 926,
+       "t_ms": 1732,
        "url": "http://127.0.0.1:8147/api/address",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 500,
+       "ms": 14,
        "retry_after": null
       },
       {
        "method": "POST",
-       "t_ms": 11609,
+       "t_ms": 12314,
        "url": "http://127.0.0.1:8147/api/address",
+       "injected": false,
        "status": 200,
+       "ms": 15,
        "retry_after": null
       }
      ],
@@ -1594,11 +3424,13 @@
       "Failed to load resource: the server responded with a status of 404 (Not Found)",
       "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
      ],
-     "finished_at": "2026-11-11T09:09:52Z"
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:56:14Z",
+     "requests_sent": 8
     },
     {
      "tag": "run2",
-     "started_at": "2026-11-11T09:09:52Z",
+     "started_at": "2026-11-12T06:56:14Z",
      "steps": [
       {
        "name": "open form",
@@ -1609,10 +3441,18 @@
         "root_text": "Delivery address\nStreet  Save",
         "root_len": 29,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Save"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nDelivery address\nStreet  Save"
        }
       },
@@ -1623,16 +3463,24 @@
        "completed_under_fault": false,
        "first_error_ms": null,
        "spinner_seen": false,
-       "watched_ms": 10662,
+       "watched_ms": 10580,
        "observed": {
         "body_len": 98,
         "root_text": "Delivery address\nStreet  Save",
         "root_len": 29,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Save"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nDelivery address\nStreet  Save"
        },
        "inputs": {
@@ -1659,19 +3507,26 @@
       }
      ],
      "ok": true,
+     "fault_triggered": true,
+     "faulted_requests": 1,
      "requests": [
       {
        "method": "POST",
-       "t_ms": 928,
+       "t_ms": 1728,
        "url": "http://127.0.0.1:8147/api/address",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 500,
+       "ms": 14,
        "retry_after": null
       },
       {
        "method": "POST",
-       "t_ms": 11580,
+       "t_ms": 12310,
        "url": "http://127.0.0.1:8147/api/address",
+       "injected": false,
        "status": 200,
+       "ms": 14,
        "retry_after": null
       }
      ],
@@ -1680,7 +3535,9 @@
       "Failed to load resource: the server responded with a status of 404 (Not Found)",
       "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
      ],
-     "finished_at": "2026-11-11T09:10:03Z"
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:56:27Z",
+     "requests_sent": 8
     }
    ]
   },
@@ -1690,7 +3547,7 @@
    "runs": [
     {
      "tag": "run1",
-     "started_at": "2026-11-11T09:10:03Z",
+     "started_at": "2026-11-12T06:56:27Z",
      "steps": [
       {
        "name": "open form",
@@ -1701,10 +3558,18 @@
         "root_text": "Delivery address\nStreet  Save",
         "root_len": 29,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Save"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nDelivery address\nStreet  Save"
        }
       },
@@ -1715,16 +3580,24 @@
        "completed_under_fault": false,
        "first_error_ms": null,
        "spinner_seen": false,
-       "watched_ms": 10680,
+       "watched_ms": 10616,
        "observed": {
         "body_len": 98,
         "root_text": "Delivery address\nStreet  Save",
         "root_len": 29,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Save"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nDelivery address\nStreet  Save"
        },
        "inputs": {
@@ -1751,19 +3624,25 @@
       }
      ],
      "ok": true,
+     "fault_triggered": true,
+     "faulted_requests": 1,
      "requests": [
       {
        "method": "POST",
-       "t_ms": 926,
+       "t_ms": 1731,
        "url": "http://127.0.0.1:8147/api/address",
+       "injected": false,
        "status": null,
+       "ms": 15,
        "failure": "net::ERR_INTERNET_DISCONNECTED"
       },
       {
        "method": "POST",
-       "t_ms": 11592,
+       "t_ms": 12350,
        "url": "http://127.0.0.1:8147/api/address",
+       "injected": false,
        "status": 200,
+       "ms": 14,
        "retry_after": null
       }
      ],
@@ -1772,11 +3651,13 @@
       "Failed to load resource: the server responded with a status of 404 (Not Found)",
       "Failed to load resource: net::ERR_INTERNET_DISCONNECTED"
      ],
-     "finished_at": "2026-11-11T09:10:15Z"
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:56:39Z",
+     "requests_sent": 9
     },
     {
      "tag": "run2",
-     "started_at": "2026-11-11T09:10:15Z",
+     "started_at": "2026-11-12T06:56:39Z",
      "steps": [
       {
        "name": "open form",
@@ -1787,10 +3668,18 @@
         "root_text": "Delivery address\nStreet  Save",
         "root_len": 29,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Save"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nDelivery address\nStreet  Save"
        }
       },
@@ -1801,16 +3690,24 @@
        "completed_under_fault": false,
        "first_error_ms": null,
        "spinner_seen": false,
-       "watched_ms": 10716,
+       "watched_ms": 10627,
        "observed": {
         "body_len": 98,
         "root_text": "Delivery address\nStreet  Save",
         "root_len": 29,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Save"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nDelivery address\nStreet  Save"
        },
        "inputs": {
@@ -1837,19 +3734,25 @@
       }
      ],
      "ok": true,
+     "fault_triggered": true,
+     "faulted_requests": 1,
      "requests": [
       {
        "method": "POST",
-       "t_ms": 924,
+       "t_ms": 1717,
        "url": "http://127.0.0.1:8147/api/address",
+       "injected": false,
        "status": null,
+       "ms": 13,
        "failure": "net::ERR_INTERNET_DISCONNECTED"
       },
       {
        "method": "POST",
-       "t_ms": 11622,
+       "t_ms": 12350,
        "url": "http://127.0.0.1:8147/api/address",
+       "injected": false,
        "status": 200,
+       "ms": 13,
        "retry_after": null
       }
      ],
@@ -1858,7 +3761,9 @@
       "Failed to load resource: the server responded with a status of 404 (Not Found)",
       "Failed to load resource: net::ERR_INTERNET_DISCONNECTED"
      ],
-     "finished_at": "2026-11-11T09:10:27Z"
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:56:52Z",
+     "requests_sent": 9
     }
    ]
   },
@@ -1868,7 +3773,7 @@
    "runs": [
     {
      "tag": "run1",
-     "started_at": "2026-11-11T09:10:27Z",
+     "started_at": "2026-11-12T06:56:52Z",
      "steps": [
       {
        "name": "open tracking",
@@ -1879,10 +3784,18 @@
         "root_text": "P1001: In transit\n\nLast scan: Sorting centre\n\nMark as received",
         "root_len": 62,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Mark as received"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nP1001: In transit\n\nLast scan: Sorting centre\n\nMark as received"
        }
       },
@@ -1891,14 +3804,15 @@
        "target": true,
        "error": null,
        "completed_under_fault": false,
-       "first_error_ms": 285,
+       "first_error_ms": 268,
        "spinner_seen": false,
-       "watched_ms": 836,
+       "watched_ms": 812,
        "observed": {
         "body_len": 170,
         "root_text": "P1001: In transit\n\nLast scan: Sorting centre\n\nMark as received\n\nCouldn't update the parcel. Try again",
         "root_len": 101,
         "spinner": false,
+        "loading_words": [],
         "error_element": true,
         "error_words": [
          "couldn't",
@@ -1906,6 +3820,14 @@
         ],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Mark as received",
+         "Try again"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nP1001: In transit\n\nLast scan: Sorting centre\n\nMark as received\n\nCouldn't update the parcel. Try again"
        },
        "inputs": {
@@ -1924,19 +3846,26 @@
       }
      ],
      "ok": true,
+     "fault_triggered": true,
+     "faulted_requests": 1,
      "requests": [
       {
        "method": "POST",
-       "t_ms": 897,
+       "t_ms": 1696,
        "url": "http://127.0.0.1:8147/api/received/P1001",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 500,
+       "ms": 18,
        "retry_after": null
       },
       {
        "method": "POST",
-       "t_ms": 1746,
+       "t_ms": 2512,
        "url": "http://127.0.0.1:8147/api/received/P1001",
+       "injected": false,
        "status": 200,
+       "ms": 16,
        "retry_after": null
       }
      ],
@@ -1945,11 +3874,13 @@
       "Failed to load resource: the server responded with a status of 404 (Not Found)",
       "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
      ],
-     "finished_at": "2026-11-11T09:10:29Z"
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:56:54Z",
+     "requests_sent": 9
     },
     {
      "tag": "run2",
-     "started_at": "2026-11-11T09:10:29Z",
+     "started_at": "2026-11-12T06:56:54Z",
      "steps": [
       {
        "name": "open tracking",
@@ -1960,10 +3891,18 @@
         "root_text": "P1001: In transit\n\nLast scan: Sorting centre\n\nMark as received",
         "root_len": 62,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Mark as received"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nP1001: In transit\n\nLast scan: Sorting centre\n\nMark as received"
        }
       },
@@ -1972,14 +3911,15 @@
        "target": true,
        "error": null,
        "completed_under_fault": false,
-       "first_error_ms": 296,
+       "first_error_ms": 302,
        "spinner_seen": false,
-       "watched_ms": 842,
+       "watched_ms": 835,
        "observed": {
         "body_len": 170,
         "root_text": "P1001: In transit\n\nLast scan: Sorting centre\n\nMark as received\n\nCouldn't update the parcel. Try again",
         "root_len": 101,
         "spinner": false,
+        "loading_words": [],
         "error_element": true,
         "error_words": [
          "couldn't",
@@ -1987,6 +3927,14 @@
         ],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Mark as received",
+         "Try again"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nP1001: In transit\n\nLast scan: Sorting centre\n\nMark as received\n\nCouldn't update the parcel. Try again"
        },
        "inputs": {
@@ -2005,19 +3953,26 @@
       }
      ],
      "ok": true,
+     "fault_triggered": true,
+     "faulted_requests": 1,
      "requests": [
       {
        "method": "POST",
-       "t_ms": 928,
+       "t_ms": 1749,
        "url": "http://127.0.0.1:8147/api/received/P1001",
+       "injected": true,
+       "fault_action": "fulfill",
        "status": 500,
+       "ms": 13,
        "retry_after": null
       },
       {
        "method": "POST",
-       "t_ms": 1760,
+       "t_ms": 2565,
        "url": "http://127.0.0.1:8147/api/received/P1001",
+       "injected": false,
        "status": 200,
+       "ms": 15,
        "retry_after": null
       }
      ],
@@ -2026,7 +3981,9 @@
       "Failed to load resource: the server responded with a status of 404 (Not Found)",
       "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
      ],
-     "finished_at": "2026-11-11T09:10:30Z"
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:56:57Z",
+     "requests_sent": 9
     }
    ]
   },
@@ -2036,7 +3993,7 @@
    "runs": [
     {
      "tag": "run1",
-     "started_at": "2026-11-11T09:10:30Z",
+     "started_at": "2026-11-12T06:56:57Z",
      "steps": [
       {
        "name": "open orders",
@@ -2047,10 +4004,18 @@
         "root_text": "Your parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place",
         "root_len": 119,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Track"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nYour parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place"
        }
       },
@@ -2061,16 +4026,23 @@
        "completed_under_fault": true,
        "first_error_ms": null,
        "spinner_seen": false,
-       "watched_ms": 2174,
+       "watched_ms": 10795,
        "observed": {
         "body_len": 68,
         "root_text": "",
         "root_len": 0,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week."
        },
        "inputs": {
@@ -2087,12 +4059,17 @@
       }
      ],
      "ok": true,
+     "fault_triggered": true,
+     "faulted_requests": 1,
      "requests": [
       {
        "method": "GET",
-       "t_ms": 942,
+       "t_ms": 1726,
        "url": "http://127.0.0.1:8147/chunk-help.js",
+       "injected": true,
+       "fault_action": "abort",
        "status": null,
+       "ms": 2,
        "failure": "net::ERR_FAILED"
       }
      ],
@@ -2101,11 +4078,13 @@
       "Failed to load resource: the server responded with a status of 404 (Not Found)",
       "Failed to load resource: net::ERR_FAILED"
      ],
-     "finished_at": "2026-11-11T09:10:34Z"
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:57:09Z",
+     "requests_sent": 9
     },
     {
      "tag": "run2",
-     "started_at": "2026-11-11T09:10:34Z",
+     "started_at": "2026-11-12T06:57:09Z",
      "steps": [
       {
        "name": "open orders",
@@ -2116,10 +4095,18 @@
         "root_text": "Your parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place",
         "root_len": 119,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Track"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nYour parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place"
        }
       },
@@ -2130,16 +4117,23 @@
        "completed_under_fault": true,
        "first_error_ms": null,
        "spinner_seen": false,
-       "watched_ms": 2181,
+       "watched_ms": 10581,
        "observed": {
         "body_len": 68,
         "root_text": "",
         "root_len": 0,
         "spinner": false,
+        "loading_words": [],
         "error_element": false,
         "error_words": [],
         "empty_words": [],
         "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help"
+        ],
         "text": "My parcels Delivery address Help\nDeliveries run as normal this week."
        },
        "inputs": {
@@ -2156,12 +4150,17 @@
       }
      ],
      "ok": true,
+     "fault_triggered": true,
+     "faulted_requests": 1,
      "requests": [
       {
        "method": "GET",
-       "t_ms": 939,
+       "t_ms": 1711,
        "url": "http://127.0.0.1:8147/chunk-help.js",
+       "injected": true,
+       "fault_action": "abort",
        "status": null,
+       "ms": 1,
        "failure": "net::ERR_FAILED"
       }
      ],
@@ -2170,9 +4169,222 @@
       "Failed to load resource: the server responded with a status of 404 (Not Found)",
       "Failed to load resource: net::ERR_FAILED"
      ],
-     "finished_at": "2026-11-11T09:10:37Z"
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:57:22Z",
+     "requests_sent": 9
     }
    ]
+  },
+  {
+   "id": "S12",
+   "status": "not_triggered",
+   "runs": [
+    {
+     "tag": "run1",
+     "started_at": "2026-11-12T06:57:22Z",
+     "steps": [
+      {
+       "name": "open orders",
+       "completed": true,
+       "error": null,
+       "observed": {
+        "body_len": 188,
+        "root_text": "Your parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place",
+        "root_len": 119,
+        "spinner": false,
+        "loading_words": [],
+        "error_element": false,
+        "error_words": [],
+        "empty_words": [],
+        "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Track"
+        ],
+        "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nYour parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place"
+       }
+      },
+      {
+       "name": "open tracking",
+       "target": true,
+       "error": null,
+       "completed_under_fault": true,
+       "first_error_ms": null,
+       "spinner_seen": false,
+       "watched_ms": 10789,
+       "observed": {
+        "body_len": 131,
+        "root_text": "P1001: In transit\n\nLast scan: Sorting centre\n\nMark as received",
+        "root_len": 62,
+        "spinner": false,
+        "loading_words": [],
+        "error_element": false,
+        "error_words": [],
+        "empty_words": [],
+        "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Mark as received"
+        ],
+        "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nP1001: In transit\n\nLast scan: Sorting centre\n\nMark as received"
+       },
+       "inputs": {
+        "before": {},
+        "after_fault": {}
+       },
+       "retry_controls": [],
+       "recovery": "repeat_step",
+       "recovered": true,
+       "screenshots": [
+        "S12.run1.fault.png",
+        "S12.run1.recovery.png"
+       ]
+      }
+     ],
+     "ok": true,
+     "fault_triggered": false,
+     "faulted_requests": 0,
+     "requests": [
+      {
+       "method": "GET",
+       "t_ms": 19,
+       "url": "http://127.0.0.1:8147/api/orders",
+       "injected": false,
+       "status": 200,
+       "ms": 4,
+       "retry_after": null
+      },
+      {
+       "method": "GET",
+       "t_ms": 1367,
+       "url": "http://127.0.0.1:8147/api/orders",
+       "injected": false,
+       "status": 200,
+       "ms": 3,
+       "retry_after": null
+      }
+     ],
+     "page_errors": [],
+     "console_errors": [
+      "Failed to load resource: the server responded with a status of 404 (Not Found)"
+     ],
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:57:39Z",
+     "requests_sent": 10
+    },
+    {
+     "tag": "run2",
+     "started_at": "2026-11-12T06:57:39Z",
+     "steps": [
+      {
+       "name": "open orders",
+       "completed": true,
+       "error": null,
+       "observed": {
+        "body_len": 188,
+        "root_text": "Your parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place",
+        "root_len": 119,
+        "spinner": false,
+        "loading_words": [],
+        "error_element": false,
+        "error_words": [],
+        "empty_words": [],
+        "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Track"
+        ],
+        "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nYour parcels\nP1001 from Test Books Track\nP1002 from Example Outdoor Track\nGood to know\nTrack by SMS\nChoose a safe place"
+       }
+      },
+      {
+       "name": "open tracking",
+       "target": true,
+       "error": null,
+       "completed_under_fault": true,
+       "first_error_ms": null,
+       "spinner_seen": false,
+       "watched_ms": 10593,
+       "observed": {
+        "body_len": 131,
+        "root_text": "P1001: In transit\n\nLast scan: Sorting centre\n\nMark as received",
+        "root_len": 62,
+        "spinner": false,
+        "loading_words": [],
+        "error_element": false,
+        "error_words": [],
+        "empty_words": [],
+        "fallback_words": [],
+        "boundary_element": false,
+        "controls": [
+         "My parcels",
+         "Delivery address",
+         "Help",
+         "Mark as received"
+        ],
+        "text": "My parcels Delivery address Help\nDeliveries run as normal this week.\nP1001: In transit\n\nLast scan: Sorting centre\n\nMark as received"
+       },
+       "inputs": {
+        "before": {},
+        "after_fault": {}
+       },
+       "retry_controls": [],
+       "recovery": "repeat_step",
+       "recovered": true,
+       "screenshots": [
+        "S12.run2.fault.png",
+        "S12.run2.recovery.png"
+       ]
+      }
+     ],
+     "ok": true,
+     "fault_triggered": false,
+     "faulted_requests": 0,
+     "requests": [
+      {
+       "method": "GET",
+       "t_ms": 20,
+       "url": "http://127.0.0.1:8147/api/orders",
+       "injected": false,
+       "status": 200,
+       "ms": 3,
+       "retry_after": null
+      },
+      {
+       "method": "GET",
+       "t_ms": 1355,
+       "url": "http://127.0.0.1:8147/api/orders",
+       "injected": false,
+       "status": 200,
+       "ms": 3,
+       "retry_after": null
+      }
+     ],
+     "page_errors": [],
+     "console_errors": [
+      "Failed to load resource: the server responded with a status of 404 (Not Found)"
+     ],
+     "console_filtered": 0,
+     "finished_at": "2026-11-12T06:57:57Z",
+     "requests_sent": 10
+    }
+   ],
+   "reason": "the fault matched no request in any run: the step made no matching request after the fault was installed (prefetched or cached earlier, or the pattern, method or headers do not match)"
+  },
+  {
+   "id": "S13",
+   "status": "untested",
+   "runs": [],
+   "reason": "baseline failed"
   }
  ],
  "browser": {
@@ -2180,5 +4392,42 @@
   "version": "158.0.8127.18"
  },
  "blocked_requests": [],
- "finished_at": "2026-11-11T09:10:38Z"
+ "requests_sent": 300,
+ "harness": {
+  "browser": "chromium",
+  "version": "158.0.8127.18",
+  "read_only": false,
+  "bypass_csp": false,
+  "third_party": "block",
+  "allowed_hosts": [],
+  "request_budget": 3000,
+  "init_scripts": 0,
+  "launch_args": [],
+  "firefox_user_prefs": {},
+  "retry": {
+   "max_retries": 2,
+   "max_retry_after_seconds": 60.0,
+   "stop_on_429": false
+  },
+  "stopped": null,
+  "requests": {
+   "seen": 300,
+   "sent": 300,
+   "blocked": {
+    "write": 0,
+    "third_party": 0,
+    "budget": 0
+   },
+   "by_method": {
+    "GET": 288,
+    "POST": 12
+   },
+   "budget": 3000,
+   "budget_exhausted": false
+  }
+ },
+ "harness_events": [],
+ "prefetch_blocked": 0,
+ "budget_reached": false,
+ "finished_at": "2026-11-12T06:57:58Z"
 }

@@ -28,13 +28,28 @@ def main() -> int:
     a = ap.parse_args()
     d = json.loads(a.report.read_text(encoding='utf-8'))
     P = (lambda s, st: f'{st}{s}{RESET}') if supports_color(a.color) else (lambda s, st: s)
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
     hl = d['headline']
+    md = d['metadata']
     out = [P('# Resilience probe', BOLD), '', hl['summary'], '',
            f'Scenarios run: {hl["scenarios_run"]} of {hl["scenarios_planned"]}. Findings by priority: ' +
            (', '.join(f'{k} {v}' for k, v in sorted(hl['priority_counts'].items())) or 'none') +
            f'. Flows with a P0: {", ".join(hl["flows_with_p0"]) or "none"}. Confidence {hl["overall_confidence"]}.',
-           'Faults tried: ' + ', '.join(d['scope']['faults']) + '. Devices: ' + ', '.join(d['scope']['devices']) + '.']
+           'Faults that ran: ' + (', '.join(d['scope']['faults']) or 'none') + '.',
+           'Faults planned but not run: ' + (', '.join(d['scope'].get('faults_untested', [])) or 'none') + '.',
+           'Devices: ' + ', '.join(d['scope']['devices']) + '.',
+           f'Safety: {md.get("requests_sent")} request(s) reached the site' + (f' (budget {md["request_budget"]})' if md.get('request_budget') else '') +
+           f'; {md.get("blocked_requests")} blocked by the harness; writes {"allowed" if md.get("allow_form_submission") else "blocked"}; '
+           f'{md.get("runs_per_scenario")} run(s) per scenario.']
+    broken = {n: b for n, b in d['baseline'].items() if b['status'] != 'passed'}
+    for n, b in broken.items():
+        out.append(P(f'Baseline {n}: {b["status"]} without any fault', RED) + (f' at step "{b["failed_step"]}"' if b.get('failed_step') else '') +
+                   (f' [{", ".join(b.get("screenshots", []))}]' if b.get('screenshots') else '') + '.')
     if a.brief:
+        nt = [s['id'] for s in d['scenarios'] if s['status'] == 'not_triggered']
+        if nt:
+            out.append(f'Fault never triggered (nothing tested): {", ".join(nt)}.')
         out.append('')
         out += [f'{P(f["id"], BOLD)} {P(f["priority"], PRI[f["priority"]])} {f["effect"]} on {f["flow"]}/{f["step"]}: {f["title"]}' for f in d['findings']]
         print('\n'.join(out))
@@ -48,10 +63,16 @@ def main() -> int:
                 f'- Evidence: ' + '; '.join(f'{e["scenario"]} {e["run"]}: {json.dumps(e["measure"])[:140]} [{", ".join(e["screenshots"])}]' for e in f['evidence'][:2]),
                 f'- Repro: {f["repro"]["script"]}', f'- Fix: {f["fix"]}', f'- Verify: {f["verification_step"]}']
     out += ['', P('## Scenarios', BOLD), '', '| Scenario | Flow / step | Fault | Endpoint | Status | Effects |', '|---|---|---|---|---|---|']
-    out += [f'| {s["id"]} | {s["flow"]} / {s["step"]} | {s["fault"]} | `{s["endpoint"]}` | {s["status"]} | {", ".join(s["effects"]) or "none"} |'
+    out += [f'| {s["id"]} | {s["flow"]} / {s["step"]} | {s["fault"]} | `{s["endpoint"]}` | {s["status"].replace("_", " ")}'
+            f'{" (" + s["reason"] + ")" if s.get("reason") and s["status"] != "ran" else ""} | {", ".join(s["effects"]) or "none"} |'
             for s in d['scenarios']]
-    out += ['', P('## Coverage by fault group', BOLD), ''] + [f'- {g}: {c["ran"]} ran, {c["untested"]} untested, {c["errored"]} errored'
+    out += ['', P('## Coverage by fault group', BOLD), ''] + [f'- {g}: {c["ran"]} ran, {c["untested"]} untested, {c["errored"]} errored, '
+                                                            f'{c.get("not_triggered", 0)} never triggered'
                                                             for g, c in sorted(d['coverage'].items())]
+    if d.get('unreachable'):
+        out += ['', P('## Not reachable from the browser', BOLD), ''] + [
+            f'- {u["what"]}' + (f' ({u["flow"]}' + (f' / {u["step"]}' if u.get('step') else '') + ')' if u.get('flow') else '') + f': {u["reason"]}'
+            for u in d['unreachable']]
     if d['notes']:
         out += ['', P('## Notes (not findings)', BOLD), ''] + [f'- {n["kind"]}: {"; ".join(n["detail"])}' + (f' ({n["scenario"]})' if n.get('scenario') else
                                                                                                                f' (baseline, {n.get("flow")})') for n in d['notes']]

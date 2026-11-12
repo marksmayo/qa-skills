@@ -1,7 +1,7 @@
 {
  "skill": {
   "name": "resilience-prober",
-  "version": "1.0.0"
+  "version": "1.1.0"
  },
  "scope": {
   "target": "http://127.0.0.1:8147/",
@@ -41,6 +41,13 @@
      "open orders",
      "open help"
     ]
+   },
+   {
+    "name": "returns",
+    "critical_path": false,
+    "steps": [
+     "open returns"
+    ]
    }
   ],
   "faults": [
@@ -53,6 +60,7 @@
    "slow_3s",
    "truncated_json"
   ],
+  "faults_untested": [],
   "budgets": {
    "message_ms": 10000,
    "spinner_ms": 30000,
@@ -61,7 +69,7 @@
   }
  },
  "metadata": {
-  "generated_at": "2026-11-11T09:10:38Z",
+  "generated_at": "2026-11-12T06:58:12Z",
   "browser": {
    "name": "chromium",
    "version": "158.0.8127.18"
@@ -75,24 +83,50 @@
    }
   ],
   "har": null,
-  "blocked_requests": 0
+  "blocked_requests": 0,
+  "requests_sent": 300,
+  "request_budget": 3000,
+  "allow_form_submission": true,
+  "runs_per_scenario": 2
  },
  "baseline": {
   "track": {
    "status": "passed",
+   "critical_path": true,
    "runs": 2
   },
   "address": {
    "status": "passed",
+   "critical_path": true,
    "runs": 2
   },
   "receive": {
    "status": "passed",
+   "critical_path": false,
    "runs": 2
   },
   "help": {
    "status": "passed",
+   "critical_path": false,
    "runs": 2
+  },
+  "returns": {
+   "status": "failed",
+   "critical_path": false,
+   "runs": 2,
+   "failed_step": "open returns",
+   "error": null,
+   "shown": {
+    "fallback_words": [],
+    "boundary_element": false,
+    "error_words": [],
+    "visible_chars": 188
+   },
+   "page_errors": [],
+   "screenshots": [
+    "baseline-returns.baseline1.failed-step.png",
+    "baseline-returns.baseline2.failed-step.png"
+   ]
   }
  },
  "scenarios": [
@@ -220,7 +254,6 @@
    "expected": "Within 10 s the user sees an error message (role=alert or error wording) instead of a spinner running past 30 s; no blank or crashed screen; data is never shown as empty because of the failure; no more than 10 requests in 30 s and none before Retry-After; after the fault is removed the step completes without a full reload.",
    "status": "ran",
    "effects": [
-    "silent_failure",
     "retry_storm"
    ],
    "runs": 2,
@@ -240,7 +273,7 @@
    "expected": "Within 10 s the user sees an error message (role=alert or error wording) instead of a spinner running past 30 s; no blank or crashed screen; data is never shown as empty because of the failure; the typed input is kept; the action is never shown as done; after the fault is removed the step completes without a full reload.",
    "status": "ran",
    "effects": [
-    "silent_failure",
+    "silent_failure_write",
     "lost_input"
    ],
    "runs": 2,
@@ -260,7 +293,7 @@
    "expected": "Within 10 s the user sees an error message (role=alert or error wording) instead of a spinner running past 30 s; no blank or crashed screen; data is never shown as empty because of the failure; the typed input is kept; the action is never shown as done; after the fault is removed the step completes without a full reload.",
    "status": "ran",
    "effects": [
-    "silent_failure",
+    "silent_failure_write",
     "lost_input"
    ],
    "runs": 2,
@@ -306,6 +339,37 @@
     "S11.run2.fault.png",
     "S11.run2.recovery.png"
    ]
+  },
+  {
+   "id": "S12",
+   "flow": "track",
+   "step": "open tracking",
+   "endpoint": "**/api/orders",
+   "fault": "http_500",
+   "expected": "Within 10 s the user sees an error message (role=alert or error wording) instead of a spinner running past 30 s; no blank or crashed screen; data is never shown as empty because of the failure; after the fault is removed the step completes without a full reload.",
+   "status": "not_triggered",
+   "effects": [],
+   "runs": 2,
+   "screenshots": [
+    "S12.run1.fault.png",
+    "S12.run1.recovery.png",
+    "S12.run2.fault.png",
+    "S12.run2.recovery.png"
+   ],
+   "reason": "the fault matched no request in any run: the step made no matching request after the fault was installed (prefetched or cached earlier, or the pattern, method or headers do not match)"
+  },
+  {
+   "id": "S13",
+   "flow": "returns",
+   "step": "open returns",
+   "endpoint": "**/api/returns",
+   "fault": "http_500",
+   "expected": "Within 10 s the user sees an error message (role=alert or error wording) instead of a spinner running past 30 s; no blank or crashed screen; data is never shown as empty because of the failure; after the fault is removed the step completes without a full reload.",
+   "status": "untested",
+   "effects": [],
+   "runs": 0,
+   "screenshots": [],
+   "reason": "baseline failed"
   }
  ],
  "findings": [
@@ -357,7 +421,8 @@
       "S08.run1.fault.png",
       "S08.run1.recovery.png"
      ],
-     "requests": 2
+     "requests": 2,
+     "faulted_requests": 1
     },
     {
      "scenario": "S09",
@@ -377,7 +442,8 @@
       "S09.run1.fault.png",
       "S09.run1.recovery.png"
      ],
-     "requests": 2
+     "requests": 2,
+     "faulted_requests": 1
     }
    ],
    "repro": {
@@ -385,8 +451,7 @@
     "step": "save address",
     "fault": "http_500",
     "endpoint": "**/api/address",
-    "script": "repros/F1.py",
-    "input": "synthetic: \"1 Test Lane\""
+    "script": "repros/F1.py"
    },
    "fix": "In address() (app.js), drop form.reset() from the catch block; keep the input and show an error with a retry button.",
    "verification_step": "Rerun scenarios S08, S09 with run_resilience.py --runs 2: no lost_input effect."
@@ -426,28 +491,32 @@
      "run": "run1",
      "measure": {
       "message_budget_ms": 10000,
-      "watched_ms": 10694,
-      "error_shown": false
+      "watched_ms": 10586,
+      "error_shown": false,
+      "controls_gone": []
      },
      "screenshots": [
       "S08.run1.fault.png",
       "S08.run1.recovery.png"
      ],
-     "requests": 2
+     "requests": 2,
+     "faulted_requests": 1
     },
     {
      "scenario": "S09",
      "run": "run1",
      "measure": {
       "message_budget_ms": 10000,
-      "watched_ms": 10680,
-      "error_shown": false
+      "watched_ms": 10616,
+      "error_shown": false,
+      "controls_gone": []
      },
      "screenshots": [
       "S09.run1.fault.png",
       "S09.run1.recovery.png"
      ],
-     "requests": 2
+     "requests": 2,
+     "faulted_requests": 1
     }
    ],
    "repro": {
@@ -455,8 +524,7 @@
     "step": "save address",
     "fault": "http_500",
     "endpoint": "**/api/address",
-    "script": "repros/F2.py",
-    "input": "synthetic: \"1 Test Lane\""
+    "script": "repros/F2.py"
    },
    "fix": "Show an error (role=alert) in the catch block of address(), with a Try again button.",
    "verification_step": "Rerun scenarios S08, S09 with run_resilience.py --runs 2: no silent_failure effect."
@@ -493,13 +561,15 @@
      "scenario": "S01",
      "run": "run1",
      "measure": {
-      "spinner_visible_after_ms": 30801
+      "spinner_visible_after_ms": 30727,
+      "loading_words": []
      },
      "screenshots": [
       "S01.run1.fault.png",
       "S01.run1.recovery.png"
      ],
-     "requests": 1
+     "requests": 1,
+     "faulted_requests": 1
     }
    ],
    "repro": {
@@ -507,8 +577,7 @@
     "step": "open tracking",
     "fault": "hang",
     "endpoint": "**/api/status/*",
-    "script": "repros/F3.py",
-    "input": null
+    "script": "repros/F3.py"
    },
    "fix": "Give the status fetch a timeout (AbortController, about 10 s) and show an error with a retry button when it fires.",
    "verification_step": "Rerun scenarios S01 with run_resilience.py --runs 2: no endless_loading effect."
@@ -555,7 +624,8 @@
       "S02.run1.fault.png",
       "S02.run1.recovery.png"
      ],
-     "requests": 1
+     "requests": 1,
+     "faulted_requests": 1
     }
    ],
    "repro": {
@@ -563,8 +633,7 @@
     "step": "open tracking",
     "fault": "http_500",
     "endpoint": "**/api/status/*",
-    "script": "repros/F4.py",
-    "input": null
+    "script": "repros/F4.py"
    },
    "fix": "In track(), check r.ok before rendering, and show an error state instead of the status.",
    "verification_step": "Rerun scenarios S02 with run_resilience.py --runs 2: no misleading_state effect."
@@ -614,7 +683,8 @@
       "S04.run1.fault.png",
       "S04.run1.recovery.png"
      ],
-     "requests": 2
+     "requests": 2,
+     "faulted_requests": 2
     },
     {
      "scenario": "S05",
@@ -631,7 +701,8 @@
       "S05.run1.fault.png",
       "S05.run1.recovery.png"
      ],
-     "requests": 2
+     "requests": 2,
+     "faulted_requests": 2
     }
    ],
    "repro": {
@@ -639,8 +710,7 @@
     "step": "open orders",
     "fault": "http_500",
     "endpoint": "**/api/orders",
-    "script": "repros/F5.py",
-    "input": null
+    "script": "repros/F5.py"
    },
    "fix": "In orders(), don't turn a failure into an empty list: show an error with a retry button.",
    "verification_step": "Rerun scenarios S04, S05 with run_resilience.py --runs 2: no misleading_state effect."
@@ -689,7 +759,8 @@
       "S04.run1.fault.png",
       "S04.run1.recovery.png"
      ],
-     "requests": 2
+     "requests": 2,
+     "faulted_requests": 2
     },
     {
      "scenario": "S05",
@@ -702,7 +773,8 @@
       "S05.run1.fault.png",
       "S05.run1.recovery.png"
      ],
-     "requests": 2
+     "requests": 2,
+     "faulted_requests": 2
     },
     {
      "scenario": "S06",
@@ -715,7 +787,8 @@
       "S06.run1.fault.png",
       "S06.run1.recovery.png"
      ],
-     "requests": 2
+     "requests": 2,
+     "faulted_requests": 2
     }
    ],
    "repro": {
@@ -723,8 +796,7 @@
     "step": "open orders",
     "fault": "http_500",
     "endpoint": "**/api/orders",
-    "script": "repros/F6.py",
-    "input": null
+    "script": "repros/F6.py"
    },
    "fix": "Add a retry control to the orders screen's error and empty states, and re-render on a click of the current route.",
    "verification_step": "Rerun scenarios S04, S05, S06 with run_resilience.py --runs 2: no no_recovery effect."
@@ -765,6 +837,7 @@
        "please reload",
        "something went wrong"
       ],
+      "boundary_element": true,
       "page_errors": [],
       "root_len": 45
      },
@@ -772,7 +845,8 @@
       "S06.run1.fault.png",
       "S06.run1.recovery.png"
      ],
-     "requests": 2
+     "requests": 2,
+     "faulted_requests": 2
     }
    ],
    "repro": {
@@ -780,8 +854,7 @@
     "step": "open orders",
     "fault": "partial_500",
     "endpoint": "**/api/recommendations",
-    "script": "repros/F7.py",
-    "input": null
+    "script": "repros/F7.py"
    },
    "fix": "Load recommendations separately and render the orders without them when they fail (check recs.items, or a boundary around the widget only).",
    "verification_step": "Rerun scenarios S06 with run_resilience.py --runs 2: no crash_b2 effect."
@@ -821,9 +894,12 @@
       "app_root_chars": 0,
       "request": {
        "method": "GET",
-       "t_ms": 942,
+       "t_ms": 1726,
        "url": "http://127.0.0.1:8147/chunk-help.js",
+       "injected": true,
+       "fault_action": "abort",
        "status": null,
+       "ms": 2,
        "failure": "net::ERR_FAILED"
       }
      },
@@ -831,7 +907,8 @@
       "S11.run1.fault.png",
       "S11.run1.recovery.png"
      ],
-     "requests": 1
+     "requests": 1,
+     "faulted_requests": 1
     }
    ],
    "repro": {
@@ -839,8 +916,7 @@
     "step": "open help",
     "fault": "asset_abort",
     "endpoint": "**/chunk-help.js",
-    "script": "repros/F8.py",
-    "input": null
+    "script": "repros/F8.py"
    },
    "fix": "In help(), show an error with a retry that re-requests the chunk, instead of clearing the screen.",
    "verification_step": "Rerun scenarios S11 with run_resilience.py --runs 2: no chunk_failure effect."
@@ -870,36 +946,40 @@
     "S07"
    ],
    "expected": "Within 10 s the user sees an error message (role=alert or error wording) instead of a spinner running past 30 s; no blank or crashed screen; data is never shown as empty because of the failure; no more than 10 requests in 30 s and none before Retry-After; after the fault is removed the step completes without a full reload.",
-   "actual": "With /api/notices returning 503 and Retry-After: 5, the client sent a request every ~200 ms (more than 10 within a few seconds), each sooner than Retry-After.",
+   "actual": "With /api/notices returning 503 and Retry-After: 5, the client sent 52 requests to the same URL within 10706 ms (gaps about 205 ms), each sooner than Retry-After.",
    "user_impact": "Every open tab hammers a struggling service, making the outage worse.",
    "evidence": [
     {
      "scenario": "S07",
      "run": "run1",
      "measure": {
-      "requests": 12,
-      "span_ms": 2351,
+      "url": "http://127.0.0.1:8147/api/notices",
+      "requests": 52,
+      "distinct_urls": 1,
+      "span_ms": 10706,
       "gaps_ms": [
-       212,
-       204,
-       219,
-       218,
-       218,
+       205,
+       216,
        203,
-       204,
-       218,
-       219,
        217,
-       219
+       209,
+       206,
+       216,
+       208,
+       216,
+       217,
+       209,
+       212
       ],
-      "retry_after_ignored": 11,
+      "retry_after_ignored": 51,
       "growing_gaps": false
      },
      "screenshots": [
       "S07.run1.fault.png",
       "S07.run1.recovery.png"
      ],
-     "requests": 12
+     "requests": 52,
+     "faulted_requests": 51
     }
    ],
    "repro": {
@@ -907,8 +987,7 @@
     "step": "open orders",
     "fault": "http_503_retry_after",
     "endpoint": "**/api/notices",
-    "script": "repros/F9.py",
-    "input": null
+    "script": "repros/F9.py"
    },
    "fix": "In notices(), honour Retry-After and back off exponentially with jitter (for example 1 s, 2 s, 4 s, capped).",
    "verification_step": "Rerun scenarios S07 with run_resilience.py --runs 2: no retry_storm effect."
@@ -964,47 +1043,71 @@
    "scenario": null,
    "flow": "help",
    "in_baseline": true
+  },
+  {
+   "kind": "console_only",
+   "detail": [
+    "Failed to load resource: the server responded with a status of 404 (Not Found)"
+   ],
+   "scenario": null,
+   "flow": "returns",
+   "in_baseline": true
   }
  ],
  "coverage": {
   "timeout": {
    "ran": 1,
    "untested": 0,
-   "errored": 0
+   "errored": 0,
+   "not_triggered": 0
   },
   "server_error": {
    "ran": 5,
-   "untested": 0,
-   "errored": 0
+   "untested": 1,
+   "errored": 0,
+   "not_triggered": 1
   },
   "latency": {
    "ran": 1,
    "untested": 0,
-   "errored": 0
+   "errored": 0,
+   "not_triggered": 0
   },
   "payload": {
    "ran": 1,
    "untested": 0,
-   "errored": 0
+   "errored": 0,
+   "not_triggered": 0
   },
   "partial": {
    "ran": 1,
    "untested": 0,
-   "errored": 0
+   "errored": 0,
+   "not_triggered": 0
   },
   "offline": {
    "ran": 1,
    "untested": 0,
-   "errored": 0
+   "errored": 0,
+   "not_triggered": 0
   },
   "static_asset": {
    "ran": 1,
    "untested": 0,
-   "errored": 0
+   "errored": 0,
+   "not_triggered": 0
   }
  },
+ "unreachable": [
+  {
+   "flow": "track",
+   "step": "open tracking",
+   "what": "the courier scan feed behind /api/status",
+   "reason": "the API builds the status on the server; a failure between the API and its own data sources happens server-side, where a browser-side fault cannot reach (only the /api/status response that carries the result)"
+  }
+ ],
  "headline": {
-  "summary": "11 scenarios in 4 flows, each run twice after clean baselines, with 8 fault types injected in the browser. 9 findings, all reproduced: the address save loses input silently, the tracking page can spin forever, failures are shown as empty data, and a failed optional widget or chunk takes out the screen. The optimistic \"Mark as received\" rolled back with a message, and the missing font only logs an error.",
+  "summary": "13 scenarios planned in 5 flows; 11 ran twice each after clean baselines, with 8 fault types injected in the browser. The returns flow is broken without any fault: its baseline never showed the returns form (the app has no #returns route), so its scenario is untested. One scenario never triggered its fault (S12: the orders were already loaded), so it tested nothing. 9 findings, all reproduced: the address save loses input silently, the tracking page can spin forever, failures are shown as empty data, and a failed optional widget or chunk takes out the screen. The optimistic \"Mark as received\" rolled back with a message, and the missing font only logs an error.",
   "priority_counts": {
    "P0": 6,
    "P1": 3
@@ -1014,8 +1117,8 @@
    "track"
   ],
   "scenarios_run": 11,
-  "scenarios_planned": 11,
-  "overall_confidence": "high"
+  "scenarios_planned": 13,
+  "overall_confidence": "medium"
  },
  "needs_review": [],
  "triage": [
@@ -1041,7 +1144,7 @@
    "candidate_id": "K4",
    "decision": "promoted",
    "finding_id": "F4",
-   "reason": "Reproduced in both runs; matches the planted defect."
+   "reason": "Reproduced in both runs; not planted: the status page renders the error body without checking r.ok."
   },
   {
    "candidate_id": "K5",
@@ -1072,16 +1175,13 @@
    "decision": "promoted",
    "finding_id": "F9",
    "reason": "Reproduced in both runs; matches the planted defect."
-  },
-  {
-   "candidate_id": "K10",
-   "decision": "dismissed",
-   "finding_id": null,
-   "reason": "The notices banner is optional and left empty while the endpoint fails; the real defect on this endpoint is the retry storm, reported separately."
   }
  ],
  "limitations": [
-  "Browser-side faults only; server-side faults (between the backend and its database) were not tried.",
+  "The returns flow's baseline failed without any fault (step \"open returns\" did not complete), so its scenarios are untested.",
+  "S12: the fault matched no request, so nothing was tested (see each scenario's reason).",
+  "Not reachable from the browser (track / open tracking): the courier scan feed behind /api/status: the API builds the status on the server; a failure between the API and its own data sources happens server-side, where a browser-side fault cannot reach (only the /api/status response that carries the result).",
+  "Browser-side faults only; server-side faults (between the backend and its data sources) were not tried.",
   "One desktop Chromium profile; mobile profiles, Firefox and WebKit were not run.",
   "Not tried: 401/403 mid-flow, 429, 5 MB and HTML payloads, flapping endpoints and service workers; see the coverage table for what ran.",
   "Recovery was tried without a reload, through the app's retry control or the step's actions; a reload was not counted as recovery."

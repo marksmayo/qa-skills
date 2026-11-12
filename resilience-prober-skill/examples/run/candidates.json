@@ -1,23 +1,69 @@
 {
+ "baselines": {
+  "track": {
+   "status": "passed",
+   "critical_path": true,
+   "runs": 2
+  },
+  "address": {
+   "status": "passed",
+   "critical_path": true,
+   "runs": 2
+  },
+  "receive": {
+   "status": "passed",
+   "critical_path": false,
+   "runs": 2
+  },
+  "help": {
+   "status": "passed",
+   "critical_path": false,
+   "runs": 2
+  },
+  "returns": {
+   "status": "failed",
+   "critical_path": false,
+   "runs": 2,
+   "failed_step": "open returns",
+   "error": null,
+   "shown": {
+    "fallback_words": [],
+    "boundary_element": false,
+    "error_words": [],
+    "visible_chars": 188
+   },
+   "page_errors": [],
+   "screenshots": [
+    "baseline-returns.baseline1.failed-step.png",
+    "baseline-returns.baseline2.failed-step.png"
+   ]
+  }
+ },
  "scenarios": [
   {
    "id": "S01",
    "status": "ran",
    "effects": [
     "endless_loading"
-   ]
+   ],
+   "runs_triggered": 2,
+   "runs": 2
   },
   {
    "id": "S02",
    "status": "ran",
    "effects": [
     "misleading_state"
-   ]
+   ],
+   "runs_triggered": 2,
+   "runs": 2
   },
   {
    "id": "S03",
    "status": "ran",
-   "effects": []
+   "effects": [],
+   "runs_triggered": 2,
+   "runs": 2
   },
   {
    "id": "S04",
@@ -25,7 +71,9 @@
    "effects": [
     "misleading_state",
     "no_recovery"
-   ]
+   ],
+   "runs_triggered": 2,
+   "runs": 2
   },
   {
    "id": "S05",
@@ -33,7 +81,9 @@
    "effects": [
     "misleading_state",
     "no_recovery"
-   ]
+   ],
+   "runs_triggered": 2,
+   "runs": 2
   },
   {
    "id": "S06",
@@ -41,15 +91,18 @@
    "effects": [
     "crash_b2",
     "no_recovery"
-   ]
+   ],
+   "runs_triggered": 2,
+   "runs": 2
   },
   {
    "id": "S07",
    "status": "ran",
    "effects": [
-    "silent_failure",
     "retry_storm"
-   ]
+   ],
+   "runs_triggered": 2,
+   "runs": 2
   },
   {
    "id": "S08",
@@ -57,7 +110,9 @@
    "effects": [
     "silent_failure_write",
     "lost_input"
-   ]
+   ],
+   "runs_triggered": 2,
+   "runs": 2
   },
   {
    "id": "S09",
@@ -65,19 +120,37 @@
    "effects": [
     "silent_failure_write",
     "lost_input"
-   ]
+   ],
+   "runs_triggered": 2,
+   "runs": 2
   },
   {
    "id": "S10",
    "status": "ran",
-   "effects": []
+   "effects": [],
+   "runs_triggered": 2,
+   "runs": 2
   },
   {
    "id": "S11",
    "status": "ran",
    "effects": [
     "chunk_failure"
-   ]
+   ],
+   "runs_triggered": 2,
+   "runs": 2
+  },
+  {
+   "id": "S12",
+   "status": "not_triggered",
+   "effects": [],
+   "reason": "the fault matched no request in any run: the step made no matching request after the fault was installed (prefetched or cached earlier, or the pattern, method or headers do not match)"
+  },
+  {
+   "id": "S13",
+   "status": "untested",
+   "effects": [],
+   "reason": "baseline failed"
   }
  ],
  "candidates": [
@@ -126,7 +199,8 @@
       "S08.run1.fault.png",
       "S08.run1.recovery.png"
      ],
-     "requests": 2
+     "requests": 2,
+     "faulted_requests": 1
     },
     {
      "scenario": "S09",
@@ -146,7 +220,8 @@
       "S09.run1.fault.png",
       "S09.run1.recovery.png"
      ],
-     "requests": 2
+     "requests": 2,
+     "faulted_requests": 1
     }
    ]
   },
@@ -182,28 +257,32 @@
      "run": "run1",
      "measure": {
       "message_budget_ms": 10000,
-      "watched_ms": 10694,
-      "error_shown": false
+      "watched_ms": 10586,
+      "error_shown": false,
+      "controls_gone": []
      },
      "screenshots": [
       "S08.run1.fault.png",
       "S08.run1.recovery.png"
      ],
-     "requests": 2
+     "requests": 2,
+     "faulted_requests": 1
     },
     {
      "scenario": "S09",
      "run": "run1",
      "measure": {
       "message_budget_ms": 10000,
-      "watched_ms": 10680,
-      "error_shown": false
+      "watched_ms": 10616,
+      "error_shown": false,
+      "controls_gone": []
      },
      "screenshots": [
       "S09.run1.fault.png",
       "S09.run1.recovery.png"
      ],
-     "requests": 2
+     "requests": 2,
+     "faulted_requests": 1
     }
    ]
   },
@@ -236,13 +315,15 @@
      "scenario": "S01",
      "run": "run1",
      "measure": {
-      "spinner_visible_after_ms": 30801
+      "spinner_visible_after_ms": 30727,
+      "loading_words": []
      },
      "screenshots": [
       "S01.run1.fault.png",
       "S01.run1.recovery.png"
      ],
-     "requests": 1
+     "requests": 1,
+     "faulted_requests": 1
     }
    ]
   },
@@ -285,7 +366,8 @@
       "S02.run1.fault.png",
       "S02.run1.recovery.png"
      ],
-     "requests": 1
+     "requests": 1,
+     "faulted_requests": 1
     }
    ]
   },
@@ -331,7 +413,8 @@
       "S04.run1.fault.png",
       "S04.run1.recovery.png"
      ],
-     "requests": 2
+     "requests": 2,
+     "faulted_requests": 2
     },
     {
      "scenario": "S05",
@@ -348,7 +431,8 @@
       "S05.run1.fault.png",
       "S05.run1.recovery.png"
      ],
-     "requests": 2
+     "requests": 2,
+     "faulted_requests": 2
     }
    ]
   },
@@ -393,7 +477,8 @@
       "S04.run1.fault.png",
       "S04.run1.recovery.png"
      ],
-     "requests": 2
+     "requests": 2,
+     "faulted_requests": 2
     },
     {
      "scenario": "S05",
@@ -406,7 +491,8 @@
       "S05.run1.fault.png",
       "S05.run1.recovery.png"
      ],
-     "requests": 2
+     "requests": 2,
+     "faulted_requests": 2
     },
     {
      "scenario": "S06",
@@ -419,7 +505,8 @@
       "S06.run1.fault.png",
       "S06.run1.recovery.png"
      ],
-     "requests": 2
+     "requests": 2,
+     "faulted_requests": 2
     }
    ]
   },
@@ -456,6 +543,7 @@
        "please reload",
        "something went wrong"
       ],
+      "boundary_element": true,
       "page_errors": [],
       "root_len": 45
      },
@@ -463,7 +551,8 @@
       "S06.run1.fault.png",
       "S06.run1.recovery.png"
      ],
-     "requests": 2
+     "requests": 2,
+     "faulted_requests": 2
     }
    ]
   },
@@ -499,9 +588,12 @@
       "app_root_chars": 0,
       "request": {
        "method": "GET",
-       "t_ms": 942,
+       "t_ms": 1726,
        "url": "http://127.0.0.1:8147/chunk-help.js",
+       "injected": true,
+       "fault_action": "abort",
        "status": null,
+       "ms": 2,
        "failure": "net::ERR_FAILED"
       }
      },
@@ -509,7 +601,8 @@
       "S11.run1.fault.png",
       "S11.run1.recovery.png"
      ],
-     "requests": 1
+     "requests": 1,
+     "faulted_requests": 1
     }
    ]
   },
@@ -542,70 +635,33 @@
      "scenario": "S07",
      "run": "run1",
      "measure": {
-      "requests": 12,
-      "span_ms": 2351,
+      "url": "http://127.0.0.1:8147/api/notices",
+      "requests": 52,
+      "distinct_urls": 1,
+      "span_ms": 10706,
       "gaps_ms": [
-       212,
-       204,
-       219,
-       218,
-       218,
+       205,
+       216,
        203,
-       204,
-       218,
-       219,
        217,
-       219
+       209,
+       206,
+       216,
+       208,
+       216,
+       217,
+       209,
+       212
       ],
-      "retry_after_ignored": 11,
+      "retry_after_ignored": 51,
       "growing_gaps": false
      },
      "screenshots": [
       "S07.run1.fault.png",
       "S07.run1.recovery.png"
      ],
-     "requests": 12
-    }
-   ]
-  },
-  {
-   "id": "K10",
-   "effect": "silent_failure",
-   "on_write": false,
-   "impact": "Friction",
-   "impact_weight": 2,
-   "likelihood": 3,
-   "reach": 3,
-   "score": 18,
-   "priority": "P1",
-   "floors": [],
-   "confidence": "reproduced",
-   "flow": "track",
-   "step": "open orders",
-   "endpoints": [
-    "**/api/notices"
-   ],
-   "faults": [
-    "http_503_retry_after"
-   ],
-   "scenarios": [
-    "S07"
-   ],
-   "critical_path": true,
-   "evidence": [
-    {
-     "scenario": "S07",
-     "run": "run1",
-     "measure": {
-      "message_budget_ms": 10000,
-      "watched_ms": 2200,
-      "error_shown": false
-     },
-     "screenshots": [
-      "S07.run1.fault.png",
-      "S07.run1.recovery.png"
-     ],
-     "requests": 12
+     "requests": 52,
+     "faulted_requests": 51
     }
    ]
   }
@@ -659,6 +715,15 @@
    ],
    "scenario": null,
    "flow": "help",
+   "in_baseline": true
+  },
+  {
+   "kind": "console_only",
+   "detail": [
+    "Failed to load resource: the server responded with a status of 404 (Not Found)"
+   ],
+   "scenario": null,
+   "flow": "returns",
    "in_baseline": true
   }
  ]

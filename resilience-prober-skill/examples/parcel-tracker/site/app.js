@@ -6,7 +6,7 @@ function spinner() { app.innerHTML = '<div class="spinner" role="progressbar" ar
 // Each route renders inside a boundary that shows a fallback when rendering throws.
 function boundary(render) {
   return render().catch(function () {
-    app.innerHTML = '<h2>Something went wrong</h2><p>Please reload the page.</p>';
+    app.innerHTML = '<div class="route-error"><h2>Something went wrong</h2><p>Please reload the page.</p></div>';
   });
 }
 

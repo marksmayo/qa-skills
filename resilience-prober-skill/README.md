@@ -40,11 +40,16 @@ scenarios needs Playwright (`pip install -r requirements.txt` and `python -m pla
 
 > What happens to checkout when the payment API is slow or returns 503? Our test environment is https://test.example.com and I can authorise it.
 
+On a shared environment set `request_budget` in flows.json and leave `allow_form_submission` false (the
+default): the site's host is the only one the browser may reach, and writes stay in the browser.
+
 ```bash
 python scripts/plan_scenarios.py flows.json --out run/scenarios.json --plan-only
 python scripts/plan_scenarios.py flows.json --out run/scenarios.json
 python scripts/run_resilience.py flows.json run/scenarios.json --out run --runs 2
 python scripts/classify.py run/run.json run/scenarios.json flows.json --out run/candidates.json
+python scripts/build_report.py --run run/run.json --scenarios run/scenarios.json --candidates run/candidates.json --flows flows.json \
+    --promote K1,K2 --repros run/repros --out run/resilience_report.json     # then replace every TODO
 python scripts/validate_resilience.py run/resilience_report.json --run run/run.json --scenarios run/scenarios.json --candidates run/candidates.json
 python scripts/render_report.py run/resilience_report.json [--brief]
 ```
@@ -67,10 +72,13 @@ python scripts/render_report.py examples/resilience_report.example.json
 - `RUBRIC.md`: effects, impact, likelihood, reach, priority, confidence
 - `schemas/resilience_report.schema.json`: output contract
 - `data/faults.json`: the fault catalogue with likelihoods
-- `data/indicators.json`: spinner, error, empty-state and retry-control patterns, and budgets
+- `data/indicators.json`: default spinner, loading, error, empty-state, boundary and retry-control
+  patterns, and budgets (a product's own go under `indicators` in flows.json)
 - `scripts/plan_scenarios.py`: scenarios with expected outcomes, written before the run
-- `scripts/run_resilience.py`: baselines, fault injection, observation and recovery
+- `scripts/run_resilience.py`: baselines, fault injection (by URL, method, headers, resource type),
+  observation, recovery and request accounting
 - `scripts/classify.py`: effects, root-cause merging and ratings
+- `scripts/build_report.py`: the report skeleton and a guarded repro script per finding
 - `scripts/validate_resilience.py`, `scripts/render_report.py`, `scripts/schema_check.py`
 - `scripts/browser_harness.py`: shared copy (edit it in `shared/`)
 - `examples/`: the app, the flows, the run and the report

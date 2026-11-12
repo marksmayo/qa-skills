@@ -4,9 +4,16 @@
     python plan_scenarios.py flows.json --out run/scenarios.json [--plan-only]
 
 flows.json lists the flows (named steps with actions, a `done` selector, `input` fields, `write`) and the
-scenarios to run, either explicitly ({"flow", "step", "endpoint", "fault", "method"?}) or as
-{"auto": {"endpoints": {step: [patterns]}, "faults": [...]}}, which crosses every listed fault with each
-step's endpoints. Duplicate (step, endpoint, fault) scenarios are dropped.
+scenarios to run, either explicitly ({"flow", "step", "endpoint", "fault"} plus optional "method",
+"headers" ({name: value}, true for present, false for absent: e.g. {"RSC": "1"} for a Next.js server
+component payload, {"Next-Router-Prefetch": false} for a non-prefetch request), "resource_type" (fetch,
+document, script ...) and "from": "load" (install the fault before the page loads, for requests a framework
+sends at load such as prefetches)) or as {"auto": {"endpoints": {step: [patterns]}, "faults": [...]}},
+which crosses every listed fault with each step's endpoints. Duplicate scenarios are dropped.
+
+`unreachable` in flows.json lists data the browser cannot reach ({"flow"?, "step"?, "what", "reason"}),
+such as data a server component fetches on the server: browser-side faults reach only the payload that
+carries its result. It is copied into the plan so the report can say what was not testable.
 
 Each scenario gets an `expected` outcome written now, from the step (read or write) and the fault group,
 with the budgets: the bar a run is held to can't move after the result is known. `planned_at` records when.
@@ -17,6 +24,7 @@ import argparse, json, sys, time
 from pathlib import Path
 
 SKILL = Path(__file__).resolve().parent.parent
+SCENARIO_KEYS = {'flow', 'step', 'endpoint', 'fault', 'method', 'headers', 'resource_type', 'from', 'note'}
 
 
 def expected(step: dict, fault: dict, budgets: dict) -> str:
@@ -46,8 +54,16 @@ def main() -> int:
     a = ap.parse_args()
     cfg = json.loads(a.flows.read_text(encoding='utf-8'))
     cat = json.loads((SKILL / 'data' / 'faults.json').read_text(encoding='utf-8'))
-    budgets = json.loads((SKILL / 'data' / 'indicators.json').read_text(encoding='utf-8'))['budgets'] | (cfg.get('budgets') or {})
+    budgets = (json.loads((SKILL / 'data' / 'indicators.json').read_text(encoding='utf-8'))['budgets'] | ((cfg.get('indicators') or {}).get('budgets') or {})
+               | (cfg.get('budgets') or {}))
     flows = {f['name']: f for f in cfg['flows']}
+    unreachable = []
+    for u in cfg.get('unreachable') or []:
+        if u.get('flow') and u['flow'] not in flows:
+            raise SystemExit(f'unreachable: no flow {u["flow"]!r}')
+        if len((u.get('reason') or '').strip()) < 10 or not (u.get('what') or '').strip():
+            raise SystemExit('unreachable: each entry needs "what" and a "reason" (why a browser-side fault cannot reach it)')
+        unreachable.append({'flow': u.get('flow'), 'step': u.get('step'), 'what': u['what'], 'reason': u['reason']})
     specs = cfg['scenarios']
     if isinstance(specs, dict) and 'auto' in specs:
         auto, specs = specs['auto'], []
@@ -58,17 +74,21 @@ def main() -> int:
                         specs.append({'flow': f['name'], 'step': st['name'], 'endpoint': ep, 'fault': fault})
     seen, out = set(), []
     for s in specs:
-        k = (s['step'], s['endpoint'], s['fault'])
+        k = (s['flow'], s['step'], s['endpoint'], s['fault'], s.get('method'), json.dumps(s.get('headers'), sort_keys=True), s.get('from'))
         if k in seen:
             continue
         seen.add(k)
-        flow = flows[s['flow']]
-        step = next(st for st in flow['steps'] if st['name'] == s['step'])
+        flow = flows.get(s['flow'])
+        step = next((st for st in (flow or {}).get('steps', []) if st['name'] == s['step']), None)
+        if step is None or s['fault'] not in cat['faults']:
+            raise SystemExit(f'scenario {s}: unknown flow, step or fault')
+        if set(s) - SCENARIO_KEYS:
+            raise SystemExit(f'scenario {s}: unknown field(s) {sorted(set(s) - SCENARIO_KEYS)}')
         fault = cat['faults'][s['fault']]
         out.append({'id': f'S{len(out) + 1:02d}', **s, 'group': fault['group'], 'likelihood': cat['groups'][fault['group']]['likelihood'],
                     'critical_path': bool(flow.get('critical_path')), 'write': bool(step.get('write') or flow.get('write') and step.get('input')),
                     'expected': expected(dict(step, write=bool(step.get('write') or (flow.get('write') and step.get('input')))), fault, budgets)})
-    doc = {'planned_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'budgets': budgets, 'scenarios': out}
+    doc = {'planned_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'budgets': budgets, 'scenarios': out, 'unreachable': unreachable}
     if a.plan_only or not a.out:
         print(json.dumps({'count': len(out), 'scenarios': [f'{s["id"]} {s["flow"]}/{s["step"]} {s["fault"]} {s["endpoint"]}' for s in out]}, indent=1))
         return 0

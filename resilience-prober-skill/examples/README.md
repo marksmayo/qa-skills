@@ -1,11 +1,13 @@
 # Example: parcel-tracker
 
 `parcel-tracker/` is a small single-page app (`site/`) with a stub API (`server.py`, loopback, port 8147)
-that always answers correctly: every fault in the run is injected in the browser. `flows.json` has four
-flows (track and address are critical paths) and 11 scenarios. `run/` is the real run (listed in
-`run/commands.sh`): the plan with expected outcomes, `run.json` with two runs per scenario, screenshots,
-`candidates.json` and a repro script per finding in `run/repros/`. `resilience_report.example.json` is
-the report. Chromium 158, one desktop profile.
+that always answers correctly: every fault in the run is injected in the browser. `flows.json` has five
+flows (track and address are critical paths), 13 scenarios, the app's own error-boundary selector under
+`indicators`, a request budget, and one `unreachable` entry. `run/` is the real run (listed in
+`run/commands.sh`): the plan with expected outcomes, `run.json` with two runs per scenario and the
+harness's request counts, screenshots, `candidates.json` and a guarded repro script per finding in
+`run/repros/` (written by `build_report.py`). `resilience_report.example.json` is the report. Chromium,
+one desktop profile.
 
 ## Answer key
 
@@ -21,10 +23,12 @@ the report. Chromium 158, one desktop profile.
 | A failed help chunk clears the screen | chunk_failure | F8, P1 |
 | Decoy: optimistic "Marked as received" that rolls back with a Try again button | No finding | S10 has no effect; the injected 500 is only a console note |
 | Decoy: a font file that doesn't exist | Console note only | A 404 console note in every baseline; the text falls back to Arial |
+| The returns journey has no route (`#returns` falls back to the orders screen) | the baseline fails without any fault; its scenario is untested | baseline `failed` at "open returns", with screenshots; S13 untested; the headline names it |
+| Decoy: a 500 on `/api/orders` while opening tracking (S12) | the orders loaded on the previous step, so no request matches | `not_triggered`: no effects, not counted as run |
 
-The notices banner left empty while its endpoint fails was dismissed: it is optional, and the retry
-storm is the defect on that endpoint. The 3 s slow status response (S03) showed the spinner and then the
-status: no finding.
+The notices banner left empty while its endpoint fails is no longer a candidate: the orders step still
+completed with every control the baseline showed, and the retry storm is the defect on that endpoint.
+The 3 s slow status response (S03) showed the spinner and then the status: no finding.
 
 ```bash
 python scripts/validate_resilience.py examples/resilience_report.example.json --run examples/run/run.json --scenarios examples/run/scenarios.json --candidates examples/run/candidates.json

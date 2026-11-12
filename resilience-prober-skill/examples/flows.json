@@ -2,8 +2,10 @@
   "site": "http://127.0.0.1:8147/",
   "authorised_by": null,
   "allow_form_submission": true,
+  "request_budget": 3000,
   "app_root": "#app",
   "viewport": "1280x800",
+  "indicators": {"boundary_selectors": [".route-error"]},
   "flows": [
     {"name": "track", "critical_path": true, "steps": [
       {"name": "open orders", "actions": [{"goto": "#orders"}], "done": "a.track"},
@@ -17,7 +19,13 @@
       {"name": "mark received", "actions": [{"click": "#received"}], "done": ".received-state", "write": true}]},
     {"name": "help", "critical_path": false, "steps": [
       {"name": "open orders", "actions": [{"goto": "#orders"}], "done": "a.track"},
-      {"name": "open help", "actions": [{"click": "a.help"}], "done": ".help"}]}
+      {"name": "open help", "actions": [{"click": "a.help"}], "done": ".help"}]},
+    {"name": "returns", "critical_path": false, "steps": [
+      {"name": "open returns", "actions": [{"goto": "#returns"}], "done": ".returns-form"}]}
+  ],
+  "unreachable": [
+    {"flow": "track", "step": "open tracking", "what": "the courier scan feed behind /api/status",
+     "reason": "the API builds the status on the server; a failure between the API and its own data sources happens server-side, where a browser-side fault cannot reach (only the /api/status response that carries the result)"}
   ],
   "scenarios": [
     {"flow": "track", "step": "open tracking", "endpoint": "**/api/status/*", "fault": "hang"},
@@ -30,6 +38,9 @@
     {"flow": "address", "step": "save address", "endpoint": "**/api/address", "fault": "http_500", "method": "POST"},
     {"flow": "address", "step": "save address", "endpoint": "**/api/address", "fault": "offline"},
     {"flow": "receive", "step": "mark received", "endpoint": "**/api/received/*", "fault": "http_500", "method": "POST"},
-    {"flow": "help", "step": "open help", "endpoint": "**/chunk-help.js", "fault": "asset_abort"}
+    {"flow": "help", "step": "open help", "endpoint": "**/chunk-help.js", "fault": "asset_abort"},
+    {"flow": "track", "step": "open tracking", "endpoint": "**/api/orders", "fault": "http_500",
+     "note": "decoy: the orders were loaded on the previous step, so opening tracking sends no matching request"},
+    {"flow": "returns", "step": "open returns", "endpoint": "**/api/returns", "fault": "http_500"}
   ]
 }

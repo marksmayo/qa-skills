@@ -1,6 +1,6 @@
 # Design: `resilience-prober-skill`
 
-Status: Built (v1.0.0). Build order: 21.
+Status: Built (v1.1.0). Build order: 21.
 
 ## Mission
 
@@ -276,3 +276,44 @@ Where the build differs from the design above, and what the example showed.
   (6 P0, 3 P1), all reproduced, matching the seven planted defects plus one real one (the status page
   ignores `r.ok`); both decoys produced notes only. The F1 repro script reproduces the lost input.
 - **Testing:** 13 of 13 seeded report violations are caught.
+
+### v1.1.0: after a run on a real Next.js staging deployment
+
+A read-only run against a Next.js App Router site on Vercel showed these gaps; v1.1.0 closes them.
+
+- **The runner could not test a remote site**: the site was never registered with the browser harness,
+  so its own document was blocked as a third party. The site, `targets` and `allowed_hosts` are now
+  harness targets; page loads go through the harness's goto (paced, 429/503 back-off) except where a
+  fault must be in place first.
+- **Writes were let through by default** (`allow_form_submission` defaulted to true in the runner). It is
+  false now, and the report records it. The harness counts every request it lets out; `request_budget`
+  caps a run (no new run starts past it, and a run the harness had to cut short is marked failed, not
+  evidence). run.json records the harness's metadata and counts.
+- **A fault that never fired counted as tested**, and as a silent failure: Next.js had prefetched the
+  payload before the fault was installed. Runs record `fault_triggered`; a scenario with none is
+  `not_triggered`. The request log keeps the query (sensitive values redacted), marks injected and held
+  requests, and records response times.
+- **Next.js**: faults match request headers (`RSC: 1`, `Next-Router-Prefetch`) and resource type,
+  `"from": "load"` installs a fault before the page loads, `"prefetch": "block"` makes navigations fetch,
+  and `unreachable` lists server-side data browser faults can't reach.
+- **Indicators were fixed**: the app's error boundary wording, skeletons and empty states couldn't be
+  named, so a boundary render came out as a silent failure. `indicators` in flows.json (global or per
+  flow) is merged over the defaults and recorded in run.json; `boundary_selectors` and `loading_words` are
+  new.
+- **The watch ended 2-3 s after the step's selector showed**, so a widget that never stopped loading on a
+  server-rendered page couldn't be endless loading. Failing faults are now watched for the whole window.
+- **False positives**: a retry storm counted every URL a wildcard matched (eleven chunks once each); a
+  static-asset fault whose screen kept its content was a silent failure; a read whose step completed with
+  all its controls was a silent failure. Storms count per URL; static assets and completed reads are
+  excluded (a read that lost controls the baseline showed still counts).
+- **Lost input was measured after the click**, so a quick reset could look like an empty field before
+  the fault. It is measured after the last fill.
+- **Failed baselines had no evidence and the report's baseline section was free text**; a tampered
+  "passed" validated. The failing step is screenshotted and observed, `classify.py` derives the baseline
+  section, the validator compares it and requires the headline to name broken flows.
+- **No report builder**: `build_report.py` writes the skeleton (with `TODO` placeholders the validator
+  rejects) and a repro script per finding with a third-party and write guard. The validator also checks
+  `scope.faults` against what ran, rejects absolute claims ("production ready", "recovers gracefully from
+  every failure"), and allows `low` confidence.
+- **Not done**: client-side versus full navigation is still not recorded, and visible controls are
+  compared with the baseline only for the silent-failure rule.

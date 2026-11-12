@@ -1,5 +1,5 @@
 {
- "planned_at": "2026-11-11T09:06:16Z",
+ "planned_at": "2026-11-12T06:51:30Z",
  "budgets": {
   "message_ms": 10000,
   "spinner_ms": 30000,
@@ -140,6 +140,39 @@
    "critical_path": false,
    "write": false,
    "expected": "The screen keeps its content or shows an error within 10 s; no blank screen."
+  },
+  {
+   "id": "S12",
+   "flow": "track",
+   "step": "open tracking",
+   "endpoint": "**/api/orders",
+   "fault": "http_500",
+   "note": "decoy: the orders were loaded on the previous step, so opening tracking sends no matching request",
+   "group": "server_error",
+   "likelihood": 3,
+   "critical_path": true,
+   "write": false,
+   "expected": "Within 10 s the user sees an error message (role=alert or error wording) instead of a spinner running past 30 s; no blank or crashed screen; data is never shown as empty because of the failure; after the fault is removed the step completes without a full reload."
+  },
+  {
+   "id": "S13",
+   "flow": "returns",
+   "step": "open returns",
+   "endpoint": "**/api/returns",
+   "fault": "http_500",
+   "group": "server_error",
+   "likelihood": 3,
+   "critical_path": false,
+   "write": false,
+   "expected": "Within 10 s the user sees an error message (role=alert or error wording) instead of a spinner running past 30 s; no blank or crashed screen; data is never shown as empty because of the failure; after the fault is removed the step completes without a full reload."
+  }
+ ],
+ "unreachable": [
+  {
+   "flow": "track",
+   "step": "open tracking",
+   "what": "the courier scan feed behind /api/status",
+   "reason": "the API builds the status on the server; a failure between the API and its own data sources happens server-side, where a browser-side fault cannot reach (only the /api/status response that carries the result)"
   }
  ]
 }
