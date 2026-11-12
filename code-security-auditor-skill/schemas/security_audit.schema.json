@@ -9,7 +9,18 @@
                "files_written", "summary"],
   "additionalProperties": false,
   "properties": {
-    "schema_version": {"enum": ["1.0", "1.1"], "description": "1.1 adds machine-credential auth values, server_action and middleware entry points, agent-found findings (source, basis), business_impact, and npm dependency facts (range, dev, via)."},
+    "schema_version": {"enum": ["1.0", "1.1", "1.2"], "description": "1.1 adds machine-credential auth values, server_action and middleware entry points, agent-found findings (source, basis), business_impact, and npm dependency facts (range, dev, via). 1.2 requires dependency_advisories (were advisories checked at all), and adds observation excerpts, grep variant rules and chains_with references to findings in a sibling repository's report (repo#F-n)."},
+    "dependency_advisories": {
+      "type": "object", "required": ["status", "tools", "reason"], "additionalProperties": false,
+      "description": "Whether the dependencies were checked against an advisory database. not_assessed (no tool ran, e.g. offline) is not the same as no vulnerable dependencies. Required from schema 1.2.",
+      "properties": {
+        "status": {"enum": ["assessed", "partial", "not_assessed"]},
+        "tools": {"type": "array", "items": {"type": "string"}, "description": "dependency tools that ran"},
+        "reason": {"type": ["string", "null"], "description": "why advisories were not (fully) assessed"},
+        "lockfiles": {"type": "array", "items": {"type": "string"}},
+        "packages": {"type": ["integer", "null"], "minimum": 0, "description": "pinned packages listed offline"}
+      }
+    },
     "skill": {
       "type": "object", "required": ["name", "version"], "additionalProperties": false,
       "properties": {"name": {"const": "code-security-auditor"}, "version": {"type": "string"}}
@@ -139,7 +150,7 @@
         "properties": {
           "id": {"type": "string", "pattern": "^R-\\d+$"},
           "for_findings": {"type": "array", "items": {"type": "string"}, "minItems": 1},
-          "engine": {"enum": ["semgrep"]},
+          "engine": {"enum": ["semgrep", "grep"], "description": "grep: a regular expression (saved in file) when Semgrep is not available; matches lists what it found"},
           "file": {"type": "string"},
           "rule": {"type": "string", "minLength": 20},
           "matches": {"type": "array", "items": {"type": "string", "pattern": "^[^:]+:\\d+$"}},
@@ -158,6 +169,7 @@
           "cwe": {"type": "array", "items": {"type": "string", "pattern": "^CWE-\\d+$"}},
           "file": {"type": "string"},
           "line": {"type": "integer", "minimum": 1},
+          "excerpt": {"type": "string", "minLength": 3, "description": "text on that line; --repo re-reads it"},
           "note": {"type": "string"}
         }
       }
@@ -334,7 +346,7 @@
             "fixed_in": {"type": "array", "items": {"type": "string"}}
           }
         },
-        "chains_with": {"type": "array", "items": {"type": "string", "pattern": "^F-\\d+$"}},
+        "chains_with": {"type": "array", "items": {"type": "string", "pattern": "^([\\w.-]+#)?F-\\d+$"}, "description": "F-n in this report, or repo#F-n for a finding in a sibling repository's report"},
         "variant_of": {"type": ["string", "null"], "pattern": "^F-\\d+$"},
         "variants": {"type": "array", "items": {"type": "string", "pattern": "^F-\\d+$"}}
       }

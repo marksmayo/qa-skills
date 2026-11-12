@@ -4,9 +4,11 @@ optionally export the findings as SARIF for code-scanning dashboards.
 
     python render_report.py security_audit.json [--color auto|always|never] [--brief] [--sarif findings.sarif]
 
---brief prints the summary, the ranked table and dependencies without per-finding detail, and
-counts dismissed candidates by reason instead of listing each one. Findings found by review
-(source: agent) are labelled "found by review".
+--brief prints the summary, the ranked table and dependencies without per-finding detail,
+collapses tools that did not apply into one line, and counts dismissed candidates by reason
+instead of listing each one. Findings found by review (source: agent) are labelled "found by
+review". With --sarif only the SARIF file is written (and a one-line note printed); the report
+itself is not printed.
 The SARIF export gives each rule its CWE tags and a security-severity (the CVSS v4.0 score), which
 GitHub code scanning uses to rank alerts. It contains titles, locations and fixes, not exploit
 steps, so it is safer to upload than the report itself.
@@ -98,10 +100,15 @@ def main() -> int:
     w(f"Verification: {vt}")
     w('')
     w(P('## Tools', BOLD))
+    na = [t for t in d['tools'] if t['status'] == 'not_applicable'] if args.brief else []
     for t in d['tools']:
+        if t in na:
+            continue
         extra = t.get('version') or ''
         why = f" - {t['reason']}" if t.get('reason') else ''
         w(f"- {t['name']} {extra} [{P(t['status'], TOOL_STYLE[t['status']])}]{why}")
+    if na:
+        w(P(f"- not applicable: {', '.join(t['name'] for t in na)}", DIM))
     w('')
     w(P('## Findings (ranked)', BOLD))
     w('| # | ID | Priority | Severity | Confidence | Exposure | CWE | Finding | Location |')
@@ -169,6 +176,12 @@ def main() -> int:
                 w('Related: ' + '; '.join(links))
     w('')
     w(P('## Dependencies', BOLD))
+    adv = d.get('dependency_advisories')
+    if adv:
+        style = GREEN if adv['status'] == 'assessed' else YELLOW if adv['status'] == 'partial' else RED
+        w(P(f"Advisories {adv['status'].replace('_', ' ')}", style) + (f" by {', '.join(adv['tools'])}" if adv['tools'] else '') +
+          (f" ({adv['packages']} pinned package(s) in {len(adv.get('lockfiles') or [])} lockfile(s))" if adv.get('packages') is not None else '') +
+          (f": {adv['reason']}" if adv.get('reason') else ''))
     by = {}
     for x in d['dependencies']:
         by.setdefault(x['reachable'], []).append(x)
@@ -217,10 +230,11 @@ def main() -> int:
     w(P('## Limitations', BOLD))
     for l in d['limitations']:
         w(f"- {l}")
-    print('\n'.join(out))
     if args.sarif:
         args.sarif.write_text(json.dumps(to_sarif(d), indent=2) + '\n', encoding='utf-8')
-        print(f"\nSARIF ({len(d['findings'])} result(s)) -> {args.sarif}", file=sys.stderr)
+        print(f"SARIF ({len(d['findings'])} result(s)) -> {args.sarif}")
+        return 0
+    print('\n'.join(out))
     return 0
 
 if __name__ == '__main__':

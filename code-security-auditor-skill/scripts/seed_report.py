@@ -49,7 +49,8 @@ def git_commit(repo: Path | None) -> str | None:
         return None
 
 def entry_point(e: dict) -> dict:
-    exposure = 'local' if e['kind'] == 'cli' else 'internet'
+    # a CLI runs locally; queue, blob and timer triggers are reached through the platform, not by a request
+    exposure = 'local' if e['kind'] == 'cli' else 'internal' if e['kind'] in ('queue_consumer', 'other') else 'internet'
     out = {'id': e['id'], 'kind': e['kind'], 'method': e['method'], 'path': e['path'], 'handler': e['handler'],
            'auth': e['auth'], 'exposure': exposure, 'reviewed': False}
     if e.get('auth_evidence'):
@@ -100,6 +101,18 @@ def dependency(x: dict) -> dict:
     out['basis'] = f'{TODO}: {hint}'
     return out
 
+def advisories(scanners: dict | None, cands: dict) -> dict:
+    """Whether dependency advisories were checked: copied from run_scanners.py's manifest when there is one."""
+    adv = (scanners or {}).get('dependency_advisories')
+    inv = (scanners or {}).get('dependency_inventory') or {}
+    if adv:
+        out = {'status': adv['status'], 'tools': adv.get('tools') or [], 'reason': adv.get('reason')}
+        out['lockfiles'] = [l['file'] for l in inv.get('lockfiles') or []]
+        out['packages'] = inv.get('packages')
+        return out
+    return {'status': 'assessed' if cands.get('dependencies') else 'not_assessed', 'tools': [],
+            'reason': f'{TODO}: no scanners.json was given; say which dependency tool checked advisories, or why none did'}
+
 def high_risk_areas(recon: dict) -> list[dict]:
     by: OrderedDict[str, dict] = OrderedDict()
     for lead in recon.get('review_leads') or []:
@@ -121,7 +134,7 @@ def seed(recon: dict, cands: dict, scanners: dict | None, repo: Path | None) -> 
     not_ran = [t['name'] for t in tools if t['status'] in ('not_run', 'errored')]
     stores = list(OrderedDict((f"{s['kind']} ({s['file']}:{s['line']})", None) for s in recon.get('data_stores') or []))
     d = {
-        'schema_version': '1.1',
+        'schema_version': '1.2',
         'skill': {'name': 'code-security-auditor', 'version': skill_version()},
         'sensitive': True,
         'notice': NOTICE,
@@ -150,9 +163,10 @@ def seed(recon: dict, cands: dict, scanners: dict | None, repo: Path | None) -> 
                      for s in cands.get('secrets', [])],
         'findings': [],
         'dependencies': [dependency(x) for x in cands.get('dependencies', [])],
+        'dependency_advisories': advisories(scanners, cands),
         'variant_rules': [],
         'observations': [],
-        'coverage': {'languages_reviewed': [], 'files_in_scope': int(recon.get('source_files') or 0), 'files_read': 0,
+        'coverage': {'languages_reviewed': [], 'files_in_scope': int(recon.get('files_in_scope') or recon.get('source_files') or 0), 'files_read': 0,
                      'entry_points_total': len(eps), 'entry_points_reviewed': 0, 'areas_deep_reviewed': [],
                      'not_reviewed': [{'area': 'entry points', 'reason': f'{TODO}: which entry points were not reviewed and why'}]},
         'limitations': [f'{TODO}: what the review could not cover'] +
@@ -160,6 +174,10 @@ def seed(recon: dict, cands: dict, scanners: dict | None, repo: Path | None) -> 
         'files_written': [],
         'summary': {'headline': f'{TODO}: what was found and what was covered', 'counts': {}},
     }
+    adv = d['dependency_advisories']
+    if adv['status'] != 'assessed' and TODO not in (adv.get('reason') or ''):
+        d['limitations'].append(f"Dependency advisories were {adv['status'].replace('_', ' ')}: {adv['reason']}. "
+                                'This is not the same as no vulnerable dependencies.')
     if recon.get('middleware'):
         d['recon']['middleware'] = [f"{m['file']}:{m['line']} matcher {', '.join(m['matcher']) or '(all paths)'}; "
                                     f"protects {', '.join(m['protected_prefixes']) or 'every matched path'}; "

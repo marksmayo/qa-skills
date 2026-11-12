@@ -164,6 +164,25 @@ def _line(repo: Path, file: str | None, line: int | None) -> tuple[str, str] | N
     lines = src.read_text(encoding='utf-8', errors='replace').splitlines()
     return (lines[line - 1], src.name) if 0 < line <= len(lines) else None
 
+def python_string_lines(path: Path) -> set[int]:
+    """Lines of a Python file whose code starts inside a string literal (a docstring's usage example), not lines
+    that merely hold a string (a decorator's path); empty if the file doesn't parse."""
+    import ast
+    try:
+        text = path.read_text(encoding='utf-8', errors='replace')
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError, OSError):
+        return set()
+    lines = text.splitlines()
+    out: set[int] = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Constant) and isinstance(n.value, str) and getattr(n, 'end_lineno', None):
+            out.update(range(n.lineno + 1, n.end_lineno + 1))
+            first = lines[n.lineno - 1] if n.lineno <= len(lines) else ''
+            if n.col_offset <= len(first) - len(first.lstrip()):
+                out.add(n.lineno)  # the line itself starts with the string
+    return out
+
 def secret_values(findings: list[dict], cand_secrets: dict, triaged: dict, repo: Path) -> list[tuple[str, str]]:
     """(value, where it came from) for every value the report must not contain. Never print the value.
 
@@ -195,6 +214,35 @@ def secret_values(findings: list[dict], cand_secrets: dict, triaged: dict, repo:
     return [(v, o) for v, o in out.items()]
 
 # ---------------------------------------------------------------- checks
+def advisory_errors(d: dict) -> list[str]:
+    """Were dependency advisories checked at all? (schema 1.2 requires the answer.) Not assessed is
+    never the same as no vulnerable dependencies."""
+    errors: list[str] = []
+    E = errors.append
+    adv = d.get('dependency_advisories')
+    dep_ran = [t['name'] for t in d['tools'] if t['area'] == 'dependencies' and t['status'] == 'ran']
+    if adv is None:
+        if d['schema_version'] == '1.2':
+            E('dependency_advisories: required from schema 1.2 (assessed, partial or not_assessed)')
+    else:
+        if adv['status'] in ('assessed', 'partial') and not dep_ran:
+            E(f"dependency_advisories: status {adv['status']} but no dependency tool ran; say not_assessed")
+        if adv['status'] == 'not_assessed' and dep_ran:
+            E(f"dependency_advisories: {', '.join(dep_ran)} ran; say assessed or partial")
+        for t in adv['tools']:
+            if t not in dep_ran:
+                E(f'dependency_advisories: {t} is not a dependency tool that ran')
+        if adv['status'] == 'not_assessed' and d['dependencies']:
+            E('dependency_advisories: not_assessed, but dependencies lists advisories')
+        if adv['status'] != 'assessed':
+            if not adv.get('reason') or len(adv['reason']) < 10:
+                E(f"dependency_advisories: status {adv['status']} needs a reason")
+            if not re.search(r'(?i)advisor|dependenc|lockfile', ' '.join(d['limitations'])):
+                E(f"limitations: dependency advisories were {adv['status'].replace('_', ' ')}; say so in limitations")
+            if re.search(r'(?i)\b(no|zero|0)\s+(known[- ])?(vulnerable|vulnerabilities in)\s+(dependenc|packages|librar)', d['summary']['headline']):
+                E('summary.headline claims no vulnerable dependencies, but advisories were not (fully) assessed')
+    return errors
+
 def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tuple[list[str], list[str]]:
     schema = json.loads(SCHEMA.read_text(encoding='utf-8'))
     errors = schema_errors(d, schema, schema)
@@ -446,6 +494,10 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tu
                 elif x['package'].lower() != f['dependency']['package'].lower():
                     P(f"dependency {dep} is {x['package']}, not {f['dependency']['package']}: group advisories by package")
         for ref in (f.get('chains_with') or []) + (f.get('variants') or []) + ([f['variant_of']] if f.get('variant_of') else []):
+            if '#' in ref:  # repo#F-n: a finding in a sibling repository's report, checked against that report
+                if ref.split('#')[0] == d['target']['repository']:
+                    P(f'{ref} names this report\'s own repository; write {ref.split("#")[1]}')
+                continue
             if ref not in fids or ref == fid:
                 P(f'refers to {ref}, which is not another finding')
         if f.get('variant_of'):
@@ -484,9 +536,24 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tu
             E(f"variant_rules[{r['id']}]: tested rules need a test_note saying what it matched")
     if repo:
         for o in d['observations']:
-            src = repo / o['file']
-            if not src.exists() or o['line'] > len(src.read_text(encoding='utf-8', errors='replace').splitlines()):
+            got = _line(repo, o['file'], o['line'])
+            if got is None:
                 E(f"observations[{o['id']}]: {o['file']}:{o['line']} does not exist")
+            elif o.get('excerpt') and norm(o['excerpt']) not in norm(got[0]):
+                E(f"observations[{o['id']}]: excerpt is not on {o['file']}:{o['line']} (line reads {got[0].strip()[:80]!r})")
+            elif not o.get('excerpt') and d['schema_version'] == '1.2':
+                W(f"observations[{o['id']}]: no excerpt, so {o['file']}:{o['line']} can only be checked for existence")
+        # recon entry points: the handler line must exist and, in Python, not sit inside a string or docstring
+        for e in eps.values():
+            file, _, line = e['handler'].rpartition(':')
+            got = _line(repo, file, int(line))
+            if got is None:
+                E(f"recon.entry_points[{e['id']}]: handler {e['handler']} does not exist in the repository")
+            elif file.endswith('.py') and int(line) in python_string_lines(repo / file):
+                E(f"recon.entry_points[{e['id']}]: handler {e['handler']} is inside a string or docstring, not code "
+                  '(a usage example, not a route)')
+
+    errors += advisory_errors(d)
 
     # coverage
     cov = d['coverage']
