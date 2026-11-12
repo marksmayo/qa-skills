@@ -4,6 +4,7 @@
     {"id": "py-logging", "kind": "log", "langs": ["py"], "pattern": "\\b(logger|logging|log)\\.(debug|info|warning|warn|error|exception|critical)\\(", "hints": ["logger.", "logging.", "log."]},
     {"id": "py-print", "kind": "log", "langs": ["py"], "pattern": "^\\s*print\\(", "hints": ["print("]},
     {"id": "js-console", "kind": "log", "langs": ["js", "ts", "html"], "pattern": "\\bconsole\\.(log|info|warn|error|debug)\\(", "hints": ["console."]},
+    {"id": "js-logger", "kind": "log", "langs": ["js", "ts"], "pattern": "\\b(logger|log|pino|winston)\\.(trace|debug|info|warn|warning|error|fatal|log)\\(", "hints": ["logger.", "log.", "pino.", "winston."]},
     {"id": "android-log", "kind": "log", "langs": ["java", "kt"], "pattern": "\\bLog\\.[dviwe]\\(", "hints": ["Log."]},
     {"id": "ios-log", "kind": "log", "langs": ["swift", "m"], "pattern": "\\b(NSLog|os_log|print)\\(", "hints": ["NSLog(", "os_log(", "print("]},
     {"id": "ruby-logger", "kind": "log", "langs": ["rb"], "pattern": "\\b(Rails\\.logger|logger)\\.(debug|info|warn|error)\\b", "hints": ["logger."]},
@@ -49,6 +50,7 @@
     "@segment/analytics-next": "Segment", "logrocket": "LogRocket", "@fullstory/browser": "FullStory", "react-ga4": "Google Analytics",
     "firebase": "Google Firebase", "com.google.firebase:firebase-analytics": "Google Firebase", "com.facebook.android:facebook-android-sdk": "Meta",
     "FBSDKCoreKit": "Meta", "Firebase/Analytics": "Google Firebase", "amplitude-js": "Amplitude", "@amplitude/analytics-browser": "Amplitude",
-    "@intercom/messenger-js-sdk": "Intercom", "bugsnag-js": "Bugsnag", "@bugsnag/js": "Bugsnag", "datadog-rum": "Datadog", "@datadog/browser-rum": "Datadog", "@datadog/browser-logs": "Datadog", "@datadog/browser-rum-slim": "Datadog"
+    "@intercom/messenger-js-sdk": "Intercom", "@sentry/nextjs": "Sentry", "@sentry/node": "Sentry", "@sentry/vue": "Sentry", "@sentry/angular": "Sentry",
+    "@vercel/analytics": "Vercel Web Analytics", "@vercel/speed-insights": "Vercel Speed Insights", "mixpanel": "Mixpanel", "posthog-node": "PostHog", "bugsnag-js": "Bugsnag", "@bugsnag/js": "Bugsnag", "datadog-rum": "Datadog", "@datadog/browser-rum": "Datadog", "@datadog/browser-logs": "Datadog", "@datadog/browser-rum-slim": "Datadog"
   }
 }
