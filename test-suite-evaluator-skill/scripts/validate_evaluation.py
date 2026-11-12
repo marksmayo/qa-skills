@@ -7,8 +7,9 @@ Beyond the schema it checks what SKILL.md and RUBRIC.md require: all fifteen dim
 rubric's weights (re-weighted only for dimensions marked not applicable), the raw weighted score
 and the group scores recomputed from the dimension scores, every triggered cap listed and applied,
 the rating band matching the overall score, evidence and confidence for every score, evidence
-completeness recomputed from the inventory, the assessment mode supported by the inventory, and
-no code-coverage claim that rests on test-derived inference.
+completeness recomputed from the inventory, the assessment mode supported by the inventory, the
+reliability score consistent with the failures the runs recorded, every untested interface accounted
+for, and no code-coverage claim that rests on test-derived inference.
 """
 from __future__ import annotations
 import argparse, json, re, sys
@@ -53,11 +54,18 @@ TOL = 0.05 + 1e-9
 # (service-form-branch-coverage.test.tsx, branch_coverage) and text in backticks are not claims.
 _NOT_IN_NAME_BEFORE = r'(?<![\w./\\-])'
 _NOT_IN_NAME_AFTER = r'(?![\w/\\-]|\.\w)'
+# Interface coverage names what it counts right before the word: route, endpoint, interface, operation, requirement,
+# specification or acceptance-criteria coverage is not code coverage. Fixed-width lookbehinds, one per word (singular,
+# plural, and hyphenated "API-operation coverage").
+_INTERFACE_WORDS = ['route', 'routes', 'endpoint', 'endpoints', 'interface', 'interfaces', 'operation', 'operations',
+                    'requirement', 'requirements', 'spec', 'specification', 'criteria', 'handler', 'handlers']
+_NOT_INTERFACE = ''.join(f'(?<!{w}[ -])' for w in _INTERFACE_WORDS)
 COVERAGE_CLAIM = re.compile(
     _NOT_IN_NAME_BEFORE + r'(code|line|branch|statement|condition|function|instrumented|implementation|source)[- ]coverage'
     + _NOT_IN_NAME_AFTER +
     r'|\b\d+(\.\d+)?\s*%\s*(of\s+)?(the\s+)?(code\s+|line\s+|branch\s+|statement\s+|test\s+)?coverage\b'
-    r'|\bcoverage\s+(of|is|at|was|reached|reaches|=|:)\s*\d+(\.\d+)?\s*%'
+    # "route coverage is 100%" counts interfaces (interface_coverage), not code; "coverage is 80%" alone is a claim
+    r'|' + _NOT_INTERFACE + r'\bcoverage\s+(of|is|at|was|reached|reaches|=|:)\s*\d+(\.\d+)?\s*%'
     r'|\b\d+(\.\d+)?\s*%\s+of\s+(the\s+|all\s+)?(application\s+|app\s+|production\s+|source\s+)?'
     r'(code(base)?|lines|branches|statements|functions|conditions)\b'
     r'|\b(lines|branches|statements|functions|conditions)\s*[:=]?\s*\d+(\.\d+)?\s*%', re.I)
@@ -154,6 +162,8 @@ def expected_caps(rep: dict, dims: dict) -> dict[str, float]:
         caps['reliability_below_4'] = 5
     if score('assertions') is not None and score('assertions') < 3:
         caps['assertions_below_3'] = 3
+    if score('coverage') is not None and score('coverage') < 4:
+        caps['coverage_below_4'] = 4
     execution = rep['metadata']['execution']
     if execution == 'not_executable':
         caps['not_executable'] = 5
@@ -323,6 +333,14 @@ def check(rep: dict) -> tuple[list[str], list[str]]:
                 errs.append(f'{i}: confidence high needs direct evidence; test_derived inference is medium at most')
             if len(evidence) < 2:
                 errs.append(f'{i}: confidence high needs multiple consistent evidence sources (at least two evidence items)')
+    # thin suites: these dimensions grade the few tests that exist, so they can't be held with high confidence when the
+    # suite reaches little of the product
+    cov = dims['coverage']['score']
+    if cov is not None and cov < 4:
+        for i in ('reliability', 'assertions', 'isolation', 'performance'):
+            if dims[i]['score'] is not None and dims[i]['confidence'] == 'high':
+                errs.append(f'{i}: coverage is {cov}, so the {i} score describes a small sample of the product; its '
+                            f'confidence is medium at most')
     scored = [i for i, d in dims.items() if d['score'] is not None]
     if not scored:
         errs.append('no dimension is scored, so there is no weighted score to report')
@@ -370,9 +388,11 @@ def check(rep: dict) -> tuple[list[str], list[str]]:
     for i, b in enumerate(rep.get('interface_coverage', [])):
         if b['tested'] > b['total']:
             errs.append(f'interface_coverage[{i}]: tested {b["tested"]} exceeds total {b["total"]}')
-        if len(b.get('untested', [])) > b['total'] - b['tested']:
-            errs.append(f'interface_coverage[{i}]: lists {len(b["untested"])} untested of only '
-                        f'{b["total"] - b["tested"]} untested')
+        listed = sum(u.get('count', 1) if isinstance(u, dict) else 1 for u in b.get('untested', []))
+        if listed != b['total'] - b['tested']:
+            errs.append(f'interface_coverage[{i}]: untested accounts for {listed} interface(s) but {b["total"]} - '
+                        f'{b["tested"]} = {b["total"] - b["tested"]} are untested; list each one, or group them as '
+                        f'{{"group": ..., "count": n}}')
         if b['evidence_level'] == 'specification_derived' and not has('requirements'):
             errs.append(f'interface_coverage[{i}]: specification_derived needs requirements or specifications in the inventory')
 
@@ -390,6 +410,7 @@ def check(rep: dict) -> tuple[list[str], list[str]]:
     if execution in STATIC and head['overall_confidence'] == 'high':
         errs.append('overall confidence cannot be high without execution evidence')
     errs += execution_errors(meta)
+    errs += reliability_errors(meta, dims)
 
     # raw weighted score and group scores
     raw = weighted(dims, [i for i, _, _ in DIMENSIONS])
@@ -456,7 +477,8 @@ def check(rep: dict) -> tuple[list[str], list[str]]:
                if f['severity'] == 'critical' or f.get('category', 'other') != 'other'] or \
         [r for r in caps if r not in ('static_only', 'not_executable')]
     if serious and 'critical_risk' not in cats:
-        errs.append('a critical finding or score cap applies, so at least one recommendation is a critical_risk')
+        errs.append('a finding of severity critical, a finding in a capping category, or a score cap applies, so at '
+                    'least one recommendation is a critical_risk')
     lacking = {k for k, s in inv.items() if s in ('missing', 'partial')}
     if lacking and 'evidence_needed' not in cats:
         errs.append(f'evidence is missing or partial ({", ".join(sorted(lacking))}); add an evidence_needed '
@@ -507,6 +529,29 @@ def check(rep: dict) -> tuple[list[str], list[str]]:
                     if known and ref not in known and re.fullmatch(r'[A-Za-z]{1,3}\d+', ref):
                         errs.append(f'{d["id"]}.{key}: cites [{ref}], which is not an evidence id of this dimension')
     return errs, warns
+
+
+def reliability_errors(meta: dict, dims: dict) -> list[str]:
+    """A test-class failure that appears in some recorded runs and not in others is a flaky or order-dependent test.
+    Reliability 7 and above needs repeated runs that agree (RUBRIC 3), so it can't stand beside one."""
+    er = meta.get('execution_result') or {}
+    score = dims['reliability']['score']
+    if score is None or score < 7:
+        return []
+    runs = {r['id']: r for r in er.get('runs', [])}
+    flaky = []
+    for f in er.get('failures', []):
+        failed_in = [r for r in f.get('runs_failed', []) if r in runs]
+        if f['class'] != 'test' or not failed_in:
+            continue
+        layers = {name for r in failed_in for name in runs[r]['layers']}
+        others = [rid for rid, r in runs.items() if rid not in failed_in and layers & set(r['layers'])]
+        if others:
+            flaky.append(f'{f["test"]!r} (failed in {", ".join(failed_in)}, passed in {", ".join(others)})')
+    if flaky:
+        return [f'reliability {score}: the runs disagree on test-class failures ({"; ".join(flaky[:3])}); repeated runs '
+                f'that disagree are at most 6 (RUBRIC 3), or classify the failure if it is not the test\'s']
+    return []
 
 
 def execution_errors(meta: dict) -> list[str]:

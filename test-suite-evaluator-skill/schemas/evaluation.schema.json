@@ -311,6 +311,7 @@
                   "trust_below_4",
                   "reliability_below_4",
                   "assertions_below_3",
+                  "coverage_below_4",
                   "not_executable",
                   "secret_or_production_data",
                   "systematic_false_pass",
@@ -808,8 +809,28 @@
           },
           "untested": {
             "type": "array",
+            "description": "Every untested interface: a name, or a group {group, count} standing for count interfaces. The entries account for exactly total - tested.",
             "items": {
-              "type": "string"
+              "type": [
+                "string",
+                "object"
+              ],
+              "minLength": 1,
+              "required": [
+                "group",
+                "count"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "group": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "count": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
             }
           },
           "notes": {

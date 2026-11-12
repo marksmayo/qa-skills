@@ -241,9 +241,11 @@ def render(data: dict, md: bool, color: bool) -> str:
                   b['method']) for b in ic])
         for b in ic:
             if b.get('untested'):
-                o.p(f"{b['interface']}: untested ({len(b['untested'])} listed)")
+                # a group entry ({"group": "...", "count": n}) stands for n interfaces
+                n = sum(u.get('count', 1) if isinstance(u, dict) else 1 for u in b['untested'])
+                o.p(f"{b['interface']}: {n} untested")
                 for u in b['untested']:
-                    o.li(u)
+                    o.li(f"{u['group']} ({u['count']})" if isinstance(u, dict) else u)
             if b.get('notes'):
                 o.p(b['notes'])
 
