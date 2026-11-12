@@ -37,6 +37,7 @@ SHARED = {
                                    'cross-browser-checker-skill', 'i18n-checker-skill',
                                    'resilience-prober-skill', 'privacy-flow-auditor-skill'],
     'scripts/clock_shift.py': ['test-data-auditor-skill', 'flaky-test-hunter-skill:plugins/clock_shift.py'],
+    'scripts/clock_shift.mjs': ['test-data-auditor-skill', 'flaky-test-hunter-skill:plugins/clock_shift.mjs'],
     'scripts/png_io.py': ['visual-regression-reviewer-skill', 'cross-browser-checker-skill', 'mobile-app-auditor-skill'],
     'data/wcag-sc.json': ['wcag-auditor-skill', 'mobile-app-auditor-skill'],
     'data/en301549-map.json': ['wcag-auditor-skill', 'mobile-app-auditor-skill'],
