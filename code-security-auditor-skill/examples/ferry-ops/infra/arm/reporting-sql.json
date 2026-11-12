@@ -1,0 +1,30 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "sqlAdminPassword": { "type": "securestring" }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Sql/servers",
+      "apiVersion": "2022-05-01-preview",
+      "name": "ferry-reporting",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "administratorLogin": "reporting",
+        "administratorLoginPassword": "[parameters('sqlAdminPassword')]",
+        "publicNetworkAccess": "Enabled",
+        "minimalTlsVersion": "1.0"
+      }
+    },
+    {
+      "type": "Microsoft.Sql/servers/firewallRules",
+      "apiVersion": "2022-05-01-preview",
+      "name": "ferry-reporting/everyone",
+      "properties": {
+        "startIpAddress": "0.0.0.0",
+        "endIpAddress": "255.255.255.255"
+      }
+    }
+  ]
+}

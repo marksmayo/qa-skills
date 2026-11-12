@@ -1,0 +1,25 @@
+# Safe counterpart: main only, and the service connection is used inside a deployment job with an environment.
+trigger:
+  branches:
+    include:
+      - main
+pr: none
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+  - stage: release
+    jobs:
+      - deployment: release_api
+        environment: ferry-production
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureCLI@2
+                  inputs:
+                    azureSubscription: ferry-production
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: az webapp deploy --name ferry-ops-api --src-path app.zip

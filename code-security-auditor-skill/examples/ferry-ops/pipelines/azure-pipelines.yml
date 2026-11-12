@@ -1,0 +1,43 @@
+# Deliberately misconfigured build-and-deploy pipeline (planted problems for the built-in patterns).
+trigger:
+  branches:
+    include:
+      - '*'
+
+parameters:
+  - name: releaseNote
+    type: string
+    default: ''
+
+variables:
+  - group: ferry-shared
+  - name: buildConfiguration
+    value: Release
+  - name: smtpPassword
+    value: not-a-real-pass-123
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+  - stage: build
+    jobs:
+      - job: build
+        steps:
+          - checkout: self
+          - script: |
+              echo "Building $(Build.SourceBranchName)"
+              echo "${{ parameters.releaseNote }}" > release-note.txt
+            displayName: Build $(Build.SourceBranchName)
+          - template: templates/reset-db.yml
+
+  - stage: deploy
+    jobs:
+      - job: deploy_api
+        steps:
+          - task: AzureCLI@2
+            inputs:
+              azureSubscription: ferry-production
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: az webapp deploy --name ferry-ops-api --src-path app.zip

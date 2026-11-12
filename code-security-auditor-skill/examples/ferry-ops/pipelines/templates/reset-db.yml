@@ -1,0 +1,7 @@
+steps:
+  - bash: |
+      PGPASSWORD="$DB_ADMIN_PASS" psql -h "$DB_HOST" -U ferryadmin -c "select 1"
+    displayName: Reset the test database
+    env:
+      DB_ADMIN_PASS: $(dbAdminPassword)
+      DB_HOST: $(dbHost)
