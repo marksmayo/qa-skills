@@ -48,7 +48,18 @@ Config (dict):
     rate_limit_seconds    0.5 between page loads; 429/503 back off (Retry-After) up to max_retries times
     auth                  {"storage_state": file} or {"login": {"url", "steps": [...], "wait_for"}};
                           login steps use {"fill": sel, "env": NAME}, so credentials never appear in output;
-                          an identity provider the login redirects to must be listed in allowed_hosts
+                          an identity provider the login redirects to must be listed in allowed_hosts.
+                          storage_state is a session a person captured by signing in by hand, for apps behind
+                          SSO, MFA or an OIDC library (MSAL, oidc-client-ts, Auth0): run
+                          `python browser_harness.py capture-session --url <app> --out <file outside the repo>`.
+                          It holds cookies, localStorage, IndexedDB and (unlike Playwright's own file)
+                          sessionStorage, which is restored on its origin before the app's scripts run. The
+                          run stays read-only and blocks third parties, so a token refresh that posts to the
+                          identity provider fails: capture shortly before the run. metadata()["auth"] records
+                          counts only (cookies, keys, expired cookies), never values or the file's path
+    trace_with_auth       false (default): a page in a signed-in session (storage_state or login) is not
+                          Playwright-traced, because a trace holds its cookies and tokens; the page's log says
+                          so under not_applied. true records the trace anyway (keep it out of shared evidence)
     headless              true (default)
     host_map              {"*.shop.test": "127.0.0.1"}: resolve these hosts to loopback (Chromium only), so a
                           sample app can use made-up hostnames for itself and its stub vendors
@@ -75,7 +86,7 @@ that send requests themselves (page.goto, fetch): it returns ("retry", seconds),
 or ("ok", None), honouring Retry-After in seconds or as an HTTP date.
 """
 from __future__ import annotations
-import ipaddress, os, struct, time, zlib
+import ipaddress, json, os, struct, time, zlib
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
@@ -269,6 +280,9 @@ class Harness:
         self.events: list[dict] = []
         self.last_load = 0.0
         self.storage_state = None
+        self._session_script = None   # restores a captured sessionStorage; holds token values, so never recorded
+        self.auth_info: dict | None = None
+        self.trace_with_auth = bool(cfg.get('trace_with_auth', False))
         self._pw = self._browser = None
         self._logs: dict[int, dict] = {}
         self._contexts: dict[int, object] = {}
@@ -308,7 +322,8 @@ class Harness:
                 'retry': {'max_retries': self.max_retries, 'max_retry_after_seconds': self.max_retry_after,
                           'stop_on_429': self.stop_on_429},
                 'stopped': self.stopped, 'requests': {**self.requests, 'blocked': dict(self.requests['blocked']),
-                                                      'by_method': dict(self.requests['by_method'])}}
+                                                      'by_method': dict(self.requests['by_method'])},
+                'auth': dict(self.auth_info) if self.auth_info else None, 'trace_with_auth': self.trace_with_auth}
 
     def __exit__(self, *exc):
         try:
@@ -380,9 +395,14 @@ class Harness:
             kw['user_agent'] = user_agent
         ctx = self._browser.new_context(**kw)
         ctx.route('**/*', self.guard)
+        if self._session_script:
+            ctx.add_init_script(script=self._session_script)
         page_scripts = self.init_scripts + [self._script_source(s) for s in init_scripts or []]
         for src in page_scripts:
             ctx.add_init_script(script=src)
+        trace_refused = bool(trace and self.storage_state and not self.trace_with_auth)
+        if trace_refused:
+            trace = False   # a trace of a signed-in page holds its cookies and tokens
         if trace:
             ctx.tracing.start(screenshots=True, snapshots=True)
         page = ctx.new_page()
@@ -394,6 +414,10 @@ class Harness:
                'not_applied': [], 'trace': trace}
         if mobile and self.browser_name != 'chromium':
             log['not_applied'].append('mobile: is_mobile/has_touch emulation is Chromium only')
+        if trace_refused:
+            log['not_applied'].append('trace: not recorded because the page runs in a signed-in session, and a '
+                                      'Playwright trace would hold its cookies and tokens (set trace_with_auth to '
+                                      'record it, and keep that trace out of shared evidence)')
         page.on('console', lambda m: log['console'].append({'type': m.type, 'text': m.text}))
         page.on('pageerror', lambda e: log['page_errors'].append({'name': getattr(e, 'name', 'Error'), 'message': str(e)}))
         page.on('requestfailed', lambda r: log['failed_requests'].append({'method': r.method, 'url': r.url.split('?')[0],
@@ -535,7 +559,7 @@ class Harness:
     def login(self):
         auth = self.cfg.get('auth') or {}
         if auth.get('storage_state'):
-            self.storage_state = auth['storage_state']
+            self.storage_state, self._session_script, self.auth_info = load_session(auth['storage_state'])
             return 'storage_state'
         if auth.get('login'):
             rec = auth['login']
@@ -551,6 +575,113 @@ class Harness:
                 self.allow_post = allow
             ctx = self._contexts[id(page)]
             self.storage_state = ctx.storage_state()   # kept in memory only, never written
+            self.auth_info = {'method': 'login_recipe', 'cookies': len(self.storage_state.get('cookies', [])),
+                              'origins': len(self.storage_state.get('origins', []))}
             self.close_page(page)
             return 'login_recipe'
         return None
+
+
+# ---------------------------------------------------------------- signed-in sessions (storage_state)
+def load_session(path) -> tuple[dict, str | None, dict]:
+    """Read a session file: Playwright's storage_state JSON ({cookies, origins: [{origin, localStorage}]}), which
+    capture-session extends with a sessionStorage list per origin (Playwright's own storage_state has none, and
+    MSAL and other OIDC libraries often keep their token cache there). Returns (the storage_state Playwright gets,
+    an init script that puts the sessionStorage back on its own origin, a summary with counts only). The values
+    stay in memory: neither the file's contents nor its location go into metadata or output."""
+    data = json.loads(Path(path).read_text(encoding='utf-8'))
+    cookies = list(data.get('cookies') or [])
+    origins, session = [], {}
+    for o in data.get('origins') or []:
+        origins.append({k: v for k, v in o.items() if k != 'sessionStorage'})
+        items = o.get('sessionStorage') or []
+        if items:
+            session[o['origin']] = {i['name']: i['value'] for i in items}
+    nowts = time.time()
+    expired = sum(1 for c in cookies if isinstance(c.get('expires'), (int, float)) and 0 < c['expires'] < nowts)
+    script = None
+    if session:
+        script = ('(() => { const all = ' + json.dumps(session) + '; const mine = all[location.origin];'
+                  ' if (!mine) return; try { for (const [k, v] of Object.entries(mine))'
+                  ' if (sessionStorage.getItem(k) === null) sessionStorage.setItem(k, v); } catch (e) {} })();')
+    info = {'method': 'storage_state', 'cookies': len(cookies), 'expired_cookies': expired, 'origins': len(origins),
+            'local_storage_keys': sum(len(o.get('localStorage') or []) for o in origins),
+            'session_storage_origins': len(session), 'session_storage_keys': sum(len(v) for v in session.values()),
+            'indexed_db': any(o.get('indexedDB') for o in origins), 'captured_at': data.get('captured_at')}
+    return {'cookies': cookies, 'origins': origins}, script, info
+
+
+def capture_session(url: str, out: Path, browser: str = 'chromium', wait_for: str | None = None,
+                    wait_url: str | None = None, timeout_s: int = 600, authorised_by: str | None = None) -> dict:
+    """Open a visible browser at url for a person to sign in by hand (MSAL, OIDC, SSO, MFA), then save the session
+    (cookies, localStorage, sessionStorage, IndexedDB where Playwright supports it) to out. Nothing is clicked or
+    typed by this function; the person signs in. Returns the counts only."""
+    import re
+    check_authorised([url], authorised_by)
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as pw:
+        b = getattr(pw, browser).launch(headless=False)
+        ctx = b.new_context()
+        page = ctx.new_page()
+        page.goto(url)
+        if wait_for:
+            page.wait_for_selector(wait_for, timeout=timeout_s * 1000)
+        elif wait_url:
+            page.wait_for_url(re.compile(wait_url), timeout=timeout_s * 1000)
+        else:
+            input('Sign in in the browser window, wait until the app shows a signed-in page, then press Enter here... ')
+        try:
+            state = ctx.storage_state(indexed_db=True)   # Playwright 1.51+
+        except TypeError:
+            state = ctx.storage_state()
+        by_origin = {o['origin']: o for o in state.get('origins', [])}
+        for p in ctx.pages:
+            try:
+                origin = p.evaluate('location.origin')
+                items = p.evaluate('Object.entries(sessionStorage).map(([name, value]) => ({name, value}))')
+            except Exception:   # a closed page, or one that can't be read
+                continue
+            if items and origin and origin != 'null':
+                by_origin.setdefault(origin, {'origin': origin, 'localStorage': []})['sessionStorage'] = items
+        state['origins'] = list(by_origin.values())
+        state['captured_at'] = now()
+        b.close()
+    out = Path(out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(state), encoding='utf-8')
+    try:
+        os.chmod(out, 0o600)
+    except OSError:
+        pass
+    return load_session(out)[2]
+
+
+def _main(argv=None) -> int:
+    import argparse
+    ap = argparse.ArgumentParser(description='Browser harness tools. capture-session: sign in by hand once and save '
+                                             'the session for read-only runs (auth: {"storage_state": file}).')
+    sub = ap.add_subparsers(dest='cmd', required=True)
+    c = sub.add_parser('capture-session', help='open a visible browser, let a person sign in, save the session')
+    c.add_argument('--url', required=True)
+    c.add_argument('--out', type=Path, required=True, help='session file to write; keep it outside the repository '
+                                                           'and the evidence, and delete it after the run')
+    c.add_argument('--browser', default='chromium', choices=['chromium', 'firefox', 'webkit'])
+    c.add_argument('--wait-for', help='CSS selector that appears once signed in (instead of pressing Enter)')
+    c.add_argument('--wait-url', help='regular expression the URL matches once signed in (instead of pressing Enter)')
+    c.add_argument('--timeout', type=int, default=600, help='seconds to wait for --wait-for/--wait-url (default 600)')
+    c.add_argument('--authorised-by', help='who confirmed testing this target is allowed (needed unless loopback)')
+    args = ap.parse_args(argv)
+    try:
+        info = capture_session(args.url, args.out, args.browser, args.wait_for, args.wait_url, args.timeout,
+                               args.authorised_by)
+    except NotAuthorised as e:
+        print(f'refused: {e}')
+        return 2
+    print(f"session saved: {info['cookies']} cookie(s), {info['local_storage_keys']} localStorage and "
+          f"{info['session_storage_keys']} sessionStorage key(s) over {info['origins']} origin(s). The file holds live "
+          'credentials: keep it out of the repository and the evidence, and delete it when the run is done.')
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(_main())
