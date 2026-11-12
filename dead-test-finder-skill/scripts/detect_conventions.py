@@ -60,7 +60,9 @@ NAMING = [
     (re.compile(r'^.+\.spec\.[cm]?[jt]sx?$'), '*.spec.(js|ts)'), (re.compile(r'^.+\.test\.[cm]?[jt]sx?$'), '*.test.(js|ts)'),
     (re.compile(r'^.+\.cy\.[jt]sx?$'), '*.cy.(js|ts)'), (re.compile(r'^.+\.e2e\.[jt]s$'), '*.e2e.(js|ts)'),
     (re.compile(r'^.+(Test|Tests)\.(java|kt)$'), '*Test.(java|kt)'), (re.compile(r'^.+IT\.(java|kt)$'), '*IT.(java|kt)'),
-    (re.compile(r'^.+_test\.go$'), '*_test.go'), (re.compile(r'^.+_spec\.rb$'), '*_spec.rb'),
+    (re.compile(r'^.+_test\.go$'), '*_test.go'),
+    (re.compile(r'^test_.+\.rs$'), 'test_*.rs'), (re.compile(r'^.+_test\.rs$'), '*_test.rs'),
+    (re.compile(r'^.+_spec\.rb$'), '*_spec.rb'),
     (re.compile(r'^(test_.+|.+_test)\.rb$'), '*_test.rb'), (re.compile(r'^.+Tests?\.cs$'), '*Tests.cs'),
     (re.compile(r'^.+Test\.php$'), '*Test.php'), (re.compile(r'^.+_test\.dart$'), '*_test.dart'),
     (re.compile(r'^.+Tests?\.swift$'), '*Tests.swift'), (re.compile(r'^.+\.feature$'), '*.feature'),
@@ -179,7 +181,7 @@ RUN_HINTS = re.compile(r'\b(pytest|python -m pytest|tox|nox|npm (run )?test\S*|n
                        r'pnpm (run )?\S*(test|e2e)\S*|npx (jest|vitest|playwright test|cypress run|wdio|detox test)|'
                        r'(jest|vitest|mocha)\b|playwright test|cypress run|go test|mvn (-\S+ )*(verify|test)|'
                        r'(\./)?gradlew? \S*(test|check|connected\w*AndroidTest)|bundle exec (rspec|rake|cucumber)|rspec|'
-                       r'dotnet test|cargo test|flutter test|phpunit|xcodebuild (\S+ )*test|maestro test|detox test|behave)\b')
+                       r'dotnet test|cargo (nextest run|test)|flutter test|phpunit|xcodebuild (\S+ )*test|maestro test|detox test|behave)\b')
 
 def rel(p: Path, root: Path) -> str:
     return PurePosixPath(p.relative_to(root)).as_posix()
@@ -211,6 +213,10 @@ def is_test_file(path: str) -> bool:
     if parts & {'__tests__', 'androidTest', 'integration_test'} or any(x.endswith('UITests') or x.endswith('Tests') for x in parts):
         return p.suffix in LANG_EXT
     if 'src' in p.parts and 'test' in p.parts and p.suffix in ('.java', '.kt', '.scala'):
+        return True
+    # Rust integration tests live in a top-level tests/ tree (e.g. tests/by-util/test_*.rs); count any
+    # .rs file inside a test/tests directory, but not library sources nested under src/ (helper crates).
+    if p.suffix == '.rs' and (parts & {'test', 'tests'}) and 'src' not in parts:
         return True
     return False
 
@@ -375,6 +381,9 @@ class Detector:
                         cat = 'e2e' if v in ('playwright', 'cypress', 'webdriverio') else 'mobile' if v == 'detox' \
                             else 'bdd' if v in ('behave', 'cucumber') else 'unit'
                         add_fw(a, cat, v, f)
+            if name == 'nextest.toml':   # cargo-nextest config (usually .config/nextest.toml)
+                a['config_files'].append(f)
+                add_fw(a, 'unit', 'cargo-nextest', f)
             if name == 'Makefile' or name == 'justfile':
                 for i, line in enumerate(read(self.root / f).splitlines(), 1):
                     m = re.match(r'^([\w.-]*test[\w.-]*|e2e[\w.-]*)\s*:', line)
@@ -538,7 +547,8 @@ class Detector:
         if any(names(x) for x in roots):
             return False  # names a different area
         tool_fw = {'pytest': 'pytest', 'playwright': 'playwright', 'cypress': 'cypress', 'jest': 'jest', 'vitest': 'vitest',
-                   'go test': 'go-testing', 'cargo test': 'cargo-test', 'flutter test': 'flutter_test', 'rspec': 'rspec',
+                   'go test': 'go-testing', 'cargo test': 'cargo-test', 'cargo nextest': 'cargo-nextest',
+                   'flutter test': 'flutter_test', 'rspec': 'rspec',
                    'dotnet test': 'xunit', 'detox': 'detox', 'maestro': 'maestro', 'phpunit': 'phpunit', 'behave': 'behave',
                    'gradle': 'junit5', 'mvn': 'junit5'}
         return any(k in text and v in frameworks for k, v in tool_fw.items())

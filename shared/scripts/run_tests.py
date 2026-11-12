@@ -25,8 +25,13 @@ unreadable and named in the run's warnings, never a crash. runs.json records the
 (`code_hash_basis`: method and file count), and a change during the runs names the files.
 
 Presets know each runner's JUnit, ordering, seed and worker flags; a variation a preset can't
-apply is an error, never silently ignored. `--minutes` caps the wall time: repeats stop early and
-the stop is recorded. The user's home directory is replaced with ~ in JUnit files and output.
+apply is an error, never silently ignored. The `nextest` preset runs `cargo nextest run --profile
+ci` (per-case JUnit, `--test-threads` workers) and copies target/nextest/ci/junit.xml to the per-run
+JUnit path; the `cargo` preset runs `cargo test`, which writes no JUnit and so yields no per-case
+data. A run that completes but parses no test cases is flagged `no_tests_parsed` on the run and
+warned loudly, so a zero-case run is never mistaken for a pass. `--minutes` caps the wall time:
+repeats stop early and the stop is recorded. The user's home directory is replaced with ~ in JUnit
+files and output.
 `--check-tree` hashes the working tree before and after and exits 3 if anything outside the
 JUnit directory changed. The script never edits test files.
 
@@ -119,6 +124,17 @@ PRESETS = {
         'cmd': ['gotestsum', '--junitfile', '{junit}', '--', '-count=1'], 'tests': 'args', 'workers': ['-p', '{n}'],
         'shuffle': ['-shuffle={seed}'],
     },
+    # cargo-nextest writes JUnit to target/nextest/<profile>/junit.xml when the profile configures
+    # [profile.<profile>.junit] (e.g. .config/nextest.toml). run_one copies that file to the per-run
+    # {junit} path (`junit_from`). --test-threads sets the worker count; nextest has no seeded shuffle
+    # flag, so --order is refused for it (recorded as not_run), as with the other non-reordering runners.
+    'nextest': {
+        'cmd': ['cargo', 'nextest', 'run', '--profile', 'ci'], 'tests': 'args',
+        'workers': ['--test-threads', '{n}'], 'junit_from': 'target/nextest/ci/junit.xml',
+    },
+    # Plain `cargo test` emits no JUnit, so a run parses 0 cases and is flagged `no_tests_parsed`
+    # (no per-case data). Install cargo-nextest and use --preset nextest for per-case results.
+    'cargo': {'cmd': ['cargo', 'test'], 'tests': 'args'},
     'custom': {'cmd': None, 'tests': 'placeholder'},
 }
 
@@ -300,19 +316,23 @@ def tree_snapshot(root: Path, skip: set[Path]) -> dict[str, str]:
 
 
 def runtime_of(preset_name: str, cmd: str | None) -> str:
-    """Which runtime reads TZ for this run: python, node, go or unknown."""
+    """Which runtime reads TZ for this run: python, node, go, rust or unknown."""
     if preset_name == 'pytest':
         return 'python'
     if preset_name in NODE_RUNNERS:
         return 'node'
     if preset_name == 'gotestsum':
         return 'go'
+    if preset_name in ('cargo', 'nextest'):
+        return 'rust'
     first = Path(shlex.split(cmd)[0]).name.lower() if cmd and shlex.split(cmd) else ''
     first = re.sub(r'\.(exe|cmd|bat)$', '', first)
     if re.match(r'(python[\d.]*|py|pytest)$', first):
         return 'python'
     if first in ('node', 'npx', 'npm', 'pnpm', 'yarn', 'bun', 'vitest', 'jest', 'playwright', 'mocha', 'ava'):
         return 'node'
+    if first in ('cargo', 'rustc', 'nextest', 'cargo-nextest'):
+        return 'rust'
     return 'unknown'
 
 
@@ -722,10 +742,20 @@ def run_one(args, preset, run_id: str, tests: list[str], base_env: dict, junit_d
         for h in hogs:
             kill_tree(h)
     duration = round(time.monotonic() - t0, 3)
+    copy_notes = []
+    junit_from = preset.get('junit_from')   # nextest writes JUnit to a profile path, not {junit}: copy it here
+    if junit_from and not junit.exists():
+        src = cwd / junit_from
+        if os.path.isfile(long_path(src)):
+            shutil.copyfile(long_path(src), long_path(junit))
+            copy_notes.append(f'Copied JUnit from {junit_from} (cargo-nextest profile output) to {junit.name}.')
+        else:
+            copy_notes.append(f'cargo-nextest wrote no JUnit at {junit_from}; this run has no per-case data '
+                              '(configure [profile.ci.junit] in .config/nextest.toml, or install cargo-nextest).')
     if junit.exists():
         junit.write_text(redact_home(junit.read_text(encoding='utf-8', errors='replace')), encoding='utf-8')
     cases, pnotes = parse_results.parse_junit(junit, run_id) if junit.exists() else ([], [f'{junit.name}: not written'])
-    run_notes = list(notes) + pnotes
+    run_notes = list(notes) + pnotes + copy_notes
     if timed_out:
         run_notes.append(f'Timed out after {args.timeout}s; the process tree was killed.')
     is_pytest = args.preset == 'pytest' or bool(args.cmd and re.search(r'\bpytest\b', args.cmd))
