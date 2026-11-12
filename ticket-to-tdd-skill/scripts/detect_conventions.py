@@ -8,7 +8,10 @@ monorepos and mixed stacks get the conventions that apply where a new test will 
 
 Detection is heuristic: every conclusion carries the files it came from, and anything it can't
 see is listed under `limitations`. CI configuration is treated as the source of truth for run
-commands.
+commands. Besides the usual file names, YAML files at the top level or under pipeline directories
+(pipelines/, .azure-pipelines/, .azuredevops/, ci/, templates/ ...) count as CI when they are
+shaped like an Azure DevOps pipeline or template (trigger/stages/jobs/steps with pool, task,
+script or template entries).
 """
 from __future__ import annotations
 import argparse, json, os, re, sys
@@ -24,8 +27,28 @@ MANIFESTS = {'package.json', 'pyproject.toml', 'setup.py', 'setup.cfg', 'require
              'requirements-dev.txt', 'pom.xml', 'build.gradle', 'build.gradle.kts', 'go.mod',
              'Gemfile', 'composer.json', 'Cargo.toml', 'pubspec.yaml', 'Package.swift'}
 CI_GLOBS = ['.github/workflows/*.yml', '.github/workflows/*.yaml', '.gitlab-ci.yml', '.circleci/config.yml',
-            'azure-pipelines.yml', 'bitbucket-pipelines.yml', 'Jenkinsfile', '.buildkite/*.yml',
+            'azure-pipelines.yml', 'azure-pipelines.yaml', 'bitbucket-pipelines.yml', 'Jenkinsfile', '.buildkite/*.yml',
             'buildspec.yml', '.drone.yml', 'codemagic.yaml', 'bitrise.yml']
+# Azure DevOps pipelines and templates are often named after what they build (pipelines/api.yml,
+# pipelines/templates/_tests.yml); YAML files in these directories (or at the top level) are read and
+# kept when their shape is a pipeline's.
+PIPELINE_DIRS = {'pipelines', '.pipelines', 'pipeline', '.azure-pipelines', 'azure-pipelines', '.azuredevops', '.azure',
+                 'azure', 'azure-devops', '.vsts', 'ci', '.ci', 'build', 'devops', 'templates'}
+AZDO_TOP = re.compile(r'^(trigger|pr|stages|jobs|steps|extends|resources|schedules|pool|variables|parameters)\s*:', re.M)
+AZDO_SHAPE = re.compile(r'^\s*(-\s*)?(pool|vmImage|task|script|bash|pwsh|powershell|template|stage|job|deployment|'
+                        r'checkout)\s*:', re.M)
+
+
+def azure_pipeline_like(text: str) -> bool:
+    """A YAML file shaped like an Azure DevOps pipeline or template: top-level pipeline keys (trigger, stages, jobs,
+    steps, extends, ...) and step or job keys (pool, task, script, template, vmImage, ...), and not a Kubernetes,
+    Compose, OpenAPI or GitHub Actions file."""
+    tops = set(m.group(1) for m in AZDO_TOP.finditer(text))
+    if not tops & {'trigger', 'pr', 'stages', 'jobs', 'steps', 'extends', 'schedules'}:
+        return False
+    if re.search(r'^(apiVersion|kind|services|openapi|swagger|on)\s*:', text, re.M) or 'runs-on:' in text:
+        return False
+    return len(set(m.group(2) for m in AZDO_SHAPE.finditer(text))) >= 1
 LANG_EXT = {'.py': 'python', '.js': 'javascript', '.jsx': 'javascript', '.mjs': 'javascript',
             '.cjs': 'javascript', '.ts': 'typescript', '.tsx': 'typescript', '.java': 'java',
             '.kt': 'kotlin', '.kts': 'kotlin', '.go': 'go', '.rb': 'ruby', '.cs': 'csharp',
@@ -254,10 +277,20 @@ class Detector:
         matches = [r for r in roots if r != '.' and (path == r or path.startswith(r + '/'))]
         return max(matches, key=len) if matches else '.'
 
+    def _is_ci(self, f: str) -> bool:
+        p = PurePosixPath(f)
+        if any(p.match(g) for g in CI_GLOBS) or f in CI_GLOBS:
+            return True
+        if p.suffix not in ('.yml', '.yaml') or f.startswith('.github/'):
+            return False
+        if len(p.parts) > 1 and not (set(p.parts[:-1]) & PIPELINE_DIRS):
+            return False
+        return azure_pipeline_like(read(self.root / f, 200_000))
+
     def ci(self) -> tuple[list[str], list[dict]]:
         ci_files, commands = [], []
         for f in self.files:
-            if any(PurePosixPath(f).match(g) for g in CI_GLOBS) or f in CI_GLOBS:
+            if self._is_ci(f):
                 ci_files.append(f)
                 lines = read(self.root / f).splitlines()
                 for i, line in enumerate(lines, 1):
@@ -267,7 +300,7 @@ class Detector:
                     if s and not s.startswith('#') and RUN_HINTS.search(s) and len(s) < 300:
                         cmd = {'command': s, 'source': f'{f}:{i}', 'origin': 'ci'}
                         for near in self._step_lines(lines, i - 1):
-                            m = re.search(r'working[-_]directory\s*:\s*[\'"]?([^\'"\s]+)', near)
+                            m = re.search(r'working[-_]?directory\s*:\s*[\'"]?([^\'"\s]+)', near, re.I)
                             if m:
                                 cmd['working_directory'] = m.group(1).strip('./') or '.'
                                 break
