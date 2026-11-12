@@ -170,7 +170,7 @@ When the application's interfaces can be listed, map each one to the tests that 
 - **Express, Fastify, Flask, Django, Rails, Spring:** the router or URL configuration lists the endpoints; match tests by URL and method.
 - **OpenAPI or GraphQL:** operations from the specification (that makes it `specification_derived`).
 
-`python scripts/list_interfaces.py <repo> --tests <test dir>` lists FastAPI, Flask, Next.js and Express interfaces from source (it never imports the app) and marks the ones a test's URL literal reaches; read its output before using it, as the method field says.
+`python scripts/list_interfaces.py <repo> --tests <test dir>` lists FastAPI, Flask, Azure Functions, Next.js and Express interfaces from source (it never imports the app) and marks the ones a test's URL literal reaches; read its output before using it, as the method field says.
 
 **Reached is not authorised.** When fixtures replace the authentication or authorisation dependency (FastAPI `app.dependency_overrides[get_current_user] = ...` or a no-op permission check, a mocked `auth()` in Next.js, a test settings flag that disables auth), every route test runs without the real check, and "reached by a test" says nothing about access control. Record a second `interface_coverage` entry for the interfaces tested with the real dependency in place (for example "operations with a 401/403 test against the real permission check"); that is the security-relevant number, and an untested permission path is a finding.
 

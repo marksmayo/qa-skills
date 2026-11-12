@@ -6,13 +6,17 @@
 An optional helper for SKILL.md Step 4 (interface coverage). It reads source, never imports or runs
 it, so it works without the application's dependencies:
 
-    FastAPI    @app.get/post/.../api_route and add_api_route on FastAPI() and APIRouter() objects
-               (and a project's own router class or factory whose name contains Router),
-               with APIRouter(prefix=...) and include_router(router, prefix=...) resolved across
-               modules (relative and absolute imports), parsed with ast (decorators in strings
-               and docstrings are never read)
+    FastAPI    @app.get/post/.../api_route/websocket and add_api_route on FastAPI() and APIRouter()
+               objects (and a project's own router subclass, or a class or factory whose name ends in
+               Router/router), with APIRouter(prefix=...) and include_router(router, prefix=...)
+               resolved across modules (relative and absolute imports)
     Flask      @app.route / @bp.route / @bp.get ..., add_url_rule, Blueprint(url_prefix=...) and
                register_blueprint(bp, url_prefix=...)
+    Azure      @app.route(route=...) on a FunctionApp or functions Blueprint, under host.json's
+    Functions  routePrefix (default api)
+               Python is read by py_routes.py, the route reader shared with the journey mapper, the
+               API contract tester and the security auditor: it parses with ast, so decorators in
+               strings and docstrings are never read
     Next.js    app/**/route.(ts|js) exported GET/POST/... handlers (route groups dropped, [id] ->
                {id}), and pages/api/** files (method ANY)
     Express    app.get/post/... and router.get/post/... with a literal path (pattern-based; a
@@ -28,12 +32,15 @@ This is test_derived evidence: it says a test names the URL, not which code ran 
 real authentication dependency was in place (check fixtures for dependency overrides and mocked
 auth, and record that as a separate interface_coverage entry).
 
-Read the output before using it: dynamic prefixes (a prefix from a variable) are shown as
-<dynamic>, and routers never included in an app are listed with included: false.
+Read the output before using it: a computed path is shown as <dynamic> and an f-string prefix with
+its expression in braces, and routers never included in an app are listed with included: false.
 """
 from __future__ import annotations
 import argparse, ast, json, os, re, sys
 from pathlib import Path, PurePosixPath
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import py_routes  # noqa: E402  (shared route reader)
 
 PRUNE = {'.git', '.hg', '.svn', 'node_modules', '.venv', 'venv', 'env', '__pycache__', '.mypy_cache', '.pytest_cache',
          '.tox', '.nox', 'dist', 'build', 'out', '.next', '.nuxt', 'coverage', 'site-packages', '.turbo', '.cache'}
@@ -63,200 +70,77 @@ def join(*parts: str) -> str:
     return '/' + path if path else '/'
 
 
-# ---------------------------------------------------------------- Python (FastAPI, Flask)
-def call_name(n: ast.AST) -> str:
-    f = n.func if isinstance(n, ast.Call) else n
-    return f.attr if isinstance(f, ast.Attribute) else f.id if isinstance(f, ast.Name) else ''
+# ---------------------------------------------------------------- Python (FastAPI, Flask, Azure Functions)
+ROUTE_ATTRS = set(HTTP) | {'api_route', 'route', 'add_api_route', 'add_url_rule', 'websocket'}
+PY_HINT = re.compile(r'FastAPI|Router|router|Flask|Blueprint|register_blueprint|add_url_rule|\.route\(|FunctionApp')
 
 
-def const_str(n: ast.AST | None) -> str | None:
-    if n is None:
-        return None
-    if isinstance(n, ast.Constant) and isinstance(n.value, str):
-        return n.value
-    return '<dynamic>'
-
-
-def kw(call: ast.Call, name: str) -> ast.AST | None:
-    return next((k.value for k in call.keywords if k.arg == name), None)
-
-
-def str_list(n: ast.AST | None) -> list[str] | None:
-    if isinstance(n, (ast.List, ast.Tuple, ast.Set)):
-        return [e.value.upper() for e in n.elts if isinstance(e, ast.Constant) and isinstance(e.value, str)]
-    return None
-
-
-class PyModule:
-    def __init__(self, rel: str, name: str, tree: ast.Module):
-        self.rel, self.name, self.tree = rel, name, tree
-        self.routers: dict[str, dict] = {}       # var -> {kind, prefix, line}
-        self.imports: dict[str, str] = {}        # local name -> dotted origin
-        self.routes: list[dict] = []
-        self.includes: list[dict] = []
-        pkg = name.rsplit('.', 1)[0] if '.' in name else ''
-        is_pkg = rel.endswith('__init__.py')
-        for n in ast.walk(tree):
-            if isinstance(n, ast.ImportFrom):
-                base = n.module or ''
-                if n.level:
-                    parts = (name if is_pkg else pkg).split('.') if (name if is_pkg else pkg) else []
-                    parts = parts[:len(parts) - (n.level - 1)] if n.level > 1 else parts
-                    base = '.'.join([*parts, *([n.module] if n.module else [])])
-                for a in n.names:
-                    self.imports[a.asname or a.name] = f'{base}.{a.name}' if base else a.name
-            elif isinstance(n, ast.Import):
-                for a in n.names:
-                    self.imports[a.asname or a.name.split('.')[0]] = a.name if a.asname else a.name.split('.')[0]
-            elif isinstance(n, (ast.Assign, ast.AnnAssign)) and isinstance(n.value, ast.Call):
-                kind = call_name(n.value)
-                # a project's own router class or factory (APIRouterWithAuth(...), make_router(...)) counts by its name
-                if kind not in ('FastAPI', 'Flask') and ('Router' in kind or kind.endswith('router')):
-                    kind = 'APIRouter'
-                elif kind.endswith('Blueprint'):
-                    kind = 'Blueprint'
-                if kind in ('FastAPI', 'APIRouter', 'Flask', 'Blueprint'):
-                    prefix = const_str(kw(n.value, 'prefix') if kind == 'APIRouter' else
-                                       kw(n.value, 'url_prefix') if kind == 'Blueprint' else None) or ''
-                    for t in (n.targets if isinstance(n, ast.Assign) else [n.target]):
-                        if isinstance(t, ast.Name):
-                            self.routers[t.id] = {'kind': kind, 'prefix': prefix, 'line': n.lineno}
-        for n in ast.walk(tree):
-            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                for d in n.decorator_list:
-                    if isinstance(d, ast.Call) and isinstance(d.func, ast.Attribute):
-                        self.route_call(d, n.lineno, n.name)
-            elif isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute):
-                attr = n.func.attr
-                if attr in ('add_api_route', 'add_url_rule'):
-                    self.route_call(n, n.lineno, None)
-                elif attr in ('include_router', 'register_blueprint') and n.args:
-                    owner = self.ref(n.func.value)
-                    pref = kw(n, 'prefix' if attr == 'include_router' else 'url_prefix')
-                    self.includes.append({'owner': owner, 'child': self.ref(n.args[0]), 'line': n.lineno,
-                                          'prefix': const_str(pref) if pref is not None else None,
-                                          'override': attr == 'register_blueprint' and pref is not None})
-
-    def ref(self, n: ast.AST) -> str | None:
-        """A dotted reference for a Name or Attribute chain: local routers stay local (module:var)."""
-        if isinstance(n, ast.Name):
-            if n.id in self.routers:
-                return f'{self.name}:{n.id}'
-            return self.imports.get(n.id, n.id)
-        if isinstance(n, ast.Attribute):
-            base = self.ref(n.value)
-            return f'{base}.{n.attr}' if base else None
-        return None
-
-    def route_call(self, call: ast.Call, line: int, func: str | None):
-        attr = call.func.attr
-        owner = self.ref(call.func.value)
-        path = const_str(call.args[0] if call.args else kw(call, 'path') or kw(call, 'rule'))
-        if path is None or not owner:
-            return
-        if attr in HTTP:
-            methods = [attr.upper()]
-        elif attr in ('api_route', 'route', 'add_api_route', 'add_url_rule', 'websocket'):
-            methods = ['WEBSOCKET'] if attr == 'websocket' else (str_list(kw(call, 'methods')) or ['GET'])
-        else:
-            return
-        self.routes.append({'owner': owner, 'path': path, 'methods': methods, 'line': line, 'function': func})
+def dotted(rel: str) -> str:
+    parts = list(PurePosixPath(rel).with_suffix('').parts)
+    if parts[-1] == '__init__':
+        parts = parts[:-1]
+    return '.'.join(parts)
 
 
 def python_interfaces(root: Path, files: list[str]) -> tuple[list[dict], list[str]]:
-    mods: dict[str, PyModule] = {}
-    notes = []
+    """Python interfaces from the shared route reader (py_routes.py): the syntax tree, routers followed across modules."""
+    texts, hosts, notes = {}, {}, []
     for rel in files:
+        if rel.endswith('host.json'):
+            hosts[rel] = (root / rel).read_text(encoding='utf-8', errors='replace')
         if not rel.endswith('.py') or is_test(rel):
             continue
-        try:
-            text = (root / rel).read_text(encoding='utf-8', errors='replace')
-            if not re.search(r'FastAPI|Router|router|Flask|Blueprint|register_blueprint|add_url_rule|\.route\(', text):
-                continue
-            tree = ast.parse(text)
-        except (SyntaxError, ValueError) as exc:
-            notes.append(f'{rel}: not parsed ({exc})')
-            continue
-        parts = list(PurePosixPath(rel).with_suffix('').parts)
-        if parts[-1] == '__init__':
-            parts = parts[:-1]
-        mods['.'.join(parts)] = PyModule(rel, '.'.join(parts), tree)
-    names = list(mods)
-
-    def module_for(dotted: str, near: str) -> PyModule | None:
-        """The module a dotted import names. The repo root need not be the import root, so a suffix match counts; when
-        several modules match (two services that each have api.routes.x), the one sharing the longest leading path
-        with the importing module (near) wins, and a tie resolves nothing."""
-        if dotted in mods:
-            return mods[dotted]
-        hits = [n for n in names if n.endswith('.' + dotted)]
-        if len(hits) <= 1:
-            return mods[hits[0]] if hits else None
-        shared = lambda n: len(os.path.commonprefix([n.split('.'), near.split('.')]))  # noqa: E731
-        best = max(shared(n) for n in hits)
-        top = [n for n in hits if shared(n) == best]
-        return mods[top[0]] if len(top) == 1 else None
-
-    def router_key(ref: str | None, near: str) -> str | None:
-        """module:var for a reference (local module:var, or an imported pkg.mod.var / pkg.mod attribute chain)."""
-        if not ref:
-            return None
-        if ':' in ref:
-            return ref
-        mod, _, var = ref.rpartition('.')
-        m = module_for(mod, near) if mod else None
-        if m and var in m.routers:
-            return f'{m.name}:{var}'
-        return None
-
-    routers = {f'{m.name}:{v}': {**info, 'module': m} for m in mods.values() for v, info in m.routers.items()}
-    children: dict[str, list[dict]] = {}
-    included = set()
-    for m in mods.values():
-        for inc in m.includes:
-            o, c = router_key(inc['owner'], m.name), router_key(inc['child'], m.name)
-            if o and c and o in routers and c in routers:
-                children.setdefault(o, []).append({**inc, 'child_key': c})
-                included.add(c)
-            else:
-                notes.append(f'{m.rel}:{inc["line"]}: could not resolve {inc["child"]} included into {inc["owner"]}')
-    routes_of: dict[str, list[dict]] = {}
-    for m in mods.values():
-        for r in m.routes:
-            key = router_key(r['owner'], m.name)
-            routes_of.setdefault(key or f'?{m.name}:{r["owner"]}', []).append({**r, 'rel': m.rel})
+        texts[rel] = (root / rel).read_text(encoding='utf-8', errors='replace')
+    project = py_routes.Project(texts, py_routes.host_route_prefixes(hosts))
+    for rel, err in sorted(project.parse_errors.items()):
+        if PY_HINT.search(texts[rel]):
+            notes.append(f'{rel}: not parsed ({err})')
+    for d in project.dynamic_includes:
+        notes.append(f"{d['file']}:{d['line']}: could not resolve the router included by {d['text']}")
+    name = lambda key: f'{dotted(key[0])}:{key[1]}'  # noqa: E731
     out = []
-
-    def emit(key: str, prefix: str, chain: list[str], seen: set, is_root: bool):
-        if key in seen:
-            return
-        seen = seen | {key}
-        info = routers[key]
-        for r in routes_of.get(key, []):
-            for meth in r['methods']:
-                out.append({'framework': 'flask' if info['kind'] in ('Flask', 'Blueprint') else 'fastapi', 'method': meth,
-                            'path': join(prefix, r['path']), 'file': r['rel'], 'line': r['line'],
-                            **({'function': r['function']} if r['function'] else {}), 'router': ' > '.join(chain),
-                            'included': is_root})
-        for inc in children.get(key, []):
-            child = routers[inc['child_key']]
-            own = child['prefix']
-            if inc['override']:
-                own = ''                          # register_blueprint(url_prefix=...) replaces the blueprint's own
-            emit(inc['child_key'], join(prefix, inc['prefix'] or '', own), chain + [inc['child_key']], seen, is_root)
-    apps = [k for k, v in routers.items() if v['kind'] in ('FastAPI', 'Flask')]
-    for k in apps:
-        emit(k, '', [k], set(), True)
-    for k, v in routers.items():                  # routers never included anywhere: listed with their own prefix
-        if k not in included and k not in apps:
-            emit(k, v['prefix'], [k], set(), False)
-    for k, rs in routes_of.items():
-        if k.startswith('?'):
-            for r in rs:
-                for meth in r['methods']:
-                    out.append({'framework': 'python', 'method': meth, 'path': join(r['path']), 'file': r['rel'],
-                                'line': r['line'], 'router': k[1:], 'included': False,
-                                'note': 'the object the route is declared on is not a recognised app or router'})
+    for h in project.hits():
+        m, fn, call, attr, key = h['module'], h['fn'], h['call'], h['attr'], h['key']
+        line = fn.lineno if fn is not None else call.lineno
+        func = {'function': fn.name} if fn is not None else {}
+        router = project.router(key) if key else None
+        if router and router['framework'] == 'azure-functions':
+            if attr != 'route' or fn is None:
+                continue
+            rnode = py_routes._kw(call, 'route')
+            route = py_routes._str(rnode, m.consts)[0] if rnode is not None else fn.name
+            route = '<dynamic>' if route is None else route
+            for meth in py_routes._methods(py_routes._kw(call, 'methods')) or ['ANY']:
+                out.append({'framework': 'azure-functions', 'method': meth, 'path': join(project.host_prefix(m.rel), route),
+                            'file': m.rel, 'line': line, **func, 'router': name(key), 'included': True})
+            continue
+        if attr not in ROUTE_ATTRS:
+            continue
+        pnode = call.args[0] if call.args else py_routes._kw(call, 'path', 'rule')
+        if pnode is None:
+            continue
+        path = py_routes._str(pnode, m.consts)[0]
+        path = '<dynamic>' if path is None else path
+        if attr in HTTP:
+            methods = [attr.upper()]
+        else:
+            methods = ['WEBSOCKET'] if attr == 'websocket' else (py_routes._methods(py_routes._kw(call, 'methods')) or ['GET'])
+        if router is None:
+            owner = call.func.value
+            while isinstance(owner, ast.Attribute):
+                owner = owner.value
+            if not isinstance(owner, ast.Name):
+                continue                          # super().add_api_route(...) inside a router class, a call result...
+            for meth in methods:
+                out.append({'framework': 'python', 'method': meth, 'path': join(path), 'file': m.rel, 'line': line, **func,
+                            'router': f'{dotted(m.rel)}:{py_routes._unparse(call.func.value)}', 'included': False,
+                            'note': 'the object the route is declared on is not a recognised app or router'})
+            continue
+        for c in project.mount_chains(key):
+            for meth in methods:
+                out.append({'framework': router['framework'], 'method': meth, 'path': join(c['prefix'], path), 'file': m.rel,
+                            'line': line, **func, 'router': ' > '.join(name(k) for k in c['chain']), 'included': c['reached'],
+                            **({'note': 'a router prefix is computed, so the path is partial'} if c['status'] == 'dynamic' else {})})
     return out, notes
 
 

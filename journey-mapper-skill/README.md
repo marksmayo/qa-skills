@@ -95,7 +95,8 @@ Re-running is safe:
 - `scripts/extract_surface.py`: heuristic extractor for routes, screens, endpoints, deep links,
   command lines, function triggers, goals, flags and tests
 - `scripts/py_routes.py`: Python routes (Flask, FastAPI, Azure Functions), triggers and command
-  lines read with `ast`, with router and blueprint prefixes resolved
+  lines read with `ast`, with router and blueprint prefixes resolved (a shared file: the canonical copy is
+  `shared/scripts/py_routes.py` in the repository)
 - `scripts/js_routes.py`: React Router, Vue Router and Angular route trees, joined across files
 - `scripts/validate_journey_map.py`: structure and honesty checks
 - `scripts/write_journeys.py`: idempotent writer for journey files, index, coverage and graph

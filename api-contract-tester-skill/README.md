@@ -123,7 +123,8 @@ and excerpt that `--repo` re-reads).
   request and path budgets, a 429 policy and resumable runs
 - `scripts/handler_map.py`: static contract-vs-handler comparison (`--self-test` checks it on fixtures)
 - `scripts/py_routes.py`: Flask, FastAPI and Azure Functions routes read with `ast`, with router and
-  blueprint prefixes resolved (the same file as the journey mapper's copy)
+  blueprint prefixes resolved (a shared file, the same in the journey mapper, security auditor and test suite
+  evaluator; the canonical copy is `shared/scripts/py_routes.py` in the repository)
 - `scripts/run_schemathesis.py`: optional Schemathesis wrapper with the same safe mode
 - `scripts/spec_diff.py`: breaking-change diff; merges oasdiff output when present
 - `scripts/merge_findings.py`: operation coverage and rated candidates

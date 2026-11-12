@@ -167,7 +167,7 @@ python scripts/render_report.py examples/security_audit.example.json --brief
 - `schemas/security_audit.schema.json`: output contract
 - `scripts/recon.py`: attack-surface map
 - `scripts/nextjs_auth.py`: Next.js route handlers, server actions and middleware, with per-handler auth (used by recon)
-- `scripts/py_routes.py`: FastAPI, Flask and Azure Functions entry points from the syntax tree, routers and their dependencies followed across files (used by recon)
+- `scripts/py_routes.py`: FastAPI, Flask and Azure Functions entry points from the syntax tree, routers and their dependencies followed across files (used by recon; a shared file, canonical in `shared/scripts/py_routes.py` in the repository)
 - `scripts/run_scanners.py`: detects and runs the open-source scanners, recording each one's status
 - `scripts/scan_pitfalls.py`: pattern scan
 - `scripts/scan_secrets.py`: secrets in the tree and git history, without values; whether each file is tracked, untracked or gitignored and was ever committed; credential files and paths to them listed separately

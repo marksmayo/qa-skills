@@ -40,6 +40,8 @@ SHARED = {
     'scripts/clock_shift.mjs': ['test-data-auditor-skill', 'flaky-test-hunter-skill:plugins/clock_shift.mjs'],
     'scripts/net_guard.py': ['test-suite-evaluator-skill'],
     'scripts/net_guard.cjs': ['test-suite-evaluator-skill'],
+    'scripts/py_routes.py': ['journey-mapper-skill', 'api-contract-tester-skill', 'code-security-auditor-skill',
+                             'test-suite-evaluator-skill'],
     'scripts/png_io.py': ['visual-regression-reviewer-skill', 'cross-browser-checker-skill', 'mobile-app-auditor-skill'],
     'data/wcag-sc.json': ['wcag-auditor-skill', 'mobile-app-auditor-skill'],
     'data/en301549-map.json': ['wcag-auditor-skill', 'mobile-app-auditor-skill'],
