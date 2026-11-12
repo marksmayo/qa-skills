@@ -14,6 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 # canonical file (relative to shared/) -> skills that must carry a copy at the same relative path
+# ('skill:other/path' when the skill keeps it elsewhere)
 SHARED = {
     'JOURNEY_FORMAT.md': ['journey-mapper-skill', 'journey-to-tests-skill'],
     'schemas/journey.schema.json': ['journey-mapper-skill', 'journey-to-tests-skill'],
@@ -35,6 +36,7 @@ SHARED = {
     'scripts/browser_harness.py': ['bug-reproducer-skill', 'performance-budget-auditor-skill', 'visual-regression-reviewer-skill',
                                    'cross-browser-checker-skill', 'i18n-checker-skill',
                                    'resilience-prober-skill', 'privacy-flow-auditor-skill'],
+    'scripts/clock_shift.py': ['test-data-auditor-skill', 'flaky-test-hunter-skill:plugins/clock_shift.py'],
     'scripts/png_io.py': ['visual-regression-reviewer-skill', 'cross-browser-checker-skill', 'mobile-app-auditor-skill'],
     'data/wcag-sc.json': ['wcag-auditor-skill', 'mobile-app-auditor-skill'],
     'data/en301549-map.json': ['wcag-auditor-skill', 'mobile-app-auditor-skill'],
@@ -53,19 +55,21 @@ def main() -> int:
         canonical = ROOT / 'shared' / rel
         if not canonical.exists():
             print(f'MISSING CANONICAL: shared/{rel}'); problems += 1; continue
-        for skill in skills:
+        for entry in skills:
+            skill, _, where = entry.partition(':')  # 'skill' (same relative path) or 'skill:other/path'
             if not (ROOT / skill).is_dir():
                 continue  # skill not built yet
-            copy = ROOT / skill / rel
+            copy = ROOT / skill / (where or rel)
+            rel_shown = where or rel
             state = 'missing' if not copy.exists() else ('ok' if normalised(copy) == normalised(canonical) else 'drift')
             if state == 'ok':
                 continue
             if args.fix:
                 copy.parent.mkdir(parents=True, exist_ok=True)
                 copy.write_bytes(normalised(canonical))
-                print(f'FIXED ({state}): {skill}/{rel}')
+                print(f'FIXED ({state}): {skill}/{rel_shown}')
             else:
-                print(f'{state.upper()}: {skill}/{rel} differs from shared/{rel}'); problems += 1
+                print(f'{state.upper()}: {skill}/{rel_shown} differs from shared/{rel}'); problems += 1
     if problems:
         print(f'{problems} problem(s). Run: python tools/check_shared.py --fix')
         return 1
