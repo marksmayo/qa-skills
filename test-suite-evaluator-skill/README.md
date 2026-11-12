@@ -65,6 +65,7 @@ Evaluations written for an older contract fail with a migration hint; SKILL.md "
 - `schemas/evaluation.schema.json` — machine-readable output contract
 - `scripts/render_report.py` — terminal renderer (ANSI colour) and Markdown renderer (`--markdown`)
 - `scripts/validate_evaluation.py` — schema and rubric validator (recomputes scores, caps and completeness)
+- `scripts/net_guard.py`, `scripts/net_guard.cjs` — network guards for the test run (a pytest plugin and a Node `--require` module, shared files): they refuse non-loopback connections and log a `loaded` line per process and each refusal (`--self-test` checks them)
 - `scripts/list_interfaces.py` — optional: lists FastAPI, Flask, Azure Functions, Next.js and Express interfaces from source (Python through `scripts/py_routes.py`, the shared route reader) (routers, prefixes and includes resolved, nothing imported) and marks the ones a test's URL literal reaches (`python scripts/list_interfaces.py <repo> --tests <test dir> --out interfaces.json`)
 - `examples/evaluation.example.json` — sample result: a black-box, static-only evaluation
 - `examples/evaluation.partial-run.example.json` — sample result: a white-box partial run of a synthetic Next.js app (unit layer run twice and with coverage, end-to-end layer not run), with execution results, interface coverage and mixed evidence levels
