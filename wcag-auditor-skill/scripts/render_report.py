@@ -54,8 +54,11 @@ def main() -> int:
     w(P(f"# WCAG {sc['wcag_version']} {sc['level']} audit", BOLD))
     w('')
     w(f"Targets: {', '.join(sc['targets'])}  |  generated {d['generated_at']}  |  {d['skill']['name']} {d['skill']['version']}")
+    audited = [p for p in meta['sample'] if p['reason'] not in ('unreachable', 'blocked')]
+    lost = len(meta['sample']) - len(audited)
     w(f"Browser: {meta['browser']['name']} {meta['browser']['version']}  |  viewports {', '.join(meta['viewports'])}  |  "
-      f"{len(meta['sample'])} page(s) sampled, {meta['unsampled_count']} not sampled  |  authorised by: {sc['authorised_by']}")
+      f"{len(audited)} page(s) audited" + (f" ({lost} more unreachable or blocked, not audited)" if lost else '') +
+      f", {meta['unsampled_count']} not sampled  |  authorised by: {sc['authorised_by']}")
     w('')
     verdict_style = RED + BOLD if h['conformance_verdict'] == 'does_not_conform' else YELLOW + BOLD
     w(P(f"Verdict: {VERDICT[h['conformance_verdict']]}", verdict_style))

@@ -22,7 +22,11 @@ It doesn't bluff about the result:
 - Agent judgment (alt-text quality, colour-only errors) is labelled as such and never rated high
   confidence.
 - Every engine and probe is recorded as ran, not run or errored, and the validator checks the
-  report against the run's own records.
+  report against the run's own records. Pages run with their CSP bypassed so the engines and probes
+  can be injected, every injection is checked, and a probe that couldn't apply its overrides is
+  errored, never a silent pass.
+- Contrast estimates understand modern CSS colours (`oklch()`, `lab()`, `color()`), give no ratio
+  for text over images or video, and are self-tested against known ratios.
 - An audit sends nothing to third parties: requests to other hosts are blocked unless you allow
   them, so analytics and ad tags never fire.
 
@@ -95,7 +99,7 @@ leverage (one fix covers several instances).
 
 ## Output
 
-`audit.json`, described by `schemas/audit.schema.json`:
+`audit.json`, described by `schemas/audit.schema.json` (`schema_version` `"1.0"`):
 
 | Section | Content |
 |---|---|

@@ -16,9 +16,12 @@ Checks the report against schemas/audit.schema.json, then the rules a schema can
 - priority, ranking, severity counts, SC coverage, evidence completeness and overall confidence
   are recomputed.
 
---run re-checks tool statuses, the check matrix, the sample and screenshots against run.json.
---candidates checks every candidate was triaged exactly once and that finding sources come from
-the candidates they cite. --write-summary fills or recomputes the headline numbers in place (not
+--run re-checks tool statuses, the check matrix, the sample and screenshots against run.json, and
+that an SC passed on probe evidence had its probes run on every planned check (a probe whose
+injection failed measured nothing). --candidates checks every candidate was triaged exactly once,
+that finding sources come from the candidates they cite, and that no contrast candidate whose
+estimate is below the threshold, whose background is an image or video, or that is a group with no
+estimate, is dismissed. --write-summary fills or recomputes the headline numbers in place (not
 the verdict or its text) before anything is checked, so a draft may leave them empty. Exit code 0
 when valid, 1 when invalid.
 """
@@ -403,6 +406,15 @@ def check(d: dict, run_dir: Path | None, cands: dict | None) -> list[str]:
                 e.append(f'{w}: not a candidate in the candidates file')
             elif c['kind'] != 'wcag' and t['decision'] in ('finding', 'needs_review'):
                 e.append(f'{w}: {c["kind"]} candidates are advisories or dismissed, never WCAG findings')
+            elif t['decision'] == 'dismissed' and c['kind'] == 'wcag' and c['outcome'] == 'cantTell':
+                est = c.get('contrast_estimate')
+                if est and (est.get('min_ratio') is None or est.get('below')):
+                    why = ('an image or video background' if est.get('min_ratio') is None
+                           else f'an estimate of {est["min_ratio"]}:1, below {est["required"]}:1')
+                    e.append(f'{w}: a contrast candidate with {why} is needs review or a finding, never dismissed '
+                             '(check the screenshot pixels, then promote it or put it in needs_review)')
+                elif c.get('group') and not est:
+                    e.append(f'{w}: a grouped contrast candidate with no estimate is needs review, never dismissed')
     for cid, n in seen.items():
         if n > 1:
             e.append(f'triage: {cid} triaged {n} times')
@@ -432,6 +444,21 @@ def check(d: dict, run_dir: Path | None, cands: dict | None) -> list[str]:
             e.append('metadata.sample: ids and URLs must match run.json')
         if meta['browser']['version'] != run['browser']['version']:
             e.append('metadata.browser.version differs from run.json')
+        # a pass resting on probe evidence needs that probe to have run everywhere it was planned: a probe whose
+        # injection failed (a CSP refusing its style) measured nothing, so it can't support "passed"
+        probe_sc: dict[str, set] = {}
+        for code, m in json.loads((DATA / 'rule-map.json').read_text(encoding='utf-8'))['probe'].items():
+            for s in m['sc']:
+                probe_sc.setdefault(s, set()).add(code.split('.')[0].replace('focus', 'keyboard'))
+        for r in d['sc_results']:
+            if r['outcome'] != 'passed' or 'probe' not in r['basis']:
+                continue
+            for probe in sorted(probe_sc.get(r['sc'], ())):
+                rows = [c for c in run['checks'] if c['kind'] == 'probe' and c['name'] == probe]
+                bad = [c for c in rows if c['status'] != 'ran']
+                if rows and bad:
+                    e.append(f'sc_results[{r["sc"]}]: passed on probe evidence, but the {probe} probe did not run on '
+                             f'{len(bad)} of {len(rows)} planned checks ({bad[0]["page"]} {bad[0]["viewport"]}: {bad[0]["status"]})')
     return e
 
 

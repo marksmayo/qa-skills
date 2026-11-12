@@ -237,6 +237,22 @@ class Norm:
                         self.probe(rec, 'reflow.horizontal_scroll', 'failed', el=c,
                                    message=f"Overflows the {r['viewport_width']} px viewport by {c['overflow_px']} px and makes the page scroll horizontally",
                                    data={'overflow_px': c['overflow_px'], 'scroll_width': r['scroll_width']})
+            else:
+                # the page can't scroll sideways (overflow hidden on html or body), so whatever sticks out is cut off
+                for c in r['culprits']:
+                    if c['inside_scroller'] or c['exempt_kind']:
+                        continue
+                    self.probe(rec, 'reflow.clipped', 'failed', el=c,
+                               message=f"Extends {abs(c['overflow_px'])} px past the {r['viewport_width']} px viewport and the page "
+                                       "doesn't scroll horizontally, so that part is cut off and can't be reached",
+                               data={'overflow_px': c['overflow_px'], 'scroll_width': r['scroll_width']})
+            for c in r.get('clipped_by_ancestor') or []:
+                if c.get('exempt_kind'):
+                    continue
+                self.probe(rec, 'reflow.clipped', 'cantTell', el=c,
+                           message=f"Extends {abs(c['overflow_px'])} px past the {r['viewport_width']} px viewport inside an ancestor "
+                                   "with overflow hidden: check the screenshot for content cut off (a carousel's off-screen slides are fine)",
+                           data={'overflow_px': c['overflow_px'], 'clipped_by': c.get('clipped_by')})
         t = p.get('text_spacing')
         if t and t.get('status') == 'ran':
             self.checked(['1.4.12'])

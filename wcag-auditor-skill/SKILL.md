@@ -1,7 +1,7 @@
 ---
 name: wcag-auditor
 description: Audit live web pages against WCAG (2.2 AA by default) without needing the source code. Runs three open-source engines inside a real browser (axe-core, IBM Equal Access, HTML_CodeSniffer), adds keyboard, focus, reflow, text-spacing, zoom, target-size, hover, motion, language and media probes, merges and de-duplicates the results by component, maps every issue to a success criterion, rates severity with a published rubric, and gives every SC at the target level an EARL outcome. Untested criteria become a manual test plan. The report never says the site conforms.
-version: 1.0.0
+version: 1.1.0
 ---
 
 # WCAG Auditor
@@ -54,6 +54,12 @@ What sets this apart from running one checker:
    Third-party requests are blocked too (GETs included), so an audit never sends analytics hits
    or ad requests; service workers are blocked. Don't click destructive buttons, don't bypass
    CAPTCHAs (record the page as blocked), and never write credentials into any output.
+9. **A probe that couldn't run is not a pass.** The runner injects the engines, its probe helpers
+   and a text-spacing stylesheet; a Content-Security-Policy with a hash or nonce refuses them
+   silently. Pages therefore run with the CSP bypassed (`bypass_csp`, default true; it changes
+   nothing for real users), every injection is checked, and one that didn't take makes that engine
+   or probe `errored`, never "ran, nothing found". An SC passed on probe evidence needs its probe to
+   have run on every planned check (the validator enforces it with `--run`).
 
 ## Inputs
 
@@ -71,6 +77,8 @@ What sets this apart from running one checker:
 | `allowed_hosts` | none | Further hosts to let through, such as a CDN the site needs (`"*.cdn.example"` allowed) |
 | `service_workers` | `block` | `allow` lets the site register them |
 | `allow_form_submission` | `false` | Only the user can turn it on, for a test environment |
+| `bypass_csp` | `true` | Run pages with their CSP bypassed so engines and probes can be injected; `false` audits the CSP as served (injections it refuses are recorded as errored) |
+| `consent` | none | An overlay to dismiss (`dismiss` selector or `steps`), `engines` `both` (default), `before` or `after`, and `probes_with_overlay` (default `["keyboard"]`) |
 | `standards_map` | off | `en301549` adds EN 301 549 clause numbers (V3.2.1; WCAG 2.2 additions have none) |
 
 If something essential is missing (the target, or authorisation for a non-loopback target), ask
@@ -81,8 +89,8 @@ once, then proceed with the defaults.
 ### 1. Define the scope
 
 Record the version, level, targets, exclusions (third-party embeds, PDFs, out-of-scope
-subdomains) and critical paths. Write `audit_config.json` (see `scripts/run_audit.py --help` for
-every field). Use `states` for UI that only appears after an action (open menus, dialogs,
+subdomains) and critical paths. Write `audit_config.json` (`python scripts/run_audit.py --help`
+lists every field). Use `states` for UI that only appears after an action (open menus, dialogs,
 accordions, form errors), and reference them from critical-path steps.
 
 ### 2. Check tooling
@@ -109,7 +117,8 @@ structure, and samples every critical-path page and every listed target (never d
 sharing a template), one page per template not yet covered, and about 10% more of the rest at
 random (seeded). Each page records how it entered the sample (`critical_path`, `listed`,
 `structured`, `random`, or `unreachable`). Check the sample makes sense before the full run; add
-targets for templates the crawl missed.
+targets for templates the crawl missed. A plan-only run records every engine as `not_run` with the
+reason "plan only": that is expected, not a failure.
 
 ### 4. Run engines and probes
 
@@ -117,17 +126,22 @@ targets for templates the crawl missed.
 python scripts/run_audit.py --config audit_config.json --out <run-dir>
 ```
 
-For every sampled page and viewport the runner takes a full-page screenshot, runs the engines
-with any consent banner showing (it's content too), dismisses the banner, then runs the probes:
+For every sampled page and viewport the runner takes a full-page screenshot and runs the engines
+with any consent banner or overlay showing (it's content too). With `consent` configured it then
+runs `probes_with_overlay` (the keyboard probe by default: does focus enter the overlay, is focus
+hidden behind it?) with it open (state `consent_open`), dismisses it, runs the engines again on the
+uncovered page (state `consent_dismissed`, unless `engines` is `before`), and runs the probes;
+`run.json` records which ran in each state. The motion probe watches fresh loads in their own pages,
+so the audited page is never reloaded under later probes.
 
 | Probe | SCs | What it measures |
 |---|---|---|
-| `keyboard` | 2.1.1, 2.1.2, 2.4.3 | Tab order; traps (no new element for 15 presses, then Shift+Tab and Escape tried); clickable elements that aren't focusable, with their click listeners; menu links that only `:hover` reveals and no key opens (focus, ArrowDown, and Enter and Space unless the control follows a link or submits a form) |
+| `keyboard` | 2.1.1, 2.1.2, 2.4.3 | Tab order from the top of the document (an invisible starting point focused at the start of the body; nothing is clicked, so the first Tab reaches a skip link even under a fixed header); traps (no new element for 15 presses, then Shift+Tab and Escape tried); clickable elements that aren't focusable, with their click listeners; menu links that only `:hover` reveals and no key opens (focus, ArrowDown, and Enter and Space unless the control follows a link or submits a form) |
 | `focus_visible` | 2.4.7, 2.4.11, 2.4.12 | Pixels changed around each element when focused; whether fixed or sticky content covers it |
-| `reflow` | 1.4.10 | Horizontal scrolling at 320 px and the element causing it (tables, video and other two-dimensional content flagged as possibly exempt) |
-| `text_spacing` | 1.4.12 | Text clipped once the WCAG spacing overrides are applied (visually hidden `.sr-only` text excluded) |
+| `reflow` | 1.4.10 | Horizontal scrolling at 320 px and the element causing it (tables, video and other two-dimensional content flagged as possibly exempt); content past the viewport on a page that can't scroll sideways (cut off: `reflow.clipped`, failed), or cut off by an ancestor with overflow hidden (needs review) |
+| `text_spacing` | 1.4.12 | Text clipped once the WCAG spacing overrides are applied (visually hidden `.sr-only` text excluded); the overrides are read back, and a refused stylesheet makes the probe `errored` |
 | `resize_text` | 1.4.4 | Text clipped at 200% zoom (half the viewport at device scale 2; visually hidden text excluded); viewport meta that blocks zoom |
-| `target_size` | 2.5.8 | Targets under 24 x 24 px whose 24 px circle overlaps another target; inline links exempt |
+| `target_size` | 2.5.8 | Pointer targets (links, buttons, controls, ARIA widgets; never a `tabindex` container or a visually hidden link) under 24 x 24 px whose 24 px circle overlaps another target, measured at the top of the page; fixed or sticky targets are compared only with each other; inline links exempt |
 | `hover_focus` | 1.4.13 | Content shown on hover: dismissible with Escape, hoverable, persistent |
 | `motion` | 2.2.2 | Content still changing 5 to 7.5 s after load with no pause control; again with reduced motion |
 | `a11y_tree` | 1.3.1, 2.4.6, 4.1.2 | Accessibility-tree snapshot, headings and landmarks for the assisted review |
@@ -163,7 +177,13 @@ gradient's luminance) and collapses candidates with the same cause and the same 
 one grouped candidate whose `group` lists the cause, the background, the member components,
 counts, text colours and sample selectors. Candidates estimated below the threshold are never
 grouped; they stay separate so they can be promoted. Visually hidden text is grouped on its own.
-Runs without that record (older runs) are not grouped.
+Runs without that record (older runs) are not grouped. Colours in any CSS syntax are converted to
+sRGB (`rgb()`, hex, `hsl()`, `hwb()`, `lab()`, `lch()`, `oklab()`, `oklch()`, `color(srgb …)`,
+`display-p3`, `xyz`; Tailwind 4 writes `oklch()` and Chromium reports some colours as `lab()`); one
+it can't parse gives no estimate rather than a wrong one (`python scripts/merge_findings.py
+--self-test` checks the conversions against known ratios). Text over an `<img>`, `<video>`,
+`<canvas>` or `<svg>` painted behind it has an unknown background: its estimate has no ratio
+(`unknown_background`), and the candidate is never grouped.
 
 ### 6. Triage every candidate
 
@@ -181,7 +201,10 @@ A grouped contrast candidate is triaged once, like any other. A `contrast_estima
 recorded colours, not pixels: dismiss on it only when the group's lowest estimate clears the
 threshold and you say so with the colours (`#222 on a #fafafa-#eef4ee gradient: at least 14.2:1`);
 otherwise send it for review with the sample selectors. Check a sample in the screenshot either
-way, because images, shadows and overlapping content aren't in the estimate.
+way, because images, shadows and overlapping content aren't in the estimate; when the text colour
+isn't plain `rgb()` (an `oklch()` or `lab()` theme), check the screenshot pixels first. A contrast
+candidate with an estimate below the threshold, an unknown background, or a group with no estimate
+is never dismissed (the validator rejects it).
 
 A finding built only from `cantTell` candidates is agent judgment and needs a `resolution` saying
 what you looked at.
@@ -217,7 +240,8 @@ the `manual_test_plan` with concrete steps and pages.
 
 ### 10. Report, validate and render
 
-Write `audit.json` (described by `schemas/audit.schema.json`) next to the run directory, then:
+Write `audit.json` (described by `schemas/audit.schema.json`; its `schema_version` is `"1.0"`) next
+to the run directory, then:
 
 ```bash
 python scripts/validate_audit.py audit.json --run <run-dir> --candidates <run-dir>/candidates.json --write-summary
@@ -244,12 +268,19 @@ reason, the P0 and P1 findings, blocked critical paths, what was untested and th
 - Headline: severity counts, SC coverage, evidence completeness (ran / planned checks), overall
   confidence and blocked critical paths recomputed.
 - With `--run`: tool statuses, versions, the check matrix, the sample and the browser version
-  match `run.json`, so nothing claims to have run that didn't.
+  match `run.json`, so nothing claims to have run that didn't; an SC passed on probe evidence had
+  its probes run on every planned check.
+- With `--candidates`: no contrast candidate below the threshold, over an image or video, or
+  grouped without an estimate is dismissed.
 
 ## Edge cases
 
-- **Consent banners:** engines run with the banner showing, then `consent.dismiss` closes it for
-  the probes and states.
+- **Consent banners and overlays:** engines run with the overlay showing and again after
+  `consent.dismiss` (or `consent.steps`) closes it; the keyboard probe also runs with it open; the
+  other probes and states run after dismissal. A dismissal that fails is recorded
+  (`consent_dismissed: false`) and the engines are not rerun.
+- **Strict CSP (Next.js and similar):** leave `bypass_csp` on; with it off, expect engines and
+  probes to be `errored` on pages whose CSP refuses injected scripts or styles.
 - **CAPTCHAs:** stop, record the page as blocked, report affected SCs as `untested`.
 - **SPAs:** the runner waits for network idle and a quiet DOM; add `wait_for` actions for slow views.
 - **Infinite scroll:** capped by `max_pages`; don't scroll endlessly.

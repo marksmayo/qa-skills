@@ -24,7 +24,15 @@ Config (JSON):
     allowed_hosts      further hosts to let through, e.g. a CDN the site needs: ["cdn.example.com", "*.cdn.net"]
     service_workers    "block" (default) or "allow"
     rate_limit_seconds 1.0 between page loads; 429/503 responses back off (Retry-After) up to twice
-    consent            {"dismiss": "<selector>"}: engines run with the banner showing, then it is dismissed
+    bypass_csp         true (default): pages run with their Content-Security-Policy bypassed (Playwright's
+                       bypass_csp), so the engines, probes.js and the text-spacing style can be injected under a
+                       hash- or nonce-based CSP. Each injection is checked; one that didn't take makes that engine
+                       or probe errored, never "ran, no issues". false tests the CSP as served.
+    consent            an overlay (cookie banner, sign-up modal) to dismiss: {"dismiss": "<selector>"} or
+                       {"steps": [actions]}, plus "engines": "both" (default: engines run with the overlay showing
+                       and again after dismissal, recorded as state consent_dismissed), "before" or "after", and
+                       "probes_with_overlay": ["keyboard"] (default; run with the overlay open, recorded as state
+                       consent_open). The other probes run after dismissal. run.json records which ran.
     auth               {"storage_state": "<file>"} or {"login": {"url", "steps": [...], "wait_for"}};
                        login steps use {"fill": sel, "env": NAME} so credentials never appear in output
     states             [{"url", "name", "viewport"?, "actions": [...], "probes"?: [...]}]
@@ -36,8 +44,15 @@ Config (JSON):
                        template de-duplication only thins crawled and sitemap pages. Each sample entry's
                        reason says how it entered: critical_path, listed, structured, random or unreachable.
 
-Writes <out>/run.json (metadata, sample, per-page checks), <out>/raw/*.json (engine and probe
-results per page, viewport and state), <out>/screenshots/*.png and <out>/aria/*.txt.
+Probes: the keyboard probe starts sequential focus from an invisible point at the top of the body (no
+click), so the first Tab reaches a skip link; target size is measured at the top of the page with
+pointer targets only (never a tabindex-only container or a visually hidden link), and fixed or sticky
+targets are not compared with in-flow ones; motion watches fresh loads in their own pages, so the
+audited page is never reloaded under later probes.
+
+Writes <out>/run.json (metadata, sample, per-page checks, mode, bypass_csp, consent, request counts),
+<out>/raw/*.json (engine and probe results per page, viewport and state), <out>/screenshots/*.png and
+<out>/aria/*.txt. With --plan-only no engine runs: they are recorded not_run with that reason.
 """
 from __future__ import annotations
 import argparse, hashlib, ipaddress, json, os, random, re, shutil, struct, subprocess, sys, time, zlib
@@ -142,6 +157,8 @@ class Runner:
         self.rate = float(cfg.get('rate_limit_seconds', 1.0))
         self.allow_post = bool(cfg.get('allow_form_submission', False))
         self.third_party = cfg.get('third_party', 'block')
+        self.bypass_csp = bool(cfg.get('bypass_csp', True))
+        self.requests = {'seen': 0, 'sent': 0}   # every request the pages made, and those let out (the rest are in blocked)
         targets = cfg.get('targets') if isinstance(cfg.get('targets'), list) else []
         self.site_hosts = {(urlparse(u).hostname or '').lower() for u in targets + [cfg.get('sitemap') or '']} - {''}
         self.site_hosts |= {(urlparse(s.get('url', '')).hostname or '').lower() for s in cfg.get('states') or []} - {''}
@@ -192,10 +209,12 @@ class Runner:
         return host in self.site_hosts or any(host == p or (p.startswith('*.') and host.endswith(p[1:])) for p in self.allowed_hosts)
 
     def guard(self, route, request):
+        self.requests['seen'] += 1
         if self.third_party == 'block' and not self.host_allowed(request.url):
             self.blocked.append({'method': request.method, 'url': request.url.split('?')[0], 'reason': 'third_party', 'at': now()})
             return route.abort('blockedbyclient')
         if request.method in ('GET', 'HEAD', 'OPTIONS') or self.allow_post:
+            self.requests['sent'] += 1
             return route.continue_()
         self.blocked.append({'method': request.method, 'url': request.url.split('?')[0], 'reason': 'write', 'at': now()})
         return route.abort()
@@ -204,7 +223,7 @@ class Runner:
         w, h = parse_vp(vp)
         ctx = browser.new_context(viewport={'width': w, 'height': h}, device_scale_factor=scale,
                                   reduced_motion=reduced_motion, storage_state=self.storage_state,
-                                  user_agent=None, ignore_https_errors=False,
+                                  user_agent=None, ignore_https_errors=False, bypass_csp=self.bypass_csp,
                                   service_workers=self.cfg.get('service_workers', 'block'))
         ctx.route('**/*', self.guard)
         return ctx
@@ -235,11 +254,29 @@ class Runner:
         page.evaluate("""() => new Promise(res => { let t = setTimeout(res, 500); const stop = setTimeout(res, 5000);
             new MutationObserver(() => { clearTimeout(t); t = setTimeout(() => { clearTimeout(stop); res(); }, 500); })
               .observe(document, {subtree: true, childList: true, attributes: true}); })""")
-        self.inject_helpers(page)
+        try:
+            self.inject_helpers(page)
+        except Exception as e:  # every probe on this page then errors, which is recorded; never a silent pass
+            self.events.append({'url': page.url, 'event': f'probe helpers not injected: {type(e).__name__}: {str(e).splitlines()[0][:200]}',
+                                'at': now()})
 
     def inject_helpers(self, page):
+        """Add probes.js and check it took: a script CSP with a nonce or hash refuses injected scripts (set bypass_csp)."""
         if not page.evaluate('() => !!window.__qa'):
             page.add_script_tag(content=self.probes_js)
+            if not page.evaluate('() => !!window.__qa'):
+                raise RuntimeError('probes.js did not run (the page\'s Content-Security-Policy may refuse injected scripts; '
+                                   'set "bypass_csp": true)')
+
+    def page_info(self, page) -> dict:
+        """window.__qa.pageInfo(), or a minimal stand-in (title from the page) when probes.js couldn't be injected, so
+        the page is still sampled and its engines and probes are recorded as errored rather than the run crashing."""
+        try:
+            return page.evaluate('() => window.__qa.pageInfo()')
+        except Exception as e:
+            self.events.append({'url': page.url, 'event': f'page info unavailable (probes.js not injected): {type(e).__name__}', 'at': now()})
+            return {'title': page.title(), 'lang': None, 'viewport_meta': None, 'template': {'landmarks': '', 'main_shape': ''},
+                    'landmarks': [], 'headings': [], 'frames': [], 'captcha': False, 'links': [], 'probes_injected': False}
 
     def act(self, page, actions: list[dict]):
         for a in actions:
@@ -363,10 +400,13 @@ class Runner:
     def probe_keyboard(self, page, shots: Path, pid: str) -> dict:
         targets = page.evaluate('() => window.__qa.focusTargets()')
         focusable = targets['focusable']
-        page.evaluate('() => { window.scrollTo(0, 0); document.activeElement && document.activeElement.blur && document.activeElement.blur(); }')
-        page.mouse.click(1, 1)  # sequential focus starts from the top of the document
-        page.mouse.move(1, 1)
+        # Sequential focus starts from the top of the document: an invisible starting point is focused at the start
+        # of the body (never a click: a click at fixed coordinates can land inside a fixed header, past the skip
+        # link, or activate a control), so the first Tab reaches the first focusable element.
+        if not page.evaluate('() => window.__qa.focusStart()'):
+            raise RuntimeError('could not set the focus starting point at the top of the document')
         limit = min(400, 3 * len(focusable) + 20)
+        started = False
         stops, moves, trap = [], [], None
         seen: set[str] = set()
         last_new = 0
@@ -375,6 +415,9 @@ class Runner:
         for i in range(limit):
             page.keyboard.press('Tab')
             page.wait_for_timeout(60)
+            if not started:
+                page.evaluate('() => window.__qa.focusStartDone()')
+                started = True
             info = page.evaluate('() => window.__qa.activeInfo()')
             if info and stops and info['xpath'] == stops[-1]['xpath']:
                 continue  # moving between a native control's internal parts (video controls)
@@ -568,7 +611,11 @@ class Runner:
 
     def probe_text_spacing(self, page) -> dict:
         before = {c['xpath']: c['overflow'] for c in page.evaluate('() => window.__qa.clipped()')}
-        page.evaluate('() => window.__qa.textSpacing(true)')
+        if not page.evaluate('() => window.__qa.textSpacing(true)'):
+            page.evaluate('() => window.__qa.textSpacing(false)')
+            # the override never applied, so nothing was measured: errored, never "ran, nothing clipped"
+            return {'status': 'errored', 'reason': 'the text-spacing style did not apply (the page\'s Content-Security-Policy '
+                                                   'refuses inline styles; set "bypass_csp": true)'}
         page.wait_for_timeout(200)
         after = page.evaluate('() => window.__qa.clipped()')
         page.evaluate('() => window.__qa.textSpacing(false)')
@@ -595,6 +642,10 @@ class Runner:
                 'viewport_meta': info['vm'], 'zoom_disabled': disabled, 'screenshot': shot.name}
 
     def probe_target_size(self, page) -> dict:
+        # earlier probes (keyboard) leave the page scrolled; measure every target at the top of the page, in one
+        # coordinate system (fixed and in-flow targets are never compared with each other, see probes.js)
+        page.evaluate('() => window.scrollTo(0, 0)')
+        page.wait_for_timeout(150)
         return page.evaluate('() => window.__qa.targetSize()')
 
     def probe_hover_focus(self, page) -> dict:
@@ -641,16 +692,25 @@ class Runner:
         page.wait_for_timeout(2500)
         return page.evaluate('() => window.__qa.motionChanges()')
 
-    def probe_motion(self, page, browser, url: str) -> dict:
-        self.goto(page, url)
-        normal = self.watch_motion(page)
-        ctx = self.new_context(browser, self.viewports[0], reduced_motion='reduce')
-        p2 = ctx.new_page()
-        reduced = None
-        if self.goto(p2, url)['ok']:
-            reduced = self.watch_motion(p2)
-        ctx.close()
-        return {'window': 'changes between 5.0 s and 7.5 s after load', 'normal': normal, 'reduced_motion': reduced}
+    def probe_motion(self, browser, url: str, vp: str) -> dict:
+        """Watch a fresh load in its own pages (normal, then reduced motion): the probed page is never reloaded, so
+        later probes keep its state (a dismissed consent banner stays dismissed)."""
+        out = {'window': 'changes between 5.0 s and 7.5 s after load', 'normal': None, 'reduced_motion': None}
+        for key, motion in (('normal', 'no-preference'), ('reduced_motion', 'reduce')):
+            ctx = self.new_context(browser, vp, reduced_motion=motion)
+            try:
+                p = ctx.new_page()
+                nav = self.goto(p, url)
+                if not nav['ok']:
+                    if key == 'normal':
+                        return {'status': 'errored', 'reason': nav.get('error') or f"HTTP {nav.get('status')}"}
+                    break
+                self.inject_helpers(p)
+                self.consent_dismiss(p)
+                out[key] = self.watch_motion(p)
+            finally:
+                ctx.close()
+        return out
 
     def probe_a11y_tree(self, page, aria_dir: Path, pid: str) -> dict:
         try:
@@ -695,7 +755,7 @@ class Runner:
             if not nav['ok']:
                 found.append({'url': url, 'ok': False, 'error': nav.get('error') or f"HTTP {nav.get('status')}"})
                 continue
-            info = page.evaluate('() => window.__qa.pageInfo()')
+            info = self.page_info(page)
             found.append({'url': url, 'ok': True, 'final_url': nav.get('final_url'), 'title': info['title'],
                           'template_sig': info['template'], 'captcha': info['captcha']})
             if crawl:
@@ -750,6 +810,52 @@ class Runner:
         self.unsampled = [f['url'] for f in rest if f['url'] not in {s['url'] for s in sample}]
         return sample
 
+    # consent / overlays -------------------------------------------------
+    def consent_cfg(self) -> dict | None:
+        """The configured overlay dismissal: {"dismiss": selector} or {"steps": [actions]}; engines run "before" it
+        (as before 1.2), "after" it or "both" (the default); probes_with_overlay (default ["keyboard"]) run with it open."""
+        c = self.cfg.get('consent') or {}
+        if not (c.get('dismiss') or c.get('steps')):
+            return None
+        engines = c.get('engines', 'both')
+        if engines not in ('before', 'after', 'both'):
+            raise ValueError('consent.engines must be "before", "after" or "both"')
+        return {'engines': engines, 'probes_with_overlay': [p for p in c.get('probes_with_overlay', ['keyboard']) if p in ALL_PROBES]}
+
+    def consent_dismiss(self, page) -> bool:
+        c = self.cfg.get('consent') or {}
+        if not (c.get('dismiss') or c.get('steps')):
+            return False
+        try:
+            if c.get('steps'):
+                self.act(page, c['steps'])
+            else:
+                page.click(c['dismiss'], timeout=3000)
+                page.wait_for_timeout(300)
+            return True
+        except Exception as e:
+            self.events.append({'url': page.url, 'event': f'overlay dismissal failed: {type(e).__name__}', 'at': now()})
+            return False
+
+    def run_probe(self, probe, page, browser, url, vp, shots, aria, tag) -> dict:
+        t0 = time.time()
+        try:
+            if probe in ('keyboard', 'focus_visible'):
+                result = self.probe_keyboard(page, shots, tag)
+            elif probe == 'resize_text':
+                result = self.probe_resize_text(browser, url, shots, tag)
+            elif probe == 'motion':
+                result = self.probe_motion(browser, url, vp)
+            elif probe == 'a11y_tree':
+                result = self.probe_a11y_tree(page, aria, tag)
+            else:
+                result = getattr(self, 'probe_' + probe)(page)
+            result.setdefault('status', 'ran')
+        except Exception as e:
+            result = {'status': 'errored', 'reason': f'{type(e).__name__}: {str(e).splitlines()[0][:300]}'}
+        result['seconds'] = round(time.time() - t0, 2)
+        return result
+
     # main loop -----------------------------------------------------------
     def audit_page(self, browser, pg: dict) -> dict:
         url, pid = pg['url'], pg['id']
@@ -771,40 +877,49 @@ class Runner:
                 ctx.close(); continue
             tag = f'{pid}__{vp}'
             page.screenshot(path=str(shots / f'{tag}.png'), full_page=True)
-            info = page.evaluate('() => window.__qa.pageInfo()')
+            info = self.page_info(page)
+            consent = self.consent_cfg()
             record = {'page': pid, 'url': url, 'final_url': page.url, 'viewport': vp, 'state': 'initial', 'page_info': {k: v for k, v in info.items() if k != 'links'},
-                      'screenshot': f'{tag}.png', 'engines': self.run_engines(page), 'probes': {}}
-            vc['engines'] = {k: v['status'] for k, v in record['engines'].items()}
-            consent = (self.cfg.get('consent') or {}).get('dismiss')
+                      'screenshot': f'{tag}.png', 'engines': {}, 'probes': {}}
+            if not consent or consent['engines'] in ('before', 'both'):
+                record['engines'] = self.run_engines(page)
             if consent:
-                try:
-                    page.click(consent, timeout=3000)
-                    page.wait_for_timeout(300)
-                    record['consent_dismissed'] = True
-                except Exception:
-                    record['consent_dismissed'] = False
-            self.inject_helpers(page)
-            for probe in self.probes:
+                # probes with the overlay open (does focus enter it? is focus hidden behind it?), on the same page
+                for probe in consent['probes_with_overlay']:
+                    if (probe in DESKTOP_ONLY and narrow) or (probe in NARROW_ONLY and not narrow):
+                        continue
+                    open_rec = {'page': pid, 'url': url, 'final_url': page.url, 'viewport': vp, 'state': 'consent_open',
+                                'screenshot': f'{tag}.png', 'engines': {}, 'probes': {probe: self.run_probe(probe, page, browser, url, vp, shots, aria, f'{tag}__consent_open')}}
+                    (raw / f'{tag}__consent_open.json').write_text(json.dumps(open_rec, indent=1, ensure_ascii=False), encoding='utf-8')
+                    vc.setdefault('consent', {})['probes_with_overlay'] = {probe: open_rec['probes'][probe]['status']}
+                record['consent_dismissed'] = self.consent_dismiss(page)
+                vc.setdefault('consent', {})['dismissed'] = record['consent_dismissed']
+                if consent['engines'] == 'after' or (consent['engines'] == 'both' and record['consent_dismissed']):
+                    after = self.run_engines(page) if record['consent_dismissed'] else {}
+                    if consent['engines'] == 'after':
+                        record['engines'] = after
+                    else:
+                        shot = f'{tag}__consent_dismissed.png'
+                        page.screenshot(path=str(shots / shot), full_page=True)
+                        (raw / f'{tag}__consent_dismissed.json').write_text(json.dumps(
+                            {'page': pid, 'url': url, 'final_url': page.url, 'viewport': vp, 'state': 'consent_dismissed',
+                             'screenshot': shot, 'engines': after, 'probes': {}}, indent=1, ensure_ascii=False), encoding='utf-8')
+                        vc['consent']['engines_after_dismissal'] = {k: v['status'] for k, v in after.items()}
+                record['consent'] = {'engines': consent['engines'], 'probes_with_overlay': consent['probes_with_overlay'],
+                                     'dismissed': record['consent_dismissed']}
+            vc['engines'] = {k: v['status'] for k, v in record['engines'].items()}
+            try:
+                self.inject_helpers(page)
+            except Exception as e:
+                self.events.append({'url': url, 'event': f'probe helpers not injected: {type(e).__name__}', 'at': now()})
+            # motion loads the page afresh in its own context, so its order doesn't matter; it runs last anyway
+            for probe in sorted(self.probes, key=lambda p: (p == 'motion', p != 'keyboard')):
                 if (probe in DESKTOP_ONLY and narrow) or (probe in NARROW_ONLY and not narrow):
                     continue
-                t0 = time.time()
-                try:
-                    if probe == 'keyboard':
-                        result = self.probe_keyboard(page, shots, tag)
-                    elif probe == 'focus_visible':
-                        result = {'note': 'measured during the keyboard probe'} if 'keyboard' in self.probes else self.probe_keyboard(page, shots, tag)
-                    elif probe == 'resize_text':
-                        result = self.probe_resize_text(browser, url, shots, tag)
-                    elif probe == 'motion':
-                        result = self.probe_motion(page, browser, url)
-                    elif probe == 'a11y_tree':
-                        result = self.probe_a11y_tree(page, aria, tag)
-                    else:
-                        result = getattr(self, 'probe_' + probe)(page)
-                    result.setdefault('status', 'ran')
-                except Exception as e:
-                    result = {'status': 'errored', 'reason': f'{type(e).__name__}: {str(e).splitlines()[0][:300]}'}
-                result['seconds'] = round(time.time() - t0, 2)
+                if probe == 'focus_visible' and 'keyboard' in self.probes:
+                    result = {'note': 'measured during the keyboard probe', 'status': record['probes'].get('keyboard', {}).get('status', 'ran')}
+                else:
+                    result = self.run_probe(probe, page, browser, url, vp, shots, aria, tag)
                 record['probes'][probe] = result
                 vc['probes'][probe] = result['status']
             (raw / f'{tag}__initial.json').write_text(json.dumps(record, indent=1, ensure_ascii=False), encoding='utf-8')
@@ -827,12 +942,8 @@ class Runner:
         if not nav['ok']:
             out['error'] = nav.get('error')
             ctx.close(); return out
-        consent = (self.cfg.get('consent') or {}).get('dismiss')
-        if consent:
-            try:
-                page.click(consent, timeout=3000)
-            except Exception:
-                pass
+        if self.consent_cfg():
+            out['consent_dismissed'] = self.consent_dismiss(page)
         try:
             self.act(page, st.get('actions', []))
         except Exception as e:
@@ -842,15 +953,8 @@ class Runner:
         record = {'page': pg['id'], 'url': pg['url'], 'final_url': page.url, 'viewport': vp, 'state': st['name'],
                   'screenshot': f'{tag}.png', 'engines': self.run_engines(page), 'probes': {}}
         out['engines'] = {k: v['status'] for k, v in record['engines'].items()}
-        for probe in st.get('probes', []):
-            try:
-                if probe == 'keyboard':
-                    result = self.probe_keyboard(page, self.out / 'screenshots', tag)
-                else:
-                    result = getattr(self, 'probe_' + probe)(page)
-                result.setdefault('status', 'ran')
-            except Exception as e:
-                result = {'status': 'errored', 'reason': f'{type(e).__name__}: {str(e).splitlines()[0][:300]}'}
+        for probe in sorted(st.get('probes', []), key=lambda p: p == 'motion'):
+            result = self.run_probe(probe, page, browser, pg['url'], vp, self.out / 'screenshots', self.out / 'aria', tag)
             record['probes'][probe] = result
             out['probes'][probe] = result['status']
         (self.out / 'raw' / f'{tag}.json').write_text(json.dumps(record, indent=1, ensure_ascii=False), encoding='utf-8')
@@ -860,7 +964,7 @@ class Runner:
 
 def main() -> int:
     sys.stdout.reconfigure(errors='replace')
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--config', required=True)
     ap.add_argument('--out', required=True)
     ap.add_argument('--cache', help='engine cache (default as fetch_engines.py)')
@@ -885,6 +989,10 @@ def main() -> int:
     for d in ('raw', 'screenshots', 'aria'):
         (out / d).mkdir(parents=True, exist_ok=True)
     r = Runner(cfg, out, Path(args.cache) if args.cache else None)
+    try:
+        r.consent_cfg()
+    except ValueError as exc:
+        ap.error(str(exc))
     r.prepare_engines()
     started = now()
     with sync_playwright() as p:
@@ -904,7 +1012,9 @@ def main() -> int:
     safe_cfg = {k: v for k, v in cfg.items() if k != 'auth'}
     safe_cfg['auth'] = {'kind': auth_used} if auth_used else None
     for e in r.engine_status:
-        if e['status'] == 'ready':
+        if e['status'] == 'ready' and args.plan_only:
+            e['status'], e['reason'] = 'not_run', 'plan only: ready, but engines do not run with --plan-only'
+        elif e['status'] == 'ready':
             ran = [vp.get('engines', {}).get(e['name']) for pg in pages for vp in pg.get('viewports', {}).values()]
             e['status'] = 'ran' if 'ran' in ran else ('errored' if 'errored' in ran else 'not_run')
             if e['status'] != 'ran':
@@ -934,10 +1044,13 @@ def main() -> int:
            'sample': [{k: s.get(k) for k in ('id', 'url', 'final_url', 'title', 'template', 'template_key', 'reason', 'error', 'captcha')} for s in sample],
            'unsampled': getattr(r, 'unsampled', []), 'pages': pages, 'blocked_requests': r.blocked, 'events': r.events,
            'authorised_by': cfg.get('authorised_by') or ('loopback target' if all(is_loopback(u) for u in targets) else None),
-           'auth_used': bool(auth_used)}
+           'auth_used': bool(auth_used), 'mode': 'plan_only' if args.plan_only else 'audit',
+           'bypass_csp': r.bypass_csp, 'consent': r.consent_cfg(), 'requests': r.requests}
     (out / 'run.json').write_text(json.dumps(run, indent=1, ensure_ascii=False), encoding='utf-8')
-    print(json.dumps({'pages': len(sample), 'engines': {e['name']: e['status'] for e in r.engine_status},
-                      'blocked_requests': len(r.blocked), 'out': str(out)}, indent=1))
+    print(json.dumps({'mode': run['mode'], 'pages': len(sample),
+                      'reachable': sum(1 for s in sample if s['reason'] != 'unreachable'),
+                      'engines': {e['name']: e['status'] for e in r.engine_status},
+                      'requests_sent': r.requests['sent'], 'blocked_requests': len(r.blocked), 'out': str(out)}, indent=1))
     return 0
 
 

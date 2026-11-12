@@ -222,7 +222,7 @@ wcag-auditor-skill/
   examples/audit.example.json
 ```
 
-## As built (v1.0.0)
+## As built (v1.1.0)
 
 Differences from the draft above, and decisions made while building:
 
@@ -308,3 +308,48 @@ Differences from the draft above, and decisions made while building:
   `examples/run/` is a real run (Chromium 156, Playwright 1.64.1). The Nu HTML Checker did not
   run: downloading and executing its jar was not permitted in the environment that produced the
   example, and the report records that.
+- **Found on a Next.js site behind a strict CSP, fixed (v1.1.0):**
+  - *Text spacing passed silently*: the probe's stylesheet was refused by a hashed `style-src`, no
+    exception was raised, and 1.4.12 looked checked. Contexts now use Playwright's `bypass_csp`
+    (`"bypass_csp": true` by default, recorded in `run.json`); the override sets a marker custom
+    property that is read back, and a refused style makes the probe `errored`. probes.js is checked
+    after injection too, and a page whose CSP refuses it still gets sampled, with every engine and
+    probe `errored` and the CSP message as the reason. The validator rejects an SC passed on probe
+    evidence when that probe didn't run on every planned check. Checked on a loopback fixture: with
+    `bypass_csp` false and a nonce `script-src`, all engines and probes errored; with only a hashed
+    `style-src`, the engines ran and text spacing errored; with the default, all ran.
+  - *Contrast estimates misread CSS Color 4*: `lab(75.08 -60.73 19.41)` (#00d492, about 1.9:1 on
+    white) became RGB (75, 60, 19) and a 10.2:1 "not below" estimate. `merge_findings.py` now
+    converts hex, `rgb()` (both syntaxes), `hsl()`, `hwb()`, `lab()`, `lch()`, `oklab()`, `oklch()`
+    and `color()` (srgb, srgb-linear, display-p3, xyz) to sRGB with the CSS Color 4 formulas,
+    handles `none`, negative numbers and alpha, reads every colour function in a gradient, and gives
+    no estimate for anything it can't parse. `--self-test` checks the conversions against known
+    ratios (#00d492 on white 1.94:1 in all of its notations). The browser side reads alpha in any
+    syntax.
+  - *Text over images and video* was estimated against the section colour. The runner records an
+    `<img>`, `<video>`, `<canvas>` or `<svg>` painted behind the text (`media_behind`); its estimate
+    then has no ratio (`unknown_background`), and such candidates are never grouped. The validator
+    rejects a dismissed contrast candidate below the threshold, over media, or grouped without an
+    estimate.
+  - *The keyboard probe clicked (1, 1)* to start, which landed inside a fixed header past the skip
+    link (and could activate a control). It now focuses an invisible starting point inserted at the
+    start of the body and removes it after the first Tab; nothing is clicked. On the fixture with a
+    fixed header the skip link is the first stop.
+  - *Target size* compared fixed-header links with in-flow elements at scrolled coordinates and
+    counted a `tabindex="-1"` skip-link target and a visually hidden skip link as targets (15 false
+    2.5.8 failures). It now measures at the top of the page, counts pointer targets only, skips
+    visually hidden ones, and never compares a fixed or sticky target with an in-flow one.
+  - *The motion probe reloaded the audited page*, bringing a dismissed consent banner back for the
+    probes after it. It now watches fresh loads in their own pages and runs last.
+  - *Overlays*: `consent` takes `dismiss` or `steps`; engines run with the overlay and again after
+    dismissal (state `consent_dismissed`, `engines`: both, before or after), and the keyboard probe
+    also runs with it open (state `consent_open`, `probes_with_overlay`). `run.json` records which.
+  - *Reflow at 320 px* produced no candidate when the page clipped overflow instead of scrolling.
+    Content past the viewport on a page that can't scroll is now `reflow.clipped` (failed), and
+    content cut off by an ancestor with overflow hidden is recorded and raised as needs review;
+    elements parked off-screen to the left (skip links) and visually hidden ones are ignored.
+  - `--help` prints the whole config reference, a plan-only run records engines as not run "plan
+    only", `run.json` counts requests sent, and the renderer counts audited pages, not unreachable
+    ones. `schema_version` (`"1.0"`, unchanged) is documented.
+  - The example run predates these probe changes; its items and candidates regenerate unchanged
+    with the new `normalize.py` and `merge_findings.py`, and the report validates as before.

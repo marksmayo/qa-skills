@@ -1,6 +1,7 @@
 // In-page helpers for run_audit.py. Injected after the page loads; defines window.__qa.
-// Every function only reads the page except textSpacing(), which adds a style element that
-// run_audit.py removes again. Nothing here submits forms or follows links.
+// Every function only reads the page except textSpacing(), which adds a style element, and
+// focusStart(), which adds an invisible focus starting point; run_audit.py removes both again.
+// Nothing here submits forms, clicks or follows links.
 (() => {
   if (window.__qa) return;
 
@@ -107,6 +108,33 @@
   // nearest background image (a gradient keeps its colour stops) and the element carrying it, and
   // the first opaque background colour, which is either in front of the image (opaque_first: the
   // image is not behind the text) or beneath it. Plus the text colour and size.
+  // The alpha of a computed colour in any syntax: rgba(r, g, b, a), or "/ a" in the space-separated and
+  // CSS Color 4 forms (lab(), oklch(), color()); 1 when there is none, 0 for transparent.
+  function alphaOf(c) {
+    if (!c || c === 'transparent') return 0;
+    let m = c.match(/\/\s*([\d.]+)(%?)\s*\)\s*$/);
+    if (m) return Number(m[1]) / (m[2] ? 100 : 1);
+    m = c.match(/^rgba\(\s*[^,]+,[^,]+,[^,]+,\s*([\d.]+)(%?)\s*\)$/);
+    if (m) return Number(m[1]) / (m[2] ? 100 : 1);
+    return 1;
+  }
+
+  // An <img>, <video>, <canvas>, <picture> or <svg> painted behind the text (not inside it): positioned
+  // hero media, a video poster. Its pixels are the real background, so no colour estimate is possible.
+  function mediaBehind(el) {
+    const r = el.getBoundingClientRect();
+    if (!r.width || !r.height || !document.elementsFromPoint) return null;
+    const x = Math.min(Math.max(r.left + r.width / 2, 0), innerWidth - 1), y = Math.min(Math.max(r.top + r.height / 2, 0), innerHeight - 1);
+    if (r.left + r.width / 2 < 0 || r.top + r.height / 2 < 0 || r.left + r.width / 2 >= innerWidth || r.top + r.height / 2 >= innerHeight) return null;
+    const stack = document.elementsFromPoint(x, y);
+    const at = stack.findIndex(n => n === el || el.contains(n));
+    for (const n of stack.slice(at < 0 ? 0 : at + 1)) {
+      if (el.contains(n) || n.contains(el)) continue;
+      if (n.matches('img,video,canvas,picture,svg,object,embed')) return { tag: n.localName, xpath: xpath(n), selector: cssPath(n) };
+    }
+    return null;
+  }
+
   function contrastContext(el) {
     if (!el || el.nodeType !== 1) return null;
     const cs = getComputedStyle(el);
@@ -114,16 +142,17 @@
     const overlays = [];
     for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
       const s = getComputedStyle(n);
-      const m = (s.backgroundColor.match(/[\d.]+/g) || []).map(Number);
-      const alpha = m.length >= 4 ? m[3] : (m.length === 3 ? 1 : 0);
+      const alpha = alphaOf(s.backgroundColor);
       if (!imgOn && s.backgroundImage && s.backgroundImage !== 'none') { imgOn = n; image = s.backgroundImage.slice(0, 300); }
       if (alpha >= 1) { bgColor = s.backgroundColor; opaqueFirst = !imgOn; break; }
       if (alpha > 0 && !imgOn) overlays.push(s.backgroundColor);  // translucent layers in front of the image
     }
+    let media = null;
+    try { media = mediaBehind(el); } catch (e) { media = null; }
     return { fg: cs.color, font_px: parseFloat(cs.fontSize), font_weight: Number(cs.fontWeight) || 400,
              bg_image_on: imgOn ? { xpath: xpath(imgOn), sig: sig(imgOn), selector: cssPath(imgOn) } : null,
              bg_image: image, bg_color: bgColor || 'rgb(255, 255, 255)', opaque_first: opaqueFirst, overlays: overlays.slice(0, 6),
-             visually_hidden: visuallyHidden(el) };
+             media_behind: media, visually_hidden: visuallyHidden(el) };
   }
 
   function describe(el) {
@@ -331,9 +360,18 @@
       return describe(c);
     },
 
+    // Pointer targets only: links, buttons, non-text inputs, ARIA widgets and onclick elements. A tabindex
+    // alone (a skip-link target such as <div id="main" tabindex="-1">, a scrollable region) is not something
+    // to tap; visually hidden targets (.sr-only skip links) aren't seen. Measured at the current scroll
+    // position (run_audit.py scrolls to the top first), all in viewport coordinates; a pair where one target
+    // is fixed or sticky and the other isn't is never compared, since they only meet at some scroll positions.
     targetSize() {
-      const targets = interactive().filter(el => !['iframe'].includes(el.localName) && !(el.localName === 'input' && ['text', 'email', 'search', 'tel', 'url', 'password', 'number', 'date'].includes(el.type)) && !['textarea', 'select'].includes(el.localName));
-      const boxes = targets.map(el => ({ el, r: el.getBoundingClientRect() })).filter(b => b.r.width > 0 && b.r.height > 0);
+      const POINTER = 'a[href],area[href],button,input:not([type=hidden]),summary,[onclick],[role=button],[role=link],[role=checkbox],' +
+        '[role=radio],[role=switch],[role=tab],[role=menuitem],[role=menuitemcheckbox],[role=menuitemradio],[role=option],[role=slider],' +
+        '[role=spinbutton],[role=treeitem]';
+      const pinned = el => { for (let n = el; n && n.nodeType === 1; n = n.parentElement) { const p = getComputedStyle(n).position; if (p === 'fixed' || p === 'sticky') return true; } return false; };
+      const targets = interactive().filter(el => el.matches(POINTER) && !visuallyHidden(el) && !['iframe'].includes(el.localName) && !(el.localName === 'input' && ['text', 'email', 'search', 'tel', 'url', 'password', 'number', 'date'].includes(el.type)) && !['textarea', 'select'].includes(el.localName));
+      const boxes = targets.map(el => ({ el, r: el.getBoundingClientRect(), pinned: pinned(el) })).filter(b => b.r.width > 0 && b.r.height > 0);
       const small = boxes.filter(b => b.r.width < 24 || b.r.height < 24);
       const center = r => [r.left + r.width / 2, r.top + r.height / 2];
       const circleHitsRect = (c, r) => { const dx = Math.max(r.left - c[0], 0, c[0] - r.right); const dy = Math.max(r.top - c[1], 0, c[1] - r.bottom); return dx * dx + dy * dy < 144; };
@@ -343,7 +381,7 @@
         const inline = b.el.localName === 'a' && !!b.el.closest('p,li,td,dd') && ((b.el.closest('p,li,td,dd').innerText || '').trim().length > (b.el.innerText || '').trim().length + 20);
         let conflict = null;
         for (const o of boxes) {
-          if (o === b || o.el.contains(b.el) || b.el.contains(o.el)) continue;
+          if (o === b || o.el.contains(b.el) || b.el.contains(o.el) || o.pinned !== b.pinned) continue;
           const oc = center(o.r);
           const oSmall = o.r.width < 24 || o.r.height < 24;
           if (circleHitsRect(c, o.r) || (oSmall && Math.hypot(c[0] - oc[0], c[1] - oc[1]) < 24)) { conflict = describe(o.el); break; }
@@ -352,32 +390,40 @@
         out.push({ ...d, width: Math.round(b.r.width * 10) / 10, height: Math.round(b.r.height * 10) / 10, inline, spacing_ok: !conflict, conflicts_with: conflict });
       }
       const under44 = boxes.filter(b => b.r.width < 44 || b.r.height < 44).length;
-      return { targets: boxes.length, undersized: out, under_44: under44 };
+      return { targets: boxes.length, undersized: out, under_44: under44, scroll_y: Math.round(scrollY) };
     },
 
     reflow() {
       const se = document.scrollingElement;
       const vw = document.documentElement.clientWidth;
       const hscroll = se.scrollWidth > vw + 1;
-      const culprits = [];
+      const culprits = [], clippedByAnc = [];
       for (const el of document.querySelectorAll('body *')) {
-        if (!visible(el)) continue;
+        if (!visible(el) || visuallyHidden(el)) continue;
         const r = el.getBoundingClientRect();
         if (r.right <= vw + 1 && r.left >= -1) continue;
+        if (r.right <= 0) continue;  // parked off-screen to the left on purpose (a skip link until focused)
         const p = el.parentElement;
         const pr = p ? p.getBoundingClientRect() : null;
         if (pr && (pr.right > vw + 1 || pr.left < -1) && p !== document.body) continue;  // report the outermost overflowing element
-        let scroller = false, clippedByAncestor = false;
+        let scroller = false, clipper = null;
         for (let n = p; n && n !== document.body; n = n.parentElement) {
           const ox = getComputedStyle(n).overflowX;
           if (ox === 'auto' || ox === 'scroll') { scroller = true; break; }
-          if (ox === 'hidden' || ox === 'clip') { clippedByAncestor = true; break; }
+          if (ox === 'hidden' || ox === 'clip') { clipper = n; break; }
         }
-        if (clippedByAncestor) continue;  // cut off by an ancestor, so it cannot cause page scrolling
-        culprits.push({ ...describe(el), exempt_kind: el.closest(EXEMPT_REFLOW) ? el.closest(EXEMPT_REFLOW).localName : null, inside_scroller: scroller, overflow_px: Math.round(r.right - vw) });
+        const exempt = el.closest(EXEMPT_REFLOW) ? el.closest(EXEMPT_REFLOW).localName : null;
+        if (clipper) {
+          // cut off by an ancestor, so it cannot cause page scrolling, but the part past the viewport may be lost
+          const cr = clipper.getBoundingClientRect();
+          if (cr.right > vw + 1 && clippedByAnc.length < 20)
+            clippedByAnc.push({ ...describe(el), exempt_kind: exempt, overflow_px: Math.round(r.right - vw), clipped_by: describe(clipper) });
+          continue;
+        }
+        culprits.push({ ...describe(el), exempt_kind: exempt, inside_scroller: scroller, overflow_px: Math.round(r.right - vw) });
         if (culprits.length >= 20) break;
       }
-      return { viewport_width: vw, scroll_width: se.scrollWidth, horizontal_scroll: hscroll, culprits };
+      return { viewport_width: vw, scroll_width: se.scrollWidth, horizontal_scroll: hscroll, culprits, clipped_by_ancestor: clippedByAnc };
     },
 
     clipped() {
@@ -403,10 +449,31 @@
       if (!on) return true;
       const s = document.createElement('style');
       s.id = id;
-      s.textContent = '* { line-height: 1.5 !important; letter-spacing: 0.12em !important; word-spacing: 0.16em !important; } p { margin-bottom: 2em !important; }';
-      document.head.appendChild(s);
-      return true;
+      s.textContent = '* { line-height: 1.5 !important; letter-spacing: 0.12em !important; word-spacing: 0.16em !important; } p { margin-bottom: 2em !important; } :root { --qa-text-spacing: 1; }';
+      (document.head || document.documentElement).appendChild(s);
+      // a Content-Security-Policy without 'unsafe-inline' (or with a hash or nonce) refuses the style silently
+      return getComputedStyle(document.documentElement).getPropertyValue('--qa-text-spacing').trim() === '1';
     },
+
+    // Where sequential focus navigation starts: a temporary, invisible element at the very top of the body,
+    // focused without scrolling, so the next Tab reaches the first focusable element (a skip link) without
+    // clicking anything. focusStartDone() removes it.
+    focusStart() {
+      window.scrollTo(0, 0);
+      const a = deepActive(); if (a && a.blur) a.blur();
+      let s = document.getElementById('__qa_focus_start');
+      if (!s) {
+        s = document.createElement('span');
+        s.id = '__qa_focus_start';
+        s.tabIndex = -1;
+        s.style.position = 'absolute'; s.style.top = '0'; s.style.left = '0'; s.style.width = '1px'; s.style.height = '1px';
+        s.style.overflow = 'hidden'; s.style.outline = 'none';
+        document.body.insertBefore(s, document.body.firstChild);
+      }
+      s.focus({ preventScroll: true });
+      return document.activeElement === s;
+    },
+    focusStartDone() { const s = document.getElementById('__qa_focus_start'); if (s) s.remove(); },
 
     visibleSet() { window.__qa_vis = snapshotVisible(); return window.__qa_vis.size; },
     newlyVisible() {

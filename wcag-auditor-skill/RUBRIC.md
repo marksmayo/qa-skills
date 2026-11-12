@@ -13,7 +13,7 @@ rubric layered on top of WCAG, and every report says so.
 | Outcome | Means | Needs |
 |---|---|---|
 | `failed` | At least one finding fails the SC on the sampled pages | The findings' ids |
-| `passed` | The whole SC was checked on every sampled page and nothing failed | Probe, agent-review or manual evidence; tool passes alone never count. `automatable: none` SCs need agent-review or manual evidence |
+| `passed` | The whole SC was checked on every sampled page and nothing failed | Probe, agent-review or manual evidence; tool passes alone never count. `automatable: none` SCs need agent-review or manual evidence. Probe evidence counts only when the probe ran on every planned check (an errored probe, such as a text-spacing style a CSP refused, measured nothing) |
 | `cantTell` | Evidence exists but needs a person to decide | Needs-review items saying what to check |
 | `inapplicable` | The sampled pages have no content the SC applies to | Why (no media, no authentication, obsolete in the version) |
 | `untested` | No evidence either way | An entry in the manual test plan |
@@ -109,7 +109,9 @@ reach). Say exactly what to check.
 - for a grouped contrast candidate (same cause, same background), the lowest `contrast_estimate`
   of the group with the text colours and gradient stops it came from, after checking a sample in
   the screenshot; a group whose estimate is below the threshold, or that has no estimate, is
-  needs review, not dismissed;
+  needs review, not dismissed (the validator enforces it); so is text over an image or video
+  (`unknown_background`: no ratio). When the colours aren't plain `rgb()` (`oklch()`, `lab()`),
+  check the screenshot pixels before trusting an estimate;
 - that the text is visually hidden (`.sr-only`): it is never seen, so 1.4.3 doesn't apply to it;
 - a probe measurement that contradicts a potential issue (`focus probe: 1248 pixels changed`);
 - an exemption that applies (video in 1.4.10; an inline link in 2.5.8);
