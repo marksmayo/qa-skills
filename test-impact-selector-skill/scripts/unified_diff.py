@@ -2,21 +2,44 @@
 r"""Parse and apply unified diffs without git (stdlib only).
 
     python unified_diff.py apply change.diff --root <dir> [--reverse]
-    python unified_diff.py check change.diff --root <dir> [--reverse]     # dry run in a temporary copy
+    python unified_diff.py check change.diff --root <dir> [--reverse]     # dry run on copies of the touched files
 
 Reads git and plain unified diffs: new, deleted and renamed files, several hunks per file,
 "\ No newline at end of file". Hunks must match the target exactly, ignoring line endings; a
 hunk may sit up to 80 lines from where the header says. A hunk that doesn't match stops the run
 with "patch does not apply" before anything is written for that file. Binary patches are
-refused. Files are written with LF line endings.
+refused. Files are written with LF line endings. `check` copies only the files the patch
+names into a temporary directory, so it costs the same on a large repository as on a small
+one. Paths past Windows' 260-character limit are handled with the \\?\ prefix.
 """
 from __future__ import annotations
-import argparse, re, shutil, sys, tempfile
+import argparse, os, re, shutil, sys, tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import diff_scope  # noqa: E402
+
+
+def long_path(p) -> str:
+    """The path as a string that also works past Windows' 260-character limit; unchanged elsewhere."""
+    s = os.path.abspath(str(p))
+    if os.name != 'nt' or s.startswith('\\\\?\\'):
+        return s
+    return '\\\\?\\UNC\\' + s[2:] if s.startswith('\\\\') else '\\\\?\\' + s
+
+
+def touched_paths(text: str, reverse: bool = False) -> list[str]:
+    """Every existing path the patch reads (the old side of each file; the new side when reversed)."""
+    out = []
+    for f in parse_patch(text):
+        status = f['status']
+        if reverse:
+            status = {'added': 'deleted', 'deleted': 'added'}.get(status, status)
+        src = (f['new'] or f['old']) if reverse else (f['old'] or f['new'])
+        if status != 'added' and src and src not in out:
+            out.append(src)
+    return out
 
 
 def parse_patch(text: str) -> list[dict]:
@@ -97,9 +120,10 @@ def apply_patch(text: str, root: Path, reverse: bool = False) -> list[str]:
         if status == 'added':
             src_lines, had_nl = [], True
         else:
-            if not src.is_file():
+            if not os.path.isfile(long_path(src)):
                 raise SystemExit(f'patch does not apply: {old} is missing')
-            content = src.read_text(encoding='utf-8', errors='replace').replace('\r\n', '\n')
+            with open(long_path(src), encoding='utf-8', errors='replace') as fh:
+                content = fh.read().replace('\r\n', '\n')
             had_nl = content.endswith('\n')
             src_lines = content.split('\n')
             if had_nl:
@@ -131,16 +155,32 @@ def apply_patch(text: str, root: Path, reverse: bool = False) -> list[str]:
             pos = found + len(want)
         out += src_lines[pos:]
         if status == 'deleted':
-            src.unlink()
+            os.unlink(long_path(src))
             touched.append(old)
             continue
         dest = root / new
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        if status == 'renamed' and old != new and src.exists():
-            src.unlink()
-        dest.write_text('\n'.join(out) + ('\n' if out and ends_nl else ''), encoding='utf-8', newline='\n')
+        os.makedirs(long_path(dest.parent), exist_ok=True)
+        if status == 'renamed' and old != new and os.path.exists(long_path(src)):
+            os.unlink(long_path(src))
+        with open(long_path(dest), 'w', encoding='utf-8', newline='\n') as fh:
+            fh.write('\n'.join(out) + ('\n' if out and ends_nl else ''))
         touched.append(new)
     return touched
+
+
+def check_patch(text: str, root: Path, reverse: bool = False) -> list[str]:
+    """Dry run: copy just the files the patch reads into a temporary tree and apply it there."""
+    tmp = tempfile.mkdtemp(prefix='udiff-')
+    try:
+        dest = Path(tmp) / 'tree'
+        for rel in touched_paths(text, reverse):
+            src = root / rel
+            if os.path.isfile(long_path(src)):
+                os.makedirs(long_path((dest / rel).parent), exist_ok=True)
+                shutil.copyfile(long_path(src), long_path(dest / rel))
+        return apply_patch(text, dest, reverse)
+    finally:
+        shutil.rmtree(long_path(tmp), ignore_errors=True)   # the prefix lets rmtree remove deep copies too
 
 
 def main(argv=None) -> int:
@@ -152,10 +192,7 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     text = args.diff.read_text(encoding='utf-8', errors='replace')
     if args.action == 'check':
-        with tempfile.TemporaryDirectory() as tmp:
-            dest = Path(tmp) / 'tree'
-            shutil.copytree(args.root, dest, ignore=shutil.ignore_patterns('.git', 'node_modules', '__pycache__'))
-            touched = apply_patch(text, dest, args.reverse)
+        touched = check_patch(text, args.root.resolve(), args.reverse)
         print(f'applies cleanly: {len(touched)} file(s)')
         return 0
     touched = apply_patch(text, args.root, args.reverse)
