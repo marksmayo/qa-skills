@@ -1,6 +1,6 @@
 # Design: `mutation-tester-skill`
 
-Status: Built (v1.0.0), see "As built" at the end. Build order: 9.
+Status: Built (v1.2.0), see "As built" at the end. Build order: 9.
 
 ## Mission
 
@@ -289,3 +289,40 @@ Agreed with the user before the build.
   - SKILL.md now says what the baseline is for a scoped run (the tests that exercise the scoped
     code, named in `baseline.note`) and how a flaky test in it is handled.
   - The example (Python) is unchanged and still validates; no example uses Stryker.
+- **Found on a real Python monorepo library with pytest and the builtin engine (v1.2.0)**:
+  - **`--tests` and `--pytest-args`** on `builtin_mutator.py`. Every run was a bare `pytest`, so
+    the engine collected the package's integration tests (which need a storage emulator): many
+    minutes and failures, so it would have stopped as "not green". The coverage run, the
+    timing run and each mutant's run are now limited to the named tests, and both options are
+    recorded in the engine command.
+  - **Shadowed imports.** The coverage plugin records whether each scoped file was imported
+    and any other copy of the same module that was; the engine stops when the tests imported
+    only another copy (an editable install pointing at another clone), since every mutant would
+    look unexercised.
+  - **Path scope.** `path_scope.py` (skill-local) writes a `scope.json` of every line of the
+    files under one or more paths (a file may take a line range), classified like
+    `diff_scope.py`, with `source.kind: "path"`. Before, a path scope needed a diff against the
+    empty tree.
+  - **Ids.** The builtin engine numbered mutants in `ast.walk` order and the normaliser
+    renumbered them by line, so the console said B49 where the report said B2. The engine now
+    numbers by file, line and column and writes `"ids": "position"`, and the normaliser keeps
+    those ids. Older `builtin.json` files (the example's) are renumbered as before, and the
+    renderer shows the engine's own id beside the report's when they differ.
+  - **New operators.** `remove_method_call` (`name.upper() == X` -> `name == X`, also
+    `strip`/`lower`/`casefold`...): a case-insensitive match was never mutated, so a 100% score
+    said nothing about the "any case" requirement. `constant_string_compared` (kind branch) and
+    `constant_string_named` (kind value): a wildcard `"*"` -> `""` in a permission comparison
+    widened a grant but ranked as display text (kind 1). mutmut and
+    Stryker string mutants are refined from the original line's tokens. Builtin mutants inside
+    `typing.Literal[...]` carry a note that they matter only where the type is checked at run
+    time.
+  - **Renderer and validator.** `render_report.py` on a report without the computed summary
+    says to run `--write-summary` instead of failing with a `KeyError`. Schema errors on
+    findings, mutants and gaps name the item's id (`$.findings[7] (F1)`), because
+    `--write-summary` re-sorts the findings before the check. A cited proof's `test_code` must
+    match its recorded hash, and when the finding's suggestion has code, the proved code must be
+    that code (whitespace aside).
+  - SKILL.md has stack notes: tests in other packages of a monorepo are not run, editable
+    installs, and running from the package directory.
+  - The example's run is unchanged and still validates (its `builtin.json` predates position
+    ids, so it is renumbered as before).

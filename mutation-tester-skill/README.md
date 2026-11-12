@@ -49,8 +49,9 @@ or
 ```bash
 python scripts/detect_tools.py <repo>
 python scripts/diff_scope.py --repo <repo> --base main --out run/scope.json
+#   or, for a path scope:  python scripts/path_scope.py --repo <repo> --path src/billing --out run/scope.json
 python scripts/run_tests.py --preset pytest --cwd <repo> --out run/runs.json --repeat 2 --label baseline --run-prefix G
-python scripts/builtin_mutator.py --repo <repo> --scope run/scope.json --run-dir run
+python scripts/builtin_mutator.py --repo <repo> --scope run/scope.json --run-dir run --tests tests/unit
 python scripts/normalize_results.py --scope run/scope.json --repo <repo> --builtin run/builtin.json \
     --coverage run/coverage.json --out run/mutants.json
 python scripts/prove_kill.py --repo <repo> --mutants run/mutants.json --mutant B24 --test-file tests/test_x.py \
@@ -68,7 +69,8 @@ python scripts/render_report.py run/mutation_report.json [--brief]
 | P3 | < 4 |
 
 Criticality is 3 for money, auth, permissions, data deletion or a critical journey, 2 for ordinary
-logic and 1 for display text. Kind is 3 for a branch or boundary, 2 for a value and 1 for a string.
+logic and 1 for display text. Kind is 3 for a branch or boundary (including a string compared in
+a condition), 2 for a value (including an UPPER_CASE string constant) and 1 for other strings.
 Proximity is 2 when a unit test of the function ran the line and still passed.
 
 ## Output
@@ -113,7 +115,8 @@ directory uses them.
 - `scripts/detect_tools.py`: configured and available mutation tools
 - `scripts/diff_scope.py`: changed files, lines and functions from git or a diff (shared)
 - `scripts/run_tests.py`, `scripts/parse_results.py`, `scripts/detect_conventions.py`: test runs and conventions (shared)
-- `scripts/builtin_mutator.py`: stdlib AST mutation engine and per-test line coverage for pytest
+- `scripts/path_scope.py`: a path scope (every line of the files under a path) in `scope.json` form
+- `scripts/builtin_mutator.py`: stdlib AST mutation engine and per-test line coverage for pytest, limited to `--tests`
 - `scripts/run_engine.py`: runs mutmut in a scratch copy, or StrykerJS on the scope's line ranges, and keeps the raw results and the tree check
 - `scripts/ts_scan.py`: finds JavaScript/TypeScript tests by name and whether they call a function (for proximity)
 - `scripts/normalize_results.py`: one mutant list across engines, limited to the scope

@@ -1,7 +1,7 @@
 ---
 name: mutation-tester
 description: Run mutation testing on the code that changed (or a path you name) and turn the surviving mutants into a short, ranked list of weak assertions and missing cases, each naming the test that should have caught it and the assertion or input that would. Uses the repo's own mutation tool when it is configured, the standard open-source tool otherwise (from a scratch config, never added to the repo), and a stdlib AST engine for Python as a fallback. Every score is shown with its counts and scope; equivalent mutants need a checkable reason; timeouts and errors are never counted as kills; no-coverage mutants are coverage gaps, not weak assertions. Never claims code is "well tested".
-version: 1.1.0
+version: 1.2.0
 ---
 
 # Mutation tester
@@ -116,10 +116,21 @@ runtime error rather than `compile_error`; say so in the limitations.
 
 ```bash
 python scripts/diff_scope.py --repo <repo> --base main --out <run>/scope.json      # or --diff change.diff
+python scripts/path_scope.py --repo <repo> --path src/billing [--path src/auth/rules.py:40-120] --out <run>/scope.json
 ```
 
-Only `source` files' added or changed lines are mutated. Tests, generated code, migrations,
-vendored code, type declarations, config and docs are excluded and listed with the reason.
+`diff_scope.py` is the `changed` scope. `path_scope.py` is the path scope: every line of the
+files under each path (a file may take a line range), in the same `scope.json` shape, with
+`source.kind: "path"`; set `metadata.scope.mode` to `path` and `paths` to `source.paths`.
+
+Only `source` files' added or changed lines (or, for a path, all their lines) are mutated.
+Tests, generated code, migrations, vendored code, type declarations, config and docs are
+excluded and listed with the reason.
+
+When `--repo` is a package inside a larger git repository (a monorepo's `libs/<name>`), check
+that `scope.json` lists the changed files with `present: true` and their functions; if the
+paths came back relative to the git root instead, make the diff yourself with
+`git -C <repo> diff --relative <base>` and pass it with `--diff`.
 
 ## Step 3: Green baseline
 
@@ -149,9 +160,25 @@ If flaky-test-hunter has already reported tests in this set as flaky, start from
 ## Step 4: Mutate and run
 
 ```bash
-python scripts/builtin_mutator.py --repo <repo> --scope <run>/scope.json --run-dir <run> [--minutes 30]
+python scripts/builtin_mutator.py --repo <repo> --scope <run>/scope.json --run-dir <run> [--minutes 30] \
+    [--tests tests/unit/test_rules.py --tests tests/unit/test_access.py] [--pytest-args "-p no:randomly"]
 python scripts/run_engine.py mutmut --repo <repo> --scope <run>/scope.json --run-dir <run>
 ```
+
+Give the builtin engine the same test files as the baseline with `--tests` (repeatable: files,
+directories or node ids). Every run it makes (the coverage run, the timing run and each
+mutant's run) is limited to them, and `--pytest-args` is added to each. Without `--tests`,
+pytest collects whatever the repo's configuration collects, which may include integration
+tests that need services, take minutes, or fail without them; the engine then stops with "the
+suite does not pass unmutated".
+
+The engine checks that the tests imported the scoped files themselves. If they imported another
+copy (a virtual environment with an editable install pointing at another clone, or the package
+installed from a wheel), it stops: no mutant in this checkout could be seen. Install this
+checkout into the environment, or put it first on `PYTHONPATH`. Its mutant ids (B1..) follow
+file, line and column and are kept by `normalize_results.py`, so the console, `builtin.json` and
+the report agree; other engines' ids are renumbered, and the renderer shows the engine's own id
+beside the report's.
 
 For JavaScript and TypeScript:
 
@@ -204,6 +231,13 @@ exactly one finding, and nothing else does:
 - `equivalent`: with the argument that both versions behave the same for every input.
 - `accepted`: the behaviour doesn't matter (log text, a debug-only branch), with the reason.
 
+A string compared in a condition (`role != "*"`, `kind in ("a", "b")`) or held in an UPPER_CASE
+constant is not display text: its operator is `constant_string_compared` (kind branch) or
+`constant_string_named` (value), so a mutant that turns a wildcard check or a role name into
+`""` ranks with the logic it changes. A builtin mutant inside a typing `Literal[...]` carries a
+note: it changes behaviour only where the type is checked at run time (pydantic models,
+typeguard), which may be outside the tests in this repo; triage it on that basis.
+
 Give each `weak_assertion` and `missing_case` a criticality (RUBRIC.md) with a reason. Group every
 `no_coverage` mutant into a coverage gap by function and lines, with a suggested test.
 Timeouts, runtime and compile errors are not triaged; they appear in their own list.
@@ -234,14 +268,30 @@ python scripts/render_report.py <run>/mutation_report.json [--brief]
 ```
 
 `--write-summary` computes each ranked finding's kind factor, proximity, score and priority, and
-every count, score and score text in the summary. Write the headline yourself, and fix every
-error rather than editing computed fields. Show the user:
+every count, score and score text in the summary, and sorts the findings by priority; errors
+name the finding id as well as its index. `render_report.py` needs the computed summary, so
+run `--write-summary` first. Write the headline yourself, and fix every error rather than
+editing computed fields. Show the user:
 
 1. the headline;
 2. the ranked findings, each with its mutants, the test that should have caught them, the
    suggestion and whether it's proved;
 3. the coverage gaps;
 4. each engine's score text, and what wasn't run.
+
+## Stack notes
+
+- **Tests in other packages.** Each engine runs the tests of `--repo` only. When a shared library
+  is also exercised by tests in the packages that depend on it (a monorepo's services, each with
+  its own environment), those tests are not run, so a survivor may be killed there. The builtin
+  engine can't run them; say so in the limitations, and before calling a survivor a weak
+  assertion, check whether a dependent package's test covers that input (if one does, the
+  finding is still real for this package, but name that test in the reason).
+- **Editable installs.** See Step 4: the builtin engine refuses a run whose tests import another
+  copy of the scoped code. mutmut and Stryker work in a copy and have the same risk; check
+  `covering_tests` is not empty for code the tests obviously call.
+- **Monorepo packages.** Run every step with `--repo` (and the baseline's `--cwd`) set to the
+  package directory, so pytest finds the package's own `pyproject.toml` and rootdir.
 
 ## Report fields
 
