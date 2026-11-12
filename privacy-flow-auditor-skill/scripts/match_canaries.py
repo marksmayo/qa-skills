@@ -38,6 +38,63 @@ def luhn(digits: str) -> bool:
     return len(d) >= 13 and sum(d[0::2] + [sum(divmod(2 * x, 10)) for x in d[1::2]]) % 10 == 0
 
 
+EPOCH_MS = (946684800000, 4102444800000)   # 2000-01-01 to 2100-01-01 in milliseconds
+
+
+def card_like(text: str, m: re.Match) -> bool:
+    """True when a CARD match looks like a payment card number: 13-19 digits passing Luhn, not part of a decimal
+    (no '.' or ',' digit just before or after it, as in 205.1234567890123), not an epoch-millisecond timestamp
+    (13 digits between 2000 and 2100), not one digit repeated, and not glued to letters (an id such as v1-...)."""
+    digits = re.sub(r'\D', '', m.group(0))
+    if not 13 <= len(digits) <= 19 or not luhn(digits) or len(set(digits)) == 1:
+        return False
+    s = m.start()
+    e = s + len(m.group(0).rstrip(' -'))
+    if s >= 2 and text[s - 1] in '.,' and text[s - 2].isdigit():
+        return False
+    if re.match(r'[.,]\d', text[e:e + 2]):
+        return False
+    if (s and (text[s - 1].isalpha() or text[s - 1] == '_')) or (e < len(text) and (text[e].isalpha() or text[e] == '_')):
+        return False
+    if len(digits) == 13 and EPOCH_MS[0] <= int(digits) < EPOCH_MS[1] and re.fullmatch(r'\d+', m.group(0).strip()):
+        return False
+    return True
+
+
+def decode_body(buf: bytes | None, content_encoding: str | None = None) -> tuple[str | None, str]:
+    """A request body as text for searching, and how it was read: text, gzip, deflate, br, or binary (not
+    searched). Compressed bodies (Content-Encoding, or gzip/zlib magic bytes, as session-replay and analytics SDKs
+    send them) are decompressed first; brotli only when the brotli module is installed."""
+    import gzip, zlib
+    if not buf:
+        return None, 'empty'
+    enc = (content_encoding or '').lower().strip()
+    tries = []
+    if enc in ('gzip', 'x-gzip') or buf[:2] == b'\x1f\x8b':
+        tries.append(('gzip', lambda b: gzip.decompress(b)))
+    if enc == 'deflate' or (len(buf) > 1 and buf[0] == 0x78 and (buf[0] * 256 + buf[1]) % 31 == 0):
+        tries.append(('deflate', lambda b: zlib.decompress(b)))
+        tries.append(('deflate', lambda b: zlib.decompress(b, -15)))
+    if enc == 'br':
+        try:
+            import brotli  # type: ignore
+            tries.append(('br', brotli.decompress))
+        except ImportError:
+            return None, 'br_not_searched'
+    for name, fn in tries:
+        try:
+            out = fn(buf)
+            return out.decode('utf-8'), name
+        except Exception:  # noqa: BLE001 - not that encoding, or not text
+            continue
+    try:
+        return buf.decode('utf-8'), 'text'
+    except UnicodeDecodeError:
+        text = buf.decode('latin-1')
+        printable = sum(ch.isprintable() or ch in '\r\n\t' for ch in text) / max(1, len(text))
+        return (text, 'text_latin1') if printable > 0.95 else (None, 'binary_not_searched')
+
+
 def new_set(set_id: str | None = None) -> dict:
     sid = set_id or secrets.token_hex(2)
     return {'id': sid, 'synthetic': True, 'note': 'Synthetic canary values; none belongs to a real person.',
@@ -94,7 +151,8 @@ class Matcher:
             text = re.sub(re.escape(s), f'<canary:{f}:{enc}>', text, flags=re.I)
         text = EMAIL_ENC.sub('<redacted:email>', text)
         text = PHONE_RX.sub('<redacted:phone>', text)
-        text = CARD.sub(lambda m: '<redacted:card>' if luhn(re.sub(r'\D', '', m.group(0))) else m.group(0), text)
+        text = CARD.sub(lambda m: '<redacted:card>' + m.group(0)[len(m.group(0).rstrip(' -')):]
+                        if card_like(m.string, m) else m.group(0), text)
         return text
 
 

@@ -52,14 +52,25 @@ python scripts/validate_privacy_audit.py run/privacy_audit.json --candidates run
 python scripts/render_report.py run/privacy_audit.json [--brief]
 ```
 
+When the browser capture can't run, the audit is still delivered from the static scan alone, marked
+`run_status: not_run`, with no consent state claimed:
+
+```bash
+python scripts/merge_candidates.py --static run/static.json --run-status-reason "why the capture couldn't run" --out run/candidates.json
+python scripts/validate_privacy_audit.py run/privacy_audit.json --candidates run/candidates.json --repo . --recompute
+```
+
 ## Example
 
 `examples/clinic-signup/` is a small patient sign-up site with stub vendors on made-up `.test` hostnames
 and planted problems; `examples/flows.json` the flows; `examples/lists.example.json` the vendor list for
 the made-up vendors; `examples/run/` the real run (listed in `examples/run/commands.sh`) with every value
-redacted; `examples/privacy_audit.example.json` the audit. `examples/README.md` has the answer key.
+redacted; `examples/privacy_audit.example.json` the audit; `examples/static-only/` and
+`examples/privacy_audit.static-only.example.json` the same app audited from the code alone.
+`examples/README.md` has the answer key.
 
 ```bash
+python scripts/validate_privacy_audit.py examples/privacy_audit.static-only.example.json --candidates examples/static-only/candidates.json --repo examples/clinic-signup
 python scripts/validate_privacy_audit.py examples/privacy_audit.example.json --candidates examples/run/candidates.json --capture examples/run/capture.json --canaries examples/run/canaries.json --evidence examples/run --repo examples/clinic-signup
 python scripts/render_report.py examples/privacy_audit.example.json
 ```
@@ -73,11 +84,13 @@ python scripts/render_report.py examples/privacy_audit.example.json
 - `data/sinks.json`: logging, analytics, replay, error-tracker, storage and HTTP sinks; SDK packages
 - `data/provisions.json`: finding type to GDPR, UK GDPR, ePrivacy, PECR and APP references
 - `data/vendors.json`: curated domain-to-vendor names, plus vendor aliases and parent companies for matching declared processors
-- `data/lists.lock.json`: EasyPrivacy and the Open Cookie Database pinned to git commits, with hashes (downloaded, not committed)
+- `data/lists.lock.json`: EasyPrivacy and the Open Cookie Database pinned to git commits, with hashes (downloaded, not committed), and the bundled suffix list's hash
+- `data/public-suffix-private.json`: shared-hosting suffixes from the Public Suffix List (vercel.app, netlify.app, ...), so each app on them is its own domain
+- `scripts/domains.py`: registrable domains with those suffixes, and first-party matching as given
 - `scripts/fetch_lists.py`: download, verify and combine the lists; `--check` verifies the cache, `--update --write-lock` re-pins into a scratch lock
 - `scripts/match_canaries.py`: canary sets, encodings, search and redaction
 - `scripts/scan_privacy.py`: static collection points, sinks, candidate flows and SDK hosts (including scripts injected from JavaScript); lists what it skipped
-- `scripts/capture_flows.py`: the three-state browser capture
+- `scripts/capture_flows.py`: the browser capture in each consent state (before, reject, accept; optionally partial and dismiss)
 - `scripts/merge_candidates.py`: candidates, recipients and the consent matrix
 - `scripts/validate_privacy_audit.py`, `scripts/render_report.py`
 - `scripts/browser_harness.py`, `scripts/sarif.py`: shared copies (edit them in `shared/`)

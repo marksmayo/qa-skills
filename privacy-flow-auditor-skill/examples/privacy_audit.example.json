@@ -1,7 +1,9 @@
 {
- "schema_version": "1.0.0",
+ "schema_version": "1.1.0",
+ "run_status": "complete",
+ "run_status_reason": null,
  "skill": "privacy-flow-auditor",
- "skill_version": "1.0.0",
+ "skill_version": "1.1.0",
  "generated": "2026-11-11",
  "scope": {
   "repo": "examples/clinic-signup",
@@ -1294,6 +1296,7 @@
   "The vendors are stubs on loopback with made-up .test hostnames; the example list stands in for EasyPrivacy and the Open Cookie Database, and its regions are invented.",
   "Form submission was allowed because the target is the sample app on loopback; on a real test environment it stays blocked unless allowed.",
   "Server-side processing is not visible beyond the local server log.",
-  "Semgrep was not installed; only the built-in static patterns ran."
+  "Semgrep was not installed; only the built-in static patterns ran.",
+  "Screenshots in run/screenshots/ are viewport images taken after each flow; these show the pages after the form was submitted, so no typed value is on them. A new capture masks every field a canary was typed into, but a canary the page echoes back elsewhere could still appear in an image, and images are not scanned for personal data."
  ]
 }

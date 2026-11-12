@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Capture what a web app sends, sets and stores in three consent states, typing synthetic canaries.
+"""Capture what a web app sends, sets and stores in each consent state, typing synthetic canaries.
 
     python capture_flows.py flows.json --canaries run/canaries.json --out run/capture.json [--server-log server.log]
-        [--states before,reject,accept] [--screenshots run/screenshots]
+        [--states before,reject,accept[,partial,dismiss]] [--screenshots run/screenshots]
 
 For each consent state, a fresh browser context loads the start page and records every request, cookie and
 storage entry before any interaction (phase "initial"); then, for reject and accept, it operates the banner;
@@ -14,8 +14,20 @@ With --server-log (local runs only), the app's log is read after the run and the
 are recorded, redacted, with their line numbers.
 
 flows.json: {"site", "host_map"?, "authorised_by"?, "allow_form_submission"?, "third_party"?, "allowed_hosts"?,
-"consent": {"accept": sel, "reject": sel}, "flows": [{"id", "reach": 1-3, "steps": [{"name", "actions": [...]}]}]}.
-If the banner can't be operated, that state is recorded as untested with the reason.
+"consent": {"accept": sel, "reject": sel, "partial"?: sel or [actions], "dismiss"?: sel or [actions], "banner"?: sel,
+"wait_ms"?: 8000, "partial_refuses"?: [vendor categories]}, "flows": [{"id", "reach": 1-3, "steps": [{"name", "actions": [...]}]}]}.
+States: before (no choice), reject, accept, and optionally partial (save preferences with some purposes refused:
+a list of actions such as open settings, untick analytics, save) and dismiss (the banner closed without a choice: its
+X or an overlay click). Before operating a control the capture waits up to wait_ms for the banner (or the first
+control) to be visible. If the banner can't be operated, that state is recorded as untested with the reason. When
+the choice itself triggers a write the harness blocks (the site's consent record), the state records
+consent_writes_blocked: the server-side record of the choice was never made.
+
+Request bodies are read as bytes and decompressed (gzip, deflate; brotli when the brotli module is installed) and
+Base64 bodies decoded before searching; each request records body_read (text, gzip, deflate, br, base64+...,
+binary_not_searched, br_not_searched). Content Security Policy violations in the console (the browser stops those
+requests before any request event) are recorded per state under csp_violations. Screenshots mask every field a
+canary was typed into (Playwright mask); text the page echoes back elsewhere can still show a canary.
 
 Third parties are blocked by default (the browser harness's third_party: block): every request to a host that
 isn't loopback (including *.test and host_map hosts), the site or allowed_hosts is aborted in the browser, so
@@ -26,21 +38,46 @@ must say so. "third_party": "allow" lets requests out to real vendors; use it on
 audit has agreed that the vendors receive the test's hits (record who in third_party_authorised_by).
 """
 from __future__ import annotations
-import argparse, json, re, sys, time
+import argparse, base64, binascii, json, re, sys, time
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from browser_harness import SAFE_METHODS, Harness, check_authorised, now  # noqa: E402
-from match_canaries import Matcher  # noqa: E402
+from match_canaries import Matcher, decode_body  # noqa: E402
 
 HEX = re.compile(r'(?<![0-9a-f])([0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})(?![0-9a-f])', re.I)
+CSP_CONSOLE = re.compile(r"Refused to [\w ]+? '(?P<url>https?://[^']+)'.*?Content Security Policy directive:? \"?(?P<directive>[\w-]+)", re.S)
+STATES = ('before', 'reject', 'accept', 'partial', 'dismiss')
+
+
+def consent_actions(spec) -> list[dict]:
+    """A consent control as actions: a selector is one click; a list is a sequence (open settings, untick, save)."""
+    if not spec:
+        return []
+    return [{'click': spec}] if isinstance(spec, str) else list(spec)
+
+
+def masked_screenshot(page, path: Path, selectors: list[str]) -> Path:
+    """A viewport screenshot with every field a canary was typed into masked (Playwright mask), so the image never
+    shows a canary value."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    masks = []
+    for sel in selectors:
+        try:
+            loc = page.locator(sel)
+            if loc.count():
+                masks.append(loc)
+        except Exception:  # noqa: BLE001 - a selector this page doesn't have
+            continue
+    page.screenshot(path=str(path), full_page=False, mask=masks, mask_color='#000000')
+    return path
 
 
 class Recorder:
     def __init__(self, m: Matcher, h: Harness | None = None):
-        self.m, self.h, self.requests, self.phase = m, h, [], None
+        self.m, self.h, self.requests, self.phase, self.csp = m, h, [], None, []
 
     def blocked(self, req) -> str | None:
         """Why the harness will abort this request (it routes after the request event), or None."""
@@ -54,21 +91,45 @@ class Recorder:
         return None
 
     def on_request(self, req):
-        try:
-            body = req.post_data
-        except Exception:  # binary bodies
-            body = None
         url = req.url
         if url.startswith('data:'):
             return
+        try:
+            buf = req.post_data_buffer
+        except Exception:  # noqa: BLE001
+            buf = None
+        body, body_read = decode_body(buf, req.headers.get('content-encoding'))
+        if body is not None and len(body) < 20000 and re.fullmatch(r'[A-Za-z0-9+/=_-]{24,}', body.strip()):
+            try:  # a Base64 body (some beacons): search the decoded text too
+                inner, how = decode_body(base64.b64decode(body.strip() + '=' * (-len(body.strip()) % 4), altchars=b'-_'
+                                                          if '-' in body or '_' in body else None))
+                if inner is not None:
+                    body, body_read = inner, f'base64+{how}'
+            except (ValueError, binascii.Error):
+                pass
         parts = {'url': url, 'body': body, 'referer': req.headers.get('referer')}
         matches = [dict(h, where=k) for k, v in parts.items() for h in self.m.find(v)]
         red_url = self.m.redact(url)
         hexes = sorted({h for h in HEX.findall(self.m.redact((url or '') + ' ' + (body or ''))) if h})
+        red_body = self.m.redact(body) if body else None
         self.requests.append({'n': len(self.requests) + 1, 'phase': self.phase, 'method': req.method, 'resource_type': req.resource_type,
                               'host': urlparse(url).hostname, 'url': red_url, 'path': urlparse(red_url).path,
-                              'referer': self.m.redact(req.headers.get('referer')), 'body': self.m.redact(body)[:2000] if body else None,
+                              'referer': self.m.redact(req.headers.get('referer')), 'body': red_body[:2000] if red_body else None,
+                              'body_length': len(red_body) if red_body else 0, 'body_read': body_read if buf else None,
                               'matches': matches, 'unmatched_hex': hexes, 'blocked': self.blocked(req)})
+
+    def on_console(self, msg):
+        """A Content Security Policy violation in the console: the browser stopped the request before it was sent, so
+        no request event fires. Recorded as an attempt with its URL (redacted) and directive."""
+        try:
+            text = msg.text
+        except Exception:  # noqa: BLE001
+            return
+        m = CSP_CONSOLE.search(text or '')
+        if m:
+            u = m.group('url')
+            self.csp.append({'phase': self.phase, 'source': 'console', 'url': self.m.redact(u)[:300], 'host': urlparse(u).hostname,
+                             'directive': m.group('directive')})
 
 
 def cookies_and_storage(ctx, page, m: Matcher) -> dict:
@@ -110,37 +171,58 @@ def main() -> int:
                                                                                        'steps': [s['name'] for s in f['steps']]} for f in cfg['flows']]}
     hcfg = {k: cfg[k] for k in ('host_map', 'authorised_by', 'allow_form_submission', 'third_party', 'allowed_hosts') if k in cfg}
     hcfg['targets'] = [site]
+    # the site's own Content Security Policy stays in force (the harness bypasses it by default): a vendor call the CSP
+    # forbids is then stopped by the browser and seen as a CSP violation, as it would be for a real visitor
+    hcfg['bypass_csp'] = bool(cfg.get('bypass_csp', False))
     if cfg.get('third_party') == 'allow' and not (cfg.get('third_party_authorised_by') or '').strip():
         ap.error('third_party: allow sends the test\'s requests to real vendors; set third_party_authorised_by in flows.json')
     hcfg['rate_limit_seconds'] = cfg.get('rate_limit_seconds', 0.3)
+    fills = sorted({act['fill'] for f in cfg['flows'] for s in f['steps'] for act in s['actions'] if 'canary' in act})
+    if a.screenshots:
+        out['screenshots'] = {'masked_fields': fills, 'note': 'fields a canary was typed into are masked; a canary the page '
+                              'echoes elsewhere (a greeting, a summary) can still show in an image'}
     with Harness(hcfg) as h:
         out['browser'] = f'{h.browser_name} {h.version}'
         out['third_party'] = getattr(h, 'third_party', 'allow')
         if cfg.get('third_party_authorised_by'):
             out['third_party_authorised_by'] = cfg['third_party_authorised_by']
+        consent = cfg.get('consent') or {}
+        wait_ms = int(consent.get('wait_ms', 8000))
         for state in a.states.split(','):
+            if state not in STATES:
+                ap.error(f'unknown consent state {state!r}; use {", ".join(STATES)}')
             page = h.new_page(service_workers='block')
             ctx = page.context
             rec = Recorder(m, h)
             page.on('request', rec.on_request)
+            page.on('console', rec.on_console)
             st = {'state': state, 'status': 'tested', 'snapshots': []}
             rec.phase = 'initial'
             res = h.goto(page, site)
             st['start'] = {'ok': res.get('ok'), 'status': res.get('status')}
             page.wait_for_timeout(800)
             st['snapshots'].append(dict(phase='initial', **cookies_and_storage(ctx, page, m)))
-            if state in ('reject', 'accept'):
-                sel = (cfg.get('consent') or {}).get(state)
+            if state != 'before':
+                acts = consent_actions(consent.get(state))
+                writes_before = sum(1 for b in h.blocked if b.get('reason', 'write') == 'write')
                 try:
+                    if not acts:
+                        raise LookupError(f'flows.json has no consent.{state} control')
                     rec.phase = f'after_{state}'
-                    page.click(sel, timeout=5000)
+                    first = consent.get('banner') or next((x.get('click') for x in acts if x.get('click')), None)
+                    if first:  # banners often appear after hydration or a timer: wait for it before clicking
+                        page.wait_for_selector(first, state='visible', timeout=wait_ms)
+                    h.act(page, acts)
                     h.settle(page)
                     page.wait_for_timeout(800)
                     st['snapshots'].append(dict(phase=f'after_{state}', **cookies_and_storage(ctx, page, m)))
+                    # the site's own record of the choice (a POST) is blocked on a read-only run
+                    st['consent_writes_blocked'] = sum(1 for b in h.blocked if b.get('reason', 'write') == 'write') - writes_before
                 except Exception as e:
-                    st.update(status='untested', reason=f'consent control {sel!r} could not be operated: {type(e).__name__}')
+                    what = consent.get(state)
+                    st.update(status='untested', reason=f'consent control {what!r} could not be operated: {type(e).__name__}')
             if a.screenshots:
-                h.screenshot(page, a.screenshots / f'{state}-initial.png', full_page=False)
+                masked_screenshot(page, a.screenshots / f'{state}-initial.png', fills)
             if st['status'] == 'tested':
                 for flow in cfg['flows']:
                     for step in flow['steps']:
@@ -163,14 +245,18 @@ def main() -> int:
                             st.setdefault('errors', []).append({'phase': rec.phase, 'error': f'{type(e).__name__}: {str(e).splitlines()[0][:200]}'})
                         st['snapshots'].append(dict(phase=rec.phase, ok=step_ok, url=m.redact(page.url), **cookies_and_storage(ctx, page, m)))
                     if a.screenshots:
-                        h.screenshot(page, a.screenshots / f'{state}-{flow["id"]}.png', full_page=False)
+                        masked_screenshot(page, a.screenshots / f'{state}-{flow["id"]}.png', fills)
             st['requests'] = rec.requests
+            st['csp_violations'] = rec.csp
             st['blocked_writes'] = sum(1 for b in h.blocked if b.get('reason', 'write') == 'write')
             st['blocked_third_party'] = sum(1 for b in h.blocked if b.get('reason') == 'third_party')
             st['blocked_hosts'] = sorted({urlparse(b['url']).hostname or '' for b in h.blocked if b.get('reason') == 'third_party'})
+            # writes the harness blocked on the site itself (telemetry, CSP reports, consent records), by the harness's own site field
+            st['blocked_first_party_writes'] = sum(1 for b in h.blocked if b.get('reason', 'write') == 'write' and b.get('site') == 'same_site')
             h.blocked.clear()
             h.close_page(page)
             out['states'].append(st)
+        out['harness'] = h.metadata()
     if a.server_log and a.server_log.exists():
         lines = a.server_log.read_text(encoding='utf-8').splitlines()[log_start:]
         out['server_log'] = {'file': a.server_log.name, 'lines_read': len(lines),

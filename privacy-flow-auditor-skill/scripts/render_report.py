@@ -36,10 +36,17 @@ def main() -> int:
             why = (h.get('states_not_tested') or {}).get(state) or row.get('reason') or row.get('status')
             return f'not tested ({why})'
         return ', '.join(h[key]) or 'none'
-    blocked = [x['domain'] for x in r['recipients'] if x.get('blocked_requests')]
+    blocked = [x['domain'] for x in r['recipients'] if x.get('blocked_requests') and x.get('kind') != 'first_party']
+    fp_writes = [x for x in r['recipients'] if x.get('blocked_requests') and x.get('kind') == 'first_party']
+    csp = [x['domain'] for x in r['recipients'] if x.get('csp_blocked_attempts')]
+    status = r.get('run_status') or 'complete'
     out = [c('# Privacy flow audit', 'bold'), '',
            f'Targets {", ".join(s["targets"]) or "-"}; repository `{s.get("repo") or "-"}`; regions {", ".join(s["regions"])}; '
-           f'consent states tested: {", ".join(s["consent_states_tested"])}.', '',
+           f'consent states tested: {", ".join(s["consent_states_tested"]) or "none"}.', '']
+    if status != 'complete':
+        out += [c(f'Browser capture {"NOT RUN" if status == "not_run" else "PARTIAL"}: {(r.get("run_status_reason") or "-").rstrip(".")}.', 'bold')
+                + (' Static findings only; no consent state, request or canary was tested.' if status == 'not_run' else ''), '']
+    out += [
            ' '.join(f'{c(p, p)} {n}' for p, n in h['counts'].items()), '', h['statement'], '',
            f'Third parties before consent: {seen("third_parties_before_consent", "before")}. '
            f'After "Reject all": {seen("third_parties_after_reject", "reject")}. '
@@ -47,21 +54,32 @@ def main() -> int:
     if blocked:
         out += [f'Blocked in the browser, so they never reached the vendor and could set no cookies or send follow-up hits: '
                 f'{", ".join(blocked)}.', '']
+    if fp_writes:
+        out += ['First-party writes blocked by the read-only run (telemetry, CSP reports, consent records; their effect on the site is '
+                'not seen): ' + ', '.join(f'{x["domain"]} x{x["blocked_requests"]}' for x in fp_writes) + '.', '']
+    if csp:
+        out += [f'Stopped by the site\'s own Content Security Policy before leaving the browser (attempted, from CSP reports and console): '
+                f'{", ".join(csp)}.', '']
     out += [c(h['disclaimer'], 'dim'), '', '## Consent matrix', '','| State | Third-party domains | Cookies | Canaries sent to third parties |', '|---|---|---|---|']
     for m in r['consent_matrix']:
         if m['status'] != 'tested':
             out.append(f'| {m["state"]} | {m["status"]}: {m.get("reason") or ""} | | |')
         else:
-            out.append(f'| {m["state"]} | {", ".join(m["third_party_domains"]) or "-"} | {", ".join(m["cookies"]) or "-"} | {", ".join(m["canaries_to_third_parties"]) or "-"} |')
+            extra = (f' (CSP-blocked: {", ".join(m["csp_blocked_domains"])})' if m.get('csp_blocked_domains') else '') + \
+                (f' (consent record blocked x{m["consent_writes_blocked"]})' if m.get('consent_writes_blocked') else '')
+            out.append(f'| {m["state"]} | {", ".join(m["third_party_domains"]) or "-"}{extra} | {", ".join(m["cookies"]) or "-"} | {", ".join(m["canaries_to_third_parties"]) or "-"} |')
     out += ['', '## Findings', '', '| ID | Priority | Type | Recipient | Categories | Score | Confidence |', '|---|---|---|---|---|---|---|']
     for f in sorted(r['findings'], key=lambda f: (f['priority'], f['id'])):
-        out.append(f'| {f["id"]} | {c(f["priority"], f["priority"])} | {f["type"]} | {f.get("vendor") or f.get("domain") or "-"} '
+        out.append(f'| {f["id"]}{" (found by review)" if f.get("source") == "agent" else ""} | {c(f["priority"], f["priority"])} | {f["type"]} | {f.get("vendor") or f.get("domain") or "-"} '
                    f'| {", ".join(f["categories"])} | {f["sensitivity"]}x{f["flow"]}x{f["reach"]}={f["score"]} | {f["confidence"]} |')
     out.append('')
     if not a.brief:
         for f in sorted(r['findings'], key=lambda f: (f['priority'], f['id'])):
             ev = f['evidence']
-            out += [f'### {f["id"]} {c(f["priority"], f["priority"])} {f["title"]}', '', ev.get('summary', ''), '']
+            out += [f'### {f["id"]} {c(f["priority"], f["priority"])} {f["title"]}' + (' (found by review)' if f.get('source') == 'agent' else ''),
+                    '', ev.get('summary', ''), '']
+            for b in f.get('basis') or []:
+                out.append(f'- Basis: `{b["file"]}:{b["line"]}` {b.get("excerpt", "")}' if 'file' in b else f'- Basis: evidence {b.get("evidence")}')
             if f.get('consent_states'):
                 out.append(f'- Consent states: {", ".join(f["consent_states"])}')
             if f.get('floor') or f.get('cap'):
@@ -76,7 +94,8 @@ def main() -> int:
                 '|---|---|---|---|---|---|---|---|']
         for x in r['recipients']:
             dec = f'{x["declared_as"]["name"]} ({x["declared_as"]["match"]})' if x.get('declared_as') else '-'
-            reqs = f'{x["requests"]} ({x.get("blocked_requests", 0)})' if 'requests' in x else '-'
+            reqs = (f'{x["requests"]} ({x.get("blocked_requests", 0)})' if 'requests' in x else '-') + \
+                (f', CSP-blocked {x["csp_blocked_attempts"]}' if x.get('csp_blocked_attempts') else '')
             out.append(f'| {x["domain"]} | {x["vendor"] or "-"} | {x["kind"]} | {dec} | {x["region"] or "-"} | {", ".join(x["states"])} '
                        f'| {", ".join(x["categories"]) or "-"} | {reqs} |')
         out += ['', '## Data inventory', '']

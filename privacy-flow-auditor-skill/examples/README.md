@@ -36,7 +36,22 @@ The capture was made before the browser harness blocked third parties by default
 third-party mode (`third_party_mode: null` in `candidates.json`). Blocking wouldn't change it: the stub
 vendors' `*.test` hosts are mapped to loopback, which the harness always lets through, so no request is
 blocked and every recipient shows `blocked_requests: 0`. Each declared vendor matches by its exact name
-(`declared_as`).
+(`declared_as`). The run's screenshots were taken after the form was submitted, so no typed value is on
+them; a new capture also masks every field a canary was typed into.
+
+## Static only
+
+`static-only/candidates.json` is the merge of `run/static.json` alone (`merge_candidates.py --static ...
+--run-status-reason ...`): `run_status: not_run`, every consent state `not_run`, no recipients.
+`privacy_audit.static-only.example.json` is the audit to deliver when the browser capture can't run: 5
+findings from the code (traced or pattern; the `/welcome?email=` redirect is a finding found by review,
+`source: agent`, whose `basis` lines the validator re-reads), the chat widget's `identify` call recorded
+as inventory because its vendor can't be named without the live list, and a statement and limitations
+that say no consent state, request or canary was tested.
+
+```bash
+python privacy-flow-auditor-skill/scripts/validate_privacy_audit.py privacy-flow-auditor-skill/examples/privacy_audit.static-only.example.json --candidates privacy-flow-auditor-skill/examples/static-only/candidates.json --repo privacy-flow-auditor-skill/examples/clinic-signup --recompute
+```
 
 ```bash
 python scripts/validate_privacy_audit.py examples/privacy_audit.example.json --candidates examples/run/candidates.json --capture examples/run/capture.json --canaries examples/run/canaries.json --evidence examples/run --repo examples/clinic-signup

@@ -108,7 +108,8 @@
    "sink": "py-cookie",
    "kind": "storage",
    "vendor": null,
-   "excerpt": "return self.send_file('index.html', {'Set-Cookie': cookie})"
+   "excerpt": "return self.send_file('index.html', {'Set-Cookie': cookie})",
+   "side": "server"
   },
   {
    "file": "serve.py",
@@ -116,7 +117,8 @@
    "sink": "py-logging",
    "kind": "log",
    "vendor": null,
-   "excerpt": "logger.info('new patient signup email=%s dob=%s reason=%s', patient['email'], patient['dob'], patient['reason'])"
+   "excerpt": "logger.info('new patient signup email=%s dob=%s reason=%s', patient['email'], patient['dob'], patient['reason'])",
+   "side": "server"
   },
   {
    "file": "serve.py",
@@ -124,7 +126,8 @@
    "sink": "py-print",
    "kind": "log",
    "vendor": null,
-   "excerpt": "print(f'app on http://127.0.0.1:{a.port}/, vendors on 127.0.0.1:{a.vendor_port}', flush=True)"
+   "excerpt": "print(f'app on http://127.0.0.1:{a.port}/, vendors on 127.0.0.1:{a.vendor_port}', flush=True)",
+   "side": "server"
   },
   {
    "file": "site/index.html",
@@ -279,6 +282,7 @@
   }
  ],
  "permissions": [],
+ "wrappers": [],
  "candidates": [
   {
    "type": "sensitive_category_flow",
@@ -366,6 +370,7 @@
    ],
    "confidence": "pattern",
    "vendor": null,
+   "consent_check_nearby": false,
    "id": "S005",
    "source": "static"
   },
@@ -383,6 +388,7 @@
    ],
    "confidence": "pattern",
    "vendor": null,
+   "consent_check_nearby": false,
    "id": "S006",
    "source": "static"
   }

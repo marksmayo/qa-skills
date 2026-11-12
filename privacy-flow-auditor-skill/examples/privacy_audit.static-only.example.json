@@ -1,0 +1,481 @@
+{
+ "schema_version": "1.1.0",
+ "run_status": "not_run",
+ "run_status_reason": "static-only example: the live capture was not run (no browser in the environment), so only the code was read",
+ "skill": "privacy-flow-auditor",
+ "skill_version": "1.1.0",
+ "generated": "2026-11-12",
+ "scope": {
+  "repo": "examples/clinic-signup",
+  "repo_excluded": [
+   "stub-vendors (stands in for third-party code)"
+  ],
+  "targets": [],
+  "authorised_by": null,
+  "regions": [
+   "AU",
+   "EU"
+  ],
+  "flows": [],
+  "consent_states_tested": [],
+  "covered": [
+   "static scan of site/ and serve.py: collection points, sinks, script hosts, consent checks near sinks",
+   "reading the code paths from each candidate's collection point to its sink"
+  ],
+  "not_covered": [
+   "the browser capture: no consent state, request, cookie, storage entry or canary was tested",
+   "what the vendors do with the data once received",
+   "salted or keyed hashes"
+  ]
+ },
+ "metadata": {
+  "browser": null,
+  "canary_set": null,
+  "lists": null,
+  "declared_processors": "Harbourside Clinic privacy policy, section 7 (Who we share information with), version 2026-08",
+  "tools": [
+   {
+    "name": "scan_privacy.py",
+    "status": "ran"
+   },
+   {
+    "name": "merge_candidates.py",
+    "status": "ran (static only)"
+   },
+   {
+    "name": "capture_flows.py",
+    "status": "not_run"
+   }
+  ],
+  "evidence": {
+   "static": "run/static.json",
+   "candidates": "static-only/candidates.json"
+  }
+ },
+ "inventory": [
+  {
+   "field": "email",
+   "category": "contact",
+   "collected_at": [
+    "site/signup.html:26",
+    "serve.py:59"
+   ],
+   "stored": [
+    "localStorage signup_email (site/static/signup.js:45)"
+   ],
+   "logged": [
+    "serve.py:62"
+   ],
+   "in_urls": [
+    "/welcome?email= (serve.py:64)"
+   ],
+   "recipients": []
+  },
+  {
+   "field": "dob",
+   "category": "date_of_birth",
+   "collected_at": [
+    "site/signup.html:28",
+    "serve.py:59"
+   ],
+   "stored": [],
+   "logged": [
+    "serve.py:62"
+   ],
+   "in_urls": [],
+   "recipients": []
+  },
+  {
+   "field": "reason",
+   "category": "health",
+   "collected_at": [
+    "site/signup.html:29",
+    "serve.py:59"
+   ],
+   "stored": [],
+   "logged": [
+    "serve.py:62"
+   ],
+   "in_urls": [],
+   "recipients": []
+  }
+ ],
+ "recipients": [],
+ "consent_matrix": [
+  {
+   "state": "before",
+   "status": "not_run",
+   "reason": "static-only example: the live capture was not run (no browser in the environment), so only the code was read"
+  },
+  {
+   "state": "reject",
+   "status": "not_run",
+   "reason": "static-only example: the live capture was not run (no browser in the environment), so only the code was read"
+  },
+  {
+   "state": "accept",
+   "status": "not_run",
+   "reason": "static-only example: the live capture was not run (no browser in the environment), so only the code was read"
+  }
+ ],
+ "findings": [
+  {
+   "id": "F01",
+   "type": "sensitive_category_flow",
+   "title": "The server logs the email, date of birth and reason for visit of every new patient",
+   "candidates": [
+    "S001"
+   ],
+   "categories": [
+    "contact",
+    "date_of_birth",
+    "health"
+   ],
+   "fields": [
+    "dob",
+    "email",
+    "reason"
+   ],
+   "vendor": null,
+   "domain": null,
+   "recipient_kind": null,
+   "consent_states": [],
+   "flow_basis": "logs",
+   "reach": 3,
+   "reach_source": "sign-up is the path every new patient takes",
+   "confidence": "traced",
+   "evidence": {
+    "summary": "do_POST reads the five sign-up fields from the form body and logs three of them, including the reason for visit, at INFO on every sign-up.",
+    "code_path": [
+     {
+      "file": "site/signup.html",
+      "line": 29,
+      "what": "reason textarea"
+     },
+     {
+      "file": "serve.py",
+      "line": 59,
+      "what": "form fields read"
+     },
+     {
+      "file": "serve.py",
+      "line": 62,
+      "what": "logger.info(... email, dob, reason)"
+     }
+    ]
+   },
+   "references": {
+    "EU": [
+     "GDPR Art. 9",
+     "GDPR Art. 5(1)(f)",
+     "GDPR Art. 32"
+    ],
+    "AU": [
+     "APP 3.3",
+     "APP 6.2",
+     "APP 11"
+    ]
+   },
+   "fix": "Log an opaque patient id instead of the fields, and never log the reason for visit.",
+   "verification": "Run the live capture with --server-log and search the log for the canaries: no line matches.",
+   "sensitivity": 4,
+   "flow": 2,
+   "score": 24,
+   "priority": "P1",
+   "floor": null,
+   "cap": null
+  },
+  {
+   "id": "F02",
+   "type": "session_replay_unmasked",
+   "title": "The session-replay script is initialised with input masking switched off",
+   "candidates": [
+    "S003"
+   ],
+   "categories": [
+    "contact",
+    "date_of_birth",
+    "health",
+    "identity"
+   ],
+   "fields": null,
+   "vendor": null,
+   "domain": null,
+   "recipient_kind": null,
+   "consent_states": [],
+   "flow_basis": "declared_unexpected",
+   "reach": 3,
+   "reach_source": "the replay script loads on every page once the visitor accepts",
+   "confidence": "pattern",
+   "evidence": {
+    "summary": "replayr.init({maskAllInputs: false}) after \"Accept all\": the sign-up form's fields, including the reason for visit, would be recorded as typed. Whether values leave the browser needs the live capture.",
+    "code_path": [
+     {
+      "file": "site/static/consent.js",
+      "line": 14,
+      "what": "replayr.init({maskAllInputs: false})"
+     }
+    ]
+   },
+   "references": {
+    "EU": [
+     "GDPR Art. 5(1)(c)",
+     "GDPR Art. 25",
+     "GDPR Art. 28",
+     "ePrivacy Art. 5(3)"
+    ],
+    "AU": [
+     "APP 3",
+     "APP 6",
+     "APP 11"
+    ]
+   },
+   "fix": "Initialise the replay script with input masking on, and exclude the sign-up form from recording.",
+   "verification": "Run the live capture in the accept state: no request to the replay host carries a canary.",
+   "sensitivity": 4,
+   "flow": 2,
+   "score": 24,
+   "priority": "P1",
+   "floor": null,
+   "cap": null
+  },
+  {
+   "id": "F03",
+   "type": "personal_data_to_third_party",
+   "title": "The sign-up page sends a SHA-256 of the email address to the advertising script",
+   "candidates": [
+    "S005"
+   ],
+   "categories": [
+    "contact"
+   ],
+   "fields": [
+    "email"
+   ],
+   "vendor": null,
+   "domain": null,
+   "recipient_kind": null,
+   "consent_states": [],
+   "flow_basis": "declared_unexpected",
+   "reach": 3,
+   "reach_source": "every new patient fills in the email field",
+   "confidence": "pattern",
+   "evidence": {
+    "summary": "On blur of the email field the lowercased address is hashed and passed to adnetic.track('lead', ...). An unsalted hash of an email is still an identifier.",
+    "code_path": [
+     {
+      "file": "site/static/signup.js",
+      "line": 43,
+      "what": "email lowercased"
+     },
+     {
+      "file": "site/static/signup.js",
+      "line": 47,
+      "what": "adnetic.track('lead', {em: sha256(value)})"
+     }
+    ]
+   },
+   "references": {
+    "EU": [
+     "GDPR Art. 5(1)(a)",
+     "GDPR Art. 6",
+     "GDPR Art. 13(1)(e)",
+     "GDPR Art. 28"
+    ],
+    "AU": [
+     "APP 5",
+     "APP 6"
+    ]
+   },
+   "fix": "Don't send the email, hashed or not, to the advertising script; if conversion matching is wanted, ask for it separately.",
+   "verification": "Run the live capture in the accept state: the canary's SHA-256 appears in no request.",
+   "sensitivity": 2,
+   "flow": 2,
+   "score": 12,
+   "priority": "P2",
+   "floor": null,
+   "cap": null
+  },
+  {
+   "id": "F04",
+   "type": "insecure_storage",
+   "title": "The sign-up page keeps the email address in localStorage",
+   "candidates": [
+    "S004"
+   ],
+   "categories": [
+    "contact"
+   ],
+   "fields": [
+    "email"
+   ],
+   "vendor": null,
+   "domain": null,
+   "recipient_kind": null,
+   "consent_states": [],
+   "flow_basis": "insecure_storage",
+   "reach": 3,
+   "reach_source": "every new patient fills in the email field",
+   "confidence": "traced",
+   "evidence": {
+    "summary": "On blur the email field's value is written to localStorage under signup_email and never removed.",
+    "code_path": [
+     {
+      "file": "site/static/signup.js",
+      "line": 41,
+      "what": "email field"
+     },
+     {
+      "file": "site/static/signup.js",
+      "line": 45,
+      "what": "localStorage.setItem('signup_email', value)"
+     }
+    ]
+   },
+   "references": {
+    "EU": [
+     "GDPR Art. 5(1)(f)",
+     "GDPR Art. 25",
+     "GDPR Art. 32"
+    ],
+    "AU": [
+     "APP 11"
+    ]
+   },
+   "fix": "Don't persist the email in the browser; if a returning visitor needs it, keep it server side.",
+   "verification": "Run the live capture: localStorage holds no canary after the sign-up flow.",
+   "sensitivity": 2,
+   "flow": 2,
+   "score": 12,
+   "priority": "P2",
+   "floor": null,
+   "cap": null
+  },
+  {
+   "id": "F05",
+   "type": "personal_data_in_url",
+   "title": "After sign-up the server redirects to a URL carrying the email address",
+   "source": "agent",
+   "basis": [
+    {
+     "file": "serve.py",
+     "line": 64,
+     "excerpt": "self.send_header('Location', '/welcome?email=' + quote(patient['email']))"
+    },
+    {
+     "file": "site/static/welcome.js",
+     "line": 3,
+     "excerpt": "var email = new URLSearchParams(location.search).get('email');"
+    }
+   ],
+   "candidates": [],
+   "categories": [
+    "contact"
+   ],
+   "fields": [
+    "email"
+   ],
+   "vendor": null,
+   "domain": null,
+   "recipient_kind": null,
+   "consent_states": [],
+   "flow_basis": "url",
+   "reach": 3,
+   "reach_source": "every new patient is redirected after sign-up",
+   "confidence": "traced",
+   "evidence": {
+    "summary": "Found by review: the 303 after sign-up puts the email in the query string of /welcome, where it reaches server logs, browser history and the Referer of every request the welcome page makes.",
+    "code_path": [
+     {
+      "file": "serve.py",
+      "line": 64,
+      "what": "Location: /welcome?email=..."
+     },
+     {
+      "file": "site/static/welcome.js",
+      "line": 3,
+      "what": "email read back from the URL"
+     }
+    ]
+   },
+   "references": {
+    "EU": [
+     "GDPR Art. 5(1)(f)",
+     "GDPR Art. 25",
+     "GDPR Art. 32"
+    ],
+    "AU": [
+     "APP 6",
+     "APP 11"
+    ]
+   },
+   "fix": "Redirect to /welcome without the email; keep what the page needs in the server session.",
+   "verification": "Run the live capture: no first-party URL carries a canary.",
+   "sensitivity": 2,
+   "flow": 2,
+   "score": 12,
+   "priority": "P2",
+   "floor": null,
+   "cap": null
+  }
+ ],
+ "triage": [
+  {
+   "candidate": "S001",
+   "decision": "promoted",
+   "finding": "F01"
+  },
+  {
+   "candidate": "S002",
+   "decision": "dismissed",
+   "reason_code": "pii_disabled",
+   "reason": "The error tracker is initialised with sendDefaultPii: false and a beforeSend scrubber that removes the user's email (same line on all three pages)."
+  },
+  {
+   "candidate": "S003",
+   "decision": "promoted",
+   "finding": "F02"
+  },
+  {
+   "candidate": "S004",
+   "decision": "promoted",
+   "finding": "F04"
+  },
+  {
+   "candidate": "S005",
+   "decision": "promoted",
+   "finding": "F03"
+  },
+  {
+   "candidate": "S006",
+   "decision": "inventory",
+   "reason": "The welcome page passes the email from its URL to the chat widget's identify call. The chat vendor can't be named or matched to the declared processors without the live capture's domain list, so it is recorded here for that run; the URL itself is F05."
+  }
+ ],
+ "headline": {
+  "statement": "Static review only: the browser capture was not run, so no consent state was tested and nothing here says what reaches a vendor. The code logs health details at sign-up, records form fields with replay masking off, hashes the email for an ad script, and puts it in localStorage and a redirect URL.",
+  "disclaimer": "These are references for a qualified privacy professional, who decides whether there is a breach. This report is not legal advice and does not say the app is or isn't compliant.",
+  "counts": {
+   "P0": 0,
+   "P1": 2,
+   "P2": 3,
+   "P3": 0
+  },
+  "third_parties_before_consent": null,
+  "third_parties_after_reject": null,
+  "states_not_tested": {
+   "before": "static-only example: the live capture was not run (no browser in the environment), so only the code was read",
+   "reject": "static-only example: the live capture was not run (no browser in the environment), so only the code was read",
+   "accept": "static-only example: the live capture was not run (no browser in the environment), so only the code was read"
+  },
+  "special_category_flows": [
+   "F01",
+   "F02"
+  ]
+ },
+ "limitations": [
+  "The browser capture was not run (run_status not_run): no consent state, request, cookie, storage entry or canary was tested, and findings rest on the code alone (traced or pattern).",
+  "Vendors are not named: names come only from the domain list (live run) or a code import, and the sample loads its vendors by script URL.",
+  "Server-side processing beyond serve.py is not visible."
+ ]
+}

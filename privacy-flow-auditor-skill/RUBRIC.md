@@ -68,10 +68,28 @@ AU: the APPs), listed for the regions in scope:
 | `excess_collection` | A field no code uses (judgment) |
 | `cross_border_transfer` | A vendor outside the regions receiving data (needs a region from the list) |
 | `missing_usage_description` | A mobile permission without a purpose string |
+| `first_party_beacon` | A first-party write fired without a form submission (telemetry, experiment exposure, autosave), usually before any choice |
+
+Tracking findings also cover first-party tracking paths (an analytics proxy or error-tracker tunnel on
+the site's own host) and vendor calls the site's own CSP stopped in the browser (attempted, never sent),
+and the `partial` (some purposes refused) and `dismiss` (banner closed without a choice) states: tracking
+after a dismissal is tracking before consent.
+
+## Static-only audits and findings found by review
+
+With `run_status: not_run` (no capture), findings rest on the code: `traced` with a full code path, or
+`pattern`. Nothing is `observed`, no consent state is named, and `before_consent` needs a static
+`tracking_before_consent` candidate (pattern). A finding found by reading the code (`source: agent`)
+carries a `basis` of re-checkable file lines (or runtime evidence) and is at most `traced` without
+runtime evidence.
 
 ## Triage outcomes
 
 `promoted`, `inventory` (expected and recorded, for example a declared processor's region; never for
 special categories or tracking after rejection), or `dismissed` with a code the validator checks:
-`strictly_necessary`, `functional_no_identifier`, `constant_in_source`, `pii_disabled`, `duplicate`,
-`false_match`, `not_personal_data`. A special-category candidate can only be dismissed as `false_match`.
+`strictly_necessary` (a first-party HttpOnly cookie, or a first-party CSRF cookie whose name says
+csrf/xsrf and whose reason says it is the readable half of a double-submit check),
+`functional_no_identifier`, `constant_in_source`, `random_per_load_id` (hex values that change on every
+request and never recur across consent states), `pii_disabled` (default PII off, or replay masked by the
+SDK default), `duplicate`, `false_match`, `not_personal_data`. A special-category candidate can only be
+dismissed as `false_match`.

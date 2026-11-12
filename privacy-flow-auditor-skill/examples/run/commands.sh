@@ -29,4 +29,11 @@ python $S/scripts/merge_candidates.py --capture $E/run/capture.json --static $E/
 
 # 5. Validate the audit against the run
 python $S/scripts/validate_privacy_audit.py $E/privacy_audit.example.json --candidates $E/run/candidates.json \
-  --capture $E/run/capture.json --canaries $E/run/canaries.json --evidence $E/run --repo $E/clinic-signup
+  --capture $E/run/capture.json --canaries $E/run/canaries.json --evidence $E/run --repo $E/clinic-signup --recompute
+
+# 6. The static-only variant: merge and audit from the static scan alone (no capture)
+python $S/scripts/merge_candidates.py --static $E/run/static.json --declared $E/clinic-signup/declared_processors.json --regions AU,EU \
+  --run-status-reason "static-only example: the live capture was not run (no browser in the environment), so only the code was read" \
+  --out $E/static-only/candidates.json
+python $S/scripts/validate_privacy_audit.py $E/privacy_audit.static-only.example.json --candidates $E/static-only/candidates.json \
+  --repo $E/clinic-signup --recompute

@@ -319,3 +319,64 @@ Where the build differs from the design above, and what the example showed.
     request with `blocked: third_party`, the merge counts blocked requests per recipient and lists the
     blocked domains, the renderer names them, and the validator requires a limitation saying that blocked
     vendors set no cookies and sent no follow-up hits. Stub vendors on `*.test` hosts are loopback and still load.
+
+### v1.1.0: gaps found on a Next.js app on shared hosting (static scan and a live capture)
+
+- **Static-only mode.** The merge and the validator needed a capture, so a static review could only be
+  reported by inventing one. `merge_candidates.py` without `--capture` now writes a `not_run` output
+  (every consent state `not_run`, no recipients, the static candidates), and the audit carries
+  `run_status` (`complete`, `partial`, `not_run`) and `run_status_reason`. A `not_run` audit validates
+  without a capture or canaries, but the validator rejects observed findings, captured requests, consent
+  states, live candidates and statements only a browser run could support. `examples/static-only/` and
+  `privacy_audit.static-only.example.json` show it. A capture with an untested or missing state, step
+  errors or an exhausted request budget is `partial`.
+- **Findings found by review** (`source: agent`, `basis` of file lines re-read with `--repo`, or runtime
+  evidence) cover flows no pattern catches; the renderer labels them.
+- **Shared hosting.** `registrable()` had no Public Suffix List, so `myapp.vercel.app` became `vercel.app`:
+  other tenants were first party, and EasyPrivacy rules for two other vercel.app apps made the site's own
+  recipient a "tracker". `data/public-suffix-private.json` is a hand-transcribed subset of the PSL private
+  section, pinned by SHA-256 in the lock (`bundled`) and checked by `fetch_lists.py`; `scripts/domains.py`
+  is used by the scan, the list build and the merge; `first_party_domains` are honoured as given.
+- **First-party tracking paths.** `fetch_lists.py` dropped EasyPrivacy's path rules; they are now kept
+  (`path_rules`), and with curated rules in `data/vendors.json` (Vercel Web Analytics and Speed Insights
+  paths, Sentry tunnels by path or by an envelope body) they flag analytics proxies and tunnels on the
+  site's own host (`subtype: first_party_proxy`).
+- **Blocked first-party writes** were listed as a "blocked vendor" (the site) and were no candidate.
+  The renderer now lists only third parties as blocked vendors; first-party writes fired without a form
+  submission are `first_party_beacon` candidates (a new type with its own references), listed separately
+  (`blocked_first_party_writes`), and need a limitation.
+- **CSP.** Calls the site's CSP stops never reach the request event. The capture keeps the CSP in force
+  (`bypass_csp: false`, the shared harness's default is true), records console CSP violations, and the
+  merge reads CSP report bodies; vendor attempts become `csp_blocked_attempts` on tracking candidates and
+  recipients. A capture run with the CSP bypassed needs a limitation.
+- **Per-load ids.** 49 Sentry `sid`/`event_id`/`trace_id` values became 49 "possible hashed identifier"
+  candidates. They are grouped per (domain, key) with facts (distinct values, a new value every request,
+  recurring across consent states, a known SDK id key), and `random_per_load_id` dismisses them only when
+  the facts show it.
+- **Consent states** `partial` (save preferences, with `partial_refuses`) and `dismiss` (closed without a
+  choice); the capture waits for the banner before clicking; a blocked consent-record write is recorded
+  (`consent_writes_blocked`) and needs a limitation.
+- **Evidence.** Bodies are read as bytes and decompressed (gzip, deflate, brotli when installed) or
+  Base64-decoded before searching, with `body_read` per request. The card redactor no longer fires on
+  epoch-millisecond timestamps, decimal fractions or ids glued to letters. Screenshots mask the fields a
+  canary was typed into, and a limitation must say what images may show. The capture records the
+  harness's settings and request counts (`harness`).
+- **Validator.** `--write-summary` crashed with `KeyError: 'priority'`; it now fills missing ratings (and
+  reports what it can't compute). A readable CSRF cookie can be `strictly_necessary` with a reason that
+  says so; `constant_in_source` searches .tsx/.jsx/.mjs/.mts and more, pruning dependency directories.
+- **Static scan.** Sink calls are read across their whole argument span (multi-line `Sentry.setUser({`,
+  `mixpanel.people.set({ $email ...`); identify and error-tracker calls count identity keys; small app
+  functions that pass a parameter to a log, analytics or error-tracker call are sinks one level deep
+  (`logSecurityEvent`, `trackMixpanelEvent`; `--log-sinks`/`--analytics-sinks` add more), and `logger.*`,
+  pino and winston are JS/TS log sinks; controlled React inputs take their field from `value={form.x}` or
+  the setter and their label from the `<label>` before them; consent checks near a sink are noted;
+  server code is marked and vendor endpoints called from it are `server_side_send` candidates; Sentry
+  Replay without masking options or a nearby consent check is a candidate; test directories and files
+  are skipped by default; social profile and documentation links are not SDKs; script hosts lose query
+  strings. On the real app (462 files, about 2 s) the scan went from 1 candidate to 70, including the
+  flows a reviewer had found by hand (identity to Sentry and Mixpanel, email in security logs through a
+  wrapper, Mixpanel events from API routes, replay before consent).
+- **Not done:** a library shared by server and client code is not recognised as server code; `@/` path
+  aliases are not resolved; server actions are not modelled; the PSL subset is not the full private
+  section (no network download step); a live CSP report or compressed Replay segment was not exercised
+  against a real site (unit-checked on synthetic input only).

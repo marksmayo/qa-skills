@@ -17,6 +17,7 @@
     "undeclared_processor": {"EU": ["GDPR Art. 13(1)(e)", "GDPR Art. 28", "GDPR Art. 30"], "UK": ["UK GDPR Art. 13(1)(e)", "UK GDPR Art. 28"], "AU": ["APP 1", "APP 5", "APP 8"]},
     "excess_collection": {"EU": ["GDPR Art. 5(1)(c)", "GDPR Art. 25"], "UK": ["UK GDPR Art. 5(1)(c)", "UK GDPR Art. 25"], "AU": ["APP 3"]},
     "cross_border_transfer": {"EU": ["GDPR Art. 44", "GDPR Art. 46"], "UK": ["UK GDPR Art. 44", "UK GDPR Art. 46"], "AU": ["APP 8"]},
+    "first_party_beacon": {"EU": ["GDPR Art. 5(1)(a)", "GDPR Art. 5(1)(c)", "GDPR Art. 6", "ePrivacy Art. 5(3)"], "UK": ["UK GDPR Art. 5(1)(a)", "UK GDPR Art. 5(1)(c)", "UK GDPR Art. 6", "PECR reg. 6"], "AU": ["APP 3", "APP 5"]},
     "missing_usage_description": {"EU": ["GDPR Art. 13"], "UK": ["UK GDPR Art. 13"], "AU": ["APP 5"]}
   },
   "disclaimer": "These are references for a qualified privacy professional, who decides whether there is a breach. This report is not legal advice and does not say the app is or isn't compliant."

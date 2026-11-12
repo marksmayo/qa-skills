@@ -1,0 +1,151 @@
+{
+ "run_status": "not_run",
+ "run_status_reason": "static-only example: the live capture was not run (no browser in the environment), so only the code was read",
+ "capture": null,
+ "static": "privacy-flow-auditor-skill/examples/run/static.json",
+ "inputs": {
+  "flows": null,
+  "lists": null,
+  "declared": "privacy-flow-auditor-skill/examples/clinic-signup/declared_processors.json",
+  "regions": "AU,EU"
+ },
+ "lists": null,
+ "declared": "Harbourside Clinic privacy policy, section 7 (Who we share information with), version 2026-08",
+ "regions": [
+  "AU",
+  "EU"
+ ],
+ "first_party": [],
+ "third_party_mode": null,
+ "blocked_domains": [],
+ "blocked_first_party_writes": [],
+ "csp_attempts": [],
+ "recipients": [],
+ "consent_matrix": [
+  {
+   "state": "before",
+   "status": "not_run",
+   "reason": "static-only example: the live capture was not run (no browser in the environment), so only the code was read"
+  },
+  {
+   "state": "reject",
+   "status": "not_run",
+   "reason": "static-only example: the live capture was not run (no browser in the environment), so only the code was read"
+  },
+  {
+   "state": "accept",
+   "status": "not_run",
+   "reason": "static-only example: the live capture was not run (no browser in the environment), so only the code was read"
+  }
+ ],
+ "candidates": [
+  {
+   "type": "sensitive_category_flow",
+   "file": "serve.py",
+   "line": 62,
+   "sink": "py-logging",
+   "excerpt": "logger.info('new patient signup email=%s dob=%s reason=%s', patient['email'], patient['dob'], patient['reason'])",
+   "fields": [
+    "dob",
+    "email",
+    "reason"
+   ],
+   "categories": [
+    "contact",
+    "date_of_birth",
+    "health"
+   ],
+   "confidence": "pattern",
+   "vendor": null,
+   "id": "S001",
+   "source": "static"
+  },
+  {
+   "type": "personal_data_to_third_party",
+   "file": "site/index.html",
+   "line": 13,
+   "sink": "default-pii",
+   "excerpt": "bugcatch.init({dsn: 'http://ingest.bugcatch.test:8153/1', sendDefaultPii: false, beforeSend: siteScrub});",
+   "fields": [],
+   "categories": [],
+   "confidence": "pattern",
+   "note": "error tracker default PII off",
+   "facts": {
+    "default_pii": false,
+    "scrubber": true
+   },
+   "id": "S002",
+   "source": "static",
+   "also_at": [
+    "site/signup.html:13",
+    "site/welcome.html:13"
+   ]
+  },
+  {
+   "type": "session_replay_unmasked",
+   "file": "site/static/consent.js",
+   "line": 14,
+   "sink": "replay-masking-off",
+   "excerpt": "replayr.init({maskAllInputs: false});",
+   "fields": [],
+   "categories": [],
+   "confidence": "pattern",
+   "note": "input masking switched off in a session-replay configuration",
+   "id": "S003",
+   "source": "static"
+  },
+  {
+   "type": "insecure_storage",
+   "file": "site/static/signup.js",
+   "line": 45,
+   "sink": "local-storage",
+   "excerpt": "localStorage.setItem('signup_email', value);",
+   "fields": [
+    "email"
+   ],
+   "categories": [
+    "contact"
+   ],
+   "confidence": "pattern",
+   "vendor": null,
+   "id": "S004",
+   "source": "static"
+  },
+  {
+   "type": "personal_data_to_third_party",
+   "file": "site/static/signup.js",
+   "line": 47,
+   "sink": "generic-track",
+   "excerpt": "adnetic.track('lead', {em: sha256(value)});",
+   "fields": [
+    "email"
+   ],
+   "categories": [
+    "contact"
+   ],
+   "confidence": "pattern",
+   "vendor": null,
+   "consent_check_nearby": false,
+   "id": "S005",
+   "source": "static"
+  },
+  {
+   "type": "personal_data_to_third_party",
+   "file": "site/static/welcome.js",
+   "line": 5,
+   "sink": "generic-identify",
+   "excerpt": "chatterbox.identify({email: email});",
+   "fields": [
+    "email"
+   ],
+   "categories": [
+    "contact"
+   ],
+   "confidence": "pattern",
+   "vendor": null,
+   "consent_check_nearby": false,
+   "id": "S006",
+   "source": "static"
+  }
+ ]
+}

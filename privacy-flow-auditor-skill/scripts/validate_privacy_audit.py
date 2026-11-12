@@ -3,6 +3,7 @@
 
     python validate_privacy_audit.py audit.json --candidates run/candidates.json --capture run/capture.json
         --canaries run/canaries.json [--evidence run] [--repo app] [--recompute] [--write-summary]
+    python validate_privacy_audit.py audit.json --candidates run/candidates.json [--repo app] [--recompute]   # static only
 
 Fails when: any output or evidence file holds something that looks like personal data (an email address, a
 phone or card number, a canary value outside canaries.json) or a secret; a transfer finding has neither a
@@ -12,16 +13,31 @@ above pattern, or a pattern finding is P0; a consent-state claim names a state t
 capture doesn't show it; a legal reference list differs from data/provisions.json; a candidate isn't triaged
 exactly once, or a dismissal isn't supported by its facts; the headline counts differ; a consent state that
 wasn't tested is summarised as a list (it must be null, listed in states_not_tested, and the statement must say
-it wasn't tested rather than "none"); requests were blocked in the browser and the limitations don't say so; or
-any text says the app is compliant. --recompute re-runs merge_candidates.py from the recorded inputs and compares.
+it wasn't tested rather than "none"); requests were blocked in the browser and the limitations don't say so; the
+consent choice's own record was blocked and no limitation says so; screenshots are in the evidence and no
+limitation says what they may show; or any text says the app is compliant.
+
+run_status (complete, partial or not_run, with run_status_reason) must equal the candidates file's. A not_run
+audit (merge_candidates.py without --capture) needs no capture or canaries; it must test no consent state, and
+it fails on anything that depends on the browser run: an observed finding, a captured request as evidence,
+consent states on a finding, live candidates, recipients, or a statement that the run found nothing or that
+consent is respected.
+
+Findings found by reading the code rather than from a candidate set "source": "agent" and carry "basis": a list of
+{"file", "line", "excerpt"} (re-read with --repo: the excerpt must be on that line) or {"evidence": path} (a file
+in --evidence). They are at most traced, and never observed without runtime evidence.
+
+--write-summary fills the computed fields (headline counts and states; each finding's sensitivity, flow, score,
+priority, floor and cap when they are missing) and writes the audit back. --recompute re-runs
+merge_candidates.py from the recorded inputs and compares.
 """
 from __future__ import annotations
-import argparse, json, re, subprocess, sys, tempfile
+import argparse, json, os, re, subprocess, sys, tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from match_canaries import EMAIL, PHONE_RX, CARD, luhn, encodings  # noqa: E402
+from match_canaries import EMAIL, PHONE_RX, CARD, card_like, encodings  # noqa: E402
 
 DATA = HERE.parent / 'data'
 CATS = json.loads((DATA / 'categories.json').read_text(encoding='utf-8'))
@@ -32,9 +48,18 @@ FLOW = {'undeclared_third_party': 3, 'before_consent': 3, 'after_reject': 3, 'de
 TRANSFER = {'personal_data_to_third_party', 'session_replay_unmasked', 'undeclared_processor', 'cross_border_transfer',
             'tracking_before_consent', 'tracking_after_reject'}
 JUDGMENT = {'excess_collection'}
-DISMISS = {'strictly_necessary', 'functional_no_identifier', 'constant_in_source', 'pii_disabled', 'duplicate', 'false_match', 'not_personal_data'}
+DISMISS = {'strictly_necessary', 'functional_no_identifier', 'constant_in_source', 'pii_disabled', 'duplicate', 'false_match',
+           'not_personal_data', 'random_per_load_id'}
 BANNED = re.compile(r'\b(is|are|fully|now|be)\s+compliant\b|\bGDPR[- ]ready\b|\bmeets the APPs\b|\bcompliant with\b|\bprivacy[- ]safe\b', re.I)
 SECRET = re.compile(r'AKIA[0-9A-Z]{16}|sk_live_[0-9a-zA-Z]{8,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|xox[bp]-[0-9A-Za-z-]{10,}|ghp_[0-9A-Za-z]{30,}')
+CSRF_COOKIE = re.compile(r'csrf|xsrf', re.I)
+# a statement that only a browser run could support, in an audit whose browser run did not happen
+RUNTIME_CLAIM = re.compile(r'\b(no|none of the|zero)\s+(third[- ]part(y|ies)|trackers?|tracking|requests?|vendors?|canar(y|ies)|cookies?)\b'
+                           r'|\bconsent (is|was) (respected|honou?red)\b|\bnothing (is|was) sent\b|\b(capture|live run|browser run) (showed|found|confirmed)\b', re.I)
+SKIP_DIRS = {'node_modules', '.git', '.next', '.nuxt', 'dist', 'build', 'out', 'coverage', '.venv', 'venv', '__pycache__', '.turbo', '.cache'}
+SOURCE_SUFFIXES = ('.js', '.mjs', '.cjs', '.jsx', '.ts', '.mts', '.cts', '.tsx', '.html', '.htm', '.py', '.vue', '.svelte', '.rb', '.json')
+IMAGES = ('.png', '.jpg', '.jpeg', '.webp')
+RATING = ('sensitivity', 'flow', 'score', 'priority', 'floor', 'cap')
 
 
 def rate(f: dict) -> tuple[int, int, int, int]:
@@ -62,6 +87,21 @@ def expected(f: dict) -> tuple[str, str | None, str | None]:
     return p, floor, cap
 
 
+def ratable(f: dict) -> bool:
+    return (f.get('flow_basis') in FLOW and f.get('reach') in (1, 2, 3) and isinstance(f.get('categories'), list)
+            and all(c in CATS['categories'] for c in f['categories']) and f.get('confidence') in ('observed', 'traced', 'pattern'))
+
+
+def fill_ratings(f: dict) -> None:
+    """--write-summary: the computed rating fields, where the finding leaves them out."""
+    if not ratable(f) or all(k in f for k in RATING):
+        return
+    sens, flow, _, score = rate(f)
+    p, floor, cap = expected(f)
+    for k, v in zip(RATING, (sens, flow, score, p, floor, cap)):
+        f.setdefault(k, v)
+
+
 def pii_problems(text: str, where: str, canary_values: list[str]) -> list[str]:
     out = []
     for m in EMAIL.finditer(text):
@@ -69,7 +109,7 @@ def pii_problems(text: str, where: str, canary_values: list[str]) -> list[str]:
     for m in PHONE_RX.finditer(text):
         out.append(f'{where}: phone-like value')
     for m in CARD.finditer(text):
-        if luhn(re.sub(r'\D', '', m.group(0))):
+        if card_like(text, m):
             out.append(f'{where}: card-number-like value')
     low = text.lower()
     for v in canary_values:
@@ -83,7 +123,7 @@ def pii_problems(text: str, where: str, canary_values: list[str]) -> list[str]:
 def summary(rep: dict, cands: dict) -> dict:
     """Headline facts recomputed from the findings and the consent matrix. A state that wasn't tested has no list
     of third parties (null), never an empty one, and is named in states_not_tested with its reason."""
-    counts = {p: sum(1 for f in rep['findings'] if f['priority'] == p) for p in ORDER}
+    counts = {p: sum(1 for f in rep['findings'] if f.get('priority') == p) for p in ORDER}
     m = {r['state']: r for r in cands['consent_matrix']}
 
     def third(s):
@@ -92,21 +132,30 @@ def summary(rep: dict, cands: dict) -> dict:
     not_tested = {r['state']: (r.get('reason') or r['status']) for r in cands['consent_matrix'] if r['status'] != 'tested'}
     return {'counts': counts, 'third_parties_before_consent': third('before'), 'third_parties_after_reject': third('reject'),
             'states_not_tested': not_tested,
-            'special_category_flows': sorted(f['id'] for f in rep['findings'] if any(c in CATS['special'] for c in f['categories']))}
+            'special_category_flows': sorted(f['id'] for f in rep['findings'] if any(c in CATS['special'] for c in f.get('categories') or []))}
 
 
-NOT_TESTED = re.compile(r"\b(not tested|untested|could ?n[o']t be tested|was ?n[o']t tested|were ?n[o']t tested|not run)\b", re.I)
+NOT_TESTED = re.compile(r"\b(not tested|untested|could ?n[o']t be tested|was ?n[o']t tested|were ?n[o']t tested|not run|did ?n[o']t run|was ?n[o']t run)\b", re.I)
 NONE_CLAIM = {'reject': re.compile(r'(after|following|once)\W+(the\W+)?(user\W+)?(rejects?|rejection|reject all|"reject all")[^.;]{0,40}?\b(none|nothing|no (third|tracking|request|vendor))', re.I),
               'before': re.compile(r'before\W+(any\W+|a\W+)?(consent|choice)[^.;]{0,40}?\b(none|nothing|no (third|tracking|request|vendor))', re.I),
               'accept': re.compile(r'(after|following|once)\W+(the\W+)?(user\W+)?(accepts?|acceptance|accept all|"accept all")[^.;]{0,40}?\b(none|nothing|no (third|tracking|request|vendor))', re.I)}
+
+
+def walk_sources(repo: Path):
+    """Source files under repo, pruning dependency and build directories before descending."""
+    for root, dirs, names in os.walk(repo):
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+        for n in names:
+            if n.endswith(SOURCE_SUFFIXES):
+                yield Path(root) / n
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('audit', type=Path)
     ap.add_argument('--candidates', type=Path, required=True)
-    ap.add_argument('--capture', type=Path, required=True)
-    ap.add_argument('--canaries', type=Path, required=True)
+    ap.add_argument('--capture', type=Path, help='required unless the candidates file is static only (run_status not_run)')
+    ap.add_argument('--canaries', type=Path, help='required with --capture')
     ap.add_argument('--evidence', type=Path)
     ap.add_argument('--repo', type=Path)
     ap.add_argument('--recompute', action='store_true')
@@ -114,8 +163,12 @@ def main() -> int:
     a = ap.parse_args()
     rep = json.loads(a.audit.read_text(encoding='utf-8'))
     cfile = json.loads(a.candidates.read_text(encoding='utf-8'))
-    cap = json.loads(a.capture.read_text(encoding='utf-8'))
-    canaries = json.loads(a.canaries.read_text(encoding='utf-8'))
+    run_status = cfile.get('run_status') or 'complete'
+    static_only = run_status == 'not_run'
+    if not static_only and not (a.capture and a.canaries):
+        ap.error('this run has a live capture: pass --capture and --canaries')
+    cap = json.loads(a.capture.read_text(encoding='utf-8')) if a.capture else {'states': []}
+    canaries = json.loads(a.canaries.read_text(encoding='utf-8')) if a.canaries else None
     cands = {c['id']: c for c in cfile['candidates']}
     errs: list[str] = []
     e = errs.append
@@ -125,20 +178,39 @@ def main() -> int:
             e(f'missing top-level field {k}')
     if errs:
         print('\n'.join(errs)); return 1
+    if a.write_summary:
+        for f in rep['findings']:
+            fill_ratings(f)
+
+    # --- run status
+    if rep.get('run_status') != run_status:
+        e(f'run_status {rep.get("run_status")!r} should be {run_status!r} (from the candidates file)')
+    if run_status != 'complete' and not (rep.get('run_status_reason') or '').strip():
+        e(f'run_status {run_status}: run_status_reason must say why')
 
     # --- personal data and secrets anywhere in the outputs
-    values = sorted({v for f, c in canaries['fields'].items() for k, v in encodings(f, c['value']).items()
+    values = sorted({v for f, c in (canaries or {'fields': {}})['fields'].items() for k, v in encodings(f, c['value']).items()
                      if k in ('raw', 'url', 'url_plus', 'url_double', 'base64', 'e164', 'digits')}, key=len, reverse=True)
-    files = [a.audit, a.candidates, a.capture]
+    files = [a.audit, a.candidates] + ([a.capture] if a.capture else [])
+    images = []
     if a.evidence:
-        files += [p for p in a.evidence.rglob('*') if p.is_file() and p.suffix in ('.json', '.txt', '.md', '.log', '.har', '.csv')
-                  and p.resolve() != a.canaries.resolve()]
+        for p in a.evidence.rglob('*'):
+            if not p.is_file() or (a.canaries and p.resolve() == a.canaries.resolve()):
+                continue
+            if p.suffix in ('.json', '.txt', '.md', '.log', '.har', '.csv'):
+                files.append(p)
+            elif p.suffix.lower() in IMAGES:
+                images.append(p)
     for p in dict.fromkeys(files):
         errs += pii_problems(p.read_text(encoding='utf-8', errors='replace'), p.name, values)
-    if not canaries.get('synthetic'):
-        e('the canary set is not marked synthetic')
-    if cap.get('canary_set') != canaries['id'] or rep['metadata'].get('canary_set') != canaries['id']:
-        e('canary set id differs between the audit, the capture and canaries.json')
+    if canaries is not None:
+        if not canaries.get('synthetic'):
+            e('the canary set is not marked synthetic')
+        if cap.get('canary_set') != canaries['id'] or rep['metadata'].get('canary_set') != canaries['id']:
+            e('canary set id differs between the audit, the capture and canaries.json')
+    if images and not any(re.search(r'screenshot', x, re.I) and re.search(r'canar|typed|personal', x, re.I) for x in rep['limitations']):
+        e(f'{len(images)} screenshot(s) are in the evidence, but no limitation says what they may show (masked canary fields; a canary '
+          'the page echoes elsewhere can still appear) - images are not scanned for personal data')
 
     # --- scope and states
     tested = {s['state'] for s in cap['states'] if s['status'] == 'tested'}
@@ -151,22 +223,30 @@ def main() -> int:
     regions = rep['scope'].get('regions') or []
     if sorted(regions) != sorted(cfile['regions']):
         e(f'scope.regions {regions} differ from the regions the candidates were built with {cfile["regions"]}')
+    if static_only:
+        if any(c.get('source') == 'live' for c in cfile['candidates']) or cfile['recipients']:
+            e('a not_run candidates file has live candidates or recipients')
+        if any(r['status'] != 'not_run' for r in cfile['consent_matrix']):
+            e('a not_run audit must have every consent state not_run')
 
     lists_vendors = {r['vendor'] for r in cfile['recipients'] if r.get('vendor')}
     static_vendors = {c.get('vendor') for c in cfile['candidates'] if c.get('source') == 'static' and c.get('vendor')}
+    static_vendors |= {c.get('vendor') for c in cfile['candidates'] if c.get('subtype') == 'first_party_proxy' and c.get('vendor')}
 
     # --- findings
     seen_ids = set()
     for f in rep['findings']:
         fid = f.get('id', '?')
+        agent = f.get('source') == 'agent'
         if fid in seen_ids:
             e(f'{fid}: duplicate id')
         seen_ids.add(fid)
+        n_err = len(errs)
         for k in ('type', 'title', 'categories', 'flow_basis', 'reach', 'reach_source', 'confidence', 'evidence', 'references', 'fix', 'verification', 'candidates'):
             if k not in f or f[k] in (None, '', []):
-                if not (k == 'categories' and f.get('type', '').startswith('tracking_')):
+                if not (k == 'categories' and f.get('type', '').startswith(('tracking_', 'first_party_beacon'))) and not (k == 'candidates' and agent and 'candidates' in f):
                     e(f'{fid}: missing {k}')
-        if errs and fid in errs[-1]:
+        if len(errs) > n_err:
             continue
         for c in f['categories']:
             if c not in CATS['categories']:
@@ -180,27 +260,62 @@ def main() -> int:
         if f['reach'] not in (1, 2, 3):
             e(f'{fid}: reach {f["reach"]}')
             continue
+        if f['confidence'] not in ('observed', 'traced', 'pattern'):
+            e(f'{fid}: confidence {f["confidence"]!r}')
+            continue
         sens, flow, reach, score = rate(f)
         if (f.get('sensitivity'), f.get('flow'), f.get('score')) != (sens, flow, score):
             e(f'{fid}: sensitivity/flow/score {f.get("sensitivity")}/{f.get("flow")}/{f.get("score")} should be {sens}/{flow}/{score}')
         p, floor, cap_ = expected(f)
         if f.get('priority') != p or f.get('floor') != floor or f.get('cap') != cap_:
             e(f'{fid}: priority/floor/cap {f.get("priority")}/{f.get("floor")}/{f.get("cap")} should be {p}/{floor}/{cap_}')
-        if f['confidence'] not in ('observed', 'traced', 'pattern'):
-            e(f'{fid}: confidence {f["confidence"]!r}')
         if f['type'] in JUDGMENT and f['confidence'] != 'pattern':
             e(f'{fid}: agent judgment ({f["type"]}) must be pattern confidence')
+        if static_only:
+            if f['confidence'] == 'observed':
+                e(f'{fid}: observed, but the browser run did not happen (run_status not_run)')
+            if f['evidence'].get('requests'):
+                e(f'{fid}: cites captured requests, but the browser run did not happen')
+            if f.get('consent_states'):
+                e(f'{fid}: names consent states {f["consent_states"]}, but none was tested (run_status not_run)')
         own = [cands.get(c) for c in f['candidates']]
         if None in own:
             e(f'{fid}: names a candidate that is not in the candidates file'); continue
-        if f['type'] not in {c['type'] for c in own}:
-            e(f'{fid}: type {f["type"]} is not the type of any of its candidates')
+        if agent:
+            basis = f.get('basis')
+            if not isinstance(basis, list) or not basis:
+                e(f'{fid}: found by review (source agent) without a basis'); continue
+            runtime = False
+            for b in basis:
+                if 'evidence' in b:
+                    runtime = True
+                    root = a.evidence or a.audit.parent
+                    if not (root / b['evidence']).is_file() and not (a.audit.parent / b['evidence']).is_file():
+                        e(f'{fid}: basis evidence {b["evidence"]} does not exist')
+                elif {'file', 'line', 'excerpt'} <= set(b):
+                    if a.repo:
+                        p_ = a.repo / b['file']
+                        lines = p_.read_text(encoding='utf-8', errors='replace').splitlines() if p_.is_file() else []
+                        if not isinstance(b['line'], int) or not 1 <= b['line'] <= len(lines):
+                            e(f'{fid}: basis {b["file"]}:{b["line"]} not found')
+                        elif ' '.join(b['excerpt'].split()) not in ' '.join(lines[b['line'] - 1].split()):
+                            e(f'{fid}: basis excerpt is not on {b["file"]}:{b["line"]}')
+                else:
+                    e(f'{fid}: each basis item needs file, line and excerpt, or evidence')
+            if f['confidence'] == 'observed' and not (runtime and not static_only):
+                e(f'{fid}: found by review, observed only with runtime evidence from a browser run')
+            if f['type'] in TRANSFER and not own and not f['evidence'].get('code_path') and not runtime:
+                e(f'{fid}: a transfer finding needs a captured request or a code path')
+        else:
+            if f['type'] not in {c['type'] for c in own}:
+                e(f'{fid}: type {f["type"]} is not the type of any of its candidates')
         live = [c for c in own if c['source'] == 'live']
-        if f['confidence'] == 'observed' and not live:
+        static_own = [c for c in own if c['source'] == 'static']
+        if f['confidence'] == 'observed' and not live and not agent:
             e(f'{fid}: observed without a live candidate')
-        if f['confidence'] == 'traced' and not f['evidence'].get('code_path'):
+        if f['confidence'] == 'traced' and not f['evidence'].get('code_path') and not (agent and any('file' in b for b in f.get('basis') or [])):
             e(f'{fid}: traced without a code path')
-        if f['type'] in TRANSFER and not live and not f['evidence'].get('code_path'):
+        if f['type'] in TRANSFER and not agent and not live and not f['evidence'].get('code_path'):
             e(f'{fid}: a transfer finding needs a captured request or a code path')
         cand_fields = sorted({x for c in own for x in c.get('fields', [])})
         cand_cats = sorted({x for c in own for x in c.get('categories', [])})
@@ -221,7 +336,9 @@ def main() -> int:
         live_states = {s for c in live for s in (c.get('states') or ([c['state']] if c.get('state') else []))}
         if states and live and not set(states) <= live_states:
             e(f'{fid}: consent states {states} are not all shown by its candidates ({sorted(live_states)})')
-        if f['flow_basis'] == 'before_consent' and not any(c['type'] == 'tracking_before_consent' or 'before' in (c.get('states') or []) for c in live):
+        static_before = f['confidence'] == 'pattern' and any(c['type'] == 'tracking_before_consent' for c in static_own)
+        if f['flow_basis'] == 'before_consent' and not static_before and not any(
+                c['type'] == 'tracking_before_consent' or 'before' in (c.get('states') or []) or c.get('before_choice') for c in live):
             e(f'{fid}: flow_basis before_consent, but no candidate shows the before state')
         if f['flow_basis'] == 'after_reject' and not any(c['type'] == 'tracking_after_reject' or 'reject' in (c.get('states') or []) for c in live):
             e(f'{fid}: flow_basis after_reject, but no candidate shows the reject state')
@@ -233,7 +350,7 @@ def main() -> int:
         if a.repo:
             for cp in f['evidence'].get('code_path', []):
                 p_ = a.repo / cp['file']
-                if not p_.exists() or cp['line'] > len(p_.read_text(encoding='utf-8').splitlines()):
+                if not p_.exists() or cp['line'] > len(p_.read_text(encoding='utf-8', errors='replace').splitlines()):
                     e(f'{fid}: code path {cp["file"]}:{cp["line"]} not found')
         for r in f['evidence'].get('requests', []):
             st = next((s for s in cap['states'] if s['state'] == r['state']), None)
@@ -265,22 +382,32 @@ def main() -> int:
                 e(f'{cid}: a {c["type"]} candidate or a special category cannot be recorded as inventory only')
         elif d == 'dismissed':
             code = t.get('reason_code')
+            facts = c.get('facts') or {}
             if code not in DISMISS or not t.get('reason'):
                 e(f'{cid}: dismissal needs a reason_code from {sorted(DISMISS)} and a reason')
-            if code == 'strictly_necessary' and not (c.get('recipient') == 'first_party' and (c.get('cookie_flags') or {}).get('http_only')):
-                e(f'{cid}: strictly_necessary needs a first-party HttpOnly cookie')
+            if code == 'strictly_necessary':
+                flags = c.get('cookie_flags') or {}
+                csrf = bool(CSRF_COOKIE.search(c.get('cookie') or '')) and re.search(r'csrf|xsrf|double[- ]submit', t.get('reason', ''), re.I)
+                if not (c.get('recipient') == 'first_party' and (flags.get('http_only') or csrf)):
+                    e(f'{cid}: strictly_necessary needs a first-party HttpOnly cookie, or a first-party CSRF cookie (name with csrf/xsrf, '
+                      'readable by design for a double-submit check) whose reason says so')
             if code == 'functional_no_identifier':
                 st = next((s for s in cap['states'] if s['state'] == c.get('state')), {'requests': []})
                 hit = any(r['matches'] for r in st['requests'] if (r['host'] or '').endswith(c.get('domain', '?')))
                 if c.get('cookies') or c.get('vendor_category') in ('analytics', 'advertising', 'session_replay') or hit:
                     e(f'{cid}: functional_no_identifier, but the candidate has cookies, a tracking category or carried a canary')
             if code == 'constant_in_source':
-                found = a.repo and any(c.get('value', '\0') in p.read_text(encoding='utf-8', errors='replace')
-                                       for p in a.repo.rglob('*') if p.is_file() and p.suffix in ('.js', '.html', '.py', '.ts'))
+                found = a.repo and any(c.get('value', '\0') in p.read_text(encoding='utf-8', errors='replace') for p in walk_sources(a.repo))
                 if not found:
                     e(f'{cid}: constant_in_source, but the value was not found in the repo (pass --repo)')
-            if code == 'pii_disabled' and (c.get('facts') or {}).get('default_pii') is not False:
-                e(f'{cid}: pii_disabled, but the candidate does not show default PII off')
+            if code == 'random_per_load_id':
+                per_load = c.get('subtype') == 'possible_hashed_identifier' and not facts.get('value_in_several_states') and (
+                    facts.get('differs_every_request') or (facts.get('known_sdk_id_key') and facts.get('distinct_values', 0) > 1))
+                if not per_load:
+                    e(f'{cid}: random_per_load_id needs hex values that differ from request to request and never recur in another '
+                      'consent state (a fresh browser context): the candidate\'s facts do not show that')
+            if code == 'pii_disabled' and facts.get('default_pii') is not False and facts.get('masked_by_default') is not True:
+                e(f'{cid}: pii_disabled, but the candidate does not show default PII off or SDK-default masking')
             if any(x in CATS['special'] for x in c.get('categories', [])) and code != 'false_match':
                 e(f'{cid}: a special-category candidate can only be dismissed as a false match')
         else:
@@ -289,7 +416,7 @@ def main() -> int:
     if missing:
         e(f'candidates not triaged: {missing}')
     for f in rep['findings']:
-        for cid in f['candidates']:
+        for cid in f.get('candidates') or []:
             if (seen.get(cid) or {}).get('finding') != f['id']:
                 e(f'{f["id"]}: lists {cid}, but triage does not promote it there')
 
@@ -317,19 +444,36 @@ def main() -> int:
         if rep['headline'].get(k) != v:
             e(f'headline.{k} {rep["headline"].get(k)!r} should be {v!r}')
     untested = [r['state'] for r in cfile['consent_matrix'] if r['status'] != 'tested']
-    if untested and not any(s in ' '.join(rep['limitations']) for s in untested):
+    if untested and not static_only and not any(s in ' '.join(rep['limitations']) for s in untested):
         e(f'consent states {untested} were not tested, but the limitations do not say so')
     statement = rep['headline'].get('statement', '')
     if untested and not NOT_TESTED.search(statement):
         e(f'headline.statement must say that {untested} {"was" if len(untested) == 1 else "were"} not tested')
     for s_ in untested:
-        mm = NONE_CLAIM[s_].search(statement)
+        mm = NONE_CLAIM.get(s_) and NONE_CLAIM[s_].search(statement)
         if mm:
             e(f'headline.statement summarises the untested {s_} state as {mm.group(0)!r}: say it was not tested')
+    if static_only:
+        if not any(re.search(r'not run|did ?n[o\']t run|static only|no (live|browser) (capture|run)', x, re.I) for x in rep['limitations']):
+            e('run_status not_run: a limitation must say the browser capture was not run (consent states, live requests and canaries untested)')
+        for where, text in [('headline.statement', statement)] + [(f'{f["id"]} title', f.get('title', '')) for f in rep['findings']]:
+            mm = RUNTIME_CLAIM.search(text)
+            if mm:
+                e(f'{where} says {mm.group(0)!r}, which only a browser run could show; the run did not happen (not_run)')
     # requests the browser blocked never reached the vendor: the report must say what that hides
     blocked = cfile.get('blocked_domains') or sorted({r['host'] for s_ in cap['states'] for r in s_.get('requests', []) if r.get('blocked') == 'third_party'})
     if blocked and not any(re.search(r'\bblock', x, re.I) and re.search(r'third[- ]part|vendor', x, re.I) for x in rep['limitations']):
         e(f'requests to {blocked[:5]} were blocked in the browser, but no limitation says so (blocked vendors set no cookies and send no follow-up hits)')
+    if any(r.get('consent_writes_blocked') for r in cfile['consent_matrix']) and not any(
+            re.search(r'consent', x, re.I) and re.search(r'block|not (recorded|sent|stored)', x, re.I) for x in rep['limitations']):
+        e('the consent choice triggered a write the harness blocked (the site\'s own record of the choice was never made), '
+          'but no limitation says so')
+    if cfile.get('blocked_first_party_writes') and not any(re.search(r'first[- ]party', x, re.I) and re.search(r'block|write|POST', x, re.I)
+                                                           for x in rep['limitations']):
+        e('first-party writes were blocked (telemetry, CSP reports, consent records), but no limitation says what that hides')
+    if (cap.get('harness') or {}).get('bypass_csp') and not any(re.search(r'\bCSP\b|Content[- ]Security[- ]Policy', x, re.I) for x in rep['limitations']):
+        e('the capture ran with the site\'s Content Security Policy bypassed (bypass_csp), but no limitation says so: a vendor call '
+          'the CSP would stop could appear sent, and CSP-blocked attempts were not seen')
     for r_ in rep['recipients']:
         if r_.get('blocked_requests') and r_['blocked_requests'] > r_.get('requests', r_['blocked_requests']):
             e(f'recipient {r_["domain"]}: more blocked requests than requests')
@@ -338,8 +482,15 @@ def main() -> int:
         inp = cfile['inputs']
         with tempfile.TemporaryDirectory() as d:
             out = Path(d) / 'c.json'
-            cmd = [sys.executable, str(HERE / 'merge_candidates.py'), '--capture', cfile['capture'], '--flows', inp['flows'], '--lists', inp['lists'],
-                   '--regions', inp['regions'], '--out', str(out)]
+            cmd = [sys.executable, str(HERE / 'merge_candidates.py'), '--regions', inp['regions'], '--out', str(out)]
+            if cfile.get('capture'):
+                cmd += ['--capture', cfile['capture'], '--flows', inp['flows'], '--lists', inp['lists']]
+            else:
+                cmd += ['--run-status-reason', cfile.get('run_status_reason') or '']
+                if inp.get('lists'):
+                    cmd += ['--lists', inp['lists']]
+                if inp.get('flows'):
+                    cmd += ['--flows', inp['flows']]
             if cfile.get('static'):
                 cmd += ['--static', cfile['static']]
             if inp.get('declared'):
@@ -349,8 +500,8 @@ def main() -> int:
                 e(f'recompute failed: {r.stderr.strip()[-300:]}')
             else:
                 again = json.loads(out.read_text(encoding='utf-8'))
-                for k in ('candidates', 'recipients', 'consent_matrix'):
-                    if again[k] != cfile[k]:
+                for k in ('candidates', 'recipients', 'consent_matrix', 'run_status'):
+                    if again.get(k) != cfile.get(k):
                         e(f'recompute: {k} differ from the candidates file')
 
     if errs:
@@ -359,8 +510,8 @@ def main() -> int:
             print('  -', x)
         return 1
     c = want['counts']
-    print(f'{a.audit}: valid. {len(rep["findings"])} finding(s) (P0 {c["P0"]}, P1 {c["P1"]}, P2 {c["P2"]}, P3 {c["P3"]}); {len(seen)} candidate(s) triaged; '
-          f'no personal data or secrets in {len(dict.fromkeys(files))} file(s)')
+    print(f'{a.audit}: valid ({run_status}). {len(rep["findings"])} finding(s) (P0 {c["P0"]}, P1 {c["P1"]}, P2 {c["P2"]}, P3 {c["P3"]}); '
+          f'{len(seen)} candidate(s) triaged; no personal data or secrets in {len(dict.fromkeys(files))} file(s)')
     return 0
 
 
