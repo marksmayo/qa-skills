@@ -182,8 +182,9 @@ python scripts/normalize_results.py --scope <run>/scope.json --repo <repo> --bui
 For Stryker, covering tests and `killed_by` are test names from the report's `testFiles`
 (`src/__tests__/x.test.ts::describe > title`, the same form as Vitest's JUnit ids), never
 Stryker's numeric ids. Each mutant's `function` comes from `ast` for Python and from
-`ts_scan.py` (a light JS/TS scanner) otherwise, so TypeScript findings name their function and
-proximity can be 2.
+the shared `diff_scope.py` scanner otherwise (the same function ranges as `scope.json`), so
+TypeScript findings name their function; `ts_scan.py` finds JS/TS tests by name for proximity,
+which can then be 2.
 
 It drops mutants outside the scope (and counts them), maps operators to the common set in
 `data/operators.json`, and assigns the ids the report uses (B1.., M1.., S1..). It exits non-zero

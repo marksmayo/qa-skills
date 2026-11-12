@@ -20,7 +20,7 @@ engine_status, covering_tests and killed_by.
   embedded test source shows the describe chain), never Stryker's numeric ids. The version
   comes from `framework`. --stryker-run (written by `run_engine.py stryker`) supplies the command,
   config source and the before/after tree check; without it tree_changed stays null. JS/TS
-  mutants get their function from ts_scan.py.
+  mutants get their function from the shared diff_scope.functions() (the scanner scope.json uses).
 - --coverage (builtin_mutator.py --coverage-only) gives per-test line coverage. mutmut only knows
   which tests call a function, so a mutmut mutant that survived on a line no test executed
   becomes no_coverage, marked reclassified_from "survived".
@@ -32,6 +32,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+import diff_scope  # noqa: E402
 import ts_scan  # noqa: E402
 OPS = json.loads((HERE.parent / 'data' / 'operators.json').read_text(encoding='utf-8'))
 CMP = {'<', '<=', '>', '>=', '==', '!=', 'is', 'is not', 'in', 'not in', '===', '!=='}
@@ -154,7 +155,7 @@ def enclosing_function(tree: ast.AST, line: int) -> str | None:
 
 
 class Sources:
-    """File text, lines, and a function finder: Python's ast, or ts_scan for JS/TS."""
+    """File text, lines, and a function finder: Python's ast, or diff_scope's scanner for other languages."""
     def __init__(self, repo: Path):
         self.repo, self.cache, self.funcs = repo, {}, {}
 
@@ -175,11 +176,12 @@ class Sources:
         text, _, tree = self.get(rel)
         if tree is not None:
             return enclosing_function(tree, line)
-        if text is not None and ts_scan.is_js(rel):
-            if rel not in self.funcs:
-                self.funcs[rel] = ts_scan.functions(text)
-            return ts_scan.enclosing(self.funcs[rel], line)
-        return None
+        if text is None or rel.endswith('.py'):
+            return None
+        if rel not in self.funcs:
+            self.funcs[rel] = diff_scope.functions(rel, text)[0]   # the shared JS/TS scanner, as in scope.json
+        hold = [f for f in self.funcs[rel] if f['start'] <= line <= f['end']]
+        return min(hold, key=lambda f: f['end'] - f['start'])['qualname'] if hold else None
 
 
 def rel_to(root: str | None, path: str) -> str:

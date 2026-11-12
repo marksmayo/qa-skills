@@ -96,8 +96,8 @@ Suspects are tests that failed once, tests history says flaked, and tests with a
 a slow suite, repeat only the suspects and say how many tests were never repeated.
 
 Use the repo's own test command, not just the preset's default. If `npm test` sets `TZ=...`, adds
-`--configLoader native` or other flags (`detect_conventions.py` shows the resolved script), pass
-the same with `--cmd` and `--env`, or tests that depend on them fail every run and look like real
+`--configLoader native` or other flags (`detect_conventions.py` shows the resolved script), use
+`--npm-script test` or pass the same with `--runner-args` and `--env`, or tests that depend on them fail every run and look like real
 failures. Say in `metadata.run_command` what you ran.
 
 Keep populations apart: a suspect-only repeat runs far fewer files than the full suite, so the
@@ -154,9 +154,9 @@ than counting a run that varied nothing.
   effects show between tests in one file, or across files only with `isolate: false` or
   `--no-isolate`; check the config before reading a shuffle result. `--isolate` here runs each
   given test (or file) in its own process.
-- **Ids.** Vitest and Jest JUnit ids are `file::Describe > Inner > title`. Run one test with the
-  file and `-t <title>` (a name pattern), not the id as a positional argument, which Vitest reads
-  as a file filter.
+- **Ids.** Vitest and Jest JUnit ids are `file::Describe > Inner > title`. `run_tests.py --tests`
+  takes these ids and reruns each as its file plus a `-t` name pattern (a bare id passed to
+  Vitest would be read as a file filter).
 - **Timeouts under load.** A test that times out only with many workers (passes serially, fails
   with the default pool or under `--cpu-load`) is `resource_contention` (or `async_wait` if it
   waits on time). Fix the work, not the timer: warm heavy imports in `beforeAll` with its own

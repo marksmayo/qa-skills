@@ -272,11 +272,11 @@ Agreed with the user before the build.
     hashed before and after, and the code hash it ran on is recorded; the validator rejects an
     engine whose code hash differs from the baseline's (optional `code_hash` on the engine
     record).
-  - **TypeScript functions.** `ts_scan.py` (new, in this skill) finds JS/TS function ranges:
-    multi-line parameter lists with object type literals, return types with braces, arrow
-    functions assigned to names, class methods; `new Error(...)` and type-literal members are
-    not functions. Mutants now name their function, and proximity reads JS/TS tests by describe
-    chain and title, so TypeScript findings can reach proximity 2 (and P0). On the real
+  - **TypeScript functions.** Mutants in non-Python files get their function from the shared
+    `diff_scope.functions()` JS/TS scanner (multi-line typed parameters, arrows, methods; no
+    `new Error(`), the same ranges `scope.json` uses. `ts_scan.py` (new, in this skill) finds a
+    JS/TS test by describe chain and title and checks whether its body calls the function, so
+    TypeScript findings can reach proximity 2 (and P0). On the real
     repository 130 of 132 mutants got a function, and proximity was 2 for the promotion-engine
     findings (their tests call the function) and 1 for the URL-safety ones (reached through
     calendar sync).
