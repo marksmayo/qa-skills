@@ -431,6 +431,7 @@ def main() -> int:
         return 2
     t0 = time.monotonic()
     found, creds = scan_tree(root)
+    t_tree = time.monotonic()
     # Low-entropy literals in test files are fixtures: counted and listed apart, not triaged one by one.
     head = [s for s in found if not s['in_test_path'] or real_looking(s)]
     fixtures = [s for s in found if s['in_test_path'] and not real_looking(s)]
@@ -443,6 +444,7 @@ def main() -> int:
     fps_by_path = {path: {s['fingerprint'] for s in head if s['file'] == path} for path in paths}
     by_path = paths_history(root, fps_by_path) if in_git else {p: ('unknown', None) for p in paths}
 
+    t_git = time.monotonic()
     history_status, removed, removed_fixtures, note, coverage = 'not_run', [], [], None, None
     hist: dict = {}
     if args.history:
@@ -487,6 +489,9 @@ def main() -> int:
            'generated_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
            'repository': root.name, 'git': in_git,
            'elapsed_s': round(time.monotonic() - t0, 1),
+           # where the time went: reading the working tree, the per-file git lookups, the history scan
+           'elapsed_breakdown_s': {'tree': round(t_tree - t0, 1), 'git_lookups': round(t_git - t_tree, 1),
+                                   'history': round(time.monotonic() - t_git, 1)},
            'history': {'status': history_status, 'note': note, 'coverage': coverage, 'removed_from_head': removed,
                        'removed_test_fixtures': len(removed_fixtures)},
            'note': 'Values are never written. Rotate any real secret found here, including ones only in history. '
@@ -504,7 +509,8 @@ def main() -> int:
         args.out.write_text(text + '\n', encoding='utf-8')
         print(f'{len(head)} secret(s) at HEAD, {len(fixtures)} test fixture literal(s) set aside, {len(removed)} only in '
               f'history (history: {history_status}), {len(creds)} credential file(s) or reference(s) '
-              f"in {out['elapsed_s']}s -> {args.out}")
+              f"in {out['elapsed_s']}s (tree {out['elapsed_breakdown_s']['tree']}s, git lookups "
+              f"{out['elapsed_breakdown_s']['git_lookups']}s, history {out['elapsed_breakdown_s']['history']}s) -> {args.out}")
         if note:
             print(f'  history: {note}')
     else:
