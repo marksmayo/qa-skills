@@ -466,7 +466,9 @@ def check(d: dict, mutants_file: dict | None, runs: dict | None, proofs: dict | 
                 ok = False
                 continue
             t = r['totals']
-            green = r['exit_code'] == 0 and not t.get('failed') and not t.get('error') and t.get('passed', 0) > 0
+            green = r['exit_code'] == 0 and not r.get('errored') and not t.get('failed') and not t.get('error') and t.get('passed', 0) > 0
+            if r.get('errored'):
+                errs.append(f'baseline: run {rid} errored ({r.get("error") or "the tests did not run"}), so it is no green run')
             ok = ok and green
             if r.get('code_hash') != md['code_hash']:
                 errs.append(f'baseline: run {rid} was on different code (code_hash)')

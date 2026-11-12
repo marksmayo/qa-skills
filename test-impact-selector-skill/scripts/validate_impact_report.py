@@ -283,6 +283,9 @@ def check(rep: dict, selection: dict | None, replay: dict | None, runs: dict | N
         for rid in v['selected_run_ids'] + v['full_run_ids']:
             if rid not in by_id:
                 errs.append(f'verify: run {rid} is not in {v["runs_file"]}')
+            elif by_id[rid].get('errored'):
+                errs.append(f'verify: run {rid} errored ({by_id[rid].get("error") or "the tests did not run"}); '
+                            'an errored run is no evidence that the selection holds')
         outside, inside = set(), set()
         for c in runs['cases']:
             run = by_id.get(c['run_id'])

@@ -381,6 +381,8 @@ def run_test(defn: dict, work: Path, run_dir: Path, label: str, prefix: str, ext
         print(f'run_tests.py recorded no run (exit {res.returncode}):\n{err}', file=sys.stderr)
         return 'none', 'not_run', err
     rid = new[-1]['id']
+    if new[-1].get('errored'):           # crashed or errored: whatever cases it wrote, it is no pass or fail
+        return rid, 'errored', None
     pattern = defn.get('name_pattern') if defn['run_id'] == defn['id'] else None
     return rid, case_status(data['cases'], rid, defn['run_id'].split('::', 1)[1], defn['lang'] == 'python', pattern), None
 

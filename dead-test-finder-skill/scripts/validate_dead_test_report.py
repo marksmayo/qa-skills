@@ -169,6 +169,8 @@ def merge_status(statuses: list[str]) -> str:
 
 
 def case_status(runs: dict, run_id: str, test_id: str, pattern: str | None = None) -> str | None:
+    if any(r.get('id') == run_id and r.get('errored') for r in runs.get('runs', [])):
+        return 'errored'                  # a crashed or errored run shows nothing, whatever cases it wrote
     name = test_id.split('::')[-1] if '.py::' in test_id else test_id.split('::', 1)[-1]
     exact = [c['status'] for c in runs['cases'] if c['run_id'] == run_id and
              (c['name'] == name or c['name'] == name.split(' > ')[-1] or c['name'] == test_id.split('::')[-1])]
