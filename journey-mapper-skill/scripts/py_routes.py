@@ -18,7 +18,11 @@ HTTP routes (result['routes']):
             host.json's routePrefix (default `api`) + route (default: the function name).
 Each route records `mount`: `resolved` (every prefix was a literal), `unmounted` (a router that no
 include_router/register_blueprint call was found for: its own prefix only) or `dynamic` (a prefix or the
-included router is computed, e.g. a loop over routers). A router included twice gives two routes.
+included router is computed, e.g. a loop over routers). A router included twice gives two routes. `response_classes` lists the response classes a handler declares
+(`response_class=`) or builds (`StreamingResponse(...)`, Flask `send_file`), so a caller can compare
+them with the documented media type.
+
+This file is identical in the journey mapper and the API contract tester; keep the copies in step.
 
 Triggers (result['triggers']): Azure Functions non-HTTP triggers (`@app.blob_trigger(path=...)`,
 `timer_trigger(schedule=...)`, `queue_trigger(queue_name=...)`, Service Bus, Event Hub, Event Grid, Cosmos DB).
@@ -92,6 +96,20 @@ def _methods(node) -> list[str]:
             elif isinstance(el, ast.Attribute):          # func.HttpMethod.GET
                 out.append(el.attr.upper())
     return out
+
+
+def response_classes(fn, dec: ast.Call) -> list[str]:
+    """Response classes a handler declares (`response_class=`) or builds (`StreamingResponse(...)`, `send_file(...)`)."""
+    out = set()
+    rc = _kw(dec, 'response_class')
+    if rc is not None and _name(rc):
+        out.add(_name(rc))
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Call):
+            n = _name(node.func)
+            if n and (n.endswith('Response') or n in ('send_file', 'send_from_directory', 'stream_with_context')):
+                out.add(n)
+    return sorted(out)
 
 
 def join(*parts: str) -> str:
@@ -396,6 +414,7 @@ class Project:
                         else:
                             meths = _methods(_kw(dec, 'methods')) or ['GET']
                         mounts = self.prefixes(key) if key else [('', 'unmounted')]
+                        responses = response_classes(node, dec)
                         for prefix, status in mounts:
                             full = join(prefix, path) if (prefix or path.strip('/')) else '/'
                             if path.endswith('/') and len(path) > 1:
@@ -404,7 +423,8 @@ class Project:
                                 routes.append({'method': meth, 'path': full, 'file': m.rel, 'line': line,
                                                'framework': fw, 'function': fn_name,
                                                'mount': status if lit else 'dynamic',
-                                               **({'router_prefix': prefix} if prefix else {})})
+                                               **({'router_prefix': prefix} if prefix else {}),
+                                               **({'response_classes': responses} if responses else {})})
             clis += self.command_lines(m)
         uniq = {}
         for r in routes:

@@ -26,8 +26,9 @@
           "properties": {
             "kind": {"enum": ["openapi", "graphql", "swagger2"]},
             "version": {"type": ["string", "null"]},
+            "title": {"type": ["string", "null"], "description": "info.title of the contract (contract.json title); the report heading names the API by it"},
             "api_version": {"type": ["string", "null"]},
-            "source": {"type": "string"},
+            "source": {"type": "string", "description": "contract.json's source; compared as a path, so ./x, x and an absolute path to the same file match"},
             "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
           }
         },
@@ -118,10 +119,16 @@
     },
     "contract_issues": {
       "type": "array",
+      "description": "The loaded contract's issues, exactly as contract.json lists them, then any the agent found by reading (source agent, with a basis the validator re-reads under --repo)",
       "items": {
         "type": "object", "additionalProperties": false, "required": ["id", "kind", "location", "line", "message"],
         "properties": {"id": {"type": "string"}, "kind": {"type": "string"}, "location": {"type": "string"},
-                       "line": {"type": ["integer", "null"]}, "message": {"type": "string"}}
+                       "line": {"type": ["integer", "null"]}, "message": {"type": "string"},
+                       "source": {"enum": ["loader", "agent"], "description": "absent or loader: from load_contract.py; agent: found by reading the code or samples"},
+                       "basis": {"type": "object", "additionalProperties": false, "required": ["file", "line"],
+                                 "description": "Where the agent saw it: a file (relative to --repo) and line, with an optional excerpt of that line",
+                                 "properties": {"file": {"type": "string", "minLength": 1}, "line": {"type": "integer", "minimum": 1},
+                                                "excerpt": {"type": "string"}}}}
       }
     },
     "handler_check": {
@@ -134,13 +141,15 @@
            "source": {"type": "string"},
            "frameworks": {"type": "array", "items": {"type": "string"}},
            "contract_prefix": {"type": "string"},
+           "handler_prefix": {"type": "string"},
+           "unresolved_mounts": {"type": "integer", "minimum": 0, "description": "handlers whose router was never seen being mounted, or whose prefix is computed"},
            "handlers_found": {"type": "integer", "minimum": 0},
            "counts": {"type": "object", "additionalProperties": {"type": "integer"}},
            "issues": {"type": "array", "items": {
              "type": "object", "additionalProperties": false,
              "required": ["id", "kind", "method", "path", "operation_id", "file", "line", "message"],
              "properties": {"id": {"type": "string", "pattern": "^H[0-9]+$"},
-                            "kind": {"enum": ["undocumented_handler", "missing_handler", "method_not_handled", "parameter_name_mismatch"]},
+                            "kind": {"enum": ["undocumented_handler", "missing_handler", "method_not_handled", "parameter_name_mismatch", "response_class_mismatch"]},
                             "method": {"type": "string"}, "path": {"type": "string"}, "operation_id": {"type": ["string", "null"]},
                             "file": {"type": ["string", "null"]}, "line": {"type": ["integer", "null"]}, "message": {"type": "string"}}}}
          }}
