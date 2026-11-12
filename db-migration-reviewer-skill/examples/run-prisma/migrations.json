@@ -1,0 +1,250 @@
+{
+ "repo": "db-migration-reviewer-skill/examples/greenhouse",
+ "tool": "prisma",
+ "engine": {
+  "name": "postgresql",
+  "version": "16.4",
+  "source": "prisma/schema.prisma and docker-compose.yml",
+  "assumed": true,
+  "assumed_reason": "the version comes from docker-compose.yml, a development or CI image, not from the production database; confirm it (or pass --engine-version)"
+ },
+ "heads": [],
+ "since": "20260301000000_baseline",
+ "migrations": [
+  {
+   "revision": "20260301000000_baseline",
+   "down_revision": null,
+   "up": [
+    {
+     "line": 2,
+     "sql": "CREATE TYPE \"OrderStatus\" AS ENUM ('PENDING', 'PAID', 'SHIPPED')",
+     "via": "sql"
+    },
+    {
+     "line": 4,
+     "sql": "CREATE TABLE \"Customer\" ( \"id\" TEXT NOT NULL, \"email\" TEXT NOT NULL, \"phone\" TEXT, \"legacy_ref\" TEXT, \"createdAt\" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT \"Customer_pkey\" PRIMARY KEY (\"id\") )",
+     "via": "sql"
+    },
+    {
+     "line": 13,
+     "sql": "CREATE TABLE \"Plant\" ( \"id\" TEXT NOT NULL, \"name\" TEXT NOT NULL, \"price\" DECIMAL(10,2) NOT NULL, \"weight_kg\" DECIMAL(8,3) NOT NULL, \"stock\" INTEGER NOT NULL DEFAULT 0, CONSTRAINT \"Plant_pkey\" PRIMARY KEY (\"id\") )",
+     "via": "sql"
+    },
+    {
+     "line": 22,
+     "sql": "CREATE TABLE \"Order\" ( \"id\" TEXT NOT NULL, \"customerId\" TEXT NOT NULL, \"total\" DECIMAL(10,2) NOT NULL, \"status\" \"OrderStatus\" NOT NULL DEFAULT 'PENDING', \"createdAt\" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT \"Order_pkey\" PRIMARY KEY (\"id\") )",
+     "via": "sql"
+    },
+    {
+     "line": 31,
+     "sql": "CREATE UNIQUE INDEX \"Customer_email_key\" ON \"Customer\"(\"email\")",
+     "via": "sql"
+    },
+    {
+     "line": 33,
+     "sql": "ALTER TABLE \"Order\" ADD CONSTRAINT \"Order_customerId_fkey\" FOREIGN KEY (\"customerId\") REFERENCES \"Customer\"(\"id\") ON DELETE RESTRICT ON UPDATE CASCADE",
+     "via": "sql"
+    }
+   ],
+   "down": [],
+   "transactional": true,
+   "not_analysed": [],
+   "down_state": "missing",
+   "down_model": "prisma: no down migrations (roll forward, or restore a backup)",
+   "id": "20260301000000_baseline",
+   "file": "prisma/migrations/20260301000000_baseline/migration.sql",
+   "parsed": true,
+   "created_tables": [
+    "Customer",
+    "Plant",
+    "Order"
+   ],
+   "pending": false
+  },
+  {
+   "revision": "20260415000000_release_hardening",
+   "down_revision": "20260301000000_baseline",
+   "up": [
+    {
+     "line": 3,
+     "sql": "ALTER TABLE \"Plant\" ALTER COLUMN \"price\" TYPE DECIMAL(10,2) USING ROUND(\"price\"::numeric, 2), ALTER COLUMN \"weight_kg\" TYPE DECIMAL(8,3) USING ROUND(\"weight_kg\"::numeric, 3)",
+     "via": "sql"
+    },
+    {
+     "line": 7,
+     "sql": "ALTER TABLE \"Order\" ALTER COLUMN \"total\" TYPE DECIMAL(10,2) USING ROUND(\"total\"::numeric, 2)",
+     "via": "sql"
+    },
+    {
+     "line": 10,
+     "sql": "CREATE TABLE IF NOT EXISTS \"StockAlert\" ( \"id\" TEXT NOT NULL, \"plantId\" TEXT NOT NULL, \"threshold\" INTEGER NOT NULL, CONSTRAINT \"StockAlert_pkey\" PRIMARY KEY (\"id\") )",
+     "via": "sql"
+    },
+    {
+     "line": 17,
+     "sql": "CREATE UNIQUE INDEX IF NOT EXISTS \"StockAlert_plantId_key\" ON \"StockAlert\"(\"plantId\")",
+     "via": "sql"
+    },
+    {
+     "line": 19,
+     "sql": "ALTER TABLE \"StockAlert\" ADD CONSTRAINT \"StockAlert_plantId_fkey\" FOREIGN KEY (\"plantId\") REFERENCES \"Plant\"(\"id\") ON DELETE RESTRICT ON UPDATE CASCADE",
+     "via": "sql"
+    },
+    {
+     "line": 22,
+     "sql": "ALTER TABLE \"Order\" ADD COLUMN \"giftNote\" TEXT, ADD COLUMN \"channel\" TEXT NOT NULL",
+     "via": "sql"
+    },
+    {
+     "line": 26,
+     "sql": "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'Order_createdAt_idx') THEN EXECUTE 'CREATE INDEX \"Order_createdAt_idx\" ON \"Order\" (\"createdAt\")'; END IF; END $$",
+     "via": "sql"
+    },
+    {
+     "line": 34,
+     "sql": "ALTER TABLE \"Customer\" RENAME COLUMN \"phone\" TO \"mobile\"",
+     "via": "sql"
+    },
+    {
+     "line": 36,
+     "sql": "ALTER TABLE \"Customer\" DROP COLUMN \"legacy_ref\"",
+     "via": "sql"
+    }
+   ],
+   "down": [],
+   "transactional": true,
+   "not_analysed": [],
+   "down_state": "missing",
+   "down_model": "prisma: no down migrations (roll forward, or restore a backup)",
+   "id": "20260415000000_release_hardening",
+   "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+   "parsed": true,
+   "created_tables": [
+    "StockAlert"
+   ],
+   "pending": true
+  }
+ ],
+ "excluded": [
+  {
+   "file": "prisma/migration_history_archive/20251001090000_init/migration.sql",
+   "reason": "outside the Prisma migrations folder prisma/migrations"
+  },
+  {
+   "file": "prisma/migration_history_archive/20251110090000_orders/migration.sql",
+   "reason": "outside the Prisma migrations folder prisma/migrations"
+  }
+ ],
+ "not_parsed": [],
+ "prisma": {
+  "config": "prisma.config.ts",
+  "schema": "prisma/schema.prisma",
+  "migrations_path": "prisma/migrations",
+  "provider": "postgresql",
+  "lock_provider": "postgresql"
+ },
+ "type_history": {
+  "Plant.price": [
+   {
+    "type": "DOUBLE PRECISION",
+    "column": "price",
+    "origin": "archive",
+    "migration": "20251001090000_init",
+    "file": "prisma/migration_history_archive/20251001090000_init/migration.sql",
+    "line": 15
+   },
+   {
+    "type": "DECIMAL(10,2)",
+    "column": "price",
+    "origin": "chain",
+    "migration": "20260301000000_baseline",
+    "file": "prisma/migrations/20260301000000_baseline/migration.sql",
+    "line": 16
+   },
+   {
+    "type": "DECIMAL(10,2)",
+    "column": "price",
+    "origin": "chain",
+    "migration": "20260415000000_release_hardening",
+    "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+    "line": 4
+   },
+   {
+    "type": "DECIMAL(10,2)",
+    "origin": "schema",
+    "file": "prisma/schema.prisma",
+    "line": 27,
+    "field": "price",
+    "model": "Plant"
+   }
+  ],
+  "Order.total": [
+   {
+    "type": "DOUBLE PRECISION",
+    "column": "total",
+    "origin": "archive",
+    "migration": "20251110090000_orders",
+    "file": "prisma/migration_history_archive/20251110090000_orders/migration.sql",
+    "line": 6
+   },
+   {
+    "type": "DECIMAL(10,2)",
+    "column": "total",
+    "origin": "chain",
+    "migration": "20260301000000_baseline",
+    "file": "prisma/migrations/20260301000000_baseline/migration.sql",
+    "line": 25
+   },
+   {
+    "type": "DECIMAL(10,2)",
+    "column": "total",
+    "origin": "chain",
+    "migration": "20260415000000_release_hardening",
+    "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+    "line": 7
+   },
+   {
+    "type": "DECIMAL(10,2)",
+    "origin": "schema",
+    "file": "prisma/schema.prisma",
+    "line": 37,
+    "field": "total",
+    "model": "Order"
+   }
+  ],
+  "Plant.weight_kg": [
+   {
+    "type": "DOUBLE PRECISION",
+    "column": "weight_kg",
+    "origin": "archive",
+    "migration": "20251001090000_init",
+    "file": "prisma/migration_history_archive/20251001090000_init/migration.sql",
+    "line": 16
+   },
+   {
+    "type": "DECIMAL(8,3)",
+    "column": "weight_kg",
+    "origin": "chain",
+    "migration": "20260301000000_baseline",
+    "file": "prisma/migrations/20260301000000_baseline/migration.sql",
+    "line": 17
+   },
+   {
+    "type": "DECIMAL(8,3)",
+    "column": "weight_kg",
+    "origin": "chain",
+    "migration": "20260415000000_release_hardening",
+    "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+    "line": 5
+   },
+   {
+    "type": "DECIMAL(8,3)",
+    "origin": "schema",
+    "file": "prisma/schema.prisma",
+    "line": 28,
+    "field": "weightKg",
+    "model": "Plant"
+   }
+  ]
+ }
+}

@@ -1,0 +1,8 @@
+{
+  "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)",
+  "tables": {
+    "Customer": {"rows": 310000, "bytes": 92000000},
+    "Plant": {"rows": 4800, "bytes": 2100000},
+    "Order": {"rows": 2600000, "bytes": 1400000000}
+  }
+}

@@ -669,6 +669,8 @@ def engine(repo: Path, a, prisma: dict | None = None) -> dict:
             name = 'mysql' if prov == 'mysql' else 'postgresql'
             url_source = prisma.get('schema') if prisma.get('provider') else prisma.get('config') or 'migration_lock.toml'
 
+    claims = [c for i, c in enumerate(claims) if c not in claims[:i]]
+
     def key(c):
         return tuple(int(x) for x in c['version'].split('.'))
     best = [c for c in claims if c['kind'] == 'infrastructure'] or claims

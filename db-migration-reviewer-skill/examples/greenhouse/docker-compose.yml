@@ -1,0 +1,11 @@
+services:
+  db:
+    image: postgres:16.4
+    environment:
+      POSTGRES_PASSWORD: example-only
+    ports: ["5432:5432"]
+  shadow:
+    image: postgres:16.4
+    environment:
+      POSTGRES_PASSWORD: example-only
+    ports: ["5433:5432"]

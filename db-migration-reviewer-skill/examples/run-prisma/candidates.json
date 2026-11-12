@@ -1,0 +1,503 @@
+{
+ "migrations_file": "db-migration-reviewer-skill/examples/run-prisma/migrations.json",
+ "table_stats": "db-migration-reviewer-skill/examples/greenhouse/table_stats.json",
+ "engine": {
+  "name": "postgresql",
+  "version": "16.4",
+  "source": "prisma/schema.prisma and docker-compose.yml",
+  "assumed": true,
+  "assumed_reason": "the version comes from docker-compose.yml, a development or CI image, not from the production database; confirm it (or pass --engine-version)"
+ },
+ "pending": [
+  "20260415000000_release_hardening"
+ ],
+ "squawk": null,
+ "not_parsed": [],
+ "candidates": [
+  {
+   "id": "C001",
+   "source": "builtin",
+   "rule": "PG-TYPE-CHANGE-REWRITE",
+   "category": "blocking_lock",
+   "hazard": 3,
+   "migration": "20260415000000_release_hardening",
+   "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+   "line": 4,
+   "statement": "ALTER TABLE Plant ALTER COLUMN price TYPE DECIMAL(10,2) USING ROUND(price::numeric, 2)",
+   "direction": "up",
+   "table": "Plant",
+   "column": "price",
+   "engine": "postgresql",
+   "engine_version": "16.4",
+   "engine_range": "postgresql: all versions (most type changes rewrite)",
+   "engine_assumed": true,
+   "size": {
+    "class": "small",
+    "rows": 4800,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "effect": "ALTER COLUMN TYPE rewrites Plant under an ACCESS EXCLUSIVE lock: reads and writes wait for the whole rewrite",
+   "rewrite": "Add a new column of the new type, backfill it in batches, dual-write, switch reads, then drop the old column in a later release",
+   "code_hits": [],
+   "facts": {
+    "to": "DECIMAL(10,2)",
+    "from": "DECIMAL(10,2)",
+    "using": "ROUND(price::numeric, 2)",
+    "type_before_on_chain": "DECIMAL(10,2)",
+    "same_type_on_chain": true
+   }
+  },
+  {
+   "id": "C002",
+   "source": "builtin",
+   "rule": "TYPE-NARROWING",
+   "category": "data_loss",
+   "hazard": 4,
+   "migration": "20260415000000_release_hardening",
+   "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+   "line": 4,
+   "statement": "ALTER TABLE Plant ALTER COLUMN price TYPE DECIMAL(10,2) USING ROUND(price::numeric, 2)",
+   "direction": "up",
+   "table": "Plant",
+   "column": "price",
+   "engine": "postgresql",
+   "engine_version": "16.4",
+   "engine_range": "postgresql: all versions",
+   "engine_assumed": true,
+   "size": {
+    "class": "small",
+    "rows": 4800,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "effect": "DOUBLE PRECISION to DECIMAL(10,2) narrows the column: values that don't fit are rounded, truncated or rejected",
+   "rewrite": "Check every value fits first (SELECT count(*) WHERE col <> col::newtype), convert explicitly with USING, and keep the old column until verified",
+   "code_hits": [],
+   "facts": {
+    "why": "DOUBLE PRECISION values are rounded to 2 decimal place(s), and any value of 1e8 or more fails the conversion and aborts the migration",
+    "from": "DOUBLE PRECISION",
+    "from_path": "archived history",
+    "from_source": "prisma/migration_history_archive/20251001090000_init/migration.sql:15",
+    "other_types_before": [
+     {
+      "type": "DECIMAL(10,2)",
+      "path": "chain",
+      "source": "prisma/migrations/20260301000000_baseline/migration.sql:16"
+     }
+    ]
+   }
+  },
+  {
+   "id": "C003",
+   "source": "builtin",
+   "rule": "PG-TYPE-CHANGE-REWRITE",
+   "category": "blocking_lock",
+   "hazard": 3,
+   "migration": "20260415000000_release_hardening",
+   "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+   "line": 5,
+   "statement": "ALTER TABLE Plant ALTER COLUMN weight_kg TYPE DECIMAL(8,3) USING ROUND(weight_kg::numeric, 3)",
+   "direction": "up",
+   "table": "Plant",
+   "column": "weight_kg",
+   "engine": "postgresql",
+   "engine_version": "16.4",
+   "engine_range": "postgresql: all versions (most type changes rewrite)",
+   "engine_assumed": true,
+   "size": {
+    "class": "small",
+    "rows": 4800,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "effect": "ALTER COLUMN TYPE rewrites Plant under an ACCESS EXCLUSIVE lock: reads and writes wait for the whole rewrite",
+   "rewrite": "Add a new column of the new type, backfill it in batches, dual-write, switch reads, then drop the old column in a later release",
+   "code_hits": [],
+   "facts": {
+    "to": "DECIMAL(8,3)",
+    "from": "DECIMAL(8,3)",
+    "using": "ROUND(weight_kg::numeric, 3)",
+    "type_before_on_chain": "DECIMAL(8,3)",
+    "same_type_on_chain": true
+   }
+  },
+  {
+   "id": "C004",
+   "source": "builtin",
+   "rule": "TYPE-NARROWING",
+   "category": "data_loss",
+   "hazard": 4,
+   "migration": "20260415000000_release_hardening",
+   "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+   "line": 5,
+   "statement": "ALTER TABLE Plant ALTER COLUMN weight_kg TYPE DECIMAL(8,3) USING ROUND(weight_kg::numeric, 3)",
+   "direction": "up",
+   "table": "Plant",
+   "column": "weight_kg",
+   "engine": "postgresql",
+   "engine_version": "16.4",
+   "engine_range": "postgresql: all versions",
+   "engine_assumed": true,
+   "size": {
+    "class": "small",
+    "rows": 4800,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "effect": "DOUBLE PRECISION to DECIMAL(8,3) narrows the column: values that don't fit are rounded, truncated or rejected",
+   "rewrite": "Check every value fits first (SELECT count(*) WHERE col <> col::newtype), convert explicitly with USING, and keep the old column until verified",
+   "code_hits": [],
+   "facts": {
+    "why": "DOUBLE PRECISION values are rounded to 3 decimal place(s), and any value of 1e5 or more fails the conversion and aborts the migration",
+    "from": "DOUBLE PRECISION",
+    "from_path": "archived history",
+    "from_source": "prisma/migration_history_archive/20251001090000_init/migration.sql:16",
+    "other_types_before": [
+     {
+      "type": "DECIMAL(8,3)",
+      "path": "chain",
+      "source": "prisma/migrations/20260301000000_baseline/migration.sql:17"
+     }
+    ]
+   }
+  },
+  {
+   "id": "C005",
+   "source": "builtin",
+   "rule": "PG-TYPE-CHANGE-REWRITE",
+   "category": "blocking_lock",
+   "hazard": 3,
+   "migration": "20260415000000_release_hardening",
+   "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+   "line": 7,
+   "statement": "ALTER TABLE \"Order\" ALTER COLUMN \"total\" TYPE DECIMAL(10,2) USING ROUND(\"total\"::numeric, 2)",
+   "direction": "up",
+   "table": "Order",
+   "column": "total",
+   "engine": "postgresql",
+   "engine_version": "16.4",
+   "engine_range": "postgresql: all versions (most type changes rewrite)",
+   "engine_assumed": true,
+   "size": {
+    "class": "large",
+    "rows": 2600000,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "effect": "ALTER COLUMN TYPE rewrites Order under an ACCESS EXCLUSIVE lock: reads and writes wait for the whole rewrite",
+   "rewrite": "Add a new column of the new type, backfill it in batches, dual-write, switch reads, then drop the old column in a later release",
+   "code_hits": [],
+   "facts": {
+    "to": "DECIMAL(10,2)",
+    "from": "DECIMAL(10,2)",
+    "using": "ROUND(total::numeric, 2)",
+    "type_before_on_chain": "DECIMAL(10,2)",
+    "same_type_on_chain": true
+   }
+  },
+  {
+   "id": "C006",
+   "source": "builtin",
+   "rule": "TYPE-NARROWING",
+   "category": "data_loss",
+   "hazard": 4,
+   "migration": "20260415000000_release_hardening",
+   "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+   "line": 7,
+   "statement": "ALTER TABLE \"Order\" ALTER COLUMN \"total\" TYPE DECIMAL(10,2) USING ROUND(\"total\"::numeric, 2)",
+   "direction": "up",
+   "table": "Order",
+   "column": "total",
+   "engine": "postgresql",
+   "engine_version": "16.4",
+   "engine_range": "postgresql: all versions",
+   "engine_assumed": true,
+   "size": {
+    "class": "large",
+    "rows": 2600000,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "effect": "DOUBLE PRECISION to DECIMAL(10,2) narrows the column: values that don't fit are rounded, truncated or rejected",
+   "rewrite": "Check every value fits first (SELECT count(*) WHERE col <> col::newtype), convert explicitly with USING, and keep the old column until verified",
+   "code_hits": [],
+   "facts": {
+    "why": "DOUBLE PRECISION values are rounded to 2 decimal place(s), and any value of 1e8 or more fails the conversion and aborts the migration",
+    "from": "DOUBLE PRECISION",
+    "from_path": "archived history",
+    "from_source": "prisma/migration_history_archive/20251110090000_orders/migration.sql:6",
+    "other_types_before": [
+     {
+      "type": "DECIMAL(10,2)",
+      "path": "chain",
+      "source": "prisma/migrations/20260301000000_baseline/migration.sql:25"
+     }
+    ]
+   }
+  },
+  {
+   "id": "C007",
+   "source": "builtin",
+   "rule": "PG-INDEX-LOCKS-WRITES",
+   "category": "blocking_lock",
+   "hazard": 3,
+   "migration": "20260415000000_release_hardening",
+   "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+   "line": 17,
+   "statement": "CREATE UNIQUE INDEX IF NOT EXISTS \"StockAlert_plantId_key\" ON \"StockAlert\"(\"plantId\")",
+   "direction": "up",
+   "table": "StockAlert",
+   "column": null,
+   "engine": "postgresql",
+   "engine_version": "16.4",
+   "engine_range": "postgresql: all versions",
+   "engine_assumed": true,
+   "size": {
+    "class": "small",
+    "rows": 0,
+    "source": "created in pending migration 20260415000000_release_hardening"
+   },
+   "effect": "CREATE INDEX takes a SHARE lock on StockAlert: inserts, updates and deletes wait until the index is built",
+   "rewrite": "CREATE INDEX CONCURRENTLY in its own non-transactional migration (Alembic: with op.get_context().autocommit_block(), postgresql_concurrently=True)",
+   "code_hits": [],
+   "facts": {
+    "table_created_in_release": "20260415000000_release_hardening"
+   }
+  },
+  {
+   "id": "C008",
+   "source": "builtin",
+   "rule": "NOT-NULL-WHILE-WRITTEN-WITHOUT",
+   "category": "compatibility",
+   "hazard": 3,
+   "migration": "20260415000000_release_hardening",
+   "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+   "line": 23,
+   "statement": "ALTER TABLE Order ADD COLUMN channel TEXT NOT NULL",
+   "direction": "up",
+   "table": "Order",
+   "column": "channel",
+   "engine": "postgresql",
+   "engine_version": "16.4",
+   "engine_range": "postgresql: all versions",
+   "engine_assumed": true,
+   "size": {
+    "class": "large",
+    "rows": 2600000,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "effect": "Order.channel becomes NOT NULL while code still inserts rows without it",
+   "rewrite": "Ship code that always sends the column (or a server default) first; make it NOT NULL in a later release",
+   "code_hits": [
+    {
+     "file": "src/orders.ts",
+     "line": 4,
+     "kind": "prisma_create_without_column",
+     "excerpt": ".order.create({"
+    }
+   ],
+   "facts": {
+    "new_required_column": true,
+    "test_hits": 1,
+    "writers_not_analysed": 1
+   }
+  },
+  {
+   "id": "C009",
+   "source": "builtin",
+   "rule": "RENAME-WHILE-READ",
+   "category": "compatibility",
+   "hazard": 3,
+   "migration": "20260415000000_release_hardening",
+   "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+   "line": 34,
+   "statement": "ALTER TABLE \"Customer\" RENAME COLUMN \"phone\" TO \"mobile\"",
+   "direction": "up",
+   "table": "Customer",
+   "column": "phone",
+   "engine": "postgresql",
+   "engine_version": "16.4",
+   "engine_range": "postgresql: all versions",
+   "engine_assumed": true,
+   "size": {
+    "class": "medium",
+    "rows": 310000,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "effect": "Renaming Customer.phone breaks code that still uses the old name during the deploy",
+   "rewrite": "Expand and contract: add the new column, dual-write, backfill, switch reads, then drop the old one in a later release",
+   "code_hits": [
+    {
+     "file": "src/customers.ts",
+     "line": 6,
+     "kind": "orm_query",
+     "excerpt": "select: { email: true, phone: true },"
+    }
+   ],
+   "facts": {
+    "new_name": "mobile",
+    "test_hits": 0,
+    "migration_hits": 3,
+    "names_searched": [
+     "phone"
+    ]
+   }
+  },
+  {
+   "id": "C010",
+   "source": "builtin",
+   "rule": "DROP-COLUMN",
+   "category": "data_loss",
+   "hazard": 4,
+   "migration": "20260415000000_release_hardening",
+   "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+   "line": 36,
+   "statement": "ALTER TABLE \"Customer\" DROP COLUMN \"legacy_ref\"",
+   "direction": "up",
+   "table": "Customer",
+   "column": "legacy_ref",
+   "engine": "postgresql",
+   "engine_version": "16.4",
+   "engine_range": "postgresql: all versions",
+   "engine_assumed": true,
+   "size": {
+    "class": "medium",
+    "rows": 310000,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "effect": "DROP COLUMN legacy_ref deletes the column's data in Customer",
+   "rewrite": "Stop reading and writing it first (one release), back it up, then drop",
+   "code_hits": [
+    {
+     "file": "src/customers.ts",
+     "line": 11,
+     "kind": "orm_query",
+     "excerpt": "return prisma.customer.findFirst({ where: { legacyRef: ref } });"
+    }
+   ],
+   "facts": {
+    "code_readers": 1,
+    "down_state": "missing",
+    "down_restores_data": false,
+    "names_searched": [
+     "legacy_ref",
+     "legacyRef"
+    ]
+   }
+  },
+  {
+   "id": "C011",
+   "source": "builtin",
+   "rule": "DROP-WHILE-READ",
+   "category": "compatibility",
+   "hazard": 3,
+   "migration": "20260415000000_release_hardening",
+   "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+   "line": 36,
+   "statement": "ALTER TABLE \"Customer\" DROP COLUMN \"legacy_ref\"",
+   "direction": "up",
+   "table": "Customer",
+   "column": "legacy_ref",
+   "engine": "postgresql",
+   "engine_version": "16.4",
+   "engine_range": "postgresql: all versions",
+   "engine_assumed": true,
+   "size": {
+    "class": "medium",
+    "rows": 310000,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "effect": "Dropping Customer.legacy_ref breaks code that still reads it",
+   "rewrite": "Remove the code that reads it in an earlier release",
+   "code_hits": [
+    {
+     "file": "src/customers.ts",
+     "line": 11,
+     "kind": "orm_query",
+     "excerpt": "return prisma.customer.findFirst({ where: { legacyRef: ref } });"
+    }
+   ],
+   "facts": {
+    "test_hits": 0,
+    "names_searched": [
+     "legacy_ref",
+     "legacyRef"
+    ]
+   }
+  },
+  {
+   "id": "C012",
+   "source": "builtin",
+   "rule": "IRREVERSIBLE",
+   "category": "irreversible",
+   "hazard": 2,
+   "migration": "20260415000000_release_hardening",
+   "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+   "line": 3,
+   "statement": "down migration: missing (Prisma has no down migrations)",
+   "direction": "up",
+   "table": "Plant",
+   "column": null,
+   "engine": "postgresql",
+   "engine_version": "16.4",
+   "engine_range": "postgresql: all versions",
+   "engine_assumed": true,
+   "size": {
+    "class": "small",
+    "rows": 4800,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "effect": "The down migration is missing (Prisma has no down migrations): this migration can't be rolled back",
+   "rewrite": "Write a down that restores what the up changed, or mark the migration irreversible on purpose and say how to recover",
+   "code_hits": [],
+   "facts": {
+    "down_state": "missing",
+    "up_statements": 9,
+    "down_model": "prisma: roll forward with a new migration, or restore a backup; prisma migrate diff can draft a reverse script",
+    "migrations": [
+     "20260415000000_release_hardening"
+    ]
+   }
+  },
+  {
+   "id": "C013",
+   "source": "builtin",
+   "rule": "PG-NO-LOCK-TIMEOUT",
+   "category": "lock_queueing",
+   "hazard": 2,
+   "migration": "20260415000000_release_hardening",
+   "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+   "line": 7,
+   "statement": "ALTER TABLE \"Order\" ALTER COLUMN \"total\" TYPE DECIMAL(10,2) USING ROUND(\"total\"::numeric, 2)",
+   "direction": "up",
+   "table": "Order",
+   "column": null,
+   "engine": "postgresql",
+   "engine_version": "16.4",
+   "engine_range": "postgresql: all versions",
+   "engine_assumed": true,
+   "size": {
+    "class": "large",
+    "rows": 2600000,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "effect": "DDL runs with no lock_timeout: if a long query holds Order, the migration waits and every later query queues behind it",
+   "rewrite": "SET lock_timeout = '5s' (and a statement_timeout) at the start of each migration, or in env.py, and retry on timeout",
+   "code_hits": [],
+   "facts": {
+    "migrations": [
+     "20260415000000_release_hardening"
+    ],
+    "tables": {
+     "Plant": [
+      "20260415000000_release_hardening"
+     ],
+     "Order": [
+      "20260415000000_release_hardening"
+     ],
+     "Customer": [
+      "20260415000000_release_hardening"
+     ]
+    },
+    "checked": [
+     "pending migration statements"
+    ]
+   }
+  }
+ ]
+}

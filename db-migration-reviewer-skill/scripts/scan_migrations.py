@@ -314,7 +314,7 @@ class Scan:
                               'down_restores_data': False, 'names_searched': self.field_names(table, col)}, column=col, hits=hits['code'])
                     if hits['code']:
                         self.add('DROP-WHILE-READ', mig, st, table, f'{self.engine["name"]}: all versions',
-                                 {'test_hits': len(hits['test'])}, column=col, hits=hits['code'])
+                                 {'test_hits': len(hits['test']), 'names_searched': self.field_names(table, col)}, column=col, hits=hits['code'])
                 m = re.match(r'DROP TABLE (?:IF EXISTS )?(\S+)', norm, re.I)
                 if m:
                     self.add('DROP-TABLE', mig, st, sqlshape.ident(m.group(1)), f'{self.engine["name"]}: all versions')

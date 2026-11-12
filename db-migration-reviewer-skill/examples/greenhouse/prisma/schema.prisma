@@ -1,0 +1,49 @@
+// Greenhouse: a small plant nursery shop (sample for the migration reviewer; all data invented).
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  SHIPPED
+}
+
+model Customer {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  mobile    String?
+  createdAt DateTime @default(now())
+  orders    Order[]
+}
+
+model Plant {
+  id       String      @id @default(cuid())
+  name     String
+  price    Decimal     @db.Decimal(10, 2)
+  weightKg Decimal     @map("weight_kg") @db.Decimal(8, 3)
+  stock    Int         @default(0)
+  alert    StockAlert?
+}
+
+model Order {
+  id         String      @id @default(cuid())
+  customerId String
+  customer   Customer    @relation(fields: [customerId], references: [id])
+  total      Decimal     @db.Decimal(10, 2)
+  status     OrderStatus @default(PENDING)
+  giftNote   String?
+  channel    String
+  createdAt  DateTime    @default(now())
+}
+
+model StockAlert {
+  id        String   @id @default(cuid())
+  plantId   String   @unique
+  plant     Plant    @relation(fields: [plantId], references: [id])
+  threshold Int
+}

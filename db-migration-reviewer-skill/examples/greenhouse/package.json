@@ -1,0 +1,16 @@
+{
+  "name": "greenhouse",
+  "private": true,
+  "version": "2.4.0",
+  "scripts": {
+    "migrate:deploy": "prisma migrate deploy",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@prisma/client": "6.19.0"
+  },
+  "devDependencies": {
+    "prisma": "6.19.0",
+    "vitest": "3.2.4"
+  }
+}

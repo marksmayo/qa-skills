@@ -1,0 +1,670 @@
+{
+ "schema_version": "1.1.0",
+ "skill": "db-migration-reviewer",
+ "skill_version": "1.1.0",
+ "generated": "2026-11-12",
+ "scope": {
+  "repo": "examples/greenhouse",
+  "tool": "prisma",
+  "engine": {
+   "name": "postgresql",
+   "version": "16.4",
+   "source": "prisma/schema.prisma and docker-compose.yml",
+   "assumed": true,
+   "assumed_reason": "the version comes from docker-compose.yml (the development and shadow databases), not from production; nothing in the repository names the production version"
+  },
+  "deploy_model": "rolling",
+  "deploy_model_source": "user: the app runs on two instances updated one at a time; prisma migrate deploy runs as a release step while the old instances still serve",
+  "since": "20260301000000_baseline",
+  "excluded": [
+   {
+    "file": "prisma/migration_history_archive/20251001090000_init/migration.sql",
+    "reason": "outside the Prisma migrations folder prisma/migrations"
+   },
+   {
+    "file": "prisma/migration_history_archive/20251110090000_orders/migration.sql",
+    "reason": "outside the Prisma migrations folder prisma/migrations"
+   }
+  ],
+  "migrations_reviewed": [
+   "20260415000000_release_hardening"
+  ],
+  "checked": [
+   "every statement and every clause of 20260415000000_release_hardening/migration.sql, including the DO block (read by hand)",
+   "column types before the release on both upgrade paths: the active chain (baseline) and the archived history that pre-squash databases still have",
+   "readers of renamed and dropped columns by column name and Prisma field name, and prisma.order.create calls missing a column made NOT NULL, in src/ (tests listed apart)",
+   "table sizes from table_stats.json (staging export, 2026-11-10)"
+  ],
+  "not_checked": [
+   "the production PostgreSQL version (only the development docker-compose image is in the repository)",
+   "how long each statement takes and which locks it really holds: the dynamic check did not run",
+   "drift between schema.prisma and the migration chain (prisma migrate diff needs a shadow database)",
+   "other services or reporting jobs that use the same database (none were named)"
+  ]
+ },
+ "metadata": {
+  "tools": [
+   {
+    "name": "detect_migrations.py",
+    "version": "1.1.0",
+    "status": "ran"
+   },
+   {
+    "name": "scan_migrations.py",
+    "version": "1.1.0",
+    "status": "ran"
+   },
+   {
+    "name": "squawk",
+    "version": null,
+    "status": "not_installed"
+   },
+   {
+    "name": "dynamic_check.py",
+    "version": "1.1.0",
+    "status": "not_run"
+   }
+  ],
+  "table_stats": {
+   "file": "examples/greenhouse/table_stats.json",
+   "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+  },
+  "inputs": {
+   "migrations": "run-prisma/migrations.json",
+   "candidates": "run-prisma/candidates.json"
+  }
+ },
+ "migrations": [
+  {
+   "id": "20260415000000_release_hardening",
+   "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+   "transactional": true,
+   "down_state": "missing",
+   "statements": 9,
+   "findings": [
+    "F01",
+    "F02",
+    "F03",
+    "F04",
+    "F05",
+    "F06",
+    "F07",
+    "F08",
+    "F09",
+    "F10",
+    "F11",
+    "F12"
+   ]
+  }
+ ],
+ "findings": [
+  {
+   "id": "F01",
+   "candidates": [
+    "C002"
+   ],
+   "rule": "TYPE-NARROWING",
+   "category": "data_loss",
+   "hazard": 4,
+   "migration": "20260415000000_release_hardening",
+   "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+   "line": 4,
+   "statement": "ALTER TABLE Plant ALTER COLUMN price TYPE DECIMAL(10,2) USING ROUND(price::numeric, 2)",
+   "table": "Plant",
+   "column": "price",
+   "engine": "postgresql",
+   "engine_range": "postgresql: all versions",
+   "effect": "On databases created before the squash, Plant.price is still DOUBLE PRECISION (prisma/migration_history_archive/20251001090000_init/migration.sql:15): the conversion rounds every price to 2 decimal places, and a value of 1e8 or more aborts the migration. On databases built from the baseline the column is already DECIMAL(10,2) and nothing changes, so the loss only shows on the older databases.",
+   "size": {
+    "class": "small",
+    "rows": 4800,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "recoverable": false,
+   "size_factor": 3,
+   "exposure": 3,
+   "score": 36,
+   "priority": "P0",
+   "floor": "unrecoverable_data_loss",
+   "cap": null,
+   "confidence": "matched",
+   "code_hits": [],
+   "rewrite": "Before converting, count the rows that would change (SELECT count(*) FROM \"Plant\" WHERE price::numeric <> round(price::numeric, 2) OR abs(price) >= 1e8) on each pre-squash database, copy price to a backup column, then convert; keep the backup until the totals reconcile",
+   "verification": "On a copy of a pre-squash database, run the count above, apply the migration, and compare sum(price) before and after"
+  },
+  {
+   "id": "F02",
+   "candidates": [
+    "C004"
+   ],
+   "rule": "TYPE-NARROWING",
+   "category": "data_loss",
+   "hazard": 4,
+   "migration": "20260415000000_release_hardening",
+   "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+   "line": 5,
+   "statement": "ALTER TABLE Plant ALTER COLUMN weight_kg TYPE DECIMAL(8,3) USING ROUND(weight_kg::numeric, 3)",
+   "table": "Plant",
+   "column": "weight_kg",
+   "engine": "postgresql",
+   "engine_range": "postgresql: all versions",
+   "effect": "On pre-squash databases weight_kg is DOUBLE PRECISION (archive init migration line 16): weights are rounded to the gram, and a weight of 100 000 kg or more aborts the migration",
+   "size": {
+    "class": "small",
+    "rows": 4800,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "recoverable": false,
+   "size_factor": 3,
+   "exposure": 3,
+   "score": 36,
+   "priority": "P0",
+   "floor": "unrecoverable_data_loss",
+   "cap": null,
+   "confidence": "matched",
+   "code_hits": [],
+   "rewrite": "Same as F01: count the values that change, back the column up, then convert",
+   "verification": "On a copy of a pre-squash database: SELECT count(*) FROM \"Plant\" WHERE weight_kg::numeric <> round(weight_kg::numeric, 3) before applying"
+  },
+  {
+   "id": "F03",
+   "candidates": [
+    "C006"
+   ],
+   "rule": "TYPE-NARROWING",
+   "category": "data_loss",
+   "hazard": 4,
+   "migration": "20260415000000_release_hardening",
+   "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+   "line": 7,
+   "statement": "ALTER TABLE \"Order\" ALTER COLUMN \"total\" TYPE DECIMAL(10,2) USING ROUND(\"total\"::numeric, 2)",
+   "table": "Order",
+   "column": "total",
+   "engine": "postgresql",
+   "engine_range": "postgresql: all versions",
+   "effect": "On pre-squash databases Order.total is DOUBLE PRECISION (prisma/migration_history_archive/20251110090000_orders/migration.sql:6): 2.6 million order totals are rounded to the cent, so stored totals can differ from what was charged, and any total of 1e8 or more aborts the migration",
+   "size": {
+    "class": "large",
+    "rows": 2600000,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "recoverable": false,
+   "size_factor": 3,
+   "exposure": 3,
+   "score": 36,
+   "priority": "P0",
+   "floor": "unrecoverable_data_loss",
+   "cap": null,
+   "confidence": "matched",
+   "code_hits": [],
+   "rewrite": "Add total_cents BIGINT, backfill it in batches from round(total * 100) after reconciling the rows that change, switch reads, and drop total in a later release",
+   "verification": "On a copy of a pre-squash database: SELECT count(*), sum(total - round(total::numeric, 2)) FROM \"Order\" before applying"
+  },
+  {
+   "id": "F04",
+   "candidates": [
+    "C008"
+   ],
+   "rule": "NOT-NULL-WHILE-WRITTEN-WITHOUT",
+   "category": "compatibility",
+   "hazard": 3,
+   "migration": "20260415000000_release_hardening",
+   "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+   "line": 23,
+   "statement": "ALTER TABLE Order ADD COLUMN channel TEXT NOT NULL",
+   "table": "Order",
+   "column": "channel",
+   "engine": "postgresql",
+   "engine_range": "postgresql: all versions",
+   "effect": "Order.channel is added NOT NULL with no default. On a table with rows PostgreSQL refuses the ADD COLUMN, so the migration fails; and if it did apply, placeOrder() (src/orders.ts:4) still creates orders without channel during the rolling deploy. importOrder() passes a variable as data and could not be checked; the test in tests/orders.test.ts also omits it",
+   "size": {
+    "class": "large",
+    "rows": 2600000,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "size_factor": 3,
+   "exposure": 3,
+   "score": 27,
+   "priority": "P0",
+   "floor": null,
+   "cap": null,
+   "confidence": "matched",
+   "code_hits": [
+    {
+     "file": "src/orders.ts",
+     "line": 4,
+     "kind": "prisma_create_without_column",
+     "excerpt": ".order.create({"
+    }
+   ],
+   "rewrite": "Add channel nullable (or with DEFAULT 'web'), ship code that always sets it, backfill, then SET NOT NULL through a NOT VALID CHECK in a later release",
+   "verification": "grep for prisma.order.create and check each data object sets channel; apply the migration to a copy with rows and confirm it succeeds"
+  },
+  {
+   "id": "F05",
+   "candidates": [
+    "C009"
+   ],
+   "rule": "RENAME-WHILE-READ",
+   "category": "compatibility",
+   "hazard": 3,
+   "migration": "20260415000000_release_hardening",
+   "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+   "line": 34,
+   "statement": "ALTER TABLE \"Customer\" RENAME COLUMN \"phone\" TO \"mobile\"",
+   "table": "Customer",
+   "column": "phone",
+   "engine": "postgresql",
+   "engine_range": "postgresql: all versions",
+   "effect": "The running release selects phone (src/customers.ts:6); after the rename every contact lookup fails until the new code is out",
+   "size": {
+    "class": "medium",
+    "rows": 310000,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "size_factor": 3,
+   "exposure": 3,
+   "score": 27,
+   "priority": "P0",
+   "floor": null,
+   "cap": null,
+   "confidence": "matched",
+   "code_hits": [
+    {
+     "file": "src/customers.ts",
+     "line": 6,
+     "kind": "orm_query",
+     "excerpt": "select: { email: true, phone: true },"
+    }
+   ],
+   "rewrite": "Add mobile, dual-write, backfill, switch reads to mobile (or map the field with @map(\"phone\") and skip the rename), then drop phone in a later release",
+   "verification": "After the expand step, grep src/ for phone: only the dual-write remains"
+  },
+  {
+   "id": "F06",
+   "candidates": [
+    "C010"
+   ],
+   "rule": "DROP-COLUMN",
+   "category": "data_loss",
+   "hazard": 4,
+   "migration": "20260415000000_release_hardening",
+   "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+   "line": 36,
+   "statement": "ALTER TABLE \"Customer\" DROP COLUMN \"legacy_ref\"",
+   "table": "Customer",
+   "column": "legacy_ref",
+   "engine": "postgresql",
+   "engine_range": "postgresql: all versions",
+   "effect": "The import references of 310 000 customers are deleted, and the code still reads them as legacyRef (src/customers.ts:11): this is not a finished contract step",
+   "size": {
+    "class": "medium",
+    "rows": 310000,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "recoverable": false,
+   "size_factor": 3,
+   "exposure": 3,
+   "score": 36,
+   "priority": "P0",
+   "floor": "unrecoverable_data_loss",
+   "cap": null,
+   "confidence": "matched",
+   "code_hits": [
+    {
+     "file": "src/customers.ts",
+     "line": 11,
+     "kind": "orm_query",
+     "excerpt": "return prisma.customer.findFirst({ where: { legacyRef: ref } });"
+    }
+   ],
+   "rewrite": "Remove findByImportRef() first, export legacy_ref, and drop the column in a later release",
+   "verification": "grep src/ for legacyRef and legacy_ref returns nothing before the drop ships"
+  },
+  {
+   "id": "F07",
+   "candidates": [
+    "C011"
+   ],
+   "rule": "DROP-WHILE-READ",
+   "category": "compatibility",
+   "hazard": 3,
+   "migration": "20260415000000_release_hardening",
+   "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+   "line": 36,
+   "statement": "ALTER TABLE \"Customer\" DROP COLUMN \"legacy_ref\"",
+   "table": "Customer",
+   "column": "legacy_ref",
+   "engine": "postgresql",
+   "engine_range": "postgresql: all versions",
+   "effect": "findByImportRef() (src/customers.ts:11) queries legacyRef, which Prisma maps to legacy_ref: it fails once the column is gone",
+   "size": {
+    "class": "medium",
+    "rows": 310000,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "size_factor": 3,
+   "exposure": 3,
+   "score": 27,
+   "priority": "P0",
+   "floor": null,
+   "cap": null,
+   "confidence": "matched",
+   "code_hits": [
+    {
+     "file": "src/customers.ts",
+     "line": 11,
+     "kind": "orm_query",
+     "excerpt": "return prisma.customer.findFirst({ where: { legacyRef: ref } });"
+    }
+   ],
+   "rewrite": "Remove the reader in an earlier release",
+   "verification": "grep src/ for legacyRef"
+  },
+  {
+   "id": "F08",
+   "candidates": [
+    "C005"
+   ],
+   "rule": "PG-TYPE-CHANGE-REWRITE",
+   "category": "blocking_lock",
+   "hazard": 3,
+   "migration": "20260415000000_release_hardening",
+   "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+   "line": 7,
+   "statement": "ALTER TABLE \"Order\" ALTER COLUMN \"total\" TYPE DECIMAL(10,2) USING ROUND(\"total\"::numeric, 2)",
+   "table": "Order",
+   "column": "total",
+   "engine": "postgresql",
+   "engine_range": "postgresql: all versions (most type changes rewrite)",
+   "effect": "The USING clause rewrites all of Order (2.6 million rows, 1.4 GB) under ACCESS EXCLUSIVE, even on databases where total is already DECIMAL(10,2); Prisma sends the file as one transaction, so the lock is held until the last statement commits",
+   "size": {
+    "class": "large",
+    "rows": 2600000,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "size_factor": 3,
+   "exposure": 3,
+   "score": 27,
+   "priority": "P1",
+   "floor": null,
+   "cap": "assumed_capped_at_P1",
+   "confidence": "assumed",
+   "code_hits": [],
+   "rewrite": "Only convert where the column is still DOUBLE PRECISION (a DO block that checks information_schema.columns), or use the add-backfill-switch sequence of F03",
+   "verification": "On a copy with production-size data, time the statement and watch pg_locks for the ACCESS EXCLUSIVE lock"
+  },
+  {
+   "id": "F09",
+   "source": "agent",
+   "candidates": [],
+   "rule": "PG-INDEX-LOCKS-WRITES",
+   "category": "blocking_lock",
+   "hazard": 3,
+   "basis": [
+    {
+     "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+     "line": 29,
+     "excerpt": "EXECUTE 'CREATE INDEX \"Order_createdAt_idx\" ON \"Order\" (\"createdAt\")';"
+    },
+    {
+     "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+     "line": 26,
+     "excerpt": "DO $$"
+    }
+   ],
+   "migration": "20260415000000_release_hardening",
+   "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+   "line": 29,
+   "statement": "EXECUTE 'CREATE INDEX \"Order_createdAt_idx\" ON \"Order\" (\"createdAt\")'",
+   "table": "Order",
+   "column": null,
+   "engine": "postgresql",
+   "engine_range": "postgresql: all versions",
+   "effect": "The index is built inside a DO block, so no rule saw it: CREATE INDEX without CONCURRENTLY holds a SHARE lock on Order (2.6 million rows) and blocks every insert and update until it is built, and inside Prisma's transaction until the migration commits",
+   "size": {
+    "class": "large",
+    "rows": 2600000,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "size_factor": 3,
+   "exposure": 3,
+   "score": 27,
+   "priority": "P1",
+   "floor": null,
+   "cap": "assumed_capped_at_P1",
+   "confidence": "assumed",
+   "code_hits": [],
+   "rewrite": "Move the index to its own migration containing only CREATE INDEX CONCURRENTLY IF NOT EXISTS \"Order_createdAt_idx\" ON \"Order\" (\"createdAt\"); (Prisma runs a migration with a single CONCURRENTLY statement outside a transaction)",
+   "verification": "Apply on a copy and check pg_locks during the build: only SHARE UPDATE EXCLUSIVE should appear"
+  },
+  {
+   "id": "F10",
+   "candidates": [
+    "C013"
+   ],
+   "rule": "PG-NO-LOCK-TIMEOUT",
+   "category": "lock_queueing",
+   "hazard": 2,
+   "migration": "20260415000000_release_hardening",
+   "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+   "line": 7,
+   "statement": "ALTER TABLE \"Order\" ALTER COLUMN \"total\" TYPE DECIMAL(10,2) USING ROUND(\"total\"::numeric, 2)",
+   "table": "Order",
+   "column": null,
+   "engine": "postgresql",
+   "engine_range": "postgresql: all versions",
+   "effect": "Nothing sets lock_timeout: if a long report holds Order or Customer when the migration starts, the ALTER waits and every later query on the table queues behind it",
+   "size": {
+    "class": "large",
+    "rows": 2600000,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "size_factor": 3,
+   "exposure": 3,
+   "score": 18,
+   "priority": "P1",
+   "floor": null,
+   "cap": null,
+   "confidence": "assumed",
+   "code_hits": [],
+   "rewrite": "Start the migration with SET lock_timeout = '5s'; SET statement_timeout = '15min'; and rerun prisma migrate deploy on a timeout",
+   "verification": "Hold a lock on Order from another session on a copy and check the migration gives up after 5 s"
+  },
+  {
+   "id": "F11",
+   "candidates": [
+    "C001"
+   ],
+   "rule": "PG-TYPE-CHANGE-REWRITE",
+   "category": "blocking_lock",
+   "hazard": 3,
+   "migration": "20260415000000_release_hardening",
+   "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+   "line": 4,
+   "statement": "ALTER TABLE Plant ALTER COLUMN price TYPE DECIMAL(10,2) USING ROUND(price::numeric, 2)",
+   "table": "Plant",
+   "column": "price",
+   "engine": "postgresql",
+   "engine_range": "postgresql: all versions (most type changes rewrite)",
+   "effect": "Plant (4 800 rows) is rewritten once for both clauses under ACCESS EXCLUSIVE; short, but held until the whole migration commits, behind the Order rewrite",
+   "size": {
+    "class": "small",
+    "rows": 4800,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "size_factor": 1,
+   "exposure": 3,
+   "score": 9,
+   "priority": "P2",
+   "floor": null,
+   "cap": null,
+   "confidence": "assumed",
+   "code_hits": [],
+   "rewrite": "Put the Plant conversion in its own migration so its lock is released at once",
+   "verification": "Apply on a copy and time the Plant statement"
+  },
+  {
+   "id": "F12",
+   "candidates": [
+    "C012"
+   ],
+   "rule": "IRREVERSIBLE",
+   "category": "irreversible",
+   "hazard": 2,
+   "migration": "20260415000000_release_hardening",
+   "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+   "line": 3,
+   "statement": "down migration: missing (Prisma has no down migrations)",
+   "table": "Plant",
+   "column": null,
+   "engine": "postgresql",
+   "engine_range": "postgresql: all versions",
+   "effect": "Prisma has no down migrations: the release can only be rolled forward or restored from a backup, and the rounding in F01-F03 can't be undone either way",
+   "size": {
+    "class": "small",
+    "rows": 4800,
+    "source": "pg_class.reltuples and pg_total_relation_size, exported from staging on 2026-11-10 (row counts only)"
+   },
+   "size_factor": 1,
+   "exposure": 3,
+   "score": 6,
+   "priority": "P3",
+   "floor": null,
+   "cap": null,
+   "confidence": "matched",
+   "code_hits": [],
+   "rewrite": "Take a backup (or a database branch) before prisma migrate deploy, and draft a reverse script with prisma migrate diff --from-schema-datamodel <new> --to-schema-datamodel <old> --script",
+   "verification": "Restore the backup to a copy and confirm the row counts match"
+  }
+ ],
+ "triage": [
+  {
+   "candidate": "C001",
+   "decision": "promoted",
+   "finding": "F11"
+  },
+  {
+   "candidate": "C002",
+   "decision": "promoted",
+   "finding": "F01"
+  },
+  {
+   "candidate": "C003",
+   "decision": "dismissed",
+   "reason_code": "duplicate",
+   "reason": "Second clause of the same ALTER TABLE Plant: PostgreSQL rewrites the table once for both clauses, which F11 (C001) covers"
+  },
+  {
+   "candidate": "C004",
+   "decision": "promoted",
+   "finding": "F02"
+  },
+  {
+   "candidate": "C005",
+   "decision": "promoted",
+   "finding": "F08"
+  },
+  {
+   "candidate": "C006",
+   "decision": "promoted",
+   "finding": "F03"
+  },
+  {
+   "candidate": "C007",
+   "decision": "dismissed",
+   "reason_code": "table_created_in_release",
+   "reason": "StockAlert is created by the same migration (line 10), so the index locks an empty table"
+  },
+  {
+   "candidate": "C008",
+   "decision": "promoted",
+   "finding": "F04"
+  },
+  {
+   "candidate": "C009",
+   "decision": "promoted",
+   "finding": "F05"
+  },
+  {
+   "candidate": "C010",
+   "decision": "promoted",
+   "finding": "F06"
+  },
+  {
+   "candidate": "C011",
+   "decision": "promoted",
+   "finding": "F07"
+  },
+  {
+   "candidate": "C012",
+   "decision": "promoted",
+   "finding": "F12"
+  },
+  {
+   "candidate": "C013",
+   "decision": "promoted",
+   "finding": "F10"
+  }
+ ],
+ "dynamic": {
+  "status": "not_run",
+  "reason": "No Docker, Podman or loopback PostgreSQL on the review machine"
+ },
+ "safe_sequence": [
+  {
+   "release": "Before any production run",
+   "steps": [
+    "Confirm the production PostgreSQL version",
+    "On each pre-squash database, count the price, weight and total values the conversion would change, and back the columns up"
+   ]
+  },
+  {
+   "release": "2.4a (with the current code)",
+   "steps": [
+    "SET lock_timeout and statement_timeout at the top of each migration (F10)",
+    "Plant conversion in its own migration, guarded to run only where the column is DOUBLE PRECISION (F01, F02, F11)",
+    "StockAlert table, its index and foreign key as written",
+    "ADD COLUMN channel TEXT DEFAULT 'web' and giftNote (F04)",
+    "Order_createdAt_idx alone, CREATE INDEX CONCURRENTLY (F09)",
+    "ADD COLUMN mobile; total_cents BIGINT (nullable)"
+   ]
+  },
+  {
+   "release": "2.4b (code dual-writes)",
+   "steps": [
+    "Code sets channel, writes mobile and phone, writes total_cents (F04, F05)",
+    "Batched backfill of mobile and total_cents (F03, F08)",
+    "Remove findByImportRef() (F06, F07)"
+   ]
+  },
+  {
+   "release": "2.5 (code reads the new columns)",
+   "steps": [
+    "channel SET NOT NULL through a validated CHECK",
+    "Drop phone, total and legacy_ref after exporting legacy_ref (F06)"
+   ]
+  }
+ ],
+ "headline": {
+  "counts": {
+   "P0": 7,
+   "P1": 3,
+   "P2": 1,
+   "P3": 1
+  },
+  "migrations_with_p0": [
+   "20260415000000_release_hardening"
+  ],
+  "verdict": "do_not_deploy",
+  "statement": "Do not deploy 20260415000000_release_hardening as written. On databases created before the squash it rounds every price, weight and order total stored as DOUBLE PRECISION, it cannot add Order.channel to a table with rows, and the running code still reads phone and legacy_ref. The index in its DO block and the Order rewrite lock a 2.6 million row table for the rest of the migration.",
+  "scope_statement": "Static review of the one pending Prisma migration and src/ against PostgreSQL 16.4 as the docker-compose file assumes (the production version is not in the repository), with staging row counts and the archived pre-squash history. Durations and locks were not measured, schema drift was not checked, and no other service was searched."
+ },
+ "limitations": [
+  "The dynamic check did not run (no Docker, Podman or loopback PostgreSQL), so no finding is measured.",
+  "The engine version comes from the development docker-compose file; findings that depend on it are assumed and capped at P1.",
+  "Which production databases predate the squash is not in the repository; the narrowing findings hold for those.",
+  "importOrder() passes a variable as Prisma data, so whether it sets channel could not be read.",
+  "Squawk was not installed; only the built-in rules and a reading of the DO block ran."
+ ]
+}

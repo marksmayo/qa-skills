@@ -248,8 +248,10 @@ def main() -> int:
             for h in f.get('code_hits', []):
                 lines = (a.repo / h['file']).read_text(encoding='utf-8').splitlines() if (a.repo / h['file']).exists() else []
                 word = f.get('column') if f['rule'] != 'NOT-NULL-WHILE-WRITTEN-WITHOUT' else None
-                if h['line'] > len(lines) or (word and not re.search(rf'\b{re.escape(word)}\b', lines[h['line'] - 1])):
-                    e(f'{fid}: code hit {h["file"]}:{h["line"]} does not mention {word}')
+                # the names the scan searched: the column, and its Prisma field name (@map, or the camelCase of a snake_case column)
+                names = {word} | {n for cid in f.get('candidates', []) for n in ((cands.get(cid) or {}).get('facts') or {}).get('names_searched', [])}
+                if h['line'] > len(lines) or (word and not any(re.search(rf'\b{re.escape(n)}\b', lines[h['line'] - 1]) for n in names if n)):
+                    e(f'{fid}: code hit {h["file"]}:{h["line"]} does not mention {" or ".join(sorted(n for n in names if n))}')
 
     # triage
     seen: dict = {}
