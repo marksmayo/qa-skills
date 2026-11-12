@@ -4,8 +4,22 @@
  "engine": {
   "name": "postgresql",
   "version": "16.4",
-  "source": "alembic.ini and docker-compose.yml",
-  "assumed": false
+  "source": "alembic.ini and infra/database.tf",
+  "assumed": false,
+  "claims": [
+   {
+    "kind": "image",
+    "name": "postgresql",
+    "version": "16.4",
+    "source": "docker-compose.yml"
+   },
+   {
+    "kind": "infrastructure",
+    "name": "postgresql",
+    "version": "16.4",
+    "source": "infra/database.tf"
+   }
+  ]
  },
  "pending": [
   "0003",
@@ -130,7 +144,10 @@
    "facts": {
     "new_name": "amount_cents",
     "test_hits": 1,
-    "migration_hits": 2
+    "migration_hits": 2,
+    "names_searched": [
+     "amount"
+    ]
    }
   },
   {
@@ -160,7 +177,9 @@
    "code_hits": [],
    "facts": {
     "to": "INTEGER",
-    "from": "NUMERIC(12,2)"
+    "from": "NUMERIC(12,2)",
+    "type_before_on_chain": "NUMERIC(12,2)",
+    "same_type_on_chain": false
    }
   },
   {
@@ -189,7 +208,17 @@
    "rewrite": "Check every value fits first (SELECT count(*) WHERE col <> col::newtype), convert explicitly with USING, and keep the old column until verified",
    "code_hits": [],
    "facts": {
-    "why": "the 2 decimal place(s) are rounded away and values above the integer range are rejected"
+    "why": "the 2 decimal place(s) are rounded away and values above the integer range are rejected",
+    "from": "NUMERIC(12,2)",
+    "from_path": "the migration (existing_type)",
+    "from_source": "the migration (existing_type)",
+    "other_types_before": [
+     {
+      "type": "NUMERIC(12,2)",
+      "path": "chain",
+      "source": "migrations/versions/0001_initial.py:18"
+     }
+    ]
    }
   },
   {
@@ -345,7 +374,8 @@
     }
    ],
    "facts": {
-    "test_hits": 0
+    "test_hits": 0,
+    "writers_not_analysed": 0
    }
   },
   {
@@ -408,7 +438,10 @@
    "facts": {
     "code_readers": 0,
     "down_state": "ok",
-    "down_restores_data": false
+    "down_restores_data": false,
+    "names_searched": [
+     "legacy_code"
+    ]
    }
   },
   {

@@ -4,8 +4,22 @@
  "engine": {
   "name": "postgresql",
   "version": "16.4",
-  "source": "alembic.ini and docker-compose.yml",
-  "assumed": false
+  "source": "alembic.ini and infra/database.tf",
+  "assumed": false,
+  "claims": [
+   {
+    "kind": "image",
+    "name": "postgresql",
+    "version": "16.4",
+    "source": "docker-compose.yml"
+   },
+   {
+    "kind": "infrastructure",
+    "name": "postgresql",
+    "version": "16.4",
+    "source": "infra/database.tf"
+   }
+  ]
  },
  "heads": [
   "0009"
@@ -274,5 +288,26 @@
    "pending": true
   }
  ],
- "not_parsed": []
+ "excluded": [],
+ "not_parsed": [],
+ "type_history": {
+  "transactions.amount_cents": [
+   {
+    "type": "NUMERIC(12,2)",
+    "column": "amount",
+    "origin": "chain",
+    "migration": "0001",
+    "file": "migrations/versions/0001_initial.py",
+    "line": 18
+   },
+   {
+    "type": "INTEGER",
+    "column": "amount_cents",
+    "origin": "chain",
+    "migration": "0005",
+    "file": "migrations/versions/0005_rename_amount.py",
+    "line": 15
+   }
+  ]
+ }
 }
