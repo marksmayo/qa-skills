@@ -195,7 +195,7 @@ Agreed with the user before the build.
 2. **Age at which an unticketed skip is stale?** 180 days.
 3. **May `apply: true` remove a stray `.only`?** Yes.
 
-## As built (v1.0.0)
+## As built (v1.0.0 to v1.2.0)
 
 Where the build differs from the design above, and what the example showed.
 
@@ -374,3 +374,58 @@ Where the build differs from the design above, and what the example showed.
   - Not done: Prisma-style and other per-test coverage for JavaScript duplicates; running
     Playwright tests under neutralisation; a Vitest file filter that works where Vitest 4.1
     printed nothing (the list is reported as errored instead).
+- **v1.2.0: found on a Python monorepo (FastAPI services, about 970 pytest tests in seven
+  packages) and a React/Vitest front end**, and fixed:
+  - **Ancestor rootdir.** A `pytest.ini` above the packages made pytest print ids relative to it,
+    and `collect_check.py` prefixed the package again (`services/api/api/tests/...`): 300 collected
+    tests came out `not_collected` and 436 "collected but not defined". Listed ids are now mapped
+    back through their files (an ancestor, the package or below), and `scan_tests.py` reads
+    `python_files` from the nearest configuration at or above the package, as pytest does.
+  - **Nested packages.** A package inside another (`services/a` and `services/a/api`) was listed
+    and traced twice. The outer list command now passes `--ignore` for each inner package.
+  - **Similarity verdicts.** Pairs whose session exited 4 (ids not found) or whose tests failed
+    had no traced lines but came out `overlap`. The plugin now records each test's outcome and
+    maps ids through the test's file; a pair is `duplicate` or `overlap` only when both tests
+    passed and product lines were traced for each, otherwise `not_assessed` with the reason and
+    exit code. Cross-package pairs say so instead of "only collected for Python tests". The copy
+    keeps the ini and `conftest.py` files above the package. A latent bug traced `<frozen os>`
+    lines as product lines (realpath put them under the copy): the example's duplicate pair ran
+    2 product lines, not 10.
+  - **Literal values** were stored verbatim in `similarity.json` (one was a real-looking email
+    address). They are hashed now (`sha256:` plus 12 hex digits), and the validator rejects raw
+    values.
+  - **Neutralisation outcomes.** A test whose original and neutralised runs were all
+    `not_found` was `failed_neutralised`, counted as neutralised and lifted evidence completeness
+    to 100%. Such a run is now `errored` with `error_reason` (also when the test fails unchanged),
+    and the validator checks every result's outcome against its runs.
+  - **`it.each` neutralisation.** The pattern id (`... > %s shows ...`) never matched the JUnit
+    names and the expanded ids were "unknown". A pattern id now matches every case its pattern
+    matches; an expanded id resolves to its definition and runs that case. The validator maps
+    both to the definition.
+  - **Targets.** Methods can be named (`module.Class.method`); a class gets a hint instead of
+    "not found"; standard-library names are never targets (filtered in the scan and in
+    `skipped_targets`); a name from another package says so.
+  - **Environment.** `--env` takes several pairs per flag in every script (as `run_tests.py`
+    does), and `--package-env PACKAGE:K=V` sets a package's own variables (two services with
+    their own `PYTHONPATH`) in `collect_check.py`, `similarity.py` and `neutralise.py`;
+    `similarity.py` gained `--cwd`. Only variable names are recorded.
+  - **False positives.** `duplicate`: 1,767 candidates, none kept (792 across two services that
+    each keep a copy of the same tests, the rest input cases with different literals). Pairs are
+    now within one package, and Python pairs need the same literal values; the rest are counted
+    as `near_duplicates` with a note. `unreached_assertion`: 52, none kept; a loop is no longer
+    flagged when a length, truthiness, indexed or helper assertion outside it, or a non-empty
+    literal binding, fails on an empty iterable. `no_assertion` follows helpers of the same file
+    that assert (`_test_shape(...)`, `self._check(...)`).
+  - **Judgement.** SKILL.md now covers "should not raise" allow-path tests of a "return or
+    raise" guard (rank by the sibling deny-path tests and what the name promises) and no-op paths
+    (the neutral body is the expected behaviour: `weak` with `investigate`, or dismissed).
+  - **Tested** with synthetic fixtures: an ancestor `pytest.ini` with nested packages (ids map,
+    no double collection, per-package env names recorded); loops with each guard form and one
+    without; helper delegation; same-shape pairs with equal and different literals; a traced
+    session with a passing duplicate, a failing pair and a pair with no product lines (no literal
+    in the output); method, class, stdlib and failing-unchanged neutralisations; and validator
+    probes (a `not_found` run reported as `failed_neutralised`, raw values, an overlap without
+    lines). The example's candidates are unchanged; its `similarity.json` was regenerated (hashed
+    values, 2 lines) and the example validates.
+  - Not done: following helpers imported from other modules for `no_assertion`; Vitest file
+    filters for `it.each` cases (each run is still the whole file).

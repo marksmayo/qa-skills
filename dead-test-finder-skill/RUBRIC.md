@@ -51,10 +51,27 @@ run evidence as any other finding. The renderer labels it "found by review". A f
 | `duplicate` | `similarity.json` says duplicate: similarity ≥ 0.9, identical coverage and identical values. Otherwise the finding is an `overlap`. A JavaScript pair is `not_assessed` there (no per-test coverage): it can be a `static` `duplicate` only when the bodies are identical apart from variable names (similarity 1.0, the scanner's JavaScript threshold), otherwise an `overlap`, and never `confirmed` |
 | `stale_skip` | `skips.json` says stale: a done ticket, or no ticket and older than `skip_age_days` |
 
+**Neutralisation outcomes (checked for every result, proofs included).** `passed_neutralised` or
+`failed_neutralised` needs the unchanged run to show the test passed and at least one neutral-body
+(`return`) run to show it passed, failed or errored, as `runs.json` records them; passed means
+every such run passed. A test that was not found or failed unchanged, or that no neutral-body run
+ran, is `errored` with an `error_reason`: it is not `neutralised` in `tests[]` and doesn't count
+towards evidence completeness.
+
+**Similarity verdicts (checked).** `duplicate` or `overlap` needs both tests passed in the traced
+session and product lines traced for each; otherwise the pair is `not_assessed` with a reason (a
+failed or missing test with the session's exit code, no lines traced, different packages, not
+Python). Literal values are stored only as `sha256:` hashes.
+
 `static` means a rule matched and you checked it. `suspected` means your judgement alone, and is
 capped at P2.
 
 A `weak` finding whose test passes even when its code raises is really `cant_fail`.
+
+**Judgement.** An allow-path test of a "return or raise" guard passes with the neutral body by
+design; rank it by what its sibling deny-path tests show and by what its name promises (SKILL.md,
+Step 4). A test whose expected behaviour is the neutral body (a no-op path) is `weak` with an
+`investigate` proposal, or dismissed with that reason.
 
 ## Ranking (computed)
 
@@ -100,7 +117,8 @@ Criticality is yours, with a reason:
 
 The mean of three shares:
 - the packages whose collect command ran;
-- the neutralisable candidates that were neutralised, or that had nothing to neutralise;
+- the neutralisable candidates that were neutralised (passed or failed neutralised, never
+  errored), or that had nothing to neutralise;
 - the ticket keys whose ticket was read.
 
 ## Honesty rules
