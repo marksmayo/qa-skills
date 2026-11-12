@@ -6,7 +6,9 @@
 Formats: JSON (any shape; objects become records), a YAML subset (block mappings and sequences,
 plain and quoted scalars, inline [a, b] lists, comments), CSV (header row), SQL INSERT statements
 (`INSERT INTO t (a, b) VALUES (...), (...)`), and Python test sources (dict literals with
-constant keys). Anything else is read as text lines. YAML anchors, aliases, tags, block
+constant keys), HTML tables (including HTML or XML saved with an .xls extension, found by
+sniffing the content) and .xlsx workbooks (stdlib zipfile; `--text` prints the text form whose
+lines findings cite). Anything else is read as text lines. YAML anchors, aliases, tags, block
 scalars (| and >) and multiple documents are not supported: such a file raises NotAssessed and
 is reported as not assessed, never guessed at.
 
@@ -24,8 +26,185 @@ class NotAssessed(Exception):
     pass
 
 
+def sniff_markup(path: Path) -> str | None:
+    """'html' or 'xml' when a file with a spreadsheet extension is really text: report tools save HTML tables and
+    XML Spreadsheet 2003 files as .xls. None for a real binary file."""
+    try:
+        with path.open('rb') as fh:
+            head = fh.read(4096)
+    except OSError:
+        return None
+    if b'\x00' in head:
+        return None
+    t = head.lstrip(b'\xef\xbb\xbf \t\r\n').lower()
+    if t.startswith((b'<!doctype html', b'<html', b'<table', b'<meta')) or b'<html' in t[:1024]:
+        return 'html'
+    if t.startswith(b'<?xml'):
+        return 'xml'
+    return None
+
+
 def fmt_of(path: Path) -> str:
-    return DATA_EXT.get(path.suffix.lower(), 'text')
+    ext = path.suffix.lower()
+    if ext == '.xls':
+        return sniff_markup(path) or 'xls'
+    if ext in ('.xlsx', '.xlsm'):
+        return 'xlsx'
+    if ext in ('.html', '.htm'):
+        return 'html'
+    return DATA_EXT.get(ext, 'text')
+
+
+# ---------------------------------------------------------------- spreadsheets
+XLSX_NS = '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
+XLSX_REL = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}'
+
+
+def xlsx_sheets(path: Path, max_rows: int = 200_000) -> list[tuple[str, list[list[str]]]]:
+    """[(sheet name, rows of cell text)] from an .xlsx workbook, with stdlib zipfile and XML only: shared strings,
+    inline strings and plain values. Formulas give their cached value; styles and dates (serial numbers) are not
+    interpreted. Raises NotAssessed for an encrypted, corrupt or unexpected file."""
+    import zipfile
+    import xml.etree.ElementTree as ET
+    try:
+        z = zipfile.ZipFile(path)
+    except (zipfile.BadZipFile, OSError) as exc:
+        raise NotAssessed(f'not a readable xlsx workbook ({exc.__class__.__name__}); it may be encrypted')
+    try:
+        names = set(z.namelist())
+        shared = []
+        if 'xl/sharedStrings.xml' in names:
+            for si in ET.fromstring(z.read('xl/sharedStrings.xml')).iter(XLSX_NS + 'si'):
+                shared.append(''.join(t.text or '' for t in si.iter(XLSX_NS + 't')))
+        book = ET.fromstring(z.read('xl/workbook.xml'))
+        rels = {}
+        if 'xl/_rels/workbook.xml.rels' in names:
+            for r in ET.fromstring(z.read('xl/_rels/workbook.xml.rels')):
+                rels[r.get('Id')] = r.get('Target', '').lstrip('/')
+        out = []
+        for sh in book.iter(XLSX_NS + 'sheet'):
+            target = rels.get(sh.get(XLSX_REL + 'id'), '')
+            target = target if target.startswith('xl/') else 'xl/' + target
+            if target not in names:
+                continue
+            rows = []
+            for row in ET.fromstring(z.read(target)).iter(XLSX_NS + 'row'):
+                cells: dict[int, str] = {}
+                for c in row.iter(XLSX_NS + 'c'):
+                    ref = re.match(r'([A-Z]+)', c.get('r', '')) if c.get('r') else None
+                    col = 0
+                    if ref:
+                        for ch in ref.group(1):
+                            col = col * 26 + ord(ch) - 64
+                        col -= 1
+                    else:
+                        col = len(cells)
+                    t, v = c.get('t'), c.find(XLSX_NS + 'v')
+                    if t == 's' and v is not None and (v.text or '').isdigit() and int(v.text) < len(shared):
+                        val = shared[int(v.text)]
+                    elif t == 'inlineStr':
+                        val = ''.join(x.text or '' for x in c.iter(XLSX_NS + 't'))
+                    else:
+                        val = v.text if v is not None and v.text is not None else ''
+                    cells[col] = val
+                rows.append([cells.get(i, '') for i in range(max(cells) + 1)] if cells else [])
+                if len(rows) >= max_rows:
+                    break
+            out.append((sh.get('name') or target, rows))
+        return out
+    except (KeyError, ET.ParseError, ValueError) as exc:
+        raise NotAssessed(f'xlsx workbook could not be read ({exc.__class__.__name__})')
+    finally:
+        z.close()
+
+
+def xlsx_text(path: Path) -> str:
+    """A workbook as text, one line per row: a `[sheet <name>]` line, then each row as CSV. Line numbers in findings
+    on an .xlsx file count lines of this text (print it with `datafiles.py <file> --text`)."""
+    buf = io.StringIO()
+    w = csv.writer(buf, quoting=csv.QUOTE_ALL, lineterminator='\n')
+    for name, rows in xlsx_sheets(path):
+        buf.write(f'[sheet {name}]\n')
+        for r in rows:
+            w.writerow(r)
+    return buf.getvalue()
+
+
+def text_of(path: Path, errors: str = 'replace') -> str:
+    """The text the scanner and the validator read: the file itself, or an .xlsx workbook's text form."""
+    if fmt_of(path) == 'xlsx':
+        return xlsx_text(path)
+    return path.read_text(encoding='utf-8', errors=errors)
+
+
+def xlsx_records(path: Path, source: str) -> list[dict]:
+    """Rows of each sheet as records under the sheet's first row (the header), with line numbers in xlsx_text."""
+    out, line = [], 0
+    for name, rows in xlsx_sheets(path):
+        line += 1                                   # the [sheet] line
+        head, head_line = None, None
+        for r in rows:
+            line += 1
+            if head is None:
+                if any(c.strip() for c in r):
+                    head, head_line = [c.strip() for c in r], line
+                continue
+            if not any(c.strip() for c in r):
+                continue
+            out.append({'source': source, 'kind': 'row', 'hint': name, 'line': line, 'header_line': head_line,
+                        'fields': {h: {'value': v, 'line': line} for h, v in zip(head, r) if h}})
+    return out
+
+
+# ---------------------------------------------------------------- HTML tables
+def html_records(text: str, source: str) -> list[dict]:
+    """Rows of each <table> as records under its first row (th or td cells), with the source line of each row."""
+    from html.parser import HTMLParser
+
+    class P(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=True)
+            self.tables: list[list[tuple[int, list[str]]]] = []
+            self.row: list[str] | None = None
+            self.cell: list[str] | None = None
+            self.row_line = 0
+
+        def handle_starttag(self, tag, attrs):
+            if tag == 'table':
+                self.tables.append([])
+            elif tag == 'tr' and self.tables:
+                self.row, self.row_line = [], self.getpos()[0]
+            elif tag in ('td', 'th') and self.row is not None:
+                self.cell = []
+
+        def handle_endtag(self, tag):
+            if tag in ('td', 'th') and self.cell is not None and self.row is not None:
+                self.row.append(' '.join(''.join(self.cell).split()))
+                self.cell = None
+            elif tag == 'tr' and self.row is not None and self.tables:
+                self.tables[-1].append((self.row_line, self.row))
+                self.row = None
+
+        def handle_data(self, data):
+            if self.cell is not None:
+                self.cell.append(data)
+
+    p = P()
+    try:
+        p.feed(text)
+        p.close()
+    except Exception as exc:                  # html.parser is lenient; anything it still rejects is not guessed at
+        raise NotAssessed(f'HTML could not be parsed ({exc.__class__.__name__})')
+    out = []
+    for t in p.tables:
+        rows = [(ln, r) for ln, r in t if any(c for c in r)]
+        if len(rows) < 2:
+            continue
+        head_line, head = rows[0]
+        for ln, r in rows[1:]:
+            out.append({'source': source, 'kind': 'row', 'hint': Path(source).stem, 'line': ln, 'header_line': head_line,
+                        'fields': {h: {'value': v, 'line': ln} for h, v in zip(head, r) if h}})
+    return out
 
 
 # ---------------------------------------------------------------- JSON
@@ -187,7 +366,7 @@ def csv_records(text: str, source: str, delim: str = ',') -> list[dict]:
     for i, row in enumerate(rows[1:], 2):
         if not any(c.strip() for c in row):
             continue
-        out.append({'source': source, 'kind': 'row', 'hint': Path(source).stem, 'line': i,
+        out.append({'source': source, 'kind': 'row', 'hint': Path(source).stem, 'line': i, 'header_line': 1,
                     'fields': {h: {'value': v, 'line': i} for h, v in zip(head, row)}})
     return out
 
@@ -270,11 +449,17 @@ def python_records(text: str, source: str) -> list[dict]:
 
 
 def load_records(path: Path, source: str) -> list[dict]:
+    f = fmt_of(path)
+    if f == 'xlsx':
+        return xlsx_records(path, source)
+    if f == 'xls':
+        raise NotAssessed('binary .xls workbook (BIFF): not read')
     try:
         text = path.read_text(encoding='utf-8')
     except UnicodeDecodeError:
         raise NotAssessed('binary or not UTF-8 text')
-    f = fmt_of(path)
+    if f == 'html':
+        return html_records(text, source)
     if f == 'json':
         return json_records(text, source)
     if f == 'yaml':
@@ -298,6 +483,9 @@ def load_structure(path: Path):
 
 if __name__ == '__main__':
     p = Path(sys.argv[1])
+    if '--text' in sys.argv[2:]:
+        sys.stdout.write(text_of(p))       # the text form findings count lines in (an .xlsx workbook as CSV per sheet)
+        sys.exit(0)
     try:
         for r in load_records(p, p.as_posix()):
             print(r['line'], r['hint'], {k: (v['line'], type(v['value']).__name__) for k, v in r['fields'].items()})

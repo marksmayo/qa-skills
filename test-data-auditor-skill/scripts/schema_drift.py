@@ -13,7 +13,11 @@ its file name (`appointments.yaml` -> `Appointment`). Three rules:
 - missing_required: the model requires a field (no default) the fixture lacks;
 - invalid_enum: an enum-typed field holds a value that isn't one of the enum's values.
 
-Records no model matches are listed as unmatched, not guessed.
+Models are scoped: a fixture is compared only with models from its own package or service (the
+nearest directory with a pyproject.toml, package.json or similar), unless the repo has one root.
+A record matches a model only when at least half of its keys are the model's fields, so a chart
+or an extract that happens to share a file name with a model is not compared with it. Records no
+model matches are counted per file as unmatched, not guessed.
 """
 from __future__ import annotations
 import argparse, ast, json, re, sys
@@ -83,7 +87,9 @@ def python_models(root: Path, files: list[str]) -> tuple[dict, dict]:
                             fields[t.id] = {'annotation': ast.unparse(st.value) if hasattr(ast, 'unparse') else '', 'required': required}
             if node.name == 'Meta' or not fields:
                 continue
-            models[node.name] = {'source': f'{rel}:{node.lineno}', 'fields': fields}
+            # two services may each define a model of the same name: keep both, keyed apart
+            key = node.name if node.name not in models else f'{node.name}@{rel}:{node.lineno}'
+            models[key] = {'name': node.name, 'source': f'{rel}:{node.lineno}', 'fields': fields}
     for m in models.values():
         for f in m['fields'].values():
             f['enum'] = next((e for e in enums if re.search(rf'\b{e}\b', f['annotation'])), None)
@@ -109,21 +115,33 @@ def schema_models(root: Path, files: list[str]) -> dict:
             if not isinstance(sch, dict) or 'properties' not in sch:
                 continue
             req = set(sch.get('required', []))
-            out[title] = {'source': rel, 'fields': {k: {'annotation': json.dumps(v.get('type')), 'required': k in req,
+            out[title if title not in out else f'{title}@{rel}'] = {'name': title, 'source': rel, 'fields': {k: {'annotation': json.dumps(v.get('type')), 'required': k in req,
                                                         'enum': None, 'enum_values': v.get('enum')}
                                                     for k, v in sch['properties'].items()},
                           'closed': sch.get('additionalProperties') is False}
     return out
 
 
-def match_model(record: dict, path: str, models: dict) -> str | None:
-    by_norm = {norm(k): k for k in models}
+def model_root(source: str, roots: set[str]) -> str:
+    return inv.root_of(source.split(':', 1)[0], roots)
+
+
+def match_model(record: dict, path: str, models: dict, roots: set[str] | None = None) -> str | None:
+    """The model a record stands for: named by its key or table (or the file name), in the record's own package root,
+    and sharing at least half of the record's keys."""
+    here = inv.root_of(path, roots or set())
+    scoped = {k: m for k, m in models.items() if not roots or model_root(m['source'], roots) == here}
+    keys = set(record['fields'])
+    if not keys:
+        return None
     for cand in (record.get('hint'), PurePosixPath(path).stem):
         if not cand:
             continue
         for form in (cand, singular(cand)):
-            if norm(form) in by_norm:
-                return by_norm[norm(form)]
+            named = [k for k, m in scoped.items() if norm(m.get('name', k)) == norm(form)]
+            best = max(named, key=lambda k: len(keys & set(scoped[k]['fields'])), default=None)
+            if best and len(keys & set(scoped[best]['fields'])) / len(keys) >= 0.5:
+                return best
     return None
 
 
@@ -131,8 +149,10 @@ def drift(root: Path, inventory: dict) -> dict:
     files = inv.walk(root)
     models, enums = python_models(root, files)
     models.update(schema_models(root, files))
+    roots = inv.package_roots(files)
+    roots = roots if len(roots | {'.'}) > 1 else set()      # one root: every model is in scope
     findings: dict[tuple, dict] = {}
-    unmatched = []
+    unmatched: dict[str, int] = {}
     for item in inventory['inventory']:
         if item['kind'] not in ('fixture', 'seed', 'recording') or item['status'] != 'scanned':
             continue
@@ -141,22 +161,23 @@ def drift(root: Path, inventory: dict) -> dict:
         except datafiles.NotAssessed:
             continue
         for r in records:
-            model = match_model(r, item['path'], models)
+            model = match_model(r, item['path'], models, roots)
             if not model:
-                unmatched.append(f'{item["path"]}:{r["line"]}')
+                unmatched[item['path']] = unmatched.get(item['path'], 0) + 1
                 continue
             spec = models[model]
+            mname = spec.get('name', model)
             mf = spec['fields']
             for fname, fv in r['fields'].items():
                 if fname not in mf:
                     key = (item['path'], 'extra_field', fname, model)
-                    findings.setdefault(key, {'rule': 'extra_field', 'file': item['path'], 'field': fname, 'model': model,
+                    findings.setdefault(key, {'rule': 'extra_field', 'file': item['path'], 'field': fname, 'model': mname,
                                               'model_source': spec['source'], 'lines': []})['lines'].append(fv['line'])
                     continue
                 allowed = mf[fname].get('enum_values') or (enums.get(mf[fname]['enum']) if mf[fname].get('enum') else None)
                 if allowed is not None and fv['value'] not in allowed:
                     key = (item['path'], 'invalid_enum', fname, model)
-                    findings.setdefault(key, {'rule': 'invalid_enum', 'file': item['path'], 'field': fname, 'model': model,
+                    findings.setdefault(key, {'rule': 'invalid_enum', 'file': item['path'], 'field': fname, 'model': mname,
                                               'model_source': spec['source'], 'lines': [], 'allowed': allowed,
                                               'values': []})
                     findings[key]['lines'].append(fv['line'])
@@ -165,9 +186,10 @@ def drift(root: Path, inventory: dict) -> dict:
                 if meta['required'] and fname not in r['fields'] and r['kind'] != 'row':
                     key = (item['path'], 'missing_required', fname, model)
                     findings.setdefault(key, {'rule': 'missing_required', 'file': item['path'], 'field': fname,
-                                              'model': model, 'model_source': spec['source'], 'lines': []})['lines'].append(r['line'])
+                                              'model': mname, 'model_source': spec['source'], 'lines': []})['lines'].append(r['line'])
     return {'models': {k: {'source': v['source'], 'fields': sorted(v['fields'])} for k, v in sorted(models.items())},
-            'findings': list(findings.values()), 'unmatched_records': unmatched}
+            'findings': list(findings.values()), 'unmatched_records': dict(sorted(unmatched.items())),
+            'unmatched_total': sum(unmatched.values())}
 
 
 def main(argv=None) -> int:
@@ -180,7 +202,7 @@ def main(argv=None) -> int:
     text = json.dumps(res, indent=2) + '\n'
     if args.out:
         args.out.write_text(text, encoding='utf-8')
-        print(f'{len(res["models"])} models, {len(res["findings"])} drift findings, {len(res["unmatched_records"])} unmatched records -> {args.out}')
+        print(f'{len(res["models"])} models, {len(res["findings"])} drift findings, {res["unmatched_total"]} unmatched records in {len(res["unmatched_records"])} files -> {args.out}')
     else:
         sys.stdout.write(text)
     return 0

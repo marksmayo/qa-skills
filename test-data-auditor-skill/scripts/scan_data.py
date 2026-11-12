@@ -13,6 +13,12 @@ kind of data and why it was flagged, plus a short SHA-256 fingerprint of the nor
 the validator can tell candidates apart. A value on a reserved list (example.com, ACMA and
 Ofcom fiction numbers, published test cards, specimen IDs) or with an invalid check digit is
 dismissed automatically, and the dismissal names the rule.
+
+A table with many rows (CSV, TSV, an HTML or .xlsx sheet, a JSON list) whose column is named for a
+person or customer and holds mostly names is a `customer_extract` candidate: judged by the header
+and the row count, recorded by file, header line and column only. Compact date-times and dated
+run ids (yyyymmdd-hhmmss, yyyymmdd-NNN), digit runs inside paths or identifiers, and bare digit
+strings with no phone field are never cards or phones.
 """
 from __future__ import annotations
 import argparse, ast, difflib, hashlib, json, math, re, sys
@@ -53,6 +59,12 @@ LOCAL_PATH = re.compile(r'(?:/Users/[A-Za-z][\w.-]+/|/home/[a-z][\w.-]+/|[A-Za-z
 UUID = re.compile(r'\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b', re.I)
 SECRETS = {k: re.compile(v) for k, v in RULES['secret_patterns'].items()}
 ID_CALL = re.compile(r'^(get|find|fetch|load|lookup|read|retrieve)(_\w+)?$|_by_id$|^by_id$', re.I)
+DB_MARK = re.compile(r'\b(django_db|integration|db|database|e2e|functional|system)\b', re.I)
+DB_FIXTURE = re.compile(r'(^|_)(db|database|session|db_session|engine|conn|connection|cursor|seed|seeded|transaction|pg|postgres|'
+                        r'mysql|sqlite|live_server|dbsession)(_|$)', re.I)
+DB_DIRS = {'integration', 'integration_tests', 'it', 'e2e', 'functional', 'system', 'acceptance', 'db', 'database'}
+NOT_FOUND_TEST = re.compile(r'not_?found|missing|unknown|nonexist|non_existent|does_not_exist|doesnt_exist|no_such|invalid|404|absent',
+                            re.I)
 PLACEHOLDER = re.compile(r'\b(test|example|sample|fake|dummy|placeholder|lorem|foo|bar|demo)\b', re.I)
 # a secret value that announces itself as a placeholder, or has too little entropy to be a real credential
 PLACEHOLDER_SECRET = re.compile(RULES['placeholder_secret_words'], re.I)
@@ -170,8 +182,18 @@ def epoch(d: str, field: str = '') -> bool:
     return len(d) == 10 and 1_000_000_000 <= int(d) < 2_100_000_000 and bool(field and TIME_FIELD.search(field))
 
 
+CARD_FIELD = re.compile(r'(^|_)(card|pan|cc|credit|debit|card_?number|cc_?number)(_|$)', re.I)
 DATE_SHAPE = re.compile(r'^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}(?:[T ][\d:.]+(?:Z|[+-]\d{2}:?\d{2})?)?$|^\d{1,2}[-/.]\d{1,2}[-/.]\d{4}$')
 SSN_SHAPE = re.compile(r'^\d{3}-\d{2}-\d{4}$')
+
+
+COMPACT_DT = re.compile(r'^((?:19|20)\d{6})[-_T.]?(\d{2,9})$')
+
+
+def compact_datetime(run: str) -> bool:
+    """A compact date-time or a dated run id: yyyymmdd-hhmmss, yyyymmddhhmmss, yyyymmdd-NNN (a real calendar date first)."""
+    m = COMPACT_DT.match(run.strip())
+    return bool(m) and compact_date(m.group(1))
 
 
 def not_phone(value: str, field: str = '') -> str | None:
@@ -180,6 +202,8 @@ def not_phone(value: str, field: str = '') -> str | None:
     d = digits(v)
     if DATE_TIME.match(v) or (v == d and compact_date(d)):
         return 'a date or time'
+    if compact_datetime(v):
+        return 'a compact date-time or a dated run id (yyyymmdd-hhmmss, yyyymmdd-NNN)'
     if DATE_SHAPE.match(v):
         return 'a date-shaped string (an invalid date in a date-validation test is still not a phone)'
     if SSN_SHAPE.match(v):
@@ -191,6 +215,22 @@ def not_phone(value: str, field: str = '') -> str | None:
     if field and NOT_PHONE_FIELD.search(snake(field)):
         return f'the field {field} holds an identifier, code, secret, date or amount, not a phone number'
     return None
+
+
+# a data migration that seeds rows is run by the migration tool, not loaded by tests
+MIGRATION_SEED = re.compile(r'(^|/)(versions|migrations)/[^/]+\.py$')
+PERSON_COLUMN = re.compile(RULES['person_columns'], re.I)
+
+
+def name_like(value: str) -> bool:
+    """A value that reads as a person's or an organisation's name: mostly letters, no @, not a short code."""
+    v = value.strip()
+    if len(v) < 3 or len(v) > 80 or '@' in v or re.fullmatch(r'[A-Z]{1,4}\d*|[\d\W_]+', v):
+        return False
+    if v.lower() in ('null', 'none', 'n/a', 'na', 'true', 'false', 'yes', 'no', 'unknown', 'tbc', 'tbd', '-'):
+        return False
+    core = [c for c in v if not c.isspace() and c not in ".,'&-()/"]
+    return bool(core) and sum(c.isalpha() for c in core) / len(core) >= 0.8
 
 
 def placeholder_digits(d: str) -> str | None:
@@ -211,11 +251,15 @@ def placeholder_digits(d: str) -> str | None:
 def not_card(text: str, start: int, end: int, field: str = '') -> bool:
     """True when the card-shaped digit run text[start:end] is a date, time, version or timestamp."""
     run = text[start:end]
-    if DATE_TOKEN.search(run):
+    if DATE_TOKEN.search(run) or compact_datetime(run):
         return True
     before, after = text[max(0, start - 1):start], text[end:end + 2]
     if before in ('.', ':', 'v', 'V') or re.match(r'[.:]\d|T\d', after):
         return True  # part of a version, a decimal, or a date followed by a time
+    # a digit run that is part of a path or an identifier (runs/20261103-142530/, order_4111..., x4111...) is not a card
+    # number, unless the field says it holds one
+    if (re.match(r'[A-Za-z_/\\]', before) or re.match(r'[A-Za-z_/\\]', after[:1])) and not CARD_FIELD.search(field or ''):
+        return True
     # a date that overlaps the run's edge ("2024-01-15 ..." where the match starts mid-date)
     off = max(0, start - 12)
     if any(m.start() + off < end and m.end() + off > start for m in DATE_TOKEN.finditer(text[off:end + 12])):
@@ -287,8 +331,11 @@ def placeholder_secret(kind: str, match: str) -> str | None:
 class Scanner:
     def __init__(self, root: Path, inventory: dict, today: date):
         self.root, self.inv, self.today = root, inventory, today
+        inv.DATA_DIRS.clear()
+        inv.DATA_DIRS.update(inventory.get('data_dirs', []))       # trees inventory.py was told hold test data
         self.cands: list[dict] = []
         self.by_path = {i['path']: i for i in inventory['inventory']}
+        self.seed_loaders = {t for i in inventory['inventory'] if i['kind'] == 'seed' for t in i['loaded_by']}
         self.files = inv.walk(root)
         self.sources = [f for f in self.files if f.endswith('.py') and not inv.in_test_area(f)]
         # JS/TS product code and tests (declaration files and bundles are not read)
@@ -322,7 +369,10 @@ class Scanner:
             self.add('personal_data', 'email', file, line, why, field, 'email address', m.group(0),
                      auto_dismiss=why if cls == 'reserved' else None,
                      details={'domain_class': cls, 'domain': m.group(2).lower() if cls != 'other' else None})
-        phone_shaped = PHONE_TEXT.fullmatch(value.strip()) and (not fname or loose)
+        # a bare run of digits with no phone field (no separators, no +) is an id, an order number or a count far more
+        # often than a phone number written down; under a phone field it is still checked
+        bare_number = value.strip().isdigit()
+        phone_shaped = PHONE_TEXT.fullmatch(value.strip()) and (not fname or loose) and not bare_number
         if (PHONE_F.match(fname) or phone_shaped) and not not_phone(value, fname):
             d = digits(value)
             if 8 <= len(d) <= 13:
@@ -396,6 +446,40 @@ class Scanner:
                 self.add('personal_data', 'dob_with_name', file, v['line'], 'a date of birth beside a name', k, 'date of birth',
                          nm[1]['value'] + '|' + v['value'],
                          details={'name_field': nm[0], 'placeholder_words': bool(PLACEHOLDER.search(nm[1]['value']))})
+
+    def tabular_extract(self, rel: str, records: list[dict]):
+        """A table (CSV, TSV, an HTML or .xlsx sheet, a JSON list of objects) with many rows and a column named for a
+        person or customer whose values are mostly names: possibly customer data copied from a production extract.
+        Judged by the header and the row count; no value is recorded (the fingerprint covers the file and column)."""
+        groups: dict = {}
+        for r in records:
+            if r['kind'] in ('row', 'object'):
+                groups.setdefault(r.get('hint'), []).append(r)
+        for rs in groups.values():
+            if len(rs) < RULES['extract_min_rows']:
+                continue
+            cols: dict[str, list[dict]] = {}
+            for r in rs:
+                for k, v in r['fields'].items():
+                    cols.setdefault(k, []).append(v)
+            for col, vals in cols.items():
+                if not PERSON_COLUMN.search(re.sub(r'[\s./]+', '_', snake(col)).strip('_')):
+                    continue
+                texts = [v['value'].strip() for v in vals if isinstance(v['value'], str) and v['value'].strip()]
+                if len(texts) < RULES['extract_min_rows']:
+                    continue
+                namey = [t for t in texts if name_like(t)]
+                share = len(namey) / len(texts)
+                distinct = len(set(namey))
+                if share < RULES['extract_name_like_share'] or distinct < RULES['extract_min_distinct']:
+                    continue
+                line = rs[0].get('header_line') or vals[0]['line']
+                self.add('personal_data', 'customer_extract', rel, line,
+                         f'column {col} holds {distinct} distinct name-like values across {len(rs)} rows: possibly person or '
+                         'customer data copied from a production extract', col, 'person or customer names in a tabular extract',
+                         f'{rel}#{col}', details={'column': col, 'rows': len(rs), 'populated': len(texts),
+                                                  'name_like_share': round(share, 2), 'distinct_values': distinct},
+                         tests=self.by_path.get(rel, {}).get('loaded_by', []))
 
     # ---------------- time bombs
     def now_comparisons(self) -> dict[str, list[dict]]:
@@ -490,18 +574,40 @@ class Scanner:
                 pass
         return out
 
-    def test_code(self, rel: str, tree: ast.AST, seeds: dict[int, str]):
+    def db_in_reach(self, rel: str, fn: ast.AST, tid: str, tree: ast.AST, py: inv.PyTests | None) -> bool:
+        """Whether a test can reach a database or seed rows, so a literal id means a row: it loads a seed, carries a
+        database or integration marker, requests a database fixture, or sits in an integration or end-to-end tree."""
+        if tid in self.seed_loaders:
+            return True
+        marks = [ast.unparse(d) for d in getattr(fn, 'decorator_list', [])]
+        marks += [ast.unparse(st.value) for st in getattr(tree, 'body', []) if isinstance(st, ast.Assign)
+                  and any(isinstance(t, ast.Name) and t.id == 'pytestmark' for t in st.targets)]
+        if any(DB_MARK.search(m) for m in marks):
+            return True
+        if py is not None and rel in py.tests and isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if any(DB_FIXTURE.search(f) for f in py.requested(fn, py.visible_fixtures(rel)) | {a.arg for a in fn.args.args}):
+                return True
+        return bool(set(PurePosixPath(rel).parts[:-1]) & DB_DIRS)
+
+    def test_code(self, rel: str, tree: ast.AST, seeds: dict[int, str], py: inv.PyTests | None = None):
         item = self.by_path.get(rel, {})
         for fn in ast.walk(tree):
             if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) or not fn.name.startswith('test'):
                 continue
             tid = next((t for t in item.get('loaded_by', []) if t.endswith('::' + fn.name)), f'{rel}::{fn.name}')
+            # a literal id is a magic id only where a database or seed rows are in reach; in a unit test with the data layer
+            # mocked it is a value passed to a mock. A large id in a "not found" test is a deliberate miss.
+            reach = self.db_in_reach(rel, fn, tid, tree, py)
+            probe = bool(NOT_FOUND_TEST.search(fn.name))
             for n in ast.walk(fn):
                 if isinstance(n, ast.Call):
                     name = n.func.attr if isinstance(n.func, ast.Attribute) else getattr(n.func, 'id', '')
                     args = list(n.args) + [k.value for k in n.keywords if k.arg in ('id', 'pk') or (k.arg or '').endswith('_id')]
                     for a in args[:1] if ID_CALL.search(name or '') else [k.value for k in n.keywords
                                                                             if k.arg in ('id', 'pk') or (k.arg or '').endswith('_id')]:
+                        if not reach or not isinstance(a, ast.Constant) or (probe and isinstance(a.value, int) and a.value >= 999) or \
+                                (isinstance(a.value, int) and re.fullmatch(r'9{3,}', str(a.value))):
+                            continue
                         if isinstance(a, ast.Constant) and isinstance(a.value, int) and not isinstance(a.value, bool) and a.value >= 2:
                             seed = seeds.get(a.value)
                             self.add('magic_id', 'literal_lookup', rel, a.lineno,
@@ -511,8 +617,11 @@ class Scanner:
                 if isinstance(n, ast.Constant) and isinstance(n.value, str) and UUID.search(n.value):
                     self.add('magic_id', 'literal_uuid', rel, n.lineno, f'{fn.name} uses a literal UUID', None, 'uuid',
                              details={}, tests=[tid])
+                # x.id == 3 depends on the sequence; x.id > 0 or x.id is not None does not
                 if isinstance(n, ast.Compare) and isinstance(n.left, ast.Attribute) and n.left.attr in ('id', 'pk') and \
-                        any(isinstance(c, ast.Constant) and isinstance(c.value, int) for c in n.comparators):
+                        all(isinstance(op, (ast.Eq, ast.NotEq)) for op in n.ops) and \
+                        any(isinstance(c, ast.Constant) and isinstance(c.value, int) and not isinstance(c.value, bool)
+                            and c.value >= 1 for c in n.comparators):
                     self.add('magic_id', 'auto_increment', rel, n.lineno, f'{fn.name} asserts an auto-increment id', None, 'id',
                              details={}, tests=[tid])
 
@@ -557,6 +666,57 @@ class Scanner:
                              f'{scope}-scoped fixture {name} returns a mutable value and {len({m["test"] for m in mutators})} test(s) '
                              f'mutate it; {len(users)} test(s) share it', name, None,
                              details={'fixture': name, 'scope': scope, 'mutated_by': mutators, 'shared_by': users}, tests=users)
+
+    def module_file(self, dotted: str) -> str | None:
+        """The repo file for a dotted module name (clinic_api.settings -> clinic_api/settings.py or src/.../settings.py)."""
+        tail = dotted.replace('.', '/')
+        for cand in (tail + '.py', tail + '/__init__.py'):
+            hits = [f for f in self.files if f == cand or f.endswith('/' + cand)]
+            if hits:
+                return sorted(hits, key=len)[0]
+        return None
+
+    def module_reloads(self, rel: str, tree: ast.AST, py: inv.PyTests):
+        """importlib.reload(module) in test code: the module's top-level state (often read from the environment at import)
+        is rebuilt and stays that way for every later test, so other tests can pass only after the reload and fail alone
+        or in another order."""
+        imported: dict[str, str] = {}
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Import):
+                for a in n.names:
+                    imported[a.asname or a.name.split('.')[0]] = a.name if a.asname else a.name.split('.')[0]
+            elif isinstance(n, ast.ImportFrom) and n.module:
+                for a in n.names:
+                    imported[a.asname or a.name] = f'{n.module}.{a.name}'
+        tests = [py.test_id(rel, fn) for fn in py.tests.get(rel, [])] or self.by_path.get(rel, {}).get('loaded_by', [])
+        for fn in ast.walk(tree):
+            if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            for n in ast.walk(fn):
+                if not (isinstance(n, ast.Call) and n.args and
+                        ((isinstance(n.func, ast.Attribute) and n.func.attr == 'reload' and getattr(n.func.value, 'id', '') == 'importlib')
+                         or (isinstance(n.func, ast.Name) and n.func.id == 'reload' and imported.get('reload') == 'importlib.reload'))):
+                    continue
+                arg = ast.unparse(n.args[0])
+                dotted = imported.get(arg.split('.')[0], arg.split('.')[0]) + ('.' + arg.split('.', 1)[1] if '.' in arg else '')
+                target = self.module_file(dotted)
+                env_reads = []
+                if target:
+                    try:
+                        mtree = ast.parse((self.root / target).read_text(encoding='utf-8', errors='replace'))
+                        for st in mtree.body:
+                            if isinstance(st, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                                continue
+                            if re.search(r'\bos\.(getenv|environ)\b|\bgetenv\(|\benviron\[', ast.unparse(st)):
+                                env_reads.append(f'{target}:{st.lineno}')
+                    except SyntaxError:
+                        pass
+                self.add('shared_mutable', 'module_reload', rel, n.lineno,
+                         f'{fn.name} reloads {arg} with importlib.reload; the module-level state it rebuilds'
+                         + (f' (environment read at import: {", ".join(env_reads[:3])})' if env_reads else '')
+                         + ' stays changed for later tests, so other tests can pass only after it and fail alone or in another order',
+                         arg, None, details={'module': dotted, 'module_file': target, 'env_reads_at_import': env_reads,
+                                             'reloaded_in': fn.name}, tests=tests)
 
     def nondeterministic(self, rel: str, text: str, tree: ast.AST):
         seeded = re.search(r'random\.seed\(|Random\(\s*\d|Faker\.seed\(|seed_instance\(|\.seed\(\s*\d|faker\.seed', text)
@@ -624,13 +784,20 @@ class Scanner:
         for m in ARN.finditer(text):
             self.add('environment_coupling', 'account_id', rel, line_no, 'an AWS ARN with a real-looking account id', None,
                      'account id', details={})
-        if LOCAL_PATH.search(text):
+        # a platform's fixed content or build root (/home/site/wwwroot on Azure App Service, a CI runner's home) is the
+        # same on every machine of that platform, so it is not someone's machine
+        reserved = tuple(RESERVED['paths_reserved']['prefixes'])
+        if any(not text[m.start():].startswith(reserved) for m in LOCAL_PATH.finditer(text)):
             self.add('environment_coupling', 'local_path', rel, line_no, 'an absolute path on someone\'s machine', None, 'path',
                      details={})
 
     def secrets(self, rel: str, line_no: int, text: str):
+        spans: list[tuple[int, int]] = []
         for kind, rx in SECRETS.items():
             for m in rx.finditer(text):
+                if any(a < m.end() and m.start() < b for a, b in spans):
+                    continue               # the same value, already matched by a more specific pattern
+                spans.append((m.start(), m.end()))
                 why = placeholder_secret(kind, m.group(0))
                 self.add('secret', kind, rel, line_no, f'looks like a secret ({kind.replace("_", " ")})', None, 'secret', m.group(0),
                          auto_dismiss=why, details={'route_to': None if why else 'code-security-auditor'})
@@ -856,11 +1023,11 @@ class Scanner:
                 if i.get('lines', 0) > RULES['snapshot_max_lines']:
                     self.add('snapshot_rot', 'large_snapshot', i['path'], 1, f'{i["lines"]} lines asserted wholesale', None, None,
                              details={'lines': i['lines']})
-            elif i['kind'] in ('fixture', 'recording', 'seed') and not i['loaded_by']:
+            elif i['kind'] in ('fixture', 'recording', 'seed') and not i['loaded_by'] and not MIGRATION_SEED.search(i['path']):
                 self.add('unused_or_duplicate', 'unused', i['path'], 1, 'no test loads this file (its name appears in no test, '
                          'fixture or loader)', None, None)
         data = [i for i in items if i['kind'] in ('fixture', 'recording', 'seed') and i.get('lines', 0) >= RULES['duplicate_min_lines']]
-        texts = {i['path']: re.sub(r'\s+', ' ', (self.root / i['path']).read_text(encoding='utf-8')) for i in data}
+        texts = {i['path']: re.sub(r'\s+', ' ', datafiles.text_of(self.root / i['path'])) for i in data}
         for a in range(len(data)):
             for b in range(a + 1, len(data)):
                 x, y = data[a], data[b]
@@ -875,8 +1042,8 @@ class Scanner:
                     continue
                 if len(tx) + len(ty) > RULES.get('duplicate_max_chars', 400_000):
                     # very large files: compare their line sets instead (Jaccard), and say so
-                    lx = set((self.root / x['path']).read_text(encoding='utf-8').splitlines())
-                    ly = set((self.root / y['path']).read_text(encoding='utf-8').splitlines())
+                    lx = set(datafiles.text_of(self.root / x['path']).splitlines())
+                    ly = set(datafiles.text_of(self.root / y['path']).splitlines())
                     ratio = len(lx & ly) / len(lx | ly) if lx | ly else 0.0
                     if ratio >= RULES['duplicate_similarity']:
                         self.add('unused_or_duplicate', 'near_duplicate', y['path'], 1, f'{ratio:.0%} of distinct lines shared with {x["path"]}',
@@ -916,7 +1083,13 @@ class Scanner:
                 self.personal_record(r, rel)
                 if item['kind'] in ('fixture', 'seed', 'recording', 'factory', 'inline', 'support'):
                     self.time_bombs(r, rel, comparisons)
-            text = p.read_text(encoding='utf-8', errors='replace')
+            if item['kind'] in ('fixture', 'seed', 'recording'):
+                self.tabular_extract(rel, records)
+            try:
+                text = datafiles.text_of(p)
+            except datafiles.NotAssessed as exc:
+                item['status'], item['reason'] = 'not_assessed', str(exc)
+                continue
             structured = {(r_line) for r in records for r_line in [v['line'] for v in r['fields'].values()]}
             for n, line in enumerate(text.split('\n'), 1):
                 self.secrets(rel, n, line)
@@ -939,8 +1112,10 @@ class Scanner:
                 if tree is not None:
                     self.nondeterministic(rel, text, tree)
                     if item['kind'] == 'inline':
-                        self.test_code(rel, tree, seeds)
+                        self.test_code(rel, tree, seeds, py)
                         self.code_time_bombs(rel, tree)
+                    if item['kind'] in ('inline', 'support'):
+                        self.module_reloads(rel, tree, py)
         self.shared_mutable(py)
         self.locale(py)
         self.js_locale()

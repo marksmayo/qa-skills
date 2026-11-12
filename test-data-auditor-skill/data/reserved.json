@@ -39,6 +39,11 @@
     "tfn": ["123456782"],
     "medicare": []
   }},
+  "paths_reserved": {
+    "$source": "Fixed roots of hosting and CI platforms: the same path on every machine of that platform, so not a person's machine",
+    "prefixes": ["/home/site/wwwroot", "/home/site/", "/home/runner/", "/home/vsts/", "/home/circleci/", "/home/gitpod/",
+                 "/home/vscode/", "/home/node/", "/home/codespace/", "/home/jenkins/", "/home/appveyor/", "/home/travis/"]
+  },
   "hosts_reserved": {
     "$source": "RFC 2606, RFC 6761, RFC 5737 (documentation addresses)",
     "exact": ["localhost", "127.0.0.1", "0.0.0.0", "::1", "example.com", "example.net", "example.org"],
