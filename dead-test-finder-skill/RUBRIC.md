@@ -21,7 +21,11 @@ in `dismissed` with a reason of 20+ characters.
 | `duplicate` | `duplicate`, `overlap` |
 
 Two candidates can't be dismissed: a stale skip, and a never-runs candidate that the collect
-output confirms.
+output confirms. The exception is a conditional skip (a skipif, an `importorskip`, or a runtime
+`pytest.skip()` inside an `if`, `except` or similar guard) whose stale verdict came from its age,
+not from a done ticket: it may be dismissed with the reason the guard is there **(checked)**.
+`check_skips.py` no longer makes a conditional skip stale by age, so this only arises with older
+skip files.
 
 ## Confidence
 

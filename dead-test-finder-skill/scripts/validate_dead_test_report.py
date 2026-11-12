@@ -105,8 +105,8 @@ def completeness(rep: dict, ev: dict) -> float:
     collected = len([p for p in pk if p['status'] == 'ran']) / len(pk) if pk else 1.0
     neut_cands = [c for c in ev['candidates']['candidates']
                   if c['category'] in ('no_assertion', 'tautology', 'unreached_assertion', 'swallowed_failure', 'async_not_awaited', 'mock_only')]
-    done = {r['test_id'] for r in ev['neutralisations']['results'] if not r.get('patch') and r['outcome'] != 'not_run'}
-    noth = {r['test_id'] for r in ev['neutralisations']['results'] if not r.get('patch') and r['outcome'] == 'not_run'
+    done = {base_id(r['test_id']) for r in ev['neutralisations']['results'] if not r.get('patch') and r['outcome'] != 'not_run'}
+    noth = {base_id(r['test_id']) for r in ev['neutralisations']['results'] if not r.get('patch') and r['outcome'] == 'not_run'
             and r.get('note')}
     neut = len([c for c in neut_cands if c['test_ids'][0] in done or c['test_ids'][0] in noth]) / len(neut_cands) if neut_cands else 1.0
     skips = (ev.get('skips') or {}).get('skips', [])
@@ -124,12 +124,32 @@ def summary(rep: dict, ev: dict) -> dict:
 
 
 # ---------------------------------------------------------------- checks
+def base_name(name: str) -> str:
+    """test_x[case-1] -> test_x (a parametrised case's function)."""
+    return re.sub(r'\[.*\]$', '', name)
+
+
+def base_id(test_id: str) -> str:
+    """core/tests/test_x.py::test_y[case] -> core/tests/test_x.py::test_y (Python ids only; JS names may end in ])."""
+    return base_name(test_id) if '.py::' in test_id else test_id
+
+
+def merge_status(statuses: list[str]) -> str:
+    """One status for every parametrised case of a test: failed or error if any case did, passed if every case ran."""
+    for s in ('error', 'failed'):
+        if s in statuses:
+            return s
+    return 'passed' if 'passed' in statuses else statuses[0]
+
+
 def case_status(runs: dict, run_id: str, test_id: str) -> str | None:
     name = test_id.split('::')[-1]
-    for c in runs['cases']:
-        if c['run_id'] == run_id and (c['name'] == name or c['name'] == name.split(' > ')[-1]):
-            return c['status']
-    return None
+    exact = [c['status'] for c in runs['cases'] if c['run_id'] == run_id and
+             (c['name'] == name or c['name'] == name.split(' > ')[-1])]
+    if exact:
+        return exact[0]
+    cases = [c['status'] for c in runs['cases'] if c['run_id'] == run_id and '[' in c['name'] and base_name(c['name']) == name]
+    return merge_status(cases) if cases else None
 
 
 def check(rep: dict, ev: dict, repo: Path | None, base: Path) -> list[str]:
@@ -153,7 +173,7 @@ def check(rep: dict, ev: dict, repo: Path | None, base: Path) -> list[str]:
     tests = {t['id']: t for t in rep['tests']}
     if set(tests) != defs:
         errs.append(f'tests: must list every defined test exactly ({len(defs)} in the candidates file)')
-    neutralised = {r['test_id'] for r in neut if not r.get('patch') and r['outcome'] != 'not_run'}
+    neutralised = {base_id(r['test_id']) for r in neut if not r.get('patch') and r['outcome'] != 'not_run'}
     for tid, t in tests.items():
         if (t['status'] == 'neutralised') != (tid in neutralised):
             errs.append(f'tests[{tid}]: status neutralised must match the neutralisation runs')
@@ -234,7 +254,8 @@ def check(rep: dict, ev: dict, repo: Path | None, base: Path) -> list[str]:
                     errs.append(f'{w}: proof must be {want}, with the failing neutralised runs {failed}')
     for d in rep['dismissed']:
         s = skips.get(d['candidate_id'])
-        if s and s['verdict'] == 'stale':
+        done_ticket = bool(s and s.get('ticket') and s['ticket'].get('checked'))
+        if s and s['verdict'] == 'stale' and not (s.get('conditional') and not done_ticket):
             errs.append(f'{d["candidate_id"]}: a stale skip is a finding, not a dismissal')
         c = cands.get(d['candidate_id'])
         if c and c['category'] == 'never_runs' and c['test_ids'][0] in ev['collection']['not_collected']:
@@ -253,13 +274,9 @@ def check(rep: dict, ev: dict, repo: Path | None, base: Path) -> list[str]:
         for f in rep['findings']:
             pp = f['proposal'].get('patch_path')
             if pp and not f['applied'] and (base / pp).is_file():
-                with tempfile.TemporaryDirectory() as tmp:
-                    dest = Path(tmp) / 'r'
-                    shutil.copytree(repo, dest, ignore=shutil.ignore_patterns('node_modules', '.git', '__pycache__'))
-                    try:
-                        unified_diff.apply_patch((base / pp).read_text(encoding='utf-8'), dest)
-                    except SystemExit as exc:
-                        errs.append(f'{f["id"]}: patch {pp} no longer applies ({exc})')
+                problem = patch_problem((base / pp).read_text(encoding='utf-8'), repo)
+                if problem:
+                    errs.append(f'{f["id"]}: patch {pp} no longer applies ({problem})')
     # text
     texts = [('summary.headline', rep['summary'].get('headline', ''))] + [(f'limitations[{i}]', t) for i, t in enumerate(rep['limitations'])] + \
         [(f'{f["id"]}.why', f['why']) for f in rep['findings']] + [(f'{f["id"]}.proposal', f['proposal']['rationale']) for f in rep['findings']]
@@ -279,6 +296,28 @@ def check(rep: dict, ev: dict, repo: Path | None, base: Path) -> list[str]:
     if any(f['priority'] == 'P0' for f in rep['findings']) and 'P0' not in rep['summary'].get('headline', ''):
         errs.append('summary.headline: name the P0 findings')
     return errs
+
+
+def patch_problem(text: str, repo: Path) -> str | None:
+    """Apply a patch to a sparse copy holding only the files it touches (not the whole repo), so checking many
+    patches against a large repository costs a few small file copies each. None when it applies."""
+    try:
+        files = unified_diff.parse_patch(text)
+    except (SystemExit, ValueError) as exc:
+        return f'cannot parse: {exc}'
+    with tempfile.TemporaryDirectory(prefix='dtf-check-') as tmp:
+        dest = Path(tmp)
+        for f in files:
+            for rel in {f['old'], f['new']} - {None}:
+                src = repo / rel
+                if src.is_file():
+                    (dest / rel).parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(src, dest / rel)
+        try:
+            unified_diff.apply_patch(text, dest)
+        except SystemExit as exc:
+            return str(exc)
+    return None
 
 
 def patched_files(p: Path) -> list[str]:

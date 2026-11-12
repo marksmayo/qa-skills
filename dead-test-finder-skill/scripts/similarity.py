@@ -3,15 +3,20 @@
 
     python similarity.py --repo <repo> --candidates candidates.json --run-dir run [--out similarity.json]
 
-For each `duplicate` candidate pair from scan_tests.py (Python tests), both tests run once in a
-scratch copy of their package (in a temporary directory outside the repo) with a small sys.settrace pytest plugin that records the product
-lines each test executes (test files excluded). The literal values in each test's assertions and
-calls are compared too. A pair is a `duplicate` when the normalised AST similarity is at or above
-the threshold, the executed lines are identical, and the values are identical; otherwise it is an
+For the `duplicate` candidate pairs from scan_tests.py (Python tests), every test in any pair runs
+once, in one pytest session per package (split only to keep the command line short), in a single
+scratch copy of the package outside the repo, with a small sys.settrace pytest plugin that records
+the product lines each test executes. Only product frames are traced line by line; test files and
+installed libraries are skipped at the call, so tracing stays cheap. The cases of a parametrised
+test count together as that test. The literal values in each test's assertions and calls are
+compared too. A pair is a `duplicate` when the normalised AST similarity is at or above the
+threshold, the executed lines are identical, and the values are identical; otherwise it is an
 `overlap`. Pairs in other languages are `not_assessed` (no per-test coverage here).
+similarity.json records each pytest session (`sessions`) and, per pair, the command that
+reproduces it on its own and the exit code of the session that ran it.
 """
 from __future__ import annotations
-import argparse, ast, hashlib, json, os, shutil, subprocess, sys, tempfile
+import argparse, ast, hashlib, json, os, re, shutil, subprocess, sys, tempfile
 from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
@@ -32,14 +37,28 @@ def _is_test(rel):
     return name.startswith("test_") or name.endswith("_test.py") or name == "conftest.py" or "/tests/" in "/" + rel
 
 
-def _tracer(frame, event, arg):
+_rel = {}
+
+
+def _product(code):
+    """The repo-relative path of a product file, or None for test files and anything outside the copy (cached)."""
+    fn = code.co_filename
+    if fn not in _rel:
+        f = os.path.realpath(fn)
+        rel = os.path.relpath(f, _root).replace(os.sep, "/") if f.startswith(_root) else None
+        _rel[fn] = rel if rel and not _is_test(rel) else None
+    return _rel[fn]
+
+
+def _local(frame, event, arg):
     if event == "line" and _current[0]:
-        f = os.path.realpath(frame.f_code.co_filename)
-        if f.startswith(_root):
-            rel = os.path.relpath(f, _root).replace(os.sep, "/")
-            if not _is_test(rel):
-                _lines.setdefault(_current[0], set()).add(f"{rel}:{frame.f_lineno}")
-    return _tracer
+        _lines.setdefault(_current[0], set()).add(f"{_product(frame.f_code)}:{frame.f_lineno}")
+    return _local
+
+
+def _tracer(frame, event, arg):
+    # Line events are traced only in product frames; library and test frames are not traced at all.
+    return _local if _product(frame.f_code) else None
 
 
 @pytest.hookimpl(hookwrapper=True)
@@ -77,6 +96,30 @@ def values(path: Path, name: str) -> list:
     return []
 
 
+IGNORE = ('.git', '.hg', '.svn', '__pycache__', '*.pyc', '.pytest_cache', '.mypy_cache', '.tox', '.venv', 'venv', 'node_modules')
+
+
+def ignore_for(run_dir: Path):
+    """copytree ignore: VCS data, caches, virtualenvs, node_modules, and the run directory when it sits in the copy."""
+    pat = shutil.ignore_patterns(*IGNORE)
+
+    def ignore(dirpath: str, names: list[str]) -> set[str]:
+        return set(pat(dirpath, names)) | {n for n in names if (Path(dirpath) / n).resolve() == run_dir}
+    return ignore
+
+
+def batches(nodes: list[str], limit: int = 20000) -> list[list[str]]:
+    """Split node ids so each pytest command line stays well under the Windows 32k-character limit."""
+    out, cur, size = [], [], 0
+    for n in nodes:
+        if cur and size + len(n) + 3 > limit:
+            out.append(cur)
+            cur, size = [], 0
+        cur.append(n)
+        size += len(n) + 3
+    return out + ([cur] if cur else [])
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('--repo', type=Path, required=True)
@@ -91,44 +134,74 @@ def main(argv=None) -> int:
     out = []
     args.run_dir.mkdir(parents=True, exist_ok=True)
     h_before = tree_hash(root, args.run_dir)
+    pairs, by_pkg = [], {}
     for c in data['candidates']:
         if c['category'] != 'duplicate':
             continue
         a, b = (defs[t] for t in c['test_ids'])
         row = {'candidate_id': c['id'], 'test_ids': c['test_ids'], 'similarity': c['details']['similarity'], 'threshold': threshold}
         if a['lang'] != 'python' or b['lang'] != 'python' or a['package'] != b['package']:
-            out.append({**row, 'verdict': 'not_assessed', 'reason': 'per-test coverage is only collected for Python tests'})
+            pairs.append((c, a, b, {**row, 'verdict': 'not_assessed', 'reason': 'per-test coverage is only collected for Python tests'}))
             continue
-        pkg = a['package']
+        pairs.append((c, a, b, row))
+        by_pkg.setdefault(a['package'], set()).update(c['test_ids'])
+    # One scratch copy per package and one traced pytest session for every test in any pair (split only to keep the
+    # command line short), instead of a copy and a session per pair.
+    cov, sessions, session_of = {}, [], {}
+    for pkg, ids in sorted(by_pkg.items()):
+        prefix = pkg + '/' if pkg != '.' else ''
+        src = root / pkg if pkg != '.' else root
         tmp = Path(tempfile.mkdtemp(prefix='dtf-sim-'))
         work = tmp / 'pkg'
-        shutil.copytree(root / pkg if pkg != '.' else root, work,
-                        ignore=shutil.ignore_patterns('__pycache__', '*.pyc', '.pytest_cache', 'node_modules'))
-        (work / 'dtf_lines.py').write_text(PLUGIN, encoding='utf-8')
-        lines_file = work / '_lines.json'
-        prefix = pkg + '/' if pkg != '.' else ''
+        try:
+            shutil.copytree(src, work, ignore=ignore_for(args.run_dir.resolve()))
+            (work / 'dtf_lines.py').write_text(PLUGIN, encoding='utf-8')
+            todo = batches(sorted(t[len(prefix):] for t in ids))
+            while todo:
+                batch = todo.pop(0)
+                lines_file = work / '_lines.json'
+                lines_file.unlink(missing_ok=True)
+                cmd = [sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', '-p', 'dtf_lines', *batch]
+                res = subprocess.run(cmd, cwd=work, capture_output=True, text=True,
+                                     env={**os.environ, 'DTF_LINES_OUT': str(lines_file), 'PYTHONDONTWRITEBYTECODE': '1'})
+                if res.returncode in (3, 4) and len(batch) > 1:
+                    # a usage or internal error (an id pytest can't find, a module skipped at import) stops the whole
+                    # session: run those tests one at a time instead, so one bad id doesn't cost the others
+                    todo = [[n] for n in batch] + todo
+                    sessions.append({'package': pkg, 'tests': len(batch), 'exit_code': res.returncode,
+                                     'command': f'python -m pytest -q -p no:cacheprovider -p dtf_lines <{len(batch)} test ids>',
+                                     'note': 'stopped by a usage or internal error; its tests were rerun one at a time'})
+                    continue
+                got = json.loads(lines_file.read_text(encoding='utf-8')) if lines_file.exists() else {}
+                for nodeid, lines in got.items():               # the cases of a parametrised test count as that test
+                    cov.setdefault(prefix + re.sub(r'\[.*\]$', '', nodeid), set()).update(lines)
+                sessions.append({'package': pkg, 'tests': len(batch), 'exit_code': res.returncode,
+                                 'command': f'python -m pytest -q -p no:cacheprovider -p dtf_lines <{len(batch)} test ids>'})
+                session_of.update({prefix + n: res.returncode for n in batch})
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    for c, a, b, row in pairs:
+        if row.get('verdict') == 'not_assessed':
+            out.append(row)
+            continue
+        prefix = a['package'] + '/' if a['package'] != '.' else ''
         nodes = [t[len(prefix):] for t in c['test_ids']]
-        cmd = [sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', '-p', 'dtf_lines', *nodes]
-        res = subprocess.run(cmd, cwd=work, capture_output=True, text=True,
-                             env={**os.environ, 'DTF_LINES_OUT': str(lines_file), 'PYTHONDONTWRITEBYTECODE': '1'})
-        cov = json.loads(lines_file.read_text(encoding='utf-8')) if lines_file.exists() else {}
-        la, lb = (set(cov.get(n, [])) for n in nodes)
+        la, lb = (cov.get(t, set()) for t in c['test_ids'])
         va = values(root / a['file'], a['id'].split('::')[-1])
         vb = values(root / b['file'], b['id'].split('::')[-1])
-        shutil.rmtree(tmp, ignore_errors=True)
         same_cov = bool(la) and la == lb
         same_vals = va == vb
         verdict = 'duplicate' if row['similarity'] >= threshold and same_cov and same_vals else 'overlap'
         out.append({**row, 'command': 'python -m pytest -q -p no:cacheprovider -p dtf_lines ' + ' '.join(nodes),
-                    'exit_code': res.returncode, 'lines_a': len(la), 'lines_b': len(lb), 'coverage_identical': same_cov,
+                    'exit_code': session_of.get(c['test_ids'][0]), 'lines_a': len(la), 'lines_b': len(lb), 'coverage_identical': same_cov,
                     'only_in_a': sorted(la - lb)[:10], 'only_in_b': sorted(lb - la)[:10],
                     'values_a': va, 'values_b': vb, 'values_identical': same_vals, 'verdict': verdict})
         print(f'{c["id"]}: {verdict} (similarity {row["similarity"]:.0%}, coverage {"identical" if same_cov else "differs"}, '
               f'values {"identical" if same_vals else "differ"})')
     h_after = tree_hash(root, args.run_dir)
     path = args.out or args.run_dir / 'similarity.json'
-    path.write_text(json.dumps({'tree_hash_before': h_before, 'tree_hash_after': h_after, 'pairs': out}, indent=2) + '\n',
-                    encoding='utf-8')
+    path.write_text(json.dumps({'tree_hash_before': h_before, 'tree_hash_after': h_after, 'sessions': sessions, 'pairs': out},
+                               indent=2) + '\n', encoding='utf-8')
     return 3 if h_before != h_after else 0
 
 

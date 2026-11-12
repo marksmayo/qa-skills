@@ -22,7 +22,8 @@ It is strict about what it shows:
   in a scratch copy, and the test still passes. A separate raising body shows whether the test
   at least checks that nothing raises.
 - A duplicate needs identical coverage and values; similar code alone is an overlap.
-- A skip is stale only when its ticket is done, or when `git blame` says it is old.
+- A skip is stale only when its ticket is done, or when `git blame` says it is old; a guard skip
+  (`if not path.exists(): pytest.skip(...)`) is conditional and never stale by age.
 - It never deletes or merges tests. With `apply: true` it applies only strengthening fixes.
 - No "no dead tests" claims.
 
@@ -50,7 +51,7 @@ repository's own test runners (pytest, Vitest or Jest). Nothing is installed.
 ```bash
 python scripts/scan_tests.py <repo> --out run/candidates.json
 python scripts/collect_check.py <repo> --candidates run/candidates.json --run-dir run
-python scripts/neutralise.py --repo <repo> --candidates run/candidates.json --run-dir run --test <test id>
+python scripts/neutralise.py --repo <repo> --candidates run/candidates.json --run-dir run --test <test id> [--test <id>[case] ...] [--copy-ignore "*.mp4"]
 python scripts/neutralise.py --repo <repo> --candidates run/candidates.json --run-dir run --patch proposals/fix.diff --test <test id>
 python scripts/similarity.py --repo <repo> --candidates run/candidates.json --run-dir run
 python scripts/check_skips.py --repo <repo> --candidates run/candidates.json --tickets run/tickets.json --out run/skips.json

@@ -257,6 +257,58 @@ Where the build differs from the design above, and what the example showed.
   a test with no assertion. Calls are now found in the source with comments and string contents blanked
   (names are still read from the original), and a call on an object (`regex.test(`, `obj.it(`) doesn't
   count.
+- **Found on a second real repository, and fixed** (a static site's pytest suite: about 585
+  tests in 170 files, parametrised over about 2,000 HTML pages):
+  - **Root-level package.** `neutralise.py` crashed with `FileExistsError` when the tests sat at
+    the repo root (package `.`), because the copy's path was the temporary directory itself. It
+    is now named `repo`.
+  - **Parametrised tests** were `not_found`: the JUnit cases are `test_x[case]`. A function id
+    now runs every case and passes only if every case passes; a case id runs that case. The
+    validator reads the cases the same way.
+  - **Copies.** `neutralise.py` copied the whole repository, images included, for every test.
+    It now copies each package once per invocation, without VCS data, caches, virtualenvs,
+    `node_modules` or the run directory, plus anything named with `--copy-ignore`, and restores
+    each neutralised file from its text after the run. `neutralisations.json` records each copy.
+    `similarity.py` likewise copies once and runs every paired test in one traced pytest session,
+    tracing only product frames line by line (it took 62 minutes with a copy, a session and
+    every library line traced per pair),
+    and falls back to one test at a time if pytest stops on an id it can't run.
+  - **Duplicate search.** The all-pairs `SequenceMatcher` took 9 minutes. Pairs are now pruned
+    with three bounds that can never drop a pair at or above the threshold (length, token counts,
+    and a bit-parallel longest common subsequence), so the result is unchanged; identical
+    sequences skip the comparison. Re-scanning that repository (read-only) took 412 s before and
+    6 s after, with the same 151 duplicate pairs; the rescan also found the module-level skip,
+    made 73 runtime skips conditional and dropped the 8 swallowed-failure false positives. A
+    synthetic suite where 8,404 of 179,700 pairs really are duplicates gives the same pairs, but
+    still needs the exact comparison for each (about 13 minutes against 15).
+  - **Tested** with synthetic inputs: a root-level package with parametrised tests, guard and
+    unconditional runtime skips, every module-level skip form, three swallowing and three
+    non-swallowing excepts; the bit-parallel LCS against a dynamic-programming LCS on 2,000 random
+    pairs; `--repo` on the example plus 300 MB of images (3.2 s before, 0.2 s after); and three
+    neutralisations on the example's core package plus 300 MB of images (43 s before, 31 s
+    after, 13 s with `--copy-ignore images`; the rest is the tree hash).
+  - **Guard skips.** Every runtime `pytest.skip()` counted as unconditional, so guard skips
+    (`if not path.exists(): pytest.skip(...)`, `except FileNotFoundError: pytest.skip(...)`) aged
+    into `stale` and the validator refused to dismiss them. A runtime skip inside an `if`,
+    `except`, `try`, loop, short-circuit expression or after an early return is now conditional
+    with that guard as its condition; `check_skips.py` never makes a conditional skip stale by
+    age (with a reason it is `legitimate`, without one `unknown`), and the validator accepts the
+    dismissal of a conditional skip that an older skips file called stale by age.
+  - **Swallowed failures** were 8 of 8 false positives: any `except` around an assertion counted.
+    Only an `except` that can catch the `AssertionError` (bare, `AssertionError`, `Exception`,
+    `BaseException`, also in a tuple) and doesn't re-raise, fail, assert, or keep the error for a
+    later assertion is flagged now. `assert_in_except` likewise needs the except to hold the
+    test's only assertions (`except Exception as e: pytest.fail(...)` around a checked read is
+    not unreached).
+  - **Module-level skips** raised nothing. `pytestmark = pytest.mark.skip/skipif/xfail`,
+    `pytest.importorskip(...)` and a guarded `pytest.skip(..., allow_module_level=True)` are now
+    `skipped` candidates, and an unconditional module-level `pytest.skip` is `never_runs` (pytest
+    collects none of the module's tests); each candidate lists every test in the module. Skip
+    marks on a test's class count too.
+  - **`--repo` in the validator** copied the repository for each patch. Each patch is now applied
+    to a sparse copy holding only the files it touches.
+  - The example's candidates, similarity verdict and validation are unchanged; its
+    neutralisation runs were not repeated (they need the Node client copy).
 - **Testing:**
   - The validator catches 31 of 31 seeded violations.
   - 18 scanner, similarity and skip scenarios pass:

@@ -13,8 +13,14 @@ Verdicts:
     stale        the ticket's status category is done (or its status is a done-like name), or an
                  unconditional skip with no ticket is older than --skip-age-days
     open         the ticket is still open: the skip is waiting on it
-    legitimate   a conditional skip (platform, optional dependency) with a stated reason
-    unknown      none of the above could be established (no ticket file, no git history)
+    legitimate   a conditional skip (platform, optional dependency, a guard such as
+                 `if not path.exists(): pytest.skip("... not found")`) with a stated reason
+    unknown      none of the above could be established (no ticket file, no git history), or a
+                 conditional skip with no reason: age alone never makes a guard skip stale
+
+A skip is conditional when it is a skipif/skipUnless/conditional xfail mark, or a runtime
+pytest.skip() inside an if, except, try, loop or short-circuit expression, or after an early
+return (scan_tests.py records the condition).
 """
 from __future__ import annotations
 import argparse, json, re, subprocess, sys
@@ -91,6 +97,9 @@ def main(argv=None) -> int:
             verdict, why = 'legitimate', f'conditional skip ({d.get("condition")}) with a reason: {d["reason"]}'
         elif key:
             verdict, why = 'unknown', f'{key} could not be read (no ticket file or connector); status not_checked'
+        elif d.get('conditional'):
+            verdict, why = 'unknown', (f'conditional skip ({d.get("condition")}) with no stated reason; a guard skip is not '
+                                       'stale by age alone, so check what the condition guards against')
         elif age is not None and age > args.skip_age_days:
             verdict, why = 'stale', f'no ticket, and the skip is {age} days old (threshold {args.skip_age_days})'
         elif age is not None:

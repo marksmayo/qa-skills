@@ -52,7 +52,9 @@ Output:
   - **Otherwise:** similar code that runs the same lines with different values is an `overlap`.
 - **A stale skip needs evidence.** Either its ticket is done (Jira status category, read-only),
   or it has no ticket and `git blame` says it is older than `skip_age_days`. A conditional skip
-  with a stated reason is legitimate and is dismissed with that reason.
+  with a stated reason is legitimate and is dismissed with that reason. A guard skip (a
+  `pytest.skip()` inside an `if` or `except`, or after an early return) is conditional, and age
+  alone never makes it stale.
 - **Never deletes or merges.**
   - **Proposals:** every one has a patch file.
   - **With `apply: true`:** apply only fixes that strengthen a test (the missing assertion or
@@ -95,15 +97,15 @@ It flags these candidates:
 
 | Candidate | Rule |
 |---|---|
-| `never_runs` | File outside `python_files` (read from the pytest config), class outside `python_classes`, `.only` |
+| `never_runs` | File outside `python_files` (read from the pytest config), class outside `python_classes`, `.only`, a module-level `pytest.skip(..., allow_module_level=True)` that always runs (one candidate listing every test in the module) |
 | `no_assertion` | No `assert`, assertion call, `expect` or `pytest.raises` |
 | `tautology` | `assert True`, `x == x`, `expect(v).toBe(v)` |
-| `unreached_assertion` | Assertions inside a loop over a possibly empty iterable, only inside `except`, or after `return` |
-| `swallowed_failure` | `except AssertionError: pass` or similar around an assertion; an empty `.catch(() => {})` |
+| `unreached_assertion` | Assertions inside a loop over a possibly empty iterable, only inside `except` (the test has no other assertion), or after `return` |
+| `swallowed_failure` | An `except` that can catch the assertion (bare, `AssertionError`, `Exception` or `BaseException`, alone or in a tuple) around it, and doesn't re-raise, fail (`pytest.fail`, `self.fail`), assert, or keep the error for an assertion after the `try`; an empty `.catch(() => {})`. `except FileNotFoundError: pytest.skip(...)` is not one |
 | `async_not_awaited` | `expect(...).resolves/.rejects` neither awaited nor returned; a `done` callback never called |
 | `mock_only` | The test patches a function, then asserts on that same function |
-| `skipped` | `skip`, `skipif`, a non-strict `xfail`, `it.skip`, `describe.skip`, `todo`; with the reason and any ticket key |
-| `duplicate` | Normalised AST similarity ≥ 0.9 |
+| `skipped` | `skip`, `skipif`, a non-strict `xfail` (on the test or its class), a runtime `pytest.skip()` or `self.skipTest()`, `it.skip`, `describe.skip`, `todo`; at module level `pytestmark = pytest.mark.skip/skipif/xfail`, `pytest.importorskip(...)` and a guarded `pytest.skip(..., allow_module_level=True)` (one candidate listing every test in the module). Each with the reason, any ticket key, and whether it is conditional: a runtime skip inside an `if`, `except`, `try`, loop or short-circuit expression, or after an early return, is conditional, with that guard as its condition |
+| `duplicate` | Normalised AST similarity ≥ 0.9. Pairs are pruned first with bounds that never drop a pair at or above the threshold (length, token counts, longest common subsequence), so the result is the same as comparing every pair, in seconds rather than minutes on a large suite |
 
 `collect_check.py` runs each framework's list command and keeps the raw output. Every
 definition that isn't listed is `not_collected`.
@@ -116,7 +118,18 @@ python scripts/neutralise.py --repo <repo> --candidates <run>/candidates.json --
 ```
 
 Run this for every `no_assertion`, `tautology`, `unreached_assertion`, `swallowed_failure`,
-`async_not_awaited` and `mock_only` candidate.
+`async_not_awaited` and `mock_only` candidate, all in one invocation where you can.
+
+- **One copy per invocation.** Each package (the repo root too) is copied once, outside the
+  repo, without VCS data, caches, virtualenvs, `node_modules` or the run directory, and every test
+  in the invocation shares it; each neutralised file is written back straight after its run. Add
+  `--copy-ignore <glob>` for large files the tests never open (`--copy-ignore "*.mp4"`), and only
+  those: a test that checks an image exists needs the image. `neutralisations.json` records each
+  copy and what it left out. For a very large repo, make one scratch copy yourself and pass it
+  with `--cwd <package>=<copy>` to reuse it across invocations.
+- **Parametrised tests.** Name the function (`tests/test_x.py::test_y`) to run every case: it
+  passes only if every case passes. Name one case (`tests/test_x.py::test_y[a-1]`) to run just
+  that one.
 
 The targets are the product functions the test imports and calls; use `--target` to name another.
 Each test runs three times:
@@ -138,8 +151,10 @@ python scripts/fetch_ticket.py --from-file <issue.json> --source connector --out
 python scripts/check_skips.py --repo <repo> --candidates <run>/candidates.json --tickets <run>/tickets.json --out <run>/skips.json
 ```
 
-`similarity.py` runs each candidate pair with a per-test line tracer and compares the lines run
-and the literal values.
+`similarity.py` runs every test in a candidate pair once, in one traced pytest session per
+package (in one scratch copy), and compares the lines each test ran and its literal values. Only
+product code is traced line by line. A parametrised test's cases count together. If a session
+stops on an id pytest can't run, its tests are rerun one at a time.
 
 `check_skips.py` gives each skip a verdict:
 
@@ -147,13 +162,15 @@ and the literal values.
 |---|---|
 | `stale` | The ticket is done, or the skip has no ticket and is older than `skip_age_days` |
 | `open` | The ticket is still open |
-| `legitimate` | A conditional skip with a reason |
-| `unknown` | No ticket file, no git history |
+| `legitimate` | A conditional skip with a reason (a skipif, an `importorskip`, a guard such as `if not path.exists(): pytest.skip("... not found")`) |
+| `unknown` | No ticket file, no git history, or a conditional skip with no reason (never stale by age) |
 
 ## Step 4: Review, propose, prove
 
 Every candidate becomes a finding or is dismissed with a reason, for example a legitimate
-conditional skip.
+conditional skip. A stale verdict can be dismissed only when the skip is conditional and the
+verdict came from its age rather than a done ticket (a `skips.json` written before guard skips
+were recognised); say what the condition guards against.
 
 | Finding | From |
 |---|---|
