@@ -1,5 +1,5 @@
 {
- "collected_at": "2026-11-11T13:24:06Z",
+ "collected_at": "2026-11-12T07:02:17Z",
  "candidate": {
   "commit": "a7c23dea801abfc544a0eebeaa71587787fc47ca",
   "build_id": "ci-4821",
@@ -39,7 +39,7 @@
  "sources": [
   {
    "path": "code-security-auditor-skill/examples/security_audit.example.json",
-   "sha256": "e62c0f311099836af4eb69c43781d810581fa58f3ac7e622665fbbce817c52cb",
+   "sha256": "93e04893ba223d9905d7e98a585f91e4de8c23e220596cd14f6926e8b26e12fc",
    "type": "code-security-auditor",
    "skill": "code-security-auditor",
    "skill_version": "1.0.0",
@@ -459,7 +459,7 @@
   },
   {
    "path": "wcag-auditor-skill/examples/audit.example.json",
-   "sha256": "06473272f65ef7ac2d2c31142726897eb77e6abc779e7780485f289f3a9d3d2a",
+   "sha256": "947cca93afbae8be9b0a73eb2a6bb3637fcb03a910b3b8a9fd8a4288ed530493",
    "type": "wcag-auditor",
    "skill": "wcag-auditor",
    "skill_version": "1.0.0",
@@ -1073,10 +1073,10 @@
   },
   {
    "path": "ui-crash-hunter-skill/examples/crash_report.example.json",
-   "sha256": "1bc849fc9aa0baf9f4e65c5d92dd07c34e8629e4f9d0238360e501ee7d08b9e8",
+   "sha256": "2671e1e63b9d52999455e572d2586ed2bdaddfa038fb2b36aabf794a163d9d4c",
    "type": "ui-crash-hunter",
    "skill": "ui-crash-hunter",
-   "skill_version": "1.0.0",
+   "skill_version": "1.2.0",
    "provenance": {
     "schema_version": "1.0.0",
     "commit": "a35dba359ea303b64f995e609e3b88a23482e98b",
@@ -1108,7 +1108,7 @@
    "facts": {
     "type": "ui-crash-hunter",
     "skill": "ui-crash-hunter",
-    "skill_version": "1.0.0",
+    "skill_version": "1.2.0",
     "generated_at": "2026-11-10T09:30:00Z",
     "verdict": null,
     "evidence_completeness": 0.71,
@@ -1230,7 +1230,7 @@
   },
   {
    "path": "journey-to-tests-skill/examples/journey_tests_report.example.json",
-   "sha256": "3cb99200d2f59ecc9515eabe7d4c1a5f6d1830c0af0dc027f3c726058c7be09e",
+   "sha256": "3ca08badf1b73d7ef2d85dc2331966d67ac7f22f1005102818fe622300a5b4b8",
    "type": "journey-to-tests",
    "skill": "journey-to-tests",
    "skill_version": "1.0.0",
@@ -1351,7 +1351,7 @@
   },
   {
    "path": "test-impact-selector-skill/examples/impact_report.example.json",
-   "sha256": "41a2674ae08be2d84550f94b40663af2f221ad7edc9a622f4c178296094951f7",
+   "sha256": "2ca9ba211460b44dd4186e69a265df91276667a315ceb81796cc10c7d0c414d3",
    "type": "test-impact-selector",
    "skill": "test-impact-selector",
    "skill_version": "1.0.0",

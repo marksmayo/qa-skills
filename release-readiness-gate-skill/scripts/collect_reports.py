@@ -36,7 +36,7 @@ from adapters import TYPES, detect, facts_for  # noqa: E402
 
 
 def sha256(p: Path) -> str:
-    return hashlib.sha256(p.read_bytes()).hexdigest()
+    return hashlib.sha256(p.read_bytes().replace(b'\r\n', b'\n')).hexdigest()  # line endings normalised
 
 
 def posix(p: Path) -> str:

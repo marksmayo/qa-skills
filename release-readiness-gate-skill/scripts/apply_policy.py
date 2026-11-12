@@ -325,7 +325,7 @@ def statement(e: dict) -> str:
 
 
 def sha256(p: Path) -> str:
-    return hashlib.sha256(p.read_bytes()).hexdigest()
+    return hashlib.sha256(p.read_bytes().replace(b'\r\n', b'\n')).hexdigest()  # line endings normalised
 
 
 KINDS = {'priority', 'cvss_at_least', 'blocked_critical_path', 'junit_failed', 'flaky_rate', 'completeness', 'irreversible_migration',

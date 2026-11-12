@@ -32,7 +32,7 @@ def now() -> str:
 
 
 def sha(p: Path) -> str | None:
-    return hashlib.sha256(p.read_bytes()).hexdigest() if p.exists() else None
+    return hashlib.sha256(p.read_bytes().replace(b'\r\n', b'\n')).hexdigest() if p.exists() else None  # line endings normalised
 
 
 def get(obj, path: str):

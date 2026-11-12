@@ -31,7 +31,7 @@ REQUIRED = ['schema_version', 'skill', 'generated_at', 'as_of', 'candidate', 'po
 
 
 def sha(p: Path) -> str | None:
-    return hashlib.sha256(p.read_bytes()).hexdigest() if p.exists() else None
+    return hashlib.sha256(p.read_bytes().replace(b'\r\n', b'\n')).hexdigest() if p.exists() else None  # line endings normalised
 
 
 def expected_confidence(d: dict) -> str:
