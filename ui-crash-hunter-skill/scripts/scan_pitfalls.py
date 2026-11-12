@@ -15,7 +15,8 @@ Scope is UI code: files are followed from the UI entry points through their impo
 jsconfig "paths" aliases such as "@/*" are resolved; see ui_graph.py). Route handlers (a throw there
 is an HTTP 500, not a UI crash), tests and modules no entry point imports are excluded, from this
 scan and from --sarif/--extra candidates alike, and counted with examples in "scope.excluded".
---all-files keeps route handlers and unreachable modules (tests stay out).
+--all-files keeps route handlers and unreachable modules (tests and tool configs such as
+vite.config.ts or eslint.config.js stay out). An --extra candidate without a snippet gets its source line.
 Promise chains (matcher "promise_chain") are parsed whole across lines; --self-test runs a built-in
 check of that parser and exits.
 """
@@ -414,6 +415,8 @@ def main() -> int:
         kind = classify(rel)
         if kind == 'test':
             return 'tests'
+        if kind == 'config':  # vite.config.ts, eslint.config.js: build tooling, never run by the UI
+            return 'tool_configs'
         if args.all_files:
             return None
         if kind == 'route_handler':
@@ -463,6 +466,12 @@ def main() -> int:
             return 2
         found = data.get('candidates') or []
         kept = in_scope(found)
+        for c in kept:  # a tool that gave no snippet (older ESLint output): the source line, so snippet rules can match
+            if not c.get('snippet') and c.get('file') and isinstance(c.get('line'), int):
+                try:
+                    c['snippet'] = (root / c['file']).read_text(encoding='utf-8', errors='replace').splitlines()[c['line'] - 1].strip()[:200]
+                except (OSError, IndexError):
+                    pass
         cands.extend(kept)
         tools.append({'tool': data.get('tool', path.stem), 'status': data.get('status', 'ran'),
                       'results': len(kept), 'input': str(path),
@@ -471,8 +480,10 @@ def main() -> int:
              'entry_points': len(g['entries']) if g else None,
              'reachable_files': len(reach) if reach is not None else None,
              'path_aliases': g['aliases'] if g else [],
+             'unresolved_imports': g.get('unresolved', 0) if g else None,
+             'warnings': (g.get('warnings') or []) if g else [],
              'excluded': excluded,
-             'note': ('every source file scanned (--all-files); tests are still skipped' if args.all_files else
+             'note': ('every source file scanned (--all-files); tests and tool configs are still skipped' if args.all_files else
                       'UI code only: tests, route handlers and modules no UI entry point imports are excluded and counted '
                       'here; read the examples, and rerun with --all-files if a module is reached in a way the import '
                       'graph cannot follow (a computed import)' if reach is not None else
@@ -494,6 +505,8 @@ def main() -> int:
         for c in out['candidates']:
             by[c.get('pitfall_id') or 'unmapped'] = by.get(c.get('pitfall_id') or 'unmapped', 0) + 1
         print(f"{len(out['candidates'])} candidate(s) from {sum(files_by_pack.values())} file(s) -> {args.out}")
+        for w in scope['warnings']:
+            print(f'  WARN: {w}')
         for k, e in excluded.items():
             print(f"  excluded ({k}): {e['files']} file(s), {e['candidates']} tool candidate(s), e.g. {', '.join(e['examples'][:3])}")
         for k, v in sorted(by.items(), key=lambda kv: -kv[1]):

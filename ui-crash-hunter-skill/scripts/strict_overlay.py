@@ -12,6 +12,12 @@ through a second scratch config, so existing errors aren't reported; the two com
 side. Both scratch configs set incremental false and their tsBuildInfoFile in the scratch dir, so
 nothing (not even tsconfig.tsbuildinfo) is written into the repository. The repo's tsconfig and
 jsconfig are read as JSON with comments ("@/*" in a string is not a comment).
+A solution-style tsconfig ("files": [] and "references", the create-vite layout) compiles nothing and
+carries none of the app's compiler options, so the referenced project whose include covers src/
+(tsconfig.app.json) is compiled instead; if none does, the result is errored with the reason. The
+baseline lists the files it compiled (--listFiles): a compile that covered none of the repository's
+source files is errored, never "ran with 0 new errors", and a baseline with more than 50 errors
+carries a warning that the tsconfig is probably not the one the build uses.
 --scope ui (default) compiles only the UI entry points (Next.js page/layout/error files, src/main.*,
 the scripts index.html loads; see ui_graph.py) and what they import, plus declaration files: tests,
 scripts and modules no page imports are left out. --scope all compiles the whole project.
@@ -22,9 +28,11 @@ same way. Without any tsc the result is not_applicable.
 eslint: the repo's config plus crash-relevant rules from plugins the config already loads
 (react-hooks/exhaustive-deps, @typescript-eslint/no-floating-promises, no-non-null-assertion,
 no-unnecessary-condition). Which plugins are loaded is asked of ESLint itself (--print-config on a
-source file), so plugins that come through a shared config such as eslint-config-next count; the
-type-aware rules run only when the config sets parserOptions.project or projectService. Only
-violations the extra rules add are reported. --scope ui lints the files the UI entry points reach.
+source file of the app's main extension, under src/, never a tool config such as eslint.config.js),
+so plugins that come through a shared config such as eslint-config-next count; the type-aware rules
+run only when the config sets parserOptions.project or projectService. Only violations the extra
+rules add are reported, each with the source line as its snippet. --scope ui lints the files the UI
+entry points reach.
 
 Nothing in the repo is written. Tools are never installed: a missing tool is reported as not_run,
 and a failing tool as errored, so the report can lower its evidence completeness.
@@ -36,7 +44,8 @@ from pathlib import Path
 
 sys.dont_write_bytecode = True  # importing a sibling must not write __pycache__ into the skill folder
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from ui_graph import load_jsonc, graph as ui_graph, walk as walk_repo  # noqa: E402
+from ui_graph import (load_jsonc, graph as ui_graph, walk as walk_repo, is_solution, ui_project, references,  # noqa: E402
+                      is_tool_config)
 
 TSC_LINE = re.compile(r'^(?P<file>.+?)\((?P<line>\d+),(?P<col>\d+)\):\s+error\s+(?P<code>TS\d+):\s+(?P<msg>.*)$')
 NULL_CODES = {'TS2531', 'TS2532', 'TS2533', 'TS18047', 'TS18048', 'TS18049', 'TS2722', 'TS2721'}
@@ -117,6 +126,22 @@ def parse_tsc(output: str, root: Path) -> list[dict]:
             errs.append({'file': rel, 'line': int(m['line']), 'column': int(m['col']), 'code': m['code'], 'message': m['msg']})
     return errs
 
+def compiled_files(output: str, root: Path) -> int:
+    """How many of the repository's own source files a `tsc --listFiles` run compiled (not node_modules or lib files)."""
+    n = 0
+    for line in output.splitlines():
+        s = line.strip()
+        if not s or TSC_LINE.match(s) or not re.search(r'\.(tsx?|jsx?|mts|cts|mjs|cjs|vue|svelte)$', s):
+            continue
+        p = Path(s)
+        try:
+            rel = p.resolve().relative_to(root)
+        except (ValueError, OSError):
+            continue
+        if 'node_modules' not in rel.parts and not s.endswith('.d.ts'):
+            n += 1
+    return n
+
 DEFAULT_TSC = 'npx --no-install tsc'
 SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'out', '.next', '.nuxt', 'coverage', 'vendor', '__pycache__',
              'storybook-static', '.venv', 'venv'}
@@ -174,6 +199,19 @@ def checkjs_config(args, root: Path) -> tuple[Path | None, dict | None, str | No
 def cmd_tsc(args, root: Path) -> dict:
     tsconfig = (root / args.tsconfig).resolve()
     extra: dict = {}
+    if tsconfig.exists() and is_solution(tsconfig):
+        # a solution tsconfig ("files": [] + "references") compiles nothing itself, and extending it gives
+        # none of the app's compiler options (jsx, paths, target): use the referenced project for the app
+        project = ui_project(tsconfig)
+        if project is None:
+            return result('tsc-strict', 'errored', solution_config=tsconfig.name,
+                          references=[q.name for q in references(tsconfig)],
+                          note=f'{tsconfig.name} is a solution file ("files": [] and references) and no referenced project '
+                               "compiles the app's source (src/); pass the app's project with --tsconfig")
+        extra['solution_config'] = tsconfig.name
+        extra['project_note'] = (f'{tsconfig.name} is a solution file (compiles nothing itself); compiled the referenced '
+                                 f'project {project.name}, whose include covers the app source')
+        tsconfig = project.resolve()
     if not tsconfig.exists():
         # plain JavaScript: type-check it with checkJs through a generated config, when a tsc is available
         tsc = resolve_cmd(args.tsc, root) or (resolve_cmd('tsc', root) if args.tsc == DEFAULT_TSC else None)
@@ -231,7 +269,8 @@ def cmd_tsc(args, root: Path) -> dict:
     started = time.monotonic()
     try:
         (base_rc, base_out), (strict_rc, strict_out) = run_both(
-            [tsc + ['-p', str(base_cfg_path), '--pretty', 'false'], tsc + ['-p', str(scratch_cfg), '--pretty', 'false']],
+            [tsc + ['-p', str(base_cfg_path), '--pretty', 'false', '--listFiles'],
+             tsc + ['-p', str(scratch_cfg), '--pretty', 'false']],
             root, args.timeout, scratch)
     except (OSError, subprocess.TimeoutExpired) as exc:
         return result('tsc-strict', 'errored', note=str(exc))
@@ -243,6 +282,17 @@ def cmd_tsc(args, root: Path) -> dict:
         return result('tsc-strict', 'errored', note='tsc failed without diagnostics', output=strict_out[-2000:])
     if base_rc not in (0, 1, 2) or (base_rc and not base):
         return result('tsc-strict', 'errored', note='the baseline tsc run failed without diagnostics', output=base_out[-2000:])
+    covered = compiled_files(base_out, root)
+    if not covered:
+        # zero errors from a compile of zero files is not a result
+        return result('tsc-strict', 'errored', **extra, baseline_config=base_cfg_path.as_posix(), compiled_files=0,
+                      note=f'the compile covered no source file of the repository ({tsconfig.name} selects none with this '
+                           'scope); 0 new errors would mean nothing. Pass the project that compiles the app with --tsconfig')
+    extra['compiled_files'] = covered
+    if len(base) > 50:
+        extra['warning'] = (f'the baseline compile already has {len(base)} errors: if the repository\'s own type check is '
+                            'clean, this is not the tsconfig its build uses (wrong compiler options or paths), and the '
+                            'new errors are unreliable; pass the right project with --tsconfig')
     seen = {(e['file'], e['line'], e['column'], e['code']) for e in base}
     new = [e for e in strict if (e['file'], e['line'], e['column'], e['code']) not in seen]
     version = run(tsc + ['--version'], root, 60)[1].strip()
@@ -272,15 +322,30 @@ def cmd_eslint(args, root: Path) -> dict:
     if not paths and args.scope == 'ui':
         g = ui_graph(root)
         reach = [f for f in (g['reachable'] or []) if f.endswith(('.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs')) and not f.endswith('.d.ts')]
-        if reach and len(reach) <= 600:
+        if reach and len(reach) <= 600 and sum(len(r) + 1 for r in reach) < 20000:  # the Windows command-line limit
             paths = reach
             scope_note = f'scope ui: linted the {len(reach)} source file(s) reachable from the UI entry points'
+    if not paths:
+        # not '.': a command-line --rule for a plugin applies to every linted file, and ESLint aborts on a file
+        # (eslint.config.js) that the config's plugin block does not cover. Lint the app's own source files
+        # of its main language family instead, as one glob per top-level folder (a file list can exceed the
+        # Windows command-line limit).
+        main = probe_file(root)
+        fam = ('.ts', '.tsx', '.mts', '.cts') if main and main.endswith(('.ts', '.tsx')) else ('.js', '.jsx', '.mjs', '.cjs')
+        src = [p.relative_to(root).as_posix() for p in walk_repo(root) if p.suffix in fam and not p.name.endswith('.d.ts')]
+        src = [f for f in src if not is_tool_config(f)]
+        exts = sorted({Path(f).suffix.lstrip('.') for f in src})
+        pattern = ('{' + ','.join(exts) + '}') if len(exts) > 1 else (exts[0] if exts else '')
+        top = sorted({f.split('/', 1)[0] for f in src if '/' in f})
+        paths = [f'{d}/**/*.{pattern}' for d in top] + [f for f in src if '/' not in f]
+        if paths:
+            scope_note = (f'scope all: linted {len(src)} {"/".join(exts)} source file(s); tool configs '
+                          '(eslint.config.js, vite.config.ts) and the other language family left out')
     paths = paths or ['.']
     # Which plugins the config really loads: eslint-config-next and other shared configs bring
     # eslint-plugin-react-hooks and typescript-eslint in transitively, so package.json alone undercounts.
-    sample = next((p for p in paths if Path(p).suffix in ('.tsx', '.ts', '.jsx', '.js')), None) or \
-        next((p.relative_to(root).as_posix() for p in walk_repo(root) if p.suffix in ('.tsx', '.ts', '.jsx', '.js')
-              and not p.name.endswith('.d.ts')), None)
+    sample = next((p for p in paths if Path(p).suffix in ('.tsx', '.ts', '.jsx', '.js') and not is_tool_config(p)), None) \
+        or probe_file(root)
     plugins, typed, how = None, False, 'package.json'
     if sample:
         try:
@@ -349,7 +414,7 @@ def cmd_eslint(args, root: Path) -> dict:
             if key(f['filePath'], m) in seen or m.get('ruleId') not in pid_by_rule:
                 continue
             cands.append({'pitfall_id': pid_by_rule[m['ruleId']], 'file': rel, 'line': m.get('line'), 'column': m.get('column'),
-                          'snippet': '', 'message': f"{m['ruleId']}: {m.get('message', '')}",
+                          'snippet': line_at(root, rel, m.get('line')), 'message': f"{m['ruleId']}: {m.get('message', '')}",
                           'sources': [{'tool': 'eslint-strict', 'rule_id': m['ruleId']}]})
     more = {'scope_note': scope_note} if scope_note else {}
     if skipped:
@@ -359,6 +424,28 @@ def cmd_eslint(args, root: Path) -> dict:
     shown = paths if len(paths) <= 5 else paths[:5] + [f'... ({len(paths)} files)']
     return result('eslint-strict', 'ran', rules=[r for r, _ in rules], plugins_detected_by=how, plugins=sorted(plugins),
                   command=' '.join(eslint + extra + shown), candidates=cands, **more)
+
+def probe_file(root: Path) -> str | None:
+    """A source file to ask ESLint about: the app's dominant extension, under src/ when there is one, never a
+    tool config (a flat config often applies only to **/*.{ts,tsx}, so eslint.config.js would show no plugins)."""
+    found = [p.relative_to(root).as_posix() for p in walk_repo(root)
+             if p.suffix in ('.tsx', '.ts', '.jsx', '.js') and not p.name.endswith('.d.ts')]
+    found = [f for f in found if not is_tool_config(f) and not re.search(r'(^|/)(tests?|__tests__|e2e)/|\.(test|spec)\.', f)]
+    if not found:
+        return None
+    counts: dict[str, int] = {}
+    for f in found:
+        counts[Path(f).suffix] = counts.get(Path(f).suffix, 0) + 1
+    dominant = max(counts, key=lambda e: (counts[e], e in ('.tsx', '.ts')))
+    pool = [f for f in found if f.endswith(dominant)]
+    in_src = [f for f in pool if re.match(r'^(.*/)?src/', f)]
+    return sorted(in_src or pool, key=lambda f: (f.count('/'), f))[0]
+
+def line_at(root: Path, rel: str, line: int | None) -> str:
+    try:
+        return (root / rel).read_text(encoding='utf-8', errors='replace').splitlines()[int(line) - 1].strip()[:200]
+    except (OSError, IndexError, TypeError, ValueError):
+        return ''
 
 def _pkg(root: Path) -> dict:
     try:
