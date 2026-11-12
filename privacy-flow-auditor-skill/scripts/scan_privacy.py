@@ -34,6 +34,15 @@ from server code is a server_side_send candidate. Sentry Replay with no masking 
 nearby, is a candidate. Test directories and files are skipped unless --include-tests. Social profile and
 documentation links are not SDKs.
 
+Identity SDKs: where MSAL, oidc-client-ts or the Auth0 SPA SDK keep tokens (cacheLocation, storeAuthStateInCookie,
+userStore: new WebStorageStateStore({store}), or the SDK default sessionStorage when an MSAL or oidc-client-ts client
+sets none) is an insecure_storage candidate (subtype auth_token_storage) with the standard OIDC scopes requested. ID
+and access tokens, idTokenClaims and account claims, and variables holding a decoded token (jwtDecode,
+JSON.parse(atob(...))) or one read back from storage are identity_read collection points, so a log line that names
+them is a candidate, with identity_source saying where the value came from; a bearer token sent to an API is not.
+File inputs, dropzones, client-side parsing (SheetJS, Papa Parse, FileReader) and files appended to FormData are
+collection points with category null (what the files hold is unknown). collection_by_category counts the points.
+
 Files are read once and every pattern runs over the whole text. Directories in SKIP and --exclude are pruned.
 Files larger than --max-bytes (default 2 MB) are skipped; minified or generated files (*.min.js, bundles, or
 very long lines) are scanned for SDK hosts only. Both are listed in the output under "skipped".
@@ -91,6 +100,15 @@ ALIAS_ELEMENT = re.compile(r'''\b(?:var|let|const)\s+(\w+)\s*=\s*document\.(?:ge
 ALIAS_VALUE = re.compile(r'\b(?:var|let|const)\s+(\w+)\s*=\s*(\w+)\.value\b')
 ALIAS_PARAM = re.compile(r'''\b(?:var|let|const)\s+(\w+)\s*=\s*new URLSearchParams\([^)]*\)\.get\(['"]([\w-]+)['"]\)''')
 SCRIPT_TAG = re.compile(r'''<script\b[^>]*?\bsrc\s*=\s*["']?(?:https?:)?//([^/"'\s:>?#]+)''', re.I)
+# identity tokens and claims read from an identity SDK or browser storage: collected identity data, so a log or
+# analytics line that names them is a candidate. A bearer token sent to an API is how sign-in works: http sinks
+# naming only token fields are not candidates.
+TOKEN_FIELDS = {'idTokenClaims', 'idToken', 'rawIdToken', 'id_token', 'accessToken', 'access_token'}
+CLAIM_CATEGORY = {'username': 'identity', 'preferred_username': 'identity', 'upn': 'identity', 'name': 'identity', 'given_name': 'identity',
+                  'family_name': 'identity', 'email': 'contact', 'oid': 'online_identifier'}
+AUTH_LOCATION = re.compile(r'''cacheLocation\s*:\s*(?:["'`](\w+)["'`]|(?:msal\.)?BrowserCacheLocation\.(\w+))|store\s*:\s*(?:window\.)?(localStorage|sessionStorage)|(storeAuthStateInCookie)''')
+SCOPES = re.compile(r'''\bscopes?\s*:\s*(\[[^\]]{0,400}\]|["'`][^"'`]{0,200}["'`])''')
+FILE_KINDS = ('file_upload', 'file_parse', 'form_data_upload')
 
 
 def sdk_like(host: str, path: str) -> bool:
@@ -335,6 +353,54 @@ def find_wrappers(rel: str, lang: str, text: str, T, sink_rx) -> list[dict]:
     return out
 
 
+def file_point(rel: str, line: int, name: str | None, accept: str | None, kind: str, via: str | None = None) -> dict:
+    """A collection point for files the user picks or uploads: the category is unknown until someone says what the
+    files hold, so it stays null and the report asks."""
+    e = {'file': rel, 'line': line, 'kind': kind, 'field': name or 'file', 'category': None,
+         'note': 'whatever the chosen file holds is collected: ask what the files contain (category unknown until then)'}
+    if accept:
+        e['accept'] = accept[:80]
+    if via:
+        e['via'] = via
+    return e
+
+
+def scope_words(text: str) -> list[str]:
+    """OAuth scopes written as string literals in scope: / scopes: settings (openid, profile, email, ...); names of
+    constants and spreads are not scopes and are left out."""
+    out = set()
+    for g in SCOPES.findall(text):
+        for lit_ in re.findall(r'''["'`]([^"'`]{1,200})["'`]''', g):
+            out |= {w for w in lit_.split() if re.fullmatch(r'[A-Za-z][\w.:/-]{0,59}', w)}
+    return sorted(out)
+
+
+def auth_storage(text: str, T, m, sid: str) -> dict:
+    """Where an identity SDK keeps its tokens, from its configuration (or the SDK's default when none is set)."""
+    window = text[max(0, m.start() - 200):m.end() + 600] if sid == 'auth-sdk-init' else m.group(0)
+    loc = AUTH_LOCATION.search(window)
+    where = None
+    if loc:
+        where = 'cookie (auth state)' if loc.group(4) else (loc.group(1) or loc.group(2) or loc.group(3))
+        where = {'localstorage': 'localStorage', 'sessionstorage': 'sessionStorage'}.get(where.lower(), where)
+    if 'UserManager' in m.group(0) or 'WebStorageStateStore' in m.group(0):
+        sdk = 'oidc-client-ts'
+    elif re.search(r'msal|PublicClientApplication|BrowserCacheLocation', text, re.I):
+        sdk = 'MSAL'
+    elif re.search(r'auth0', text, re.I):
+        sdk = 'Auth0 SPA SDK'
+    else:
+        sdk = None
+    default = sid == 'auth-sdk-init' and not loc
+    if default:
+        where = 'sessionStorage'  # MSAL browser and oidc-client-ts keep tokens in sessionStorage unless told otherwise
+    words = scope_words(text)
+    # the standard OpenID Connect scopes say which identity claims the app asks for; API scopes are only counted
+    scopes = [w for w in words if w in ('openid', 'profile', 'email', 'phone', 'address', 'offline_access')]
+    return {'location': where, 'sdk': sdk, 'sdk_default': default, 'scopes': scopes, 'other_scopes': len(words) - len(scopes),
+            'refresh_tokens': bool(re.search(r'useRefreshTokens\s*:\s*true|offline_access', text))}
+
+
 def call_object(text: str, start: int) -> str:
     """The text of the call starting at start, up to its closing parenthesis."""
     i = text.index('(', start)
@@ -368,6 +434,7 @@ def main() -> int:
     aliases: dict[str, dict] = {}
     sink_rx = [(s, re.compile(s['pattern'], re.M), s.get('hints') or []) for s in SINKS['sinks']]
     chint = SINKS.get('collection_hints', {})
+    xhint = SINKS.get('collection_hints_extra', {})
 
     def has(text: str, hints) -> bool:
         """False only when a pattern can't match: none of its hints occurs (no hints: always search)."""
@@ -403,6 +470,9 @@ def main() -> int:
             except (ValueError, AttributeError):
                 deps = {}
             sdks += [{'file': rel, 'package': d, 'vendor': SINKS['sdk_packages'][d], 'source': 'manifest'} for d in deps if d in SINKS['sdk_packages']]
+            # identity SDKs: they keep tokens (with the user's name, username and ids) in browser storage
+            sdks += [{'file': rel, 'package': d, 'vendor': None, 'sdk': SINKS['auth_sdk_packages'][d], 'kind': 'identity', 'source': 'manifest'}
+                     for d in deps if d in SINKS.get('auth_sdk_packages', {}) and d not in SINKS['sdk_packages']]
             continue
         if p.name in MANIFESTS:
             t = p.read_text(encoding='utf-8', errors='replace')
@@ -467,6 +537,9 @@ def main() -> int:
                 if (ty or '').lower() in ('hidden', 'submit', 'button', 'checkbox', 'radio'):
                     continue
                 nm, i, ac = jsx_attr(tag, 'name'), jsx_attr(tag, 'id'), jsx_attr(tag, 'autoComplete') or jsx_attr(tag, 'autocomplete')
+                if (ty or '').lower() == 'file':
+                    collection.append(file_point(rel, T.line_of(off), nm or i, jsx_attr(tag, 'accept'), 'file_upload'))
+                    continue
                 state = controlled_field(tag)  # value={form.email}, onChange={e => setEmail(...)}
                 label = (jsx_attr(tag, 'aria-label') or jsx_attr(tag, 'label') or preceding_label(text, off, i)
                          or jsx_attr(tag, 'placeholder') or '')
@@ -499,6 +572,9 @@ def main() -> int:
                 tag = m.group(0)
                 if (attr(tag, 'type') or '').lower() in ('hidden', 'submit', 'button', 'checkbox', 'radio'):
                     continue
+                if (attr(tag, 'type') or '').lower() == 'file':
+                    collection.append(file_point(rel, T.line_of(m.start()), attr(tag, 'name') or attr(tag, 'id'), attr(tag, 'accept'), 'file_upload'))
+                    continue
                 nm, i, ty, ac = attr(tag, 'name'), attr(tag, 'id'), attr(tag, 'type'), attr(tag, 'autocomplete')
                 label = labels.get(i or '', '')
                 cat = classify(nm, i, ac, ty, *re.findall(r'\w+', label.lower()))
@@ -518,6 +594,29 @@ def main() -> int:
             for m in (coll_rx[key].finditer(text) if has(text, chint.get(key)) else ()):
                 collection.append({'file': rel, 'line': T.line_of(m.start()), 'kind': 'code_read', 'field': m.group('name'),
                                    'category': classify(m.group('name'))})
+        if lang in ('js', 'ts', 'html'):
+            # identity tokens and claims read in the browser (an identity SDK's account, a decoded ID token): one point per field and file
+            seen_id = set()
+            for m in (coll_rx['identity_read'].finditer(text) if has(text, xhint.get('identity_read')) else ()):
+                fld = m.group('name') or m.group('claim')
+                if fld in seen_id:
+                    continue
+                seen_id.add(fld)
+                collection.append({'file': rel, 'line': T.line_of(m.start()), 'kind': 'identity_read', 'field': fld,
+                                   'category': 'identity' if m.group('name') else CLAIM_CATEGORY[m.group('claim')],
+                                   'note': 'read from an identity SDK or token: the signed-in user\'s identity'})
+            for m in (coll_rx['token_alias'].finditer(text) if has(text, xhint.get('token_alias')) else ()):
+                alias[m.group('var')] = 'idToken'  # a decoded token, or one read back from storage, stands for the ID token
+                if 'idToken' not in seen_id:
+                    seen_id.add('idToken')
+                    collection.append({'file': rel, 'line': T.line_of(m.start()), 'kind': 'identity_read', 'field': 'idToken', 'category': 'identity',
+                                       'note': f'{m.group("var")} holds a decoded or stored identity token'})
+        # files the user picks: whatever they hold is collected (client-side parsing, uploads to an API)
+        for key, kind_ in (('file_input', 'file_parse'), ('form_data_file', 'form_data_upload')):
+            for m in (coll_rx[key].finditer(text) if has(text, xhint.get(key)) else ()):
+                nm = m.groupdict().get('name')
+                k2 = 'file_upload' if re.match(r'(useDropzone|request\.files|UploadFile)', m.group(0).lstrip('.')) else kind_
+                collection.append(file_point(rel, T.line_of(m.start()), nm, None, k2, m.group(0).strip()[:40]))
         for cat, api in apis:
             if '.' in api and api in text:
                 i = text.find(api)
@@ -534,6 +633,12 @@ def main() -> int:
                     continue
                 seen_lines.add((sk['id'], n))
                 sinks.append(sink_entry(rel, T, text, m, n, sk['id'], sk['kind'], sk.get('vendor'), server_file))
+                if sk['id'] in ('auth-token-storage', 'auth-sdk-init'):
+                    au = sinks[-1]['_auth'] = auth_storage(text, T, m, sk['id'])
+                    # the identity provider hands the app the user's identity: a collection point of its own
+                    collection.append({'file': rel, 'line': n, 'kind': 'identity_provider', 'field': 'idToken', 'category': 'identity',
+                                       'sdk': au['sdk'], 'scopes': au['scopes'],
+                                       'note': 'ID token claims from the identity provider (name, username, directory ids; email with the email scope)'})
         if lang in ('js', 'ts', 'py'):
             for w in find_wrappers(rel, lang, text, T, sink_rx):
                 wrappers.setdefault(w['name'], w)
@@ -571,6 +676,12 @@ def main() -> int:
     collection.sort(key=lambda x: (x['file'], x['line']))
     # fields known from collection points; variables in the same file that hold them are named after them here
     fields = {c['field']: c['category'] for c in collection if c.get('field') and c.get('category')}
+    id_points: dict = {}
+    for c in collection:
+        if c['kind'] in ('identity_read', 'identity_provider'):
+            id_points.setdefault(c['field'], []).append(c)
+    all_scopes = sorted({x for s in sinks for x in (s.get('_auth') or {}).get('scopes', [])} |
+                        {x for t in texts.values() if 'scope' in t for x in scope_words(t) if x in ('openid', 'profile', 'email', 'offline_access')})
     candidates = []
 
     def cand(**kw):
@@ -589,6 +700,24 @@ def main() -> int:
         view = s['_view']
         names = {f for f in fields if names_field(view, f)}
         names |= {f for v, f in aliases.get(s['file'], {}).items() if f in fields and re.search(rf'(?<![\w$.]){re.escape(v)}(?![\w$])', view)}
+        if s['sink'] in ('auth-token-storage', 'auth-sdk-init'):
+            au = s['_auth']
+            if s['sink'] == 'auth-sdk-init' and any(x['sink'] == 'auth-token-storage' for x in sinks):
+                continue  # the explicit cache configuration is the candidate
+            if (au['location'] or '').lower().startswith('memory'):
+                continue  # tokens kept in memory only
+            scopes = au['scopes'] or all_scopes
+            au = dict(au, scopes=scopes)
+            cats_ = {'identity', 'online_identifier'} | ({'contact'} if 'email' in scopes else set())
+            where = au['location'] or 'browser storage'
+            cand(type='insecure_storage', subtype='auth_token_storage', file=s['file'], line=s['line'], sink=s['sink'], excerpt=line, fields=[],
+                 categories=sorted(cats_), confidence='pattern', vendor=None,
+                 note=f'{au["sdk"] or "an identity SDK"} keeps ID and access tokens in {where}'
+                      + (' (the SDK default: no cache location is set)' if au['sdk_default'] else '')
+                      + ': the ID token carries the signed-in user\'s name, username and directory ids (email with the email scope), and any '
+                        'script running on the origin can read it' + (' after the tab closes too' if where == 'localStorage' else ''),
+                 facts=au)
+            continue
         if s['sink'] == 'cache-persist':
             same = next((c for c in candidates if c.get('sink') == 'cache-persist' and c['file'] == s['file']), None)
             if same:
@@ -615,6 +744,8 @@ def main() -> int:
             named = sorted(names | set(ident))
             if not named:
                 continue
+            if s['kind'] == 'http' and set(named) <= TOKEN_FIELDS:
+                continue  # a bearer token sent to an API is how sign-in works, not a disclosure
             typ = {'log': 'personal_data_in_logs', 'storage': 'insecure_storage', 'replay': 'session_replay_unmasked'}.get(s['kind'], 'personal_data_to_third_party')
             cats = sorted({fields.get(f) or ident[f] for f in named})
             if typ == 'personal_data_in_logs' and any(c in CATS['special'] for c in cats):
@@ -624,6 +755,14 @@ def main() -> int:
                 extra['end_line'] = s['end_line']
             if s.get('wrapper_of'):
                 extra['wrapper_of'] = s['wrapper_of']
+            src_ = {}
+            for f in named:  # where an identity value came from (an identity SDK, a decoded or stored token)
+                pts = id_points.get(f) or []
+                pt = next((p for p in pts if p['file'] == s['file']), None) or (pts[0] if pts else None)
+                if pt:
+                    src_[f] = f'{pt["file"]}:{pt["line"]} ({pt["kind"]})'
+            if src_:
+                extra['identity_source'] = src_
             if s['kind'] in ('analytics', 'identify', 'replay', 'error_tracker', 'http'):
                 extra['consent_check_nearby'] = s['_consent']
             if s.get('side') == 'server' and typ in ('personal_data_to_third_party', 'session_replay_unmasked'):
@@ -671,7 +810,9 @@ def main() -> int:
     for p in permissions:
         if p['usage_string'] is False:
             cand(type='missing_usage_description', file=p['file'], line=p['line'], api=p['api'], categories=[p['category']], fields=[], confidence='pattern')
-    used = dict.fromkeys(fields, False)
+    # excess collection is about what a form asks for; identity read from a token or SDK is not asked of the user
+    used = dict.fromkeys((f for f in fields if any(c.get('field') == f and c['kind'] not in ('identity_read', 'identity_provider')
+                                                   for c in collection)), False)
     if fields:
         any_field = re.compile(r'\b(' + '|'.join(sorted(map(re.escape, fields), key=len, reverse=True)) + r')\b')
         for r, t in texts.items():
@@ -699,17 +840,28 @@ def main() -> int:
     for x in sinks:
         x.pop('_view', None)
         x.pop('_consent', None)
+        x.pop('_auth', None)
     skipped += [{'file': d + '/', 'bytes': None, 'reason': 'test directory skipped (--include-tests scans it)'
                  if d.rsplit('/', 1)[-1] in TEST_DIRS else 'directory skipped (dependencies, build output or --exclude)'} for d in pruned]
     if tests_skipped:
         skipped.append({'file': '*.test.* / *.spec.* / test_*.py', 'bytes': None, 'reason': f'{tests_skipped} test file(s) skipped (--include-tests scans them)'})
+    # in an internal business app most collection points are business parameters with no personal-data category
+    by_cat: dict = {}
+    for c in collection:
+        by_cat[c.get('category') or 'none'] = by_cat.get(c.get('category') or 'none', 0) + 1
+    by_cat = dict(sorted(by_cat.items()))
     out = {'repo': repo.as_posix(), 'files_scanned': n_files, 'seconds': round(time.time() - t0, 1), 'skipped': skipped,
-           'collection': collection, 'sinks': sinks, 'sdks': sdks, 'permissions': permissions,
+           'collection': collection, 'collection_by_category': by_cat, 'sinks': sinks, 'sdks': sdks, 'permissions': permissions,
            'wrappers': sorted(wrappers.values(), key=lambda w: (w['file'] or '', w['line'] or 0, w['name'])), 'candidates': candidates}
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(json.dumps(out, indent=1) + '\n', encoding='utf-8', newline='\n')
     print(f'{n_files} file(s) in {out["seconds"]}s: {len(collection)} collection point(s), {len(sinks)} sink(s), {len(sdks)} SDK reference(s), '
           f'{len(candidates)} candidate(s) -> {a.out}')
+    print('  collection points by category: ' + ', '.join(f'{k} {v}' for k, v in by_cat.items())
+          + ('  (category none: not personal data by name; triage only what the code shows holds personal data)' if by_cat.get('none') else ''))
+    files_ = [c for c in collection if c['kind'] in FILE_KINDS]
+    if files_:
+        print(f'  {len(files_)} file upload or parsing point(s): ask what the files contain ' + ', '.join(f'{c["file"]}:{c["line"]}' for c in files_[:4]))
     if skipped:
         print(f'  skipped {len(skipped)} file(s) (listed under "skipped"): ' + ', '.join(f'{x["file"]} ({x["reason"].split(" (")[0]})' for x in skipped[:5])
               + (' ...' if len(skipped) > 5 else ''))

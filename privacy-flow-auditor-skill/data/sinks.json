@@ -35,6 +35,8 @@
     {"id": "datadog-rum-init", "kind": "replay", "vendor": "Datadog", "pattern": "\\b(datadogRum|DD_RUM)\\.init\\(", "langs": ["js", "ts", "html"], "hints": ["datadogRum.init(", "DD_RUM.init("]},
     {"id": "indexeddb", "kind": "storage", "pattern": "\\bindexedDB\\.open\\(|\\bnew Dexie\\(|\\bidb(Keyval)?\\.set\\(|\\bopenDB\\(", "langs": ["js", "ts", "html"], "hints": ["indexedDB.open(", "new Dexie(", "idb.set(", "idbKeyval.set(", "openDB("]},
     {"id": "localforage", "kind": "storage", "pattern": "\\blocalforage\\.(setItem|config|createInstance)\\(", "langs": ["js", "ts", "html"], "hints": ["localforage."]},
+    {"id": "auth-token-storage", "kind": "storage", "pattern": "\\bcacheLocation\\s*:\\s*(?:['\"`](?:localStorage|sessionStorage|localstorage)['\"`]|(?:msal\\.)?BrowserCacheLocation\\.(?:LocalStorage|SessionStorage))|\\bstoreAuthStateInCookie\\s*:\\s*true|\\buserStore\\s*:\\s*new\\s+(?:\\w+\\.)?WebStorageStateStore\\(\\s*\\{\\s*store\\s*:\\s*(?:window\\.)?(?:localStorage|sessionStorage)", "langs": ["js", "ts", "html"], "hints": ["cacheLocation", "storeAuthStateInCookie", "WebStorageStateStore"]},
+    {"id": "auth-sdk-init", "kind": "storage", "pattern": "\\bnew\\s+(?:msal\\.|\\w+\\.)?(?:PublicClientApplication|UserManager)\\(|\\bcreateStandardPublicClientApplication\\(", "langs": ["js", "ts", "html"], "hints": ["PublicClientApplication", "UserManager("]},
     {"id": "cache-persist", "kind": "storage", "pattern": "\\b(persistCache|CachePersistor|persistQueryClient|createSyncStoragePersister|createAsyncStoragePersister|persistStore)\\(|\\bnew (CachePersistor|LocalForageWrapper|LocalStorageWrapper|SessionStorageWrapper|IonicStorageWrapper)\\(", "langs": ["js", "ts", "html"], "hints": ["persistCache(", "CachePersistor", "persistQueryClient(", "createSyncStoragePersister(", "createAsyncStoragePersister(", "persistStore(", "new LocalForageWrapper(", "new LocalStorageWrapper(", "new SessionStorageWrapper(", "new IonicStorageWrapper("]}
   ],
   "collection_hints": {"html_input": ["<input", "<select", "<textarea"], "py_form_read": ["form.get(", "form[", "args.get(", "args[", "values.get(", "values[", "json.get(", "json[", "data.get(", "data[", "GET.get(", "GET[", "POST.get(", "POST[", "body.get(", "body[", "query.get(", "query[", "params.get(", "params[", "Data.get(", "Data[", "fields.get(", "fields["], "js_value_read": [").value"], "js_register": ["register(", "useField(", "getFieldProps("]},
@@ -43,8 +45,16 @@
     "py_form_read": "(\\brequest\\.(form|args|values|json|data|GET|POST)|\\b(req|request|ctx\\.request)\\.(body|query|params)|\\bform|\\bform_data|\\bformData|\\bcleaned_data|\\bfields|\\bparams)(\\.get\\(|\\[)\\s*['\"](?P<name>[\\w-]+)['\"]",
     "js_value_read": "(getElementById|querySelector)\\(['\"]#?(?P<name>[\\w-]+)['\"]\\)\\.value",
     "jsx_input": "<(input|select|textarea|TextField|Input|OutlinedInput|FilledInput|Select|NativeSelect|Autocomplete|TextareaAutosize|DatePicker|DateTimePicker|PhoneInput|Field)\\b",
-    "js_register": "\\b(register|useField|getFieldProps)\\(\\s*['\"](?P<name>[\\w.-]+)['\"]"
+    "js_register": "\\b(register|useField|getFieldProps)\\(\\s*['\"](?P<name>[\\w.-]+)['\"]",
+    "identity_read": "\\b(?P<name>idTokenClaims|idToken|rawIdToken|id_token|accessToken|access_token)\\b|\\b(?:account|activeAccount|idTokenClaims|claims)\\??\\.(?P<claim>username|preferred_username|upn|email|name|oid|given_name|family_name)\\b",
+    "token_alias": "\\b(?:const|let|var)\\s+(?P<var>\\w+)\\s*=\\s*(?:await\\s+)?(?:(?:jwtDecode|jwt_decode|decodeJwt|parseJwt|decodeToken)\\(|JSON\\.parse\\(\\s*(?:window\\.)?atob\\(|(?:window\\.)?(?:sessionStorage|localStorage)\\.getItem\\([^)\\n]*(?:[Tt]oken|msal|MSAL|auth|oidc))",
+    "file_input": "\\bXLSX\\.(?:read|readFile)\\(|\\bxlsx\\.read\\(|\\bPapa\\.parse\\(|\\bnew FileReader\\(|\\.readAs(?:ArrayBuffer|Text|BinaryString|DataURL)\\(|\\buseDropzone\\(|\\brequest\\.files\\b|\\bUploadFile\\b",
+    "form_data_file": "\\.append\\(\\s*['\"](?P<name>[\\w-]+)['\"]\\s*,\\s*[\\w.?]*(?:file|File|blob|Blob)\\b"
   },
+  "collection_hints_extra": {"identity_read": ["Token", "token", "account", "claims", "Claims"], "token_alias": ["jwtDecode", "jwt_decode", "decodeJwt", "parseJwt", "decodeToken", "atob(", "getItem("],
+    "file_input": ["XLSX.", "xlsx.read(", "Papa.parse(", "FileReader(", ".readAs", "useDropzone(", "request.files", "UploadFile"], "form_data_file": [".append("]},
+  "auth_sdk_packages": {"@azure/msal-browser": "MSAL", "@azure/msal-react": "MSAL", "@azure/msal-angular": "MSAL", "oidc-client-ts": "oidc-client-ts", "oidc-client": "oidc-client",
+    "@auth0/auth0-spa-js": "Auth0 SPA SDK", "@auth0/auth0-react": "Auth0 SPA SDK", "aws-amplify": "Amplify Auth", "@aws-amplify/auth": "Amplify Auth", "firebase": "Firebase Auth", "react-oidc-context": "oidc-client-ts"},
   "sdk_packages": {
     "@sentry/browser": "Sentry", "@sentry/react": "Sentry", "sentry-sdk": "Sentry", "posthog-js": "PostHog", "mixpanel-browser": "Mixpanel",
     "@segment/analytics-next": "Segment", "logrocket": "LogRocket", "@fullstory/browser": "FullStory", "react-ga4": "Google Analytics",

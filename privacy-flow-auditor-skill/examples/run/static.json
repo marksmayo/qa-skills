@@ -101,6 +101,12 @@
    "category": "health"
   }
  ],
+ "collection_by_category": {
+  "contact": 4,
+  "date_of_birth": 2,
+  "health": 2,
+  "identity": 2
+ },
  "sinks": [
   {
    "file": "serve.py",
