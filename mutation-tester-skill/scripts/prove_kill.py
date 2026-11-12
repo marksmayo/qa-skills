@@ -148,7 +148,8 @@ def main(argv=None) -> int:
     ap.add_argument('--timeout', type=float, default=60.0)
     ap.add_argument('--runner', choices=['pytest', 'vitest', 'jest'],
                     help='default: vitest for a JS/TS test file, else pytest')
-    ap.add_argument('--env', nargs='*', default=[], metavar='K=V', help="environment the repo's test command sets (e.g. TZ=...)")
+    ap.add_argument('--env', nargs='+', action='append', default=[], metavar='K=V',
+                    help="environment the repo's test command sets (e.g. TZ=...); several pairs per flag, or repeat the flag")
     ap.add_argument('--extra-args', default='', help="extra runner arguments the repo's test command adds")
     args = ap.parse_args(argv)
     repo, run_dir = args.repo.resolve(), args.run_dir.resolve()
@@ -163,7 +164,7 @@ def main(argv=None) -> int:
     test_id = f'{args.test_file}::{args.test_name}'
     pycache = run_dir / '_pycache'
     env = {**os.environ, 'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONPYCACHEPREFIX': str(pycache),
-           **dict(kv.split('=', 1) for kv in args.env)}
+           **dict(kv.split('=', 1) for kv in run_tests.env_pairs(args.env))}
     work = run_dir / 'proof-work'
     old_link = work / 'node_modules'     # left by an interrupted run: remove the link, never its target
     if old_link.is_symlink() or getattr(os.path, 'isjunction', lambda p: False)(old_link):
