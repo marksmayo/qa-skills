@@ -258,6 +258,15 @@ Where the build differs from the design above, and what the example showed.
     least five characters and not a generic word, and values made only of letters must appear as a whole
     token. Values with digits, secrets included, still count anywhere. Every non-reserved flagged value in
     the example, planted in a sentence, at a sentence's end and inside a URL, is still caught (33 of 33).
+  - The phone rule matched ISO dates: a test asserting a request's start and end dates (`"2026-11-12"`)
+    produced two phone candidates. The phone and card rules now skip values shaped like dates and times
+    (ISO and day-month-year forms, date ranges, `yyyymmdd`, date followed by a time), version strings,
+    and epoch timestamps (13-digit milliseconds always, 10-digit seconds only in a field named as a time,
+    because an Australian 1300 or 1800 number is also ten digits starting with 1). A card-shaped run that
+    overlaps a date, or is part of a version or decimal, is skipped too. Of 26 synthetic values, the old
+    rules flagged 9 dates, versions and timestamps as phones or cards; the new rules flag none of them and
+    still catch every mobile, landline, international, 1300 and card number. The example's candidates
+    did not change.
 - **Testing:**
   - The validator catches 33 of 33 seeded violations.
   - 16 rule scenarios pass:

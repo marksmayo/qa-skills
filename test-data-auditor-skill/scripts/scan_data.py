@@ -99,6 +99,66 @@ def iban_ok(s: str) -> bool:
     return int(num) % 97 == 1
 
 
+# ---------------------------------------------------------------- numbers that are not personal data
+# Dates, times, version strings and epoch timestamps are digit runs too; the phone and card rules
+# skip them (found on a real repository, where ISO dates were reported as phone numbers).
+DATE_TOKEN = re.compile(r'(?<![\d.])(?:(?:19|20)\d{2}[-/.](?:0?[1-9]|1[0-2])[-/.](?:0?[1-9]|[12]\d|3[01])'
+                        r'|(?:0?[1-9]|[12]\d|3[01])[-/.](?:0?[1-9]|1[0-2])[-/.](?:19|20)\d{2}'
+                        r'|(?:0?[1-9]|1[0-2])[-/.](?:0?[1-9]|[12]\d|3[01])[-/.](?:19|20)\d{2})(?![\d.])')
+TIME_TOKEN = re.compile(r'(?<!\d)(?:[01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?!\d)')
+DATE_TIME = re.compile(rf'^(?:{DATE_TOKEN.pattern}|{TIME_TOKEN.pattern})(?:(?:[T ]|\s*-\s*|\s+to\s+)'
+                       rf'(?:{DATE_TOKEN.pattern}|{TIME_TOKEN.pattern}))*(?:Z|[+-]\d{{2}}:?\d{{2}})?$', re.I)
+VERSION = re.compile(r'^v?\d+(?:\.\d+){1,3}(?:[-+][0-9A-Za-z.-]+)?$', re.I)
+TIME_FIELD = re.compile(r'(?i:(^|_)(ts|time|timestamp|epoch|date|datetime|created|updated|modified|expires?|exp|iat|nbf)(_|$)'
+                        r'|_at$|_on$)|(At|On|Time|Date|Timestamp)$')
+
+
+def compact_date(d: str) -> bool:
+    """An eight-digit yyyymmdd that is a real calendar date (19xx or 20xx)."""
+    if len(d) != 8 or d[:2] not in ('19', '20'):
+        return False
+    try:
+        date(int(d[:4]), int(d[4:6]), int(d[6:]))
+        return True
+    except ValueError:
+        return False
+
+
+def epoch(d: str, field: str = '') -> bool:
+    """Unix time in milliseconds (13 digits, 2001-2036), or in seconds when the field names a time."""
+    if len(d) == 13 and d[0] == '1' and 1_000_000_000_000 <= int(d) < 2_100_000_000_000:
+        return True
+    return len(d) == 10 and 1_000_000_000 <= int(d) < 2_100_000_000 and bool(field and TIME_FIELD.search(field))
+
+
+def not_phone(value: str, field: str = '') -> str | None:
+    """Why a phone-shaped value is not a phone number, or None."""
+    v = value.strip()
+    d = digits(v)
+    if DATE_TIME.match(v) or (v == d and compact_date(d)):
+        return 'a date or time'
+    if VERSION.match(v) and '.' in v:
+        return 'a version string'
+    if v == d and epoch(d, field):
+        return 'an epoch timestamp'
+    return None
+
+
+def not_card(text: str, start: int, end: int, field: str = '') -> bool:
+    """True when the card-shaped digit run text[start:end] is a date, time, version or timestamp."""
+    run = text[start:end]
+    if DATE_TOKEN.search(run):
+        return True
+    before, after = text[max(0, start - 1):start], text[end:end + 2]
+    if before in ('.', ':', 'v', 'V') or re.match(r'[.:]\d|T\d', after):
+        return True  # part of a version, a decimal, or a date followed by a time
+    # a date that overlaps the run's edge ("2024-01-15 ..." where the match starts mid-date)
+    off = max(0, start - 12)
+    if any(m.start() + off < end and m.end() + off > start for m in DATE_TOKEN.finditer(text[off:end + 12])):
+        return True
+    return run == digits(run) and epoch(run, field)
+
+
 def phone_reserved(d: str) -> str | None:
     p = RESERVED['phones']
     local = '0' + d[2:] if d.startswith('61') and len(d) == 11 else '0' + d[2:] if d.startswith('44') and len(d) in (12, 13) else d
@@ -160,7 +220,7 @@ class Scanner:
             self.add('personal_data', 'email', file, line, why, field, 'email address', m.group(0),
                      auto_dismiss=why if cls == 'reserved' else None,
                      details={'domain_class': cls, 'domain': m.group(2).lower() if cls != 'other' else None})
-        if PHONE_F.match(fname) or (not fname and PHONE_TEXT.fullmatch(value.strip())):
+        if (PHONE_F.match(fname) or (not fname and PHONE_TEXT.fullmatch(value.strip()))) and not not_phone(value, fname):
             d = digits(value)
             if 8 <= len(d) <= 13:
                 res = phone_reserved(d)
@@ -186,6 +246,8 @@ class Scanner:
                          None if valid else f'check digit invalid, so not {label}')
         if CARD.search(value):
             for m in CARD.finditer(value):
+                if not_card(value, m.start(), m.end(), fname):
+                    continue
                 n = digits(m.group(0))
                 if 13 <= len(n) <= 19 and luhn(n):
                     test = n in RESERVED['test_cards']['numbers']

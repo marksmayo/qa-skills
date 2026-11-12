@@ -103,7 +103,7 @@ python scripts/schema_drift.py <repo> --inventory <run>/inventory.json --out <ru
 
 | Category | Rules |
 |---|---|
-| `personal_data` | Email at a public or non-reserved domain; phone outside the reserved ranges; Luhn-valid card not on a test list; Medicare, TFN or NHS number with a valid check digit; SSN or National Insurance number in valid format; IBAN with a valid checksum; full name with a street address; date of birth beside a name |
+| `personal_data` | Email at a public or non-reserved domain; phone outside the reserved ranges; Luhn-valid card not on a test list (dates, times, version strings and epoch timestamps are never phones or cards); Medicare, TFN or NHS number with a valid check digit; SSN or National Insurance number in valid format; IBAN with a valid checksum; full name with a street address; date of birth beside a name |
 | `time_bomb` | A fixed expiry date in the future that the code compares with now, giving the date it fails on; a future literal date in a test that also reads the clock |
 | `magic_id` | A lookup by a literal id, checked against the seed rows; a literal UUID; an assertion on an auto-increment id |
 | `environment_coupling` | A production or staging host, a real bucket, an AWS account id, an absolute path on someone's machine |
