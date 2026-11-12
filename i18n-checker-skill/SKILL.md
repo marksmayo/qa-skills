@@ -44,7 +44,7 @@ The WCAG auditor checks the page language and reflow; this skill checks every sh
 | `rtl_locales` | `ar`, then `he` | Arabic is the main RTL run; Hebrew a second check |
 | `pseudo` | on | Expansion, accents, ⟦ ⟧ brackets |
 | `allow_list` | `data/hardcoded-patterns.json` | Text that is never translated (brand names, codes) |
-| `authorised_by`, `auth` | as in `browser_harness.py` | |
+| `authorised_by`, `auth` | as in `browser_harness.py` | `auth: {"storage_state": file}` runs signed in, with a session a person captured by signing in by hand (`python scripts/browser_harness.py capture-session --url <app> --out <file outside the repo>`; cookies, localStorage, IndexedDB and sessionStorage); the run stays read-only and records only that a session was used, never the file or its contents |
 
 At least one of `repo` and `targets` is required.
 

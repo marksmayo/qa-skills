@@ -35,7 +35,7 @@ SHARED = {
                                 'test-case-designer-skill', 'requirements-traceability-auditor-skill'],
     'scripts/browser_harness.py': ['bug-reproducer-skill', 'performance-budget-auditor-skill', 'visual-regression-reviewer-skill',
                                    'cross-browser-checker-skill', 'i18n-checker-skill',
-                                   'resilience-prober-skill', 'privacy-flow-auditor-skill'],
+                                   'resilience-prober-skill', 'privacy-flow-auditor-skill', 'wcag-auditor-skill'],
     'scripts/clock_shift.py': ['test-data-auditor-skill', 'flaky-test-hunter-skill:plugins/clock_shift.py'],
     'scripts/clock_shift.mjs': ['test-data-auditor-skill', 'flaky-test-hunter-skill:plugins/clock_shift.mjs'],
     'scripts/net_guard.py': ['test-suite-evaluator-skill'],

@@ -8,7 +8,11 @@ targets.json:
      "viewports": ["1280x800"], "source_locale": "en", "locales": ["en", "de", "fr", "ar"], "rtl_locales": ["ar", "he"],
      "locale_strategy": {"query": "lang"},              # or {"cookie": "locale"} or {"path_prefix": true} or {"accept_language": true}
      "resources": "locales/{locale}.json",              # where the page loads its messages; enables pseudo by interception
-     "pseudo": true, "authorised_by": null}
+     "pseudo": true, "authorised_by": null, "auth": null}
+
+"auth": {"storage_state": "<file outside the repo>"} renders an app behind sign-in in a session a person
+captured with `python browser_harness.py capture-session --url <app> --out <file>`; the output records only
+that a session was used ("auth": {"method": ...}).
 
 Pseudo-locale: the source resource file is rewritten as it is served (Playwright route): letters become accented
 look-alikes, text grows 30-50% (short strings grow more) and each message is wrapped in ⟦ ⟧ so truncation shows.
@@ -219,6 +223,8 @@ def main() -> int:
     doc = {'site': cfg['site'], 'captured_at': now(), 'pseudo_method': None, 'runs': [], 'not_run': [], 'locale_strategy': cfg.get('locale_strategy')}
     with Harness({'authorised_by': cfg.get('authorised_by'), 'auth': cfg.get('auth'), 'rate_limit_seconds': 0.1}) as h:
         doc['browser'] = {'name': 'chromium', 'version': h.version}
+        if h.auth_info:
+            doc['auth'] = {'method': h.auth_info['method']}   # that a session was used; never its contents or path
         # which locales have resources
         available, keys = {}, set()
         for loc in sorted(set(cfg['locales']) | set(cfg.get('rtl_locales') or [])):

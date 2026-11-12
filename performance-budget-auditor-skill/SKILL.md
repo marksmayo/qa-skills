@@ -86,7 +86,7 @@ for targets and forms.
 | `service_workers` | `cold` | `cold` blocks them on cold runs only; `block` on every run (a site whose worker would serve warm runs from its cache); `allow` |
 | `bypass_csp` | `false` | Measure the page under its own Content-Security-Policy (web-vitals is an init script, which CSP doesn't block); `true` bypasses it, and a limitation must then say the CSP was not enforced |
 | `stop_on_429` | `false` | Stop a page at its first 429 instead of retrying after Retry-After (the shared harness's `retry_decision`) |
-| `authorised_by`, `auth`, `allow_form_submission` | as in `browser_harness.py` | |
+| `authorised_by`, `auth`, `allow_form_submission` | as in `browser_harness.py` | `auth: {"storage_state": file}` runs signed in, with a session a person captured by signing in by hand (`python scripts/browser_harness.py capture-session --url <app> --out <file outside the repo>`; cookies, localStorage, IndexedDB and sessionStorage); the run stays read-only and records only that a session was used, never the file or its contents |
 | `baseline` | none | A previous run's `candidates.json`, for regression comparison |
 | `field_data` | none | CrUX or RUM figures to show alongside, labelled field |
 

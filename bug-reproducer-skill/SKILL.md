@@ -51,7 +51,7 @@ problems nobody has reported. Its regression tests follow the same red rules as 
 | `target` | local | A URL (staging), or a local build of `version` |
 | `version` | from the report | A tag, commit, build number or app version |
 | `attempts` | 3 | Runs per candidate reproduction |
-| `authorised_by`, `allow_form_submission`, `auth` | as in `browser_harness.py` | |
+| `authorised_by`, `allow_form_submission`, `auth` | as in `browser_harness.py` | `auth: {"storage_state": file}` runs signed in, with a session a person captured by signing in by hand (`python scripts/browser_harness.py capture-session --url <app> --out <file outside the repo>`; cookies, localStorage, IndexedDB and sessionStorage); the run stays read-only and records only that a session was used, never the file or its contents; no Playwright trace is taken in a signed-in session |
 | `write_regression_test` | `propose` | `propose` shows the test and waits for approval; `on` writes it; `off` |
 | `duplicate_search` | `on` | JQL through `fetch_ticket.py --jql`, or `gh issue list --search`; read-only |
 | `known_good` | none | A version without the bug; enables `git bisect run` |

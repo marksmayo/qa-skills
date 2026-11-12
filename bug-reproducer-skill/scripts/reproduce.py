@@ -7,7 +7,7 @@ A spec lists candidate reproductions. Each candidate runs `runs` times (default 
 is one attempt with its own screenshot, console log and (first run only) Playwright trace:
 
     {"key": "TASK-11", "version": "1.2.0", "version_selector": "#version",
-     "authorised_by": null, "allow_form_submission": false,
+     "authorised_by": null, "allow_form_submission": false, "auth": null,
      "failure": {"any": [{"text_contains": "#tasks", "text": "Pay the water bill"}]},
      "observe": ["#tasks", "#status"],
      "candidates": [
@@ -32,6 +32,11 @@ Results: matched (the failure checks hold), different (no match, but a page erro
 or dialog appeared that the report doesn't describe), no_failure, errored (a step or the
 browser failed; the error is recorded). The version the page shows is read from
 version_selector and recorded as the attempt's version, whatever the spec says.
+
+An app behind sign-in takes "auth": {"storage_state": "<file outside the repo>"}, a session a person
+captured with `python browser_harness.py capture-session --url <app> --out <file>` (or a login recipe; see
+browser_harness.py). The attempts record only that a session was used ("auth": {"method": ...}), never its
+contents or path, and the first run's Playwright trace is not taken in a signed-in session.
 
 Safety: every target must be loopback or have authorised_by (browser_harness.check_authorised);
 non-GET requests are aborted unless allow_form_submission. Console text, dialog messages and
@@ -149,7 +154,8 @@ def run_one(h: Harness, spec: dict, cand: dict, n: int, art: Path, base: Path) -
     return rec
 
 
-def run_spec(spec: dict, art: Path, base: Path, only: set | None = None) -> list[dict]:
+def run_spec(spec: dict, art: Path, base: Path, only: set | None = None, session: dict | None = None) -> list[dict]:
+    """Run the candidates; when a signed-in session was used, session (if given) gets {"method": ...}."""
     urls = [s['goto'] for c in spec['candidates'] for s in c['steps'] if 'goto' in s]
     check_authorised(urls, spec.get('authorised_by'))
     out = []
@@ -158,7 +164,11 @@ def run_spec(spec: dict, art: Path, base: Path, only: set | None = None) -> list
             continue
         cfg = {'browser': cand.get('browser', 'chromium'), 'authorised_by': spec.get('authorised_by'),
                'allow_form_submission': spec.get('allow_form_submission', False), 'rate_limit_seconds': 0}
+        if spec.get('auth'):
+            cfg['auth'] = spec['auth']
         with Harness(cfg) as h:
+            if h.auth_info and session is not None:
+                session['method'] = h.auth_info['method']
             for n in range(1, int(cand.get('runs', 3)) + 1):
                 rec = run_one(h, spec, cand, n, art, base)
                 print(f'{rec["id"]} {rec["browser"]} v{rec["version"]}: {rec["result"]}  {rec["checks"] or rec["error"] or ""}')
@@ -179,10 +189,11 @@ def main(argv=None) -> int:
     art = args.artifacts or args.out.parent / 'artifacts' / spec['key']
     prev = json.loads(args.out.read_text(encoding='utf-8'))['attempts'] if args.only and args.out.exists() else []
     only = set(args.only) if args.only else None
-    runs = run_spec(spec, art, base, only)
+    session: dict = {}
+    runs = run_spec(spec, art, base, only, session)
     keep = [r for r in prev if r['candidate'] not in (only or set())]
     doc = {'key': spec['key'], 'spec': args.spec.name, 'version_stated': spec.get('version'), 'failure': spec['failure'],
-           'generated': now(), 'attempts': sorted(keep + runs, key=lambda r: (r['candidate'], int(r['id'].rsplit('-', 1)[1])))}
+           'generated': now(), **({'auth': session} if session else {}), 'attempts': sorted(keep + runs, key=lambda r: (r['candidate'], int(r['id'].rsplit('-', 1)[1])))}
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + '\n', encoding='utf-8', newline='\n')
     m = sum(r['result'] == 'matched' for r in doc['attempts'])

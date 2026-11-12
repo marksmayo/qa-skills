@@ -34,7 +34,11 @@ Config (JSON):
                        "probes_with_overlay": ["keyboard"] (default; run with the overlay open, recorded as state
                        consent_open). The other probes run after dismissal. run.json records which ran.
     auth               {"storage_state": "<file>"} or {"login": {"url", "steps": [...], "wait_for"}};
-                       login steps use {"fill": sel, "env": NAME} so credentials never appear in output
+                       login steps use {"fill": sel, "env": NAME} so credentials never appear in output.
+                       storage_state is a session a person captured by signing in by hand (SSO, MFA, MSAL):
+                       `python browser_harness.py capture-session --url <app> --out <file outside the repo>`;
+                       its sessionStorage is put back on its origin before the app's scripts run. run.json
+                       records only that a session was used (auth.kind), never its contents or path
     states             [{"url", "name", "viewport"?, "actions": [...], "probes"?: [...]}]
                        actions: {"click": sel} {"hover": sel} {"press": key} {"fill": sel, "value"|"env"}
                                 {"wait": ms} {"wait_for": sel}
@@ -63,6 +67,7 @@ import urllib.request
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import fetch_engines  # noqa: E402
+from browser_harness import load_session  # noqa: E402  (signed-in session files, shared with the other browser skills)
 
 ALL_PROBES = ['keyboard', 'focus_visible', 'reflow', 'text_spacing', 'resize_text', 'target_size',
               'hover_focus', 'motion', 'a11y_tree', 'language', 'media']
@@ -171,6 +176,7 @@ class Runner:
         self.last_load = 0.0
         self.probes_js = (HERE / 'probes.js').read_text(encoding='utf-8')
         self.storage_state = None
+        self._session_script = None   # restores a captured sessionStorage; holds token values, so never recorded
 
     # engines -------------------------------------------------------------
     def prepare_engines(self):
@@ -225,6 +231,8 @@ class Runner:
                                   reduced_motion=reduced_motion, storage_state=self.storage_state,
                                   user_agent=None, ignore_https_errors=False, bypass_csp=self.bypass_csp,
                                   service_workers=self.cfg.get('service_workers', 'block'))
+        if self._session_script:
+            ctx.add_init_script(script=self._session_script)
         ctx.route('**/*', self.guard)
         return ctx
 
@@ -299,7 +307,7 @@ class Runner:
     def login(self, browser):
         auth = self.cfg.get('auth') or {}
         if auth.get('storage_state'):
-            self.storage_state = auth['storage_state']
+            self.storage_state, self._session_script, _ = load_session(auth['storage_state'])
             return 'storage_state'
         if auth.get('login'):
             rec = auth['login']

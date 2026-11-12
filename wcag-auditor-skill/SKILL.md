@@ -69,7 +69,7 @@ What sets this apart from running one checker:
 | `wcag_version` | `2.2` | Also `2.1` and `2.0`. In 2.2, 4.1.1 Parsing is obsolete and recorded as `inapplicable` |
 | `level` | `AA` | `A`, `AA` or `AAA`. Requirements above the target are advisories |
 | `critical_paths` | optional | Named flows as steps (`url`, optional `state`, `label`), or journey files from journey-mapper |
-| `auth` | optional | A Playwright `storageState` file, or a login recipe whose fields read credentials from environment variables |
+| `auth` | optional | `{"storage_state": file}`: a session a person captured by signing in by hand (`python scripts/browser_harness.py capture-session --url <app> --out <file outside the repo>`; its sessionStorage is restored too), or a login recipe whose fields read credentials from environment variables; `run.json` records only which kind was used |
 | `viewports` | `1280x800`, `320x640` | 320 px also covers 1.4.10 Reflow |
 | `max_pages` | 25 | Sampling cap for crawled and sitemap pages; listed targets are always audited |
 | `random_sample` | 0.1 | Share of the remaining crawled pages added at random (seeded); `0` adds none |
@@ -285,5 +285,5 @@ reason, the P0 and P1 findings, blocked critical paths, what was untested and th
 - **SPAs:** the runner waits for network idle and a quiet DOM; add `wait_for` actions for slow views.
 - **Infinite scroll:** capped by `max_pages`; don't scroll endlessly.
 - **WAF or rate limits:** the runner backs off; if it keeps failing, record it in `events` and limitations.
-- **Login:** use `storageState` or a login recipe with `env` fields. Never put credentials in the config.
+- **Login:** use a captured session (`capture-session`) or a login recipe with `env` fields. Never put credentials in the config, and keep the session file outside the repository.
 - **PDFs:** out of scope; point to veraPDF.

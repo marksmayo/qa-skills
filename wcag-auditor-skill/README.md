@@ -156,6 +156,9 @@ python scripts/run_audit.py --config examples/harbour-dental/audit_config.json -
 - `schemas/audit.schema.json`: output contract
 - `scripts/fetch_engines.py`: download, verify and cache the engines
 - `scripts/run_audit.py`, `scripts/probes.js`: the Playwright runner and its in-page probes
+- `scripts/browser_harness.py`: the shared browser harness; run_audit.py uses its session loader, and
+  `python scripts/browser_harness.py capture-session --url <app> --out <file outside the repo>` saves a session a
+  person signs in to by hand, for `auth: {"storage_state": file}`
 - `scripts/normalize.py`, `scripts/merge_findings.py`: map results to SCs, merge into candidates
 - `scripts/validate_audit.py`: structure and honesty checks
 - `scripts/render_report.py`: coloured terminal/Markdown report

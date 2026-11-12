@@ -184,7 +184,7 @@ def main() -> int:
     if cfg.get('storage_state'):
         st_path = Path(cfg['storage_state']).resolve()
         if not st_path.is_file():
-            ap.error(f'storage_state {cfg["storage_state"]} does not exist (sign in by hand and save it with context.storage_state(path=...))')
+            ap.error(f'storage_state {cfg["storage_state"]} does not exist (sign in by hand and save it with: python browser_harness.py capture-session --url <app> --out <file>)')
         if a.out.resolve().parent in st_path.parents or (a.screenshots and a.screenshots.resolve() in st_path.parents):
             ap.error('keep the storage_state file outside the run folder: it holds session cookies and tokens and must not become evidence')
         hcfg['auth'] = {'storage_state': str(st_path)}

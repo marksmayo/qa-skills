@@ -9,6 +9,10 @@ targets.json:
      "viewports": ["1280x800", "375x812"], "browsers": ["chromium"], "clock": null,
      "authorised_by": null, "auth": null}
 
+"auth": {"storage_state": "<file outside the repo>"} captures an app behind sign-in in a session a person
+captured with `python browser_harness.py capture-session --url <app> --out <file>`; the manifest records only
+that a session was used ("auth": {"method": ...}).
+
 Each page (and state) x viewport x browser is loaded in a fresh context with animations,
 transitions and the caret disabled, then waits for network idle and document.fonts.ready (retrying
 once when fonts haven't loaded). Take 1 is <out>/<browser>/<viewport>/<page>[~state].png; with
@@ -139,6 +143,8 @@ def main() -> int:
     for browser in cfg.get('browsers') or ['chromium']:
         with Harness({'browser': browser, 'authorised_by': cfg.get('authorised_by'), 'auth': cfg.get('auth'), 'rate_limit_seconds': 0.2}) as h:
             manifest['browsers'][browser] = h.version
+            if h.auth_info:
+                manifest['auth'] = {'method': h.auth_info['method']}   # that a session was used; never its contents or path
             for p in cfg['pages']:
                 for state in [None] + (p.get('states') or []):
                     name = p['name'] + (f'~{state["name"]}' if state else '')

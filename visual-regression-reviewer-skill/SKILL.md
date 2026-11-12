@@ -43,7 +43,7 @@ or reject. Say exactly what was compared, so "no differences" can't be read beyo
 | `min_region_pixels` | 20 | Smaller regions are counted, not grouped |
 | `ignore_regions` | `{}` | Per page: `{"selector": sig}` or `{"rect": [x, y, w, h]}`, masked in both images |
 | `change_context` | none | A PR description, diff or ticket, for intent |
-| `authorised_by`, `auth` | as in `browser_harness.py` | |
+| `authorised_by`, `auth` | as in `browser_harness.py` | `auth: {"storage_state": file}` runs signed in, with a session a person captured by signing in by hand (`python scripts/browser_harness.py capture-session --url <app> --out <file outside the repo>`; cookies, localStorage, IndexedDB and sessionStorage); the run stays read-only and records only that a session was used, never the file or its contents; capture both sets in the same account |
 
 ## Workflow
 

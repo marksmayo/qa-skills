@@ -8,11 +8,16 @@ targets.json:
        "states": [{"name": "menu-open", "critical_path": true, "viewports": ["390x844"],
                    "actions": [{"click": "#menu"}, {"wait_for": "#nav.open"}]}]}],
      "viewports": ["1280x800", "390x844"], "engines": ["chromium", "firefox", "webkit"], "reruns": 3,
-     "authorised_by": null, "auth": null, "allow_form_submission": false,
+     "authorised_by": null, "auth": null, "storage_state": null, "allow_form_submission": false,
      "third_party": "block", "allowed_hosts": [], "service_workers": "allow", "scroll": true,
      "bypass_csp": true, "reduced_motion": "reduce", "freeze_animations": true,
      "rate_limit_seconds": 0.5, "max_retries": 2, "max_retry_after_seconds": 60, "stop_on_429": false,
      "request_budget": null}
+
+storage_state: a session file a person captured by signing in by hand (`python browser_harness.py
+capture-session --url <app> --out <file outside the repo>`), the same as "auth": {"storage_state": file}. It is
+loaded into every engine's context (cookies, localStorage and sessionStorage); runs.json records only the
+counts the harness reports under harness.<engine>.auth, never the contents or the path.
 
 bypass_csp: true (the default) creates every context with Playwright's bypass_csp, so the styles capture injects
 (animation freeze, content-visibility) apply on sites whose Content-Security-Policy has a hash or nonce in
@@ -289,10 +294,11 @@ def main() -> int:
     pages = {p['name']: p for p in cfg['pages']}
     states = {p['name'] + (f'~{st["name"]}' if st else ''): st for p in cfg['pages'] for st in [None] + (p.get('states') or [])}
     req = doc['requests']
+    auth = cfg.get('auth') or ({'storage_state': cfg['storage_state']} if cfg.get('storage_state') else None)
     for eng in engines:
         start = len(doc['runs'])
         try:
-            with Harness({'browser': eng, 'authorised_by': cfg.get('authorised_by'), 'auth': cfg.get('auth'),
+            with Harness({'browser': eng, 'authorised_by': cfg.get('authorised_by'), 'auth': auth,
                           'allow_form_submission': cfg.get('allow_form_submission', False),
                           'rate_limit_seconds': s['rate_limit_seconds'], 'bypass_csp': s['bypass_csp'],
                           'request_budget': None if s['request_budget'] is None else max(1, s['request_budget'] - req['sent']),

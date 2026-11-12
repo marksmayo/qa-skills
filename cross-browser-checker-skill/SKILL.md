@@ -122,13 +122,15 @@ is short.
 
 **Apps behind sign-in** (MSAL, OIDC or another identity provider). Without a session a single-page app
 renders only its sign-in page, and following the sign-in redirect leaves the site. The least invasive
-route is a captured session: a person signs in to a **test account** by hand in a Playwright browser
-and saves the context's storage state to a file outside the repository; the shared harness
-(`browser_harness.py`) loads it as `storage_state` into every engine's context. The file holds live
-tokens: never commit it, never copy its contents into `runs.json`, the report or a screenshot name,
-and delete it after the run. It carries cookies and localStorage, not sessionStorage, so it works for
-MSAL only when the test build keeps its cache in `localStorage`; otherwise use the app's own test
-sign-in or mock-auth mode. Never use a real user's account. Without a session, capture what renders
+route is a captured session: a person signs in to a **test account** by hand with
+`python scripts/browser_harness.py capture-session --url <app> --out <file outside the repo>`, and the
+shared harness loads the file as `storage_state` into every engine's context. It carries cookies,
+localStorage, IndexedDB and sessionStorage (put back on its origin before the app's scripts run), so an
+MSAL cache in sessionStorage works too; the run stays read-only and blocks third parties, so a token
+refresh fails: capture shortly before the run. The file holds live tokens: never commit it, never copy
+its contents into `runs.json`, the report or a screenshot name, and delete it after the run; `runs.json`
+records only counts. Without a session file, the app's own test sign-in or mock-auth mode is the
+alternative. Never use a real user's account. Without a session, capture what renders
 signed out (the sign-in page), set `run_status` to `partial` with the reason, and say in the
 limitations which pages weren't compared because they need a session.
 
