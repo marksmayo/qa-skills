@@ -5,7 +5,7 @@
   "type": "object",
   "required": ["schema_version", "skill", "skill_version", "generated", "scope", "metadata", "migrations", "findings", "triage", "dynamic", "headline", "limitations"],
   "properties": {
-    "schema_version": {"const": "1.0.0"},
+    "schema_version": {"enum": ["1.0.0", "1.1.0"]},
     "skill": {"const": "db-migration-reviewer"},
     "skill_version": {"type": "string"},
     "generated": {"type": "string", "format": "date"},
@@ -21,12 +21,15 @@
             "name": {"enum": ["postgresql", "mysql", "mariadb", "sqlite"]},
             "version": {"type": ["string", "null"]},
             "source": {"type": "string", "minLength": 1},
-            "assumed": {"type": "boolean"}
+            "assumed": {"type": "boolean"},
+            "assumed_reason": {"type": "string", "description": "Why the version is assumed: none found, or only a development source (docker-compose, Dockerfile, CI)"}
           }
         },
         "deploy_model": {"enum": ["rolling", "blue_green", "stop_the_world"]},
         "deploy_model_source": {"type": "string"},
         "since": {"type": ["string", "null"]},
+        "excluded": {"type": "array", "description": "Migration files left out of the chain (archived or squashed history), with the reason",
+          "items": {"type": "object", "required": ["file", "reason"], "properties": {"file": {"type": "string"}, "reason": {"type": "string"}}}},
         "migrations_reviewed": {"type": "array", "items": {"type": "string"}, "minItems": 1},
         "checked": {"type": "array", "items": {"type": "string"}, "minItems": 1},
         "not_checked": {"type": "array", "items": {"type": "string"}, "minItems": 1}
@@ -58,10 +61,18 @@
         "type": "object",
         "required": ["id", "candidates", "rule", "category", "hazard", "migration", "file", "line", "statement", "table", "engine", "engine_range",
                      "effect", "size", "size_factor", "exposure", "score", "priority", "floor", "cap", "confidence", "code_hits", "rewrite", "verification"],
+        "if": {"properties": {"source": {"const": "agent"}}, "required": ["source"]},
+        "then": {"required": ["basis"], "properties": {"candidates": {"maxItems": 0}}},
+        "else": {"properties": {"candidates": {"minItems": 1}}},
         "properties": {
           "id": {"type": "string", "pattern": "^F\\d{2,}$"},
-          "candidates": {"type": "array", "items": {"type": "string"}, "minItems": 1},
-          "rule": {"type": "string"},
+          "source": {"enum": ["tool", "agent"], "description": "agent: found by reading the code, not by a rule match; cites a basis instead of candidates"},
+          "basis": {"type": "array", "minItems": 1, "items": {"type": "object",
+            "properties": {"file": {"type": "string"}, "line": {"type": "integer", "minimum": 1}, "excerpt": {"type": "string", "minLength": 1},
+                           "evidence": {"type": "string"}},
+            "anyOf": [{"required": ["file", "line", "excerpt"]}, {"required": ["evidence"]}]}},
+          "candidates": {"type": "array", "items": {"type": "string"}},
+          "rule": {"type": "string", "description": "A data/rules.json rule id; an agent finding may name its own"},
           "category": {"enum": ["data_loss", "blocking_lock", "compatibility", "irreversible", "lock_queueing", "transaction_mistake", "backfill_cost", "ordering"]},
           "hazard": {"type": "integer", "minimum": 1, "maximum": 4},
           "migration": {"type": ["string", "null"]},

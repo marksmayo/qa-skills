@@ -3,10 +3,11 @@
 
     python render_report.py review.json [--brief] [--color auto|always|never]
 
---brief prints the headline, the findings table and the safe sequence only.
+--brief prints the headline, the findings table and the safe sequence only. Findings an agent found by
+reading the code (source "agent", with a basis) rather than by a rule match are labelled "found by review".
 """
 from __future__ import annotations
-import argparse, json, os, sys
+import argparse, json, os, re, sys
 from pathlib import Path
 
 COL = {'P0': '31;1', 'P1': '31', 'P2': '33', 'P3': '36', 'dim': '2', 'bold': '1', 'green': '32'}
@@ -30,33 +31,41 @@ def main() -> int:
     eng = s['engine']
     out = [c('# Migration review', 'bold'), '',
            f'Repository `{s["repo"]}` ({s["tool"]}), {eng["name"]} {eng.get("version") or "?"}'
-           f'{" (assumed)" if eng.get("assumed") else ""}, deploy model **{s["deploy_model"]}**, '
+           f'{" (assumed: " + eng["assumed_reason"] + ")" if eng.get("assumed") and eng.get("assumed_reason") else " (assumed)" if eng.get("assumed") else ""}, deploy model **{s["deploy_model"]}**, '
            f'migrations {", ".join(s["migrations_reviewed"])}.', '',
            c(f'Verdict: {h["verdict"].replace("_", " ")}', 'P0' if h['verdict'] == 'do_not_deploy' else 'green'),
            ' '.join(f'{c(p, p)} {n}' for p, n in h['counts'].items()), '', h['statement'], '',
            c('Scope: ', 'bold') + h['scope_statement'], '']
     out += ['## Findings', '', '| ID | Priority | Migration | Rule | Table | Score | Confidence |', '|---|---|---|---|---|---|---|']
     for f in sorted(r['findings'], key=lambda f: (f['priority'], f['id'])):
-        out.append(f'| {f["id"]} | {c(f["priority"], f["priority"])} | {f["migration"]} | {f["rule"]} | {f["table"] or "-"} '
+        rule = f["rule"] + (' (found by review)' if f.get('source') == 'agent' else '')
+        out.append(f'| {f["id"]} | {c(f["priority"], f["priority"])} | {f["migration"] or "-"} | {rule} | {f["table"] or "-"} '
                    f'| {f["hazard"]}x{f["size_factor"]}x{f["exposure"]}={f["score"]} | {f["confidence"]} |')
     out.append('')
     if not a.brief:
         for f in sorted(r['findings'], key=lambda f: (f['priority'], f['id'])):
-            out += [f'### {f["id"]} {c(f["priority"], f["priority"])} {f["rule"]} ({f["category"].replace("_", " ")})', '',
+            out += [f'### {f["id"]} {c(f["priority"], f["priority"])} {f["rule"]} ({f["category"].replace("_", " ")})'
+                    + (' - found by review' if f.get('source') == 'agent' else ''), '',
                     f'`{f["file"]}:{f["line"]}`: `{f["statement"]}`', '',
                     f'- Effect: {f["effect"]}',
                     f'- Engine: {f["engine_range"]}',
                     f'- Table size: {f["size"]["class"]}{" (" + format(f["size"]["rows"], ",") + " rows)" if f["size"].get("rows") else ""}, from {f["size"]["source"]}']
             if f.get('floor') or f.get('cap'):
                 out.append(f'- Priority adjusted: {f.get("floor") or f.get("cap")}')
+            if f.get('source') == 'agent':
+                out.append('- Found by review: ' + '; '.join(f'`{b["file"]}:{b["line"]}` {b["excerpt"]}' if b.get('file')
+                                                            else f'evidence `{b["evidence"]}`' for b in f.get('basis', [])))
             if f['code_hits']:
                 out.append('- Code still using it: ' + ', '.join(f'`{x["file"]}:{x["line"]}` ({x["kind"]})' for x in f['code_hits']))
             out += [f'- Safer rewrite: {f["rewrite"]}', f'- Verify: {f["verification"]}', '']
     if r.get('safe_sequence'):
         out += ['## Safer sequence', '']
         for rel in r['safe_sequence']:
-            out.append(f'**Release {rel["release"]}**')
-            out += [f'1. {x}' for x in rel['steps']] + ['']
+            label = rel['release']
+            # a short label ("A", "2.4") reads as "Release A"; a phrase ("Before any production run") stands alone
+            out.append(f'**Release {label}**' if re.match(r'^[A-Z0-9][\w.\-]{0,9}(\s|$)', label) and not re.match(r'^[A-Z][a-z]{3,}\b', label)
+                       else f'**{label}**')
+            out += [f'{n}. {x}' for n, x in enumerate(rel['steps'], 1)] + ['']
     if not a.brief:
         out += ['## Triage', '']
         for t in r['triage']:

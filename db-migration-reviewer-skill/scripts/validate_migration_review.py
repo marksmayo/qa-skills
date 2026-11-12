@@ -11,7 +11,12 @@ counts hits in tests or migrations; a measured finding has no dynamic result, or
 database the skill didn't create or a non-loopback host; any candidate isn't triaged exactly once; a data-loss
 candidate is dismissed without the intended-contract-step reason and zero code readers; the headline counts
 or verdict are wrong, or it says "safe" without the scope statement; row values appear in the dynamic results.
-With --repo, every cited line must exist, and code hits must contain the column name.
+With --repo, every cited line must exist and name the finding's column (or table) within three lines, code hits
+must contain the column name, and every agent finding's basis excerpt must be on its file:line.
+Agent findings (source "agent", found by review rather than by a rule match) cite no candidates but carry a
+basis of {file, line, excerpt}; they are rated like any other finding, with the hazard of their category.
+With --migrations, the engine may not be marked known when detection marked it assumed from the same source.
+The headline statement may not contradict the verdict ("safe to deploy" or "no findings" with findings).
 With --write-summary, the headline is recomputed and written back.
 """
 from __future__ import annotations
@@ -29,6 +34,15 @@ ORDER = ['P0', 'P1', 'P2', 'P3']
 DISMISS = {'table_created_in_release', 'constant_default_pg11', 'intended_contract_step', 'validated_check_present',
            'online_schema_tool', 'not_applicable_engine_version', 'duplicate', 'false_match'}
 DYN_KEYS = {'id', 'up', 'down', 'locks', 'probes', 'rows_changed'}
+CATEGORY_HAZARD = {'data_loss': 4, 'blocking_lock': 3, 'compatibility': 3, 'irreversible': 2, 'lock_queueing': 2,
+                   'transaction_mistake': 2, 'backfill_cost': 2, 'ordering': 1}
+NO_LINE_TEXT = {'IRREVERSIBLE', 'PG-NO-LOCK-TIMEOUT', 'ALEMBIC-MULTIPLE-HEADS', 'MYSQL-DDL-AUTOCOMMIT'}
+CONTRADICTS = re.compile(r'\b(safe to (deploy|ship|run)|no (blocking )?(findings|problems|issues)|nothing (blocking|to fix)|ready to (deploy|ship))\b', re.I)
+SCHEMA_VERSIONS = ('1.0.0', '1.1.0')
+
+
+def norm_text(s: str) -> str:
+    return ' '.join(s.replace('"', '').replace('`', '').split()).lower()
 
 
 def rate(category: str, hazard: int, size_class: str, deploy: str) -> tuple[int, int, int]:
@@ -80,6 +94,8 @@ def main() -> int:
             e(f'missing top-level field {k}')
     if errs:
         print('\n'.join(errs)); return 1
+    if rep.get('schema_version') not in SCHEMA_VERSIONS:
+        e(f'schema_version {rep.get("schema_version")!r} is not one of {SCHEMA_VERSIONS}')
     scope = rep['scope']
     deploy = scope.get('deploy_model')
     if deploy not in EXPOSURE:
@@ -105,6 +121,10 @@ def main() -> int:
             for k in ('file', 'down_state', 'transactional'):
                 if m.get(k) != src.get(k):
                     e(f'migration {m["id"]}: {k} {m.get(k)!r} differs from the migrations file ({src.get(k)!r})')
+        det = md.get('engine') or {}
+        if det.get('assumed') and not eng.get('assumed') and eng.get('source') == det.get('source'):
+            e(f'scope.engine is marked known, but detection assumed it ({det.get("assumed_reason") or "no version found"}); '
+              'give the source that confirms the version, or keep assumed: true')
 
     # dynamic
     dyn = rep['dynamic']
@@ -139,14 +159,42 @@ def main() -> int:
         if fid in fids:
             e(f'{fid}: duplicate finding id')
         fids.add(fid)
-        for k in ('file', 'line', 'statement', 'engine_range', 'effect', 'rewrite', 'verification', 'candidates'):
+        agent = f.get('source', 'tool') == 'agent'
+        if f.get('source', 'tool') not in ('tool', 'agent'):
+            e(f'{fid}: source {f.get("source")!r} must be tool or agent')
+        for k in ('file', 'line', 'statement', 'engine_range', 'effect', 'rewrite', 'verification') + (() if agent else ('candidates',)):
             if not f.get(k):
                 e(f'{fid}: missing {k}')
+        if agent:
+            if f.get('candidates'):
+                e(f'{fid}: an agent finding cites no candidates (a candidate is promoted to a tool finding instead)')
+            basis = f.get('basis')
+            if not isinstance(basis, list) or not basis:
+                e(f'{fid}: an agent finding needs a non-empty basis of {{file, line, excerpt}}')
+                basis = []
+            for b in basis:
+                if not isinstance(b, dict) or not ((b.get('file') and isinstance(b.get('line'), int) and b.get('excerpt')) or b.get('evidence')):
+                    e(f'{fid}: basis entry {b!r} needs file, line and excerpt (or evidence)')
+                elif b.get('file') and a.repo:
+                    bp = a.repo / b['file']
+                    blines = bp.read_text(encoding='utf-8', errors='replace').splitlines() if bp.is_file() else None
+                    if blines is None:
+                        e(f'{fid}: basis file {b["file"]} not found in the repo')
+                    elif not 1 <= b['line'] <= len(blines):
+                        e(f'{fid}: basis line {b["file"]}:{b["line"]} is past the end of the file')
+                    elif norm_text(b['excerpt']) not in norm_text(blines[b['line'] - 1]):
+                        e(f'{fid}: basis excerpt is not on {b["file"]}:{b["line"]}')
+                elif b.get('evidence') and not (a.review.parent / b['evidence']).exists():
+                    e(f'{fid}: basis evidence {b["evidence"]} not found next to the review')
+        elif f.get('basis'):
+            e(f'{fid}: basis is for agent findings; a tool finding cites candidates')
         rule = RULES.get(f.get('rule'))
-        if not rule:
+        if not rule and not agent:
             e(f'{fid}: unknown rule {f.get("rule")}'); continue
-        if f.get('category') != rule['category'] or f.get('hazard') != rule['hazard']:
-            e(f'{fid}: category/hazard {f.get("category")}/{f.get("hazard")} differ from the rule ({rule["category"]}/{rule["hazard"]})')
+        want_cat_hz = (rule['category'], rule['hazard']) if rule else (f.get('category'), CATEGORY_HAZARD.get(f.get('category')))
+        if f.get('category') not in CATEGORY_HAZARD or (f.get('category'), f.get('hazard')) != want_cat_hz:
+            e(f'{fid}: category/hazard {f.get("category")}/{f.get("hazard")} differ from the {"rule" if rule else "rubric"} '
+              f'({want_cat_hz[0]}/{want_cat_hz[1]})')
             continue
         sz = f.get('size') or {}
         if sz.get('class') not in SIZE:
@@ -192,6 +240,11 @@ def main() -> int:
                 e(f'{fid}: {f["file"]} not found in the repo')
             elif f['line'] > len(p_.read_text(encoding='utf-8').splitlines()):
                 e(f'{fid}: line {f["line"]} is past the end of {f["file"]}')
+            elif f.get('rule') not in NO_LINE_TEXT and (f.get('column') or f.get('table')):
+                near = norm_text(' '.join(p_.read_text(encoding='utf-8').splitlines()[f['line'] - 1:f['line'] + 2]))
+                word = (f.get('column') or f.get('table')).lower()
+                if not re.search(rf'(?<![\w]){re.escape(word)}(?![\w])', near):
+                    e(f'{fid}: {f["file"]}:{f["line"]} does not mention {word} (the cited line must hold the statement)')
             for h in f.get('code_hits', []):
                 lines = (a.repo / h['file']).read_text(encoding='utf-8').splitlines() if (a.repo / h['file']).exists() else []
                 word = f.get('column') if f['rule'] != 'NOT-NULL-WHILE-WRITTEN-WITHOUT' else None
@@ -250,6 +303,8 @@ def main() -> int:
         e('headline says "safe" without a scope_statement')
     if not hl.get('scope_statement'):
         e('headline has no scope_statement (what was and was not checked)')
+    if want['verdict'] != 'no_blocking_findings' and CONTRADICTS.search(stmt):
+        e(f'headline statement says "{CONTRADICTS.search(stmt).group(0)}", which contradicts the verdict {want["verdict"]}')
     if dyn.get('status') == 'not_run' and not any('dynamic' in x.lower() for x in rep['limitations']):
         e('dynamic check not run, but limitations do not say so')
 

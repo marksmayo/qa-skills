@@ -1,7 +1,7 @@
 {
- "schema_version": "1.0.0",
+ "schema_version": "1.1.0",
  "skill": "db-migration-reviewer",
- "skill_version": "1.0.0",
+ "skill_version": "1.1.0",
  "generated": "2026-11-11",
  "scope": {
   "repo": "examples/ledger",
@@ -9,7 +9,7 @@
   "engine": {
    "name": "postgresql",
    "version": "16.4",
-   "source": "alembic.ini and docker-compose.yml",
+   "source": "alembic.ini and infra/database.tf (the production RDS instance; docker-compose.yml agrees)",
    "assumed": false
   },
   "deploy_model": "rolling",
@@ -40,12 +40,12 @@
   "tools": [
    {
     "name": "detect_migrations.py",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "status": "ran"
    },
    {
     "name": "scan_migrations.py",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "status": "ran"
    },
    {
@@ -55,7 +55,7 @@
    },
    {
     "name": "dynamic_check.py",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "status": "not_run"
    }
   ],
