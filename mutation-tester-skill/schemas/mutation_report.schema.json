@@ -174,7 +174,7 @@
         "function": {"type": ["string", "null"]},
         "summary": {"type": "string", "minLength": 10},
         "reason": {"type": "string", "minLength": 10},
-        "should_have_caught": {"type": ["string", "null"]},
+        "should_have_caught": {"type": ["string", "null"], "description": "Required on every finding, may be null: a covering test for weak_assertion (never null there), the closest covering test or null for missing_case, null for equivalent and accepted"},
         "suggestion": {
           "type": ["object", "null"],
           "required": ["test_file", "assertion_or_input", "code"],

@@ -36,6 +36,14 @@ def short(tid: str | None) -> str:
     return tid.split('::')[-1] if tid else '-'
 
 
+def mid_label(mid: str, m: dict) -> str:
+    """The report id, with the engine's own id when it differs (what the engine printed and wrote)."""
+    raw = m.get('raw_id')
+    if not raw or raw == mid:
+        return mid
+    return f'{mid} (engine id {raw if len(raw) <= 24 else "..." + raw[-21:]})'
+
+
 def where(f: dict) -> str:
     return f['file'] + (f' {f["function"]}()' if f.get('function') else ' (module level)')
 
@@ -55,7 +63,12 @@ def main() -> int:
         return 2
     c = supports_color(args.color)
     P = lambda t, s: paint(t, s, c)  # noqa: E731
-    md, s = d['metadata'], d['summary']
+    md, s = d['metadata'], d.get('summary') or {}
+    missing = [k for k in ('by_engine', 'findings', 'coverage_gaps', 'evidence_completeness') if k not in s]
+    if missing:
+        print(f'The report has no computed summary ({", ".join(missing)} missing). Run '
+              'validate_mutation_report.py <report> --repo <repo> --write-summary first.', file=sys.stderr)
+        return 2
     mutants = {m['id']: m for m in d['mutants']}
     sc = md['scope']
     src = sc.get('diff_file') or (f'changes since {sc["base_ref"]}' if sc.get('base_ref') else sc['mode'])
@@ -85,7 +98,7 @@ def main() -> int:
         print(f['summary'])
         for mid in f['mutant_ids']:
             m = mutants.get(mid, {})
-            print(P(f'  {mid} {m.get("engine", "")} line {m.get("line")}: ', DIM) +
+            print(P(f'  {mid_label(mid, m)} {m.get("engine", "")} line {m.get("line")}: ', DIM) +
                   f'{m.get("original", "").strip()}  ->  {m.get("mutated", "").strip()}')
         print(f'Should have caught: {short(f["should_have_caught"])}' if f['should_have_caught'] else 'No existing test uses a distinguishing input.')
         if f['suggestion']:
@@ -115,7 +128,7 @@ def main() -> int:
     if odd:
         print(P('## Timeouts, errors and mutants not run (never counted as kills)', BOLD))
         for m in odd:
-            print(P(f'- {m["id"]} {m["status"]}', STATUS_STYLE[m['status']]) +
+            print(P(f'- {mid_label(m["id"], m)} {m["status"]}', STATUS_STYLE[m['status']]) +
                   f' {m["file"]}:{m["line"]} {m["original"].strip()}  ->  {m["mutated"].strip()}' +
                   (f' ({m["note"]})' if m.get('note') else ''))
         print()

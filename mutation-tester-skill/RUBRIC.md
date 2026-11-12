@@ -38,7 +38,7 @@ mutant is in exactly one coverage gap.
 | Triage | Needs | Ranked |
 |---|---|---|
 | `weak_assertion` | `should_have_caught`: a test in every mutant's `covering_tests`; the missing assertion | yes |
-| `missing_case` | the distinguishing input; `should_have_caught` optional (a covering test if given) | yes |
+| `missing_case` | the distinguishing input; `should_have_caught` is required but may be `null` (a covering test if given) | yes |
 | `equivalent` | a reason of 40+ characters arguing both versions behave the same for every input | never |
 | `accepted` | a reason (20+ characters) why the behaviour doesn't matter | never |
 
@@ -62,7 +62,7 @@ How to tell them apart:
 | Factor | Values |
 |---|---|
 | Criticality (yours, with a reason) | 3: money, auth, permissions, data deletion, or a journey-mapper P0/P1 step (`critical_paths`). 2: ordinary logic. 1: formatting, logging, display text |
-| Kind (computed) | The highest over the finding's mutants, from `data/operators.json`: branch or boundary = 3 (comparison, negation, condition, logical, boolean constant, loop control); value = 2 (arithmetic, number, returned value, `None`, arguments, removed call); string literal = 1 |
+| Kind (computed) | The highest over the finding's mutants, from `data/operators.json`: branch or boundary = 3 (comparison, negation, condition, logical, boolean constant, loop control, a string compared in a condition); value = 2 (arithmetic, number, returned value, `None`, arguments, removed call, removed `.upper()`/`.strip()`-style method call, an UPPER_CASE string constant); other string literal = 1 |
 | Proximity (computed with `--repo`) | 2 when a covering test calls the mutated function directly (a unit test ran the line and still passed); 1 when only tests that reach it through other functions ran it, and always 1 for a module-level mutant. Python tests are read with `ast`; JS/TS tests are found by their describe chain and title (`ts_scan.py`) and their body searched for a call |
 
 | Priority | Score |

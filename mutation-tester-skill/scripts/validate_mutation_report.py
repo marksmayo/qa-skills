@@ -14,7 +14,7 @@ score text (needs --repo). The headline stays yours, and any percentage in it mu
 computed scores, shown with its counts.
 """
 from __future__ import annotations
-import argparse, ast, json, re, sys
+import argparse, ast, hashlib, json, re, sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -197,10 +197,11 @@ def write_summary(d: dict, repo: Path) -> None:
     mutants = {m['id']: m for m in d['mutants']}
     cache: dict = {}
     for f in d['findings']:
-        if f['triage'] in RANKED:
-            f['kind_factor'] = max(KIND_FACTOR[mutants[m]['kind']] for m in f['mutant_ids'] if m in mutants)
-            f['proximity'] = proximity(f, mutants, repo, cache)
-            if f['criticality'] in (1, 2, 3):
+        if f.get('triage') in RANKED:
+            kinds = [KIND_FACTOR[mutants[m]['kind']] for m in f.get('mutant_ids', []) if m in mutants and mutants[m].get('kind') in KIND_FACTOR]
+            f['kind_factor'] = max(kinds) if kinds else None
+            f['proximity'] = proximity(f, mutants, repo, cache) if 'function' in f else None
+            if f.get('criticality') in (1, 2, 3) and f['kind_factor'] and f['proximity']:
                 f['score'] = f['criticality'] * f['kind_factor'] * f['proximity']
                 f['priority'] = priority(f['score'])
         else:
@@ -215,7 +216,8 @@ def write_summary(d: dict, repo: Path) -> None:
     s['coverage_gaps'] = len(d['coverage_gaps'])
     s['evidence_completeness'] = completeness(d)
     order = {'P0': 0, 'P1': 1, 'P2': 2, 'P3': 3, None: 4}
-    d['findings'].sort(key=lambda f: (order[f.get('priority')], -(f.get('score') or 0), int(f['id'][1:])))
+    d['findings'].sort(key=lambda f: (order.get(f.get('priority'), 4), -(f.get('score') or 0),
+                                      int(f['id'][1:]) if str(f.get('id', ''))[1:].isdigit() else 0))
 
 
 # ---------------------------------------------------------------- checks
@@ -231,9 +233,28 @@ def texts(d: dict):
     yield 'baseline.note', d['baseline']['note']
 
 
+ITEM_PATH = re.compile(r'^\$\.(findings|mutants|coverage_gaps)\[(\d+)\]')
+
+
+def name_items(errs: list[str], d: dict) -> list[str]:
+    """Add the item's id to schema paths ($.findings[7] -> $.findings[7] (F1)): --write-summary
+    re-sorts the findings, so an index alone points at the wrong one in the file you edit."""
+    out = []
+    for e in errs:
+        m = ITEM_PATH.match(e)
+        if m:
+            items = d.get(m.group(1))
+            i = int(m.group(2))
+            iid = items[i].get('id') if isinstance(items, list) and i < len(items) and isinstance(items[i], dict) else None
+            if iid:
+                e = e[:m.end()] + f' ({iid})' + e[m.end():]
+        out.append(e)
+    return out
+
+
 def check(d: dict, mutants_file: dict | None, runs: dict | None, proofs: dict | None, repo: Path | None) -> tuple[list[str], list[str]]:
     schema = json.loads(SCHEMA.read_text(encoding='utf-8'))
-    errs = schema_errors(d, schema, schema)
+    errs = name_items(schema_errors(d, schema, schema), d)
     warns: list[str] = []
     if errs:
         return errs, warns
@@ -475,6 +496,15 @@ def check(d: dict, mutants_file: dict | None, runs: dict | None, proofs: dict | 
                     errs.append(f'{pid}: the new test did not fail on {r["mutant_id"]} ({r["verdict"]})')
             if owner.get('suggestion') and isinstance(owner['suggestion'], dict) and p['test_file'] != owner['suggestion']['test_file']:
                 errs.append(f'{pid}: proved in {p["test_file"]}, but {owner["id"]} suggests {owner["suggestion"]["test_file"]}')
+            code = p.get('test_code')
+            if code is not None and p.get('test_code_sha256') and \
+                    hashlib.sha256(code.encode('utf-8')).hexdigest() != p['test_code_sha256']:
+                errs.append(f'{pid}: test_code does not match its test_code_sha256 (proofs.json was edited)')
+            sugg = owner.get('suggestion') if isinstance(owner.get('suggestion'), dict) else None
+            if code is not None and sugg and sugg.get('code') and \
+                    ' '.join(sugg['code'].split()) != ' '.join(code.split()):
+                errs.append(f'{pid}: the proved test code is not the code {owner["id"]} suggests; prove the suggestion '
+                            'as written, or put the proved code in the suggestion')
             if p['applied_to'] == 'repo' and p['test_file'] not in d['files_changed']:
                 errs.append(f'{pid}: the test was written to the repo, so {p["test_file"]} belongs in files_changed')
             if p['applied_to'] == 'repo' and not md['write_tests']:
