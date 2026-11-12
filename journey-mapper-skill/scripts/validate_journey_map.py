@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
 """Validate a journey_map.json: required structure plus the honesty checks the skill depends on
 (every step has code evidence, every surface item is accounted for, coverage arithmetic adds up,
-the mapper never claims a status other than "inferred"). Prints every problem, not just the first."""
+the mapper never claims a status other than "inferred", out_of_scope orphans really are outside the
+run scope, and the graph is recorded or explicitly declined). With --repo it also re-reads every cited
+file and line (missing files, lines past the end, blank lines, excerpts that don't match) and checks
+that each journey's tests exist. Prints every problem, not just the first.
+
+    python validate_journey_map.py journeys/journey_map.json [--repo <repository root>]"""
 from __future__ import annotations
-import json, re, sys
+import argparse, json, re, sys
 from pathlib import Path
 
 PLATFORMS = {'web', 'ios', 'android', 'desktop', 'api', 'cli'}
 BUCKETS = {'routes': 'route', 'screens': 'screen', 'endpoints': 'endpoint', 'entry_points': 'entry_point', 'goals': 'goal'}
-ORPHAN_REASONS = {'no_user_path_found', 'not_user_facing', 'out_of_scope', 'needs_review', 'false_positive'}
+ORPHAN_REASONS = {'no_user_path_found', 'not_user_facing', 'out_of_scope', 'not_mapped_this_run', 'needs_review',
+                  'false_positive'}
 UNREACHABLE_REASONS = {'dead', 'flag_off', 'guarded_unreachable'}
 NODE_KINDS = {'entry', 'screen', 'state', 'goal'}
 JRN_RE = re.compile(r'^JRN-[A-Z0-9]+-\d{3}$')
@@ -16,7 +22,50 @@ DOMAIN_RE = re.compile(r'^[a-z0-9][a-z0-9-]*$')
 TARGET_RE = re.compile(r'^(step (\d+)|(V\d+))$')
 
 
-def check(d: dict) -> list[str]:
+class Repo:
+    """Re-reads cited files so evidence can't point at a missing file, a line past the end or a blank line."""
+    def __init__(self, root: Path):
+        self.root = root
+        self.cache: dict[str, list[str] | None] = {}
+
+    def lines(self, rel: str):
+        if rel not in self.cache:
+            p = self.root / rel
+            try:
+                self.cache[rel] = p.read_text(encoding='utf-8', errors='replace').splitlines() if p.is_file() else None
+            except OSError:
+                self.cache[rel] = None
+        return self.cache[rel]
+
+    def check(self, ev: dict, where: str, e, allow_blank=False):
+        rel, line = ev.get('file'), ev.get('line')
+        if not rel or not isinstance(line, int):
+            return
+        lines = self.lines(rel)
+        if lines is None:
+            e(f'{where}: cited file {rel} does not exist in the repository'); return
+        if not 1 <= line <= max(len(lines), 1):
+            e(f'{where}: {rel}:{line} is past the end of the file ({len(lines)} lines)'); return
+        text = lines[line - 1] if lines else ''
+        if not allow_blank and not text.strip():
+            e(f'{where}: {rel}:{line} is a blank line; cite the line that handles the action or produces the outcome')
+        exc = ev.get('excerpt')
+        if exc and ' '.join(exc.split()) not in ' '.join(text.split()):
+            e(f'{where}: excerpt {exc!r} is not on {rel}:{line}')
+
+    def test_exists(self, ref: str) -> bool:
+        path = re.split(r'::|#', ref, maxsplit=1)[0]
+        path = re.sub(r':\d+(:\d+)?$', '', path).strip()
+        if any(ch in path for ch in '*?['):
+            return any(self.root.glob(path))
+        return (self.root / path).exists()
+
+
+def item_domain(o: dict, items: dict) -> str | None:
+    return o.get('domain') or (items.get(o.get('item')) or {}).get('domain')
+
+
+def check(d: dict, repo: Repo | None = None) -> list[str]:
     errs: list[str] = []
     e = errs.append
     for key in ('metadata', 'surface', 'coverage', 'journeys'):
@@ -34,11 +83,16 @@ def check(d: dict) -> list[str]:
     if scope != 'all' and not (isinstance(scope, list) and scope):
         e('metadata.run_scope.domains must be "all" or a non-empty list')
 
-    def evidence_ok(ev, where):
+    scoped = isinstance(scope, list) and bool(scope)
+
+    def evidence_ok(ev, where, allow_blank=False):
         if not isinstance(ev, dict) or not ev.get('file') or not isinstance(ev.get('line'), int) or ev['line'] < 1:
-            e(f'{where}: evidence needs file and line >= 1')
+            e(f'{where}: evidence needs file and line >= 1'); return
+        if repo:
+            repo.check(ev, where, e, allow_blank)
 
     surface_ids: dict[str, str] = {}
+    surface_items: dict[str, dict] = {}
     for bucket, kind in BUCKETS.items():
         items = d['surface'].get(bucket)
         if not isinstance(items, list):
@@ -48,9 +102,10 @@ def check(d: dict) -> list[str]:
             if not sid: e(f'surface.{bucket}: item without id'); continue
             if sid in surface_ids: e(f'duplicate surface id {sid}')
             surface_ids[sid] = kind
+            surface_items[sid] = it
             if it.get('kind') != kind: e(f'{sid}: kind {it.get("kind")!r} does not match bucket {bucket}')
             if not it.get('name'): e(f'{sid}: missing name')
-            evidence_ok(it, sid)
+            evidence_ok(it, sid, allow_blank=True)   # file-based routes cite line 1, which may be blank
             if it.get('confidence') not in ('high', 'medium', 'low'): e(f'{sid}: confidence must be high|medium|low')
             if it.get('source') not in ('extractor', 'agent'): e(f'{sid}: source must be extractor|agent')
 
@@ -65,6 +120,11 @@ def check(d: dict) -> list[str]:
         for key in ('title', 'persona', 'priority_reason', 'entry_point', 'goal'):
             if not j.get(key): e(f'{w}: {key} missing')
         if not DOMAIN_RE.match(str(j.get('domain', ''))): e(f'{w}: domain must be a lowercase slug')
+        elif scoped and j['domain'] not in scope:
+            e(f'{w}: domain {j["domain"]!r} is outside the run scope {scope}')
+        if repo:
+            for t in j.get('tests') or []:
+                if not repo.test_exists(str(t)): e(f'{w}: test {t} does not exist in the repository')
         if not j.get('platforms') or set(j['platforms']) - PLATFORMS: e(f'{w}: platforms missing or invalid')
         if j.get('priority') not in ('P1', 'P2', 'P3'): e(f'{w}: priority must be P1|P2|P3')
         if j.get('status', 'inferred') != 'inferred':
@@ -107,7 +167,24 @@ def check(d: dict) -> list[str]:
     for o in cov.get('orphans') or []:
         if o.get('item') not in surface_ids: e(f'orphan refers to unknown surface item {o.get("item")}')
         if o.get('reason') not in ORPHAN_REASONS: e(f'orphan {o.get("item")}: reason must be one of {sorted(ORPHAN_REASONS)}')
+        if o.get('item') in orphan_ids: e(f'orphan {o.get("item")} is listed twice')
         orphan_ids.add(o.get('item'))
+        dom = item_domain(o, surface_items)
+        if o.get('reason') == 'out_of_scope':
+            if not scoped:
+                e(f'orphan {o.get("item")}: out_of_scope, but the run scope is all domains')
+            elif not dom:
+                e(f'orphan {o.get("item")}: out_of_scope needs the domain it belongs to (domain on the orphan or the item)')
+            elif dom in scope:
+                e(f'orphan {o.get("item")}: out_of_scope, but its domain {dom!r} is in the run scope {scope}; '
+                  f'map it, or use not_mapped_this_run with a note')
+        if o.get('reason') == 'not_mapped_this_run':
+            if not o.get('note'):
+                e(f'orphan {o.get("item")}: not_mapped_this_run needs a note naming the user path that was found')
+            if scoped and dom and dom not in scope:
+                e(f'orphan {o.get("item")}: not_mapped_this_run is for in-scope items; domain {dom!r} is out of scope (use out_of_scope)')
+        if o.get('reason') == 'needs_review' and not o.get('note'):
+            e(f'orphan {o.get("item")}: needs_review needs a note saying what a person must decide')
     for u in cov.get('unreachable') or []:
         if u.get('item') not in surface_ids: e(f'unreachable refers to unknown surface item {u.get("item")}')
         if u.get('reason') not in UNREACHABLE_REASONS: e(f'unreachable {u.get("item")}: reason must be one of {sorted(UNREACHABLE_REASONS)}')
@@ -125,6 +202,11 @@ def check(d: dict) -> list[str]:
         e(f'coverage.in_journey is {cov.get("in_journey")} but journeys cover {len(covered)} distinct items')
 
     g = d.get('graph')
+    declined = d.get('graph_declined')
+    if g is None and not (isinstance(declined, str) and declined.strip()):
+        e('graph missing: record the nodes and edges the journeys traverse (Step 3), or set graph_declined to the reason it was not built')
+    if g is not None and declined:
+        e('graph and graph_declined are both set; keep one')
     if g is not None:
         nids = set()
         for n in g.get('nodes') or []:
@@ -132,21 +214,27 @@ def check(d: dict) -> list[str]:
             nids.add(n.get('id'))
             if n.get('kind') not in NODE_KINDS: e(f'graph node {n.get("id")}: kind must be one of {sorted(NODE_KINDS)}')
             if n.get('surface_item') and n['surface_item'] not in surface_ids: e(f'graph node {n.get("id")}: unknown surface_item')
+            if repo and n.get('file') and isinstance(n.get('line'), int): evidence_ok(n, f'graph node {n.get("id")}', allow_blank=True)
         for ed in g.get('edges') or []:
             for end in ('from', 'to'):
                 if ed.get(end) not in nids: e(f'graph edge {ed.get("from")}->{ed.get("to")}: unknown {end} node')
             if not ed.get('action'): e(f'graph edge {ed.get("from")}->{ed.get("to")}: action missing')
+            if repo and ed.get('file') and isinstance(ed.get('line'), int): evidence_ok(ed, f'graph edge {ed.get("from")}->{ed.get("to")}')
     return errs
 
 
 def main() -> int:
-    if len(sys.argv) != 2:
-        print('usage: validate_journey_map.py journey_map.json', file=sys.stderr); return 2
+    ap = argparse.ArgumentParser(description='Validate a journey_map.json.')
+    ap.add_argument('journey_map', type=Path)
+    ap.add_argument('--repo', type=Path, help='repository root: re-read every cited file and line, and check test paths exist')
+    args = ap.parse_args()
     try:
-        d = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+        d = json.loads(args.journey_map.read_text(encoding='utf-8'))
     except Exception as exc:
         print(f'INVALID: {exc}', file=sys.stderr); return 1
-    errs = check(d)
+    if args.repo and not args.repo.is_dir():
+        print(f'INVALID: --repo {args.repo} is not a directory', file=sys.stderr); return 1
+    errs = check(d, Repo(args.repo) if args.repo else None)
     if errs:
         for msg in errs: print(f'INVALID: {msg}', file=sys.stderr)
         print(f'{len(errs)} problem(s)', file=sys.stderr)

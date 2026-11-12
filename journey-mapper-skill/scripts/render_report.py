@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Render a Journey Mapper journey_map.json as a terminal/Markdown report with optional ANSI colour."""
+"""Render a Journey Mapper journey_map.json as a terminal/Markdown report with optional ANSI colour.
+In a scoped run the coverage headline counts only the run's domains; the whole-repository figure follows it.
+
+    python render_report.py journeys/journey_map.json [--brief] [--color auto|always|never]"""
 from __future__ import annotations
 import argparse, json, os, sys
 from pathlib import Path
@@ -22,10 +25,17 @@ def bar(fraction, width=20):
     filled=max(0,min(width,round(fraction*width)))
     return '█'*filled+'░'*(width-filled)
 
+def scoped_counts(data):
+    """(in-scope total, covered, out-of-scope count) for a scoped run: every item except out_of_scope orphans."""
+    cov=data['coverage']
+    out={o['item'] for o in cov['orphans'] if o['reason']=='out_of_scope'}
+    return cov['surface_items_total']-len(out), cov['in_journey'], len(out)
+
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument('json_file', type=Path)
     ap.add_argument('--color', choices=['auto','always','never'], default='auto')
+    ap.add_argument('--brief', action='store_true', help='coverage headline, untested P1 journeys and counts only')
     args=ap.parse_args()
     try:
         data=json.loads(args.json_file.read_text(encoding='utf-8'))
@@ -39,10 +49,20 @@ def main():
     print(f"Platforms: {', '.join(meta.get('platforms') or ['unknown'])}  |  Frameworks: {', '.join(meta.get('frameworks') or ['unknown'])}")
     print(f"Scope: {'all domains' if scope=='all' else ', '.join(scope)}  |  Generated: {meta['generated_at']}")
 
-    total=cov['surface_items_total']; inj=cov['in_journey']; frac=inj/total if total else 0
+    total=cov['surface_items_total']; inj=cov['in_journey']
+    scoped=scope!='all'
+    head_total,head_inj,n_out=scoped_counts(data) if scoped else (total,inj,0)
+    frac=head_inj/head_total if head_total else 0
     style=GREEN if frac>=0.9 else CYAN if frac>=0.75 else YELLOW if frac>=0.5 else RED
     print('\n'+paint('SURFACE COVERAGE',BOLD,color))
-    print(paint(f"In journeys: {inj}/{total} ({frac*100:.0f}%)  {bar(frac)}",style,color))
+    label=f"In journeys (run scope: {', '.join(scope)})" if scoped else 'In journeys'
+    print(paint(f"{label}: {head_inj}/{head_total} ({frac*100:.0f}%)  {bar(frac)}",style,color))
+    if scoped:
+        print(f"Whole repository: {inj}/{total} ({(inj/total*100 if total else 0):.0f}%); "
+              f"{n_out} items in domains outside this run were not mapped")
+    not_mapped=[o for o in cov['orphans'] if o['reason']=='not_mapped_this_run']
+    if not_mapped:
+        print(paint(f"{len(not_mapped)} in-scope item(s) have a user path but were not mapped in this run",YELLOW,color))
     counts={k:len(v) for k,v in data['surface'].items()}
     print(f"Found: {counts['routes']} routes, {counts['screens']} screens, {counts['endpoints']} endpoints, "
           f"{counts['entry_points']} entry points, {counts['goals']} goals")
@@ -50,6 +70,20 @@ def main():
     print(paint('Surface found by static analysis plus review; dynamically built routes may be missing, so this is a lower bound.',DIM,color))
 
     untested=[j for j in journeys if j['priority']=='P1' and j['automation']=='none']
+    if args.brief:
+        by_p={p:sum(1 for j in journeys if j['priority']==p) for p in ('P1','P2','P3')}
+        by_a={a:sum(1 for j in journeys if j['automation']==a) for a in ('automated','partial','none')}
+        print(f"\nJourneys: {len(journeys)} (P1 {by_p['P1']}, P2 {by_p['P2']}, P3 {by_p['P3']}); automation: "
+              f"{by_a['automated']} automated, {by_a['partial']} partial, {by_a['none']} none")
+        if untested:
+            print(paint('Untested P1 journeys:',BOLD,color))
+            for j in untested: print(paint(f"- {j['id']} {j['title']}",RED,color))
+        else:
+            print('Untested P1 journeys: none')
+        nq=len(data.get('open_questions',[]))+sum(len(j.get('open_questions',[])) for j in journeys)
+        print(f"Open questions: {nq}")
+        print(paint('All journeys are status "inferred": they describe current behaviour and need human review.',DIM,color))
+        return 0
     if untested:
         print('\n'+paint('CRITICAL JOURNEYS WITHOUT TESTS',BOLD,color))
         for j in untested:
@@ -71,7 +105,7 @@ def main():
         by_reason={}
         for o in cov['orphans']: by_reason.setdefault(o['reason'],[]).append(o['item'])
         for reason,items in sorted(by_reason.items()):
-            code=MAGENTA if reason in ('no_user_path_found','needs_review') else DIM
+            code=MAGENTA if reason in ('no_user_path_found','needs_review','not_mapped_this_run') else DIM
             print(paint(f"- {reason}: {len(items)}",code,color)+f"  {', '.join(items[:8])}{' …' if len(items)>8 else ''}")
 
     questions=[(q['id'],q['question']) for q in data.get('open_questions',[])]
@@ -79,6 +113,9 @@ def main():
     if questions:
         print('\n'+paint('OPEN QUESTIONS',BOLD,color))
         for qid,q in questions: print(f"- {qid}: {q}")
+
+    if data.get('graph_declined'):
+        print('\n'+paint('GRAPH NOT BUILT',BOLD,color)+f"  {data['graph_declined']}")
 
     files=data.get('files')
     if files:

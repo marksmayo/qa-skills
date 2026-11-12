@@ -115,6 +115,28 @@ Status: **built** (v1.0.0). The implementation differs from the original plan as
   validator checks that the totals match.
 - Reviewed or approved journeys are never overwritten. Updates go to `<name>.proposed.md`.
 
+Version 1.1.0, after a run on a real Next.js 16 App Router application:
+
+- The extractor reports one endpoint per exported HTTP method of a Next.js `route.ts` (including
+  `export { handler as GET }` and `export const { GET, POST } = handlers`), Express
+  `router.route(path).get().post()` chains, and server actions (`ACTION <name>`). Intercepting
+  routes resolve to the route they intercept instead of being treated as route groups.
+- Goals include calls to tracking wrappers: functions that forward their first parameter to a
+  known analytics call, followed through wrappers of wrappers, plus names given with
+  `--goal-wrapper`. `context.goal_wrappers` lists them with their definitions.
+- New context: `guards` (matchers, path lists, path checks and redirects in `middleware.ts` or
+  `proxy.ts`), `layouts` (App Router layouts with guard-like lines) and `path_aliases`
+  (`tsconfig`/`jsconfig` `paths`, read as JSON with comments). Routes and endpoints carry a
+  proposed `domain` from their first path segment, and test-only surface carries a note.
+- The validator takes `--repo` and re-reads every cited file and line (missing file, line past
+  the end, blank step evidence, optional `excerpt` mismatch) and checks journeys' `tests` exist.
+  `out_of_scope` orphans must have a domain outside the run scope, journeys must be inside it,
+  and the new orphan reason `not_mapped_this_run` (in scope, path found, not mapped) needs a note.
+  The map must carry `graph` or `graph_declined`.
+- The report's coverage headline uses the run's scope in scoped runs, with the whole-repository
+  figure second; `--brief` prints the headline only. `coverage.md` shows both figures. Journey
+  file slugs are cut at a word boundary.
+
 ```text
 journey-mapper-skill/
   SKILL.md  RUBRIC.md  README.md

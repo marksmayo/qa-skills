@@ -92,6 +92,15 @@ Use the most specific truthful reason. If you are unsure whether something is de
 unreached by your tracing, use orphan `no_user_path_found` or `needs_review`, not
 `unreachable: dead`. "Dead" is a strong claim.
 
+- `out_of_scope` only for items whose domain is outside `run_scope.domains`. The validator checks
+  the domain (on the orphan, or on the surface item).
+- `not_mapped_this_run` for an in-scope item whose user path you found but didn't map (time or
+  budget). The note names the path, e.g. "called from `my-appointments/page.tsx:377`". Never
+  hide it as `out_of_scope` or `no_user_path_found`.
+- View and progress events the extractor reports as goals (`checkout_started`,
+  `*_viewed`) stay in the surface. Cover them from the journey whose step fires them; otherwise
+  orphan them with the reason that applies.
+
 ## 6. Automation status anchors
 
 | Status | Anchor |
@@ -99,6 +108,14 @@ unreached by your tracing, use orphan `no_user_path_found` or `needs_review`, no
 | `automated` | Every main-path step is exercised and every main-path Expect is asserted by at least one test. Variants may be untested |
 | `partial` | Some steps or variants are exercised, or the path is exercised without asserting its outcomes |
 | `none` | No test exercises the journey. Unit tests of components used by the journey don't count |
+
+What counts as asserting an Expect:
+
+- A navigation wait (`waitForURL`, `toHaveURL`, `cy.url().should`) asserts an Expect only when
+  that Expect is the navigation itself. It doesn't assert text, state or data on the new page.
+- Steps run inside helper functions (`login()`, `registerAccount()`) count for the spec that
+  calls the helper. List the spec in `tests`, not the helper file, and read the helper to see
+  what it asserts.
 
 ## 7. Quality checklist before finishing
 

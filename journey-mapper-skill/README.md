@@ -44,12 +44,16 @@ or, for a large application:
 Scripts, in the order the skill runs them:
 
 ```bash
-python scripts/extract_surface.py <repo> --out surface.json           # candidate surface
-python scripts/validate_journey_map.py journeys/journey_map.json      # honesty checks
+python scripts/extract_surface.py <repo> --out surface.json           # candidate surface [--goal-wrapper NAME]
+python scripts/validate_journey_map.py journeys/journey_map.json --repo <repo>   # honesty checks, re-reads evidence
 python scripts/write_journeys.py journeys/journey_map.json --out journeys
 python scripts/journey_md.py lint journeys --strict
-python scripts/render_report.py journeys/journey_map.json             # --color always|never
+python scripts/render_report.py journeys/journey_map.json             # [--brief] [--color always|never]
 ```
+
+`--repo` re-reads every cited file and line (missing files, lines past the end, blank lines,
+excerpts that don't match) and checks each journey's tests exist. Use it on every real run; the
+bundled example describes a fictional repository, so it is validated without `--repo`.
 
 ## Output
 
@@ -57,7 +61,7 @@ python scripts/render_report.py journeys/journey_map.json             # --color 
 journeys/
   index.md              journeys by domain, priority, automation status + flow diagrams
   coverage.md           every surface item and the journey that covers it, or why none does
-  journey-graph.json    screen/state interaction graph
+  journey-graph.json    screen/state interaction graph (absent when the map sets graph_declined)
   journey_map.json      machine-readable result of the last run
   <domain>/JRN-<DOMAIN>-<NNN>-<slug>.md
 ```
@@ -93,10 +97,10 @@ The extractor detects:
 
 | Area | Stacks |
 |---|---|
-| Web | Next.js (app and pages routers), Nuxt, SvelteKit, Remix, React Router, Vue Router, Angular, Django URLs |
+| Web | Next.js (app and pages routers; one endpoint per exported HTTP method; server actions; intercepting routes; `middleware.ts`/`proxy.ts` matchers and path guards; layouts with guard hints; `tsconfig` path aliases), Nuxt, SvelteKit, Remix, React Router, Vue Router, Angular, Django URLs |
 | Mobile | Expo Router, React Navigation, Flutter (GoRouter, route maps), Android (navigation graphs, Compose navigation, manifest activities and deep links), iOS (SwiftUI views, UIKit view controllers, storyboards, URL schemes) |
-| API | Express, Fastify, Koa, NestJS, Flask, FastAPI, Rails, Spring, Go `net/http`/Gin/Echo/chi, ASP.NET, OpenAPI documents |
-| Goal events | `track`, `logEvent`, `capture`, `gtag('event', …)` and similar analytics calls |
+| API | Express (including `router.route(path).get().post()` chains), Fastify, Koa, NestJS, Flask, FastAPI, Rails, Spring, Go `net/http`/Gin/Echo/chi, ASP.NET, OpenAPI documents |
+| Goal events | `track`, `logEvent`, `capture`, `gtag('event', …)` and similar analytics calls, plus calls to tracking wrappers: functions that forward their first parameter to a known analytics call (detected, including wrappers of wrappers) or are named with `--goal-wrapper` |
 
 Anything else is added by the agent during review.
 

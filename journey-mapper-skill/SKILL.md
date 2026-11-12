@@ -1,7 +1,7 @@
 ---
 name: journey-mapper
 description: Map the user journeys of an application by reading its codebase (web, mobile and API), and write them as prioritised, evidence-linked Journey Markdown files ready to be turned into automated tests. Accounts for every route, screen, endpoint, entry point and goal event it finds, reports coverage honestly, and never presents behaviour inferred from code as intended behaviour.
-version: 1.0.0
+version: 1.1.0
 ---
 
 # Journey Mapper
@@ -79,7 +79,13 @@ Establish, citing files:
 - **Feature flags:** the flag system and where defaults are defined.
 - **Domains:** functional areas, from directory structure (`features/checkout`), route prefixes
   and navigation menus. Use lowercase slugs.
-- **Existing end-to-end and UI tests:** frameworks and locations.
+- **Existing end-to-end and UI tests:** frameworks and locations. Note helper modules
+  (`e2e/helpers.ts`) whose functions run whole flows for the specs that call them.
+- **Next.js App Router:** the guard file is `middleware.ts`, or `proxy.ts` from Next 16, at the
+  project root or in `src/`. Layouts (`layout.tsx`) often hold auth checks for every page below
+  them. Server components may read the database directly, which is where ownership checks belong.
+  Server actions (`'use server'`) are endpoints. Imports go through `tsconfig.json` `paths`
+  aliases such as `@/*`.
 - **Existing journeys:** if the output directory already exists, read `index.md` and note which
   journeys are `reviewed` or `approved`.
 
@@ -92,9 +98,30 @@ python scripts/extract_surface.py <repo> --out surface.json
 ```
 
 It finds candidate routes, screens, API endpoints, entry points (deep links, URL schemes) and
-goal events (analytics calls). It also collects context: feature flag calls and end-to-end test
-files with the URLs they visit. Write `surface.json` to a scratch location, not into the
-repository.
+goal events (analytics calls). Write `surface.json` to a scratch location, not into the
+repository. Details worth knowing:
+
+- **Endpoints are per HTTP method.** A Next.js `route.ts` that exports `GET`, `PATCH` and
+  `DELETE` gives three items (`GET /api/x/:id`, ...), each at its export line. `ANY /path` means
+  no exported method was found; check how the file exports its handlers. Server actions appear as
+  `ACTION <function name>`.
+- **Intercepting routes** (`(.)x`, `(..)x`, `(...)x`) are reported under the route they
+  intercept, with detector `next-intercepting-route` and a note. They are a second way to render
+  that route (usually a modal on client-side navigation), so cover them with a variant.
+- **Goals** include calls to tracking wrappers: functions that forward their first parameter to a
+  known analytics call (e.g. `trackMixpanelEvent('sign_up_completed')`), found automatically and
+  listed in `context.goal_wrappers` with where they are defined. If the app tracks through a
+  wrapper the extractor misses, rerun with `--goal-wrapper <name>` (repeatable). Events passed as
+  constants (`EVENTS.SIGNUP`) are not resolved; add them as agent items.
+- **Domains** on routes and endpoints are proposals from the first path segment (`/api/orders/:id`
+  becomes `orders`). Correct them during review: they decide what `out_of_scope` may hold.
+- **Test-only surface** (`/test-support/...`, Sentry example pages) carries a note. Confirm it,
+  then orphan it as `not_user_facing`.
+- **Context:** `flags`, `tests` (e2e files and the URLs they visit), `guards` (each Next.js
+  `middleware.ts`/`proxy.ts`: its `matcher` values, lists of path prefixes such as
+  `AUTH_REQUIRED`, path checks and redirects, by line), `layouts` (each App Router layout with
+  lines that look like guards), `path_aliases` (`tsconfig`/`jsconfig` `paths`) and
+  `goal_wrappers`.
 
 The extractor is heuristic. Then:
 
@@ -121,12 +148,19 @@ record:
 - **Edges:** user actions that navigate or change state (`router.push`, `navigate()`,
   `<Link>`, form submits that redirect, `Navigator.push`, segues).
 - **Guards:** authentication checks, role checks, feature flags, and required state (e.g. cart not
-  empty) that must hold for an edge to be available.
-- **API calls** each action makes, linking UI to endpoints.
+  empty) that must hold for an edge to be available. Start from `context.guards` and
+  `context.layouts`: a matcher says which requests reach the guard file, the path lists and
+  checks say what it enforces, and the redirects show where a refused user goes (check whether the
+  redirect keeps the query string). Confirm each one by reading the lines cited.
+- **API calls** each action makes, linking UI to endpoints. Name the method and path
+  (`POST /api/orders`) so the call resolves to one endpoint item. Follow imports through
+  `context.path_aliases` (e.g. `@/lib/x` is `src/lib/x`).
 
 Record nodes (`entry`, `screen`, `state`, `goal`) and edges in the `graph` section of the map.
 The graph doesn't need every edge in the application. It needs the edges that the journeys
-traverse, plus the edges that make the reachability conclusions in Step 8 defensible.
+traverse, plus the edges that make the reachability conclusions in Step 8 defensible. If you
+don't build it, set `graph_declined` to the reason instead; the validator requires one or the
+other, and `journey-graph.json` and the diagrams are then not written.
 
 ## Step 4: Identify goals
 
@@ -138,7 +172,10 @@ Goals are states a user is trying to reach. Sources, strongest first:
 3. Transitions to terminal or meaningful statuses in state machines (e.g. `status = 'submitted'`).
 4. Created, updated, deleted or exported resources reached through the UI.
 
-Navigation events alone (`page_viewed`) are not goals.
+Navigation events alone (`page_viewed`) are not goals. When the extractor reports view or
+progress events (`checkout_started`, `dashboard_viewed`), keep them in the surface: cover them
+from the journey whose step fires them, or orphan them with the reason that applies. Don't drop
+them, or the coverage arithmetic stops describing the code.
 
 ## Step 5: Synthesise journeys
 
@@ -177,7 +214,10 @@ test suites. Match tests to journeys by route, screen, selectors, API calls and 
 - `none`: no test exercises the journey.
 
 List matched test files in `tests`. Never set `partial` or `automated` without listing the tests.
-Be conservative: a test that visits a page isn't a test of the journey.
+Be conservative: a test that visits a page isn't a test of the journey. A URL wait
+(`waitForURL`, `toHaveURL`) asserts only a navigation Expect, not what the page shows. Flows run
+in helper functions count for the spec that calls them: list the spec, and read the helper to see
+what it asserts (`RUBRIC.md` section 6).
 
 ## Step 7: Prioritise
 
@@ -193,7 +233,8 @@ Every surface item must end up in exactly one bucket:
 | Covered | Listed in at least one journey's `covers` |
 | Orphan `no_user_path_found` | User-facing, but you couldn't trace a path to it |
 | Orphan `not_user_facing` | Health checks, webhooks, internal or machine-to-machine endpoints |
-| Orphan `out_of_scope` | Belongs to a domain excluded from this run |
+| Orphan `out_of_scope` | Belongs to a domain excluded from this run. The item's `domain` (or the orphan's own `domain`, when the item's proposed one is wrong) must be outside `run_scope.domains` |
+| Orphan `not_mapped_this_run` | In scope, and you found its user path, but didn't map it in this run. The `note` names the path (file and line) |
 | Orphan `needs_review` | Ambiguous; a person must decide (explain in `note`) |
 | Orphan `false_positive` | Extractor output that isn't actually a route, screen or event |
 | Unreachable `dead` | No navigation, link, redirect or call reaches it (cite the evidence of absence you checked) |
@@ -210,8 +251,14 @@ Write `journey_map.json` into the output directory (`journeys/journey_map.json`)
 domains mapped. Then:
 
 ```bash
-python scripts/validate_journey_map.py journeys/journey_map.json
+python scripts/validate_journey_map.py journeys/journey_map.json --repo <repo>
 ```
+
+With `--repo` the validator re-reads every cited file and line: a missing file, a line past the
+end of the file, or a blank line cited as step evidence is an error. If an evidence entry has an
+`excerpt`, it must be on the cited line. It also checks that each journey's `tests` exist. It
+checks, with or without `--repo`, that journeys and `not_mapped_this_run` orphans are inside the
+run scope and `out_of_scope` orphans are outside it, and that the graph is present or declined.
 
 Fix every reported problem. Don't fudge the coverage numbers to pass: if an item isn't covered,
 list it as an orphan or unreachable item with a truthful reason.
@@ -235,12 +282,15 @@ python scripts/journey_md.py lint journeys --strict
 python scripts/render_report.py journeys/journey_map.json
 ```
 
-Strict lint must pass. Use `--color never` when the output will be pasted elsewhere.
+Strict lint must pass. Use `--color never` when the output will be pasted elsewhere, and
+`--brief` for the headline only. In a scoped run the coverage headline counts the run's domains
+(every item except `out_of_scope` orphans), and the whole-repository figure follows it.
 
 ## Large applications
 
 Map one or a few domains per run, using `run_scope.domains`. Items in other domains are orphans
-with reason `out_of_scope`. Stable IDs make runs add up: `index.md` always lists every journey
+with reason `out_of_scope`; in-scope items you traced but had no time to map are
+`not_mapped_this_run`. Stable IDs make runs add up: `index.md` always lists every journey
 file on disk, and `coverage.md` describes the latest run's scope. Suggest a domain order to the
 user, highest-risk first (payments, authentication, data entry).
 
@@ -249,7 +299,8 @@ user, highest-risk first (payments, authentication, data entry).
 Keep it short. Include:
 
 1. Coverage: surface items found, the percentage in journeys, orphans and unreachable items. Say
-   that it is a lower bound.
+   that it is a lower bound. In a scoped run, give the in-scope figure first and the whole
+   repository second, and say how many in-scope items were `not_mapped_this_run`.
 2. The number of journeys by priority, and **the untested P1 journeys by name**.
 3. Behaviour that looked unintended (open questions), with file and line.
 4. Proposed updates waiting next to reviewed journeys, and stale journeys.

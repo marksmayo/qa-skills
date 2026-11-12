@@ -1,9 +1,10 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Journey Map",
-  "description": "Machine-readable result of a Journey Mapper run. scripts/validate_journey_map.py enforces this structure plus cross-field honesty checks (coverage arithmetic, evidence on every step).",
+  "description": "Machine-readable result of a Journey Mapper run. scripts/validate_journey_map.py enforces this structure plus cross-field honesty checks (coverage arithmetic, evidence on every step, out_of_scope orphans outside the run scope, graph present or declined; with --repo, every cited file and line exists).",
   "type": "object",
   "required": ["metadata", "surface", "coverage", "journeys"],
+  "oneOf": [{"required": ["graph"]}, {"required": ["graph_declined"]}],
   "$defs": {
     "evidence": {
       "type": "object",
@@ -11,7 +12,8 @@
       "properties": {
         "file": {"type": "string", "minLength": 1},
         "line": {"type": "integer", "minimum": 1},
-        "note": {"type": "string"}
+        "note": {"type": "string"},
+        "excerpt": {"type": "string", "description": "Optional text from the cited line; with --repo the validator checks it is on that line."}
       }
     },
     "surfaceItem": {
@@ -78,8 +80,9 @@
             "required": ["item", "reason"],
             "properties": {
               "item": {"type": "string"},
-              "reason": {"enum": ["no_user_path_found", "not_user_facing", "out_of_scope", "needs_review", "false_positive"]},
-              "note": {"type": "string"}
+              "reason": {"enum": ["no_user_path_found", "not_user_facing", "out_of_scope", "not_mapped_this_run", "needs_review", "false_positive"]},
+              "domain": {"type": "string", "description": "The domain the item belongs to, when it differs from the surface item's domain. out_of_scope needs a domain (here or on the item) outside run_scope.domains; not_mapped_this_run is for items inside it."},
+              "note": {"type": "string", "description": "Required for not_mapped_this_run (the user path that was found) and needs_review (what a person must decide)."}
             }
           }
         },
@@ -201,6 +204,11 @@
           }
         }
       }
+    },
+    "graph_declined": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Why the interaction graph was not built. Exactly one of graph and graph_declined must be present."
     },
     "open_questions": {
       "type": "array",

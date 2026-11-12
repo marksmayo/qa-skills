@@ -6,7 +6,7 @@ end-to-end tests). Stdlib only; never executes or modifies the repository.
 Detection is heuristic. Every item records file, line, detector and confidence so the agent can
 verify it. Anything the extractor can't see must be added by the agent with source "agent".
 
-    python extract_surface.py /path/to/repo --out surface.json
+    python extract_surface.py /path/to/repo --out surface.json [--goal-wrapper trackEvent2]
 """
 from __future__ import annotations
 import argparse, bisect, json, re, sys
@@ -72,8 +72,45 @@ SPRING_MAPPING = re.compile(r'@(Get|Post|Put|Patch|Delete|Request)Mapping\(\s*(?
 GO_HANDLER = re.compile(r'\.(GET|POST|PUT|PATCH|DELETE|Get|Post|Put|Patch|Delete|HandleFunc|Handle)\(\s*"(/[^"]*)"')
 ASPNET_ROUTE = re.compile(r'\[(?:Http(Get|Post|Put|Patch|Delete)|Route)\(\s*"([^"]*)"')
 
+NEXT_METHODS = ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')
+NEXT_METHOD_EXPORT = re.compile(r'^[ \t]*export\s+(?:async\s+)?(?:function\s*\*?\s*|(?:const|let|var)\s+)'
+                                r'(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b', re.M)
+NEXT_METHOD_GROUP = re.compile(r'^[ \t]*export\s+(?:const\s*)?\{([^}]*)\}', re.M)
+JS_ROUTE_CHAIN = re.compile(r'\.route\(\s*' + Q + r'(/[^"\'`]*)' + Q + r'\s*\)')
+CHAIN_VERB = re.compile(r'\.(get|post|put|patch|delete|all)\(')
+SERVER_ACTION_EXPORT = re.compile(r'^[ \t]*export\s+(?:default\s+)?(?:async\s+function\s+(\w+)|const\s+(\w+)\s*=\s*async\b)', re.M)
+INLINE_SERVER_ACTION = re.compile(r'(?:async\s+function\s+(\w+)\s*\([^)]*\)\s*(?::[^{]+)?\{|(?:const|let)\s+(\w+)\s*=\s*async\s*'
+                                  r'\([^)]*\)\s*(?::[^=]+)?=>\s*\{)\s*["\']use server["\']')
+USE_SERVER_FIRST = re.compile(r'\A(?:\s|//[^\n]*\n|/\*.*?\*/)*["\']use server["\']', re.S)
+TEST_ONLY_HINT = re.compile(r'(test-support|sentry-example|__tests?__|/e2e\b|/debug\b|/playground\b)', re.I)
+LAYOUT_HINT = re.compile(r'redirect\(|notFound\(|getServerSession|\bauth\(\)|useSession\(|getToken\(|currentUser\(|'
+                         r'\brole\b|isAdmin|forbidden\(|unauthorized\(')
+MATCHER = re.compile(r'\bmatcher\s*:\s*(\[[^\]]*\]|' + Q + r'[^"\'`]*' + Q + ')', re.S)
+PATH_LIST = re.compile(r'\b(?:const|let|var)\s+(\w+)\s*(?::[^=\n]+)?=\s*\[([^\]]*)\]', re.S)
+PATH_CHECK = re.compile(r'(?:startsWith|===|==|includes|match)\s*\(?\s*' + Q + r'(/[^"\'`]*)' + Q)
+STRING_LIT = re.compile(r'"([^"\n]*)"|\'([^\'\n]*)\'|`([^`]*)`')
+REDIRECT_CALL = re.compile(r'(?:NextResponse\.redirect|\bredirect)\(')
+GUARD_FILE_STEMS = ('middleware', 'proxy')
+INTERCEPT = re.compile(r'^(\(\.\.\.\)|\(\.\)|(?:\(\.\.\))+)(.*)$')
+
 GOAL_CALL = re.compile(r'(?:\b|\.)(?:track|trackEvent|logEvent|logCustomEvent|capture|sendEvent|recordEvent)\(\s*'
                        r'(?:\w+\s*,\s*)?' + Q + r'([A-Za-z0-9_ .:/-]{2,80})' + Q)
+# Analytics sinks a wrapper may forward its event-name parameter to (group 1 = the variable passed).
+SINK_CALLS = [
+    re.compile(r'\b(?:mixpanel|analytics|posthog|amplitude|segment|heap|rudderanalytics|Analytics|appInsights|'
+               r'datadogRum|umami|fathom|snowplow|ReactGA|gtm|clarity|Sentry\.metrics)\s*(?:\.\w+)*\s*\.\s*'
+               r'(?:track|trackEvent|capture|logEvent|event|addAction|trackCustomEvent)\(\s*(\w+)\b(?!\s*[.(\[])'),
+    re.compile(r'\bgtag\(\s*["\']event["\']\s*,\s*(\w+)\b(?!\s*[.(\[])'),
+    re.compile(r'\bplausible\(\s*(\w+)\b(?!\s*[.(\[])'),
+    re.compile(r'\blogEvent\(\s*\w+\s*,\s*(\w+)\b(?!\s*[.(\[])'),
+    re.compile(r'\bdataLayer\.push\(\s*\{[^}]*\bevent\s*:\s*(\w+)\b(?!\s*[.(\[])'),
+]
+FUNC_DEF_JS = re.compile(r'\bfunction\s+([A-Za-z_$][\w$]*)\s*(?:<[^>()]*>)?\s*\(\s*([A-Za-z_$][\w$]*)'
+                         r'|\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=\n]+)?=\s*(?:async\s+)?(?:function\s*)?'
+                         r'\(\s*([A-Za-z_$][\w$]*)')
+FUNC_DEF_PY = re.compile(r'^[ \t]*(?:async\s+)?def\s+(\w+)\(\s*(?:self\s*,\s*|cls\s*,\s*)?(\w+)', re.M)
+STRING_ARG_CALL = re.compile(r'(?<![\w$.])([A-Za-z_$][\w$]*)\(\s*' + Q + r'([A-Za-z0-9_ .:/-]{2,80})' + Q)
+JS_KEYWORDS = {'if', 'for', 'while', 'switch', 'catch', 'return', 'function', 'typeof', 'require', 'import'}
 GTAG_EVENT = re.compile(r'gtag\(\s*["\']event["\']\s*,\s*["\']([^"\']+)')
 FLAG_CALL = re.compile(r'\b(useFlag|useFeatureFlag|useFeatureFlagEnabled|useFeatureIsOn|isFeatureEnabled|'
                        r'featureEnabled|variation|boolVariation|getFeatureValue|getFlag|isEnabled)\(\s*' + Q + r'([\w.:-]{2,80})' + Q)
@@ -89,13 +126,57 @@ VISIT_PATTERNS = [
 TEST_CASE = re.compile(r'\b(?:test|it|scenario)\(\s*' + Q)
 
 
+def parse_jsonc(text: str):
+    """Parse JSON with comments and trailing commas (tsconfig.json). Strings are kept intact, so "@/*" survives."""
+    out, i, n = [], 0, len(text)
+    while i < n:
+        c = text[i]
+        if c == '"':
+            j = i + 1
+            while j < n and text[j] != '"':
+                j += 2 if text[j] == '\\' else 1
+            out.append(text[i:j + 1]); i = j + 1
+        elif text.startswith('//', i):
+            j = text.find('\n', i); i = n if j == -1 else j
+        elif text.startswith('/*', i):
+            j = text.find('*/', i + 2); i = n if j == -1 else j + 2
+        else:
+            out.append(c); i += 1
+    try:
+        return json.loads(re.sub(r',(\s*[}\]])', r'\1', ''.join(out)))
+    except ValueError:
+        return None
+
+
+API_PREFIX_SEGMENTS = {'api', 'rest', 'graphql', 'internal', 'public'}
+
+def domain_hint(name: str) -> str | None:
+    """Propose a domain from the first static path segment: `GET /api/orders/:id` -> orders, `/` -> home."""
+    path = name.split(' ', 1)[1] if re.match(r'^[A-Z|]+ ', name) else name
+    if not path.startswith('/'):
+        return None
+    segs = [s for s in path.split('/') if s and not s.startswith((':', '*', '{', '<', '['))]
+    while segs and (segs[0].lower() in API_PREFIX_SEGMENTS or re.fullmatch(r'v\d+', segs[0], re.I)):
+        segs = segs[1:]
+    if not segs:
+        return 'home' if path.strip('/') == '' else None
+    slug = re.sub(r'[^a-z0-9]+', '-', segs[0].lower()).strip('-')
+    return slug or None
+
+
 class Extractor:
-    def __init__(self, root: Path, max_files: int):
+    def __init__(self, root: Path, max_files: int, goal_wrappers=()):
         self.root = root
         self.max_files = max_files
         self.items: list[dict] = []
         self.flags: list[dict] = []
         self.tests: list[dict] = []
+        self.guards: list[dict] = []
+        self.layouts: list[dict] = []
+        self.aliases: list[dict] = []
+        self.configured_wrappers = {w.strip() for w in goal_wrappers if w.strip()}
+        self.func_defs: list[dict] = []        # {name, file, line, forwards: set of callees given the 1st param}
+        self.string_calls: list[tuple] = []    # (callee, event, path, line) for wrapper resolution at the end
         self.frameworks: set[str] = set()
         self.platforms: set[str] = set()
         self.pkg_cache: dict[Path, set[str]] = {}
@@ -169,9 +250,23 @@ class Extractor:
 
     # ---- file-based routing ----
     @staticmethod
+    def intercepts(segs) -> bool:
+        return any(INTERCEPT.match(s) for s in segs)
+
+    @staticmethod
     def segments_to_route(segs):
+        """Route path for file-system segments. Route groups `(x)` and slots `@x` are dropped; an
+        intercepting segment `(.)x`, `(..)x`, `(..)(..)x` or `(...)x` resolves to the route it intercepts."""
         parts = []
         for s in segs:
+            m = INTERCEPT.match(s or '')
+            if m:
+                marker, s = m.group(1), m.group(2)
+                if marker == '(...)':
+                    parts = []
+                elif marker != '(.)':
+                    up = marker.count('(..)')
+                    parts = parts[:-up] if up <= len(parts) else []
             if not s or (s.startswith('(') and s.endswith(')')) or s.startswith('@'):
                 continue
             if s.startswith('_') and s != '_index':
@@ -183,7 +278,115 @@ class Extractor:
             parts.append(s)
         return '/' + '/'.join(parts)
 
-    def file_route(self, path: Path, rel_parts, deps):
+    def next_methods(self, text: str) -> list[tuple[str, int]]:
+        """HTTP methods a Next.js route handler exports: `export async function GET`, `export const POST =`,
+        `export { handler as GET, handler as POST }`, `export const { GET, POST } = handlers`."""
+        offsets = [i for i, c in enumerate(text) if c == '\n']
+        found: dict[str, int] = {}
+        for m in NEXT_METHOD_EXPORT.finditer(text):
+            found.setdefault(m.group(1), self.line_of(offsets, m.start(1)))
+        for m in NEXT_METHOD_GROUP.finditer(text):
+            for part in m.group(1).split(','):
+                name = part.strip().split(' as ')[-1].strip().split(':')[-1].strip()
+                if name in NEXT_METHODS:
+                    found.setdefault(name, self.line_of(offsets, m.start()))
+        return sorted(found.items(), key=lambda kv: (kv[1], NEXT_METHODS.index(kv[0])))
+
+    def scan_guard(self, path: Path, text: str):
+        """Summarise a Next.js middleware.ts / proxy.ts (Next 16): matchers, path prefix lists, path checks and
+        redirects, so the agent can trace guards instead of finding them by hand."""
+        offsets = [i for i, c in enumerate(text) if c == '\n']
+        L = lambda pos: self.line_of(offsets, pos)
+        strings = lambda chunk: [next(g for g in sm.groups() if g is not None) for sm in STRING_LIT.finditer(chunk)]
+        matchers = []
+        for m in MATCHER.finditer(text):
+            for sm in STRING_LIT.finditer(m.group(1)):
+                matchers.append({'value': next(g for g in sm.groups() if g is not None),
+                                 'line': L(m.start(1) + sm.start())})
+        lists = []
+        for m in PATH_LIST.finditer(text):
+            values = [v for v in strings(m.group(2)) if v.startswith('/')]
+            if values:
+                lists.append({'name': m.group(1), 'line': L(m.start()), 'values': values})
+        checks = [{'value': m.group(1), 'line': L(m.start())} for m in PATH_CHECK.finditer(text)]
+        redirects = []
+        for m in REDIRECT_CALL.finditer(text):
+            line_start = text.rfind('\n', 0, m.start()) + 1
+            redirects.append({'line': L(m.start()), 'text': text[line_start:].split('\n', 1)[0].strip()[:160]})
+        self.guards.append({'file': self.rel(path), 'kind': 'next-' + path.stem, 'matchers': matchers,
+                            'path_lists': lists, 'path_checks': checks, 'redirects': redirects,
+                            'note': 'No matcher means the file runs on every request.' if not matchers else
+                                    'Matchers decide which requests run this file; path lists and checks decide what it does.'})
+
+    def scan_tsconfig(self, path: Path, text: str):
+        data = parse_jsonc(text)
+        if not isinstance(data, dict):
+            return
+        opts = data.get('compilerOptions') or {}
+        if not isinstance(opts, dict) or not (opts.get('paths') or opts.get('baseUrl')):
+            if data.get('extends'):
+                self.aliases.append({'config': self.rel(path), 'extends': data['extends'], 'paths': {},
+                                     'note': 'paths may be inherited from the extended config, which is not followed'})
+            return
+        entry = {'config': self.rel(path), 'paths': opts.get('paths') or {}}
+        if opts.get('baseUrl'):
+            entry['base_url'] = opts['baseUrl']
+        if data.get('extends'):
+            entry['extends'] = data['extends']
+        self.aliases.append(entry)
+
+    def is_guard_file(self, path: Path, deps: set[str]) -> bool:
+        if path.stem not in GUARD_FILE_STEMS or path.suffix not in ('.ts', '.js', '.mjs', '.tsx') or 'nextjs' not in deps:
+            return False
+        d = path.parent
+        return (d / 'package.json').is_file() or (d.name == 'src' and (d.parent / 'package.json').is_file())
+
+    def collect_wrappers(self, path: Path, text: str, offsets):
+        """Record function definitions that forward their first parameter to an analytics call or to another
+        function, and every call with a string first argument; resolved into goals in resolve_wrappers()."""
+        is_py = path.suffix == '.py'
+        defs = list((FUNC_DEF_PY if is_py else FUNC_DEF_JS).finditer(text))
+        for i, m in enumerate(defs):
+            name = m.group(1) or m.group(3)
+            param = m.group(2) or m.group(4)
+            if not name or not param or name in JS_KEYWORDS:
+                continue
+            end = defs[i + 1].start() if i + 1 < len(defs) else len(text)
+            body = text[m.end(): min(end, m.end() + 4000)]
+            forwards = set()
+            for rx in SINK_CALLS:
+                if any(sm.group(1) == param for sm in rx.finditer(body)):
+                    forwards.add('<sink>')
+            for cm in re.finditer(r'(?<![\w$])([A-Za-z_$][\w$]*)\(\s*' + re.escape(param) + r'\b(?!\s*[.(\[])', body):
+                if cm.group(1) != name:
+                    forwards.add(cm.group(1))
+            if forwards:
+                self.func_defs.append({'name': name, 'file': self.rel(path),
+                                       'line': self.line_of(offsets, m.start()), 'forwards': forwards})
+        for m in STRING_ARG_CALL.finditer(text):
+            if m.group(1) not in JS_KEYWORDS:
+                self.string_calls.append((m.group(1), m.group(2), path, self.line_of(offsets, m.start())))
+
+    def resolve_wrappers(self) -> list[dict]:
+        wrappers: dict[str, dict] = {w: {'name': w, 'source': 'configured'} for w in self.configured_wrappers}
+        changed = True
+        while changed:   # a wrapper of a wrapper is also a wrapper
+            changed = False
+            for f in self.func_defs:
+                if f['name'] in wrappers:
+                    continue
+                via = '<sink>' if '<sink>' in f['forwards'] else next((c for c in sorted(f['forwards']) if c in wrappers), None)
+                if via:
+                    wrappers[f['name']] = {'name': f['name'], 'file': f['file'], 'line': f['line'], 'source': 'detected',
+                                           'forwards_to': 'an analytics call' if via == '<sink>' else via}
+                    changed = True
+        for callee, event, path, line in self.string_calls:
+            if callee in wrappers:
+                self.add('goal', event, path, line, 'analytics-wrapper', 'medium',
+                         note=f'event passed to tracking wrapper {callee}()')
+        return sorted(wrappers.values(), key=lambda w: w['name'])
+
+    def file_route(self, path: Path, rel_parts, deps, text: str = ''):
         name, stem, ext = path.name, path.stem, path.suffix
         lower = [p for p in rel_parts[:-1]]
 
@@ -200,11 +403,33 @@ class Extractor:
         if 'nextjs' in deps and ext in ('.tsx', '.ts', '.jsx', '.js', '.mdx'):
             if stem == 'page' and (segs := after('app')) is not None:
                 r = self.segments_to_route(segs)
-                if r: self.add('route', r, path, 1, 'next-app-router', 'high', 'nextjs', 'web')
+                if r and self.intercepts(segs):
+                    self.add('route', r, path, 1, 'next-intercepting-route', 'medium', 'nextjs', 'web',
+                             note=f'intercepting route: on client-side navigation it renders {r} inside the current '
+                                  f'layout (often a modal); a full page load shows the target page instead')
+                elif r:
+                    self.add('route', r, path, 1, 'next-app-router', 'high', 'nextjs', 'web')
                 return
             if stem == 'route' and (segs := after('app')) is not None:
                 r = self.segments_to_route(segs)
-                if r: self.add('endpoint', r, path, 1, 'next-route-handler', 'high', 'nextjs', 'api')
+                if r:
+                    methods = self.next_methods(text)
+                    for verb, line in methods:
+                        self.add('endpoint', f'{verb} {r}', path, line, 'next-route-handler', 'high', 'nextjs', 'api')
+                    if not methods:
+                        self.add('endpoint', f'ANY {r}', path, 1, 'next-route-handler', 'medium', 'nextjs', 'api',
+                                 note='no exported GET/POST/... handler found; check how the handlers are exported')
+                return
+            if stem == 'layout' and (segs := after('app')) is not None:
+                r = self.segments_to_route(segs)
+                if r is not None:
+                    offsets = [i for i, c in enumerate(text) if c == '\n']
+                    hints = [{'line': self.line_of(offsets, m.start()),
+                              'text': text[text.rfind('\n', 0, m.start()) + 1:].split('\n', 1)[0].strip()[:160]}
+                             for m in LAYOUT_HINT.finditer(text)]
+                    seen = set()
+                    hints = [h for h in hints if not (h['line'] in seen or seen.add(h['line']))][:12]
+                    self.layouts.append({'route': r, 'file': self.rel(path), 'guard_hints': hints})
                 return
             if (segs := after('pages')) is not None and not stem.startswith('_'):
                 r = self.segments_to_route(segs + ([] if stem == 'index' else [stem]))
@@ -254,6 +479,26 @@ class Extractor:
             for m in JS_ENDPOINT.finditer(text):
                 self.add('endpoint', f'{m.group(1).upper()} {m.group(2)}', path, L(m), 'js-router-call', 'medium',
                          None, 'api')
+            for m in JS_ROUTE_CHAIN.finditer(text):   # router.route('/x').get(...).post(...)
+                stop = text.find(';', m.end())
+                chunk = text[m.end(): stop if stop != -1 else m.end() + 2000]
+                depth, verbs = 0, []
+                for i, ch in enumerate(chunk):   # only verbs chained at the top level, not calls inside handlers
+                    if ch in '([{': depth += 1
+                    elif ch in ')]}': depth -= 1
+                    elif ch == '.' and depth == 0 and (vm := CHAIN_VERB.match(chunk, i)):
+                        verbs.append((vm.group(1), m.end() + i))
+                for verb, pos in verbs:
+                    self.add('endpoint', f'{verb.upper()} {m.group(1)}', path, self.line_of(offsets, pos),
+                             'js-route-chain', 'medium', None, 'api')
+            if 'nextjs' in deps and 'use server' in text:
+                if USE_SERVER_FIRST.match(text):
+                    for m in SERVER_ACTION_EXPORT.finditer(text):
+                        self.add('endpoint', f'ACTION {m.group(1) or m.group(2)}', path, L(m), 'next-server-action',
+                                 'medium', 'nextjs', 'api', note='server action module ("use server" file)')
+                for m in INLINE_SERVER_ACTION.finditer(text):
+                    self.add('endpoint', f'ACTION {m.group(1) or m.group(2)}', path, L(m), 'next-server-action',
+                             'medium', 'nextjs', 'api', note='inline server action')
             if '@Controller' in text:
                 c = NEST_CONTROLLER.search(text)
                 prefix = '/' + c.group(1).strip('/') if c and c.group(1) else ''
@@ -340,6 +585,8 @@ class Extractor:
                 self.add('goal', m.group(1), path, L(m), 'analytics-call', 'medium')
             for m in GTAG_EVENT.finditer(text):
                 self.add('goal', m.group(1), path, L(m), 'gtag-event', 'medium')
+            if ext in ('.js', '.jsx', '.ts', '.tsx', '.mjs', '.vue', '.svelte', '.py'):
+                self.collect_wrappers(path, text, offsets)
             for m in FLAG_CALL.finditer(text):
                 self.flags.append({'key': m.group(2), 'call': m.group(1), 'file': self.rel(path), 'line': L(m)})
 
@@ -418,8 +665,13 @@ class Extractor:
                 continue
             deps = self.deps_for(path) if path.suffix in ('.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.vue',
                                                           '.svelte', '.mdx') else set()
-            self.file_route(path, list(rel_parts), deps)
+            if re.fullmatch(r'(tsconfig|jsconfig)([.\w-]*)\.json', path.name):
+                self.scan_tsconfig(path, text)
+            if self.is_guard_file(path, deps):
+                self.scan_guard(path, text)
+            self.file_route(path, list(rel_parts), deps, text)
             self.scan_content(path, text, deps)
+        self.wrappers = self.resolve_wrappers()
         fw = self.frameworks
         if fw & WEB_FW: self.platforms.add('web')
         if fw & {'react-native', 'expo-router', 'react-navigation', 'flutter'}: self.platforms |= {'ios', 'android'}
@@ -434,6 +686,12 @@ class Extractor:
             key = (it['kind'], it['name'], it['file'])
             if key not in seen:
                 seen.add(key); unique.append(it)
+                if it['kind'] in ('route', 'screen', 'endpoint'):
+                    dom = domain_hint(it['name'])
+                    if dom:
+                        it['domain'] = dom
+                    if TEST_ONLY_HINT.search(it['name'] + ' ' + it['file']) and 'note' not in it:
+                        it['note'] = 'looks like test-only or sample surface; confirm before mapping it'
         surface: dict[str, list] = {'routes': [], 'screens': [], 'endpoints': [], 'entry_points': [], 'goals': []}
         counters: dict[str, int] = {}
         for it in unique:
@@ -447,13 +705,20 @@ class Extractor:
             'platforms': sorted(self.platforms),
             'frameworks': sorted(self.frameworks),
             'surface': surface,
-            'context': {'flags': self.flags, 'tests': self.tests},
+            'context': {'flags': self.flags, 'tests': self.tests, 'guards': self.guards, 'layouts': self.layouts,
+                        'path_aliases': self.aliases, 'goal_wrappers': getattr(self, 'wrappers', [])},
             'stats': {'files_scanned': self.files_scanned, 'truncated': self.truncated,
                       'counts': {k: len(v) for k, v in surface.items()}},
             'limitations': [
                 'Regex/heuristic extraction: verify every item; nested and dynamically built routes are not resolved.',
                 'Low-confidence items (e.g. class names ending in Screen/View) may be components, not screens.',
-                'Navigation edges, guards and handlers are not extracted; the agent must trace them.',
+                'Navigation edges and handlers are not extracted; the agent must trace them. Guards are only '
+                'summarised (context.guards for Next.js middleware/proxy files, guard_hints in context.layouts); '
+                'the agent must confirm what each one does.',
+                'Goal events passed as constants or variables (e.g. EVENTS.SIGNUP) are not resolved; tracking '
+                'wrappers are followed only when they forward their first parameter (see context.goal_wrappers).',
+                'The domain on each item is a proposal from its path prefix; correct it during review.',
+                'Import aliases are reported (context.path_aliases) but imports are not resolved.',
             ],
         }
 
@@ -463,18 +728,25 @@ def main() -> int:
     ap.add_argument('repo', type=Path)
     ap.add_argument('--out', type=Path, help='write JSON here instead of stdout')
     ap.add_argument('--max-files', type=int, default=20000)
+    ap.add_argument('--goal-wrapper', action='append', default=[], metavar='NAME',
+                    help='name of a function that sends analytics events (its first argument is the event name); '
+                         'repeatable, comma-separated lists allowed. Wrappers that forward their first parameter to a '
+                         'known analytics call are detected without this.')
     args = ap.parse_args()
     root = args.repo.resolve()
     if not root.is_dir():
         print(f'Not a directory: {root}', file=sys.stderr); return 2
-    data = Extractor(root, args.max_files).run()
+    wrappers = [w for arg in args.goal_wrapper for w in arg.split(',')]
+    data = Extractor(root, args.max_files, wrappers).run()
     text = json.dumps(data, indent=2, ensure_ascii=False)
     if args.out:
         args.out.write_text(text + '\n', encoding='utf-8')
         c = data['stats']['counts']
         print(f"Wrote {args.out}: {c['routes']} routes, {c['screens']} screens, {c['endpoints']} endpoints, "
               f"{c['entry_points']} entry points, {c['goals']} goals, {len(data['context']['tests'])} e2e test files "
-              f"({data['stats']['files_scanned']} files scanned{', TRUNCATED' if data['stats']['truncated'] else ''})")
+              f"({data['stats']['files_scanned']} files scanned{', TRUNCATED' if data['stats']['truncated'] else ''}); "
+              f"{len(data['context']['guards'])} guard files, {len(data['context']['layouts'])} layouts, "
+              f"{len(data['context']['goal_wrappers'])} tracking wrappers")
     else:
         print(text)
     return 0

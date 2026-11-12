@@ -21,8 +21,12 @@ PRIORITY_ORDER = {'P1': 0, 'P2': 1, 'P3': 2}
 
 
 def slug(text: str, limit: int = 48) -> str:
+    """Lowercase hyphenated slug, cut at a word boundary (never mid-word) when longer than limit."""
     s = re.sub(r'[^a-z0-9]+', '-', text.lower()).strip('-')
-    return s[:limit].rstrip('-') or 'journey'
+    if len(s) > limit:
+        cut = s[:limit + 1]
+        s = cut[:cut.rfind('-')] if '-' in cut else s[:limit]
+    return s.rstrip('-') or 'journey'
 
 def ref(ev: dict) -> str:
     return f"`{ev['file']}:{ev['line']}`" + (f" — {ev['note']}" if ev.get('note') else '')
@@ -144,10 +148,23 @@ def write_coverage(d: dict) -> str:
     total, inj = cov['surface_items_total'], cov['in_journey']
     pct = f'{inj / total * 100:.0f}%' if total else 'n/a'
     scope = d['metadata']['run_scope']['domains']
+    measures = [f'| Surface items found | {total} |']
+    if scope != 'all':
+        n_out = sum(1 for o in cov['orphans'] if o['reason'] == 'out_of_scope')
+        in_scope = total - n_out
+        spct = f'{inj / in_scope * 100:.0f}%' if in_scope else 'n/a'
+        measures += [f'| In this run\'s scope ({", ".join(scope)}) | {in_scope} |',
+                     f'| In at least one journey, of the run\'s scope | {inj} ({spct}) |',
+                     f'| In at least one journey, of the whole surface | {inj} ({pct}) |',
+                     f'| Out of scope (other domains, not mapped) | {n_out} |']
+    else:
+        measures += [f'| In at least one journey | {inj} ({pct}) |']
+    not_mapped = sum(1 for o in cov['orphans'] if o['reason'] == 'not_mapped_this_run')
+    if not_mapped:
+        measures += [f'| In scope with a user path, not mapped this run | {not_mapped} |']
     lines = ['# Journey coverage of the application surface', '',
              f"Run scope: {'all domains' if scope == 'all' else ', '.join(scope)}. Generated {d['metadata']['generated_at']}.", '',
-             '| Measure | Count |', '|---|---|',
-             f'| Surface items found | {total} |', f'| In at least one journey | {inj} ({pct}) |',
+             '| Measure | Count |', '|---|---|', *measures,
              f"| Orphans (no journey) | {len(cov['orphans'])} |", f"| Unreachable | {len(cov['unreachable'])} |", '',
              '> The surface was found by static analysis plus agent review. Items the analysis could not see '
              '(e.g. dynamically built routes) are not counted, so this is a lower bound on the real surface.', '']
@@ -235,6 +252,9 @@ def main() -> int:
     if graph:
         write(out / 'journey-graph.json', json.dumps(graph, indent=2, ensure_ascii=False) + '\n')
         actions.append({'path': rel(out / 'journey-graph.json'), 'action': 'generated'})
+    else:
+        why = d.get('graph_declined') or 'the map has no graph section'
+        print(f'NOTE: journey-graph.json not written ({why}); index.md has no flow diagrams', file=sys.stderr)
     if not args.dry_run:
         write(out / 'index.md', write_index(out, graph, not args.no_diagrams))
         write(out / 'coverage.md', write_coverage(d))
