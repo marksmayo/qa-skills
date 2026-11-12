@@ -1,6 +1,6 @@
 # Design: `risk-based-test-planner-skill`
 
-Status: Built (v1.1.0), see "As built" at the end. Build order: 13.
+Status: Built (v1.2.0), see "As built" at the end. Build order: 13.
 
 ## Mission
 
@@ -307,3 +307,49 @@ Where the build differs from the design above, and what the example showed.
   includes what is not tested, and the validator checks the headline against the register (no
   "no area reaches High" when one does; band counts, quoted risks and bands must match). The
   example's headline quoted payments at 17.9 after re-scoring, and the new check caught it.
+
+### v1.2.0: found planning a real Python API monorepo and a Vite React app (Azure DevOps), and fixed
+
+- **Squash merges hid every fix.** Azure DevOps squash merges have subjects like `Merged PR 123:
+  fix(x): ...`, and the conventional-commit and fix-verb patterns are anchored at the start, so
+  one repository showed no fixes at all and the other a fraction of them. `mine_history.py`
+  strips the merge tool's prefix before matching and records `merge_prefix` on the commit.
+- **Python tests through sys.path roots were not linked.** Tests import `<pkg>.x` from a
+  `libs/<lib>/src` layout and `<package>.x` from a service directory; only relative paths and
+  `src/` were tried, so most areas read "no test imports this area" although many test files
+  imported them. Imports now also resolve relative imports and through the importer's ancestor
+  directories, the parent of every top-level package, project-file directories and their
+  `src/`, pytest `pythonpath` and `sys.path.insert` targets (stdlib names are not looked up
+  there).
+- **SQL in Python strings** (`op.execute("ALTER TABLE ... DROP COLUMN ...")`, an f-string
+  `TRUNCATE {t} ... CASCADE`) didn't match: the raw patterns only knew `DROP TABLE`, `DELETE
+  FROM` and `TRUNCATE TABLE`. Upper-case-only raw patterns for `TRUNCATE`, `ALTER TABLE ... DROP
+  COLUMN` and `DROP SCHEMA/DATABASE/COLUMN/INDEX/VIEW` were added.
+- **Entry points and integrations outside Next.js**: decorated Python handlers (Flask, FastAPI,
+  Azure Functions `route`/`*_trigger`, DRF) are entry points; API client wrappers
+  (`apiClient.postJson(`, `this.http.get(`) and cloud SDK clients are external integrations.
+- **React false positives**: `deleteRow(index)` (local form state), `Plotly.purge(el)` (chart
+  cleanup) and a sign-out button's `logout()` each made an area impact 5. Index-argument deletes
+  and chart purges are excluded, and log-out/sign-out no longer count as access control.
+- **UI impact without a journey map** collapsed to surface alone, so no frontend area was High.
+  A `ui_route` class (3) now marks page files and route definitions (by path for page modules),
+  and `risk.json` warns when UI areas have neither a journey map nor usage; the validator wants
+  the plan to say so.
+- **Default areas.** Workspace packages with more than 40 source files are split by
+  subdirectory below their source root; packages with no files (an uninitialised submodule) are
+  not areas. The default layout goes down from the main source directory while one
+  subdirectory holds nearly all the code (`app/` -> `app/src`) and splits container directories
+  (`modules/`, `common/`, ...), so `src/modules/<module>` are the areas. Tool configuration
+  written as code (`.prettierrc.js`) and files under `doc/` are excluded and listed, not scored.
+- **Inputs.** Two reports of one kind (two migration reviews) overwrote each other in the
+  validator; carried findings now record their `source` report and are matched by it. A
+  finding the source report only assumes (`assumed`, `possible`, ...) sets
+  `unconfirmed_findings` (at least Medium) instead of the High floor. The migration reviewer's
+  `generated` date is read. `--finding-area KIND:ID=AREA` moves a finding whose report cites
+  the wrong file; it records `reassigned_from` and the plan must explain it.
+- **Effort without a budget.** A High area made High only by a finding (a very low risk) got a
+  1% share. Without a budget, each planned High area now gets at least 10%.
+- **"The last N merged PRs"** as a scope base is described in SKILL.md (the parent of the
+  Nth-newest squash merge on the first-parent line).
+- The example was re-scored: the scores, bands and areas are unchanged; carried findings gained
+  `source`.

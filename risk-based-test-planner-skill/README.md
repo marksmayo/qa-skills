@@ -21,8 +21,13 @@ It is strict about evidence:
 - Missing evidence is `not_assessed`, never low risk. New code with no history is flagged
   `novel`, which raises it.
 - An open high finding from another skill makes an area High, and its severity and confidence
-  are carried as reported (crash `ranking.priority`, WCAG severity, CVSS severity).
-- A partial journey map leaves the areas it didn't map `not_assessed`, not low impact.
+  are carried as reported (crash `ranking.priority`, WCAG severity, CVSS severity). One its own
+  report only assumes makes the area at least Medium (`unconfirmed_findings`), not High.
+- A partial journey map leaves the areas it didn't map `not_assessed`, not low impact; with no
+  journey map at all, the plan must say that UI impact rests on surface patterns alone.
+- Squash-merged pull requests ("Merged PR 123: fix(x): ...") count as fixes by their own type,
+  and Python tests count through the import roots `sys.path` would have (src layouts, service
+  directories, pytest `pythonpath`).
 - Every area is either planned or in `not_tested`, with the reason and the residual risk.
 - The plan never says a release is safe. Exit criteria are conditions to check.
 
@@ -88,7 +93,7 @@ python scripts/render_report.py examples/test_plan.example.json --brief
 
 - `SKILL.md`: complete agent instructions
 - `RUBRIC.md`: factors, percentiles, bands, floors, strategy, effort, honesty rules
-- `data/surfaces.json`: call-aware patterns for money, access, personal data, destructive, compliance, entry-point and external surfaces, run on code with comments and strings blanked
+- `data/surfaces.json`: call-aware patterns for money, access, personal data, destructive, compliance, entry-point, UI page and external surfaces, run on code with comments and strings blanked (SQL in strings, directives and page paths matched as written)
 - `schemas/test_plan.schema.json`: output contract
 - `scripts/mine_history.py`: churn, authors, fix commits and formatting-only commits from `git log --numstat`
 - `scripts/complexity.py`: lines of code and branches per file

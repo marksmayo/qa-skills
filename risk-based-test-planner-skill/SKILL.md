@@ -1,7 +1,7 @@
 ---
 name: risk-based-test-planner
 description: Write a test plan for a release, sprint or change with effort spread by risk = likelihood x impact. Likelihood comes from git history (churn, fix commits, Jira bugs), complexity, the change in scope and test weakness; impact from journey criticality, money, access, personal-data and destructive surfaces, and reach. Every factor cites its evidence and missing evidence is not_assessed, never low risk. It reads other skills' reports (journey maps, security, crash, WCAG and flaky reports) as far as their own confidence goes, allocates 90-minute sessions against a budget, names the skill or test type for each risk, and lists every area it does not test with the reason and residual risk. Never claims a release is safe.
-version: 1.1.0
+version: 1.2.0
 ---
 
 # Risk-based test planner
@@ -86,9 +86,16 @@ python scripts/score_risk.py --repo <repo> --history <run>/history.json --comple
     [--defects <run>/bugs.json] [--usage usage.json] --out <run>/risk.json
 ```
 
-**Areas** follow the packages in a monorepo. Otherwise they are the subdirectories of the main
-source directory. Pass `--areas` to set them yourself. Generated and vendored files are left out
-and listed. `risk.json` records which rule made the areas (`area_basis`).
+**Areas** follow the packages in a monorepo; a package with more than 40 source files is split
+by subdirectory below its source root (`services/orders/handlers`, `services/orders/store`), and
+a package with no files checked out (an uninitialised submodule) is not an area. Otherwise they
+are the subdirectories of the main source directory. The source root is found by going down
+while one subdirectory holds nearly all the code (`app/` -> `app/src`), and container
+directories (`modules/`, `features/`, `common/`, `components/`, ...) are split again, so a Vite
+or React app with `src/modules/<module>/` gets one area per module. Pass `--areas` to set them
+yourself. Generated and vendored files, tool configuration written as code (`.prettierrc.js`,
+`*.config.ts`, dotfiles) and files under `doc/`, `docs/` or `examples/` are left out and listed
+in `excluded`. `risk.json` records which rule made the areas (`area_basis`).
 
 - **Next.js App Router** (a `next` dependency and `app/` or `src/app/` with pages or route
   handlers): the directory tree is routing, not modules, so one `app` area would be useless.
@@ -106,6 +113,11 @@ and listed. `risk.json` records which rule made the areas (`area_basis`).
 - **Tests** count for an area when they import one of its files (imports are resolved to files,
   through relative paths and tsconfig/jsconfig/vite/webpack aliases; a top-level `src/*` area
   matches only files directly in `src/`), import a package directory inside it, or sit inside it.
+  Python imports are resolved the way `sys.path` would find them: relative imports, the
+  repository root and `src/`, the test's own ancestor directories (a service's tests import
+  `shared.x` from the service directory), the parent of every top-level package (a
+  `libs/<lib>/src` layout), the directories of `pyproject.toml`/`setup.py`/`pytest.ini`, pytest
+  `pythonpath` entries and `sys.path.insert` targets in `conftest.py`.
   Playwright and Cypress specs drive the app over HTTP and import no source, so they don't count;
   the journey map is where end-to-end coverage shows.
 
@@ -133,7 +145,9 @@ commits by their subject, along with any issue keys:
   bug or regression, or close an issue (`fixes #12`). "Redesign the UI, fix the hero video" is a
   feature;
 - merge commits are never fixes, and the same fix landing twice (same subject, same files) counts
-  once (`duplicate_fix_of`).
+  once (`duplicate_fix_of`);
+- a merge tool's prefix is stripped first, so an Azure DevOps squash merge `Merged PR 123:
+  fix(orders): ...` is read as `fix(orders): ...` (the commit records `merge_prefix`).
 
 Formatting-only commits are left out of churn and listed. A commit counts as formatting-only
 when its subject says style, format or reformat and every file's added and deleted counts are
@@ -145,14 +159,36 @@ branch, fetch it and use `origin/master`; without a remote, find the base's tip 
 that last synced it (`git log --merges --first-parent`, its second parent) or use the release
 tag. Say which commit you used in the plan's assumptions.
 
+**Scope as "the last N merged pull requests".** With squash merges (each pull request is one
+commit on the main line), the base is the parent of the Nth-newest merged commit:
+
+```bash
+git -C <repo> log --first-parent --format="%H %s" <branch> | grep -E "^[0-9a-f]+ (Merged PR [0-9]+:|Merge pull request #|.*\(#[0-9]+\)$)" | sed -n "<N>p"
+git -C <repo> rev-parse "<that commit>^1"          # the base: pass it to diff_scope.py --base
+```
+
+With merge commits (no squash), the same list is the merges on the first parent
+(`git log --merges --first-parent`) and the base is the first parent of the Nth-newest merge.
+Name the N pull requests and the base commit in the plan's assumptions.
+
 **Surfaces** come from `data/surfaces.json`. The patterns are about doing, not mentioning: a
 catalogue that shows a price doesn't move money.
 - They run on code with comments and string literals blanked, so a provider named in a CSP
   header, an API description or marketing copy doesn't count. SQL statements and the
-  `'use server'` directive are matched as written.
+  `'use server'` directive are matched as written, so SQL inside a Python string counts:
+  `op.execute("ALTER TABLE x DROP COLUMN y")`, an f-string `TRUNCATE {table} ... CASCADE`
+  (the bare `TRUNCATE`/`DROP` forms are upper-case only, so prose doesn't match).
+- Entry points include decorated Python handlers (Flask/FastAPI `@app.get`, `@router.post`,
+  Azure Functions `@app.route`, `@app.blob_trigger`, `@app.timer_trigger`, DRF views); external
+  integrations include calls through an API client wrapper (`apiClient.postJson(`,
+  `this.http.get(`) and cloud SDK clients. A UI's pages (`pages/`, `views/`, `screens/`,
+  `*Page.tsx`, App Router `page.tsx`) and route definitions (`<Route path`, `createBrowserRouter`)
+  are user-facing entry points (3).
 - They are call-aware: `logInfo(` isn't a login, `Sentry.captureMessage(` isn't a payment
   capture, `stripe.paymentIntents.retrieve(` only reads, `someMap.delete(key)` isn't data
-  deletion, and `useSession()` reads who is signed in without enforcing anything. JS/TS idioms
+  deletion, `useSession()` reads who is signed in without enforcing anything, a sign-out button's
+  `logout()` doesn't enforce access, `deleteRow(index)` edits local form state and
+  `Plotly.purge(el)` clears a chart. JS/TS idioms
   count: `stripe.refunds.create(`, `bcrypt.compare(`, `getServerSession(`,
   `prisma.x.deleteMany(`, a middleware `matcher:`.
 - Type declaration files (`.d.ts`) are skipped.
@@ -192,8 +228,15 @@ doesn't rank as the top risk: under 25 lines at most 2, under 100 at most 3, und
 | Low | < 8 |
 
 **Floors:**
-- An open critical or high finding from another skill makes the area High.
+- An open critical or high finding from another skill makes the area High, when its report
+  stands by it. One whose own confidence is `assumed`, `possible`, `low` or similar sets
+  `unconfirmed_findings` instead, which makes the area at least Medium.
 - `novel` code is at least Medium.
+
+**Without a journey map** a UI's impact rests on its surface patterns alone, so a page that
+drives an important flow can rank Low. `risk.json` warns, and the plan must say so (the
+validator wants the journey map named in the headline, an assumption or an open question):
+plan smoke checks for the pages you know matter, and ask for journey-mapper.
 
 **Confidence:**
 
@@ -217,7 +260,15 @@ doesn't set the High floor, and `risk.json` `warnings` names the finding.
 | any other | `findings[]` | `severity`, `priority`, `rating`, `ranking.priority` | as above |
 
 Files come from `locations[].file` (and `file`). Each carried finding records `source_rating`
-(the field and value it was read from, e.g. `ranking.priority P1`). The validator re-reads the
+(the field and value it was read from, e.g. `ranking.priority P1`) and `source`, the report's
+file name, so two reports of one kind (two migration reviews: `--input migration=a.json
+--input migration=b.json`) both count even when their finding ids collide. The report's date is
+read from `generated_at` or `generated` (top level or `metadata`).
+
+When a report cites the wrong file for a finding (a scanner quirk that points at another
+package's file), move it with `--finding-area KIND:ID=AREA`: it is carried on that area with
+`reassigned_from`, `risk.json` warns, and an assumption in the plan must name the finding and
+say why. The validator re-reads the
 source with `--input` and fails when the severity, the rating or the confidence differ, or when
 the `open_findings` flag doesn't match a critical or high finding. Crash `degradations` are not
 read: they have no rating.
@@ -240,6 +291,8 @@ Copy `risk.json`'s areas into `test_plan.json`, then write:
 - **High floor:** each planned High area gets min(2, 10% of the budget) sessions, rounded up, at
   least 1.
 - **The rest:** shared across the planned areas by risk, using largest remainders.
+- **Without a budget:** shares by risk, with each planned High area at least 10% (or an equal
+  split when there are many), so a High area made High by a finding alone isn't left with 1%.
 - **`sessions_short`:** how far the High floors of *every* High area in scope exceed the budget.
   Leaving a High area out doesn't hide it. When it's above zero, the headline says the budget is
   short.
@@ -267,7 +320,7 @@ Show the user:
 | Field | Content |
 |---|---|
 | `metadata` | Repo, head, scope, history window and excluded formatting commits, budget, risk file, inputs used and missing, excluded files; optionally `area_basis`, `unassigned`, `journey_map_scope` and `warnings` copied from `risk.json` |
-| `areas[]` | Paths, journeys, surfaces, flags (`novel`, `open_findings`), open findings with their severity, `source_rating` and source confidence, tests, the eight factors (score, status, evidence, command, judged reason), likelihood, impact, risk, band, confidence |
+| `areas[]` | Paths, journeys, surfaces, flags (`novel`, `open_findings`, `unconfirmed_findings`), open findings with their severity, `source_rating`, source confidence and source report (and `reassigned_from` when moved), tests, the eight factors (score, status, evidence, command, judged reason), likelihood, impact, risk, band, confidence |
 | `strategy[]` | Area, test types (type, owning skill, why), effort in sessions and share, charters |
 | `not_tested[]` | Area, reason, residual band, `accepted_by` |
 | `entry_criteria[]`, `exit_criteria[]`, `assumptions[]`, `open_questions[]` | The plan's conditions and caveats |
