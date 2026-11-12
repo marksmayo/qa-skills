@@ -43,7 +43,7 @@ def lines(d: dict, P, brief: bool, md: bool) -> list[str]:
             f'- History: {h["from"]} to {h["to"]}, {h["commits"]} commits'
             + (f'; {len(h.get("excluded_formatting", []))} formatting-only commit(s) left out of churn' if h.get('excluded_formatting') else ''),
             f'- Effort: {budget} sessions of {m.get("session_minutes", 90)} minutes' if budget is not None else
-            '- Effort: no budget given, so relative shares only',
+            '- Effort: no budget given, so relative shares only (by risk, with each planned High area at least 10%)',
             f'- Inputs used: ' + (', '.join(f'{i["skill"]} ({i["path"]})' for i in m['inputs_used']) or 'none')
             + (f'; missing: {", ".join(m["inputs_missing"])}' if m['inputs_missing'] else '')]
     if m.get('area_basis'):

@@ -1,5 +1,5 @@
 {
-  "$comment": "Impact surfaces found by pattern in an area's source files. `patterns` and `exclude` are case-insensitive regexes run per line on the code with comments and string literals blanked, so a provider named in a CSP header, marketing copy, an API description or a comment doesn't count; `raw_patterns` run on the line as written (SQL statements, directives). (?-i:...) makes part of a pattern case-sensitive, which is how a camelCase verb (captureMessage) is told from capture( or capture_payment(. A line that matches one of the class's exclude patterns doesn't count. Type declaration files (.d.ts) are skipped. The highest-scoring class an area matches sets its surface factor; a person may judge it differently, with a reason. Patterns are about doing (charging, deleting, authenticating, enforcing access), not mentioning or reading: a catalogue that shows a price does not move money, and useSession() reads who is signed in without enforcing anything.",
+  "$comment": "Impact surfaces found by pattern in an area's source files. `patterns` and `exclude` are case-insensitive regexes run per line on the code with comments and string literals blanked, so a provider named in a CSP header, marketing copy, an API description or a comment doesn't count; `raw_patterns` run on the line as written, so SQL inside a string (op.execute(\"ALTER TABLE x DROP COLUMN y\"), an f-string TRUNCATE) and directives count; the bare TRUNCATE and DROP forms are upper-case only, so prose doesn't match. `path_patterns` match the file's path (a page or screen module of a UI). Decorated Python handlers (Flask, FastAPI, Azure Functions triggers) are entry points; calls through an API client wrapper (apiClient.postJson) are external integrations. (?-i:...) makes part of a pattern case-sensitive, which is how a camelCase verb (captureMessage) is told from capture( or capture_payment(. A line that matches one of the class's exclude patterns doesn't count. Type declaration files (.d.ts) are skipped. The highest-scoring class an area matches sets its surface factor; a person may judge it differently, with a reason. Patterns are about doing (charging, deleting, authenticating, enforcing access), not mentioning or reading: a catalogue that shows a price does not move money, and useSession() reads who is signed in without enforcing anything.",
   "classes": {
     "money": {
       "score": 5,
@@ -24,7 +24,7 @@
       "score": 5,
       "label": "controls access",
       "patterns": [
-        "\\b(log_?in|log_?out|sign_?in|sign_?out|authenticate|authori[sz]e|has_?permission|check_?permission|require_?(role|auth|user|admin|login|session)|verify_?password|check_?password|ensure_?authenticated|with_?auth)(_\\w+)?\\s*\\(",
+        "\\b(log_?in|sign_?in|authenticate|authori[sz]e|has_?permission|check_?permission|require_?(role|auth|user|admin|login|session)|verify_?password|check_?password|ensure_?authenticated|with_?auth)(_\\w+)?\\s*\\(",
         "@login_required\\b|@requires?_\\w+\\b|@permission_required\\b",
         "\\bpassword_?hash\\b|\\bhash_?password\\b|\\bcheck_password_hash\\s*\\(|\\b(bcrypt|bcryptjs|argon2)\\.(compare|hash|verify)(Sync)?\\s*\\(",
         "\\bsession_?token\\b\\s*=(?!=)|\\bsession\\[[^\\]]+\\]\\s*=(?!=)|\\bsession\\.(create|destroy|invalidate|regenerate|cycle_key|flush)\\s*\\(",
@@ -57,7 +57,10 @@
       "raw_patterns": [
         "\\bDROP\\s+TABLE\\b",
         "\\bDELETE\\s+FROM\\b",
-        "\\bTRUNCATE\\s+TABLE\\b"
+        "\\bTRUNCATE\\s+TABLE\\b",
+        "(?-i:\\bTRUNCATE\\s+(?:ONLY\\s+)?[\\w\"`{\\[])",
+        "(?-i:\\bALTER\\s+TABLE\\b.*\\bDROP\\s+(?:COLUMN|CONSTRAINT)\\b)",
+        "(?-i:\\bDROP\\s+(?:SCHEMA|DATABASE|COLUMN|INDEX|VIEW)\\b)"
       ],
       "exclude": [
         "\\b(searchParams|params|query|headers|url|map|set|cache|seen|visited|selected|state|formData|weakMap|style|classList|dataset|attributes|listeners|subscribers|timers|pending|queue|ids|keys|subscriptions|observers|handlers|callbacks|registry|entries|traces|sent)\\.delete\\s*\\(",
@@ -65,6 +68,8 @@
         "\\bthis\\.#?\\w+\\.delete\\s*\\(",
         "\\b(?!session\\b)\\w+\\.delete\\s*\\(\\s*[\\w.$\\[\\]\"']+\\s*\\)",
         "\\b(function|const|let|as)\\s+DELETE\\b",
+        "\\b(delete|remove|erase)(?-i:[A-Z])\\w*\\s*\\(\\s*(index|idx|i|rowIndex|row|position|pos|key|itemIndex|fieldIndex)\\s*\\)",
+        "\\b(Plotly|chart|echarts|\\w*(?-i:Chart|Plot|Graph))\\.purge\\s*\\(",
         "\\b(removeEventListener|removeChild|removeAttribute|removeItem|deleteProperty)\\s*\\(",
         "\\b(Reflect\\.deleteProperty|cookies\\(\\)\\.delete)\\b"
       ]
@@ -82,10 +87,26 @@
       "patterns": [
         "\\bexport\\s+(async\\s+)?function\\s+(GET|POST|PUT|PATCH|DELETE)\\s*\\(",
         "\\bexport\\s+const\\s+(GET|POST|PUT|PATCH|DELETE)\\s*=",
-        "\\bexport\\s*\\{[^}]*\\bas\\s+(GET|POST|PUT|PATCH|DELETE)\\b"
+        "\\bexport\\s*\\{[^}]*\\bas\\s+(GET|POST|PUT|PATCH|DELETE)\\b",
+        "^\\s*@\\w+\\.(get|post|put|patch|delete|route|api_route|websocket)\\s*\\(",
+        "^\\s*@\\w+\\.(\\w+_trigger|function_name)\\s*\\(",
+        "^\\s*@api_view\\s*\\(|^\\s*class\\s+\\w+\\((\\w+\\.)?(APIView|ViewSet|ModelViewSet|GenericAPIView)\\)"
       ],
       "raw_patterns": [
         "^\\s*['\"]use server['\"]"
+      ]
+    },
+    "ui_route": {
+      "score": 3,
+      "label": "user-facing page or route",
+      "patterns": [
+        "<Route\\b[^>]*\\b(path|index)\\b",
+        "\\bcreate(Browser|Hash|Memory)Router\\s*\\(|\\buseRoutes\\s*\\(|\\bcreateRouter\\s*\\(\\s*\\{"
+      ],
+      "path_patterns": [
+        "(^|/)(pages|views|screens|routes)/.+\\.(tsx|jsx|vue|svelte)$",
+        "(^|/)app/(.+/)?page\\.(tsx|jsx|js|mdx)$",
+        "(^|/)(?-i:[A-Z])\\w*(Page|Screen)\\.(tsx|jsx|vue|svelte)$"
       ]
     },
     "external": {
@@ -93,6 +114,9 @@
       "label": "external integration",
       "patterns": [
         "\\burllib\\.request\\b|\\brequests\\.(get|post|put|delete)\\b|\\bfetch\\s*\\(|\\baxios\\b|\\bhttpx\\b",
+        "\\b\\w*(http|api|rest)_?client\\.(get|post|put|patch|delete|request|send|\\w+Json)\\s*\\(",
+        "\\b(this\\.)?http\\.(get|post|put|patch|delete|request)\\s*(<[^>]*>)?\\s*\\(",
+        "\\b(BlobServiceClient|ServiceBusClient|QueueClient|EventHubProducerClient|S3Client|SQSClient|SNSClient)\\s*[.(]|\\bboto3\\.(client|resource)\\s*\\(",
         "\\bwebhooks?\\b"
       ]
     }

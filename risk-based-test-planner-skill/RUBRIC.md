@@ -44,8 +44,8 @@ The `not_assessed` cases:
 
 | Band | Risk | Floor |
 |---|---|---|
-| **High** | ≥ 15 | Also any area with an open critical or high finding from another skill (`open_findings`) |
-| **Medium** | 8 to 14.9 | Also any `novel` area that would be Low |
+| **High** | ≥ 15 | Also any area with an open critical or high finding from another skill, at a confidence its report stands by (`open_findings`) |
+| **Medium** | 8 to 14.9 | Also any `novel` area, or one whose critical or high findings are only assumed or possible (`unconfirmed_findings`), that would be Low |
 | **Low** | < 8 | |
 
 **Confidence:**
@@ -84,7 +84,10 @@ With a budget of B sessions:
    rounded by largest remainder, and added to the floors.
 
 `sessions_short` = max(0, f × (all High areas in scope) − B). Without a budget, `effort_sessions`
-is null, and `effort_share` = risk / Σ risk over the planned areas.
+is null, and `effort_share` = risk / Σ risk over the planned areas, with the same High floor in
+share form: each planned High area gets at least min(10%, 1 / planned areas), and the other
+areas share the rest by risk. (A High area made High only by an open finding can have a small
+risk; without the floor it would get 1%.) With a budget, the shares stay risk / Σ risk.
 
 ## Inputs from other skills
 
@@ -93,7 +96,18 @@ by the adapters listed in SKILL.md (crash `ranking.priority` P0/P1 = critical/hi
 high, security CVSS severity) and recorded with its `source_rating`; a rating the adapter can't
 read is `unknown` and sets no floor. With `--input`, the validator re-reads the report and fails
 if the severity, the source rating or the confidence differ, and it checks the `open_findings`
-flag is set exactly when a finding is critical or high.
+flag is set exactly when a finding is critical or high at a confidence its report stands by.
+
+- **Confidence decides the floor.** A critical or high finding whose own confidence is
+  `assumed`, `possible`, `low`, `unconfirmed`, `suspected`, `speculative` or `unknown` doesn't
+  make the area High: it sets `unconfirmed_findings`, which makes it at least Medium. (A
+  migration reviewer caps a rating at P1 when table sizes are unknown; four assumed P1s are not
+  a confirmed High.) A finding with no confidence field counts as confirmed.
+- **Several reports of one kind** (two migration reviews) are all read; each carried finding
+  records the report's file name in `source`, so equal ids in two reports are told apart.
+- **A finding whose report cites the wrong file** can be moved with `score_risk.py
+  --finding-area KIND:ID=AREA`. The finding records `reassigned_from`, `risk.json` warns, and
+  the plan's assumptions say why.
 
 Source files no area covers are scored as the `unassigned` area; they are never dropped.
 

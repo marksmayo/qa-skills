@@ -9,8 +9,11 @@ confidence recompute; every area matches risk.json except judged factors; every 
 planned or not tested (never both, never neither); test types fit the band; effort recomputes
 from the budget; a High area is left untested only when the budget is short; residual bands
 match; open findings keep the severity (as the adapter reads it, with its source_rating) and the
-confidence they had in their source report (--input), and the open_findings flag is set exactly
-when one is critical or high; the headline doesn't contradict the register (no "no area reaches
+confidence they had in their source report (--input, which may name several reports of one kind;
+findings are matched by kind, id and source report), the open_findings flag is set exactly when
+one is critical or high at a confidence its report stands by (unconfirmed_findings when they are
+only assumed or possible), a finding moved by --finding-area is explained in an assumption, and
+a risk file warning that UI impact rests on surfaces alone is acknowledged; the headline doesn't contradict the register (no "no area reaches
 High" when one does, band counts and quoted risks and bands match); no "safe", "fully tested" or
 "risk-free". --write-summary fills in each area's computed fields, the effort and the summary;
 the headline stays yours.
@@ -128,17 +131,25 @@ def check(plan: dict, risk: dict, inputs: dict) -> list[str]:
             if a.get(k) != v:
                 errs.append(f'{w}.{k}: {a.get(k)!r} but the factors give {v!r} (run --write-summary)')
         for f in a['open_findings']:
-            src = inputs.get(f['skill'], {}).get(f['id'])
-            if f['skill'] in inputs and src is None:
-                errs.append(f'{w}: {f["skill"]} {f["id"]} is not in the {f["skill"]} report given with --input')
+            cands = [i for i in inputs.get(f['skill'], []) if i['id'] == f['id']
+                     and (f.get('source') is None or i['_source'] == f['source'])]
+            src = cands[0] if len(cands) == 1 else None
+            if f['skill'] in inputs and not cands:
+                errs.append(f'{w}: {f["skill"]} {f["id"]} is not in the {f["skill"]} report'
+                            + (f' {f["source"]}' if f.get('source') else '') + ' given with --input')
+            elif len(cands) > 1:
+                errs.append(f'{w}: {f["skill"]} {f["id"]} is in more than one {f["skill"]} report given with --input '
+                            f'({", ".join(i["_source"] for i in cands)}); re-run score_risk.py so it records its source')
             if src is not None and src.get('confidence') != f['confidence']:
                 errs.append(f'{w}: {f["skill"]} {f["id"]} has confidence {src.get("confidence")!r} in its report, not {f["confidence"]!r}')
             if src is not None and (src.get('severity'), src.get('source_rating')) != (f['severity'], f.get('source_rating')):
                 errs.append(f'{w}: {f["skill"]} {f["id"]} reads as severity {src.get("severity")!r} ({src.get("source_rating")}) from '
                             f'its report, not {f["severity"]!r} ({f.get("source_rating")}); re-run score_risk.py')
-        severe = any(f['severity'] in score_risk.SEVERE for f in a['open_findings'])
-        if severe != ('open_findings' in a['flags']):
-            errs.append(f'{w}.flags: open_findings must be set exactly when an open finding is critical or high')
+        want_flags = score_risk.finding_flags(a['open_findings'])
+        for flag, what in (('open_findings', 'an open finding is critical or high at a confidence its report stands by'),
+                           ('unconfirmed_findings', 'every critical or high open finding is only assumed or possible')):
+            if (flag in want_flags) != (flag in a['flags']):
+                errs.append(f'{w}.flags: {flag} must be set exactly when {what}')
     planned = [s['area_id'] for s in plan['strategy']]
     untested = [n['area_id'] for n in plan['not_tested']]
     for aid in by:
@@ -199,6 +210,17 @@ def check(plan: dict, risk: dict, inputs: dict) -> list[str]:
     if short and not re.search(r'\bshort\b', plan['summary'].get('headline', ''), re.I):
         errs.append('summary.headline: the budget is short; say so')
     errs += headline_errors(plan['summary'].get('headline', ''), plan['areas'], want_s)
+    for a in plan['areas']:
+        for f in a['open_findings']:
+            if 'reassigned_from' in f:
+                if not any(re.search(rf'(?<![\w-]){re.escape(f["id"])}(?![\w-])', t) for t in plan['assumptions']):
+                    errs.append(f'areas[{a["id"]}]: {f["skill"]} {f["id"]} was moved here by --finding-area; an assumption '
+                                'must name it and say why its report\'s file is wrong')
+    if any(str(x).startswith('no journey map: the impact of') for x in risk.get('warnings') or []):
+        said = json.dumps([plan['summary'].get('headline', ''), plan['assumptions'], plan['open_questions']])
+        if not re.search(r'journey', said, re.I):
+            errs.append('the risk file warns that UI impact rests on surface patterns alone (no journey map); the headline, '
+                        'an assumption or an open question must say so')
     return errs
 
 
@@ -232,11 +254,13 @@ def headline_errors(headline: str, areas: list[dict], counts: dict) -> list[str]
 
 
 def load_inputs(specs: list[str]) -> dict:
-    out = {}
+    """{kind: [items, each with _source = the report's file name]}: two reports of one kind (two migration reviews)
+    both count, and a finding id that appears in both is told apart by the source the carried finding records."""
+    out: dict[str, list[dict]] = {}
     for spec in specs:
         kind, path = spec.split('=', 1)
         data = score_risk.load_input(kind, Path(path))
-        out[kind] = {i['id']: i for i in data['items']}
+        out.setdefault(kind, []).extend({**i, '_source': data['path']} for i in data['items'])
     return out
 
 

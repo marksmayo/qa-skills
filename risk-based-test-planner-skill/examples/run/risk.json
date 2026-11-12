@@ -84,7 +84,8 @@
           "title": "Gateway timeout is long enough to hold worker threads",
           "severity": "low",
           "source_rating": "cvss.severity Low",
-          "confidence": "possible"
+          "confidence": "possible",
+          "source": "security_audit.json"
         }
       ],
       "tests": [
@@ -354,7 +355,8 @@
           "title": "Session tokens never expire server-side",
           "severity": "high",
           "source_rating": "cvss.severity High",
-          "confidence": "likely"
+          "confidence": "likely",
+          "source": "security_audit.json"
         }
       ],
       "tests": [],

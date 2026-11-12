@@ -3,7 +3,7 @@
     "repo": "larder",
     "head": "d834c7e13dc8",
     "generated_at": "2026-11-01T09:00:00Z",
-    "skill_version": "1.1.0",
+    "skill_version": "1.2.0",
     "title": "larder 1.5 (since v1.4), 16 sessions",
     "scope": {
       "kind": "git",
@@ -79,7 +79,8 @@
           "title": "Gateway timeout is long enough to hold worker threads",
           "severity": "low",
           "source_rating": "cvss.severity Low",
-          "confidence": "possible"
+          "confidence": "possible",
+          "source": "security_audit.json"
         }
       ],
       "tests": [
@@ -349,7 +350,8 @@
           "title": "Session tokens never expire server-side",
           "severity": "high",
           "source_rating": "cvss.severity High",
-          "confidence": "likely"
+          "confidence": "likely",
+          "source": "security_audit.json"
         }
       ],
       "tests": [],

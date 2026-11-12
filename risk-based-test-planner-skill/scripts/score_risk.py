@@ -4,19 +4,23 @@
     python score_risk.py --repo <repo> --history history.json --complexity complexity.json --scope scope.json \
         --out risk.json [--journeys journey_map.json] [--input security=security_audit.json] [--input flaky=flaky_report.json]
         [--input crash=crash_report.json] [--input wcag=audit.json] [--usage usage.json] [--areas areas.json]
-        [--defects bugs.json]
+        [--defects bugs.json] [--finding-area KIND:ID=AREA]
 
-Areas are the workspace packages when the repo has several; for a Next.js App Router project,
+Areas are the workspace packages when the repo has several (a package with more than
+SPLIT_PACKAGE source files is split by subdirectory below its source root); for a Next.js App Router project,
 one per API resource (app/api/<x>), one per top-level route segment or group, app (root),
 middleware/proxy, and lib/, components/ and the other source directories split by subdirectory
 (and by file-name prefix when flat and large); otherwise the immediate subdirectories of the
-main source directory (the top-level directory holding the most source files). --areas gives
-them explicitly as {"areas": [{"id": ..., "paths": [...]}]}. Test, generated, vendored and docs
-files are not areas. Source files no area covers are scored as the area "unassigned" and named
-in a warning, never dropped.
+main source directory (the top-level directory holding the most source files, followed down
+while one subdirectory holds nearly all of it), with container directories such as modules/ and
+common/ split again. --areas gives them explicitly as {"areas": [{"id": ..., "paths": [...]}]}.
+Test, generated, vendored, tool-configuration and docs files are not areas. Source files no area
+covers are scored as the area "unassigned" and named in a warning, never dropped.
 
 Tests are linked to areas through their imports, resolved to files (so a top-level 'src/*' area
-matches only files directly in src/), and by sitting inside an area. Journeys are linked through
+matches only files directly in src/; Python through the sys.path roots a test would have:
+relative imports, its ancestor directories, package roots, src layouts, pytest pythonpath and
+conftest sys.path.insert), and by sitting inside an area. Journeys are linked through
 the files their steps cite, the surface items they cover, the route handler behind each
 "POST /api/x" note, and one hop of imports from those files. A partial journey map (scoped to
 some domains) leaves the areas it didn't map not_assessed for journey criticality and reach.
@@ -36,7 +40,10 @@ A factor with no evidence is not_assessed, never 1: churn and defects for an are
 history before the scope (it is flagged novel), journeys without a journey map, reach without a
 journey map or usage export. Likelihood and impact are the weighted means of the assessed
 factors (one decimal); risk = likelihood x impact. Floors: an open critical or high finding from
-another skill makes the area High; novel code is at least Medium.
+another skill makes the area High (only assumed or possible ones: at least Medium, flagged
+unconfirmed_findings); novel code is at least Medium. Each carried finding records its source
+report's file name; --finding-area moves a finding whose report cites the wrong file. Without a
+journey map or usage export, UI areas get a warning that their impact rests on surfaces alone.
 
 Also usable as a module: allocate(planned, budget) is the effort allocation the validator
 recomputes.
@@ -54,6 +61,8 @@ LIKELIHOOD = {'churn': 2, 'defects': 3, 'complexity': 1, 'change_in_scope': 2, '
 IMPACT = {'journey_criticality': 3, 'surface': 3, 'reach': 1}
 PRIORITY_SCORE = {'P0': 5, 'P1': 4, 'P2': 3, 'P3': 2}
 SEVERE = {'critical', 'high'}
+UI_EXT = {'.tsx', '.jsx', '.vue', '.svelte'}
+STDLIB = set(getattr(sys, 'stdlib_module_names', ())) | {'__future__'}
 CODE_EXT = {'.py', '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.java', '.kt', '.go', '.cs', '.swift', '.dart', '.rb', '.php',
             '.scala', '.rs', '.vue', '.svelte', '.sql'}
 
@@ -81,9 +90,21 @@ def band_of(risk: float | None, flags: list[str]) -> str:
     band = 'Low' if risk is None else 'High' if risk >= 15 else 'Medium' if risk >= 8 else 'Low'
     if 'open_findings' in flags:
         band = 'High'
-    if 'novel' in flags and band == 'Low':
+    if ('novel' in flags or 'unconfirmed_findings' in flags) and band == 'Low':
         band = 'Medium'
     return band
+
+
+# A source report's own confidence below this is not enough for the High floor: an "assumed" or "possible" critical
+# finding (e.g. a migration reviewer that capped a rating because table sizes are unknown) makes the area at least
+# Medium, flagged unconfirmed_findings, until someone confirms it.
+WEAK_CONFIDENCE = {'assumed', 'possible', 'low', 'unconfirmed', 'suspected', 'speculative', 'unknown'}
+
+
+def finding_flags(findings: list[dict]) -> list[str]:
+    severe = [x for x in findings if x['severity'] in SEVERE]
+    confirmed = [x for x in severe if str(x.get('confidence') or '').lower() not in WEAK_CONFIDENCE]
+    return (['open_findings'] if confirmed else []) + (['unconfirmed_findings'] if severe and not confirmed else [])
 
 
 def confidence_of(factors: dict) -> str:
@@ -114,6 +135,28 @@ def high_floor(budget: int) -> int:
     return max(1, math.ceil(min(2, 0.1 * budget)))
 
 
+HIGH_SHARE_FLOOR = 0.10     # without a budget, a planned High area gets at least this share (10%, as with a budget)
+
+
+def floored_shares(planned: list[dict], total: float) -> dict:
+    """Shares by risk when there is no budget, with the High floor the session allocation has: each planned High area
+    gets at least HIGH_SHARE_FLOOR (or an equal split of everything when the Highs are many), and the other areas
+    share the rest by risk. Without it, a High area made High only by an open finding could get 1%."""
+    highs = [a for a in planned if a['band'] == 'High']
+    floor = min(HIGH_SHARE_FLOOR, 1 / len(planned)) if planned else 0
+    raw = {a['id']: (a['risk'] or 0) / total for a in planned}
+    out, fixed = dict(raw), set()
+    while True:                       # scaling the others down can push another High area under the floor
+        more = {a['id'] for a in highs if a['id'] not in fixed and out[a['id']] < floor - 1e-12}
+        if not more:
+            break
+        fixed |= more
+        rest_raw = sum(v for k, v in raw.items() if k not in fixed)
+        left = 1 - floor * len(fixed)
+        out = {k: (floor if k in fixed else (v / rest_raw * left if rest_raw else 0)) for k, v in raw.items()}
+    return {k: round(v, 3) for k, v in out.items()}
+
+
 def allocate(planned: list[dict], budget: int | None, high_in_scope: int | None = None) -> tuple[dict, int, dict]:
     """planned: [{id, risk, band}]. Returns ({id: sessions or None}, sessions_short, {id: share}).
 
@@ -122,7 +165,7 @@ def allocate(planned: list[dict], budget: int | None, high_in_scope: int | None 
     total = sum(a['risk'] or 0 for a in planned) or 1
     shares = {a['id']: round((a['risk'] or 0) / total, 3) for a in planned}
     if budget is None:
-        return {a['id']: None for a in planned}, 0, shares
+        return {a['id']: None for a in planned}, 0, floored_shares(planned, total)
     floor = high_floor(budget)
     order = sorted(planned, key=lambda a: (-(a['risk'] or 0), a['id']))
     highs = [a for a in order if a['band'] == 'High']
@@ -151,16 +194,34 @@ def allocate(planned: list[dict], budget: int | None, high_in_scope: int | None 
 
 # ---------------------------------------------------------------- areas and attribution
 NOT_SOURCE_DIRS = {'e2e', 'cypress', 'playwright', 'fixtures', '__fixtures__', '__mocks__', 'mocks', 'stories', '.storybook',
-                   'docs', 'examples', 'public', 'static', 'migrations', 'node_modules'}
+                   'docs', 'doc', 'documentation', 'examples', 'public', 'static', 'migrations', 'node_modules'}
 NEXT_ENTRY = re.compile(r'(?:^|/)(?:page|layout|route|template|loading|error|not-found|default)\.(?:tsx?|jsx?|mjs)$')
 NEXT_GUARD = ('middleware', 'proxy')
 SPLIT_FLAT = 8          # a source directory with more flat files than this is split by file-name prefix
+SPLIT_PACKAGE = 40      # a workspace package with more source files than this is split by subdirectory
+# Directories that hold modules rather than being one: src/modules/<x>, src/features/<x>, src/common/<x> ...
+CONTAINERS = {'modules', 'features', 'domains', 'common', 'shared', 'packages', 'apps', 'services', 'libs', 'components',
+              'pages', 'views', 'screens', 'routes', 'api', 'core'}
+# Tool configuration written as code: .prettierrc.js, .eslintrc.cjs, babel.config.js, jest.setup.ts, noxfile.py ...
+CONFIG_NAME = re.compile(r'^\.|.*\.(config|setup)\.\w+$|.*rc\.(js|cjs|mjs|ts|cts|mts)$|^(noxfile|fabfile|setup|conftest)\.py$')
 
 
 def is_source(f: str) -> bool:
     p = PurePosixPath(f)
     return (p.suffix in CODE_EXT and not is_test(f) and not f.endswith('.d.ts') and not set(p.parts[:-1]) & NOT_SOURCE_DIRS
-            and not re.match(r'.*\.(config|setup)\.\w+$', p.name))
+            and not CONFIG_NAME.match(p.name))
+
+
+DOC_DIRS = {'docs', 'doc', 'documentation', 'examples'}
+
+
+def is_area_code(f: str) -> bool:
+    """A file that counts in its area's scores: code that is not a test, tool configuration or documentation.
+    Migrations, static and generated-looking directories still count here (a migration that drops a column is a
+    destructive surface); is_source() is the stricter test for choosing areas."""
+    p = PurePosixPath(f)
+    return (p.suffix in CODE_EXT and not is_test(f) and not CONFIG_NAME.match(p.name)
+            and not set(p.parts[:-1]) & DOC_DIRS)
 
 
 def prefix_token(stem: str) -> str:
@@ -236,27 +297,77 @@ def next_app_areas(root: Path, files: list[str], source: list[str]) -> list[dict
     return areas
 
 
+def descend(d: str, source: list[str]) -> str:
+    """Go down from d while one subdirectory holds nearly all its source files and d has none of its own (app/ ->
+    app/src, packages/x -> packages/x/src/x): the modules are below that."""
+    while True:
+        inside = [f for f in source if f.startswith(d + '/')]
+        if not inside or any(f[len(d) + 1:].count('/') == 0 and PurePosixPath(f).name != '__init__.py' for f in inside):
+            return d
+        counts: dict[str, int] = {}
+        for f in inside:
+            s = f[len(d) + 1:].split('/')[0]
+            counts[s] = counts.get(s, 0) + 1
+        top = max(sorted(counts), key=lambda s: counts[s])
+        if counts[top] < 0.8 * len(inside):
+            return d
+        d = f'{d}/{top}'
+
+
+def module_areas(d: str, source: list[str], label: str) -> list[dict]:
+    """split_dir, then each container subdirectory (modules/, features/, common/ ...) with two or more subdirectories
+    of its own is split again: a Vite or React app's src/modules/<module> are the modules, not src/modules."""
+    out = []
+    for a in split_dir(d, source, label):
+        p = a['paths'][0]
+        name = PurePosixPath(p).name
+        if len(a['paths']) == 1 and not p.endswith('*') and name in CONTAINERS:
+            inner = split_dir(p, source, a['id'])
+            if len([x for x in inner if not x['id'].endswith('(top level)')]) >= 2:
+                out += inner
+                continue
+        out.append(a)
+    return out
+
+
 def define_areas(root: Path, files: list[str], explicit: Path | None) -> tuple[list[dict], str]:
     if explicit:
         return json.loads(explicit.read_text(encoding='utf-8'))['areas'], 'explicit (--areas)'
     det = detect_conventions.Detector(root, 50_000).run(None)
+    all_source = [f for f in files if is_area_code(f)]
     pkgs = sorted({a['root'] for a in det['areas'] if a['root'] != '.'})
+    pkgs = [p for p in pkgs if any(f.startswith(p + '/') for f in all_source)]   # not an empty or unchecked-out package
     if len(pkgs) > 1:
-        return [{'id': p, 'paths': [p]} for p in pkgs], 'workspace packages'
+        areas, split = [], []
+        for p in pkgs:
+            mine = [f for f in all_source if f.startswith(p + '/') and not any(
+                q != p and q.startswith(p + '/') and f.startswith(q + '/') for q in pkgs)]
+            base = descend(p, mine)
+            parts = module_areas(base, mine, p) if len(mine) > SPLIT_PACKAGE else []
+            if len(parts) >= 2:
+                areas += parts
+                split.append(p)
+            else:
+                areas.append({'id': p, 'paths': [p]})
+        basis = 'workspace packages'
+        if split:
+            basis += f' (split by subdirectory where larger than {SPLIT_PACKAGE} source files: {", ".join(split)})'
+        return areas, basis
     nxt = next_app_areas(root, files, [f for f in files if is_source(f)])
     if nxt:
         return nxt, 'Next.js App Router (route segments, API resources, source modules)'
-    source = [f for f in files if PurePosixPath(f).suffix in CODE_EXT and not is_test(f) and '/' in f]
+    source = [f for f in all_source if '/' in f]
     tops: dict[str, int] = {}
     for f in source:
         tops[f.split('/')[0]] = tops.get(f.split('/')[0], 0) + 1
     if not tops:
         return [], 'none'
-    main_root = max(sorted(tops), key=lambda t: tops[t])
-    subs = sorted({f.split('/')[1] for f in source if f.startswith(main_root + '/') and f.count('/') >= 2})
-    areas = [{'id': s, 'paths': [f'{main_root}/{s}']} for s in subs]
-    if any(f.count('/') == 1 and f.startswith(main_root + '/') and PurePosixPath(f).name != '__init__.py' for f in source):
-        areas.append({'id': f'{main_root} (top level)', 'paths': [f'{main_root}/*']})
+    main_root = descend(max(sorted(tops), key=lambda t: tops[t]), source)
+    areas = module_areas(main_root, source, '')
+    for a in areas:     # ids relative to the main source directory, as before: 'payments', 'modules/orders'
+        a['id'] = a['id'].lstrip('/') or main_root
+        if a['id'] == ' (top level)':
+            a['id'] = f'{main_root} (top level)'
     return areas, f'subdirectories of the main source directory {main_root}/'
 
 
@@ -338,6 +449,8 @@ class Imports:
                 self.dirs.add(d)
         self.aliases = js_aliases(root, files)
         self.cache: dict[str, list[str]] = {}
+        self._roots: list[str] | None = None
+        self._roots_for: dict[str, list[str]] = {}
 
     def targets(self, f: str) -> set[str]:
         try:
@@ -351,6 +464,15 @@ class Imports:
             except SyntaxError:
                 return set()
             for n in ast.walk(tree):
+                if isinstance(n, ast.ImportFrom) and n.level:          # from .x import y / from .. import y
+                    base = PurePosixPath(f).parent
+                    for _ in range(n.level - 1):
+                        base = base.parent
+                    stem = (str(base) + '/' if str(base) != '.' else '') + (n.module or '').replace('.', '/')
+                    for t in [f'{stem}/{a.name}' if n.module else (str(base) + '/' if str(base) != '.' else '') + a.name
+                              for a in n.names] + ([stem] if n.module else []):
+                        targets.add('./' + norm(t))                   # './': already relative to the repository
+                    continue
                 mods = [a.name for a in n.names] if isinstance(n, ast.Import) else \
                     [f'{n.module}.{a.name}' for a in n.names] + [n.module] if isinstance(n, ast.ImportFrom) and n.module else []
                 for m in mods:
@@ -367,11 +489,85 @@ class Imports:
                         break
         return targets
 
-    def resolve(self, t: str) -> str | None:
+    def resolve(self, t: str, importer: str = '') -> str | None:
+        if t.startswith('./'):                             # a Python relative import, already resolved to the repo
+            return self._resolve(t[2:])
         found = self._resolve(t)
         if found is None and not t.startswith('src/'):     # Python src layout: import pkg.mod -> src/pkg/mod.py
             found = self._resolve('src/' + t)
+        if found is None and importer.endswith('.py') and t.split('/')[0] not in STDLIB:   # through sys.path roots
+            for r in self.roots_for(importer):
+                found = self._resolve(f'{r}/{t}')
+                if found:
+                    break
         return found
+
+    def py_roots(self) -> list[str]:
+        """Directories Python code here is imported from, besides the repository root and src/: the parent of every
+        top-level package (a directory with __init__.py whose parent has none: libs/x/src for libs/x/src/pkg/...,
+        services/y for services/y/shared/...), the directories of pyproject.toml/setup.py/setup.cfg/pytest.ini/tox.ini
+        and their src/, pytest `pythonpath` entries, and sys.path.insert/append targets in conftest.py and tests."""
+        if self._roots is None:
+            roots: set[str] = set()
+            for f in self.fileset:
+                p = PurePosixPath(f)
+                if p.name == '__init__.py':
+                    d = p.parent
+                    while str(d.parent) != '.' and f'{d.parent}/__init__.py' in self.fileset:
+                        d = d.parent
+                    roots.add(str(d.parent) if str(d.parent) != '.' else '')
+                if p.name in ('pyproject.toml', 'setup.py', 'setup.cfg', 'pytest.ini', 'tox.ini'):
+                    d = '' if str(p.parent) == '.' else str(p.parent)
+                    roots.update({d, (d + '/src').lstrip('/')})
+                    try:
+                        text = (self.root / f).read_text(encoding='utf-8', errors='replace')
+                    except OSError:
+                        text = ''
+                    m = re.search(r'^\s*pythonpath\s*=\s*\[([^\]]*)\]', text, re.M) or \
+                        re.search(r'^\s*pythonpath\s*=\s*([^\n\[]+)$', text, re.M)
+                    if m:
+                        for x in re.findall(r'''["']([^"']+)["']''', m.group(1)) or m.group(1).split():
+                            roots.add(norm(PurePosixPath(d or '.') / x))
+                if p.suffix == '.py' and (p.name == 'conftest.py' or is_test(f)):
+                    try:
+                        text = (self.root / f).read_text(encoding='utf-8', errors='replace')
+                    except OSError:
+                        continue
+                    for call in re.findall(r'sys\.path\.(?:insert|append)\(([^\n]*)', text):
+                        parts = re.findall(r'''["']([^"'/\\]+(?:/[^"']*)?)["']''', call)
+                        if '__file__' in call:
+                            base = p.parent
+                            up = re.search(r'parents\[(\d+)\]', call)
+                            # Path(__file__).parent and dirname(__file__) are the file's directory; each further
+                            # .parent / dirname, or parents[N], goes up one more
+                            for _ in range(int(up.group(1)) if up else call.count('.parent') + call.count('dirname') - 1):
+                                base = base.parent
+                            roots.add(norm(PurePosixPath(base) / '/'.join(parts)) if parts else norm(base))
+                        elif parts:
+                            roots.add(norm('/'.join(parts)))
+            self._roots = sorted(r for r in roots if r and r in self.dirs)
+        return self._roots
+
+    def roots_for(self, importer: str) -> list[str]:
+        """Import roots to try for a Python file: its own ancestor directories (pytest puts the first directory
+        without __init__.py on sys.path; a service's tests import its packages by their name), nearest first, then the
+        repository's import roots, those sharing the longest path with the importer first."""
+        d = str(PurePosixPath(importer).parent)
+        if d not in self._roots_for:
+            anc, x = [], PurePosixPath(importer).parent
+            while str(x) != '.':
+                anc.append(str(x))
+                x = x.parent
+            def shared(r: str) -> int:
+                n = 0
+                for a, b in zip(r.split('/'), d.split('/')):
+                    if a != b:
+                        break
+                    n += 1
+                return n
+            rest = sorted((r for r in self.py_roots() if r not in anc), key=lambda r: (-shared(r), r))
+            self._roots_for[d] = anc + rest
+        return self._roots_for[d]
 
     def _resolve(self, t: str) -> str | None:
         for cand in (t, *(t + e for e in self.EXTS), *(f'{t}/index{e}' for e in self.EXTS), f'{t}/__init__.py'):
@@ -388,7 +584,7 @@ class Imports:
 
     def resolved(self, f: str) -> list[str]:
         if f not in self.cache:
-            self.cache[f] = sorted({r for r in (self.resolve(t) for t in self.targets(f)) if r})
+            self.cache[f] = sorted({r for r in (self.resolve(t, f) for t in self.targets(f)) if r})
         return self.cache[f]
 
     def __call__(self, f: str) -> list[str]:
@@ -470,7 +666,10 @@ ADAPTERS = {
 
 def load_input(kind: str, path: Path) -> dict:
     data = json.loads(path.read_text(encoding='utf-8'))
-    meta = {'skill': kind, 'path': path.name, 'generated_at': data.get('generated_at') or (data.get('metadata') or {}).get('generated_at')}
+    md = data.get('metadata') if isinstance(data.get('metadata'), dict) else {}
+    meta = {'skill': kind, 'path': path.name,
+            'generated_at': next((v for v in (data.get('generated_at'), md.get('generated_at'), data.get('generated'),
+                                              md.get('generated'), md.get('created_at')) if isinstance(v, str) and v), None)}
     items = []
     if kind != 'flaky':
         key, fields = ADAPTERS.get(kind, ('findings', ['severity', 'priority', 'rating', 'ranking.priority']))
@@ -606,9 +805,13 @@ def surface_scan(root: Path, files: list[str]) -> tuple[int, list[str], list[str
     compiled = {cls: ([re.compile(p, re.I) for p in spec.get('patterns', [])],
                       [re.compile(p, re.I) for p in spec.get('raw_patterns', [])],
                       [re.compile(p, re.I) for p in spec.get('exclude', [])]) for cls, spec in SURFACES['classes'].items()}
+    by_path = {cls: [re.compile(p, re.I) for p in spec.get('path_patterns', [])] for cls, spec in SURFACES['classes'].items()}
     for f in files:
         if f.endswith('.d.ts'):
             continue
+        for cls, pats in by_path.items():
+            if any(p.search(f) for p in pats):
+                hits.setdefault(cls, []).append(f'{f} (path)')
         try:
             text = (root / f).read_text(encoding='utf-8', errors='replace')
         except OSError:
@@ -641,6 +844,9 @@ def score(args) -> dict:
         kind, why = diff_scope.classify(f, '', False)
         if kind in ('generated', 'vendored') and area_of(f, areas):
             excluded.append({'path': f, 'reason': why})
+        elif PurePosixPath(f).suffix in CODE_EXT and not is_test(f) and not is_area_code(f) and area_of(f, areas):
+            excluded.append({'path': f, 'reason': 'tool configuration file' if CONFIG_NAME.match(PurePosixPath(f).name)
+                             else 'documentation or examples directory'})
     excluded_paths = {e['path'] for e in excluded}
     owner = {f: area_of(f, areas) for f in files}
     # Source files no area covers are never dropped silently: they form the 'unassigned' area, and a warning names them.
@@ -657,6 +863,24 @@ def score(args) -> dict:
                         + ', '.join(unassigned[:8]) + (f' (+{len(unassigned) - 8})' if len(unassigned) > 8 else '')
                         + '; add them to --areas')
     inputs = [load_input(k, Path(p)) for k, p in (x.split('=', 1) for x in args.input)]
+    names = [(i['skill'], i['path']) for i in inputs]
+    if len(set(names)) != len(names):
+        raise SystemExit('two --input reports of the same kind have the same file name; give them distinct names, since '
+                         'each carried finding records the report it came from by name')
+    # --finding-area KIND:ID=AREA: the source report points the finding at the wrong file (say so in the plan's
+    # assumptions); the finding records the area its files gave as reassigned_from
+    reassign: dict[tuple[str, str], str] = {}
+    for spec in args.finding_area:
+        m = re.match(r'^([^:=]+):([^=]+)=(.+)$', spec)
+        if not m:
+            raise SystemExit(f'--finding-area {spec!r}: expected KIND:ID=AREA')
+        if m.group(3) not in {a['id'] for a in areas}:
+            raise SystemExit(f'--finding-area {spec!r}: {m.group(3)!r} is not an area')
+        if not any(i['skill'] == m.group(1) and any(it['id'] == m.group(2) for it in i['items']) for i in inputs):
+            raise SystemExit(f'--finding-area {spec!r}: no {m.group(1)} finding {m.group(2)} in the --input reports')
+        reassign[(m.group(1), m.group(2))] = m.group(3)
+        warnings.append(f'{m.group(1)} {m.group(2)} was moved to area {m.group(3)} by --finding-area (its report cites '
+                        'another file); say why in the plan\'s assumptions')
     for inp in inputs:
         for it in inp['items']:
             if inp['skill'] != 'flaky' and it['severity'] == 'unknown':
@@ -687,8 +911,7 @@ def score(args) -> dict:
     commits = {c['sha']: c for c in hist['commits']}
     raw = {}
     for a in areas:
-        mine = [f for f in files if owner[f] == a['id'] and not is_test(f) and f not in excluded_paths
-                and PurePosixPath(f).suffix in CODE_EXT]
+        mine = [f for f in files if owner[f] == a['id'] and is_area_code(f) and f not in excluded_paths]
         mine_set = set(mine)
         h = [hist['files'][f] for f in mine]
         added_in_scope = [f for f in mine if scope_files.get(f, {}).get('status') == 'added']
@@ -793,16 +1016,29 @@ def score(args) -> dict:
         findings = []
         for inp in inputs:
             for it in inp['items']:
-                if it['files'] and any(aof(x) == a['id'] for x in it['files']) and inp['skill'] != 'flaky':
-                    findings.append({'skill': inp['skill'], 'id': it['id'], 'title': it['title'], 'severity': it['severity'],
-                                     'source_rating': it['source_rating'], 'confidence': it['confidence']})
-        flags = (['novel'] if r['novel'] else []) + (['open_findings'] if any(x['severity'] in SEVERE for x in findings) else [])
+                if inp['skill'] == 'flaky':
+                    continue
+                moved = reassign.get((inp['skill'], it['id']))
+                home = moved if moved else ({aof(x) for x in it['files']} if it['files'] else set())
+                if (moved and moved == a['id']) or (not moved and a['id'] in home):
+                    fnd = {'skill': inp['skill'], 'id': it['id'], 'title': it['title'], 'severity': it['severity'],
+                           'source_rating': it['source_rating'], 'confidence': it['confidence'], 'source': inp['path']}
+                    if moved:
+                        fnd['reassigned_from'] = sorted(x for x in {aof(x) for x in it['files']} if x) or None
+                    findings.append(fnd)
+        flags = (['novel'] if r['novel'] else []) + finding_flags(findings)
         area = {'id': a['id'], 'paths': a['paths'], 'files': len(r['files']),
                 'journeys': [j['id'] for j in linked], 'surfaces': classes, 'flags': flags, 'open_findings': findings,
                 'tests': r['tests'], 'factors': {k: f[k] for k in list(LIKELIHOOD) + list(IMPACT)}}
         area.update(recompute(area))
         out_areas.append(area)
     out_areas.sort(key=lambda a: (-(a['risk'] or 0), a['id']))
+    ui = [a['id'] for a in out_areas if any(PurePosixPath(f).suffix in UI_EXT for f in raw[a['id']]['files'])]
+    if ui and not have_map and not usage:
+        warnings.append(f'no journey map: the impact of {len(ui)} UI area(s) ({", ".join(ui[:6])}'
+                        + (f' +{len(ui) - 6}' if len(ui) > 6 else '') + ') rests on surface patterns alone, so a page that '
+                        'drives an important flow can rank Low; run journey-mapper (or give --usage) before trusting the UI '
+                        'ranking, and say so in the plan')
     return {'repo': root.name, 'head': hist['head'],
             'history': {**window, 'commits': hist['summary']['commits'], 'shallow': hist['shallow'],
                         'excluded_formatting': hist['excluded_formatting']},
@@ -831,6 +1067,8 @@ def main(argv=None) -> int:
     ap.add_argument('--usage', type=Path)
     ap.add_argument('--areas', type=Path)
     ap.add_argument('--defects', type=Path, help='bug tickets from fetch_ticket.py --jql (read-only)')
+    ap.add_argument('--finding-area', action='append', default=[],
+                    help='KIND:ID=AREA: carry this input finding on AREA, when its report cites the wrong file (repeatable)')
     ap.add_argument('--out', type=Path, required=True)
     args = ap.parse_args(argv)
     res = score(args)
