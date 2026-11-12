@@ -22,6 +22,13 @@ def load(name):
     return json.loads((DATA / name).read_text(encoding='utf-8'))
 
 
+def contrast_data(ctx, check=None):
+    """What lies behind text whose contrast an engine could not compute (recorded by run_audit.py)."""
+    if not ctx and not check:
+        return None
+    return {'contrast': ctx, **({'axe_check': check} if check else {})}
+
+
 class Norm:
     def __init__(self, run: dict):
         self.run = run
@@ -92,7 +99,8 @@ class Norm:
                 for n in v['nodes']:
                     self.add(rec, tool='axe-core', rule_id=v['id'], act_rules=m['act'], sc=m['sc'], kind=m['kind'],
                              outcome=outcome, impact=n.get('impact') or v.get('impact'), message=n.get('summary') or v['help'],
-                             el=n.get('el'), selector=' >>> '.join(map(str, n['target'])), html=n.get('html'))
+                             el=n.get('el'), selector=' >>> '.join(map(str, n['target'])), html=n.get('html'),
+                             data=contrast_data(n.get('contrast'), n.get('check')))
         for p in r.get('passes', []):
             m = self.map['axe'].get(p['id'])
             if m and m['kind'] == 'wcag':
@@ -111,7 +119,7 @@ class Norm:
             outcome = 'failed' if result == 'FAIL' else 'cantTell'
             self.add(rec, tool='ibm-equal-access', rule_id=x['ruleId'], act_rules=m['act'], sc=m['sc'], kind=kind,
                      outcome=outcome, impact=f'{policy}/{result}', message=x.get('message'), el=x.get('el'),
-                     html=x.get('snippet'), data={'reason': x.get('reasonId')})
+                     html=x.get('snippet'), data={'reason': x.get('reasonId'), **(contrast_data(x.get('contrast')) or {})})
         for rule, n in (r.get('passes') or {}).items():
             m = self.map['ibm'].get(rule)
             if m and m['kind'] == 'wcag':
@@ -126,7 +134,8 @@ class Norm:
             sc = [f'{m.group(2)}.{m.group(3)}.{m.group(4)}'] if m else []
             rule = msg['code'].split('.', 1)[1] if '.' in msg['code'] else msg['code']
             self.add(rec, tool='htmlcs', rule_id=rule, sc=sc, kind='wcag' if sc else 'best_practice',
-                     outcome='failed' if msg['type'] == 1 else 'cantTell', message=msg.get('msg'), el=msg.get('el'))
+                     outcome='failed' if msg['type'] == 1 else 'cantTell', message=msg.get('msg'), el=msg.get('el'),
+                     data=contrast_data(msg.get('contrast')))
         for code, n in (r.get('notices') or {}).items():
             m = pat.search(code)
             if m:
@@ -168,6 +177,18 @@ class Norm:
             else:
                 for u in k['unreached']:
                     self.probe(rec, 'keyboard.unreachable', 'cantTell', el=u, message='Focusable element was never reached by Tab')
+            for hm in k.get('hover_only') or []:
+                # menu items that only :hover reveals; Tab never reached them and no key opened the menu
+                link = any(t.startswith('Enter/Space not tried') for t in hm['keys_tried'])
+                names = ', '.join(re.sub(r'<[^>]*>', '', i.get('html') or '').strip()[:30] or i['xpath'].rsplit('/', 1)[-1] for i in hm['items'][:5])
+                self.probe(rec, 'keyboard.hover_only', 'cantTell' if link else 'failed', el=hm['trigger'],
+                           message=(f"{len(hm['items'])} link(s) or button(s) in this menu appear only on hover and were never reached "
+                                    f"by keyboard ({names}); keys tried on its control: "
+                                    f"{', '.join(k for k in hm['keys_tried'] if not k.startswith('Enter/Space')) or 'none (no focusable control)'}"
+                                    + (f"; {next(k for k in hm['keys_tried'] if k.startswith('Enter/Space'))}, so check whether "
+                                       'another keyboard route (such as the linked page) offers the same links' if link else '')),
+                           data={'items': [i['xpath'] for i in hm['items']], 'control': (hm.get('control') or {}).get('xpath'),
+                                 'revealed_on_hover': hm['revealed_on_hover'], 'keys_tried': hm['keys_tried']})
             for po in k['pointer_only']:
                 ls = po.get('listeners')
                 if ls:

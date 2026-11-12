@@ -81,7 +81,7 @@
                      "sha256": {"type": ["string", "null"]}}},
     "sample_page": {"type": "object", "additionalProperties": false, "required": ["id", "url", "template", "reason", "title"],
       "properties": {"id": {"type": "string", "pattern": "^p\\d{2,}$"}, "url": {"type": "string"}, "template": {"type": ["string", "null"]},
-                     "reason": {"enum": ["structured", "random", "critical_path", "unreachable", "blocked"]},
+                     "reason": {"enum": ["listed", "structured", "random", "critical_path", "unreachable", "blocked"]},
                      "title": {"type": ["string", "null"]}, "note": {"type": "string"}}},
     "check": {"type": "object", "additionalProperties": false, "required": ["page", "viewport", "kind", "name", "status"],
       "properties": {"page": {"type": "string"}, "viewport": {"type": "string"}, "kind": {"enum": ["engine", "probe"]},

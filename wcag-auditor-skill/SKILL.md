@@ -50,9 +50,10 @@ What sets this apart from running one checker:
 7. **Test only what you are allowed to test.** Before scanning, confirm the user owns the target
    or is authorised to test it, and record who confirmed it (`authorised_by`). Loopback targets
    need no confirmation. Respect rate limits; back off on 429 and 503.
-8. **Change nothing.** Form submission is off by default: every non-GET request is aborted. Don't
-   click destructive buttons, don't bypass CAPTCHAs (record the page as blocked), and never write
-   credentials into any output.
+8. **Change nothing.** Form submission is off by default: every non-GET request is aborted.
+   Third-party requests are blocked too (GETs included), so an audit never sends analytics hits
+   or ad requests; service workers are blocked. Don't click destructive buttons, don't bypass
+   CAPTCHAs (record the page as blocked), and never write credentials into any output.
 
 ## Inputs
 
@@ -64,7 +65,11 @@ What sets this apart from running one checker:
 | `critical_paths` | optional | Named flows as steps (`url`, optional `state`, `label`), or journey files from journey-mapper |
 | `auth` | optional | A Playwright `storageState` file, or a login recipe whose fields read credentials from environment variables |
 | `viewports` | `1280x800`, `320x640` | 320 px also covers 1.4.10 Reflow |
-| `max_pages` | 25 | Sampling cap |
+| `max_pages` | 25 | Sampling cap for crawled and sitemap pages; listed targets are always audited |
+| `random_sample` | 0.1 | Share of the remaining crawled pages added at random (seeded); `0` adds none |
+| `third_party` | `block` | Every request to a host that isn't loopback, a target's host or in `allowed_hosts` is aborted and logged. Third-party content (embeds, fonts, widgets from other hosts) is then absent: say so in `limitations`, or let a host through |
+| `allowed_hosts` | none | Further hosts to let through, such as a CDN the site needs (`"*.cdn.example"` allowed) |
+| `service_workers` | `block` | `allow` lets the site register them |
 | `allow_form_submission` | `false` | Only the user can turn it on, for a test environment |
 | `standards_map` | off | `en301549` adds EN 301 549 clause numbers (V3.2.1; WCAG 2.2 additions have none) |
 
@@ -100,9 +105,11 @@ python scripts/run_audit.py --config audit_config.json --out <run-dir> --plan-on
 ```
 
 The runner crawls (or reads the sitemap), groups pages into templates by URL pattern and landmark
-structure, and samples one page per template, every critical-path page, and about 10% more at
-random (seeded). Each page records why it was chosen. Check the sample makes sense before the full
-run; add targets for templates the crawl missed.
+structure, and samples every critical-path page and every listed target (never dropped for
+sharing a template), one page per template not yet covered, and about 10% more of the rest at
+random (seeded). Each page records how it entered the sample (`critical_path`, `listed`,
+`structured`, `random`, or `unreachable`). Check the sample makes sense before the full run; add
+targets for templates the crawl missed.
 
 ### 4. Run engines and probes
 
@@ -115,11 +122,11 @@ with any consent banner showing (it's content too), dismisses the banner, then r
 
 | Probe | SCs | What it measures |
 |---|---|---|
-| `keyboard` | 2.1.1, 2.1.2, 2.4.3 | Tab order; traps (no new element for 15 presses, then Shift+Tab and Escape tried); clickable elements that aren't focusable, with their click listeners |
+| `keyboard` | 2.1.1, 2.1.2, 2.4.3 | Tab order; traps (no new element for 15 presses, then Shift+Tab and Escape tried); clickable elements that aren't focusable, with their click listeners; menu links that only `:hover` reveals and no key opens (focus, ArrowDown, and Enter and Space unless the control follows a link or submits a form) |
 | `focus_visible` | 2.4.7, 2.4.11, 2.4.12 | Pixels changed around each element when focused; whether fixed or sticky content covers it |
 | `reflow` | 1.4.10 | Horizontal scrolling at 320 px and the element causing it (tables, video and other two-dimensional content flagged as possibly exempt) |
-| `text_spacing` | 1.4.12 | Text clipped once the WCAG spacing overrides are applied |
-| `resize_text` | 1.4.4 | Text clipped at 200% zoom (half the viewport at device scale 2); viewport meta that blocks zoom |
+| `text_spacing` | 1.4.12 | Text clipped once the WCAG spacing overrides are applied (visually hidden `.sr-only` text excluded) |
+| `resize_text` | 1.4.4 | Text clipped at 200% zoom (half the viewport at device scale 2; visually hidden text excluded); viewport meta that blocks zoom |
 | `target_size` | 2.5.8 | Targets under 24 x 24 px whose 24 px circle overlaps another target; inline links exempt |
 | `hover_focus` | 1.4.13 | Content shown on hover: dismissible with Escape, hoverable, persistent |
 | `motion` | 2.2.2 | Content still changing 5 to 7.5 s after load with no pause control; again with reduced motion |
@@ -139,10 +146,24 @@ python scripts/merge_findings.py <run-dir>/items.json --run <run-dir> --out <run
 
 `normalize.py` maps every result to SCs and ACT rules through `data/rule-map.json`, and classifies
 it as `wcag`, `best_practice`, `above_level`, `outside_version`, `obsolete` or `experimental`.
+The map is generated from the engines' own metadata; its `overrides` table corrects the few
+entries that metadata gets wrong (IBM `img_alt_redundant` is best practice, like axe's
+`image-redundant-alt`, not a 1.1.1 failure).
 `merge_findings.py` merges results about the same element (or an image and its link) across
 tools, viewports and states, then groups them by component signature across pages. Each
 candidate carries its sources, outcome, a suggested confidence and the rubric's default failure
 pattern. `sc_draft` gives each SC a draft outcome; it never drafts `passed`.
+
+Contrast "needs review" results (axe `incomplete`, HTMLCS `.Alpha`/`.BgImage`/`.Abs`, IBM
+potentials) can bury the real failures when a page has a faint background gradient. The runner
+records what lies behind each such element: the background image and the element carrying it,
+translucent layers, and the text colour and size. `merge_findings.py` then gives each candidate a
+`contrast_estimate` (the worst-case ratio against the gradient's colour stops, which bound a
+gradient's luminance) and collapses candidates with the same cause and the same background into
+one grouped candidate whose `group` lists the cause, the background, the member components,
+counts, text colours and sample selectors. Candidates estimated below the threshold are never
+grouped; they stay separate so they can be promoted. Visually hidden text is grouped on its own.
+Runs without that record (older runs) are not grouped.
 
 ### 6. Triage every candidate
 
@@ -155,6 +176,12 @@ Every candidate gets exactly one triage entry:
 - **dismissed**: with a reason someone can check, such as the computed contrast ratio and the
   colours it came from, the probe measurement that contradicts the hint, or the exemption that
   applies. "False positive" alone is rejected.
+
+A grouped contrast candidate is triaged once, like any other. A `contrast_estimate` comes from
+recorded colours, not pixels: dismiss on it only when the group's lowest estimate clears the
+threshold and you say so with the colours (`#222 on a #fafafa-#eef4ee gradient: at least 14.2:1`);
+otherwise send it for review with the sample selectors. Check a sample in the screenshot either
+way, because images, shadows and overlapping content aren't in the estimate.
 
 A finding built only from `cantTell` candidates is agent judgment and needs a `resolution` saying
 what you looked at.
@@ -197,7 +224,8 @@ python scripts/validate_audit.py audit.json --run <run-dir> --candidates <run-di
 python scripts/render_report.py audit.json [--brief]
 ```
 
-`--write-summary` recomputes the headline numbers; it does not write the verdict text. Fix every
+`--write-summary` fills or recomputes the headline numbers before anything is checked, so the draft
+can leave them out; it never writes the verdict or its text. Fix every
 problem the validator reports, then give the user the rendered report: the verdict and its
 reason, the P0 and P1 findings, blocked critical paths, what was untested and the limitations.
 

@@ -9,8 +9,17 @@
   "ibm: SCs from the WCAG_2_0/2_1/2_2 and IBM_Accessibility rulesets' checkpoints; ACT ids from help/rules.csv.",
   "htmlcs: the SC is encoded in the message code (Principle1.Guideline1_1.1_1_1.H37 -> 1.1.1); no ACT ids.",
   "vnu: messages are supporting evidence for 4.1.1 (2.0/2.1) and 4.1.2 only.",
-  "probe: result codes emitted by run_audit.py."
+  "probe: result codes emitted by run_audit.py.",
+  "overrides: entries where the engines' metadata is corrected for this skill, each with its reason; build_rule_map.py re-applies them."
  ],
+ "overrides": {
+  "ibm": {
+   "img_alt_redundant": {
+    "kind": "best_practice",
+    "reason": "Alt text that repeats adjacent link text is redundant, not missing: a best practice like axe's image-redundant-alt. IBM files it under the 1.1.1 and 2.4.4 checkpoints, which made it a 1.1.1 failure with the unnamed-functional-image pattern."
+   }
+  }
+ },
  "axe": {
   "accesskeys": {
    "sc": [],
@@ -1732,7 +1741,8 @@
     "2.4.4"
    ],
    "act": [],
-   "kind": "wcag"
+   "kind": "best_practice",
+   "override": "Alt text that repeats adjacent link text is redundant, not missing: a best practice like axe's image-redundant-alt. IBM files it under the 1.1.1 and 2.4.4 checkpoints, which made it a 1.1.1 failure with the unnamed-functional-image pattern."
   },
   "img_alt_valid": {
    "sc": [
@@ -2366,6 +2376,12 @@
     "3.1.1"
    ],
    "pattern": "3.1.1-wrong-page-lang"
+  },
+  "keyboard.hover_only": {
+   "sc": [
+    "2.1.1"
+   ],
+   "pattern": "2.1.1-control-not-keyboard"
   }
  }
 }

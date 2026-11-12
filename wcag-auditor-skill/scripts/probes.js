@@ -85,6 +85,47 @@
     return !el.closest('[hidden],[inert]');
   }
 
+  // Visually hidden but exposed to assistive technology (.sr-only, .visually-hidden): clipped to
+  // nothing with clip or clip-path, or a 1 x 1 px box with overflow hidden, on the element or an
+  // ancestor. Such text is never seen, so it cannot be "clipped" or low-contrast for a reader.
+  function visuallyHidden(el) {
+    for (let n = el; n && n.nodeType === 1 && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+      const cs = getComputedStyle(n);
+      if (cs.clip && cs.clip.startsWith('rect') && ['absolute', 'fixed'].includes(cs.position)) {
+        const v = (cs.clip.match(/-?[\d.]+/g) || []).map(Number);
+        if (v.length === 4 && v[1] - v[3] <= 1 && v[2] - v[0] <= 1) return true;
+      }
+      if (/^inset\(\s*(50|100)%/.test(cs.clipPath || '')) return true;
+      const r = n.getBoundingClientRect();
+      if (r.width <= 1 && r.height <= 1 && [cs.overflowX, cs.overflowY].some(o => o === 'hidden' || o === 'clip')) return true;
+    }
+    return false;
+  }
+
+  // What lies behind an element's text, for contrast results the engines could not compute. Walking
+  // up from the text: translucent background colours on the way (overlays, nearest first), the
+  // nearest background image (a gradient keeps its colour stops) and the element carrying it, and
+  // the first opaque background colour, which is either in front of the image (opaque_first: the
+  // image is not behind the text) or beneath it. Plus the text colour and size.
+  function contrastContext(el) {
+    if (!el || el.nodeType !== 1) return null;
+    const cs = getComputedStyle(el);
+    let imgOn = null, image = null, bgColor = null, opaqueFirst = false;
+    const overlays = [];
+    for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
+      const s = getComputedStyle(n);
+      const m = (s.backgroundColor.match(/[\d.]+/g) || []).map(Number);
+      const alpha = m.length >= 4 ? m[3] : (m.length === 3 ? 1 : 0);
+      if (!imgOn && s.backgroundImage && s.backgroundImage !== 'none') { imgOn = n; image = s.backgroundImage.slice(0, 300); }
+      if (alpha >= 1) { bgColor = s.backgroundColor; opaqueFirst = !imgOn; break; }
+      if (alpha > 0 && !imgOn) overlays.push(s.backgroundColor);  // translucent layers in front of the image
+    }
+    return { fg: cs.color, font_px: parseFloat(cs.fontSize), font_weight: Number(cs.fontWeight) || 400,
+             bg_image_on: imgOn ? { xpath: xpath(imgOn), sig: sig(imgOn), selector: cssPath(imgOn) } : null,
+             bg_image: image, bg_color: bgColor || 'rgb(255, 255, 255)', opaque_first: opaqueFirst, overlays: overlays.slice(0, 6),
+             visually_hidden: visuallyHidden(el) };
+  }
+
   function describe(el) {
     return el && el.nodeType === 1 ? { xpath: xpath(el), selector: cssPath(el), sig: sig(el), html: snippet(el), rect: rect(el) } : null;
   }
@@ -222,6 +263,36 @@
 
     describeXpath(xp) { return describe(byXpath(xp)); },
     describeTarget(t) { return describe(bySelector(t)); },
+    visuallyHidden, contrastContext,
+    contrastXpath(xp) { return contrastContext(byXpath(xp)); },
+    contrastTarget(t) { return contrastContext(bySelector(t)); },
+
+    // Links and buttons inside menus that are in the DOM but not displayed (display: none,
+    // visibility: hidden, opacity 0 or zero size), grouped by the nearest visible ancestor: the
+    // menu item whose :hover may reveal them. run_audit.py hovers each trigger to see which open.
+    hiddenMenuItems(limit = 30) {
+      const groups = new Map();
+      const sel = 'a[href],button,[role=menuitem],[role=link],[role=button]';
+      for (const el of document.querySelectorAll(sel)) {
+        if (visible(el) || el.closest('[hidden],[inert],template,noscript,dialog:not([open])')) continue;
+        if (el.closest('[aria-hidden=true]') && !el.closest('nav,[role=navigation],[role=menubar],[role=menu]')) continue;
+        let t = el.parentElement;
+        while (t && t !== document.body && !visible(t)) t = t.parentElement;
+        if (!t || t === document.body || t === document.documentElement) continue;
+        if (!groups.has(t)) groups.set(t, []);
+        groups.get(t).push(el);
+      }
+      const out = [];
+      for (const [t, items] of groups) {
+        const ctl = [...t.querySelectorAll('a[href],button,[role=button],[role=menuitem],[tabindex]')].find(e => visible(e) && isFocusable(e));
+        out.push({ trigger: describe(t), control: ctl ? { ...describe(ctl), tag: ctl.localName,
+                   href: ctl.getAttribute('href'), submits: !!(ctl.form && (ctl.type === 'submit' || ctl.type === 'image')), haspopup: ctl.getAttribute('aria-haspopup'), expanded: ctl.getAttribute('aria-expanded') } : null,
+                   items: items.slice(0, 20).map(describe) });
+        if (out.length >= limit) break;
+      }
+      return out;
+    },
+    activeXpath() { const a = deepActive(); return a && a !== document.body ? xpath(a) : null; },
 
     pageInfo() {
       const vm = document.querySelector('meta[name=viewport]');
@@ -314,7 +385,7 @@
       for (const el of document.querySelectorAll('body *')) {
         if (!visible(el)) continue;
         const text = [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim());
-        if (!text) continue;
+        if (!text || visuallyHidden(el)) continue;  // .sr-only text is clipped on purpose and never seen
         const cs = getComputedStyle(el);
         const hideX = ['hidden', 'clip'].includes(cs.overflowX), hideY = ['hidden', 'clip'].includes(cs.overflowY);
         const over = (hideY && el.scrollHeight > el.clientHeight + 1) || (hideX && el.scrollWidth > el.clientWidth + 1) || (cs.textOverflow === 'ellipsis' && el.scrollWidth > el.clientWidth + 1);

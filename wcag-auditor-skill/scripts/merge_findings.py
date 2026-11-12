@@ -7,6 +7,9 @@
    viewports and states, keeping every source.
 2. Candidates: instances with the same component signature and overlapping SCs merge across pages,
    so a defect in a shared header becomes one candidate listing every affected page.
+3. Contrast "needs review" candidates get a `contrast_estimate` from the background the runner
+   recorded, and those with the same cause and background collapse into one grouped candidate
+   (`group`); any estimated below the threshold stay separate (see group_contrast()).
 
 Each candidate keeps its sources (tool, version, rule, ACT ids), outcome (`failed` if any source
 failed, otherwise `cantTell`), kind, a suggested confidence (high when two independent sources
@@ -16,7 +19,7 @@ advisory or dismissed with a checkable reason. `sc_draft` gives every SC at the 
 draft EARL outcome; it never drafts `passed`.
 """
 from __future__ import annotations
-import argparse, json, sys
+import argparse, json, re, sys
 from pathlib import Path
 
 DATA = Path(__file__).resolve().parent.parent / 'data'
@@ -83,6 +86,7 @@ def merge(items: list[dict], scs: dict) -> list[dict]:
             c = {'sig': inst['sig'], 'kind': inst['kind'], 'sc': list(inst['sc']), 'instances': [inst]}
             bucket.append(c)
             cands.append(c)
+    cands = group_contrast(cands)
     out = []
     for c in cands:
         its = [i for inst in c['instances'] for i in inst['items']]
@@ -122,6 +126,8 @@ def merge(items: list[dict], scs: dict) -> list[dict]:
             'pages': pages, 'instance_count': len(inst_out), 'instances': inst_out,
             'sources': [{**v, 'outcomes': sorted(v['outcomes'])} for v in sources.values()],
             'related_sc': sorted({r for i in its for r in i['related_sc']}, key=sc_key),
+            **({'contrast_estimate': c['contrast_estimate']} if c.get('contrast_estimate') else {}),
+            **({'group': c['group']} if c.get('group') else {}),
         })
     order = {'failed': 0, 'cantTell': 1}
     kind_order = {'wcag': 0, 'above_level': 1, 'outside_version': 2, 'best_practice': 3, 'experimental': 4, 'obsolete': 5}
@@ -133,6 +139,134 @@ def merge(items: list[dict], scs: dict) -> list[dict]:
 
 def sc_key(s):
     return [int(x) for x in s.split('.')]
+
+
+# --- contrast "needs review" ------------------------------------------------------------------
+# A faint page-level gradient makes axe and HTML_CodeSniffer ask for a manual contrast check on
+# nearly every piece of text, burying the real failures. run_audit.py records what lies behind each
+# such element (the background image, its colour stops, translucent overlays, the text colour), so
+# here each instance gets an estimated worst-case ratio, and candidates with the same cause and the
+# same background collapse into one grouped candidate. Instances estimated below the threshold
+# are never grouped; they stay separate candidates so they aren't buried.
+
+AXE_CAUSE = {'bgGradient': 'background gradient', 'bgImage': 'background image', 'pseudoContent': 'pseudo-element background',
+             'bgOverlap': 'overlapping elements', 'elmPartiallyObscured': 'overlapping elements',
+             'elmPartiallyObscuring': 'overlapping elements', 'outsideViewport': 'outside the viewport',
+             'nonBmp': 'non-text content', 'shortTextContent': 'non-text content', 'equalRatio': 'same text and background colour'}
+HTMLCS_CAUSE = {'Alpha': 'transparent colour', 'BgImage': 'background image', 'Abs': 'absolute positioning'}
+
+
+def is_contrast(it) -> bool:
+    return it['outcome'] == 'cantTell' and it['kind'] == 'wcag' and (
+        it['rule_id'].startswith('color-contrast') or it['rule_id'] == 'text_contrast_sufficient' or bool(re.search(r'1_4_[36]\.', it['rule_id'])))
+
+
+def contrast_cause(it) -> str:
+    d = it.get('data') or {}
+    ctx = d.get('contrast') or {}
+    if ctx.get('visually_hidden'):
+        return 'visually hidden text'
+    if ctx.get('bg_image_on') and not ctx.get('opaque_first'):
+        return 'background gradient' if 'gradient(' in (ctx.get('bg_image') or '') else 'background image'
+    key = (d.get('axe_check') or {}).get('messageKey')
+    if key in AXE_CAUSE:
+        return AXE_CAUSE[key]
+    if it['tool'] == 'htmlcs':
+        return HTMLCS_CAUSE.get(it['rule_id'].rsplit('.', 1)[-1], it['rule_id'].rsplit('.', 1)[-1])
+    msg = re.sub(r'^Fix any of the following:\s*', '', it.get('message') or '').strip()
+    return re.sub(r'[\d.#]+', '', msg)[:80] or it['rule_id']
+
+
+def rgba(s):
+    v = [float(x) for x in re.findall(r'[\d.]+', s or '')]
+    return (v + [1.0])[:4] if len(v) >= 3 else None
+
+
+def over(top, base):
+    a = top[3]
+    return [top[k] * a + base[k] * (1 - a) for k in range(3)] + [1.0]
+
+
+def lum(c):
+    f = lambda x: x / 12.92 if x <= 0.04045 else ((x + 0.055) / 1.055) ** 2.4
+    return 0.2126 * f(c[0] / 255) + 0.7152 * f(c[1] / 255) + 0.0722 * f(c[2] / 255)
+
+
+def estimate(ctx) -> dict | None:
+    """Worst-case contrast of the text against what is behind it, from the recorded colours.
+
+    A gradient interpolates channel by channel between its stops, and relative luminance rises
+    with every channel, so along each segment luminance moves monotonically: the background's
+    luminance range is spanned by its stops, and the lowest ratio is at the stop nearest the
+    text's luminance (or 1:1 if the text's luminance falls inside the range). Translucent layers
+    are composited over each stop, which keeps the interpolation linear. Images (url()) can't be
+    estimated."""
+    if not ctx or ctx.get('visually_hidden'):
+        return None
+    fg, base = rgba(ctx.get('fg')), rgba(ctx.get('bg_color'))
+    if not fg or fg[3] < 1 or not base:
+        return None
+    image = ctx.get('bg_image') or ''
+    if ctx.get('opaque_first') or not ctx.get('bg_image_on'):
+        stops, basis = [base], 'opaque background'
+    elif 'url(' in image or 'gradient(' not in image:
+        return None
+    else:
+        stops = [over(c, base) for c in (rgba(m) for m in re.findall(r'rgba?\([^)]*\)', image)) if c]
+        if not stops:
+            return None
+        basis = 'gradient colour stops'
+    layers = [rgba(o) for o in reversed(ctx.get('overlays') or [])]
+    shown = []
+    for s in stops:
+        for o in layers:
+            if o:
+                s = over(o, s)
+        shown.append(lum(s))
+    lf, lo, hi = lum(fg), min(shown), max(shown)
+    worst = 1.0 if lo <= lf <= hi else (lo + 0.05) / (lf + 0.05) if lf < lo else (lf + 0.05) / (hi + 0.05)
+    px, wt = ctx.get('font_px') or 16, ctx.get('font_weight') or 400
+    need = 3.0 if px >= 24 or (px >= 18.66 and wt >= 700) else 4.5
+    return {'min_ratio': round(worst, 2), 'required': need, 'below': worst < need, 'basis': basis}
+
+
+def group_contrast(cands: list[dict], min_group: int = 2) -> list[dict]:
+    keyed: dict[tuple, list[dict]] = {}
+    for c in cands:
+        its = [i for inst in c['instances'] for i in inst['items']]
+        if c['kind'] != 'wcag' or not its or not all(is_contrast(i) for i in its):
+            continue
+        ests = [e for e in (estimate((i.get('data') or {}).get('contrast')) for i in its) if e]
+        if ests:
+            c['contrast_estimate'] = min(ests, key=lambda e: e['min_ratio'] - e['required'])
+        if any(e['below'] for e in ests):
+            continue  # possibly a real failure: keep it as its own candidate
+        if not all((i.get('data') or {}).get('contrast') for i in its):
+            continue  # no record of the background (older runs): grouping would be a guess
+        causes = tuple(sorted({contrast_cause(i) for i in its}))
+        bgs = tuple(sorted({((i['data']['contrast'].get('bg_image_on') or {}).get('sig') or '', i['data']['contrast'].get('bg_image') or '')
+                            for i in its if not i['data']['contrast'].get('visually_hidden')}))
+        keyed.setdefault((causes, bgs), []).append(c)
+    grouped_ids = set()
+    out = []
+    for (causes, bgs), members in keyed.items():
+        if len(members) < min_group:
+            continue
+        insts = [inst for m in members for inst in m['instances']]
+        ests = [m['contrast_estimate'] for m in members if m.get('contrast_estimate')]
+        fgs = sorted({i['data']['contrast'].get('fg') for inst in insts for i in inst['items']})
+        on = ', '.join(sorted({b[0] for b in bgs if b[0]})) or 'none'
+        g = {'sig': f"contrast needs review: {' + '.join(causes)} (background on {on})", 'kind': 'wcag',
+             'sc': sorted({s for m in members for s in m['sc']}, key=sc_key), 'instances': insts,
+             'contrast_estimate': min(ests, key=lambda e: e['min_ratio'] - e['required']) if ests else None,
+             'group': {'cause': list(causes), 'backgrounds': [{'on': b[0] or None, 'image': b[1] or None} for b in bgs],
+                       'candidate_count': len(members), 'instance_count': len(insts), 'text_colours': fgs[:10],
+                       'estimated': len(ests), 'members': [{'component': m['sig'], 'pages': sorted({i['page'] for i in m['instances']}),
+                                                            'instance_count': len(m['instances'])} for m in members],
+                       'sample_selectors': [s for s in dict.fromkeys(next((i['selector'] for i in inst['items'] if i['selector']), None) for inst in insts) if s][:8]}}
+        grouped_ids |= {id(m) for m in members}
+        out.append(g)
+    return [c for c in cands if id(c) not in grouped_ids] + out
 
 
 def draft_matrix(cands, scs, version, level, run, evidence):

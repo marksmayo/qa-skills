@@ -23,6 +23,8 @@ It doesn't bluff about the result:
   confidence.
 - Every engine and probe is recorded as ran, not run or errored, and the validator checks the
   report against the run's own records.
+- An audit sends nothing to third parties: requests to other hosts are blocked unless you allow
+  them, so analytics and ad tags never fire.
 
 ## Install
 
@@ -143,7 +145,8 @@ python scripts/run_audit.py --config examples/harbour-dental/audit_config.json -
 - `requirements.txt`: Playwright for Python, for `run_audit.py` only
 - `data/wcag-sc.json`: all 87 SCs of WCAG 2.0 to 2.2 with level, version, automation, probes,
   failure patterns with default severities and a manual check
-- `data/rule-map.json`: axe, IBM and HTMLCS rules and probe codes to SCs and ACT rules
+- `data/rule-map.json`: axe, IBM and HTMLCS rules and probe codes to SCs and ACT rules, with an
+  `overrides` table (each entry with its reason) that the generator re-applies
 - `data/en301549-map.json`: SC to EN 301 549 V3.2.1 clause
 - `data/engines.lock.json`: pinned engine versions, tarball URLs, integrity and SHA-256
 - `schemas/audit.schema.json`: output contract

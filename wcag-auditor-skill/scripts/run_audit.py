@@ -31,7 +31,10 @@ Config (JSON):
                        actions: {"click": sel} {"hover": sel} {"press": key} {"fill": sel, "value"|"env"}
                                 {"wait": ms} {"wait_for": sel}
     critical_paths     [{"name", "steps": [{"url", "state"?, "label"?}]}]
-    random_sample      fraction of non-structured pages to add (default 0.1); "seed" for reproducibility
+    random_sample      fraction of the remaining pages to add at random (default 0.1; 0 adds none); "seed"
+                       for reproducibility. Listed targets and critical-path steps are always audited;
+                       template de-duplication only thins crawled and sitemap pages. Each sample entry's
+                       reason says how it entered: critical_path, listed, structured, random or unreachable.
 
 Writes <out>/run.json (metadata, sample, per-page checks), <out>/raw/*.json (engine and probe
 results per page, viewport and state), <out>/screenshots/*.png and <out>/aria/*.txt.
@@ -301,10 +304,14 @@ class Runner:
         tags = AXE_TAGS[self.version] + ['best-practice']
         return page.evaluate("""async (tags) => {
             const r = await axe.run(document, {runOnly: {type: 'tag', values: tags}, resultTypes: ['violations', 'incomplete']});
-            const node = n => ({target: n.target, impact: n.impact, summary: n.failureSummary || null,
-                                html: n.html.slice(0, 300), el: window.__qa.describeTarget(n.target)});
+            const contrastData = n => { const d = ((n.any || [])[0] || {}).data;
+                return d && typeof d === 'object' ? {fgColor: d.fgColor || null, bgColor: d.bgColor || null,
+                    contrastRatio: d.contrastRatio || null, messageKey: d.messageKey || null} : null; };
+            const node = (n, id) => ({target: n.target, impact: n.impact, summary: n.failureSummary || null,
+                                html: n.html.slice(0, 300), el: window.__qa.describeTarget(n.target),
+                                ...(id.startsWith('color-contrast') ? {contrast: window.__qa.contrastTarget(n.target), check: contrastData(n)} : {})});
             const pack = list => list.map(v => ({id: v.id, impact: v.impact, tags: v.tags, help: v.help, helpUrl: v.helpUrl,
-                                                 nodes: v.nodes.slice(0, 50).map(node), node_count: v.nodes.length}));
+                                                 nodes: v.nodes.slice(0, 50).map(n => node(n, v.id)), node_count: v.nodes.length}));
             return {version: r.testEngine.version, violations: pack(r.violations), incomplete: pack(r.incomplete),
                     passes: r.passes.map(p => ({id: p.id, nodes: p.nodes.length})), inapplicable: r.inapplicable.map(p => p.id)};
         }""", tags)
@@ -319,7 +326,8 @@ class Runner:
             return {version: ace.Config ? (ace.Config.version || null) : null, ruleset,
                     results: keep.slice(0, 1500).map(x => ({ruleId: x.ruleId, value: x.value, reasonId: x.reasonId,
                         message: x.message, snippet: (x.snippet || '').slice(0, 300), xpath: x.path && x.path.dom,
-                        el: window.__qa.describeXpath(x.path && x.path.dom)})),
+                        el: window.__qa.describeXpath(x.path && x.path.dom),
+                        ...(x.ruleId === 'text_contrast_sufficient' ? {contrast: window.__qa.contrastXpath(x.path && x.path.dom)} : {})})),
                     truncated: keep.length > 1500, passes};
         }""", IBM_RULESET[self.version])
 
@@ -331,7 +339,8 @@ class Runner:
             for (const m of msgs) {
                 if (m.type === 3) { notices[m.code] = (notices[m.code] || 0) + 1; continue; }
                 if (m.element && m.element.closest && m.element.closest('script,style,#__qa_text_spacing')) continue;
-                keep.push({type: m.type, code: m.code, msg: m.msg, el: window.__qa.describe(m.element)});
+                keep.push({type: m.type, code: m.code, msg: m.msg, el: window.__qa.describe(m.element),
+                           ...(/1_4_[36]\\./.test(m.code) ? {contrast: window.__qa.contrastContext(m.element)} : {})});
             }
             res({standard: std, messages: keep.slice(0, 1500), truncated: keep.length > 1500, notices});
         }))""", HTMLCS_STD[self.level])
@@ -408,6 +417,7 @@ class Runner:
         for s in stops:
             s.pop('_shot', None)
         unreached = [f for f in focusable if f['xpath'] not in seen]
+        hover_only = [] if trap else self.hover_only_menus(page, seen)
         pointer_only = targets['pointer_only'][:50]
         self.add_listeners(page, pointer_only)
         positive = [s for s in stops if s.get('tabindex') and s['tabindex'].lstrip('-').isdigit() and int(s['tabindex']) > 0]
@@ -419,7 +429,78 @@ class Runner:
         skip = bool(first and re.search(r'href="#', first.get('html') or '') and re.search(r'skip|main|content', first.get('html') or '', re.I))
         return {'presses': len(moves), 'stops': stops, 'focusable_count': len(focusable), 'unreached': unreached[:50],
                 'pointer_only': pointer_only, 'trap': trap, 'positive_tabindex': positive, 'jumps': jumps[:20],
-                'skip_link_first': skip}
+                'skip_link_first': skip, 'hover_only': hover_only}
+
+    def hover_only_menus(self, page, seen: set) -> list[dict]:
+        """Links and buttons that only appear on :hover and that no key opens.
+
+        Hidden menu items are invisible to the Tab traversal, so they can never count as unreached.
+        For every group of hidden items, hover the nearest visible ancestor (the menu item); if that
+        reveals them, try the keyboard on its control: focus it (covers :focus-within), then
+        ArrowDown, and Enter and Space where they don't follow a link. Items that no key reveals
+        and that Tab never reached are reported. The page is restored after each attempt."""
+        out = []
+        start = page.url
+        try:
+            groups = page.evaluate('() => window.__qa.hiddenMenuItems()')
+        except Exception:
+            return out
+
+        def reset():
+            page.keyboard.press('Escape')
+            page.evaluate('() => window.__qa.blurActive()')
+            page.mouse.move(1, 1)
+            page.wait_for_timeout(200)
+
+        def shown(items):
+            return {i['xpath'] for i in items if page.evaluate('(x) => window.__qa.stillVisible(x)', i['xpath'])}
+
+        for g in groups:
+            items = [i for i in g['items'] if i['xpath'] not in seen]
+            if not items or '#shadow-root' in (g['trigger']['xpath'] or ''):
+                continue
+            try:
+                reset()
+                page.locator(f"xpath={g['trigger']['xpath']}").first.hover(timeout=2000)
+                page.wait_for_timeout(300)
+                revealed = [i for i in items if i['xpath'] in shown(items)]
+                reset()
+                if not revealed:
+                    continue  # not a hover menu (a closed drawer or toggle panel is another probe's business)
+                ctl, tried, reached = g.get('control'), [], set()
+                if ctl:
+                    link = ctl['tag'] == 'a' and (ctl.get('href') or '').strip() not in ('', '#') and not (ctl.get('href') or '').startswith(('#', 'javascript:'))
+                    keys = ['focus', 'ArrowDown'] + ([] if link or ctl.get('submits') else ['Enter', 'Space'])
+                    for key in keys:
+                        page.evaluate('(x) => window.__qa.refocus(x)', ctl['xpath'])
+                        if key != 'focus':
+                            page.keyboard.press(key)
+                        page.wait_for_timeout(250)
+                        tried.append(key)
+                        if page.url != start:
+                            self.events.append({'url': start, 'event': f'hover-menu check: {key} navigated away; page reloaded', 'at': now()})
+                            self.goto(page, start)
+                            break
+                        reached |= shown(revealed)
+                        act = page.evaluate('() => window.__qa.activeXpath()')
+                        if act in {i['xpath'] for i in revealed}:
+                            reached.add(act)
+                        reset()
+                    if link or ctl.get('submits'):
+                        tried.append('Enter/Space not tried: the control ' + ('follows a link' if link else 'submits a form'))
+                stuck = [i for i in revealed if i['xpath'] not in reached]
+                if stuck:
+                    out.append({'trigger': g['trigger'], 'control': ctl, 'items': stuck, 'revealed_on_hover': len(revealed),
+                                'keys_tried': tried})
+            except Exception as e:
+                self.events.append({'url': start, 'event': f'hover-menu check skipped a menu: {type(e).__name__}', 'at': now()})
+            if len(out) >= 10:
+                break
+        try:
+            reset()
+        except Exception:
+            pass
+        return out
 
     def add_listeners(self, page, elements):
         """Record click-type listeners on pointer-only elements (Chromium DevTools protocol)."""
@@ -640,16 +721,25 @@ class Runner:
             f['template'] = 'T' + hashlib.sha1(key.encode()).hexdigest()[:6]
             f['template_key'] = key
             groups.setdefault(f['template'], []).append(f)
+        # Every page enters the sample once, labelled by how it entered: critical-path steps and the
+        # explicitly listed targets always (template de-duplication never drops them), then one page
+        # per template not yet covered (structured), then a seeded random share of what is left.
+        listed = {urldefrag(u)[0] for u in (self.cfg.get('targets') or [])}
         sample, chosen = [], set()
         for f in found:
             if f['ok'] and f['url'] in cp_urls and f['url'] not in chosen:
                 sample.append({**f, 'reason': 'critical_path'}); chosen.add(f['url'])
+        for f in found:
+            if f['ok'] and f['url'] in listed and f['url'] not in chosen:
+                sample.append({**f, 'reason': 'listed'}); chosen.add(f['url'])
         for t, members in groups.items():
             if not any(m['url'] in chosen for m in members) and len(sample) < max_pages:
                 sample.append({**members[0], 'reason': 'structured'}); chosen.add(members[0]['url'])
         rest = [f for f in found if f['ok'] and f['url'] not in chosen]
         rng = random.Random(self.cfg.get('seed', 1))
-        k = min(len(rest), max(0, max_pages - len(sample)), max(1, round(len(rest) * float(self.cfg.get('random_sample', 0.1)))) if rest else 0)
+        share = float(self.cfg.get('random_sample', 0.1))
+        want = 0 if share <= 0 else max(1, round(len(rest) * share))  # 0 means no random pages
+        k = min(len(rest), max(0, max_pages - len(sample)), want)
         for f in rng.sample(rest, k):
             sample.append({**f, 'reason': 'random'})
         for f in found:

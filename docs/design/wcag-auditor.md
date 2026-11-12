@@ -266,6 +266,44 @@ Differences from the draft above, and decisions made while building:
 - **Not built in v1:** Section 508 mapping (as planned), a crawler that renders SPAs before
   collecting links (the crawl reads links after load and settle), journey-file input for
   critical paths (steps are given in the config), and EARL/JSON-LD export.
+- **Found on a real static site, fixed** (an audit of a plant-guide site of many same-template
+  pages):
+  - Listed targets that shared a template with another target were dropped from the sample, and
+    `random_sample: 0` still added a page. Listed targets and critical-path steps are now always
+    audited (template de-duplication thins only crawled and sitemap pages), `0` adds no random
+    pages, and each page records how it entered the sample: `critical_path`, `listed`,
+    `structured`, `random` or `unreachable` (`listed` is new in the schema).
+  - `text_spacing` and `resize_text` reported `.sr-only` text as clipped. Visually hidden
+    elements (clip or clip-path to nothing, or 1 x 1 px with overflow hidden, on the element or
+    an ancestor) are excluded.
+  - Submenus that only `:hover` opens were invisible to the keyboard probe: hidden links never
+    counted as unreached. The probe now finds links and buttons hidden inside a visible menu item,
+    hovers the item, and for those it reveals tries the keyboard on the item's control (focus, for
+    `:focus-within`; ArrowDown; Enter and Space unless the control follows a link or submits a
+    form). Items Tab never reached and no key revealed become `keyboard.hover_only` (2.1.1):
+    `failed` when every key was tried, `cantTell` when Enter wasn't, since the linked page may
+    offer the same links.
+  - IBM `img_alt_redundant` was mapped to 1.1.1 (IBM files it under that checkpoint), so merging
+    gave it the unnamed-functional-image pattern and Critical. It is a best practice, like axe's
+    `image-redundant-alt`. `rule-map.json` gained an `overrides` table, each entry with its
+    reason, which `build_rule_map.py` re-applies after reading the engines' metadata (regenerating
+    from the pinned engines reproduces the file byte for byte).
+  - `validate_audit.py --write-summary` checked the schema first, so it rejected the empty
+    headline numbers it exists to fill. It now fills them first; the verdict and its text are
+    still the author's and still checked.
+  - A faint page-level gradient made axe and HTMLCS return about 135 contrast "needs review"
+    candidates that buried the real failures. The runner now records what lies behind each such
+    element (background image and the element carrying it, translucent layers, text colour and
+    size); `merge_findings.py` estimates the worst-case ratio against the gradient's colour stops
+    (a gradient interpolates each channel linearly, so its luminance range is spanned by its
+    stops) and collapses candidates with the same cause and background into one grouped
+    candidate with counts, members, text colours and sample selectors. Candidates estimated
+    below the threshold stay separate. Every item is still in exactly one candidate, so the
+    triage check still accounts for all of them. Runs recorded before this (like the example)
+    have no background record and are not grouped.
+  - Third-party requests (GETs included) and service workers are blocked by default
+    (`third_party`, `allowed_hosts`, `service_workers`), so an audit never fires analytics or ad
+    tags.
 - **Example:** `examples/harbour-dental/` is a static site with planted barriers;
   `examples/run/` is a real run (Chromium 156, Playwright 1.64.1). The Nu HTML Checker did not
   run: downloading and executing its jar was not permitted in the environment that produced the

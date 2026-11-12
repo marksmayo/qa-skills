@@ -6,7 +6,9 @@
 Loads axe-core and the IBM engine into a blank Chromium page (Playwright) and reads axe's
 getRules() (wcagNNN tags, ACT ids) and IBM's getGuidelines() (WCAG ruleset checkpoints). IBM's
 ACT ids come from help/rules.csv in its npm tarball, which is downloaded and integrity-checked
-unless --ibm-tarball is given. The htmlcs and probe sections are kept from the current file.
+unless --ibm-tarball is given. The htmlcs, probe and overrides sections are kept from the current
+file; `overrides` then corrects what the engines' metadata gets wrong for this skill (for example a
+best-practice rule filed under an SC checkpoint), entry by entry, each with its reason.
 --check exits 1 if the result differs from data/rule-map.json instead of writing it.
 """
 from __future__ import annotations
@@ -74,10 +76,22 @@ def build(axe_rules, guidelines, act, current, known):
     for rid in sorted(set(ibm_sc) | set(act)):
         sc = sorted((s for s in ibm_sc.get(rid, ()) if s in known), key=sc_key)
         ibm[rid] = {'sc': sc, 'act': sorted(act.get(rid, ())), 'kind': 'wcag' if sc else 'best_practice'}
+    apply_overrides({'axe': axe, 'ibm': ibm}, current.get('overrides', {}))
     versions = {e['package'] if 'package' in e else e['name']: e['version'] for e in fetch_engines.load_lock()['engines'] if e['kind'] == 'browser_script'}
     return {'generated_from': {'axe-core': versions['axe-core'], 'accessibility-checker-engine': versions['accessibility-checker-engine'],
                                'html_codesniffer': versions['html_codesniffer']},
-            'notes': current['notes'], 'axe': axe, 'ibm': ibm, 'htmlcs': current['htmlcs'], 'probe': current['probe']}
+            'notes': current['notes'], 'overrides': current.get('overrides', {}),
+            'axe': axe, 'ibm': ibm, 'htmlcs': current['htmlcs'], 'probe': current['probe']}
+
+
+def apply_overrides(maps: dict, overrides: dict):
+    """Patch generated entries: each override sets fields (kind, sc) and records its reason."""
+    for engine, rules in overrides.items():
+        for rid, o in rules.items():
+            if rid not in maps[engine]:
+                raise SystemExit(f'override for {engine}:{rid}, which the engine no longer has; remove or update it')
+            maps[engine][rid].update({k: v for k, v in o.items() if k != 'reason'})
+            maps[engine][rid]['override'] = o['reason']
 
 
 def main() -> int:

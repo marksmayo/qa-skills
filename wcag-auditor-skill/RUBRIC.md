@@ -106,6 +106,11 @@ reach). Say exactly what to check.
 
 - a computed contrast ratio with its colours and where they come from (`#1d2b33 on #ffffff:
   14.5:1, site.css .cookie`), for engine "needs review" results on positioned or overlapping text;
+- for a grouped contrast candidate (same cause, same background), the lowest `contrast_estimate`
+  of the group with the text colours and gradient stops it came from, after checking a sample in
+  the screenshot; a group whose estimate is below the threshold, or that has no estimate, is
+  needs review, not dismissed;
+- that the text is visually hidden (`.sr-only`): it is never seen, so 1.4.3 doesn't apply to it;
 - a probe measurement that contradicts a potential issue (`focus probe: 1248 pixels changed`);
 - an exemption that applies (video in 1.4.10; an inline link in 2.5.8);
 - why the flagged words aren't instructions ("above the pharmacy" is a street location);
@@ -118,7 +123,11 @@ reach). Say exactly what to check.
 - Loopback targets need no confirmation; anything else needs `authorised_by`.
 - `allow_form_submission: false` aborts every non-GET request and logs it in `blocked_requests`.
   Client-side validation can still be exercised with a state that clicks submit.
-- Probes press Tab, Shift+Tab and Escape and hover; they never press Enter or click links.
+- Probes press Tab, Shift+Tab and Escape and hover. The hover-menu check also presses ArrowDown
+  on a menu's control, and Enter and Space only when that control neither follows a link nor
+  submits a form; if the page navigates anyway, it is reloaded and the event recorded.
+- Third-party requests and service workers are blocked by default (`third_party`,
+  `allowed_hosts`, `service_workers`).
 - Login recipes read credentials from environment variables; the storage state stays in memory.
 - CAPTCHAs are never bypassed.
 

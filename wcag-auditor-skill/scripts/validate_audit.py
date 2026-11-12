@@ -18,8 +18,9 @@ Checks the report against schemas/audit.schema.json, then the rules a schema can
 
 --run re-checks tool statuses, the check matrix, the sample and screenshots against run.json.
 --candidates checks every candidate was triaged exactly once and that finding sources come from
-the candidates they cite. --write-summary recomputes the headline numbers in place (not the
-verdict text). Exit code 0 when valid, 1 when invalid.
+the candidates they cite. --write-summary fills or recomputes the headline numbers in place (not
+the verdict or its text) before anything is checked, so a draft may leave them empty. Exit code 0
+when valid, 1 when invalid.
 """
 from __future__ import annotations
 import argparse, json, math, re, sys
@@ -448,15 +449,25 @@ def main() -> int:
         print(f'INVALID: cannot read {args.audit}: {exc}')
         return 1
     schema = json.loads(SCHEMA.read_text(encoding='utf-8'))
+    if args.write_summary:
+        # fill the computed headline fields first: the schema requires them, and a draft report
+        # leaves them empty for this step to fill (the verdict and its text stay the author's)
+        try:
+            summary = compute_summary(d)
+        except (KeyError, TypeError, AttributeError) as exc:
+            summary = None
+            print(f'cannot compute the summary yet ({type(exc).__name__}: {exc}); the schema errors below say what is missing')
+        if summary is not None:
+            head = d.get('headline') if isinstance(d.get('headline'), dict) else {}
+            d['headline'] = {k: head[k] for k in ('conformance_verdict', 'verdict_text') if k in head} | summary | \
+                {k: v for k, v in head.items() if k not in summary and k not in ('conformance_verdict', 'verdict_text')}
+            args.audit.write_text(json.dumps(d, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
     errs = schema_errors(d, schema, schema)
     if errs:
         print(f'INVALID: {len(errs)} schema error(s)')
         for x in errs[:50]:
             print(f'  - {x}')
         return 1
-    if args.write_summary:
-        d['headline'].update(compute_summary(d))
-        args.audit.write_text(json.dumps(d, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
     cands = json.loads(args.candidates.read_text(encoding='utf-8')) if args.candidates else None
     errs = check(d, args.run, cands)
     if errs:
