@@ -10,7 +10,9 @@ when its conventional-commit type is fix, bugfix, hotfix or revert; or, without 
 type, when its subject starts with fix/fixes/fixed/bugfix/hotfix/revert/regression, names a bug
 or regression, or closes an issue (fixes #12). feat:, chore: and other types are never fixes,
 merge commits are never fixes, and the same fix landing twice (same subject, same files) counts
-once (`duplicate_fix_of`). Issue keys in the message (PROJ-123) are kept as evidence. When the
+once (`duplicate_fix_of`). A merge tool's prefix is stripped before matching, so an Azure DevOps
+squash merge "Merged PR 123: fix(x): ..." is a conventional fix (the commit records
+`merge_prefix`). Issue keys in the message (PROJ-123) are kept as evidence. When the
 window ends well after HEAD's date, a note says how much history it leaves out.
 A commit counts as formatting-only, and is left out
 of churn, when its subject says so (style, format, reformat, lint, whitespace, prettier, black)
@@ -29,6 +31,17 @@ CONVENTIONAL = re.compile(r'^\s*(feat|feature|fix|bugfix|hotfix|revert|chore|doc
 CONV_FIX = {'fix', 'bugfix', 'hotfix', 'revert'}
 FIX_FIRST = re.compile(r'^\s*(\[[^\]]*\]\s*)?(fix(e[sd]|ing)?|bug-?fix|hot-?fix|revert(s|ed)?|regression)\b', re.I)
 FIX_ANYWHERE = re.compile(r'\b(bug|regression)\b|\b(fixes|fixed|closes|resolves)\s+#\d+', re.I)
+# What merge tools put in front of a squash-merged pull request's own subject: Azure DevOps ("Merged PR 123:
+# fix(x): ..."), and "Merge pull request #12: ..." / "PR #12 - ..." forms. GitHub squash merges append " (#123)",
+# which needs no stripping; a two-parent merge commit is never a fix whatever its subject.
+MERGE_PREFIX = re.compile(r'^\s*(?:Merged PR \d+|Merge(?:d)? pull request #?\d+|Merge PR #?\d+|PR #?\d+|Squashed commit of)'
+                          r'\s*[:\-]\s*', re.I)
+
+
+def strip_merge_prefix(subject: str) -> tuple[str, str | None]:
+    """(the pull request's own subject, the merge tool's prefix or None)."""
+    m = MERGE_PREFIX.match(subject)
+    return (subject[m.end():], m.group(0).strip(' :-')) if m and subject[m.end():].strip() else (subject, None)
 
 
 def fix_kind(subject: str, merge: bool) -> str | None:
@@ -36,9 +49,11 @@ def fix_kind(subject: str, merge: bool) -> str | None:
     A conventional-commit type decides on its own (fix:, fix(scope):, hotfix:, revert: are fixes; feat:, chore:,
     docs: and the rest are not, even when the text says "fix"). Otherwise the subject must start with fix, fixes,
     fixed, bugfix, hotfix, revert or regression, or name a bug or regression, or close an issue (fixes #12): a
-    "Redesign the UI, fix the hero video" commit is a feature, not a defect."""
+    "Redesign the UI, fix the hero video" commit is a feature, not a defect. A merge tool's prefix ("Merged PR 123: ")
+    is stripped first, so a squash-merged "fix(x): ..." is read by its own type."""
     if merge:
         return None
+    subject = strip_merge_prefix(subject)[0]
     m = CONVENTIONAL.match(subject)
     if m:
         return 'conventional' if m.group(1).lower() in CONV_FIX else None
@@ -103,7 +118,7 @@ def mine(repo: Path, days: int, as_of: date | None) -> dict:
             duplicate_of = seen_fixes.get(ident)
             seen_fixes.setdefault(ident, sha[:12])
         is_fix = bool(kind) and duplicate_of is None
-        formatting = bool(FORMAT.search(subject)) and bool(stats) and all(abs(a - d) <= 2 for _, a, d in stats)
+        formatting = bool(FORMAT.search(strip_merge_prefix(subject)[0])) and bool(stats) and all(abs(a - d) <= 2 for _, a, d in stats)
         c = {'sha': sha[:12], 'date': when[:10], 'author': author, 'subject': subject[:200], 'fix': is_fix,
              'keys': sorted(set(KEY.findall(subject + ' ' + msg))), 'formatting': formatting,
              'files': [{'path': p, 'added': a, 'deleted': d} for p, a, d in stats]}
@@ -111,6 +126,9 @@ def mine(repo: Path, days: int, as_of: date | None) -> dict:
             c['merge'] = True
         if is_fix:
             c['fix_basis'] = kind
+            prefix = strip_merge_prefix(subject)[1]
+            if prefix:
+                c['merge_prefix'] = prefix
         if duplicate_of:
             c['duplicate_fix_of'] = duplicate_of
         commits.append(c)
