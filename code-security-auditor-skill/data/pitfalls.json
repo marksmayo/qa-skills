@@ -1,5 +1,5 @@
 {
- "version": "1.1.0",
+ "version": "1.2.0",
  "about": "Security pitfall catalogue for scan_pitfalls.py, organised by CWE. Each entry is a pattern-level lead: a match is a candidate until a source-to-sink path is traced. cvss_hint is a typical CVSS v4.0 base vector for the weakness, to adjust per finding. tools maps rules from other scanners (tool:rule) to the entry. OWASP categories are the 2025 Top 10.",
  "owasp_2025": {
   "A01": "A01:2025 Broken Access Control",
@@ -106,6 +106,21 @@
    "extensions": [
     ".tf"
    ]
+  },
+  "azure_iac": {
+   "extensions": [
+    ".bicep",
+    ".json"
+   ],
+   "require_content": "deploymentTemplate\\.json|^\\s*resource\\s+\\w+\\s+'Microsoft\\."
+  },
+  "azure_pipelines": {
+   "extensions": [
+    ".yml",
+    ".yaml"
+   ],
+   "require_content": "^(trigger|pr|schedules|stages|jobs|steps|pool|extends|resources|variables|parameters)\\s*:",
+   "exclude_content": "^\\s*runs-on\\s*:|^on\\s*:|^(apiVersion|kind|services)\\s*:"
   }
  },
  "pitfalls": [
@@ -116,7 +131,7 @@
    "owasp": "A05:2025 Injection",
    "category": "injection",
    "title": "SQL built with an f-string",
-   "regex": "(?i)\\bf[\"\\']{1,3}\\s*(SELECT|INSERT|UPDATE|DELETE|WITH|REPLACE)\\b[^\"\\']*\\{",
+   "regex": "(?i)\\bf\"{1,3}\\s*(SELECT\\b[^\"]*\\bFROM\\b|INSERT\\s+INTO\\b|UPDATE\\s+\\S+\\s+SET\\b|DELETE\\s+FROM\\b|WITH\\s+\\w+\\s+AS\\s*\\(|REPLACE\\s+INTO\\b|MERGE\\s+INTO\\b)[^\"]*\\{|\\bf\"{1,3}\\s*SELECT\\b[^\"]*\\{[^\"]*\\bFROM\\b|\\bf'{1,3}\\s*(SELECT\\b[^']*\\bFROM\\b|INSERT\\s+INTO\\b|UPDATE\\s+\\S+\\s+SET\\b|DELETE\\s+FROM\\b|WITH\\s+\\w+\\s+AS\\s*\\(|REPLACE\\s+INTO\\b|MERGE\\s+INTO\\b)[^']*\\{|\\bf'{1,3}\\s*SELECT\\b[^']*\\{[^']*\\bFROM\\b",
    "fix": "Pass values as bound parameters (?, %s, :name). Identifiers (columns, ORDER BY) must come from an allow-list, never from input.",
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:L/SC:N/SI:N/SA:N",
    "tools": [
@@ -125,7 +140,9 @@
     "semgrep:formatted-sql-query",
     "semgrep:sqlalchemy-execute-raw-query",
     "semgrep:sql-injection-db-cursor-execute"
-   ]
+   ],
+   "suppress_line": "#\\s*noqa:\\s*S608\\s*[-:,]?\\s*\\w+",
+   "constant_interpolation": true
   },
   {
    "id": "PY-SQL-CONCAT",
@@ -444,6 +461,37 @@
    ]
   },
   {
+   "id": "PY-AUTH-ENV-BYPASS",
+   "pack": "python",
+   "cwe": "CWE-288",
+   "owasp": "A07:2025 Authentication Failures",
+   "category": "authentication",
+   "title": "Authentication bypass or extra roles controlled by an environment variable, with no environment guard",
+   "regex": "(?i)(os\\.getenv|os\\.environ\\.get|os\\.environ\\[)\\s*\\(?\\s*[\"\\']\\w*(DUMMY|DEV|FAKE|BYPASS|MOCK|STATIC|SKIP|TEST|DEBUG|LOCAL|EXTRA)\\w*(TOKEN|AUTH|ROLES?|USER|BEARER|API_?KEY|CLAIMS?)\\w*[\"\\']|\\b\\w*roles?\\w*[\"\\']?\\]?\\s*(\\+=|=|\\|=)[^\\n]*(os\\.getenv|os\\.environ)|\\b\\w*roles?\\w*\\.(extend|append|update|add)\\([^\\n]*(os\\.getenv|os\\.environ)",
+   "suppress_near": "(?i)\\b(ENV|ENVIRONMENT|APP_ENV|STAGE|DEPLOY_ENV|RUNTIME_ENV|ENV_NAME)\\b[\"\\']?\\s*\\)?\\s*(==|!=|\\bin\\b|\\bnot in\\b)|\\bis_(prod|production|local|dev|development)\\b|\\bsettings\\.(debug|DEBUG)\\b",
+   "window": 6,
+   "fix": "Remove the bypass from deployed code, or make it fail closed: accept the static token or extra roles only when an explicit local-environment setting is on, and refuse to start with it in any other environment.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "semgrep:hardcoded-token-comparison"
+   ]
+  },
+  {
+   "id": "PY-UPLOAD-UNBOUNDED",
+   "pack": "python",
+   "cwe": "CWE-400",
+   "owasp": "A06:2025 Insecure Design",
+   "category": "server_side",
+   "title": "Uploaded file read whole into memory (or handed to a parser) with no size limit",
+   "regex": "\\b\\w+\\.file\\.read\\(\\s*\\)|\\bawait\\s+\\w+\\.read\\(\\s*\\)|\\b\\w+\\.stream\\.read\\(\\s*\\)|\\b(load_workbook|read_excel|read_csv|ZipFile|parse)\\(\\s*(io\\.BytesIO\\()?\\w+\\.(file|stream)\\b",
+   "require_file": "\\bUploadFile\\b|request\\.files\\b|FileStorage\\b",
+   "suppress_near": "(?i)\\bmax_?(upload|size|bytes|file|content)\\w*|size_?limit|content[-_]length|too large|\\b413\\b|\\.read\\(\\s*[A-Z_\\d]",
+   "window": 4,
+   "fix": "Read in bounded chunks and stop past a limit (or set the server/proxy body limit), and check the size before parsing; parsers such as openpyxl also expand compressed content, so cap that too.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:N/VI:N/VA:H/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
    "id": "JS-SQL-TEMPLATE",
    "pack": "javascript",
    "cwe": "CWE-89",
@@ -651,7 +699,9 @@
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
    "tools": [
     "semgrep:express-cookie-session-no-secure"
-   ]
+   ],
+   "suppress_near": "\\bchangeOrigin\\b|\\btarget\\s*:\\s*[\"\\'`]https?:|\\bproxy\\s*:|\\bws\\s*:\\s*(true|false)",
+   "window": 6
   },
   {
    "id": "JS-POSTMESSAGE",
@@ -804,6 +854,34 @@
    "regex": "\\b[cC]ontent[tT]ype\\s*:\\s*\\w+\\.(type|mimetype)\\b",
    "fix": "Detect the type from the bytes (magic numbers), allow-list it, and serve uploads with Content-Disposition: attachment.",
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
+   "tools": []
+  },
+  {
+   "id": "JS-AUTH-ENV-BYPASS",
+   "pack": "javascript",
+   "cwe": "CWE-288",
+   "owasp": "A07:2025 Authentication Failures",
+   "category": "authentication",
+   "title": "Authentication bypass or extra roles controlled by an environment variable, with no environment guard",
+   "regex": "\\b(process\\.env|import\\.meta\\.env)\\.\\w*(DUMMY|DEV|FAKE|BYPASS|MOCK|STATIC|SKIP|TEST|DEBUG|LOCAL|EXTRA)\\w*(TOKEN|AUTH|ROLES?|USER|BEARER|API_?KEY|CLAIMS?)\\w*\\b|\\b\\w*[rR]oles?\\w*\\s*(=|\\.push\\(|\\.concat\\()[^\\n]*process\\.env",
+   "suppress_near": "NODE_ENV\\s*[!=]==?|import\\.meta\\.env\\.(DEV|PROD)\\b|\\bAPP_ENV\\b\\s*[!=]==?|\\bisProduction\\b|\\bisDev\\b",
+   "window": 6,
+   "fix": "Remove the bypass from deployed code, or accept it only when an explicit local-development setting is on and fail closed everywhere else.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "JS-UPLOAD-NO-LIMIT",
+   "pack": "javascript",
+   "cwe": "CWE-400",
+   "owasp": "A06:2025 Insecure Design",
+   "category": "server_side",
+   "title": "multer upload handler with no size limit",
+   "regex": "\\bmulter\\s*\\(",
+   "suppress_near": "\\blimits\\s*:|fileSize",
+   "window": 6,
+   "fix": "Pass limits: { fileSize, files } to multer and reject larger uploads before parsing them.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:N/VI:N/VA:H/SC:N/SI:N/SA:N",
    "tools": []
   },
   {
@@ -1584,6 +1662,222 @@
     "trivy:misconfig",
     "checkov:CKV_AWS_"
    ]
+  },
+  {
+   "id": "AZ-PUBLIC-NETWORK",
+   "pack": "azure_iac",
+   "cwe": "CWE-284",
+   "owasp": "A02:2025 Security Misconfiguration",
+   "category": "configuration",
+   "title": "Data service reachable from the public internet (publicNetworkAccess Enabled)",
+   "regex": "[\"']?publicNetworkAccess[\"']?\\s*:\\s*[\"']Enabled[\"']",
+   "require_file": "Microsoft\\.(DBforPostgreSQL|DBforMySQL|Sql|DocumentDB|Cache|Storage|KeyVault|Search|ServiceBus|EventHub)",
+   "fix": "Disable public network access and reach the service through a private endpoint or VNet integration.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:H/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "checkov:CKV_AZURE_",
+    "trivy:misconfig"
+   ]
+  },
+  {
+   "id": "AZ-FIREWALL-OPEN",
+   "pack": "azure_iac",
+   "cwe": "CWE-284",
+   "owasp": "A02:2025 Security Misconfiguration",
+   "category": "configuration",
+   "title": "Firewall rule from 0.0.0.0: \"allow all Azure services\" (to 0.0.0.0) or the whole internet (to 255.255.255.255)",
+   "regex": "[\"']?startIpAddress[\"']?\\s*:\\s*[\"']0\\.0\\.0\\.0[\"']",
+   "fix": "Remove the rule; \"allow Azure services\" admits every tenant's Azure resources, not just yours. Use a private endpoint, VNet rules or specific addresses.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:H/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "checkov:CKV_AZURE_11",
+    "trivy:misconfig"
+   ]
+  },
+  {
+   "id": "AZ-ADMIN-PASSWORD",
+   "pack": "azure_iac",
+   "cwe": "CWE-1390",
+   "owasp": "A07:2025 Authentication Failures",
+   "category": "authentication",
+   "title": "Database administrator password login left enabled (no Entra-only authentication)",
+   "regex": "[\"']?administratorLoginPassword[\"']?\\s*:",
+   "suppress_file": "passwordAuth[\"']?\\s*:\\s*[\"']Disabled|azureADOnlyAuthentication[\"']?\\s*:\\s*true",
+   "fix": "Use Microsoft Entra authentication only (passwordAuth Disabled, azureADOnlyAuthentication true); if a password must stay, keep it in Key Vault and rotate it.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "checkov:CKV_AZURE_"
+   ]
+  },
+  {
+   "id": "AZ-SECRET-PARAM",
+   "pack": "azure_iac",
+   "cwe": "CWE-532",
+   "owasp": "A04:2025 Cryptographic Failures",
+   "category": "secrets",
+   "title": "Bicep parameter holding a secret without @secure() (logged in deployment history)",
+   "regex": "(?i)^\\s*param\\s+\\w*(password|secret|token|key|connectionstring)\\w*\\s+string\\b",
+   "suppress_above": "@secure\\(\\)",
+   "window": 2,
+   "fix": "Decorate the parameter with @secure() so it is not stored in the deployment history or outputs.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:P/PR:L/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "checkov:CKV_AZURE_",
+    "bicep:secure-secrets-in-params"
+   ]
+  },
+  {
+   "id": "AZ-KV-BROAD-POLICY",
+   "pack": "azure_iac",
+   "cwe": "CWE-732",
+   "owasp": "A01:2025 Broken Access Control",
+   "category": "access_control",
+   "title": "Key Vault access policy grants list/get on every secret: check which principal gets it",
+   "regex": "[\"']?secrets[\"']?\\s*:\\s*\\[",
+   "require_near": "[\"'](list|all)[\"']",
+   "require_file": "accessPolicies",
+   "window": 4,
+   "fix": "Prefer RBAC (enableRbacAuthorization) with Key Vault Secrets User on the specific secrets; never grant list to compute identities or broad groups.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:P/PR:L/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "checkov:CKV_AZURE_"
+   ]
+  },
+  {
+   "id": "AZ-FTPS-ALLOWED",
+   "pack": "azure_iac",
+   "cwe": "CWE-319",
+   "owasp": "A04:2025 Cryptographic Failures",
+   "category": "configuration",
+   "title": "App Service allows plain FTP deployment (ftpsState AllAllowed)",
+   "regex": "[\"']?ftpsState[\"']?\\s*:\\s*[\"']AllAllowed[\"']",
+   "fix": "Set ftpsState to Disabled (or FtpsOnly) and deploy through the pipeline.",
+   "cvss_hint": "CVSS:4.0/AV:A/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "checkov:CKV_AZURE_78"
+   ]
+  },
+  {
+   "id": "AZ-HTTPS-ONLY",
+   "pack": "azure_iac",
+   "cwe": "CWE-319",
+   "owasp": "A04:2025 Cryptographic Failures",
+   "category": "configuration",
+   "title": "App Service without httpsOnly: plain HTTP is served",
+   "regex": "Microsoft\\.Web/sites@|[\"']?httpsOnly[\"']?\\s*:\\s*(false|[\"']false[\"'])",
+   "suppress_file": "[\"']?httpsOnly[\"']?\\s*:\\s*(true|[\"']true[\"'])",
+   "fix": "Set httpsOnly: true on the site.",
+   "cvss_hint": "CVSS:4.0/AV:A/AC:L/AT:P/PR:N/UI:P/VC:H/VI:L/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "checkov:CKV_AZURE_16"
+   ]
+  },
+  {
+   "id": "AZ-MIN-TLS",
+   "pack": "azure_iac",
+   "cwe": "CWE-326",
+   "owasp": "A04:2025 Cryptographic Failures",
+   "category": "configuration",
+   "title": "Minimum TLS version below 1.2",
+   "regex": "[\"']?(minTlsVersion|minimumTlsVersion|minimalTlsVersion)[\"']?\\s*:\\s*[\"'](1\\.0|1\\.1|TLS1_0|TLS1_1)[\"']",
+   "fix": "Set the minimum TLS version to '1.2' (TLS1_2) or later.",
+   "cvss_hint": "CVSS:4.0/AV:A/AC:H/AT:P/PR:N/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "checkov:CKV_AZURE_"
+   ]
+  },
+  {
+   "id": "AZ-LISTKEYS-CONNSTR",
+   "pack": "azure_iac",
+   "cwe": "CWE-522",
+   "owasp": "A07:2025 Authentication Failures",
+   "category": "secrets",
+   "title": "Account key from listKeys() written into an app setting or connection string",
+   "regex": "listKeys\\(",
+   "require_near": "(?i)AccountKey=|connectionstring|appSettings",
+   "window": 3,
+   "fix": "Use a managed identity with a data-plane role instead of the account key, or a Key Vault reference; keys in app settings are readable by anyone with Contributor on the site.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:P/PR:H/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "checkov:CKV_AZURE_"
+   ]
+  },
+  {
+   "id": "ADO-TRIGGER-ALL-BRANCHES",
+   "pack": "azure_pipelines",
+   "cwe": "CWE-284",
+   "owasp": "A03:2025 Software Supply Chain Failures",
+   "category": "supply_chain_ci",
+   "title": "Pipeline triggers on every branch ('*'): anyone who can push a branch runs it with its secrets and connections",
+   "regex": "^(trigger|pr)\\s*:\\s*[\"']?\\*[\"']?\\s*$|^\\s*-\\s*[\"']?\\*[\"']?\\s*$|^(trigger|pr)\\s*:\\s*\\[\\s*[\"']?\\*",
+   "require_near": "^\\s*(trigger|pr|include|branches)\\s*:",
+   "window": 3,
+   "fix": "List the branches that should build (main, release/*); keep secrets and service connections in deployment jobs behind an environment with approvals and a branch control check.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:P/PR:L/UI:N/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N",
+   "tools": [
+    "checkov:CKV_AZUREPIPELINES_"
+   ]
+  },
+  {
+   "id": "ADO-SECRET-VARIABLE",
+   "pack": "azure_pipelines",
+   "cwe": "CWE-798",
+   "owasp": "A07:2025 Authentication Failures",
+   "category": "secrets",
+   "title": "Secret-looking pipeline variable with a literal value in the YAML",
+   "regex": "(?i)^\\s*\\w*(password|passwd|secret|token|api_?key|connectionstring|accesskey)\\w*\\s*:\\s*[\"']?(?![$\"'\\s]|\\{\\{)[^\\s\"'#]{4,}",
+   "require_near": "^\\s*variables\\s*:",
+   "window": 12,
+   "fix": "Move the value to a secret variable, a variable group linked to Key Vault, or a Key Vault task; reference it as $(name).",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "checkov:CKV_SECRET_"
+   ]
+  },
+  {
+   "id": "ADO-SECRET-VARIABLE-LIST",
+   "pack": "azure_pipelines",
+   "cwe": "CWE-798",
+   "owasp": "A07:2025 Authentication Failures",
+   "category": "secrets",
+   "title": "Secret-looking pipeline variable (- name/value form) with a literal value in the YAML",
+   "regex": "^\\s*value\\s*:\\s*[\"']?(?![$\"'\\s]|\\{\\{)[^\\s\"'#]{4,}",
+   "window": 1,
+   "fix": "Move the value to a secret variable, a variable group linked to Key Vault, or a Key Vault task; reference it as $(name).",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "checkov:CKV_SECRET_"
+   ],
+   "require_above": "(?i)^\\s*-\\s*name\\s*:\\s*[\"\\']?\\w*(password|passwd|secret|token|api_?key|connectionstring|accesskey)"
+  },
+  {
+   "id": "ADO-SCRIPT-INJECTION",
+   "pack": "azure_pipelines",
+   "cwe": "CWE-78",
+   "owasp": "A05:2025 Injection",
+   "category": "supply_chain_ci",
+   "title": "Branch name, commit message, pull request field or runtime parameter pasted into a script",
+   "regex": "\\$\\((Build\\.(SourceBranch|SourceBranchName|SourceVersionMessage|RequestedFor|RequestedForEmail)|System\\.PullRequest\\.\\w+)\\)|\\$\\{\\{\\s*parameters\\.\\w+\\s*\\}\\}",
+   "require_near": "^\\s*-?\\s*(script|bash|pwsh|powershell|inlineScript|arguments)\\s*:",
+   "window": 6,
+   "suppress_line": "^\\s*-?\\s*(displayName|condition|name|value|default|environment|dependsOn)\\s*:|\\$\\{\\{\\s*parameters\\.\\w+\\s*\\}\\}\\s*:",
+   "fix": "Pass the value through env: (BRANCH: $(Build.SourceBranchName)) and use \"$BRANCH\" in the script; declare runtime parameters with a type and values: list so they cannot carry shell syntax.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N",
+   "tools": []
+  },
+  {
+   "id": "ADO-DEPLOY-NO-ENVIRONMENT",
+   "pack": "azure_pipelines",
+   "cwe": "CWE-284",
+   "owasp": "A03:2025 Software Supply Chain Failures",
+   "category": "supply_chain_ci",
+   "title": "Service connection used in a plain job, outside a deployment job with an environment (no approval or check)",
+   "regex": "^\\s*(azureSubscription|connectedServiceName\\w*|azureResourceManagerConnection|kubernetesServiceConnection)\\s*:",
+   "scope_regex": "^\\s*-\\s*(job|deployment)\\s*:",
+   "scope_suppress": "deployment\\s*:",
+   "fix": "Run the step in a deployment job that targets an environment with approvals and checks (branch control).",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:P/PR:L/UI:N/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N",
+   "tools": []
   }
  ]
 }

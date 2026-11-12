@@ -14,6 +14,16 @@ A pitfall can narrow its matches with:
   require_file    keep only when the file matches this anywhere (e.g. pull_request_target)
   suppress_file   skip when the file matches this anywhere (e.g. a signature check in a webhook handler)
   require_path    keep only when the file's path matches this (e.g. webhook)
+  suppress_above  skip when one of the `window` lines above the match matches this (e.g. @secure())
+  require_above   keep only when one of the `window` lines above the match matches this
+  scope_regex     with scope_suppress: find the nearest line above that matches scope_regex (e.g. the
+  scope_suppress  enclosing `- job:` or `- deployment:`) and skip when it matches scope_suppress
+  constant_interpolation
+                  skip a Python f-string whose every {name} is a module constant (UPPER_CASE, or a
+                  literal assigned at module level) or a loop variable over one
+A pack can also require_content / exclude_content: a file joins the pack only when its text
+matches (or doesn't match) the regex, so .json and .yml files are claimed by ARM templates and
+Azure DevOps pipelines only when they are ones.
 Test files, dependencies, build output and minified files are skipped.
 """
 from __future__ import annotations
@@ -28,7 +38,7 @@ SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'out', '.next', '.nuxt', '
              'env', '.tox', '.mypy_cache', '.pytest_cache', 'site-packages', 'target', 'bin', 'obj', '.terraform',
              'test', 'tests', '__tests__', '__mocks__', 'spec', 'e2e', 'cypress', 'testdata', 'fixtures',
              'androidTest', 'UITests', 'Tests'}
-ALLOWED_DOT_DIRS = {'.github'}
+ALLOWED_DOT_DIRS = {'.github', '.azuredevops', '.pipelines', '.azure-pipelines', '.ado'}
 TEST_FILE = re.compile(r'(^test_.*\.py$|_test\.(py|go)$|(\.|_)(test|spec)\.\w+$|Tests?\.(java|kt|swift|cs)$|\.min\.js$|'
                        r'^(vitest|jest|playwright)\.(setup|config)\.\w+$|^setupTests\.\w+$)', re.I)
 COMMENT = re.compile(r'^\s*(//|/\*|\*\s|#(?!!)|<!--|--\s)')
@@ -67,10 +77,35 @@ def walk(root: Path, include_tests: bool = False):
 def compile_pitfall(p: dict) -> dict:
     q = dict(p)
     q['_rx'] = re.compile(p['regex'], re.M)
-    for k in ('suppress_line', 'suppress_near', 'require_near', 'require_file', 'suppress_file', 'require_path'):
+    for k in ('suppress_line', 'suppress_near', 'require_near', 'require_file', 'suppress_file', 'require_path', 'suppress_above',
+              'scope_regex', 'scope_suppress', 'require_above'):
         if p.get(k):
             q['_' + k] = re.compile(p[k], re.M)
     return q
+
+FSTRING = re.compile(r'''\b[fF][rR]?("""|\'\'\'|"|')(.*?)(?:\1|$)''')
+NEUTRAL_NAMES = {'len', 'str', 'int', 'repr', 'sorted', 'tuple', 'list', 'join', 'upper', 'lower'}
+
+def constant_fstring(line: str, text: str) -> bool:
+    """True when every name interpolated into the line's f-strings is a module constant: UPPER_CASE, a
+    literal assigned at module level, or a loop variable over one (for table in ARCHIVE_TABLES)."""
+    names = []
+    for m in FSTRING.finditer(line):
+        body = m.group(2).replace('{{', '').replace('}}', '')
+        for expr in re.findall(r'\{([^{}]+)\}', body):
+            expr = re.split(r'![rsa]|:(?![^\[\(]*[\]\)])', expr)[0]
+            expr = re.sub(r'(["\']).*?\1', '', expr)
+            names += [n for n in re.findall(r'(?<![\w.])([A-Za-z_]\w*)', expr) if n not in NEUTRAL_NAMES]
+    if not names:
+        return False
+    def constant(n: str) -> bool:
+        if re.fullmatch(r'[A-Z][A-Z0-9_]*', n):
+            return True
+        if re.search(rf'^{re.escape(n)}\s*(:[^=\n]+)?=\s*[\(\["\']', text, re.M):
+            return True
+        m = re.search(rf'\bfor\s+{re.escape(n)}\s+in\s+([A-Z][A-Z0-9_]*\b|[\(\[])', text)
+        return bool(m)
+    return all(constant(n) for n in names)
 
 def scan_file(path: Path, rel: str, pitfalls: list[dict]) -> list[dict]:
     try:
@@ -97,6 +132,16 @@ def scan_file(path: Path, rel: str, pitfalls: list[dict]) -> list[dict]:
                 continue
             if p.get('_require_near') and not p['_require_near'].search(near):
                 continue
+            if p.get('_suppress_above') and p['_suppress_above'].search('\n'.join(lines[max(0, i - w):i])):
+                continue
+            if p.get('_require_above') and not p['_require_above'].search('\n'.join(lines[max(0, i - w):i])):
+                continue
+            if p.get('_scope_regex') and p.get('_scope_suppress'):
+                scope = next((lines[j] for j in range(i, -1, -1) if p['_scope_regex'].search(lines[j])), None)
+                if scope is not None and p['_scope_suppress'].search(scope):
+                    continue
+            if p.get('constant_interpolation') and constant_fstring(line, text):
+                continue
             hits.append({'pitfall_id': p['id'], 'cwe': [p['cwe']], 'file': rel, 'line': i + 1, 'column': m.start() + 1,
                          'snippet': line.strip()[:200], 'message': p['title'],
                          'sources': [{'tool': 'scan_pitfalls', 'rule_id': p['id']}]})
@@ -110,6 +155,13 @@ def scan(root: Path, catalogue: dict, wanted: set[str] | None = None, include_te
     for path in walk(root, include_tests):
         rel = path.relative_to(root).as_posix()
         names = [n for n in pack_of(path, rel, packs) if n in wanted]
+        if any(packs[n].get('require_content') or packs[n].get('exclude_content') for n in names):
+            try:
+                head = path.read_text(encoding='utf-8', errors='replace') if path.stat().st_size < 2_000_000 else ''
+            except OSError:
+                head = ''
+            names = [n for n in names if (not packs[n].get('require_content') or re.search(packs[n]['require_content'], head, re.M))
+                     and not (packs[n].get('exclude_content') and re.search(packs[n]['exclude_content'], head, re.M))]
         if not names:
             continue
         for n in names:
