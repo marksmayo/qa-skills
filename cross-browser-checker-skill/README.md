@@ -19,9 +19,13 @@ where they behave differently:
 - **Third parties blocked by default**, and recorded; the report says their behaviour wasn't
   compared.
 - **Static feature scan**: CSS, JavaScript and HTML checked against the project's browserslist targets
-  (or Next.js's default targets in a Next.js project without one) with web-features and caniuse
-  data, and linked to the runtime differences they explain. Tailwind class strings are checked for
-  known non-baseline utilities, and built CSS is scanned when given.
+  (or Next.js's default targets in a Next.js project without one, or a Vite project's `build.target`
+  or Vite's default) with web-features and caniuse data, and linked to the runtime differences they
+  explain. Tailwind class strings are checked for known non-baseline utilities, CSS-in-JS styles
+  written in scripts (Emotion, MUI, styled-components) are read, newer JavaScript APIs (`structuredClone`,
+  `Object.groupBy`, `toSorted`, `Set` methods, ...) are matched, and built CSS is scanned when given.
+- **Static only** works without browsers: `compare_engines.py --static-only`, and the report is
+  `run_status: "not_run"` with an `inconclusive` verdict.
 - **Honest about failed captures**: pages are captured with the site's CSP bypassed (the capture
   injects styles), a style that didn't apply or a page that didn't load makes the run errored, and
   with any comparison not made and nothing found the verdict is `inconclusive`, never "no
@@ -66,6 +70,15 @@ python scripts/validate_report.py run/report.json --runs run/capture/runs.json -
 python scripts/render_report.py run/report.json [--brief]
 ```
 
+Static only (no browser): the feature scan, then a candidates file with every engine `not_run`, and a
+report with `run_status: "not_run"`, validated without `--runs`:
+
+```bash
+python scripts/feature_scan.py --repo . --out run/features.json [--built-css dist/assets]
+python scripts/compare_engines.py --static-only --features run/features.json [--targets targets.json] --out run/candidates.json
+python scripts/validate_report.py run/report.json --candidates run/candidates.json --features run/features.json [--targets targets.json]
+```
+
 ## Example
 
 `examples/travel-site/` is a small site with planted engine differences and a browserslist in its
@@ -76,6 +89,13 @@ real run (listed in `examples/run/commands.sh`) and `examples/report.example.jso
 ```bash
 python scripts/validate_report.py examples/report.example.json --runs examples/run/capture/runs.json --candidates examples/run/candidates.json --features examples/run/features.json --targets examples/targets.json
 python scripts/render_report.py examples/report.example.json
+```
+
+`examples/report.static.example.json` is the static-only report of the same site (`run_status:
+"not_run"`), built from `examples/static-only/candidates.json`:
+
+```bash
+python scripts/validate_report.py examples/report.static.example.json --candidates examples/static-only/candidates.json --features examples/run/features.json --targets examples/targets.json
 ```
 
 ## Files

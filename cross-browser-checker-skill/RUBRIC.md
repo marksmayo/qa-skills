@@ -63,7 +63,12 @@ alternative too) has a fallback.
 - **Verdict:** `differences_found` with at least one promoted difference; otherwise `inconclusive`
   when any planned engine-versus-reference comparison wasn't made (an engine `not_run` or `errored`,
   or a run of either side errored or skipped: a comparison needs every rerun captured on both
-  sides); otherwise `no_differences_detected`. No comparison made is never "no differences".
+  sides), or no comparison was made at all (an empty plan, a static-only report); otherwise
+  `no_differences_detected`. No comparison made is never "no differences".
+- **Run status:** `complete` when every planned run ran and every comparison was made, `partial`
+  otherwise (with the reason), `not_run` for a static-only report (feature scan only: every engine
+  `not_run`, verdict `inconclusive`, confidence low, every feature finding `possible` or
+  `not_assessed`).
 - **Comparisons:** planned (page or state, viewport) pairs times the engines other than the
   reference, and how many were made.
 - **Checks planned:** the (page or state, viewport) pairs in `runs.json`'s `planned` (per-page and

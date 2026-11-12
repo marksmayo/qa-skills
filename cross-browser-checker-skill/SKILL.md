@@ -1,7 +1,7 @@
 ---
 name: cross-browser-checker
 description: Run the same pages, states and journeys in Playwright's Chromium, Firefox and WebKit, three times each, and report where they behave differently - script errors, failing steps, content that isn't rendered, missing elements, input fallbacks, layout and network differences - keeping only differences that repeat in every run and listing the rest as flaky. With a repository, also scan CSS, JavaScript and HTML for features the project's browserslist targets don't all support (web-features and caniuse data, pinned and hash-checked), and link them to the runtime differences they explain. Never says "compatible", and never treats WebKit as Safari.
-version: 1.1.0
+version: 1.2.0
 ---
 
 # Cross-browser checker
@@ -82,9 +82,10 @@ cross-browser finding, even if it's a bug: note it for the crash hunter.
 | `max_retries`, `max_retry_after_seconds`, `stop_on_429` | 2, 60, false | 429/503 retries after `Retry-After` (the shared harness policy); a longer Retry-After, or any 429 with `stop_on_429`, errors the run |
 | `request_budget` | none | Stop capturing once the pages have sent this many requests; later runs are `skipped` |
 | `engines` | all three | Missing ones are `not_run` |
-| `browserslist` | from the repo, else Next.js's defaults for a Next.js project, else `defaults` | `package.json` or `.browserslistrc` |
+| `browserslist` | from the repo, else Next.js's defaults for a Next.js project, else a Vite project's `build.target` (or Vite's default), else `defaults` | `package.json` or `.browserslistrc` |
 | `repo` | none | Turns on the static feature scan |
-| `static_only` | false | Feature scan without browsers; every finding stays `possible` |
+| `static_only` | false | Feature scan without browsers; every finding stays `possible`, `run_status` is `not_run` and the verdict `inconclusive` (see "Static only") |
+| `storage_state` | none | A signed-in test session for an app behind sign-in (see "Apps behind sign-in") |
 | `reruns` | 3 | Per engine and check |
 | `authorised_by`, `auth`, `allow_form_submission` | as in `browser_harness.py` | |
 
@@ -119,6 +120,18 @@ per run `run_status` (`ran`, `errored`, `skipped`), the error, `requests_sent` a
 going on: an errored run is never a pass. Run one engine at a time (`--engines webkit`) when memory
 is short.
 
+**Apps behind sign-in** (MSAL, OIDC or another identity provider). Without a session a single-page app
+renders only its sign-in page, and following the sign-in redirect leaves the site. The least invasive
+route is a captured session: a person signs in to a **test account** by hand in a Playwright browser
+and saves the context's storage state to a file outside the repository; the shared harness
+(`browser_harness.py`) loads it as `storage_state` into every engine's context. The file holds live
+tokens: never commit it, never copy its contents into `runs.json`, the report or a screenshot name,
+and delete it after the run. It carries cookies and localStorage, not sessionStorage, so it works for
+MSAL only when the test build keeps its cache in `localStorage`; otherwise use the app's own test
+sign-in or mock-auth mode. Never use a real user's account. Without a session, capture what renders
+signed out (the sign-in page), set `run_status` to `partial` with the reason, and say in the
+limitations which pages weren't compared because they need a session.
+
 ### 3. Static feature scan (with a repo)
 
 ```bash
@@ -129,8 +142,30 @@ python scripts/feature_scan.py --repo <repo> --out <run>/features.json
 Unresolvable browserslist terms (Firefox ESR, `and`, regional usage) are listed, and the scan can't
 assess them. A Next.js project with no browserslist config compiles for Next's own documented
 targets (Next 16: Chrome, Edge and Firefox 111, Safari 16.4), so those are used, and `source` says so.
+A Vite project with no browserslist config compiles for its `build.target`: the scan reads it from
+`vite.config.*` when it is a literal (`['chrome100', 'safari15']`, `'modules'`,
+`'baseline-widely-available'`), else uses the Vite major's documented default (Vite 7:
+`baseline-widely-available`, Chrome and Edge 107, Firefox 104, Safari 16; Vite 3-6: `modules`,
+Chrome 87, Edge 88, Firefox 78, Safari 14), with iOS Safari following Safari; `source` says which.
+`esNNNN`/`esnext` name no browser and are reported as not assessed.
 The walk prunes `node_modules`, `.next`, build output, coverage and caches, and skips tests and
 stories (they don't ship).
+
+JavaScript APIs, not syntax: a build transpiles syntax for its targets but doesn't polyfill APIs, so
+the scan looks for APIs that newer targets have and older ones don't (`structuredClone`, `.at(-1)`,
+`findLast`, `toSorted`, `Object.hasOwn`, `Object.groupBy`, the new `Set` methods,
+`Promise.withResolvers`, `Array.fromAsync`, iterator helpers, `AbortSignal.any`, the async Clipboard
+API, which also needs a secure context, `replaceAll`, `Intl.Segmenter`, `WeakRef`, error `cause`), with
+support from web-features. A polyfill the project loads (core-js) is not detected: say so when a
+finding depends on it.
+
+CSS-in-JS (Emotion, MUI's `sx` and `styled`, styled-components) generates its CSS at runtime, so
+neither the source scan nor built CSS sees it. When the repo depends on such a library, the scan reads
+the styles written literally in the scripts that use it: object styles (a camelCase property with a
+string value such as `textWrap: 'balance'`, a selector key such as `'&:has(.x)'`, an `@container`
+key) and tagged template literals (`` styled.div`...` ``, `` css`...` ``). Those uses are marked
+`via: "css-in-js"`, `css_in_js` records the libraries, and a limitation says that styles computed at
+runtime were not scanned; the report must carry it.
 
 Utility-class CSS (Tailwind) lives in class strings, not stylesheets. When the repo depends on
 Tailwind, class strings are matched against the known non-baseline utilities (`text-balance`,
@@ -138,6 +173,13 @@ Tailwind, class strings are matched against the known non-baseline utilities (`t
 `utility_css` says only those were scanned. The CSS the framework generates (colour functions,
 `@property`, layers) is scanned only from built CSS (`--built-css <dir>`, or `.next/static/css`
 when it exists); otherwise `features.json` carries a limitation, which the report must repeat.
+Minified built CSS has every rule on line 1, so its uses carry a `column` and repeats of one feature on
+one line collapse into one entry with `occurrences`. Tailwind 4 registers its variables with
+`@property` and emits its own fallback for engines without it (`@layer properties { @supports (...)
+{ *, ::before, ::after { --tw-...: initial } } }`); when built CSS has that block, its `@property`
+uses count as having a fallback. Tailwind 4 itself requires Chrome and Edge 111, Firefox 128 and
+Safari 16.4: when a declared target is below that floor, `utility_css.targets_below_floor` lists it
+and a limitation says the project's real support floor is ambiguous.
 
 ### 4. Compare engines
 
@@ -179,6 +221,19 @@ python scripts/validate_report.py <run>/report.json --runs <run>/capture/runs.js
 python scripts/render_report.py <run>/report.json [--brief]
 ```
 
+**Static only** (`static_only`, or when no engine can run): skip the capture and write the
+candidates file of the feature scan alone, then a report with `run_status: "not_run"`, a
+`run_status_reason`, every engine `not_run`, no differences, triage or flaky entries, `runs_file:
+null`, verdict `inconclusive`, and a summary and limitation that say no engine ran:
+
+```bash
+python scripts/compare_engines.py --static-only --features <run>/features.json [--targets targets.json] --out <run>/candidates.json
+python scripts/validate_report.py <run>/report.json --candidates <run>/candidates.json --features <run>/features.json [--targets targets.json] [--write-summary]
+```
+
+`--targets` records the checks that were planned and not made; without it the plan is empty, and the
+verdict is still `inconclusive`. `examples/report.static.example.json` is a static-only report.
+
 Commercial device clouds (BrowserStack, Sauce Labs) aren't integrated; with an account, run the same
 targets there and compare by hand.
 
@@ -189,7 +244,9 @@ targets there and compare by hand.
   (as in `candidates.json`; required when the capture recorded it), and `capture`, `requests` and `harness`
   (copies of `runs.json`'s, required when the capture recorded them; `harness` is the shared harness's
   `metadata()` per engine: CSP bypass, read-only mode, request totals, retry policy).
-- `metadata`: tools, data versions and hashes, runs file.
+- `run_status` (`complete`, `partial`, `not_run`) and `run_status_reason` (unless complete): whether
+  the capture ran in full; `not_run` is a static-only report.
+- `metadata`: tools, data versions and hashes, runs file (`null` when static only).
 - `headline`: verdict (`differences_found`, `no_differences_detected`, `inconclusive`), summary,
   severity counts, flaky count, checks planned and run, engine comparisons planned and made,
   evidence completeness, overall confidence.
@@ -205,9 +262,13 @@ difference is consistent across its reruns, differs from the reference, and has 
 their hashes) from both sides. Safari is never an engine or a title, and a summary sentence that
 names Safari must say it wasn't tested (sentences split at a full stop and a space, so "Safari 16.4"
 is one sentence). No compatibility claims. The verdict follows from the runs: `inconclusive`
-whenever a planned comparison wasn't made and nothing was promoted, never `no_differences_detected`
-with zero comparisons; an inconclusive summary must say so and not claim "no differences", and a
-limitation must name what wasn't compared. Confidence is low when no comparison, or under half of
+whenever a planned comparison wasn't made, an engine didn't run, or no comparison was made at all (an
+empty plan included), and nothing was promoted; never `no_differences_detected` with zero
+comparisons; an inconclusive summary must say so ("inconclusive", "not compared", "not made", "no
+engine ran", "static only") and not claim "no differences", and a limitation must name what wasn't
+compared. `run_status`, when given, agrees: `complete` only when every planned run ran and every
+comparison was made; a `not_run` report is validated without `--runs`, from a `--static-only`
+candidates file, with every engine `not_run` and no differences, triage or confirmed features. Confidence is low when no comparison, or under half of
 them or of the runs, was made. `scope.capture`, `scope.requests` and `scope.harness` equal `runs.json`'s; forced
 reduced motion or frozen animations need `out_of_scope` to say motion wasn't compared; the feature
 scan's limitations (utility CSS not scanned) must appear in the report's. Every

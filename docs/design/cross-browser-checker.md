@@ -276,3 +276,32 @@ Where the build differs from the design above, and what the example showed.
     `@property`. Without built CSS, `features.json` carries a limitation the report must repeat.
   - The example's capture predates these settings, so its report has no `scope.capture` or
     `scope.requests`; `candidates.json` was regenerated (only `comparisons` added, 8 of 8 made).
+- **v1.2.0** (a static feature scan of a React and Vite 7 single-page app styled with MUI (Emotion) and
+  Tailwind CSS 4, behind an identity-provider sign-in):
+  - *Wrong targets for Vite*: with no browserslist config the scan used `defaults` (0 findings). A
+    project depending on `vite` now gets its literal `build.target` from `vite.config.*` (only the
+    `build` block, so a dev-proxy `target` is ignored), else the Vite major's documented default (7:
+    `baseline-widely-available`, Chrome and Edge 107, Firefox 104, Safari 16; 3-6: `modules`); `source`
+    says which.
+  - *Static only wasn't supported by the validator*: it required `--runs` and demanded
+    `no_differences_detected` when the plan was empty. `compare_engines.py --static-only` writes the
+    candidates file of a feature scan alone (engines `not_run`, the plan from `--targets`, 0
+    comparisons), reports carry `run_status`/`run_status_reason`, and a `not_run` report validates
+    without `--runs`. Any engine not run, or no comparison made at all, now means `inconclusive`;
+    "not made", "not run", "no engine ran" and "static only" count as saying so.
+    `examples/report.static.example.json` is the static-only report of the example site.
+  - *CSS-in-JS was invisible*: with Emotion, MUI or styled-components in the dependencies, object
+    styles and tagged template literals written in scripts are matched (`via: "css-in-js"`), and a
+    limitation says runtime-computed styles were not scanned. The CSS tokeniser keeps declarations
+    that come before a nested rule.
+  - *Tailwind 4*: its `@layer properties` fallback now counts as the fallback for its `@property`
+    uses, and declared targets below Tailwind 4's own floor (Chrome 111, Firefox 128, Safari 16.4)
+    are listed in `utility_css.targets_below_floor` with a limitation. Minified built CSS uses carry a
+    `column` and collapse per feature and line (`occurrences`) instead of 20 identical `:1` entries.
+  - *Small JS catalogue*: 16 API patterns added (`.at(-n)`, `findLast`, `toSorted`, `Object.hasOwn`,
+    `Object.groupBy`, `Set` methods, `Promise.withResolvers`, `Array.fromAsync`, iterator helpers,
+    `AbortSignal.any`, async Clipboard, `replaceAll`, `Promise.any`, `Intl.Segmenter`, `WeakRef`, error
+    `cause`), with support from the cached web-features data.
+  - SKILL.md describes capturing apps behind sign-in with a test-account `storage_state` loaded by the
+    shared harness (never committed or recorded). The example's capture and feature scan are
+    unchanged: rerunning `feature_scan.py` on `travel-site/` gives the same `features.json`.
