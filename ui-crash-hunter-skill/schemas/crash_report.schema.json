@@ -46,7 +46,10 @@
               "reach": {"$ref": "#/$defs/reach"},
               "reach_basis": {"type": "string", "description": "Why this reach: journey priority, analytics, or the agent's reading"},
               "analysed": {"type": "boolean"},
-              "not_analysed_reason": {"type": "string"}
+              "not_analysed_reason": {"type": "string"},
+              "pages": {"type": "integer", "description": "Static sites: how many HTML pages share this entry's scripts"},
+              "scripts": {"type": "array", "items": {"type": "string"}, "description": "Static sites: the scripts the page loads"},
+              "content_rendered_by_js": {"type": "boolean"}
             }
           }
         },
@@ -64,6 +67,16 @@
               "scope": {"enum": ["app", "route", "screen", "component", "global"]},
               "covers": {"type": "array", "items": {"type": "string"}, "description": "Route/screen ids or component names it wraps"}
             }
+          }
+        },
+        "site_model": {"enum": ["spa", "ssr", "multi_page", "single_page_static", "native", "unknown"],
+                       "description": "From recon.py site.kind: one render tree (spa, ssr), static HTML pages that each load their own scripts, or a native app"},
+        "blast_radius": {
+          "type": "object", "required": ["model"],
+          "properties": {
+            "model": {"enum": ["per_root", "per_script", "per_process", "unknown"],
+                      "description": "per_root: an uncaught render error blanks the app; per_script: it stops only the script that threw (static pages); per_process: it kills the app"},
+            "note": {"type": "string"}
           }
         },
         "data_layer": {"type": "array"},
@@ -215,6 +228,7 @@
             "expected": {"type": "string"},
             "actual": {"type": "string"},
             "stack_trace": {"type": "string"},
+            "observed_effect": {"type": "string", "description": "What the probe's expectations showed, when it was reproduced by its effect rather than (or as well as) a stack trace"},
             "screenshot": {"type": "string"},
             "evidence_file": {"type": "string"},
             "repro_spec": {"type": "string"},

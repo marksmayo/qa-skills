@@ -10,6 +10,8 @@ data/pitfalls.json. Candidates are not findings until the agent traces them to a
 mapped to pitfalls through each pitfall's 'tools' list. --extra adds candidates written by
 strict_overlay.py and contract_diff.py. Hits on the same file, line and pitfall are merged, keeping
 every source. Test files, dependencies, build output and minified files are skipped.
+Promise chains (matcher "promise_chain") are parsed whole across lines; --self-test runs a built-in
+check of that parser and exits.
 """
 from __future__ import annotations
 import argparse, json, re, sys
@@ -17,6 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+sys.dont_write_bytecode = True  # importing a sibling must not write __pycache__ into the skill folder
 sys.path.insert(0, str(HERE))
 import sarif  # noqa: E402
 
@@ -66,14 +69,183 @@ def source_files(root: Path, extensions: set[str]):
             elif p.suffix in extensions and not TEST_FILE.search(p.name) and not is_bundle(p):
                 yield p
 
+REGEX_BEFORE = set('(,=:[!&|?{};+-*%<>~^') | {''}
+OPEN, CLOSE = '([{', ')]}'
+
+def mask_code(text: str) -> str:
+    """Blank out comments, string, template and regex literal contents (same length, newlines kept), so
+    brackets can be balanced on what is left."""
+    out = list(text)
+    i, n = 0, len(text)
+    def blank(a: int, b: int) -> None:
+        for k in range(a, min(b, n)):
+            if out[k] != '\n':
+                out[k] = ' '
+    prev = ''
+    while i < n:
+        c = text[i]
+        if c == '/' and text.startswith('//', i):
+            j = text.find('\n', i)
+            j = n if j < 0 else j
+            blank(i, j)
+            i = j
+        elif c == '/' and text.startswith('/*', i):
+            j = text.find('*/', i + 2)
+            j = n if j < 0 else j + 2
+            blank(i, j)
+            i = j
+        elif c in '"\'`':
+            j = i + 1
+            while j < n and text[j] != c:
+                if text[j] == '\\':
+                    j += 1
+                elif c != '`' and text[j] == '\n':
+                    break
+                j += 1
+            blank(i + 1, j)
+            i, prev = j + 1, c
+        elif c == '/' and (prev in REGEX_BEFORE or re.search(r'\b(return|typeof|case|in|of)\s*$', text[max(0, i - 10):i])):
+            j, cls = i + 1, False
+            while j < n and text[j] != '\n' and (cls or text[j] != '/'):
+                if text[j] == '\\':
+                    j += 1
+                elif text[j] == '[':
+                    cls = True
+                elif text[j] == ']':
+                    cls = False
+                j += 1
+            blank(i + 1, j)
+            i, prev = j + 1, '/'
+        else:
+            if not c.isspace():
+                prev = c
+            i += 1
+    return ''.join(out)
+
+def _match(code: str, i: int, step: int) -> int:
+    """Index of the bracket matching code[i], scanning forwards (step 1) or backwards (step -1); -1 if none."""
+    depth, j = 0, i
+    while 0 <= j < len(code):
+        ch = code[j]
+        if ch in (OPEN if step == 1 else CLOSE):
+            depth += 1
+        elif ch in (CLOSE if step == 1 else OPEN):
+            depth -= 1
+            if depth == 0:
+                return j
+        j += step
+    return -1
+
+IDENT = re.compile(r'[\w$]')
+
+def chain_start(code: str, dot: int) -> int:
+    """Start of the receiver expression ending just before code[dot] ('.then'): identifiers, member
+    accesses, calls and index expressions, across lines."""
+    j = dot - 1
+    while True:
+        while j >= 0 and code[j].isspace():
+            j -= 1
+        if j < 0:
+            return 0
+        if code[j] in ')]':
+            k = _match(code, j, -1)
+            if k < 0:
+                return j + 1
+            j = k - 1
+            continue
+        if IDENT.match(code[j]):
+            while j >= 0 and IDENT.match(code[j]):
+                j -= 1
+            k = j
+            while k >= 0 and code[k].isspace():
+                k -= 1
+            if k >= 0 and code[k] == '.':
+                j = k - 1 - (1 if k >= 1 and code[k - 1] == '?' else 0)
+                continue
+            return j + 1
+        return j + 1
+
+def chain_links(code: str, dot: int) -> tuple[list[tuple[str, int, int]], int]:
+    """Calls in the chain from code[dot] onwards: (method, args, position), and where the chain ends."""
+    links, j = [], dot
+    while True:
+        m = re.compile(r'\??\.\s*([\w$]+)\s*').match(code, j)
+        if not m:
+            return links, j
+        name, j = m.group(1), m.end()
+        if j < len(code) and code[j] == '(':
+            end = _match(code, j, 1)
+            if end < 0:
+                return links, len(code)
+            inner, depth, commas = code[j + 1:end], 0, 0
+            for ch in inner:
+                if ch in OPEN:
+                    depth += 1
+                elif ch in CLOSE:
+                    depth -= 1
+                elif ch == ',' and depth == 0:
+                    commas += 1
+            args = (commas + 1 if inner.strip() else 0) - (1 if inner.rstrip().endswith(',') else 0)
+            links.append((name, args, m.start()))
+            j = end + 1
+        while j < len(code) and code[j] == '[':
+            end = _match(code, j, 1)
+            j = len(code) if end < 0 else end + 1
+        k = j
+        while k < len(code) and code[k].isspace():
+            k += 1
+        if code.startswith('.', k) or code.startswith('?.', k):
+            j = k
+        else:
+            return links, j
+
+def promise_chain_hits(text: str, rel: str, p: dict) -> list[dict]:
+    """Promise chains with no rejection handler anywhere in the chain, parsed across lines."""
+    code = mask_code(text)
+    lines = text.splitlines()
+    hits, done = [], set()
+    for m in re.finditer(r'\??\.\s*then\s*\(', code):
+        if m.start() in done:
+            continue
+        start = chain_start(code, m.start())
+        j = start
+        while j < len(code) and IDENT.match(code[j]):
+            j += 1
+        while j < len(code) and code[j] in '([':
+            end = _match(code, j, 1)
+            j = len(code) if end < 0 else end + 1
+        every, _ = chain_links(code, j)
+        if not any(pos == m.start() for _, _, pos in every):  # receiver not understood: judge from this link on
+            every, _ = chain_links(code, m.start())
+        for name, _, pos in every:
+            if name == 'then':
+                done.add(pos)
+        handled = any(name == 'catch' or (name == 'then' and args >= 2) for name, args, _ in every)
+        before = code[:start].rstrip()
+        consumed = (re.search(r'(\breturn|\bawait|\byield|=>)$', before) is not None
+                    or (before[-1:] in ('(', ',', '[') and not re.search(r'\b(if|while|for|switch)\s*\($', before)))
+        if handled or consumed:
+            continue
+        ln = text.count('\n', 0, m.start()) + 1
+        col = m.start() - (text.rfind('\n', 0, m.start()) + 1) + 1
+        hits.append({'pitfall_id': p['id'], 'file': rel, 'line': ln, 'column': col,
+                     'snippet': lines[ln - 1].strip()[:200], 'message': p['title'],
+                     'sources': [{'tool': 'scan_pitfalls', 'rule_id': p['id']}]})
+    return hits
+
 def scan_file(path: Path, rel: str, pitfalls: list[dict]) -> list[dict]:
     try:
-        lines = path.read_text(encoding='utf-8', errors='replace').splitlines()
+        text = path.read_text(encoding='utf-8', errors='replace')
     except OSError:
         return []
+    lines = text.splitlines()
     if lines and max(len(l) for l in lines) > 2000:  # minified or generated
         return []
     hits = []
+    for p in pitfalls:
+        if p.get('matcher') == 'promise_chain' and (not p.get('extensions') or path.suffix in p['extensions']):
+            hits.extend(promise_chain_hits(text, rel, p))
+    pitfalls = [p for p in pitfalls if not p.get('matcher')]
     for i, line in enumerate(lines):
         if COMMENT.match(line):
             continue
@@ -142,15 +314,64 @@ def merge(cands: list[dict]) -> list[dict]:
         c['id'] = f'CAND-{n:03d}'
     return out
 
+SELF_TEST_JS = r"""// a .then( in a comment, and "x.then(" in a string, are not code
+const s = "fetch(a).then(b)";
+const re = /\)\.then\(/g;
+function returned() {
+  return fetch("/a")
+    .then((r) => r.json());
+}
+navigator.serviceWorker.getRegistration().then((reg) => {
+  if (reg) return;
+  navigator.serviceWorker
+    .register("/sw.js")
+    .then((registration) => {
+      console.info("ok", registration);
+    })
+    .catch((error) => console.warn(error));
+});
+loadIndex().then(() => render(input.value));
+loadIndex()
+  .then(() => render(input.value))
+  .finally(() => done());
+api.get("/x").then(ok, (err) => showError(err));
+self.addEventListener("install", (event) => {
+  event.waitUntil(caches.open("v1").then((c) => c.addAll(["/"])));
+});
+const load = () => fetch("/b").then((r) => r.json());
+async function awaited() { return await fetch("/c").then((r) => r.text()); }
+fetch(`/d/${id}`, { method: "POST" })
+  .then((r) => r.json())
+  .then((j) => { show(j.items.map((x) => (x.then ? 1 : 2))); })
+  .catch(() => {});
+const ratio = a / b; const half = (x) / 2; client.get(u).then(cb);
+"""
+# unhandled chains; the chains split across lines that end in .catch (10-15, 27-30) are handled
+SELF_TEST_EXPECT = [8, 17, 19, 31]
+
+def self_test() -> int:
+    p = next(q for q in load_catalogue()['pitfalls'] if q.get('matcher') == 'promise_chain')
+    got = [h['line'] for h in promise_chain_hits(SELF_TEST_JS, 'app.js', p)]
+    ok = got == SELF_TEST_EXPECT
+    print(f"self-test {'passed' if ok else 'FAILED'}: promise chains flagged at lines {got}, expected {SELF_TEST_EXPECT}")
+    return 0 if ok else 1
+
 def main() -> int:
+    if hasattr(sys.stdout, 'reconfigure'):  # JSON on stdout may hold any character; a cp1252 console can't print it
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument('repo', type=Path)
+    ap.add_argument('repo', type=Path, nargs='?')
+    ap.add_argument('--self-test', action='store_true', help='run the built-in promise-chain test and exit')
     ap.add_argument('--packs', help='comma-separated packs (default: every pack with matching files)')
     ap.add_argument('--sarif', nargs='*', type=Path, default=[], help='SARIF files from other analysers')
     ap.add_argument('--extra', nargs='*', type=Path, default=[], help='candidate files from strict_overlay.py / contract_diff.py')
     ap.add_argument('--catalogue', type=Path, default=CATALOGUE)
     ap.add_argument('--out', type=Path)
     args = ap.parse_args()
+    if args.self_test:
+        return self_test()
+    if args.repo is None:
+        ap.error('repo is required')
     root = args.repo.resolve()
     if not root.is_dir():
         print(f'Not a directory: {root}', file=sys.stderr)

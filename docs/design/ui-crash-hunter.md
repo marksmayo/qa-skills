@@ -205,6 +205,37 @@ Status: **built** (v1.0.0). The implementation differs from the original plan as
   - a malformed-link white screen;
   - one traced-only crash that needs Safari before 17.4;
   - three degradations and six dismissed candidates.
+- **Found on a real static site, and fixed (v1.1.0).** A run on a vanilla-JavaScript multi-page site
+  (about 2,000 HTML pages sharing a few scripts) showed the skill assumed a single-page app:
+  - `recon.py` reported no platform, no routes and no boundaries, and called every uncaught error
+    app-fatal. It now sets a site model (`spa`, `ssr`, `multi_page`, `single_page_static`, `native`)
+    and a blast-radius model. Static sites are `per_script`: the HTML renders without script, so an
+    uncaught error breaks that script's feature (B3) or only logs (B4), and is B1 only where the page
+    content is rendered by script. Recon lists the pages (or one entry per set of scripts when there
+    are many), the scripts each loads, scripts that inject others, inline scripts, and error pages
+    whose relative asset URLs break at nested paths.
+  - `reproduced` needed a stack trace and a blank root, so a swallowed fetch failure that left search
+    dead, and a `404.html` that loaded unstyled at a nested path, could only be `traced`. Probes now
+    take observable-effect assertions (`expect`: visible or absent elements and text, counts,
+    requests made or not with a status, computed styles, error text) plus `type`, `unroute` and
+    `expect` steps. A probe whose assertions all hold reproduces by its effect; the validator accepts
+    that for B3/B4 with `repro.observed_effect`, and for B1/B2 only when the probe also shows the app
+    blanked. Baselines are `"kind": "baseline"` and assert healthy behaviour.
+  - The probe now blocks third-party requests by default; the validator's clean-baseline check
+    ignores console errors caused by that blocking.
+  - `strict_overlay.py tsc` was "not applicable" without a tsconfig. Plain JavaScript is now checked
+    with `checkJs` through a config generated in the scratch directory, using the repo's or the
+    PATH's `tsc`, with a loose baseline (newer compilers default to strict) so only what strictness
+    adds is reported. It is `not_applicable` only when no `tsc` is available.
+  - The promise rule judged `.then(` by the few lines around it, so it flagged a chain whose `.catch`
+    came several lines later and missed a real unhandled call elsewhere. `scan_pitfalls.py` now
+    parses each chain whole (strings, comments and regex literals masked, brackets balanced from the
+    receiver to the end of the statement) and treats it as handled when any link is `.catch` or a
+    two-argument `.then`, or when the chain is returned, awaited, an arrow body or passed to a call.
+    `--self-test` covers both cases. The pantry example's candidates are unchanged.
+  - Importing a sibling script wrote `__pycache__` into the skill folder; the scripts that import
+    `sarif.py` now set `sys.dont_write_bytecode`, and `probe_web.py` says to run it rather than import
+    it (or use `python -B`).
 
 ```text
 ui-crash-hunter-skill/

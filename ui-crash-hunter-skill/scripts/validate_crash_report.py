@@ -8,6 +8,12 @@ directory and must exist. --repo re-checks every finding location against the so
 line exists, snippet is on that line) and that nothing the run wrote is inside the repository.
 --candidates re-checks that every candidate was triaged. --write-summary recomputes the summary
 counts in place (the headline is kept) before validating. Exit code 0 when valid, 1 when invalid.
+
+A reproduced finding needs a stack trace, or a probe that reproduced it by its effect (evidence
+effect_observed, every expectation held) plus repro.observed_effect. An effect is enough for a B3/B4
+degradation; a B1/B2 crash without a stack trace also needs the probe to show the app blanked
+(root_empty, or a screen fallback for B2). A baseline_clean probe ignores console errors caused by
+the probe's own third-party blocking (ERR_BLOCKED_BY_CLIENT, kept in blocked_console_errors).
 """
 from __future__ import annotations
 import argparse, json, re, sys
@@ -30,6 +36,7 @@ LIKELIHOOD = {'normal_data': 4, 'edge_data': 3, 'rare_environment': 2, 'adversar
 RECOVERABILITY = {'crash_loop': 3, 'restart_or_navigate': 2, 'retry_fixes': 1}
 BANNED = re.compile(r'\b(crash[- ]free|no crashes|never crash(es)?|bug[- ]free|(is|are) (stable|safe)|production[- ]ready|'
                     r'fully (tested|covered)|100% (covered|safe))\b', re.I)
+BLOCKED = re.compile(r'ERR_BLOCKED_BY_CLIENT|blockedbyclient', re.I)
 VAGUE = re.compile(r'^\W*(this|it|value|data|field)?\s*(could|might|may|can) be (null|undefined|nil|empty)\W*$', re.I)
 
 def score(tier: str, r: dict) -> int:
@@ -103,18 +110,29 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tu
 
     # probes
     probes = {p.get('id'): p for p in d['probes']}
+    evidence: dict[str, dict] = {}
     for p in d['probes']:
         if p.get('outcome') not in PROBE_OUTCOMES:
             E(f"probe {p.get('id')}: outcome must be one of {sorted(PROBE_OUTCOMES)}")
         for k in ('scenario_file', 'evidence_file'):
             if p.get(k) and not (base / p[k]).exists():
                 E(f"probe {p.get('id')}: {k} {p[k]} not found")
-        if p.get('evidence_file') and (base / p['evidence_file']).exists() and p.get('outcome') in ('reproduced', 'baseline_clean'):
-            ev = json.loads((base / p['evidence_file']).read_text(encoding='utf-8'))
+        if p.get('evidence_file') and (base / p['evidence_file']).exists():
+            try:
+                evidence[p.get('id')] = json.loads((base / p['evidence_file']).read_text(encoding='utf-8'))
+            except ValueError:
+                E(f"probe {p.get('id')}: evidence file {p['evidence_file']} is not valid JSON")
+        ev = evidence.get(p.get('id'))
+        if ev is not None and p.get('outcome') in ('reproduced', 'baseline_clean'):
             if p['outcome'] == 'reproduced' and not ev.get('reproduced'):
                 E(f"probe {p['id']}: outcome 'reproduced' but its evidence file says it did not reproduce")
-            if p['outcome'] == 'baseline_clean' and (ev.get('page_errors') or ev.get('console_errors')):
-                E(f"probe {p['id']}: outcome 'baseline_clean' but its evidence file records errors")
+            if p['outcome'] == 'baseline_clean':
+                # errors caused by the probe's own third-party blocking are not the app's errors
+                own = [c for c in ev.get('console_errors') or [] if not BLOCKED.search(str(c.get('text', c)))]
+                if ev.get('page_errors') or own:
+                    E(f"probe {p['id']}: outcome 'baseline_clean' but its evidence file records errors")
+                if ev.get('baseline_ok') is False or any(not x.get('passed') for x in ev.get('expectations') or []):
+                    E(f"probe {p['id']}: outcome 'baseline_clean' but its healthy-behaviour expectations did not all hold")
     if d['probes'] and not app_run.get('attempted'):
         E('probes are listed but metadata.app_run.attempted is false')
 
@@ -191,7 +209,19 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tu
             if not app_run.get('attempted'):
                 E(f'{fid}: marked reproduced but the app was never run')
             if not norm(rp.get('stack_trace')):
-                E(f'{fid}: marked reproduced without a stack trace')
+                # without a stack trace, the probe must have shown the effect itself: any observed effect for a
+                # degradation, but for a crash only an effect showing the app or screen gone
+                pev = evidence.get(rp.get('probe_id')) or {}
+                effect = bool(pev.get('effect_observed')) and bool(pev.get('expectations'))
+                blanked = bool(pev.get('root_empty')) or (tier == 'B2' and bool(pev.get('fallback_visible')))
+                if not effect:
+                    E(f'{fid}: marked reproduced without a stack trace, and its probe has no observed effect '
+                      '(evidence effect_observed with expectations that all held)')
+                elif tier in ('B1', 'B2') and not blanked:
+                    E(f'{fid}: a {tier} crash reproduced without a stack trace needs evidence that the app blanked '
+                      '(root_empty, or a screen fallback for B2); otherwise give the stack trace or keep it traced')
+                if not norm(rp.get('observed_effect')):
+                    E(f'{fid}: reproduced by its effect: repro.observed_effect must say what the probe saw')
             if not rp.get('screenshot'):
                 E(f'{fid}: marked reproduced without a screenshot')
             elif not (base / rp['screenshot']).exists():
@@ -214,6 +244,10 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tu
             E(f'{fid}: sources must name the tool or say "agent"')
         if not norm(f.get('remediation')) or not norm(f.get('verification_step')):
             E(f'{fid}: remediation and verification_step are required')
+        if section == 'crashes' and (recon.get('blast_radius') or {}).get('model') == 'per_script' and \
+                not ((f.get('repro') or {}).get('probe_id') and (evidence.get(f['repro']['probe_id']) or {}).get('root_empty')):
+            W(f'{fid}: {tier} on a per_script site (static pages): an uncaught error stops only its own script, so this is '
+              'a crash only if the page content is rendered by script or the script blanks it; otherwise it is B3/B4')
         if section == 'crashes':
             r = f.get('ranking') or {}
             for k, scale in (('reach', REACH), ('likelihood', LIKELIHOOD), ('recoverability', RECOVERABILITY)):

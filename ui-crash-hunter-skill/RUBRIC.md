@@ -10,7 +10,7 @@ Anchors for tiers, boundaries, confidence, ranking and triage. `SKILL.md` says w
 | B1 | Crash | `app_terminated`, `white_screen`, `crash_loop` | Render error above every boundary: React unmounts the root and the page is blank | Uncaught exception or force unwrap: the process dies |
 | B1 | Crash (loop) | `crash_loop` | Bad value in localStorage read during the first render: blank on every load | Corrupt SharedPreferences/UserDefaults read at launch: crashes on every start |
 | B2 | Crash | `screen_replaced`, `screen_frozen` | Route boundary or Next.js `error.tsx` replaces the page; render loop freezes the tab | Flutter error widget fills the screen; ANR on a screen's main thread |
-| B3 | Degradation | `component_replaced`, `component_broken` | A widget's own boundary shows a fallback; a list never leaves "Loading…" | One card shows an error state |
+| B3 | Degradation | `component_replaced`, `component_broken` | A widget's own boundary shows a fallback; a list never leaves "Loading…"; on a static page, a script's feature (search, menu) is dead or the page loads unstyled | One card shows an error state |
 | B4 | Degradation | `console_only` | Unhandled rejection or event-handler throw with no visible effect | Logged exception, UI unchanged |
 
 The validator checks that the effect matches the tier. When unsure between two tiers, pick the one
@@ -29,6 +29,7 @@ hardest at what is outside all of them.
 | Angular | `ErrorHandler` (global; logs, does not recover the view) | A throw in a template can leave the view half-rendered |
 | React Native | Error boundaries as in React; `ErrorUtils.setGlobalHandler` | Native module exceptions terminate the app regardless |
 | Flutter | `ErrorWidget.builder` (per widget: grey screen in release), `FlutterError.onError`, `PlatformDispatcher.instance.onError`, `runZonedGuarded` | A build error in a top-level widget replaces the whole screen (B2); errors in `main()` before `runApp` are app-fatal |
+| Static multi-page site | None needed: each page's HTML renders without script, and each `<script>` runs on its own (`blast_radius: per_script`); `window.onerror` / `unhandledrejection` handlers only log | An uncaught error stops the rest of that script and its handler, not the page (B3/B4). B1 only where the page content is rendered by script (an empty `<div id="app">`), or the script hides or removes it. A `404.html` with relative asset URLs is served at any missing path and loses its CSS and scripts at nested paths |
 | Android | `Thread.setDefaultUncaughtExceptionHandler`, `CoroutineExceptionHandler` | Handlers report; the process still dies (B1) unless the exception is caught in code |
 | iOS | `NSSetUncaughtExceptionHandler` | Swift traps (force unwrap, `try!`, index out of range) are not exceptions and always terminate (B1) |
 
@@ -40,11 +41,13 @@ anyway; otherwise `caught_by` is `null`.
 
 | Confidence | Evidence type | Needs |
 |---|---|---|
-| `reproduced` | `reproduced` | A probe whose evidence shows the error and the effect, a stack trace, a screenshot, and the trace. The probe lists the finding |
+| `reproduced` | `reproduced` | A probe that lists the finding, a screenshot and the trace, and either a stack trace with the error's effect, or the effect alone (`effect_observed`: every `expect` assertion held) with `repro.observed_effect`. An effect alone suffices for B3/B4; a B1/B2 crash without a stack trace also needs `root_empty` (or a screen fallback for B2) |
 | `traced` | `trace` or `agent_judgment` | At least two `file:line` hops from the input to the throw, and the boundary that catches it |
 | `pattern` | `tool` or `agent_judgment` | A rule match you didn't trace further. Capped at P1 |
 
-Never mark something `reproduced` because the logic is obvious. If the app can't run, the best
+Effect assertions must pin the defect, not something that could have another cause: "search shows
+nothing **and** the index is not requested again after the server recovers", not just "search shows
+nothing". Never mark something `reproduced` because the logic is obvious. If the app can't run, the best
 possible confidence is `traced`.
 
 ## Ranking anchors (crashes only)
@@ -125,7 +128,7 @@ diff or reading. Full entries, triggers and fixes are in `data/pitfalls.json`.
   initial value.
 - SSR and browser APIs: `window`/`localStorage` at module scope in SSR code, hydration mismatches,
   APIs missing in the declared targets.
-- Async and lifecycle: unhandled rejections, responses applied after unmount or out of order,
+- Async and lifecycle: unhandled rejections (the scan reads each promise chain whole, across lines, and counts a `.catch` or two-argument `.then` anywhere in it, or a returned, awaited or passed-on chain, as handled), responses applied after unmount or out of order,
   `setState` during render, effect-dependency loops.
 - Type escapes and resources: TypeScript `!` and `as any`, deep recursion, huge unvirtualised lists,
   catastrophic regex backtracking.
@@ -151,7 +154,9 @@ on possibly empty lists, casts of decoded JSON to non-nullable types.
 - [ ] Every candidate is promoted or dismissed with a checkable reason.
 - [ ] Every finding has a file:line, a concrete trigger with basis, and the boundary that catches it.
 - [ ] Tiers match effects; B3/B4 are only in degradations.
-- [ ] `reproduced` findings have a probe, stack trace and screenshot; a baseline probe was clean.
+- [ ] `reproduced` findings have a probe, a screenshot and a stack trace or an observed effect; a
+      baseline probe was clean (errors from third-party blocking don't count).
+- [ ] On a static multi-page site, tiers follow the per-script blast radius.
 - [ ] Scores and priorities are recomputed by the validator; pattern findings aren't P0.
 - [ ] Repro specs, evidence and the report are outside the repository; the source is unchanged.
 - [ ] Coverage and limitations say what wasn't analysed; the headline doesn't claim the app is safe.

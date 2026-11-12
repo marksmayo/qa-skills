@@ -133,9 +133,8 @@
       "category": "async",
       "title": "Promise chain without a rejection handler",
       "regex": "\\.then\\(",
-      "suppress_after": "\\.catch\\(|,\\s*(\\(?\\s*\\w*\\s*\\)?|\\w+)\\s*=>|onRejected|\\.finally\\(",
-      "suppress_before": "\\btry\\s*\\{|return\\s+[\\w.]*\\s*$|return\\s+\\w",
-      "window": 4,
+      "matcher": "promise_chain",
+      "matcher_note": "The whole chain is parsed across lines, from its receiver to the end of the statement. It is handled when any link is .catch(...) or .then(onFulfilled, onRejected), or when the chain is returned, awaited, yielded, an arrow function's body, or passed straight to a call or array (waitUntil, Promise.all), whose owner then answers for the rejection. .finally() does not handle a rejection.",
       "trigger_hint": "The request fails (HTTP 500, offline); the rejection is unhandled. Usually B4, but B1/B2 when a later render depends on the result.",
       "fix": "Handle the rejection and show an error state.",
       "tools": ["eslint:@typescript-eslint/no-floating-promises", "eslint:promise/catch-or-return"]

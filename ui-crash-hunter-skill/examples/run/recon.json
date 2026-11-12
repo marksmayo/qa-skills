@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-10T02:34:02Z",
+  "generated_at": "2026-11-12T00:10:21Z",
   "repository": "pantry",
   "platforms": [
     "react"
@@ -103,6 +103,17 @@
     }
   ],
   "source_files": 14,
+  "site": {
+    "kind": "spa",
+    "frameworks": [
+      "react"
+    ],
+    "html_pages": 1
+  },
+  "blast_radius": {
+    "model": "per_root",
+    "note": "Single render tree: an uncaught render error above every boundary blanks the app (B1)."
+  },
   "notes": [
     "Heuristic: confirm which boundary wraps each finding by reading the render tree."
   ]

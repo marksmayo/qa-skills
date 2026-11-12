@@ -334,6 +334,8 @@ def guard_nearby(lines: list[str], i: int, field: str, col: int) -> bool:
                           rf'if\s+let\s+\w+\s*=\s*[\w.]*\.{f}\b|\.{f}\s*\?\.', window))
 
 def main() -> int:
+    if hasattr(sys.stdout, 'reconfigure'):  # JSON on stdout may hold any character; a cp1252 console can't print it
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('repo', type=Path)
     ap.add_argument('--contract', nargs='*', type=Path, default=[], help='contract files (default: discover)')

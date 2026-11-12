@@ -9,6 +9,10 @@ tsc: a scratch tsconfig extends the repo's and turns on strictNullChecks and
 noUncheckedIndexedAccess. Errors present only in the strict run are candidates (a value the
 types say can be null or undefined is used as if it can't). The baseline run is the repo's own
 config, so existing errors aren't reported.
+Plain JavaScript (no tsconfig): when a TypeScript compiler is available (the repo's, or tsc on PATH),
+a config generated in the scratch directory type-checks the JavaScript files (allowJs, checkJs,
+noEmit; extending jsconfig.json if there is one), and the strict overlay is compared against it the
+same way. Without any tsc the result is not_applicable.
 eslint: the repo's config plus crash-relevant rules from plugins the repo already has
 (react-hooks/exhaustive-deps, @typescript-eslint/no-floating-promises, no-non-null-assertion,
 no-unnecessary-condition). Only violations the extra rules add are reported.
@@ -75,13 +79,78 @@ def parse_tsc(output: str, root: Path) -> list[dict]:
             errs.append({'file': rel, 'line': int(m['line']), 'column': int(m['col']), 'code': m['code'], 'message': m['msg']})
     return errs
 
+DEFAULT_TSC = 'npx --no-install tsc'
+SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'out', '.next', '.nuxt', 'coverage', 'vendor', '__pycache__',
+             'storybook-static', '.venv', 'venv'}
+JS_EXT = ('.js', '.mjs', '.cjs', '.jsx')
+
+def js_sources(root: Path, limit: int = 3000) -> list[Path]:
+    """Plain JavaScript source files: no dependencies, build output, minified or bundled files."""
+    found, stack = [], [root]
+    while stack and len(found) < limit:
+        d = stack.pop()
+        try:
+            entries = sorted(d.iterdir())
+        except OSError:
+            continue
+        for p in entries:
+            if p.is_dir():
+                if p.name not in SKIP_DIRS and not p.name.startswith('.'):
+                    stack.append(p)
+            elif p.suffix in JS_EXT and not p.name.endswith('.min.js') and not p.with_name(p.name + '.map').exists():
+                try:
+                    if p.stat().st_size <= 400_000:
+                        found.append(p)
+                except OSError:
+                    pass
+    return found
+
+def checkjs_config(args, root: Path) -> tuple[Path | None, dict | None, str | None]:
+    """For a repository without a tsconfig: a scratch config that type-checks its JavaScript (allowJs,
+    checkJs, noEmit), extending the repo's jsconfig.json when it has one. Returns (config, info, why_not)."""
+    jsconfig = root / 'jsconfig.json'
+    files = js_sources(root)
+    if not files and not jsconfig.exists():
+        return None, None, f'no {args.tsconfig} and no JavaScript sources in the repository'
+    cfg: dict = {'compilerOptions': {'allowJs': True, 'checkJs': True, 'noEmit': True, 'skipLibCheck': True,
+                                     'target': 'ES2022', 'lib': ['DOM', 'DOM.Iterable', 'ES2022'], 'types': [],
+                                     'maxNodeModuleJsDepth': 0, 'incremental': False}}
+    own: dict = {}
+    if jsconfig.exists():
+        cfg['extends'] = jsconfig.as_posix()
+        try:
+            own = json.loads(re.sub(r'(?m)^\s*//.*$|/\*.*?\*/', '', jsconfig.read_text(encoding='utf-8-sig'), flags=re.S))
+            own = own.get('compilerOptions') or {}
+        except (OSError, ValueError):
+            own = {}
+    # the baseline is loose (newer compilers default to strict), so the overlay shows what strictness adds
+    for k in ('strict', 'strictNullChecks', 'noImplicitAny'):
+        if k not in own:
+            cfg['compilerOptions'][k] = False
+    if files:
+        cfg['files'] = [f.as_posix() for f in files]
+    path = args.scratch.resolve() / 'tsconfig.checkjs.json'
+    path.write_text(json.dumps(cfg, indent=2), encoding='utf-8')
+    return path, {'mode': 'checkJs', 'generated_config': path.as_posix(), 'js_files': len(files),
+                  'extends_jsconfig': jsconfig.exists()}, None
+
 def cmd_tsc(args, root: Path) -> dict:
     tsconfig = (root / args.tsconfig).resolve()
+    extra: dict = {}
     if not tsconfig.exists():
-        return result('tsc-strict', 'not_applicable', note=f'no {args.tsconfig} in the repository')
-    tsc = resolve_cmd(args.tsc, root)
-    if not tsc:
-        return result('tsc-strict', 'not_run', note=f'"{args.tsc}" not available (TypeScript not installed in the repo); not installed by this script')
+        # plain JavaScript: type-check it with checkJs through a generated config, when a tsc is available
+        tsc = resolve_cmd(args.tsc, root) or (resolve_cmd('tsc', root) if args.tsc == DEFAULT_TSC else None)
+        if not tsc:
+            return result('tsc-strict', 'not_applicable',
+                          note=f'no {args.tsconfig}, and no TypeScript compiler in the repository or on PATH to check the '
+                               'JavaScript with checkJs; not installed by this script')
+        tsconfig, extra, why_not = checkjs_config(args, root)
+        if not tsconfig:
+            return result('tsc-strict', 'not_applicable', note=why_not)
+    else:
+        tsc = resolve_cmd(args.tsc, root)
+        if not tsc:
+            return result('tsc-strict', 'not_run', note=f'"{args.tsc}" not available (TypeScript not installed in the repo); not installed by this script')
     try:
         base_cfg = json.loads(re.sub(r'(?m)^\s*//.*$|/\*.*?\*/', '', tsconfig.read_text(encoding='utf-8-sig'), flags=re.S))
     except ValueError:
@@ -118,7 +187,7 @@ def cmd_tsc(args, root: Path) -> dict:
                       'file': e['file'], 'line': e['line'], 'column': e['column'], 'snippet': src[:200],
                       'message': f"{e['code']}: {e['message']}",
                       'sources': [{'tool': 'tsc-strict', 'version': version, 'rule_id': e['code']}]})
-    return result('tsc-strict', 'ran', version=version, scratch_config=scratch_cfg.as_posix(),
+    return result('tsc-strict', 'ran', **extra, version=version, scratch_config=scratch_cfg.as_posix(),
                   command=' '.join(tsc + ['-p', scratch_cfg.as_posix()]), baseline_errors=len(base), strict_errors=len(strict),
                   new_errors=len(new), candidates=cands)
 
@@ -175,6 +244,8 @@ def _pkg(root: Path) -> dict:
         return {}
 
 def main() -> int:
+    if hasattr(sys.stdout, 'reconfigure'):  # JSON on stdout may hold any character; a cp1252 console can't print it
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest='cmd', required=True)
     for name in ('tsc', 'eslint'):
@@ -184,7 +255,7 @@ def main() -> int:
         s.add_argument('--timeout', type=int, default=900)
         s.add_argument('--out', type=Path)
     sub.choices['tsc'].add_argument('--tsconfig', default='tsconfig.json')
-    sub.choices['tsc'].add_argument('--tsc', default='npx --no-install tsc')
+    sub.choices['tsc'].add_argument('--tsc', default=DEFAULT_TSC)
     sub.choices['eslint'].add_argument('--paths', nargs='*')
     sub.choices['eslint'].add_argument('--eslint', default='npx --no-install eslint')
     args = ap.parse_args()

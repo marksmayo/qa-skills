@@ -8,6 +8,14 @@ Everything is heuristic and records file:line so the agent can verify it. The bo
 decides whether a throw is B1 (nothing catches it) or B2 (a route or screen boundary does), so the
 agent must confirm which boundary wraps each finding rather than trust this list alone.
 --journey-map attaches journey priorities (P1/P2/P3) to routes, for the reach factor.
+
+It also decides the site model (site.kind) and the blast-radius model. A single-page app or a
+server-rendered framework has one render tree (per_root). A static multi-page site (HTML pages that
+each load their own scripts, no SPA framework) is per_script: an uncaught error stops only the
+script that threw, so it breaks a feature (B3) or only logs (B4), except on pages whose content is
+itself rendered by script. For such sites it lists the pages (one route per page, or one per set of
+scripts when there are many), the scripts each page loads, scripts that inject other scripts,
+inline scripts, and error pages (404.html) whose relative asset URLs break at nested paths.
 """
 from __future__ import annotations
 import argparse, json, re, sys
@@ -144,7 +152,114 @@ def detect_platforms(root: Path, files: list[Path]) -> tuple[list[str], dict]:
         plats.add('android')
     return sorted(plats), targets
 
+SPA_PLATFORMS = {'react', 'vue', 'angular', 'svelte', 'preact', 'solid', 'react-native', 'expo'}
+SSR_PLATFORMS = {'nextjs', 'nuxt', 'sveltekit', 'remix'}
+SCRIPT_TAG = re.compile(r'<script\b([^>]*)>(.*?)</script\s*>', re.I | re.S)
+ATTR = lambda name: re.compile(r'\b' + name + r'\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>]+))', re.I)
+SRC, HREF, TYPE, REL = ATTR('src'), ATTR('href'), ATTR('type'), ATTR('rel')
+LINK_TAG = re.compile(r'<link\b[^>]*>', re.I)
+ASSET_TAG = re.compile(r'<(?:img|source|link|script)\b[^>]*>', re.I)
+DATA_TYPES = re.compile(r'json|template|text/(?!javascript)|x-shader', re.I)
+ERROR_PAGE = re.compile(r'^(404|500|50x|error|not[-_]?found)\.html?$', re.I)
+PAGE_LIST_MAX = 60
+INJECT = re.compile(r'createElement\(\s*["\']script["\']\s*\)')
+INJECT_SRC = re.compile(r'\.src\s*=\s*["\'`]([^"\'`$]+)["\'`]')
+# an empty element that script fills: <div id="app"></div>, <main id="root"></main>
+MOUNT_POINT = re.compile(r'<(div|main|section)\b[^>]*\bid\s*=\s*["\']?(app|root|main|content|__next|__nuxt|svelte)["\']?[^>]*>\s*</\1\s*>', re.I)
+
+def attr(rx: re.Pattern, tag: str) -> str | None:
+    m = rx.search(tag)
+    return next((g for g in m.groups() if g is not None), None) if m else None
+
+def is_relative(url: str) -> bool:
+    return bool(url) and not re.match(r'^([a-z][\w+.-]*:|//|/|#|\{|\$)', url, re.I)
+
+def html_page(root: Path, f: Path) -> dict:
+    """The scripts and stylesheets one HTML page loads, and whether its content is rendered by script."""
+    rel = f.relative_to(root).as_posix()
+    text = read(f)
+    scripts, inline = [], 0
+    for m in SCRIPT_TAG.finditer(text):
+        tag_attrs, body = m.group(1), m.group(2)
+        kind = attr(TYPE, tag_attrs) or ''
+        if DATA_TYPES.search(kind):
+            continue
+        src = attr(SRC, tag_attrs)
+        if not src:
+            inline += 1 if body.strip() else 0
+            continue
+        entry: dict = {'src': src, 'line': line_of(text, m.start()), 'module': kind.lower() == 'module'}
+        if re.match(r'^([a-z][\w+.-]*:)?//', src, re.I):
+            entry['external'] = True
+        else:
+            path = src.split('?')[0].split('#')[0]
+            target = (root / path.lstrip('/')) if path.startswith('/') else (f.parent / path)
+            try:
+                entry['file'] = target.resolve().relative_to(root).as_posix()
+            except ValueError:
+                entry['file'] = path
+            entry['exists'] = target.exists()
+        scripts.append(entry)
+    styles = [attr(HREF, t) for t in LINK_TAG.findall(text) if 'stylesheet' in (attr(REL, t) or '').lower()]
+    body = re.search(r'<body\b[^>]*>(.*)</body\s*>', text, re.I | re.S)
+    visible = re.sub(r'<(script|style|template|noscript)\b.*?</\1\s*>', ' ', body.group(1) if body else text, flags=re.I | re.S)
+    visible = re.sub(r'<[^>]+>', ' ', visible)
+    text_len = len(' '.join(visible.split()))
+    page = {'file': rel, 'scripts': scripts, 'inline_scripts': inline, 'stylesheets': [s for s in styles if s],
+            'text_chars': text_len,
+            'content_rendered_by_js': bool(scripts or inline) and (text_len < 20 or bool(MOUNT_POINT.search(text)))}
+    if ERROR_PAGE.match(f.name):
+        rels = sorted({u for t in ASSET_TAG.findall(text) for u in (attr(SRC, t), attr(HREF, t)) if u and is_relative(u)})
+        if rels:
+            page['error_page_relative_urls'] = rels
+    return page
+
+def site_model(root: Path, files: list[Path], platforms: list[str]) -> dict:
+    """Single-page app, server-rendered framework, or a static multi-page site where each page loads its own scripts."""
+    html = [f for f in files if f.suffix.lower() in ('.html', '.htm') and not TEST_PART.search(f.relative_to(root).as_posix())]
+    fw = sorted(set(platforms) & (SPA_PLATFORMS | SSR_PLATFORMS))
+    if fw:
+        return {'kind': 'ssr' if set(fw) & SSR_PLATFORMS else 'spa', 'frameworks': fw, 'html_pages': len(html)}
+    if set(platforms) & {'android', 'ios', 'flutter'}:
+        return {'kind': 'native', 'frameworks': [], 'html_pages': len(html)}
+    if not html:
+        return {'kind': 'unknown', 'frameworks': [], 'html_pages': 0}
+    pages = [html_page(root, f) for f in html]
+    groups: dict[tuple, list[dict]] = {}
+    for p in pages:
+        key = tuple(sorted(s.get('file') or s['src'] for s in p['scripts']))
+        groups.setdefault(key, []).append(p)
+    scripts: dict[str, dict] = {}
+    for p in pages:
+        for s in p['scripts']:
+            k = s.get('file') or s['src']
+            e = scripts.setdefault(k, {'script': k, 'external': bool(s.get('external')), 'pages': 0,
+                                       'renders_content_on': 0, 'missing_on': 0})
+            e['pages'] += 1
+            e['renders_content_on'] += 1 if p['content_rendered_by_js'] else 0
+            e['missing_on'] += 0 if s.get('exists', True) else 1
+    for e in scripts.values():  # scripts that inject further scripts (a search box loaded on demand, an ad tag)
+        text = '' if e['external'] else read(root / e['script'])
+        if INJECT.search(text):
+            e['injects'] = sorted({u.split('?')[0] for u in INJECT_SRC.findall(text)})[:10] or ['(computed URL)']
+    js_rendered = [p['file'] for p in pages if p['content_rendered_by_js']]
+    return {
+        'kind': 'multi_page' if len(pages) > 1 else 'single_page_static', 'frameworks': [], 'html_pages': len(pages),
+        'page_groups': [{'id': f'PG-{n}', 'scripts': list(k), 'pages': len(v), 'examples': [p['file'] for p in v[:5]],
+                         'content_rendered_by_js': sum(1 for p in v if p['content_rendered_by_js'])}
+                        for n, (k, v) in enumerate(sorted(groups.items(), key=lambda kv: -len(kv[1])), 1)],
+        'scripts': sorted(scripts.values(), key=lambda s: -s['pages']),
+        'pages': pages if len(pages) <= PAGE_LIST_MAX else pages[:PAGE_LIST_MAX],
+        'pages_listed': min(len(pages), PAGE_LIST_MAX),
+        'content_rendered_by_js': js_rendered,
+        'inline_script_pages': sum(1 for p in pages if p['inline_scripts']),
+        'error_pages': [{'file': p['file'], 'relative_urls': p['error_page_relative_urls']} for p in pages
+                        if p.get('error_page_relative_urls')],
+    }
+
 def main() -> int:
+    if hasattr(sys.stdout, 'reconfigure'):  # JSON on stdout may hold any character; a cp1252 console can't print it
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('repo', type=Path)
     ap.add_argument('--journey-map', type=Path, help='journey_map.json from journey-mapper, for route priorities')
@@ -230,8 +345,48 @@ def main() -> int:
         for r in uniq_routes:
             if r['path'] in prio:
                 r['journey_priority'] = prio[r['path']]
+    site = site_model(root, files, platforms)
+    static = site['kind'] in ('multi_page', 'single_page_static')
+    if static:
+        platforms = sorted(set(platforms) | {'static-html'})
+        listed = {(r['path'], r['file']) for r in uniq_routes}
+        if site['html_pages'] <= PAGE_LIST_MAX:
+            for p in site['pages']:
+                if ('/' + p['file'], p['file']) not in listed:
+                    uniq_routes.append({'kind': 'route', 'path': '/' + p['file'], 'file': p['file'], 'line': 1,
+                                        'detector': 'html-page', 'scripts': [s.get('file') or s['src'] for s in p['scripts']],
+                                        'content_rendered_by_js': p['content_rendered_by_js']})
+        else:  # many pages: one entry per set of scripts, since pages that share scripts share failure modes
+            for g in site['page_groups']:
+                uniq_routes.append({'kind': 'route', 'path': '/' + g['examples'][0], 'file': g['examples'][0], 'line': 1,
+                                    'detector': 'html-page-group', 'page_group': g['id'], 'pages': g['pages'],
+                                    'scripts': g['scripts'], 'content_rendered_by_js': g['content_rendered_by_js'] > 0})
     for n, r in enumerate(uniq_routes, 1):
         r['id'] = f'RT-{n}'
+    if static:
+        blast = {'model': 'per_script',
+                 'note': 'Static pages: the HTML renders without script, and each page runs its own scripts. An uncaught '
+                         'error stops the rest of the script (or event handler) that threw, so it usually breaks that '
+                         "script's feature (B3) or only logs (B4); the page stays. It is B1 only where the page's "
+                         'content is itself rendered by script (content_rendered_by_js), or the script hides or '
+                         'removes the content.'}
+        notes = [blast['note']]
+        if site['content_rendered_by_js']:
+            notes.append(f"Content rendered by script on {len(site['content_rendered_by_js'])} page(s), e.g. "
+                         f"{', '.join(site['content_rendered_by_js'][:3])}: an uncaught error before render leaves that page blank (B1).")
+        for e in site['error_pages']:
+            notes.append(f"{e['file']} is served for any missing URL but loads {len(e['relative_urls'])} asset(s) by relative URL "
+                         f"({', '.join(e['relative_urls'][:3])}): at a nested path they resolve under that path and fail.")
+        if site['inline_script_pages']:
+            notes.append(f"{site['inline_script_pages']} page(s) have inline scripts, which scan_pitfalls.py does not read.")
+    else:
+        native = set(platforms) & {'android', 'ios', 'flutter', 'react-native', 'expo'}
+        blast = ({'model': 'per_root', 'note': 'Single render tree: an uncaught render error above every boundary blanks the app (B1).'}
+                 if site['kind'] in ('spa', 'ssr') else
+                 {'model': 'per_process', 'note': 'An uncaught exception terminates the app (B1) unless code or a handler catches it.'}
+                 if native else
+                 {'model': 'unknown', 'note': 'No framework, app platform or HTML pages recognised; decide by reading the code.'})
+        notes = ['No error boundary or global handler found: any uncaught render error is app-fatal (B1).'] if not boundaries else []
     out = {
         'generated_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
         'repository': root.name,
@@ -243,13 +398,15 @@ def main() -> int:
         'contracts': contracts,
         'persisted_state': persisted,
         'source_files': len(code),
-        'notes': ['Heuristic: confirm which boundary wraps each finding by reading the render tree.'] +
-                 (['No error boundary or global handler found: any uncaught render error is app-fatal (B1).'] if not boundaries else []),
+        'site': site,
+        'blast_radius': blast,
+        'notes': ['Heuristic: confirm which boundary wraps each finding by reading the render tree.'] + notes,
     }
     text = json.dumps(out, indent=2, ensure_ascii=False)
     if args.out:
         args.out.write_text(text + '\n', encoding='utf-8')
-        print(f"platforms: {', '.join(platforms) or 'unknown'} | routes/screens: {len(uniq_routes)} | boundaries: {len(boundaries)} | "
+        print(f"platforms: {', '.join(platforms) or 'unknown'} | site: {site['kind']} ({site['html_pages']} HTML page(s)) | "
+              f"blast radius: {blast['model']} | routes/screens: {len(uniq_routes)} | boundaries: {len(boundaries)} | "
               f"contracts: {len(contracts)} | persisted-state uses: {len(persisted)} -> {args.out}")
     else:
         print(text)

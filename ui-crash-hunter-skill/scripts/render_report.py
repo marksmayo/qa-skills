@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse, json, os, sys
 from pathlib import Path
 
+sys.dont_write_bytecode = True  # importing a sibling must not write __pycache__ into the skill folder
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import sarif  # noqa: E402
 
@@ -64,6 +65,9 @@ def main() -> int:
     print(f"Platforms: {', '.join(meta['platforms'])}  |  Frameworks: {', '.join(meta.get('frameworks') or []) or 'unknown'}  |  "
           f"App run: {run['status']}{' (' + run['target'] + ')' if run.get('target') else ''}")
     print(f"Generated: {meta['generated_at']}")
+    site, blast = d['recon'].get('site_model'), (d['recon'].get('blast_radius') or {}).get('model')
+    if site or blast:
+        print(f"Site: {site or 'unknown'}  |  Blast-radius model: {blast or 'unknown'}")
     if s.get('headline'):
         print('\n' + s['headline'])
 
@@ -95,6 +99,8 @@ def main() -> int:
             print(f"   Actual:  {rp['actual']}")
         if rp.get('stack_trace'):
             print(paint('   ' + rp['stack_trace'].splitlines()[0], DIM, c))
+        if rp.get('observed_effect'):
+            print(f"   Seen:    {rp['observed_effect']}")
         if rp.get('repro_spec'):
             print(paint(f"   Repro spec: {rp['repro_spec']}", DIM, c))
         if rp.get('not_reproduced_reason'):
@@ -106,6 +112,9 @@ def main() -> int:
         for f in d['degradations']:
             print(f"- {f['tier']} {f['id']} {f['title']}  " + paint(f"[{f['confidence']}]", CONF_STYLE.get(f['confidence'], ''), c)
                   + f"  {loc(f)}")
+            seen = (f.get('repro') or {}).get('observed_effect')
+            if seen:
+                print(paint(f"    seen: {seen}", DIM, c))
 
     print('\n' + paint('TOOLS', BOLD, c))
     for t in d['tools']:

@@ -1,7 +1,7 @@
 ---
 name: ui-crash-hunter
 description: Hunt for code paths in web and mobile UI code that are likely to crash the app (B1, app-fatal) or a whole screen (B2, screen-fatal), rank them by real-world severity, and write reproduction steps for each. Uses static analysis, an API-contract diff and the error-boundary map, then confirms crashes in the running app where possible. Every finding has a file and line, a concrete trigger and a confidence level (reproduced, traced or pattern); degradations are listed separately and never ranked as crashes.
-version: 1.0.0
+version: 1.1.0
 ---
 
 # UI Crash Hunter
@@ -32,7 +32,8 @@ Output:
 ## Non-negotiable rules
 
 - **"Likely crash" is not "crash".** Every finding has a confidence:
-  - `reproduced`: forced in the running app, with a stack trace and a screenshot.
+  - `reproduced`: forced in the running app, with a screenshot and either a stack trace or, for a
+    silent or non-script failure, the probe's observed effect (see step 5).
   - `traced`: you followed a realistic input through the code to an unguarded throw, hop by hop.
   - `pattern`: a lint rule or heuristic matched and you did not trace it further.
 - **Every finding cites a file and line, and a concrete trigger**: the exact data shape, stored
@@ -76,6 +77,16 @@ python scripts/recon.py <repo> [--journey-map journey_map.json] --out <out_dir>/
 
 Read the output, then confirm and complete it by reading the code:
 
+- **The site model and blast radius** (`site.kind`, `blast_radius`). A single-page app or a
+  server-rendered framework has one render tree: an uncaught render error above every boundary
+  blanks the app (`per_root`). A static multi-page site (HTML pages that each load their own scripts,
+  no SPA framework) is `per_script`: the HTML renders without script, so an uncaught error stops
+  only the script (or event handler) that threw and breaks that feature (B3) or only logs (B4). It is
+  B1 only on pages whose content is rendered by script (`content_rendered_by_js`) or when the script
+  hides the content. For static sites recon lists the pages (one route per page, or one per set of
+  scripts when there are many), the scripts each loads, scripts that inject others, pages with
+  inline scripts (read those yourself; the pattern scan skips HTML), and error pages such as
+  `404.html` whose relative asset URLs break when served at a nested path.
 - **Platforms and frameworks**, and the supported targets (`browserslist`, `minSdkVersion`, iOS
   deployment target). Targets decide whether an API is "missing in a supported browser or OS".
 - **Routes and screens.** Add the app shell (header, navigation, layout) as an item: it renders on
@@ -109,7 +120,7 @@ python scripts/scan_pitfalls.py <repo> --sarif <semgrep/detekt/swiftlint .sarif 
 
 | Stack | Tools (only if already installed, or the user agrees to install) |
 |---|---|
-| TypeScript / JavaScript | `strict_overlay.py tsc` (strictNullChecks, noUncheckedIndexedAccess) and `eslint` (react-hooks/exhaustive-deps, no-floating-promises, no-non-null-assertion, no-unnecessary-condition) using the repo's own installs |
+| TypeScript / JavaScript | `strict_overlay.py tsc` (strictNullChecks, noUncheckedIndexedAccess; plain JavaScript without a tsconfig is checked with `checkJs` through a config generated in the scratch directory, using the repo's or the PATH's `tsc`, and is `not_applicable` only when there is no `tsc`) and `eslint` (react-hooks/exhaustive-deps, no-floating-promises, no-non-null-assertion, no-unnecessary-condition) using the repo's own installs |
 | Android | Android Lint (`./gradlew lint`, SARIF via `lint { sarifReport = true }`), detekt (`--report sarif:...`) |
 | iOS | SwiftLint (`swiftlint lint --reporter sarif`) with force_unwrapping, force_cast, force_try enabled in a scratch config |
 | Flutter | `dart analyze` / `flutter analyze` (null-check and `use_build_context_synchronously` diagnostics) |
@@ -156,14 +167,46 @@ python scripts/probe_web.py <out_dir>/probes/C-1.json --out-dir <out_dir>/eviden
 ```
 
 A scenario mocks API responses, seeds storage once (so reloads see what the app itself wrote), sets
-locale, time zone and viewport, and runs steps (`goto`, `click`, `fill`, `press`, `reload`, `back`,
-`offline`, `wait_for`, `wait_ms`). The evidence file records uncaught page errors with stacks,
-console errors (a boundary that catches an error usually logs it), failed requests, whether the root
-is empty (white screen) and which fallback texts are visible, plus a screenshot. `--emit-spec`
-writes a standalone script that exits 1 while the crash reproduces and 0 once it is fixed.
+locale, time zone and viewport, and runs steps (`goto`, `click`, `fill`, `type` (key by key),
+`press`, `reload`, `back`, `offline`, `unroute` (stop a mock, so the next request reaches the real
+server), `expect`, `wait_for`, `wait_ms`). The evidence file records uncaught page errors with
+stacks, console errors (a boundary that catches an error usually logs it), every request with its
+status, failed requests, whether the root is empty (white screen) and which fallback texts are
+visible, plus a screenshot. `--emit-spec` writes a standalone script that exits 1 while the problem
+reproduces and 0 once it is fixed. Run `probe_web.py` rather than importing it; if a wrapper must
+import it, run that with `python -B` so nothing is written into the skill folder.
 
-Always run one **baseline** probe with contract-valid data first: if the baseline already errors,
-fix the scenario before blaming the code.
+**Third parties are blocked.** Every request to a host that isn't loopback, the base URL's host or
+in `allowed_hosts` is aborted and listed in `blocked_requests`, GETs included, so a probe never
+sends analytics hits or ad requests. Console errors caused by that blocking go to
+`blocked_console_errors` and never count towards a reproduction or against a baseline.
+`third_party: "allow"` lifts the block (only with the user's agreement), and
+`service_workers: "block"` stops service workers for the run. Errors inside blocked scripts, and
+their effect on the page, are therefore untested: say so in the limitations.
+
+**Effects, not only errors.** Many real failures throw nothing visible: a fetch failure swallowed by
+`.catch(() => {})` leaves search dead with no message, and a `404.html` with relative asset URLs
+loads unstyled at a nested path. Describe the defect's observable effect in `expect` (and in
+`expect` steps, checked at that point):
+
+| Assertion | Holds when |
+|---|---|
+| `{"visible": sel}` / `{"hidden": sel}` | the element is visible / absent or hidden |
+| `{"text_visible": t}` / `{"text_absent": t}` | the text is visible / not visible |
+| `{"count": sel, "equals"\|"min"\|"max": n}` | the number of matching elements |
+| `{"style": sel, "property": p, "equals"\|"contains"\|"not_equals"\|"not_contains": v}` | a computed style |
+| `{"request": glob, "made": true\|false, "status": n}` | a request was (not) made, optionally with that status |
+| `{"page_error": s}` / `{"console_error": s}` | an error containing the text was raised / logged |
+
+When every assertion holds and no step failed, `effect_observed` is true and the probe reproduces
+(`reproduced_by: ["effect"]`), with or without an error. Assert the defect precisely, so that nothing
+else explains it: "no results **and** no second request for the index after the server recovered" pins the
+memoised failure; "no results" alone could be an empty index.
+
+Always run one **baseline** probe first (`"kind": "baseline"`, contract-valid data, assertions that
+describe healthy behaviour, such as results appearing and the stylesheet applying). It never counts
+as reproduced; `baseline_ok` is true when there were no errors of the app's own and every assertion
+held. If the baseline already errors or fails, fix the scenario before blaming the code.
 
 Triggers worth forcing: null fields, `[]`, missing keys, 10,000-character strings, emoji and
 right-to-left text, HTTP 401/404/500, slow responses, offline, another locale or time zone, stored
@@ -183,7 +226,10 @@ denying permissions. Write the flow (Maestro YAML, Detox test) to the output dir
 spec.
 
 A finding is `reproduced` only with a probe whose evidence shows the error **and** the effect (empty
-root, fallback text, process death in the log). If a probe doesn't reproduce it, keep the finding at
+root, fallback text, process death in the log), or, without a stack trace, whose expectations all
+held (`effect_observed`); write what the probe saw in `repro.observed_effect`. An effect alone is
+enough for a B3/B4 degradation; a B1/B2 crash without a stack trace also needs the probe to show the
+app blanked (`root_empty`, or a screen fallback for B2). If a probe doesn't reproduce it, keep the finding at
 `traced` and record what was tried in `repro.not_reproduced_reason`, or dismiss it if the probe
 showed the trace was wrong.
 
@@ -250,8 +296,12 @@ worst finding plainly ("5 likely crashes, 4 reproduced; a P0 crash loop for user
 - Every finding: file and line (and, with `--repo`, the snippet is on that line), a concrete
   trigger with its basis, trigger data for data and stored-state triggers, a boundary and effect
   that match the tier, sources, a remediation and a verification step.
-- `reproduced`: a probe that reproduced it and lists it, a stack trace, a screenshot on disk, and a
-  trace. `traced`: at least two trace hops.
+- `reproduced`: a probe that reproduced it and lists it, a screenshot on disk, a trace, and a stack
+  trace, or the probe's observed effect with `repro.observed_effect` (B1/B2 crashes also need the
+  probe to show the app blanked).
+- `baseline_clean` probes: no page errors and no console errors of the app's own (errors from the
+  probe's third-party blocking are ignored), and any healthy-behaviour assertions held.
+- On a `per_script` site, a B1/B2 crash whose probe didn't show an empty root draws a warning. `traced`: at least two trace hops.
 - Crashes are B1/B2 with a ranking whose score and priority are recomputed; a crash loop needs a
   stored-state trigger; ranks follow the score. Degradations are B3/B4 and unranked.
 - Every candidate is promoted or dismissed with a reason.

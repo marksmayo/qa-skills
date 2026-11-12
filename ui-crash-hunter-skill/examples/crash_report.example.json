@@ -29,6 +29,11 @@
     }
   },
   "recon": {
+    "site_model": "spa",
+    "blast_radius": {
+      "model": "per_root",
+      "note": "One React root: an uncaught render error above every boundary unmounts it and the page is blank (B1)."
+    },
     "routes_screens": [
       {
         "id": "RT-1",
