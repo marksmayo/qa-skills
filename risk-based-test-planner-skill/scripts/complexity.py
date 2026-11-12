@@ -7,10 +7,12 @@ Python files are parsed with `ast`: each if/elif, loop, except handler, boolean 
 conditional expression, comprehension condition and match case counts as one branch. Other
 languages (JS/TS, Java, Kotlin, Go, C#, Swift, Dart, Ruby, PHP) use a keyword count on code with
 strings and comments removed: if, else if, for, while, case, catch, &&, ||, ?: and ??. Lines of
-code exclude blank lines and comments. Each file records which method was used.
+code exclude blank lines and comments. Each file records which method was used. Dependency,
+build and cache directories (node_modules, .next, dist, coverage, .venv and the like) are pruned
+before they are walked.
 """
 from __future__ import annotations
-import argparse, ast, json, re, sys
+import argparse, ast, json, os, re, sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -56,6 +58,23 @@ def measure(path: Path) -> dict | None:
     return {'loc': loc, 'branches': len(KEYWORDS.findall(code)), 'method': 'keywords'}
 
 
+PRUNE = detect_conventions.SKIP_DIRS | {'.git', 'node_modules', '.next', '.nuxt', 'dist', 'build', 'out', 'coverage', '.venv',
+                                        'venv', '__pycache__', '.turbo', '.cache', '.vercel', '.output'}
+
+
+def walk(root: Path) -> list[Path]:
+    """Code files under root, sorted. Dependency, build and cache directories are pruned before descending, so a
+    node_modules folder is never walked."""
+    out = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d not in PRUNE and not d.endswith('.egg-info'))
+        for fn in filenames:
+            p = Path(dirpath) / fn
+            if p.suffix in CODE_EXT:
+                out.append(p)
+    return sorted(out, key=lambda p: p.relative_to(root).as_posix())
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('repo', type=Path)
@@ -63,13 +82,10 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     root = args.repo.resolve()
     files = {}
-    for p in sorted(root.rglob('*')):
-        rel = p.relative_to(root).as_posix()
-        if not p.is_file() or p.suffix not in CODE_EXT or set(Path(rel).parts) & (detect_conventions.SKIP_DIRS | {'.git'}):
-            continue
+    for p in walk(root):
         m = measure(p)
         if m:
-            files[rel] = m
+            files[p.relative_to(root).as_posix()] = m
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps({'repo': root.name, 'files': files}, indent=2) + '\n', encoding='utf-8')
     print(f'{len(files)} files, {sum(f["loc"] for f in files.values())} lines of code, '
