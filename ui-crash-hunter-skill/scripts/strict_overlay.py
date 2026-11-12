@@ -7,23 +7,36 @@ configs to a scratch directory only, and report the errors the strict settings a
 
 tsc: a scratch tsconfig extends the repo's and turns on strictNullChecks and
 noUncheckedIndexedAccess. Errors present only in the strict run are candidates (a value the
-types say can be null or undefined is used as if it can't). The baseline run is the repo's own
-config, so existing errors aren't reported.
+types say can be null or undefined is used as if it can't). The baseline is the repo's own config
+through a second scratch config, so existing errors aren't reported; the two compiles run side by
+side. Both scratch configs set incremental false and their tsBuildInfoFile in the scratch dir, so
+nothing (not even tsconfig.tsbuildinfo) is written into the repository. The repo's tsconfig and
+jsconfig are read as JSON with comments ("@/*" in a string is not a comment).
+--scope ui (default) compiles only the UI entry points (Next.js page/layout/error files, src/main.*,
+the scripts index.html loads; see ui_graph.py) and what they import, plus declaration files: tests,
+scripts and modules no page imports are left out. --scope all compiles the whole project.
 Plain JavaScript (no tsconfig): when a TypeScript compiler is available (the repo's, or tsc on PATH),
 a config generated in the scratch directory type-checks the JavaScript files (allowJs, checkJs,
 noEmit; extending jsconfig.json if there is one), and the strict overlay is compared against it the
 same way. Without any tsc the result is not_applicable.
-eslint: the repo's config plus crash-relevant rules from plugins the repo already has
+eslint: the repo's config plus crash-relevant rules from plugins the config already loads
 (react-hooks/exhaustive-deps, @typescript-eslint/no-floating-promises, no-non-null-assertion,
-no-unnecessary-condition). Only violations the extra rules add are reported.
+no-unnecessary-condition). Which plugins are loaded is asked of ESLint itself (--print-config on a
+source file), so plugins that come through a shared config such as eslint-config-next count; the
+type-aware rules run only when the config sets parserOptions.project or projectService. Only
+violations the extra rules add are reported. --scope ui lints the files the UI entry points reach.
 
 Nothing in the repo is written. Tools are never installed: a missing tool is reported as not_run,
 and a failing tool as errored, so the report can lower its evidence completeness.
 """
 from __future__ import annotations
-import argparse, json, re, shlex, shutil, subprocess, sys
+import argparse, json, re, shlex, shutil, subprocess, sys, time
 from datetime import datetime, timezone
 from pathlib import Path
+
+sys.dont_write_bytecode = True  # importing a sibling must not write __pycache__ into the skill folder
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ui_graph import load_jsonc, graph as ui_graph, walk as walk_repo  # noqa: E402
 
 TSC_LINE = re.compile(r'^(?P<file>.+?)\((?P<line>\d+),(?P<col>\d+)\):\s+error\s+(?P<code>TS\d+):\s+(?P<msg>.*)$')
 NULL_CODES = {'TS2531', 'TS2532', 'TS2533', 'TS18047', 'TS18048', 'TS18049', 'TS2722', 'TS2721'}
@@ -33,7 +46,9 @@ ESLINT_RULES = [
     ('@typescript-eslint', '@typescript-eslint/no-non-null-assertion', 'WEB-NON-NULL-ASSERTION'),
     ('@typescript-eslint', '@typescript-eslint/no-unnecessary-condition', None),
 ]
-ESLINT_CONFIGS = ('eslint.config.js', 'eslint.config.mjs', 'eslint.config.cjs', 'eslint.config.ts', '.eslintrc', '.eslintrc.js',
+TYPE_AWARE = {'@typescript-eslint/no-floating-promises', '@typescript-eslint/no-unnecessary-condition'}
+ESLINT_CONFIGS = ('eslint.config.js', 'eslint.config.mjs', 'eslint.config.cjs', 'eslint.config.ts', 'eslint.config.mts',
+                  'eslint.config.cts', '.eslintrc', '.eslintrc.js',
                   '.eslintrc.cjs', '.eslintrc.json', '.eslintrc.yml', '.eslintrc.yaml')
 
 def now() -> str:
@@ -64,6 +79,29 @@ def resolve_cmd(cmd: str, root: Path) -> list[str] | None:
 def run(cmd: list[str], cwd: Path, timeout: int) -> tuple[int, str]:
     p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=timeout)
     return p.returncode, (p.stdout or '') + (p.stderr or '')
+
+def run_both(cmds: list[list[str]], cwd: Path, timeout: int, scratch: Path) -> list[tuple[int, str]]:
+    """Run commands at the same time (the baseline and the strict compile are independent), each
+    writing to a file in the scratch directory; returns (exit code, output) per command."""
+    procs = []
+    for n, cmd in enumerate(cmds):
+        out = open(scratch / f'run-{n}.log', 'w+', encoding='utf-8', errors='replace')
+        procs.append((subprocess.Popen(cmd, cwd=cwd, stdout=out, stderr=subprocess.STDOUT), out))
+    deadline = time.monotonic() + timeout
+    results = []
+    try:
+        for p, out in procs:
+            p.wait(timeout=max(1, deadline - time.monotonic()))
+    except subprocess.TimeoutExpired:
+        for p, _ in procs:
+            p.kill()
+        raise
+    finally:
+        for p, out in procs:
+            out.seek(0)
+            results.append((p.returncode, out.read()))
+            out.close()
+    return results
 
 def parse_tsc(output: str, root: Path) -> list[dict]:
     errs = []
@@ -119,8 +157,7 @@ def checkjs_config(args, root: Path) -> tuple[Path | None, dict | None, str | No
     if jsconfig.exists():
         cfg['extends'] = jsconfig.as_posix()
         try:
-            own = json.loads(re.sub(r'(?m)^\s*//.*$|/\*.*?\*/', '', jsconfig.read_text(encoding='utf-8-sig'), flags=re.S))
-            own = own.get('compilerOptions') or {}
+            own = load_jsonc(jsconfig).get('compilerOptions') or {}
         except (OSError, ValueError):
             own = {}
     # the baseline is loose (newer compilers default to strict), so the overlay shows what strictness adds
@@ -152,28 +189,60 @@ def cmd_tsc(args, root: Path) -> dict:
         if not tsc:
             return result('tsc-strict', 'not_run', note=f'"{args.tsc}" not available (TypeScript not installed in the repo); not installed by this script')
     try:
-        base_cfg = json.loads(re.sub(r'(?m)^\s*//.*$|/\*.*?\*/', '', tsconfig.read_text(encoding='utf-8-sig'), flags=re.S))
-    except ValueError:
-        base_cfg = {}
+        base_cfg = load_jsonc(tsconfig)
+    except (OSError, ValueError) as exc:
+        return result('tsc-strict', 'errored', note=f'cannot parse {tsconfig.name}: {exc}')
     co = base_cfg.get('compilerOptions') or {}
-    overlay = {'extends': tsconfig.as_posix(),
-               'compilerOptions': {'strictNullChecks': True, 'noUncheckedIndexedAccess': True, 'noEmit': True,
-                                   'incremental': False, 'composite': False}}
+    scratch = args.scratch.resolve()
+    # Both runs go through scratch configs that extend the repo's, so neither writes into the repository:
+    # incremental (the Next.js default) would otherwise write tsconfig.tsbuildinfo beside the repo's config.
+    common = {'noEmit': True, 'incremental': False, 'composite': False,
+              'tsBuildInfoFile': (scratch / 'tsbuildinfo').as_posix()}
     if 'typeRoots' not in co:
-        overlay['compilerOptions']['typeRoots'] = [(root / 'node_modules' / '@types').as_posix()]
-    if 'include' not in base_cfg and 'files' not in base_cfg:
-        overlay['include'] = [(root / '**' / '*').as_posix()]
-        overlay['exclude'] = [(root / d).as_posix() for d in ('node_modules', 'dist', 'build', 'out', '.next')]
-    scratch_cfg = args.scratch.resolve() / 'tsconfig.strict.json'
+        # The default typeRoots are relative to the config file, which now lives in the scratch dir. With an
+        # explicit "types" list (e.g. "vitest/globals"), entries are looked up in typeRoots, so node_modules
+        # itself is a root too; without one, it must not be (every package would become a global type package).
+        roots = [d / 'node_modules' / '@types' for d in (root, *root.parents) if (d / 'node_modules' / '@types').is_dir()]
+        if co.get('types'):
+            roots += [d / 'node_modules' for d in (root, *root.parents) if (d / 'node_modules').is_dir()]
+        common['typeRoots'] = [p.as_posix() for p in roots] or [(root / 'node_modules' / '@types').as_posix()]
+    scope_note = None
+    files_override: dict = {}
+    if args.scope == 'ui' and extra.get('mode') != 'checkJs':
+        g = ui_graph(root)
+        if g['reachable']:
+            dts = sorted(p.as_posix() for p in walk_repo(root) if p.name.endswith('.d.ts'))
+            files_override = {'files': [(root / f).as_posix() for f in g['entries']] + dts, 'include': []}
+            scope_note = (f"scope ui: compiled from {len(g['entries'])} UI entry point(s) and what they import "
+                          f"({len(g['reachable'])} source file(s)) plus {len(dts)} declaration file(s); tests, scripts and "
+                          "modules no page imports are not compiled (--scope all compiles the whole project)")
+        else:
+            scope_note = 'scope ui requested, but no UI entry point was recognised; the whole project was compiled'
+    if not files_override and 'include' not in base_cfg and 'files' not in base_cfg:
+        files_override = {'include': [(root / '**' / '*').as_posix()],
+                          'exclude': [(root / d).as_posix() for d in ('node_modules', 'dist', 'build', 'out', '.next')]}
+    base_overlay = {'extends': tsconfig.as_posix(), 'compilerOptions': dict(common), **files_override}
+    overlay = {'extends': tsconfig.as_posix(),
+               'compilerOptions': {**common, 'strictNullChecks': True, 'noUncheckedIndexedAccess': True}, **files_override}
+    base_cfg_path = scratch / 'tsconfig.baseline.json'
+    scratch_cfg = scratch / 'tsconfig.strict.json'
+    base_cfg_path.write_text(json.dumps(base_overlay, indent=2), encoding='utf-8')
     scratch_cfg.write_text(json.dumps(overlay, indent=2), encoding='utf-8')
+    started = time.monotonic()
     try:
-        base_rc, base_out = run(tsc + ['-p', str(tsconfig), '--noEmit', '--pretty', 'false'], root, args.timeout)
-        strict_rc, strict_out = run(tsc + ['-p', str(scratch_cfg), '--pretty', 'false'], root, args.timeout)
+        (base_rc, base_out), (strict_rc, strict_out) = run_both(
+            [tsc + ['-p', str(base_cfg_path), '--pretty', 'false'], tsc + ['-p', str(scratch_cfg), '--pretty', 'false']],
+            root, args.timeout, scratch)
     except (OSError, subprocess.TimeoutExpired) as exc:
         return result('tsc-strict', 'errored', note=str(exc))
+    elapsed = round(time.monotonic() - started, 1)
+    if scope_note:
+        extra = {**extra, 'scope': args.scope, 'scope_note': scope_note}
     base, strict = parse_tsc(base_out, root), parse_tsc(strict_out, root)
     if strict_rc not in (0, 1, 2) or (strict_rc and not strict):
         return result('tsc-strict', 'errored', note='tsc failed without diagnostics', output=strict_out[-2000:])
+    if base_rc not in (0, 1, 2) or (base_rc and not base):
+        return result('tsc-strict', 'errored', note='the baseline tsc run failed without diagnostics', output=base_out[-2000:])
     seen = {(e['file'], e['line'], e['column'], e['code']) for e in base}
     new = [e for e in strict if (e['file'], e['line'], e['column'], e['code']) not in seen]
     version = run(tsc + ['--version'], root, 60)[1].strip()
@@ -188,6 +257,7 @@ def cmd_tsc(args, root: Path) -> dict:
                       'message': f"{e['code']}: {e['message']}",
                       'sources': [{'tool': 'tsc-strict', 'version': version, 'rule_id': e['code']}]})
     return result('tsc-strict', 'ran', **extra, version=version, scratch_config=scratch_cfg.as_posix(),
+                  baseline_config=base_cfg_path.as_posix(), seconds=elapsed,
                   command=' '.join(tsc + ['-p', scratch_cfg.as_posix()]), baseline_errors=len(base), strict_errors=len(strict),
                   new_errors=len(new), candidates=cands)
 
@@ -197,14 +267,60 @@ def cmd_eslint(args, root: Path) -> dict:
     eslint = resolve_cmd(args.eslint, root)
     if not eslint:
         return result('eslint-strict', 'not_run', note=f'"{args.eslint}" not available; not installed by this script')
-    deps = _pkg(root)
-    deps = {**(deps.get('dependencies') or {}), **(deps.get('devDependencies') or {})}
-    have = {'react-hooks': 'eslint-plugin-react-hooks' in deps,
-            '@typescript-eslint': '@typescript-eslint/eslint-plugin' in deps or 'typescript-eslint' in deps}
-    rules = [(r, pid) for plugin, r, pid in ESLINT_RULES if have.get(plugin)]
+    paths = args.paths
+    scope_note = None
+    if not paths and args.scope == 'ui':
+        g = ui_graph(root)
+        reach = [f for f in (g['reachable'] or []) if f.endswith(('.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs')) and not f.endswith('.d.ts')]
+        if reach and len(reach) <= 600:
+            paths = reach
+            scope_note = f'scope ui: linted the {len(reach)} source file(s) reachable from the UI entry points'
+    paths = paths or ['.']
+    # Which plugins the config really loads: eslint-config-next and other shared configs bring
+    # eslint-plugin-react-hooks and typescript-eslint in transitively, so package.json alone undercounts.
+    sample = next((p for p in paths if Path(p).suffix in ('.tsx', '.ts', '.jsx', '.js')), None) or \
+        next((p.relative_to(root).as_posix() for p in walk_repo(root) if p.suffix in ('.tsx', '.ts', '.jsx', '.js')
+              and not p.name.endswith('.d.ts')), None)
+    plugins, typed, how = None, False, 'package.json'
+    if sample:
+        try:
+            rc, out = run(eslint + ['--print-config', sample], root, min(args.timeout, 120))
+            cfg = json.loads(out[out.find('{'):]) if rc == 0 and '{' in out else None
+        except (OSError, subprocess.TimeoutExpired, ValueError):
+            cfg = None
+        if isinstance(cfg, dict):
+            raw = cfg.get('plugins') or []
+            raw = list(raw.keys()) if isinstance(raw, dict) else raw
+            plugins = {str(p).split(':')[0] for p in raw}
+            po = {**((cfg.get('languageOptions') or {}).get('parserOptions') or {}), **(cfg.get('parserOptions') or {})}
+            typed = bool(po.get('project') or po.get('projectService'))
+            how = f'eslint --print-config {sample}'
+    if plugins is None:
+        deps = _pkg(root)
+        deps = {**(deps.get('dependencies') or {}), **(deps.get('devDependencies') or {})}
+        nm = root / 'node_modules'
+        plugins = set()
+        if 'eslint-plugin-react-hooks' in deps or (nm / 'eslint-plugin-react-hooks').is_dir():
+            plugins.add('react-hooks')
+        if {'@typescript-eslint/eslint-plugin', 'typescript-eslint'} & set(deps) or (nm / '@typescript-eslint' / 'eslint-plugin').is_dir():
+            plugins.add('@typescript-eslint')
+    skipped = []
+    rules = []
+    for plugin, r, pid in ESLINT_RULES:
+        if plugin not in plugins:
+            continue
+        if r in TYPE_AWARE and not typed:
+            skipped.append(r)
+            continue
+        rules.append((r, pid))
     if not rules:
-        return result('eslint-strict', 'not_applicable', note='none of the crash-relevant ESLint plugins are installed')
-    paths = args.paths or ['.']
+        if how == 'package.json':
+            return result('eslint-strict', 'not_run', note='could not confirm which plugins the ESLint config loads '
+                          '(eslint --print-config failed) and none of the crash-relevant plugins is a dependency')
+        return result('eslint-strict', 'not_applicable', plugins_detected_by=how, plugins=sorted(plugins),
+                      note='the ESLint config loads none of the crash-relevant plugins (react-hooks, @typescript-eslint)'
+                           + (f'; type-aware rules {", ".join(skipped)} skipped: no parserOptions.project/projectService'
+                              if skipped else ''))
     extra = []
     for r, _ in rules:
         extra += ['--rule', f'{r}: error']
@@ -235,7 +351,14 @@ def cmd_eslint(args, root: Path) -> dict:
             cands.append({'pitfall_id': pid_by_rule[m['ruleId']], 'file': rel, 'line': m.get('line'), 'column': m.get('column'),
                           'snippet': '', 'message': f"{m['ruleId']}: {m.get('message', '')}",
                           'sources': [{'tool': 'eslint-strict', 'rule_id': m['ruleId']}]})
-    return result('eslint-strict', 'ran', rules=[r for r, _ in rules], command=' '.join(eslint + extra + paths), candidates=cands)
+    more = {'scope_note': scope_note} if scope_note else {}
+    if skipped:
+        more['skipped_rules'] = skipped
+        more['note'] = (f'type-aware rules not run ({", ".join(skipped)}): the config sets no parserOptions.project or '
+                        'projectService, and the overlay does not add type information')
+    shown = paths if len(paths) <= 5 else paths[:5] + [f'... ({len(paths)} files)']
+    return result('eslint-strict', 'ran', rules=[r for r, _ in rules], plugins_detected_by=how, plugins=sorted(plugins),
+                  command=' '.join(eslint + extra + shown), candidates=cands, **more)
 
 def _pkg(root: Path) -> dict:
     try:
@@ -254,6 +377,8 @@ def main() -> int:
         s.add_argument('--scratch', type=Path, required=True, help='directory outside the repo for overlay configs')
         s.add_argument('--timeout', type=int, default=900)
         s.add_argument('--out', type=Path)
+        s.add_argument('--scope', choices=['ui', 'all'], default='ui',
+                       help='ui (default): only files reachable from UI entry points; all: the whole project')
     sub.choices['tsc'].add_argument('--tsconfig', default='tsconfig.json')
     sub.choices['tsc'].add_argument('--tsc', default=DEFAULT_TSC)
     sub.choices['eslint'].add_argument('--paths', nargs='*')

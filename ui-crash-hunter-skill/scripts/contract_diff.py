@@ -5,13 +5,17 @@ code dereferences them without a guard. Stdlib only.
     python contract_diff.py <repo> [--contract openapi.json ...] [--out contract.json]
 
 Contracts read: OpenAPI 3.x / Swagger 2 (JSON, or YAML: PyYAML if installed, otherwise a built-in
-subset parser), GraphQL SDL, TypeScript interfaces and object types, Kotlin data classes, Swift
-structs and Dart classes. Without --contract, every contract file under the repo is used.
+subset parser), GraphQL SDL, Prisma schemas (a `Type?` field is nullable; required columns and
+relations are not), TypeScript interfaces and object types (not a route handler's private types),
+Kotlin data classes, Swift structs and Dart classes. Without --contract, every contract file under
+the repo is used.
 
 An access site is `.field` followed by a dereference (`.x`, `[i]`, `(...)`) or a force unwrap
 (`!`, `!!`). Matching is by field name, so every hit is a candidate for the agent to trace, not a
-finding: `name_collision` marks fields that are non-null in some other type, and `guard_nearby`
-marks a check on the same field in the lines just before.
+finding. A field name that is non-null in some other contract type can't be told apart by name, so
+those sites are skipped and counted (`skipped.name_collision`; --include-collisions lists them, marked
+`name_collision`), as are Prisma client delegates (`prisma.appointment.findMany()`). `guard_nearby`
+marks a check on the same field in the lines just before. Route handlers are not scanned.
 """
 from __future__ import annotations
 import argparse, json, re, sys
@@ -19,7 +23,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'out', '.next', '.nuxt', 'coverage', 'vendor', 'Pods',
-             'DerivedData', '.gradle', '.dart_tool', '__pycache__', '.expo', 'storybook-static', 'target'}
+             'DerivedData', '.gradle', '.dart_tool', '__pycache__', '.expo', 'storybook-static', 'target', '.turbo',
+             '.cache', '.venv', 'venv'}
+ROUTE_HANDLER = re.compile(r'(^|/)(src/)?app/(.*/)?route\.(ts|js|mts|mjs|tsx|jsx)$|(^|/)(src/)?pages/api/')
+AUTHORITATIVE = {'openapi', 'graphql', 'prisma'}
+DB_CLIENT = re.compile(r'(prisma|db|tx|client|orm)$', re.I)
 TEST_PART = re.compile(r'(^|/)(tests?|__tests__|__mocks__|e2e|cypress|playwright|androidTest|integration_test|\w*UITests?)(/|$)')
 TEST_NAME = re.compile(r'(\.|_)(test|spec|stories)\.\w+$|Tests?\.(swift|kt|java)$|_test\.dart$|\.d\.ts$', re.I)
 UI_EXT = {'.js', '.jsx', '.mjs', '.ts', '.tsx', '.vue', '.svelte', '.kt', '.java', '.swift', '.dart'}
@@ -253,6 +261,27 @@ def typescript_fields(text: str, ref: str) -> list[dict]:
             out.append(entry)
     return out
 
+PRISMA_MODEL = re.compile(r'^\s*(model|type)\s+(\w+)\s*\{', re.M)
+PRISMA_FIELD = re.compile(r'^\s*(\w+)\s+(\w+)(\[\])?(\?)?(?=\s|$)')
+
+def prisma_fields(text: str, ref: str) -> list[dict]:
+    """Prisma schema models: a field is nullable when its type ends in '?'. Required relations and
+    columns are non-null: the database (and the generated client's types) guarantee them."""
+    out = []
+    for m in PRISMA_MODEL.finditer(text):
+        body, _ = _body(text, m.end() - 1)
+        for line in body.splitlines():
+            s = line.strip()
+            if not s or s.startswith(('//', '@@')):
+                continue
+            f = PRISMA_FIELD.match(line)
+            if not f:
+                continue
+            nullable = bool(f.group(4))
+            out.append({'type': m.group(2), 'field': f.group(1), 'nullable': nullable, 'list': bool(f.group(3)),
+                        **({'reason': 'nullable'} if nullable else {}), 'ref': f'{ref}#{m.group(2)}.{f.group(1)}'})
+    return out
+
 def model_fields(text: str, ref: str, ext: str) -> list[dict]:
     out = []
     for m in MODEL_DECL[ext].finditer(text):
@@ -302,6 +331,10 @@ def find_contracts(root: Path) -> list[tuple[str, Path]]:
             continue
         if p.suffix in ('.graphql', '.gql'):
             found.append(('graphql', p))
+        elif p.suffix == '.prisma':
+            found.append(('prisma', p))
+        elif ROUTE_HANDLER.search(rel):
+            continue  # a route handler's own row types are private to the server, not a contract the UI reads
         elif p.suffix in ('.json', '.yaml', '.yml') and p.name not in ('package.json', 'package-lock.json', 'tsconfig.json'):
             try:
                 head = p.read_text(encoding='utf-8', errors='replace')[:4000]
@@ -322,6 +355,8 @@ def read_contract(kind: str, path: Path, root: Path) -> list[dict]:
     text = path.read_text(encoding='utf-8', errors='replace')
     if kind == 'graphql':
         return graphql_fields(text, rel)
+    if kind == 'prisma':
+        return prisma_fields(text, rel)
     if kind == 'typescript':
         return typescript_fields(text, rel)
     return model_fields(text, rel, path.suffix)
@@ -340,6 +375,8 @@ def main() -> int:
     ap.add_argument('repo', type=Path)
     ap.add_argument('--contract', nargs='*', type=Path, default=[], help='contract files (default: discover)')
     ap.add_argument('--include-generic', action='store_true', help=f'also match generic field names ({", ".join(sorted(GENERIC))})')
+    ap.add_argument('--include-collisions', action='store_true',
+                    help='also list access sites whose field name is non-null in another contract type')
     ap.add_argument('--out', type=Path)
     args = ap.parse_args()
     root = args.repo.resolve()
@@ -350,7 +387,7 @@ def main() -> int:
     for c in args.contract:
         p = c if c.is_absolute() else (Path.cwd() / c)
         kind = 'graphql' if p.suffix in ('.graphql', '.gql') else 'openapi' if p.suffix in ('.json', '.yaml', '.yml') \
-            else 'typescript' if p.suffix in ('.ts', '.tsx') else 'model'
+            else 'prisma' if p.suffix == '.prisma' else 'typescript' if p.suffix in ('.ts', '.tsx') else 'model'
         contracts.append((kind, p.resolve()))
     if not contracts:
         contracts = find_contracts(root)
@@ -366,13 +403,16 @@ def main() -> int:
         if f['nullable'] and (args.include_generic or f['field'] not in GENERIC):
             nullable.setdefault(f['field'], []).append(f)
     contract_files = {str(p.resolve()) for _, p in contracts}
-    cands = []
+    # Prisma client delegates: prisma.appointment.findMany() is a model accessor, not a field read
+    delegates = {f['type'][:1].lower() + f['type'][1:] for f in fields if f.get('contract_kind') == 'prisma'}
+    cands, skipped = [], {'name_collision': {}, 'db_client_delegate': 0}
     if nullable:
         names = '|'.join(sorted((re.escape(n) for n in nullable), key=len, reverse=True))
         access = re.compile(rf'(?:\?\.|\.)({names})\b(?:\s*(?:\.(?![.?])|\[|\()|(!!|!)(?!=))')
         for p in walk(root):
             rel = p.relative_to(root).as_posix()
-            if p.suffix not in UI_EXT or is_bundle(p) or TEST_NAME.search(p.name) or TEST_PART.search(rel) or str(p.resolve()) in contract_files:
+            if p.suffix not in UI_EXT or is_bundle(p) or TEST_NAME.search(p.name) or TEST_PART.search(rel) or \
+                    ROUTE_HANDLER.search(rel) or str(p.resolve()) in contract_files:
                 continue
             try:
                 lines = p.read_text(encoding='utf-8', errors='replace').splitlines()
@@ -384,6 +424,14 @@ def main() -> int:
                 for m in access.finditer(line):
                     field = m.group(1)
                     src = nullable[field]
+                    recv = re.search(r'([\w$]+)\??$', line[:m.start()])
+                    if field in delegates and recv and DB_CLIENT.search(recv.group(1)):
+                        skipped['db_client_delegate'] += 1
+                        continue
+                    if field in non_null_names and not args.include_collisions:
+                        # the same name is non-null in another type: matching by name can't tell which one this is
+                        skipped['name_collision'][field] = skipped['name_collision'].get(field, 0) + 1
+                        continue
                     cands.append({
                         'pitfall_id': PITFALL_BY_EXT.get(p.suffix, 'WEB-UNGUARDED-OPTIONAL'),
                         'file': rel, 'line': i + 1, 'column': m.start() + 1, 'snippet': line.strip()[:200],
@@ -398,6 +446,12 @@ def main() -> int:
         'contracts': [{'kind': k, 'file': p.relative_to(root).as_posix() if p.is_relative_to(root) else str(p)} for k, p in contracts],
         'read_errors': read_errors,
         'nullable_fields': [f for fs in nullable.values() for f in fs],
+        'skipped': {'name_collision': sum(skipped['name_collision'].values()),
+                    'name_collision_fields': dict(sorted(skipped['name_collision'].items(), key=lambda kv: -kv[1])[:30]),
+                    'db_client_delegate': skipped['db_client_delegate'],
+                    'note': 'Access sites not listed as candidates: the field name is non-null in another contract type '
+                            '(rerun with --include-collisions to list them), or the access is a database client delegate '
+                            '(prisma.model.findMany()).'},
         'candidates': cands,
     }
     text = json.dumps(out, indent=2, ensure_ascii=False)

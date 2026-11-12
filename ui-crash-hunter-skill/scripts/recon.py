@@ -16,6 +16,14 @@ script that threw, so it breaks a feature (B3) or only logs (B4), except on page
 itself rendered by script. For such sites it lists the pages (one route per page, or one per set of
 scripts when there are many), the scripts each page loads, scripts that inject other scripts,
 inline scripts, and error pages (404.html) whose relative asset URLs break at nested paths.
+
+Next.js: pages become routes (route groups and parallel-route slots are not URL segments), the root
+layout becomes a shell item, and "nextjs" lists layouts, template/not-found/loading files,
+middleware.ts/proxy.ts with its matcher, next/dynamic imports (and whether they skip SSR) and the
+route handlers with their HTTP methods. Route handlers are API code and never UI routes. A
+`path: "/..."` object is a route only in router configuration, not in cookie options or OpenAPI
+documents; OpenAPI documents built in code and Prisma schemas are listed as contracts. Boundary
+definitions that nothing renders are marked used: false.
 """
 from __future__ import annotations
 import argparse, json, re, sys
@@ -24,7 +32,7 @@ from pathlib import Path
 
 SKIP_DIRS = {'.git', 'node_modules', 'dist', 'build', 'out', '.next', '.nuxt', '.svelte-kit', '.output', 'coverage',
              'vendor', 'Pods', 'Carthage', 'DerivedData', '.gradle', '.dart_tool', '.idea', '.vscode', '__pycache__',
-             'storybook-static', '.expo', 'venv', '.venv', 'target'}
+             'storybook-static', '.expo', 'venv', '.venv', 'target', '.turbo', '.cache'}
 TEST_PART = re.compile(r'(^|/)(tests?|__tests__|__mocks__|e2e|cypress|playwright|androidTest|integration_test|\w*UITests?)(/|$)')
 TEST_NAME = re.compile(r'(\.|_)(test|spec|stories)\.\w+$|Tests?\.(swift|kt|java)$|_test\.dart$|\.d\.ts$', re.I)
 CODE_EXT = {'.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.vue', '.svelte', '.kt', '.java', '.swift', '.dart'}
@@ -70,7 +78,19 @@ ROUTE_RX = [
     ('android-screen', re.compile(r'class\s+(\w+(?:Activity|Fragment))\b[^{]*?:\s*\w*(?:Activity|Fragment)\b')),
     ('flutter-screen', re.compile(r'class\s+(\w+(?:Screen|Page))\s+extends\s+(?:Stateless|Stateful)Widget')),
 ]
-NEXT_FILES = re.compile(r'(^|/)(app|src/app)/(.*/)?(page|error|global-error|layout)\.(tsx|jsx|js|ts)$|(^|/)(pages|src/pages)/.+\.(tsx|jsx|js|ts)$')
+NEXT_FILES = re.compile(r'(^|/)(app|src/app)/(.*/)?(page|error|global-error|layout)\.(tsx|jsx|js|ts)$|(^|/)(pages|src/pages)/(?!api/).+\.(tsx|jsx|js|ts)$')
+NEXT_SPECIAL = re.compile(r'^(?P<dir>(?:src/)?app(?:/.*)?)/(?P<kind>layout|template|not-found|loading|error|global-error|default)\.(tsx|jsx|js|ts)$')
+NEXT_HANDLER = re.compile(r'^(?:src/)?app/(?P<seg>(?:.*/)?)route\.(ts|js|mts|mjs|tsx|jsx)$|^(?:src/)?pages/(?P<api>api/.+)\.(ts|js|tsx|jsx)$')
+HTTP_EXPORT = re.compile(r'\bexport\s+(?:async\s+)?(?:function|const|let)\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b|'
+                         r'\bexport\s*\{([^}]*)\}')
+DYNAMIC = re.compile(r'\bdynamic\s*\(\s*(?:async\s*)?\(\s*\)\s*=>\s*import\(\s*["\']([^"\']+)["\']\s*\)')
+DEFAULT_EXPORT = re.compile(r'^\s*export\s+default\b', re.M)
+# 'path: "/..."' is a route only in router configuration: not in cookie options, OpenAPI documents or route handlers
+ROUTER_FILE = re.compile(r'createBrowserRouter|createHashRouter|createRouter|createRoute\b|RouterModule|\bRoutes\b|'
+                         r'\broutes\s*[:=]|\bcomponent\s*:|\belement\s*:|loadComponent|loadChildren|\blazy\s*:')
+NOT_ROUTER_FILE = re.compile(r'["\']?(openapi|swagger)["\']?\s*:\s*["\']\d|\boperationId\b|\brequestBody\b')
+OPENAPI_CODE = re.compile(r'["\']?(openapi|swagger)["\']?\s*:\s*["\'][23]\.\d')
+COOKIE_CONTEXT =re.compile(r'\b(httpOnly|sameSite|secure|maxAge|expires|domain)\s*:|cookies?\b', re.I)
 
 def walk(root: Path):
     stack = [root]
@@ -257,6 +277,65 @@ def site_model(root: Path, files: list[Path], platforms: list[str]) -> dict:
                         if p.get('error_page_relative_urls')],
     }
 
+def next_path(seg: str) -> str:
+    """App Router directory -> URL path: route groups "(x)" and parallel-route slots "@x" are not URL
+    segments; intercepting routes "(.)x" keep their target segment."""
+    parts = []
+    for p in seg.strip('/').split('/'):
+        if not p or p.startswith('@') or re.fullmatch(r'\([^.)][^)]*\)', p):
+            continue
+        parts.append(re.sub(r'^\((\.{1,3}|\.\.\)\(\.\.)\)', '', p))
+    return '/' + '/'.join(x for x in parts if x)
+
+def nextjs_model(root: Path, code: list[Path]) -> dict:
+    """Next.js structure that decides blast radius: layouts (the root layout renders around every page
+    and sits outside every error.tsx; only global-error catches it), templates, not-found and loading
+    files, middleware/proxy, next/dynamic imports, and route handlers (API code, not UI)."""
+    layouts, special, handlers, dynamic, middleware = [], [], [], [], []
+    for f in code:
+        rel = f.relative_to(root).as_posix()
+        m = NEXT_SPECIAL.match(rel)
+        text = read(f)
+        if m:
+            seg = re.sub(r'^(src/)?app', '', m['dir'])
+            d = DEFAULT_EXPORT.search(text)
+            entry = {'kind': m['kind'], 'file': rel, 'line': line_of(text, d.start()) if d else 1, 'path': next_path(seg),
+                     'client': bool(re.match(r'\s*["\']use client["\']', text))}
+            if m['kind'] == 'layout':
+                entry['root'] = seg.strip('/') == '' or all(p.startswith('(') for p in seg.strip('/').split('/'))
+                layouts.append(entry)
+            elif m['kind'] not in ('error', 'global-error'):
+                special.append(entry)
+        h = NEXT_HANDLER.match(rel)
+        if h:
+            methods = []
+            for x in HTTP_EXPORT.finditer(text):
+                if x.group(1):
+                    methods.append(x.group(1))
+                else:  # export { handler as GET, POST }
+                    methods += re.findall(r'(?:\bas\s+|^|,\s*)(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b', x.group(2).strip())
+            path = next_path(h['seg']) if h['seg'] is not None else '/' + re.sub(r'/index$', '', h['api'])
+            handlers.append({'path': path, 'file': rel, 'methods': sorted(set(methods)), 'line': 1})
+        if re.match(r'^(src/)?(middleware|proxy)\.(ts|js|mts|mjs)$', rel):
+            mm = re.search(r'\bmatcher\s*:\s*(\[[^\]]*\]|["\'][^"\']*["\'])', text, re.S)
+            middleware.append({'file': rel, 'line': line_of(text, mm.start()) if mm else 1,
+                               'matcher': ' '.join(mm.group(1).split())[:300] if mm else None,
+                               'note': 'Runs before every matched request (pages and API): redirects, auth and rate limits '
+                                       'here change what a probe sees, and a throw here fails every matched page.'})
+        for x in DYNAMIC.finditer(text):
+            tail = text[x.end():x.end() + 200]
+            ssr = re.match(r'\s*,\s*\{[^}]*\bssr\s*:\s*false', tail)
+            dynamic.append({'file': rel, 'line': line_of(text, x.start()), 'import': x.group(1), 'ssr': not bool(ssr)})
+    return {'layouts': sorted(layouts, key=lambda l: l['file']), 'special_files': sorted(special, key=lambda s: s['file']),
+            'middleware': middleware, 'dynamic_imports': dynamic,
+            'route_handlers': sorted(handlers, key=lambda h: h['path']),
+            'note': 'Route handlers are API code (a throw is an HTTP 500, not a UI crash) and are not UI routes. '
+                    'The root layout renders around every page and is outside every error.tsx: only global-error '
+                    'catches a throw there, so it replaces the whole document (effect app_fallback). An error.tsx '
+                    'catches its segment\'s page and nested segments, not the layout in its own folder. '
+                    'Server components run during SSR: their triggers are server data (seed the database), not '
+                    'browser mocks. next/dynamic with ssr:false runs only in the browser, after hydration.'}
+
 def main() -> int:
     if hasattr(sys.stdout, 'reconfigure'):  # JSON on stdout may hold any character; a cp1252 console can't print it
         sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -275,6 +354,7 @@ def main() -> int:
             and not TEST_PART.search(f.relative_to(root).as_posix())]
 
     routes, boundaries, data_layer, persisted, contracts = [], [], {}, [], []
+    code_set = set(code)
     data_rx = {k: re.compile(v) for k, v in DATA_LAYER.items()}
     pers_rx = {k: re.compile(v) for k, v in PERSISTED.items()}
     for f in code:
@@ -288,10 +368,19 @@ def main() -> int:
                 boundaries.append({'framework': 'nextjs', 'kind': kind, 'name': f.name, 'file': rel, 'line': 1,
                                    'scope': 'app' if 'global-error' in f.name else 'route'})
             elif re.search(r'(^|/)page\.\w+$|(^|/)pages/', rel):
-                routes.append({'kind': 'route', 'path': '/' + re.sub(r'^(src/)?(app|pages)/?|/?page\.\w+$|\.\w+$', '', rel),
+                routes.append({'kind': 'route', 'path': next_path(re.sub(r'^(src/)?(app|pages)/?|/?page\.\w+$|\.\w+$', '', rel)),
                                'file': rel, 'line': 1, 'detector': 'nextjs-file'})
+        handler = bool(NEXT_HANDLER.match(rel))
+        router_file = bool(ROUTER_FILE.search(text)) and not NOT_ROUTER_FILE.search(text) and not handler
         for det, rx in ROUTE_RX:
+            if det == 'route-object' and not router_file:
+                continue
             for m in rx.finditer(text):
+                if det == 'route-object':
+                    lo = text.rfind('{', 0, m.start())
+                    ctx = text[max(lo, m.start() - 300):m.end() + 200]
+                    if COOKIE_CONTEXT.search(ctx):
+                        continue
                 routes.append({'kind': 'screen' if det.endswith(('view', 'vc', 'screen')) else 'route', 'path': m.group(1),
                                'file': rel, 'line': line_of(text, m.start()), 'detector': det})
         for fw, kind, rx in BOUNDARY_RX:
@@ -322,8 +411,17 @@ def main() -> int:
             head = read(f)[:4000]
             if re.search(r'["\']?(openapi|swagger)["\']?\s*:\s*["\']?\d', head):
                 contracts.append({'kind': 'openapi', 'file': rel})
+        elif f.suffix == '.prisma':
+            contracts.append({'kind': 'prisma', 'file': rel})
+        elif f in code_set and f.suffix in ('.ts', '.js', '.mjs') and OPENAPI_CODE.search(read(f)):
+            contracts.append({'kind': 'openapi-in-code', 'file': rel,
+                              'note': 'an OpenAPI document built in code: export it (run its builder) to use it as a contract'})
     # boundary usages that refer to a defined boundary component, or a known library boundary
     defined = {b['name'] for b in boundaries if b['kind'] == 'definition'}
+    used_names = {b['name'] for b in boundaries if b['kind'] == 'usage'}
+    for b in boundaries:
+        if b['kind'] == 'definition':
+            b['used'] = b['name'] in used_names  # a boundary that is defined but never rendered protects nothing
     boundaries = [b for b in boundaries if b['kind'] != 'usage' or b['name'] in defined
                   or b['name'] in ('ErrorBoundary', 'Sentry.ErrorBoundary')]
     for n, b in enumerate(boundaries, 1):
@@ -346,6 +444,22 @@ def main() -> int:
             if r['path'] in prio:
                 r['journey_priority'] = prio[r['path']]
     site = site_model(root, files, platforms)
+    nextjs = None
+    if 'nextjs' in platforms:
+        nextjs = nextjs_model(root, code)
+        handler_files = {h['file'] for h in nextjs['route_handlers']}
+        uniq_routes = [r for r in uniq_routes if r['file'] not in handler_files]
+        for lay in nextjs['layouts']:
+            if lay['root']:  # the app shell: renders around every page, outside every error.tsx
+                uniq_routes.append({'kind': 'shell', 'path': f"(root layout {lay['path']})".replace(' /)', ')'),
+                                    'file': lay['file'], 'line': lay['line'], 'detector': 'nextjs-root-layout',
+                                    'note': 'Renders around every page; only global-error catches a throw here, and its '
+                                            'client components (and their next/dynamic imports) run on every page.'})
+        for b in boundaries:
+            if b.get('framework') == 'nextjs' and b['kind'] == 'route_file':
+                seg = re.sub(r'^(src/)?app|/(global-)?error\.\w+$', '', b['file'])
+                b['covers'] = (['every page and the root layout (replaces the whole document)'] if b['scope'] == 'app' else
+                               [f"pages under {next_path(seg)} and nested segments (not the layout in its own folder)"])
     static = site['kind'] in ('multi_page', 'single_page_static')
     if static:
         platforms = sorted(set(platforms) | {'static-html'})
@@ -399,6 +513,7 @@ def main() -> int:
         'persisted_state': persisted,
         'source_files': len(code),
         'site': site,
+        **({'nextjs': nextjs, 'api_endpoints': len(nextjs['route_handlers'])} if nextjs else {}),
         'blast_radius': blast,
         'notes': ['Heuristic: confirm which boundary wraps each finding by reading the render tree.'] + notes,
     }

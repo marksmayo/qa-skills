@@ -57,7 +57,8 @@
       "pack": "web",
       "category": "data",
       "title": "Invalid Date reaches a throwing Date method",
-      "regex": "\\.toISOString\\(\\)",
+      "regex": "(?<!new Date\\(\\))\\.toISOString\\(\\)",
+      "note": "new Date() with no argument (the current time) cannot be Invalid Date and is not matched.",
       "trigger_hint": "A date string the engine can't parse (empty, null, or a non-ISO format some browsers reject) produces Invalid Date; toISOString then throws RangeError.",
       "fix": "Check isNaN(date.getTime()) before formatting, or parse with a library that returns a result type.",
       "tools": []
@@ -68,6 +69,8 @@
       "category": "data",
       "title": "Number or string method called on a value that can be null",
       "regex": "\\.(toFixed|toPrecision)\\(",
+      "suppress_line": "!==?\\s*(?:null|undefined)\\s*(?:\\?|&&)|typeof\\s+[\\w.]+\\s*===?\\s*['\"]number['\"]|\\?\\?\\s*[\\d.]+\\s*\\)\\s*\\.(?:toFixed|toPrecision)|Number\\([^)]*\\)\\s*\\.(?:toFixed|toPrecision)|Number\\.isFinite\\(",
+      "note": "Not matched when the same line guards the value (x != null ? x.toFixed(...), typeof x === 'number', (x ?? 0).toFixed, Number(x).toFixed).",
       "trigger_hint": "The number is null or undefined (no rating yet, price not loaded) and toFixed throws TypeError.",
       "fix": "Format through a helper that handles null, and show a placeholder.",
       "tools": ["tsc:TS18047", "tsc:TS18048", "contract_diff:nullable-access"]
@@ -78,6 +81,8 @@
       "category": "data",
       "title": "Intl formatter built from data that can be invalid",
       "regex": "new\\s+Intl\\.(NumberFormat|DateTimeFormat|RelativeTimeFormat)\\(|toLocaleString\\([^)]*currency",
+      "suppress_line": "^(?:(?!new\\s+Intl\\.).)*new\\s+Intl\\.\\w+\\(\\s*(?:['\"][A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*['\"]|\\[\\s*['\"][\\w-]+['\"]\\s*\\]|undefined)?\\s*(?:\\)|,\\s*\\{(?:\\s*\\w+\\s*:\\s*(?:'[^']*'|\"[^\"]*\"|\\d+|true|false)\\s*,?)*\\s*\\}\\s*\\))(?:(?!new\\s+Intl\\.|toLocaleString).)*$",
+      "note": "A formatter built from a constant locale and constant options (all on one line) cannot throw and is not matched.",
       "trigger_hint": "The locale, currency code or time zone comes from the user or the API and is invalid or empty; the constructor throws RangeError.",
       "fix": "Validate the code against a known list, or construct inside try/catch with a fallback locale.",
       "tools": []

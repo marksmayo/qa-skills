@@ -10,6 +10,12 @@ data/pitfalls.json. Candidates are not findings until the agent traces them to a
 mapped to pitfalls through each pitfall's 'tools' list. --extra adds candidates written by
 strict_overlay.py and contract_diff.py. Hits on the same file, line and pitfall are merged, keeping
 every source. Test files, dependencies, build output and minified files are skipped.
+
+Scope is UI code: files are followed from the UI entry points through their imports (tsconfig and
+jsconfig "paths" aliases such as "@/*" are resolved; see ui_graph.py). Route handlers (a throw there
+is an HTTP 500, not a UI crash), tests and modules no entry point imports are excluded, from this
+scan and from --sarif/--extra candidates alike, and counted with examples in "scope.excluded".
+--all-files keeps route handlers and unreachable modules (tests stay out).
 Promise chains (matcher "promise_chain") are parsed whole across lines; --self-test runs a built-in
 check of that parser and exits.
 """
@@ -22,11 +28,13 @@ HERE = Path(__file__).resolve().parent
 sys.dont_write_bytecode = True  # importing a sibling must not write __pycache__ into the skill folder
 sys.path.insert(0, str(HERE))
 import sarif  # noqa: E402
+from ui_graph import graph as ui_graph, classify, SRC_EXT  # noqa: E402
 
 CATALOGUE = HERE.parent / 'data' / 'pitfalls.json'
 SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'out', '.next', '.nuxt', '.svelte-kit', 'coverage', 'vendor',
              'Pods', 'DerivedData', '.gradle', '.dart_tool', '.idea', '.vscode', '__pycache__', 'storybook-static',
-             '.expo', 'e2e', 'cypress', 'playwright', '__tests__', '__mocks__',
+             '.expo', 'e2e', 'cypress', 'playwright', '__tests__', '__mocks__', '.turbo', '.cache', '.venv', 'venv',
+             'test-shims',
              'test', 'tests', 'androidTest', 'integration_test', 'UITests', 'Tests'}
 TEST_FILE = re.compile(r'(\.|_)(test|spec|stories|story)\.\w+$|Tests?\.(swift|kt|java)$|_test\.dart$|\.d\.ts$|\.min\.js$', re.I)
 COMMENT = re.compile(r'^\s*(//|/\*|\*|#|<!--)')
@@ -365,6 +373,8 @@ def main() -> int:
     ap.add_argument('--packs', help='comma-separated packs (default: every pack with matching files)')
     ap.add_argument('--sarif', nargs='*', type=Path, default=[], help='SARIF files from other analysers')
     ap.add_argument('--extra', nargs='*', type=Path, default=[], help='candidate files from strict_overlay.py / contract_diff.py')
+    ap.add_argument('--all-files', action='store_true',
+                    help='scan route handlers and modules no UI entry point imports too (tests stay excluded)')
     ap.add_argument('--catalogue', type=Path, default=CATALOGUE)
     ap.add_argument('--out', type=Path)
     args = ap.parse_args()
@@ -395,31 +405,83 @@ def main() -> int:
     exts = {e for name, pk in packs.items() if name in wanted for e in pk['extensions']}
     cands: list[dict] = []
     files_by_pack: dict[str, int] = {}
+    # Scope: UI code only. Tests, route handlers (a throw is an HTTP 500, not a UI crash) and modules
+    # no UI entry point imports are excluded and counted, unless --all-files.
+    g = None if args.all_files else ui_graph(root)
+    reach = set(g['reachable']) if g and g['reachable'] is not None else None
+    excluded: dict[str, dict] = {}
+    def why_excluded(rel: str) -> str | None:
+        kind = classify(rel)
+        if kind == 'test':
+            return 'tests'
+        if args.all_files:
+            return None
+        if kind == 'route_handler':
+            return 'route_handlers'
+        if reach is not None and rel.endswith(SRC_EXT) and rel not in reach:
+            return 'unreachable'
+        return None
+    def note_excluded(reason: str, rel: str, n_cands: int, is_file: bool) -> None:
+        e = excluded.setdefault(reason, {'files': 0, 'candidates': 0, 'examples': []})
+        e['files'] += 1 if is_file else 0
+        e['candidates'] += n_cands
+        if rel not in e['examples'] and len(e['examples']) < 10:
+            e['examples'].append(rel)
     for path in source_files(root, exts):
         rel = path.relative_to(root).as_posix()
+        reason = why_excluded(rel)
+        if reason:
+            note_excluded(reason, rel, 0, True)
+            continue
         for name, pk in packs.items():
             if path.suffix in pk['extensions']:
                 files_by_pack[name] = files_by_pack.get(name, 0) + 1
         cands.extend(scan_file(path, rel, [p for p in active if path.suffix in packs[p['pack']]['extensions']]))
     tools = [{'tool': 'scan_pitfalls', 'status': 'ran', 'results': len(cands),
               'packs': sorted(n for n in files_by_pack if n in wanted)}]
+    def in_scope(found: list[dict]) -> list[dict]:
+        kept = []
+        for c in found:
+            reason = why_excluded(str(c.get('file') or ''))
+            if reason:
+                note_excluded(reason, c['file'], 1, False)
+            else:
+                kept.append(c)
+        return kept
     if args.sarif:
         extra, info = from_sarif(args.sarif, root, cat)
-        cands.extend(extra)
+        kept = in_scope(extra)
+        cands.extend(kept)
         tools.extend({**t, 'status': 'ran'} for t in info)
+        if len(kept) != len(extra):
+            tools[-1]['excluded'] = len(extra) - len(kept)
     for path in args.extra:
         try:
             data = json.loads(path.read_text(encoding='utf-8'))
         except (OSError, ValueError) as exc:
             print(f'Unable to read {path}: {exc}', file=sys.stderr)
             return 2
-        cands.extend(data.get('candidates') or [])
+        found = data.get('candidates') or []
+        kept = in_scope(found)
+        cands.extend(kept)
         tools.append({'tool': data.get('tool', path.stem), 'status': data.get('status', 'ran'),
-                      'results': len(data.get('candidates') or []), 'input': str(path)})
+                      'results': len(kept), 'input': str(path),
+                      **({'excluded': len(found) - len(kept)} if len(kept) != len(found) else {})})
+    scope = {'mode': 'all_files' if args.all_files else 'ui',
+             'entry_points': len(g['entries']) if g else None,
+             'reachable_files': len(reach) if reach is not None else None,
+             'path_aliases': g['aliases'] if g else [],
+             'excluded': excluded,
+             'note': ('every source file scanned (--all-files); tests are still skipped' if args.all_files else
+                      'UI code only: tests, route handlers and modules no UI entry point imports are excluded and counted '
+                      'here; read the examples, and rerun with --all-files if a module is reached in a way the import '
+                      'graph cannot follow (a computed import)' if reach is not None else
+                      'no UI entry point recognised, so every non-test source file was scanned (route handlers excluded)')}
     out = {
         'generated_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
         'repository': root.name,
         'files_scanned': files_by_pack,
+        'scope': scope,
         'ssr_frameworks': sorted(ssr),
         'tools': tools,
         'note': 'Candidates are pattern-level leads, not findings. Trace each one to a realistic trigger or dismiss it.',
@@ -432,6 +494,8 @@ def main() -> int:
         for c in out['candidates']:
             by[c.get('pitfall_id') or 'unmapped'] = by.get(c.get('pitfall_id') or 'unmapped', 0) + 1
         print(f"{len(out['candidates'])} candidate(s) from {sum(files_by_pack.values())} file(s) -> {args.out}")
+        for k, e in excluded.items():
+            print(f"  excluded ({k}): {e['files']} file(s), {e['candidates']} tool candidate(s), e.g. {', '.join(e['examples'][:3])}")
         for k, v in sorted(by.items(), key=lambda kv: -kv[1]):
             print(f'  {v:4}  {k}')
     else:
