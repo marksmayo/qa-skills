@@ -14,6 +14,10 @@ Per operation, in order:
   random    a seeded sample of valid values (fields with a pattern use their example)
   no_auth   the example without credentials, for operations with a security requirement
   added     cases from --add-cases files (for example, one reproducing a Schemathesis failure)
+--auth-required marks operations the contract leaves unsecured as needing credentials (the agent's
+reading of the handlers); they get the no_auth case too, and cases.json records the selectors.
+Case ids are <operation id>-NNN; an operation id that isn't filesystem-safe (the default
+"GET /api/x" when the contract has no operationId) becomes a slug plus a short hash.
 GraphQL: each query field with every enum value and a few values per scalar argument, selecting
 every scalar field (and one level of nested objects), plus a query missing each required argument.
 
@@ -27,6 +31,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import jsonschema_lite as jl  # noqa: E402
+from send_cases import MSYS_MANGLED, safe_id  # noqa: E402
 
 FIXED_DATE = '2026-01-15'
 
@@ -397,7 +402,7 @@ def matches(op: dict, sel: str) -> bool:
     if sel.startswith('tag:'):
         return sel[4:] in op['tags']
     if sel.startswith('path:'):
-        return op['path'].startswith(sel[5:])
+        return op['path'].startswith('/' + sel[5:].lstrip('/'))   # a leading slash is optional (Git Bash rewrites it)
     return op['operation_id'] == sel
 
 
@@ -414,13 +419,26 @@ def main() -> int:
     ap.add_argument('--add-cases', type=Path, action='append', default=[],
                     help='JSON list of extra cases {operation_id, description, path_params, query, headers, body, valid, auth, source}, '
                          'e.g. to reproduce a Schemathesis failure with a saved exchange')
+    ap.add_argument('--auth-required', action='append', default=[], metavar='ID|tag:T|path:/prefix',
+                    help='treat these operations as needing credentials although the contract declares no security '
+                         '(agent judgment from the handlers): they get a no_auth case that expects 401/403')
     a = ap.parse_args()
+    for sel in a.include + a.exclude + a.auth_required:
+        if MSYS_MANGLED.search(sel):
+            print(f'error: selector {sel!r} looks rewritten by Git Bash path conversion; write path:api/x without the '
+                  f'leading slash, or set MSYS_NO_PATHCONV=1', file=sys.stderr)
+            return 2
     contract = json.loads(a.contract.read_text(encoding='utf-8'))
     seed = a.seed if a.seed is not None else random.SystemRandom().randint(1, 2 ** 31 - 1)
     rng = random.Random(seed)
     plan, cases, dropped = [], [], 0
+    declares_no_security = contract['kind'] == 'openapi' and not any(o['security'] for o in contract['operations'])
+    marked = set()
     for op in contract['operations']:
         oid = op['operation_id']
+        if a.auth_required and not op['security'] and any(matches(op, s) for s in a.auth_required):
+            op = dict(op, security=['agent:auth-required'])
+            marked.add(oid)
         if (a.include and not any(matches(op, s) for s in a.include)) or any(matches(op, s) for s in a.exclude):
             plan.append({'operation_id': oid, 'status': 'excluded', 'reason': 'excluded by --include/--exclude'})
             continue
@@ -454,11 +472,21 @@ def main() -> int:
     counts: dict[str, int] = {}
     for c in cases:
         counts[c['operation_id']] = counts.get(c['operation_id'], 0) + 1
-        c['id'] = f'{c["operation_id"]}-{counts[c["operation_id"]]:03d}'
+        c['id'] = f'{safe_id(c["operation_id"])}-{counts[c["operation_id"]]:03d}'
     cases = [{'id': c['id'], **{k: v for k, v in c.items() if k != 'id'}} for c in cases]
     out = {'generator': 'stdlib', 'seed': seed, 'max_cases_per_operation': a.max_cases, 'contract_sha256': contract['sha256'],
            'allow_writes': a.allow_writes, 'auth_configured': a.auth_configured, 'dropped_invalid_samples': dropped,
            'plan': plan, 'cases': cases}
+    if a.auth_required:
+        out['auth_required'] = {'selectors': a.auth_required, 'operation_ids': sorted(marked),
+                                'basis': 'agent_judgment (the contract declares no security for these operations)'}
+    if declares_no_security and marked:
+        print(f'note: the contract declares no security; {len(marked)} operation(s) marked auth-required by --auth-required '
+              f'get a no_auth case (agent judgment, recorded in cases.json)', file=sys.stderr)
+    elif declares_no_security:
+        print('warning: the contract declares no security (no securitySchemes, no security requirement), so no '
+              'no_auth cases were made and auth_enforced cannot be evaluated; mark operations that need a session or '
+              'token with --auth-required (from reading the handlers)', file=sys.stderr)
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(json.dumps(out, indent=2) + '\n', encoding='utf-8')
     by = {}

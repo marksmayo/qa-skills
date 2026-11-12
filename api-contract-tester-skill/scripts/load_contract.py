@@ -18,7 +18,12 @@ Schemathesis); kind is swagger2 and every operation is not_assessed.
 
 Contract issues are problems in the contract itself, not in the API: a missing operationId, a 2xx
 response without a schema, an example that doesn't match its own schema, a keyword the checker
-can't evaluate, an unresolved $ref, or a GraphQL schema served by the API that differs from the SDL.
+can't evaluate, an unresolved $ref, an OpenAPI contract in which no operation requires security
+(auth_enforced can't be evaluated), or a GraphQL schema served by the API that differs from the SDL.
+
+A contract built in code (a TypeScript object, zod-to-openapi, a framework's generator) has no file
+to load: run the app's own generator or export route first, save its JSON, and load that file; the
+report's scope then names the generated file, and the agent says how it was produced.
 """
 from __future__ import annotations
 import argparse, copy, datetime as dt, hashlib, json, re, sys, urllib.request
@@ -471,6 +476,14 @@ def main() -> int:
             ops = load_openapi(doc, text, issues)
             lint_examples(doc, ops, dialect, issues)
             lint_unsupported(doc, ops, issues)
+            if ops and not any(o['security'] for o in ops):
+                schemes = sorted(((doc.get('components') or {}).get('securitySchemes') or {}))
+                issues.append({'kind': 'no_security_declared', 'location': 'security',
+                               'message': ('no operation declares a security requirement'
+                                           + (f' (securitySchemes {", ".join(schemes)} are defined but never required)' if schemes
+                                              else ' and there are no securitySchemes')
+                                           + '; auth_enforced cannot be evaluated from the contract. If the handlers need a '
+                                             'session or token, mark those operations with gen_cases.py --auth-required')})
             out.update({'kind': 'openapi', 'version': version, 'title': (doc.get('info') or {}).get('title'),
                         'api_version': (doc.get('info') or {}).get('version'), 'dialect': dialect, 'yaml_parser': parser,
                         'operations': ops, 'root': doc})

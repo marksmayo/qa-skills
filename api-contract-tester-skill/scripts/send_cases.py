@@ -3,16 +3,30 @@
 
     python send_cases.py contract.json cases.json --base-url http://127.0.0.1:8140 --out run/run.json
         [--exchanges run/exchanges] [--rate 5] [--bearer-env NAME] [--api-key-env NAME --api-key-header X-Api-Key]
-        [--authorised-by WHO] [--allow-writes --confirm-non-production] [--production-host HOST ...]
-        [--probe /health] [--graphql-path /graphql] [--no-resend]
+        [--cookie-env NAME] [--authorised-by WHO] [--allow-writes --confirm-non-production] [--production-host HOST ...]
+        [--probe api/health --probe-expect 200] [--graphql-path /graphql] [--no-resend]
+        [--max-requests N] [--path-budget /api/appointments=15 ...] [--max-retries-429 N] [--max-retry-after S]
+        [--on-429 stop-run|stop-path] [--resume run/run.attempt1.json]
 
 Safety (enforced here, re-checked by the validator):
   * A target that isn't loopback needs --authorised-by.
   * Only GET, HEAD and OPTIONS are sent unless --allow-writes, which also needs --authorised-by and
     --confirm-non-production. A host given with --production-host never receives a write, even then.
     GraphQL queries go over POST but are reads; mutations are writes.
-  * Requests are spaced to --rate per second (default 5). A 429 is retried after Retry-After (at most
-    60 s, three times); if it persists the run stops and is `incomplete`.
+  * Requests are spaced to --rate per second (default 5). A 429 is retried after its Retry-After up to
+    --max-retries-429 times (default 3) when Retry-After is at most --max-retry-after seconds (default
+    60); a longer wait is not retried early. When the 429 persists, --on-429 stop-run (default) stops the
+    run and stop-path stops only that path (its --path-budget prefix, else the operation's path) and
+    carries on. Either way the run is `incomplete`.
+  * --max-requests caps this attempt; --path-budget caps requests to a path prefix (a first send needs
+    room for its re-send). Cases over a budget are listed in `blocked` and the run is `incomplete`.
+  * --resume reuses the answered cases of an earlier run.json (same contract, seed and base URL), copies
+    their exchanges, and sends only the rest; the earlier attempt is recorded in `resumed_from` and its
+    requests are counted in `requests_sent`. If the sender aborts, the partial run.json is still written.
+  * The liveness probe is --probe (leading slash optional; Git Bash rewrites a leading "/" unless
+    MSYS_NO_PATHCONV=1, and a rewritten path is refused). The run is `down` when the probe can't connect
+    or misses --probe-expect (default: any status below 500). Without --probe the first parameterless GET
+    operation is used, and its 5xx alone doesn't mark the target down: it is an API answer, checked as a case.
   * Before anything is written to disk, credentials are redacted: Authorization, Cookie, Set-Cookie,
     the API-key header or query parameter, any parameter named like token/secret/password/key/sig, and
     body fields the schema marks format: password or writeOnly. Every occurrence of a configured secret
@@ -24,7 +38,9 @@ negative_accepted (an invalid request got 2xx), positive_rejected (a documented 
 than 401/403/429), auth_enforced (no credentials, 2xx), graphql_errors. Each failing case is sent once
 more; a check that doesn't fail again is not repeatable (flaky).
 
-Only exchanges with a failed check are saved, as exchanges/<case>.json and <case>.resend.json.
+Only exchanges with a failed check are saved, as exchanges/<case>.json and <case>.resend.json (the
+case id made filesystem-safe). --cookie-env sends a Cookie header (session auth); it is redacted like
+the other credentials, and each cookie value is scrubbed wherever it appears.
 """
 from __future__ import annotations
 import argparse, hashlib, ipaddress, json, os, re, socket, sys, time, urllib.error, urllib.parse, urllib.request
@@ -41,6 +57,19 @@ SENSITIVE_HEADERS = {'authorization', 'proxy-authorization', 'cookie', 'set-cook
 SENSITIVE_NAME = re.compile(r'(token|secret|passw|api[-_]?key|apikey|signature|^sig$|session)', re.I)
 CHECKS = ['status_documented', 'server_error', 'content_type', 'schema_conformance', 'required_headers',
           'negative_accepted', 'positive_rejected', 'auth_enforced', 'graphql_errors']
+
+
+SAFE_ID = re.compile(r'^[A-Za-z0-9._-]{1,80}$')
+
+
+def safe_id(name: str) -> str:
+    """A filesystem-safe stand-in for an operation id. Ids that are already safe are kept; others (the
+    default "GET /api/x" when the contract has no operationId) become a slug plus a short hash, so two
+    ids that slug alike stay distinct."""
+    if SAFE_ID.match(name) and name not in ('.', '..'):
+        return name
+    slug = re.sub(r'[^A-Za-z0-9]+', '_', name).strip('_')[:60] or 'op'
+    return f'{slug}-{hashlib.sha256(name.encode("utf-8")).hexdigest()[:8]}'
 
 
 def is_loopback(host: str) -> bool:
@@ -76,10 +105,17 @@ class Sender:
         self.rate_events = 0
         self.backoff = 0.0
         self.stopped: str | None = None
+        self.limited: str | None = None
+        self.budget_used = {p: 0 for p in getattr(a, 'budgets', {})}
         self.opener = urllib.request.build_opener(NoRedirect)
 
     def request(self, method: str, url: str, headers: dict, body: bytes | None):
-        for attempt in range(4):
+        """Send one request, retrying a 429 up to --max-retries-429 times when its Retry-After is at most
+        --max-retry-after seconds. Returns (status, headers, body, elapsed_ms); `self.limited` is set when
+        a 429 persisted, and the caller decides whether that stops the run or only that path."""
+        self.limited = None
+        retries = max(0, self.a.max_retries_429)
+        for attempt in range(retries + 1):
             wait = self.last + self.interval - time.monotonic()
             if wait > 0:
                 time.sleep(wait)
@@ -87,35 +123,79 @@ class Sender:
             req = urllib.request.Request(url, data=body, method=method, headers=headers)
             t0 = time.monotonic()
             self.sent += 1
+            path = urllib.parse.urlsplit(url).path
+            for prefix in self.budget_used:
+                if path.startswith(prefix):
+                    self.budget_used[prefix] += 1
             try:
                 with self.opener.open(req, timeout=self.a.timeout) as r:
                     status, rh, raw = r.status, dict(r.headers.items()), r.read(MAX_BODY + 1)
             except urllib.error.HTTPError as e:
                 status, rh, raw = e.code, dict(e.headers.items()), e.read(MAX_BODY + 1)
             elapsed = round((time.monotonic() - t0) * 1000)
-            if status == 429 and attempt < 3:
-                self.rate_events += 1
-                delay = retry_after(rh.get('Retry-After'))
+            if status != 429:
+                return status, rh, raw, elapsed
+            self.rate_events += 1
+            delay = retry_after(rh.get('Retry-After'))
+            if attempt < retries and delay <= self.a.max_retry_after:
                 self.backoff += delay
                 time.sleep(delay)
                 continue
-            if status == 429:
-                self.rate_events += 1
-                self.stopped = 'rate limited: 429 persisted after 3 retries'
+            why = (f'Retry-After {delay:g} s is over --max-retry-after {self.a.max_retry_after:g} s' if delay > self.a.max_retry_after
+                   else f'429 persisted after {retries} retr{"y" if retries == 1 else "ies"}')
+            self.limited = f'rate limited on {path}: {why}'
             return status, rh, raw, elapsed
         raise RuntimeError('unreachable')
 
 
 def retry_after(v: str | None) -> float:
+    """Seconds the server asked for (not capped here; the caller compares with --max-retry-after)."""
     if not v:
         return 1.0
     try:
-        return min(60.0, max(0.0, float(v)))
+        return max(0.0, float(v))
     except ValueError:
         try:
-            return min(60.0, max(0.0, parsedate_to_datetime(v).timestamp() - time.time()))
+            return max(0.0, parsedate_to_datetime(v).timestamp() - time.time())
         except (TypeError, ValueError):
             return 1.0
+
+
+def parse_budgets(items: list[str]) -> dict[str, int]:
+    out = {}
+    for it in items:
+        prefix, sep, n = it.rpartition('=')
+        if not sep or not n.isdigit():
+            raise ValueError(f'--path-budget {it!r}: expected PREFIX=N')
+        out['/' + prefix.lstrip('/')] = int(n)
+    return out
+
+
+MSYS_MANGLED = re.compile(r'^[A-Za-z]:[\\/]|[A-Za-z]:[\\/](Program Files|msys|Git)', re.I)
+
+
+def norm_path(p: str | None, what: str) -> str | None:
+    """A path given on the command line, with its leading slash optional. Git Bash rewrites a leading
+    "/" into a Windows path (MSYS path conversion); refuse that instead of sending it."""
+    if p is None:
+        return None
+    if MSYS_MANGLED.search(p):
+        raise ValueError(f'{what} {p!r} looks rewritten by Git Bash path conversion; pass it without the leading slash '
+                         f'(e.g. api/health) or set MSYS_NO_PATHCONV=1')
+    return '/' + p.lstrip('/')
+
+
+def expect_ok(status: int, spec: str | None) -> bool:
+    """--probe-expect: a comma list of codes or classes (200,204,2xx). Default: anything below 500."""
+    if not spec:
+        return status < 500
+    for tok in spec.split(','):
+        tok = tok.strip().lower()
+        if tok.endswith('xx') and tok[:1].isdigit() and str(status)[0] == tok[0]:
+            return True
+        if tok.isdigit() and int(tok) == status:
+            return True
+    return False
 
 
 def media(ct: str | None) -> str:
@@ -379,16 +459,37 @@ def main() -> int:
     ap.add_argument('--api-key-env')
     ap.add_argument('--api-key-header')
     ap.add_argument('--api-key-query')
+    ap.add_argument('--cookie-env', help='env var holding a Cookie header value (session cookie auth)')
     ap.add_argument('--authorised-by')
     ap.add_argument('--allow-writes', action='store_true')
     ap.add_argument('--confirm-non-production', action='store_true')
     ap.add_argument('--production-host', action='append', default=[])
-    ap.add_argument('--probe', default=None, help='path for the first GET (default: the first GET operation without parameters)')
+    ap.add_argument('--probe', default=None,
+                    help='liveness path for the first GET, leading slash optional (default: the first GET operation without parameters)')
+    ap.add_argument('--probe-expect', default=None, help='statuses that mean "up", e.g. 200 or 2xx,3xx (default: below 500)')
     ap.add_argument('--graphql-path', default='/graphql')
     ap.add_argument('--no-resend', action='store_true')
-    ap.add_argument('--max-requests', type=int, default=5000)
+    ap.add_argument('--max-requests', type=int, default=5000, help='total request budget for this attempt')
+    ap.add_argument('--path-budget', action='append', default=[], metavar='PREFIX=N',
+                    help='at most N requests to paths starting with PREFIX (resends included); cases over it are not sent')
+    ap.add_argument('--max-retries-429', type=int, default=3)
+    ap.add_argument('--max-retry-after', type=float, default=60.0,
+                    help='honour Retry-After up to this many seconds; a longer one is not waited for')
+    ap.add_argument('--on-429', choices=['stop-run', 'stop-path'], default='stop-run',
+                    help='when a 429 persists: stop the whole run, or stop only that path (its budget prefix, else its '
+                         'operation path) and carry on with the rest')
+    ap.add_argument('--resume', type=Path, help='an earlier run.json of the same cases: answered cases are reused, not re-sent')
     a = ap.parse_args()
 
+    try:
+        a.probe = norm_path(a.probe, '--probe')
+        a.graphql_path = norm_path(a.graphql_path, '--graphql-path')
+        a.budgets = parse_budgets(a.path_budget)
+        for prefix in a.budgets:
+            norm_path(prefix, '--path-budget')
+    except ValueError as e:
+        print(f'error: {e}', file=sys.stderr)
+        return 2
     contract = json.loads(a.contract.read_text(encoding='utf-8'))
     cases_doc = json.loads(a.cases.read_text(encoding='utf-8'))
     if cases_doc.get('contract_sha256') != contract['sha256']:
@@ -403,11 +504,20 @@ def main() -> int:
     if a.allow_writes and not writes_ok:
         print('error: --allow-writes needs --authorised-by, --confirm-non-production and a host not in --production-host', file=sys.stderr)
         return 2
-    secret_envs = [e for e in (a.bearer_env, a.api_key_env) if e]
+    secret_envs = [e for e in (a.bearer_env, a.api_key_env, a.cookie_env) if e]
     secrets = [os.environ.get(e, '') for e in secret_envs]
     for e, v in zip(secret_envs, secrets):
         if not v:
             print(f'error: environment variable {e} is empty', file=sys.stderr)
+            return 2
+    # a cookie header carries name=value pairs: scrub each value too, in case one comes back alone
+    if a.cookie_env:
+        secrets += [kv.split('=', 1)[1].strip() for kv in os.environ[a.cookie_env].split(';') if '=' in kv and len(kv.split('=', 1)[1].strip()) >= 8]
+    prev = None
+    if a.resume:
+        prev = json.loads(a.resume.read_text(encoding='utf-8'))
+        if (prev.get('contract_sha256'), prev.get('seed'), prev.get('base_url')) != (contract['sha256'], cases_doc['seed'], a.base_url):
+            print('error: --resume run.json is for a different contract, seed or base URL', file=sys.stderr)
             return 2
     auth_headers = {}
     auth_query = {}
@@ -418,6 +528,8 @@ def main() -> int:
             auth_query[a.api_key_query] = os.environ[a.api_key_env]
         else:
             auth_headers[a.api_key_header or 'X-API-Key'] = os.environ[a.api_key_env]
+    if a.cookie_env:
+        auth_headers['Cookie'] = os.environ[a.cookie_env]
     ops = {o['operation_id']: o for o in contract['operations']}
     ex_dir = a.exchanges or a.out.parent / 'exchanges'
     ex_dir.mkdir(parents=True, exist_ok=True)
@@ -427,8 +539,25 @@ def main() -> int:
            'writes_allowed': writes_ok, 'production_hosts': a.production_host, 'rate_per_second': a.rate,
            'contract_sha256': contract['sha256'], 'seed': cases_doc['seed'], 'generator': cases_doc['generator'],
            'secret_env': secret_envs, 'started_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'probe': None,
-           'status': 'complete', 'results': [], 'blocked': []}
+           'status': 'complete', 'results': [], 'blocked': [],
+           'limits': {'max_requests': a.max_requests, 'path_budgets': a.budgets, 'max_retries_429': a.max_retries_429,
+                      'max_retry_after': a.max_retry_after, 'on_429': a.on_429}}
+    if a.cookie_env:
+        run['auth'] = 'cookie'
 
+    rel = lambda p: p.relative_to(a.out.parent).as_posix() if p and p.is_relative_to(a.out.parent) else (p.as_posix() if p else None)  # noqa: E731
+
+    def write_run():
+        run['requests_sent'] = s.sent + (prev['requests_sent'] if prev else 0)
+        run['requests_this_attempt'] = s.sent
+        events = s.rate_events + ((prev.get('rate_limited') or {}).get('events', 0) if prev else 0)
+        backoff = s.backoff + ((prev.get('rate_limited') or {}).get('backoff_seconds', 0) if prev else 0)
+        run['rate_limited'] = {'events': events, 'backoff_seconds': round(backoff, 1)}
+        run['finished_at'] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+        a.out.parent.mkdir(parents=True, exist_ok=True)
+        a.out.write_text(json.dumps(run, indent=2) + '\n', encoding='utf-8')
+
+    default_probe = a.probe is None
     probe_path = a.probe
     if probe_path is None:
         probe_path = next((o['path'] for o in contract['operations'] if o['method'] == 'GET' and not o['parameters']), '/')
@@ -440,14 +569,35 @@ def main() -> int:
         else:
             st, rh, raw, el = s.request('POST', a.base_url.rstrip('/') + a.graphql_path, {'Content-Type': 'application/json', **auth_headers},
                                         json.dumps({'query': '{ __typename }'}).encode())
-        run['probe'] = {'path': probe_path or a.graphql_path, 'status': st, 'elapsed_ms': el}
-        if st >= 500:
-            run['status'] = 'down'
+        run['probe'] = {'path': probe_path or a.graphql_path, 'status': st, 'elapsed_ms': el, 'expect': a.probe_expect,
+                        'default': default_probe}
+        if not expect_ok(st, a.probe_expect):
+            if default_probe and st >= 500 and probe_path is not None and probe_path != '/':
+                # the default probe is an API operation; its 5xx doesn't prove the target is down (the
+                # operation is sent as a case anyway). Name a health path with --probe to decide liveness.
+                run['probe']['note'] = 'the default probe is an API operation; its 5xx was not taken as the target being down'
+            else:
+                run['status'] = 'down'
     except (urllib.error.URLError, OSError) as e:
-        run['probe'] = {'path': probe_path or a.graphql_path, 'status': None, 'error': str(e)[:200]}
+        run['probe'] = {'path': probe_path or a.graphql_path, 'status': None, 'error': str(e)[:200], 'expect': a.probe_expect,
+                        'default': default_probe}
         run['status'] = 'down'
     if run['status'] == 'down':
         print(f'the instance looks down ({run["probe"]}); nothing sent', file=sys.stderr)
+
+    def scope_of(case: dict) -> str:
+        op = ops.get(case['operation_id'])
+        path = a.graphql_path if case['request'].get('graphql') or not op else op['path']
+        budget = max((p for p in a.budgets if path.startswith(p)), key=len, default=None)
+        return budget or path
+
+    def budget_room(case: dict, need: int) -> str | None:
+        op = ops.get(case['operation_id'])
+        path = a.graphql_path if case['request'].get('graphql') or not op else op['path']
+        for prefix, n in a.budgets.items():
+            if path.startswith(prefix) and s.budget_used[prefix] + need > n:
+                return prefix
+        return None
 
     def send(case: dict, suffix: str = ''):
         req = case['request']
@@ -485,42 +635,100 @@ def main() -> int:
                       'response': {'status': st, 'headers': redact_headers(rh, a.api_key_header), 'body': resp},
                       'elapsed_ms': el, 'failed_checks': failed}
             record = scrub(record, secrets)
-            exchange = (ex_dir / f'{case["id"]}{suffix}.json')
+            exchange = (ex_dir / f'{safe_id(case["id"])}{suffix}.json')
             exchange.write_text(json.dumps(record, indent=2) + '\n', encoding='utf-8')
         return st, el, checks, failed, exchange
 
-    rel = lambda p: p.relative_to(a.out.parent).as_posix() if p and p.is_relative_to(a.out.parent) else (p.as_posix() if p else None)  # noqa: E731
-    if run['status'] != 'down':
-        for case in cases_doc['cases']:
-            if s.stopped or s.sent >= a.max_requests:
-                run['status'] = 'incomplete'
-                break
-            if is_write(case) and not writes_ok:
-                run['blocked'].append({'case_id': case['id'], 'reason': 'write method without allowed writes'})
+    def reuse(r: dict) -> dict:
+        """A result from --resume, with its exchange files copied next to this run."""
+        r = json.loads(json.dumps(r))
+        for holder in (r, r.get('resend') or {}):
+            p = holder.get('exchange')
+            if not p:
                 continue
-            st, el, checks, failed, ex = send(case)
-            run['results'].append({'case_id': case['id'], 'operation_id': case['operation_id'], 'kind': case['kind'],
-                                   'valid': case['valid'], 'method': case['request']['method'], 'write': is_write(case),
-                                   'status': st, 'elapsed_ms': el, 'checks': checks, 'failed': failed, 'exchange': rel(ex),
-                                   'resend': None})
-        if not a.no_resend:
-            by_id = {c['id']: c for c in cases_doc['cases']}
-            for r in run['results']:
-                if not r['failed'] or s.stopped:
+            src = a.resume.parent / p
+            dst = ex_dir / Path(p).name
+            if src.is_file() and src.resolve() != dst.resolve():
+                dst.write_text(src.read_text(encoding='utf-8'), encoding='utf-8')
+            holder['exchange'] = rel(dst)
+        r['reused_from'] = a.resume.as_posix()
+        return r
+
+    stopped_scopes: dict[str, str] = {}
+    try:
+        if run['status'] != 'down':
+            if prev:
+                done = {r['case_id']: r for r in prev.get('results') or [] if r['status'] != 429}
+                run['resumed_from'] = (prev.get('resumed_from') or []) + [{
+                    'file': a.resume.as_posix(), 'status': prev.get('status'), 'stopped_reason': prev.get('stopped_reason'),
+                    'requests_sent': prev.get('requests_this_attempt', prev.get('requests_sent')), 'results_reused': 0}]
+            else:
+                done = {}
+            for case in cases_doc['cases']:
+                if s.stopped or s.sent >= a.max_requests:
+                    run['status'] = 'incomplete'
+                    run.setdefault('stopped_reason', s.stopped or f'request budget --max-requests {a.max_requests} reached')
+                    break
+                if case['id'] in done:
+                    run['results'].append(reuse(done[case['id']]))
+                    run['resumed_from'][-1]['results_reused'] += 1
                     continue
-                st, el, checks, failed, ex = send(by_id[r['case_id']], '.resend')
-                r['resend'] = {'status': st, 'failed': failed, 'exchange': rel(ex),
-                               'repeated': {c: c in failed for c in r['failed']}}
-        if s.stopped:
-            run['status'] = 'incomplete'
-            run['stopped_reason'] = s.stopped
-    run['requests_sent'] = s.sent
-    run['rate_limited'] = {'events': s.rate_events, 'backoff_seconds': round(s.backoff, 1)}
-    run['finished_at'] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
-    a.out.parent.mkdir(parents=True, exist_ok=True)
-    a.out.write_text(json.dumps(run, indent=2) + '\n', encoding='utf-8')
+                if is_write(case) and not writes_ok:
+                    run['blocked'].append({'case_id': case['id'], 'reason': 'write method without allowed writes'})
+                    continue
+                scope = scope_of(case)
+                if scope in stopped_scopes:
+                    run['blocked'].append({'case_id': case['id'], 'reason': f'not sent: {stopped_scopes[scope]}'})
+                    continue
+                over = budget_room(case, 1 if a.no_resend else 2)
+                if over:
+                    run['blocked'].append({'case_id': case['id'], 'reason': f'not sent: path budget for {over} '
+                                                                           f'({a.budgets[over]} requests) would be exceeded'})
+                    continue
+                st, el, checks, failed, ex = send(case)
+                run['results'].append({'case_id': case['id'], 'operation_id': case['operation_id'], 'kind': case['kind'],
+                                       'valid': case['valid'], 'method': case['request']['method'], 'write': is_write(case),
+                                       'status': st, 'elapsed_ms': el, 'checks': checks, 'failed': failed, 'exchange': rel(ex),
+                                       'resend': None})
+                if s.limited:
+                    if a.on_429 == 'stop-path':
+                        stopped_scopes[scope] = s.limited
+                    else:
+                        s.stopped = s.limited
+            if not a.no_resend:
+                by_id = {c['id']: c for c in cases_doc['cases']}
+                for r in run['results']:
+                    if not r['failed'] or r.get('resend') or s.stopped or r['status'] == 429:
+                        continue
+                    if scope_of(by_id[r['case_id']]) in stopped_scopes:
+                        continue
+                    st, el, checks, failed, ex = send(by_id[r['case_id']], '.resend')
+                    r['resend'] = {'status': st, 'failed': failed, 'exchange': rel(ex),
+                                   'repeated': {c: c in failed for c in r['failed']}}
+                    if s.limited:
+                        if a.on_429 == 'stop-path':
+                            stopped_scopes[scope_of(by_id[r['case_id']])] = s.limited
+                        else:
+                            s.stopped = s.limited
+            if s.stopped:
+                run['status'] = 'incomplete'
+                run['stopped_reason'] = s.stopped
+            if stopped_scopes:
+                run['status'] = 'incomplete'
+                run['stopped_paths'] = stopped_scopes
+                run.setdefault('stopped_reason', f'{len(stopped_scopes)} path(s) stopped on 429: {", ".join(sorted(stopped_scopes))}')
+            if any(b['reason'].startswith('not sent: path budget') for b in run['blocked']):
+                run['status'] = 'incomplete'
+                run.setdefault('stopped_reason', 'path budget reached; some cases were not sent')
+    except BaseException as e:  # never lose the record of what was already sent
+        run['status'] = 'incomplete'
+        run['stopped_reason'] = f'sender aborted: {type(e).__name__}: {str(e)[:200]}'
+        write_run()
+        print(f'aborted after {s.sent} request(s); partial run written to {a.out} (resume with --resume)', file=sys.stderr)
+        raise
+    write_run()
     nfail = sum(1 for r in run['results'] if r['failed'])
-    print(f'{run["status"]}: {s.sent} request(s), {len(run["results"])} case(s), {nfail} with a failed check, '
+    print(f'{run["status"]}: {s.sent} request(s) this attempt, {len(run["results"])} case(s), {nfail} with a failed check, '
           f'{len(run["blocked"])} blocked -> {a.out}', file=sys.stderr)
     return 0 if run['status'] != 'down' else 1
 
