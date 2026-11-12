@@ -320,3 +320,33 @@ Agreed with the user before the build.
   - SKILL.md has Vitest notes (pools, isolation, shuffle, ids, timeouts under load), the Node
     clock preload `plugins/clock_shift.mjs` (shared), IANA time zones, and keeping suspect-only
     repeats apart from full-suite repeats.
+- **Found on a Python monorepo (v1.2.0)** (several packages, each with its own virtual
+  environment, pytest ini files at different levels, pandas, Azure DevOps pipelines):
+  - **The clock plugin crashed the interpreter** when pandas was imported after it (an access
+    violation or a stack overflow, with no traceback), and the crashed runs were recorded as
+    clean runs of zero tests. The shared `clock_shift.py` now gives compiled modules the real
+    datetime classes while they load and has a `--self-test`. `run_tests.py` marks crashed,
+    timed-out and pytest exit 2-5 runs `errored`. The validator leaves errored runs out of every
+    count and rejects a variation whose runs all errored or ran no test.
+  - **Reordered runs from the wrong directory.** pytest printed ids relative to an ini file below
+    `--cwd`, and the reversed run asked for paths that didn't exist (exit 4, recorded as a clean
+    run). `run_tests.py` now maps the ids to `--cwd`, and passes long id lists through a file:
+    about 300 ids reach the Windows command-line limit.
+  - **Enablers.** Two tests failed alone and passed only after a test that reloaded a module
+    with a changed environment. The polluter bisection stopped at `fails_alone`.
+    `bisect_polluter.py --relation enabler` now bisects from a passing run, and a flake's
+    `polluter` takes `relation: enabler`, confirmed by a pair that passes while the test alone
+    fails. The schema is 1.1.0 (1.0.0 still validates). Bisect output names the test as a
+    `runs.json` case id (`polluter`) and as a node id (`polluter_node_id`). The example's
+    `bisect.json` predates this and uses the node id; the validator accepts either form.
+  - **Smells.** `module-reload` flags `importlib.reload` in a test, and `env-read-at-import`
+    flags module-level environment reads in the module it reloads. `wall-clock-today` no longer
+    fires on a clock read that only fills a keyword argument or a dict value whose name nothing
+    in the file compares: 98% of that repository's smells were such fixture timestamps.
+    `data/pitfalls.json` is 1.3.0, and the example's smells are unchanged.
+  - **Reports.** `--brief` with no flakes printed an empty table header and an empty heading.
+    The validator checks that every "upper bound N%" in the headline is a Wilson bound of the
+    runs: a hand-computed 16.1% for 21 runs had passed. `--bisect` takes several files.
+  - **Guidance.** SKILL.md covers per-package interpreters and one `code_hash` (`--hash-path`),
+    environment from Makefile exports and pipelines given as fake `--env` values (`runs.json`
+    keeps names only), Azure DevOps pipelines under any name, and uncollectable files.

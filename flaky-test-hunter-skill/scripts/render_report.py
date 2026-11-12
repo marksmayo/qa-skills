@@ -82,8 +82,12 @@ def main() -> int:
     w('')
     w(P('## Flakes', BOLD))
     w('')
-    w('| # | Priority | Test | Cause | Confidence | Worst rate | Score |')
-    w('|---|---|---|---|---|---|---|')
+    if d['flakes']:
+        w('| # | Priority | Test | Cause | Confidence | Worst rate | Score |')
+        w('|---|---|---|---|---|---|---|')
+    else:
+        w(f"No test both passed and failed in these {s['total_runs']} runs. That is not proof the suite is free of "
+          'flakes: see the upper bounds below.')
     tests = {t['id']: t for t in d['tests']}
     for f in d['flakes']:
         t = tests.get(f['test_id'])
@@ -97,7 +101,10 @@ def main() -> int:
             w(P(f"### {f['id']} {f['test_id']}", BOLD))
             w(f"{f['cause'].replace('_', ' ')}, {f['cause_confidence']}: {f['experiment']['what_changed']}")
             w(f"  Result: {f['experiment']['result']}")
-            if f['polluter']:
+            if f['polluter'] and f['polluter'].get('relation') == 'enabler':
+                w(f"  Enabler: {f['polluter']['test_id']} (pair run {f['polluter']['pair_run_id']} passes, "
+                  f"test alone {f['polluter']['alone_run_id']} fails: it depends on that test running first)")
+            elif f['polluter']:
                 w(f"  Polluter: {f['polluter']['test_id']} (pair run {f['polluter']['pair_run_id']} fails, "
                   f"victim alone {f['polluter']['alone_run_id']} passes)")
             w(f"  Passing runs: {', '.join(f['evidence_runs']['passing'][:6])}"
@@ -113,9 +120,10 @@ def main() -> int:
                 q = f['quarantine']
                 w(P(f"  Stopgap (proposed, not applied): {q['how']}; owner {q['owner']}, ticket {q['ticket']}", DIM))
             w('')
-    w(P('## Tests', BOLD))
-    w('')
     shown = [t for t in d['tests'] if not args.brief or t['status'] in ('flaky', 'consistently_failing')]
+    if shown or d['tests']:
+        w(P('## Tests', BOLD))
+        w('')
     if shown:
         w('| Test | Status | Normal runs | Worst | Runs |')
         w('|---|---|---|---|---|')
@@ -131,7 +139,8 @@ def main() -> int:
                 by_runs[t['runs']] = by_runs.get(t['runs'], 0) + 1
             fewest = min(by_runs)
             groups = ', '.join(f'{n} with {r} run{"s" if r != 1 else ""}' for r, n in sorted(by_runs.items(), reverse=True)[:6])
-            w('')
+            if shown:
+                w('')
             w(f"{len(quiet)} other tests were not observed flaky ({groups}{', ...' if len(by_runs) > 6 else ''}). "
               f"0/{fewest} has a 95% upper bound of {pct(stats.wilson(0, fewest)[1])}, so a test with "
               f"{fewest} run(s) could still fail that often; the full report (without --brief) lists every test.")

@@ -1,7 +1,7 @@
 ---
 name: flaky-test-hunter
 description: Find tests that pass and fail on the same code, show why with experiments, and propose a fix for each. Reruns the suite under controlled variations (repeats, reversed and shuffled order, isolation, hash seeds, parallel workers, time zone, clock, locale, CPU load), bisects order-dependent failures to their polluter, reports every rate as failures/runs with a 95% Wilson interval, separates flakes from tests that simply fail, and ranks flakes by rate, CI gate and what they hide. Never calls a test or suite "not flaky"; never proposes a retry as the fix; never changes product code.
-version: 1.1.0
+version: 1.2.0
 ---
 
 # Flaky test hunter
@@ -40,7 +40,8 @@ Output:
 - **Every rate has its counts and a 95% Wilson interval.** `2/20 (2.8%–30.1%)`, never "10%".
 - **A cause is `confirmed` only by an experiment that turns the failure off and on:**
   - a label with 3 or more runs that all pass, and another with 2 or more failures; or
-  - a polluter pair that fails while the victim alone passes.
+  - a polluter pair that fails while the victim alone passes; or
+  - an enabler pair that passes while the test alone fails (it depends on an earlier test).
 
   A failure message that fits a cause is `indicated`. Reading the code alone is `suspected`
   (agent judgment), and suspected flakes are capped at P2.
@@ -55,6 +56,10 @@ Output:
   every changed file. Never commit.
 - **Record every tool and variation** as ran, not run or not applicable, with the reason. A
   missing plugin is `not_run`, never assumed.
+- **An errored run ran nothing.** `run_tests.py` marks a run `errored` when the process crashed,
+  timed out, pytest exited 2–5 (collection error, internal error, unknown id, nothing collected)
+  or no JUnit was written. Its cases never count, and a variation whose runs all errored is
+  `not_run` with the error as the reason; the validator enforces both.
 
 ## Inputs
 
@@ -79,6 +84,26 @@ python scripts/scan_pitfalls.py <repo> --out <scratch>/smells.json
 Note which variations the runner supports and which plugins are installed (pytest-xdist,
 pytest-randomly). Don't install anything without asking; a variation you can't apply is
 `not_run` with the reason.
+
+CI configuration is the source of truth for how the suites run: `detect_conventions.py` reads
+GitHub Actions, GitLab and the rest, and Azure DevOps pipelines and templates under any name
+(`pipelines/*.yml`, `.azure-pipelines/`, templates with `steps:` and `- script:`). The gate is
+`ci` when one of them runs the tests. Look there, and in the Makefile, for the environment the
+tests need: a variable a Makefile `export`s or a pipeline sets (`DATABASE_URL`, a storage
+connection string) must be given with `--env`, or the first run is a collection error. Give fake
+loopback values, never real credentials; `runs.json` records only their names.
+
+**Monorepos.** When packages run in separate virtual environments (as CI often does), run each
+suite with its own interpreter: start `run_tests.py` itself with that environment's Python
+(`<venv>/bin/python scripts/run_tests.py ...`), one `--cwd` and label prefix per package. Runs of
+different packages can share one `runs.json` and one report as long as each records the same
+`code_hash`; give every package's runs the same `--cwd` (the repo root, with `--tests <package
+path>`) or widen the hash with `--hash-path <sibling package>` so the hash covers the code they
+share. pytest may take its rootdir from an ini file above or below `--cwd`; `run_tests.py` maps the
+collected ids back to `--cwd` and says so in the run's notes. A test directory that two suites run
+(a shared package under two services) is pooled across both: say so. Files that can't be collected
+(a missing private dependency or submodule) are left out of `--tests`, listed in `limitations`,
+and their tests are not counted as run.
 
 ## Step 2: Baseline and repeats
 
@@ -133,6 +158,11 @@ their own clock); or libfaketime (`FAKETIME`) for whole processes. Give `PYTHONP
 `--cwd`, so no home path is recorded, and keep the plugin in its own directory so nothing else on
 that path shadows the repo's modules. Record these runs under the `clock` variation, not `tz`;
 the validator checks a clock variation's runs set `TDA_CLOCK_SHIFT`, `TDA_CLOCK_DATE` or `FAKETIME`.
+`clock_shift.py` gives compiled modules (pandas, numpy, any Cython extension) the real datetime
+classes while they load, so they import safely after it, but their own clocks
+(`pandas.Timestamp.now()`) are not moved: say so when the code under test reads time through
+them. `python plugins/clock_shift.py --self-test`, run with the repo's interpreter, checks the
+plugin there first.
 
 Time zones: give IANA names. Node reads them on every platform; Python on Windows can't, so
 `run_tests.py` turns them into fixed offsets for Python runs only, and the run's notes say so.
@@ -163,17 +193,34 @@ than counting a run that varied nothing.
   hook timeout, type with `userEvent.setup({ delay: null })`, or give the file a timeout that
   matches its real work (`vi.setConfig({ testTimeout })`); never a retry.
 
-## Step 4: Polluters
+## Step 4: Polluters and enablers
 
-For a test that fails after some order but passes alone:
+Order dependence comes in two shapes:
+
+- **Polluted:** the test passes alone and fails after some earlier test (which left state behind).
+- **Enabled:** the test fails alone, and passes only because an earlier test ran first (it
+  reloaded a module with other settings, filled a cache, created a row). It looks fine in the
+  given order and fails reversed or isolated.
 
 ```bash
 python scripts/bisect_polluter.py --runs <scratch>/runs.json --from-run <failing run> --victim <case id> \
-    --cwd <repo> --out <scratch>/bisect.json
+    --cwd <repo> --out <scratch>/bisect.json                       # polluted: start from a failing run
+python scripts/bisect_polluter.py --runs <scratch>/runs.json --from-run <passing run> --victim <case id> \
+    --cwd <repo> --relation enabler --out <scratch>/bisect-enabler.json   # enabled: from a passing run
 ```
 
-A `minimal_pair` names the polluter: the pair fails and the victim alone passes. `needs_several`
-or `fails_alone` mean there is no single polluter; say so.
+A `minimal_pair` names the test: for a polluter the pair fails and the victim alone passes; for
+an enabler the pair passes and the test alone fails. Record it in the flake's `polluter` with
+`relation` (`polluter` or `enabler`) and the id the bisection gives (`polluter` in its output is
+the case id as `runs.json` writes it). `needs_several`, `fails_alone`, `passes_alone` or
+`errored` mean there is no single test to name; say so. One polluter often explains several
+flakes: a test that reloads a module without reloading it back pollutes the tests that need the
+original settings and enables the ones that need the changed ones. Fix the polluter first, then
+check the enabled tests fail consistently (they were relying on it) and fix them too. Pass every
+bisect file to the validator (`--bisect a.json b.json`).
+
+`scan_pitfalls.py` points at this shape: `module-reload` flags `importlib.reload` in a test, and
+`env-read-at-import` the module-level `os.getenv` reads in the module it reloads.
 
 ## Step 5: Classify and propose fixes
 
@@ -200,6 +247,8 @@ RUBRIC.md has the causes, their experiments and the usual fixes. Account for eve
 A smell with a `mitigation` (Math.random stubbed, fake timers in the file or a setup file) is a
 weaker lead: check the mitigation covers the test and say so in the note. Smells are line
 patterns, so some are false leads; keep them `not_observed` with a note saying why.
+`wall-clock-today` is not raised for a clock read that only fills a keyword argument or a dict
+value (`created_at=datetime.now()`) whose name nothing in the file compares or asserts on.
 
 List consistently failing tests separately, with what they show.
 
@@ -214,7 +263,8 @@ python scripts/render_report.py <scratch>/flaky_report.json [--brief]
 `--brief` lists only the flaky and consistently failing tests and summarises the rest in one line.
 
 `--write-summary` computes every test's counts, intervals and status from the runs, each flake's
-score and priority, and the summary counts. `--repo` checks that every proposed fix applies cleanly to the repository's files, so generate
+score and priority, and the summary counts. An "upper bound N%" in the headline must be a Wilson
+upper bound of the runs (`python scripts/stats.py 0 21` gives 0/21); the validator checks it. `--repo` checks that every proposed fix applies cleanly to the repository's files, so generate
 diffs from real edits (`git diff`, `difflib`) rather than writing them by hand. Fix every error
 rather than editing those by hand.
 Show the rendered report:
@@ -231,7 +281,7 @@ Show the rendered report:
 | `metadata` | Repo, code hash, framework, run command, budget, gate and its evidence, critical tests, platform |
 | `tools[]`, `variations[]` | Each with ran, not run or not applicable and the reason; variations name their run labels |
 | `tests[]` | Per test: runs, passes, fails, the normal rate and the worst label with Wilson bounds, and status (computed) |
-| `flakes[]` | Cause, confidence, experiment, evidence runs, polluter, excerpts, ranking, fix and optional quarantine |
+| `flakes[]` | Cause, confidence, experiment, evidence runs, polluter or enabler (`polluter.relation`), excerpts, ranking, fix and optional quarantine |
 | `consistently_failing[]` | Tests that failed every run, with what they show |
 | `static_smells[]` | Every smell from `scan_pitfalls.py` and what became of it |
 | `summary` | Headline, counts, causes, priorities, total runs, minutes and evidence completeness |

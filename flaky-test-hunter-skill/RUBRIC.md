@@ -40,7 +40,7 @@ Every rate is `fails/runs` with a 95% Wilson score interval (`scripts/stats.py`)
 |---|---|---|---|
 | `async_wait` | Fixed sleeps, polling with no deadline, a missing `await` | Fails under `--cpu-load`, passes without it | Wait on the condition (Event, join with timeout, a waiting assertion) |
 | `shared_state` | Module globals, singletons, class attributes, a shared row | A polluter pair | Reset the state in a fixture, or inject it |
-| `order_dependence` | Passes alone, fails after a specific test | A polluter pair, or reverse order fails and isolation passes | Make each test set up what it needs |
+| `order_dependence` | Passes alone, fails after a specific test (polluted); or fails alone and passes only after a specific test (enabled: a module reloaded with other settings, a cache or row an earlier test left) | A polluter pair, an enabler pair, or the given order passes 3/3 while reverse order and isolation fail | Make each test set up what it needs; undo a reload in a finalizer |
 | `external_dependency` | Real HTTP, DNS, outside sandboxes | Blocking the network fails it every time | Stub or record and replay |
 | `time_and_locale` | `today()`, `now()`, DST and month ends, locale formatting | One TZ, clock date or locale passes every run, another fails (`tz`, `clock` and `locale` variations) | Freeze the clock, or compare in one zone |
 | `randomness` | Unseeded random or Faker, set and dict ordering | One seed fails every run, another passes | Seed it, sort it, or assert on properties |
@@ -60,7 +60,12 @@ The off/on experiment is one of:
 
 - a label with 3 or more runs that all pass, and another label with 2 or more failures, among the
   experiment's runs; or
-- a polluter pair that fails while the victim alone passes, both from the bisection's record.
+- a polluter pair that fails while the victim alone passes, both from the bisection's record; or
+- an enabler pair (`polluter.relation: enabler`) that passes while the test alone fails, both from
+  the bisection's record (`bisect_polluter.py --relation enabler`).
+
+Runs that errored (a crash, a timeout, a collection or usage error, no JUnit) are not part of any
+experiment or count.
 
 An `unknown` cause is always `suspected`.
 

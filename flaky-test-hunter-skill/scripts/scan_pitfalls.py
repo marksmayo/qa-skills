@@ -132,8 +132,9 @@ def scan(root: Path, data: dict) -> list[dict]:
                'prev_rx': re.compile(s['skip_if_prev']) if s.get('skip_if_prev') else None,
                'next_rx': re.compile(s['skip_if_next']) if s.get('skip_if_next') else None,
                'mit_rx': re.compile(s['mitigated_by']) if s.get('mitigated_by') else None}
-              for s in data['smells'] if s.get('scope') != 'thread_setup']
+              for s in data['smells'] if s.get('scope') not in ('thread_setup', 'reload_target')]
     project = [s for s in data['smells'] if s.get('scope') == 'thread_setup']
+    reload_targets = [s for s in data['smells'] if s.get('scope') == 'reload_target']
     all_files = list(files(root))
     setups, pools = setup_files(root, all_files)
     texts: dict[str, list[str]] = {}
@@ -189,6 +190,8 @@ def scan(root: Path, data: dict) -> list[dict]:
                     nxt = next((lines[k] for k in range(i + 1, len(lines)) if lines[k].strip()), '')
                     if sm['next_rx'].search(nxt):
                         continue
+                if sm.get('skip_unless_compared') and fills_unused_field(lines, i, sm['rx']):
+                    continue
                 mitigation = None
                 if sm['mit_rx'] is not None:
                     if sm['id'] not in local_mit:
@@ -213,7 +216,45 @@ def scan(root: Path, data: dict) -> list[dict]:
                                     'excerpt': line.strip()[:160], 'cause': sm['cause'],
                                     'message': f"{sm['message']} ({why})", 'fix': sm['fix'], 'test': None,
                                     'in_test_file': False, 'mitigation': None})
+
+    # project checks: environment read at import in a module that a test reloads
+    reloaded = {m.group(1).split('.')[-1] for h in out if h['smell'] == 'module-reload'
+                for m in [RELOAD_ARG.search(h['excerpt'])] if m}
+    if reload_targets and reloaded:
+        for p in all_files:
+            rel = p.relative_to(root).as_posix()
+            if p.suffix != '.py' or p.stem not in reloaded or any(re.compile(x).search(rel) for x in data['test_file_patterns']):
+                continue
+            for sm in reload_targets:
+                rx = re.compile(sm['pattern'])
+                for i, line in enumerate(read(p) or []):
+                    if rx.search(line):
+                        out.append({'id': f'SM-{len(out) + 1}', 'smell': sm['id'], 'file': rel, 'line': i + 1,
+                                    'excerpt': line.strip()[:160], 'cause': sm['cause'],
+                                    'message': f"{sm['message']} ({p.stem} is reloaded by a test)", 'fix': sm['fix'],
+                                    'test': None, 'in_test_file': False, 'mitigation': None})
     return out
+
+
+RELOAD_ARG = re.compile(r'reload\(\s*([A-Za-z_][\w.]*)\s*\)')
+# created_at=dt.datetime.now(...) as a keyword argument, or "created_at": datetime.now() in a dict literal
+KWARG_BEFORE = re.compile(r'(?:(?:^|[(,])\s*([A-Za-z_]\w*)=(?!=)|(?:^|[{,])\s*[\'"]([A-Za-z_]\w*)[\'"]\s*:)\s*[\w.]*$')
+# what may follow the clock read: the end of the argument, optionally shifted by a timedelta
+KWARG_AFTER = re.compile(r'\s*(?:[-+]\s*[\w.]*timedelta\([^()]*\)\s*)?(?:,|\)|\}|$)')
+
+
+def fills_unused_field(lines: list[str], i: int, rx: re.Pattern) -> bool:
+    """The clock read only fills a keyword argument (created_at=datetime.now() in a fixture or constructor call),
+    and no line of the file compares or asserts on that name: a timestamp nobody compares can't make a test flaky."""
+    line = lines[i]
+    m = rx.search(line)
+    kw = KWARG_BEFORE.search(line[:m.start()])
+    if not kw or not KWARG_AFTER.match(line[m.end():]):
+        return False   # not a keyword argument or dict value, or the value is used further on the same line
+    name = re.escape(kw.group(1) or kw.group(2))
+    named = re.compile(r'(?:\.|\[[\'"])' + name + r'\b|\b' + name + r'\b')
+    compared = re.compile(r'\bassert\b|[<>]=?|==|!=|\bsorted\(|\bmin\(|\bmax\(|timedelta|\.days\b|total_seconds')
+    return not any(j != i and named.search(l) and compared.search(l) for j, l in enumerate(lines))
 
 
 def main(argv=None) -> int:

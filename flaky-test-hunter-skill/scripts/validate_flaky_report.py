@@ -6,7 +6,7 @@
 
 --runs recomputes every test's counts, Wilson intervals and status from the real runs and checks
 each flake's evidence against them. --smells checks every static smell is accounted for.
---bisect checks a polluter against the bisection's own record. --repo checks that every proposed
+--bisect (one or more files) checks a polluter or enabler against the bisection's own record. --repo checks that every proposed
 (unapplied) fix applies cleanly to the repository's files. --write-summary fills in the
 computed fields (tests[], each flake's rate factor, gate, masking, score and priority, and the
 summary counts) before validating; the headline stays yours.
@@ -96,8 +96,10 @@ def schema_errors(value, schema: dict, root: dict, path: str = '$') -> list[str]
 
 # ---------------------------------------------------------------- aggregation from runs
 def outcomes(runs_data: dict, code_hash: str) -> tuple[dict, dict, dict]:
-    """test id -> [(run_id, label, 'pass'|'fail')], test id -> file, run id -> run (same code only)."""
-    runs = {r['id']: r for r in runs_data['runs'] if r.get('code_hash') == code_hash}
+    """test id -> [(run_id, label, 'pass'|'fail')], test id -> file, run id -> run (same code only). Errored runs
+    (run_tests.py's `errored`: a crash, a timeout, a pytest usage or collection error, no JUnit) did not run the tests,
+    so none of their cases count."""
+    runs = {r['id']: r for r in runs_data['runs'] if r.get('code_hash') == code_hash and not r.get('errored')}
     out, files = defaultdict(list), {}
     for c in runs_data['cases']:
         r = runs.get(c['run_id'])
@@ -410,11 +412,23 @@ def check(d: dict, runs_data: dict | None, smells: dict | None, bisect: dict | N
         other = [r['id'] for r in runs_data['runs'] if r.get('code_hash') != meta['code_hash']]
         if other:
             warns.append(f'{len(other)} run(s) have a different code_hash and were left out: {", ".join(other[:5])}')
+        errored = [r for r in runs_data['runs'] if r.get('code_hash') == meta['code_hash'] and r.get('errored')]
+        if errored:
+            warns.append(f'{len(errored)} errored run(s) did not run the tests and were left out of every count: '
+                         + ', '.join(f"{r['id']} ({r.get('error') or 'errored'})" for r in errored[:4]))
         labels = {r.get('label') for r in runs.values()}
+        all_labels = {r.get('label') for r in runs_data['runs'] if r.get('code_hash') == meta['code_hash']}
         for v in d['variations']:
             for l in v['labels']:
-                if l not in labels:
+                if l in all_labels and l not in labels:
+                    errs.append(f"variation {v['kind']} names label {l!r}, whose runs all errored (crashed, timed out "
+                                'or ran no tests); record the variation as not_run with the reason')
+                elif l not in labels:
                     errs.append(f"variation {v['kind']} names label {l!r}, which no run has")
+            if v['status'] == 'ran' and v['labels'] and not any(
+                    (r.get('totals') or {}).get('tests', 1) for r in runs.values() if r.get('label') in v['labels']):
+                errs.append(f"variation {v['kind']} ran, but none of its runs ({', '.join(v['labels'])}) ran a test; "
+                            'record it as not_run with the reason')
             if v['kind'] == 'clock' and v['status'] == 'ran' and not any(
                     moves_clock(r) for r in runs.values() if r.get('label') in v['labels']):
                 errs.append(f"variation clock ran, but none of its runs ({', '.join(v['labels'])}) records a clock change "
@@ -450,9 +464,14 @@ def check(d: dict, runs_data: dict | None, smells: dict | None, bisect: dict | N
                 ok = False
                 if f['polluter']:
                     pol = f['polluter']
-                    ok = res.get(pol['pair_run_id']) == 'fail' and res.get(pol['alone_run_id']) == 'pass'
-                    if not ok:
-                        errs.append(f'{at}: polluter pair must fail and the victim alone must pass')
+                    if pol.get('relation', 'polluter') == 'enabler':
+                        ok = res.get(pol['pair_run_id']) == 'pass' and res.get(pol['alone_run_id']) == 'fail'
+                        if not ok:
+                            errs.append(f'{at}: an enabler pair must pass and the test alone must fail')
+                    else:
+                        ok = res.get(pol['pair_run_id']) == 'fail' and res.get(pol['alone_run_id']) == 'pass'
+                        if not ok:
+                            errs.append(f'{at}: polluter pair must fail and the victim alone must pass')
                 else:
                     by = defaultdict(list)
                     for rid in f['experiment']['run_ids']:
@@ -478,15 +497,52 @@ def check(d: dict, runs_data: dict | None, smells: dict | None, bisect: dict | N
         warns.append('no --runs given; counts, statuses and experiments were not re-checked')
 
     if bisect is not None:
-        for f in flakes:
-            if f['polluter'] and f['test_id'] == bisect['victim']:
-                if bisect['outcome'] != 'minimal_pair':
-                    errs.append(f"{f['id']}: names a polluter but the bisection's outcome is {bisect['outcome']}")
-                else:
-                    steps = {s['run_id'] for s in bisect['steps']}
+        for b in (bisect if isinstance(bisect, list) else [bisect]):
+            for f in flakes:
+                if f['polluter'] and f['test_id'] == b['victim']:
+                    rel = f['polluter'].get('relation', 'polluter')
+                    if b['outcome'] != 'minimal_pair':
+                        errs.append(f"{f['id']}: names a {rel} but the bisection's outcome is {b['outcome']}")
+                        continue
+                    if b.get('relation', 'polluter') != rel:
+                        errs.append(f"{f['id']}: names a {rel} but the bisection looked for a {b.get('relation', 'polluter')}")
+                    steps = {s['run_id'] for s in b['steps']}
                     if not set(f['polluter']['bisect_run_ids']) <= steps:
-                        errs.append(f"{f['id']}: polluter bisect runs are not the bisection's steps")
+                        errs.append(f"{f['id']}: {rel} bisect runs are not the bisection's steps")
+                    named = {b.get('polluter'), b.get('polluter_node_id')} - {None}
+                    if named and f['polluter']['test_id'] not in named and not any(
+                            same_test(f['polluter']['test_id'], n) for n in named):
+                        errs.append(f"{f['id']}: {rel} {f['polluter']['test_id']} is not the one the bisection named "
+                                    f"({b.get('polluter')})")
+
+    # numbers in the headline
+    if d['tests']:
+        bounds = set()
+        for t in d['tests']:
+            for n, k in ((t['runs'], t['fails']), (t['normal']['runs'], t['normal']['fails']),
+                         (t['worst']['runs'], t['worst']['fails']), (t['runs'], 0)):
+                if n:
+                    bounds.add(stats.wilson(k, n)[1] * 100)
+        for m in UPPER_BOUND.finditer(d['summary'].get('headline', '')):
+            claimed, places = float(m.group(1)), len(m.group(1).partition('.')[2])
+            if not any(abs(round(b, places) - claimed) < 1e-9 for b in bounds):
+                errs.append(f"summary.headline: upper bound {m.group(1)}% matches no Wilson upper bound of the runs "
+                            '(compute it with stats.py; 0 of n has upper bound stats.py 0 n)')
     return errs, warns
+
+
+UPPER_BOUND = re.compile(r'upper (?:bound|limit|end)[^0-9%.]{0,40}?(\d+(?:\.\d+)?)\s*%', re.I)
+
+
+def same_test(a: str, b: str) -> bool:
+    """tests.test_x::name (a runs.json case id) and tests/test_x.py::name (a pytest node id) name one test."""
+    ma, _, na = a.partition('::')
+    mb, _, nb = b.partition('::')
+    if na != nb:
+        return False
+    norm = lambda m: re.sub(r'\.py$', '', m).replace('/', '.').replace('\\', '.')  # noqa: E731
+    x, y = norm(ma), norm(mb)
+    return x == y or x.endswith('.' + y) or y.endswith('.' + x)
 
 
 def main(argv=None) -> int:
@@ -494,7 +550,7 @@ def main(argv=None) -> int:
     ap.add_argument('report', type=Path)
     ap.add_argument('--runs', type=Path)
     ap.add_argument('--smells', type=Path)
-    ap.add_argument('--bisect', type=Path)
+    ap.add_argument('--bisect', type=Path, nargs='+', help='one or more bisect_polluter.py outputs')
     ap.add_argument('--repo', type=Path, help='check every proposed fix applies to these files')
     ap.add_argument('--write-summary', action='store_true')
     args = ap.parse_args(argv)
@@ -511,7 +567,7 @@ def main(argv=None) -> int:
         write_summary(d, runs_data)
         args.report.write_text(json.dumps(d, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
     smells = json.loads(args.smells.read_text(encoding='utf-8')) if args.smells else None
-    bisect = json.loads(args.bisect.read_text(encoding='utf-8')) if args.bisect else None
+    bisect = [json.loads(p.read_text(encoding='utf-8')) for p in args.bisect] if args.bisect else None
     errs, warns = check(d, runs_data, smells, bisect, args.repo)
     for w in warns:
         print(f'WARN: {w}')
