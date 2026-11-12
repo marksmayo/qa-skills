@@ -19,7 +19,13 @@ elapsed time when it finishes.
 
 Network: Semgrep fetches registry rules (metrics are turned off); pip-audit, npm audit,
 osv-scanner and Trivy query vulnerability databases with package names and versions, never
-source code. --offline skips those tools and records why.
+source code. --offline skips those tools and records why (and whether they are installed at all).
+With --osv-local-db <dir> (an osv-scanner offline database downloaded beforehand), osv-scanner
+checks advisories without the network, also under --offline.
+
+Whatever runs, the pinned packages in lockfiles and requirements files are listed offline in
+dependencies.json, and scanners.json records dependency_advisories: assessed, partial (some
+ecosystem's lockfile no tool covered) or not_assessed (no advisory tool ran), for the report.
 
 Only free, open-source tools whose licences allow scanning closed-source code are used: Semgrep
 OSS with community rules, Bandit, gosec, Brakeman, ESLint security plugins, Psalm, gitleaks,
@@ -35,6 +41,7 @@ from pathlib import Path
 SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'out', '.next', '.nuxt', '.turbo', '.cache', 'coverage', '.venv', 'venv',
              '__pycache__', 'vendor', 'target', '.terraform'}
 HEARTBEAT = 30  # seconds between progress lines for a long-running tool
+ALLOWED_DOT_DIRS = {'.github', '.azuredevops', '.pipelines', '.azure-pipelines', '.ado'}
 EXT = {'python': {'.py'}, 'javascript': {'.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.vue', '.svelte'},
        'go': {'.go'}, 'ruby': {'.rb'}, 'php': {'.php'}, 'java': {'.java', '.kt', '.kts'}, 'csharp': {'.cs'},
        'c': {'.c', '.h', '.cc', '.cpp'}, 'swift': {'.swift'}, 'terraform': {'.tf'}}
@@ -43,7 +50,7 @@ def inventory(root: Path) -> dict:
     langs: dict[str, int] = {}
     names: list[str] = []
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and (not d.startswith('.') or d == '.github')]
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and (not d.startswith('.') or d in ALLOWED_DOT_DIRS)]
         rel = Path(dirpath).relative_to(root).as_posix()
         for f in filenames:
             names.append(f'{rel}/{f}' if rel != '.' else f)
@@ -61,14 +68,108 @@ def inventory(root: Path) -> dict:
                       'Pipfile.lock', 'go.mod', 'Gemfile.lock', 'composer.lock', 'Cargo.lock', 'pom.xml', 'build.gradle',
                       'gradle.lockfile', 'pubspec.lock', 'packages.lock.json'} or re.search(r'requirements[\w.-]*\.txt$', n)],
         'dockerfiles': [n for n in names if Path(n).name in ('Dockerfile', 'Containerfile') or Path(n).name.startswith('Dockerfile.')],
-        'iac': [n for n in names if n.endswith(('.tf', '.bicep')) or Path(n).name in ('Dockerfile',) or
-                re.search(r'(^|/)(k8s|kubernetes|helm|charts|cloudformation)/', n)],
+        # what Checkov reads: Terraform, Bicep, ARM, CloudFormation, Kubernetes/Helm, Dockerfiles, Compose,
+        # GitHub Actions and Azure Pipelines
+        'iac': [n for n in names if n.endswith(('.tf', '.bicep')) or Path(n).name in ('Dockerfile', 'Containerfile') or
+                Path(n).name.startswith('Dockerfile.') or re.match(r'(docker-)?compose([.-][\w-]+)?\.ya?ml$', Path(n).name) or
+                re.search(r'(^|/)(k8s|kubernetes|helm|charts|cloudformation)/', n) or
+                (n.endswith('.json') and arm_template(root / n)) or
+                (n.endswith(('.yml', '.yaml')) and (n.startswith('.github/workflows/') or ado_pipeline(root / n)))],
         'rails': 'Gemfile' in base and any(n.endswith('config/routes.rb') for n in names),
         'eslint_security': eslint_security_plugin(root),
         'psalm': (root / 'vendor' / 'bin' / 'psalm').exists(),
         'is_git': (root / '.git').exists(),
         'mobile_package': [n for n in names if n.endswith(('.apk', '.aab', '.ipa'))],
     }
+
+def _head(p: Path, n: int = 4000) -> str:
+    try:
+        with p.open(encoding='utf-8', errors='replace') as fh:
+            return fh.read(n)
+    except OSError:
+        return ''
+
+def arm_template(p: Path) -> bool:
+    return 'deploymentTemplate.json' in _head(p) or 'deploymentParameters.json' in _head(p)
+
+def ado_pipeline(p: Path) -> bool:
+    text = _head(p, 20000)
+    if re.search(r'(^|/)azure-pipelines[\w.-]*\.ya?ml$', p.as_posix()):
+        return True
+    if re.search(r'^(apiVersion|kind|services|on)\s*:|^\s*runs-on\s*:', text, re.M):
+        return False
+    return bool(re.search(r'^(trigger|pr|schedules|stages|jobs|steps|pool|extends)\s*:', text, re.M) and
+                re.search(r'^\s*-?\s*(task|script|bash|pwsh|powershell|checkout|template|deployment|job|stage)\s*:', text, re.M))
+
+# ---------------------------------------------------------------- offline dependency inventory
+def dependency_inventory(root: Path, inv: dict) -> dict:
+    """Packages pinned in lockfiles and requirements files, read without the network.
+
+    It lists what is installed; it says nothing about advisories. Without a tool that checks the
+    packages against an advisory database, the report records advisories as not assessed."""
+    lockfiles, packages = [], []
+    for n in inv['files']:
+        name, p = Path(n).name, root / n
+        got = None
+        try:
+            if name == 'package-lock.json':
+                d = json.loads(p.read_text(encoding='utf-8'))
+                if isinstance(d.get('packages'), dict):
+                    got = [('npm', k.split('node_modules/')[-1], v.get('version'), bool(v.get('dev')))
+                           for k, v in d['packages'].items() if k and isinstance(v, dict)]
+                else:
+                    got = [('npm', k, v.get('version'), bool(v.get('dev'))) for k, v in (d.get('dependencies') or {}).items()]
+            elif re.match(r'requirements[\w.-]*\.txt$', name):
+                got = [('PyPI', m.group(1), m.group(2), 'dev' in name) for m in
+                       re.finditer(r'^\s*([A-Za-z0-9_.\-\[\]]+)\s*==\s*([^\s;#]+)', p.read_text(encoding='utf-8', errors='replace'), re.M)]
+            elif name in ('poetry.lock', 'Cargo.lock'):
+                eco = 'PyPI' if name == 'poetry.lock' else 'crates.io'
+                got = [(eco, a, b, False) for a, b in
+                       re.findall(r'^\[\[package\]\]\s*\nname\s*=\s*"([^"]+)"\s*\nversion\s*=\s*"([^"]+)"', p.read_text(encoding='utf-8', errors='replace'), re.M)]
+            elif name == 'Pipfile.lock':
+                d = json.loads(p.read_text(encoding='utf-8'))
+                got = [('PyPI', k, (v.get('version') or '').lstrip('='), sect == 'develop')
+                       for sect in ('default', 'develop') for k, v in (d.get(sect) or {}).items()]
+            elif name == 'yarn.lock':
+                got = [('npm', a.split('@')[0] if not a.startswith('@') else '@' + a[1:].split('@')[0], b, False) for a, b in
+                       re.findall(r'^"?([^\s"#][^,:\n]*?)@[^:\n]*:?\s*\n\s+version:?\s+"?([^"\s]+)', p.read_text(encoding='utf-8', errors='replace'), re.M)]
+            elif name == 'pnpm-lock.yaml':
+                got = [('npm', a, b, False) for a, b in
+                       re.findall(r"^\s{2}'?/?(@?[^@\s'/][^@\s']*)@([0-9][^:\s'(]*)", p.read_text(encoding='utf-8', errors='replace'), re.M)]
+            elif name == 'go.mod':
+                got = [('Go', a, b, False) for a, b in re.findall(r'^\s*(?:require\s+)?([\w.\-]+\.[\w.\-/]+)\s+(v[\w.\-+]+)', p.read_text(encoding='utf-8', errors='replace'), re.M)]
+            elif name == 'Gemfile.lock':
+                got = [('RubyGems', a, b, False) for a, b in re.findall(r'^ {4}([\w.\-]+) \(([^)]+)\)', p.read_text(encoding='utf-8', errors='replace'), re.M)]
+            elif name == 'composer.lock':
+                d = json.loads(p.read_text(encoding='utf-8'))
+                got = [('Packagist', x.get('name'), x.get('version'), sect == 'packages-dev')
+                       for sect in ('packages', 'packages-dev') for x in d.get(sect) or []]
+        except (OSError, ValueError, AttributeError):
+            lockfiles.append({'file': n, 'ecosystem': None, 'packages': None, 'error': 'could not be read'})
+            continue
+        if got is None:
+            continue
+        uniq = sorted({(e, a, b, dev) for e, a, b, dev in got if a})
+        lockfiles.append({'file': n, 'ecosystem': uniq[0][0] if uniq else None, 'packages': len(uniq)})
+        packages += [{'ecosystem': e, 'name': a, 'version': b, 'dev': dev, 'file': n} for e, a, b, dev in uniq]
+    return {'lockfiles': lockfiles, 'packages': packages}
+
+def advisory_status(records: list[dict], deps: dict) -> dict:
+    """assessed / partial / not_assessed, from which dependency tools ran and which ecosystems they cover."""
+    ran = [r['name'] for r in records if r.get('area') == 'dependencies' and r.get('status') == 'ran']
+    ecos = {l['ecosystem'] for l in deps['lockfiles'] if l.get('ecosystem')}
+    covered = set(ecos) if 'osv-scanner' in ran else ({'PyPI'} if 'pip-audit' in ran else set()) | ({'npm'} if 'npm-audit' in ran else set())
+    if not deps['lockfiles']:
+        return {'status': 'assessed' if ran else 'not_assessed', 'tools': ran,
+                'reason': None if ran else 'no lockfile or pinned requirements file was found'}
+    if not ran:
+        why = [f"{r['name']}: {r.get('reason')}" for r in records if r.get('area') == 'dependencies' and r.get('status') != 'not_applicable']
+        return {'status': 'not_assessed', 'tools': [], 'reason': 'no dependency advisory tool ran (' + '; '.join(why) + '); '
+                f"{sum(l.get('packages') or 0 for l in deps['lockfiles'])} pinned package(s) listed offline in dependencies.json"}
+    missing = sorted(ecos - covered)
+    if missing:
+        return {'status': 'partial', 'tools': ran, 'reason': f"no tool covered the {', '.join(missing)} lockfile(s)"}
+    return {'status': 'assessed', 'tools': ran, 'reason': None}
 
 def eslint_security_plugin(root: Path) -> bool:
     try:
@@ -91,7 +192,7 @@ def tool_env() -> dict:
     env.update({'PYTHONUTF8': '1', 'PYTHONIOENCODING': 'utf-8', 'SEMGREP_SEND_METRICS': 'off', 'NO_COLOR': '1'})
     return env
 
-def plan(root: Path, out: Path, inv: dict, semgrep_configs: list[str]) -> list[dict]:
+def plan(root: Path, out: Path, inv: dict, semgrep_configs: list[str], osv_local_db: Path | None = None) -> list[dict]:
     """One entry per tool: {name, area, network, applies (reason if not), exe, runs: [{cmd, cwd, output, stdout_to}]}."""
     L = inv['langs']
     src = sum(L.values()) > 0
@@ -131,9 +232,15 @@ def plan(root: Path, out: Path, inv: dict, semgrep_configs: list[str]) -> list[d
           'fallback': ['gitleaks', 'detect', '--source', str(root), *([] if inv['is_git'] else ['--no-git']), '--report-format', 'sarif',
                        '--report-path', str(out / 'gitleaks.sarif'), '--redact', '--no-banner', '--exit-code', '0']}],
         note='scans git history too when the repository is a git checkout')
-    add('osv-scanner', 'dependencies', 'osv-scanner', True if inv['lockfiles'] else 'no lockfile or manifest',
-        [{'cmd': ['osv-scanner', 'scan', 'source', '-r', '--format', 'json', '--output', str(out / 'osv.json'), str(root)], 'output': 'osv.json',
-          'fallback': ['osv-scanner', '--format', 'json', '--output', str(out / 'osv.json'), '-r', str(root)], 'ok_codes': [0, 1]}], network=True)
+    if osv_local_db:  # a database downloaded earlier (osv-scanner --download-offline-databases): no network at scan time
+        osv_runs = [{'cmd': ['osv-scanner', 'scan', 'source', '-r', '--offline-vulnerabilities', '--format', 'json', '--output', str(out / 'osv.json'),
+                             str(root)], 'output': 'osv.json', 'ok_codes': [0, 1], 'env': {'OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY': str(osv_local_db)},
+                     'fallback': ['osv-scanner', '--experimental-offline', '--format', 'json', '--output', str(out / 'osv.json'), '-r', str(root)]}]
+    else:
+        osv_runs = [{'cmd': ['osv-scanner', 'scan', 'source', '-r', '--format', 'json', '--output', str(out / 'osv.json'), str(root)], 'output': 'osv.json',
+                     'fallback': ['osv-scanner', '--format', 'json', '--output', str(out / 'osv.json'), '-r', str(root)], 'ok_codes': [0, 1]}]
+    add('osv-scanner', 'dependencies', 'osv-scanner', True if inv['lockfiles'] else 'no lockfile or manifest', osv_runs,
+        network=not osv_local_db, note=f'offline, local advisory database {osv_local_db}' if osv_local_db else None)
     pip_runs = [{'cmd': ['pip-audit', '-r', str(root / r), '-f', 'json', '-o', str(out / f"pip-audit{'' if i == 0 else '-' + str(i)}.json"),
                          '--progress-spinner', 'off'], 'output': f"pip-audit{'' if i == 0 else '-' + str(i)}.json", 'ok_codes': [0, 1]}
                 for i, r in enumerate(inv['requirements'])]
@@ -153,7 +260,8 @@ def plan(root: Path, out: Path, inv: dict, semgrep_configs: list[str]) -> list[d
     add('trivy', 'iac_containers', 'trivy', True,
         [{'cmd': ['trivy', 'fs', '--scanners', 'vuln,misconfig,secret', '--format', 'sarif', '--output', str(out / 'trivy.sarif'),
                   '--quiet', str(root)], 'output': 'trivy.sarif'}], network=True)
-    add('checkov', 'iac_containers', 'checkov', True if inv['iac'] else 'no IaC or container files',
+    add('checkov', 'iac_containers', 'checkov', True if inv['iac'] else
+        'no Terraform, Bicep, ARM, CloudFormation, Kubernetes, Dockerfile, Compose or CI pipeline files',
         [{'cmd': ['checkov', '-d', str(root), '-o', 'sarif', '--output-file-path', str(out / 'checkov'), '--quiet', '--compact'],
           'output': 'checkov/results_sarif.sarif', 'ok_codes': [0, 1]}])
     add('hadolint', 'iac_containers', 'hadolint', True if inv['dockerfiles'] else 'no Dockerfiles',
@@ -161,10 +269,10 @@ def plan(root: Path, out: Path, inv: dict, semgrep_configs: list[str]) -> list[d
          for i, d in enumerate(inv['dockerfiles'])])
     return tools
 
-def run_with_progress(cmd: list[str], cwd: str | None, timeout: int, name: str) -> subprocess.CompletedProcess:
+def run_with_progress(cmd: list[str], cwd: str | None, timeout: int, name: str, env: dict | None = None) -> subprocess.CompletedProcess:
     """subprocess.run with a progress line on stderr every HEARTBEAT seconds; raises TimeoutExpired."""
     t0 = time.monotonic()
-    proc = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=tool_env(),
+    proc = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env={**tool_env(), **(env or {})},
                             encoding='utf-8', errors='replace')
     while True:
         left = timeout - (time.monotonic() - t0)
@@ -215,7 +323,7 @@ def run_tool(t: dict, out: Path, timeout: int, timeouts: dict | None = None) -> 
             (out / r['output']).parent.mkdir(parents=True, exist_ok=True)  # e.g. checkov/, only when it runs
             limit = (timeouts or {}).get(r.get('timeout_key'), timeout)
             try:
-                p = run_with_progress(cmd, r.get('cwd'), limit, t['name'])
+                p = run_with_progress(cmd, r.get('cwd'), limit, t['name'], r.get('env'))
             except subprocess.TimeoutExpired:
                 errors.append(f'timed out after {limit}s'); break
             except OSError as exc:
@@ -262,6 +370,8 @@ def main() -> int:
                     help='seconds for each npm audit run (default 600; a large lockfile can take several minutes)')
     ap.add_argument('--semgrep-config', nargs='*', default=['p/default', 'p/owasp-top-ten'])
     ap.add_argument('--path-prepend', nargs='*', default=[], help='directories to search for tools first (e.g. a venv)')
+    ap.add_argument('--osv-local-db', type=Path, help='an osv-scanner offline database directory (downloaded earlier with '
+                    '--download-offline-databases): osv-scanner then runs without the network, also under --offline')
     args = ap.parse_args()
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(errors='replace')  # tool output can hold characters the console can't encode
@@ -276,7 +386,7 @@ def main() -> int:
     if args.path_prepend:
         os.environ['PATH'] = os.pathsep.join([str(Path(p).resolve()) for p in args.path_prepend] + [os.environ.get('PATH', '')])
     inv = inventory(root)
-    tools = plan(root, out, inv, args.semgrep_config)
+    tools = plan(root, out, inv, args.semgrep_config, args.osv_local_db.resolve() if args.osv_local_db else None)
     only = set(args.only.split(',')) if args.only else None
     skip = set(args.skip.split(',')) if args.skip else set()
     if not args.dry_run:
@@ -290,7 +400,9 @@ def main() -> int:
         if t['not_run']:
             records.append({'name': t['name'], 'area': t['area'], 'status': 'not_run', 'reason': t['not_run']}); continue
         if args.offline and t['network']:
-            records.append({'name': t['name'], 'area': t['area'], 'status': 'not_run', 'reason': '--offline: this tool needs the network'}); continue
+            installed = not t['exe'] or shutil.which(t['exe']) or Path(t['exe']).exists()
+            reason = '--offline: this tool needs the network' if installed else f"{t['exe']} is not installed, and --offline: it also needs the network"
+            records.append({'name': t['name'], 'area': t['area'], 'status': 'not_run', 'reason': reason}); continue
         if args.dry_run:
             exe = shutil.which(t['exe']) if t['exe'] else None
             records.append({'name': t['name'], 'area': t['area'], 'status': 'planned' if exe else 'not_run',
@@ -301,17 +413,25 @@ def main() -> int:
         r = records[-1]
         print(f"  {t['name']}: {r['status']} in {r.get('elapsed_s') or 0}s" + (f", {r['results']} result(s)" if r.get('results') is not None else ''),
               file=sys.stderr, flush=True)
+    deps = dependency_inventory(root, inv)
     manifest = {'generated_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), 'repository': str(root),
-                'out_dir': str(out), 'languages': inv['langs'], 'tools': records}
+                'out_dir': str(out), 'languages': inv['langs'], 'tools': records,
+                'dependency_inventory': {'lockfiles': deps['lockfiles'], 'packages': len(deps['packages']),
+                                         'output': str(out / 'dependencies.json')},
+                'dependency_advisories': advisory_status(records, deps)}
     if args.dry_run:
         print(json.dumps(manifest, indent=2))
         return 0
     (out / 'scanners.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
+    (out / 'dependencies.json').write_text(json.dumps({'note': 'Pinned packages read from lockfiles without the network. This is '
+                                                       'an inventory, not an advisory check.', **deps}, indent=2) + '\n', encoding='utf-8')
     width = max(len(r['name']) for r in records)
     for r in records:
         extra = r.get('version') or ''
         took = f"{r['elapsed_s']}s" if r.get('elapsed_s') is not None else ''
         print(f"  {r['name']:<{width}}  {r['status']:<14} {extra:<10} {took:<8} {r.get('reason') or ''}")
+    adv = manifest['dependency_advisories']
+    print(f"dependency advisories: {adv['status']}" + (f" ({adv['reason']})" if adv.get('reason') else ''))
     print(f"manifest -> {out / 'scanners.json'}")
     return 0
 
