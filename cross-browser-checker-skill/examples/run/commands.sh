@@ -12,3 +12,5 @@ kill $SITE
 python scripts/feature_scan.py --repo examples/travel-site --out $R/features.json
 python scripts/compare_engines.py $R/capture/runs.json --features $R/features.json --out $R/candidates.json
 python scripts/validate_report.py examples/report.example.json --runs $R/capture/runs.json --candidates $R/candidates.json --features $R/features.json --targets examples/targets.json
+python scripts/compare_engines.py --static-only --features $R/features.json --targets examples/targets.json --out examples/static-only/candidates.json
+python scripts/validate_report.py examples/report.static.example.json --candidates examples/static-only/candidates.json --features $R/features.json --targets examples/targets.json

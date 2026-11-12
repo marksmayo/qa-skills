@@ -8,6 +8,10 @@ Recomputed and compared: the candidates (compare_engines.py run again on the rec
 same feature scan), each difference's ratings and runs, the feature findings and their links, the
 flaky list, and the headline (verdict, counts, checks planned and run, completeness, confidence).
 
+A report with run_status not_run (static only) is validated without --runs, from a candidates file written by
+compare_engines.py --static-only: every engine not_run, no differences, triage or confirmed features, verdict
+inconclusive.
+
 Also fails when:
   * a difference's outcomes are not consistent across its reruns (every run of each engine the same),
     or it lacks evidence (screenshots that exist and match runs.json) from the reference and every
@@ -48,7 +52,9 @@ import schema_check  # noqa: E402
 
 COMPAT = re.compile(r'\b(compatible|works (fine )?in all browsers|cross-browser (safe|ready)|fully supported everywhere|no browser issues)\b', re.I)
 INCONCLUSIVE_SAYS = re.compile(r'inconclusive|errored|not compared|could not|couldn.t|did not (run|capture|load)|skipped|'
-                               r'not captured|no comparison', re.I)
+                               r'not captured|no comparison|(were|was) not (made|run)|not made|not run\b|'
+                               r'no (engine|browser)s? (ran|were run|was run|started)|static[- ]only|without (a |any )?browsers?',
+                               re.I)
 NO_DIFF_CLAIM = re.compile(r'\b(no (\w+ )?differences (were |was )?(found|detected|seen)|no differences detected|'
                            r'all (engines|browsers) (match|agree|behave the same))\b', re.I)
 FIELDS = ('kind', 'subkind', 'page', 'states', 'element', 'severity', 'confidence', 'priority', 'score', 'usage_share', 'runs')
@@ -67,22 +73,38 @@ def sentences(text: str) -> list[str]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('report', type=Path)
-    ap.add_argument('--runs', type=Path, required=True)
+    ap.add_argument('--runs', type=Path, help='runs.json from capture.py (not for a static-only report, run_status not_run)')
     ap.add_argument('--candidates', type=Path, required=True)
     ap.add_argument('--features', type=Path)
     ap.add_argument('--targets', type=Path)
     ap.add_argument('--write-summary', action='store_true')
     ap.add_argument('--jobs', type=int, default=ce.default_jobs(), help='screenshots decoded in parallel when recomputing')
     a = ap.parse_args()
-    rep, runs, cands_doc = load(a.report), load(a.runs), load(a.candidates)
+    rep, cands_doc = load(a.report), load(a.candidates)
     errs: list[str] = []
     errs += [f'schema: {e}' for e in schema_check.errors(rep, load(HERE.parent / 'schemas' / 'cross_browser_report.schema.json'))]
     if errs:
         print('\n'.join(errs))
         print(f'INVALID: {len(errs)} schema error(s)')
         return 1
+    static = rep.get('run_status') == 'not_run'
+    if static:
+        # no browser ran: the "runs" are the candidates file's static record (engines not_run, the plan, no runs)
+        if a.runs:
+            errs.append('run_status is not_run (static only), but --runs names a capture: a capture ran, so report it')
+        if cands_doc.get('run_status') != 'not_run':
+            errs.append('run_status is not_run, but the candidates file is not from compare_engines.py --static-only')
+        runs = {'engines': cands_doc.get('engines') or [], 'reruns': cands_doc.get('reruns') or 1,
+                'planned': cands_doc.get('planned') or [], 'runs': []}
+        run_dir = a.report.resolve().parent
+    else:
+        if not a.runs:
+            ap.error('--runs is required unless the report is static only (run_status not_run)')
+        runs = load(a.runs)
+        run_dir = a.runs.parent
+    if rep.get('run_status') not in (None, 'complete') and len(' '.join(str(rep.get('run_status_reason') or '').split())) < 15:
+        errs.append(f'run_status {rep["run_status"]}: run_status_reason must say why the engines did not all run')
     sc, hl = rep['scope'], rep['headline']
-    run_dir = a.runs.parent
 
     # recompute candidates
     features = load(a.features) if a.features else None
@@ -214,12 +236,14 @@ def main() -> int:
     if plan is None:   # a capture that didn't record its plan: count what ran
         plan = [{'page': p, 'viewport': v} for p, v in sorted({(r['page'], r['viewport']) for r in runs['runs']})]
     n_states = len(plan)
-    incomplete = cmp['made'] < cmp['planned']
+    not_run = [e['name'] for e in sc['engines'] if e['status'] != 'ran']
+    # any engine not run or errored, any planned comparison not made, or none made at all (an empty plan included):
+    # nothing supports "no differences detected"
+    incomplete = cmp['made'] < cmp['planned'] or cmp['made'] == 0 or bool(not_run)
     exp = {'verdict': 'differences_found' if rep['differences'] else 'inconclusive' if incomplete else 'no_differences_detected',
            'severity_counts': dict(Counter(d['severity'] for d in rep['differences'])), 'flaky_count': len(rep['flaky']),
            'checks': {'planned': n_states * len(planned_engines) * sc['reruns'], 'ran': sum(1 for r in runs['runs'] if r['ok']),
                       'comparisons_planned': cmp['planned'], 'comparisons_made': cmp['made']}}
-    not_run = [e['name'] for e in sc['engines'] if e['status'] != 'ran']
     partial = bool(not_run or incomplete or rep['flaky'] or rep['needs_review'] or exp['checks']['ran'] < exp['checks']['planned']
                    or (features and any(f['status'] == 'not_assessed' for f in rep['feature_findings'])))
     exp['evidence_completeness'] = 'partial' if partial else 'complete'
@@ -245,6 +269,21 @@ def main() -> int:
     if cmp['not_made'] and not any(INCONCLUSIVE_SAYS.search(x) for x in rep['limitations']):
         errs.append(f'limitations: {len(cmp["not_made"])} engine comparison(s) were not made (runs errored or skipped); '
                     'say which and why')
+    elif cmp['made'] == 0 and not any(INCONCLUSIVE_SAYS.search(x) for x in rep['limitations']):
+        errs.append('limitations: no engine comparison was made; say so (no engine ran, or nothing was planned)')
+    # run_status, when given, follows the engines and comparisons
+    if static:
+        ran = [e['name'] for e in sc['engines'] if e['status'] != 'not_run']
+        if ran:
+            errs.append(f'run_status is not_run, but scope.engines says {", ".join(ran)} ran or errored')
+        if rep['differences'] or rep['flaky'] or rep['triage'] or rep['needs_review']:
+            errs.append('run_status is not_run: there are no differences, flaky observations, triage or needs_review without a capture')
+        if any(f['status'] == 'confirmed_at_runtime' for f in rep['feature_findings']):
+            errs.append('run_status is not_run: no feature finding can be confirmed_at_runtime')
+    elif rep.get('run_status') == 'complete' and (incomplete or chk['ran'] < chk['planned']):
+        errs.append('run_status is complete, but some engines or planned runs did not run or were not compared: use partial')
+    elif rep.get('run_status') == 'partial' and not (incomplete or chk['ran'] < chk['planned'] or rep['flaky']):
+        errs.append('run_status is partial, but every planned run ran and every comparison was made: use complete')
     cap = runs.get('capture') or {}
     if 'bypass_csp' in cap and sc.get('capture') != cap:
         errs.append('scope.capture should equal runs.json capture settings')

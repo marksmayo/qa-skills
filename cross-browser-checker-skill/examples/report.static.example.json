@@ -1,0 +1,1234 @@
+{
+ "skill": {
+  "name": "cross-browser-checker",
+  "version": "1.2.0"
+ },
+ "run_status": "not_run",
+ "run_status_reason": "Static-only check: the feature scan was asked for, and no browser engine was started.",
+ "scope": {
+  "site": null,
+  "pages": [
+   "about",
+   "deals",
+   "home",
+   "home~recommendations"
+  ],
+  "viewports": [
+   "1280x800"
+  ],
+  "engines": [
+   {
+    "name": "chromium",
+    "version": null,
+    "status": "not_run",
+    "note": "static-only run: no browser was started"
+   },
+   {
+    "name": "firefox",
+    "version": null,
+    "status": "not_run",
+    "note": "static-only run: no browser was started"
+   },
+   {
+    "name": "webkit",
+    "version": null,
+    "status": "not_run",
+    "note": "static-only run: no browser was started"
+   }
+  ],
+  "reference_engine": "chromium",
+  "browserslist": {
+   "query": "defaults, firefox >= 115, safari >= 14",
+   "source": "package.json",
+   "resolved_count": 109,
+   "coverage": 88.52,
+   "unresolved": [
+    "unresolved: 'Firefox ESR'"
+   ]
+  },
+  "out_of_scope": [
+   "Safari (no engine ran, and Playwright WebKit would not be Safari either)",
+   "real devices and touch",
+   "every runtime comparison: no browser engine ran, so layout, rendering and script behaviour were not compared"
+  ],
+  "reruns": 3,
+  "authorised_by": null
+ },
+ "metadata": {
+  "generated_at": "2026-11-13T09:00:00Z",
+  "tools": [
+   {
+    "name": "playwright",
+    "version": null,
+    "status": "not_run",
+    "note": "static-only check: no browser was started"
+   },
+   {
+    "name": "feature_scan.py",
+    "version": "1.0.0",
+    "status": "ran",
+    "note": "6 feature uses in examples/travel-site"
+   }
+  ],
+  "data": {
+   "caniuse-db": {
+    "version": "1.0.30001818",
+    "sha256": "33d0af33f9da104c78d65b2c4b985aa8bf9ba329ecebb95f39cee62cc62cc3d0",
+    "license": "CC-BY-4.0"
+   },
+   "web-features": {
+    "version": "3.44.0",
+    "sha256": "72577e8df9c8abe8a8af86a03bc161ac06be21488d76857f157c7f83f017f706",
+    "license": "Apache-2.0"
+   }
+  },
+  "runs_file": null
+ },
+ "headline": {
+  "verdict": "inconclusive",
+  "summary": "Static only, so inconclusive: the feature scan found 4 features that some declared targets lack (navigator.userAgentData, :has(), flexbox gap, ::-webkit- pseudo-elements), each possible until an engine shows it. No engine ran, so the 8 planned engine comparisons were not made; real Safari and devices were not tested.",
+  "severity_counts": {},
+  "flaky_count": 0,
+  "checks": {
+   "planned": 36,
+   "ran": 0,
+   "comparisons_planned": 8,
+   "comparisons_made": 0
+  },
+  "evidence_completeness": "partial",
+  "overall_confidence": "low"
+ },
+ "differences": [],
+ "feature_findings": [
+  {
+   "feature": "ua-client-hints",
+   "name": "navigator.userAgentData",
+   "baseline_status": "limited",
+   "files": [
+    {
+     "file": "site/app.js",
+     "line": 3,
+     "snippet": "const brands = navigator.userAgentData.brands.map(b => b.brand).join(', ');",
+     "selector": null,
+     "fallback": false
+    }
+   ],
+   "unsupported_in": [
+    {
+     "browser": "and_ff",
+     "version": "158",
+     "engine": "gecko",
+     "usage": 0.4133,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "115",
+     "engine": "gecko",
+     "usage": 0.1373,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "116",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "117",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "118",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "119",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "120",
+     "engine": "gecko",
+     "usage": 0.1294,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "121",
+     "engine": "gecko",
+     "usage": 0.2549,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "122",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "123",
+     "engine": "gecko",
+     "usage": 0.0078,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "124",
+     "engine": "gecko",
+     "usage": 0.0118,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "125",
+     "engine": "gecko",
+     "usage": 0.0039,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "126",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "127",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "128",
+     "engine": "gecko",
+     "usage": 0.0039,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "129",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "130",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "131",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "132",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "133",
+     "engine": "gecko",
+     "usage": 0.0078,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "134",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "135",
+     "engine": "gecko",
+     "usage": 0.0039,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "136",
+     "engine": "gecko",
+     "usage": 0.0078,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "137",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "138",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "139",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "140",
+     "engine": "gecko",
+     "usage": 0.0863,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "141",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "142",
+     "engine": "gecko",
+     "usage": 0.0039,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "143",
+     "engine": "gecko",
+     "usage": 0.0039,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "144",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "145",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "146",
+     "engine": "gecko",
+     "usage": 0.0039,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "147",
+     "engine": "gecko",
+     "usage": 0.0078,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "148",
+     "engine": "gecko",
+     "usage": 0.0078,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "149",
+     "engine": "gecko",
+     "usage": 0.0078,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "150",
+     "engine": "gecko",
+     "usage": 0.0157,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "151",
+     "engine": "gecko",
+     "usage": 0.0118,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "152",
+     "engine": "gecko",
+     "usage": 0.0275,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "153",
+     "engine": "gecko",
+     "usage": 0.0471,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "154",
+     "engine": "gecko",
+     "usage": 0.2,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "155",
+     "engine": "gecko",
+     "usage": 0.6432,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "156",
+     "engine": "gecko",
+     "usage": 0.6354,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "157",
+     "engine": "gecko",
+     "usage": 0.0235,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "158",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "ios_saf",
+     "version": "18.5-18.7",
+     "engine": "webkit",
+     "usage": 2.0064,
+     "first_supported": null
+    },
+    {
+     "browser": "ios_saf",
+     "version": "26.5",
+     "engine": "webkit",
+     "usage": 1.361,
+     "first_supported": null
+    },
+    {
+     "browser": "ios_saf",
+     "version": "26.6",
+     "engine": "webkit",
+     "usage": 8.3976,
+     "first_supported": null
+    },
+    {
+     "browser": "ios_saf",
+     "version": "27.0",
+     "engine": "webkit",
+     "usage": 0.6439,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "14",
+     "engine": "webkit",
+     "usage": 0.0078,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "14.1",
+     "engine": "webkit",
+     "usage": 0.0157,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "15",
+     "engine": "webkit",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "15.1",
+     "engine": "webkit",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "15.2-15.3",
+     "engine": "webkit",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "15.4",
+     "engine": "webkit",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "15.5",
+     "engine": "webkit",
+     "usage": 0.0039,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "15.6",
+     "engine": "webkit",
+     "usage": 0.0706,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "16.0",
+     "engine": "webkit",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "16.1",
+     "engine": "webkit",
+     "usage": 0.0078,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "16.2",
+     "engine": "webkit",
+     "usage": 0.0039,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "16.3",
+     "engine": "webkit",
+     "usage": 0.0118,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "16.4",
+     "engine": "webkit",
+     "usage": 0.0039,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "16.5",
+     "engine": "webkit",
+     "usage": 0.0078,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "16.6",
+     "engine": "webkit",
+     "usage": 0.1255,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "17.0",
+     "engine": "webkit",
+     "usage": 0.0078,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "17.1",
+     "engine": "webkit",
+     "usage": 0.1059,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "17.2",
+     "engine": "webkit",
+     "usage": 0.0118,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "17.3",
+     "engine": "webkit",
+     "usage": 0.0157,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "17.4",
+     "engine": "webkit",
+     "usage": 0.051,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "17.5",
+     "engine": "webkit",
+     "usage": 0.0431,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "17.6",
+     "engine": "webkit",
+     "usage": 0.1765,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "18.0",
+     "engine": "webkit",
+     "usage": 0.0078,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "18.1",
+     "engine": "webkit",
+     "usage": 0.0353,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "18.2",
+     "engine": "webkit",
+     "usage": 0.0078,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "18.3",
+     "engine": "webkit",
+     "usage": 0.0314,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "18.4",
+     "engine": "webkit",
+     "usage": 0.0118,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "18.5-18.7",
+     "engine": "webkit",
+     "usage": 0.2942,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "26.0",
+     "engine": "webkit",
+     "usage": 0.0157,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "26.1",
+     "engine": "webkit",
+     "usage": 0.0157,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "26.2",
+     "engine": "webkit",
+     "usage": 0.051,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "26.3",
+     "engine": "webkit",
+     "usage": 0.0667,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "26.4",
+     "engine": "webkit",
+     "usage": 0.0628,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "26.5",
+     "engine": "webkit",
+     "usage": 0.2706,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "26.6",
+     "engine": "webkit",
+     "usage": 1.4119,
+     "first_supported": null
+    },
+    {
+     "browser": "safari",
+     "version": "27",
+     "engine": "webkit",
+     "usage": 0.1216,
+     "first_supported": null
+    }
+   ],
+   "unsupported_usage": 18.191,
+   "not_assessed": [
+    "and_qq",
+    "and_uc",
+    "android",
+    "kaios",
+    "op_mini",
+    "op_mob",
+    "opera",
+    "samsung"
+   ],
+   "fallback": false,
+   "status": "possible",
+   "linked_differences": []
+  },
+  {
+   "feature": "has",
+   "name": ":has()",
+   "baseline_status": "high",
+   "files": [
+    {
+     "file": "site/style.css",
+     "line": 13,
+     "snippet": ".card:has(.sale)",
+     "selector": ".card:has(.sale)",
+     "fallback": false
+    }
+   ],
+   "unsupported_in": [
+    {
+     "browser": "firefox",
+     "version": "115",
+     "engine": "gecko",
+     "usage": 0.1373,
+     "first_supported": "121"
+    },
+    {
+     "browser": "firefox",
+     "version": "116",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": "121"
+    },
+    {
+     "browser": "firefox",
+     "version": "117",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": "121"
+    },
+    {
+     "browser": "firefox",
+     "version": "118",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": "121"
+    },
+    {
+     "browser": "firefox",
+     "version": "119",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": "121"
+    },
+    {
+     "browser": "firefox",
+     "version": "120",
+     "engine": "gecko",
+     "usage": 0.1294,
+     "first_supported": "121"
+    },
+    {
+     "browser": "safari",
+     "version": "14",
+     "engine": "webkit",
+     "usage": 0.0078,
+     "first_supported": "15.4"
+    },
+    {
+     "browser": "safari",
+     "version": "14.1",
+     "engine": "webkit",
+     "usage": 0.0157,
+     "first_supported": "15.4"
+    },
+    {
+     "browser": "safari",
+     "version": "15",
+     "engine": "webkit",
+     "usage": 0,
+     "first_supported": "15.4"
+    },
+    {
+     "browser": "safari",
+     "version": "15.1",
+     "engine": "webkit",
+     "usage": 0,
+     "first_supported": "15.4"
+    },
+    {
+     "browser": "safari",
+     "version": "15.2-15.3",
+     "engine": "webkit",
+     "usage": 0,
+     "first_supported": "15.4"
+    }
+   ],
+   "unsupported_usage": 0.29,
+   "not_assessed": [
+    "and_qq",
+    "and_uc",
+    "android",
+    "kaios",
+    "op_mini",
+    "op_mob",
+    "opera",
+    "samsung"
+   ],
+   "fallback": false,
+   "status": "possible",
+   "linked_differences": []
+  },
+  {
+   "feature": "flexbox-gap",
+   "name": "gap in flexbox",
+   "baseline_status": "high",
+   "files": [
+    {
+     "file": "site/style.css",
+     "line": 5,
+     "snippet": "form.search { display: flex; gap: 12px }",
+     "selector": "form.search",
+     "fallback": false
+    },
+    {
+     "file": "site/style.css",
+     "line": 11,
+     "snippet": ".cards { display: flex; gap: 16px }",
+     "selector": ".cards",
+     "fallback": false
+    }
+   ],
+   "unsupported_in": [
+    {
+     "browser": "safari",
+     "version": "14",
+     "engine": "webkit",
+     "usage": 0.0078,
+     "first_supported": "14.1"
+    }
+   ],
+   "unsupported_usage": 0.008,
+   "not_assessed": [
+    "and_qq",
+    "and_uc",
+    "android",
+    "kaios",
+    "op_mini",
+    "op_mob",
+    "opera",
+    "samsung"
+   ],
+   "fallback": false,
+   "status": "possible",
+   "linked_differences": []
+  },
+  {
+   "feature": "webkit-pseudo-elements",
+   "name": "::-webkit- pseudo-elements",
+   "baseline_status": "non_standard",
+   "files": [
+    {
+     "file": "site/style.css",
+     "line": 10,
+     "snippet": "input[type=\"date\"]::-webkit-datetime-edit",
+     "selector": "input[type=\"date\"]::-webkit-datetime-edit",
+     "fallback": false
+    }
+   ],
+   "unsupported_in": [
+    {
+     "browser": "and_ff",
+     "version": "158",
+     "engine": "gecko",
+     "usage": 0.4133,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "115",
+     "engine": "gecko",
+     "usage": 0.1373,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "116",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "117",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "118",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "119",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "120",
+     "engine": "gecko",
+     "usage": 0.1294,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "121",
+     "engine": "gecko",
+     "usage": 0.2549,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "122",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "123",
+     "engine": "gecko",
+     "usage": 0.0078,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "124",
+     "engine": "gecko",
+     "usage": 0.0118,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "125",
+     "engine": "gecko",
+     "usage": 0.0039,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "126",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "127",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "128",
+     "engine": "gecko",
+     "usage": 0.0039,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "129",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "130",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "131",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "132",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "133",
+     "engine": "gecko",
+     "usage": 0.0078,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "134",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "135",
+     "engine": "gecko",
+     "usage": 0.0039,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "136",
+     "engine": "gecko",
+     "usage": 0.0078,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "137",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "138",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "139",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "140",
+     "engine": "gecko",
+     "usage": 0.0863,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "141",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "142",
+     "engine": "gecko",
+     "usage": 0.0039,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "143",
+     "engine": "gecko",
+     "usage": 0.0039,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "144",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "145",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "146",
+     "engine": "gecko",
+     "usage": 0.0039,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "147",
+     "engine": "gecko",
+     "usage": 0.0078,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "148",
+     "engine": "gecko",
+     "usage": 0.0078,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "149",
+     "engine": "gecko",
+     "usage": 0.0078,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "150",
+     "engine": "gecko",
+     "usage": 0.0157,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "151",
+     "engine": "gecko",
+     "usage": 0.0118,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "152",
+     "engine": "gecko",
+     "usage": 0.0275,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "153",
+     "engine": "gecko",
+     "usage": 0.0471,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "154",
+     "engine": "gecko",
+     "usage": 0.2,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "155",
+     "engine": "gecko",
+     "usage": 0.6432,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "156",
+     "engine": "gecko",
+     "usage": 0.6354,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "157",
+     "engine": "gecko",
+     "usage": 0.0235,
+     "first_supported": null
+    },
+    {
+     "browser": "firefox",
+     "version": "158",
+     "engine": "gecko",
+     "usage": 0,
+     "first_supported": null
+    }
+   ],
+   "unsupported_usage": 2.707,
+   "not_assessed": [
+    "and_qq",
+    "and_uc",
+    "android",
+    "kaios",
+    "op_mini",
+    "op_mob",
+    "opera",
+    "samsung"
+   ],
+   "fallback": false,
+   "status": "possible",
+   "linked_differences": []
+  }
+ ],
+ "flaky": [],
+ "dismissed_automatically": 0,
+ "needs_review": [],
+ "triage": [],
+ "limitations": [
+  "No browser engine ran (static only): the 8 planned engine comparisons were not made, and every feature finding stays possible.",
+  "Firefox ESR in the browserslist defaults could not be resolved, so features were not assessed against it.",
+  "Feature support comes from web-features data, not from running the code: a polyfill or a code path that avoids the feature would not show here."
+ ]
+}

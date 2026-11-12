@@ -31,6 +31,13 @@ share of the affected engines (caniuse global usage by engine family: under 5% 1
 x reach (pages: 1, 2, 3+). A failing critical-path step is at least P1. With --features, a feature
 finding whose pattern appears in an error message, or whose CSS selector matches an affected element,
 is linked and becomes confirmed_at_runtime.
+
+    python compare_engines.py --static-only --features run/features.json [--targets targets.json] --out candidates.json
+
+--static-only is for a check in which no browser ran (the feature scan only): it writes the same
+candidates file with every engine not_run, no candidates, every feature finding possible (or
+not_assessed), the planned checks from --targets, and 0 comparisons made, for a report whose
+run_status is not_run.
 """
 from __future__ import annotations
 import argparse, json, os, re, sys
@@ -516,16 +523,54 @@ def selector_matches(selector: str | None, c: dict) -> bool:
     return bool(tag or attrs)
 
 
+STATIC_NOTE = 'static-only run: no browser was started'
+
+
+def static_doc(targets: dict | None) -> dict:
+    """The runs document of a run in which no browser started: every engine not_run, no runs, the plan from targets."""
+    engines = (targets or {}).get('engines') or ['chromium', 'firefox', 'webkit']
+    return {'engines': [{'name': e, 'version': None, 'status': 'not_run', 'note': STATIC_NOTE} for e in engines],
+            'reruns': (targets or {}).get('reruns') or 1, 'planned': planned_checks(targets) if targets else [], 'runs': []}
+
+
+def static_only(a) -> int:
+    """Candidates file for a static-only check (run_status not_run): the feature scan, nothing compared."""
+    if not a.features:
+        print('--static-only needs --features (the feature scan is the whole static check)', file=sys.stderr)
+        return 2
+    targets = json.loads(a.targets.read_text(encoding='utf-8')) if a.targets else None
+    doc = static_doc(targets)
+    features = json.loads(a.features.read_text(encoding='utf-8'))
+    for f in features['features']:
+        f['linked_differences'] = []
+    out = {'runs_file': None, 'run_status': 'not_run', 'reference': a.reference, 'engines': doc['engines'],
+           'reruns': doc['reruns'], 'planned': doc['planned'], 'third_party': None, 'candidates': [], 'flaky': [],
+           'dismissed_automatically': [], 'features': features, 'comparisons': comparisons(doc, a.reference)}
+    a.out.parent.mkdir(parents=True, exist_ok=True)
+    a.out.write_text(json.dumps(out, indent=1) + '\n', encoding='utf-8')
+    cmp = out['comparisons']
+    print(f'static only: {len(features["features"])} feature finding(s); 0 of {cmp["planned"]} engine comparison(s) made '
+          f'(no browser ran) -> {a.out}', file=sys.stderr)
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('runs', type=Path)
+    ap.add_argument('runs', type=Path, nargs='?')
     ap.add_argument('--out', type=Path, required=True)
     ap.add_argument('--features', type=Path)
-    ap.add_argument('--targets', type=Path, help='targets.json, for critical-path states')
+    ap.add_argument('--targets', type=Path, help='targets.json, for critical-path states (and the plan with --static-only)')
     ap.add_argument('--reference', default='chromium')
+    ap.add_argument('--static-only', action='store_true',
+                    help='no browser ran: write the candidates file of a feature scan alone (engines not_run, no comparison '
+                         'made, the planned checks from --targets if given), for a report with run_status not_run')
     ap.add_argument('--jobs', type=int, default=default_jobs(),
                     help='screenshots decoded in parallel (default: up to 4); 1 decodes in this process')
     a = ap.parse_args()
+    if a.static_only:
+        return static_only(a)
+    if a.runs is None:
+        ap.error('runs.json is required (or --static-only)')
     doc = json.loads(a.runs.read_text(encoding='utf-8'))
     try:
         from fetch_data import asset_path

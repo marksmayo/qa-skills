@@ -1,0 +1,1246 @@
+{
+ "runs_file": null,
+ "run_status": "not_run",
+ "reference": "chromium",
+ "engines": [
+  {
+   "name": "chromium",
+   "version": null,
+   "status": "not_run",
+   "note": "static-only run: no browser was started"
+  },
+  {
+   "name": "firefox",
+   "version": null,
+   "status": "not_run",
+   "note": "static-only run: no browser was started"
+  },
+  {
+   "name": "webkit",
+   "version": null,
+   "status": "not_run",
+   "note": "static-only run: no browser was started"
+  }
+ ],
+ "reruns": 3,
+ "planned": [
+  {
+   "page": "home",
+   "viewport": "1280x800"
+  },
+  {
+   "page": "home~recommendations",
+   "viewport": "1280x800"
+  },
+  {
+   "page": "deals",
+   "viewport": "1280x800"
+  },
+  {
+   "page": "about",
+   "viewport": "1280x800"
+  }
+ ],
+ "third_party": null,
+ "candidates": [],
+ "flaky": [],
+ "dismissed_automatically": [],
+ "features": {
+  "repo": "examples/travel-site",
+  "browserslist": {
+   "query": "defaults, firefox >= 115, safari >= 14",
+   "source": "package.json",
+   "resolved_count": 109,
+   "coverage": 88.52,
+   "unresolved": [
+    "unresolved: 'Firefox ESR'"
+   ]
+  },
+  "uses": 6,
+  "features": [
+   {
+    "feature": "ua-client-hints",
+    "name": "navigator.userAgentData",
+    "baseline_status": "limited",
+    "files": [
+     {
+      "file": "site/app.js",
+      "line": 3,
+      "snippet": "const brands = navigator.userAgentData.brands.map(b => b.brand).join(', ');",
+      "selector": null,
+      "fallback": false
+     }
+    ],
+    "unsupported_in": [
+     {
+      "browser": "and_ff",
+      "version": "158",
+      "engine": "gecko",
+      "usage": 0.4133,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "115",
+      "engine": "gecko",
+      "usage": 0.1373,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "116",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "117",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "118",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "119",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "120",
+      "engine": "gecko",
+      "usage": 0.1294,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "121",
+      "engine": "gecko",
+      "usage": 0.2549,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "122",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "123",
+      "engine": "gecko",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "124",
+      "engine": "gecko",
+      "usage": 0.0118,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "125",
+      "engine": "gecko",
+      "usage": 0.0039,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "126",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "127",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "128",
+      "engine": "gecko",
+      "usage": 0.0039,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "129",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "130",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "131",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "132",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "133",
+      "engine": "gecko",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "134",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "135",
+      "engine": "gecko",
+      "usage": 0.0039,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "136",
+      "engine": "gecko",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "137",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "138",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "139",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "140",
+      "engine": "gecko",
+      "usage": 0.0863,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "141",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "142",
+      "engine": "gecko",
+      "usage": 0.0039,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "143",
+      "engine": "gecko",
+      "usage": 0.0039,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "144",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "145",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "146",
+      "engine": "gecko",
+      "usage": 0.0039,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "147",
+      "engine": "gecko",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "148",
+      "engine": "gecko",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "149",
+      "engine": "gecko",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "150",
+      "engine": "gecko",
+      "usage": 0.0157,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "151",
+      "engine": "gecko",
+      "usage": 0.0118,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "152",
+      "engine": "gecko",
+      "usage": 0.0275,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "153",
+      "engine": "gecko",
+      "usage": 0.0471,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "154",
+      "engine": "gecko",
+      "usage": 0.2,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "155",
+      "engine": "gecko",
+      "usage": 0.6432,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "156",
+      "engine": "gecko",
+      "usage": 0.6354,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "157",
+      "engine": "gecko",
+      "usage": 0.0235,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "158",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "ios_saf",
+      "version": "18.5-18.7",
+      "engine": "webkit",
+      "usage": 2.0064,
+      "first_supported": null
+     },
+     {
+      "browser": "ios_saf",
+      "version": "26.5",
+      "engine": "webkit",
+      "usage": 1.361,
+      "first_supported": null
+     },
+     {
+      "browser": "ios_saf",
+      "version": "26.6",
+      "engine": "webkit",
+      "usage": 8.3976,
+      "first_supported": null
+     },
+     {
+      "browser": "ios_saf",
+      "version": "27.0",
+      "engine": "webkit",
+      "usage": 0.6439,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "14",
+      "engine": "webkit",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "14.1",
+      "engine": "webkit",
+      "usage": 0.0157,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "15",
+      "engine": "webkit",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "15.1",
+      "engine": "webkit",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "15.2-15.3",
+      "engine": "webkit",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "15.4",
+      "engine": "webkit",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "15.5",
+      "engine": "webkit",
+      "usage": 0.0039,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "15.6",
+      "engine": "webkit",
+      "usage": 0.0706,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "16.0",
+      "engine": "webkit",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "16.1",
+      "engine": "webkit",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "16.2",
+      "engine": "webkit",
+      "usage": 0.0039,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "16.3",
+      "engine": "webkit",
+      "usage": 0.0118,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "16.4",
+      "engine": "webkit",
+      "usage": 0.0039,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "16.5",
+      "engine": "webkit",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "16.6",
+      "engine": "webkit",
+      "usage": 0.1255,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "17.0",
+      "engine": "webkit",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "17.1",
+      "engine": "webkit",
+      "usage": 0.1059,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "17.2",
+      "engine": "webkit",
+      "usage": 0.0118,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "17.3",
+      "engine": "webkit",
+      "usage": 0.0157,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "17.4",
+      "engine": "webkit",
+      "usage": 0.051,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "17.5",
+      "engine": "webkit",
+      "usage": 0.0431,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "17.6",
+      "engine": "webkit",
+      "usage": 0.1765,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "18.0",
+      "engine": "webkit",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "18.1",
+      "engine": "webkit",
+      "usage": 0.0353,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "18.2",
+      "engine": "webkit",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "18.3",
+      "engine": "webkit",
+      "usage": 0.0314,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "18.4",
+      "engine": "webkit",
+      "usage": 0.0118,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "18.5-18.7",
+      "engine": "webkit",
+      "usage": 0.2942,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "26.0",
+      "engine": "webkit",
+      "usage": 0.0157,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "26.1",
+      "engine": "webkit",
+      "usage": 0.0157,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "26.2",
+      "engine": "webkit",
+      "usage": 0.051,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "26.3",
+      "engine": "webkit",
+      "usage": 0.0667,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "26.4",
+      "engine": "webkit",
+      "usage": 0.0628,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "26.5",
+      "engine": "webkit",
+      "usage": 0.2706,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "26.6",
+      "engine": "webkit",
+      "usage": 1.4119,
+      "first_supported": null
+     },
+     {
+      "browser": "safari",
+      "version": "27",
+      "engine": "webkit",
+      "usage": 0.1216,
+      "first_supported": null
+     }
+    ],
+    "unsupported_usage": 18.191,
+    "not_assessed": [
+     "and_qq",
+     "and_uc",
+     "android",
+     "kaios",
+     "op_mini",
+     "op_mob",
+     "opera",
+     "samsung"
+    ],
+    "fallback": false,
+    "status": "possible",
+    "linked_differences": []
+   },
+   {
+    "feature": "has",
+    "name": ":has()",
+    "baseline_status": "high",
+    "files": [
+     {
+      "file": "site/style.css",
+      "line": 13,
+      "snippet": ".card:has(.sale)",
+      "selector": ".card:has(.sale)",
+      "fallback": false
+     }
+    ],
+    "unsupported_in": [
+     {
+      "browser": "firefox",
+      "version": "115",
+      "engine": "gecko",
+      "usage": 0.1373,
+      "first_supported": "121"
+     },
+     {
+      "browser": "firefox",
+      "version": "116",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": "121"
+     },
+     {
+      "browser": "firefox",
+      "version": "117",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": "121"
+     },
+     {
+      "browser": "firefox",
+      "version": "118",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": "121"
+     },
+     {
+      "browser": "firefox",
+      "version": "119",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": "121"
+     },
+     {
+      "browser": "firefox",
+      "version": "120",
+      "engine": "gecko",
+      "usage": 0.1294,
+      "first_supported": "121"
+     },
+     {
+      "browser": "safari",
+      "version": "14",
+      "engine": "webkit",
+      "usage": 0.0078,
+      "first_supported": "15.4"
+     },
+     {
+      "browser": "safari",
+      "version": "14.1",
+      "engine": "webkit",
+      "usage": 0.0157,
+      "first_supported": "15.4"
+     },
+     {
+      "browser": "safari",
+      "version": "15",
+      "engine": "webkit",
+      "usage": 0,
+      "first_supported": "15.4"
+     },
+     {
+      "browser": "safari",
+      "version": "15.1",
+      "engine": "webkit",
+      "usage": 0,
+      "first_supported": "15.4"
+     },
+     {
+      "browser": "safari",
+      "version": "15.2-15.3",
+      "engine": "webkit",
+      "usage": 0,
+      "first_supported": "15.4"
+     }
+    ],
+    "unsupported_usage": 0.29,
+    "not_assessed": [
+     "and_qq",
+     "and_uc",
+     "android",
+     "kaios",
+     "op_mini",
+     "op_mob",
+     "opera",
+     "samsung"
+    ],
+    "fallback": false,
+    "status": "possible",
+    "linked_differences": []
+   },
+   {
+    "feature": "flexbox-gap",
+    "name": "gap in flexbox",
+    "baseline_status": "high",
+    "files": [
+     {
+      "file": "site/style.css",
+      "line": 5,
+      "snippet": "form.search { display: flex; gap: 12px }",
+      "selector": "form.search",
+      "fallback": false
+     },
+     {
+      "file": "site/style.css",
+      "line": 11,
+      "snippet": ".cards { display: flex; gap: 16px }",
+      "selector": ".cards",
+      "fallback": false
+     }
+    ],
+    "unsupported_in": [
+     {
+      "browser": "safari",
+      "version": "14",
+      "engine": "webkit",
+      "usage": 0.0078,
+      "first_supported": "14.1"
+     }
+    ],
+    "unsupported_usage": 0.008,
+    "not_assessed": [
+     "and_qq",
+     "and_uc",
+     "android",
+     "kaios",
+     "op_mini",
+     "op_mob",
+     "opera",
+     "samsung"
+    ],
+    "fallback": false,
+    "status": "possible",
+    "linked_differences": []
+   },
+   {
+    "feature": "webkit-pseudo-elements",
+    "name": "::-webkit- pseudo-elements",
+    "baseline_status": "non_standard",
+    "files": [
+     {
+      "file": "site/style.css",
+      "line": 10,
+      "snippet": "input[type=\"date\"]::-webkit-datetime-edit",
+      "selector": "input[type=\"date\"]::-webkit-datetime-edit",
+      "fallback": false
+     }
+    ],
+    "unsupported_in": [
+     {
+      "browser": "and_ff",
+      "version": "158",
+      "engine": "gecko",
+      "usage": 0.4133,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "115",
+      "engine": "gecko",
+      "usage": 0.1373,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "116",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "117",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "118",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "119",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "120",
+      "engine": "gecko",
+      "usage": 0.1294,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "121",
+      "engine": "gecko",
+      "usage": 0.2549,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "122",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "123",
+      "engine": "gecko",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "124",
+      "engine": "gecko",
+      "usage": 0.0118,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "125",
+      "engine": "gecko",
+      "usage": 0.0039,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "126",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "127",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "128",
+      "engine": "gecko",
+      "usage": 0.0039,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "129",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "130",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "131",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "132",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "133",
+      "engine": "gecko",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "134",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "135",
+      "engine": "gecko",
+      "usage": 0.0039,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "136",
+      "engine": "gecko",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "137",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "138",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "139",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "140",
+      "engine": "gecko",
+      "usage": 0.0863,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "141",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "142",
+      "engine": "gecko",
+      "usage": 0.0039,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "143",
+      "engine": "gecko",
+      "usage": 0.0039,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "144",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "145",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "146",
+      "engine": "gecko",
+      "usage": 0.0039,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "147",
+      "engine": "gecko",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "148",
+      "engine": "gecko",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "149",
+      "engine": "gecko",
+      "usage": 0.0078,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "150",
+      "engine": "gecko",
+      "usage": 0.0157,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "151",
+      "engine": "gecko",
+      "usage": 0.0118,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "152",
+      "engine": "gecko",
+      "usage": 0.0275,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "153",
+      "engine": "gecko",
+      "usage": 0.0471,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "154",
+      "engine": "gecko",
+      "usage": 0.2,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "155",
+      "engine": "gecko",
+      "usage": 0.6432,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "156",
+      "engine": "gecko",
+      "usage": 0.6354,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "157",
+      "engine": "gecko",
+      "usage": 0.0235,
+      "first_supported": null
+     },
+     {
+      "browser": "firefox",
+      "version": "158",
+      "engine": "gecko",
+      "usage": 0,
+      "first_supported": null
+     }
+    ],
+    "unsupported_usage": 2.707,
+    "not_assessed": [
+     "and_qq",
+     "and_uc",
+     "android",
+     "kaios",
+     "op_mini",
+     "op_mob",
+     "opera",
+     "samsung"
+    ],
+    "fallback": false,
+    "status": "possible",
+    "linked_differences": []
+   }
+  ]
+ },
+ "comparisons": {
+  "planned": 8,
+  "made": 0,
+  "not_made": [
+   {
+    "page": "home",
+    "viewport": "1280x800",
+    "engine": "firefox",
+    "compared": false,
+    "reason": "chromium: 0 of 3 runs captured; firefox: 0 of 3 runs captured"
+   },
+   {
+    "page": "home",
+    "viewport": "1280x800",
+    "engine": "webkit",
+    "compared": false,
+    "reason": "chromium: 0 of 3 runs captured; webkit: 0 of 3 runs captured"
+   },
+   {
+    "page": "home~recommendations",
+    "viewport": "1280x800",
+    "engine": "firefox",
+    "compared": false,
+    "reason": "chromium: 0 of 3 runs captured; firefox: 0 of 3 runs captured"
+   },
+   {
+    "page": "home~recommendations",
+    "viewport": "1280x800",
+    "engine": "webkit",
+    "compared": false,
+    "reason": "chromium: 0 of 3 runs captured; webkit: 0 of 3 runs captured"
+   },
+   {
+    "page": "deals",
+    "viewport": "1280x800",
+    "engine": "firefox",
+    "compared": false,
+    "reason": "chromium: 0 of 3 runs captured; firefox: 0 of 3 runs captured"
+   },
+   {
+    "page": "deals",
+    "viewport": "1280x800",
+    "engine": "webkit",
+    "compared": false,
+    "reason": "chromium: 0 of 3 runs captured; webkit: 0 of 3 runs captured"
+   },
+   {
+    "page": "about",
+    "viewport": "1280x800",
+    "engine": "firefox",
+    "compared": false,
+    "reason": "chromium: 0 of 3 runs captured; firefox: 0 of 3 runs captured"
+   },
+   {
+    "page": "about",
+    "viewport": "1280x800",
+    "engine": "webkit",
+    "compared": false,
+    "reason": "chromium: 0 of 3 runs captured; webkit: 0 of 3 runs captured"
+   }
+  ]
+ }
+}

@@ -44,6 +44,10 @@ def main() -> int:
     verdict = {'differences_found': P('DIFFERENCES FOUND', RED + BOLD),
                'inconclusive': P('INCONCLUSIVE', YELLOW + BOLD) + ' (engine comparisons were not all made; see limitations)'}.get(
         hl['verdict'], P('NO DIFFERENCES DETECTED', GREEN + BOLD) + ' (for these pages, states and engines only)')
+    if d.get('run_status') == 'not_run':
+        verdict = P('INCONCLUSIVE', YELLOW + BOLD) + ' (static only: no browser engine ran; feature findings stay possible)'
+    elif d.get('run_status') == 'partial' and d.get('run_status_reason'):
+        verdict += f' Capture partial: {d["run_status_reason"]}'
     engines = ', '.join(f'{e["name"]} {e["version"] or ""} ({e["status"]})'.replace(' ()', '') for e in sc['engines'])
     ck = hl['checks']
     out = [P('# Cross-browser check', BOLD), '', verdict, '', hl['summary'], '',
@@ -85,7 +89,9 @@ def main() -> int:
         out += ['', P('## Features the targets do not all support', BOLD), '']
         for f in d['feature_findings']:
             browsers = sorted({u['browser'] for u in f['unsupported_in']})
-            where = ', '.join(f'{u["file"]}:{u["line"]}' for u in f['files'])
+            where = ', '.join(f'{u["file"]}:{u["line"]}' + (f':{u["column"]}' if u.get('column') else '')
+                              + (f' (x{u["occurrences"]})' if (u.get('occurrences') or 1) > 1 else '')
+                              + (' (CSS-in-JS)' if u.get('via') == 'css-in-js' else '') for u in f['files'])
             out.append(f'- {f["name"]} ({f["status"].replace("_", " ")}): unsupported in {", ".join(browsers)} '
                        f'({f.get("unsupported_usage", 0)}% of usage); {where}; fallback {"found" if f["fallback"] else "none"}'
                        + (f'; linked {", ".join(f["linked_differences"])}' if f['linked_differences'] else ''))

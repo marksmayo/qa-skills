@@ -9,6 +9,9 @@
   "properties": {
     "skill": {"type": "object", "additionalProperties": false, "required": ["name", "version"],
               "properties": {"name": {"enum": ["cross-browser-checker"]}, "version": {"type": "string"}}},
+    "run_status": {"enum": ["complete", "partial", "not_run"],
+                   "description": "The engine capture: complete (every planned run ran and was compared), partial, or not_run (static only: the feature scan, no browser; validated without --runs, from compare_engines.py --static-only)"},
+    "run_status_reason": {"type": "string", "description": "Required unless run_status is complete"},
     "scope": {
       "type": "object", "additionalProperties": false,
       "required": ["site", "pages", "viewports", "engines", "reference_engine", "browserslist", "out_of_scope", "reruns", "authorised_by"],
@@ -42,7 +45,7 @@
         "generated_at": {"type": "string"},
         "tools": {"type": "array", "items": {"type": "object", "required": ["name", "version", "status", "note"]}},
         "data": {"type": "object"},
-        "runs_file": {"type": "string"}
+        "runs_file": {"type": ["string", "null"], "description": "null for a static-only report (run_status not_run)"}
       }
     },
     "headline": {
