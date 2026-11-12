@@ -380,3 +380,34 @@ Where the build differs from the design above, and what the example showed.
   aliases are not resolved; server actions are not modelled; the PSL subset is not the full private
   section (no network download step); a live CSP report or compressed Replay segment was not exercised
   against a real site (unit-checked on synthetic input only).
+
+## As built (v1.2.0): fixes from a run on an internal single-page app behind sign-in
+
+- **Identity SDK token storage** is a sink: MSAL `cacheLocation` (`localStorage`/`sessionStorage`, also
+  `BrowserCacheLocation.*`), `storeAuthStateInCookie`, oidc-client-ts `userStore: new WebStorageStateStore({store})`,
+  Auth0 `cacheLocation: 'localstorage'`, and an MSAL or oidc-client-ts client with no cache setting (the SDK
+  default, sessionStorage). Each gives an `insecure_storage` candidate (`subtype: auth_token_storage`) with
+  the SDK, the location, the standard OIDC scopes requested (API scopes are only counted) and whether refresh
+  tokens are used; the categories are identity and online identifier, plus contact with the `email` scope.
+  Identity SDK packages are listed in the SDK inventory (`kind: identity`).
+- **Identity values are collected data:** ID and access tokens, `idTokenClaims` and account claims
+  (`account.username`, `claims.email`), and variables holding a decoded token (`jwtDecode`,
+  `JSON.parse(atob(...))`) or one read back from storage are `identity_read` collection points, so a log or
+  analytics line naming them is a candidate with `identity_source` (where the value came from). A bearer
+  token sent to an API is not a candidate.
+- **No consent banner:** `"consent": {"banner": null}` runs one state, `no_banner`, which counts as
+  before-consent; before, reject and accept are `not_applicable`. The headline carries `consent_banner:
+  false` and `states_not_applicable`, and its statement must say there is no consent banner. A static-only
+  merge with such a `flows.json` records the same matrix (no_banner `not_run`).
+- **Signed-in sessions:** `flows.json` `storage_state` (a Playwright storage-state file a person saved after
+  signing in by hand with a test account) or the harness's `auth` login recipe. The file must sit outside the
+  run folder; the capture records only that a session was used. The validator fails on a storage-state
+  file in the evidence and needs `metadata.session` and a limitation about the session.
+- **File uploads** are collection points with category null (`file_upload` for file inputs and dropzones,
+  `file_parse` for SheetJS, Papa Parse and FileReader, `form_data_upload` for files appended to FormData);
+  the validator needs the audit to say what the files hold (inventory, scope or limitations).
+- **Collection noise:** `collection_by_category` counts collection points; in a business app most are
+  parameters with no category, which the scan says need no triage by name.
+- **Validator:** in a not_run audit a clause that says where data goes ("sent only to", "never leaves")
+  must say it is what the code does; `--fix-ratings` rewrites wrong computed rating fields and lists each
+  change, and the rating error shows the arithmetic.

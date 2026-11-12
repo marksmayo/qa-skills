@@ -24,6 +24,10 @@ Children's services (`children: true`): every category one level higher, up to 4
 | `url` | 2 | In a URL, where it reaches logs, history and Referer headers |
 | `no_use` | 1 | Collected without a use (agent judgment) |
 
+An identity SDK's token cache in `localStorage` or `sessionStorage` (`auth_token_storage`) is
+`insecure_storage`; its reach is usually 3 (every signed-in user). With no consent banner (`no_banner`),
+anything sent is `before_consent`: there is no choice to wait for.
+
 The validator checks the basis against the candidates: `before_consent` needs the before state,
 `after_reject` the reject state, `undeclared_third_party` an undeclared recipient.
 

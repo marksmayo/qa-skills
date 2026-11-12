@@ -1,9 +1,9 @@
 {
- "schema_version": "1.1.0",
+ "schema_version": "1.2.0",
  "run_status": "complete",
  "run_status_reason": null,
  "skill": "privacy-flow-auditor",
- "skill_version": "1.1.0",
+ "skill_version": "1.2.0",
  "generated": "2026-11-11",
  "scope": {
   "repo": "examples/clinic-signup",

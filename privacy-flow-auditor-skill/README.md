@@ -5,11 +5,17 @@ A portable skill for Claude Code, OpenAI Codex, Gemini CLI, and other coding age
 It maps where personal data goes in a web app, with evidence for every flow:
 
 - **Collected**: form fields, server-side reads, device APIs and mobile permissions, each classified
-  into a specific category (contact, health, government identifier, ...).
+  into a specific category (contact, health, government identifier, ...); identity from an identity SDK
+  (MSAL, OIDC, Auth0 tokens and claims); file uploads, whose contents the report asks about.
 - **Sent**: every request in three consent states (before a choice, after "Reject all", after "Accept
   all"), searched for synthetic canary values raw, URL-encoded, Base64 and hashed (SHA-256, SHA-1, MD5),
   so a "hashed email" sent to an ad platform shows up.
-- **Kept and logged**: browser storage, cookies, the server log of a local run, and logging calls in the code.
+- **Kept and logged**: browser storage (including an identity SDK's token cache), cookies, the server log
+  of a local run, and logging calls in the code.
+
+An app with no consent banner is captured in a single `no_banner` state (`"consent": {"banner": null}`),
+and an app behind sign-in is captured from a storage-state file a person saves after signing in with a
+test account (`"storage_state"` in `flows.json`; kept out of the run folder and never recorded).
 - **Who**: each recipient as first party, a declared processor or an undeclared third party, named only
   from a public or curated list.
 

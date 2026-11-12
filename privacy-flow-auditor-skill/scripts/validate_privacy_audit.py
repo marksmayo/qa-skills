@@ -28,8 +28,17 @@ Findings found by reading the code rather than from a candidate set "source": "a
 in --evidence). They are at most traced, and never observed without runtime evidence.
 
 --write-summary fills the computed fields (headline counts and states; each finding's sensitivity, flow, score,
-priority, floor and cap when they are missing) and writes the audit back. --recompute re-runs
-merge_candidates.py from the recorded inputs and compares.
+priority, floor and cap when they are missing) and writes the audit back; --fix-ratings also rewrites computed
+rating fields that are wrong, printing each change (the categories, flow basis, reach and confidence stay yours).
+--recompute re-runs merge_candidates.py from the recorded inputs and compares.
+
+An app with no consent banner (consent.banner null in flows.json) has one state, no_banner, and before, reject and
+accept are not_applicable: the headline carries consent_banner false and states_not_applicable, its third parties
+"before consent" are the no_banner state's, and the statement must say there is no consent banner. In a not_run
+audit, a sentence of the statement or a title that says where data goes ("sent only to", "never leaves") must say
+it is what the code does ("by the code", "the static scan"). A browser storage-state file (session cookies) in the
+evidence fails; a signed-in capture needs metadata.session and a limitation about the session. File upload and
+parsing points from the static scan must be followed up in the inventory, scope or limitations.
 """
 from __future__ import annotations
 import argparse, json, os, re, subprocess, sys, tempfile
@@ -60,6 +69,15 @@ SKIP_DIRS = {'node_modules', '.git', '.next', '.nuxt', 'dist', 'build', 'out', '
 SOURCE_SUFFIXES = ('.js', '.mjs', '.cjs', '.jsx', '.ts', '.mts', '.cts', '.tsx', '.html', '.htm', '.py', '.vue', '.svelte', '.rb', '.json')
 IMAGES = ('.png', '.jpg', '.jpeg', '.webp')
 RATING = ('sensitivity', 'flow', 'score', 'priority', 'floor', 'cap')
+# a positive claim about where data goes or doesn't go: in a not_run audit only the code can support it, so the sentence
+# must say it is what the code does ("by the code", "statically", "the scan")
+RECIPIENT_CLAIM = re.compile(r"\b(sent|send|sends|goes|go|flows?|reach(es)?|leaves?|shared|transmitted|disclosed)\b[^.;]{0,30}\b(only|solely|exclusively|just)\b"
+                             r"|\b(only|solely|exclusively)\b[^.;]{0,30}\b(sent|goes|flows?|reach(es)?|shared|transmitted|disclosed)\b"
+                             r"|\b(never|does not|doesn't|do not|don't|is not|isn't|are not|aren't)\s+(leave|leaves|reach|reaches|sent|shared|transmitted)\b"
+                             r"|\bstays? (on|in|within) (the )?(app|first[- ]party|browser|device|own)", re.I)
+CODE_QUALIFIER = re.compile(r'\b(code|static(ally)?|source|scan(ned)?|by reading|as written|in the repository)\b', re.I)
+NO_BANNER_TEXT = re.compile(r'\bno (consent|cookie) (banner|prompt|dialog)|\bwithout a (consent|cookie) (banner|prompt)|\bhas no banner\b', re.I)
+FILE_KINDS = ('file_upload', 'file_parse', 'form_data_upload')
 
 
 def rate(f: dict) -> tuple[int, int, int, int]:
@@ -129,10 +147,16 @@ def summary(rep: dict, cands: dict) -> dict:
     def third(s):
         row = m.get(s) or {}
         return list(row.get('third_party_domains', [])) if row.get('status') == 'tested' else None
-    not_tested = {r['state']: (r.get('reason') or r['status']) for r in cands['consent_matrix'] if r['status'] != 'tested'}
-    return {'counts': counts, 'third_parties_before_consent': third('before'), 'third_parties_after_reject': third('reject'),
-            'states_not_tested': not_tested,
-            'special_category_flows': sorted(f['id'] for f in rep['findings'] if any(c in CATS['special'] for c in f.get('categories') or []))}
+    not_tested = {r['state']: (r.get('reason') or r['status']) for r in cands['consent_matrix'] if r['status'] not in ('tested', 'not_applicable')}
+    no_banner = 'no_banner' in m
+    out = {'counts': counts, 'third_parties_before_consent': third('no_banner' if no_banner else 'before'),
+           'third_parties_after_reject': third('reject'), 'states_not_tested': not_tested,
+           'special_category_flows': sorted(f['id'] for f in rep['findings'] if any(c in CATS['special'] for c in f.get('categories') or []))}
+    if no_banner:  # no banner: everything happens "before consent", and there is no choice to reject or accept
+        out['consent_banner'] = False
+        out['states_not_applicable'] = {r['state']: r.get('reason') or 'no consent banner' for r in cands['consent_matrix']
+                                        if r['status'] == 'not_applicable'}
+    return out
 
 
 NOT_TESTED = re.compile(r"\b(not tested|untested|could ?n[o']t be tested|was ?n[o']t tested|were ?n[o']t tested|not run|did ?n[o']t run|was ?n[o']t run)\b", re.I)
@@ -160,6 +184,9 @@ def main() -> int:
     ap.add_argument('--repo', type=Path)
     ap.add_argument('--recompute', action='store_true')
     ap.add_argument('--write-summary', action='store_true')
+    ap.add_argument('--fix-ratings', action='store_true',
+                    help="rewrite each finding's computed rating fields (sensitivity, flow, score, priority, floor, cap) from its "
+                         'categories, flow_basis, reach and confidence, listing every change; the inputs stay yours')
     a = ap.parse_args()
     rep = json.loads(a.audit.read_text(encoding='utf-8'))
     cfile = json.loads(a.candidates.read_text(encoding='utf-8'))
@@ -178,9 +205,18 @@ def main() -> int:
             e(f'missing top-level field {k}')
     if errs:
         print('\n'.join(errs)); return 1
-    if a.write_summary:
+    if a.write_summary or a.fix_ratings:
         for f in rep['findings']:
+            if a.fix_ratings and ratable(f):
+                sens, flow, _, score = rate(f)
+                p_, floor_, cap_r = expected(f)
+                for k, v in zip(RATING, (sens, flow, score, p_, floor_, cap_r)):
+                    if k in f and f[k] != v:
+                        print(f'{f.get("id")}: {k} {f[k]!r} -> {v!r}')
+                    f[k] = v
             fill_ratings(f)
+        if a.fix_ratings and not a.write_summary:
+            a.audit.write_text(json.dumps(rep, indent=1, ensure_ascii=False) + '\n', encoding='utf-8', newline='\n')
 
     # --- run status
     if rep.get('run_status') != run_status:
@@ -202,7 +238,19 @@ def main() -> int:
             elif p.suffix.lower() in IMAGES:
                 images.append(p)
     for p in dict.fromkeys(files):
-        errs += pii_problems(p.read_text(encoding='utf-8', errors='replace'), p.name, values)
+        text_ = p.read_text(encoding='utf-8', errors='replace')
+        errs += pii_problems(text_, p.name, values)
+        if p.suffix == '.json' and '"origins"' in text_ and '"cookies"' in text_:
+            try:
+                d_ = json.loads(text_)
+            except ValueError:
+                d_ = None
+            if isinstance(d_, dict) and 'origins' in d_ and 'cookies' in d_:
+                e(f'{p.name} looks like a browser storage-state file (session cookies and tokens): it must never be in the evidence')
+    if cap.get('auth') and not any(re.search(r'sign(ed)?[- ]in|session|log(ged)?[- ]in|storage[- ]state', x, re.I) for x in rep['limitations']):
+        e('the capture ran in a signed-in session (storage state or login recipe), but no limitation says whose session and what it covers')
+    if cap.get('auth') and not rep['metadata'].get('session'):
+        e('the capture ran in a signed-in session: metadata.session must say whose (a test account), never the session itself')
     if canaries is not None:
         if not canaries.get('synthetic'):
             e('the canary set is not marked synthetic')
@@ -226,8 +274,8 @@ def main() -> int:
     if static_only:
         if any(c.get('source') == 'live' for c in cfile['candidates']) or cfile['recipients']:
             e('a not_run candidates file has live candidates or recipients')
-        if any(r['status'] != 'not_run' for r in cfile['consent_matrix']):
-            e('a not_run audit must have every consent state not_run')
+        if any(r['status'] not in ('not_run', 'not_applicable') for r in cfile['consent_matrix']):
+            e('a not_run audit must have every consent state not_run (or not_applicable when the app has no consent banner)')
 
     lists_vendors = {r['vendor'] for r in cfile['recipients'] if r.get('vendor')}
     static_vendors = {c.get('vendor') for c in cfile['candidates'] if c.get('source') == 'static' and c.get('vendor')}
@@ -265,7 +313,8 @@ def main() -> int:
             continue
         sens, flow, reach, score = rate(f)
         if (f.get('sensitivity'), f.get('flow'), f.get('score')) != (sens, flow, score):
-            e(f'{fid}: sensitivity/flow/score {f.get("sensitivity")}/{f.get("flow")}/{f.get("score")} should be {sens}/{flow}/{score}')
+            e(f'{fid}: sensitivity/flow/score {f.get("sensitivity")}/{f.get("flow")}/{f.get("score")} should be {sens}/{flow}/{score} '
+              f'({sens} x {flow} x reach {reach}; --fix-ratings rewrites the computed fields, --write-summary fills them when left out)')
         p, floor, cap_ = expected(f)
         if f.get('priority') != p or f.get('floor') != floor or f.get('cap') != cap_:
             e(f'{fid}: priority/floor/cap {f.get("priority")}/{f.get("floor")}/{f.get("cap")} should be {p}/{floor}/{cap_}')
@@ -338,7 +387,7 @@ def main() -> int:
             e(f'{fid}: consent states {states} are not all shown by its candidates ({sorted(live_states)})')
         static_before = f['confidence'] == 'pattern' and any(c['type'] == 'tracking_before_consent' for c in static_own)
         if f['flow_basis'] == 'before_consent' and not static_before and not any(
-                c['type'] == 'tracking_before_consent' or 'before' in (c.get('states') or []) or c.get('before_choice') for c in live):
+                c['type'] == 'tracking_before_consent' or {'before', 'no_banner'} & set(c.get('states') or []) or c.get('before_choice') for c in live):
             e(f'{fid}: flow_basis before_consent, but no candidate shows the before state')
         if f['flow_basis'] == 'after_reject' and not any(c['type'] == 'tracking_after_reject' or 'reject' in (c.get('states') or []) for c in live):
             e(f'{fid}: flow_basis after_reject, but no candidate shows the reject state')
@@ -420,6 +469,16 @@ def main() -> int:
             if (seen.get(cid) or {}).get('finding') != f['id']:
                 e(f'{f["id"]}: lists {cid}, but triage does not promote it there')
 
+    # --- file uploads the static scan found: what the files hold is unknown until someone says
+    static_path = Path(cfile['static']) if cfile.get('static') else None
+    if static_path and static_path.is_file():
+        st_ = json.loads(static_path.read_text(encoding='utf-8'))
+        ups = [c for c in st_.get('collection', []) if c.get('kind') in FILE_KINDS]
+        said = json.dumps([rep['inventory'], rep['limitations'], rep['scope'].get('not_covered'), rep['scope'].get('covered')], ensure_ascii=False)
+        if ups and not re.search(r'\b(upload|file|spreadsheet|attachment)s?\b', said, re.I):
+            e(f'the static scan found {len(ups)} file upload or parsing point(s) ({ups[0]["file"]}:{ups[0]["line"]}), but the inventory, scope '
+              'and limitations say nothing about what the files hold')
+
     # --- inventory
     for item in rep['inventory']:
         if item.get('category') not in CATS['categories']:
@@ -443,7 +502,7 @@ def main() -> int:
     for k, v in want.items():
         if rep['headline'].get(k) != v:
             e(f'headline.{k} {rep["headline"].get(k)!r} should be {v!r}')
-    untested = [r['state'] for r in cfile['consent_matrix'] if r['status'] != 'tested']
+    untested = [r['state'] for r in cfile['consent_matrix'] if r['status'] not in ('tested', 'not_applicable')]
     if untested and not static_only and not any(s in ' '.join(rep['limitations']) for s in untested):
         e(f'consent states {untested} were not tested, but the limitations do not say so')
     statement = rep['headline'].get('statement', '')
@@ -453,7 +512,15 @@ def main() -> int:
         mm = NONE_CLAIM.get(s_) and NONE_CLAIM[s_].search(statement)
         if mm:
             e(f'headline.statement summarises the untested {s_} state as {mm.group(0)!r}: say it was not tested')
+    if want.get('consent_banner') is False and not NO_BANNER_TEXT.search(statement):
+        e('the app has no consent banner (consent.banner null): the headline statement must say so ("no consent banner")')
     if static_only:
+        for where, text in [('headline.statement', statement)] + [(f'{f["id"]} title', f.get('title', '')) for f in rep['findings']]:
+            for sent in re.split(r'(?<=[.;:!?])\s+', text):  # a clause: "Static review: X is sent only to Y" still needs its own qualifier
+                mm = RECIPIENT_CLAIM.search(sent)
+                if mm and not CODE_QUALIFIER.search(sent):
+                    e(f'{where} says {mm.group(0)!r} as a fact about the running app, but the browser run did not happen (not_run); '
+                      'say it is what the code does ("by the code", "the static scan")')
         if not any(re.search(r'not run|did ?n[o\']t run|static only|no (live|browser) (capture|run)', x, re.I) for x in rep['limitations']):
             e('run_status not_run: a limitation must say the browser capture was not run (consent states, live requests and canaries untested)')
         for where, text in [('headline.statement', statement)] + [(f'{f["id"]} title', f.get('title', '')) for f in rep['findings']]:

@@ -10,10 +10,18 @@ then it runs each flow, typing canary values where a step says {"fill": sel, "ca
 (URL, method, referer, body), cookie and storage value is searched for every canary in every encoding and
 written out redacted: values become <canary:FIELD:ENCODING> or <redacted:TYPE>. Raw values are never stored.
 
+An app with no consent banner at all (an internal tool with no non-essential tracking) says so with
+"consent": {"banner": null}: one state, no_banner, runs (no choice to make) and counts like "before" for findings;
+the other states are not applicable. An app behind sign-in takes "storage_state": a Playwright storage-state file
+a person saved after signing in by hand (a test account), kept outside the run folder; every state's context
+starts from it, and the capture records only that a session was used, never the file or its contents. Capture the
+file before making any consent choice, or the stored choice leaks into the "before" state. ("auth" with a login
+recipe, as in browser_harness.py, works too.)
+
 With --server-log (local runs only), the app's log is read after the run and the lines carrying a canary
 are recorded, redacted, with their line numbers.
 
-flows.json: {"site", "host_map"?, "authorised_by"?, "allow_form_submission"?, "third_party"?, "allowed_hosts"?,
+flows.json: {"site", "host_map"?, "authorised_by"?, "allow_form_submission"?, "third_party"?, "allowed_hosts"?, "storage_state"?,
 "consent": {"accept": sel, "reject": sel, "partial"?: sel or [actions], "dismiss"?: sel or [actions], "banner"?: sel,
 "wait_ms"?: 8000, "partial_refuses"?: [vendor categories]}, "flows": [{"id", "reach": 1-3, "steps": [{"name", "actions": [...]}]}]}.
 States: before (no choice), reject, accept, and optionally partial (save preferences with some purposes refused:
@@ -49,7 +57,7 @@ from match_canaries import Matcher, decode_body  # noqa: E402
 
 HEX = re.compile(r'(?<![0-9a-f])([0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})(?![0-9a-f])', re.I)
 CSP_CONSOLE = re.compile(r"Refused to [\w ]+? '(?P<url>https?://[^']+)'.*?Content Security Policy directive:? \"?(?P<directive>[\w-]+)", re.S)
-STATES = ('before', 'reject', 'accept', 'partial', 'dismiss')
+STATES = ('before', 'reject', 'accept', 'partial', 'dismiss', 'no_banner')
 
 
 def consent_actions(spec) -> list[dict]:
@@ -169,8 +177,24 @@ def main() -> int:
     out = {'site': site, 'canary_set': canaries['id'], 'started': now(), 'states': [], 'browser': None,
            'allow_form_submission': bool(cfg.get('allow_form_submission')), 'flows': [{'id': f['id'], 'reach': f.get('reach', 2),
                                                                                        'steps': [s['name'] for s in f['steps']]} for f in cfg['flows']]}
-    hcfg = {k: cfg[k] for k in ('host_map', 'authorised_by', 'allow_form_submission', 'third_party', 'allowed_hosts') if k in cfg}
+    hcfg = {k: cfg[k] for k in ('host_map', 'authorised_by', 'allow_form_submission', 'third_party', 'allowed_hosts', 'auth') if k in cfg}
     hcfg['targets'] = [site]
+    # a signed-in session for an app behind sign-in: a storage-state file a person captured by signing in by hand
+    # (Playwright storage_state). It holds session cookies and tokens: it stays outside the run folder and is never recorded.
+    if cfg.get('storage_state'):
+        st_path = Path(cfg['storage_state']).resolve()
+        if not st_path.is_file():
+            ap.error(f'storage_state {cfg["storage_state"]} does not exist (sign in by hand and save it with context.storage_state(path=...))')
+        if a.out.resolve().parent in st_path.parents or (a.screenshots and a.screenshots.resolve() in st_path.parents):
+            ap.error('keep the storage_state file outside the run folder: it holds session cookies and tokens and must not become evidence')
+        hcfg['auth'] = {'storage_state': str(st_path)}
+    consent_cfg = cfg.get('consent') or {}
+    no_banner = 'banner' in consent_cfg and consent_cfg['banner'] is None
+    states = a.states.split(',')
+    if no_banner:
+        if a.states != 'before,reject,accept' and states != ['no_banner']:
+            ap.error('consent.banner is null (the app has no consent banner): only the no_banner state runs')
+        states = ['no_banner']
     # the site's own Content Security Policy stays in force (the harness bypasses it by default): a vendor call the CSP
     # forbids is then stopped by the browser and seen as a CSP violation, as it would be for a real visitor
     hcfg['bypass_csp'] = bool(cfg.get('bypass_csp', False))
@@ -183,12 +207,17 @@ def main() -> int:
                               'echoes elsewhere (a greeting, a summary) can still show in an image'}
     with Harness(hcfg) as h:
         out['browser'] = f'{h.browser_name} {h.version}'
+        if hcfg.get('auth'):
+            out['auth'] = {'method': h.login(), 'note': 'signed-in session from a file a person captured by signing in (or a login recipe '
+                           'with credentials from the environment); the session itself is not recorded'}
+        if no_banner:
+            out['consent_banner'] = False
         out['third_party'] = getattr(h, 'third_party', 'allow')
         if cfg.get('third_party_authorised_by'):
             out['third_party_authorised_by'] = cfg['third_party_authorised_by']
         consent = cfg.get('consent') or {}
         wait_ms = int(consent.get('wait_ms', 8000))
-        for state in a.states.split(','):
+        for state in states:
             if state not in STATES:
                 ap.error(f'unknown consent state {state!r}; use {", ".join(STATES)}')
             page = h.new_page(service_workers='block')
@@ -202,7 +231,7 @@ def main() -> int:
             st['start'] = {'ok': res.get('ok'), 'status': res.get('status')}
             page.wait_for_timeout(800)
             st['snapshots'].append(dict(phase='initial', **cookies_and_storage(ctx, page, m)))
-            if state != 'before':
+            if state not in ('before', 'no_banner'):
                 acts = consent_actions(consent.get(state))
                 writes_before = sum(1 for b in h.blocked if b.get('reason', 'write') == 'write')
                 try:

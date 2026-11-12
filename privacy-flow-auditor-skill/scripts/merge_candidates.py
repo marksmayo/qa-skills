@@ -31,6 +31,10 @@ Live candidates (L###):
                            across consent states, which are fresh browser contexts (a stable identifier)
 Static candidates (S###) are carried over unchanged.
 
+An app with no consent banner ("consent": {"banner": null} in flows.json) has one state, no_banner, treated like
+"before" (tracking_before_consent candidates); before, reject and accept are not_applicable, and the output says
+consent_banner: false.
+
 Without --capture (the live half could not run) the output is static only: run_status not_run with the reason,
 every consent state not_run, no recipients, and the static candidates. A capture with a consent state untested,
 missing or with step errors gives run_status partial.
@@ -65,6 +69,13 @@ VENDOR_DATA = json.loads((HERE.parent / 'data' / 'vendors.json').read_text(encod
 VENDORS = VENDOR_DATA.get('vendors', {})
 PATH_RULES = VENDOR_DATA.get('path_rules', {})
 CONSENT_STATES = ('before', 'reject', 'accept')
+NO_BANNER_REASON = 'the app has no consent banner (consent.banner is null in flows.json): there is no choice to make'
+
+
+def no_banner_cfg(flows: dict | None) -> bool:
+    """flows.json says the app has no consent banner at all: "consent": {"banner": null}."""
+    c = (flows or {}).get('consent') or {}
+    return 'banner' in c and c['banner'] is None
 EXTRA_STATES = ('partial', 'dismiss')
 SAFE = ('GET', 'HEAD', 'OPTIONS')
 SDK_ID_KEYS = {'sid', 'event_id', 'trace_id', 'span_id', 'parent_span_id', 'replay_id', 'segment_id', 'session_id', 'sessionid',
@@ -140,14 +151,16 @@ def csp_attempts(st: dict, first: set, dom_of) -> list[dict]:
 
 def static_only(a, static: dict, lists: dict, regions: set) -> dict:
     reason = a.run_status_reason or 'no live capture was given: the browser half did not run'
-    return {'run_status': 'not_run', 'run_status_reason': reason, 'capture': None, 'static': a.static.as_posix(),
+    no_banner = no_banner_cfg(json.loads(a.flows.read_text(encoding='utf-8')) if a.flows else None)
+    matrix = ([{'state': 'no_banner', 'status': 'not_run', 'reason': reason}]
+              + [{'state': s, 'status': 'not_applicable', 'reason': NO_BANNER_REASON} for s in CONSENT_STATES]) if no_banner else         [{'state': s, 'status': 'not_run', 'reason': reason} for s in CONSENT_STATES]
+    return {**({'consent_banner': False} if no_banner else {}),'run_status': 'not_run', 'run_status_reason': reason, 'capture': None, 'static': a.static.as_posix(),
             'inputs': {'flows': a.flows.as_posix() if a.flows else None, 'lists': a.lists.as_posix() if a.lists else None,
                        'declared': a.declared.as_posix() if a.declared else None, 'regions': a.regions},
             'lists': lists.get('source'),
             'declared': json.loads(a.declared.read_text(encoding='utf-8')).get('source') if a.declared else None, 'regions': sorted(regions), 'first_party': [], 'third_party_mode': None,
             'blocked_domains': [], 'blocked_first_party_writes': [], 'csp_attempts': [], 'recipients': [],
-            'consent_matrix': [{'state': s, 'status': 'not_run', 'reason': reason} for s in CONSENT_STATES],
-            'candidates': static['candidates']}
+            'consent_matrix': matrix, 'candidates': static['candidates']}
 
 
 def main() -> int:
@@ -225,7 +238,8 @@ def main() -> int:
     csp = {s: csp_attempts(states[s], first, dom_of) for s in tested}
     refuses = set(consent_cfg.get('partial_refuses') or [])
     # ---- tracking before consent, after reject, after a partial choice, after closing the banner without one
-    for st_name, typ, phases in (('before', 'tracking_before_consent', None), ('reject', 'tracking_after_reject', 'after'),
+    for st_name, typ, phases in (('before', 'tracking_before_consent', None), ('no_banner', 'tracking_before_consent', None),
+                                 ('reject', 'tracking_after_reject', 'after'),
                                  ('partial', 'tracking_after_reject', 'after'), ('dismiss', 'tracking_before_consent', 'after')):
         st = states.get(st_name)
         if not st or st['status'] != 'tested':
@@ -277,7 +291,7 @@ def main() -> int:
                 c['note'] = hit['what']
             if blocked(rs):
                 c['blocked_requests'] = blocked(rs)
-        if st_name == 'before':
+        if st_name in ('before', 'no_banner'):
             for c in initial['cookies']:
                 if dom_of(c['domain'].lstrip('.')) in first and not cookie_list.get(c['name']):
                     cand(type=typ, state=st_name, domain=dom_of(c['domain'].lstrip('.')), vendor=None, recipient='first_party', cookie=c['name'],
@@ -303,7 +317,7 @@ def main() -> int:
         blocked_fp_writes.append({'path': path, 'requests': len(e['requests']), 'blocked': e['blocked'], 'states': sorted(e['states'])})
         cand(type='first_party_beacon', domain=sorted(first)[0], path=path, recipient='first_party', states=sorted(e['states']),
              phases=sorted(e['phases']), methods=sorted(e['methods']), requests=len(e['requests']), blocked_requests=e['blocked'],
-             fields=sorted(e['fields']), categories=[], before_choice='before' in e['states'] or 'initial' in e['phases'],
+             fields=sorted(e['fields']), categories=[], before_choice=bool({'before', 'no_banner'} & e['states']) or 'initial' in e['phases'],
              example_requests=e['requests'][:3])
     # ---- canaries in requests
     to_third: dict = {}
@@ -422,8 +436,13 @@ def main() -> int:
             e[k] = sorted(e[k])
         e['named_by'] = 'domain list' if e['vendor'] else None
     matrix = []
-    for st_name in CONSENT_STATES + tuple(s for s in EXTRA_STATES if s in states):
+    no_banner = no_banner_cfg(flows) or 'no_banner' in states
+    order = (('no_banner',) + CONSENT_STATES) if no_banner else CONSENT_STATES + tuple(s for s in EXTRA_STATES if s in states)
+    for st_name in order:
         st = states.get(st_name)
+        if no_banner and st_name in CONSENT_STATES:
+            matrix.append({'state': st_name, 'status': 'not_applicable', 'reason': NO_BANNER_REASON})
+            continue
         if not st:
             matrix.append({'state': st_name, 'status': 'not_run'})
             continue
@@ -431,7 +450,7 @@ def main() -> int:
             matrix.append({'state': st_name, 'status': 'untested', 'reason': st.get('reason')})
             continue
         last = st['snapshots'][-1]
-        seen_from = st_name == 'before'
+        seen_from = st_name in ('before', 'no_banner')
         third = sorted({dom_of(r['host']) for r in st['requests'] if dom_of(r['host']) not in first and (seen_from or r['phase'] != 'initial')})
         canaries = sorted({m['field'] for r in st['requests'] if dom_of(r['host']) not in first for m in r['matches']})
         row = {'state': st_name, 'status': 'tested', 'third_party_domains': third,
@@ -442,7 +461,8 @@ def main() -> int:
         if st.get('consent_writes_blocked'):
             row['consent_writes_blocked'] = st['consent_writes_blocked']
         matrix.append(row)
-    problems = [f'{r["state"]} {r["status"]}' + (f' ({r["reason"]})' if r.get('reason') else '') for r in matrix if r['status'] != 'tested']
+    problems = [f'{r["state"]} {r["status"]}' + (f' ({r["reason"]})' if r.get('reason') else '') for r in matrix
+                if r['status'] not in ('tested', 'not_applicable')]
     problems += [f'{s} had {len(states[s]["errors"])} flow step error(s)' for s in tested if states[s].get('errors')]
     harness = cap.get('harness') or {}
     if (harness.get('requests') or {}).get('budget_exhausted'):
@@ -451,7 +471,7 @@ def main() -> int:
         problems.append(f'the harness stopped the run: {harness["stopped"]}')
     blocked_domains = sorted({dom_of(r['host']) for st_name in tested for r in states[st_name]['requests']
                               if r.get('blocked') and dom_of(r['host']) not in first})
-    out = {'run_status': 'partial' if problems else 'complete', 'run_status_reason': '; '.join(problems) if problems else None,
+    out = {**({'consent_banner': False} if no_banner else {}), 'run_status': 'partial' if problems else 'complete', 'run_status_reason': '; '.join(problems) if problems else None,
            'capture': a.capture.as_posix(), 'static': a.static.as_posix() if a.static else None,
            'inputs': {'flows': a.flows.as_posix(), 'lists': a.lists.as_posix(), 'declared': a.declared.as_posix() if a.declared else None,
                       'regions': a.regions}, 'lists': lists.get('source'),

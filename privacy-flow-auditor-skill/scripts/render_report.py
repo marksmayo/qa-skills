@@ -46,11 +46,17 @@ def main() -> int:
     if status != 'complete':
         out += [c(f'Browser capture {"NOT RUN" if status == "not_run" else "PARTIAL"}: {(r.get("run_status_reason") or "-").rstrip(".")}.', 'bold')
                 + (' Static findings only; no consent state, request or canary was tested.' if status == 'not_run' else ''), '']
+    if h.get('consent_banner') is False:
+        consent_line = (f'No consent banner (there is no choice to make). Third parties contacted: '
+                        f'{seen("third_parties_before_consent", "no_banner")}. ')
+    else:
+        consent_line = (f'Third parties before consent: {seen("third_parties_before_consent", "before")}. '
+                        f'After "Reject all": {seen("third_parties_after_reject", "reject")}. ')
     out += [
            ' '.join(f'{c(p, p)} {n}' for p, n in h['counts'].items()), '', h['statement'], '',
-           f'Third parties before consent: {seen("third_parties_before_consent", "before")}. '
-           f'After "Reject all": {seen("third_parties_after_reject", "reject")}. '
-           f'Special-category flows: {", ".join(h["special_category_flows"]) or "none"}.', '']
+           consent_line + f'Special-category flows: {", ".join(h["special_category_flows"]) or "none"}.', '']
+    if (r.get('metadata') or {}).get('session'):
+        out += [f'Signed-in session: {r["metadata"]["session"]}.', '']
     if blocked:
         out += [f'Blocked in the browser, so they never reached the vendor and could set no cookies or send follow-up hits: '
                 f'{", ".join(blocked)}.', '']
