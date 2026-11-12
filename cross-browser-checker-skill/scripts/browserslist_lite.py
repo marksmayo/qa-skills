@@ -13,7 +13,13 @@ assessed for them.
 With --repo, the query comes from package.json's `browserslist`, else `.browserslistrc`; a Next.js project
 (`next` in package.json) with neither uses Next's documented default support (16 and later: Chrome, Edge and
 Firefox 111, Safari 16.4; 13-15: Chrome 64, Edge 79, Firefox 67, Opera 51, Safari 12), with iOS Safari taken
-to follow Safari; anything else falls back to `defaults`. The source says which.
+to follow Safari. A Vite project (`vite` in package.json, not Next.js) with neither compiles for its
+`build.target`: read from vite.config.* when it is a literal string or array (esbuild names such as
+chrome107 or safari16.4, or 'modules' / 'baseline-widely-available'), else the Vite major's documented
+default (7 and later: 'baseline-widely-available' = Chrome and Edge 107, Firefox 104, Safari 16; 3-6:
+'modules' = Chrome 87, Edge 88, Firefox 78, Safari 14; 2: Safari 13.1), iOS Safari again following
+Safari; esXXXX and esnext name no browser and are reported as not assessed. Anything else falls back to
+`defaults`. The source says which.
 
 `dead` is an approximation of browserslist's list: IE, IE Mobile, BlackBerry, Baidu, Opera Mobile up
 to 12.1 and Samsung Internet 4.
@@ -145,6 +151,113 @@ def next_version(repo: Path, pkg: dict) -> tuple[int | None, str]:
     return (int(m.group(1)), f'next "{rng}" in package.json') if m else (None, f'next "{rng}" in package.json')
 
 
+# Vite compiles for build.target, not browserslist. Its documented defaults: Vite 7 'baseline-widely-available'
+# (Chrome 107, Edge 107, Firefox 104, Safari 16); Vite 3-6 'modules' (es2020, Chrome 87, Edge 88, Firefox 78,
+# Safari 14); Vite 2 'modules' (es2019, Chrome 87, Edge 88, Firefox 78, Safari 13.1). iOS Safari is taken to
+# follow Safari.
+VITE_DEFAULTS = [(7, "'baseline-widely-available'", ['chrome107', 'edge107', 'firefox104', 'safari16']),
+                 (3, "'modules'", ['es2020', 'edge88', 'firefox78', 'chrome87', 'safari14']),
+                 (0, "'modules'", ['es2019', 'edge88', 'firefox78', 'chrome87', 'safari13.1'])]
+VITE_CONFIGS = ('vite.config.ts', 'vite.config.mts', 'vite.config.js', 'vite.config.mjs', 'vite.config.cts', 'vite.config.cjs')
+ESBUILD_BROWSER = {'chrome': 'chrome', 'edge': 'edge', 'firefox': 'firefox', 'safari': 'safari', 'ios': 'ios_saf',
+                   'opera': 'opera'}
+
+
+def installed_major(repo: Path, pkg: dict, name: str) -> tuple[int | None, str]:
+    """A dependency's major version: the installed package's, else the range's first number."""
+    inst = repo / 'node_modules' / name / 'package.json'
+    if inst.is_file():
+        try:
+            v = json.loads(inst.read_text(encoding='utf-8')).get('version') or ''
+            m = re.match(r'(\d+)', v)
+            if m:
+                return int(m.group(1)), f'installed {name} {v}'
+        except (ValueError, OSError):
+            pass
+    rng = (pkg.get('dependencies') or {}).get(name) or (pkg.get('devDependencies') or {}).get(name) or ''
+    m = re.search(r'(\d+)', rng)
+    return (int(m.group(1)), f'{name} "{rng}" in package.json') if m else (None, f'{name} "{rng}" in package.json')
+
+
+def _block(text: str, i: int) -> str:
+    """The text of the {...} starting at text[i]."""
+    depth = 0
+    for j in range(i, len(text)):
+        if text[j] == '{':
+            depth += 1
+        elif text[j] == '}':
+            depth -= 1
+            if depth == 0:
+                return text[i + 1:j]
+    return text[i + 1:]
+
+
+def vite_build_target(repo: Path) -> tuple[list[str] | None, str | None]:
+    """build.target from vite.config.* when it is written literally (a string or an array of strings), else None.
+    Only the build block is read: a dev-server proxy also has a 'target'."""
+    for name in VITE_CONFIGS:
+        f = repo / name
+        if not f.is_file():
+            continue
+        text = re.sub(r'//[^\n]*|/\*.*?\*/', '', f.read_text(encoding='utf-8', errors='replace'), flags=re.S)
+        for m in re.finditer(r'\bbuild\s*:\s*\{', text):
+            body = _block(text, m.end() - 1)
+            # the target key at the top level of the build block (nested objects such as rollupOptions blanked)
+            depth, top = 0, []
+            for ch in body:
+                if ch == '{':
+                    depth += 1
+                top.append(ch if depth == 0 else ' ')
+                if ch == '}':
+                    depth -= 1
+            t = re.search(r'''\btarget\s*:\s*(\[[^\]]*\]|["'][^"']+["'])''', ''.join(top))
+            if t:
+                vals = re.findall(r'''["']([^"']+)["']''', t.group(1))
+                return vals, name
+        return None, name
+    return None, None
+
+
+def target_query(vals: list[str]) -> tuple[str | None, list[str]]:
+    """esbuild targets (chrome107, safari16.4, es2020, 'baseline-widely-available', 'modules', 'esnext') as a
+    browserslist query, with the values that name no browser."""
+    parts, other = [], []
+    for v in vals:
+        v = v.strip().lower()
+        if v in ('baseline-widely-available', 'modules'):
+            vals2 = next(t for _, k, t in VITE_DEFAULTS if k.strip("'") == v)
+            q, o = target_query(vals2)
+            parts += [q] if q else []
+            other += o
+            continue
+        m = re.fullmatch(r'([a-z]+)(\d+(?:\.\d+)*)', v)
+        if m and m.group(1) in ESBUILD_BROWSER:
+            parts.append(f'{ESBUILD_BROWSER[m.group(1)]} >= {m.group(2)}')
+            if m.group(1) == 'safari' and not any(x.startswith('ios') for x in vals):
+                parts.append(f'ios_saf >= {m.group(2)}')
+        else:
+            other.append(v)
+    return (', '.join(parts) or None), other
+
+
+def vite_query(repo: Path, pkg: dict) -> tuple[str, str]:
+    """A Vite project without a browserslist config: its build.target when literal, else the Vite major's default."""
+    vals, cfg = vite_build_target(repo)
+    if vals:
+        q, other = target_query(vals)
+        extra = f'; {", ".join(other)} name no browser and are not assessed' if other else ''
+        if q:
+            return q, f'Vite build.target {vals} in {cfg} (no browserslist config; iOS Safari taken to follow Safari{extra})'
+        return 'defaults', (f'Vite build.target {vals} in {cfg} names no browser version (e.g. esnext); browserslist '
+                            'defaults used instead')
+    major, how = installed_major(repo, pkg, 'vite')
+    _, name, targets = next(d for d in VITE_DEFAULTS if major is None or major >= d[0])
+    q, _ = target_query(targets)
+    assumed = '' if major is not None else '; version unknown, the newest default assumed'
+    return q, (f'Vite default build.target {name} = {", ".join(targets)} (no browserslist config and no literal '
+               f'build.target; {how}{assumed}; iOS Safari taken to follow Safari)')
+
+
 def query_from_repo(repo: Path) -> tuple[str, str]:
     pkg_file = repo / 'package.json'
     pkg = {}
@@ -162,6 +275,8 @@ def query_from_repo(repo: Path) -> tuple[str, str]:
         lines = [l.split('#')[0].strip() for l in rc.read_text(encoding='utf-8').splitlines()]
         return ', '.join(l for l in lines if l and not l.startswith('[')), '.browserslistrc'
     deps = {**(pkg.get('devDependencies') or {}), **(pkg.get('dependencies') or {})}
+    if 'vite' in deps and 'next' not in deps:
+        return vite_query(repo, pkg)
     if 'next' in deps:
         major, how = next_version(repo, pkg)
         query = next(q for floor, q in NEXT_DEFAULTS if major is None or major >= floor)
