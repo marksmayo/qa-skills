@@ -180,8 +180,7 @@ def old_side_lines(base_text: str | None, new_text: str | None) -> tuple[set[int
 
 
 def functions_of(path: str, text: str) -> list[dict]:
-    funcs = diff_scope.py_functions(text) if path.endswith('.py') else None
-    return funcs if funcs is not None else diff_scope.heuristic_functions(text)
+    return diff_scope.functions(path, text)[0]
 
 
 def naming_matches(path: str, tests: list[str], package_of) -> list[str]:
