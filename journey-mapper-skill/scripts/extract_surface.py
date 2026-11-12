@@ -9,9 +9,13 @@ verify it. Anything the extractor can't see must be added by the agent with sour
     python extract_surface.py /path/to/repo --out surface.json [--goal-wrapper trackEvent2]
 """
 from __future__ import annotations
-import argparse, bisect, json, re, sys
+import argparse, bisect, json, os, re, sys, tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from py_routes import scan_python, blank_strings          # noqa: E402
+from js_routes import scan_js_routes, Constants           # noqa: E402
 
 SKIP_DIRS = {'.git', '.hg', '.svn', 'node_modules', 'bower_components', 'dist', 'build', 'out',
              '.next', '.nuxt', '.svelte-kit', '.output', '.vercel', '.turbo', '.cache', '.expo',
@@ -34,16 +38,18 @@ FRAMEWORK_DEPS = {
     '@angular/router': 'angular', 'react-native': 'react-native', 'expo-router': 'expo-router',
     '@react-navigation/native': 'react-navigation', 'express': 'express', 'fastify': 'fastify',
     'koa': 'koa', '@nestjs/core': 'nestjs', '@playwright/test': 'playwright', 'cypress': 'cypress',
-    'webdriverio': 'webdriverio', 'detox': 'detox',
+    'webdriverio': 'webdriverio', 'detox': 'detox', 'vitest': 'vitest', 'jest': 'jest', 'mocha': 'mocha',
+    '@azure/functions': 'azure-functions',
 }
+UNIT_RUNNERS = {'vitest', 'jest', 'mocha', 'pytest'}
+MANIFESTS = ('package.json', 'pyproject.toml', 'setup.py', 'setup.cfg', 'requirements.txt', 'go.mod', 'Gemfile',
+             'pom.xml', 'build.gradle', 'build.gradle.kts', 'host.json', 'Cargo.toml', 'composer.json')
 WEB_FW = {'nextjs', 'nuxt', 'sveltekit', 'remix', 'react-router', 'vue-router', 'angular'}
 API_FW = {'express', 'fastify', 'koa', 'nestjs', 'flask', 'fastapi', 'django', 'rails', 'spring',
-          'go-http', 'aspnet'}
+          'go-http', 'aspnet', 'azure-functions'}
 
 # --- regex detectors over file content ---
 Q = r'["\'`]'
-JSX_ROUTE = re.compile(r'<Route\b[^>]*?\bpath=\{?' + Q + r'([^"\'`]+)' + Q)
-OBJ_PATH = re.compile(r'\bpath\s*:\s*' + Q + r'([^"\'`]*)' + Q)
 RN_SCREEN = re.compile(r'<(\w+)\.Screen\b[^>]*?\bname=\{?' + Q + r'([^"\'`]+)' + Q)
 GO_ROUTE = re.compile(r'GoRoute\(\s*(?:name\s*:\s*' + Q + r'[^"\'`]*' + Q + r'\s*,\s*)?path\s*:\s*' + Q + r'([^"\'`]+)' + Q)
 DART_ROUTE_MAP = re.compile(Q + r'(/[^"\'`]*)' + Q + r'\s*:\s*\(\s*\w*\s*\)\s*=>')
@@ -124,6 +130,12 @@ VISIT_PATTERNS = [
     ('maestro', re.compile(r'^\s*-?\s*openLink\s*:\s*(\S+)', re.M)),
 ]
 TEST_CASE = re.compile(r'\b(?:test|it|scenario)\(\s*' + Q)
+PY_TEST_CASE = re.compile(r'^[ \t]*(?:async\s+)?def\s+test_\w*\(', re.M)
+SUCCESS_MSG = re.compile(r'(?<![\w$.])(toast\.success|message\.success|notification\.success|notify\.success|showSuccess|'
+                         r'setSuccessMessage|setSuccessMsg|enqueueSnackbar|showToast|showNotification)\(\s*'
+                         + Q + r'([^"\'`\n]{3,120})' + Q)
+AZ_JS_TRIGGER = re.compile(r'\bapp\.(http|timer|storageBlob|storageQueue|serviceBusQueue|serviceBusTopic|eventHub|'
+                           r'eventGrid|cosmosDB)\(\s*(["\'])([^"\']+)\2\s*,\s*\{')
 
 
 def parse_jsonc(text: str):
@@ -182,6 +194,13 @@ class Extractor:
         self.pkg_cache: dict[Path, set[str]] = {}
         self.files_scanned = 0
         self.truncated = False
+        self.py_files: dict[str, str] = {}      # non-test .py files, read with ast after the walk
+        self.host_files: dict[str, str] = {}    # Azure Functions host.json files
+        self.js_texts: dict[str, str] = {}      # non-test JS/TS files: constants and components for route paths
+        self.route_files: dict[str, str] = {}   # files with client-side route configs -> router framework
+        self.unit_tests = {'files': 0, 'test_cases': 0}
+        self.py_notes: list[str] = []
+        self.manifest_dirs: dict[str, bool] = {}
 
     # ---- helpers ----
     def rel(self, p: Path) -> str:
@@ -465,14 +484,19 @@ class Extractor:
         ext, name = path.suffix.lower(), path.name
 
         if ext in ('.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.vue'):
+            self.js_texts[self.rel(path)] = text
             fw = ('react-router' if 'react-router' in text else 'vue-router' if 'vue-router' in text
                   else 'angular' if '@angular/router' in text else None)
             if fw:
-                for m in JSX_ROUTE.finditer(text):
-                    self.add('route', m.group(1), path, L(m), 'jsx-route', 'medium', fw, 'web')
-                for m in OBJ_PATH.finditer(text):
-                    self.add('route', m.group(1) or '/', path, L(m), 'route-config', 'medium', fw, 'web',
-                             note='nested routes may be relative to a parent path')
+                self.route_files[self.rel(path)] = fw   # read by js_routes after the walk (paths need every file)
+            if '@azure/functions' in text:
+                self.scan_azure_js(path, text, offsets)
+            for m in SUCCESS_MSG.finditer(text):
+                if m.group(1) in ('enqueueSnackbar', 'showToast', 'showNotification') and \
+                        'success' not in text[m.end(): m.end() + 120].lower():
+                    continue
+                self.add('goal', m.group(2), path, L(m), 'success-message', 'low',
+                         note=f'success message shown with {m.group(1)}(); a candidate goal: confirm it marks completion')
             if '@react-navigation' in text:
                 for m in RN_SCREEN.finditer(text):
                     self.add('screen', m.group(2), path, L(m), 'react-navigation', 'high', 'react-navigation', 'mobile')
@@ -552,13 +576,7 @@ class Extractor:
                         uri = f"{attrs['scheme']}://{attrs.get('host', '')}{attrs.get('pathPrefix', attrs.get('path', ''))}"
                         self.add('entry_point', uri, path, L(m), 'android-intent-filter', 'high', None, 'android')
         elif ext == '.py':
-            for m in FLASK_ROUTE.finditer(text):
-                verbs = re.findall(r'\w+', m.group(2) or 'GET')
-                self.add('endpoint', f'{"|".join(v.upper() for v in verbs)} {m.group(1)}', path, L(m), 'flask-route',
-                         'high', 'flask', 'api')
-            for m in FASTAPI_ROUTE.finditer(text):
-                self.add('endpoint', f'{m.group(1).upper()} {m.group(2)}', path, L(m), 'fastapi-route', 'high',
-                         'fastapi', 'api')
+            self.py_files[self.rel(path)] = text   # Flask, FastAPI, Azure Functions and CLIs: read with ast after the walk
             if name == 'urls.py':
                 for m in DJANGO_PATH.finditer(text):
                     self.add('route', '/' + m.group(1).lstrip('^').rstrip('$'), path, L(m), 'django-urls', 'medium',
@@ -579,6 +597,14 @@ class Extractor:
 
         if ext in ('.json', '.yaml', '.yml') and re.match(r'(openapi|swagger)', name, re.I):
             self.scan_openapi(path, text, offsets)
+        if name == 'host.json':
+            self.host_files[self.rel(path)] = text
+        elif name == 'function.json':
+            self.scan_function_json(path, text)
+        elif name == 'pyproject.toml':
+            self.scan_pyproject_scripts(path, text)
+        elif name == 'package.json':
+            self.scan_package_bin(path, text)
 
         if ext in ('.js', '.jsx', '.ts', '.tsx', '.mjs', '.vue', '.svelte', '.dart', '.kt', '.java', '.swift', '.py'):
             for m in GOAL_CALL.finditer(text):
@@ -589,6 +615,171 @@ class Extractor:
                 self.collect_wrappers(path, text, offsets)
             for m in FLAG_CALL.finditer(text):
                 self.flags.append({'key': m.group(2), 'call': m.group(1), 'file': self.rel(path), 'line': L(m)})
+
+    # ---- functions, command lines and the passes that need every file ----
+    def host_prefix(self, path: Path) -> str:
+        """Azure Functions HTTP route prefix from the nearest host.json (default `api`)."""
+        d = path.parent
+        while True:
+            hj = d / 'host.json'
+            if hj.is_file():
+                try:
+                    data = json.loads(hj.read_text(encoding='utf-8'))
+                    p = ((data.get('extensions') or {}).get('http') or {}).get('routePrefix', 'api')
+                    return p if isinstance(p, str) else 'api'
+                except (ValueError, OSError, AttributeError):
+                    return 'api'
+            if d == self.root or d.parent == d:
+                return 'api'
+            d = d.parent
+
+    def add_trigger(self, trigger: str, function: str, detail: str | None, path: Path, line: int, framework: str):
+        self.add('entry_point', f'{trigger} trigger: {detail or function}', path, line, f'{framework}-trigger', 'high',
+                 framework, 'api', note=f'function {function} runs when this {trigger} event happens; not user-facing '
+                                        f'by itself: find the user action that causes it')
+
+    def scan_function_json(self, path: Path, text: str):
+        """Azure Functions v1 programming model: <function>/function.json bindings."""
+        try:
+            bindings = json.loads(text).get('bindings') or []
+        except (ValueError, AttributeError):
+            return
+        fn = path.parent.name
+        for b in bindings:
+            t = str(b.get('type', ''))
+            if not t.endswith('Trigger') or b.get('direction', 'in') != 'in':
+                continue
+            if t == 'httpTrigger':
+                route = '/' + '/'.join(s for s in (self.host_prefix(path), b.get('route') or fn) if s)
+                for verb in [m.upper() for m in b.get('methods') or []] or ['ANY']:
+                    self.add('endpoint', f'{verb} {route}', path, 1, 'azure-functions-http', 'high', 'azure-functions', 'api')
+            else:
+                detail = b.get('path') or b.get('schedule') or b.get('queueName') or b.get('topicName') or b.get('eventHubName')
+                self.add_trigger(t[:-len('Trigger')], fn, detail, path, 1, 'azure-functions')
+
+    def scan_azure_js(self, path: Path, text: str, offsets):
+        """Azure Functions v4 Node model: app.http('name', { route, methods }), app.timer(...), app.storageBlob(...)."""
+        for m in AZ_JS_TRIGGER.finditer(text):
+            kind, fn = m.group(1), m.group(3)
+            opts = text[m.end(): m.end() + 800].split('handler', 1)[0]
+            line = self.line_of(offsets, m.start())
+            if kind == 'http':
+                rm = re.search(r'\broute\s*:\s*' + Q + r'([^"\'`]+)' + Q, opts)
+                methods = re.findall(r'["\'](GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)["\']', opts.split(']', 1)[0]) \
+                    if re.search(r'\bmethods\s*:', opts) else []
+                route = '/' + '/'.join(s for s in (self.host_prefix(path), rm.group(1) if rm else fn) if s)
+                for verb in methods or ['ANY']:
+                    self.add('endpoint', f'{verb} {route}', path, line, 'azure-functions-http', 'high', 'azure-functions', 'api')
+            else:
+                dm = re.search(r'\b(?:path|schedule|queueName|topicName|eventHubName)\s*:\s*' + Q + r'([^"\'`]+)' + Q, opts)
+                self.add_trigger(kind, fn, dm.group(1) if dm else None, path, line, 'azure-functions')
+
+    def scan_pyproject_scripts(self, path: Path, text: str):
+        """[project.scripts] and [tool.poetry.scripts] console commands."""
+        section = None
+        for n, line in enumerate(text.splitlines(), 1):
+            s = line.strip()
+            if s.startswith('['):
+                section = s.strip('[] ')
+                continue
+            if section in ('project.scripts', 'tool.poetry.scripts') and (m := re.match(r'["\']?([\w.-]+)["\']?\s*=', s)):
+                self.add('entry_point', f'cli: {m.group(1)}', path, n, 'console-script', 'high', None, 'cli')
+
+    def scan_package_bin(self, path: Path, text: str):
+        try:
+            data = json.loads(text)
+        except ValueError:
+            return
+        b = data.get('bin') if isinstance(data, dict) else None
+        names = list(b) if isinstance(b, dict) else [data.get('name')] if isinstance(b, str) and data.get('name') else []
+        for name in names:
+            m = re.search(r'"' + re.escape(str(name)) + r'"', text) if isinstance(b, dict) else re.search(r'"bin"', text)
+            line = text.count('\n', 0, m.start()) + 1 if m else 1
+            self.add('entry_point', f'cli: {name}', path, line, 'package-bin', 'high', None, 'cli')
+
+    def scan_python_project(self):
+        """Flask, FastAPI and Azure Functions routes (with router and blueprint prefixes), function triggers
+        and command lines, read with ast so decorators inside docstrings never count."""
+        res = scan_python(self.py_files, self.host_files)
+        for r in res['routes']:
+            path = self.root / r['file']
+            note = None
+            if r['mount'] == 'unmounted':
+                note = ('no include_router/register_blueprint call was found for this router; a mount prefix may be '
+                        'missing from the path')
+            elif r['mount'] == 'dynamic':
+                note = 'part of the path or its prefix is computed; check the full path by hand'
+            self.add('endpoint', f"{r['method']} {r['path']}", path, r['line'], f"{r['framework']}-route",
+                     'high' if r['mount'] == 'resolved' else 'medium', r['framework'], 'api',
+                     **({'note': note} if note else {}))
+            self.frameworks.add(r['framework'])
+        for t in res['triggers']:
+            detail = t.get('path') or t.get('schedule') or t.get('queue_name') or t.get('topic_name') or t.get('event_hub_name')
+            self.add_trigger(t['trigger'], t['function'], detail, self.root / t['file'], t['line'], t['framework'])
+            self.frameworks.add(t['framework'])
+        for c in res['clis']:
+            self.add('entry_point', f"cli: {c['command']}", self.root / c['file'], c['line'], f"{c['framework']}-command",
+                     'high', None, 'cli')
+        for d in res['dynamic_includes']:
+            self.py_notes.append(f"{d['file']}:{d['line']}: a router is included through a variable or loop "
+                                 f"({d['text']}); routes of routers marked unmounted may sit under its prefix")
+        for rel in res['unparsed']:   # can't parse: fall back to text matching, with docstrings blanked
+            text = blank_strings(self.py_files[rel])
+            path = self.root / rel
+            offsets = [i for i, c in enumerate(text) if c == '\n']
+            for m in FLASK_ROUTE.finditer(text):
+                verbs = re.findall(r'\w+', m.group(2) or 'GET')
+                self.add('endpoint', f'{"|".join(v.upper() for v in verbs)} {m.group(1)}', path,
+                         self.line_of(offsets, m.start()), 'flask-route-text', 'low', 'flask', 'api',
+                         note='file did not parse; read as text, so blueprint prefixes are not applied')
+            for m in FASTAPI_ROUTE.finditer(text):
+                self.add('endpoint', f'{m.group(1).upper()} {m.group(2)}', path, self.line_of(offsets, m.start()),
+                         'fastapi-route-text', 'low', 'fastapi', 'api',
+                         note='file did not parse; read as text, so router prefixes are not applied')
+
+    def scan_client_routes(self):
+        consts = Constants()
+        for rel, text in self.js_texts.items():
+            consts.collect(rel, text)
+        for r in scan_js_routes(self.js_texts, self.route_files, consts):
+            extra = {'note': r['note']} if r.get('note') else {}
+            if r['index']:
+                extra['index'] = True
+            self.add('route', r['name'], self.root / r['file'], r['line'], r['detector'], r['confidence'],
+                     r['framework'], 'web', **extra)
+
+    def app_root(self, rel: str) -> str:
+        """The nearest directory above a file that holds a project manifest ('' for the repository root)."""
+        parts = Path(rel).parts[:-1]
+        for i in range(len(parts), 0, -1):
+            d = '/'.join(parts[:i])
+            if d not in self.manifest_dirs:
+                try:
+                    names = set(os.listdir(self.root / d))
+                except OSError:
+                    names = set()
+                self.manifest_dirs[d] = bool(names & set(MANIFESTS)) or any(n.endswith('.csproj') for n in names)
+            if self.manifest_dirs[d]:
+                return d
+        return ''
+
+    def service_labels(self, items: list[dict]) -> dict[str, str]:
+        """app root -> short label, when the items come from more than one app (multi-service monorepos)."""
+        roots = sorted({self.app_root(it['file']) for it in items})
+        if len(roots) < 2:
+            return {}
+        split = [r.split('/') if r else [] for r in roots]
+        lead = 0
+        while all(len(s) > lead for s in split) and len({s[lead] for s in split}) == 1:
+            lead += 1
+        trail = 0
+        while all(len(s) > lead + trail for s in split) and len({s[-1 - trail] for s in split}) == 1:
+            trail += 1
+        out = {}
+        for r, s in zip(roots, split):
+            core = s[lead:len(s) - trail] if trail else s[lead:]
+            out[r] = '-'.join(core) or (s[-1] if s else 'root')
+        return out
 
     def scan_openapi(self, path, text, offsets):
         if path.suffix == '.json':
@@ -620,6 +811,10 @@ class Extractor:
         if visits or e2e_dir or path.name.endswith(('UITests.swift', 'UITest.swift')):
             self.tests.append({'file': rel, 'framework_hint': sorted(kinds) or None,
                                'visits': sorted(set(visits)), 'test_cases': len(TEST_CASE.findall(text))})
+        elif path.suffix in ('.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.py') and TEST_NAME_RE.search(path.name):
+            cases = len(PY_TEST_CASE.findall(text)) if path.suffix == '.py' else len(TEST_CASE.findall(text))
+            self.unit_tests['files'] += 1
+            self.unit_tests['test_cases'] += cases
 
     def detect_project(self, path: Path, text: str):
         name = path.name
@@ -636,7 +831,7 @@ class Extractor:
             self.frameworks.add('android')
         elif name.startswith(('requirements', 'pyproject')):
             low = text.lower()
-            for fw in ('flask', 'fastapi', 'django'):
+            for fw in ('flask', 'fastapi', 'django', 'pytest'):
                 if re.search(rf'^\s*"?{fw}\b', low, re.M):
                     self.frameworks.add(fw)
         elif name == 'Gemfile' and re.search(r"gem\s+['\"]rails['\"]", text):
@@ -671,8 +866,11 @@ class Extractor:
                 self.scan_guard(path, text)
             self.file_route(path, list(rel_parts), deps, text)
             self.scan_content(path, text, deps)
+        self.scan_python_project()
+        self.scan_client_routes()
         self.wrappers = self.resolve_wrappers()
         fw = self.frameworks
+        if any(i['platform'] == 'cli' for i in self.items if i.get('platform')): self.platforms.add('cli')
         if fw & WEB_FW: self.platforms.add('web')
         if fw & {'react-native', 'expo-router', 'react-navigation', 'flutter'}: self.platforms |= {'ios', 'android'}
         if 'android' in fw: self.platforms.add('android')
@@ -683,15 +881,24 @@ class Extractor:
     def result(self) -> dict:
         seen, unique = set(), []
         for it in sorted(self.items, key=lambda i: (i['kind'], i['file'], i['line'], i['name'])):
-            key = (it['kind'], it['name'], it['file'])
+            key = (it['kind'], it['name'], it['file'], bool(it.get('index')))
             if key not in seen:
                 seen.add(key); unique.append(it)
-                if it['kind'] in ('route', 'screen', 'endpoint'):
-                    dom = domain_hint(it['name'])
-                    if dom:
-                        it['domain'] = dom
-                    if TEST_ONLY_HINT.search(it['name'] + ' ' + it['file']) and 'note' not in it:
-                        it['note'] = 'looks like test-only or sample surface; confirm before mapping it'
+        labels = {kind: self.service_labels([i for i in unique if i['kind'] == kind])
+                  for kind in ('route', 'screen', 'endpoint')}
+        for it in unique:
+            service = labels.get(it['kind'], {}).get(self.app_root(it['file'])) if labels.get(it['kind']) else None
+            if service:
+                it['service'] = service
+            if it['kind'] in ('route', 'screen', 'endpoint'):
+                dom = domain_hint(it['name'])
+                slug = re.sub(r'[^a-z0-9]+', '-', service.lower()).strip('-') if service else None
+                if slug:
+                    dom = f'{slug}-{dom}' if dom and dom != slug else slug
+                if dom:
+                    it['domain'] = dom
+                if TEST_ONLY_HINT.search(it['name'] + ' ' + it['file']) and 'note' not in it:
+                    it['note'] = 'looks like test-only or sample surface; confirm before mapping it'
         surface: dict[str, list] = {'routes': [], 'screens': [], 'endpoints': [], 'entry_points': [], 'goals': []}
         counters: dict[str, int] = {}
         for it in unique:
@@ -706,11 +913,27 @@ class Extractor:
             'frameworks': sorted(self.frameworks),
             'surface': surface,
             'context': {'flags': self.flags, 'tests': self.tests, 'guards': self.guards, 'layouts': self.layouts,
-                        'path_aliases': self.aliases, 'goal_wrappers': getattr(self, 'wrappers', [])},
+                        'path_aliases': self.aliases, 'goal_wrappers': getattr(self, 'wrappers', []),
+                        'unit_tests': {**self.unit_tests, 'runners': sorted(self.frameworks & UNIT_RUNNERS),
+                                       'note': 'Unit and component test files outside end-to-end folders. They are '
+                                               'not journey tests: count them, but match journeys to e2e tests '
+                                               '(context.tests).'},
+                        'services': sorted({it['service'] for it in unique if it.get('service')}),
+                        'python_mounts': self.py_notes},
             'stats': {'files_scanned': self.files_scanned, 'truncated': self.truncated,
                       'counts': {k: len(v) for k, v in surface.items()}},
             'limitations': [
-                'Regex/heuristic extraction: verify every item; nested and dynamically built routes are not resolved.',
+                'Heuristic extraction: verify every item. Client routes are joined through nested route objects, '
+                '<Route> elements and splat mounts in other files, and constant paths from plain object literals are '
+                'resolved; routes built at runtime are not, and keep a note.',
+                'Python routes are read with ast: FastAPI router and include_router prefixes and Flask blueprint '
+                'prefixes are applied when they are literals; decorators in docstrings are ignored. Routes marked '
+                '"no include_router ... was found" may be missing a prefix.',
+                'When endpoints (or routes) come from several apps in one repository, each item carries a service '
+                'label (from the nearest project manifest) and its proposed domain starts with it.',
+                'Entry points include command-line commands (argparse sub-commands, click/typer commands, console '
+                'scripts, package.json bin) and Azure Functions triggers; triggers are not user-facing by themselves.',
+                'Goals with detector success-message are low-confidence candidates from success toasts and messages.',
                 'Low-confidence items (e.g. class names ending in Screen/View) may be components, not screens.',
                 'Navigation edges and handlers are not extracted; the agent must trace them. Guards are only '
                 'summarised (context.guards for Next.js middleware/proxy files, guard_hints in context.layouts); '
@@ -723,7 +946,115 @@ class Extractor:
         }
 
 
+SELF_TEST_ROUTER = '''from fastapi import APIRouter
+
+
+class BakeryRouter(APIRouter):
+    """Adds default responses."""
+'''
+SELF_TEST_FILES = {
+    # two FastAPI services with an APIRouter subclass, router prefixes and an include_router prefix
+    'services/orders/pyproject.toml': '[project]\nname = "orders"\n',
+    'services/stock/pyproject.toml': '[project]\nname = "stock"\n',
+    'services/orders/api/routes/__init__.py': SELF_TEST_ROUTER,
+    'services/stock/api/routes/__init__.py': SELF_TEST_ROUTER,
+    'services/orders/api/routes/loaves.py': 'from api.routes import BakeryRouter\n\nrouter = BakeryRouter(prefix="/v1")\n\n\n'
+                                            '@router.get("/loaves")\ndef list_loaves():\n    return []\n\n\n'
+                                            '@router.post("/loaves/{loaf_id}/bake")\ndef bake(loaf_id: int):\n    return {}\n',
+    'services/stock/api/routes/loaves.py': 'from api.routes import BakeryRouter\n\nrouter = BakeryRouter(prefix="/v1")\n\n\n'
+                                           '@router.get("/loaves")\ndef list_stock():\n    return []\n',
+    'services/orders/api/main.py': 'from fastapi import FastAPI\nfrom api.routes import loaves\n\napp = FastAPI()\n'
+                                   'app.include_router(loaves.router, prefix="/shop")\n\n\n@app.get("/status")\n'
+                                   'def status():\n    return {"ok": True}\n',
+    'services/stock/api/main.py': 'from fastapi import FastAPI\nfrom .routes.loaves import router as loaves_router\n\n'
+                                  'app = FastAPI()\napp.include_router(loaves_router)\n',
+    # decorators in docstrings are usage examples, not routes
+    'libs/common/auth/deps.py': '"""Usage::\n\n    router = APIRouter(prefix="/v1")\n\n    @router.get("/secret")\n'
+                                '    def secret(): ...\n"""\nfrom fastapi import Depends\n\n\ndef current_user():\n'
+                                '    """@router.post("/not-a-route")"""\n',
+    'libs/common/tools/cli.py': 'import argparse\n\n\ndef main():\n    parser = argparse.ArgumentParser(prog="bakery-admin")\n'
+                                '    sub = parser.add_subparsers(dest="command")\n    sub.add_parser("export")\n'
+                                '    sub.add_parser("import")\n',
+    'services/stock/functions/watcher/host.json': '{"version": "2.0"}\n',
+    'services/stock/functions/watcher/function_app.py':
+        'import azure.functions as func\n\napp = func.FunctionApp()\n\n\n'
+        '@app.blob_trigger(arg_name="blob", path="deliveries/{name}", connection="STORAGE")\ndef on_delivery(blob):\n'
+        '    pass\n\n\n@app.route(route="ovens/{oven_id}", methods=["GET"])\ndef oven(req):\n    pass\n',
+    # a React Router SPA: constant paths, index routes, a lazy route and a nested <Routes> under a splat mount
+    'web/package.json': '{"dependencies": {"react-router-dom": "6.28.0"}, "devDependencies": {"vitest": "3.2.4"}}\n',
+    'web/src/routes/paths.ts': "export const ROUTES = {\n  LOGIN: '/login',\n  SHOP: '/shop',\n"
+                               "  ADMIN: { ROOT: '/admin' },\n} as const;\n",
+    'web/src/routes/index.tsx':
+        "import { createBrowserRouter, Navigate } from 'react-router-dom';\nimport { ROUTES } from './paths';\n"
+        "import ShopModule from '../shop/ShopModule';\n\n// { path: '/commented-out', element: <Gone /> }\n"
+        "export const router = createBrowserRouter([\n  { path: ROUTES.LOGIN, element: <LoginPage /> },\n  {\n"
+        "    path: '/',\n    element: <Layout />,\n    children: [\n"
+        "      { index: true, element: <Navigate to={ROUTES.SHOP} replace /> },\n"
+        "      { path: `${ROUTES.SHOP}/*`, element: <ShopModule /> },\n"
+        "      { path: 'reports', lazy: () => import('../reports/ReportsPage') },\n"
+        "      { path: ROUTES.ADMIN.ROOT, element: <Admin />, children: [{ path: 'users', element: <Users /> }] },\n"
+        "    ],\n  },\n]);\n",
+    'web/src/shop/ShopModule.tsx':
+        "import { Routes, Route, Navigate } from 'react-router-dom';\nimport { toast } from 'sonner';\n\n"
+        "export default function ShopModule() {\n  const done = () => toast.success('Order placed');\n  return (\n"
+        "    <Routes>\n      <Route index element={<Navigate to=\"cakes\" />} />\n"
+        "      <Route path=\"cakes\" element={<Cakes />} />\n      <Route path=\"cakes/:cakeId\" element={<CakeDetail />} />\n"
+        "      <Route path=\"orders/*\" element={<Orders />}>\n        <Route path=\"history\" element={<History />} />\n"
+        "      </Route>\n    </Routes>\n  );\n}\n",
+    'web/src/shop/Cakes.test.tsx': "import { it } from 'vitest';\nit('lists cakes', () => {});\nit('filters cakes', () => {});\n",
+    'web/e2e/shop.spec.ts': "import { test } from '@playwright/test';\ntest('shop', async ({ page }) => {\n"
+                            "  await page.goto('/shop/cakes');\n});\n",
+}
+SELF_TEST_WANT = {
+    'endpoints': {('GET /shop/v1/loaves', 'orders-shop'), ('POST /shop/v1/loaves/{loaf_id}/bake', 'orders-shop'),
+                  ('GET /status', 'orders-status'), ('GET /v1/loaves', 'stock-loaves'),
+                  ('GET /api/ovens/{oven_id}', 'stock-functions-watcher-ovens')},
+    'routes': {'/login', '/', '/shop/*', '/reports', '/admin', '/admin/users', '/shop', '/shop/cakes',
+               '/shop/cakes/:cakeId', '/shop/orders/*', '/shop/orders/history'},
+    'entry_points': {'cli: bakery-admin export', 'cli: bakery-admin import', 'blob trigger: deliveries/{name}'},
+    'goals': {'Order placed'},
+}
+
+
+def self_test() -> int:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'bakery'
+        for rel, text in SELF_TEST_FILES.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(text, encoding='utf-8')
+        data = Extractor(root.resolve(), 1000).run()
+    s = data['surface']
+    got = {'endpoints': {(i['name'], i.get('domain')) for i in s['endpoints']},
+           'routes': {i['name'] for i in s['routes']},
+           'entry_points': {i['name'] for i in s['entry_points']},
+           'goals': {i['name'] for i in s['goals']}}
+    problems = []
+    for key, want in SELF_TEST_WANT.items():
+        if got[key] != want:
+            problems.append(f'{key}: missing {sorted(want - got[key])}, unexpected {sorted(got[key] - want)}')
+    index = sorted(i['name'] for i in s['routes'] if i.get('index'))
+    if index != ['/', '/shop']:
+        problems.append(f'index routes: {index}')
+    ut = data['context']['unit_tests']
+    if (ut['files'], ut['test_cases'], ut['runners']) != (1, 2, ['vitest']):
+        problems.append(f'unit tests: {ut}')
+    if [t['file'] for t in data['context']['tests']] != ['web/e2e/shop.spec.ts']:
+        problems.append(f"e2e tests: {data['context']['tests']}")
+    if 'cli' not in data['platforms'] or data['context']['services'] != ['orders', 'stock', 'stock-functions-watcher']:
+        problems.append(f"platforms {data['platforms']}, services {data['context']['services']}")
+    for p in problems:
+        print('FAIL', p)
+    if problems:
+        print('SELF-TEST FAILED'); return 1
+    c = data['stats']['counts']
+    print(f"self-test passed: {c['endpoints']} endpoints, {c['routes']} routes, {c['entry_points']} entry points, "
+          f"{c['goals']} goals")
+    return 0
+
+
 def main() -> int:
+    if '--self-test' in sys.argv[1:]:
+        return self_test()
     ap = argparse.ArgumentParser(description='Extract a candidate user-facing surface from a repository.')
     ap.add_argument('repo', type=Path)
     ap.add_argument('--out', type=Path, help='write JSON here instead of stdout')
@@ -744,6 +1075,7 @@ def main() -> int:
         c = data['stats']['counts']
         print(f"Wrote {args.out}: {c['routes']} routes, {c['screens']} screens, {c['endpoints']} endpoints, "
               f"{c['entry_points']} entry points, {c['goals']} goals, {len(data['context']['tests'])} e2e test files "
+              f"and {data['context']['unit_tests']['files']} unit test files "
               f"({data['stats']['files_scanned']} files scanned{', TRUNCATED' if data['stats']['truncated'] else ''}); "
               f"{len(data['context']['guards'])} guard files, {len(data['context']['layouts'])} layouts, "
               f"{len(data['context']['goal_wrappers'])} tracking wrappers")

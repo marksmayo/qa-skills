@@ -31,6 +31,8 @@
         "framework": {"type": "string"},
         "platform": {"type": "string"},
         "domain": {"type": "string"},
+        "service": {"type": "string", "description": "The app or service the item belongs to, when the repository holds several (from the nearest project manifest). The proposed domain starts with it."},
+        "index": {"type": "boolean", "description": "A client-side index route: it renders at its parent's path."},
         "note": {"type": "string"}
       }
     }
@@ -212,6 +214,7 @@
     },
     "open_questions": {
       "type": "array",
+      "description": "Questions that span journeys or concern no single journey. A question about one journey goes in that journey's open_questions only; reports list each text once.",
       "items": {
         "type": "object",
         "required": ["id", "question"],
