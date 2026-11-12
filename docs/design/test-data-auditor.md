@@ -359,3 +359,72 @@ Python-only.
 - **Not changed here.**
   - Prisma `schema.prisma` is still not a drift source.
   - JS `loaded_by` is still per file.
+
+## As built (v1.2.0): a Python monorepo with production extracts
+
+Run on a Python monorepo: two FastAPI services and a shared library, each with its own
+`pyproject.toml`, about 200 data sources, a 37 MB repo-level `test-data/` tree of CSV extracts,
+`.xlsx` workbooks and an HTML table saved as `.xls`, and pandas in the code under test. Version
+1.1.0 produced a valid report, but it missed the whole `test-data/` tree, read dated run ids as
+cards and phones, and those false positives then made every path in the report "leak".
+
+- **Inventory.**
+  - `test-data/`, `testData/`, `test-fixtures/`, `sample-data/` and similar names are test data
+    trees, and `--data-dir` names any other (recorded in `inventory.json`, read back by
+    `scan_data.py`).
+  - An `.xls` is sniffed: HTML or XML text is scanned as text, and HTML tables become rows under
+    their header. `.xlsx` workbooks are read with stdlib `zipfile` (shared and inline strings);
+    findings cite lines of their text form (`datafiles.py <file> --text`).
+  - A factory by file name counts only in a test area, so a product reader factory is not test
+    data. A data migration that seeds rows is a seed, and is never "unused".
+  - **Matching a file to its tests.** A bare file name counted anywhere in the repo, so one test
+    naming a file in another service was credited with loading it. Now a bare name counts only in
+    the same package root (and only if unique there, unless the directory is named too); data in
+    an enclosing root needs the directory named; a path tail always counts. Globs over a named
+    directory, code that names a directory and none of its files, and helper functions used by
+    `parametrize` count as loading. Unused files on the repository went from 69 to 46, and every
+    remaining one was checked by hand to be unread.
+- **New rules.**
+  - `customer_extract`: a table of 20 or more rows whose column is named for a person or customer
+    and holds mostly names. It is judged by the header and the row count and reports file, header
+    line and column only; the leak check protects the column's multi-word values. It found 7
+    extracts on the repository. A repo's own abbreviated headers need `person_columns` in
+    `rules.json` extended.
+  - Secrets: API key and subscription-key headers (`x-api-key`, `Ocp-Apim-Subscription-Key`,
+    `x-functions-key`) and 32-64 character hex values under key, token or secret fields. The one
+    missed gateway key is now a handoff.
+  - `module_reload`: `importlib.reload` in test code, with the module's import-time environment
+    reads. The confirmed order dependence on the repository is now a candidate.
+- **False positives.**
+  - Compact date-times and dated run ids (`yyyymmdd-hhmmss`, `yyyymmdd-NNN`), digit runs inside a
+    path or identifier, and one- or two-digit repeats are never cards; dated run ids and bare
+    digit strings with no phone field are never phones. Card and phone candidates on the
+    repository went from 33 to 0.
+  - `literal_lookup` needs a database or seed in reach and skips large ids in "not found" tests;
+    `auto_increment` needs an equality. Magic-id candidates went from 181 to 33.
+  - `/home/site/wwwroot` and CI runners' homes are reserved paths, not someone's machine.
+  - Schema drift compares a fixture only with models in its own package root, needs half the
+    record's keys to be the model's, keeps same-named models from two services apart, and counts
+    unmatched records per file. Drift candidates went from 68 to 0.
+  - Near-duplicate checks compare large pairs by line sets: character matching on large extracts
+    took over ten minutes.
+- **Leak check.** Each candidate's value is the span on its line whose fingerprint matches, not
+  every number on the line. Known repository paths are blanked before matching, both in the
+  validator and in `redact_evidence.py`, which no longer rewrites paths. The validator skips
+  `candidates.json` as the redactor does. A review dismissal may say `not_personal_data: true`,
+  which lifts the check for that candidate only.
+- **Runs.** The validator rejects an experiment citing a run with no parsed tests, a timeout, or
+  an exit code other than 0 or 1 (a crashed interpreter recorded as "0 passed, 0 failed"); such an
+  experiment is `errored`. It checks the variation text against what `runs.json` recorded, and
+  `experiment.cwd` makes case ids from a package-directory run repo-relative. SKILL.md covers the
+  `clock_shift.py` crash when pandas is imported after it, and running each package with its own
+  environment.
+- **Rubric and summary.** The personal-data P0 rule wins over the suspected cap. Evidence
+  completeness leaves out the experiment share when nothing is confirmable. The headline's finding
+  count is checked.
+- **Not changed here** (shared files, owned elsewhere): `clock_shift.py` still patches the
+  classes at load; `run_tests.py` still records a crashed run with zero totals, builds reverse-order
+  ids from pytest's rootdir, and records case ids relative to `--cwd`.
+- **Example.** `clinic-api` gains a customer extract with dated batch ids, a module-reload pair of
+  tests (confirmed by a reverse-order run), an HTML table saved as `.xls`, and a placeholder
+  `x-api-key` header.

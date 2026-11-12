@@ -1,7 +1,7 @@
 ---
 name: test-data-auditor
 description: Audit the data tests depend on (fixtures, factories, seeds, snapshots, HTTP recordings and inline literals, in Python and JavaScript/TypeScript suites) for time bombs, real-looking personal data, magic ids, environment coupling, shared mutable fixtures, unseeded randomness, schema drift, snapshot rot, unused or duplicate files, locale assumptions and files tests leave behind. Every rule runs statically; time bombs, shared state and locale assumptions are then confirmed with real runs under a moved clock, reversed order or another locale. Personal data is never echoed (only file, line, field and data type), secrets are handed to code-security-auditor, and the report never calls test data "clean".
-version: 1.1.0
+version: 1.2.0
 ---
 
 # Test data auditor
@@ -73,7 +73,8 @@ Output:
 | Input | Default | Notes |
 |---|---|---|
 | Repo | required | |
-| Paths | auto | Test directories, fixtures, seeds, `__snapshots__`, cassettes and recordings, mocks, mobile test assets |
+| Paths | auto | Test directories (`tests/`, `fixtures/`, `testdata/`, `test-data/`, `sample-data/` and the like), seeds, `__snapshots__`, cassettes and recordings, mocks, mobile test assets |
+| Data dirs | none | `--data-dir <dir>` (repeatable) for a tree of test data under a name the inventory doesn't know |
 | Today | the real date | The date the time-bomb arithmetic counts from; record it |
 | Clock shift | `+400d` | For confirming time bombs, plus a month-end and a 29 February run |
 | Markers | none | `{"anonymised_by": {"path": "reference"}}`: lowers personal data one level (Critical to Serious), is cited in the finding, and never hides it |
@@ -83,7 +84,7 @@ Output:
 ## Step 1: Inventory
 
 ```bash
-python scripts/inventory.py <repo> --out <run>/inventory.json [--markers markers.json]
+python scripts/inventory.py <repo> --out <run>/inventory.json [--markers markers.json] [--data-dir <dir> ...]
 ```
 
 Every data source gets a kind (fixture, factory, seed, snapshot, recording, inline or support), a
@@ -103,8 +104,24 @@ A test loads a source when the source's file name appears in one of four places:
 - **a source module:** the tests in modules that import it (a seed loaded by the app, for
   example).
 
+How a mention is matched, so reach isn't overstated in a monorepo:
+
+- the repo path, or its tail (`orders/export.csv`, also as `Path(DIR) / "orders" / "export.csv"`),
+  always counts;
+- a bare file name counts from code in the same package root (the nearest `pyproject.toml`,
+  `package.json` and the like) when no other file there has that name, or when the module also
+  names the directory. Data in an enclosing root (a repo-level `test-data/`) needs the directory
+  named too. A file name in another service never counts;
+- a glob (`DIR.glob("*.yaml")`) counts when the module names the directory, and so does code that
+  names the directory alone (`seeds/families`) and none of its files: a loader of what is there;
+- helper functions in a test module (a loader used by `parametrize`) count for every test in it.
+
 Binary and encrypted files, and images, fonts and media (PNG, OTF, MP4), are `not_assessed`.
-SVG is text, and is scanned.
+SVG is text, and is scanned. An `.xls` file is sniffed: report tools save HTML tables and XML
+spreadsheets with that extension, and those are scanned as text (HTML tables as rows under their
+header). `.xlsx` workbooks are read with stdlib `zipfile` (shared and inline strings); their line
+numbers count lines of the text form that `python scripts/datafiles.py <file> --text` prints. A
+data migration that seeds rows (`versions/007_seed_rooms.py`) is a seed, and is never "unused".
 
 ## Step 2: Static rules
 
@@ -115,18 +132,18 @@ python scripts/schema_drift.py <repo> --inventory <run>/inventory.json --out <ru
 
 | Category | Rules |
 |---|---|
-| `personal_data` | Email at a public or non-reserved domain; phone outside the reserved ranges; Luhn-valid card not on a test list (dates, times, version strings and epoch timestamps are never phones or cards); Medicare, TFN or NHS number with a valid check digit; SSN or National Insurance number in valid format; IBAN with a valid checksum; full name with a street address; date of birth beside a name |
+| `personal_data` | A tabular extract (CSV, TSV, HTML or `.xlsx` sheet, JSON list) with 20 or more rows whose column is named for a person or customer (`customer_name`, `client`, `Cust Name`) and holds mostly names: judged by the header and the row count, reported by file, header line and column only (`customer_extract`; extend `person_columns` in `data/rules.json` for a repo's own abbreviations); email at a public or non-reserved domain; phone outside the reserved ranges; Luhn-valid card not on a test list (dates, times, version strings and epoch timestamps are never phones or cards); Medicare, TFN or NHS number with a valid check digit; SSN or National Insurance number in valid format; IBAN with a valid checksum; full name with a street address; date of birth beside a name |
 | `time_bomb` | A fixed expiry date in the future that the code compares with now, giving the date it fails on; a future literal date in a test that also reads the clock |
-| `magic_id` | A lookup by a literal id, checked against the seed rows; a literal UUID; an assertion on an auto-increment id |
-| `environment_coupling` | A production or staging host, a real bucket, an AWS account id, an absolute path on someone's machine |
-| `shared_mutable` | A session, module, package or class-scoped fixture that returns a mutable value a test mutates |
+| `magic_id` | A lookup by a literal id where a database or seed is in reach (the test loads a seed, has a database or integration marker, requests a database fixture, or sits in an integration tree), checked against the seed rows; not a large id in a "not found" test, nor an all-nines sentinel; a literal UUID; an equality assertion on an auto-increment id (`x.id == 3`, not `x.id > 0`) |
+| `environment_coupling` | A production or staging host, a real bucket, an AWS account id, an absolute path on someone's machine (platform roots such as `/home/site/wwwroot` or a CI runner's home are the same everywhere, so they are not) |
+| `shared_mutable` | A session, module, package or class-scoped fixture that returns a mutable value a test mutates; `importlib.reload(module)` in test code, with the module's import-time environment reads (`module_reload`): later tests see the reloaded state, so a test can pass only after it |
 | `nondeterministic` | `random` or Faker with no seed in the file; `uuid4()` in test data |
-| `schema_drift` | A fixture field the model no longer has; a missing required field; an enum value the model doesn't allow (dataclasses, pydantic, SQLAlchemy, TypedDict, JSON Schema, OpenAPI JSON) |
+| `schema_drift` | A fixture field the model no longer has; a missing required field; an enum value the model doesn't allow (dataclasses, pydantic, SQLAlchemy, TypedDict, JSON Schema, OpenAPI JSON). Only models from the fixture's own package root count, and a record matches a model only when half its keys are the model's fields |
 | `snapshot_rot` | A snapshot with no test file; a snapshot over 500 lines |
 | `unused_or_duplicate` | A data file no test loads; a file at least 90% similar to another one of the same format |
 | `locale_assumption` | A test comparing a literal with a function that formats using the machine locale (`setlocale(..., "")` with `locale.currency`, `format_string` or locale-dependent `strftime`; in JS, `toLocaleString()`, `toLocaleDateString()`, `Intl.NumberFormat()` and the like with no locale argument) |
 | `residue` | Files a test run leaves in the working tree (uploads, exports, databases), found with `residue.py` (Step 4) |
-| `secret` | An authorization header, an API key or password field, an AWS key, a private key, a live token: handed to code-security-auditor unless it is an obvious placeholder |
+| `secret` | An authorization header; an API key or password field; an API key or subscription-key header (`x-api-key`, `Ocp-Apim-Subscription-Key`, `x-functions-key`); a 32-64 character hex value under a key, token or secret field; an AWS key, a private key, a live token: handed to code-security-auditor with location and type only, unless it is an obvious placeholder |
 
 Rule settings are in `data/rules.json` and the reserved values in `data/reserved.json`.
 
@@ -161,7 +178,12 @@ beside a name, phone and email fields. The JS/TS rules:
   - SSN-shaped strings, which the SSN rule handles;
   - values under identifier, code, password, amount or geometry fields (`meetingId`, `pin`,
     `viewBox`);
-  - UUIDs: a UUID is never a card number, even when it passes Luhn.
+  - UUIDs: a UUID is never a card number, even when it passes Luhn;
+  - compact date-times and dated run ids (`20261103-142530`, `20261103-001`), digit runs inside
+    a path or identifier (`runs/20261103-142530/`, `key-0000...`), and runs of one or two
+    repeated digits;
+  - a bare string of digits with no phone field and no separators or `+`: an order number or an
+    id far more often than a phone. Under a phone field it is still checked.
 - **Dismissed by rule as a placeholder pattern:** a phone whose last seven digits use one or two
   digit values (`1111112`, `0000004`), or run in sequence (`1234567`, `9876543`).
 - **Fiction ranges:**
@@ -178,7 +200,10 @@ Each candidate ends up in exactly one of three places:
   Is the fixture really read by an assertion?
 - **`dismissed`.** Use `by: rule` for a reserved-value dismissal, quoting the rule. Use
   `by: review` for your own judgement, with a reason, for example "a placeholder record made of
-  placeholder words". Never quote the value.
+  placeholder words". Never quote the value. When a personal-data candidate is not personal data
+  at all (a dated run id read as a phone, an order number), add `"not_personal_data": true`: the
+  validator then stops protecting its value, so a path or id that contains it doesn't fail the
+  leak check. A placeholder name is still personal-data shaped: leave the flag off for it.
 - **`handoffs`.** Secrets go to code-security-auditor. Confirmed shared state goes to
   flaky-test-hunter.
 
@@ -204,15 +229,34 @@ Run the affected tests with `run_tests.py`, and compare each experiment with gre
 (label `baseline`). Confirm on the affected test files only, with two baselines. A whole-suite run
 on a busy machine times out and makes a poor baseline.
 
+**A crashed or empty run is not a result.** A run that parsed no tests, timed out, or exited with
+a code other than 0 or 1 (pytest 2 to 5 for an interrupted, internal, usage or no-tests error; a
+crashed interpreter's 3221225725 or a negative signal code) can be recorded as "0 passed, 0
+failed". It is errored: the validator rejects an experiment that cites one as a baseline or as
+evidence, so set the experiment's result to `errored`, find out why, and rerun. Check also that
+the option you meant reached the runner: the validator compares the experiment's `variation` text
+(reverse, shuffle, locale, time zone, isolation) with what `runs.json` recorded.
+
+**Monorepos and packages.** Run each package from its own directory with its own environment
+(`--env PYTHONPATH=...`, one `run_tests.py` call per package): two services that each define a
+top-level `shared` package collide when installed together. Run case ids are relative to `--cwd`;
+when that is a subdirectory, give the experiment `"cwd": "<repo-relative dir>"` so the validator
+matches its cases to the repo-relative ids in `affected_tests`. With `--order reverse`, start
+pytest in its rootdir (the directory of `pytest.ini`) and pass test ids relative to it: ids built
+from an ancestor rootdir don't resolve from a package directory, and the run exits 4.
+
 Before validating, redact the evidence:
 
 ```bash
-python scripts/redact_evidence.py <run> --candidates <run>/candidates.json --repo <repo>
+python scripts/redact_evidence.py <run> --candidates <run>/candidates.json --repo <repo> [--report <run>/test_data_report.json]
 ```
 
 Runners copy test data into their output: Vitest and Jest put it in test names and failure
 messages. The validator rejects any evidence file that holds a flagged value. The script uses the
-validator's own matching, and prints only counts and candidate ids.
+validator's own matching, and prints only counts and candidate ids. Both take each candidate's
+value from the span on its line whose fingerprint is the candidate's (not every number on the
+line), leave repository paths alone, and skip `candidates.json`, which holds fingerprints and
+never values.
 
 ```bash
 python scripts/run_tests.py --preset pytest --cwd <copy> --out <run>/runs.json --label baseline --run-prefix B --repeat 2
@@ -229,7 +273,11 @@ python scripts/run_tests.py --preset pytest --cwd <copy> --out <run>/runs.json -
     and Vitest are per test, so they can't shift a whole suite. Otherwise use one of these:
     - libfaketime, for whole processes;
     - `clock_shift.py`, which moves Python's `date`, `datetime` and `time`, and must sit in the
-      directory pytest starts from;
+      directory pytest starts from. It replaces the `date` and `datetime` classes when it loads,
+      and a C-extension library imported after that (pandas with numpy) can crash the
+      interpreter with no traceback (Windows exit 3221225725). If the package imports pandas,
+      load a small wrapper plugin that imports pandas first and then `clock_shift`, and treat a
+      run with no parsed tests as errored;
     - for Node runners (Vitest, Jest), `scripts/clock_shift.mjs`, which replaces `Date` for the whole
       run, with the same `TDA_CLOCK_SHIFT` and `TDA_CLOCK_DATE` settings. Load it with
       `--env NODE_OPTIONS=--import=file:///<abs path>/clock_shift.mjs` (it reaches Vitest's workers),
@@ -274,7 +322,8 @@ Each finding's priority is computed:
   critical test, 2 for 2–9 tests, and 1 otherwise.
 - **Bands:** P0 at 9 or more, P1 at 6, P2 at 3, otherwise P3.
 - **Overrides:** real-looking personal data is always P0, and a `suspected` finding is never
-  above P2.
+  above P2. The personal-data rule wins: a personal-data finding is P0 whatever its confidence.
+  If you doubt the data is personal at all, dismiss it by review with your reason instead.
 
 ```bash
 python scripts/validate_test_data_report.py <run>/test_data_report.json --candidates <run>/candidates.json --repo <repo> \
@@ -286,7 +335,11 @@ python scripts/render_report.py <run>/test_data_report.json [--brief]
 most handoffs. A leak error names the candidate whose value leaked, never the value.
 
 Write the headline yourself, naming the P0 findings. Fix every error rather than editing
-computed fields.
+computed fields. The validator checks a finding count in the headline against the report. With
+no findings, say what was read rather than what wasn't found, for example: "No findings from the
+rules or the runs: 16 inline test files scanned, no fixture files; no experiment was needed."
+Evidence completeness then leaves out the experiment share (there was nothing to confirm) rather
+than counting it as complete.
 
 Show the user:
 1. the headline and the earliest time-bomb date;

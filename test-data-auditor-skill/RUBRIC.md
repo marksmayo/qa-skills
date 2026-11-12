@@ -11,7 +11,7 @@ Every candidate in `candidates.json` must appear exactly once, in one of these p
 |---|---|
 | a finding's `candidates` | It is a real problem. Group the candidates that describe one problem, such as the fields of one record |
 | `dismissed`, `by: rule` | `scan_data.py` set `auto_dismiss` (a reserved value, an invalid check digit, a placeholder digit pattern, or a placeholder secret). The reason quotes that rule |
-| `dismissed`, `by: review` | Your judgement (a placeholder record, a date nothing compares with now), with a reason of 15+ characters that doesn't quote the value |
+| `dismissed`, `by: review` | Your judgement (a placeholder record, a date nothing compares with now), with a reason of 15+ characters that doesn't quote the value. `not_personal_data: true` (personal-data candidates only) says the value is not personal data at all, such as a dated run id; it lifts the leak check for that candidate |
 | `handoffs` | Secrets go to code-security-auditor, unless `scan_data.py` marked the value an obvious placeholder (then they may be dismissed by rule). A secret is never dismissed by review. A confirmed `shared_mutable` finding must also be handed to flaky-test-hunter |
 
 A finding's candidates must all be its category, and the finding's file must be one of their
@@ -58,13 +58,15 @@ counts only where `scan_data.py` computed the fail date. A `residue` finding cit
 | P2 | ≥ 3 |
 | P3 | < 3 |
 
-A `suspected` finding is never above P2.
+A `suspected` finding is never above P2, except personal data: the personal-data rule wins, so a
+personal-data finding is P0 whatever its confidence. Doubt about whether it is personal data at all
+is settled by a review dismissal, not by a lower priority.
 
 ## Confidence
 
 | Confidence | Needs |
 |---|---|
-| `confirmed` | An experiment with result `failed_as_predicted`: an affected test failed in its runs, passed in the named baseline runs, and every run is in `runs.json`. A time bomb can also be confirmed by date arithmetic: the candidate found the comparison with now, and `fails_on_date` equals the date `scan_data.py` computed |
+| `confirmed` | An experiment with result `failed_as_predicted`: an affected test failed in its runs, passed in the named baseline runs, and every run is in `runs.json`. No cited run may be errored (no tests parsed, a timeout, or an exit code other than 0 or 1, such as a crashed interpreter or a pytest usage error): such an experiment's result is `errored`. The variation text must match what the runs recorded (reverse, shuffle, locale, time zone, isolation). With `cwd`, run case ids are made repo-relative before matching. A time bomb can also be confirmed by date arithmetic: the candidate found the comparison with now, and `fails_on_date` equals the date `scan_data.py` computed |
 | `static` | A rule matched, and you checked how the data is used |
 | `suspected` | Your judgement alone |
 
@@ -82,7 +84,10 @@ and `<` it is the fixed date itself.
   digits of a number, or the number without its separators:
   - the report;
   - any evidence file (`--evidence`).
-- **What counts as a value:** the whole email address always; its local part alone only when it
+- **What counts as a value:** the span on the candidate's line whose fingerprint is the
+  candidate's (never every number on that line); for a `customer_extract` column, its values of two
+  or more words or eight or more characters. Known repository paths are blanked before matching, and
+  `candidates.json` is not scanned. The whole email address always counts; its local part alone only when it
   reads as a person's name (`first.last`, `j_smith`), never a single word such as `staff` or
   `bookings`. Each error names the candidate whose value leaked, never the value.
   `redact_evidence.py` removes exactly these from runner output.
@@ -94,9 +99,13 @@ The mean of three shares:
 - the confirmable findings (time bomb, shared mutable, locale) whose experiment ran;
 - the applicable tools that ran.
 
+With no confirmable findings, the second share is left out and the mean is of the other two:
+nothing to confirm is not evidence that experiments ran.
+
 ## Honesty rules
 
-- **The headline:** it names the P0 findings when there are any.
+- **The headline:** it names the P0 findings when there are any. A finding count in it must
+  equal the report's, and it never says "no findings" when there are some.
 - **No clean-data claims:** the validator rejects these and similar:
   - "the test data is clean" or "safe";
   - "clean data";

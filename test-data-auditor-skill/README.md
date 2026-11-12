@@ -7,10 +7,11 @@ inline literals) and finds:
 
 - **time bombs**, such as a membership that expires on a fixed date the code compares with
   today, along with the date the test will start failing;
-- **real-looking personal data** that shouldn't be in a repository;
+- **real-looking personal data** that shouldn't be in a repository, including customer extracts
+  (a name column across many rows of a CSV, HTML table or workbook);
 - **magic ids** borrowed from a seed dump;
 - **production hosts and local paths**;
-- **shared fixtures** that tests mutate;
+- **shared fixtures** that tests mutate, and module reloads that leak state between tests;
 - **unseeded randomness**;
 - **fixtures that have drifted** from the model;
 - **unused snapshots and files**;
@@ -59,12 +60,12 @@ the included `clock_shift.py` pytest plugin, or `clock_shift.mjs` for Vitest and
 > Audit our test fixtures for personal data and anything that will break by itself.
 
 ```bash
-python scripts/inventory.py <repo> --out run/inventory.json
+python scripts/inventory.py <repo> --out run/inventory.json [--data-dir <dir>]
 python scripts/scan_data.py <repo> --inventory run/inventory.json --out run/candidates.json
 python scripts/run_tests.py --preset pytest --cwd <copy> --out run/runs.json --label baseline --run-prefix B --repeat 2
 python scripts/run_tests.py --preset custom --cmd "python -m pytest -q -p no:cacheprovider -p clock_shift --junitxml={junit}" \
     --cwd <copy> --env TDA_CLOCK_SHIFT=+400d --out run/runs.json --label "clock +400d" --run-prefix S
-python scripts/redact_evidence.py run --candidates run/candidates.json --repo <repo>
+python scripts/redact_evidence.py run --candidates run/candidates.json --repo <repo> --report run/test_data_report.json
 python scripts/validate_test_data_report.py run/test_data_report.json --candidates run/candidates.json --repo <repo> \
     --runs run/runs.json --evidence run --write-summary
 python scripts/render_report.py run/test_data_report.json [--brief]
@@ -80,7 +81,7 @@ python scripts/render_report.py run/test_data_report.json [--brief]
 ## Example
 
 `examples/clinic-api/` is a small clinic booking package with a pytest suite and JSON, YAML,
-CSV and SQL fixtures. Every personal detail in it is invented for the example: none of it
+CSV, SQL and HTML-as-.xls fixtures. Every personal detail in it is invented for the example: none of it
 belongs to a real person, and the "real-looking" values were made up to trip the rules, so
 please don't treat them as anyone's data. `examples/run/` holds the real run (`commands.sh`
 lists the steps), and `examples/README.md` has the answer key.
@@ -99,7 +100,7 @@ python scripts/render_report.py examples/test_data_report.example.json --brief
 - `data/reserved.json`: reserved email domains, fiction phone ranges, test cards, specimen IDs, reserved hosts
 - `schemas/test_data_report.schema.json`: output contract
 - `scripts/inventory.py`: data sources and the tests that load them
-- `scripts/datafiles.py`: JSON, YAML-subset, CSV and SQL records with line numbers
+- `scripts/datafiles.py`: JSON, YAML-subset, CSV, SQL, HTML-table and .xlsx records with line numbers (`--text` prints a workbook's text form)
 - `scripts/jsparse.py`: JavaScript/TypeScript tokenizer and object-literal records with field names
 - `scripts/scan_data.py`: the static rules, written as candidates without values
 - `scripts/schema_drift.py`: fixtures against dataclasses, pydantic, SQLAlchemy, JSON Schema and OpenAPI
