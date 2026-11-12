@@ -1,5 +1,5 @@
 {
-  "note": "Syntax and API patterns mapped to web-features ids. kind: css-selector (substring of a selector), css-pseudo-regex (regex over selectors), css-at-rule, css-declaration (property regex, optional value), css-flex-gap (gap in a rule that also sets display:flex), js-api (regex over scripts), html (regex over markup). fallback lists regexes that, found in the same file, count as a feature check or alternative. support overrides web-features for non-standard syntax.",
+  "note": "Syntax and API patterns mapped to web-features ids. kind: css-selector (substring of a selector), css-pseudo-regex (regex over selectors), css-at-rule, css-declaration (property regex, optional value), css-flex-gap (gap in a rule that also sets display:flex), js-api (regex over scripts), html (regex over markup), utility-class (a class token, behind any variants, in scripts and markup; only when the repo depends on Tailwind CSS). fallback lists regexes that, found in the same file, count as a feature check or alternative; emits_fallback says why every use has one (the framework writes a prefixed alternative). support overrides web-features for non-standard syntax.",
   "patterns": [
     {"feature": "has", "name": ":has()", "kind": "css-selector", "match": ":has(", "fallback": ["@supports\\s+selector\\(\\s*:has"]},
     {"feature": "flexbox-gap", "name": "gap in flexbox", "kind": "css-flex-gap", "fallback": ["@supports\\s*\\(\\s*gap"]},
@@ -21,6 +21,17 @@
     {"feature": "avif", "name": "AVIF images", "kind": "html", "match": "\\.avif\\b", "fallback": ["<picture"]},
     {"feature": "content-visibility", "name": "content-visibility", "kind": "css-declaration", "property": "content-visibility", "fallback": ["@supports\\s*\\(\\s*content-visibility"]},
     {"feature": "contain-intrinsic-size", "name": "contain-intrinsic-size", "kind": "css-declaration", "property": "contain-intrinsic-(size|width|height|block-size|inline-size)", "fallback": ["@supports\\s*\\(\\s*contain-intrinsic"]},
+    {"feature": "oklab", "name": "oklch() / oklab() colours", "kind": "css-declaration", "property": "[a-z-]+", "value": "okl", "fallback": ["@supports\\s*\\([^)]*okl"]},
+    {"feature": "color-mix", "name": "color-mix()", "kind": "css-declaration", "property": "[a-z-]+", "value": "color-mix(", "fallback": ["@supports\\s*\\([^)]*color-mix"]},
+    {"feature": "registered-custom-properties", "name": "@property", "kind": "css-at-rule", "match": "@property", "fallback": []},
+    {"feature": "text-wrap-balance", "name": "text-wrap: balance", "kind": "utility-class", "match": "text-balance(?![\\w-])", "fallback": []},
+    {"feature": "text-wrap-pretty", "name": "text-wrap: pretty", "kind": "utility-class", "match": "text-pretty(?![\\w-])", "fallback": []},
+    {"feature": "backdrop-filter", "name": "backdrop-filter", "kind": "utility-class", "emits_fallback": "Tailwind writes -webkit-backdrop-filter alongside backdrop-filter", "match": "backdrop-(blur|brightness|contrast|grayscale|hue-rotate|invert|opacity|saturate|sepia)(-[\\w\\[\\].%/-]+)?(?![\\w-])", "fallback": []},
+    {"feature": "background-clip-text", "name": "background-clip: text", "kind": "utility-class", "match": "bg-clip-text(?![\\w-])", "fallback": []},
+    {"feature": "has", "name": ":has()", "kind": "utility-class", "match": "(group-|peer-)?has-\\[[^\\]\\s]+\\]:[\\w-]+", "fallback": []},
+    {"feature": "container-queries", "name": "@container", "kind": "utility-class", "match": "@container(?![\\w-])|@(3xs|2xs|xs|sm|md|lg|xl|[2-7]xl|min-\\[[^\\]]+\\]|max-\\[[^\\]]+\\]):[\\w-]+", "fallback": []},
+    {"feature": "field-sizing", "name": "field-sizing", "kind": "utility-class", "match": "field-sizing-(content|fixed)(?![\\w-])", "fallback": []},
+    {"feature": "starting-style", "name": "@starting-style", "kind": "utility-class", "match": "starting:[\\w-]+", "fallback": []},
     {"feature": "requestidlecallback", "name": "requestIdleCallback()", "kind": "js-api", "match": "\\brequestIdleCallback\\s*\\(", "fallback": ["['\"]requestIdleCallback['\"]\\s+in\\s+(window|self|globalThis)", "typeof\\s+(window\\.|self\\.|globalThis\\.)?requestIdleCallback", "requestIdleCallback\\s*\\|\\|", "if\\s*\\(\\s*!?\\s*(window\\.|self\\.|globalThis\\.)?requestIdleCallback\\s*\\)"]}
   ]
 }

@@ -10,6 +10,11 @@ and comma-separated unions. `Firefox ESR`, `and` combinations, regional usage (`
 `since`, `extends` and Node queries are not resolved: they are listed as unresolved, and features can't be
 assessed for them.
 
+With --repo, the query comes from package.json's `browserslist`, else `.browserslistrc`; a Next.js project
+(`next` in package.json) with neither uses Next's documented default support (16 and later: Chrome, Edge and
+Firefox 111, Safari 16.4; 13-15: Chrome 64, Edge 79, Firefox 67, Opera 51, Safari 12), with iOS Safari taken
+to follow Safari; anything else falls back to `defaults`. The source says which.
+
 `dead` is an approximation of browserslist's list: IE, IE Mobile, BlackBerry, Baidu, Opera Mobile up
 to 12.1 and Samsung Internet 4.
 """
@@ -117,18 +122,52 @@ class Resolver:
         return {'query': query, 'resolved': rows, 'unresolved': unresolved, 'coverage': round(sum(r['usage'] for r in rows), 2)}
 
 
+# Next.js compiles for its own browser list when a project has no browserslist config. The documented defaults:
+# Next.js 16 "Chrome 111+, Edge 111+, Firefox 111+, Safari 16.4+"; Next.js 13-15 "Chrome 64+, Edge 79+, Firefox 67+,
+# Opera 51+, Safari 12+". iOS Safari is taken to follow Safari's version (the docs name Safari only).
+NEXT_DEFAULTS = [(16, 'chrome >= 111, edge >= 111, firefox >= 111, safari >= 16.4, ios_saf >= 16.4'),
+                 (0, 'chrome >= 64, edge >= 79, firefox >= 67, opera >= 51, safari >= 12, ios_saf >= 12')]
+
+
+def next_version(repo: Path, pkg: dict) -> tuple[int | None, str]:
+    """Next.js major version: the installed package's, else the dependency range's first number."""
+    inst = repo / 'node_modules' / 'next' / 'package.json'
+    if inst.is_file():
+        try:
+            v = json.loads(inst.read_text(encoding='utf-8')).get('version') or ''
+            m = re.match(r'(\d+)', v)
+            if m:
+                return int(m.group(1)), f'installed next {v}'
+        except (ValueError, OSError):
+            pass
+    rng = (pkg.get('dependencies') or {}).get('next') or (pkg.get('devDependencies') or {}).get('next') or ''
+    m = re.search(r'(\d+)', rng)
+    return (int(m.group(1)), f'next "{rng}" in package.json') if m else (None, f'next "{rng}" in package.json')
+
+
 def query_from_repo(repo: Path) -> tuple[str, str]:
-    pkg = repo / 'package.json'
-    if pkg.is_file():
-        bl = json.loads(pkg.read_text(encoding='utf-8')).get('browserslist')
+    pkg_file = repo / 'package.json'
+    pkg = {}
+    if pkg_file.is_file():
+        pkg = json.loads(pkg_file.read_text(encoding='utf-8'))
+        bl = pkg.get('browserslist')
         if isinstance(bl, list):
             return ', '.join(bl), 'package.json'
+        if isinstance(bl, str):
+            return bl, 'package.json'
         if isinstance(bl, dict) and 'production' in bl:
             return ', '.join(bl['production']), 'package.json (production)'
     rc = repo / '.browserslistrc'
     if rc.is_file():
         lines = [l.split('#')[0].strip() for l in rc.read_text(encoding='utf-8').splitlines()]
         return ', '.join(l for l in lines if l and not l.startswith('[')), '.browserslistrc'
+    deps = {**(pkg.get('devDependencies') or {}), **(pkg.get('dependencies') or {})}
+    if 'next' in deps:
+        major, how = next_version(repo, pkg)
+        query = next(q for floor, q in NEXT_DEFAULTS if major is None or major >= floor)
+        assumed = '' if major is not None else '; version unknown, the newest defaults assumed'
+        return query, (f'Next.js default browser support (no browserslist config; {how}{assumed}; iOS Safari taken to '
+                       'follow Safari)')
     return 'defaults', 'browserslist default (no config found)'
 
 
