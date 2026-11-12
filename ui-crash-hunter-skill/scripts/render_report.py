@@ -2,7 +2,7 @@
 """Render a UI crash hunter report as a terminal/Markdown report with optional ANSI colour,
 and optionally export the findings as SARIF.
 
-    python render_report.py crash_report.json [--color auto|always|never] [--sarif crashes.sarif]
+    python render_report.py crash_report.json [--brief] [--color auto|always|never] [--sarif crashes.sarif]
 """
 from __future__ import annotations
 import argparse, json, os, sys
@@ -46,10 +46,54 @@ def to_sarif(d: dict) -> dict:
                                            'finding_id': f['id']}})
     return sarif.build('ui-crash-hunter', d['metadata'].get('skill_version'), results)
 
+EFFECT_LABEL = {'app_fallback': 'app-wide fallback replaced every page', 'white_screen': 'white screen',
+                'app_terminated': 'app terminated', 'crash_loop': 'crash loop', 'screen_replaced': 'screen replaced by a fallback',
+                'screen_frozen': 'screen frozen', 'component_replaced': 'component replaced by a fallback',
+                'component_broken': 'component broken', 'console_only': 'console only'}
+STACK_LINES = 12
+
+def stack_excerpt(st: str) -> list[str]:
+    """The error line and the first frames; framework internals after the app's frames are cut."""
+    lines = [l.rstrip() for l in st.strip().splitlines() if l.strip()]
+    if len(lines) <= STACK_LINES:
+        return lines
+    return lines[:STACK_LINES] + [f'... {len(lines) - STACK_LINES} more frame(s)']
+
+def found_by(f: dict) -> str:
+    return ' (found by review)' if f.get('source') == 'agent' else ''
+
+def brief(d: dict, c: bool) -> None:
+    meta, s, cov = d['metadata'], d['summary'], d['coverage']
+    run = meta['app_run']
+    print(paint(f"UI crash hunt — {meta['repository']}", BOLD, c))
+    if s.get('headline'):
+        print(s['headline'])
+    bp, bc = s['by_priority'], s['by_confidence']
+    print(f"Crashes {s['crashes']} (P0 {bp.get('P0', 0)}, P1 {bp.get('P1', 0)}, P2 {bp.get('P2', 0)}, P3 {bp.get('P3', 0)}; "
+          f"reproduced {bc.get('reproduced', 0)}, traced {bc.get('traced', 0)}, pattern {bc.get('pattern', 0)}), "
+          f"degradations {s['degradations']}")
+    print(f"Dynamic half: {d.get('run_status', 'unknown')}"
+          + (f" ({d['run_status_reason']})" if d.get('run_status_reason') else '')
+          + f" | app run: {run['status']}{' at ' + run['target'] if run.get('target') else ''} | probes {len(d['probes'])}")
+    print(f"Tools ran {s['tools_ran']}/{s['tools_applicable']} | candidates {s['candidates_total']} "
+          f"({s['candidates_promoted']} promoted, {s['candidates_dismissed']} dismissed) | "
+          f"routes analysed {cov['routes_analysed']}/{cov['routes_total']}")
+    for f in d['crashes']:
+        r = f['ranking']
+        print(f"  {f['rank']}. {paint(r['priority'], PRIO_STYLE.get(r['priority'], ''), c)} {f['tier']} {f['id']} "
+              f"[{f['confidence']}] {f['title']}{found_by(f)}  ({loc(f)})")
+    for f in d['degradations']:
+        print(f"  - {f['tier']} {f['id']} [{f['confidence']}] {f['title']}{found_by(f)}  ({loc(f)})")
+    not_ran = [t['name'] for t in d['tools'] if t['status'] in ('not_run', 'errored')]
+    if not_ran:
+        print(paint(f"Not run or errored: {', '.join(not_ran)}", YELLOW, c))
+    print(paint(f"{len(d['limitations'])} limitation(s); render without --brief for the full report.", DIM, c))
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('json_file', type=Path)
     ap.add_argument('--color', choices=['auto', 'always', 'never'], default='auto')
+    ap.add_argument('--brief', action='store_true', help='a short summary: headline, counts and one line per finding')
     ap.add_argument('--sarif', type=Path, help='also write the findings as SARIF 2.1.0')
     args = ap.parse_args()
     try:
@@ -58,13 +102,21 @@ def main() -> int:
         print(f"Unable to read report: {exc}", file=sys.stderr)
         return 2
     c = supports_color(args.color)
+    if args.brief:
+        brief(d, c)
+        if args.sarif:
+            args.sarif.write_text(json.dumps(to_sarif(d), indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+        return 0
     meta, s, cov = d['metadata'], d['summary'], d['coverage']
     title = f"UI CRASH HUNT — {meta['repository']}"
     print(paint(title, BOLD, c)); print('=' * min(len(title), 100))
     run = meta['app_run']
     print(f"Platforms: {', '.join(meta['platforms'])}  |  Frameworks: {', '.join(meta.get('frameworks') or []) or 'unknown'}  |  "
           f"App run: {run['status']}{' (' + run['target'] + ')' if run.get('target') else ''}")
-    print(f"Generated: {meta['generated_at']}")
+    print(f"Generated: {meta['generated_at']}  |  Dynamic half: {d.get('run_status', 'unknown')}"
+          + (f" ({d['run_status_reason']})" if d.get('run_status_reason') else ''))
+    if run.get('authorised_by') or run.get('read_only') is not None:
+        print(f"Target approved by: {run.get('authorised_by') or 'n/a (loopback)'}  |  read-only: {run.get('read_only', 'not stated')}")
     site, blast = d['recon'].get('site_model'), (d['recon'].get('blast_radius') or {}).get('model')
     if site or blast:
         print(f"Site: {site or 'unknown'}  |  Blast-radius model: {blast or 'unknown'}")
@@ -86,19 +138,26 @@ def main() -> int:
         r, rp = f['ranking'], f.get('repro') or {}
         head = paint(f"{r['priority']}", PRIO_STYLE.get(r['priority'], ''), c)
         print(f"\n{f['rank']}. {head} {paint(f['tier'], BOLD, c)} {f['id']}  {f['title']}  "
-              + paint(f"[{f['confidence']}]", CONF_STYLE.get(f['confidence'], ''), c) + paint(f"  score {r['score']}", DIM, c))
-        print(f"   Where:   {loc(f)}")
+              + paint(f"[{f['confidence']}]", CONF_STYLE.get(f['confidence'], ''), c) + paint(f"  score {r['score']}", DIM, c)
+              + paint(found_by(f), DIM, c))
+        print(f"   Where:   {loc(f)}" + (f"  (+{len(f['locations']) - 1} more)" if len(f['locations']) > 1 else ''))
         print(f"   Trigger: {f['trigger']['description']}")
         caught = f['boundary']['caught_by'] or 'nothing'
-        print(f"   Effect:  {f['boundary']['effect'].replace('_', ' ')} (caught by {caught})")
+        eff = f['boundary']['effect']
+        print(f"   Effect:  {EFFECT_LABEL.get(eff, eff.replace('_', ' '))} (caught by {caught})")
         print(paint(f"   Ranking: reach {r['reach']} · likelihood {r['likelihood']} · recoverability {r['recoverability']}"
                     + (f" · {r['capped']}" if r.get('capped') else ''), DIM, c))
         for n, step in enumerate(rp.get('steps') or [], 1):
             print(f"   {n}) {step}")
         if rp.get('actual'):
             print(f"   Actual:  {rp['actual']}")
+        if rp.get('probe_id'):
+            print(paint(f"   Probe:   {rp['probe_id']}", DIM, c))
         if rp.get('stack_trace'):
-            print(paint('   ' + rp['stack_trace'].splitlines()[0], DIM, c))
+            for l in stack_excerpt(rp['stack_trace']):
+                print(paint('   | ' + l, DIM, c))
+        if rp.get('source_mapping'):
+            print(paint(f"   Frames mapped: {rp['source_mapping']}", DIM, c))
         if rp.get('observed_effect'):
             print(f"   Seen:    {rp['observed_effect']}")
         if rp.get('repro_spec'):
@@ -111,10 +170,28 @@ def main() -> int:
         print('\n' + paint('DEGRADATIONS (not crashes; not ranked)', BOLD, c))
         for f in d['degradations']:
             print(f"- {f['tier']} {f['id']} {f['title']}  " + paint(f"[{f['confidence']}]", CONF_STYLE.get(f['confidence'], ''), c)
-                  + f"  {loc(f)}")
+                  + f"  {loc(f)}" + paint(found_by(f), DIM, c))
             seen = (f.get('repro') or {}).get('observed_effect')
             if seen:
                 print(paint(f"    seen: {seen}", DIM, c))
+
+    print('\n' + paint('PROBES', BOLD, c))
+    if not d['probes']:
+        print('  None: the app was not run, so nothing was confirmed dynamically.')
+    for p in d['probes']:
+        style = {'reproduced': GREEN, 'baseline_clean': GREEN, 'not_reproduced': YELLOW,
+                 'baseline_not_clean': RED, 'errored': RED}.get(p['outcome'], '')
+        fl = f" -> {', '.join(p['findings'])}" if p.get('findings') else ''
+        env = f"  {p['environment']}" if p.get('environment') else ''
+        print(paint(f"  [{p['outcome']:18}]", style, c) + f" {p['id']}{fl}{env}")
+        if p.get('note'):
+            print(paint(f"      {p['note']}", DIM, c))
+
+    tri = d['triage']
+    if tri.get('dismissed_groups'):
+        print('\n' + paint('DISMISSED IN GROUPS', BOLD, c))
+        for g in tri['dismissed_groups']:
+            print(f"  {g['rule_id']}: {len(g['candidates'])} candidate(s) matching {json.dumps(g['match'])} — {g['reason']}")
 
     print('\n' + paint('TOOLS', BOLD, c))
     for t in d['tools']:
@@ -123,11 +200,18 @@ def main() -> int:
         print(paint(f"  [{t['status']:14}]", TOOL_STYLE.get(t['status'], ''), c) + f" {t['name']}{ver}{note}")
 
     print('\n' + paint('COVERAGE', BOLD, c))
+    reasons = {x['item']: x['reason'] for x in cov['not_analysed']}
+    shown = set()
     for r in d['recon']['routes_screens']:
-        mark = 'analysed' if r['analysed'] else 'NOT analysed'
-        print(f"  {r['id']:6} {r['path']:22} {mark:13} reach {r['reach']}")
+        if r['analysed']:
+            print(f"  {r['id']:6} {r['path']:22} analysed      reach {r['reach']}")
+        else:
+            why = reasons.get(r['id']) or reasons.get(r['path']) or r.get('not_analysed_reason') or ''
+            shown |= {r['id'], r['path']}
+            print(paint(f"  {r['id']:6} {r['path']:22} NOT analysed  reach {r['reach']}" + (f"  ({why})" if why else ''), YELLOW, c))
     for x in cov['not_analysed']:
-        print(paint(f"  not analysed: {x['item']} ({x['reason']})", YELLOW, c))
+        if x['item'] not in shown:
+            print(paint(f"  not analysed: {x['item']} ({x['reason']})", YELLOW, c))
     if cov.get('platforms_not_covered'):
         print(paint(f"  platforms not covered: {', '.join(cov['platforms_not_covered'])}", YELLOW, c))
 

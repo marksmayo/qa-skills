@@ -165,7 +165,7 @@ Fix:           guard / schema validation at the boundary (zod, kotlinx.serializa
 
 ## Files
 
-Status: **built** (v1.0.0). The implementation differs from the original plan as follows:
+Status: **built** (v1.2.0). The implementation differs from the original plan as follows:
 
 - **More scripts.** Beyond `strict_overlay.py`, `contract_diff.py` and the renderer and validator:
   - `recon.py` finds platforms, targets, routes and screens, the error-boundary map, the data
@@ -236,13 +236,59 @@ Status: **built** (v1.0.0). The implementation differs from the original plan as
   - Importing a sibling script wrote `__pycache__` into the skill folder; the scripts that import
     `sarif.py` now set `sys.dont_write_bytecode`, and `probe_web.py` says to run it rather than import
     it (or use `python -B`).
+- **Found on a real Next.js App Router app, and fixed (v1.2.0).** A static run and a read-only live
+  run against a Next.js 16 / React 19 / Prisma app showed:
+  - `strict_overlay.py` stripped comments with a regex that read the `/*` in `"@/*"` (every
+    create-next-app tsconfig) as a comment, so the config failed to parse and the whole repo was
+    compiled; and its baseline compile wrote `tsconfig.tsbuildinfo` into the repo. Configs are now
+    read by a string-aware JSONC reader; both compiles go through scratch configs (incremental off,
+    build info in the scratch dir) and run side by side; `--scope ui` (default) compiles only what the
+    UI entry points import. On that app the tsc step went from 14 min 34 s (two sequential full
+    compiles) to 47 s with `--scope all` and 22 s with `--scope ui`. Type roots include `node_modules`
+    when the config lists `types` such as `vitest/globals`.
+  - The ESLint step read only `package.json`, so plugins loaded through `eslint-config-next` looked
+    absent and the tool was wrongly `not_applicable`. It now asks ESLint (`--print-config`) which
+    plugins the config loads, and skips the type-aware rules (with a note) when the config has no type
+    information.
+  - Recon turned an OpenAPI document built in code into 34 UI routes and cookie options
+    (`path: '/'`) into three `/` routes, and didn't model layouts. Route objects now count only in
+    router configuration; recon records Next.js layouts (the root layout becomes a `shell` item),
+    special files, `middleware.ts`/`proxy.ts`, `next/dynamic` imports and route handlers with their
+    methods (API code, never UI routes), lists Prisma schemas and code-built OpenAPI documents as
+    contracts, and marks boundary definitions nothing renders as `used: false`.
+  - 98.7% of 1,146 candidates were dismissed, mostly tests, route handlers and modules no page
+    imports. `ui_graph.py` builds the import graph from the UI entry points, resolving `tsconfig`
+    `paths` (`@/*`); `scan_pitfalls.py` excludes tests, route handlers and unreachable modules from
+    its own scan and from `--extra`/`--sarif` candidates, counting each with examples (1,146 became
+    356 on that app, with every exclusion listed). The pitfall rules no longer match
+    `new Date().toISOString()`, Intl formatters built from constants, or `toFixed` guarded on the
+    same line. `contract_diff.py` reads Prisma schemas, ignores route handlers' private types, and
+    skips (and counts) name collisions and Prisma client delegates (about 500 sites on that app).
+  - The live half needed a wrapper: the probe had no way to make storage throw, set Firefox
+    preferences, keep the app's own POSTs and CSP reports off a remote target, or keep the stack of an
+    Error a boundary logs (Firefox's console text is `JSHandle@object`). `probe_web.py` now has
+    `storage_blocked`, `init_scripts`, `browser_prefs`, `launch_args`, `bypass_csp`, a read-only mode
+    (default for non-loopback targets, which also need `--authorised-by`), console arguments
+    evaluated to `{name, message, stack}`, and repro specs that carry all of it.
+  - Next.js `global-error` renders its own document, so a B1 there could only be reproduced with a
+    stack trace. The new effect `app_fallback` (B1, caught by an app or global boundary) can be
+    reproduced by the app-wide fallback text.
+  - The validator accepted a trace hop to a file that doesn't exist, 1,131 identical dismissal
+    reasons, an API endpoint marked as an analysed UI route, a finding "reproduced" by another
+    finding's probe with the stack trace `"x"`, and probes against an unapproved host. It now rejects
+    each of these, adds `triage.dismissed_groups` (a class of candidates dismissed under a match rule
+    it checks), a required top-level `run_status` (`complete`, `partial`, `not_run`) with the shared
+    `not_run` rules, `source: "agent"` findings with a re-read `basis`, probe outcome
+    `baseline_not_clean`, and notes on errored probes. The renderer has `--brief`, a probes section and
+    the full (trimmed) stack. The example's repro specs were re-emitted from the same scenarios; its
+    evidence is unchanged.
 
 ```text
 ui-crash-hunter-skill/
   SKILL.md  RUBRIC.md  README.md  requirements.txt
   data/pitfalls.json                    # per-platform packs (regex, trigger, fix, matching tool rules)
   schemas/crash_report.schema.json
-  scripts/recon.py  scan_pitfalls.py  strict_overlay.py  contract_diff.py  probe_web.py
+  scripts/recon.py  ui_graph.py  scan_pitfalls.py  strict_overlay.py  contract_diff.py  probe_web.py
           validate_crash_report.py  render_report.py
           sarif.py                      # shared copy
   examples/crash_report.example.json  pantry/  run/  probes/  evidence/  repro/

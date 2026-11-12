@@ -7,7 +7,7 @@ Anchors for tiers, boundaries, confidence, ranking and triage. `SKILL.md` says w
 
 | Tier | Class | Effect values | Web example | Mobile example |
 |---|---|---|---|---|
-| B1 | Crash | `app_terminated`, `white_screen`, `crash_loop` | Render error above every boundary: React unmounts the root and the page is blank | Uncaught exception or force unwrap: the process dies |
+| B1 | Crash | `app_terminated`, `white_screen`, `app_fallback`, `crash_loop` | Render error above every boundary: React unmounts the root and the page is blank; or an app-scoped boundary (Next.js `global-error`) replaces every page with its own fallback (`app_fallback`) | Uncaught exception or force unwrap: the process dies |
 | B1 | Crash (loop) | `crash_loop` | Bad value in localStorage read during the first render: blank on every load | Corrupt SharedPreferences/UserDefaults read at launch: crashes on every start |
 | B2 | Crash | `screen_replaced`, `screen_frozen` | Route boundary or Next.js `error.tsx` replaces the page; render loop freezes the tab | Flutter error widget fills the screen; ANR on a screen's main thread |
 | B3 | Degradation | `component_replaced`, `component_broken` | A widget's own boundary shows a fallback; a list never leaves "Loading…"; on a static page, a script's feature (search, menu) is dead or the page loads unstyled | One card shows an error state |
@@ -24,7 +24,7 @@ hardest at what is outside all of them.
 | Platform | Boundaries | Not caught by them |
 |---|---|---|
 | React | Class components with `getDerivedStateFromError`/`componentDidCatch`, `react-error-boundary`, `Sentry.ErrorBoundary` | Event handlers, async code, `setTimeout`, errors in the boundary itself, anything above the topmost boundary (since React 16, an uncaught render error unmounts the whole root) |
-| Next.js | `app/**/error.tsx` (route segment), `app/global-error.tsx` (app), `pages/_error` | Errors in the root layout are caught only by `global-error`; server component errors during SSR become error pages |
+| Next.js | `app/**/error.tsx` (its segment's page and nested segments, not the `layout` in its own folder), `app/global-error.tsx` (app: replaces the whole document, effect `app_fallback`), `pages/_error` | The root layout and everything it renders (providers, the shell, `next/dynamic` widgets) is caught only by `global-error`, so a throw there is B1 on every page. Server component errors during SSR become error pages; their trigger is server data (seed a test database), not a browser mock. `middleware.ts`/`proxy.ts` runs before every matched page. Route handlers (`app/**/route.ts`) are API code: a throw is an HTTP 500, not a UI crash, so they are out of scope |
 | Vue | `errorCaptured` / `onErrorCaptured` (subtree), `app.config.errorHandler` (global, logs only) | A global handler doesn't re-render; the component stays broken |
 | Angular | `ErrorHandler` (global; logs, does not recover the view) | A throw in a template can leave the view half-rendered |
 | React Native | Error boundaries as in React; `ErrorUtils.setGlobalHandler` | Native module exceptions terminate the app regardless |
@@ -33,15 +33,17 @@ hardest at what is outside all of them.
 | Android | `Thread.setDefaultUncaughtExceptionHandler`, `CoroutineExceptionHandler` | Handlers report; the process still dies (B1) unless the exception is caught in code |
 | iOS | `NSSetUncaughtExceptionHandler` | Swift traps (force unwrap, `try!`, index out of range) are not exceptions and always terminate (B1) |
 
-A `screen_replaced` or `component_replaced` effect must name the boundary in `caught_by`. A
-`white_screen` or `crash_loop` can only be "caught" by an app-scoped boundary that blanks the app
-anyway; otherwise `caught_by` is `null`.
+A `screen_replaced`, `component_replaced` or `app_fallback` effect must name the boundary in
+`caught_by` (for `app_fallback`, an `app`- or `global`-scoped one). A `white_screen` or `crash_loop`
+can only be "caught" by an app-scoped boundary that blanks the app anyway; otherwise `caught_by` is
+`null`. A boundary component that is defined but never rendered (recon `used: false`) catches
+nothing and can't be `caught_by`.
 
 ## Confidence
 
 | Confidence | Evidence type | Needs |
 |---|---|---|
-| `reproduced` | `reproduced` | A probe that lists the finding, a screenshot and the trace, and either a stack trace with the error's effect, or the effect alone (`effect_observed`: every `expect` assertion held) with `repro.observed_effect`. An effect alone suffices for B3/B4; a B1/B2 crash without a stack trace also needs `root_empty` (or a screen fallback for B2) |
+| `reproduced` | `reproduced` | A probe that lists the finding, with its evidence file, a screenshot and the trace, and either a stack trace with the error's effect, or the effect alone (`effect_observed`: every `expect` assertion held) with `repro.observed_effect`. An effect alone suffices for B3/B4; a B1/B2 crash without a stack trace also needs `root_empty` (a screen fallback for B2, or the app-wide fallback text for `app_fallback`). A stack trace is the one the probe captured: its error line appears in the evidence and it has frames. One probe's stack or effect reproduces one finding; minified frames are mapped to source in `repro.source_mapping` |
 | `traced` | `trace` or `agent_judgment` | At least two `file:line` hops from the input to the throw, and the boundary that catches it |
 | `pattern` | `tool` or `agent_judgment` | A rule match you didn't trace further. Capped at P1 |
 
@@ -113,7 +115,41 @@ the same root cause into one finding (list each candidate id), keeping the throw
 - the trigger can't occur (`the field is required in the contract and validated by zod at api.ts:14`);
 - a duplicate of another candidate that is promoted.
 
-"False positive" on its own is not a reason.
+"False positive" on its own is not a reason, and neither is one sentence pasted onto many
+candidates: the validator rejects a reason shared by more than three individual dismissals.
+
+**Dismiss in a group** when one checkable rule covers a class of candidates, in
+`triage.dismissed_groups`: a `rule_id`, a `match` (any of `pitfall_id`, `path` glob, `tool`, source
+`rule`, `snippet` regex), the specific reason that holds for every match, and the candidate ids. With
+`--candidates` the validator checks each listed candidate matches. Good groups: tsc
+`noUncheckedIndexedAccess` hits on `x.split(...)[0]` (`rule: TS2532`, `snippet: "split\\("`; `split`
+always returns at least one element), or `WEB-INVALID-DATE` on Prisma `DateTime` fields (`snippet`
+naming them; the client returns `Date` objects). A group never covers a candidate you didn't read the
+rule for.
+
+**Scope.** UI crash hunting covers code the UI runs. `scan_pitfalls.py` excludes tests, route
+handlers and modules no UI entry point imports by default and counts them in `scope.excluded`; read
+the examples it lists, and rerun with `--all-files` if something is reached in a way the import graph
+can't follow. Route handlers belong to the API contract tester; module-scope code and server
+components the UI renders stay in scope.
+
+## Agent-found findings
+
+A finding no candidate pointed at sets `"source": "agent"` and a `basis`: file, line and an excerpt of
+that line (or `{"evidence": "<path>"}` for runtime evidence). The validator re-reads each excerpt with
+`--repo`; renderers label these "found by review".
+
+## The dynamic half
+
+`run_status` is `complete` (the planned probes ran), `partial` (some couldn't, or the target was
+degraded) or `not_run` (static only), with `run_status_reason` unless complete. A `not_run` report has
+no reproduced findings, no probe outcomes that need a running app, and no headline implying a runtime
+check. Probe outcome `baseline_not_clean` records a baseline that showed the app's own errors (a
+degraded target), and `errored` a probe that couldn't run; both need a note.
+
+**Targets.** Every probe's evidence must have run against `app_run.target`'s host. A target that is
+not loopback needs `app_run.authorised_by`, and runs read-only (`probe_web.py` answers every
+non-GET request in the browser and never sends it).
 
 ## Pitfall catalogue
 
@@ -149,9 +185,12 @@ on possibly empty lists, casts of decoded JSON to non-nullable types.
 
 ## Reviewer checklist
 
-- [ ] Recon includes the app shell and every boundary, with scopes.
+- [ ] Recon includes the app shell (for Next.js, the root layout) and every boundary, with scopes;
+      unused boundaries aren't credited; API route handlers aren't counted as UI routes.
 - [ ] Every tool is ran, not_run (with why), errored (with why) or not_applicable.
-- [ ] Every candidate is promoted or dismissed with a checkable reason.
+- [ ] Every candidate is promoted or dismissed with a checkable reason, individually or in a group
+      with a match rule.
+- [ ] `run_status` says whether the dynamic half ran; probes ran against the approved target.
 - [ ] Every finding has a file:line, a concrete trigger with basis, and the boundary that catches it.
 - [ ] Tiers match effects; B3/B4 are only in degradations.
 - [ ] `reproduced` findings have a probe, a screenshot and a stack trace or an observed effect; a

@@ -1,7 +1,7 @@
 ---
 name: ui-crash-hunter
 description: Hunt for code paths in web and mobile UI code that are likely to crash the app (B1, app-fatal) or a whole screen (B2, screen-fatal), rank them by real-world severity, and write reproduction steps for each. Uses static analysis, an API-contract diff and the error-boundary map, then confirms crashes in the running app where possible. Every finding has a file and line, a concrete trigger and a confidence level (reproduced, traced or pattern); degradations are listed separately and never ranked as crashes.
-version: 1.1.0
+version: 1.2.0
 ---
 
 # UI Crash Hunter
@@ -51,7 +51,12 @@ Output:
   were analysed, which tools ran, and what wasn't covered. Never write "crash-free", "stable",
   "safe" or "no crashes".
 - **Probe only local or test environments** the user has approved, with mocked or test data.
-  Never point probes at production or at real user accounts.
+  Never point probes at production or at real user accounts. A target that isn't loopback needs the
+  user's own approval (`--authorised-by`, recorded as `app_run.authorised_by`) and runs read-only:
+  no request other than GET, HEAD or OPTIONS leaves the browser.
+- **UI code is the scope.** Tests, API route handlers (a throw there is an HTTP 500, not a UI
+  crash) and modules no page or entry point imports are out of scope; the scripts exclude them and
+  count what they excluded. Say so in the coverage.
 - **Don't reveal secrets.** Never copy tokens, keys or personal data from code, storage or
   telemetry into the report; give the location and the kind of secret only.
 
@@ -90,7 +95,19 @@ Read the output, then confirm and complete it by reading the code:
 - **Platforms and frameworks**, and the supported targets (`browserslist`, `minSdkVersion`, iOS
   deployment target). Targets decide whether an API is "missing in a supported browser or OS".
 - **Routes and screens.** Add the app shell (header, navigation, layout) as an item: it renders on
-  every screen and is often outside every boundary.
+  every screen and is often outside every boundary. For Next.js recon adds the root layout as a
+  `shell` item itself (`(root layout)`, at the line of its default export).
+- **Next.js** (`recon.nextjs`): the layouts (the root layout and everything it renders, including
+  providers and `next/dynamic` widgets, is outside every `error.tsx`: only `global-error` catches a
+  throw there, and it replaces the whole document), `template`/`not-found`/`loading` files,
+  `middleware.ts`/`proxy.ts` with its matcher (it runs before every matched page: auth redirects and
+  rate limits change what a probe sees), `next/dynamic` imports (`ssr: false` runs only in the browser,
+  after hydration), and the route handlers with their HTTP methods. Route handlers are API code: they
+  are not UI routes and never count as analysed routes. Server components run during SSR; their
+  triggers are server data (a seeded test database), not browser mocks.
+- **Code-built contracts.** Recon lists OpenAPI documents built in code (`openapi-in-code`) and
+  Prisma schemas. To use a code-built OpenAPI document, run its own builder or export endpoint into
+  the output directory and pass that file to `contract_diff.py --contract`.
 - **The error-boundary map.** For each boundary, record its `scope` (`app`, `route`/`screen`,
   `component`, `global`) and what it covers. Check what is *outside* every boundary: the root
   render, the shell, providers, and code that runs before the first render.
@@ -120,7 +137,7 @@ python scripts/scan_pitfalls.py <repo> --sarif <semgrep/detekt/swiftlint .sarif 
 
 | Stack | Tools (only if already installed, or the user agrees to install) |
 |---|---|
-| TypeScript / JavaScript | `strict_overlay.py tsc` (strictNullChecks, noUncheckedIndexedAccess; plain JavaScript without a tsconfig is checked with `checkJs` through a config generated in the scratch directory, using the repo's or the PATH's `tsc`, and is `not_applicable` only when there is no `tsc`) and `eslint` (react-hooks/exhaustive-deps, no-floating-promises, no-non-null-assertion, no-unnecessary-condition) using the repo's own installs |
+| TypeScript / JavaScript | `strict_overlay.py tsc` (strictNullChecks, noUncheckedIndexedAccess; plain JavaScript without a tsconfig is checked with `checkJs` through a config generated in the scratch directory, using the repo's or the PATH's `tsc`, and is `not_applicable` only when there is no `tsc`) and `eslint` (react-hooks/exhaustive-deps, no-floating-promises, no-non-null-assertion, no-unnecessary-condition) using the repo's own installs. Both compile or lint only what the UI entry points reach (`--scope ui`, the default; `--scope all` for everything), and the baseline and strict compiles run side by side through scratch configs, so nothing (not even `tsconfig.tsbuildinfo`) is written into the repo. The ESLint step asks ESLint which plugins the config really loads (`--print-config`), so plugins that come in through `eslint-config-next` count; type-aware rules run only when the config has type information |
 | Android | Android Lint (`./gradlew lint`, SARIF via `lint { sarifReport = true }`), detekt (`--report sarif:...`) |
 | iOS | SwiftLint (`swiftlint lint --reporter sarif`) with force_unwrapping, force_cast, force_try enabled in a scratch config |
 | Flutter | `dart analyze` / `flutter analyze` (null-check and `use_build_context_synchronously` diagnostics) |
@@ -128,9 +145,17 @@ python scripts/scan_pitfalls.py <repo> --sarif <semgrep/detekt/swiftlint .sarif 
 | All | `scan_pitfalls.py`: the stdlib pattern scan over `data/pitfalls.json`, which always runs |
 
 The **contract diff** (`contract_diff.py`) is the biggest single source of real crashes: fields the
-contract marks nullable or optional, dereferenced in the UI without a guard. The strict `tsc`
-overlay finds the same class of bug through the types, including accesses after destructuring that
-name matching misses.
+contract marks nullable or optional, dereferenced in the UI without a guard. It reads OpenAPI,
+GraphQL, Prisma schemas (`?` fields are nullable; required relations are not), exported TypeScript
+types and mobile models, but not a route handler's private row types. A field name that is non-null
+in another type is skipped as a name collision and counted (`--include-collisions` lists them), and
+`prisma.model.findMany()` delegates are not field reads. The strict `tsc` overlay finds the same class
+of bug through the types, including accesses after destructuring that name matching misses.
+
+`scan_pitfalls.py` scans UI code only: it follows imports from the UI entry points (resolving
+`tsconfig`/`jsconfig` `paths` such as `@/*`) and excludes tests, route handlers and unreachable
+modules from its own scan and from the `--extra`/`--sarif` candidates, counting each in
+`scope.excluded` with examples. `--all-files` scans route handlers and unreachable modules too.
 
 ### 3. Triage every candidate
 
@@ -140,11 +165,16 @@ name matching misses.
 - **Dismiss** it with a specific reason: the guard and its line, the invariant that makes it
   unreachable, or why the trigger can't happen.
 
-Every candidate ends up in `triage.promoted` or `triage.dismissed`; the validator checks the count
-against `candidates.json`. Then read the code for crash classes no tool finds (unsupported APIs in
+Every candidate ends up in `triage.promoted`, `triage.dismissed` or `triage.dismissed_groups`; the
+validator checks the count against `candidates.json`. On a large app, dismiss a class of candidates
+that one checkable rule covers as a group: `rule_id`, a `match` (`pitfall_id`, `path` glob, `tool`,
+source `rule`, `snippet` regex), the specific reason, and the ids; the validator checks every listed
+candidate matches. Don't paste one sentence onto many individual dismissals: more than three
+identical reasons are rejected. Then read the code for crash classes no tool finds (unsupported APIs in
 the declared targets, render loops, stale responses, lifecycle misuse, deep links, permission
-denial, process death): see the catalogue in `RUBRIC.md`. Those findings have `sources: [{"tool":
-"agent"}]` and no candidate ids.
+denial, process death, configuration read at module scope in the root layout): see the catalogue in
+`RUBRIC.md`. Those findings set `"source": "agent"`, `sources: [{"tool": "agent"}]`, a `basis` (file,
+line and an excerpt of that line, re-read by the validator) and no candidate ids.
 
 ### 4. Trace each finding
 
@@ -172,9 +202,37 @@ locale, time zone and viewport, and runs steps (`goto`, `click`, `fill`, `type` 
 server), `expect`, `wait_for`, `wait_ms`). The evidence file records uncaught page errors with
 stacks, console errors (a boundary that catches an error usually logs it), every request with its
 status, failed requests, whether the root is empty (white screen) and which fallback texts are
-visible, plus a screenshot. `--emit-spec` writes a standalone script that exits 1 while the problem
-reproduces and 0 once it is fixed. Run `probe_web.py` rather than importing it; if a wrapper must
-import it, run that with `python -B` so nothing is written into the skill folder.
+visible, plus a screenshot. Console errors keep their arguments: an Error that a boundary logs with
+`console.error(error)` is recorded as `{name, message, stack}` (Firefox's text for it is only
+`JSHandle@object`), and `console_error` assertions match against it. `--emit-spec` writes a
+standalone script that exits 1 while the problem reproduces and 0 once it is fixed; it carries the
+same browser, launch and context options, init scripts and guards. Run `probe_web.py` rather than
+importing it; if a wrapper must import it, run that with `python -B` so nothing is written into the
+skill folder.
+
+Environment options, for triggers a mock can't produce:
+
+| Option | Effect |
+|---|---|
+| `"storage_blocked": true` (or `{"except": [stack substrings]}`) | `window.localStorage`/`sessionStorage` getters throw `SecurityError`, as when the browser blocks site data. `except` spares callers whose stack contains a substring, to confirm each of several throwing sites on its own |
+| `"init_scripts": ["js", {"file": "x.js"}]` | Scripts run before the page's own (files relative to the scenario) |
+| `"browser_prefs": {...}` | Firefox preferences, e.g. `{"network.cookie.cookieBehavior": 2}` (the real "block cookies and site data") |
+| `"launch_args": [...]` | Chromium switches |
+| `"bypass_csp": true` | Ignore the page's CSP (on by default in read-only mode, so no violation report is sent) |
+
+**Read-only mode** is the default for any target that isn't loopback (`"read_only": true` turns it on
+anywhere). Every request other than GET, HEAD or OPTIONS is answered in the browser with 204 and never
+sent, whatever its host, including the app's own POSTs, beacons and CSP reports; same-origin analytics
+(`/_vercel/*`) is aborted. Intercepted writes are listed in `writes_blocked`. `probe_web.py` refuses a
+non-loopback target without `--authorised-by`.
+
+**Next.js.** A throw in the root layout (or a provider or `next/dynamic` widget it renders) is caught
+only by `global-error`, which renders its own document: the root is not empty, so reproduce it with
+the stack trace, or by its effect with the global-error text in `observe.fallback_text` and an
+`expect` on it, and use the effect `app_fallback` (B1, `caught_by` the global-error boundary). A
+server component's trigger is server data: seed a test database, since `page.route` mocks only the
+browser's requests. Pages behind `middleware.ts`/`proxy.ts` auth need a test session (a `goto` +
+`fill` sign-in, or a seeded cookie in an init script).
 
 **Third parties are blocked.** Every request to a host that isn't loopback, the base URL's host or
 in `allowed_hosts` is aborted and listed in `blocked_requests`, GETs included, so a probe never
@@ -206,7 +264,10 @@ memoised failure; "no results" alone could be an empty index.
 Always run one **baseline** probe first (`"kind": "baseline"`, contract-valid data, assertions that
 describe healthy behaviour, such as results appearing and the stylesheet applying). It never counts
 as reproduced; `baseline_ok` is true when there were no errors of the app's own and every assertion
-held. If the baseline already errors or fails, fix the scenario before blaming the code.
+held. If the baseline already errors or fails, fix the scenario before blaming the code; if the
+target itself is degraded (its own API returns 500s), mock the failing requests in the browser, or
+record the probe as `baseline_not_clean` with a note and set `run_status` to `partial`. A probe that
+couldn't run at all is `errored`, with a note.
 
 Triggers worth forcing: null fields, `[]`, missing keys, 10,000-character strings, emoji and
 right-to-left text, HTTP 401/404/500, slow responses, offline, another locale or time zone, stored
@@ -229,7 +290,10 @@ A finding is `reproduced` only with a probe whose evidence shows the error **and
 root, fallback text, process death in the log), or, without a stack trace, whose expectations all
 held (`effect_observed`); write what the probe saw in `repro.observed_effect`. An effect alone is
 enough for a B3/B4 degradation; a B1/B2 crash without a stack trace also needs the probe to show the
-app blanked (`root_empty`, or a screen fallback for B2). If a probe doesn't reproduce it, keep the finding at
+app blanked (`root_empty`, a screen fallback for B2, or the app-wide fallback for `app_fallback`).
+Paste the stack the probe captured into `repro.stack_trace` (its error line must be in the evidence);
+for minified production frames, say in `repro.source_mapping` how each frame maps to the source
+location. One probe reproduces one finding. If a probe doesn't reproduce it, keep the finding at
 `traced` and record what was tried in `repro.not_reproduced_reason`, or dismiss it if the probe
 showed the trace was wrong.
 
@@ -273,12 +337,14 @@ Verify:        how to show the fix works (usually: the repro spec exits 0)
 
 ### 9. Report, validate and render
 
-Write `crash_report.json`, then:
+Write `crash_report.json`, with `run_status` (`complete`, `partial` or `not_run`, and
+`run_status_reason` unless complete). A static-only report is `not_run`: it is valid, but nothing in
+it may be `reproduced` and the headline must not imply a runtime check. Then:
 
 ```bash
 python scripts/validate_crash_report.py <out_dir>/crash_report.json --write-summary \
     --repo <repo> --candidates <out_dir>/candidates.json
-python scripts/render_report.py <out_dir>/crash_report.json [--sarif <out_dir>/crashes.sarif]
+python scripts/render_report.py <out_dir>/crash_report.json [--brief] [--sarif <out_dir>/crashes.sarif]
 ```
 
 Fix every validation error; don't weaken the report to pass. The headline states counts and the
@@ -293,18 +359,25 @@ worst finding plainly ("5 likely crashes, 4 reproduced; a P0 crash loop for user
 
 ## Report fields that the validator checks
 
-- Every finding: file and line (and, with `--repo`, the snippet is on that line), a concrete
-  trigger with its basis, trigger data for data and stored-state triggers, a boundary and effect
-  that match the tier, sources, a remediation and a verification step.
-- `reproduced`: a probe that reproduced it and lists it, a screenshot on disk, a trace, and a stack
-  trace, or the probe's observed effect with `repro.observed_effect` (B1/B2 crashes also need the
-  probe to show the app blanked).
+- Every finding: file and line (and, with `--repo`, the snippet is on that line and every trace hop
+  exists), a concrete trigger with its basis, trigger data for data and stored-state triggers, a
+  boundary and effect that match the tier (never an unused boundary), sources, a remediation and a
+  verification step. `source: "agent"` findings have a basis whose excerpts are on the cited lines.
+- `reproduced`: a probe that reproduced it and lists it, with its evidence file, a screenshot on
+  disk, a trace, and a stack trace (with frames, its error line in the probe's evidence, not shared
+  with another finding), or the probe's observed effect with `repro.observed_effect` (B1/B2 crashes
+  also need the probe to show the app blanked or the app-wide fallback).
 - `baseline_clean` probes: no page errors and no console errors of the app's own (errors from the
   probe's third-party blocking are ignored), and any healthy-behaviour assertions held.
+  `baseline_not_clean` and `errored` probes have a note.
+- Every probe ran against `app_run.target`'s host; a non-loopback target has `authorised_by`.
+- `run_status` agrees with the probes, and a `not_run` report claims nothing that needs the app.
+- No route handler or `/api/` path is an analysed UI route.
 - On a `per_script` site, a B1/B2 crash whose probe didn't show an empty root draws a warning. `traced`: at least two trace hops.
 - Crashes are B1/B2 with a ranking whose score and priority are recomputed; a crash loop needs a
   stored-state trigger; ranks follow the score. Degradations are B3/B4 and unranked.
-- Every candidate is promoted or dismissed with a reason.
+- Every candidate is promoted or dismissed with a specific reason (not "false positive", not one
+  sentence pasted onto more than three candidates), or dismissed in a group whose match rule it fits.
 - Every route or screen is analysed or listed as not analysed with a reason; coverage counts match.
 - Every tool that didn't run says why; at least one tool ran.
 - Nothing listed in `files_written` is inside the repository.

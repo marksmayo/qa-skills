@@ -65,15 +65,16 @@ Crashes are ranked by blast radius × reach × likelihood × recoverability into
 Scripts, in the order the skill runs them:
 
 ```bash
-python scripts/recon.py <repo> --out recon.json                          # site model, routes or pages, boundaries, contracts, stored state
-python scripts/strict_overlay.py tsc <repo> --scratch <tmp> --out tsc.json  # strict tsc in a scratch config (checkJs for plain JS)
+python scripts/recon.py <repo> --out recon.json                          # site model, routes or pages, boundaries, contracts, stored state; Next.js layouts, proxy, route handlers
+python scripts/ui_graph.py <repo> --out graph.json                        # UI entry points and the files they import (resolves tsconfig paths)
+python scripts/strict_overlay.py tsc <repo> --scratch <tmp> --out tsc.json  # strict tsc in a scratch config (checkJs for plain JS); --scope ui|all
 python scripts/strict_overlay.py eslint <repo> --scratch <tmp> --out eslint.json
-python scripts/contract_diff.py <repo> --out contract.json               # nullable contract fields vs unguarded access
-python scripts/scan_pitfalls.py <repo> --sarif semgrep.sarif --extra tsc.json eslint.json contract.json --out candidates.json
+python scripts/contract_diff.py <repo> --out contract.json               # nullable contract fields vs unguarded access (OpenAPI, GraphQL, Prisma, types)
+python scripts/scan_pitfalls.py <repo> --sarif semgrep.sarif --extra tsc.json eslint.json contract.json --out candidates.json  # UI code only; --all-files
 python scripts/scan_pitfalls.py --self-test                               # the multi-line promise-chain test
-python scripts/probe_web.py probes/C-1.json --out-dir evidence/C-1 --emit-spec repro/repro_C-1.py
+python scripts/probe_web.py probes/C-1.json --out-dir evidence/C-1 --emit-spec repro/repro_C-1.py  # --authorised-by for a non-loopback target
 python scripts/validate_crash_report.py crash_report.json --repo <repo> --candidates candidates.json --write-summary
-python scripts/render_report.py crash_report.json --sarif crashes.sarif  # --color always|never
+python scripts/render_report.py crash_report.json --sarif crashes.sarif  # --brief, --color always|never
 python scripts/sarif.py read detekt.sarif swiftlint.sarif                 # normalise any SARIF file
 ```
 
@@ -85,8 +86,9 @@ python scripts/sarif.py read detekt.sarif swiftlint.sarif                 # norm
 |---|---|
 | `recon` | The site model and blast-radius model (one render tree, or static pages where an error stops only its own script), routes, screens or pages with their reach, the error-boundary map, data layer, contracts, stored state, targets |
 | `tools` | Every analyser and probe: ran, not run, errored or not applicable, and why |
-| `triage` | Every candidate from every tool, promoted to a finding or dismissed with a reason |
-| `probes` | Each dynamic confirmation, including a clean baseline run |
+| `run_status` | Whether the dynamic half ran: `complete`, `partial` or `not_run` (static only), with the reason |
+| `triage` | Every candidate from every tool, promoted to a finding or dismissed with a reason (singly, or in groups with a checked match rule) |
+| `probes` | Each dynamic confirmation, including a clean baseline run; read-only against any non-loopback target |
 | `crashes` | B1/B2 findings, ranked: location, trigger, boundary, trace, score, repro steps, fix |
 | `degradations` | B3/B4 findings, unranked |
 | `coverage`, `limitations` | What was and wasn't analysed |
@@ -123,12 +125,20 @@ To rerun the probes: `cd examples/pantry && npm install && npm run build && npm 
   a fix and a verification step.
 - The effect matches the tier, and the boundary that caught it exists in the boundary map; screen
   and component fallbacks must name their boundary.
-- `reproduced` needs a reproducing probe that lists the finding, a screenshot on disk, and a stack
-  trace or the probe's observed effect (every `expect` assertion held, described in
+- `reproduced` needs a reproducing probe that lists the finding, its evidence file, a screenshot on
+  disk, and a stack trace (with frames, its error in the probe's evidence, not shared with another
+  finding) or the probe's observed effect (every `expect` assertion held, described in
   `repro.observed_effect`); an effect alone is enough for B3/B4, while a B1/B2 crash without a stack
-  trace needs the probe to show the app blanked. `traced` needs a trace of at least two hops.
+  trace needs the probe to show the app blanked (or, for `app_fallback`, the app-wide fallback).
+  `traced` needs a trace of at least two hops, and with `--repo` every hop must exist.
+- Agent-found findings (`source: "agent"`) carry a basis whose excerpts are re-read from the repo.
 - A clean baseline has no errors of the app's own; errors caused by the probe blocking third-party
-  requests don't count.
+  requests don't count. `baseline_not_clean` and `errored` probes need a note.
+- Every probe ran against `app_run.target`'s host; a non-loopback target needs `authorised_by`.
+- `run_status` agrees with the probes; a `not_run` report claims nothing that needs the running app.
+- Dismissal reasons are specific: generic ones, and one reason pasted onto more than three
+  candidates, are rejected; grouped dismissals must match their rule. API route handlers can't be
+  analysed UI routes, and unused boundaries can't catch anything.
 - Crashes are B1/B2 and degradations B3/B4; scores, priorities and ranks are recomputed; a crash
   loop needs a stored-state trigger; pattern findings are capped at P1.
 - Every candidate is triaged; every route is analysed or listed with a reason; every tool that
@@ -143,13 +153,15 @@ To rerun the probes: `cd examples/pantry && npm install && npm run build && npm 
 - `data/pitfalls.json`: per-platform pitfall packs (patterns, triggers, fixes, matching tool rules)
 - `schemas/crash_report.schema.json`: output contract
 - `scripts/recon.py`: platforms, site and blast-radius model, routes or pages, boundaries, data layer, contracts, stored state, targets
-- `scripts/scan_pitfalls.py`: pattern scan, and merging of SARIF and other candidates
-- `scripts/strict_overlay.py`: strict `tsc` and ESLint runs from scratch configs
-- `scripts/contract_diff.py`: nullable contract fields against unguarded access (OpenAPI, GraphQL, TypeScript, Kotlin, Swift, Dart)
-- `scripts/probe_web.py`: Playwright probes (errors, white screens and observable-effect
-  assertions; third parties blocked) and standalone repro specs
+- `scripts/ui_graph.py`: UI entry points, the import graph (with `tsconfig` `paths` aliases), and file classes (test, route handler, UI)
+- `scripts/scan_pitfalls.py`: pattern scan over UI code, and merging of SARIF and other candidates (excluded files counted)
+- `scripts/strict_overlay.py`: strict `tsc` and ESLint runs from scratch configs (nothing written to the repo)
+- `scripts/contract_diff.py`: nullable contract fields against unguarded access (OpenAPI, GraphQL, Prisma, TypeScript, Kotlin, Swift, Dart)
+- `scripts/probe_web.py`: Playwright probes (errors with console Error arguments, white screens and
+  observable-effect assertions; third parties blocked; read-only mode; blocked storage, init scripts,
+  browser preferences) and standalone repro specs
 - `scripts/validate_crash_report.py`: structure and honesty checks
-- `scripts/render_report.py`: coloured terminal/Markdown report and SARIF export
+- `scripts/render_report.py`: coloured terminal/Markdown report (`--brief`), with probes, and SARIF export
 - `scripts/sarif.py`: SARIF reader and writer (shared with Code Security Auditor)
 - `requirements.txt`: Playwright, for `probe_web.py` only
 - `examples/`: sample app, tool outputs, probes, evidence, repro specs and report

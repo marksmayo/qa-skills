@@ -2,7 +2,7 @@
   "metadata": {
     "repository": "pantry-web",
     "generated_at": "2026-11-10T09:30:00Z",
-    "skill_version": "1.0.0",
+    "skill_version": "1.2.0",
     "platforms": [
       "web"
     ],
@@ -28,6 +28,7 @@
       "note": "API responses mocked per probe with page.route; no backend was run."
     }
   },
+  "run_status": "complete",
   "recon": {
     "site_model": "spa",
     "blast_radius": {

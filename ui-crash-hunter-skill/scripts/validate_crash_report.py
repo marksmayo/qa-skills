@@ -19,17 +19,27 @@ from __future__ import annotations
 import argparse, json, re, sys
 from pathlib import Path
 
-REQUIRED = ['metadata', 'recon', 'tools', 'triage', 'probes', 'crashes', 'degradations', 'coverage', 'limitations',
-            'files_written', 'summary']
+REQUIRED = ['metadata', 'run_status', 'recon', 'tools', 'triage', 'probes', 'crashes', 'degradations', 'coverage',
+            'limitations', 'files_written', 'summary']
+RUN_STATUS = {'complete', 'partial', 'not_run'}
 TIERS = {'B1', 'B2', 'B3', 'B4'}
 CONFIDENCE = ['reproduced', 'traced', 'pattern']
 EVIDENCE_TYPES = {'reproduced', 'trace', 'tool', 'agent_judgment'}
 TRIGGER_KINDS = {'data', 'persisted_state', 'environment', 'user_action', 'lifecycle', 'navigation'}
-EFFECT_TIER = {'app_terminated': 'B1', 'white_screen': 'B1', 'crash_loop': 'B1', 'screen_replaced': 'B2',
-               'screen_frozen': 'B2', 'component_replaced': 'B3', 'component_broken': 'B3', 'console_only': 'B4'}
-CAUGHT_EFFECTS = {'screen_replaced', 'component_replaced'}
+EFFECT_TIER = {'app_terminated': 'B1', 'white_screen': 'B1', 'app_fallback': 'B1', 'crash_loop': 'B1',
+               'screen_replaced': 'B2', 'screen_frozen': 'B2', 'component_replaced': 'B3', 'component_broken': 'B3',
+               'console_only': 'B4'}
+CAUGHT_EFFECTS = {'screen_replaced', 'component_replaced', 'app_fallback'}
 TOOL_STATUS = {'ran', 'not_run', 'errored', 'not_applicable'}
-PROBE_OUTCOMES = {'reproduced', 'not_reproduced', 'baseline_clean', 'errored'}
+PROBE_OUTCOMES = {'reproduced', 'not_reproduced', 'baseline_clean', 'baseline_not_clean', 'errored'}
+# a stack frame: V8 "    at fn (file:1:2)", Firefox/Safari "fn@file:1:2"
+FRAME = re.compile(r'^\s+at\s+\S|\S@\S+:\d+(:\d+)?\s*$|\(\S+:\d+:\d+\)', re.M)
+GENERIC_REASON = re.compile(r'^\W*(not an? (real |actual )?(crash|issue|bug|problem)( path)?|false[- ]positive|n/?a|'
+                            r'not relevant|irrelevant|not reachable|unreachable|ok|fine|safe|ignore[d]?|noise|'
+                            r'not applicable|no issue|won\'?t fix)\W*$', re.I)
+RUNTIME_CLAIM = re.compile(r'\b(reproduced in|confirmed (in|by) (the )?(browser|running app|app|probes?)|probes? (passed|were clean)|'
+                           r'baseline (was )?clean|verified in the (browser|app))\b', re.I)
+API_ROUTE = re.compile(r'(^|/)(src/)?app/(.*/)?route\.(ts|js|mts|mjs|tsx|jsx)$|(^|/)(src/)?pages/api/')
 BLAST = {'B1': 3, 'B2': 2}
 REACH = {'critical_path': 3, 'high_traffic': 2, 'unknown': 2, 'rare': 1}
 LIKELIHOOD = {'normal_data': 4, 'edge_data': 3, 'rare_environment': 2, 'adversarial': 1}
@@ -70,7 +80,8 @@ def compute_summary(d: dict) -> dict:
         'degradations': len(degr),
         'candidates_total': int(triage.get('total') or 0),
         'candidates_promoted': len({p['candidate'] for p in triage.get('promoted', [])}),
-        'candidates_dismissed': len(triage.get('dismissed', [])),
+        'candidates_dismissed': len(triage.get('dismissed', [])) + sum(len(g.get('candidates') or [])
+                                                                       for g in triage.get('dismissed_groups', [])),
         'tools_ran': len(ran),
         'tools_applicable': len(applicable),
         'evidence_completeness': round(len(ran) / len(applicable), 2) if applicable else 0.0,
@@ -79,6 +90,50 @@ def compute_summary(d: dict) -> dict:
 
 def norm(s: str) -> str:
     return ' '.join(str(s or '').split())
+
+def host(url: str) -> str | None:
+    from urllib.parse import urlparse
+    m = re.search(r'[a-z][\w+.-]*://[^\s)]+', str(url or ''), re.I)
+    return (urlparse(m.group(0)).hostname or '').lower() if m else None
+
+def loopback(h: str | None) -> bool:
+    import ipaddress
+    if not h:
+        return False
+    if h == 'localhost' or h.endswith(('.localhost', '.test')):
+        return True
+    try:
+        return ipaddress.ip_address(h).is_loopback
+    except ValueError:
+        return False
+
+def glob_rx(pattern: str) -> re.Pattern:
+    out = ''
+    for part in re.split(r'(\*\*/?|\*|\?)', pattern):
+        out += {'**/': '(?:.*/)?', '**': '.*', '*': '[^/]*', '?': '[^/]'}.get(part, re.escape(part))
+    return re.compile('^' + out + '$')
+
+def read_lines(repo: Path, rel: str, cache: dict) -> list[str] | None:
+    if rel not in cache:
+        p = repo / rel
+        try:
+            cache[rel] = p.read_text(encoding='utf-8', errors='replace').splitlines() if p.is_file() else None
+        except OSError:
+            cache[rel] = None
+    return cache[rel]
+
+def evidence_texts(ev: dict) -> list[str]:
+    """Every error text a probe recorded: page errors and console errors with their evaluated Error arguments."""
+    out = []
+    for e in ev.get('page_errors') or []:
+        out += [f"{e.get('name', '')}: {e.get('message', '')}", str(e.get('message', '')), str(e.get('stack') or '')]
+    for c in (ev.get('console_errors') or []):
+        if isinstance(c, dict):
+            err = c.get('error') or {}
+            out += [str(c.get('text', '')), f"{err.get('name', '')}: {err.get('message', '')}", str(err.get('stack', ''))]
+        else:
+            out.append(str(c))
+    return [norm(t) for t in out if t]
 
 def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tuple[list[str], list[str]]:
     errors: list[str] = []
@@ -96,8 +151,49 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tu
     app_run = meta.get('app_run') or {}
     boundaries = {b.get('id'): b for b in recon.get('boundaries', [])}
     routes = recon.get('routes_screens', [])
+    lines_cache: dict = {}
     if not routes:
         E('recon.routes_screens is empty: the report must state which routes and screens were analysed')
+    for r in routes:
+        if r.get('analysed') and (API_ROUTE.search(str(r.get('file') or '')) or str(r.get('path') or '').startswith('/api/')):
+            E(f"{r.get('id')}: {r.get('path')} is an API endpoint (route handler), not a UI route; it cannot be an "
+              'analysed UI route. Drop it, or list it as not analysed')
+    for b in recon.get('boundaries', []):
+        if b.get('used') is False and any((f.get('boundary') or {}).get('caught_by') == b.get('id')
+                                          for f in d.get('crashes', []) + d.get('degradations', [])):
+            E(f"{b.get('id')}: {b.get('name')} is never rendered (used: false), so it cannot catch anything")
+
+    # the dynamic half
+    rs = d['run_status']
+    if rs not in RUN_STATUS:
+        E(f'run_status must be one of {sorted(RUN_STATUS)}')
+    if rs != 'complete' and len(norm(d.get('run_status_reason'))) < 15:
+        E(f'run_status {rs}: run_status_reason must say why the dynamic half did not fully run')
+    if rs == 'not_run':
+        if app_run.get('attempted'):
+            E('run_status not_run, but metadata.app_run.attempted is true')
+        if any(p.get('outcome') in ('reproduced', 'baseline_clean') for p in d['probes']):
+            E('run_status not_run, but probes claim a reproduction or a clean baseline')
+        for f in d['crashes'] + d['degradations']:
+            if f.get('confidence') == 'reproduced':
+                E(f"{f.get('id')}: reproduced, but run_status is not_run (static only)")
+        claim = RUNTIME_CLAIM.search(str((d.get('summary') or {}).get('headline') or ''))
+        if claim:
+            E(f'summary.headline implies a runtime check ("{claim.group(0)}"), but run_status is not_run')
+    elif rs == 'complete' and not any(p.get('outcome') in ('reproduced', 'not_reproduced', 'baseline_clean')
+                                      for p in d['probes']):
+        E('run_status complete, but no probe ran to an outcome; use partial or not_run with a reason')
+
+    # the probe target: the approved base URL, loopback unless someone authorised another target
+    target_host = host(app_run.get('target'))
+    if d['probes'] and app_run.get('attempted') and not target_host and \
+            any(p.get('evidence_file') for p in d['probes']):
+        E('metadata.app_run.target must name the URL the probes ran against')
+    if target_host and not loopback(target_host):
+        if not norm(app_run.get('authorised_by')):
+            E(f'app_run.target {target_host} is not loopback: app_run.authorised_by must name who approved probing it')
+        if app_run.get('read_only') is not True:
+            W(f'app_run.target {target_host} is not loopback and app_run.read_only is not true: writes may have reached it')
 
     # tools
     for t in d['tools']:
@@ -122,7 +218,20 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tu
                 evidence[p.get('id')] = json.loads((base / p['evidence_file']).read_text(encoding='utf-8'))
             except ValueError:
                 E(f"probe {p.get('id')}: evidence file {p['evidence_file']} is not valid JSON")
+        if p.get('outcome') in ('errored', 'baseline_not_clean') and len(norm(p.get('note'))) < 10:
+            E(f"probe {p.get('id')}: outcome {p.get('outcome')} needs a note saying what failed (environment down, "
+              'degraded target, step error)')
         ev = evidence.get(p.get('id'))
+        if ev is not None:
+            eh = host(ev.get('base_url'))
+            if eh and target_host and eh != target_host:
+                E(f"probe {p.get('id')}: its evidence ran against {eh}, not the approved target {target_host} (app_run.target)")
+            if eh and not loopback(eh) and ev.get('read_only') is False and app_run.get('read_only') is True:
+                E(f"probe {p.get('id')}: app_run.read_only is true, but this probe's evidence says read_only false")
+        if ev is not None and p.get('outcome') == 'baseline_not_clean':
+            own = [c for c in ev.get('console_errors') or [] if not BLOCKED.search(str(c.get('text', c)))]
+            if not (ev.get('page_errors') or own or ev.get('step_error') or ev.get('baseline_ok') is False):
+                E(f"probe {p['id']}: outcome 'baseline_not_clean' but its evidence records no error or failed expectation")
         if ev is not None and p.get('outcome') in ('reproduced', 'baseline_clean'):
             if p['outcome'] == 'reproduced' and not ev.get('reproduced'):
                 E(f"probe {p['id']}: outcome 'reproduced' but its evidence file says it did not reproduce")
@@ -138,6 +247,8 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tu
 
     # findings
     all_ids: set[str] = set()
+    stacks_seen: dict[tuple, list[str]] = {}
+    effect_only: dict[str, list[str]] = {}
     findings = [('crashes', f) for f in d['crashes']] + [('degradations', f) for f in d['degradations']]
     for section, f in findings:
         fid = f.get('id', '?')
@@ -200,26 +311,72 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tu
             E(f'{fid}: effect "{effect}" means a boundary caught the error; name it in boundary.caught_by')
         if effect in ('white_screen', 'crash_loop') and caught and (boundaries.get(caught) or {}).get('scope') not in ('app', 'global'):
             E(f'{fid}: a {effect} cannot be caught by a {boundaries[caught].get("scope")}-scoped boundary')
+        if effect == 'app_fallback' and caught and (boundaries.get(caught) or {}).get('scope') not in ('app', 'global'):
+            E(f'{fid}: app_fallback means an app-scoped or global boundary replaced every page; '
+              f'{caught} is {(boundaries.get(caught) or {}).get("scope")}-scoped')
         if conf in ('reproduced', 'traced'):
             hops = f.get('trace') or []
             if len(hops) < 2 or any(not h.get('file') or not isinstance(h.get('line'), int) for h in hops):
                 E(f'{fid}: a {conf} finding needs a trace of at least two file:line hops from the input to the throw')
+        for h in f.get('trace') or []:
+            if repo and h.get('file') and isinstance(h.get('line'), int):
+                lines = read_lines(repo, h['file'], lines_cache)
+                if lines is None:
+                    E(f"{fid}: trace hop {h['file']}:{h['line']} - file not found in the repository")
+                elif not 1 <= h['line'] <= len(lines):
+                    E(f"{fid}: trace hop {h['file']}:{h['line']} is past the end of the file ({len(lines)} lines)")
+        # convention: a finding the agent found by reading carries its basis, re-read from the repository
+        if f.get('source') not in (None, 'tool', 'agent'):
+            E(f'{fid}: source must be "tool" or "agent"')
+        if f.get('source') == 'agent':
+            basis = f.get('basis') or []
+            if not basis:
+                E(f'{fid}: source "agent" needs a basis: file, line and excerpt (or a runtime evidence path)')
+            for b in basis:
+                if b.get('evidence'):
+                    if not (base / b['evidence']).exists():
+                        E(f"{fid}: basis evidence {b['evidence']} not found")
+                elif not b.get('file') or not isinstance(b.get('line'), int) or not norm(b.get('excerpt')):
+                    E(f'{fid}: every basis entry needs file, line and excerpt (or evidence)')
+                elif repo:
+                    lines = read_lines(repo, b['file'], lines_cache)
+                    if lines is None or not 1 <= b['line'] <= len(lines):
+                        E(f"{fid}: basis {b['file']}:{b['line']} does not exist in the repository")
+                    elif norm(b['excerpt']) not in norm(lines[b['line'] - 1]):
+                        E(f"{fid}: basis excerpt not found at {b['file']}:{b['line']}")
+            if f.get('candidate_ids'):
+                E(f'{fid}: source "agent" findings are not promoted candidates; drop candidate_ids or use source "tool"')
         if conf == 'reproduced':
             rp = f.get('repro') or {}
             if not app_run.get('attempted'):
                 E(f'{fid}: marked reproduced but the app was never run')
+            pev = evidence.get(rp.get('probe_id')) or {}
+            if rp.get('probe_id') in probes and not pev:
+                E(f"{fid}: probe {rp.get('probe_id')} has no readable evidence_file, so the reproduction can't be checked")
+            st = str(rp.get('stack_trace') or '')
+            if norm(st):
+                first = norm(st.splitlines()[0])
+                msg = norm(first.split(': ', 1)[1]) if ': ' in first else first
+                if len(st.strip()) < 40 or not FRAME.search(st):
+                    E(f'{fid}: repro.stack_trace is not a stack trace (no frame lines); paste the stack the probe captured')
+                if pev and msg and not any(msg in t for t in evidence_texts(pev)):
+                    E(f"{fid}: the stack trace's error ({first[:80]}) is not in probe {rp.get('probe_id')}'s evidence")
+                stacks_seen.setdefault((rp.get('probe_id'), first), []).append(fid)
             if not norm(rp.get('stack_trace')):
                 # without a stack trace, the probe must have shown the effect itself: any observed effect for a
-                # degradation, but for a crash only an effect showing the app or screen gone
-                pev = evidence.get(rp.get('probe_id')) or {}
+                # degradation, but for a crash only an effect showing the app or screen gone (or, for
+                # app_fallback, the app-wide fallback that replaced every page)
                 effect = bool(pev.get('effect_observed')) and bool(pev.get('expectations'))
-                blanked = bool(pev.get('root_empty')) or (tier == 'B2' and bool(pev.get('fallback_visible')))
+                blanked = bool(pev.get('root_empty')) or (tier == 'B2' and bool(pev.get('fallback_visible'))) or \
+                    ((f.get('boundary') or {}).get('effect') == 'app_fallback' and bool(pev.get('fallback_visible')))
+                effect_only.setdefault(rp.get('probe_id'), []).append(fid)
                 if not effect:
                     E(f'{fid}: marked reproduced without a stack trace, and its probe has no observed effect '
                       '(evidence effect_observed with expectations that all held)')
                 elif tier in ('B1', 'B2') and not blanked:
                     E(f'{fid}: a {tier} crash reproduced without a stack trace needs evidence that the app blanked '
-                      '(root_empty, or a screen fallback for B2); otherwise give the stack trace or keep it traced')
+                      '(root_empty, a screen fallback for B2, or the app-wide fallback for app_fallback); otherwise give '
+                      'the stack trace or keep it traced')
                 if not norm(rp.get('observed_effect')):
                     E(f'{fid}: reproduced by its effect: repro.observed_effect must say what the probe saw')
             if not rp.get('screenshot'):
@@ -269,6 +426,14 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tu
                 E(f"{fid}: priority {r.get('priority')} does not match score {s} ({p}{'; ' + cap if cap else ''})")
         elif f.get('ranking') or f.get('rank'):
             E(f'{fid}: degradations are not ranked; remove ranking and rank')
+    for (pid, first), fids in stacks_seen.items():
+        if len(fids) > 1:
+            E(f"{', '.join(fids)}: the same stack ({first[:60]}) from probe {pid} is cited as the reproduction of "
+              'several findings; one throw is one finding (merge them) or each needs its own probe evidence')
+    for pid, fids in effect_only.items():
+        if len(fids) > 1:
+            E(f"{', '.join(fids)}: reproduced only by the effect of the same probe {pid}; each finding needs its own "
+              'probe (or a stack trace that tells them apart)')
     ordered = sorted(d['crashes'], key=rank_key)
     for n, f in enumerate(ordered, 1):
         if f.get('rank') != n:
@@ -283,12 +448,52 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tu
         if p.get('finding') not in all_ids:
             E(f"triage: {p.get('candidate')} promoted to unknown finding {p.get('finding')}")
         seen.setdefault(p.get('candidate'), 'promoted')
+    reasons: dict[str, list[str]] = {}
     for x in tri.get('dismissed', []):
         if x.get('candidate') in seen:
             E(f"triage: {x.get('candidate')} is both {seen[x['candidate']]} and dismissed")
         seen[x.get('candidate')] = 'dismissed'
-        if len(norm(x.get('reason'))) < 10:
-            E(f"triage: {x.get('candidate')} dismissed without a real reason")
+        r = norm(x.get('reason'))
+        if len(r) < 10 or GENERIC_REASON.match(r):
+            E(f"triage: {x.get('candidate')} dismissed without a real reason (name the guard, the invariant or why the "
+              'trigger cannot happen)')
+        reasons.setdefault(r.lower(), []).append(x.get('candidate'))
+    for r, cids in reasons.items():
+        if len(cids) > 3:
+            E(f'triage: {len(cids)} candidates ({", ".join(cids[:4])}, ...) share one dismissal reason ("{r[:60]}"); '
+              'give each its own reason, or dismiss them together in triage.dismissed_groups with a match rule')
+    by_id = {c['id']: c for c in (candidates or {}).get('candidates', [])}
+    rule_ids: set[str] = set()
+    for g in tri.get('dismissed_groups', []):
+        gid = g.get('rule_id') or '?'
+        if gid in rule_ids:
+            E(f'triage: dismissed_groups rule_id {gid} is used twice')
+        rule_ids.add(gid)
+        r = norm(g.get('reason'))
+        if len(r) < 20 or GENERIC_REASON.match(r):
+            E(f'triage: dismissed group {gid} needs a specific reason (the guard or invariant that holds for every match)')
+        match = g.get('match') or {}
+        if not match:
+            E(f'triage: dismissed group {gid} needs a match rule (pitfall_id, path, tool, rule or snippet)')
+        cids = g.get('candidates') or []
+        if not cids:
+            E(f'triage: dismissed group {gid} lists no candidates')
+        for cid in cids:
+            if cid in seen:
+                E(f'triage: {cid} is both {seen[cid]} and in dismissed group {gid}')
+            seen[cid] = 'dismissed'
+            c = by_id.get(cid)
+            if candidates is None or c is None:
+                continue
+            srcs = c.get('sources') or []
+            fails = [k for k, v in match.items() if not (
+                (k == 'pitfall_id' and c.get('pitfall_id') == v) or
+                (k == 'path' and glob_rx(v).match(str(c.get('file') or ''))) or
+                (k == 'tool' and any(s.get('tool') == v for s in srcs)) or
+                (k == 'rule' and any(s.get('rule_id') == v for s in srcs)) or
+                (k == 'snippet' and re.search(v, str(c.get('snippet') or ''))))]
+            if fails:
+                E(f'triage: {cid} is in dismissed group {gid} but does not match its rule ({", ".join(fails)})')
     if len(seen) != tri.get('total'):
         E(f"triage: {len(seen)} candidate(s) accounted for, but total is {tri.get('total')}")
     for _, f in findings:
@@ -333,6 +538,12 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tu
         W('no crashes and no dynamic confirmation: say clearly that this is a static result only')
     if want['evidence_completeness'] < 0.5:
         W(f"evidence completeness is {want['evidence_completeness']}: most applicable tools did not run")
+    elif d['crashes'] and want['evidence_completeness'] < 0.75:
+        W(f"evidence completeness is {want['evidence_completeness']} with {len(d['crashes'])} crash(es): say which tools "
+          'did not run and what that leaves unchecked')
+    if d['crashes'] and not any(f.get('confidence') == 'reproduced' for f in d['crashes']):
+        W('no crash was confirmed in the running app: every crash is traced or pattern only; say so in the headline '
+          'and the limitations')
     return errors, warnings
 
 def main() -> int:

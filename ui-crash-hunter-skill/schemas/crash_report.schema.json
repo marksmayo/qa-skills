@@ -3,9 +3,12 @@
   "$id": "https://github.com/qa-skills/ui-crash-hunter-skill/schemas/crash_report.schema.json",
   "title": "UI crash hunter report",
   "type": "object",
-  "required": ["metadata", "recon", "tools", "triage", "probes", "crashes", "degradations", "coverage", "limitations",
-               "files_written", "summary"],
+  "required": ["metadata", "run_status", "recon", "tools", "triage", "probes", "crashes", "degradations", "coverage",
+               "limitations", "files_written", "summary"],
   "properties": {
+    "run_status": {"enum": ["complete", "partial", "not_run"],
+                   "description": "The dynamic half (probes in the running app): complete, partial (some planned probes could not run, or the target was degraded), or not_run (static only)"},
+    "run_status_reason": {"type": "string", "description": "Required unless run_status is complete"},
     "metadata": {
       "type": "object",
       "required": ["repository", "generated_at", "skill_version", "platforms", "app_run"],
@@ -22,7 +25,9 @@
           "properties": {
             "attempted": {"type": "boolean"},
             "status": {"enum": ["ran", "not_run", "failed"]},
-            "target": {"type": "string", "description": "URL, emulator or device the probes ran against"},
+            "target": {"type": "string", "description": "URL, emulator or device the probes ran against; every probe's evidence base_url must be on this host"},
+            "authorised_by": {"type": "string", "description": "Who approved probing a target that is not loopback (required for one)"},
+            "read_only": {"type": "boolean", "description": "Probes ran in read-only mode (non-GET requests answered in the browser, never sent); required for a non-loopback target unless writes were authorised"},
             "build_command": {"type": "string"},
             "note": {"type": "string"}
           }
@@ -49,7 +54,8 @@
               "not_analysed_reason": {"type": "string"},
               "pages": {"type": "integer", "description": "Static sites: how many HTML pages share this entry's scripts"},
               "scripts": {"type": "array", "items": {"type": "string"}, "description": "Static sites: the scripts the page loads"},
-              "content_rendered_by_js": {"type": "boolean"}
+              "content_rendered_by_js": {"type": "boolean"},
+              "note": {"type": "string"}
             }
           }
         },
@@ -65,7 +71,8 @@
               "file": {"type": "string"},
               "line": {"type": "integer"},
               "scope": {"enum": ["app", "route", "screen", "component", "global"]},
-              "covers": {"type": "array", "items": {"type": "string"}, "description": "Route/screen ids or component names it wraps"}
+              "covers": {"type": "array", "items": {"type": "string"}, "description": "Route/screen ids or component names it wraps"},
+              "used": {"type": "boolean", "description": "Definitions: whether anything renders it; an unused boundary catches nothing"}
             }
           }
         },
@@ -108,7 +115,23 @@
                                                 "properties": {"candidate": {"type": "string"}, "finding": {"type": "string"}}}},
         "dismissed": {"type": "array", "items": {"type": "object", "required": ["candidate", "reason"],
                                                  "properties": {"candidate": {"type": "string"}, "reason": {"type": "string"},
-                                                                "location": {"type": "string"}}}}
+                                                                "location": {"type": "string"}}}},
+        "dismissed_groups": {
+          "type": "array",
+          "description": "Candidates dismissed together for one stated rule. Every candidate must match 'match' (checked with --candidates)",
+          "items": {
+            "type": "object", "required": ["rule_id", "match", "reason", "candidates"],
+            "properties": {
+              "rule_id": {"type": "string", "description": "Short id for the rule, unique in the report"},
+              "match": {"type": "object", "minProperties": 1,
+                        "properties": {"pitfall_id": {"type": "string"}, "path": {"type": "string", "description": "glob on the candidate's file (** spans directories)"},
+                                       "tool": {"type": "string"}, "rule": {"type": "string", "description": "a source rule_id, e.g. TS2532"},
+                                       "snippet": {"type": "string", "description": "regex the candidate's snippet must match"}}},
+              "reason": {"type": "string", "description": "Why every matching candidate is not a crash: the invariant or guard, specifically"},
+              "candidates": {"type": "array", "items": {"type": "string"}, "minItems": 1}
+            }
+          }
+        }
       }
     },
     "probes": {
@@ -120,8 +143,10 @@
           "scenario_file": {"type": "string"},
           "evidence_file": {"type": "string"},
           "findings": {"type": "array", "items": {"type": "string"}},
-          "outcome": {"enum": ["reproduced", "not_reproduced", "baseline_clean", "errored"]},
-          "environment": {"type": "string"}
+          "outcome": {"enum": ["reproduced", "not_reproduced", "baseline_clean", "baseline_not_clean", "errored"],
+                      "description": "baseline_not_clean: the baseline showed errors of the app's own (a degraded target); errored: the probe could not run (environment down, step failed). Both need a note"},
+          "environment": {"type": "string"},
+          "note": {"type": "string"}
         }
       }
     },
@@ -175,6 +200,13 @@
         "pitfall_id": {"type": ["string", "null"]},
         "confidence": {"enum": ["reproduced", "traced", "pattern"]},
         "evidence_type": {"enum": ["reproduced", "trace", "tool", "agent_judgment"]},
+        "source": {"enum": ["tool", "agent"], "description": "agent: found by reading the code, not from a candidate; needs basis"},
+        "basis": {
+          "type": "array", "minItems": 1,
+          "items": {"type": "object",
+                    "properties": {"file": {"type": "string"}, "line": {"type": "integer", "minimum": 1}, "excerpt": {"type": "string"},
+                                   "evidence": {"type": "string", "description": "a runtime evidence file, relative to the report"}}}
+        },
         "locations": {
           "type": "array", "minItems": 1,
           "items": {"type": "object", "required": ["file", "line"],
@@ -194,8 +226,9 @@
           "type": "object", "required": ["caught_by", "effect"],
           "properties": {
             "caught_by": {"type": ["string", "null"], "description": "recon.boundaries id, or null if nothing catches it"},
-            "effect": {"enum": ["app_terminated", "white_screen", "crash_loop", "screen_replaced", "screen_frozen",
-                                "component_replaced", "component_broken", "console_only"]},
+            "effect": {"enum": ["app_terminated", "white_screen", "app_fallback", "crash_loop", "screen_replaced", "screen_frozen",
+                                "component_replaced", "component_broken", "console_only"],
+                       "description": "app_fallback (B1): an app-scoped or global boundary (Next.js global-error) replaced every page with its fallback"},
             "note": {"type": "string"}
           }
         },
@@ -227,7 +260,8 @@
             "steps": {"type": "array", "items": {"type": "string"}},
             "expected": {"type": "string"},
             "actual": {"type": "string"},
-            "stack_trace": {"type": "string"},
+            "stack_trace": {"type": "string", "description": "As captured by the probe: its first line must appear in the probe's evidence, and it must hold at least one frame"},
+            "source_mapping": {"type": "string", "description": "How minified frames were mapped to the source locations (chunk:line:col to file:line)"},
             "observed_effect": {"type": "string", "description": "What the probe's expectations showed, when it was reproduced by its effect rather than (or as well as) a stack trace"},
             "screenshot": {"type": "string"},
             "evidence_file": {"type": "string"},
