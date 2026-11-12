@@ -11,8 +11,10 @@ the original code and with the neutral body; every confirmed never_runs is missi
 collect output; a duplicate has identical coverage and values (otherwise it is an overlap); a
 stale skip has a done ticket or an age over the threshold; every proof passed on the original
 and failed neutralised, in real runs; delete and merge are never applied; the tree hash is
-unchanged across the runs. --repo checks every patch still applies and every changed file
-exists. --write-summary fills in weights, scores, priorities and the summary.
+unchanged across the runs. A finding found by review (`source: agent`) needs no candidate but a
+basis, and a dismissal with `scanner_error` needs one too; --repo re-reads every basis line and
+checks its excerpt, and checks every patch still applies. --write-summary fills in weights,
+scores, priorities and the summary.
 """
 from __future__ import annotations
 import argparse, json, re, shutil, sys, tempfile

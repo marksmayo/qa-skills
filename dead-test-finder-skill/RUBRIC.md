@@ -27,13 +27,28 @@ not from a done ticket: it may be dismissed with the reason the guard is there *
 `check_skips.py` no longer makes a conditional skip stale by age, so this only arises with older
 skip files.
 
+**A candidate the scanner got wrong** (a runtime `test.skip(condition, reason)` read as a new
+test, a name cut at a quote) may be dismissed with `scanner_error: true` and a `basis` citing the
+lines that show the misreading: each `{file, line, excerpt}` must match the repo line **(checked
+with `--repo`, required for these)**. A stale skip whose ticket is done can't be dismissed this
+way.
+
+**Findings found by review** (`source: "agent"`): an issue no candidate covers, for example an
+assertion that is commented out in a test the rules didn't parse. Such a finding has `candidates:
+[]` and a non-empty `basis`: `{file, line, excerpt}` items (the excerpt must appear on that repo
+line, **checked with `--repo`**) or `{evidence: <file in the run directory>}` items (must exist).
+Its location must be one of its basis files. Every other rule applies unchanged: it is `suspected`
+from reading alone, `static` only if a rule-like check matched, and `confirmed` only with the same
+run evidence as any other finding. The renderer labels it "found by review". A finding with
+`source: "tool"` (the default) cites at least one candidate.
+
 ## Confidence
 
 | Finding | `confirmed` needs |
 |---|---|
 | `cant_fail`, `mock_only`, and `async_not_awaited`, `swallowed_failure` or `unreached_assertion` when confirmed | A neutralisation of the test: it passed unchanged and passed with every target's neutral body, in runs recorded in `runs.json`. If the raise variant failed, `evidence.note` must say the test checks that nothing raises |
 | `never_runs` | The collect output leaves the test out (`collection.json` and its raw output file), or a `.only` marker |
-| `duplicate` | `similarity.json` says duplicate: similarity ≥ 0.9, identical coverage and identical values. Otherwise the finding is an `overlap` |
+| `duplicate` | `similarity.json` says duplicate: similarity ≥ 0.9, identical coverage and identical values. Otherwise the finding is an `overlap`. A JavaScript pair is `not_assessed` there (no per-test coverage): it can be a `static` `duplicate` only when the bodies are identical apart from variable names (similarity 1.0, the scanner's JavaScript threshold), otherwise an `overlap`, and never `confirmed` |
 | `stale_skip` | `skips.json` says stale: a done ticket, or no ticket and older than `skip_age_days` |
 
 `static` means a rule matched and you checked it. `suspected` means your judgement alone, and is

@@ -1,6 +1,6 @@
 # Design: `dead-test-finder-skill`
 
-Status: Built (v1.0.0), see "As built" at the end. Build order: 12.
+Status: Built (v1.1.0), see "As built" at the end. Build order: 12.
 
 ## Mission
 
@@ -318,3 +318,59 @@ Where the build differs from the design above, and what the example showed.
     - `.only`, `describe.skip`, empty catches and `done` callbacks;
     - an overlap with the same lines but different values;
     - git-blame ages either side of 180 days.
+- **v1.1.0: found on a Next.js, TypeScript, Vitest and Playwright repository** (3,630 Vitest
+  tests in 403 files, 51 Playwright tests), and fixed:
+  - **A lexer for JavaScript.** Regex literals holding a quote (`/can't take bookings/`) opened a
+    "string" that swallowed the rest of the file (4 tests lost, silently); names were cut at the
+    first inner quote (19 wrong ids); a commented-out `expect` counted as an assertion (a
+    Playwright test that can never fail went unflagged). `js_lex` now knows where strings,
+    template literals (with nested `${}`), regex literals and comments start and end; calls and
+    assertions are matched in the masked code, names read from the literal. Strings end at a
+    newline at the latest, so an apostrophe in JSX text costs one line.
+  - **Parametrised names.** `it.each`/`describe.each`/`.for` tables (including ones holding `)`),
+    template names with `${...}` and computed names get a `name_pattern` (printf `%s`, `$var`,
+    `${}` become wildcards); `collect_check.py` matches the runner's expanded names against it.
+  - **Playwright.** `test.describe` (named, anonymous, `.configure`), a runtime
+    `test.skip(cond, reason)`/`test.fixme(cond)` (now a conditional skip of its test or block, not
+    a test named "?"), `test.step`, `expect.soft`/`expect.poll`, `test as setup` aliases and
+    `*.setup.ts` setup projects. Playwright specs are listed with `playwright test --list
+    --reporter=json`; before, `vitest list` (which excludes `e2e/`) made all 51 "not collected".
+  - **Rules for JavaScript** that were Python-only: mock-only (every called product name comes
+    from a `vi.mock`ed module and every `expect` is on a mock), unreached assertions (all inside a
+    loop over a non-literal, all inside `catch`, after a top-level `return`), swallowed failures
+    (a `catch` around an `expect`, an empty `catch`, an empty `.catch()` except on a
+    `waitFor...()`), and duplicates. Every rule now runs on every test instead of stopping at
+    `no_assertion`. A determinism check `expect(f(x)).toBe(f(x))` is no longer a tautology.
+  - **JavaScript duplicates** with the Python settings gave 1,719 candidates on that repo (tests
+    that differ only in a URL or label). There is no per-test coverage for JavaScript to tell a
+    duplicate from an overlap, so the JavaScript tokens keep calls and literal values and the
+    threshold is 1.0 (identical up to variable names): 15 candidates. They stay static.
+  - **Loops over a `const` array literal** (`const cases = [...]; for (const c of cases)`) are not
+    unreached: 24 candidates fell to 7, each a loop over something read at run time.
+  - **Collection.** `--env` for setup files that read configuration at import; `--scope
+    candidates`/`--files` to list only some files (a full `vitest list` took 12 minutes there);
+    `--reuse` keeps a list while the command and files are unchanged; a list that names no tests
+    for files that define some is errored, never "not collected" (Vitest 4.1 on Windows printed
+    nothing for a file filter in that repo).
+  - **Neutralisation.** Targets were only `{ named }` imports from relative paths, and the call
+    list held `render`, `fn`, `mockResolvedValue` and keywords; 15 of 23 tests were "not run".
+    Targets are now the imported product names a test calls or renders, resolved through
+    tsconfig `paths` and vite/vitest `alias`, default exports and re-exports, with nested generics
+    and expression-bodied arrows patched. Re-run on five of those tests (the component through
+    `@/` and a default import, the soft-delete and audit-log helpers, `getEnv`) in a scratch copy:
+    every target resolved once nested generics (`<T extends Record<K, V>>`) were handled, in 74 s,
+    and the copy's `src/` hashed the same before and after. Files are restored from their
+    original bytes and checked by SHA-256 (the old LF rewrite left four CRLF files modified in the
+    copy); run_tests.py's error is shown instead of "runs.json not found"; `--tests-file`, `--env`,
+    `--npm-script` and `--runner-args` added; Playwright tests are recorded as not run.
+  - **Speed.** `walk()` used `rglob` and filtered `node_modules` afterwards (46 s of a 4.5-minute
+    scan under load). It prunes before descending now. On that repository (read-only), idle with a
+    warm cache: the walk took 4.5 s before and under 0.1 s after, listing the same 1,016 files;
+    the whole scan, with the lexer and the new rules, took 10.3 s before and 4.6 s after
+    in-process (13 s from the command line under other load).
+  - **Findings found by review** (`source: "agent"`, a `basis` re-read by `--repo`) and
+    **dismissals of misread candidates** (`scanner_error` with a basis) are in the contract; the
+    example gains one (F8, a test asserting only the keys of the trial balance).
+  - Not done: Prisma-style and other per-test coverage for JavaScript duplicates; running
+    Playwright tests under neutralisation; a Vitest file filter that works where Vitest 4.1
+    printed nothing (the list is reported as errored instead).

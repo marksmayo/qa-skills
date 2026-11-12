@@ -1,7 +1,7 @@
 ---
 name: dead-test-finder
 description: Find tests that give false assurance - tests the framework never collects, tests that pass whatever the code does, tests that only check their own mocks, un-awaited async assertions, swallowed failures, duplicates, and skips whose reason has gone - and prove the important ones with real runs. Never-runs is confirmed by the framework's own collect output; can't-fail by neutralising the code under test in a scratch copy and seeing the test still pass; duplicates by identical coverage and values. Each finding gets a patch, and every strengthening patch is proved to pass on the code and fail when it's neutralised. Never deletes or merges tests, never commits, and never claims a suite has "no dead tests".
-version: 1.0.0
+version: 1.1.0
 ---
 
 # Dead test finder
@@ -44,7 +44,9 @@ Output:
   - **Without a run:** a test with no assertion is `static`, and reading the code alone is
     `suspected` (never above P2).
 - **"Never runs" is confirmed by collection, not by name patterns.** The framework's own list
-  command must leave the test out (`pytest --collect-only`, `vitest list`, `jest --listTests`).
+  command must leave the test out (`pytest --collect-only`, `vitest list`, `jest --listTests`,
+  `playwright test --list`). A list command that fails, or lists nothing for files that define
+  tests, is errored: its tests are not assessed, never not collected.
   A `.only` left in the code is always P0.
 - **A duplicate needs similar code and identical behaviour.**
   - **The test:** AST similarity at or above 0.9 after normalising names and literals, the same
@@ -86,35 +88,65 @@ Output:
 
 ```bash
 python scripts/scan_tests.py <repo> --out <run>/candidates.json
-python scripts/collect_check.py <repo> --candidates <run>/candidates.json --run-dir <run> [--cwd client=<copy with node_modules>]
+python scripts/collect_check.py <repo> --candidates <run>/candidates.json --run-dir <run> [--cwd client=<copy with node_modules>] \
+    [--env DATABASE_URL=postgresql://fake:fake@127.0.0.1:5432/fake] [--scope candidates | --files <file> ...] [--reuse]
 ```
 
 `scan_tests.py` lists every test definition, whether or not it would be collected:
 - Python is parsed with `ast`;
-- JavaScript and TypeScript are parsed with `it`/`test`/`describe` matching.
+- JavaScript and TypeScript go through a small lexer first, so strings, template literals,
+  regular expression literals (`/can't/`) and comments are never read as code, and a
+  commented-out `expect` is not an assertion. Calls are then matched: `describe`/`it`/`test`
+  and their `x`/`f` forms, `.only`/`.skip`/`.todo`/`.each`/`.for`/`.skipIf`/`.runIf`, Playwright's
+  `test.describe` (named or anonymous), `test.fixme`, and `test` imported under another name
+  (`import { test as setup }`). Names keep their quotes and apostrophes. A name from `it.each`,
+  `describe.each`, a template literal with `${...}` or a variable is parametrised: the definition
+  carries a `name_pattern` that the expanded names the runner lists are matched against.
+- Playwright: a file that imports `@playwright/test` or sits in the config's `testDir` is marked
+  `framework: playwright`, and setup projects (`auth.setup.ts`) are scanned too. A runtime
+  `test.skip(condition, reason)` or `test.fixme(condition)` inside a test is a conditional skip of
+  that test, not a test; at describe level it covers the block. `test.step` bodies belong to their
+  test, and `expect.soft`/`expect.poll` are assertions.
+- Every rule runs on every test (a test with no assertion and an empty catch gets both
+  candidates). Dependency, build and cache directories (`node_modules`, `.next`, `dist`, ...) are
+  pruned before the walk descends into them.
 
 It flags these candidates:
 
 | Candidate | Rule |
 |---|---|
 | `never_runs` | File outside `python_files` (read from the pytest config), class outside `python_classes`, `.only`, a module-level `pytest.skip(..., allow_module_level=True)` that always runs (one candidate listing every test in the module) |
-| `no_assertion` | No `assert`, assertion call, `expect` or `pytest.raises` |
-| `tautology` | `assert True`, `x == x`, `expect(v).toBe(v)` |
-| `unreached_assertion` | Assertions inside a loop over a possibly empty iterable, only inside `except` (the test has no other assertion), or after `return` |
-| `swallowed_failure` | An `except` that can catch the assertion (bare, `AssertionError`, `Exception` or `BaseException`, alone or in a tuple) around it, and doesn't re-raise, fail (`pytest.fail`, `self.fail`), assert, or keep the error for an assertion after the `try`; an empty `.catch(() => {})`. `except FileNotFoundError: pytest.skip(...)` is not one |
+| `no_assertion` | No `assert`, assertion call, `expect` (also `expect.soft`, `expect.poll`, `expect.assertions`, helpers named `expectX`/`assertX`/`verifyX`) or `pytest.raises`. When the test only uses Testing Library `getBy*`/`findBy*` queries, the candidate says so: they throw when nothing matches, so the test checks only that elements exist |
+| `tautology` | `assert True`, `x == x`, `expect(v).toBe(v)` (not `expect(f(x)).toBe(f(x))`, a determinism check) |
+| `unreached_assertion` | Assertions inside a loop over a possibly empty iterable, only inside `except` (the test has no other assertion), or after `return`. JavaScript: every assertion inside a `for ... of`/`.forEach`/`.map` over something that isn't an array literal (or a `const` holding one), only inside `catch`, or after a top-level `return` |
+| `swallowed_failure` | An `except` that can catch the assertion (bare, `AssertionError`, `Exception` or `BaseException`, alone or in a tuple) around it, and doesn't re-raise, fail (`pytest.fail`, `self.fail`), assert, or keep the error for an assertion after the `try`. JavaScript: a `catch` around an `expect` that neither rethrows nor fails, an empty `catch {}`, and an empty `.catch(() => {})` (not on a best-effort `waitFor...()`). `except FileNotFoundError: pytest.skip(...)` is not one |
 | `async_not_awaited` | `expect(...).resolves/.rejects` neither awaited nor returned; a `done` callback never called |
-| `mock_only` | The test patches a function, then asserts on that same function |
-| `skipped` | `skip`, `skipif`, a non-strict `xfail` (on the test or its class), a runtime `pytest.skip()` or `self.skipTest()`, `it.skip`, `describe.skip`, `todo`; at module level `pytestmark = pytest.mark.skip/skipif/xfail`, `pytest.importorskip(...)` and a guarded `pytest.skip(..., allow_module_level=True)` (one candidate listing every test in the module). Each with the reason, any ticket key, and whether it is conditional: a runtime skip inside an `if`, `except`, `try`, loop or short-circuit expression, or after an early return, is conditional, with that guard as its condition |
-| `duplicate` | Normalised AST similarity ≥ 0.9. Pairs are pruned first with bounds that never drop a pair at or above the threshold (length, token counts, longest common subsequence), so the result is the same as comparing every pair, in seconds rather than minutes on a large suite |
+| `mock_only` | The test patches a function, then asserts on that same function. JavaScript: every product function the test calls comes from a module it mocks (`vi.mock`/`jest.mock`), and every `expect` is on a mock |
+| `skipped` | `skip`, `skipif`, a non-strict `xfail` (on the test or its class), a runtime `pytest.skip()` or `self.skipTest()`, `it.skip`, `describe.skip`, `todo`, `test.fixme`, `it.skipIf(cond)` (conditional), a runtime Playwright `test.skip(cond, reason)` (conditional, on its test or block); at module level `pytestmark = pytest.mark.skip/skipif/xfail`, `pytest.importorskip(...)` and a guarded `pytest.skip(..., allow_module_level=True)` (one candidate listing every test in the module). Each with the reason, any ticket key, and whether it is conditional: a runtime skip inside an `if`, `except`, `try`, loop or short-circuit expression, or after an early return, is conditional, with that guard as its condition |
+| `duplicate` | Python: normalised AST similarity ≥ 0.9. JavaScript: test bodies identical apart from variable names (calls and literal values kept, at least 40 tokens), because no per-test coverage run can tell a JavaScript duplicate from an overlap later. Pairs are pruned first with bounds that never drop a pair at or above the threshold (length, token counts, longest common subsequence), so the result is the same as comparing every pair, in seconds rather than minutes on a large suite |
 
 `collect_check.py` runs each framework's list command and keeps the raw output. Every
-definition that isn't listed is `not_collected`.
+definition that isn't listed is `not_collected` (a parametrised one is matched by its name
+pattern).
+
+- **Playwright** specs are listed with `npx playwright test --list --reporter=json` (no browser
+  starts), never with Vitest or Jest, which exclude `e2e/` and would report every spec as not
+  collected.
+- **Environment.** Setup files often read configuration at import (`vitest.setup.ts` reading
+  `DATABASE_URL`). Pass fake values with `--env K=V`, never real credentials.
+- **Cost.** `vitest list` and `playwright test --list` import every file they list, so on a large
+  suite a list costs about as much as a run. `--scope candidates` lists only the files holding a
+  candidate (`--files` names them yourself); everything else is `not_assessed` with the reason.
+  `--reuse` keeps an earlier list while the command and the listed files are unchanged. A list
+  that comes back empty for files that define tests (a filter that matched nothing) is errored,
+  not "nothing collected"; rerun without the scope.
 
 ## Step 2: Neutralise the flagged tests
 
 ```bash
 python scripts/neutralise.py --repo <repo> --candidates <run>/candidates.json --run-dir <run> \
-    --test <id> [--test <id> ...] [--target <id>=module.function] [--cwd client=<copy>]
+    --test <id> [--test <id> ...] [--tests-file ids.txt] [--target <id>=module.function] [--cwd client=<copy>] \
+    [--env K=V] [--npm-script test] [--runner-args "..."]
 ```
 
 Run this for every `no_assertion`, `tautology`, `unreached_assertion`, `swallowed_failure`,
@@ -127,6 +159,22 @@ Run this for every `no_assertion`, `tautology`, `unreached_assertion`, `swallowe
   those: a test that checks an image exists needs the image. `neutralisations.json` records each
   copy and what it left out. For a very large repo, make one scratch copy yourself and pass it
   with `--cwd <package>=<copy>` to reuse it across invocations.
+- **Ids from a file.** `--tests-file` takes one id per line, so ids holding quotes, `>` or `$`
+  need no shell quoting.
+- **JavaScript targets** are the names the test imports from relative or alias paths (`@/lib/x`,
+  read from tsconfig `paths` or a vite/vitest `alias`) and calls or renders as JSX. Each is
+  followed through default imports and re-exports to its function (`function`, `const` arrow,
+  `export default function`). Mocked modules and test-library helpers are never targets.
+  `--env`, `--npm-script test` (the repo's own runner flags and env) and `--runner-args` are
+  passed to `run_tests.py`. Each run is the whole test file (Vitest start-up dominates, about
+  10 s a run), so a test costs one run plus two per target.
+- **Restores.** Every patched file is written back byte for byte (CRLF kept) and checked by
+  SHA-256; the script stops if a restore doesn't match.
+- **Windows paths.** Deep trees (`prisma/migration_history_archive/...`) pass 260 characters
+  inside a long scratch path. Put the `--cwd` copy at a short path (`C:\t\app`); when
+  `run_tests.py` records no run, its own error is shown and kept in the result (`errors`).
+- **Playwright tests** are not neutralised (they drive a running app); they are recorded as not
+  run with the reason.
 - **Parametrised tests.** Name the function (`tests/test_x.py::test_y`) to run every case: it
   passes only if every case passes. Name one case (`tests/test_x.py::test_y[a-1]`) to run just
   that one.
@@ -142,6 +190,7 @@ Each test runs three times:
 | Passes with the neutral body | It can't fail on that code: `cant_fail` (or `mock_only` when it mocks its subject), confirmed |
 | Fails with the neutral body | It can fail. Keep the static finding (e.g. an un-awaited assertion that today's runner happens to check), with that result as evidence |
 | Nothing to neutralise | It calls no product code: usually a smoke test, so `weak` |
+| Targets not found | Name them with `--target`; until then the result is `not_run` and counts against evidence completeness |
 
 ## Step 3: Duplicates and skips
 
@@ -168,7 +217,16 @@ stops on an id pytest can't run, its tests are rerun one at a time.
 ## Step 4: Review, propose, prove
 
 Every candidate becomes a finding or is dismissed with a reason, for example a legitimate
-conditional skip. A stale verdict can be dismissed only when the skip is conditional and the
+conditional skip. A candidate the scanner got wrong (a misread skip, a name cut short) is
+dismissed with `scanner_error: true` and a `basis` of `{file, line, excerpt}` items showing the
+real code; this is the only way to dismiss a stale-skip or confirmed never-runs candidate, and
+the validator re-reads each line with `--repo`.
+
+**Problems no candidate covers** (an assertion commented out in a file the rules couldn't parse,
+a test that asserts only the keys of a result) are reported too, as findings with `"source":
+"agent"`, `candidates: []` and a `basis`: `{file, line, excerpt}` items the validator re-reads, or
+`{evidence: <file in the run directory>}`. Reading alone makes them `suspected` (at most P2);
+`confirmed` still needs a neutralisation run. The rendered report labels them "found by review". A stale verdict can be dismissed only when the skip is conditional and the
 verdict came from its age rather than a done ticket (a `skips.json` written before guard skips
 were recognised); say what the condition guards against.
 
@@ -232,7 +290,7 @@ Show the user:
 | `tools[]` | Each tool ran, not run, errored or not applicable, with the reason |
 | `collection` | Defined, collected, not collected, not assessed |
 | `tests[]` | Every defined test: scanned, neutralised or not assessed (with the reason) |
-| `findings[]` | Category, candidates, tests, location, confidence, why, criticality and reason, evidence (neutralisation, collection, similarity or skip), proposal (action, patch, rationale, proof), `applied`; weight, score and priority are computed |
+| `findings[]` | Category, `source` (tool or agent) and `basis`, candidates, tests, location, confidence, why, criticality and reason, evidence (neutralisation, collection, similarity or skip), proposal (action, patch, rationale, proof), `applied`; weight, score and priority are computed |
 | `dismissed[]` | Candidates set aside, with the reason |
 | `summary` | Headline, tests defined, collected and neutralised, counts by category and priority, evidence completeness |
 | `limitations[]`, `files_changed[]` | What the scan can't see; files changed with `apply: true` |

@@ -20,7 +20,9 @@ Verdicts:
 
 A skip is conditional when it is a skipif/skipUnless/conditional xfail mark, or a runtime
 pytest.skip() inside an if, except, try, loop or short-circuit expression, or after an early
-return (scan_tests.py records the condition).
+return, and in JavaScript an `it.skipIf(cond)` or a runtime Playwright `test.skip(cond, reason)` /
+`test.fixme(cond)` inside a test or describe block (scan_tests.py records the condition). A
+candidate the scanner misread can be dismissed in the report with `scanner_error` and a basis.
 """
 from __future__ import annotations
 import argparse, json, re, subprocess, sys
