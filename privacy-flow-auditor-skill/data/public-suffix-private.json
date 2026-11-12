@@ -1,0 +1,29 @@
+{
+ "note": "A subset of the PRIVATE section of the Public Suffix List (https://publicsuffix.org/list/, Mozilla Public License 2.0): shared-hosting suffixes under which each customer's site is its own registrable domain. Without them, myapp.vercel.app would have the registrable domain vercel.app, so every other vercel.app app would count as first party, and an EasyPrivacy rule for one tenant (||someone.vercel.app^) would mark the whole suffix, and your site, as a tracker. Transcribed by hand, not downloaded, so it is pinned by this file's SHA-256 in data/lists.lock.json (public_suffix_private) rather than by a commit; fetch_lists.py --check verifies it. Add suffixes from the PSL private section when a target sits under one that is missing, and update the lock hash.",
+ "licence": "MPL-2.0",
+ "suffixes": [
+  "amplifyapp.com",
+  "appspot.com",
+  "azurestaticapps.net",
+  "azurewebsites.net",
+  "blogspot.com",
+  "cloudfront.net",
+  "deno.dev",
+  "firebaseapp.com",
+  "fly.dev",
+  "github.io",
+  "gitlab.io",
+  "glitch.me",
+  "herokuapp.com",
+  "netlify.app",
+  "ngrok.io",
+  "now.sh",
+  "onrender.com",
+  "pages.dev",
+  "repl.co",
+  "surge.sh",
+  "vercel.app",
+  "web.app",
+  "workers.dev"
+ ]
+}

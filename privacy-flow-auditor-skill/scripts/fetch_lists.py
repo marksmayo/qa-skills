@@ -20,35 +20,26 @@ Lists (not committed to this repository; each has its own licence):
   EasyPrivacy           GPL-3.0-or-later / CC BY-SA 3.0   tracker domains (||domain^ rules)
   Open Cookie Database  Apache-2.0                        cookie names and domains -> platform, purpose, retention
 The cache defaults to ~/.cache/qa-skills/privacy-lists. domains.json is what merge_candidates.py --lists reads:
-{"source", "domains": {registrable domain: {vendor, category, region, tracker}}, "cookies": {name: {...}}, "aliases"}.
+{"source", "domains": {registrable domain: {vendor, category, region, tracker}}, "cookies": {name: {...}}, "vendors",
+"path_rules": [EasyPrivacy path rules such as /_vercel/insights/script.js, for first-party analytics proxies and tunnels]}.
+Registrable domains know the shared-hosting suffixes in data/public-suffix-private.json (a Public Suffix List
+subset, pinned by SHA-256 under "bundled" in the lock and verified on every run, --check included), so a rule for
+one vercel.app or netlify.app tenant never marks the whole suffix, or your own site, as a tracker.
 Vendors are named only from data/vendors.json (curated); EasyPrivacy-only domains are trackers without
 a vendor name, and the Open Cookie Database names cookies only. Neither list has regions, so cross-border candidates need a
 region supplied by the user (an extra domains file merged with --extra).
 """
 from __future__ import annotations
-import argparse, csv, hashlib, io, ipaddress, json, re, sys, urllib.request
+import argparse, csv, hashlib, io, json, re, sys, urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+from domains import PSL_FILE, psl_sha256, registrable  # noqa: E402
 LOCK = HERE.parent / 'data' / 'lists.lock.json'
 VENDORS = HERE.parent / 'data' / 'vendors.json'
 CATEGORY = {'Analytics': 'analytics', 'Marketing': 'advertising', 'Functional': 'functional', 'Security': 'security', 'Personalization': 'personalisation'}
-TWO_LEVEL = ('com.au', 'net.au', 'org.au', 'gov.au', 'edu.au', 'co.uk', 'org.uk', 'gov.uk', 'ac.uk', 'co.nz', 'co.jp', 'com.br')
-
-
-def registrable(host: str) -> str:
-    """The registrable domain of a host name; IP addresses, localhost and single labels are returned whole."""
-    host = host.lower().strip('.').strip('[]')
-    try:
-        ipaddress.ip_address(host)
-        return host
-    except ValueError:
-        pass
-    if host == 'localhost' or host.endswith('.localhost') or '.' not in host:
-        return host
-    parts = host.split('.')
-    n = 3 if '.'.join(parts[-2:]) in TWO_LEVEL else 2
-    return '.'.join(parts[-n:])
+PATH_RULE = re.compile(r'^/[^#@|]')
 
 
 def get(url: str, accept: str | None = None) -> bytes:
@@ -76,12 +67,30 @@ def version_of(name: str, data: bytes) -> str | None:
     return m.group(1).decode() if m else None
 
 
+def path_rule(line: str) -> str | None:
+    """An EasyPrivacy path rule that applies to first-party requests (/_vercel/insights/script.js, /?sentry_key=),
+    without its options; None for domain rules, element hiding, exceptions, regex rules and third-party-only rules."""
+    line = line.strip()
+    if not PATH_RULE.match(line) or (line.endswith('/') and len(line) > 2 and '\\' in line):
+        return None
+    rule, _, opts = line.partition('$')
+    if 'third-party' in opts.split(',') or 'domain=' in opts or len(rule) < 4:
+        return None
+    return rule
+
+
 def build(easy: bytes, ocd: bytes, lock: dict) -> dict:
     domains: dict = {}
+    paths: list[str] = []
     for line in easy.decode('utf-8', 'replace').splitlines():
         m = re.match(r'^\|\|([a-z0-9.-]+\.[a-z]{2,})[\^/]', line.strip())
         if m:
+            # registrable() knows shared-hosting suffixes: ||someone.vercel.app^ marks that app, not vercel.app
             domains.setdefault(registrable(m.group(1)), {'vendor': None, 'category': 'tracker', 'region': None, 'tracker': True})['tracker'] = True
+            continue
+        r = path_rule(line)
+        if r:
+            paths.append(r)
     cookies: dict = {}
     for row in csv.DictReader(io.StringIO(ocd.decode('utf-8-sig', 'replace'))):
         dom = (row.get('Domain') or '').strip()
@@ -99,7 +108,21 @@ def build(easy: bytes, ocd: bytes, lock: dict) -> dict:
     src = '; '.join(f'{k} {v["repo"]}@{v["ref"][:10]}{" version " + v["version"] if v.get("version") else ""} (sha256 {v["sha256"][:12]})'
                     for k, v in lock['lists'].items())
     return {'source': src, 'domains': dict(sorted(domains.items())), 'cookies': dict(sorted(cookies.items())),
-            'vendors': curated.get('vendors', {})}
+            'vendors': curated.get('vendors', {}), 'path_rules': sorted(set(paths))}
+
+
+def check_bundled(lock: dict) -> bool:
+    """The files shipped in data/ (the Public Suffix List subset) match their pinned SHA-256."""
+    ok = True
+    for name, spec in (lock.get('bundled') or {}).items():
+        digest = psl_sha256() if name == 'public_suffix_private' else None
+        if digest != spec['sha256']:
+            print(f'{name}: sha256 {(digest or "?")[:12]} of {PSL_FILE.name} differs from the pinned {spec["sha256"][:12]}; '
+                  'update the lock when the file is edited on purpose')
+            ok = False
+        else:
+            print(f'{name}: {spec["file"]} (bundled), sha256 {digest[:12]} ok')
+    return ok
 
 
 def main() -> int:
@@ -117,6 +140,7 @@ def main() -> int:
     if a.write_lock and not a.update:
         ap.error('--write-lock needs --update')
     lock = json.loads(a.lock.read_text(encoding='utf-8'))
+    bundled_ok = check_bundled(lock)
     blobs, missing = {}, []
     for name, spec in lock['lists'].items():
         path = a.cache / spec['file']
@@ -150,7 +174,9 @@ def main() -> int:
         target.write_text(json.dumps(lock, indent=1) + '\n', encoding='utf-8', newline='\n')
         print(f'lock -> {target}')
     if a.check:
-        return 1 if missing else 0
+        return 1 if missing or not bundled_ok else 0
+    if not bundled_ok:
+        return 1
     out = build(blobs['easyprivacy'], blobs['open_cookie_database'], lock)
     if a.extra:
         extra = json.loads(a.extra.read_text(encoding='utf-8'))

@@ -20,6 +20,8 @@
     "segment.io": {"vendor": "Segment", "category": "analytics"},
     "segment.com": {"vendor": "Segment", "category": "analytics"},
     "mixpanel.com": {"vendor": "Mixpanel", "category": "analytics"},
+    "mxpnl.com": {"vendor": "Mixpanel", "category": "analytics"},
+    "vercel-insights.com": {"vendor": "Vercel Web Analytics", "category": "analytics"},
     "amplitude.com": {"vendor": "Amplitude", "category": "analytics"},
     "posthog.com": {"vendor": "PostHog", "category": "analytics"},
     "heap.io": {"vendor": "Heap", "category": "analytics"},
@@ -83,6 +85,22 @@
     "Yandex Metrica": {"company": "Yandex", "aliases": ["Yandex", "Yandex.Metrica", "Metrika"]},
     "Xandr": {"company": "Microsoft", "aliases": ["AppNexus"]},
     "Snap": {"company": "Snap", "aliases": ["Snapchat", "Snap Pixel"]},
-    "Zendesk": {"company": "Zendesk", "aliases": ["Zendesk Chat", "Zopim"]}
+    "Zendesk": {"company": "Zendesk", "aliases": ["Zendesk Chat", "Zopim"]},
+    "Vercel Web Analytics": {"company": "Vercel", "aliases": ["Vercel Analytics"]},
+    "Vercel Speed Insights": {"company": "Vercel", "aliases": []}
+  },
+  "path_rules": {
+    "note": "First-party paths that are a vendor's collection endpoint served from the site's own host, or forward to one (an analytics proxy, an error-tracker tunnel). merge_candidates.py checks every first-party request's path and query against these (substring) and against EasyPrivacy's path rules from the list; a match is first-party tracking, named only when a rule here names the vendor. body_rules match the request body (with 'requires' also in it).",
+    "rules": [
+      {"pattern": "/_vercel/insights/", "vendor": "Vercel Web Analytics", "category": "analytics"},
+      {"pattern": "/_vercel/speed-insights/", "vendor": "Vercel Speed Insights", "category": "analytics"},
+      {"pattern": "/api/sentry/tunnel", "vendor": "Sentry", "category": "error_tracking"},
+      {"pattern": "?sentry_key=", "vendor": "Sentry", "category": "error_tracking"},
+      {"pattern": "&sentry_key=", "vendor": "Sentry", "category": "error_tracking"}
+    ],
+    "body_rules": [
+      {"pattern": "\"dsn\":\"http", "requires": "sentry", "vendor": "Sentry", "category": "error_tracking",
+       "what": "a Sentry envelope (its header names the DSN) sent to a first-party path: a Sentry tunnel"}
+    ]
   }
 }

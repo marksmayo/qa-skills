@@ -23,5 +23,13 @@
    "version": null,
    "sha256": "ed4836ea285719d77c7340582be68d355f7358edded50e6b96bb3139fc0eb8c0"
   }
+ },
+ "bundled": {
+  "public_suffix_private": {
+   "file": "data/public-suffix-private.json",
+   "source": "Public Suffix List (publicsuffix/list), PRIVATE section: a subset of shared-hosting suffixes, transcribed by hand (no commit is pinned; the file's SHA-256 is)",
+   "licence": "MPL-2.0",
+   "sha256": "1157d3b4369863f4e8e6ef076e831be43f77e4451ed49b8c0413165ed5a9c59f"
+  }
  }
 }
