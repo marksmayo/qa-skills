@@ -697,7 +697,7 @@
     {
       "path": "journey-mapper-skill/examples/journeys/checkout/JRN-CHK-001-guest-completes-checkout-with-card.md",
       "journey": "JRN-CHK-001",
-      "action": "updated"
+      "action": "unchanged"
     },
     {
       "path": "journey-mapper-skill/examples/journeys/account/JRN-ACC-001-member-signs-in-and-views-their-account.md",
