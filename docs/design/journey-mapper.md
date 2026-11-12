@@ -137,6 +137,27 @@ Version 1.1.0, after a run on a real Next.js 16 App Router application:
   figure second; `--brief` prints the headline only. `coverage.md` shows both figures. Journey
   file slugs are cut at a word boundary.
 
+Version 1.2.0, after a run on a React Router SPA with a separate multi-service FastAPI repository:
+
+- Python routes are read with `ast` (`py_routes.py`), so decorators inside docstrings no longer
+  count. FastAPI paths include `APIRouter(prefix=...)`, on subclasses of `APIRouter` too, and
+  every `include_router(..., prefix=...)` above it, across modules; Flask paths include blueprint
+  prefixes. A router never seen being included, or a computed prefix, is noted on the item.
+- Client routes come from `js_routes.py`: `createBrowserRouter` objects and `children`, `<Route>`
+  elements, index and lazy routes, and a component's own `<Routes>` joined to the splat route that
+  renders it from another file. Paths built from constant objects (`ROUTES.X`, template literals)
+  are resolved.
+- When routes or endpoints come from several apps in one repository, each item carries `service`
+  (from the nearest project manifest) and its proposed domain starts with it.
+- Entry points include command lines (argparse sub-commands, click/typer, console scripts,
+  `package.json` `bin`) and Azure Functions triggers; Azure HTTP functions are endpoints.
+- `context.unit_tests` counts unit and component test files and cases, with their runners.
+  Success toasts and messages are low-confidence candidate goals.
+- The validator warns (errors with `--strict`) when a journey covers an item whose file none of
+  its evidence cites, and when a map-level open question repeats a journey's. The renderer and
+  `coverage.md` list each open question once.
+- `extract_surface.py --self-test` checks the extractor against a built-in sample repository.
+
 ```text
 journey-mapper-skill/
   SKILL.md  RUBRIC.md  README.md
@@ -144,6 +165,7 @@ journey-mapper-skill/
   schemas/journey.schema.json            # shared copy
   schemas/journey_map.schema.json
   scripts/extract_surface.py             # heuristic surface + context extraction (stdlib)
+          py_routes.py  js_routes.py     # Python routes/CLIs/triggers (ast); client route trees
           write_journeys.py              # idempotent merge, preserves human edits
           journey_md.py                  # shared copy: parse / lint / render
           validate_journey_map.py  render_report.py

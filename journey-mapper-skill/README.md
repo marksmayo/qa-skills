@@ -45,7 +45,7 @@ Scripts, in the order the skill runs them:
 
 ```bash
 python scripts/extract_surface.py <repo> --out surface.json           # candidate surface [--goal-wrapper NAME]
-python scripts/validate_journey_map.py journeys/journey_map.json --repo <repo>   # honesty checks, re-reads evidence
+python scripts/validate_journey_map.py journeys/journey_map.json --repo <repo>   # honesty checks, re-reads evidence [--strict]
 python scripts/write_journeys.py journeys/journey_map.json --out journeys
 python scripts/journey_md.py lint journeys --strict
 python scripts/render_report.py journeys/journey_map.json             # [--brief] [--color always|never]
@@ -53,7 +53,16 @@ python scripts/render_report.py journeys/journey_map.json             # [--brief
 
 `--repo` re-reads every cited file and line (missing files, lines past the end, blank lines,
 excerpts that don't match) and checks each journey's tests exist. Use it on every real run; the
-bundled example describes a fictional repository, so it is validated without `--repo`.
+bundled example describes a fictional repository, so it is validated without `--repo`. The
+validator warns when a journey covers an item whose file its evidence never cites, or when a
+map-level open question repeats a journey's; `--strict` makes those warnings errors.
+
+`python scripts/extract_surface.py --self-test` runs the extractor on a small built-in
+multi-service repository (FastAPI routers with prefixes, a docstring with decorators, an Azure
+Functions app, an argparse CLI and a React Router SPA) and checks what it finds.
+
+For an SPA with its API in another repository, put both under one parent directory, cite files as
+`<repo>/<path>`, and validate with `--repo <parent>`.
 
 ## Output
 
@@ -84,7 +93,10 @@ Re-running is safe:
 - `schemas/journey_map.schema.json`: output contract for a mapping run
 - `schemas/journey.schema.json`: journey front matter contract (shared)
 - `scripts/extract_surface.py`: heuristic extractor for routes, screens, endpoints, deep links,
-  goals, flags and e2e tests
+  command lines, function triggers, goals, flags and tests
+- `scripts/py_routes.py`: Python routes (Flask, FastAPI, Azure Functions), triggers and command
+  lines read with `ast`, with router and blueprint prefixes resolved
+- `scripts/js_routes.py`: React Router, Vue Router and Angular route trees, joined across files
 - `scripts/validate_journey_map.py`: structure and honesty checks
 - `scripts/write_journeys.py`: idempotent writer for journey files, index, coverage and graph
 - `scripts/journey_md.py`: Journey Markdown parser, linter and renderer (shared)
@@ -97,10 +109,12 @@ The extractor detects:
 
 | Area | Stacks |
 |---|---|
-| Web | Next.js (app and pages routers; one endpoint per exported HTTP method; server actions; intercepting routes; `middleware.ts`/`proxy.ts` matchers and path guards; layouts with guard hints; `tsconfig` path aliases), Nuxt, SvelteKit, Remix, React Router, Vue Router, Angular, Django URLs |
+| Web | Next.js (app and pages routers; one endpoint per exported HTTP method; server actions; intercepting routes; `middleware.ts`/`proxy.ts` matchers and path guards; layouts with guard hints; `tsconfig` path aliases), Nuxt, SvelteKit, Remix, React Router (`createBrowserRouter` objects, `<Route>` elements, index and lazy routes, nested `<Routes>` joined to the splat route that mounts them, paths from constant objects), Vue Router, Angular, Django URLs |
 | Mobile | Expo Router, React Navigation, Flutter (GoRouter, route maps), Android (navigation graphs, Compose navigation, manifest activities and deep links), iOS (SwiftUI views, UIKit view controllers, storyboards, URL schemes) |
-| API | Express (including `router.route(path).get().post()` chains), Fastify, Koa, NestJS, Flask, FastAPI, Rails, Spring, Go `net/http`/Gin/Echo/chi, ASP.NET, OpenAPI documents |
-| Goal events | `track`, `logEvent`, `capture`, `gtag('event', …)` and similar analytics calls, plus calls to tracking wrappers: functions that forward their first parameter to a known analytics call (detected, including wrappers of wrappers) or are named with `--goal-wrapper` |
+| API | Express (including `router.route(path).get().post()` chains), Fastify, Koa, NestJS, Flask (blueprint prefixes), FastAPI (`APIRouter` and subclass prefixes, `include_router` prefixes; decorators in docstrings ignored), Azure Functions (HTTP routes and triggers, Python v1/v2 and Node v4 models), Rails, Spring, Go `net/http`/Gin/Echo/chi, ASP.NET, OpenAPI documents; endpoints from several services in one repository are labelled by service |
+| Command lines | argparse sub-commands, click and typer commands, `[project.scripts]`, `package.json` `bin` |
+| Goal events | `track`, `logEvent`, `capture`, `gtag('event', …)` and similar analytics calls, plus calls to tracking wrappers: functions that forward their first parameter to a known analytics call (detected, including wrappers of wrappers) or are named with `--goal-wrapper`; success toasts and messages as low-confidence candidates |
+| Tests | e2e and UI tests with the URLs they visit; unit and component tests (Vitest, Jest, Mocha, pytest) counted separately |
 
 Anything else is added by the agent during review.
 

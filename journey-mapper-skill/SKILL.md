@@ -1,7 +1,7 @@
 ---
 name: journey-mapper
 description: Map the user journeys of an application by reading its codebase (web, mobile and API), and write them as prioritised, evidence-linked Journey Markdown files ready to be turned into automated tests. Accounts for every route, screen, endpoint, entry point and goal event it finds, reports coverage honestly, and never presents behaviour inferred from code as intended behaviour.
-version: 1.1.0
+version: 1.2.0
 ---
 
 # Journey Mapper
@@ -75,7 +75,13 @@ Establish, citing files:
   Expo Router, React Navigation, Flutter (GoRouter/Navigator), Android (Navigation, Compose,
   activities), iOS (SwiftUI, UIKit, storyboards); backend frameworks.
 - **Role model:** how users are identified and what roles or permissions exist (e.g. guest,
-  member, admin, tenant owner). These become personas.
+  member, admin, tenant owner). These become personas. Role or group names often encode several
+  dimensions, e.g. `<app>-<env>-<region>-<site>-<READ|WRITE>` such as `bakery-prod-north-harbour-write`,
+  with a special site value that grants every site. Split them: the access level gives the
+  personas (READ is a viewer, WRITE an editor), and the other dimensions become preconditions
+  ("signed in as an editor of one site") and variants (one site versus every site), not one
+  persona per combination. Check whether every screen honours the access level: a write action
+  that a read-only user can still reach is an open question.
 - **Feature flags:** the flag system and where defaults are defined.
 - **Domains:** functional areas, from directory structure (`features/checkout`), route prefixes
   and navigation menus. Use lowercase slugs.
@@ -86,6 +92,23 @@ Establish, citing files:
   them. Server components may read the database directly, which is where ownership checks belong.
   Server actions (`'use server'`) are endpoints. Imports go through `tsconfig.json` `paths`
   aliases such as `@/*`.
+- **React Router (or Vue Router, Angular) single-page app:** routes are usually one
+  `createBrowserRouter([...])` config or `<Routes>` in `App.tsx`, with feature modules that
+  render their own `<Routes>` under a splat route (`path: 'shop/*'`). Guards are wrapper
+  components (`<ProtectedRoute>`, a layout that redirects to sign-in) rather than middleware;
+  check whether the sign-in redirect keeps the page the user asked for. API calls go through a
+  client module (`api/*.ts`, generated clients, React Query hooks), so trace each screen's calls
+  to that module and from there to the endpoint.
+- **Several repositories** (an SPA and a separate API repository, or several services): put
+  them side by side under one parent directory, run the extractor on each, and cite evidence as
+  `<repo>/<path>` relative to that parent. Validate with `--repo <parent>`, so one run re-reads
+  citations in every repository. Merge the surfaces into one map, prefixing each item's `file`
+  with its repository directory.
+- **Multi-service backends:** when endpoints come from several apps or services in one
+  repository, the extractor labels each item with `service` (from the nearest project manifest,
+  e.g. `services/<name>/pyproject.toml`) and starts its proposed domain with it
+  (`orders-loaves`). The same path in two services is two items; name the service in the
+  journey's steps (`POST /v1/loaves on the orders service`).
 - **Existing journeys:** if the output directory already exists, read `index.md` and note which
   journeys are `reviewed` or `approved`.
 
@@ -113,11 +136,34 @@ repository. Details worth knowing:
   listed in `context.goal_wrappers` with where they are defined. If the app tracks through a
   wrapper the extractor misses, rerun with `--goal-wrapper <name>` (repeatable). Events passed as
   constants (`EVENTS.SIGNUP`) are not resolved; add them as agent items.
+- **Python routes** (Flask, FastAPI, Azure Functions) are read by parsing the code, so
+  decorators in docstrings and usage examples never count. FastAPI paths include the
+  `APIRouter(prefix=...)` (also on subclasses of `APIRouter`) and every
+  `include_router(..., prefix=...)` above it; Flask paths include the blueprint's `url_prefix`. A
+  note says when a router was never seen being included (a prefix may be missing) or when part of
+  a path is computed. `context.python_mounts` lists includes through variables or loops.
+- **Client-side routes** (React Router, Vue Router, Angular) are joined to their parents:
+  `children` arrays, nested `<Route>` elements, and a component's own `<Routes>` mounted by a
+  splat route in another file (`/shop/*` rendering `<ShopModule/>` makes its `cakes` route
+  `/shop/cakes`). Paths built from constant objects (`ROUTES.LOGIN`, `` `${ROUTES.SHOP}/*` ``) are
+  resolved. Index routes carry `index: true` and render at the parent's path; lazy routes and
+  redirects say so in a note. A path that could not be resolved keeps its expression in braces.
+- **Entry points** include command-line commands (`cli: <program> <command>` from argparse
+  sub-commands, click and typer commands, `[project.scripts]` and `package.json` `bin`) and
+  Azure Functions triggers (`blob trigger: <path>`, `timer trigger: <schedule>`). A trigger is
+  not user-facing by itself: find the user action that causes it (an upload that writes the
+  blob), cover it from that journey, or orphan it as `not_user_facing`. Operator command lines
+  are journeys for an operator persona when they change what users see.
 - **Domains** on routes and endpoints are proposals from the first path segment (`/api/orders/:id`
-  becomes `orders`). Correct them during review: they decide what `out_of_scope` may hold.
+  becomes `orders`), prefixed with the service in multi-service repositories. Correct them during
+  review: they decide what `out_of_scope` may hold.
+- **Success messages** (`toast.success('Order placed')`, `setSuccessMessage(...)`) are reported
+  as low-confidence goals with detector `success-message`. Confirm each marks completion.
 - **Test-only surface** (`/test-support/...`, Sentry example pages) carries a note. Confirm it,
   then orphan it as `not_user_facing`.
-- **Context:** `flags`, `tests` (e2e files and the URLs they visit), `guards` (each Next.js
+- **Context:** `flags`, `tests` (e2e files and the URLs they visit), `unit_tests` (how many unit
+  and component test files and cases exist, and their runners: not journey tests, so they never
+  make a journey `automated`), `services`, `guards` (each Next.js
   `middleware.ts`/`proxy.ts`: its `matcher` values, lists of path prefixes such as
   `AUTH_REQUIRED`, path checks and redirects, by line), `layouts` (each App Router layout with
   lines that look like guards), `path_aliases` (`tsconfig`/`jsconfig` `paths`) and
@@ -132,11 +178,11 @@ The extractor is heuristic. Then:
 3. **Add** items the extractor can't see, with `"source": "agent"`, a file and line, and the
    next free ID in that kind's sequence (`R-`, `S-`, `E-`, `N-`, `G-`). Typical additions:
    - Expo/React Native linking config in `app.json`
-   - routes built from constants
+   - routes built at runtime (from data or a loop)
    - push-notification handlers
    - links in email templates
    - server-rendered pages in templating languages
-   - CLI commands
+   - command lines the extractor doesn't recognise (hand-parsed `sys.argv`, shell scripts)
 4. Read the `limitations` the extractor reports, and carry any that apply into
    `metadata.notes`.
 
@@ -259,6 +305,12 @@ end of the file, or a blank line cited as step evidence is an error. If an evide
 `excerpt`, it must be on the cited line. It also checks that each journey's `tests` exist. It
 checks, with or without `--repo`, that journeys and `not_mapped_this_run` orphans are inside the
 run scope and `out_of_scope` orphans are outside it, and that the graph is present or declined.
+
+It also warns when a journey `covers` an item whose file none of the journey's evidence cites
+(padded coverage: cite the line where the journey reaches the item, or drop it from `covers`),
+and when a map-level open question repeats a journey's. Map-level `open_questions` are for
+questions that span journeys; a question about one journey goes in that journey only. Run with
+`--strict` to make the warnings errors, and fix them before handing the map over.
 
 Fix every reported problem. Don't fudge the coverage numbers to pass: if an item isn't covered,
 list it as an orphan or unreachable item with a truthful reason.
