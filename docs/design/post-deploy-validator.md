@@ -1,6 +1,6 @@
 # Design: `post-deploy-validator-skill`
 
-Status: Built (v1.0.0); see "As built" at the end. Build order: 28.
+Status: Built (v1.1.0); see "As built" at the end. Build order: 28.
 
 ## Mission
 
@@ -179,3 +179,34 @@ Where the build differs from the design above, and what the example showed.
 - **Testing:** 22 of 22 seeded violations are caught, including a POST or DELETE in the request log, a
   write check not recorded as blocked, a set-cookie value, the password in the run, a softened
   recommendation, and the skill filling in the decision.
+
+### v1.1.0: after a run on a real Next.js staging deployment
+
+A run on a Next.js App Router site on Vercel, with its database layer down, showed these gaps; v1.1.0
+closes them.
+
+- **Failing checks were timed.** Three 500s were sampled three times each, and one came back slower than
+  minutes earlier: a "critical regression" of an error page. A check that doesn't answer as expected is now
+  sent once, its timing is `comparable: false`, and the comparison is `not_comparable`; sampling also stops
+  when a sample changes status.
+- **The version could not be read.** The app exposes its build only in the HTML (`data-dpl-id`). Readers
+  now take `meta` and `regex` over the body as well as JSON and headers, a separate `deployment` reader
+  records a deployment id, and `--expect-version` may be either.
+- **Baselines minutes apart on one deployment looked like evidence.** Each run records the deployment id;
+  `baseline_relation` says whether the comparison is between releases, and a same-deployment regression is
+  a finding but not a `no_go` reason. The baseline rule is written down in SKILL.md.
+- **No header checks.** `expect.headers` asserts present, absent, equals, contains; cache, CDN and security
+  headers are recorded (CSP nonces redacted), and differing CSPs between pages are a minor finding.
+- **A JSON field `status` collided with the HTTP status** ("answered None"). Assertions carry a `kind`.
+- **The stop rule depended on plan order** (a 404 reset the 5xx count) and treated an outage like a WAF.
+  Now a 4xx doesn't reset the count, and a 429 or a WAF/bot challenge stops at once as `error`,
+  `not_established`.
+- **Redirects were followed silently.** Hops are recorded, only same-origin hops are followed, a public
+  check landing on a sign-in page fails by default, and `no_redirect` / `final_path` can be asserted.
+- **The plan was never schema-checked**; a typo such as `"critcal"` silently made a check non-critical.
+  The runner and the validator now refuse it.
+- **The validator checked numbers, not words.** It now also requires the headline to name the
+  recommendation without contradicting it ("ship it", "go-ish" over a `no_go`), the derived notes and
+  evidence to be kept, titles to keep severity and HTTP status, and checks the report against its schema.
+- **Example:** 1.9.0 now also redirects the public help page to sign-in and sends an older CSP on the about
+  page; the timetable 500 is `not_comparable`. `no_go` with five findings.

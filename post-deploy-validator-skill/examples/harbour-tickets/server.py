@@ -7,7 +7,10 @@
 Release 1.9.0 has planted problems for the post-deploy validator's example:
   - GET /timetable answers 500 (a template error);
   - GET /api/fares returns a negative price for the child fare, and is about 300 ms slower;
-  - GET /about is about 30 ms slower (within tolerance: a decoy).
+  - GET /about is about 30 ms slower (within tolerance: a decoy), and carries a different, older
+    Content-Security-Policy than the other pages (left over from a template);
+  - GET /help, a public page, now redirects to the sign-in page /login.
+Every page carries security headers; the HTML names the build in <html data-build="...">.
 Signing in: POST /api/login with {"username", "password"} returns a bearer token. The only account is
 "smoke-reader" with the obviously fake password "not-a-real-password". GET /api/account needs the token.
 POST /api/bookings would create a booking (the validator must never send it).
@@ -21,10 +24,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 USER, PASSWORD = 'smoke-reader', 'not-a-real-password'
 TOKENS: set[str] = set()
 REL = {'release': '1.8.0'}
+COMMIT = {'1.8.0': 'a1b2c3d', '1.9.0': 'e4f5a6b'}
+CSP = "default-src 'self'; script-src 'self' 'nonce-{nonce}'; frame-ancestors 'none'"
+OLD_CSP = "default-src 'self' 'unsafe-inline'"
+SECURITY = {'Strict-Transport-Security': 'max-age=31536000; includeSubDomains', 'X-Content-Type-Options': 'nosniff',
+            'X-Frame-Options': 'DENY', 'Referrer-Policy': 'strict-origin-when-cross-origin'}
 
 
 def page(title: str, body: str) -> bytes:
-    return (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="app-version" content="{REL["release"]}">'
+    return (f'<!doctype html><html lang="en" data-build="{COMMIT[REL["release"]]}"><head><meta charset="utf-8"><meta name="app-version" content="{REL["release"]}">'
             f'<title>{title} - Harbour Tickets</title></head><body><h1>{title}</h1>{body}</body></html>').encode()
 
 
@@ -47,6 +55,11 @@ class H(BaseHTTPRequestHandler):
         self.send_header('Content-Type', ctype)
         self.send_header('Content-Length', str(len(body)))
         self.send_header('X-App-Version', REL['release'])
+        if ctype.startswith('text/html'):
+            for k, v in SECURITY.items():
+                self.send_header(k, v)
+            if 'Content-Security-Policy' not in (extra or {}):
+                self.send_header('Content-Security-Policy', CSP.format(nonce=secrets.token_urlsafe(12)))
         for k, v in (extra or {}).items():
             self.send_header(k, v)
         self.end_headers()
@@ -67,7 +80,7 @@ class H(BaseHTTPRequestHandler):
         new = REL['release'] == '1.9.0'
         p = self.path.split('?')[0]
         if p == '/version':
-            return self.json(200, {'version': REL['release'], 'commit': 'a1b2c3d' if not new else 'e4f5a6b'})
+            return self.json(200, {'version': REL['release'], 'commit': COMMIT[REL['release']]})
         if p == '/':
             return self.send(200, page('Harbour Tickets', '<p>Book a ferry between Harbour, Northside and the Island.</p><a href="/timetable">Timetable</a>'))
         if p == '/timetable':
@@ -76,7 +89,13 @@ class H(BaseHTTPRequestHandler):
             return self.send(200, page('Timetable', ''.join(f'<p>{s["route"]} {s["departs"]}</p>' for s in sailings())))
         if p == '/about':
             time.sleep(0.03 if new else 0)
-            return self.send(200, page('About us', '<p>Family-run ferries since 1962.</p>'))
+            return self.send(200, page('About us', '<p>Family-run ferries since 1962.</p>'), extra={'Content-Security-Policy': OLD_CSP} if new else None)
+        if p == '/help':
+            if new:
+                return self.send(302, b'', extra={'Location': '/login?next=/help'})
+            return self.send(200, page('Help', '<p>Changing or cancelling a booking.</p>'))
+        if p == '/login':
+            return self.send(200, page('Sign in', '<form method="post" action="/api/login"><input name="username"></form>'))
         if p == '/api/sailings':
             return self.json(200, {'sailings': sailings(), 'generated_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')})
         if p == '/api/fares':

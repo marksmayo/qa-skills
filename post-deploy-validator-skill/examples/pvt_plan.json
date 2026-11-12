@@ -1,18 +1,23 @@
 {
- "schema_version": "1.0.0",
+ "schema_version": "1.1.0",
  "name": "Harbour Tickets post-deploy checks",
  "target": {"base_url": "http://127.0.0.1:8160", "environment": "production",
             "authorised_by": "Release manager, for the example: a loopback stand-in for production (examples/harbour-tickets/server.py)"},
  "version": {"path": "/version", "json_path": "version", "header": "X-App-Version"},
+ "deployment": {"path": "/", "regex": "data-build=\"([0-9a-f]+)\""},
  "credential_sets": {
   "smoke-reader": {"env": {"username": "PVT_SMOKE_READER_USERNAME", "password": "PVT_SMOKE_READER_PASSWORD"},
                    "login": {"method": "POST", "path": "/api/login", "body": {"username": "{username}", "password": "{password}"}, "token_json_path": "token"}}
  },
  "checks": [
-  {"id": "home", "kind": "page", "path": "/", "critical": true, "timed": true, "expect": {"status": 200, "contains": ["Book a ferry"]}},
+  {"id": "home", "kind": "page", "path": "/", "critical": true, "timed": true,
+   "expect": {"status": 200, "contains": ["Book a ferry"], "no_redirect": true,
+              "headers": {"strict-transport-security": {"contains": "max-age="}, "x-content-type-options": {"equals": "nosniff"},
+                          "content-security-policy": {"contains": "frame-ancestors 'none'"}, "x-powered-by": {"absent": true}}}},
   {"id": "timetable", "kind": "page", "path": "/timetable", "critical": true, "timed": true,
    "expect": {"status": 200, "contains": ["<h1>Timetable</h1>"], "not_contains": ["Something went wrong"]}},
   {"id": "about", "kind": "page", "path": "/about", "critical": false, "timed": true, "expect": {"status": 200, "contains": ["Family-run"]}},
+  {"id": "help", "kind": "page", "path": "/help", "critical": false, "expect": {"status": 200}},
   {"id": "sailings-data", "kind": "data", "path": "/api/sailings", "critical": true, "timed": true,
    "expect": {"status": 200, "json": [{"path": "sailings", "op": "len_ge", "value": 1}, {"path": "sailings[*].seats_left", "op": "all_ge", "value": 0},
                                       {"path": "sailings[*].id", "op": "unique"}, {"path": "generated_at", "op": "fresh_within_minutes", "value": 10}]}},

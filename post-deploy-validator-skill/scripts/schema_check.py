@@ -1,0 +1,67 @@
+"""A subset of JSON Schema (local $ref, oneOf, if/then, const, type, enum, required, properties, additionalProperties,
+items, minItems, minLength, minimum, exclusiveMinimum, maximum, pattern) for this skill's scripts (stdlib only)."""
+from __future__ import annotations
+import re
+
+
+def errors(value, schema: dict, path: str = '$', root: dict | None = None) -> list[str]:
+    root = root if root is not None else schema
+    if 'if' in schema and not errors(value, schema['if'], path, root) and 'then' in schema:
+        rest = {k: v for k, v in schema.items() if k not in ('if', 'then')}
+        return errors(value, schema['then'], path, root) + errors(value, rest, path, root)
+    if 'const' in schema and value != schema['const']:
+        return [f'{path}: {value!r} should be {schema["const"]!r}']
+    if '$ref' in schema:
+        node = root
+        for part in schema['$ref'].lstrip('#/').split('/'):
+            node = node[part]
+        return errors(value, node, path, root)
+    if 'oneOf' in schema:
+        results = [errors(value, s, path, root) for s in schema['oneOf']]
+        passing = [r for r in results if not r]
+        if len(passing) == 1:
+            return []
+        if not passing:
+            return min(results, key=len)
+        return [f'{path}: matches more than one oneOf branch']
+    errs = []
+    if 'enum' in schema and value not in schema['enum']:
+        return [f'{path}: {value!r} is not one of {schema["enum"]}']
+    t = schema.get('type')
+    if t:
+        types = t if isinstance(t, list) else [t]
+        ok = any((tt == 'object' and isinstance(value, dict)) or (tt == 'array' and isinstance(value, list)) or
+                 (tt == 'string' and isinstance(value, str)) or (tt == 'boolean' and isinstance(value, bool)) or
+                 (tt == 'integer' and isinstance(value, int) and not isinstance(value, bool)) or
+                 (tt == 'number' and isinstance(value, (int, float)) and not isinstance(value, bool)) or
+                 (tt == 'null' and value is None) for tt in types)
+        if not ok:
+            return [f'{path}: expected {"/".join(types)}, got {type(value).__name__}']
+    if isinstance(value, str):
+        if len(value) < schema.get('minLength', 0):
+            errs.append(f'{path}: shorter than {schema["minLength"]} characters')
+        if schema.get('pattern') and not re.search(schema['pattern'], value):
+            errs.append(f'{path}: {value!r} does not match {schema["pattern"]}')
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if 'minimum' in schema and value < schema['minimum']:
+            errs.append(f'{path}: below {schema["minimum"]}')
+        if 'exclusiveMinimum' in schema and value <= schema['exclusiveMinimum']:
+            errs.append(f'{path}: must be above {schema["exclusiveMinimum"]}')
+        if 'maximum' in schema and value > schema['maximum']:
+            errs.append(f'{path}: above {schema["maximum"]}')
+    if isinstance(value, list):
+        if len(value) < schema.get('minItems', 0):
+            errs.append(f'{path}: needs at least {schema["minItems"]} item(s)')
+        for i, v in enumerate(value):
+            errs += errors(v, schema.get('items', {}), f'{path}[{i}]', root)
+    if isinstance(value, dict):
+        for k in schema.get('required', []):
+            if k not in value:
+                errs.append(f'{path}: missing {k!r}')
+        props = schema.get('properties', {})
+        for k, v in value.items():
+            if k in props:
+                errs += errors(v, props[k], f'{path}.{k}', root)
+            elif schema.get('additionalProperties') is False:
+                errs.append(f'{path}: unexpected field {k!r}')
+    return errs

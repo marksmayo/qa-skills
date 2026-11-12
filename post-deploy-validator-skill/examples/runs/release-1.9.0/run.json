@@ -1,8 +1,8 @@
 {
- "schema_version": "1.0.0",
+ "schema_version": "1.1.0",
  "plan": {
   "path": "examples/pvt_plan.json",
-  "sha256": "5b1ab116564d6ab4dfc42dc487fec32cbf3a61f1a289076b0cf1028d6d323dc6",
+  "sha256": "e13684e50fdb348c15afd3444ac2a227ad19aa16bcbb77d837fd715d2a041eb0",
   "name": "Harbour Tickets post-deploy checks"
  },
  "target": {
@@ -10,13 +10,15 @@
   "environment": "production",
   "authorised_by": "Release manager, for the example: a loopback stand-in for production (examples/harbour-tickets/server.py)"
  },
- "started_at": "2026-11-11T13:53:16Z",
- "finished_at": "2026-11-11T13:53:20Z",
+ "started_at": "2026-11-12T06:30:10Z",
+ "finished_at": "2026-11-12T06:30:14Z",
  "deployed": {
   "version": "1.9.0",
   "expected": "1.9.0",
   "matches": true,
-  "source": "/version version"
+  "source": "/version JSON version",
+  "deployment_id": "e4f5a6b",
+  "deployment_source": "/ body /data-build=\"([0-9a-f]+)\"/"
  },
  "credential_sets": [
   {
@@ -37,37 +39,89 @@
    "timed": true,
    "status": "pass",
    "http_status": 200,
-   "bytes": 295,
+   "bytes": 316,
    "headers": {
     "server": "HarbourTickets ",
     "content-type": "text/html; charset=utf-8",
-    "content-length": "295",
-    "x-app-version": "1.9.0"
+    "content-length": "316",
+    "x-app-version": "1.9.0",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY",
+    "referrer-policy": "strict-origin-when-cross-origin",
+    "content-security-policy": "default-src 'self'; script-src 'self' 'nonce-REDACTED'; frame-ancestors 'none'"
    },
+   "redirects": [],
+   "final_path": "/",
    "assertions": [
     {
-     "path": "status",
+     "kind": "http_status",
+     "path": "http",
      "op": "eq",
      "expected": 200,
      "ok": true,
      "actual": 200
     },
     {
+     "kind": "body",
      "path": "body",
      "op": "contains",
      "expected": "Book a ferry",
      "ok": true
+    },
+    {
+     "kind": "header",
+     "path": "strict-transport-security",
+     "op": "contains",
+     "expected": "max-age=",
+     "ok": true,
+     "detail": "header present"
+    },
+    {
+     "kind": "header",
+     "path": "x-content-type-options",
+     "op": "equals",
+     "expected": "nosniff",
+     "ok": true,
+     "detail": "header present"
+    },
+    {
+     "kind": "header",
+     "path": "content-security-policy",
+     "op": "contains",
+     "expected": "frame-ancestors 'none'",
+     "ok": true,
+     "detail": "header present"
+    },
+    {
+     "kind": "header",
+     "path": "x-powered-by",
+     "op": "absent",
+     "expected": true,
+     "ok": true,
+     "detail": "header absent"
+    },
+    {
+     "kind": "redirect",
+     "path": "redirects",
+     "op": "none",
+     "expected": 0,
+     "ok": true,
+     "actual": 0
     }
    ],
    "timing": {
     "samples_ms": [
-     15.1,
-     14.2,
-     14.2,
-     1.2,
-     14.7
+     4.4,
+     3.6,
+     25.9,
+     3.1,
+     3.4
     ],
-    "median_ms": 14.2
+    "median_ms": 3.6,
+    "comparable": true,
+    "reason": null,
+    "cache": null
    }
   },
   {
@@ -80,28 +134,38 @@
    "timed": true,
    "status": "fail",
    "http_status": 500,
-   "bytes": 250,
+   "bytes": 271,
    "headers": {
     "server": "HarbourTickets ",
     "content-type": "text/html; charset=utf-8",
-    "content-length": "250",
-    "x-app-version": "1.9.0"
+    "content-length": "271",
+    "x-app-version": "1.9.0",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY",
+    "referrer-policy": "strict-origin-when-cross-origin",
+    "content-security-policy": "default-src 'self'; script-src 'self' 'nonce-REDACTED'; frame-ancestors 'none'"
    },
+   "redirects": [],
+   "final_path": "/timetable",
    "assertions": [
     {
-     "path": "status",
+     "kind": "http_status",
+     "path": "http",
      "op": "eq",
      "expected": 200,
      "ok": false,
      "actual": 500
     },
     {
+     "kind": "body",
      "path": "body",
      "op": "contains",
      "expected": "<h1>Timetable</h1>",
      "ok": false
     },
     {
+     "kind": "body",
      "path": "body",
      "op": "not_contains",
      "expected": "Something went wrong",
@@ -110,13 +174,12 @@
    ],
    "timing": {
     "samples_ms": [
-     1.4,
-     1.5,
-     10.8,
-     14.1,
-     14.2
+     4.4
     ],
-    "median_ms": 10.8
+    "median_ms": 4.4,
+    "comparable": false,
+    "reason": "answered 500 (expected 200): a failing response is timed once and not compared",
+    "cache": null
    }
   },
   {
@@ -129,22 +192,31 @@
    "timed": true,
    "status": "pass",
    "http_status": 200,
-   "bytes": 222,
+   "bytes": 243,
    "headers": {
     "server": "HarbourTickets ",
     "content-type": "text/html; charset=utf-8",
-    "content-length": "222",
-    "x-app-version": "1.9.0"
+    "content-length": "243",
+    "x-app-version": "1.9.0",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY",
+    "referrer-policy": "strict-origin-when-cross-origin",
+    "content-security-policy": "default-src 'self' 'unsafe-inline'"
    },
+   "redirects": [],
+   "final_path": "/about",
    "assertions": [
     {
-     "path": "status",
+     "kind": "http_status",
+     "path": "http",
      "op": "eq",
      "expected": 200,
      "ok": true,
      "actual": 200
     },
     {
+     "kind": "body",
      "path": "body",
      "op": "contains",
      "expected": "Family-run",
@@ -153,14 +225,67 @@
    ],
    "timing": {
     "samples_ms": [
-     44.0,
-     45.3,
-     33.1,
-     43.8,
-     44.4
+     46.5,
+     86.6,
+     85.8,
+     52.7,
+     38.6
     ],
-    "median_ms": 44.0
+    "median_ms": 52.7,
+    "comparable": true,
+    "reason": null,
+    "cache": null
    }
+  },
+  {
+   "id": "help",
+   "kind": "page",
+   "critical": false,
+   "method": "GET",
+   "path": "/help",
+   "credential_set": null,
+   "timed": false,
+   "status": "fail",
+   "http_status": 200,
+   "bytes": 274,
+   "headers": {
+    "server": "HarbourTickets ",
+    "content-type": "text/html; charset=utf-8",
+    "content-length": "274",
+    "x-app-version": "1.9.0",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY",
+    "referrer-policy": "strict-origin-when-cross-origin",
+    "content-security-policy": "default-src 'self'; script-src 'self' 'nonce-REDACTED'; frame-ancestors 'none'"
+   },
+   "redirects": [
+    {
+     "status": 302,
+     "to": "/login",
+     "followed": true
+    }
+   ],
+   "final_path": "/login",
+   "assertions": [
+    {
+     "kind": "http_status",
+     "path": "http",
+     "op": "eq",
+     "expected": 200,
+     "ok": true,
+     "actual": 200
+    },
+    {
+     "kind": "redirect",
+     "path": "final_path",
+     "op": "not_login",
+     "expected": "not a sign-in page",
+     "ok": false,
+     "actual": "/login"
+    }
+   ],
+   "timing": null
   },
   {
    "id": "sailings-data",
@@ -179,15 +304,19 @@
     "content-length": "454",
     "x-app-version": "1.9.0"
    },
+   "redirects": [],
+   "final_path": "/api/sailings",
    "assertions": [
     {
-     "path": "status",
+     "kind": "http_status",
+     "path": "http",
      "op": "eq",
      "expected": 200,
      "ok": true,
      "actual": 200
     },
     {
+     "kind": "json",
      "path": "sailings",
      "op": "len_ge",
      "expected": 1,
@@ -196,6 +325,7 @@
      "actual_shape": "list of length 4"
     },
     {
+     "kind": "json",
      "path": "sailings[*].seats_left",
      "op": "all_ge",
      "expected": 0,
@@ -204,6 +334,7 @@
      "actual_shape": "list of length 4"
     },
     {
+     "kind": "json",
      "path": "sailings[*].id",
      "op": "unique",
      "expected": null,
@@ -212,6 +343,7 @@
      "actual_shape": "list of length 4"
     },
     {
+     "kind": "json",
      "path": "generated_at",
      "op": "fresh_within_minutes",
      "expected": 10,
@@ -222,13 +354,16 @@
    ],
    "timing": {
     "samples_ms": [
-     12.8,
-     3.0,
-     11.9,
-     25.6,
-     10.6
+     1.8,
+     18.6,
+     12.1,
+     19.0,
+     11.6
     ],
-    "median_ms": 11.9
+    "median_ms": 12.1,
+    "comparable": true,
+    "reason": null,
+    "cache": null
    }
   },
   {
@@ -248,15 +383,19 @@
     "content-length": "139",
     "x-app-version": "1.9.0"
    },
+   "redirects": [],
+   "final_path": "/api/fares",
    "assertions": [
     {
-     "path": "status",
+     "kind": "http_status",
+     "path": "http",
      "op": "eq",
      "expected": 200,
      "ok": true,
      "actual": 200
     },
     {
+     "kind": "json",
      "path": "fares",
      "op": "len_ge",
      "expected": 3,
@@ -265,6 +404,7 @@
      "actual_shape": "list of length 3"
     },
     {
+     "kind": "json",
      "path": "fares[*].price",
      "op": "all_gt",
      "expected": 0,
@@ -277,6 +417,7 @@
      ]
     },
     {
+     "kind": "json",
      "path": "currency",
      "op": "eq",
      "expected": "AUD",
@@ -287,13 +428,16 @@
    ],
    "timing": {
     "samples_ms": [
-     346.6,
-     331.1,
-     344.6,
+     341.5,
      322.5,
-     322.1
+     322.4,
+     336.4,
+     322.7
     ],
-    "median_ms": 331.1
+    "median_ms": 322.7,
+    "comparable": true,
+    "reason": null,
+    "cache": null
    }
   },
   {
@@ -313,15 +457,19 @@
     "content-length": "113",
     "x-app-version": "1.9.0"
    },
+   "redirects": [],
+   "final_path": "/api/account",
    "assertions": [
     {
-     "path": "status",
+     "kind": "http_status",
+     "path": "http",
      "op": "eq",
      "expected": 200,
      "ok": true,
      "actual": 200
     },
     {
+     "kind": "json",
      "path": "username",
      "op": "eq",
      "expected": "smoke-reader",
@@ -330,6 +478,7 @@
      "actual_shape": "str of length 12"
     },
     {
+     "kind": "json",
      "path": "email",
      "op": "exists",
      "expected": null,
@@ -352,174 +501,154 @@
    "reason": "POST is not allowed: the run is read-only, so this check was not sent"
   }
  ],
+ "stopped": null,
  "requests": [
   {
    "method": "GET",
    "path": "/version",
    "status": 200,
-   "ms": 28.2,
+   "ms": 20.3,
    "purpose": "version"
   },
   {
    "method": "GET",
    "path": "/",
    "status": 200,
-   "ms": 15.1,
+   "ms": 7.0,
+   "purpose": "deployment id"
+  },
+  {
+   "method": "GET",
+   "path": "/",
+   "status": 200,
+   "ms": 4.4,
    "purpose": "check"
   },
   {
    "method": "GET",
    "path": "/",
    "status": 200,
-   "ms": 14.2,
+   "ms": 3.6,
    "purpose": "timing sample"
   },
   {
    "method": "GET",
    "path": "/",
    "status": 200,
-   "ms": 14.2,
+   "ms": 25.9,
    "purpose": "timing sample"
   },
   {
    "method": "GET",
    "path": "/",
    "status": 200,
-   "ms": 1.2,
+   "ms": 3.1,
    "purpose": "timing sample"
   },
   {
    "method": "GET",
    "path": "/",
    "status": 200,
-   "ms": 14.7,
+   "ms": 3.4,
    "purpose": "timing sample"
   },
   {
    "method": "GET",
    "path": "/timetable",
    "status": 500,
-   "ms": 1.4,
-   "purpose": "check"
-  },
-  {
-   "method": "GET",
-   "path": "/timetable",
-   "status": 500,
-   "ms": 1.5,
-   "purpose": "timing sample"
-  },
-  {
-   "method": "GET",
-   "path": "/timetable",
-   "status": 500,
-   "ms": 10.8,
-   "purpose": "timing sample"
-  },
-  {
-   "method": "GET",
-   "path": "/timetable",
-   "status": 500,
-   "ms": 14.1,
-   "purpose": "timing sample"
-  },
-  {
-   "method": "GET",
-   "path": "/timetable",
-   "status": 500,
-   "ms": 14.2,
-   "purpose": "timing sample"
-  },
-  {
-   "method": "GET",
-   "path": "/about",
-   "status": 200,
-   "ms": 44.0,
+   "ms": 4.4,
    "purpose": "check"
   },
   {
    "method": "GET",
    "path": "/about",
    "status": 200,
-   "ms": 45.3,
+   "ms": 46.5,
+   "purpose": "check"
+  },
+  {
+   "method": "GET",
+   "path": "/about",
+   "status": 200,
+   "ms": 86.6,
    "purpose": "timing sample"
   },
   {
    "method": "GET",
    "path": "/about",
    "status": 200,
-   "ms": 33.1,
+   "ms": 85.8,
    "purpose": "timing sample"
   },
   {
    "method": "GET",
    "path": "/about",
    "status": 200,
-   "ms": 43.8,
+   "ms": 52.7,
    "purpose": "timing sample"
   },
   {
    "method": "GET",
    "path": "/about",
    "status": 200,
-   "ms": 44.4,
+   "ms": 38.6,
    "purpose": "timing sample"
+  },
+  {
+   "method": "GET",
+   "path": "/help",
+   "status": 302,
+   "ms": 2.2,
+   "purpose": "check"
+  },
+  {
+   "method": "GET",
+   "path": "/login?next=/help",
+   "status": 200,
+   "ms": 21.2,
+   "purpose": "redirect"
   },
   {
    "method": "GET",
    "path": "/api/sailings",
    "status": 200,
-   "ms": 12.8,
+   "ms": 1.8,
    "purpose": "check"
   },
   {
    "method": "GET",
    "path": "/api/sailings",
    "status": 200,
-   "ms": 3.0,
+   "ms": 18.6,
    "purpose": "timing sample"
   },
   {
    "method": "GET",
    "path": "/api/sailings",
    "status": 200,
-   "ms": 11.9,
+   "ms": 12.1,
    "purpose": "timing sample"
   },
   {
    "method": "GET",
    "path": "/api/sailings",
    "status": 200,
-   "ms": 25.6,
+   "ms": 19.0,
    "purpose": "timing sample"
   },
   {
    "method": "GET",
    "path": "/api/sailings",
    "status": 200,
-   "ms": 10.6,
+   "ms": 11.6,
    "purpose": "timing sample"
   },
   {
    "method": "GET",
    "path": "/api/fares",
    "status": 200,
-   "ms": 346.6,
+   "ms": 341.5,
    "purpose": "check"
-  },
-  {
-   "method": "GET",
-   "path": "/api/fares",
-   "status": 200,
-   "ms": 331.1,
-   "purpose": "timing sample"
-  },
-  {
-   "method": "GET",
-   "path": "/api/fares",
-   "status": 200,
-   "ms": 344.6,
-   "purpose": "timing sample"
   },
   {
    "method": "GET",
@@ -532,7 +661,21 @@
    "method": "GET",
    "path": "/api/fares",
    "status": 200,
-   "ms": 322.1,
+   "ms": 322.4,
+   "purpose": "timing sample"
+  },
+  {
+   "method": "GET",
+   "path": "/api/fares",
+   "status": 200,
+   "ms": 336.4,
+   "purpose": "timing sample"
+  },
+  {
+   "method": "GET",
+   "path": "/api/fares",
+   "status": 200,
+   "ms": 322.7,
    "purpose": "timing sample"
   },
   {
@@ -546,7 +689,7 @@
    "method": "GET",
    "path": "/api/account",
    "status": 200,
-   "ms": 22.7,
+   "ms": 14.9,
    "purpose": "check"
   }
  ],
@@ -561,43 +704,46 @@
  "performance": {
   "baseline_run": "examples/runs/baseline-1.8.0/run.json",
   "baseline_note": null,
+  "baseline_relation": "different_deployment",
+  "baseline_deployment_id": "a1b2c3d",
   "tolerance_pct": 20.0,
   "min_delta_ms": 50.0,
   "samples": 5,
   "comparisons": [
    {
     "check_id": "home",
-    "median_ms": 14.2,
-    "baseline_median_ms": 1.5,
-    "change_pct": 846.7,
+    "median_ms": 3.6,
+    "baseline_median_ms": 2.3,
+    "change_pct": 56.5,
     "status": "ok"
    },
    {
     "check_id": "timetable",
-    "median_ms": 10.8,
-    "baseline_median_ms": 16.1,
-    "change_pct": -32.9,
-    "status": "ok"
+    "median_ms": 4.4,
+    "baseline_median_ms": 20.4,
+    "change_pct": null,
+    "status": "not_comparable",
+    "reason": "answered 500 (expected 200): a failing response is timed once and not compared"
    },
    {
     "check_id": "about",
-    "median_ms": 44.0,
-    "baseline_median_ms": 15.0,
-    "change_pct": 193.3,
+    "median_ms": 52.7,
+    "baseline_median_ms": 17.0,
+    "change_pct": 210.0,
     "status": "ok"
    },
    {
     "check_id": "sailings-data",
-    "median_ms": 11.9,
-    "baseline_median_ms": 17.7,
-    "change_pct": -32.8,
+    "median_ms": 12.1,
+    "baseline_median_ms": 13.4,
+    "change_pct": -9.7,
     "status": "ok"
    },
    {
     "check_id": "fares-data",
-    "median_ms": 331.1,
-    "baseline_median_ms": 37.0,
-    "change_pct": 794.9,
+    "median_ms": 322.7,
+    "baseline_median_ms": 32.7,
+    "change_pct": 886.9,
     "status": "regressed"
    }
   ]

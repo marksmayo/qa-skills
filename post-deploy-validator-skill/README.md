@@ -5,11 +5,13 @@ A portable skill for Claude Code, OpenAI Codex, Gemini CLI, and other coding age
 Right after a deploy, it checks the live environment **read-only** and recommends go or no-go for a person
 to decide:
 
-- the deployed **version** is the expected one;
-- key **pages and endpoints** answer correctly, signed in with a **named set of test credentials** where
-  needed;
+- the deployed **version** (or deployment id) is the expected one, read from JSON, a header, a meta tag
+  or a pattern in the HTML;
+- key **pages and endpoints** answer correctly, with the expected **security headers** and no redirect
+  to a sign-in page, signed in with a **named set of test credentials** where needed;
 - the **data** the release depends on is sane, through the API;
-- **response times** haven't regressed against the skill's **previous run**.
+- **response times** haven't regressed against the skill's **previous run** of another deployment
+  (a failing response is never timed as a regression).
 
 It sends only GET and HEAD requests plus the named sign-in. Anything else in the plan is refused and
 recorded. Credentials, tokens and cookies never reach a file.
@@ -58,8 +60,10 @@ python scripts/render_report.py examples/pvt_report.example.json
 
 - `SKILL.md`, `RUBRIC.md`
 - `schemas/pvt_plan.schema.json`, `schemas/pvt_report.schema.json`
-- `scripts/run_pvt.py`: the read-only runner (request guard, sign-in, assertions, timings, baseline)
+- `scripts/run_pvt.py`: the read-only runner (plan schema check, request guard, sign-in, version and
+  deployment id readers, redirects, headers, assertions, timings, stop rules, baseline)
 - `scripts/recommend.py`, `scripts/validate_pvt.py`, `scripts/render_report.py`
+- `scripts/schema_check.py`: the JSON Schema subset the runner and validator use
 
 ## Design principles
 

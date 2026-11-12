@@ -1,8 +1,8 @@
 {
- "schema_version": "1.0.0",
+ "schema_version": "1.1.0",
  "skill": {
   "name": "post-deploy-validator",
-  "version": "1.0.0"
+  "version": "1.1.0"
  },
  "run": "examples/runs/release-1.9.0/run.json",
  "target": {
@@ -12,19 +12,21 @@
  },
  "plan": {
   "path": "examples/pvt_plan.json",
-  "sha256": "5b1ab116564d6ab4dfc42dc487fec32cbf3a61f1a289076b0cf1028d6d323dc6",
+  "sha256": "e13684e50fdb348c15afd3444ac2a227ad19aa16bcbb77d837fd715d2a041eb0",
   "name": "Harbour Tickets post-deploy checks"
  },
  "deployed": {
   "version": "1.9.0",
   "expected": "1.9.0",
   "matches": true,
-  "source": "/version version"
+  "source": "/version JSON version",
+  "deployment_id": "e4f5a6b",
+  "deployment_source": "/ body /data-build=\"([0-9a-f]+)\"/"
  },
  "window": {
-  "started_at": "2026-11-11T13:53:16Z",
-  "finished_at": "2026-11-11T13:53:20Z",
-  "requests_sent": 28,
+  "started_at": "2026-11-12T06:30:10Z",
+  "finished_at": "2026-11-12T06:30:14Z",
+  "requests_sent": 27,
   "blocked": [
    {
     "check_id": "create-booking",
@@ -32,7 +34,8 @@
     "path": "/api/bookings",
     "reason": "not a read: the run is read-only"
    }
-  ]
+  ],
+  "stopped": null
  },
  "credential_sets": [
   {
@@ -51,6 +54,7 @@
    "path": "/",
    "status": "pass",
    "http_status": 200,
+   "final_path": "/",
    "reason": null
   },
   {
@@ -61,6 +65,7 @@
    "path": "/timetable",
    "status": "fail",
    "http_status": 500,
+   "final_path": "/timetable",
    "reason": null
   },
   {
@@ -71,6 +76,18 @@
    "path": "/about",
    "status": "pass",
    "http_status": 200,
+   "final_path": "/about",
+   "reason": null
+  },
+  {
+   "id": "help",
+   "kind": "page",
+   "critical": false,
+   "method": "GET",
+   "path": "/help",
+   "status": "fail",
+   "http_status": 200,
+   "final_path": "/login",
    "reason": null
   },
   {
@@ -81,6 +98,7 @@
    "path": "/api/sailings",
    "status": "pass",
    "http_status": 200,
+   "final_path": "/api/sailings",
    "reason": null
   },
   {
@@ -91,6 +109,7 @@
    "path": "/api/fares",
    "status": "fail",
    "http_status": 200,
+   "final_path": "/api/fares",
    "reason": null
   },
   {
@@ -101,6 +120,7 @@
    "path": "/api/account",
    "status": "pass",
    "http_status": 200,
+   "final_path": "/api/account",
    "reason": null
   },
   {
@@ -111,49 +131,53 @@
    "path": "/api/bookings",
    "status": "blocked",
    "http_status": null,
+   "final_path": null,
    "reason": "POST is not allowed: the run is read-only, so this check was not sent"
   }
  ],
  "performance": {
   "baseline_run": "examples/runs/baseline-1.8.0/run.json",
   "baseline_note": null,
+  "baseline_relation": "different_deployment",
+  "baseline_deployment_id": "a1b2c3d",
   "tolerance_pct": 20.0,
   "min_delta_ms": 50.0,
   "samples": 5,
   "comparisons": [
    {
     "check_id": "home",
-    "median_ms": 14.2,
-    "baseline_median_ms": 1.5,
-    "change_pct": 846.7,
+    "median_ms": 3.6,
+    "baseline_median_ms": 2.3,
+    "change_pct": 56.5,
     "status": "ok"
    },
    {
     "check_id": "timetable",
-    "median_ms": 10.8,
-    "baseline_median_ms": 16.1,
-    "change_pct": -32.9,
-    "status": "ok"
+    "median_ms": 4.4,
+    "baseline_median_ms": 20.4,
+    "change_pct": null,
+    "status": "not_comparable",
+    "reason": "answered 500 (expected 200): a failing response is timed once and not compared"
    },
    {
     "check_id": "about",
-    "median_ms": 44.0,
-    "baseline_median_ms": 15.0,
-    "change_pct": 193.3,
+    "median_ms": 52.7,
+    "baseline_median_ms": 17.0,
+    "change_pct": 210.0,
     "status": "ok"
    },
    {
     "check_id": "sailings-data",
-    "median_ms": 11.9,
-    "baseline_median_ms": 17.7,
-    "change_pct": -32.8,
+    "median_ms": 12.1,
+    "baseline_median_ms": 13.4,
+    "change_pct": -9.7,
     "status": "ok"
    },
    {
     "check_id": "fares-data",
-    "median_ms": 331.1,
-    "baseline_median_ms": 37.0,
-    "change_pct": 794.9,
+    "median_ms": 322.7,
+    "baseline_median_ms": 32.7,
+    "change_pct": 886.9,
     "status": "regressed"
    }
   ]
@@ -168,7 +192,18 @@
    "title": "The timetable page answers 500 (\"Something went wrong\") on every request",
    "evidence": "run.json checks[timetable]",
    "id": "F1",
-   "detail": "timetable: GET /timetable answered 500 (expected 200); body lacks \"<h1>Timetable</h1>\"; body contains \"Something went wrong\""
+   "detail": "timetable: GET /timetable answered HTTP 500 (expected 200); body lacks \"<h1>Timetable</h1>\"; body contains \"Something went wrong\""
+  },
+  {
+   "kind": "check_failed",
+   "severity": "major",
+   "check_ids": [
+    "help"
+   ],
+   "title": "The public help page /help now redirects (302) to the sign-in page /login",
+   "evidence": "run.json checks[help]",
+   "id": "F2",
+   "detail": "help: GET /help redirected to the sign-in page /login"
   },
   {
    "kind": "check_failed",
@@ -178,8 +213,8 @@
    ],
    "title": "The fares API returns a negative child fare (-12.25 AUD)",
    "evidence": "run.json checks[fares-data]",
-   "id": "F2",
-   "detail": "fares-data: GET /api/fares fares[*].price all_gt 0: 3 value(s), 1 failing (items [1]) (values [24.5, -12.25, 18.0])"
+   "id": "F3",
+   "detail": "fares-data: GET /api/fares JSON fares[*].price all_gt 0: 3 value(s), 1 failing (items [1]) (values [24.5, -12.25, 18.0])"
   },
   {
    "kind": "regression",
@@ -187,10 +222,23 @@
    "check_ids": [
     "fares-data"
    ],
-   "title": "The fares API is about 9 times slower than in the 1.8.0 run (331 ms median against 37 ms)",
+   "title": "The fares API is about 10 times slower than in the 1.8.0 run (323 ms median against 33 ms)",
    "evidence": "examples/runs/baseline-1.8.0/run.json -> run.json, 5 samples each",
-   "id": "F3",
-   "detail": "fares-data median 331.1 ms against 37.0 ms in the previous run (+794.9%)"
+   "id": "F4",
+   "detail": "fares-data median 322.7 ms against 32.7 ms in the previous run (+886.9%)"
+  },
+  {
+   "kind": "header_inconsistent",
+   "severity": "minor",
+   "check_ids": [
+    "about",
+    "help",
+    "home"
+   ],
+   "title": "The about page sends an older Content-Security-Policy (\"default-src 'self' 'unsafe-inline'\") than home and help",
+   "evidence": "run.json checks[*].headers.content-security-policy",
+   "id": "F5",
+   "detail": "Content-Security-Policy differs between pages: 2 variants (home, help | about)"
   }
  ],
  "recommendation": {
@@ -198,9 +246,10 @@
   "reasons": [
    "critical check timetable failed",
    "critical check fares-data failed",
-   "critical check fares-data regressed (+794.9%)"
+   "critical check fares-data regressed (+886.9%)"
   ],
   "notes": [
+   "timings not compared for timetable: a failing response (here or in the baseline) is not a performance measure",
    "POST /api/bookings (create-booking) was not sent: not a read: the run is read-only"
   ],
   "decision_owner": "Release manager",
@@ -208,20 +257,22 @@
   "decision": null
  },
  "summary": {
-  "headline": "Recommend no-go for 1.9.0: the timetable page is down (500) and the fares API returns a negative child fare, both on critical checks, and the fares API is about 9 times slower than in the previous run. The deployed version is 1.9.0 as expected; the home page, sailings data and the signed-in account check pass. The release manager decides.",
+  "headline": "Recommend no-go for 1.9.0: the timetable page is down (500) and the fares API returns a negative child fare, both on critical checks, and the fares API is about 10 times slower than in the 1.8.0 run. The public help page now sends visitors to the sign-in page, and the about page carries an older Content-Security-Policy. The deployed version is 1.9.0 (build e4f5a6b) as expected; the home page, sailings data and the signed-in account check pass. The release manager decides.",
   "checks": {
    "pass": 4,
-   "fail": 2,
+   "fail": 3,
    "error": 0,
    "blocked": 1,
    "skipped": 0
   },
-  "findings": 3
+  "findings": 5
  },
  "limitations": [
   "The target is a loopback stand-in for production (examples/harbour-tickets/server.py); the timings are from this machine.",
   "Checks are HTTP requests, not a browser: client-side errors and rendering are not checked.",
-  "The about page median rose from 15.0 ms to 44.0 ms (+193.3%), less than the 50 ms minimum change, so it is not a regression; with 5 samples a change that small is within noise.",
+  "The timetable page answered 500, so it was sent once and its time was not compared: the time of an error page says nothing about the page.",
+  "The about page median rose from 17.0 ms to 52.7 ms (+210.0%); a regression must exceed both 20% and 50 ms, and with 5 samples a change that small is within noise.",
+  "Security headers were asserted on the home page only; the Content-Security-Policy comparison covers the page checks that answered (home, about, help).",
   "POST /api/bookings in the plan was refused and not sent: bookings were not checked. A read-only check, or a synthetic monitor owned by the team, is needed for that."
  ]
 }
