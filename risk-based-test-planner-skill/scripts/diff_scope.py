@@ -7,6 +7,11 @@
 Git mode diffs the merge base of --base and HEAD against the working tree (uncommitted and
 untracked files included) with rename detection; --committed-only diffs <merge base>...HEAD.
 --diff reads a unified diff (git or plain) whose new side is the current state of --repo.
+--repo may be a subdirectory of the git repository (one package of a monorepo): git mode uses
+`git diff --relative`, and a --diff whose paths start from the git top level is re-rooted at
+--repo, so paths resolve against it and changes outside it are left out (with a warning). A
+changed file that can't be found under --repo is named in `warnings` rather than passing as a
+file with no functions.
 
 Every file gets a status (added, modified, deleted, renamed), a kind (source, test, generated,
 migration, vendored, types, config, docs, binary, other) with the reason, its added and
@@ -478,6 +483,39 @@ def scope_from_diff(text: str, repo: Path) -> list[dict]:
     return out
 
 
+def git_prefix(repo: Path) -> str:
+    """repo's path inside its git work tree ('libs/core/'), '' at the top or outside git."""
+    try:
+        res = subprocess.run(['git', '-C', str(repo), 'rev-parse', '--show-prefix'], capture_output=True, text=True,
+                             encoding='utf-8', errors='replace', timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return ''
+    return res.stdout.strip() if res.returncode == 0 else ''
+
+
+def relative_diff(text: str, prefix: str) -> tuple[str, int]:
+    """A diff whose paths are relative to the git top level, re-rooted at prefix when its paths start with it (as
+    `git diff --relative` would give). Diffs already relative to --repo are returned unchanged. (text, files left out)"""
+    files = parse_diff(text)
+    if not files or not any((f['path'] or '').startswith(prefix) or (f['old_path'] or '').startswith(prefix)
+                            for f in files):
+        return text, 0
+    out, keep, outside = [], True, 0
+    marker = re.compile(r'^(diff --git |--- |\+\+\+ |rename from |rename to |copy from |copy to )')
+    for line in text.splitlines(keepends=True):
+        if line.startswith('diff --git '):
+            m = re.match(r'diff --git (\S+) (\S+)', line)
+            paths = [re.sub(r'^[ab]/', '', strip_prefix(x) or '') for x in m.groups()] if m else []
+            keep = any(p.startswith(prefix) for p in paths)
+            outside += not keep
+        if not keep:
+            continue
+        if marker.match(line):
+            line = re.sub(r'(^|\s)(a/|b/)?' + re.escape(prefix), r'\1\2', line)
+        out.append(line)
+    return ''.join(out), outside
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('--repo', type=Path, required=True)
@@ -487,19 +525,32 @@ def main(argv=None) -> int:
     ap.add_argument('--out', type=Path)
     args = ap.parse_args(argv)
     repo = args.repo.resolve()
+    warnings = []
     if args.diff:
         text = args.diff.read_text(encoding='utf-8', errors='replace')
         source = {'kind': 'diff', 'diff_file': args.diff.as_posix(), 'base_ref': None, 'merge_base': None, 'head': None}
         untracked = []
+        prefix = git_prefix(repo)
+        if prefix:
+            text, outside = relative_diff(text, prefix)
+            if outside:
+                warnings.append(f'{outside} file(s) in the diff are outside --repo ({prefix.rstrip("/")} of the git '
+                                'repository) and were left out')
     else:
         merge_base = git(repo, 'merge-base', args.base, 'HEAD').strip()
         head = git(repo, 'rev-parse', 'HEAD').strip()
         rng = [f'{merge_base}...HEAD'] if args.committed_only else [merge_base]
-        text = git(repo, 'diff', '-M', '--no-color', '--no-ext-diff', *rng)
+        # --relative: when --repo is a subdirectory of the git repository, paths come relative to it (and changes
+        # outside it are left out), so they resolve against --repo
+        text = git(repo, 'diff', '-M', '--relative', '--no-color', '--no-ext-diff', *rng)
         source = {'kind': 'git', 'diff_file': None, 'base_ref': args.base, 'merge_base': merge_base, 'head': head,
-                  'command': 'git diff -M ' + ' '.join(rng), 'working_tree': not args.committed_only}
+                  'command': 'git diff -M --relative ' + ' '.join(rng), 'working_tree': not args.committed_only}
         untracked = [] if args.committed_only else git(repo, 'ls-files', '--others', '--exclude-standard').splitlines()
     files = scope_from_diff(text, repo)
+    for f in files:
+        if f['status'] != 'deleted' and not f['present'] and f['kind'] != 'binary':
+            warnings.append(f'{f["path"]}: changed in the diff but not found under --repo, so no lines or functions '
+                            'were read (is --repo the directory the diff paths are relative to?)')
     for rel in untracked:
         p = repo / rel
         try:
@@ -523,6 +574,10 @@ def main(argv=None) -> int:
            'summary': {'files': len(files), 'by_status': by_status, 'by_kind': by_kind,
                        'lines_added': sum(f['lines_added'] for f in files),
                        'lines_deleted': sum(f['lines_deleted'] for f in files)}}
+    if warnings:
+        out['warnings'] = warnings
+        for w in warnings:
+            print('WARN: ' + w, file=sys.stderr)
     text_out = json.dumps(out, indent=2) + '\n'
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
