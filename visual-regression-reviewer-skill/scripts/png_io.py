@@ -34,6 +34,11 @@ def _unfilter(raw: bytes, w: int, h: int, bpp: int) -> list[bytes]:
     stride = w * bpp
     rows: list[bytes] = []
     prev = bytes(stride)
+    # masks for the Up filter: even and odd bytes are added as separate big-integer lanes, so a carry out of
+    # one byte lands in a masked-off byte and each byte sums mod 256 (several times faster than per byte)
+    half = (stride + 1) // 2
+    lo = int.from_bytes(b'\xff\x00' * half, 'big') >> (8 * (half * 2 - stride))
+    hi = int.from_bytes(b'\x00\xff' * half, 'big') >> (8 * (half * 2 - stride))
     i = 0
     for _ in range(h):
         f = raw[i]
@@ -44,10 +49,11 @@ def _unfilter(raw: bytes, w: int, h: int, bpp: int) -> list[bytes]:
         elif f == 1:
             out = bytearray(stride)
             for c in range(bpp):
-                out[c::bpp] = bytes(v & 255 for v in accumulate(line[c::bpp]))
+                out[c::bpp] = bytes(map((255).__and__, accumulate(line[c::bpp])))
             cur = bytes(out)
         elif f == 2:
-            cur = bytes((a + b) & 255 for a, b in zip(line, prev))
+            a, b = int.from_bytes(line, 'big'), int.from_bytes(prev, 'big')
+            cur = ((((a & lo) + (b & lo)) & lo) | (((a & hi) + (b & hi)) & hi)).to_bytes(stride, 'big')
         else:
             out = bytearray(line)
             for x in range(stride):
@@ -93,7 +99,9 @@ def decode(data: bytes) -> Image:
     for r in rows:
         if ctype == 6:
             if r[3::4].count(255) == w:
-                out.append(bytes(b for i, b in enumerate(r) if i % 4 != 3))
+                ba = bytearray(r)
+                del ba[3::4]
+                out.append(bytes(ba))
                 continue
             o = bytearray(3 * w)
             for x in range(w):
