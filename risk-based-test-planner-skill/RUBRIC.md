@@ -10,10 +10,10 @@ Rules for `test_plan.json`. The validator enforces everything marked (computed) 
 | `churn` | likelihood | 2 | Mid-rank percentile of lines changed in the window (formatting-only commits excluded); 0 lines = 1 |
 | `defects` | likelihood | 3 | Percentile of fix commits plus bug tickets by component or label (each bug counted once); 0 = 1 |
 | `complexity` | likelihood | 1 | Percentile of branches per code file |
-| `change_in_scope` | likelihood | 2 | Percentile of lines changed in the scope diff; 0 = 1 |
-| `test_weakness` | likelihood | 2 | 5 when no test imports the area (flaky tests don't count; imports are followed through relative paths and configured aliases such as `~/` from tsconfig, jsconfig, vite or webpack; a mocked module is not a link). Otherwise by test-to-code ratio: < 0.2 = 4, < 0.5 = 3, < 1 = 2, else 1 |
-| `journey_criticality` | impact | 3 | Highest linked journey: P0 = 5, P1 = 4, P2 = 3, P3 = 2; a journey map that cites the area nowhere = 1 |
-| `surface` | impact | 3 | `data/surfaces.json`: money, access, personal data, destructive = 5; compliance = 4; external = 3; none = 1 |
+| `change_in_scope` | likelihood | 2 | Percentile of lines changed in the scope diff; 0 = 1. Capped by size: under 25 lines at most 2, under 100 at most 3, under 250 at most 4 |
+| `test_weakness` | likelihood | 2 | 5 when no test imports the area or sits in it (flaky tests don't count; imports are resolved to files through relative paths and configured aliases such as `~/` from tsconfig, jsconfig, vite or webpack, so a top-level `src/*` area matches only files directly in `src/`; a mocked module is not a link). Otherwise by test-to-code ratio: < 0.2 = 4, < 0.5 = 3, < 1 = 2, else 1 |
+| `journey_criticality` | impact | 3 | Highest linked journey: P0 = 5, P1 = 4, P2 = 3, P3 = 2; a journey map that maps the area but no journey reaches it = 1. A journey reaches an area through its evidence files, the surface items it covers, the route handler behind a `METHOD /path` note, or one import hop from those |
+| `surface` | impact | 3 | `data/surfaces.json` on code with comments and strings blanked (`.d.ts` skipped): money, access, personal data, destructive = 5; compliance = 4; public entry point or external = 3; none = 1 |
 | `reach` | impact | 1 | Usage share: ≥ 50% = 5, ≥ 25% = 4, ≥ 10% = 3, ≥ 2% = 2, else 1. Without usage data, the percentile of journeys citing the area |
 
 Percentile: p = (areas below + half the ties) / (areas − 1); ≥ 0.9 = 5, ≥ 0.75 = 4, ≥ 0.5 = 3,
@@ -31,8 +31,10 @@ Every factor that isn't judged must equal `risk.json`.
 
 The `not_assessed` cases:
 - churn and defects for `novel` areas, and for shallow clones;
-- journey criticality without a journey map;
-- reach without usage data or a journey map;
+- journey criticality without a journey map, or when the map is partial (scoped to some
+  domains, or with `out_of_scope` / `not_mapped_this_run` orphans) and doesn't map the area;
+- reach without usage data or a journey map, or without usage data when a partial map doesn't
+  map the area;
 - change in scope without a scope diff.
 
 ## Risk (computed)
@@ -86,12 +88,21 @@ is null, and `effort_share` = risk / Σ risk over the planned areas.
 
 ## Inputs from other skills
 
-An open finding keeps the severity and confidence it has in its source report. With `--input`,
-the validator re-reads the report and fails if the confidence was raised.
+An open finding keeps the severity and confidence it has in its source report. Severity is read
+by the adapters listed in SKILL.md (crash `ranking.priority` P0/P1 = critical/high, WCAG serious =
+high, security CVSS severity) and recorded with its `source_rating`; a rating the adapter can't
+read is `unknown` and sets no floor. With `--input`, the validator re-reads the report and fails
+if the severity, the source rating or the confidence differ, and it checks the `open_findings`
+flag is set exactly when a finding is critical or high.
+
+Source files no area covers are scored as the `unassigned` area; they are never dropped.
 
 ## Honesty rules
 
-- **The headline:** it says "short" when `sessions_short` > 0.
+- **The headline:** it says "short" when `sessions_short` > 0, and it doesn't contradict the
+  register: no "no area reaches High" when one is High; "N High areas" (and Medium, Low) must
+  match the counts; an area quoted with "(risk X)" or as High/Medium/Low must match its
+  computed risk and band. A `not_tested` reason that quotes "<Band> risk (X)" must match too.
 - **No safety claims:** none of these may appear in the headline, reasons, exit criteria,
   assumptions or test-type reasons:
   - "safe to ship";

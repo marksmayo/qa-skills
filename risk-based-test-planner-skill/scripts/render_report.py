@@ -6,7 +6,8 @@
 
 The Markdown plan follows the sections of ISO/IEC/IEEE 29119-3 loosely: scope, risk register,
 approach, effort, entry and exit criteria, what is not tested, assumptions and open questions.
---brief prints the headline, the risk register and the effort only.
+--brief prints the headline, the risk register, the effort and what is not tested. Areas are
+listed by risk, highest first, after any judged factors (not in risk.json's order).
 """
 from __future__ import annotations
 import argparse, json, os, sys
@@ -30,6 +31,7 @@ def supports_color(mode: str) -> bool:
 def lines(d: dict, P, brief: bool, md: bool) -> list[str]:
     m, s = d['metadata'], d['summary']
     by = {a['id']: a for a in d['areas']}
+    ordered = sorted(d['areas'], key=lambda a: (-(a['risk'] or 0), a['id']))
     budget = m['budget_sessions']
     out = [P(f'# Test plan: {m.get("title") or m["repo"]}', BOLD), '',
            P(s['headline'], BOLD), '']
@@ -43,16 +45,20 @@ def lines(d: dict, P, brief: bool, md: bool) -> list[str]:
             f'- Effort: {budget} sessions of {m.get("session_minutes", 90)} minutes' if budget is not None else
             '- Effort: no budget given, so relative shares only',
             f'- Inputs used: ' + (', '.join(f'{i["skill"]} ({i["path"]})' for i in m['inputs_used']) or 'none')
-            + (f'; missing: {", ".join(m["inputs_missing"])}' if m['inputs_missing'] else ''), '']
+            + (f'; missing: {", ".join(m["inputs_missing"])}' if m['inputs_missing'] else '')]
+    if m.get('area_basis'):
+        out.append(f'- Areas: {m["area_basis"]}')
+    out += [f'- Warning: {w}' for w in m.get('warnings', [])]
+    out.append('')
     out += [P('## Risk register', BOLD), '',
             '| Area | Likelihood | Impact | Risk | Band | Confidence | Flags |', '|---|---|---|---|---|---|---|']
-    for a in d['areas']:
+    for a in ordered:
         out.append(f'| {a["id"]} | {a["likelihood"]} | {a["impact"]} | {a["risk"]} | {P(a["band"], BAND[a["band"]])} | '
                    f'{a["confidence"]} | {", ".join(a["flags"]) or "-"} |')
     out.append('')
     if not brief:
         out.append(P('### Evidence per area', BOLD))
-        for a in d['areas']:
+        for a in ordered:
             out.append(f'**{a["id"]}** (`{"`, `".join(a["paths"])}`)' if md else P(f'{a["id"]} ({", ".join(a["paths"])})', BOLD))
             for k, f in a['factors'].items():
                 score = '-' if f['score'] is None else f['score']
@@ -60,7 +66,8 @@ def lines(d: dict, P, brief: bool, md: bool) -> list[str]:
                 out.append(f'- {FACTOR_LABEL[k]}: {score}{tag} - ' + '; '.join(f['evidence'][:3])
                            + (f' Judged: {f["judged_reason"]}' if f.get('judged_reason') else ''))
             for o in a['open_findings']:
-                out.append(f'- Open finding: {o["skill"]} {o["id"]} {o.get("title") or ""} ({o["severity"]}, confidence {o["confidence"]})')
+                out.append(f'- Open finding: {o["skill"]} {o["id"]} {o.get("title") or ""} ({o["severity"]}'
+                           + (f' from {o["source_rating"]}' if o.get('source_rating') else '') + f', confidence {o["confidence"]})')
             out.append('')
     out += [P('## Approach and effort', BOLD), '']
     if budget is not None:
@@ -84,12 +91,13 @@ def lines(d: dict, P, brief: bool, md: bool) -> list[str]:
             for c in st.get('charters', []):
                 out.append(f'- Charter: {c}')
             out.append('')
-        out += [P('## Not tested', BOLD)]
-        if not d['not_tested']:
-            out.append('- Every area in scope has planned testing.')
-        for n in d['not_tested']:
-            out.append(f'- **{n["area_id"]}** (residual risk {n["residual_band"]}): {n["reason"]} Accepted by: '
-                       f'{n["accepted_by"] or "nobody yet"}.')
+    out += [P('## Not tested', BOLD)]
+    if not d['not_tested']:
+        out.append('- Every area in scope has planned testing.')
+    for n in d['not_tested']:
+        out.append(f'- **{n["area_id"]}** (residual risk {n["residual_band"]}): {n["reason"]} Accepted by: '
+                   f'{n["accepted_by"] or "nobody yet"}.')
+    if not brief:
         out += ['', P('## Entry criteria', BOLD)] + [f'- {e}' for e in d['entry_criteria']]
         out += ['', P('## Exit criteria', BOLD)] + [f'- {e["condition"]} ({e["measure"]})' for e in d['exit_criteria']]
         if d['assumptions']:

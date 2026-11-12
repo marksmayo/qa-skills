@@ -1,25 +1,41 @@
 {
-  "$comment": "Impact surfaces found by pattern in an area's source files (case-insensitive regex per line; a line that also matches one of the class's exclude patterns doesn't count, which keeps collection and URL methods such as searchParams.delete() from reading as data destruction).The highest-scoring class an area matches sets its surface factor; a person may judge it differently, with a reason. Patterns are deliberately about doing (charging, deleting, authenticating), not merely mentioning: a catalogue that shows a price does not move money.",
+  "$comment": "Impact surfaces found by pattern in an area's source files. `patterns` and `exclude` are case-insensitive regexes run per line on the code with comments and string literals blanked, so a provider named in a CSP header, marketing copy, an API description or a comment doesn't count; `raw_patterns` run on the line as written (SQL statements, directives). (?-i:...) makes part of a pattern case-sensitive, which is how a camelCase verb (captureMessage) is told from capture( or capture_payment(. A line that matches one of the class's exclude patterns doesn't count. Type declaration files (.d.ts) are skipped. The highest-scoring class an area matches sets its surface factor; a person may judge it differently, with a reason. Patterns are about doing (charging, deleting, authenticating, enforcing access), not mentioning or reading: a catalogue that shows a price does not move money, and useSession() reads who is signed in without enforcing anything.",
   "classes": {
     "money": {
       "score": 5,
       "label": "moves money",
       "patterns": [
-        "\\b(charge|capture|refund|payout|settle|transfer)_?\\w*\\s*\\(",
+        "\\b(charge|capture|refund|payout|settle|transfer)(_\\w+)?\\s*\\(",
+        "\\b(charge|capture|refund|payout|settle|transfer)(?-i:[A-Z])\\w*\\s*\\(",
         "\\b(redeem|debit|top_?up|issue_gift_card|apply_gift_card)\\w*\\s*\\(",
-        "\\bpayment_intent\\b",
+        "\\bpayment_intent\\b|\\bpaymentIntents\\.(create|capture|confirm|update|cancel|incrementAuthorization)\\s*\\(",
+        "\\b(charges|refunds|payouts|transfers|subscriptions|invoices|subscriptionItems|setupIntents)\\.(create|capture|confirm|update|cancel|del|pay|finalizeInvoice)\\s*\\(",
+        "\\bcheckout\\.sessions\\.create\\s*\\(|\\bconfirm(Card)?Payment\\s*\\(",
         "\\bledger\\b",
-        "\\bstripe\\b|\\bbraintree\\b|\\badyen\\b"
+        "\\bnew\\s+Stripe\\s*\\(|\\b(stripe|braintree|adyen)\\.\\w+(\\.\\w+)*\\.(create|capture|confirm|update|cancel|del|pay|refund|sale|submitForSettlement|void)\\s*\\("
+      ],
+      "exclude": [
+        "\\bcapture(Message|Exception|Event|Error|Console|Screenshot|Stack|Trace|Feedback|Log)\\b",
+        "\\b(Sentry|posthog|analytics|telemetry|mixpanel|logger|console)\\.\\w+\\s*\\(",
+        "\\btransfer(Focus|Control|Ownership)\\b"
       ]
     },
     "access": {
       "score": 5,
       "label": "controls access",
       "patterns": [
-        "\\b(login|logout|authenticate|authorise|authorize|has_permission|check_permission|require_role)\\w*\\s*\\(",
-        "\\bpassword_?hash\\b|\\bhash_password\\b",
-        "\\bsession(_?token)?\\b.*=|\\bjwt\\b",
-        "\\bcompare_digest\\b"
+        "\\b(log_?in|log_?out|sign_?in|sign_?out|authenticate|authori[sz]e|has_?permission|check_?permission|require_?(role|auth|user|admin|login|session)|verify_?password|check_?password|ensure_?authenticated|with_?auth)(_\\w+)?\\s*\\(",
+        "@login_required\\b|@requires?_\\w+\\b|@permission_required\\b",
+        "\\bpassword_?hash\\b|\\bhash_?password\\b|\\bcheck_password_hash\\s*\\(|\\b(bcrypt|bcryptjs|argon2)\\.(compare|hash|verify)(Sync)?\\s*\\(",
+        "\\bsession_?token\\b\\s*=(?!=)|\\bsession\\[[^\\]]+\\]\\s*=(?!=)|\\bsession\\.(create|destroy|invalidate|regenerate|cycle_key|flush)\\s*\\(",
+        "\\bjwt\\.(sign|verify|decode|encode)\\s*\\(|\\bjwtVerify\\s*\\(|\\bnew\\s+SignJWT\\b",
+        "\\bcompare_digest\\b|\\btimingSafeEqual\\s*\\(",
+        "\\bgetServerSession\\s*\\(|\\bgetServerAuthSession\\s*\\(|\\bNextAuth\\s*\\(|\\bawait\\s+auth\\s*\\(\\s*\\)|\\bgetToken\\s*\\(",
+        "\\bmatcher\\s*:"
+      ],
+      "exclude": [
+        "\\buse_?session\\s*\\(",
+        "\\blog(Info|Debug|Warn|Error)\\b"
       ]
     },
     "personal_data": {
@@ -34,21 +50,42 @@
       "score": 5,
       "label": "destroys data",
       "patterns": [
-        "\\b(delete|purge|truncate|drop|erase|wipe)_?\\w*\\s*\\(",
+        "\\b(delete|purge|truncate|drop|erase|wipe)(_\\w+)?\\s*\\(",
+        "\\b(delete|purge|truncate|erase|wipe)(?-i:[A-Z])\\w*\\s*\\(",
+        "\\.(deleteMany|destroy)\\s*\\("
+      ],
+      "raw_patterns": [
         "\\bDROP\\s+TABLE\\b",
-        "\\bDELETE\\s+FROM\\b"
+        "\\bDELETE\\s+FROM\\b",
+        "\\bTRUNCATE\\s+TABLE\\b"
       ],
       "exclude": [
-        "\\b(searchParams|params|query|headers|url|map|set|cache|seen|visited|selected|state|formData|weakMap|style|classList|dataset|attributes|listeners|subscribers|timers|pending|queue|ids|keys|subscriptions|observers|handlers|callbacks|registry|entries)\\.delete\\s*\\(",
-        "\\b\\w*(Map|Set|Params|Headers|Cache|Ids|Keys)\\.delete\\s*\\(",
-        "\\b(removeEventListener|removeChild|removeAttribute|removeItem|deleteProperty)\\s*\\("
+        "\\b(searchParams|params|query|headers|url|map|set|cache|seen|visited|selected|state|formData|weakMap|style|classList|dataset|attributes|listeners|subscribers|timers|pending|queue|ids|keys|subscriptions|observers|handlers|callbacks|registry|entries|traces|sent)\\.delete\\s*\\(",
+        "\\b\\w*(Map|Set|Params|Headers|Cache|Ids|Keys|Tracker|Sent|Traces|Timers|Queue|Registry|Store|Buffer|Pending|Seen)\\.delete\\s*\\(",
+        "\\bthis\\.#?\\w+\\.delete\\s*\\(",
+        "\\b(?!session\\b)\\w+\\.delete\\s*\\(\\s*[\\w.$\\[\\]\"']+\\s*\\)",
+        "\\b(function|const|let|as)\\s+DELETE\\b",
+        "\\b(removeEventListener|removeChild|removeAttribute|removeItem|deleteProperty)\\s*\\(",
+        "\\b(Reflect\\.deleteProperty|cookies\\(\\)\\.delete)\\b"
       ]
     },
     "compliance": {
       "score": 4,
       "label": "compliance-relevant",
       "patterns": [
-        "\\b(gdpr|consent|retention|audit_log|right_to_erasure|accessibility_statement)\\b"
+        "\\b(gdpr|consent|retention|audit_?log|right_to_erasure|accessibility_statement)\\b"
+      ]
+    },
+    "entry": {
+      "score": 3,
+      "label": "public entry point (route handler or server action)",
+      "patterns": [
+        "\\bexport\\s+(async\\s+)?function\\s+(GET|POST|PUT|PATCH|DELETE)\\s*\\(",
+        "\\bexport\\s+const\\s+(GET|POST|PUT|PATCH|DELETE)\\s*=",
+        "\\bexport\\s*\\{[^}]*\\bas\\s+(GET|POST|PUT|PATCH|DELETE)\\b"
+      ],
+      "raw_patterns": [
+        "^\\s*['\"]use server['\"]"
       ]
     },
     "external": {
@@ -56,7 +93,7 @@
       "label": "external integration",
       "patterns": [
         "\\burllib\\.request\\b|\\brequests\\.(get|post|put|delete)\\b|\\bfetch\\s*\\(|\\baxios\\b|\\bhttpx\\b",
-        "\\bwebhook\\b"
+        "\\bwebhooks?\\b"
       ]
     }
   },

@@ -8,9 +8,12 @@ factor keeps its computed score and gives a reason; likelihood, impact, risk, ba
 confidence recompute; every area matches risk.json except judged factors; every in-scope area is
 planned or not tested (never both, never neither); test types fit the band; effort recomputes
 from the budget; a High area is left untested only when the budget is short; residual bands
-match; open findings keep the confidence they had in their source report (--input); no "safe",
-"fully tested" or "risk-free". --write-summary fills in each area's computed fields, the effort
-and the summary; the headline stays yours.
+match; open findings keep the severity (as the adapter reads it, with its source_rating) and the
+confidence they had in their source report (--input), and the open_findings flag is set exactly
+when one is critical or high; the headline doesn't contradict the register (no "no area reaches
+High" when one does, band counts and quoted risks and bands match); no "safe", "fully tested" or
+"risk-free". --write-summary fills in each area's computed fields, the effort and the summary;
+the headline stays yours.
 """
 from __future__ import annotations
 import argparse, json, re, sys
@@ -126,8 +129,16 @@ def check(plan: dict, risk: dict, inputs: dict) -> list[str]:
                 errs.append(f'{w}.{k}: {a.get(k)!r} but the factors give {v!r} (run --write-summary)')
         for f in a['open_findings']:
             src = inputs.get(f['skill'], {}).get(f['id'])
+            if f['skill'] in inputs and src is None:
+                errs.append(f'{w}: {f["skill"]} {f["id"]} is not in the {f["skill"]} report given with --input')
             if src is not None and src.get('confidence') != f['confidence']:
                 errs.append(f'{w}: {f["skill"]} {f["id"]} has confidence {src.get("confidence")!r} in its report, not {f["confidence"]!r}')
+            if src is not None and (src.get('severity'), src.get('source_rating')) != (f['severity'], f.get('source_rating')):
+                errs.append(f'{w}: {f["skill"]} {f["id"]} reads as severity {src.get("severity")!r} ({src.get("source_rating")}) from '
+                            f'its report, not {f["severity"]!r} ({f.get("source_rating")}); re-run score_risk.py')
+        severe = any(f['severity'] in score_risk.SEVERE for f in a['open_findings'])
+        if severe != ('open_findings' in a['flags']):
+            errs.append(f'{w}.flags: open_findings must be set exactly when an open finding is critical or high')
     planned = [s['area_id'] for s in plan['strategy']]
     untested = [n['area_id'] for n in plan['not_tested']]
     for aid in by:
@@ -169,6 +180,9 @@ def check(plan: dict, risk: dict, inputs: dict) -> list[str]:
             errs.append(f'not_tested[{a["id"]}]: a High area is left untested only when the budget is short, and the reason must say so')
         if a['band'] == 'Medium' and 'novel' in a['flags']:
             errs.append(f'not_tested[{a["id"]}]: novel code is not left untested')
+        for m in re.finditer(r'\b(High|Medium|Low) risk \((\d+(?:\.\d+)?)\)', n['reason']):
+            if m.group(1) != a['band'] or a['risk'] is None or abs(float(m.group(2)) - a['risk']) > 0.05:
+                errs.append(f'not_tested[{a["id"]}]: reason says "{m.group(0)}", but the area computes to {a["band"]} risk ({a["risk"]})')
     texts = [('summary.headline', plan['summary'].get('headline', ''))] + \
         [(f'not_tested[{n["area_id"]}]', n['reason']) for n in plan['not_tested']] + \
         [(f'exit_criteria[{i}]', e['condition'] + ' ' + e['measure']) for i, e in enumerate(plan['exit_criteria'])] + \
@@ -184,6 +198,36 @@ def check(plan: dict, risk: dict, inputs: dict) -> list[str]:
             errs.append(f'summary.{k}: {plan["summary"].get(k)!r} but computed {v!r} (run --write-summary)')
     if short and not re.search(r'\bshort\b', plan['summary'].get('headline', ''), re.I):
         errs.append('summary.headline: the budget is short; say so')
+    errs += headline_errors(plan['summary'].get('headline', ''), plan['areas'], want_s)
+    return errs
+
+
+NO_HIGH = re.compile(r'\bno (?:area|areas|part)\b[^.;,]{0,25}\b(?:reaches|is|are|scores?|rated|in)\b[^.;,]{0,10}\bhigh\b|'
+                     r'\bno high[- ](?:risk )?areas?\b(?!\s+(?:is|are)\s+(?:left|not))|\bnothing (?:is|reaches|scores) high\b', re.I)
+COUNT_WORDS = {'no': 0, 'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6, 'seven': 7, 'eight': 8, 'nine': 9,
+               'ten': 10}
+BAND_COUNT = re.compile(r'\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(High|Medium|Low)(?:[- ]risk)?\s+areas?\b', re.I)
+
+
+def headline_errors(headline: str, areas: list[dict], counts: dict) -> list[str]:
+    """The headline must not contradict the computed register: no "no area reaches High" when one does, band counts
+    that match, and an area's risk or band quoted as computed (a stale headline after re-scoring is caught here)."""
+    errs = []
+    if counts['high'] and NO_HIGH.search(headline):
+        errs.append(f'summary.headline: says no area is High, but {counts["high"]} area(s) are')
+    for m in BAND_COUNT.finditer(headline):
+        n = int(m.group(1)) if m.group(1).isdigit() else COUNT_WORDS[m.group(1).lower()]
+        band = m.group(2).lower()
+        if n != counts[band]:
+            errs.append(f'summary.headline: "{m.group(0)}" but the register has {counts[band]} {m.group(2).capitalize()} area(s)')
+    for a in areas:
+        name = re.escape(a['id'])
+        for m in re.finditer(rf'(?<![\w/-]){name}(?![\w/-])\s*\(\s*risk\s+(\d+(?:\.\d+)?)', headline, re.I):
+            if a['risk'] is None or abs(float(m.group(1)) - a['risk']) > 0.05:
+                errs.append(f'summary.headline: quotes {a["id"]} at risk {m.group(1)}, but it computes to {a["risk"]}')
+        for m in re.finditer(rf'(?<![\w/-]){name}(?![\w/-])\s*(?:\(\s*|is\s+|:\s*)(?:risk\s+[\d.]+,?\s*)?(High|Medium|Low)\b', headline, re.I):
+            if m.group(1).capitalize() != a['band']:
+                errs.append(f'summary.headline: calls {a["id"]} {m.group(1)}, but its band is {a["band"]}')
     return errs
 
 

@@ -5,6 +5,7 @@
     "days": 180,
     "from": "2026-05-05",
     "to": "2026-11-01",
+    "head_date": "2026-10-28",
     "commits": 41,
     "shallow": false,
     "excluded_formatting": [
@@ -37,6 +38,14 @@
     "usage export",
     "Jira bug search"
   ],
+  "journey_map_scope": {
+    "domains": "all",
+    "partial": false,
+    "out_of_scope_files": 0
+  },
+  "area_basis": "subdirectories of the main source directory larder/",
+  "unassigned": [],
+  "warnings": [],
   "excluded": [],
   "flaky_tests_not_counted": [],
   "weights": {
@@ -74,6 +83,7 @@
           "id": "F-2",
           "title": "Gateway timeout is long enough to hold worker threads",
           "severity": "low",
+          "source_rating": "cvss.severity Low",
           "confidence": "possible"
         }
       ],
@@ -84,7 +94,7 @@
         "churn": {
           "score": 4,
           "status": "assessed",
-          "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%s%x1f%b",
+          "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%P%x1f%s%x1f%b",
           "evidence": [
             "40 lines changed in 13 commits by 4 author(s), 2026-05-05 to 2026-11-01 (formatting-only commits excluded)"
           ]
@@ -92,7 +102,7 @@
         "defects": {
           "score": 5,
           "status": "assessed",
-          "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%s%x1f%b",
+          "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%P%x1f%s%x1f%b",
           "evidence": [
             "6 fix commit(s) in the window",
             "048c970b0dec fix: regression in partial refunds (PAY-57)",
@@ -112,11 +122,11 @@
           ]
         },
         "change_in_scope": {
-          "score": 3,
+          "score": 2,
           "status": "assessed",
           "command": "git diff -M bac397ec032af0c329eb9547594239162c2300dd...HEAD",
           "evidence": [
-            "6 lines changed in the scope diff"
+            "6 lines changed in the scope diff (percentile 3, capped at 2 for a change this size)"
           ]
         },
         "test_weakness": {
@@ -130,7 +140,7 @@
           "score": 5,
           "status": "assessed",
           "evidence": [
-            "JRN-CHK-001 (P0) Customer pays for an order"
+            "JRN-CHK-001 (P0) Customer pays for an order - evidence (larder/payments/gateway.py)"
           ]
         },
         "surface": {
@@ -142,16 +152,16 @@
           ]
         },
         "reach": {
-          "score": 3,
+          "score": 2,
           "status": "assessed",
           "evidence": [
             "cited by 1 of 4 journeys (journey graph)"
           ]
         }
       },
-      "likelihood": 3.8,
-      "impact": 4.7,
-      "risk": 17.9,
+      "likelihood": 3.6,
+      "impact": 4.6,
+      "risk": 16.6,
       "band": "High",
       "confidence": "high"
     },
@@ -161,7 +171,9 @@
         "larder/giftcards"
       ],
       "files": 2,
-      "journeys": [],
+      "journeys": [
+        "JRN-CHK-001"
+      ],
       "surfaces": [
         "money"
       ],
@@ -193,11 +205,11 @@
           ]
         },
         "change_in_scope": {
-          "score": 4,
+          "score": 2,
           "status": "assessed",
           "command": "git diff -M bac397ec032af0c329eb9547594239162c2300dd...HEAD",
           "evidence": [
-            "15 lines changed in the scope diff"
+            "15 lines changed in the scope diff (percentile 4, capped at 2 for a change this size)"
           ]
         },
         "test_weakness": {
@@ -208,10 +220,10 @@
           ]
         },
         "journey_criticality": {
-          "score": 1,
+          "score": 5,
           "status": "assessed",
           "evidence": [
-            "journey map present; no journey cites this area"
+            "JRN-CHK-001 (P0) Customer pays for an order - larder/giftcards/cards.py imported by larder/payments/service.py"
           ]
         },
         "surface": {
@@ -222,16 +234,16 @@
           ]
         },
         "reach": {
-          "score": 1,
+          "score": 2,
           "status": "assessed",
           "evidence": [
-            "cited by 0 of 4 journeys (journey graph)"
+            "cited by 1 of 4 journeys (journey graph)"
           ]
         }
       },
-      "likelihood": 3.8,
-      "impact": 2.7,
-      "risk": 10.3,
+      "likelihood": 3.0,
+      "impact": 4.6,
+      "risk": 13.8,
       "band": "Medium",
       "confidence": "low"
     },
@@ -255,7 +267,7 @@
         "churn": {
           "score": 3,
           "status": "assessed",
-          "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%s%x1f%b",
+          "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%P%x1f%s%x1f%b",
           "evidence": [
             "8 lines changed in 3 commits by 2 author(s), 2026-05-05 to 2026-11-01 (formatting-only commits excluded)"
           ]
@@ -263,7 +275,7 @@
         "defects": {
           "score": 4,
           "status": "assessed",
-          "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%s%x1f%b",
+          "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%P%x1f%s%x1f%b",
           "evidence": [
             "1 fix commit(s) in the window",
             "db9dbcef59e2 fix: flour price was in dollars, not cents"
@@ -295,8 +307,8 @@
           "score": 5,
           "status": "assessed",
           "evidence": [
-            "JRN-CHK-001 (P0) Customer pays for an order",
-            "JRN-BRW-001 (P2) Customer browses an aisle"
+            "JRN-CHK-001 (P0) Customer pays for an order - evidence (larder/catalog/products.py)",
+            "JRN-BRW-001 (P2) Customer browses an aisle - evidence (larder/catalog/products.py)"
           ]
         },
         "surface": {
@@ -341,6 +353,7 @@
           "id": "F-1",
           "title": "Session tokens never expire server-side",
           "severity": "high",
+          "source_rating": "cvss.severity High",
           "confidence": "likely"
         }
       ],
@@ -349,7 +362,7 @@
         "churn": {
           "score": 1,
           "status": "assessed",
-          "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%s%x1f%b",
+          "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%P%x1f%s%x1f%b",
           "evidence": [
             "2 lines changed in 1 commits by 1 author(s), 2026-05-05 to 2026-11-01 (formatting-only commits excluded)"
           ]
@@ -357,7 +370,7 @@
         "defects": {
           "score": 1,
           "status": "assessed",
-          "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%s%x1f%b",
+          "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%P%x1f%s%x1f%b",
           "evidence": [
             "0 fix commit(s) in the window"
           ]
@@ -388,7 +401,7 @@
           "score": 4,
           "status": "assessed",
           "evidence": [
-            "JRN-ACC-001 (P1) Customer signs in"
+            "JRN-ACC-001 (P1) Customer signs in - evidence (larder/auth/session.py)"
           ]
         },
         "surface": {
@@ -399,7 +412,7 @@
           ]
         },
         "reach": {
-          "score": 3,
+          "score": 2,
           "status": "assessed",
           "evidence": [
             "cited by 1 of 4 journeys (journey graph)"
@@ -407,8 +420,8 @@
         }
       },
       "likelihood": 1.8,
-      "impact": 4.3,
-      "risk": 7.7,
+      "impact": 4.1,
+      "risk": 7.4,
       "band": "High",
       "confidence": "high"
     },
@@ -431,7 +444,7 @@
         "churn": {
           "score": 5,
           "status": "assessed",
-          "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%s%x1f%b",
+          "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%P%x1f%s%x1f%b",
           "evidence": [
             "420 lines changed in 21 commits by 4 author(s), 2026-05-05 to 2026-11-01 (formatting-only commits excluded)"
           ]
@@ -439,7 +452,7 @@
         "defects": {
           "score": 1,
           "status": "assessed",
-          "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%s%x1f%b",
+          "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%P%x1f%s%x1f%b",
           "evidence": [
             "0 fix commit(s) in the window"
           ]
@@ -452,11 +465,11 @@
           ]
         },
         "change_in_scope": {
-          "score": 5,
+          "score": 2,
           "status": "assessed",
           "command": "git diff -M bac397ec032af0c329eb9547594239162c2300dd...HEAD",
           "evidence": [
-            "20 lines changed in the scope diff"
+            "20 lines changed in the scope diff (percentile 5, capped at 2 for a change this size)"
           ]
         },
         "test_weakness": {
@@ -470,7 +483,7 @@
           "score": 3,
           "status": "assessed",
           "evidence": [
-            "JRN-BRW-001 (P2) Customer browses an aisle"
+            "JRN-BRW-001 (P2) Customer browses an aisle - evidence (larder/marketing/banners.py)"
           ]
         },
         "surface": {
@@ -481,16 +494,16 @@
           ]
         },
         "reach": {
-          "score": 3,
+          "score": 2,
           "status": "assessed",
           "evidence": [
             "cited by 1 of 4 journeys (journey graph)"
           ]
         }
       },
-      "likelihood": 3.5,
-      "impact": 2.1,
-      "risk": 7.4,
+      "likelihood": 2.9,
+      "impact": 2.0,
+      "risk": 5.8,
       "band": "Low",
       "confidence": "high"
     },
@@ -513,7 +526,7 @@
         "churn": {
           "score": 2,
           "status": "assessed",
-          "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%s%x1f%b",
+          "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%P%x1f%s%x1f%b",
           "evidence": [
             "4 lines changed in 1 commits by 1 author(s), 2026-05-05 to 2026-11-01 (formatting-only commits excluded)"
           ]
@@ -521,7 +534,7 @@
         "defects": {
           "score": 1,
           "status": "assessed",
-          "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%s%x1f%b",
+          "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%P%x1f%s%x1f%b",
           "evidence": [
             "0 fix commit(s) in the window"
           ]
@@ -552,7 +565,7 @@
           "score": 2,
           "status": "assessed",
           "evidence": [
-            "JRN-ADM-001 (P3) Store manager reads the weekly stock report"
+            "JRN-ADM-001 (P3) Store manager reads the weekly stock report - evidence (larder/reports/stock.py)"
           ]
         },
         "surface": {
@@ -563,7 +576,7 @@
           ]
         },
         "reach": {
-          "score": 3,
+          "score": 2,
           "status": "assessed",
           "evidence": [
             "cited by 1 of 4 journeys (journey graph)"
@@ -571,8 +584,8 @@
         }
       },
       "likelihood": 2.2,
-      "impact": 1.7,
-      "risk": 3.7,
+      "impact": 1.6,
+      "risk": 3.5,
       "band": "Low",
       "confidence": "high"
     }

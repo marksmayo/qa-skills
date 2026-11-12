@@ -24,7 +24,11 @@
         "risk_file": {"type": "string"},
         "inputs_used": {"type": "array", "items": {"type": "object", "required": ["skill", "path"]}},
         "inputs_missing": {"type": "array", "items": {"type": "string"}},
-        "excluded": {"type": "array"}
+        "excluded": {"type": "array"},
+        "area_basis": {"type": "string"},
+        "unassigned": {"type": "array", "items": {"type": "string"}},
+        "journey_map_scope": {"type": ["object", "null"]},
+        "warnings": {"type": "array", "items": {"type": "string"}}
       }
     },
     "areas": {
@@ -40,7 +44,9 @@
           "journeys": {"type": "array", "items": {"type": "string"}},
           "surfaces": {"type": "array", "items": {"type": "string"}},
           "flags": {"type": "array", "items": {"enum": ["novel", "open_findings"]}},
-          "open_findings": {"type": "array", "items": {"type": "object", "required": ["skill", "id", "severity", "confidence"]}},
+          "open_findings": {"type": "array", "items": {"type": "object", "required": ["skill", "id", "severity", "source_rating", "confidence"],
+                                                        "properties": {"severity": {"enum": ["critical", "high", "medium", "low", "unknown"]},
+                                                                       "source_rating": {"type": "string"}}}},
           "tests": {"type": "array", "items": {"type": "string"}},
           "factors": {
             "type": "object",

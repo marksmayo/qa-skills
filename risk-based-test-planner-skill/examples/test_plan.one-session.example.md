@@ -7,39 +7,40 @@ One session is 1 session short of the High floors: it goes to payments. Auth (Hi
 - History: 2026-05-05 to 2026-11-01, 41 commits; 1 formatting-only commit(s) left out of churn
 - Effort: 1 sessions of 90 minutes
 - Inputs used: security (security_audit.json), journey-mapper (journey_map.json); missing: usage export, Jira bug search
+- Areas: subdirectories of the main source directory larder/
 
 ## Risk register
 
 | Area | Likelihood | Impact | Risk | Band | Confidence | Flags |
 |---|---|---|---|---|---|---|
-| payments | 3.8 | 4.7 | 17.9 | High | high | - |
-| giftcards | 3.8 | 2.7 | 10.3 | Medium | low | novel |
+| payments | 3.6 | 4.6 | 16.6 | High | high | - |
+| giftcards | 3.0 | 4.6 | 13.8 | Medium | low | novel |
 | catalog | 2.7 | 3.3 | 8.9 | Medium | high | - |
-| auth | 1.8 | 4.3 | 7.7 | High | high | open_findings |
-| marketing | 3.5 | 2.1 | 7.4 | Low | high | - |
-| reports | 2.2 | 1.7 | 3.7 | Low | high | - |
+| auth | 1.8 | 4.1 | 7.4 | High | high | open_findings |
+| marketing | 2.9 | 2.0 | 5.8 | Low | high | - |
+| reports | 2.2 | 1.6 | 3.5 | Low | high | - |
 
 ### Evidence per area
 **payments** (`larder/payments`)
 - Churn: 4 - 40 lines changed in 13 commits by 4 author(s), 2026-05-05 to 2026-11-01 (formatting-only commits excluded)
 - Defect history: 5 - 6 fix commit(s) in the window; 048c970b0dec fix: regression in partial refunds (PAY-57); 229928e8cd68 hotfix: revert currency change, charge in the order currency
 - Complexity: 3 - 3 branches in 2 file(s), 1.5 per file; 39 lines of code (complexity.py)
-- Change in scope: 3 - 6 lines changed in the scope diff
+- Change in scope: 2 - 6 lines changed in the scope diff (percentile 3, capped at 2 for a change this size)
 - Test weakness: 3 - 1 test file(s) import it (tests/test_payments.py); 8 test lines for 39 lines of code (ratio 0.21)
-- Journey criticality: 5 - JRN-CHK-001 (P0) Customer pays for an order
+- Journey criticality: 5 - JRN-CHK-001 (P0) Customer pays for an order - evidence (larder/payments/gateway.py)
 - Surface: 5 - moves money: larder/payments/gateway.py:13, larder/payments/gateway.py:17, larder/payments/service.py:6 (+5); external integration: larder/payments/gateway.py:2, larder/payments/gateway.py:8, larder/payments/gateway.py:9
-- Reach: 3 - cited by 1 of 4 journeys (journey graph)
-- Open finding: security F-2 Gateway timeout is long enough to hold worker threads (low, confidence possible)
+- Reach: 2 - cited by 1 of 4 journeys (journey graph)
+- Open finding: security F-2 Gateway timeout is long enough to hold worker threads (low from cvss.severity Low, confidence possible)
 
 **giftcards** (`larder/giftcards`)
 - Churn: - (not assessed) - no history before the scope: every file is new
 - Defect history: - (not assessed) - no history before the scope: every file is new
 - Complexity: 1 - 1 branches in 1 file(s), 1.0 per file; 10 lines of code (complexity.py)
-- Change in scope: 4 - 15 lines changed in the scope diff
+- Change in scope: 2 - 15 lines changed in the scope diff (percentile 4, capped at 2 for a change this size)
 - Test weakness: 5 - no test imports this area
-- Journey criticality: 1 - journey map present; no journey cites this area
+- Journey criticality: 5 - JRN-CHK-001 (P0) Customer pays for an order - larder/giftcards/cards.py imported by larder/payments/service.py
 - Surface: 5 - moves money: larder/giftcards/cards.py:6, larder/giftcards/cards.py:12
-- Reach: 1 - cited by 0 of 4 journeys (journey graph)
+- Reach: 2 - cited by 1 of 4 journeys (journey graph)
 
 **catalog** (`larder/catalog`)
 - Churn: 3 - 8 lines changed in 3 commits by 2 author(s), 2026-05-05 to 2026-11-01 (formatting-only commits excluded)
@@ -47,7 +48,7 @@ One session is 1 session short of the High floors: it goes to payments. Auth (Hi
 - Complexity: 1 - 1 branches in 1 file(s), 1.0 per file; 10 lines of code (complexity.py)
 - Change in scope: 1 - 0 lines changed in the scope diff
 - Test weakness: 3 - 1 test file(s) import it (tests/test_catalog.py); 3 test lines for 10 lines of code (ratio 0.30)
-- Journey criticality: 5 - JRN-CHK-001 (P0) Customer pays for an order; JRN-BRW-001 (P2) Customer browses an aisle
+- Journey criticality: 5 - JRN-CHK-001 (P0) Customer pays for an order - evidence (larder/catalog/products.py); JRN-BRW-001 (P2) Customer browses an aisle - evidence (larder/catalog/products.py)
 - Surface: 1 - no surface pattern matched in data/surfaces.json
 - Reach: 5 - cited by 2 of 4 journeys (journey graph)
 
@@ -57,20 +58,20 @@ One session is 1 session short of the High floors: it goes to payments. Auth (Hi
 - Complexity: 1 - 1 branches in 1 file(s), 1.0 per file; 12 lines of code (complexity.py)
 - Change in scope: 1 - 0 lines changed in the scope diff
 - Test weakness: 5 - no test imports this area
-- Journey criticality: 4 - JRN-ACC-001 (P1) Customer signs in
+- Journey criticality: 4 - JRN-ACC-001 (P1) Customer signs in - evidence (larder/auth/session.py)
 - Surface: 5 - controls access: larder/auth/session.py:8, larder/auth/session.py:12, larder/auth/session.py:13 (+1)
-- Reach: 3 - cited by 1 of 4 journeys (journey graph)
-- Open finding: security F-1 Session tokens never expire server-side (high, confidence likely)
+- Reach: 2 - cited by 1 of 4 journeys (journey graph)
+- Open finding: security F-1 Session tokens never expire server-side (high from cvss.severity High, confidence likely)
 
 **marketing** (`larder/marketing`)
 - Churn: 5 - 420 lines changed in 21 commits by 4 author(s), 2026-05-05 to 2026-11-01 (formatting-only commits excluded)
 - Defect history: 1 - 0 fix commit(s) in the window
 - Complexity: 4 - 2 branches in 1 file(s), 2.0 per file; 17 lines of code (complexity.py)
-- Change in scope: 5 - 20 lines changed in the scope diff
+- Change in scope: 2 - 20 lines changed in the scope diff (percentile 5, capped at 2 for a change this size)
 - Test weakness: 4 - 1 test file(s) import it (tests/test_marketing.py); 3 test lines for 17 lines of code (ratio 0.18)
-- Journey criticality: 3 - JRN-BRW-001 (P2) Customer browses an aisle
+- Journey criticality: 3 - JRN-BRW-001 (P2) Customer browses an aisle - evidence (larder/marketing/banners.py)
 - Surface: 1 - no surface pattern matched in data/surfaces.json
-- Reach: 3 - cited by 1 of 4 journeys (journey graph)
+- Reach: 2 - cited by 1 of 4 journeys (journey graph)
 
 **reports** (`larder/reports`)
 - Churn: 2 - 4 lines changed in 1 commits by 1 author(s), 2026-05-05 to 2026-11-01 (formatting-only commits excluded)
@@ -78,9 +79,9 @@ One session is 1 session short of the High floors: it goes to payments. Auth (Hi
 - Complexity: 5 - 18 branches in 1 file(s), 18.0 per file; 36 lines of code (complexity.py)
 - Change in scope: 1 - 0 lines changed in the scope diff
 - Test weakness: 4 - 1 test file(s) import it (tests/test_reports.py); 3 test lines for 36 lines of code (ratio 0.08)
-- Journey criticality: 2 - JRN-ADM-001 (P3) Store manager reads the weekly stock report
+- Journey criticality: 2 - JRN-ADM-001 (P3) Store manager reads the weekly stock report - evidence (larder/reports/stock.py)
 - Surface: 1 - no surface pattern matched in data/surfaces.json
-- Reach: 3 - cited by 1 of 4 journeys (journey graph)
+- Reach: 2 - cited by 1 of 4 journeys (journey graph)
 
 ## Approach and effort
 
@@ -100,7 +101,7 @@ The budget is 1 session(s) short of the High-risk floors.
 - Charter: Explore paying with a gift card plus a card, including a card that covers the whole order
 
 **giftcards**
-- exploratory (exploratory-charter-writer): New in this release with no history, no journey and no tests. The charter is ready, but this budget leaves it no session: run it first if any time frees up.
+- exploratory (exploratory-charter-writer): New in this release with no history and no tests; it sits on the P0 checkout journey because payments now imports it. The charter is ready, but this budget leaves it no session: run it first if any time frees up.
 - unit (ticket-to-tdd): Issue and redeem limits ($5 to $500, partial redemption) need unit tests.
 - regression: Payments now calls redeem(): run the payments regression suite with gift cards.
 - Charter: Explore issuing and redeeming gift cards at the $5 and $500 limits and redeeming more than the balance
@@ -108,8 +109,8 @@ The budget is 1 session(s) short of the High-risk floors.
 ## Not tested
 - **auth** (residual risk High): The 1-session budget covers one High area's floor; auth is the second High area and gets no session. Its open finding F-1 still needs the security retest before release. Accepted by: nobody yet.
 - **catalog** (residual risk Medium): Medium risk (8.9), but the single session goes to payments. Catalog keeps its existing test and the browse journey. Accepted by: nobody yet.
-- **marketing** (residual risk Low): Low risk (7.4): highest churn, but banner copy moves no money and touches no account. With one session there is no time for it; its existing test keeps running. Accepted by: nobody yet.
-- **reports** (residual risk Low): Low risk (3.7): the most complex area, but one 4-line change in six months, no fixes, a P3 admin journey and an existing unit test. Its existing test keeps running in CI. Accepted by: nobody yet.
+- **marketing** (residual risk Low): Low risk (5.8): highest churn, but banner copy moves no money and touches no account. With one session there is no time for it; its existing test keeps running. Accepted by: nobody yet.
+- **reports** (residual risk Low): Low risk (3.5): the most complex area, but one 4-line change in six months, no fixes, a P3 admin journey and an existing unit test. Its existing test keeps running in CI. Accepted by: nobody yet.
 
 ## Entry criteria
 - The release candidate is deployed to the staging environment with the gateway sandbox.
@@ -123,9 +124,9 @@ The budget is 1 session(s) short of the High-risk floors.
 - F-1 retested (code-security-auditor retest report)
 
 ## Assumptions
-- Fix commits are found by message (fix, bug, hotfix, regression, revert); a fix with another message is not counted.
+- Fix commits are found by message (a fix:, hotfix: or revert: type, or a subject starting with fix, bugfix, hotfix, revert or regression, or naming a bug); merges are not counted, and a fix with another message is missed.
 - Reach comes from the journey graph, because no usage export was given.
-- The journey map predates gift cards, so gift cards score 1 for journey criticality until it is refreshed.
+- The journey map predates gift cards; they reach the P0 checkout journey only through the payments service's import, so their journey criticality rests on that one link until the map is refreshed.
 
 ## Open questions
 - Should gift cards get a journey in the journey map before release? Run journey-mapper.

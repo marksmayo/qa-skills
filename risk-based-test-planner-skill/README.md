@@ -20,8 +20,9 @@ It is strict about evidence:
   its priority, the line a surface pattern matched.
 - Missing evidence is `not_assessed`, never low risk. New code with no history is flagged
   `novel`, which raises it.
-- An open high finding from another skill makes an area High, and its confidence is carried
-  as reported.
+- An open high finding from another skill makes an area High, and its severity and confidence
+  are carried as reported (crash `ranking.priority`, WCAG severity, CVSS severity).
+- A partial journey map leaves the areas it didn't map `not_assessed`, not low impact.
 - Every area is either planned or in `not_tested`, with the reason and the residual risk.
 - The plan never says a release is safe. Exit criteria are conditions to check.
 
@@ -87,11 +88,11 @@ python scripts/render_report.py examples/test_plan.example.json --brief
 
 - `SKILL.md`: complete agent instructions
 - `RUBRIC.md`: factors, percentiles, bands, floors, strategy, effort, honesty rules
-- `data/surfaces.json`: patterns for money, access, personal data, destructive, compliance and external surfaces
+- `data/surfaces.json`: call-aware patterns for money, access, personal data, destructive, compliance, entry-point and external surfaces, run on code with comments and strings blanked
 - `schemas/test_plan.schema.json`: output contract
 - `scripts/mine_history.py`: churn, authors, fix commits and formatting-only commits from `git log --numstat`
 - `scripts/complexity.py`: lines of code and branches per file
-- `scripts/score_risk.py`: areas, the eight factors with evidence, risk, bands, floors; the effort allocation
+- `scripts/score_risk.py`: areas (packages, Next.js App Router routes and modules, or source subdirectories; uncovered files as `unassigned`), the eight factors with evidence, risk, bands, floors; the input adapters; the effort allocation
 - `scripts/validate_test_plan.py`: checks the plan against the scores, the inputs and the rules
 - `scripts/render_report.py`: terminal report, or the Markdown plan
 - `scripts/diff_scope.py`, `fetch_ticket.py`, `detect_conventions.py`: shared helpers

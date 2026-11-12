@@ -5,9 +5,11 @@
   "window": {
     "days": 180,
     "from": "2026-05-05",
-    "to": "2026-11-01"
+    "to": "2026-11-01",
+    "head_date": "2026-10-28"
   },
-  "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%s%x1f%b",
+  "notes": [],
+  "command": "git log --numstat --no-renames --since=2026-05-05T00:00:00 --until=2026-11-01T23:59:59 --format=%x1e%H%x1f%aI%x1f%an%x1f%P%x1f%s%x1f%b",
   "commits": [
     {
       "sha": "d834c7e13dc8",
@@ -163,7 +165,8 @@
           "added": 1,
           "deleted": 1
         }
-      ]
+      ],
+      "fix_basis": "conventional"
     },
     {
       "sha": "f6ae2153549a",
@@ -259,7 +262,8 @@
           "added": 1,
           "deleted": 1
         }
-      ]
+      ],
+      "fix_basis": "conventional"
     },
     {
       "sha": "dc1d295c8ea1",
@@ -357,7 +361,8 @@
           "added": 1,
           "deleted": 1
         }
-      ]
+      ],
+      "fix_basis": "conventional"
     },
     {
       "sha": "4882afb59aa0",
@@ -389,7 +394,8 @@
           "added": 1,
           "deleted": 1
         }
-      ]
+      ],
+      "fix_basis": "conventional"
     },
     {
       "sha": "847809e50cb4",
@@ -453,7 +459,8 @@
           "added": 1,
           "deleted": 1
         }
-      ]
+      ],
+      "fix_basis": "conventional"
     },
     {
       "sha": "6228483a77a6",
@@ -565,7 +572,8 @@
           "added": 1,
           "deleted": 1
         }
-      ]
+      ],
+      "fix_basis": "conventional"
     },
     {
       "sha": "a74cf1c741cc",
@@ -645,7 +653,8 @@
           "added": 1,
           "deleted": 1
         }
-      ]
+      ],
+      "fix_basis": "conventional"
     },
     {
       "sha": "580a9b0916b7",

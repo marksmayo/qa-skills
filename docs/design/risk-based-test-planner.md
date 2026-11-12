@@ -1,6 +1,6 @@
 # Design: `risk-based-test-planner-skill`
 
-Status: Built (v1.0.0), see "As built" at the end. Build order: 13.
+Status: Built (v1.1.0), see "As built" at the end. Build order: 13.
 
 ## Mission
 
@@ -188,7 +188,7 @@ Agreed with the user before the build.
 3. **Production usage data for reach?** Optional input; the default is the journey graph.
 
 
-## As built (v1.0.0)
+## As built (v1.1.0)
 
 Where the build differs from the design above, and what the example showed.
 
@@ -233,15 +233,15 @@ Where the build differs from the design above, and what the example showed.
 
   | Area | Risk | Band | Note |
   |---|---|---|---|
-  | payments | 17.9 | High | |
-  | auth | 7.7 | High | Through security finding F-1 |
-  | giftcards | 10.3 | Medium | Novel |
+  | payments | 16.6 | High | (17.9 in v1.0.0; its 6-line change is now capped at change in scope 2) |
+  | auth | 7.4 | High | Through security finding F-1 |
+  | giftcards | 13.8 | Medium | Novel; reaches the P0 checkout journey through the payments service's import (10.3 in v1.0.0) |
   | catalog | 8.9 | Medium | |
-  | marketing | 7.4 | Low | The design's answer key had Medium; with no impact surface its likelihood alone isn't enough |
-  | reports | 3.7 | Low | Not tested |
+  | marketing | 5.8 | Low | The design's answer key had Medium; with no impact surface its likelihood alone isn't enough |
+  | reports | 3.5 | Low | Not tested |
 
-  The 16-session plan gives payments 6 sessions, auth 4, and gift cards, catalog and marketing
-  2 each.
+  The 16-session plan gives payments 6 sessions, auth 4, gift cards 3, catalog 2 and marketing 1
+  (v1.0.0: gift cards, catalog and marketing 2 each).
 - **Found on a real JavaScript repository, and fixed:**
   - Tests that import through an alias (`~/utils/...`, configured in jsconfig, tsconfig, vite or webpack)
     weren't linked to their areas, which overstated test weakness. Aliases are now resolved; on that
@@ -262,3 +262,48 @@ Where the build differs from the design above, and what the example showed.
     - no budget;
     - monorepo areas;
     - no scope diff.
+
+### v1.1.0: found planning a real Next.js App Router repository, and fixed
+
+- **Crash severity was read from the wrong field.** The adapter read `ranking.band`; ui-crash-hunter
+  writes `ranking.priority`, so two P1 crashes loaded as medium and never set the High floor.
+  Adapters now read a documented list of fields per skill (P0/P1 = critical/high, WCAG serious =
+  high), record `source_rating`, and mark an unreadable rating `unknown` with a warning. The
+  validator re-reads the source and checks severity, rating and the `open_findings` flag.
+- **A top-level `src/*` area matched every test.** The test matcher stripped `/*` and took every
+  import under `src/`. Imports are now resolved to files (extensions, index files, aliases) and
+  mapped with the same rule as source files; co-located tests count for their area.
+- **Files outside `--areas` were dropped silently**, including the only source file the release
+  changed. They are now scored as `unassigned` and named in a warning.
+- **Journeys missed the API hops.** A journey linked to an area only through evidence files. It now
+  also follows `covers` (surface item files), resolves `POST /api/x` notes to App Router or Pages
+  Router handlers, and follows one hop of imports, so a payment route and the lib modules behind
+  it are on the booking journey.
+- **A partial journey map was read as complete.** Areas a scoped map didn't map scored journey
+  criticality 1 with high confidence. They are now `not_assessed` (and so is reach), which lowers
+  confidence; `out_of_scope` and `not_mapped_this_run` orphans both count as unmapped.
+- **Default areas for Next.js App Router**: one per API resource, route segment or group,
+  `app (root)`, `middleware`, and `lib/`, `components/` and other directories split by
+  subdirectory and file-name prefix, instead of one `app` area holding 256 files.
+- **Surface patterns** were Python-centric and matched mentions: `logInfo(` as login,
+  `Sentry.captureMessage(` as a payment capture, CSP strings and marketing copy as Stripe,
+  `useSession()` as access control, `someMap.delete(key)` and `.d.ts` declarations. Patterns now
+  run on code with comments and strings blanked, camelCase verbs are matched case-sensitively,
+  receivers and in-memory maps are excluded, `.d.ts` is skipped, and JS/TS idioms (Stripe
+  resource calls, bcrypt, getServerSession, Prisma deletes, route handlers, server actions,
+  middleware matchers) were added. A new `entry` class (3) marks route handlers and server
+  actions.
+- **Fix commits** were any subject containing "fix": merges, `feat: ... fixes` and a UI redesign
+  counted. Conventional-commit types now decide on their own, other subjects must start with a fix
+  verb or name a bug, merges never count and duplicates count once. On that repository 18 "fixes"
+  became 8. A note warns when `--as-of` ends the window long after HEAD.
+- **Change in scope** ranked an 18-line change as 5 when every other area tied at 0. The
+  percentile is now capped by absolute size (under 25 lines at most 2, under 100 at most 3, under
+  250 at most 4).
+- **complexity.py walked node_modules** and filtered afterwards (3 min 20 s cold on that
+  repository). It now prunes dependency, build and cache directories before descending: 10.1 s
+  warm before, 0.55 s after, the same 875 files.
+- **Renderer and validator.** The register is sorted by risk after judged factors, `--brief`
+  includes what is not tested, and the validator checks the headline against the register (no
+  "no area reaches High" when one does; band counts, quoted risks and bands must match). The
+  example's headline quoted payments at 17.9 after re-scoring, and the new check caught it.

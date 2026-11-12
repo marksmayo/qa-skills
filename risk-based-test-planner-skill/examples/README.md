@@ -19,12 +19,12 @@ on 2026-10-01. The example can't ship a `.git` directory. Built anywhere, HEAD i
 
 | Area | What the history holds | Result |
 |---|---|---|
-| payments | 13 commits, 6 of them fixes (refunds, currency, fees), on the P0 checkout journey, moves money | High, risk 17.9, the top risk; 6 of 16 sessions |
-| auth | One commit in six months and no tests, but it controls access, and security finding F-1 (High, confidence "likely") is open | risk 7.7, made High by the open finding; 4 sessions; F-1 is carried at "likely" |
-| giftcards | New after v1.4: no history, no tests, and no journey yet; redeems stored value | `novel`; churn and defects not assessed; Medium (10.3); exploratory charter; confidence low |
+| payments | 13 commits, 6 of them fixes (refunds, currency, fees), on the P0 checkout journey, moves money | High, risk 16.6, the top risk; 6 of 16 sessions. Its 6-line change ranks high among the areas, but change in scope is capped at 2 for a change under 25 lines |
+| auth | One commit in six months and no tests, but it controls access, and security finding F-1 (High, confidence "likely") is open | risk 7.4, made High by the open finding; 4 sessions; F-1 is carried at "likely" and severity high (read from its CVSS severity, recorded as `source_rating`) |
+| giftcards | New after v1.4: no history and no tests; no journey cites it, but the payments service imports it, so it reaches the P0 checkout journey through that import; redeems stored value | `novel`; churn and defects not assessed; Medium (13.8); exploratory charter; confidence low |
 | catalog | Price updates, one fix, on the P0 and P2 journeys, cited by the most journeys | Medium (8.9) |
-| marketing | The most churn (420 lines, 21 commits), no fixes, no surface | Low (7.4): likely to change but cheap if wrong; a smoke check |
-| reports | The most complex file (18 branches) but one 4-line change | Low (3.7); **not tested**, with the reason; `accepted_by` waits for a person |
+| marketing | The most churn (420 lines, 21 commits), no fixes, no surface | Low (5.8): likely to change but cheap if wrong; a smoke check |
+| reports | The most complex file (18 branches) but one 4-line change | Low (3.5); **not tested**, with the reason; `accepted_by` waits for a person |
 
 The one-session plan:
 - **Floors:** the High floor is 1 session per High area, and two High areas need 2, so the
