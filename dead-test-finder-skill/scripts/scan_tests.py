@@ -10,8 +10,10 @@ definitions with what the framework really collects.
 
 Candidate categories: never_runs (a file outside the collect patterns, a stray .only),
 no_assertion, tautology, unreached_assertion, swallowed_failure, async_not_awaited, mock_only,
-skipped and duplicate (normalised AST similarity >= the threshold in data/rules.json). Each
-candidate cites the test ids, file and line, and why it was flagged.
+skipped and duplicate (normalised AST similarity >= the threshold in data/rules.json, within one
+package, and for Python with the same literal values: same-shape tests with different values are
+input cases, counted in `near_duplicates` rather than flagged). Each candidate cites the test ids,
+file and line, and why it was flagged.
 """
 from __future__ import annotations
 import argparse, ast, copy, difflib, fnmatch, json, os, re, sys
@@ -60,26 +62,29 @@ def _pytest_config(root: Path, pkg: str) -> dict:
     conf = {'python_files': PY['default_python_files'], 'python_functions': PY['default_python_functions'],
             'python_classes': PY['default_python_classes'], 'source': 'pytest defaults'}
     base = root / pkg if pkg != '.' else root
-    for name in ('pytest.ini', 'pyproject.toml', 'tox.ini', 'setup.cfg'):
-        p = base / name
-        if not p.is_file():
-            continue
-        text = p.read_text(encoding='utf-8', errors='replace')
-        if name == 'pyproject.toml' and '[tool.pytest.ini_options]' not in text:
-            continue
-        if name in ('tox.ini', 'setup.cfg') and '[pytest]' not in text and '[tool:pytest]' not in text:
-            continue
-        found = False
-        for key in ('python_files', 'python_functions', 'python_classes'):
-            m = re.search(rf'^\s*{key}\s*=\s*(.+)$', text, re.M)
-            if m:
-                found = True
-                val = m.group(1).strip()
-                conf[key] = re.findall(r'"([^"]+)"|\'([^\']+)\'', val) and \
-                    [a or b for a, b in re.findall(r'"([^"]+)"|\'([^\']+)\'', val)] or val.split()
-        where = f'{(pkg + "/") if pkg != "." else ""}{name}'
-        conf['source'] = where if found else f'pytest defaults; {where} sets no patterns'
-        break
+    # pytest reads the first configuration file it finds in the package directory or above it (up to the repo root)
+    dirs = [base] + [d for d in base.parents if d == root or root in d.parents]
+    for d in dirs:
+        for name in ('pytest.ini', 'pyproject.toml', 'tox.ini', 'setup.cfg'):
+            p = d / name
+            if not p.is_file():
+                continue
+            text = p.read_text(encoding='utf-8', errors='replace')
+            if name == 'pyproject.toml' and '[tool.pytest.ini_options]' not in text:
+                continue
+            if name in ('tox.ini', 'setup.cfg') and '[pytest]' not in text and '[tool:pytest]' not in text:
+                continue
+            found = False
+            for key in ('python_files', 'python_functions', 'python_classes'):
+                m = re.search(rf'^\s*{key}\s*=\s*(.+)$', text, re.M)
+                if m:
+                    found = True
+                    val = m.group(1).strip()
+                    conf[key] = re.findall(r'"([^"]+)"|\'([^\']+)\'', val) and \
+                        [a or b for a, b in re.findall(r'"([^"]+)"|\'([^\']+)\'', val)] or val.split()
+            rel = p.relative_to(root).as_posix()
+            conf['source'] = rel if found else f'pytest defaults; {rel} sets no patterns'
+            return conf
     return conf
 
 
@@ -127,12 +132,47 @@ def tokens(dump: str) -> list[str]:
     return re.findall(r"\w+|[^\w\s]", dump)
 
 
+STDLIB = set(getattr(sys, 'stdlib_module_names', ())) | {'pytest', 'unittest', 'mock', '_pytest', 'hypothesis', 'freezegun',
+                                                          'pytest_mock', 'responses', 'httpx', 'requests', 'faker'}
+
+
+def asserts_in(fn: ast.AST, helpers: dict) -> bool:
+    """fn holds an assertion, or calls a helper (helpers: name -> function node) that does, two calls deep at most."""
+    seen: set[str] = set()
+
+    def visit(node: ast.AST, depth: int) -> bool:
+        for n in ast.walk(node):
+            if is_assertion(n):
+                return True
+            if depth < 2 and isinstance(n, ast.Call):
+                name = call_name(n)
+                f = n.func
+                local = isinstance(f, ast.Name) or (isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name)
+                                                    and f.value.id in ('self', 'cls'))
+                if local and name in helpers and name not in seen:
+                    seen.add(name)
+                    if visit(helpers[name], depth + 1):
+                        return True
+        return False
+    return visit(fn, 0)
+
+
 class PyScanner:
     def __init__(self, root: Path, rel: str, pkg: str, conf: dict):
         self.root, self.rel, self.pkg, self.conf = root, rel, pkg, conf
         self.text = (root / rel).read_text(encoding='utf-8', errors='replace')
         self.tree = ast.parse(self.text)
         self.imports = self.imported_names()
+        # module-level functions and class methods that are not tests themselves: a test that calls one holding
+        # asserts (_test_shape(result), self._check_row(row)) has assertions
+        self.helpers: dict[str, ast.AST] = {}
+        for node in self.tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and not node.name.startswith('test'):
+                self.helpers[node.name] = node
+            elif isinstance(node, ast.ClassDef):
+                for m in node.body:
+                    if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef)) and not m.name.startswith('test'):
+                        self.helpers.setdefault(m.name, m)
 
     def imported_names(self) -> dict[str, str]:
         """local name -> dotted origin for `from x import y` and `import x`."""
@@ -191,7 +231,8 @@ class PyScanner:
                     out.append(self.imports[f.id])
                 elif isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name) and f.value.id in self.imports:
                     out.append(f'{self.imports[f.value.id]}.{f.attr}')
-        return sorted({t for t in out if not t.startswith(('pytest', 'unittest', 'mock', 'json', 'os', 'sys', 're'))})
+        # the standard library and test tooling are never the code under test
+        return sorted({t for t in out if t.split('.')[0] not in STDLIB})
 
     def rules(self, tid, fn, add, cls=None):
         body_nodes = list(ast.walk(fn))
@@ -200,6 +241,8 @@ class PyScanner:
         if info is not None:
             add('skipped', info['kind'], [tid], info['line'], f'{info["kind"]}: {info["reason"] or "no reason given"}', info)
         if not asserts:
+            if asserts_in(fn, self.helpers):
+                return                                  # every check is in a helper of this file (_test_x, self._check)
             add('no_assertion', 'no_assertion', [tid], fn.lineno, f'{fn.name} has no assert, assertion call or pytest.raises', {})
             return
         for a in asserts:
@@ -214,7 +257,7 @@ class PyScanner:
                            if is_assertion(x)}
         for n in body_nodes:
             if isinstance(n, (ast.For, ast.AsyncFor)) and any(is_assertion(x) for x in ast.walk(n)) and \
-                    not isinstance(n.iter, (ast.List, ast.Tuple, ast.Set)):
+                    not isinstance(n.iter, (ast.List, ast.Tuple, ast.Set)) and not emptiness_guarded(fn, n, self.helpers):
                 add('unreached_assertion', 'assert_in_loop', [tid], n.lineno,
                     'every assertion in this loop is skipped when the iterable is empty', {})
             if isinstance(n, ast.Try):
@@ -313,6 +356,69 @@ class PyScanner:
                     visit(st.finalbody, guard)
         visit(self.tree.body, None)
         return out
+
+
+def loop_subjects(it: ast.AST) -> list[str]:
+    """The expressions a loop iterates (as ast dumps): x for `x`, `enumerate(x)`, `sorted(x)`, `x.items()`, `zip(a, b)`."""
+    out = [ast.dump(it)]
+    if isinstance(it, ast.Call):
+        if call_name(it) in ('enumerate', 'sorted', 'reversed', 'list', 'tuple', 'zip', 'iter') and isinstance(it.func, ast.Name):
+            for a in it.args:
+                out += loop_subjects(a)
+        elif isinstance(it.func, ast.Attribute) and it.func.attr in ('items', 'values', 'keys'):
+            out += loop_subjects(it.func.value)
+    return out
+
+
+def emptiness_guarded(fn: ast.AST, loop: ast.AST, helpers: dict) -> bool:
+    """Something outside the loop fails when its iterable is empty, so the loop's assertions can't all be skipped:
+    an assertion on its length (`assert len(rows) == 3`, also across several lines), on its truthiness or value
+    (`assert rows`, `assert rows != []`), an indexed assertion (`assert rows[0] == ...`), an assertion helper given it
+    (`_verify_shape(rows)`, `self.assert_rows(rows)`, or `_verify_shape(result)` for a loop over `result.rows`), or the
+    loop runs over a name bound to a non-empty literal (`expected = ["a", "b"]`, `counts = {"a": 1}` and its `.items()`)."""
+    subjects = set(loop_subjects(loop.iter))
+    inside = {id(x) for x in ast.walk(loop)}
+    # what a helper may be given instead: the object the iterable is read from (result for result.rows / result["rows"])
+    owners = set()
+    for e in [loop.iter] + [n for n in ast.walk(loop.iter) if isinstance(n, (ast.Attribute, ast.Subscript))]:
+        while isinstance(e, (ast.Attribute, ast.Subscript, ast.Call)):
+            e = e.func if isinstance(e, ast.Call) else e.value
+            owners.add(ast.dump(e))
+
+    def is_subject(e: ast.AST) -> bool:
+        return ast.dump(e) in subjects
+
+    def checks_subject(e: ast.AST) -> bool:
+        if is_subject(e):                                       # assert rows / rows == [...]
+            return True
+        for x in ast.walk(e):
+            if isinstance(x, ast.Call) and call_name(x) == 'len' and x.args and is_subject(x.args[0]):
+                return True
+            if isinstance(x, ast.Subscript) and is_subject(x.value):
+                return True
+        if isinstance(e, ast.Compare) and (is_subject(e.left) or any(is_subject(c) for c in e.comparators)):
+            return True
+        return False
+    for st in ast.walk(fn):
+        if id(st) in inside:
+            continue
+        if isinstance(st, ast.Assert) and checks_subject(st.test):
+            return True
+        if isinstance(st, ast.Call) and (is_assertion(st) or call_name(st).lstrip('_').startswith(('assert', 'verify', 'check', 'expect'))
+                                         or (call_name(st) in helpers and asserts_in(helpers[call_name(st)], helpers))):
+            args = list(st.args) + [k.value for k in st.keywords]
+            if any(checks_subject(a) or ast.dump(a) in owners for a in args):
+                return True
+    # for x in names / names.items(): where names is bound only to a non-empty literal in the test
+    for sub in [loop.iter] + [n for n in ast.walk(loop.iter) if isinstance(n, ast.Name)]:
+        if not isinstance(sub, ast.Name) or ast.dump(sub) not in subjects:
+            continue
+        binds = [st.value for st in ast.walk(fn) if isinstance(st, (ast.Assign, ast.AnnAssign)) and st.value is not None and
+                 any(isinstance(t, ast.Name) and t.id == sub.id for t in (st.targets if isinstance(st, ast.Assign) else [st.target]))]
+        if binds and all((isinstance(b, (ast.List, ast.Tuple, ast.Set)) and b.elts) or (isinstance(b, ast.Dict) and b.keys)
+                         for b in binds):
+            return True
+    return False
 
 
 def mark_info(d: ast.AST) -> dict | None:
@@ -1139,18 +1245,35 @@ def duplicates(pyscanners: list[PyScanner], add, threshold: float, js_bodies: li
     bodies of at least javascript.duplicate_min_tokens tokens, at javascript.duplicate_similarity, 1.0 by default: there
     is no per-test coverage run for JavaScript, so only bodies identical up to variable names are candidates), never
     across languages."""
-    py = []
+    near = 0
+    by_pkg: dict[str, list] = {}
     for s in pyscanners:
         for tid, fn, _ in s.tests():
             if any(is_assertion(n) for n in ast.walk(fn)):
                 toks = tokens(normalise(fn))
-                py.append((tid, s.rel, fn.lineno, toks, Counter(toks)))
-    similar_pairs(py, add, threshold)
-    similar_pairs([(t, r, ln, toks, Counter(toks)) for t, r, ln, toks in (js_bodies or [])], add,
-                  RULES['javascript'].get('duplicate_similarity', 1.0))
+                by_pkg.setdefault(s.pkg, []).append((tid, s.rel, fn.lineno, toks, Counter(toks), literal_values(fn)))
+    for fns in by_pkg.values():                                 # never across packages: each tests its own code
+        near += similar_pairs(fns, add, threshold)
+    js_by_pkg: dict[str, list] = {}
+    for t, r, ln, toks in (js_bodies or []):
+        js_by_pkg.setdefault(package_of.get(r, '.'), []).append((t, r, ln, toks, Counter(toks), None))
+    for fns in js_by_pkg.values():
+        similar_pairs(fns, add, RULES['javascript'].get('duplicate_similarity', 1.0))
+    return near
 
 
-def similar_pairs(fns: list, add, threshold: float):
+def literal_values(fn: ast.AST) -> list[str]:
+    """The literal values of a test (the constants normalise() hides), sorted, to tell a duplicate from an input case."""
+    return sorted(repr(n.value) for n in ast.walk(fn) if isinstance(n, ast.Constant) and n.value is not None
+                  and not (isinstance(n.value, str) and n.value == '') and not isinstance(n.value, bool))
+
+
+package_of: dict[str, str] = {}
+
+
+def similar_pairs(fns: list, add, threshold: float) -> int:
+    """Flag the pairs at or above the threshold; returns how many were left out because their literal values differ
+    (the same test written for other inputs: a parametrisation opportunity, not a duplicate)."""
     order = sorted(range(len(fns)), key=lambda i: len(fns[i][3]))
     masks: dict[int, dict[str, int]] = {}
     pairs = []
@@ -1172,6 +1295,7 @@ def similar_pairs(fns: list, add, threshold: float):
                     continue
             pairs.append((min(i, j), max(i, j)))
     matchers: dict[int, difflib.SequenceMatcher] = {}
+    near = 0
     for i, j in sorted(pairs, key=lambda p: (p[1], p[0])):     # one matcher per b, so its index is built once
         a, b = fns[i], fns[j]
         if a[3] == b[3]:
@@ -1184,10 +1308,13 @@ def similar_pairs(fns: list, add, threshold: float):
                 sm.set_seq2(b[3])
             sm.set_seq1(a[3])
             ratio = sm.ratio()
-        if ratio >= threshold:
+        if ratio >= threshold and a[5] is not None and a[5] != b[5]:
+            near += 1                                           # the same test for other inputs: not a duplicate
+        elif ratio >= threshold:
             add('duplicate', 'ast_similarity', [a[0], b[0]], b[2],
-                f'{ratio:.0%} similar to {a[0]} after normalising names and literals', {'similarity': round(ratio, 4)},
-                file=b[1])
+                f'{ratio:.0%} similar to {a[0]} after normalising names and literals',
+                {'similarity': round(ratio, 4)}, file=b[1])
+    return near
 
 
 def is_playwright_setup(root: Path, rel: str, pkg: str) -> bool:
@@ -1226,23 +1353,27 @@ def scan(root: Path) -> dict:
                 continue
             pyscanners.append(s)
             s.scan(adder(rel), defs)
+            package_of[rel] = pkg
         elif any(fnmatch.fnmatch(name, p) for p in JS['test_files']) or (
                 any(fnmatch.fnmatch(name, p) for p in JS['playwright_setup_files']) and is_playwright_setup(root, rel, pkg)):
             if pkg not in pw_dirs:
                 pw_dirs[pkg] = playwright_dirs(root, pkg)
+            package_of[rel] = pkg
             try:
                 js_scan(root, rel, pkg, adder(rel), defs, js_bodies, pw_dirs[pkg])
             except (RecursionError, IndexError, ValueError) as exc:
                 notes.append(f'{rel}: not parsed ({exc!r}); its tests are missing from definitions')
-    duplicates(pyscanners, adder(None), RULES['similarity_threshold'], js_bodies)
+    near = duplicates(pyscanners, adder(None), RULES['similarity_threshold'], js_bodies)
     out = []
     for i, c in enumerate(sorted(cands, key=lambda c: (c['file'], c['line'], c['category'])), 1):
         out.append({'id': f'C{i}', **c})
     return {'repo': root.name, 'definitions': defs, 'candidates': out,
             'pytest_config': {r: pytest_config(root, r) for r in roots if (root / r / 'pyproject.toml').exists() or r == '.'},
             'summary': {'tests_defined': len(defs), 'candidates': len(out),
-                        'by_category': {k: len([c for c in out if c['category'] == k]) for k in sorted({c['category'] for c in out})}},
-            'notes': notes}
+                        'by_category': {k: len([c for c in out if c['category'] == k]) for k in sorted({c['category'] for c in out})},
+                        **({'near_duplicates': near} if near else {})},
+            'notes': notes + ([f'{near} pairs of same-shape tests in one package differ only in their literal values (input '
+                               'cases, worth parametrising); they are not duplicate candidates'] if near else [])}
 
 
 def main(argv=None) -> int:
