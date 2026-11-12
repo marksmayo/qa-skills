@@ -4,7 +4,9 @@
     python recon.py <repo> [--out recon.json]
 
 Finds languages and frameworks, entry points (HTTP routes, GraphQL operations, webhooks, queue
-consumers, CLI commands, mobile deep links and exported components, CI workflow triggers), a
+consumers, CLI commands, mobile deep links and exported components, CI workflow triggers, and
+client-side sources in JavaScript and inline scripts: location.search/hash, URLSearchParams,
+postMessage, document.referrer, window.name, web storage and cookies), a
 first guess at each entry point's authentication requirement, data stores, outbound calls, secret
 configuration, dependency manifests and infrastructure files. It also lists review leads: routes
 taking object ids (IDOR), upload handlers, auth flows and admin surfaces.
@@ -76,6 +78,75 @@ UPLOAD = re.compile(r'request\.files\b|\bUploadFile\b|multer\(|MultipartFile|IFo
 GLOBAL_AUTH = re.compile(r'before_request|before_app_request|app\.use\([^)]*(auth|session|jwt|passport)|dependencies\s*=\s*\[\s*Depends|'
                          r'MIDDLEWARE\s*=|SecurityFilterChain|authorizeHttpRequests')
 AUTH_FLOW = re.compile(r'(?i)(login|logout|signin|signup|register|password|reset|token|oauth|session|mfa|otp|jwt)')
+# Client-side sources: values a visitor's browser reads that another page, a crafted link or stored state controls.
+# (name, regex, auth, why). URL, message and referrer sources are attacker-controlled without an account.
+CLIENT_SOURCES = [
+    ('location.search', re.compile(r'\blocation\.search\b|\bnew\s+URLSearchParams\s*\(|\bURLSearchParams\b'), 'public', 'query string: a crafted link sets it'),
+    ('location.hash', re.compile(r'\blocation\.hash\b'), 'public', 'URL fragment: a crafted link sets it, and it never reaches the server'),
+    ('location.href', re.compile(r'\b(?:document\.URL|document\.documentURI|location\.href|location\.pathname)\b(?!\s*=[^=])'), 'public', 'the page URL: a crafted link sets it'),
+    ('postMessage', re.compile(r'addEventListener\(\s*["\']message["\']|\bonmessage\s*='), 'public', 'message events: any window can post one unless event.origin is checked'),
+    ('document.referrer', re.compile(r'\bdocument\.referrer\b'), 'public', 'referrer: the linking page sets it'),
+    ('window.name', re.compile(r'\bwindow\.name\b(?!\s*=[^=])'), 'public', 'window.name: survives navigation from another site'),
+    ('web storage', re.compile(r'\b(?:localStorage|sessionStorage)\.getItem\s*\(|\b(?:localStorage|sessionStorage)\[\s*["\']'), 'unknown', 'stored values: controlled by any script on the origin, so they carry stored XSS'),
+    ('document.cookie', re.compile(r'\bdocument\.cookie\b(?!\s*=[^=])'), 'unknown', 'cookies read by script: sibling subdomains can set them'),
+]
+CLIENT_EXT = {'.js', '.mjs', '.cjs', '.jsx', '.ts', '.tsx', '.vue', '.svelte'}
+HTML_EXT = {'.html', '.htm'}
+SCRIPT_BLOCK = re.compile(r'<script\b(?![^>]*\bsrc\s*=)[^>]*>(.*?)</script>', re.S | re.I)
+# CI triggers: who can start the workflow. pull_request_target, issue_comment and workflow_run run with
+# the base repository's secrets and token on input from anyone who can open a pull request or comment.
+CI_TRIGGER_AUTH = {
+    'pull_request_target': ('public', 'any GitHub user who can open a pull request; runs with secrets and a write token'),
+    'issue_comment': ('public', 'any GitHub user who can comment; runs with secrets'),
+    'issues': ('public', 'any GitHub user who can open an issue'),
+    'discussion': ('public', 'any GitHub user who can start a discussion'),
+    'discussion_comment': ('public', 'any GitHub user who can comment on a discussion'),
+    'pull_request_review_comment': ('public', 'any GitHub user who can review'),
+    'pull_request_review': ('public', 'any GitHub user who can review'),
+    'workflow_run': ('unknown', 'runs after another workflow, with secrets; public if that workflow runs on fork pull requests'),
+    'pull_request': ('public', 'fork pull requests: no secrets and a read-only token by default'),
+    'push': ('authenticated', 'repository write access'),
+    'release': ('authenticated', 'repository write access'),
+    'workflow_dispatch': ('authenticated', 'repository write access'),
+    'schedule': ('authenticated', 'runs on a timer from the default branch'),
+}
+
+def client_sources(rel: str, text: str, base_line: int = 0) -> list[dict]:
+    """One entry per client-side source kind per file (first line where it is read)."""
+    out, seen = [], set()
+    for i, line in enumerate(text.splitlines(), 1):
+        s = line.strip()
+        if s.startswith(('//', '*', '/*')) or len(line) > 3000:
+            continue
+        for name, rx, auth, why in CLIENT_SOURCES:
+            if name in seen or not rx.search(line):
+                continue
+            seen.add(name)
+            out.append({'kind': 'client_source', 'framework': 'browser', 'method': name, 'path': rel,
+                        'handler': f'{rel}:{base_line + i}', 'function': None, 'auth': auth, 'auth_evidence': why,
+                        'snippet': s[:160]})
+    return out
+
+def html_client_sources(rel: str, text: str) -> list[dict]:
+    out, seen = [], set()
+    for m in SCRIPT_BLOCK.finditer(text):
+        base = text[:m.start(1)].count('\n')
+        for e in client_sources(rel, m.group(1), base):
+            if e['method'] not in seen:
+                seen.add(e['method'])
+                out.append(e)
+    return out
+
+def ci_trigger_entries(rel: str, text: str, triggers: list[str]) -> list[dict]:
+    out = []
+    lines = text.splitlines()
+    for t in triggers:
+        rx = re.compile(r'^\s*' + re.escape(t) + r'\s*:|^on\s*:.*\b' + re.escape(t) + r'\b')
+        line = next((i for i, l in enumerate(lines, 1) if rx.search(l)), 1)
+        auth, why = CI_TRIGGER_AUTH.get(t, ('unknown', None))
+        out.append({'kind': 'ci_workflow', 'framework': 'github_actions', 'method': t, 'path': rel,
+                    'handler': f'{rel}:{line}', 'function': None, 'auth': auth, 'auth_evidence': why})
+    return out
 
 def walk(root: Path):
     stack = [root]
@@ -241,6 +312,8 @@ def main() -> int:
     manifests, iac, workflows, env_files = [], [], [], []
     files_total = 0
     global_hooks: list[str] = []
+    client, ci_entries = [], []
+    html_seen: dict = {}
     for p in walk(root):
         rel = p.relative_to(root).as_posix()
         if p.name in MANIFESTS:
@@ -251,7 +324,18 @@ def main() -> int:
                 re.search(r'(^|/)(k8s|kubernetes|helm|charts|deploy)/.*\.ya?ml$', rel):
             iac.append(rel)
         if '.github/workflows/' in '/' + rel and p.suffix in ('.yml', '.yaml'):
-            workflows.append(workflow_info(rel, read(p)))
+            wtext = read(p)
+            workflows.append(workflow_info(rel, wtext))
+            ci_entries += ci_trigger_entries(rel, wtext, workflows[-1]['triggers'])
+            continue
+        if p.suffix.lower() in HTML_EXT and not TEST_PATH.search(rel):
+            for e in html_client_sources(rel, read(p)):
+                key = (e['method'], e['snippet'])
+                if key in html_seen:  # the same inline script repeated across generated pages
+                    html_seen[key]['also_in'] = html_seen[key].get('also_in', 0) + 1
+                else:
+                    html_seen[key] = e
+                    client += [e]
             continue
         if p.name == 'AndroidManifest.xml':
             entries += android_entries(rel, read(p))
@@ -277,6 +361,8 @@ def main() -> int:
             if re.search(rx, text):
                 frameworks.add(name)
         entries += routes_in(rel, text) + nextjs_routes(rel, text)
+        if p.suffix.lower() in CLIENT_EXT and not p.name.endswith(('.min.js', '.config.js', '.config.ts')):
+            client += client_sources(rel, text)
         if 'gql`' in text or 'typeDefs' in text:
             entries += graphql_ops(rel, text)
         for i, line in enumerate(text.splitlines(), 1):
@@ -295,7 +381,7 @@ def main() -> int:
                              'function': None, 'auth': 'unknown', 'auth_evidence': 'local invocation'})
             if UPLOAD.search(line) and not line.lstrip().startswith(('import ', 'from ')):
                 uploads.append(f'{rel}:{i}')
-    entries += queues + clis
+    entries += queues + clis + client + ci_entries
     for e in entries:  # decorator frameworks: no decorator and no app-wide hook means no auth check
         if e['framework'] in ('flask', 'fastapi') and e['auth'] == 'unknown' and not global_hooks:
             e['auth'], e['auth_evidence'] = 'public', 'no auth decorator on the route and no app-wide auth hook found'
@@ -313,6 +399,11 @@ def main() -> int:
             leads.append({'area': 'server_side', 'entry_point': e['id'], 'why': 'webhook: check signature verification, replay and any outbound fetch'})
         if e['kind'] in ('deep_link', 'exported_component'):
             leads.append({'area': 'mobile', 'entry_point': e['id'], 'why': f"{e['path']} is reachable by other apps: validate every intent/URL parameter"})
+    for kind in sorted({e['method'] for e in client if e['auth'] == 'public'}):
+        eps = [e for e in client if e['method'] == kind]
+        leads.append({'area': 'web', 'entry_point': eps[0]['id'],
+                      'why': f"{kind} read in {len(eps)} file(s) ({', '.join(e['path'] for e in eps[:3])}): trace it to DOM "
+                             "sinks (innerHTML, document.write, eval, location assignment) for DOM XSS and open redirects"})
     for w in workflows:
         if w['untrusted_input_triggers']:
             leads.append({'area': 'supply_chain_ci', 'entry_point': None,

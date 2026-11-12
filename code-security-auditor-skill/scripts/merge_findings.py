@@ -249,7 +249,7 @@ def main() -> int:
         sys.stdout.reconfigure(errors='replace')  # tool output can hold characters the console can't encode
     root = args.root.resolve()
     idx = tool_index()
-    code, secrets, deps, tools = [], [], [], []
+    code, secrets, deps, tools, cred_files = [], [], [], [], []
     try:
         if args.patterns:
             c = from_patterns(args.patterns); code += c
@@ -260,6 +260,9 @@ def main() -> int:
                 secrets.append({**s, 'sources': [{'tool': 'scan_secrets', 'rule_id': s['type']}]})
             tools.append({'tool': 'scan_secrets', 'input': str(args.secrets), 'results': len(data.get('secrets', [])),
                           'history': (data.get('history') or {}).get('status')})
+            if (data.get('history') or {}).get('note'):
+                tools[-1]['history_note'] = data['history']['note']
+            cred_files += data.get('credential_files', [])
         for path in args.sarif:
             c, s = from_sarif(path, root, idx); code += c; secrets += s
             names = sorted({x['sources'][0]['tool'] for x in c + s}) or [path.stem]
@@ -283,6 +286,8 @@ def main() -> int:
         'candidates': merge_code(code),
         'secrets': merge_secrets(secrets),
         'dependencies': merge_deps(deps),
+        # credential files and references to them (paths, not secrets): note them in the report, no triage needed
+        'credential_files': cred_files,
     }
     text = json.dumps(out, indent=2, ensure_ascii=False)
     if args.out:

@@ -95,8 +95,16 @@ appears in the request is rejected.
 ## Secrets
 
 - Report type, file, line, key name, length, a `sha256:` fingerprint (first 16 hex characters) and
-  `in_git_history` (`yes`, `no`, or `unknown` with why).
+  `in_git_history` (`yes`, `no`, or `unknown` with why), with `history_basis` (`full`: every scanned
+  commit; `path`: only commits touching that file) and the file's `git_status` (`tracked`,
+  `untracked`, `ignored`).
+- Gitignored, never committed (`ignored`, `no`, `path`): exposed only on the machines that hold it;
+  rotation is a judgement call, say why. Committed: exposed to everyone with the repository.
 - A secret in history is exposed even if removed from HEAD: `rotate: true`.
+- A `partial` history scan (time budget or `--max-commits` reached) can't support `no` with basis
+  `full`; name it in the limitations with the commits scanned.
+- Paths to credential files and public fields (`token_uri`, `auth_uri`, certificate URLs) are not
+  secrets. Note a credential file's existence and git status; its path can be named.
 - Snippets stop before the value (`os.environ.get("SECRET_KEY",`).
 - Test fixtures and `.env.example` placeholders are not secrets; real-looking keys in tests still are.
 

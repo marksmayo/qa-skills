@@ -166,6 +166,7 @@ def run_tool(t: dict, out: Path, timeout: int) -> dict:
         cmds = [r['cmd']] + ([r['fallback']] if r.get('fallback') else [])
         for i, cmd in enumerate(cmds):
             cmd = [exe if (j == 0 and exe and cmd[0] == t['exe']) else c for j, c in enumerate(cmd)]
+            (out / r['output']).parent.mkdir(parents=True, exist_ok=True)  # e.g. checkov/, only when it runs
             try:
                 p = subprocess.run(cmd, cwd=r.get('cwd'), capture_output=True, text=True, timeout=timeout, env=tool_env(),
                                    encoding='utf-8', errors='replace')
@@ -229,7 +230,6 @@ def main() -> int:
     skip = set(args.skip.split(',')) if args.skip else set()
     if not args.dry_run:
         out.mkdir(parents=True, exist_ok=True)
-        (out / 'checkov').mkdir(exist_ok=True)
     records = []
     for t in tools:
         if (only and t['name'] not in only) or t['name'] in skip:

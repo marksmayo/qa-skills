@@ -140,7 +140,10 @@ def main() -> int:
               (f". {rt['note']}" if rt.get('note') and rt['result'] == 'not_run' else ''))
             if f.get('secret'):
                 sc = f['secret']
-                w(f"Secret: {sc['type']}, {sc['fingerprint']}, in git history: {sc['in_git_history']}, rotate: {'yes' if sc['rotate'] else 'no'}")
+                basis = {'path': ' (at this path)', 'full': ' (all scanned commits)'}.get(sc.get('history_basis'), '')
+                status = f", file {sc['git_status']} in git" if sc.get('git_status') else ''
+                w(f"Secret: {sc['type']}, {sc['fingerprint']}{status}, in git history: {sc['in_git_history']}{basis}, "
+                  f"rotate: {'yes' if sc['rotate'] else 'no'}")
             if f.get('dependency'):
                 dep = f['dependency']
                 w(f"Dependency: {dep['package']} {dep['version']} -> {', '.join(dep['fixed_in'])} ({', '.join(dep['ids'])})")

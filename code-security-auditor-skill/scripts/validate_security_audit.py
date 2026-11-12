@@ -340,6 +340,15 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tu
             linked = [c for c in f['candidates'] if c in cand_secrets]
             if linked and all(cand_secrets[c].get('fingerprint') != fp for c in linked):
                 P('secret fingerprint does not match the secret candidate')
+            sc = f['secret']
+            for c in (cand_secrets[c] for c in linked):
+                if c.get('in_git_history') == 'yes' and sc['in_git_history'] != 'yes':
+                    P(f"the scanner found this secret in git history ({', '.join(c.get('history_commits') or []) or 'in_git_history: yes'}) "
+                      f"but the report says {sc['in_git_history']!r}")
+                if sc.get('git_status') and c.get('git_status') not in (None, sc['git_status']):
+                    P(f"git_status {sc['git_status']!r} but the scanner recorded {c['git_status']!r}")
+                if sc['in_git_history'] == 'no' and c.get('in_git_history') == 'unknown':
+                    P("in_git_history 'no' but the scanner could not tell; say 'unknown' or rerun scan_secrets.py in the git checkout")
             if not f['secret']['rotate'] and f['secret']['in_git_history'] != 'no':
                 W(f'{fid}: secret may be in history but rotate is false')
         if f.get('dependency'):
@@ -408,6 +417,10 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tu
     not_ran = [t['name'] for t in d['tools'] if t['status'] in ('not_run', 'errored')]
     if not_ran and not any(n in ' '.join(d['limitations']) for n in not_ran):
         W(f"limitations: tools that did not run ({', '.join(not_ran)}) are not mentioned")
+    if candidates is not None:
+        hist = next((t.get('history') for t in candidates.get('tools', []) if t.get('tool') == 'scan_secrets'), None)
+        if hist in ('partial', 'errored') and not re.search(r'(?i)\bhistory\b', ' '.join(d['limitations'])):
+            E(f'limitations: the git history secret scan was {hist}; say how much of the history was not scanned')
 
     # secrets must never appear
     for s in scan_secrets.find_in_line(report_text):

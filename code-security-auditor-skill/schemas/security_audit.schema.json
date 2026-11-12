@@ -38,7 +38,7 @@
             "type": "object", "required": ["id", "kind", "method", "path", "handler", "auth", "exposure", "reviewed"], "additionalProperties": false,
             "properties": {
               "id": {"type": "string", "pattern": "^EP-\\d+$"},
-              "kind": {"enum": ["http_route", "webhook", "graphql", "queue_consumer", "cli", "file_parser", "deep_link", "exported_component", "ci_workflow", "other"]},
+              "kind": {"enum": ["http_route", "webhook", "graphql", "queue_consumer", "cli", "file_parser", "deep_link", "exported_component", "ci_workflow", "client_source", "other"]},
               "method": {"type": "string"},
               "path": {"type": "string"},
               "handler": {"type": "string", "pattern": "^[^:]+:\\d+$"},
@@ -296,6 +296,8 @@
             "type": {"type": "string"},
             "fingerprint": {"type": "string", "pattern": "^sha256:[0-9a-f]{8,64}$"},
             "in_git_history": {"enum": ["yes", "no", "unknown"]},
+            "history_basis": {"enum": ["full", "path", null], "description": "full: every scanned commit; path: only commits touching this file"},
+            "git_status": {"enum": ["tracked", "untracked", "ignored", "unknown"]},
             "rotate": {"type": "boolean"},
             "note": {"type": "string"}
           }

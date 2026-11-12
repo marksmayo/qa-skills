@@ -187,3 +187,25 @@ Differences from the draft above, and decisions made while building:
 - **OWASP** categories are the 2025 Top 10.
 - **The report** may be written inside the repository only if the path is gitignored; the validator
   checks with `git check-ignore`.
+- **Found on a real static site, fixed.** A run on a static website (about 2,000 HTML pages, 670
+  commits, a Python tool folder and a gitignored service-account key) showed seven gaps.
+  `scan_secrets.py` reported the path in `GOOGLE_APPLICATION_CREDENTIALS` as a secret, so the
+  validator rejected any report that named the key file; paths to credential files now go to
+  `credential_files` with the file's git status, and are never treated as values. It also reported
+  Google's public `token_uri`; public service-account and OAuth fields (and plain https URLs under
+  `*_uri`/`*_url` keys, unless a path segment looks like a token) are skipped. Every secret's file
+  now gets `git_status` (`git ls-files`, `git check-ignore`) and a per-path history check
+  (`git log --all -- <path>`), so "gitignored, never committed" is distinguishable from
+  "committed" without the full scan (`history_basis: path`). The full history scan
+  (`git log --all -p`) didn't finish in 25 minutes; it now feeds commits to `git log --no-walk
+  --stdin -i -G<keywords>` in batches with pathspec exclusions (binary, media, lock, vendored,
+  minified, plus `--history-exclude` globs), caps the text read per file per commit, and stops at
+  `--history-budget` seconds with `status: partial` and the commits scanned; the validator makes
+  the report's limitations say so, and checks secret blocks against the scanner. `PY-ARCHIVE-EXTRACT`
+  matched BeautifulSoup's `Tag.extract()`; it now needs a tarfile/zipfile/shutil import and an
+  archive word near the call. `recon.py` found only the CLI scripts; it now lists client-side
+  sources (URL, fragment, `postMessage`, referrer, `window.name`, storage, cookies) in JavaScript
+  and inline scripts, deduplicated across generated pages, and every CI workflow trigger with who
+  can start it (new entry-point kind `client_source`). On the example it now finds the
+  `pull_request_target` entry point the agent had added by hand. `run_scanners.py` no longer
+  leaves an empty `checkov/` folder when Checkov doesn't run.

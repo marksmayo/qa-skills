@@ -263,6 +263,8 @@
    "title": "Archive extracted without member checks (zip slip)",
    "regex": "\\.extractall\\s*\\(|\\.extract\\s*\\(",
    "suppress_line": "filter\\s*=\\s*[\"\\']data",
+   "require_file": "\\b(?:import\\s+(?:tarfile|zipfile|shutil)|from\\s+(?:tarfile|zipfile|shutil)\\s+import|unpack_archive)\\b",
+   "require_near": "(?i)tar|zip|archive|unpack",
    "fix": "Use tarfile filter=\"data\" (3.12+) or validate each member path before extracting.",
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
    "tools": [

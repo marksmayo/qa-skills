@@ -66,10 +66,11 @@ Priority = severity (CVSS v4.0 band) x confidence x exposure (public, authentica
 Scripts, in the order the skill runs them:
 
 ```bash
-python scripts/recon.py <repo> --out recon.json                   # attack surface: entry points, auth, stores, CI
+python scripts/recon.py <repo> --out recon.json                   # attack surface: routes, client-side sources, CI triggers, auth
 python scripts/run_scanners.py <repo> --out-dir <out>              # every applicable open-source scanner, statuses recorded
 python scripts/scan_pitfalls.py <repo> --out patterns.json         # 90 CWE-mapped patterns in 13 packs
-python scripts/scan_secrets.py <repo> --history --out secrets.json # secrets, never their values
+python scripts/scan_secrets.py <repo> --history --out secrets.json # secrets, never their values; git status and history per file
+#   large repositories: --history-budget 300 (seconds; coverage recorded as partial) --history-exclude '*.html'
 python scripts/merge_findings.py --root <repo> --patterns patterns.json --secrets secrets.json \
     --sarif semgrep.sarif zizmor.sarif --bandit bandit.json --deps pip-audit.json --out candidates.json
 python scripts/run_poc.py poc.json --check                         # safety lint only
@@ -141,7 +142,7 @@ python scripts/render_report.py examples/security_audit.example.json --brief
 - `scripts/recon.py`: attack-surface map
 - `scripts/run_scanners.py`: detects and runs the open-source scanners, recording each one's status
 - `scripts/scan_pitfalls.py`: pattern scan
-- `scripts/scan_secrets.py`: secrets in the tree and git history, without values
+- `scripts/scan_secrets.py`: secrets in the tree and git history, without values; whether each file is tracked, untracked or gitignored and was ever committed; credential files and paths to them listed separately
 - `scripts/merge_findings.py`: merges SARIF, Bandit, ESLint, dependency and built-in results into candidates
 - `scripts/run_poc.py`: safety-linted PoC runner that records evidence
 - `scripts/cvss4.py`: CVSS v4.0 calculator (port of the FIRST reference implementation, BSD-2-Clause)

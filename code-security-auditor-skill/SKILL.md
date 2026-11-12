@@ -45,8 +45,8 @@ What sets this apart from asking for a quick review:
    sending anything to a host outside the target. `run_poc.py` enforces this before sending and the
    validator checks it again. If the only proof needs something forbidden, the finding stays
    `traced` and says why.
-6. **Secrets are never reproduced.** Report the type, file, line, a fingerprint and whether it is in
-   git history. Never the value: not in the report, the PoC files, the evidence or your messages.
+6. **Secrets are never reproduced.** Report the type, file, line, a fingerprint, whether the file is
+   tracked or gitignored, and whether the secret is in git history. Never the value: not in the report, the PoC files, the evidence or your messages.
    Snippets stop before the value.
 7. **The report is sensitive.** It contains working exploit details. Write it, the evidence and the
    tool outputs outside the repository (or to a gitignored directory), never commit them, and keep
@@ -72,7 +72,11 @@ python scripts/recon.py <repo> --out <out>/recon.json
 ```
 
 It finds the stack, entry points (HTTP routes, GraphQL operations, webhooks, queue consumers, CLI
-commands, mobile deep links and exported components), a first guess at each route's auth
+commands, mobile deep links and exported components, CI workflow triggers such as
+`pull_request_target`, `workflow_run` and `issue_comment`, and client-side sources in JavaScript and
+inline scripts: `location.search`/`hash`, `URLSearchParams`, `postMessage`, `document.referrer`,
+`window.name`, web storage and cookies, so a static site has entry points too; an inline script
+repeated across generated pages is listed once with `also_in`), a first guess at each route's auth
 requirement, data stores, outbound calls, secret configuration, dependency manifests, CI workflows
 and review leads. Then read the code to confirm it: add entry points the patterns missed (CI
 workflows, dynamically registered routes), correct auth guesses (`unknown` is not `public`), and
@@ -110,6 +114,18 @@ python scripts/merge_findings.py --root <repo> --patterns <out>/patterns.json --
     --sarif <out>/semgrep.sarif <out>/zizmor.sarif ... --bandit <out>/bandit.json \
     --deps <out>/pip-audit.json <out>/npm-audit.json <out>/osv.json --out <out>/candidates.json
 ```
+
+`scan_secrets.py` records each secret's file as `tracked`, `untracked` or `ignored` in git and
+checks that path's history cheaply, so "present locally, gitignored, never committed"
+(`git_status: ignored`, `in_git_history: no`, `history_basis: path`) is told apart from
+"committed". `--history` reads every commit, but only file changes that touch a secret keyword,
+without binary, lock, vendored or minified files, within `--history-budget` seconds (default
+300). On a large repository add `--history-exclude '*.html'` (or other bulk generated content);
+if the budget runs out, history is `partial` with the commits scanned, and the limitations must
+say so. Paths to credential files (`GOOGLE_APPLICATION_CREDENTIALS=keys/sa.json`) and public
+service-account fields (`token_uri`, certificate URLs) are not secrets; the credential files and
+references are listed under `credential_files`: say in the report that the file exists and
+whether it is committed, and name its path freely.
 
 `merge_findings.py` merges hits on the same sink (overlapping lines and a shared pitfall or CWE)
 into one candidate (`CAND-nnn`) with all its sources; secrets become `SEC-nnn` and dependency
@@ -242,4 +258,7 @@ rendered report, the P0 and P1 findings first, and what wasn't covered.
 - Locations (file, line and snippet) against the source; regression tests exist and fail on the
   vulnerable code; variant rule files exist.
 - No secret value in the report or the evidence, and nothing written inside the repository.
+- Secret blocks agree with the scanner: a secret it found in history is not reported as absent,
+  `no` is not claimed when it could not tell, and `git_status` matches. A `partial` or `errored`
+  history scan is named in the limitations.
 - Summary counts recomputed; headlines claiming the code is secure are rejected.

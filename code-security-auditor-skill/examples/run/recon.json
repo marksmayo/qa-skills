@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-10T04:22:26Z",
+  "generated_at": "2026-11-12T00:03:41Z",
   "repository": "invoicer_scan",
   "languages": {
     "Python": 7
@@ -151,10 +151,21 @@
       "auth": "authenticated",
       "auth_evidence": "login_required",
       "id": "EP-13"
+    },
+    {
+      "kind": "ci_workflow",
+      "framework": "github_actions",
+      "method": "pull_request_target",
+      "path": ".github/workflows/ci.yml",
+      "handler": ".github/workflows/ci.yml:4",
+      "function": null,
+      "auth": "public",
+      "auth_evidence": "any GitHub user who can open a pull request; runs with secrets and a write token",
+      "id": "EP-14"
     }
   ],
   "entry_point_auth": {
-    "public": 6,
+    "public": 7,
     "authenticated": 7
   },
   "global_auth_hooks": [],
