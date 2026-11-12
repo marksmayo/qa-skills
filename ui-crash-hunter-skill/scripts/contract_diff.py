@@ -8,7 +8,15 @@ Contracts read: OpenAPI 3.x / Swagger 2 (JSON, or YAML: PyYAML if installed, oth
 subset parser), GraphQL SDL, Prisma schemas (a `Type?` field is nullable; required columns and
 relations are not), TypeScript interfaces and object types (not a route handler's private types),
 Kotlin data classes, Swift structs and Dart classes. Without --contract, every contract file under
-the repo is used.
+the repo is used; with --contract only the listed files are read (the UI's own TypeScript types are
+then not), unless --discover adds the discovered ones too. In a FastAPI-generated OpenAPI document a
+property with a non-null default is always serialised, so it counts as present (--defaults-present
+forces this for other documents), and a Pydantic "X-Input" schema is skipped when "X-Output" exists.
+
+Scope: access sites only in files the UI entry points reach (ui_graph.py; --scope all for every
+file), never in tool configs (vite.config.ts, eslint.config.js), tests or route handlers. A call
+such as `.filter(` or `.trim(` is a method on something else, not a field read, unless a contract
+field of that name is a function type (an optional callback).
 
 An access site is `.field` followed by a dereference (`.x`, `[i]`, `(...)`) or a force unwrap
 (`!`, `!!`). Matching is by field name, so every hit is a candidate for the agent to trace, not a
@@ -22,6 +30,10 @@ import argparse, json, re, sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+sys.dont_write_bytecode = True  # importing a sibling must not write __pycache__ into the skill folder
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ui_graph import graph as ui_graph, is_tool_config, SRC_EXT  # noqa: E402
+
 SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'out', '.next', '.nuxt', 'coverage', 'vendor', 'Pods',
              'DerivedData', '.gradle', '.dart_tool', '__pycache__', '.expo', 'storybook-static', 'target', '.turbo',
              '.cache', '.venv', 'venv'}
@@ -33,6 +45,17 @@ TEST_NAME = re.compile(r'(\.|_)(test|spec|stories)\.\w+$|Tests?\.(swift|kt|java)
 UI_EXT = {'.js', '.jsx', '.mjs', '.ts', '.tsx', '.vue', '.svelte', '.kt', '.java', '.swift', '.dart'}
 PITFALL_BY_EXT = {'.kt': 'AND-NOT-NULL-ASSERTION', '.java': 'AND-NOT-NULL-ASSERTION', '.swift': 'IOS-FORCE-UNWRAP',
                   '.dart': 'FLT-NULL-CHECK'}
+# built-in Array, String, Map/Set, Promise and Object.prototype methods: `.filter(` on an array is not a call of a
+# contract field named filter
+BUILTIN_METHODS = {
+    'at', 'concat', 'copyWithin', 'entries', 'every', 'fill', 'filter', 'find', 'findIndex', 'findLast', 'findLastIndex',
+    'flat', 'flatMap', 'forEach', 'includes', 'indexOf', 'join', 'keys', 'lastIndexOf', 'map', 'pop', 'push', 'reduce',
+    'reduceRight', 'reverse', 'shift', 'slice', 'some', 'sort', 'splice', 'toReversed', 'toSorted', 'toSpliced',
+    'unshift', 'values', 'with', 'charAt', 'charCodeAt', 'codePointAt', 'endsWith', 'localeCompare', 'match', 'matchAll',
+    'normalize', 'padEnd', 'padStart', 'repeat', 'replace', 'replaceAll', 'search', 'split', 'startsWith', 'substring',
+    'toLowerCase', 'toUpperCase', 'toLocaleLowerCase', 'toLocaleUpperCase', 'trim', 'trimEnd', 'trimStart', 'get',
+    'set', 'has', 'delete', 'clear', 'add', 'then', 'catch', 'finally', 'toString', 'toFixed', 'toPrecision',
+    'toLocaleString', 'valueOf', 'hasOwnProperty'}
 GENERIC = {'id', 'type', 'name', 'data', 'value', 'key', 'length', 'status', 'message', 'error', 'items', 'result'}
 
 # ---------------------------------------------------------------- minimal YAML (OpenAPI subset)
@@ -166,11 +189,21 @@ def load_structured(path: Path):
 
 # ---------------------------------------------------------------- contract readers -> fields
 
-def openapi_fields(doc: dict, ref: str) -> list[dict]:
+def openapi_fields(doc: dict, ref: str, defaults_present: bool = False) -> list[dict]:
+    """Response-side nullability. A property is nullable when the schema says null is allowed, optional when
+    it is not required. In a FastAPI-generated document (or with --defaults-present) a non-null default
+    counts as present: FastAPI (Pydantic) lists a field with a default as not required, which is input
+    semantics, but serialises the default in every response (unless response_model_exclude_unset). When both "X-Input" and "X-Output" exist (Pydantic 2
+    split schemas), the -Input one is skipped: the UI reads the output."""
     schemas = ((doc.get('components') or {}).get('schemas')) or doc.get('definitions') or {}
+    # a FastAPI-generated document (its validation-error schemas, or Pydantic's -Output split), or --defaults-present
+    serialises_defaults = defaults_present or 'HTTPValidationError' in schemas or \
+        any(str(k).endswith('-Output') for k in schemas)
     out = []
     for tname, sch in schemas.items():
         if not isinstance(sch, dict):
+            continue
+        if tname.endswith('-Input') and tname[:-6] + '-Output' in schemas:
             continue
         parts = [sch] + [s for s in (sch.get('allOf') or []) if isinstance(s, dict)]
         required = set()
@@ -185,7 +218,7 @@ def openapi_fields(doc: dict, ref: str) -> list[dict]:
             if prop.get('nullable') or prop.get('x-nullable') or 'null' in types or \
                     any(isinstance(v, dict) and v.get('type') == 'null' for v in variants):
                 reason = 'nullable'
-            elif fname not in required:
+            elif fname not in required and not (serialises_defaults and prop.get('default') is not None):
                 reason = 'optional'
             else:
                 out.append({'type': tname, 'field': fname, 'nullable': False, 'ref': f'{ref}#/{tname}/{fname}'})
@@ -256,6 +289,8 @@ def typescript_fields(text: str, ref: str) -> list[dict]:
             ty = f.group(3).strip()
             nullable = bool(f.group(2)) or bool(re.search(r'\|\s*(null|undefined)\b|\b(null|undefined)\s*\|', ty))
             entry = {'type': tname, 'field': f.group(1), 'nullable': nullable, 'ref': f'{ref}#{tname}.{f.group(1)}'}
+            if re.search(r'=>|\bFunction\b', ty) or ty.startswith('('):
+                entry['callable'] = True  # an optional callback: `props.onClose()` is a real unguarded call
             if nullable:
                 entry['reason'] = 'optional' if f.group(2) else 'nullable'
             out.append(entry)
@@ -348,10 +383,10 @@ def find_contracts(root: Path) -> list[tuple[str, Path]]:
             found.append(('model', p))
     return found
 
-def read_contract(kind: str, path: Path, root: Path) -> list[dict]:
+def read_contract(kind: str, path: Path, root: Path, defaults_present: bool = False) -> list[dict]:
     rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else str(path)
     if kind == 'openapi':
-        return openapi_fields(load_structured(path) or {}, rel)
+        return openapi_fields(load_structured(path) or {}, rel, defaults_present)
     text = path.read_text(encoding='utf-8', errors='replace')
     if kind == 'graphql':
         return graphql_fields(text, rel)
@@ -377,6 +412,14 @@ def main() -> int:
     ap.add_argument('--include-generic', action='store_true', help=f'also match generic field names ({", ".join(sorted(GENERIC))})')
     ap.add_argument('--include-collisions', action='store_true',
                     help='also list access sites whose field name is non-null in another contract type')
+    ap.add_argument('--discover', action='store_true',
+                    help='with --contract: also read the contracts found in the repo (its own TypeScript types, schemas); '
+                         'without it, only the listed files are read')
+    ap.add_argument('--defaults-present', action='store_true',
+                    help='treat an OpenAPI property with a non-null default as always present in responses (automatic '
+                         'for FastAPI-generated documents)')
+    ap.add_argument('--scope', choices=['ui', 'all'], default='ui',
+                    help='ui (default): access sites only in files the UI entry points reach; all: every source file')
     ap.add_argument('--out', type=Path)
     args = ap.parse_args()
     root = args.repo.resolve()
@@ -389,12 +432,17 @@ def main() -> int:
         kind = 'graphql' if p.suffix in ('.graphql', '.gql') else 'openapi' if p.suffix in ('.json', '.yaml', '.yml') \
             else 'prisma' if p.suffix == '.prisma' else 'typescript' if p.suffix in ('.ts', '.tsx') else 'model'
         contracts.append((kind, p.resolve()))
-    if not contracts:
-        contracts = find_contracts(root)
+    if not contracts or args.discover:
+        listed = {p for _, p in contracts}
+        contracts += [(k, p) for k, p in find_contracts(root) if p.resolve() not in listed]
+    reach = None
+    if args.scope == 'ui':
+        g = ui_graph(root)
+        reach = set(g['reachable']) if g['reachable'] is not None else None
     fields, read_errors = [], []
     for kind, path in contracts:
         try:
-            fields.extend({**f, 'contract_kind': kind} for f in read_contract(kind, path, root))
+            fields.extend({**f, 'contract_kind': kind} for f in read_contract(kind, path, root, args.defaults_present))
         except (OSError, ValueError, AttributeError) as exc:
             read_errors.append({'file': str(path), 'error': str(exc)})
     nullable = {}
@@ -405,14 +453,17 @@ def main() -> int:
     contract_files = {str(p.resolve()) for _, p in contracts}
     # Prisma client delegates: prisma.appointment.findMany() is a model accessor, not a field read
     delegates = {f['type'][:1].lower() + f['type'][1:] for f in fields if f.get('contract_kind') == 'prisma'}
-    cands, skipped = [], {'name_collision': {}, 'db_client_delegate': 0}
+    cands, skipped = [], {'name_collision': {}, 'db_client_delegate': 0, 'method_call': 0, 'out_of_scope_files': 0}
     if nullable:
         names = '|'.join(sorted((re.escape(n) for n in nullable), key=len, reverse=True))
         access = re.compile(rf'(?:\?\.|\.)({names})\b(?:\s*(?:\.(?![.?])|\[|\()|(!!|!)(?!=))')
         for p in walk(root):
             rel = p.relative_to(root).as_posix()
             if p.suffix not in UI_EXT or is_bundle(p) or TEST_NAME.search(p.name) or TEST_PART.search(rel) or \
-                    ROUTE_HANDLER.search(rel) or str(p.resolve()) in contract_files:
+                    ROUTE_HANDLER.search(rel) or is_tool_config(rel) or str(p.resolve()) in contract_files:
+                continue
+            if reach is not None and p.suffix in SRC_EXT and rel not in reach:
+                skipped['out_of_scope_files'] += 1
                 continue
             try:
                 lines = p.read_text(encoding='utf-8', errors='replace').splitlines()
@@ -427,6 +478,13 @@ def main() -> int:
                     recv = re.search(r'([\w$]+)\??$', line[:m.start()])
                     if field in delegates and recv and DB_CLIENT.search(recv.group(1)):
                         skipped['db_client_delegate'] += 1
+                        continue
+                    if not m.group(2) and line[m.end(1):].lstrip().startswith('(') and \
+                            (field in BUILTIN_METHODS or not any(s.get('callable') for s in src)):
+                        # `.filter(` / `.trim(` is a method call on something else, not a read of a data field that
+                        # happens to share the name. An optional callback field is still matched, unless its name is
+                        # a built-in Array/String/Map method, where name matching can't tell the two apart.
+                        skipped['method_call'] += 1
                         continue
                     if field in non_null_names and not args.include_collisions:
                         # the same name is non-null in another type: matching by name can't tell which one this is
@@ -449,9 +507,13 @@ def main() -> int:
         'skipped': {'name_collision': sum(skipped['name_collision'].values()),
                     'name_collision_fields': dict(sorted(skipped['name_collision'].items(), key=lambda kv: -kv[1])[:30]),
                     'db_client_delegate': skipped['db_client_delegate'],
+                    'method_call': skipped['method_call'],
+                    'out_of_scope_files': skipped['out_of_scope_files'],
                     'note': 'Access sites not listed as candidates: the field name is non-null in another contract type '
-                            '(rerun with --include-collisions to list them), or the access is a database client delegate '
-                            '(prisma.model.findMany()).'},
+                            '(rerun with --include-collisions to list them), the access is a database client delegate '
+                            '(prisma.model.findMany()), or a method call (.filter(...)) on a name no contract field '
+                            'declares as a function. Files the UI entry points do not reach are not scanned (--scope all '
+                            'scans them).'},
         'candidates': cands,
     }
     text = json.dumps(out, indent=2, ensure_ascii=False)
