@@ -1,7 +1,7 @@
 {
- "schema_version": "1.1.0",
+ "schema_version": "1.2.0",
  "skill": "db-migration-reviewer",
- "skill_version": "1.1.0",
+ "skill_version": "1.2.0",
  "generated": "2026-11-11",
  "scope": {
   "repo": "examples/ledger",
@@ -14,6 +14,11 @@
   },
   "deploy_model": "rolling",
   "deploy_model_source": "user: the app runs on three instances updated one at a time",
+  "rollback_path": {
+   "method": "backup_restore",
+   "source": "migrations/versions: 0005 and 0006 have downgrades that only pass, so alembic downgrade cannot take the release back",
+   "notes": "restore the pre-deploy snapshot (losing writes made since), or roll forward with a fixing migration"
+  },
   "since": "0002",
   "migrations_reviewed": [
    "0003",

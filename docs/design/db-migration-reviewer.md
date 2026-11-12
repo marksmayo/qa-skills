@@ -320,3 +320,40 @@ Where the build differs from the design above, and what the example showed.
   `CREATE ... IF NOT EXISTS` of tables the chain already created, and schema-file validation of
   `metadata.tools`.
 - **Testing:** 30 of 30 seeded review violations are caught.
+
+## As built (v1.2.0): fixes from a run on a two-service Alembic repository
+
+- **Several Alembic chains in one repository.** Each script location (the folder holding `env.py` and
+  `versions/`, with the `alembic.ini` naming it) is its own chain. With more than one, detection stops and
+  lists them; `--chain <dir>` reviews one per run, so equal ids in another chain are no conflict. The
+  duplicate-id message no longer recommends `--migrations`, which could not help.
+- **Lock timeout per chain:** the check reads the reviewed chain's own `env.py` and cites the
+  `context.configure(` line (else where the connection opens), never an import.
+- **Helpers and data steps:** `upgrade()` and `downgrade()` calls into the migration's own functions are
+  followed (once per direction, cycles stop); f-strings whose values come from literal call arguments are
+  resolved (`_rename(("a", "b"))` with `UPDATE t SET c = '{new}' WHERE c = '{old}'`). `op.get_bind()`,
+  `conn.execute` with runtime SQL, SQLAlchemy Core `insert/update/delete`, `op.bulk_insert`,
+  `op.batch_alter_table`, untranslated `op.*` calls, functions imported from the application and files read
+  at run time are listed under `not_analysed` (the scan prints them). `drop_constraint`,
+  `create_check_constraint`, `create_unique_constraint` and `create_primary_key` are translated.
+  `op.get_context()` alone no longer marks a migration non-transactional; only `autocommit_block()` does.
+- **Downgrades** are scanned for data loss (`direction: "down"`): UPDATE/DELETE without WHERE, TRUNCATE,
+  and drops of tables or columns the up did not create.
+- **Value renames:** `UPDATE t SET c = 'new' WHERE c = 'old'` gives `VALUE-RENAME-WHILE-READ`
+  (compatibility) with the code that names the old value as a string literal.
+- **The previous release:** `--base-ref <rev>` also searches readers with `git grep` at that revision (the
+  code still running during a rolling deploy); those hits carry `rev` and the validator re-reads them with
+  `git show`. A column whose readers were removed in the same release is now a `DROP-WHILE-READ`.
+- **Reproducibility:** a new category (hazard 3, size factor 3, exposure 1) and rule
+  `MIGRATION-READS-FILES` for a step that reads repository files at run time, with the paths that no longer
+  exist.
+- **Engine from Azure and other repositories:** Bicep and ARM JSON (`Microsoft.DBforPostgreSQL/
+  flexibleServers` and its `version`, following a param default), `--infra <path>` for a separate
+  infrastructure repository, and `--engine-source` to keep the provenance of a given version.
+- **Size hints:** a statistics entry `{"hint": "...", "class": "small"}` sizes a seeded configuration
+  table; the size is `hinted` and findings resting on it stay `assumed`.
+- **Scope:** `components[]` (parts deployed separately, each with a deploy model; `deploy_model` is the most
+  exposed) and `rollback_path` (`down_migrations` is rejected when a reviewed down is not `ok`). The rubric
+  now says a `compatibility_with_code_hits` floor is recorded only when it raised the priority.
+- **Not built:** CHECK lists that drop a value are not matched (read by hand), and value renames are not
+  searched in other services unless they are passed with `--other-readers`.

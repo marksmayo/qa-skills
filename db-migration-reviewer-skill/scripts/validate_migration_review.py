@@ -18,9 +18,15 @@ basis of {file, line, excerpt}; they are rated like any other finding, with the 
 With --migrations, the engine may not be marked known when detection marked it assumed from the same source.
 The headline statement may not contradict the verdict ("safe to deploy" or "no findings" with findings).
 With --write-summary, the headline is recomputed and written back.
+Code hits in the previous release (with "rev") are re-read with git show <rev>:<file>. A size from a size hint
+("hinted") keeps a finding assumed. Findings in a down migration say direction "down" like their candidate.
+scope.components (parts deployed separately) may not be more exposed than scope.deploy_model, and a
+scope.rollback_path of down_migrations needs every reviewed migration's down to be ok. A floor is recorded only
+when it applies: unrecoverable_data_loss for every unrecoverable data-loss finding, compatibility_with_code_hits
+only when it raised the priority.
 """
 from __future__ import annotations
-import argparse, ipaddress, json, re, sys
+import argparse, ipaddress, json, re, subprocess, sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -35,10 +41,19 @@ DISMISS = {'table_created_in_release', 'constant_default_pg11', 'intended_contra
            'online_schema_tool', 'not_applicable_engine_version', 'duplicate', 'false_match'}
 DYN_KEYS = {'id', 'up', 'down', 'locks', 'probes', 'rows_changed'}
 CATEGORY_HAZARD = {'data_loss': 4, 'blocking_lock': 3, 'compatibility': 3, 'irreversible': 2, 'lock_queueing': 2,
-                   'transaction_mistake': 2, 'backfill_cost': 2, 'ordering': 1}
+                   'transaction_mistake': 2, 'backfill_cost': 2, 'ordering': 1, 'reproducibility': 3}
 NO_LINE_TEXT = {'IRREVERSIBLE', 'PG-NO-LOCK-TIMEOUT', 'ALEMBIC-MULTIPLE-HEADS', 'MYSQL-DDL-AUTOCOMMIT'}
 CONTRADICTS = re.compile(r'\b(safe to (deploy|ship|run)|no (blocking )?(findings|problems|issues)|nothing (blocking|to fix)|ready to (deploy|ship))\b', re.I)
-SCHEMA_VERSIONS = ('1.0.0', '1.1.0')
+SCHEMA_VERSIONS = ('1.0.0', '1.1.0', '1.2.0')
+
+
+def git_show(repo: Path, rev: str, file: str) -> str | None:
+    try:
+        r = subprocess.run(['git', '-C', str(repo), 'show', f'{rev}:./{file}'], capture_output=True, text=True, encoding='utf-8',
+                           errors='replace', timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return r.stdout if r.returncode == 0 else None
 
 
 def norm_text(s: str) -> str:
@@ -46,8 +61,9 @@ def norm_text(s: str) -> str:
 
 
 def rate(category: str, hazard: int, size_class: str, deploy: str) -> tuple[int, int, int]:
-    size = 3 if category in ('data_loss', 'compatibility') else SIZE[size_class]
-    exposure = 3 if category == 'data_loss' else EXPOSURE[deploy]
+    # data_loss and compatibility don't depend on table size; reproducibility bites every database built later, whatever its size
+    size = 3 if category in ('data_loss', 'compatibility', 'reproducibility') else SIZE[size_class]
+    exposure = 3 if category == 'data_loss' else 1 if category == 'reproducibility' else EXPOSURE[deploy]
     return size, exposure, hazard * size * exposure
 
 
@@ -107,6 +123,21 @@ def main() -> int:
     eng = scope.get('engine') or {}
     if not eng.get('source'):
         e('scope.engine has no source (how the engine and version were found)')
+    # components deployed separately (API, workers, functions, frontend): the review rates the most exposed one
+    for comp in scope.get('components') or []:
+        if not comp.get('name') or comp.get('deploy_model') not in EXPOSURE:
+            e(f'scope.components entry {comp!r} needs a name and a deploy_model in {sorted(EXPOSURE)}')
+        elif EXPOSURE[comp['deploy_model']] > EXPOSURE.get(scope.get('deploy_model'), 3):
+            e(f'scope.deploy_model {scope.get("deploy_model")} is less exposed than component {comp["name"]} '
+              f'({comp["deploy_model"]}); rate with the most exposed component that uses the database')
+    rb = scope.get('rollback_path')
+    if rb is not None:
+        if rb.get('method') not in ('down_migrations', 'backup_restore', 'roll_forward', 'none', 'unknown') or not rb.get('source'):
+            e('scope.rollback_path needs a method (down_migrations, backup_restore, roll_forward, none, unknown) and a source')
+        elif rb['method'] == 'down_migrations':
+            bad = [f'{m["id"]} ({m["down_state"]})' for m in rep['migrations'] if m.get('down_state') != 'ok']
+            if bad:
+                e(f'scope.rollback_path says down migrations, but these have no working down: {", ".join(bad)}')
 
     if a.migrations:
         md = json.loads(a.migrations.read_text(encoding='utf-8'))
@@ -209,13 +240,20 @@ def main() -> int:
         if f.get('priority') != p:
             e(f'{fid}: priority {f.get("priority")} should be {p} (score {score}{", floor " + floor if floor else ""}{", " + cap if cap else ""})')
         if f.get('floor') != floor or f.get('cap') != cap:
-            e(f'{fid}: floor/cap {f.get("floor")}/{f.get("cap")} should be {floor}/{cap}')
+            why = ''
+            if f.get('floor') == 'compatibility_with_code_hits' and floor is None:
+                why = (' (compatibility_with_code_hits is recorded only when it raised the priority; '
+                       f'score {score} already gives {priority(score)})')
+            e(f'{fid}: floor/cap {f.get("floor")}/{f.get("cap")} should be {floor}/{cap}{why}')
         if f.get('confidence') not in ('measured', 'matched', 'assumed'):
             e(f'{fid}: confidence {f.get("confidence")!r}')
         if f.get('confidence') == 'measured' and f.get('migration') not in measured_ids:
             e(f'{fid}: measured without a dynamic result for migration {f.get("migration")}')
-        if (sz['class'] == 'unknown' or eng.get('assumed')) and f.get('confidence') == 'matched' and f['category'] not in ('data_loss', 'compatibility', 'irreversible'):
-            e(f'{fid}: depends on an unknown (table size or engine version) but is rated matched, not assumed')
+        if (sz['class'] == 'unknown' or sz.get('hinted') or eng.get('assumed')) and f.get('confidence') == 'matched' and \
+                f['category'] not in ('data_loss', 'compatibility', 'irreversible', 'reproducibility'):
+            e(f'{fid}: depends on an unknown (table size, a size hint or engine version) but is rated matched, not assumed')
+        if sz.get('hinted') and sz['class'] not in ('small', 'medium'):
+            e(f'{fid}: a size hint can only make a table small or medium (without one it rates as large)')
         if f['category'] == 'compatibility':
             if not f.get('code_hits'):
                 e(f'{fid}: compatibility finding without code hits')
@@ -232,6 +270,11 @@ def main() -> int:
                         e(f'{fid}: {k} {f.get(k)!r} differs from candidate {cid} ({c.get(k)!r})')
                 if c.get('code_hits') != f.get('code_hits'):
                     e(f'{fid}: code hits differ from candidate {cid}')
+                if (c.get('direction') or 'up') != (f.get('direction') or 'up'):
+                    e(f'{fid}: direction {f.get("direction") or "up"} differs from candidate {cid} ({c.get("direction")}): '
+                      'a finding in a down migration says direction "down"')
+                if (c.get('size') or {}).get('hinted') != sz.get('hinted'):
+                    e(f'{fid}: size hint flag differs from candidate {cid}')
                 if (c.get('size') or {}).get('class') != sz['class'] or (c.get('size') or {}).get('source') != sz.get('source'):
                     e(f'{fid}: size differs from candidate {cid}')
         if a.repo:
@@ -246,7 +289,15 @@ def main() -> int:
                 if not re.search(rf'(?<![\w]){re.escape(word)}(?![\w])', near):
                     e(f'{fid}: {f["file"]}:{f["line"]} does not mention {word} (the cited line must hold the statement)')
             for h in f.get('code_hits', []):
-                lines = (a.repo / h['file']).read_text(encoding='utf-8').splitlines() if (a.repo / h['file']).exists() else []
+                if h.get('rev'):
+                    # a hit in the previous release: re-read it from git
+                    shown = git_show(a.repo, h['rev'], h['file'])
+                    if shown is None:
+                        e(f'{fid}: code hit {h["rev"]}:{h["file"]} cannot be read with git show (is --repo a git checkout with that revision?)')
+                        continue
+                    lines = shown.splitlines()
+                else:
+                    lines = (a.repo / h['file']).read_text(encoding='utf-8').splitlines() if (a.repo / h['file']).exists() else []
                 word = f.get('column') if f['rule'] != 'NOT-NULL-WHILE-WRITTEN-WITHOUT' else None
                 # the names the scan searched: the column, and its Prisma field name (@map, or the camelCase of a snake_case column)
                 names = {word} | {n for cid in f.get('candidates', []) for n in ((cands.get(cid) or {}).get('facts') or {}).get('names_searched', [])}

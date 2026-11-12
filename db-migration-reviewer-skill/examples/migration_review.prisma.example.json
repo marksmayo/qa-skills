@@ -1,7 +1,7 @@
 {
- "schema_version": "1.1.0",
+ "schema_version": "1.2.0",
  "skill": "db-migration-reviewer",
- "skill_version": "1.1.0",
+ "skill_version": "1.2.0",
  "generated": "2026-11-12",
  "scope": {
   "repo": "examples/greenhouse",
@@ -15,6 +15,11 @@
   },
   "deploy_model": "rolling",
   "deploy_model_source": "user: the app runs on two instances updated one at a time; prisma migrate deploy runs as a release step while the old instances still serve",
+  "rollback_path": {
+   "method": "roll_forward",
+   "source": "Prisma has no down migrations (prisma migrate deploy only applies)",
+   "notes": "a reverse script can be drafted with prisma migrate diff; the backup taken before the deploy is the last resort"
+  },
   "since": "20260301000000_baseline",
   "excluded": [
    {

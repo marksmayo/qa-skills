@@ -36,6 +36,12 @@ def main() -> int:
            c(f'Verdict: {h["verdict"].replace("_", " ")}', 'P0' if h['verdict'] == 'do_not_deploy' else 'green'),
            ' '.join(f'{c(p, p)} {n}' for p, n in h['counts'].items()), '', h['statement'], '',
            c('Scope: ', 'bold') + h['scope_statement'], '']
+    if s.get('components'):
+        out += ['Components deployed separately: ' + '; '.join(f'{x["name"]} ({x["deploy_model"]}{", " + x["order"] if x.get("order") else ""})'
+                                                              for x in s['components']), '']
+    if s.get('rollback_path'):
+        rb = s['rollback_path']
+        out += [f'Rollback path: {rb["method"].replace("_", " ")} ({rb["source"]}){". " + rb["notes"] if rb.get("notes") else ""}', '']
     out += ['## Findings', '', '| ID | Priority | Migration | Rule | Table | Score | Confidence |', '|---|---|---|---|---|---|---|']
     for f in sorted(r['findings'], key=lambda f: (f['priority'], f['id'])):
         rule = f["rule"] + (' (found by review)' if f.get('source') == 'agent' else '')
@@ -46,17 +52,18 @@ def main() -> int:
         for f in sorted(r['findings'], key=lambda f: (f['priority'], f['id'])):
             out += [f'### {f["id"]} {c(f["priority"], f["priority"])} {f["rule"]} ({f["category"].replace("_", " ")})'
                     + (' - found by review' if f.get('source') == 'agent' else ''), '',
-                    f'`{f["file"]}:{f["line"]}`: `{f["statement"]}`', '',
+                    f'`{f["file"]}:{f["line"]}`{" (down migration)" if f.get("direction") == "down" else ""}: `{f["statement"]}`', '',
                     f'- Effect: {f["effect"]}',
                     f'- Engine: {f["engine_range"]}',
-                    f'- Table size: {f["size"]["class"]}{" (" + format(f["size"]["rows"], ",") + " rows)" if f["size"].get("rows") else ""}, from {f["size"]["source"]}']
+                    f'- Table size: {f["size"]["class"]}{" (" + format(f["size"]["rows"], ",") + " rows)" if f["size"].get("rows") else ""}, from {f["size"]["source"]}{" (a hint, not statistics)" if f["size"].get("hinted") else ""}']
             if f.get('floor') or f.get('cap'):
                 out.append(f'- Priority adjusted: {f.get("floor") or f.get("cap")}')
             if f.get('source') == 'agent':
                 out.append('- Found by review: ' + '; '.join(f'`{b["file"]}:{b["line"]}` {b["excerpt"]}' if b.get('file')
                                                             else f'evidence `{b["evidence"]}`' for b in f.get('basis', [])))
             if f['code_hits']:
-                out.append('- Code still using it: ' + ', '.join(f'`{x["file"]}:{x["line"]}` ({x["kind"]})' for x in f['code_hits']))
+                out.append('- Code still using it: ' + ', '.join(f'`{(x["rev"] + ":") if x.get("rev") else ""}{x["file"]}:{x["line"]}` ({x["kind"]})'
+                                                                 for x in f['code_hits']))
             out += [f'- Safer rewrite: {f["rewrite"]}', f'- Verify: {f["verification"]}', '']
     if r.get('safe_sequence'):
         out += ['## Safer sequence', '']

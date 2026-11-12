@@ -6,7 +6,12 @@
 Checks: quoted identifiers and column lists, multi-clause ALTER TABLE, CREATE ... IF NOT EXISTS (both used
 to crash), type narrowing including DOUBLE PRECISION to NUMERIC(p,s), Prisma folder ids, archived history left
 out of the chain but kept for type history, --since that matches nothing, Prisma writers and @map readers,
-the previous schema.prisma from git, and that pruned folders (node_modules) are never walked.
+the previous schema.prisma from git, and that pruned folders (node_modules) are never walked. Synthetic
+Alembic cases (a bakery and a library service): two chains in one repository and --chain, the lock-timeout
+check per chain, helper functions and resolved f-strings, op.get_context(), get_bind/conn.execute and
+imported helpers listed as not analysed, downgrade data loss, value renames with readers in the previous
+release (--base-ref), files read at run time, a Bicep engine version from --infra, and size hints; and the
+validator's reproducibility rating, rollback path and component checks.
 Everything runs in a temporary folder; the examples are only read.
 """
 from __future__ import annotations
@@ -29,6 +34,161 @@ def check(cond: bool, what: str):
 
 def run(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run([sys.executable, *args], capture_output=True, text=True, encoding='utf-8')
+
+
+MIG = '''"""{doc}"""
+from alembic import op
+import sqlalchemy as sa
+{imports}
+revision = '{rev}'
+down_revision = {down}
+{body}
+'''
+ENV_PLAIN = 'from alembic import context\nfrom sqlalchemy import pool\n\n\ndef run_migrations_online():\n    context.configure(url="postgresql://localhost/x")\n'
+ENV_TIMEOUT = ENV_PLAIN + '    context.execute("SET lock_timeout = \'5s\'")\n'
+
+
+def write_chain(root: Path, service: str, env: str, migs: list[tuple[str, str, str, str]]):
+    base = root / 'services' / service / 'db'
+    (base / 'alembic' / 'versions').mkdir(parents=True)
+    (base / 'alembic.ini').write_text('[alembic]\nscript_location = alembic\n', encoding='utf-8')
+    (base / 'alembic' / 'env.py').write_text(env, encoding='utf-8')
+    down = 'None'
+    for rev, doc, imports, body in migs:
+        (base / 'alembic' / 'versions' / f'{rev}_{doc.split()[0]}.py').write_text(
+            MIG.format(doc=doc, imports=imports, rev=rev, down=down, body=body), encoding='utf-8')
+        down = repr(rev)
+
+
+def alembic_cases(tmp: Path):
+    """Synthetic Alembic cases: two chains in one repo, helpers, data steps, downgrades, value renames, file reads,
+    Bicep engine version in a separate infrastructure folder, size hints and readers in the previous release."""
+    repo = tmp / 'two-chains'
+    plain = '\n\ndef upgrade():\n    op.create_table("loaves", sa.Column("id", sa.Integer, primary_key=True))\n\n\ndef downgrade():\n    op.drop_table("loaves")\n'
+    write_chain(repo, 'bakery', ENV_PLAIN, [
+        ('001', 'loaves table', '', plain),
+        ('002', 'oven index', '', '\n\ndef upgrade():\n    op.create_index("ix_loaves_oven", "loaves", ["oven"])\n\n\n'
+                                  'def downgrade():\n    op.drop_index("ix_loaves_oven")\n')])
+    helper = '''
+
+def _rename_genre(conn):
+    op.drop_constraint("ck_shelves_genre", "shelves")
+    op.create_check_constraint("ck_shelves_genre", "shelves", "genre IN ('mystery', 'poetry')")
+    op.execute("UPDATE shelves SET genre = 'mystery' WHERE genre = 'crime'")
+
+
+def upgrade():
+    cfg = op.get_context().config
+    conn = op.get_bind()
+    _rename_genre(conn)
+    conn.execute(sa.text(cfg.get_main_option("extra_sql")))
+
+
+def downgrade():
+    op.execute("UPDATE shelves SET genre = 'crime'")
+'''
+    seeds = '''
+SEED_FILE = 'seeds/branches.yaml'
+
+
+def upgrade():
+    with open(Path(__file__).parent / SEED_FILE) as fh:
+        rows = fh.read()
+    load_rows(rows)
+
+
+def downgrade():
+    pass
+'''
+    write_chain(repo, 'library', ENV_TIMEOUT, [
+        ('001', 'shelves table', '', plain.replace('loaves', 'shelves')),
+        ('002', 'rename genre', '', helper),
+        ('003', 'branch seeds', 'from pathlib import Path\nfrom library_app.seed import load_rows\n', seeds)])
+    (repo / 'library_app').mkdir()
+    (repo / 'library_app' / 'genres.py').write_text("KNOWN = ['mystery', 'poetry']\n", encoding='utf-8')
+    (repo / 'library_app' / 'seed.py').write_text('def load_rows(rows):\n    return rows\n', encoding='utf-8')
+    infra = tmp / 'infra-repo'
+    infra.mkdir()
+    (infra / 'database.bicep').write_text("param pgVersion string = '15'\n\nresource db 'Microsoft.DBforPostgreSQL/flexibleServers@2023-06-01' = {\n"
+                                          "  name: 'library-db'\n  properties: {\n    version: pgVersion\n  }\n}\n", encoding='utf-8')
+    stats = tmp / 'stats.json'
+    stats.write_text(json.dumps({'source': 'synthetic', 'tables': {'shelves': {'hint': 'lookup table seeded by migrations only', 'class': 'small'}}}),
+                     encoding='utf-8')
+    g = ['git', '-C', str(repo), '-c', 'user.name=t', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgsign=false', '-c', 'core.autocrlf=false']
+    has_git = bool(shutil.which('git'))
+    if has_git:  # the previous release still keys on 'crime'
+        (repo / 'library_app' / 'genres.py').write_text("KNOWN = ['crime', 'poetry']\nCRIME = 'crime'\n", encoding='utf-8')
+        subprocess.run(['git', 'init', '-q', str(repo)], check=True, capture_output=True)
+        subprocess.run(g + ['add', '.'], check=True, capture_output=True)
+        subprocess.run(g + ['commit', '-qm', 'previous release'], check=True, capture_output=True)
+        (repo / 'library_app' / 'genres.py').write_text("KNOWN = ['mystery', 'poetry']\n", encoding='utf-8')
+        subprocess.run(g + ['commit', '-qam', 'this release'], check=True, capture_output=True)
+
+    out = tmp / 'chains.json'
+    det = str(HERE / 'detect_migrations.py')
+    r = run(det, '--repo', str(repo), '--out', str(out))
+    check(r.returncode == 2 and 'services/bakery/db/alembic' in r.stderr and '--chain' in r.stderr and not out.exists(),
+          'two Alembic chains without --chain: refused, and the message lists the chains')
+    r = run(det, '--repo', str(repo), '--chain', 'services/bakery/db/alembic', '--since', '001', '--out', str(out))
+    d = json.loads(out.read_text(encoding='utf-8')) if r.returncode == 0 else {}
+    check([m['id'] for m in d.get('migrations', [])] == ['001', '002'] and (d.get('chain') or {}).get('env') == 'services/bakery/db/alembic/env.py',
+          '--chain picks one chain (same ids in the other chain are no conflict) and records its env.py')
+    cands = tmp / 'bakery-c.json'
+    run(str(HERE / 'scan_migrations.py'), '--migrations', str(out), '--repo', str(repo), '--out', str(cands))
+    c = json.loads(cands.read_text(encoding='utf-8'))['candidates'] if cands.exists() else []
+    lt = next((x for x in c if x['rule'] == 'PG-NO-LOCK-TIMEOUT'), {})
+    check(lt.get('file') == 'services/bakery/db/alembic/env.py' and lt.get('line') == 6 and
+          lt.get('facts', {}).get('checked', [None])[0] == 'services/bakery/db/alembic/env.py',
+          'lock-timeout candidate cites its own chain env.py at the configure() line, not an import')
+
+    r = run(det, '--repo', str(repo), '--chain', 'library/db/alembic', '--since', '001', '--infra', str(infra), '--out', str(out))
+    d = json.loads(out.read_text(encoding='utf-8')) if r.returncode == 0 else {}
+    eng = d.get('engine', {})
+    check(eng.get('version') == '15' and eng.get('assumed') is False and 'database.bicep:1' in (eng.get('source') or ''),
+          'engine version from a Bicep param default in a separate infrastructure folder (--infra)')
+    migs = {m['id']: m for m in d.get('migrations', [])}
+    mig2, mig3 = migs.get('002', {}), migs.get('003', {})
+    check(mig2.get('transactional') is True, 'op.get_context().config does not make a migration non-transactional')
+    check(any('_rename_genre' in s.get('via', '') and 'CHECK' in s['sql'] for s in mig2.get('up', [])),
+          'statements in a helper function called by upgrade() are analysed')
+    check(any('get_bind' in x['what'] for x in mig2.get('not_analysed', [])) and any('execute' in x['what'] for x in mig2.get('not_analysed', [])),
+          'op.get_bind() and conn.execute with runtime SQL are listed as not analysed')
+    check(any('load_rows' in x['what'] for x in mig3.get('not_analysed', [])), 'a helper imported from another module is listed as not analysed')
+    check((mig3.get('reads_files') or [{}])[0].get('exists') == {'seeds/branches.yaml': False}, 'a file read at run time is recorded with whether it exists')
+
+    cands = tmp / 'library-c.json'
+    args = [str(HERE / 'scan_migrations.py'), '--migrations', str(out), '--repo', str(repo), '--table-stats', str(stats), '--out', str(cands)]
+    run(*(args + (['--base-ref', 'HEAD~1'] if has_git else [])))
+    c = json.loads(cands.read_text(encoding='utf-8'))['candidates'] if cands.exists() else []
+    rules = {(x['rule'], x.get('direction')) for x in c}
+    check(('PG-CHECK-VALIDATE', 'up') in rules, 'CHECK constraint added in a helper is a candidate')
+    check(('DML-WITHOUT-WHERE', 'down') in rules, 'UPDATE without WHERE in a downgrade is a data-loss candidate (direction down)')
+    check(not any(x['rule'] == 'PG-NO-LOCK-TIMEOUT' for x in c), 'a chain whose env.py sets lock_timeout has no lock-timeout candidate')
+    vr = next((x for x in c if x['rule'] == 'VALUE-RENAME-WHILE-READ'), {})
+    check(vr.get('column') == 'genre' and (vr.get('facts') or {}).get('old_value') == 'crime', 'a value renamed in place is a compatibility candidate')
+    if has_git:
+        check(any(h.get('rev') == 'HEAD~1' and h['file'] == 'library_app/genres.py' for h in vr.get('code_hits', [])),
+              'code keyed on the old value in the previous release (--base-ref) is a code hit with its revision')
+    rf = next((x for x in c if x['rule'] == 'MIGRATION-READS-FILES'), {})
+    check(rf.get('category') == 'reproducibility' and (rf.get('facts') or {}).get('missing_paths') == ['seeds/branches.yaml'],
+          'a migration reading a file that no longer exists is a reproducibility candidate')
+    sz = next((x['size'] for x in c if x['table'] == 'shelves' and x.get('size')), {})
+    check(sz.get('class') == 'small' and sz.get('hinted') is True, 'a size hint sizes the table and is marked hinted')
+
+
+def validator_cases(tmp: Path):
+    """The validator: reproducibility rating, hinted sizes stay assumed, rollback path and components."""
+    import validate_migration_review as v
+    check(v.rate('reproducibility', 3, 'unknown', 'rolling') == (3, 1, 9), 'reproducibility rates size 3 x exposure 1')
+    rep = json.loads((EX / 'migration_review.example.json').read_text(encoding='utf-8'))
+    rep['scope']['rollback_path'] = {'method': 'down_migrations', 'source': 'synthetic'}
+    rep['scope']['deploy_model'] = 'blue_green'
+    rep['scope']['components'] = [{'name': 'worker', 'deploy_model': 'rolling'}]
+    p = tmp / 'review.json'
+    p.write_text(json.dumps(rep), encoding='utf-8')
+    r = run(str(HERE / 'validate_migration_review.py'), str(p), '--candidates', str(EX / 'run' / 'candidates.json'))
+    check('rollback_path says down migrations' in r.stdout, 'rollback path of down migrations with a pass down is rejected')
+    check('less exposed than component worker' in r.stdout, 'a component more exposed than the deploy model is rejected')
 
 
 def main() -> int:
@@ -103,6 +263,8 @@ def main() -> int:
                   'the previous schema.prisma (git) gives the type before the release')
         else:
             print('skip git case (git not installed)')
+        alembic_cases(tmp)
+        validator_cases(tmp)
     print(f'{len(FAILS)} failure(s)' if FAILS else 'all checks passed')
     return 1 if FAILS else 0
 

@@ -12,6 +12,11 @@
 | `transaction_mistake` | 2 | CREATE INDEX CONCURRENTLY inside a transaction; MySQL DDL that commits half a migration |
 | `backfill_cost` | 2 | One UPDATE across a large table in one transaction, unbatched |
 | `ordering` | 1 | Two heads; a migration that depends on a later one |
+| `reproducibility` | 3 | A data step that reads repository files at run time (seed YAML, CSV): once the files move or are deleted, the step silently does nothing on every database built later |
+
+A value renamed in place (`UPDATE t SET c = 'new' WHERE c = 'old'`, `VALUE-RENAME-WHILE-READ`) is
+`compatibility`: code that still compares with `'old'` (in the previous release, during a rolling
+deploy) stops matching. Statements in a down migration are rated like any other (`direction: "down"`).
 
 A finding found by review (`source: "agent"`) with a rule from `data/rules.json` takes that rule's
 category and hazard; with a rule of its own it takes its category's hazard from this table.
@@ -29,8 +34,14 @@ a baseline but still the old type on databases older than a squash (archived mig
 | medium | 10 000 to 1 000 000 | 2 |
 | small | under 10 000, or created in this release | 1 |
 
-`data_loss` and `compatibility` always use 3: losing a small table still loses data, and a broken
-query breaks whatever the table's size.
+`data_loss`, `compatibility` and `reproducibility` always use 3: losing a small table still loses data,
+a broken query breaks whatever the table's size, and a step that silently does nothing misses every row.
+
+**Size hint.** Without statistics, a table whose rows are evidently bounded (a lookup or configuration
+table written only by seed migrations and an admin tool) can be given a hint in the statistics file:
+`{"hint": "seeded configuration table, rows bounded by the seed files", "class": "small"}`. The size is
+then `small` (or `medium`) with `hinted: true`, its source says "size hint", and a finding resting on it
+stays `assumed`: a hint is a reason, not a measurement.
 
 ## Deploy exposure
 
@@ -41,6 +52,11 @@ query breaks whatever the table's size.
 | `stop_the_world` (maintenance window) | 1 |
 
 `data_loss` always uses 3: a maintenance window makes locks less harmful but doesn't bring data back.
+`reproducibility` always uses 1: it bites when a database is built or rebuilt, not in the deploy window.
+
+When parts of the system deploy separately (API, workers, functions, a frontend), list them in
+`scope.components` with their own deploy model and order, and rate with the most exposed one that uses
+the database.
 
 ## Score and priority
 
@@ -59,13 +75,17 @@ query breaks whatever the table's size.
 
 **Cap.** An `assumed` finding is at most P1 (`assumed_capped_at_P1`). The floor applies first, then the cap.
 
+**Recording a floor.** `floor` names a floor only when it applies: `unrecoverable_data_loss` on every
+unrecoverable data-loss finding, `compatibility_with_code_hits` only when it raised the priority (a
+compatibility finding whose score already gives P0 or P1 has `floor: null`). The validator recomputes both.
+
 ## Confidence
 
 | Level | Meaning |
 |---|---|
 | `measured` | The dynamic run showed the lock, the blocked query, the failed rollback or the changed rows |
 | `matched` | A rule matched the statement, and the engine version and table size are known |
-| `assumed` | A condition rests on an unknown: engine version (including one taken only from docker-compose, a Dockerfile or CI) or table size |
+| `assumed` | A condition rests on an unknown: engine version (including one taken only from docker-compose, a Dockerfile or CI) or table size (including a size hint) |
 
 ## Verdict
 

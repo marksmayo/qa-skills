@@ -1,7 +1,7 @@
 ---
 name: db-migration-reviewer
 description: Review database migrations before they ship and find the ones that are dangerous in production - locks that block a busy table, table rewrites, data loss and silent narrowing, down migrations that can't roll back, and schema changes that break code still running during a rolling deploy. Reads Alembic, Django, Knex, Flyway, Prisma and raw SQL migrations for PostgreSQL and MySQL, sizes each table from real statistics, searches the code for readers of dropped or renamed columns, and can run the migrations on a throwaway local database to time them, watch the locks and test the rollback. Never runs against production, never edits a migration, and never says "safe to deploy" without saying what was checked.
-version: 1.1.0
+version: 1.2.0
 ---
 
 # Database migration reviewer
@@ -53,10 +53,12 @@ code, new code and the new schema coexist.
 |---|---|---|
 | `repo` | required | The repository |
 | `migrations` | the pending set | `--since <revision>` (everything after the deployed head; for Prisma the folder name of the last applied migration), `--migrations a,b`, or all. An id that matches nothing is an error |
+| `chain` | the only one | Alembic: a repository with several script locations (one `env.py` and `versions/` per service) has several chains; detection lists them and `--chain <dir>` reviews one per run |
+| `base_ref` | none | The git revision still running during the deploy (the deployed tag or commit). `--base-ref` also searches readers there, so code removed in this release but still running in the old one counts |
 | `exclude_dir` | archive folders | Folders that look like archived or squashed history (`archive`, `squashed`, `history`, `old`) are left out of the chain and listed in `excluded`; `--exclude-dir` adds folders, `--include-archived` keeps them |
-| `engine` | detected | From URLs in config, infrastructure templates (CloudFormation or Terraform `Engine`/`EngineVersion`, including a parameter's default) and docker-compose or Dockerfile image tags (with or without a registry prefix); the oldest version from the most production-like source, every claim listed; with no version, the oldest the repo claims, marked `assumed`. A version found only in docker-compose, a Dockerfile or CI is a development source and is also `assumed` (with `assumed_reason`) until the user or infrastructure confirms it |
-| `table_stats` | none | JSON `{"source": ..., "tables": {name: {"rows", "bytes"}}}`, keyed by the plain table name (`Order`, as `pg_class.relname` returns it); quoted names in migrations match it |
-| `deploy_model` | `rolling` | `rolling`, `blue_green` or `stop_the_world`; record where it came from |
+| `engine` | detected | From URLs in config, infrastructure templates (CloudFormation or Terraform `Engine`/`EngineVersion`, including a parameter's default) and docker-compose or Dockerfile image tags (with or without a registry prefix); the oldest version from the most production-like source, every claim listed; with no version, the oldest the repo claims, marked `assumed`. A version found only in docker-compose, a Dockerfile or CI is a development source and is also `assumed` (with `assumed_reason`) until the user or infrastructure confirms it. Azure Bicep and ARM templates (`Microsoft.DBforPostgreSQL/flexibleServers` `version`, including a param default) are read too; infrastructure in another repository is read with `--infra <path>`, and a version given with `--engine-version` keeps its provenance with `--engine-source` |
+| `table_stats` | none | JSON `{"source": ..., "tables": {name: {"rows", "bytes"}}}`, keyed by the plain table name (`Order`, as `pg_class.relname` returns it); quoted names in migrations match it. A table with no statistics but evidently bounded rows may carry a size hint instead: `{"hint": "...", "class": "small"}` (findings on it stay `assumed`) |
+| `deploy_model` | `rolling` | `rolling`, `blue_green` or `stop_the_world`; record where it came from. When parts deploy separately, list them in `scope.components` and use the most exposed |
 | `dynamic` | `auto` | `container` when Docker or Podman is present, a loopback `--dsn`, or `off`; otherwise static only, and the report says so |
 | `seed_rows` | 100 000 | Synthetic rows for tables the candidates name (1 000 for the rest) |
 | `other_readers` | none | Other services or reporting queries that use the same database |
@@ -67,8 +69,8 @@ code, new code and the new schema coexist.
 Everything is stdlib except the dynamic check, which needs `psycopg` (`requirements.txt`; ask first).
 
 ```bash
-python scripts/detect_migrations.py --repo <repo> --since <deployed head> --out <run>/migrations.json
-python scripts/scan_migrations.py --migrations <run>/migrations.json --repo <repo> --table-stats stats.json --out <run>/candidates.json [--squawk squawk.sarif] [--other-readers ../reports]
+python scripts/detect_migrations.py --repo <repo> --since <deployed head> --out <run>/migrations.json [--chain <script location>] [--infra ../infra]
+python scripts/scan_migrations.py --migrations <run>/migrations.json --repo <repo> --table-stats stats.json --out <run>/candidates.json [--base-ref <deployed tag>] [--squawk squawk.sarif] [--other-readers ../reports]
 python scripts/dynamic_check.py --migrations <run>/migrations.json --candidates <run>/candidates.json --mode container --out <run>/dynamic.json
 ```
 
@@ -78,8 +80,11 @@ checks the parsers and rules against the examples.
 
 1. **Detect.** The tool, the engine and version (and how they were found), the chain and its heads, and
    the pending set. Each migration becomes SQL-shaped statements with lines, its transaction mode, and
-   the state of its down migration (`ok`, `pass`, `empty`, `raises`, `missing`). Code the parser can't
-   analyse (runtime-built SQL, `RunPython` bodies, Java migrations) is listed, never guessed at. For every
+   the state of its down migration (`ok`, `pass`, `empty`, `raises`, `missing`). Alembic calls into the
+   migration's own helper functions are followed, and f-strings built from literal arguments are resolved.
+   Code the parser can't analyse (runtime-built SQL, `RunPython` bodies, `op.get_bind()` and
+   `conn.execute` data steps, SQLAlchemy Core statements, functions imported from the application, files
+   read at run time, Java migrations) is listed under `not_analysed`, never guessed at; read every entry. For every
    column a pending migration retypes, `type_history` lists the types it had before: earlier migrations,
    archived migrations, and for Prisma `schema.prisma` before the first pending migration (from git).
 2. **Scan.** The rules in `data/rules.json` give candidates with their facts: table size and its
@@ -88,9 +93,13 @@ checks the parsers and rules against the examples.
    NOT NULL, and whether a `lock_timeout` is set anywhere. Quoted identifiers are compared unquoted, and
    each clause of a multi-clause `ALTER TABLE` is checked on its own. A type change is compared with
    every earlier type on every upgrade path (`from_path`, `from_source`), so a column that is already
-   `NUMERIC` on fresh databases but still `DOUBLE PRECISION` on older ones is a narrowing.
+   `NUMERIC` on fresh databases but still `DOUBLE PRECISION` on older ones is a narrowing. Down
+   migrations are scanned for data loss too (`direction: "down"`). A value renamed in place (`UPDATE t
+   SET c = 'new' WHERE c = 'old'`) is checked against code naming the old value, and with `--base-ref`
+   every reader search also covers the previous release.
    Then **read the pending migrations yourself** for what no rule matches (SQL in `DO` blocks or
-   functions, data steps) and record it as agent findings (rule 9).
+   functions, the `not_analysed` entries, CHECK lists that drop a value) and record it as agent findings
+   (rule 9).
 3. **Dynamic (when possible).** Throwaway database, earlier migrations, synthetic seed, then each pending
    migration with lock polling every 100 ms and a concurrent SELECT and INSERT per affected table, then
    the down migration with schema, row-count and row-hash comparison. A finding the run confirms becomes
@@ -104,6 +113,10 @@ checks the parsers and rules against the examples.
 5. **Rate** each finding with `RUBRIC.md`: hazard x size x exposure, floors, the `assumed` cap.
 6. **Write** for each finding the effect, a safer rewrite, and a verification step someone can run on a
    copy. Lay out a safer sequence: which release each step belongs to (expand, migrate, contract).
+   Record the **rollback path** (`scope.rollback_path`): read the pipeline. If no stage runs the down
+   migrations, or a reviewed down is not `ok`, the real rollback is a backup restore (say which, and what
+   it loses: writes since the backup) or rolling forward; never write `down_migrations` unless every
+   reviewed down works and something runs it.
 7. **Validate and render.**
 
 ```bash
@@ -113,8 +126,22 @@ python scripts/render_report.py <run>/migration_review.json [--brief]
 
 ## Edge cases
 
-- **Data steps** (`RunPython`, `op.execute` loops, Rails data in `change`): flag whole-table updates
-  and missing reverses; list the rest as not analysed.
+- **Data steps** (`RunPython`, `op.execute` loops, `op.get_bind()` with `conn.execute`, Rails data in
+  `change`): flag whole-table updates and missing reverses; list the rest as not analysed.
+- **Data steps that read repository files** (seed YAML or CSV opened at run time) give a
+  `MIGRATION-READS-FILES` candidate (`reproducibility`): when the files are later moved or deleted, the
+  step silently does nothing on every database built afterwards. The candidate lists the paths that no
+  longer exist.
+- **Several Alembic chains** (one script location per service, often with the same ids): review each with
+  `--chain`; the lock-timeout check reads that chain's `env.py` only. A shared database between the
+  chains is an `other_readers` question: pass the other service's folder.
+- **Value renames** (a lookup or enum-like value renamed by UPDATE, or a CHECK list rewritten): the old
+  value in code still running breaks as surely as a renamed column. Pass `--base-ref` so the previous
+  release's code is searched; a hit there carries `rev` and is re-read with `git show`.
+- **Several components** (API, worker or function apps, a frontend deployed by another pipeline): record
+  each in `scope.components` with its deploy model and when it deploys relative to the migration, rate
+  with the most exposed, and put cross-component ordering ("deploy with the worker change") in the safer
+  sequence.
 - **Online schema-change tools:** lock rules for operations the tool handles are dismissed with
   `online_schema_tool`.
 - **Partitioned tables:** an index on a partitioned parent can't be built CONCURRENTLY (PostgreSQL);
@@ -147,11 +174,11 @@ python scripts/render_report.py <run>/migration_review.json [--brief]
 
 ## Output fields
 
-`scope` (repo, tool, engine with source and `assumed_reason`, deploy model with source, migrations
-reviewed, excluded archive files, checked, not_checked), `metadata` (tools and status, table stats source), `migrations[]` (file, transaction mode,
+`scope` (repo, tool, engine with source and `assumed_reason`, deploy model with source, `components`,
+`rollback_path`, `chain`, migrations reviewed, excluded archive files, checked, not_checked), `metadata` (tools and status, table stats source), `migrations[]` (file, transaction mode,
 down state, findings), `findings[]` (rule, category, statement and line, table, column, engine range,
-effect, size with source, hazard, size factor, exposure, score, priority, floor, cap, confidence, code
-hits, rewrite, verification; `source: "agent"` and `basis` for a finding found by review), `triage[]`, `dynamic` (status and reason, or per-migration timings, locks,
+effect, size with source (and `hinted`), hazard, size factor, exposure, score, priority, floor, cap,
+confidence, code hits (with `rev` for a hit in the previous release), `direction`, rewrite, verification; `source: "agent"` and `basis` for a finding found by review), `triage[]`, `dynamic` (status and reason, or per-migration timings, locks,
 probes, row changes and rollback comparison), `safe_sequence[]`, `headline` (counts, migrations with a
 P0, verdict, statement, scope statement), `limitations[]`.
 
@@ -165,4 +192,7 @@ P0. Compatibility findings have code hits outside tests and migrations. A `measu
 dynamic result, and dynamic results come only from a `qa_migrate_` database on loopback with no row
 values. Every candidate is triaged once, dismissals use a reason code the facts support, and data-loss
 dismissals need zero code readers. The headline counts and verdict are recomputed, it has a scope
-statement, and its statement can't contradict the verdict ("safe to deploy", "no findings").
+statement, and its statement can't contradict the verdict ("safe to deploy", "no findings"). Code hits
+at another revision are re-read with `git show`; a hinted size keeps a finding `assumed`; a finding keeps
+its candidate's direction; no component may be more exposed than `deploy_model`; and a rollback path of
+`down_migrations` needs every reviewed down to be `ok`.

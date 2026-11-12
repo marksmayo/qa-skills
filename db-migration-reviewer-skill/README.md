@@ -7,10 +7,13 @@ It reviews database migrations before they ship and finds the ones that are dang
 - **Locks and rewrites**: indexes built without CONCURRENTLY, type changes that rewrite the table,
   SET NOT NULL scans, foreign keys validated in one go, defaults that rewrite, MySQL copy ALTERs,
   DDL with no lock timeout.
-- **Data loss**: drops, truncates, type narrowing, updates without WHERE.
+- **Data loss**: drops, truncates, type narrowing, updates without WHERE (in down migrations too).
+- **Reproducibility**: data steps that read repository files at run time, which silently do nothing once
+  the files are gone.
 - **Rollback**: down migrations that are `pass`, empty, raise or are missing.
-- **Compatibility**: renames and drops while code still reads the column, NOT NULL while code still
-  inserts without it, found by searching the code (tests and migrations don't count).
+- **Compatibility**: renames and drops while code still reads the column, values renamed while code
+  still compares with the old one, NOT NULL while code still inserts without it, found by searching the
+  code and optionally the previous release (tests and migrations don't count).
 
 Each finding names the file, line, statement, engine version range and the lock or data effect, is
 rated by table size (from real statistics, never guessed) and deploy model, and comes with a safer
@@ -56,6 +59,12 @@ python scripts/render_report.py run/migration_review.json [--brief]
 
 For Prisma, `--since` is the folder name of the last applied migration (`--since 20260301000000_baseline`);
 an id that matches nothing stops with an error.
+
+A repository with one Alembic chain per service is reviewed one chain at a time
+(`--chain services/orders/db/alembic`; detection lists the chains when there are several). Infrastructure
+kept in another repository is read with `--infra ../infra` (Terraform, CloudFormation, Bicep, ARM), and
+`scan_migrations.py --base-ref v2.3.0` also searches the release still running during the deploy for
+readers of renamed or dropped columns and renamed values.
 
 A statistics file for PostgreSQL (row counts only; keys are plain table names, which match quoted names
 in migrations):
