@@ -781,7 +781,7 @@ def type_history(repo: Path, tool: str, migs: list[dict], extra: dict) -> dict:
     for m in migs:
         for s in m.get('up', []):
             replay(s['sql'], origin='chain', migration=m['id'], file=m['file'], line=s['line'])
-    for k in wanted:
+    for k in sorted(wanted):
         if full.get(k):
             hist[f'{k[0]}.{k[1]}'] = full[k]
 

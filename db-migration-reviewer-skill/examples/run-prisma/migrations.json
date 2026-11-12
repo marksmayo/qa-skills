@@ -144,40 +144,6 @@
   "lock_provider": "postgresql"
  },
  "type_history": {
-  "Plant.price": [
-   {
-    "type": "DOUBLE PRECISION",
-    "column": "price",
-    "origin": "archive",
-    "migration": "20251001090000_init",
-    "file": "prisma/migration_history_archive/20251001090000_init/migration.sql",
-    "line": 15
-   },
-   {
-    "type": "DECIMAL(10,2)",
-    "column": "price",
-    "origin": "chain",
-    "migration": "20260301000000_baseline",
-    "file": "prisma/migrations/20260301000000_baseline/migration.sql",
-    "line": 16
-   },
-   {
-    "type": "DECIMAL(10,2)",
-    "column": "price",
-    "origin": "chain",
-    "migration": "20260415000000_release_hardening",
-    "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
-    "line": 4
-   },
-   {
-    "type": "DECIMAL(10,2)",
-    "origin": "schema",
-    "file": "prisma/schema.prisma",
-    "line": 27,
-    "field": "price",
-    "model": "Plant"
-   }
-  ],
   "Order.total": [
    {
     "type": "DOUBLE PRECISION",
@@ -210,6 +176,40 @@
     "line": 37,
     "field": "total",
     "model": "Order"
+   }
+  ],
+  "Plant.price": [
+   {
+    "type": "DOUBLE PRECISION",
+    "column": "price",
+    "origin": "archive",
+    "migration": "20251001090000_init",
+    "file": "prisma/migration_history_archive/20251001090000_init/migration.sql",
+    "line": 15
+   },
+   {
+    "type": "DECIMAL(10,2)",
+    "column": "price",
+    "origin": "chain",
+    "migration": "20260301000000_baseline",
+    "file": "prisma/migrations/20260301000000_baseline/migration.sql",
+    "line": 16
+   },
+   {
+    "type": "DECIMAL(10,2)",
+    "column": "price",
+    "origin": "chain",
+    "migration": "20260415000000_release_hardening",
+    "file": "prisma/migrations/20260415000000_release_hardening/migration.sql",
+    "line": 4
+   },
+   {
+    "type": "DECIMAL(10,2)",
+    "origin": "schema",
+    "file": "prisma/schema.prisma",
+    "line": 27,
+    "field": "price",
+    "model": "Plant"
    }
   ],
   "Plant.weight_kg": [
