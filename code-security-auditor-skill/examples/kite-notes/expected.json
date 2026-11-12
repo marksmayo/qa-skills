@@ -1,0 +1,37 @@
+{
+  "about": "What scripts/self_test.py expects the built-in scanners to report on this fixture. Pattern hits must match exactly; entry points must be present with these values.",
+  "patterns": [
+    ["src/app/api/calendar/callback/route.ts", 6, "JS-OAUTH-STATE"],
+    ["src/app/api/export/route.ts", 11, "JS-CSV-INJECTION"],
+    ["src/app/api/export/route.ts", 15, "JS-SHARED-CACHE-AUTH"],
+    ["src/app/api/go/route.ts", 4, "JS-OPEN-REDIRECT"],
+    ["src/app/api/notes/[id]/route.ts", 19, "JS-MASS-ASSIGN"],
+    ["src/app/api/preview/route.ts", 10, "JS-SSRF"],
+    ["src/app/api/search/route.ts", 12, "JS-PRISMA-RAW"],
+    ["src/app/api/upload/route.ts", 9, "JS-UPLOAD-CLIENT-TYPE"],
+    ["src/app/api/webhooks/billing/route.ts", 5, "JS-WEBHOOK-UNVERIFIED"],
+    ["src/app/login/page.tsx", 7, "JS-REDIRECT-PREFIX-CHECK"],
+    ["src/app/login/page.tsx", 21, "JS-OPEN-REDIRECT"],
+    ["src/app/t/[slug]/page.tsx", 13, "JS-STYLE-INTERP"],
+    ["src/app/t/[slug]/page.tsx", 16, "JS-XSS-SINK"]
+  ],
+  "entry_points": [
+    {"kind": "server_action", "method": "POST", "path": "action:renameTeam", "handler": "src/app/actions.ts:6", "auth": "public"},
+    {"kind": "server_action", "method": "POST", "path": "action:deleteTeam", "handler": "src/app/actions.ts:10", "auth": "admin"},
+    {"kind": "webhook", "method": "POST", "path": "/api/webhooks/billing", "handler": "src/app/api/webhooks/billing/route.ts:4", "auth": "public"},
+    {"kind": "http_route", "method": "POST", "path": "/api/upload", "handler": "src/app/api/upload/route.ts:5", "auth": "authenticated"},
+    {"kind": "http_route", "method": "GET", "path": "/api/search", "handler": "src/app/api/search/route.ts:5", "auth": "authenticated"},
+    {"kind": "http_route", "method": "GET", "path": "/api/notes/:id", "handler": "src/app/api/notes/[id]/route.ts:7", "auth": "public"},
+    {"kind": "http_route", "method": "PATCH", "path": "/api/notes/:id", "handler": "src/app/api/notes/[id]/route.ts:13", "auth": "authenticated"},
+    {"kind": "http_route", "method": "GET", "path": "/api/export", "handler": "src/app/api/export/route.ts:5", "auth": "authenticated"},
+    {"kind": "http_route", "method": "GET", "path": "/api/cron/purge", "handler": "src/app/api/cron/purge/route.ts:17", "auth": "cron_secret"},
+    {"kind": "http_route", "method": "GET", "path": "/api/auth/:nextauth", "handler": "src/app/api/auth/[...nextauth]/route.ts:6", "auth": "public"},
+    {"kind": "http_route", "method": "POST", "path": "/api/auth/:nextauth", "handler": "src/app/api/auth/[...nextauth]/route.ts:6", "auth": "public"},
+    {"kind": "middleware", "method": "ANY", "handler": "src/middleware.ts:6", "auth": "authenticated"}
+  ],
+  "client_sources": ["src/app/login/page.tsx:15"],
+  "middleware_covers_api": false,
+  "data_store_files": ["src/lib/prisma.ts"],
+  "secrets": [["src/lib/auth-options.ts", 12, "secret"]],
+  "test_fixtures": 1
+}

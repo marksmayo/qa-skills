@@ -12,6 +12,8 @@ A pitfall can narrow its matches with:
   suppress_near   skip when the lines around the match (window) match this
   require_near    keep only when the lines around the match match this
   require_file    keep only when the file matches this anywhere (e.g. pull_request_target)
+  suppress_file   skip when the file matches this anywhere (e.g. a signature check in a webhook handler)
+  require_path    keep only when the file's path matches this (e.g. webhook)
 Test files, dependencies, build output and minified files are skipped.
 """
 from __future__ import annotations
@@ -21,13 +23,14 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 CATALOGUE = HERE.parent / 'data' / 'pitfalls.json'
-SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'out', '.next', '.nuxt', '.svelte-kit', 'coverage', 'vendor',
+SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'out', '.next', '.nuxt', '.svelte-kit', '.turbo', '.cache', 'coverage', 'vendor',
              'Pods', 'DerivedData', '.gradle', '.dart_tool', '.idea', '.vscode', '__pycache__', '.venv', 'venv',
              'env', '.tox', '.mypy_cache', '.pytest_cache', 'site-packages', 'target', 'bin', 'obj', '.terraform',
              'test', 'tests', '__tests__', '__mocks__', 'spec', 'e2e', 'cypress', 'testdata', 'fixtures',
              'androidTest', 'UITests', 'Tests'}
 ALLOWED_DOT_DIRS = {'.github'}
-TEST_FILE = re.compile(r'(^test_.*\.py$|_test\.(py|go)$|(\.|_)(test|spec)\.\w+$|Tests?\.(java|kt|swift|cs)$|\.min\.js$)', re.I)
+TEST_FILE = re.compile(r'(^test_.*\.py$|_test\.(py|go)$|(\.|_)(test|spec)\.\w+$|Tests?\.(java|kt|swift|cs)$|\.min\.js$|'
+                       r'^(vitest|jest|playwright)\.(setup|config)\.\w+$|^setupTests\.\w+$)', re.I)
 COMMENT = re.compile(r'^\s*(//|/\*|\*\s|#(?!!)|<!--|--\s)')
 
 def load_catalogue(path: Path = CATALOGUE) -> dict:
@@ -64,7 +67,7 @@ def walk(root: Path, include_tests: bool = False):
 def compile_pitfall(p: dict) -> dict:
     q = dict(p)
     q['_rx'] = re.compile(p['regex'], re.M)
-    for k in ('suppress_line', 'suppress_near', 'require_near', 'require_file'):
+    for k in ('suppress_line', 'suppress_near', 'require_near', 'require_file', 'suppress_file', 'require_path'):
         if p.get(k):
             q['_' + k] = re.compile(p[k], re.M)
     return q
@@ -77,7 +80,9 @@ def scan_file(path: Path, rel: str, pitfalls: list[dict]) -> list[dict]:
     lines = text.splitlines()
     if not lines or max(len(l) for l in lines) > 3000:  # minified or generated
         return []
-    active = [p for p in pitfalls if not p.get('_require_file') or p['_require_file'].search(text)]
+    active = [p for p in pitfalls if (not p.get('_require_file') or p['_require_file'].search(text))
+              and not (p.get('_suppress_file') and p['_suppress_file'].search(text))
+              and (not p.get('_require_path') or p['_require_path'].search(rel))]
     hits = []
     for i, line in enumerate(lines):
         if COMMENT.match(line):

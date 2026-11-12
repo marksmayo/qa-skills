@@ -1,5 +1,5 @@
 {
- "version": "1.0.0",
+ "version": "1.1.0",
  "about": "Security pitfall catalogue for scan_pitfalls.py, organised by CWE. Each entry is a pattern-level lead: a match is a candidate until a source-to-sink path is traced. cvss_hint is a typical CVSS v4.0 base vector for the weakness, to adjust per finding. tools maps rules from other scanners (tool:rule) to the entry. OWASP categories are the 2025 Top 10.",
  "owasp_2025": {
   "A01": "A01:2025 Broken Access Control",
@@ -451,7 +451,7 @@
    "category": "injection",
    "title": "SQL built with a template literal or concatenation",
    "regex": "(?i)\\.(query|execute|raw|\\$queryRawUnsafe|\\$executeRawUnsafe)\\s*\\(\\s*(`[^`]*\\b(SELECT|INSERT|UPDATE|DELETE)\\b[^`]*\\$\\{|\"[^\"]*\\b(SELECT|INSERT|UPDATE|DELETE)\\b[^\"]*\"\\s*\\+|\\'[^\\']*\\b(SELECT|INSERT|UPDATE|DELETE)\\b[^\\']*\\'\\s*\\+)",
-   "fix": "Use placeholders ($1, ?) or the query builder; Prisma: $queryRaw tagged template, never the Unsafe variants.",
+   "fix": "Use placeholders ($1, ?) or the query builder; Prisma: the $queryRaw tagged template, never the Unsafe variants or Prisma.raw with input.",
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:L/SC:N/SI:N/SA:N",
    "tools": [
     "semgrep:node-sqli-injection",
@@ -499,7 +499,7 @@
    "category": "web",
    "title": "HTML sink that bypasses escaping",
    "regex": "\\.(innerHTML|outerHTML)\\s*=|\\bdocument\\.write(ln)?\\s*\\(|insertAdjacentHTML\\s*\\(|dangerouslySetInnerHTML|\\bv-html\\s*=|\\{@html\\s|bypassSecurityTrust\\w+\\s*\\(",
-   "suppress_line": "DOMPurify\\.sanitize|sanitizeHtml\\(|sanitize\\(",
+   "suppress_line": "DOMPurify\\.sanitize|sanitizeHtml\\(|sanitize\\(|__html\\s*:\\s*[\\\"'][^\\\"'$]*[\\\"']\\s*\\}",
    "fix": "Render text with textContent / framework binding; sanitise unavoidable HTML with DOMPurify.",
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
    "tools": [
@@ -514,12 +514,13 @@
    "cwe": "CWE-601",
    "owasp": "A01:2025 Broken Access Control",
    "category": "web",
-   "title": "Redirect to a runtime URL",
-   "regex": "\\bres\\.redirect\\s*\\(\\s*(\\d+\\s*,\\s*)?req\\.(query|body|params)|\\b(window\\.)?location(\\.href)?\\s*=\\s*.*(searchParams|location\\.(search|hash)|query\\.)",
+   "title": "Redirect to a runtime URL (res.redirect, NextResponse.redirect, redirect(), router.push)",
+   "regex": "\\bres\\.redirect\\s*\\(\\s*(\\d+\\s*,\\s*)?req\\.(query|body|params)|\\b(window\\.)?location(\\.href)?\\s*=\\s*.*(searchParams|location\\.(search|hash)|query\\.)|\\bNextResponse\\.redirect\\s*\\(\\s*(new\\s+URL\\s*\\(\\s*)?((?:req\\.(?:query|body|params)|(?:request\\.)?nextUrl\\.searchParams|searchParams\\.get\\s*\\(|(?:await\\s+)?(?:req|request)\\.(?:json|formData|text)\\s*\\(\\s*\\)|\\bparams\\.\\w+|\\bbody\\.\\w+|headers\\(\\)\\.get\\s*\\(|cookies\\(\\)\\.get\\s*\\()|\\w*(next|callback|return|redirect)\\w*\\b(?!\\s*\\())|(?<![\\w.])(redirect|permanentRedirect)\\s*\\(\\s*((?:req\\.(?:query|body|params)|(?:request\\.)?nextUrl\\.searchParams|searchParams\\.get\\s*\\(|(?:await\\s+)?(?:req|request)\\.(?:json|formData|text)\\s*\\(\\s*\\)|\\bparams\\.\\w+|\\bbody\\.\\w+|headers\\(\\)\\.get\\s*\\(|cookies\\(\\)\\.get\\s*\\()|\\w*(next|callback|returnTo|redirectTo|returnUrl)\\w*\\b(?!\\s*\\())|\\brouter\\.(push|replace)\\s*\\(\\s*((?:req\\.(?:query|body|params)|(?:request\\.)?nextUrl\\.searchParams|searchParams\\.get\\s*\\(|(?:await\\s+)?(?:req|request)\\.(?:json|formData|text)\\s*\\(\\s*\\)|\\bparams\\.\\w+|\\bbody\\.\\w+|headers\\(\\)\\.get\\s*\\(|cookies\\(\\)\\.get\\s*\\()|\\w*(next|callback|returnTo|redirectTo|returnUrl)\\w*\\b(?!\\s*\\())",
    "fix": "Redirect only to relative paths or an allow-list of hosts.",
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:A/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
    "tools": [
-    "semgrep:express-open-redirect"
+    "semgrep:express-open-redirect",
+    "semgrep:nextjs-open-redirect"
    ]
   },
   {
@@ -528,8 +529,8 @@
    "cwe": "CWE-918",
    "owasp": "A01:2025 Broken Access Control",
    "category": "server_side",
-   "title": "Outbound request to a URL taken from the request",
-   "regex": "\\b(axios(\\.\\w+)?|fetch|got|needle|superagent\\.\\w+|https?\\.(get|request))\\s*\\(\\s*(req\\.(query|body|params)|`[^`]*\\$\\{\\s*req\\.)",
+   "title": "Outbound request to a URL taken from the request (Express or Next.js sources)",
+   "regex": "\\b(axios(\\.\\w+)?|fetch|got|needle|superagent\\.\\w+|https?\\.(get|request))\\s*\\(\\s*((?:req\\.(?:query|body|params)|(?:request\\.)?nextUrl\\.searchParams|searchParams\\.get\\s*\\(|(?:await\\s+)?(?:req|request)\\.(?:json|formData|text)\\s*\\(\\s*\\)|\\bparams\\.\\w+|\\bbody\\.\\w+|headers\\(\\)\\.get\\s*\\(|cookies\\(\\)\\.get\\s*\\()|`[^`]*\\$\\{\\s*(?:req\\.(?:query|body|params)|(?:request\\.)?nextUrl\\.searchParams|searchParams\\.get\\s*\\(|(?:await\\s+)?(?:req|request)\\.(?:json|formData|text)\\s*\\(\\s*\\)|\\bparams\\.\\w+|\\bbody\\.\\w+|headers\\(\\)\\.get\\s*\\(|cookies\\(\\)\\.get\\s*\\())",
    "fix": "Allow-list hosts; block private, loopback and link-local addresses after DNS resolution.",
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:L/VI:N/VA:N/SC:H/SI:L/SA:N",
    "tools": [
@@ -543,7 +544,7 @@
    "owasp": "A01:2025 Broken Access Control",
    "category": "server_side",
    "title": "File path built from request input",
-   "regex": "\\b(res\\.(sendFile|download)|fs\\.\\w+|path\\.(join|resolve))\\s*\\(.*req\\.(query|params|body)",
+   "regex": "\\b(res\\.(sendFile|download)|fs\\.\\w+|path\\.(join|resolve)|readFile(Sync)?|createReadStream)\\s*\\(.*(?:req\\.(?:query|body|params)|(?:request\\.)?nextUrl\\.searchParams|searchParams\\.get\\s*\\(|(?:await\\s+)?(?:req|request)\\.(?:json|formData|text)\\s*\\(\\s*\\)|\\bparams\\.\\w+|\\bbody\\.\\w+|headers\\(\\)\\.get\\s*\\(|cookies\\(\\)\\.get\\s*\\()",
    "fix": "Resolve against a base directory and check the result stays inside it; prefer opaque IDs.",
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
    "tools": [
@@ -558,7 +559,7 @@
    "owasp": "A08:2025 Software or Data Integrity Failures",
    "category": "language_specific",
    "title": "Deep merge of request data (prototype pollution)",
-   "regex": "(_\\.(merge|defaultsDeep|set|setWith)|\\$\\.extend\\s*\\(\\s*true|deepmerge|merge)\\s*\\(.*req\\.(body|query)|Object\\.assign\\s*\\(\\s*\\w+\\s*,\\s*req\\.body",
+   "regex": "(_\\.(merge|defaultsDeep|set|setWith)|\\$\\.extend\\s*\\(\\s*true|deepmerge|merge)\\s*\\(.*(?:req\\.(?:query|body|params)|(?:request\\.)?nextUrl\\.searchParams|searchParams\\.get\\s*\\(|(?:await\\s+)?(?:req|request)\\.(?:json|formData|text)\\s*\\(\\s*\\)|\\bparams\\.\\w+|\\bbody\\.\\w+|headers\\(\\)\\.get\\s*\\(|cookies\\(\\)\\.get\\s*\\()|Object\\.assign\\s*\\(\\s*\\w+\\s*,\\s*(req\\.body|body\\b|(await\\s+)?(req|request)\\.json\\(\\s*\\))",
    "fix": "Validate input against a schema; merge into Object.create(null) or reject __proto__/constructor/prototype keys.",
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
    "tools": [
@@ -572,7 +573,7 @@
    "owasp": "A05:2025 Injection",
    "category": "injection",
    "title": "NoSQL query built from raw request objects",
-   "regex": "\\.(find|findOne|findOneAndUpdate|updateOne|updateMany|deleteOne|deleteMany|countDocuments|where)\\s*\\(\\s*req\\.(body|query)|\\$where",
+   "regex": "\\.(find|findOne|findOneAndUpdate|updateOne|updateMany|deleteOne|deleteMany|countDocuments|where)\\s*\\(\\s*(req\\.(body|query)|(await\\s+)?(req|request)\\.json\\(\\s*\\)|body\\b(?!\\.))|\\$where",
    "fix": "Cast fields to expected primitive types (or validate with a schema) and use mongo-sanitize.",
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:L/SC:N/SI:N/SA:N",
    "tools": [
@@ -631,7 +632,7 @@
    "owasp": "A05:2025 Injection",
    "category": "language_specific",
    "title": "Regular expression built from input (ReDoS / injection)",
-   "regex": "\\bnew\\s+RegExp\\s*\\(\\s*req\\.|\\bnew\\s+RegExp\\s*\\(\\s*(query|search|term|input)\\b",
+   "regex": "\\bnew\\s+RegExp\\s*\\(\\s*(req\\.|searchParams\\.get|(request\\.)?nextUrl\\.searchParams|params\\.|body\\.)|\\bnew\\s+RegExp\\s*\\(\\s*(query|search|term|input|q)\\b",
    "fix": "Escape input (lodash.escapeRegExp) or use plain string matching; bound input length.",
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:N/VA:H/SC:N/SI:N/SA:N",
    "tools": [
@@ -681,6 +682,129 @@
    "tools": [
     "semgrep:cors-misconfiguration"
    ]
+  },
+  {
+   "id": "JS-PRISMA-RAW",
+   "pack": "javascript",
+   "cwe": "CWE-89",
+   "owasp": "A05:2025 Injection",
+   "category": "injection",
+   "title": "Prisma raw SQL from a variable: $queryRawUnsafe/$executeRawUnsafe, Prisma.raw, or $queryRaw called with a string",
+   "regex": "\\$(queryRawUnsafe|executeRawUnsafe)\\s*(<[^>]*>)?\\s*\\(\\s*(?![\\\"'][^\\\"'$]*[\\\"']\\s*[,)])|\\bPrisma\\.raw\\s*\\(\\s*(?![\\\"'][^\\\"'$]*[\\\"']\\s*\\))|\\$(queryRaw|executeRaw)\\s*(<[^>]*>)?\\s*\\(\\s*`[^`]*\\$\\{",
+   "fix": "Use the $queryRaw`...${value}` tagged template (values become parameters) or Prisma.sql; allow-list identifiers such as column names.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:L/SC:N/SI:N/SA:N",
+   "tools": [
+    "semgrep:prisma-raw-sql-injection"
+   ]
+  },
+  {
+   "id": "JS-MASS-ASSIGN",
+   "pack": "javascript",
+   "cwe": "CWE-915",
+   "owasp": "A01:2025 Broken Access Control",
+   "category": "access_control",
+   "title": "Request body passed whole to an ORM write (mass assignment): data: body or data: { ...body }",
+   "regex": "\\bdata\\s*:\\s*(\\{\\s*\\.\\.\\.\\s*(body|input|payload|req\\.body|json|values|formData)\\b|(body|input|payload|req\\.body|json|values)\\s*(,|\\}|$)|(await\\s+)?(req|request)\\.json\\(\\s*\\))",
+   "require_near": "(?i)prisma|\\.(create|update|upsert|createMany|updateMany)\\s*\\(",
+   "window": 6,
+   "fix": "Pick the fields the caller may set (a schema with only those fields, then data: { name: parsed.name }); never spread the body.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:N/VI:H/VA:N/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "JS-REDIRECT-PREFIX-CHECK",
+   "pack": "javascript",
+   "cwe": "CWE-601",
+   "owasp": "A01:2025 Broken Access Control",
+   "category": "web",
+   "title": "Redirect target checked only with startsWith('/'): '//evil.example' and '/\\evil.example' pass",
+   "regex": "\\.startsWith\\(\\s*[\\\"'`]/[\\\"'`]\\s*\\)",
+   "require_near": "(?i)next|callback|return|redirect|url|path",
+   "window": 6,
+   "suppress_near": "startsWith\\(\\s*[\\\"'`]//|[\\\"'`]//[\\\"'`]|[\\\"'`]/\\\\\\\\|\\\\\\\\\\\\\\\\|new\\s+URL\\(",
+   "fix": "Reject values starting with '//' or '/\\', or parse with new URL(value, base) and require the same origin.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:A/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
+   "tools": []
+  },
+  {
+   "id": "JS-CSV-INJECTION",
+   "pack": "javascript",
+   "cwe": "CWE-1236",
+   "owasp": "A05:2025 Injection",
+   "category": "injection",
+   "title": "CSV export without formula escaping (cells starting with = + - @ run in spreadsheets)",
+   "regex": "\\.join\\(\\s*[\\\"'`],[\\\"'`]\\s*\\)",
+   "require_file": "(?i)text/csv|\\.csv\\b|\\bcsv",
+   "suppress_file": "(?i)formula|\\^\\s*\\[\\s*[=+@]|startsWith\\(\\s*[\\\"'`]=",
+   "fix": "Prefix cells that start with =, +, -, @, tab or carriage return with a single quote, and quote every cell.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:A/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
+   "tools": []
+  },
+  {
+   "id": "JS-STYLE-INTERP",
+   "pack": "javascript",
+   "cwe": "CWE-79",
+   "owasp": "A05:2025 Injection",
+   "category": "web",
+   "title": "Values interpolated into a <style> block (CSS injection; </style> breaks out to HTML)",
+   "regex": "<style\\b[^>]*>\\s*\\{\\s*`",
+   "require_near": "\\$\\{",
+   "window": 10,
+   "fix": "Validate values against a strict pattern (#rrggbb colours, numbers) or set them as CSS custom properties through the style prop.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
+   "tools": []
+  },
+  {
+   "id": "JS-SHARED-CACHE-AUTH",
+   "pack": "javascript",
+   "cwe": "CWE-524",
+   "owasp": "A02:2025 Security Misconfiguration",
+   "category": "data_exposure",
+   "title": "Shared-cache headers (public, s-maxage) in a handler that reads the session",
+   "regex": "(?i)s-maxage|[\\\"']cache-control[\\\"']\\s*[:,]\\s*[\\\"'`]public",
+   "require_file": "getServerSession|(?<![\\w.])auth\\(\\s*\\)|getToken\\(|cookies\\(\\)|currentUser\\(|req\\.session|request\\.cookies",
+   "fix": "Send Cache-Control: private, no-store on responses that depend on the caller, or add Vary: Cookie.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:L/VI:N/VA:N/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "JS-OAUTH-STATE",
+   "pack": "javascript",
+   "cwe": "CWE-352",
+   "owasp": "A07:2025 Authentication Failures",
+   "category": "authentication",
+   "title": "OAuth callback reads state without comparing it with a value bound to the user's session",
+   "regex": "searchParams\\.get\\(\\s*[\\\"']state[\\\"']\\s*\\)|\\breq\\.query\\.state\\b",
+   "suppress_file": "(?i)cookies\\(\\)\\.get\\([^)]*state|state[^\\n]{0,60}(cookie|session)|(cookie|session)[^\\n]{0,60}state",
+   "fix": "Store a random state in an httpOnly cookie (or the session) before redirecting, and compare it on the callback.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:A/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "JS-WEBHOOK-UNVERIFIED",
+   "pack": "javascript",
+   "cwe": "CWE-345",
+   "owasp": "A08:2025 Software or Data Integrity Failures",
+   "category": "server_side",
+   "title": "Webhook handler parses the body with no signature verification in the file",
+   "regex": "(await\\s+)?(req|request)\\.(json|text)\\s*\\(\\s*\\)|JSON\\.parse\\s*\\(",
+   "require_path": "(?i)webhook",
+   "suppress_file": "constructEvent|verifySignature|validateSignature|svix|\\bWebhook\\s*\\(|createHmac|timingSafeEqual|\\bverify\\w*\\(",
+   "fix": "Verify the provider's signature on the raw body (stripe.webhooks.constructEvent, svix Webhook.verify) and fail closed when the secret is unset.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:H/VA:N/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "JS-UPLOAD-CLIENT-TYPE",
+   "pack": "javascript",
+   "cwe": "CWE-434",
+   "owasp": "A06:2025 Insecure Design",
+   "category": "server_side",
+   "title": "Upload stored with the client's Content-Type (file.type)",
+   "regex": "\\b[cC]ontent[tT]ype\\s*:\\s*\\w+\\.(type|mimetype)\\b",
+   "fix": "Detect the type from the bytes (magic numbers), allow-list it, and serve uploads with Content-Disposition: attachment.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
+   "tools": []
   },
   {
    "id": "JAVA-SQL",

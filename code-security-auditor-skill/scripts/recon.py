@@ -4,12 +4,17 @@
     python recon.py <repo> [--out recon.json]
 
 Finds languages and frameworks, entry points (HTTP routes, GraphQL operations, webhooks, queue
-consumers, CLI commands, mobile deep links and exported components, CI workflow triggers, and
-client-side sources in JavaScript and inline scripts: location.search/hash, URLSearchParams,
-postMessage, document.referrer, window.name, web storage and cookies), a
+consumers, CLI commands, mobile deep links and exported components, CI workflow triggers, Next.js
+route handlers, server actions and middleware, and client-side sources in browser JavaScript and
+inline scripts: location.search/hash, useSearchParams, postMessage, document.referrer, window.name,
+web storage and cookies; server code, config files and test setup are not client sources), a
 first guess at each entry point's authentication requirement, data stores, outbound calls, secret
 configuration, dependency manifests and infrastructure files. It also lists review leads: routes
 taking object ids (IDOR), upload handlers, auth flows and admin surfaces.
+
+For Next.js, each exported handler's auth is read from its body (see nextjs_auth.py): a session or
+guard call, one of the repository's helpers that wraps one (auth_helpers), a machine credential
+(cron_secret, api_key, signature, token), middleware coverage (middleware), or none ('public').
 
 Everything here is a regex-level first pass. The agent confirms entry points and auth by reading
 the code; an 'unknown' auth value means the script could not tell, not that the route is public.
@@ -20,14 +25,21 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
-SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'out', '.next', 'coverage', 'vendor', 'Pods', '.gradle',
-             '__pycache__', '.venv', 'venv', '.tox', 'site-packages', 'target', 'bin', 'obj', '.terraform', '.idea'}
+sys.dont_write_bytecode = True  # importing a sibling must not write __pycache__ into the skill folder
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import nextjs_auth  # noqa: E402
+
+SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'out', '.next', '.nuxt', '.svelte-kit', '.turbo', '.cache', 'coverage',
+             'vendor', 'Pods', '.gradle', '__pycache__', '.venv', 'venv', '.tox', 'site-packages', 'target', 'bin', 'obj',
+             '.terraform', '.idea'}
 LANG = {'.py': 'Python', '.js': 'JavaScript', '.jsx': 'JavaScript', '.mjs': 'JavaScript', '.cjs': 'JavaScript',
         '.ts': 'TypeScript', '.tsx': 'TypeScript', '.java': 'Java', '.kt': 'Kotlin', '.go': 'Go', '.rb': 'Ruby',
         '.php': 'PHP', '.cs': 'C#', '.swift': 'Swift', '.m': 'Objective-C', '.c': 'C', '.h': 'C/C++', '.cc': 'C++',
         '.cpp': 'C++', '.rs': 'Rust', '.scala': 'Scala', '.dart': 'Dart', '.vue': 'Vue', '.svelte': 'Svelte',
         '.tf': 'Terraform', '.sql': 'SQL'}
-TEST_PATH = re.compile(r'(^|/)(tests?|spec|__tests__|e2e|cypress|fixtures|testdata)(/|$)|(^|/)test_[^/]*$|_test\.\w+$|\.(test|spec)\.\w+$', re.I)
+TEST_PATH = re.compile(r'(^|/)(tests?|spec|__tests__|__mocks__|e2e|cypress|playwright|fixtures|testdata)(/|$)|(^|/)test_[^/]*$|'
+                       r'_test\.\w+$|\.(test|spec)\.\w+$|(^|/)(vitest|jest|playwright)\.(setup|config)\.\w+$|(^|/)setupTests\.\w+$', re.I)
+CONFIG_FILE = re.compile(r'(^|/)[\w-]+\.config\.\w+$')
 MANIFESTS = {'requirements.txt', 'requirements-dev.txt', 'pyproject.toml', 'Pipfile', 'Pipfile.lock', 'poetry.lock',
              'setup.py', 'setup.cfg', 'package.json', 'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'go.mod',
              'go.sum', 'pom.xml', 'build.gradle', 'build.gradle.kts', 'Gemfile', 'Gemfile.lock', 'composer.json',
@@ -81,7 +93,8 @@ AUTH_FLOW = re.compile(r'(?i)(login|logout|signin|signup|register|password|reset
 # Client-side sources: values a visitor's browser reads that another page, a crafted link or stored state controls.
 # (name, regex, auth, why). URL, message and referrer sources are attacker-controlled without an account.
 CLIENT_SOURCES = [
-    ('location.search', re.compile(r'\blocation\.search\b|\bnew\s+URLSearchParams\s*\(|\bURLSearchParams\b'), 'public', 'query string: a crafted link sets it'),
+    ('location.search', re.compile(r'\blocation\.search\b|\bnew\s+URLSearchParams\s*\(\s*(?:window\.|document\.)?location\b|\buseSearchParams\s*\(\s*\)'),
+     'public', 'query string: a crafted link sets it'),
     ('location.hash', re.compile(r'\blocation\.hash\b'), 'public', 'URL fragment: a crafted link sets it, and it never reaches the server'),
     ('location.href', re.compile(r'\b(?:document\.URL|document\.documentURI|location\.href|location\.pathname)\b(?!\s*=[^=])'), 'public', 'the page URL: a crafted link sets it'),
     ('postMessage', re.compile(r'addEventListener\(\s*["\']message["\']|\bonmessage\s*='), 'public', 'message events: any window can post one unless event.origin is checked'),
@@ -237,17 +250,6 @@ def routes_in(rel: str, text: str) -> list[dict]:
                         'auth': auth, 'auth_evidence': evidence})
     return out
 
-def nextjs_routes(rel: str, text: str) -> list[dict]:
-    m = re.search(r'(?:^|/)app/(.*)/route\.(ts|js|tsx|jsx)$', rel) or re.search(r'(?:^|/)pages/(api/.*)\.(ts|js)$', rel)
-    if not m:
-        return []
-    path = '/' + re.sub(r'\[(\.\.\.)?(\w+)\]', r':\2', m.group(1)).replace('/index', '')
-    methods = re.findall(r'export\s+(?:async\s+)?function\s+(GET|POST|PUT|PATCH|DELETE)\b', text) or ['ANY']
-    hint = AUTH_USER.search(text)  # file-level only: each exported handler must be read to know which ones check it
-    auth, evidence = 'unknown', (f'the file uses {hint.group(0)}; check each handler' if hint else None)
-    return [{'kind': 'http_route', 'framework': 'nextjs', 'method': meth, 'path': path, 'handler': f'{rel}:1',
-             'function': meth, 'auth': auth, 'auth_evidence': evidence} for meth in methods]
-
 def graphql_ops(rel: str, text: str) -> list[dict]:
     out = []
     for block in re.finditer(r'\btype\s+(Query|Mutation|Subscription)\s*\{([^}]*)\}', text):
@@ -314,6 +316,7 @@ def main() -> int:
     global_hooks: list[str] = []
     client, ci_entries = [], []
     html_seen: dict = {}
+    js_files: dict[str, str] = {}
     for p in walk(root):
         rel = p.relative_to(root).as_posix()
         if p.name in MANIFESTS:
@@ -360,13 +363,18 @@ def main() -> int:
         for name, rx in FRAMEWORKS:
             if re.search(rx, text):
                 frameworks.add(name)
-        entries += routes_in(rel, text) + nextjs_routes(rel, text)
-        if p.suffix.lower() in CLIENT_EXT and not p.name.endswith(('.min.js', '.config.js', '.config.ts')):
+        entries += routes_in(rel, text)
+        if p.suffix.lower() in CLIENT_EXT:
+            js_files[rel] = text
+        if p.suffix.lower() in CLIENT_EXT and not p.name.endswith('.min.js') and not CONFIG_FILE.search(rel) \
+                and not nextjs_auth.server_file(rel, text):
             client += client_sources(rel, text)
         if 'gql`' in text or 'typeDefs' in text:
             entries += graphql_ops(rel, text)
         for i, line in enumerate(text.splitlines(), 1):
             for kind, rx in STORES:
+                if CONFIG_FILE.search(rel):
+                    break  # next.config.ts listing @prisma/client in serverExternalPackages is not a data store
                 if re.search(rx, line) and not any(s['kind'] == kind and s['file'] == rel for s in stores):
                     stores.append({'kind': kind, 'file': rel, 'line': i})
             if OUTBOUND.search(line) and not line.lstrip().startswith(('import ', 'from ', '#', '//')):
@@ -381,6 +389,16 @@ def main() -> int:
                              'function': None, 'auth': 'unknown', 'auth_evidence': 'local invocation'})
             if UPLOAD.search(line) and not line.lstrip().startswith(('import ', 'from ')):
                 uploads.append(f'{rel}:{i}')
+    # Next.js: route handlers, server actions and middleware, with per-handler auth (helpers found across the repo)
+    middleware = [nextjs_auth.parse_middleware(rel, t) for rel, t in js_files.items() if nextjs_auth.MIDDLEWARE_FILE.search(rel)]
+    helpers = nextjs_auth.guard_helpers(js_files) if any(
+        nextjs_auth.ROUTE_FILE.search(r) or nextjs_auth.PAGES_API.search(r) or "use server" in t for r, t in js_files.items()) else {}
+    for rel, t in js_files.items():
+        entries += nextjs_auth.route_entries(rel, t, helpers, middleware) + nextjs_auth.server_actions(rel, t, helpers)
+    for mw in middleware:
+        entries.append(nextjs_auth.middleware_entry(mw))
+        if mw['auth_check']:
+            global_hooks.append(f"{mw['file']}:{mw['line']}")
     entries += queues + clis + client + ci_entries
     for e in entries:  # decorator frameworks: no decorator and no app-wide hook means no auth check
         if e['framework'] in ('flask', 'fastapi') and e['auth'] == 'unknown' and not global_hooks:
@@ -391,12 +409,16 @@ def main() -> int:
     for e in entries:
         if e['kind'] in ('http_route', 'webhook', 'graphql') and ID_PARAM.search(e['path']):
             leads.append({'area': 'access_control', 'entry_point': e['id'], 'why': f"{e['method']} {e['path']} takes an object id: check ownership (IDOR/BOLA)"})
-        if e['kind'] in ('http_route', 'webhook') and AUTH_FLOW.search(e['path']):
+        if e['kind'] in ('http_route', 'webhook') and AUTH_FLOW.search(re.sub(r':\w+', '', e['path'])):
             leads.append({'area': 'authentication', 'entry_point': e['id'], 'why': f"{e['method']} {e['path']} is part of an auth flow: tokens, rate limits, enumeration"})
         if e['kind'] in ('http_route',) and re.search(r'(?i)admin', e['path']):
             leads.append({'area': 'access_control', 'entry_point': e['id'], 'why': f"{e['path']} is an admin surface: check function-level authorisation"})
         if e['kind'] == 'webhook':
             leads.append({'area': 'server_side', 'entry_point': e['id'], 'why': 'webhook: check signature verification, replay and any outbound fetch'})
+        if e['framework'] == 'nextjs' and e['kind'] in ('http_route', 'webhook', 'server_action') and e['auth'] == 'public' \
+                and e['method'] not in ('GET', 'HEAD', 'OPTIONS') and 'by design' not in (e['auth_evidence'] or ''):
+            leads.append({'area': 'access_control', 'entry_point': e['id'],
+                          'why': f"{e['method']} {e['path']} changes state with no auth call in the handler: confirm it is meant to be public"})
         if e['kind'] in ('deep_link', 'exported_component'):
             leads.append({'area': 'mobile', 'entry_point': e['id'], 'why': f"{e['path']} is reachable by other apps: validate every intent/URL parameter"})
     for kind in sorted({e['method'] for e in client if e['auth'] == 'public'}):
@@ -422,6 +444,8 @@ def main() -> int:
         'entry_points': entries,
         'entry_point_auth': dict(counts),
         'global_auth_hooks': global_hooks,
+        'middleware': middleware,
+        'auth_helpers': {name: {'kind': k, 'defined_at': w} for name, (k, w) in sorted(helpers.items())},
         'data_stores': stores,
         'outbound_calls': outbound,
         'secret_config': secret_cfg,
