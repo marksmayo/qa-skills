@@ -4,12 +4,19 @@
     python merge_findings.py --root <repo> [--patterns patterns.json] [--secrets secrets.json]
                              [--sarif semgrep.sarif gosec.sarif ...] [--bandit bandit.json]
                              [--eslint eslint.json] [--deps pip-audit.json npm-audit.json osv.json ...]
-                             [--out candidates.json]
+                             [--npm-lock package-lock.json] [--out candidates.json]
 
 Code candidates (CAND-nnn) are merged by sink location (file and line): one line flagged by
 three tools is one candidate with three sources and every CWE they reported. Secrets (SEC-nnn)
 are merged by fingerprint or location; dependency advisories (DEP-nnn) by package, version and
 advisory aliases. Tool rules are mapped to data/pitfalls.json entries where the catalogue lists them.
+Secrets that scan_secrets.py found only in git history are candidates too (history_only, git_status
+removed, with the commits); test-file fixtures it set aside are counted, not listed.
+
+npm audit advisories are matched against the copies package-lock.json says are installed (--npm-lock,
+default <root>/package-lock.json): version is the installed version, range the advisory's own range,
+dev whether every copy is a devDependency, via the packages that pull it in, fixed_in the first
+fixed version. A package installed in two majors gives one entry per major.
 
 Secret values are never copied: snippets from secret scanners are dropped, and any secret found
 in another tool's snippet or message is replaced with [REDACTED].
@@ -118,7 +125,116 @@ def from_eslint(path: Path, root: Path, idx: dict) -> list[dict]:
                                       m.get('message'), '', {'tool': 'eslint', 'rule_id': rid, 'level': 'error' if m.get('severity') == 2 else 'warning'}))
     return out
 
-def from_deps(path: Path) -> tuple[list[dict], dict]:
+# ---------------------------------------------------------------- npm: installed copies and ranges
+def _ver(v: str) -> tuple | None:
+    m = re.match(r'^\s*v?(\d+)(?:\.(\d+|x|\*))?(?:\.(\d+|x|\*))?(?:-([\w.]+))?', v or '')
+    if not m:
+        return None
+    nums = [int(g) if g and g.isdigit() else 0 for g in m.groups()[:3]]
+    return (*nums, 0 if m.group(4) else 1)  # a prerelease sorts before its release
+
+def satisfies(version: str, rng: str) -> bool | None:
+    """npm range check for the forms npm audit prints (<, <=, >, >=, =, hyphen ranges, ||, *).
+    None when the range can't be parsed."""
+    v = _ver(version)
+    if v is None or not rng:
+        return None
+    for alt in rng.split('||'):
+        alt = alt.strip()
+        if alt in ('', '*'):
+            return True
+        hy = re.fullmatch(r'(\S+)\s+-\s+(\S+)', alt)
+        comps = [('>=', hy.group(1)), ('<=', hy.group(2))] if hy else re.findall(r'(<=|>=|<|>|=)?\s*(v?\d[\w.*-]*)', alt)
+        if not comps:
+            return None
+        ok = True
+        for op, ref in comps:
+            r = _ver(ref)
+            if r is None:
+                return None
+            op = op or '='
+            ok &= {'<': v < r, '<=': v <= r, '>': v > r, '>=': v >= r, '=': v[:3] == r[:3]}[op]
+        if ok:
+            return True
+    return False
+
+def lock_packages(lock: Path | None) -> dict[str, list[dict]]:
+    """package name -> installed copies [{version, path, dev, required_by}] from package-lock.json (v2/v3).
+
+    required_by: the package a nested copy sits under, or for a hoisted copy the packages that depend on it."""
+    if not lock or not lock.exists():
+        return {}
+    try:
+        data = json.loads(lock.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+    out: dict[str, list[dict]] = {}
+    pkgs = data.get('packages') or {}
+    dependents: dict[str, set[str]] = {}
+    for key, meta in pkgs.items():
+        if not isinstance(meta, dict):
+            continue
+        owner = key.rsplit('node_modules/', 1)[1] if 'node_modules/' in key else '(the project)'
+        for field in ('dependencies', 'optionalDependencies', 'peerDependencies'):
+            for dep in meta.get(field) or {}:
+                dependents.setdefault(dep, set()).add(owner)
+    for key, meta in pkgs.items():
+        if 'node_modules/' not in key or not isinstance(meta, dict) or not meta.get('version'):
+            continue
+        name = key.rsplit('node_modules/', 1)[1]
+        dev = bool(meta.get('dev') or meta.get('devOptional'))
+        parent = key.rsplit('/node_modules/', 1)[0].rsplit('node_modules/', 1)[-1] if key.count('node_modules/') > 1 else None
+        # a hoisted copy serves the dependents that have no nested copy of their own
+        req = [parent] if parent else sorted(o for o in dependents.get(name, set())
+                                             if f'node_modules/{o}/node_modules/{name}' not in pkgs)[:5]
+        out.setdefault(name, []).append({'version': meta['version'], 'path': key, 'dev': dev, 'required_by': req})
+    return out
+
+def fixed_from_range(rng: str) -> list[str]:
+    """The first fixed version implied by an upper bound (`<1.2.3` -> 1.2.3)."""
+    return sorted({m for m in re.findall(r'<\s*(\d[\w.-]*)', rng or '')})
+
+def from_npm_audit(data: dict, lock: dict[str, list[dict]]) -> list[dict]:
+    """One entry per advisory per installed major version, with the installed versions, the advisory's own range,
+    the dev/prod flag from the lockfile, and the chain of packages that pull it in (npm audit's effects)."""
+    out = []
+    vulns = data['vulnerabilities']
+    for name, v in vulns.items():
+        fix = v.get('fixAvailable')
+        fix_info = {'name': fix.get('name'), 'version': fix.get('version'), 'semver_major': bool(fix.get('isSemVerMajor'))} \
+            if isinstance(fix, dict) else (bool(fix) if fix is not None else None)
+        effects = sorted(v.get('effects') or [])
+        copies = lock.get(name) or []
+        for via in v.get('via') or []:
+            if not isinstance(via, dict):
+                continue  # transitive pointer to another package's entry
+            url = via.get('url') or ''
+            ghsa = re.search(r'GHSA-[\w-]+', url)
+            rng = via.get('range') or v.get('range') or ''
+            fixed = [fix['version']] if isinstance(fix, dict) and fix.get('name') == name and fix.get('version') else fixed_from_range(rng)
+            base = {'ecosystem': 'npm', 'package': name, 'advisory': ghsa.group(0) if ghsa else str(via.get('source')),
+                    'aliases': [], 'fixed_in': fixed, 'summary': via.get('title') or '', 'severity': via.get('severity'),
+                    'range': rng, 'via': effects, 'fix_available': fix_info}
+            hit = [c for c in copies if satisfies(c['version'], rng) is not False]
+            if not copies:
+                out.append({**base, 'version': v.get('range') or rng, 'installed': [], 'dev': None,
+                            'installed_note': 'package-lock.json not given or the package is not in it; version is the vulnerable range'})
+                continue
+            if not hit:  # npm audit flagged it, but no installed copy is in this advisory's range
+                versions = sorted({c['version'] for c in copies}, key=lambda x: _ver(x) or (0,))
+                out.append({**base, 'version': ', '.join(versions), 'installed': copies, 'dev': all(c['dev'] for c in copies),
+                            'installed_note': f'no installed copy is in the range {rng!r} according to package-lock.json'})
+                continue
+            by_major: dict[str, list[dict]] = {}
+            for c in hit:
+                by_major.setdefault(c['version'].split('.')[0], []).append(c)
+            for major, cs in sorted(by_major.items()):
+                versions = sorted({c['version'] for c in cs}, key=lambda x: _ver(x) or (0,))
+                via = sorted(set(effects) | {r for c in cs for r in c.get('required_by') or []})
+                out.append({**base, 'version': ', '.join(versions), 'installed': cs, 'dev': all(c['dev'] for c in cs), 'via': via})
+    return out
+
+def from_deps(path: Path, lock: dict[str, list[dict]] | None = None) -> tuple[list[dict], dict]:
     data = json.loads(path.read_text(encoding='utf-8'))
     out = []
     if isinstance(data, dict) and 'dependencies' in data and isinstance(data['dependencies'], list):  # pip-audit
@@ -130,16 +246,7 @@ def from_deps(path: Path) -> tuple[list[dict], dict]:
                             'summary': ' '.join((v.get('description') or '').split())[:300]})
     elif isinstance(data, dict) and 'vulnerabilities' in data and isinstance(data['vulnerabilities'], dict):  # npm audit v7+
         tool = 'npm audit'
-        for name, v in data['vulnerabilities'].items():
-            for via in v.get('via') or []:
-                if not isinstance(via, dict):
-                    continue  # transitive pointer to another package's entry
-                url = via.get('url') or ''
-                ghsa = re.search(r'GHSA-[\w-]+', url)
-                fix = v.get('fixAvailable')
-                out.append({'ecosystem': 'npm', 'package': name, 'version': v.get('range'), 'advisory': ghsa.group(0) if ghsa else str(via.get('source')),
-                            'aliases': [], 'fixed_in': [fix['version']] if isinstance(fix, dict) and fix.get('version') else [],
-                            'summary': via.get('title') or '', 'severity': via.get('severity')})
+        out = from_npm_audit(data, lock or {})
     elif isinstance(data, dict) and 'results' in data:  # osv-scanner
         tool = 'osv-scanner'
         for res in data['results']:
@@ -202,7 +309,7 @@ def merge_secrets(items: list[dict]) -> list[dict]:
     out: list[dict] = []
     for s in items:
         have = next((h for h in out if (s.get('fingerprint') and h.get('fingerprint') == s['fingerprint'] and h['file'] == s['file'])
-                     or (h['file'] == s['file'] and h['line'] == s['line'])), None)
+                     or (h['file'] == s['file'] and s['line'] is not None and h['line'] == s['line'])), None)
         if have:
             have['sources'] += [x for x in s['sources'] if x not in have['sources']]
             for k, v in s.items():
@@ -210,7 +317,7 @@ def merge_secrets(items: list[dict]) -> list[dict]:
                     have[k] = v
         else:
             out.append(s)
-    out.sort(key=lambda s: (s['file'], s['line'] or 0))
+    out.sort(key=lambda s: (bool(s.get('history_only')), s['file'] or '', s['line'] or 0))
     for n, s in enumerate(out, 1):
         s['id'] = f'SEC-{n:03d}'
     return out
@@ -243,6 +350,7 @@ def main() -> int:
     ap.add_argument('--bandit', type=Path)
     ap.add_argument('--eslint', type=Path)
     ap.add_argument('--deps', nargs='*', type=Path, default=[])
+    ap.add_argument('--npm-lock', type=Path, help='package-lock.json for npm audit input (default: <root>/package-lock.json)')
     ap.add_argument('--out', type=Path)
     args = ap.parse_args()
     if hasattr(sys.stdout, 'reconfigure'):
@@ -258,10 +366,21 @@ def main() -> int:
             data = json.loads(args.secrets.read_text(encoding='utf-8'))
             for s in data.get('secrets', []):
                 secrets.append({**s, 'sources': [{'tool': 'scan_secrets', 'rule_id': s['type']}]})
+            hist = data.get('history') or {}
+            # Secrets only in history are still exposed: they are candidates too (location, commits and status only).
+            for h in hist.get('removed_from_head') or []:
+                secrets.append({'type': h['type'], 'file': (h.get('files') or [None])[0], 'line': None, 'column': None,
+                                'key': h.get('key'), 'length': h.get('length'), 'entropy': h.get('entropy'),
+                                'fingerprint': h['fingerprint'], 'files': h.get('files') or [],
+                                'history_commits': h.get('commits') or [], 'in_git_history': 'yes', 'history_basis': 'full',
+                                'git_status': 'removed', 'history_only': True,
+                                'sources': [{'tool': 'scan_secrets', 'rule_id': h['type']}]})
+            fixtures = data.get('test_fixtures') or {}
             tools.append({'tool': 'scan_secrets', 'input': str(args.secrets), 'results': len(data.get('secrets', [])),
-                          'history': (data.get('history') or {}).get('status')})
-            if (data.get('history') or {}).get('note'):
-                tools[-1]['history_note'] = data['history']['note']
+                          'history': hist.get('status'), 'history_only': len(hist.get('removed_from_head') or []),
+                          'test_fixtures': fixtures.get('count', 0)})
+            if hist.get('note'):
+                tools[-1]['history_note'] = hist['note']
             cred_files += data.get('credential_files', [])
         for path in args.sarif:
             c, s = from_sarif(path, root, idx); code += c; secrets += s
@@ -273,8 +392,12 @@ def main() -> int:
         if args.eslint:
             c = from_eslint(args.eslint, root, idx); code += c
             tools.append({'tool': 'eslint', 'input': str(args.eslint), 'results': len(c)})
+        lock_path = args.npm_lock or (root / 'package-lock.json')
+        lock = lock_packages(lock_path)
         for path in args.deps:
-            d, info = from_deps(path); deps += d; tools.append(info)
+            d, info = from_deps(path, lock); deps += d; tools.append(info)
+            if info['tool'] == 'npm audit':
+                info['lockfile'] = str(lock_path) if lock else None
     except (OSError, ValueError, KeyError) as exc:
         print(f'Unable to merge: {exc}', file=sys.stderr)
         return 2

@@ -9,12 +9,19 @@ Output records give the type, file, line, variable name, length, entropy and a f
 fingerprint is enough to tell whether the same secret appears elsewhere, including in history.
 
 Each secret's file gets a git status (tracked, untracked, ignored, or unknown outside git) and a
-cheap per-path history check (git log --all -- <path>), so a key that is present locally,
+cheap history check of its path (one batched git log per hundred paths), so a key that is present locally,
 gitignored and never committed reads git_status "ignored", in_git_history "no", history_basis
 "path". Paths to credential files (GOOGLE_APPLICATION_CREDENTIALS=keys/sa.json) are not secrets:
 they, and the credential files found (service-account JSON, private-key files), are listed under
 credential_files with the same git facts. Well-known public fields of service-account and OAuth
 configuration (token_uri, auth_uri, certificate URLs) are not reported.
+
+Not reported as secrets: placeholders (instruction values such as generate-..., your-..., <...>,
+words joined by hyphens in documentation, user:password@ in a documented connection string),
+values in .env.example/.sample/.template unless they look like real keys, and lists of field
+names. A hard-coded fallback (getenv('KEY', 'dev-key')) always is. Low-entropy literals in test
+files go to test_fixtures (counted, not triaged); real-looking ones (a provider format, or 20+
+characters at 4+ bits per character) stay secrets. The output records elapsed_s.
 
 --history scans the lines added in each commit, but only file changes that touch a secret keyword
 or token prefix (git log -G), leaving out binary, lock, vendored and minified files and any
@@ -30,16 +37,25 @@ import argparse, hashlib, json, math, re, subprocess, sys, time
 from datetime import datetime, timezone
 from pathlib import Path
 
-SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'out', '.next', 'coverage', 'vendor', 'Pods', '.gradle',
-             '__pycache__', '.venv', 'venv', '.tox', '.mypy_cache', '.pytest_cache', 'site-packages', 'target',
-             '.terraform', '.idea', '.vscode'}
+SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'out', '.next', '.nuxt', '.svelte-kit', '.turbo', '.cache',
+             'coverage', 'vendor', 'Pods', '.gradle', '__pycache__', '.venv', 'venv', '.tox', '.mypy_cache',
+             '.pytest_cache', 'site-packages', 'target', '.terraform', '.idea', '.vscode'}
 SKIP_EXT = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.pdf', '.zip', '.gz', '.tgz', '.jar', '.class', '.so',
             '.dll', '.exe', '.woff', '.woff2', '.ttf', '.eot', '.mp4', '.mp3', '.lock', '.map', '.sqlite', '.db', '.pyc'}
 SKIP_FILES = {'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'poetry.lock', 'Cargo.lock', 'go.sum', 'composer.lock'}
 # also left out of the history scan: more media and bundled output
 HISTORY_SKIP_EXT = SKIP_EXT | {'.avif', '.svg', '.bmp', '.tif', '.tiff', '.psd', '.webm', '.mov', '.wav', '.ogg',
                                '.otf', '.bin', '.7z', '.rar', '.bz2', '.xz', '.min.js', '.min.css'}
-TEST_PATH = re.compile(r'(^|/)(tests?|spec|__tests__|fixtures|testdata)(/|$)|(^|/)test_[^/]*$|_test\.\w+$|\.(test|spec)\.\w+$', re.I)
+TEST_PATH = re.compile(r'(^|/)(tests?|spec|__tests__|__mocks__|fixtures|testdata|e2e|cypress|playwright)(/|$)|(^|/)test_[^/]*$|'
+                       r'_test\.\w+$|\.(test|spec)\.\w+$|(^|/)(vitest|jest|playwright)\.(setup|config)\.\w+$|(^|/)setupTests\.\w+$', re.I)
+# Values in .env.example / .env.sample / .env.template are documentation unless they look like real keys.
+TEMPLATE_ENV = ('.example', '.sample', '.template', '.dist')
+# Words that mark a value as an instruction or stand-in rather than a credential.
+PLACEHOLDER_HINT = re.compile(r'(?i)^(generate|change|replace|insert|put|add|enter|set|use|paste|fill)[-_]|[-_](here|me|this)$|'
+                              r'^x{3,}|x{6,}|\.\.\.|^<.*>$|placeholder|example|dummy|sample|changeme|not[-_]?a[-_]?real')
+# English words joined by hyphens (production-session-secret): in documentation, a stand-in, not a generated key.
+HYPHEN_WORDS = re.compile(r'^[a-z]+(?:-[a-z]+)+$')
+DOC_EXT = ('.md', '.markdown', '.rst', '.txt', '.adoc')
 
 # (type, regex, value group). Specific token formats first; the generic assignment last.
 RULES = [
@@ -109,6 +125,35 @@ def credential_path(key: str | None, value: str) -> bool:
     return bool(key and PATH_KEY.search(key) and PATH_VALUE.fullmatch(value) and re.search(r'[\\/]', value)
                 and re.search(r'^(?:~|\.{1,2}[\\/]|[A-Za-z]:|[\\/])|\.\w{1,8}$', value))
 
+def is_placeholder(value: str, path_name: str = '', fallback: bool = False) -> bool:
+    """True for stand-in values: placeholder words and instructions; words joined by hyphens in
+    documentation and template env files. A hard-coded fallback (getenv('KEY', 'dev-key')) is only a
+    placeholder when it is one of the plain placeholder words: any other fallback is used when the
+    variable is unset, so it is a finding whatever it looks like."""
+    if PLACEHOLDER.search(value):
+        return True
+    if fallback:
+        return False
+    if PLACEHOLDER_HINT.search(value):
+        return True
+    doc = path_name.lower().endswith(DOC_EXT) or (path_name.startswith('.env') and path_name.endswith(TEMPLATE_ENV))
+    return bool(doc and HYPHEN_WORDS.match(value))
+
+def real_looking(s: dict) -> bool:
+    """A provider-format token, or a long high-entropy value: worth triage even in a test file."""
+    weak_kinds = ('generic_secret', 'dotenv_secret', 'connection_string_password')
+    return s['type'] not in weak_kinds or ((s.get('entropy') or 0) >= 4.0 and (s.get('length') or 0) >= 20)
+
+def _list_element(line: str, m: re.Match) -> bool:
+    """`['clientSecret', 'paymentIntentId']`: the "key" is itself a quoted list element, not a name."""
+    sep = line[m.end(1):m.start(3)]
+    if ',' not in sep or ':' in sep or '=' in sep:
+        return False
+    before = line[:m.start(1)].rstrip()
+    if not before or before[-1] not in '"\'':
+        return False
+    return before[:-1].rstrip()[-1:] in ('[', ',')
+
 def find_in_line(line: str, path_name: str = '', refs: list | None = None) -> list[dict]:
     """Secrets on one line: [{type, key, value, column, fallback}]. Callers must not persist 'value'.
 
@@ -116,28 +161,40 @@ def find_in_line(line: str, path_name: str = '', refs: list | None = None) -> li
     out, spans = [], []
     for kind, rx, grp in RULES:
         for m in rx.finditer(line):
+            weak_doc = path_name.lower().endswith(DOC_EXT) and entropy(m.group(grp)) < 3.0
+            if kind == 'connection_string_password' and (is_placeholder(m.group(grp), path_name) or weak_doc
+                                                         or m.group(grp).startswith(('$', '%', '{'))):
+                spans.append(m.span(grp))
+                continue  # postgresql://user:password@host or a default password in documentation, or a templated one
             out.append({'type': kind, 'key': None, 'value': m.group(grp), 'column': m.start(grp) + 1, 'fallback': False})
             spans.append(m.span(grp))
-    is_env = path_name.startswith('.env') and not path_name.endswith(('.example', '.sample', '.template', '.dist'))
-    m = DOTENV.match(line) if is_env else None
+    template = path_name.startswith('.env') and path_name.endswith(TEMPLATE_ENV)
+    is_env = path_name.startswith('.env') and not template
+    m = DOTENV.match(line) if (is_env or template) else None
+    env_style = m is not None
     matches = [m] if m else list(GENERIC.finditer(line))
     for m in matches:
         if m is None:
             continue
-        key, value = (m.group(1), m.group(2)) if is_env else (m.group(1), m.group(3))
-        start = m.start(2) if is_env else m.start(3)
-        if any(a <= start < b for a, b in spans) or PLACEHOLDER.search(value):
+        key, value = (m.group(1), m.group(2)) if env_style else (m.group(1), m.group(3))
+        start = m.start(2) if env_style else m.start(3)
+        fallback = bool(not env_style and m.group(2))
+        if any(a <= start < b for a, b in spans) or is_placeholder(value, path_name, fallback):
             continue
+        if not env_style and _list_element(line, m):
+            continue
+        if template and (entropy(value) < 4.0 or len(value) < 20):
+            continue  # documentation in a template env file; only a real-looking key is reported
         if credential_path(key, value):
             if refs is not None:
                 refs.append({'key': key, 'path': value})
             continue
         if entropy(value) < 3.0 or is_public_field(key, value):
             continue
-        if not is_env and re.fullmatch(r'[A-Z_]+|[a-z_.]+\(?\)?', value):
+        if not env_style and re.fullmatch(r'[A-Z_]+|[a-z_.]+\(?\)?', value):
             continue  # an identifier or constant name, not a literal secret
-        out.append({'type': 'dotenv_secret' if is_env else 'generic_secret', 'key': key, 'value': value,
-                    'column': start + 1, 'fallback': bool(not is_env and m.group(2))})
+        out.append({'type': 'dotenv_secret' if env_style else 'generic_secret', 'key': key, 'value': value,
+                    'column': start + 1, 'fallback': fallback})
     return out
 
 def files(root: Path):
@@ -220,32 +277,45 @@ def git_statuses(root: Path, paths: list[str]) -> dict[str, str]:
             ignored = set(ci.stdout.split('\0'))
     return {p: 'tracked' if p in tracked else 'ignored' if p in ignored else 'untracked' for p in paths}
 
-def path_history(root: Path, path: str, fingerprints: set[str]) -> tuple[str, dict[str, list[str]] | None]:
-    """(was the path ever committed: yes/no/unknown, fingerprint -> commits that added it at this path).
+def paths_history(root: Path, fps_by_path: dict[str, set[str]], chunk: int = 100) -> dict[str, tuple[str, dict | None]]:
+    """path -> (was it ever committed: yes/no/unknown, fingerprint -> commits that added it at this path).
 
-    The second value is None when the path's diffs could not be read."""
-    log = git(root, ['log', '--all', '--format=%H', '--max-count=1', '--', path])
-    if not log or log.returncode != 0:
-        return 'unknown', None
-    if not log.stdout.strip():
-        return 'no', {}
-    if not fingerprints:
-        return 'yes', {}
-    diff = git(root, ['log', '--all', '-p', '--no-color', '-U0', '--no-ext-diff', '--no-renames',
-                      '--format=@@COMMIT %H', '--', path], timeout=120)
-    if not diff or diff.returncode != 0:
-        return 'yes', None
-    hits: dict[str, list[str]] = {}
-    commit = None
-    for line in diff.stdout.splitlines():
-        if line.startswith('@@COMMIT '):
-            commit = line.split()[1][:12]
-        elif line.startswith('+') and not line.startswith('+++') and commit and len(line) <= 3000:
-            for s in find_in_line(line[1:], Path(path).name):
-                fp = fingerprint(s['value'])
-                if fp in fingerprints and commit not in hits.setdefault(fp, []):
-                    hits[fp].append(commit)
-    return 'yes', hits
+    The second value is None when the path's diffs could not be read. Two git calls per chunk of
+    paths (one for which paths were committed, one for their diffs), not two per file."""
+    out: dict[str, tuple[str, dict | None]] = {}
+    paths = sorted(fps_by_path)
+    for i in range(0, len(paths), chunk):
+        part = paths[i:i + chunk]
+        names = git(root, ['-c', 'core.quotePath=false', 'log', '--all', '--format=', '--name-only', '--no-renames',
+                           '--', *part], timeout=300)
+        if not names or names.returncode != 0:
+            out.update({p: ('unknown', None) for p in part})
+            continue
+        committed = set(names.stdout.splitlines()) & set(part)
+        out.update({p: ('no', {}) for p in part if p not in committed})
+        want = [p for p in part if p in committed and fps_by_path[p]]
+        out.update({p: ('yes', {}) for p in part if p in committed and not fps_by_path[p]})
+        if not want:
+            continue
+        diff = git(root, ['-c', 'core.quotePath=false', 'log', '--all', '-p', '--no-color', '-U0', '--no-ext-diff',
+                          '--no-renames', '--format=@@COMMIT %H', '--', *want], timeout=600)
+        if not diff or diff.returncode != 0:
+            out.update({p: ('yes', None) for p in want})
+            continue
+        hits: dict[str, dict[str, list[str]]] = {p: {} for p in want}
+        commit, file = None, None
+        for line in diff.stdout.splitlines():
+            if line.startswith('@@COMMIT '):
+                commit, file = line.split()[1][:12], None
+            elif line.startswith('+++ '):
+                file = line[6:].rstrip('\t') if line.startswith('+++ b/') else None
+            elif line.startswith('+') and commit and file in hits and len(line) <= 3000:
+                for s in find_in_line(line[1:], Path(file).name):
+                    fp = fingerprint(s['value'])
+                    if fp in fps_by_path[file] and commit not in hits[file].setdefault(fp, []):
+                        hits[file][fp].append(commit)
+        out.update({p: ('yes', hits[p]) for p in want})
+    return out
 
 # The history scan only reads file changes that add or remove a line matching one of these (git log -i -G).
 # It must stay a superset of what find_in_line can match: RULES' prefixes and SECRET_NAME's words.
@@ -316,7 +386,8 @@ def scan_history(root: Path, max_commits: int, budget: float = 300, exclude: lis
                 if len(line) > 3000:
                     continue
                 for s in find_in_line(line[1:], Path(file).name):
-                    h = hist.setdefault(fingerprint(s['value']), {'type': s['type'], 'commits': [], 'files': []})
+                    h = hist.setdefault(fingerprint(s['value']), {'type': s['type'], 'key': s['key'], 'length': len(s['value']),
+                                                                  'entropy': entropy(s['value']), 'commits': [], 'files': []})
                     if commit[:12] not in h['commits']:
                         h['commits'].append(commit[:12])
                     if file and file not in h['files']:
@@ -353,19 +424,21 @@ def main() -> int:
     if not root.is_dir():
         print(f'Not a directory: {root}', file=sys.stderr)
         return 2
-    head, creds = scan_tree(root)
+    t0 = time.monotonic()
+    found, creds = scan_tree(root)
+    # Low-entropy literals in test files are fixtures: counted and listed apart, not triaged one by one.
+    head = [s for s in found if not s['in_test_path'] or real_looking(s)]
+    fixtures = [s for s in found if s['in_test_path'] and not real_looking(s)]
 
     # git facts for every file that holds a secret or is a credential file
     paths = {s['file'] for s in head} | {c['path'] for c in creds if c['kind'] != 'reference'} \
         | {c['repo_path'] for c in creds if c['kind'] == 'reference' and c.get('repo_path')}
     status = git_statuses(root, sorted(paths))
     in_git = any(v != 'unknown' for v in status.values()) or is_git(root)
-    by_path: dict[str, tuple[str, dict | None]] = {}
-    for path in sorted(paths):
-        fps = {s['fingerprint'] for s in head if s['file'] == path}
-        by_path[path] = path_history(root, path, fps) if in_git else ('unknown', None)
+    fps_by_path = {path: {s['fingerprint'] for s in head if s['file'] == path} for path in paths}
+    by_path = paths_history(root, fps_by_path) if in_git else {p: ('unknown', None) for p in paths}
 
-    history_status, removed, note, coverage = 'not_run', [], None, None
+    history_status, removed, removed_fixtures, note, coverage = 'not_run', [], [], None, None
     hist: dict = {}
     if args.history:
         hist, coverage = scan_history(root, args.max_commits, args.history_budget, args.history_exclude,
@@ -378,8 +451,12 @@ def main() -> int:
                     f"({coverage['stopped']}); secrets only in older commits may be missing")
         else:
             history_status = 'ran'
-        at_head = {s['fingerprint'] for s in head}
-        removed = [{'fingerprint': fp, **h} for fp, h in sorted(hist.items()) if fp not in at_head]
+        at_head = {s['fingerprint'] for s in found}
+        for fp, h in sorted(hist.items()):
+            if fp in at_head:
+                continue
+            h = {'fingerprint': fp, **h, 'in_test_path': all(TEST_PATH.search(f) for f in h['files']) if h['files'] else False}
+            (removed if not h['in_test_path'] or real_looking(h) else removed_fixtures).append(h)
 
     for s in head:
         committed, hits = by_path.get(s['file'], ('unknown', None))
@@ -404,16 +481,25 @@ def main() -> int:
     out = {'tool': 'scan_secrets', 'status': 'ran',
            'generated_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
            'repository': root.name, 'git': in_git,
-           'history': {'status': history_status, 'note': note, 'coverage': coverage, 'removed_from_head': removed},
+           'elapsed_s': round(time.monotonic() - t0, 1),
+           'history': {'status': history_status, 'note': note, 'coverage': coverage, 'removed_from_head': removed,
+                       'removed_test_fixtures': len(removed_fixtures)},
            'note': 'Values are never written. Rotate any real secret found here, including ones only in history. '
                    "in_git_history 'no' with history_basis 'path' means never committed at that path; "
-                   "with 'full' it means not found in any scanned commit.",
-           'secrets': head, 'credential_files': creds}
+                   "with 'full' it means not found in any scanned commit. test_fixtures are low-entropy literals in "
+                   'test files (no provider format); they are counted, not triaged.',
+           'secrets': head,
+           'test_fixtures': {'count': len(fixtures),
+                             'files': sorted({s['file'] for s in fixtures}),
+                             'items': [{k: s[k] for k in ('type', 'file', 'line', 'key', 'length', 'entropy', 'fingerprint')}
+                                       for s in fixtures]},
+           'credential_files': creds}
     text = json.dumps(out, indent=2)
     if args.out:
         args.out.write_text(text + '\n', encoding='utf-8')
-        print(f'{len(head)} secret(s) at HEAD, {len(removed)} only in history (history: {history_status}), '
-              f'{len(creds)} credential file(s) or reference(s) -> {args.out}')
+        print(f'{len(head)} secret(s) at HEAD, {len(fixtures)} test fixture literal(s) set aside, {len(removed)} only in '
+              f'history (history: {history_status}), {len(creds)} credential file(s) or reference(s) '
+              f"in {out['elapsed_s']}s -> {args.out}")
         if note:
             print(f'  history: {note}')
     else:

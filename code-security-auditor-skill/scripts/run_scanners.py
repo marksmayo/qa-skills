@@ -2,13 +2,20 @@
 """Detect and run the open-source security scanners that apply to a repository.
 
     python run_scanners.py <repo> --out-dir <dir outside the repo> [--only semgrep,bandit] [--skip trivy]
-                           [--offline] [--dry-run] [--timeout 900] [--path-prepend <venv/bin>]
+                           [--offline] [--dry-run] [--timeout 900] [--npm-audit-timeout 600]
+                           [--path-prepend <venv/bin>]
 
 Every tool is recorded with a status: ran, errored (with the error), not_run (not installed,
 offline, or needs something the script won't do on its own, with the reason) or not_applicable
 (nothing for it to scan). Nothing is installed, and the repository is never written to; outputs
 go to --out-dir, which must be outside the repository. A manifest, scanners.json, lists every
-tool's command, version, output file and status for the report's `tools` section.
+tool's command, version, output file, status, elapsed time and number of results for the report's
+`tools` section.
+
+Each tool run has a time limit (--timeout, default 900 seconds; npm audit has its own,
+--npm-audit-timeout, default 600, because on a large lockfile it can take minutes). A tool that
+runs longer than 30 seconds prints a progress line every 30 seconds, and every tool prints its
+elapsed time when it finishes.
 
 Network: Semgrep fetches registry rules (metrics are turned off); pip-audit, npm audit,
 osv-scanner and Trivy query vulnerability databases with package names and versions, never
@@ -21,11 +28,13 @@ SpotBugs + FindSecBugs and MobSF need a build or a server, so they are recorded 
 instructions; pass their SARIF to merge_findings.py if you run them.
 """
 from __future__ import annotations
-import argparse, json, os, re, shutil, subprocess, sys
+import argparse, json, os, re, shutil, subprocess, sys, time
 from datetime import datetime, timezone
 from pathlib import Path
 
-SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', '.venv', 'venv', '__pycache__', 'vendor', 'target', '.terraform'}
+SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'out', '.next', '.nuxt', '.turbo', '.cache', 'coverage', '.venv', 'venv',
+             '__pycache__', 'vendor', 'target', '.terraform'}
+HEARTBEAT = 30  # seconds between progress lines for a long-running tool
 EXT = {'python': {'.py'}, 'javascript': {'.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.vue', '.svelte'},
        'go': {'.go'}, 'ruby': {'.rb'}, 'php': {'.php'}, 'java': {'.java', '.kt', '.kts'}, 'csharp': {'.cs'},
        'c': {'.c', '.h', '.cc', '.cpp'}, 'swift': {'.swift'}, 'terraform': {'.tf'}}
@@ -133,7 +142,8 @@ def plan(root: Path, out: Path, inv: dict, semgrep_configs: list[str]) -> list[d
                      'output': 'pip-audit.json', 'ok_codes': [0, 1]}]
     add('pip-audit', 'dependencies', 'pip-audit', True if pip_runs else 'no requirements files or pyproject.toml', pip_runs, network=True)
     npm_runs = [{'cmd': ['npm', 'audit', '--json'], 'cwd': str(root / Path(lock).parent), 'stdout_to': f"npm-audit{'' if i == 0 else '-' + str(i)}.json",
-                 'output': f"npm-audit{'' if i == 0 else '-' + str(i)}.json", 'ok_codes': [0, 1]} for i, lock in enumerate(inv['package_lock'])]
+                 'output': f"npm-audit{'' if i == 0 else '-' + str(i)}.json", 'ok_codes': [0, 1], 'timeout_key': 'npm_audit'}
+                for i, lock in enumerate(inv['package_lock'])]
     add('npm-audit', 'dependencies', 'npm', True if npm_runs else ('yarn/pnpm lockfile only: use osv-scanner, or pnpm audit / yarn npm audit'
         if inv['other_js_locks'] else 'no package-lock.json'), npm_runs, network=True)
     workflows = [n for n in inv['files'] if n.startswith('.github/workflows/') and n.endswith(('.yml', '.yaml'))]
@@ -151,14 +161,50 @@ def plan(root: Path, out: Path, inv: dict, semgrep_configs: list[str]) -> list[d
          for i, d in enumerate(inv['dockerfiles'])])
     return tools
 
-def run_tool(t: dict, out: Path, timeout: int) -> dict:
+def run_with_progress(cmd: list[str], cwd: str | None, timeout: int, name: str) -> subprocess.CompletedProcess:
+    """subprocess.run with a progress line on stderr every HEARTBEAT seconds; raises TimeoutExpired."""
+    t0 = time.monotonic()
+    proc = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=tool_env(),
+                            encoding='utf-8', errors='replace')
+    while True:
+        left = timeout - (time.monotonic() - t0)
+        try:
+            out, err = proc.communicate(timeout=max(0.1, min(HEARTBEAT, left)))
+            return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
+        except subprocess.TimeoutExpired:
+            if time.monotonic() - t0 >= timeout:
+                proc.kill()
+                proc.communicate()
+                raise
+            print(f'  ... {name} still running ({time.monotonic() - t0:.0f}s of {timeout}s allowed)', file=sys.stderr, flush=True)
+
+def count_results(path: Path) -> int | None:
+    """Number of results in a tool output (SARIF, Bandit, pip-audit, npm audit, osv-scanner), or None."""
+    try:
+        d = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    if isinstance(d, dict) and 'runs' in d:
+        return sum(len(r.get('results') or []) for r in d['runs'])
+    if isinstance(d, dict) and isinstance(d.get('results'), list) and 'errors' in d:  # bandit
+        return len(d['results'])
+    if isinstance(d, dict) and isinstance(d.get('dependencies'), list):  # pip-audit
+        return sum(len(x.get('vulns') or []) for x in d['dependencies'])
+    if isinstance(d, dict) and isinstance(d.get('vulnerabilities'), dict):  # npm audit
+        return sum(1 for v in d['vulnerabilities'].values() for via in v.get('via') or [] if isinstance(via, dict))
+    if isinstance(d, dict) and isinstance(d.get('results'), list):  # osv-scanner
+        return sum(len(p.get('vulnerabilities') or []) for r in d['results'] for p in r.get('packages') or [])
+    return None
+
+def run_tool(t: dict, out: Path, timeout: int, timeouts: dict | None = None) -> dict:
     rec = {'name': t['name'], 'area': t['area'], 'network': t['network'], 'status': None, 'version': None,
-           'commands': [], 'outputs': [], 'reason': None}
+           'commands': [], 'outputs': [], 'reason': None, 'elapsed_s': None, 'results': None}
+    t0 = time.monotonic()
     if t.get('note'):
         rec['note'] = t['note']
     exe = shutil.which(t['exe']) if t['exe'] else None
     if t['exe'] and not exe and not Path(t['exe']).exists():
-        rec.update(status='not_run', reason=f"{t['exe']} is not installed")
+        rec.update(status='not_run', reason=f"{t['exe']} is not installed", elapsed_s=0.0)
         return rec
     rec['version'] = version_of(exe or t['exe']) if t['exe'] not in ('npx',) else version_of('npx', ('eslint', '--version'))
     errors = []
@@ -167,11 +213,11 @@ def run_tool(t: dict, out: Path, timeout: int) -> dict:
         for i, cmd in enumerate(cmds):
             cmd = [exe if (j == 0 and exe and cmd[0] == t['exe']) else c for j, c in enumerate(cmd)]
             (out / r['output']).parent.mkdir(parents=True, exist_ok=True)  # e.g. checkov/, only when it runs
+            limit = (timeouts or {}).get(r.get('timeout_key'), timeout)
             try:
-                p = subprocess.run(cmd, cwd=r.get('cwd'), capture_output=True, text=True, timeout=timeout, env=tool_env(),
-                                   encoding='utf-8', errors='replace')
+                p = run_with_progress(cmd, r.get('cwd'), limit, t['name'])
             except subprocess.TimeoutExpired:
-                errors.append(f'timed out after {timeout}s'); break
+                errors.append(f'timed out after {limit}s'); break
             except OSError as exc:
                 errors.append(str(exc)); break
             if r.get('stdout_to'):
@@ -189,8 +235,11 @@ def run_tool(t: dict, out: Path, timeout: int) -> dict:
         rec['status'] = 'ran'
         if errors:
             rec['reason'] = 'some runs failed: ' + '; '.join(errors)
+        counts = [count_results(Path(o)) for o in rec['outputs']]
+        rec['results'] = sum(c for c in counts if c is not None) if any(c is not None for c in counts) else None
     else:
         rec['status'], rec['reason'] = 'errored', '; '.join(errors) or 'no output produced'
+    rec['elapsed_s'] = round(time.monotonic() - t0, 1)
     return rec
 
 def valid_json(path: Path) -> bool:
@@ -208,7 +257,9 @@ def main() -> int:
     ap.add_argument('--skip', help='comma-separated tool names')
     ap.add_argument('--offline', action='store_true', help='skip tools that need the network')
     ap.add_argument('--dry-run', action='store_true', help='print the plan without running anything')
-    ap.add_argument('--timeout', type=int, default=900, help='seconds per tool run')
+    ap.add_argument('--timeout', type=int, default=900, help='seconds per tool run (default 900)')
+    ap.add_argument('--npm-audit-timeout', type=int, default=600,
+                    help='seconds for each npm audit run (default 600; a large lockfile can take several minutes)')
     ap.add_argument('--semgrep-config', nargs='*', default=['p/default', 'p/owasp-top-ten'])
     ap.add_argument('--path-prepend', nargs='*', default=[], help='directories to search for tools first (e.g. a venv)')
     args = ap.parse_args()
@@ -245,8 +296,11 @@ def main() -> int:
             records.append({'name': t['name'], 'area': t['area'], 'status': 'planned' if exe else 'not_run',
                             'reason': None if exe else f"{t['exe']} is not installed",
                             'commands': [' '.join(r['cmd']) for r in t['runs']]}); continue
-        print(f"running {t['name']} ...", file=sys.stderr)
-        records.append(run_tool(t, out, args.timeout))
+        print(f"running {t['name']} ...", file=sys.stderr, flush=True)
+        records.append(run_tool(t, out, args.timeout, {'npm_audit': min(args.npm_audit_timeout, args.timeout)}))
+        r = records[-1]
+        print(f"  {t['name']}: {r['status']} in {r.get('elapsed_s') or 0}s" + (f", {r['results']} result(s)" if r.get('results') is not None else ''),
+              file=sys.stderr, flush=True)
     manifest = {'generated_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), 'repository': str(root),
                 'out_dir': str(out), 'languages': inv['langs'], 'tools': records}
     if args.dry_run:
@@ -256,7 +310,8 @@ def main() -> int:
     width = max(len(r['name']) for r in records)
     for r in records:
         extra = r.get('version') or ''
-        print(f"  {r['name']:<{width}}  {r['status']:<14} {extra:<10} {r.get('reason') or ''}")
+        took = f"{r['elapsed_s']}s" if r.get('elapsed_s') is not None else ''
+        print(f"  {r['name']:<{width}}  {r['status']:<14} {extra:<10} {took:<8} {r.get('reason') or ''}")
     print(f"manifest -> {out / 'scanners.json'}")
     return 0
 
