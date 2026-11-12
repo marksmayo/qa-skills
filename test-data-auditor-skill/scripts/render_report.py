@@ -4,7 +4,8 @@
     python render_report.py test_data_report.json [--color auto|always|never] [--brief]
 
 --brief prints the headline and the ranked findings without the inventory, dismissals or
-limitations. Personal data never appears: the report holds only file, line, field and type.
+limitations, and summarises the handoffs per recipient and file. Findings found by review
+(source: agent) are labelled so. Personal data never appears: the report holds only file, line, field and type.
 """
 from __future__ import annotations
 import argparse, json, os, sys
@@ -17,7 +18,7 @@ TOOL = {'ran': GREEN, 'not_run': YELLOW, 'errored': RED, 'not_applicable': DIM}
 LABEL = {'personal_data': 'personal data', 'time_bomb': 'time bomb', 'magic_id': 'magic id',
          'environment_coupling': 'environment coupling', 'shared_mutable': 'shared mutable', 'nondeterministic': 'nondeterministic',
          'schema_drift': 'schema drift', 'snapshot_rot': 'snapshot rot', 'unused_or_duplicate': 'unused or duplicate',
-         'locale_assumption': 'locale assumption'}
+         'locale_assumption': 'locale assumption', 'residue': 'residue'}
 
 
 def supports_color(mode: str) -> bool:
@@ -58,8 +59,9 @@ def main() -> int:
     out.append(P('## Findings', BOLD))
     for f in sorted(d['findings'], key=lambda f: (order[f['priority']], -f['score'], f['id'])):
         loc = f'{f["location"]["file"]}:{f["location"]["line"]}' + (f' ({f["location"]["field"]})' if f['location'].get('field') else '')
-        out.append(f'- {P(f["priority"], PRIO[f["priority"]])} {f["id"]} [{LABEL[f["category"]]}, {f["severity"]}, {f["confidence"]}] '
-                   f'{f["title"]}')
+        by_review = ', found by review' if f.get('source') == 'agent' else ''
+        out.append(f'- {P(f["priority"], PRIO[f["priority"]])} {f["id"]} [{LABEL[f["category"]]}, {f["severity"]}, {f["confidence"]}'
+                   f'{by_review}] {f["title"]}')
         out.append(f'    {loc}' + (f'; {f["data_type"]}' if f.get('data_type') else ''))
         out.append(f'    {f["why_flagged"]}')
         if f.get('experiment'):
@@ -68,10 +70,23 @@ def main() -> int:
         if f.get('fails_on_date'):
             out.append(P(f'    Fails on {f["fails_on_date"]}', RED))
         if not args.brief:
+            for b in f.get('basis') or []:
+                out.append(P(f'    Basis: {b["evidence"]}' if 'evidence' in b else f'    Basis: {b["file"]}:{b["line"]}', DIM))
             out.append(f'    Fix: {f["fix"]}')
             out.append(P(f'    Check: {f["verification_step"]}', DIM))
             out.append(P(f'    Tests: {len(f["affected_tests"])}; score {f["score"]} (reach {f["reach"]})', DIM))
-    if d['handoffs']:
+    if d['handoffs'] and args.brief:
+        # brief: one line per recipient, with the files holding the most handoffs
+        out += ['', P(f'## Handed off ({len(d["handoffs"])})', BOLD)]
+        for to in sorted({h['to'] for h in d['handoffs']}):
+            hs = [h for h in d['handoffs'] if h['to'] == to]
+            files: dict[str, int] = {}
+            for h in hs:
+                files[h['location']['file']] = files.get(h['location']['file'], 0) + 1
+            top = sorted(files.items(), key=lambda kv: (-kv[1], kv[0]))
+            shown = ', '.join(f'{f} ({n})' for f, n in top[:5]) + (f', and {len(top) - 5} more file(s)' if len(top) > 5 else '')
+            out.append(f'- {to}: {len(hs)} in {len(files)} file(s): {shown}')
+    elif d['handoffs']:
         out += ['', P('## Handed off', BOLD)]
         for h in d['handoffs']:
             out.append(f'- {h["to"]}: {h["location"]["file"]}:{h["location"]["line"]} - {h["reason"]}')

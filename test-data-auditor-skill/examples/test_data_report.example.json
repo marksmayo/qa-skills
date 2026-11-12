@@ -4,7 +4,7 @@
     "commit": null,
     "generated_at": "2026-11-11T03:30:00Z",
     "today": "2026-11-11",
-    "skill_version": "1.0.0",
+    "skill_version": "1.1.0",
     "clock_shift": "+400d",
     "apply_fixes": false,
     "candidates_file": "run/candidates.json",
@@ -235,7 +235,7 @@
       "name": "detect-secrets",
       "version": null,
       "status": "not_run",
-      "reason": "not installed; secret patterns in data/rules.json routed the one secret",
+      "reason": "not installed; the secret patterns in data/rules.json found the one secret, an obvious placeholder dismissed by rule",
       "leaves_unchecked": "secret formats outside the built-in patterns"
     }
   ],
@@ -486,19 +486,14 @@
       "candidate_id": "C14",
       "by": "review",
       "reason": "The date of birth sits beside a placeholder name in the same placeholder record as C13."
+    },
+    {
+      "candidate_id": "C1",
+      "by": "rule",
+      "reason": "scan_data.py rule: placeholder secret: the value contains the placeholder word \"example\". The recorded request's Authorization header holds a token that says it is not real, so it is not handed to code-security-auditor."
     }
   ],
   "handoffs": [
-    {
-      "to": "code-security-auditor",
-      "candidate_id": "C1",
-      "finding_id": null,
-      "location": {
-        "file": "tests/cassettes/insurer_cover.json",
-        "line": 5
-      },
-      "reason": "The recorded request keeps an Authorization bearer token. Rated there, not here; the value is not reproduced."
-    },
     {
       "to": "flaky-test-hunter",
       "candidate_id": null,
@@ -537,8 +532,8 @@
     },
     "earliest_time_bomb_date": "2026-12-02",
     "evidence_completeness": 0.9167,
-    "dismissed": 5,
-    "handoffs": 2
+    "dismissed": 6,
+    "handoffs": 1
   },
   "limitations": [
     "15 data sources in 5 formats (JSON, YAML, CSV, SQL, Python) were scanned; none was binary or encrypted.",

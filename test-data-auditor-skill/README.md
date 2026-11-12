@@ -14,7 +14,11 @@ inline literals) and finds:
 - **unseeded randomness**;
 - **fixtures that have drifted** from the model;
 - **unused snapshots and files**;
-- **literals that depend on the machine locale**.
+- **literals that depend on the machine locale**;
+- **files a test run leaves behind** in the working tree.
+
+The rules cover Python and JavaScript/TypeScript suites: JS and TS are tokenized, so values in
+object literals keep their field names.
 
 It then confirms what it can with real runs: a moved clock, reversed order, another locale.
 
@@ -27,7 +31,10 @@ It is strict about what it shows:
 - A time bomb is confirmed only by a failing run with a moved clock, or by exact date
   arithmetic.
 - No "clean test data" claims. The report says what was scanned and what couldn't be.
-- Secrets are handed to the code security auditor, and shared state to the flaky test hunter.
+- Secrets are handed to the code security auditor (obvious placeholders are dismissed by rule),
+  and shared state to the flaky test hunter.
+- A problem no rule produced, found by reading or by an experiment, is reported with
+  `source: agent` and a basis the validator re-reads.
 
 ## Install
 
@@ -45,7 +52,7 @@ reference `SKILL.md` from the project's Gemini instructions.
 
 Exact skill discovery paths can vary by client version. The scripts need Python 3.9+ and the
 repository's own test runner. Clock experiments use the repo's own clock library, libfaketime,
-or the included `clock_shift.py` pytest plugin.
+the included `clock_shift.py` pytest plugin, or `clock_shift.mjs` for Vitest and Jest.
 
 ## Usage
 
@@ -57,6 +64,7 @@ python scripts/scan_data.py <repo> --inventory run/inventory.json --out run/cand
 python scripts/run_tests.py --preset pytest --cwd <copy> --out run/runs.json --label baseline --run-prefix B --repeat 2
 python scripts/run_tests.py --preset custom --cmd "python -m pytest -q -p no:cacheprovider -p clock_shift --junitxml={junit}" \
     --cwd <copy> --env TDA_CLOCK_SHIFT=+400d --out run/runs.json --label "clock +400d" --run-prefix S
+python scripts/redact_evidence.py run --candidates run/candidates.json --repo <repo>
 python scripts/validate_test_data_report.py run/test_data_report.json --candidates run/candidates.json --repo <repo> \
     --runs run/runs.json --evidence run --write-summary
 python scripts/render_report.py run/test_data_report.json [--brief]
@@ -92,9 +100,12 @@ python scripts/render_report.py examples/test_data_report.example.json --brief
 - `schemas/test_data_report.schema.json`: output contract
 - `scripts/inventory.py`: data sources and the tests that load them
 - `scripts/datafiles.py`: JSON, YAML-subset, CSV and SQL records with line numbers
+- `scripts/jsparse.py`: JavaScript/TypeScript tokenizer and object-literal records with field names
 - `scripts/scan_data.py`: the static rules, written as candidates without values
 - `scripts/schema_drift.py`: fixtures against dataclasses, pydantic, SQLAlchemy, JSON Schema and OpenAPI
 - `scripts/clock_shift.py`: pytest plugin that moves the clock for time-bomb runs
+- `scripts/redact_evidence.py`: removes flagged values from runner output before validation
+- `scripts/residue.py`: snapshot and diff of the working tree, for files a run leaves behind
 - `scripts/validate_test_data_report.py`: checks the report against the candidates, the runs and the never-echo rule
 - `scripts/render_report.py`: coloured terminal/Markdown report
 - `scripts/run_tests.py`, `parse_results.py`, `detect_conventions.py`: shared helpers

@@ -27,7 +27,9 @@ DOWN = {'critical': 'serious', 'serious': 'moderate', 'moderate': 'minor', 'mino
 BANDS = [(9, 'P0'), (6, 'P1'), (3, 'P2'), (0, 'P3')]
 CONFIRMABLE = ('time_bomb', 'shared_mutable', 'locale_assumption')
 GENERIC_LOCAL = {'admin', 'administrator', 'contact', 'demo', 'example', 'hello', 'info', 'noreply', 'no-reply', 'postmaster',
-                 'sample', 'support', 'test', 'tester', 'testing', 'user', 'users', 'webmaster'}
+                 'sample', 'support', 'test', 'tester', 'testing', 'user', 'users', 'webmaster', 'no.reply', 'do-not-reply',
+                 'donotreply', 'test.user', 'first.last', 'john.doe', 'jane.doe'}
+SERVED = re.compile(r'(^|/)(public|static|wwwroot|www|htdocs|uploads)(/|$)')
 BANNED = re.compile(r'\b(test )?data (is|are|looks?) (clean|safe|fine)\b|\bclean (test )?data\b|\bno (real |personal |sensitive )?'
                     r'(personal )?data (found|left|remains?)\b|\bfree of (personal|sensitive) data\b|\bprivacy[- ]safe\b|'
                     r'\b(GDPR|privacy)[- ]compliant\b|\bfixtures? (is|are) (clean|safe)\b|\bnothing sensitive\b', re.I)
@@ -109,6 +111,9 @@ def severity(f: dict, cands: dict, today: date) -> str:
         return 'serious' if f['confidence'] == 'confirmed' else 'moderate'
     if cat in ('snapshot_rot', 'unused_or_duplicate'):
         return 'minor'
+    if cat == 'residue':
+        # files a test run leaves in the working tree; Serious when they land in a directory the app serves
+        return 'serious' if SERVED.search(f['location']['file']) else 'moderate'
     return 'moderate'
 
 
@@ -170,8 +175,9 @@ def flagged_values(c: dict, repo: Path) -> set[str]:
     vals: set[str] = set()
     if c['category'] == 'secret':
         rx = scan_data.SECRETS.get(c['rule'])
-        m = rx.search(line) if rx else None
-        if m:
+        for m in (rx.finditer(line) if rx else []):
+            if scan_data.placeholder_secret(c['rule'], m.group(0)):
+                continue                   # a placeholder on the same line is its own (dismissed) candidate
             tokens = [t for t in re.findall(r'[A-Za-z0-9._~+/=-]{12,}', m.group(0)) if re.search(r'\d', t)]
             vals |= set(tokens)
         return vals
@@ -189,9 +195,11 @@ def flagged_values(c: dict, repo: Path) -> set[str]:
         return {v for v in vals if len(v) >= 6}
     for m in scan_data.EMAIL.finditer(line):
         vals.add(m.group(0))
-        # the local part alone identifies someone only when it isn't a generic word (user@, test@, admin@)
-        if len(m.group(1)) >= 5 and m.group(1).lower() not in GENERIC_LOCAL:
-            vals.add(m.group(1))
+        # the whole address always counts. The local part alone counts only when it reads as a person's name (first.last,
+        # j_smith): a single word such as staff, owner or bookings appears in ordinary test names and prose
+        local = m.group(1)
+        if len(local) >= 5 and re.search(r'[A-Za-z][._-][A-Za-z]', local) and local.lower() not in GENERIC_LOCAL:
+            vals.add(local)
     for q in re.findall(r'"([^"]+)"|\'([^\']+)\'', line):
         s = q[0] or q[1]
         d = scan_data.digits(s)
@@ -200,9 +208,9 @@ def flagged_values(c: dict, repo: Path) -> set[str]:
     return {v for v in vals if len(v) >= 4}
 
 
-def leaks(values: set[str], text: str) -> list[str]:
+def leaks(values: set[str], text: str, flat: str | None = None) -> list[str]:
     hits = []
-    flat = re.sub(r'[\s-]', '', text)
+    flat = flat if flat is not None else re.sub(r'[\s-]', '', text)
     for v in values:
         # a value of letters only (a name, an email's local part) counts as a whole token, not inside a longer word or a
         # path (user -> mockServer/src/user.js); values with digits (secrets, numbers) still count anywhere
@@ -218,11 +226,96 @@ def leaks(values: set[str], text: str) -> list[str]:
             hits.append('a value with its separators removed')
             continue
         if len(d) >= 8 and d == re.sub(r'[\s-]', '', v):
-            for i in range(len(d) - 5):
-                if d[i:i + 6] in flat:
-                    hits.append('six or more consecutive digits of a value')
-                    break
+            windows = six_digit_windows(flat)
+            if any(d[i:i + 6] in windows for i in range(len(d) - 5)):
+                hits.append('six or more consecutive digits of a value')
     return hits
+
+
+_WINDOWS: dict[int, tuple[str, set[str]]] = {}
+
+
+def six_digit_windows(flat: str) -> set[str]:
+    """Every run of six digits in the flattened text (cached per text), so each value is a set lookup, not a scan."""
+    hit = _WINDOWS.get(id(flat))
+    if hit and hit[0] is flat:
+        return hit[1]
+    out = set()
+    for m in re.finditer(r'\d{6,}', flat):
+        s = m.group(0)
+        out.update(s[i:i + 6] for i in range(len(s) - 5))
+    _WINDOWS.clear()
+    _WINDOWS[id(flat)] = (flat, out)
+    return out
+
+
+# ---------------------------------------------------------------- agent-found findings
+def norm(s: str) -> str:
+    return re.sub(r'\s+', ' ', s).strip()
+
+
+def excerpt_echoes_value(excerpt: str) -> str | None:
+    """An excerpt must never carry personal data: no six-digit run and no address at a non-reserved domain."""
+    if re.search(r'\d{6}', excerpt):
+        return 'six or more consecutive digits'
+    for q in re.findall(r"""'([^']*)'|"([^"]*)"|`([^`]*)`""", excerpt):
+        s = next(x for x in q if x is not None) if any(q) else ''
+        if len(re.sub(r'\D', '', s)) >= 6 and not (scan_data.DATE_TIME.match(s.strip()) or scan_data.DATE_SHAPE.match(s.strip())):
+            return 'a quoted number of six or more digits'
+    for m in scan_data.EMAIL.finditer(excerpt):
+        if scan_data.email_class(m.group(2))[0] != 'reserved':
+            return 'an email address'
+    return None
+
+
+def basis_errors(f: dict, repo: Path | None, evidence: Path | None) -> list[str]:
+    """A finding is from the tools (it cites candidates) or from review (source: agent, with a basis the validator re-reads)."""
+    w, errs = f['id'], []
+    source = f.get('source', 'tool')
+    basis = f.get('basis') or []
+    if source == 'tool':
+        if not f['candidates']:
+            errs.append(f'{w}: a finding from the tools cites at least one candidate; one you found yourself (by reading or by an '
+                        'experiment) sets source: agent and gives its basis')
+        if basis:
+            errs.append(f'{w}: basis is for source: agent findings')
+        return errs
+    if not basis:
+        return [f'{w}: source: agent needs a basis (file, line and excerpt, or an evidence file)']
+    files = set()
+    for i, b in enumerate(basis):
+        where = f'{w}.basis[{i}]'
+        if 'evidence' in b:
+            if evidence is None:
+                errs.append(f'{where}: pass --evidence to check the evidence file')
+            elif not (evidence / b['evidence']).is_file():
+                errs.append(f'{where}: evidence file {b["evidence"]} is not in {evidence.as_posix()}')
+            continue
+        if not all(k in b for k in ('file', 'line', 'excerpt')):
+            errs.append(f'{where}: give file, line and excerpt, or an evidence file')
+            continue
+        files.add(b['file'])
+        echo = excerpt_echoes_value(b['excerpt'])
+        if echo:
+            errs.append(f'{where}: the excerpt contains {echo}; quote the code around a value, never the value')
+        if repo is not None:
+            p = repo / b['file']
+            try:
+                lines = p.read_text(encoding='utf-8', errors='replace').split('\n')
+            except OSError:
+                errs.append(f'{where}: {b["file"]} is not in the repository')
+                continue
+            if not 0 < b['line'] <= len(lines):
+                errs.append(f'{where}: {b["file"]} has no line {b["line"]}')
+            elif norm(b['excerpt']) not in norm(lines[b['line'] - 1]):
+                errs.append(f'{where}: the excerpt is not on {b["file"]}:{b["line"]}')
+    if files and f['location']['file'] not in files:
+        errs.append(f'{w}: location is not one of its basis files')
+    if f['category'] == 'time_bomb' and f['confidence'] == 'confirmed' and not f.get('fails_on_date'):
+        errs.append(f'{w}: a confirmed time bomb found by review names the date it fails on (bracket it with dated runs)')
+    if f['category'] == 'residue' and not any('evidence' in b for b in basis):
+        errs.append(f'{w}: residue is shown by a run: cite the residue.py diff (or the run log) as evidence')
+    return errs
 
 
 # ---------------------------------------------------------------- checks
@@ -259,8 +352,9 @@ def check(rep: dict, cands: dict | None, runs: dict | None, repo: Path | None, e
                 errs.append(f'{d["candidate_id"]}: dismissed by a reserved-value rule; say so (by: rule) and quote the rule')
             if c and not c['auto_dismiss'] and d['by'] == 'rule':
                 errs.append(f'{d["candidate_id"]}: no rule dismisses this candidate; a review dismissal needs your reason')
-            if c and c['category'] == 'secret':
-                errs.append(f'{d["candidate_id"]}: secrets are handed to code-security-auditor, not dismissed')
+            if c and c['category'] == 'secret' and not c['auto_dismiss']:
+                errs.append(f'{d["candidate_id"]}: secrets are handed to code-security-auditor, not dismissed (only a value '
+                            'scan_data.py marks as an obvious placeholder may be dismissed, by rule)')
         for f in fs:
             linked = [cands[c] for c in f['candidates'] if c in cands]
             if any(c['category'] != f['category'] for c in linked):
@@ -274,9 +368,11 @@ def check(rep: dict, cands: dict | None, runs: dict | None, repo: Path | None, e
                 if want and f.get('fails_on_date') != want:
                     errs.append(f'{f["id"]}: fails_on_date must be {want}, from the date arithmetic')
         for c in cands.values():
-            if c['category'] == 'secret' and not any(h.get('candidate_id') == c['id'] and h['to'] == 'code-security-auditor'
+            if c['category'] == 'secret' and not c['auto_dismiss'] and not any(h.get('candidate_id') == c['id'] and h['to'] == 'code-security-auditor'
                                                     for h in rep['handoffs']):
                 errs.append(f'{c["id"]}: a secret must be handed to code-security-auditor (location and type only)')
+    for f in fs:
+        errs += basis_errors(f, repo, evidence)
     for f in fs:
         w = f['id']
         if f['category'] == 'personal_data':
@@ -286,9 +382,13 @@ def check(rep: dict, cands: dict | None, runs: dict | None, repo: Path | None, e
                 errs.append(f'{w}: real-looking personal data is always P0')
         exp = f.get('experiment')
         if f['confidence'] == 'confirmed':
+            # date arithmetic counts only where scan_data.py itself computed the fail date (a fixed expiry compared with now)
             arithmetic = f['category'] == 'time_bomb' and f.get('fails_on_date') and cands is not None and any(
-                cands[c]['details'].get('compared_with_now') for c in f['candidates'] if c in cands)
-            if not (exp and exp['result'] == 'failed_as_predicted') and not arithmetic:
+                cands[c]['details'].get('compared_with_now') and cands[c]['details'].get('fails_on_date') == f['fails_on_date']
+                for c in f['candidates'] if c in cands)
+            # residue is shown by the tree diff itself (an evidence file the validator checks exists)
+            residue = f['category'] == 'residue' and any('evidence' in b for b in f.get('basis') or [])
+            if not (exp and exp['result'] == 'failed_as_predicted') and not arithmetic and not residue:
                 errs.append(f'{w}: confirmed needs a failing experiment' + (' or a fails_on_date from date arithmetic'
                                                                              if f['category'] == 'time_bomb' else ''))
         if exp and exp['result'] == 'failed_as_predicted':
@@ -328,17 +428,23 @@ def check(rep: dict, cands: dict | None, runs: dict | None, repo: Path | None, e
         errs.append('summary.headline: name the P0 findings')
     # no personal data or secret value anywhere
     if repo is not None and cands is not None:
-        values = set()
-        for c in cands.values():
-            if c['category'] in ('personal_data', 'secret') and not c['auto_dismiss']:
-                values |= flagged_values(c, repo)
-        for kind in leaks(values, report_text):
-            errs.append(f'the report contains {kind} from a flagged location; give the file, line, field and data type only')
+        per = {c['id']: flagged_values(c, repo) for c in cands.values()
+               if c['category'] in ('personal_data', 'secret') and not c['auto_dismiss']}
+        per = {k: v for k, v in per.items() if v}
+
+        def leak_errors(where: str, text: str) -> list[str]:
+            # the candidate id is safe to name and saves hunting for the leak; the value never is
+            flat, out = re.sub(r'[\s-]', '', text), []
+            for cid in sorted(per, key=lambda x: int(x[1:])):
+                for kind in sorted(set(leaks(per[cid], text, flat))):
+                    out.append(f'{where} contains {kind} flagged by {cid}; give the file, line, field and data type only '
+                               '(redact evidence with redact_evidence.py)')
+            return out
+        errs += leak_errors('the report', report_text)
         if evidence is not None:
             for p in sorted(evidence.rglob('*')):
                 if p.is_file() and p.suffix.lower() in ('.json', '.xml', '.txt', '.md', '.log', '.html', '.sh'):
-                    for kind in leaks(values, p.read_text(encoding='utf-8', errors='replace')):
-                        errs.append(f'{p.relative_to(evidence).as_posix()}: contains {kind} from a flagged location')
+                    errs += leak_errors(p.relative_to(evidence).as_posix(), p.read_text(encoding='utf-8', errors='replace'))
     # computed
     if cands is not None:
         want = json.loads(json.dumps(rep))

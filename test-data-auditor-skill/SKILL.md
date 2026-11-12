@@ -1,7 +1,7 @@
 ---
 name: test-data-auditor
-description: Audit the data tests depend on (fixtures, factories, seeds, snapshots, HTTP recordings and inline literals) for time bombs, real-looking personal data, magic ids, environment coupling, shared mutable fixtures, unseeded randomness, schema drift, snapshot rot, unused or duplicate files and locale assumptions. Every rule runs statically; time bombs, shared state and locale assumptions are then confirmed with real runs under a moved clock, reversed order or another locale. Personal data is never echoed (only file, line, field and data type), secrets are handed to code-security-auditor, and the report never calls test data "clean".
-version: 1.0.0
+description: Audit the data tests depend on (fixtures, factories, seeds, snapshots, HTTP recordings and inline literals, in Python and JavaScript/TypeScript suites) for time bombs, real-looking personal data, magic ids, environment coupling, shared mutable fixtures, unseeded randomness, schema drift, snapshot rot, unused or duplicate files, locale assumptions and files tests leave behind. Every rule runs statically; time bombs, shared state and locale assumptions are then confirmed with real runs under a moved clock, reversed order or another locale. Personal data is never echoed (only file, line, field and data type), secrets are handed to code-security-auditor, and the report never calls test data "clean".
+version: 1.1.0
 ---
 
 # Test data auditor
@@ -29,7 +29,8 @@ Output:
 1. `test_data_report.json`, conforming to `schemas/test_data_report.schema.json`.
 2. The run directory, kept with the report as its evidence:
    - `inventory.json`, `candidates.json` and `drift.json`;
-   - `runs.json` and the JUnit files from the experiments.
+   - `runs.json` and the JUnit files from the experiments, redacted with `redact_evidence.py`;
+   - `residue.json` when a run left files in the working tree.
 3. Proposed fixes. Fixes are applied only with `apply_fixes: true`, and then only to test data
    and test code.
 4. A rendered summary for the user.
@@ -57,7 +58,10 @@ Output:
   Data that couldn't be parsed (binary, compressed or encrypted files, unsupported YAML) is
   `not_assessed`. The validator rejects "clean", "safe", "no personal data found" and similar.
 - **Secrets are handed off, never rated.** A secret goes to code-security-auditor with its
-  location and type. It is never dismissed and never made a finding.
+  location and type, and is never made a finding. The one exception is a value `scan_data.py`
+  marks as an obvious placeholder: it contains a word such as test, fake, example or changeme,
+  names what it stands for (`google-access-token`), or has too little entropy. That is dismissed
+  by rule, quoting the rule. Every other secret is handed off, never dismissed.
 - **Tools that didn't run are recorded** as `not_run` or `errored`, with what that leaves
   unchecked.
 - **Fixes are proposed, not applied.** With `apply_fixes: true`, edit test data and test code
@@ -82,8 +86,15 @@ Output:
 python scripts/inventory.py <repo> --out <run>/inventory.json [--markers markers.json]
 ```
 
-Every data source gets a kind (fixture, factory, seed, snapshot, recording or inline), a format,
-and `loaded_by`: the tests that load it.
+Every data source gets a kind (fixture, factory, seed, snapshot, recording, inline or support), a
+format, and `loaded_by`: the tests that load it. `support` is setup and helper code the tests
+share, scanned like test code but never counted as a test:
+
+- a runner's setup file (`vitest.setup.ts`, `jest.setup.js`, `setupTests.ts`): loaded by every
+  test file in its package;
+- a Playwright setup project (`auth.setup.ts`): loaded by the specs beside it;
+- helpers in a test area (`__tests__/helpers/`, `e2e/helpers.ts`, `test-support/`): loaded by the
+  tests that import them.
 
 A test loads a source when the source's file name appears in one of four places:
 - **a test function:** that test;
@@ -92,7 +103,8 @@ A test loads a source when the source's file name appears in one of four places:
 - **a source module:** the tests in modules that import it (a seed loaded by the app, for
   example).
 
-Binary and encrypted files are `not_assessed`.
+Binary and encrypted files, and images, fonts and media (PNG, OTF, MP4), are `not_assessed`.
+SVG is text, and is scanned.
 
 ## Step 2: Static rules
 
@@ -112,10 +124,50 @@ python scripts/schema_drift.py <repo> --inventory <run>/inventory.json --out <ru
 | `schema_drift` | A fixture field the model no longer has; a missing required field; an enum value the model doesn't allow (dataclasses, pydantic, SQLAlchemy, TypedDict, JSON Schema, OpenAPI JSON) |
 | `snapshot_rot` | A snapshot with no test file; a snapshot over 500 lines |
 | `unused_or_duplicate` | A data file no test loads; a file at least 90% similar to another one of the same format |
-| `locale_assumption` | A test comparing a literal with a function that formats using the machine locale (`setlocale(..., "")` with `locale.currency`, `format_string` or locale-dependent `strftime`) |
-| `secret` | An authorization header, an API key or password field, an AWS key, a private key, a live token: handed to code-security-auditor |
+| `locale_assumption` | A test comparing a literal with a function that formats using the machine locale (`setlocale(..., "")` with `locale.currency`, `format_string` or locale-dependent `strftime`; in JS, `toLocaleString()`, `toLocaleDateString()`, `Intl.NumberFormat()` and the like with no locale argument) |
+| `residue` | Files a test run leaves in the working tree (uploads, exports, databases), found with `residue.py` (Step 4) |
+| `secret` | An authorization header, an API key or password field, an AWS key, a private key, a live token: handed to code-security-auditor unless it is an obvious placeholder |
 
 Rule settings are in `data/rules.json` and the reserved values in `data/reserved.json`.
+
+**JavaScript and TypeScript.** `scripts/jsparse.py` tokenizes JS and TS: strings, template
+literals, comments and regex literals. Values in object literals keep their field names, so
+`expiresAt: new Date('2026-12-31')` is the `expiresAt` field holding a date. Object literals get
+the same field-aware rules as JSON and Python records: a name with an address, a date of birth
+beside a name, phone and email fields. The JS/TS rules:
+
+- **`time_bomb`:**
+  - an expiry-like field (`expiresAt`, `trialEndDate`, `certificationExpiresAt`) set to a future
+    date, with the product line that compares that field with `Date.now()`, `new Date()` or a
+    variable holding either;
+  - a future literal date in a test file that doesn't freeze the clock (`vi.useFakeTimers`,
+    `setSystemTime`, MockDate), when the file reads the clock or product code compares that field
+    with now;
+  - date calls count: `new Date('...')`, `new Date(2027, 4, 12)` (months count from 0), `Date.UTC`,
+    dayjs, moment, `parseISO`, `DateTime.fromISO`.
+- **`magic_id`:** literal UUIDs; `getById(42)`, `findOne(7)`, `where: { id: 7 }`; `expect(x.id).toBe(1)`.
+- **`nondeterministic`:** `Math.random()` or faker with no seed or stub in the file; `randomUUID()`,
+  uuid v4 and nanoid in fixtures and factories.
+- **`shared_mutable`:** a module-level array, object, Map or Set that tests change and no
+  `beforeEach` or `afterEach` resets.
+- **`locale_assumption`:** a literal compared with one of these, when it formats with the machine
+  locale: a direct call, a product function, or a rendered component.
+
+**Numbers that aren't personal data.**
+
+- **Skipped by the phone and card rules:**
+  - dates and times, including invalid dates in date-validation tests;
+  - version strings and epoch timestamps;
+  - SSN-shaped strings, which the SSN rule handles;
+  - values under identifier, code, password, amount or geometry fields (`meetingId`, `pin`,
+    `viewBox`);
+  - UUIDs: a UUID is never a card number, even when it passes Luhn.
+- **Dismissed by rule as a placeholder pattern:** a phone whose last seven digits use one or two
+  digit values (`1111112`, `0000004`), or run in sequence (`1234567`, `9876543`).
+- **Fiction ranges:**
+  - The NANP fiction range 555-0100 to 555-0199 is reserved with or without an area code.
+  - New Zealand has no published fiction range, and `reserved.json` records that check. A NZ
+    number with 555 in it is dismissed by review only, with your reason.
 
 ## Step 3: Review every candidate
 
@@ -130,12 +182,40 @@ Each candidate ends up in exactly one of three places:
 - **`handoffs`.** Secrets go to code-security-auditor. Confirmed shared state goes to
   flaky-test-hunter.
 
+**Problems no candidate covers.** You may find a problem by reading, or by an experiment: a time
+bomb a moved clock exposed, or files a run left behind. Report it as a finding with
+`source: "agent"` and no candidates. It carries a `basis`:
+
+- `{"file", "line", "excerpt"}` for code you read. With `--repo`, the validator re-reads the line and
+  checks the excerpt is on it.
+- `{"evidence": "<path in the run dir>"}` for a run artefact, such as `residue.json` or a JUnit file.
+
+An excerpt quotes the code around a value, never the value. The validator rejects an excerpt that
+holds six or more digits or a non-reserved email address. A confirmed time bomb found this way:
+
+- names its `fails_on_date`, bracketed with dated runs;
+- cites those runs in its experiment.
+
+The renderer labels these findings "found by review".
+
 ## Step 4: Experiments
 
 Run the affected tests with `run_tests.py`, and compare each experiment with green baseline runs
-(label `baseline`).
+(label `baseline`). Confirm on the affected test files only, with two baselines. A whole-suite run
+on a busy machine times out and makes a poor baseline.
+
+Before validating, redact the evidence:
 
 ```bash
+python scripts/redact_evidence.py <run> --candidates <run>/candidates.json --repo <repo>
+```
+
+Runners copy test data into their output: Vitest and Jest put it in test names and failure
+messages. The validator rejects any evidence file that holds a flagged value. The script uses the
+validator's own matching, and prints only counts and candidate ids.
+
+```bash
+# the K=V pairs must follow --env directly (--env K=V --out ..., never --env --out ... K=V)
 python scripts/run_tests.py --preset pytest --cwd <copy> --out <run>/runs.json --label baseline --run-prefix B --repeat 2
 python scripts/run_tests.py --preset custom --cmd "python -m pytest -q -p no:cacheprovider -p clock_shift --junitxml={junit}" \
     --cwd <copy> --env TDA_CLOCK_SHIFT=+400d --out <run>/runs.json --label "clock +400d" --run-prefix S
@@ -146,10 +226,28 @@ python scripts/run_tests.py --preset pytest --cwd <copy> --out <run>/runs.json -
 - **Time bombs:**
   - Move the clock by the shift, to the last day of a month, and to 29 February
     (`TDA_CLOCK_DATE=2028-02-29`).
-  - Prefer the repo's own clock: freezegun, time-machine, Jest fake timers or an injected
-    `Clock`. Otherwise use libfaketime for whole processes, or `clock_shift.py`, which moves
-    Python's `date`, `datetime` and `time` and must sit in the directory pytest starts from.
-- **Shared state:** reverse or shuffle the order, and run each test in isolation.
+  - Prefer the repo's own clock: freezegun, time-machine or an injected `Clock`. Fake timers in Jest
+    and Vitest are per test, so they can't shift a whole suite. Otherwise use one of these:
+    - libfaketime, for whole processes;
+    - `clock_shift.py`, which moves Python's `date`, `datetime` and `time`, and must sit in the
+      directory pytest starts from;
+    - for Vitest and Jest, `scripts/clock_shift.mjs`, which moves `Date` and `Date.now` for the whole
+      run. Load it as a setup file; its header shows how, with the same `TDA_CLOCK_SHIFT` and
+      `TDA_CLOCK_DATE` settings.
+  - Bracket the first failing day with dated runs, and report that date as `fails_on_date`.
+  - Where the repo's test command sets flags or a time zone (a `package.json` script such as
+    `TZ=... vitest --configLoader native`), copy them into a `custom` preset.
+- **Shared state:** reverse or shuffle the order, and run each test in isolation. The `vitest`
+  preset shuffles (`--order shuffle --seed N`, with two seeds) but can't reverse.
+- **Residue:** snapshot the copy before the runs, and diff it after:
+
+  ```bash
+  python scripts/residue.py snapshot <copy> --out <run>/tree.before.json
+  python scripts/residue.py diff <copy> --before <run>/tree.before.json --out <run>/residue.json
+  ```
+
+  Files added or changed outside the ignored build and dependency directories are a `residue`
+  finding, with `source: agent` and basis `{"evidence": "residue.json"}`.
 - **Locale:** use another locale and time zone. Many runtimes on Windows ignore `LANG`, so run
   it on Linux or macOS when you can, and say when the platform changed too.
 
@@ -163,8 +261,8 @@ both are true:
 | Severity (computed) | When |
 |---|---|
 | **Critical** | Real-looking personal data (Serious with an `anonymised_by` marker); a time bomb failing within 30 days |
-| **Serious** | A time bomb failing within a year; environment coupling to production; shared mutable state confirmed by an order run |
-| **Moderate** | Magic ids, nondeterminism, schema drift, locale assumptions, unconfirmed shared state, time bombs further out |
+| **Serious** | A time bomb failing within a year; environment coupling to production; shared mutable state confirmed by an order run; residue in a served directory (`public/`, `static/`, `uploads/`) |
+| **Moderate** | Magic ids, nondeterminism, schema drift, locale assumptions, unconfirmed shared state, time bombs further out, residue outside a served directory |
 | **Minor** | Snapshot rot, unused or duplicate files |
 
 Each finding's priority is computed:
@@ -179,6 +277,9 @@ python scripts/validate_test_data_report.py <run>/test_data_report.json --candid
     --runs <run>/runs.json --evidence <run> --write-summary
 python scripts/render_report.py <run>/test_data_report.json [--brief]
 ```
+
+`--brief` prints the findings, and one line per handoff recipient with the files that hold the
+most handoffs. A leak error names the candidate whose value leaked, never the value.
 
 Write the headline yourself, naming the P0 findings. Fix every error rather than editing
 computed fields.
@@ -197,7 +298,7 @@ Show the user:
 | `metadata` | Repo, date the audit counts from, clock shift, `apply_fixes`, candidates and runs files, critical tests, platform |
 | `inventory[]` | Every data source: kind, format, the tests that load it, scanned or not assessed, any `anonymised_by` |
 | `tools[]` | Each tool ran, not run, errored or not applicable, and what that leaves unchecked |
-| `findings[]` | Category, candidates, location, data type, why flagged, `real_looking`, confidence, experiment, fails-on date, affected tests, fix, verification step; severity, reach, score and priority are computed |
+| `findings[]` | Category, candidates (or `source: agent` with a `basis`), location, data type, why flagged, `real_looking`, confidence, experiment, fails-on date, affected tests, fix, verification step; severity, reach, score and priority are computed |
 | `dismissed[]` | Each candidate set aside, by rule or by review, with the reason |
 | `handoffs[]` | To code-security-auditor (secrets), flaky-test-hunter (shared state) or privacy-flow-auditor |
 | `summary` | Headline, files scanned and not assessed, counts by category, priority and severity, earliest time bomb, evidence completeness |

@@ -1,6 +1,6 @@
 # Design: `test-data-auditor-skill`
 
-Status: Built (v1.0.0), see "As built" at the end. Build order: 11.
+Status: Built (v1.1.0), see "As built" at the end. Build order: 11.
 
 ## Mission
 
@@ -280,3 +280,81 @@ Where the build differs from the design above, and what the example showed.
     - binary files and YAML anchors;
     - the `anonymised_by` marker;
     - `clock_shift.py` itself.
+
+## As built (v1.1.0): a TypeScript suite
+
+Run on a real Next.js and TypeScript repository: 402 Vitest files, 11 Playwright specs, Prisma.
+Version 1.0.0 produced a valid report, but its most useful result, nine time bombs confirmed by
+moved-clock runs, couldn't be reported. Every rule except personal data and secrets was
+Python-only.
+
+- **Findings no candidate covers.** A finding may set `source: "agent"` with no candidates and a
+  `basis`:
+  - `{file, line, excerpt}`: the validator re-reads the line with `--repo`;
+  - `{evidence}`: a file in the run directory.
+
+  An excerpt may not hold six or more digits or a non-reserved email address. A confirmed time
+  bomb found this way names its `fails_on_date` and still needs a failing experiment. Date
+  arithmetic now counts only where `scan_data.py` computed the fail date itself. The renderer
+  labels these findings "found by review".
+- **JavaScript and TypeScript rules.** `jsparse.py` tokenizes JS and TS: strings, template literals,
+  comments and regex literals, so a quote inside `/can't/` doesn't open a string. It returns
+  object literals as records with field names, and reads date calls (`new Date('...')`,
+  `new Date(y, m, d)` with months counting from 0, `Date.UTC`, dayjs, moment, `parseISO`,
+  `DateTime.fromISO`). Field patterns match camelCase through a snake_case conversion, and expiry
+  fields may carry a prefix (`trialEndDate`, `certificationExpiresAt`). The JS rules cover:
+  - time bombs, through comparisons with `Date.now()`, `new Date()` or a variable holding either,
+    in product code;
+  - future literal dates in tests that don't freeze the clock;
+  - literal UUIDs, lookups by literal id and auto-increment assertions;
+  - unseeded `Math.random`, faker, and generated ids in fixtures;
+  - module-level mutable state that tests change and no hook resets;
+  - machine-locale formatting compared with a literal. `locale_calls_js` in `rules.json` is now
+    read.
+
+  On the repository, all nine confirmed time bombs are now candidates at their lines: two
+  `fixed_expiry` candidates carry the product comparison (`claim/[token]/route.ts:83`), and the
+  rest are future literals in tests that read the clock. The JS scan takes 11 s for 430 sources.
+- **False positives.** The phone rule now skips:
+  - date-shaped strings, invalid dates included;
+  - SSN-shaped strings;
+  - values under identifier, code, password, amount and geometry fields (`meetingId`, `viewBox`).
+
+  It dismisses by rule numbers whose last seven digits use one or two digit values, or run in
+  sequence. The NANP fiction range matches without an area code (`+1-555-0123`). A UUID is never a
+  card number. An iCalendar `UID:` value is not an email address.
+
+  `reserved.json` records that New Zealand publishes no fiction range, so NZ 555 numbers stay a
+  review call. On the repository, the open personal-data candidates went from 246 to 60, with 90
+  phone numbers now dismissed by rule as placeholder patterns.
+- **Placeholder secrets.** A secret whose value contains a placeholder word, names what it stands
+  for (`google-access-token`, `pi_123_secret_abc`), or has too little entropy is dismissed by rule.
+  Every other secret is still handed off and can't be dismissed by review. Mandatory handoffs on
+  the repository went from 113 to 47; password-strength vectors remain handoffs. The example's one
+  secret, `Bearer EXAMPLE-NOT-A-REAL-TOKEN-0000`, is now dismissed by that rule.
+  `render_report.py --brief` summarises handoffs per recipient and file.
+- **Leak check.**
+  - An email's local part alone counts only when it reads as a name (`first.last`), so a role word
+    used in test names no longer fails every JUnit file.
+  - Errors name the candidate whose value leaked.
+  - Six-digit windows are a set lookup.
+  - `redact_evidence.py` removes exactly what the validator would reject from runner output. It
+    parses JSON and rewrites strings only, so durations stay numbers. The hand-written redactor
+    used on the repository took 6 min 19 s; this takes about 2 s for 18 MB.
+- **Inventory.**
+  - Images, fonts and media in a test area are listed as `not_assessed`, and SVG is scanned as
+    text.
+  - Setup and helper files are a new kind, `support`: `vitest.setup.ts`, `auth.setup.ts`,
+    `__tests__/helpers/`, `test-support/`. They are scanned but not counted as tests, and are
+    loaded by their package, their directory's specs, or their importers.
+  - Walks prune `.turbo`, `.cache` and virtualenvs too.
+- **Residue.** A new category for files a run leaves in the working tree. `residue.py snapshot` and
+  `diff` record them, and a run that wrote uploads into `public/` is Serious. The evidence file
+  confirms the finding.
+- **Not changed here.**
+  - `run_tests.py` is shared. Its `--env` takes `nargs='*'`, so `--env --cwd x K=V` fails, and
+    `action='append'` would fix that. The `vitest` preset can shuffle but not reverse; SKILL.md
+    says so.
+  - The JS clock tool `clock_shift.mjs` is shared too; SKILL.md refers to it.
+  - Prisma `schema.prisma` is still not a drift source.
+  - JS `loaded_by` is still per file.

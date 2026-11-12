@@ -32,7 +32,7 @@
         "required": ["path", "kind", "format", "loaded_by", "status"],
         "properties": {
           "path": {"type": "string"},
-          "kind": {"enum": ["fixture", "factory", "seed", "snapshot", "recording", "inline"]},
+          "kind": {"enum": ["fixture", "factory", "seed", "snapshot", "recording", "inline", "support"]},
           "format": {"type": "string"},
           "bytes": {"type": "integer"},
           "lines": {"type": "integer"},
@@ -68,9 +68,24 @@
         "properties": {
           "id": {"type": "string", "pattern": "^F\\d+$"},
           "category": {"enum": ["personal_data", "time_bomb", "magic_id", "environment_coupling", "shared_mutable",
-                                "nondeterministic", "schema_drift", "snapshot_rot", "unused_or_duplicate", "locale_assumption"]},
+                                "nondeterministic", "schema_drift", "snapshot_rot", "unused_or_duplicate", "locale_assumption",
+                                "residue"]},
+          "source": {"enum": ["tool", "agent"], "description": "tool (default): from scan_data.py candidates. agent: found by review or by an experiment, with a basis the validator re-reads"},
+          "basis": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "file": {"type": "string"},
+                "line": {"type": "integer", "minimum": 1},
+                "excerpt": {"type": "string", "minLength": 3},
+                "evidence": {"type": "string", "minLength": 1}
+              }
+            }
+          },
           "title": {"type": "string", "minLength": 10},
-          "candidates": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^C\\d+$"}},
+          "candidates": {"type": "array", "items": {"type": "string", "pattern": "^C\\d+$"}},
           "location": {
             "type": "object",
             "required": ["file", "line"],
