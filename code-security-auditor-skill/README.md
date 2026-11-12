@@ -66,9 +66,10 @@ Priority = severity (CVSS v4.0 band) x confidence x exposure (public, authentica
 Scripts, in the order the skill runs them:
 
 ```bash
-python scripts/recon.py <repo> --out recon.json                   # attack surface: routes (per-handler auth for Next.js), server actions, middleware, client-side sources, CI triggers
-python scripts/run_scanners.py <repo> --out-dir <out>              # every applicable open-source scanner: status, time and results recorded
-python scripts/scan_pitfalls.py <repo> --out patterns.json         # 99 CWE-mapped patterns in 13 packs (Express and Next.js sources)
+python scripts/recon.py <repo> --out recon.json                   # attack surface: routes (per-handler auth for Next.js; FastAPI routers and dependencies), Azure Functions triggers, server actions, middleware, client-side sources, GitHub Actions and Azure DevOps triggers
+python scripts/run_scanners.py <repo> --out-dir <out> [--offline] [--osv-local-db <dir>]
+#   every applicable open-source scanner: status, time and results; lockfiles listed offline and advisories recorded as assessed, partial or not assessed
+python scripts/scan_pitfalls.py <repo> --out patterns.json         # 118 CWE-mapped patterns in 15 packs (Express and Next.js sources, Azure Bicep/ARM and Azure Pipelines)
 python scripts/scan_secrets.py <repo> --history --out secrets.json # secrets, never their values; git status and history per file
 #   large repositories: --history-budget 300 (seconds; coverage recorded as partial) --history-exclude '*.html'
 python scripts/merge_findings.py --root <repo> --patterns patterns.json --secrets secrets.json \
@@ -79,9 +80,9 @@ python scripts/run_poc.py poc.json --check                         # safety lint
 python scripts/run_poc.py poc.json --target http://127.0.0.1:5057 --permission "..." --out evidence/F-1.json
 python scripts/cvss4.py "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"
 python scripts/validate_security_audit.py security_audit.json --repo <repo> --candidates candidates.json --write-summary
-python scripts/render_report.py security_audit.json [--brief] [--sarif findings.sarif]
+python scripts/render_report.py security_audit.json [--brief] [--sarif findings.sarif]   # --sarif writes only the SARIF file
 python scripts/sarif.py read results.sarif                          # normalise any SARIF file
-python scripts/self_test.py                                         # built-in scanners against examples/kite-notes
+python scripts/self_test.py                                         # built-in scanners against examples/kite-notes and examples/ferry-ops
 ```
 
 ## Output
@@ -96,7 +97,8 @@ python scripts/self_test.py                                         # built-in s
 | `triage` | Every candidate promoted, observed or dismissed with a reason |
 | `findings` | Ranked: CWE, OWASP 2025, CVSS v4.0, confidence, exposure, priority, path, repro, PoC result, impact, fix, regression test |
 | `dependencies` | Every advisory with reachability and its basis |
-| `variant_rules` | Semgrep rules for the bug patterns found, tested, for CI |
+| `dependency_advisories` | Whether advisories were assessed, partially assessed or not assessed at all (schema 1.2), with the tools and lockfiles |
+| `variant_rules` | Semgrep rules (or grep patterns when Semgrep is unavailable) for the bug patterns found, tested, for CI |
 | `observations`, `coverage`, `limitations` | Informational issues, what was and wasn't reviewed |
 
 - PoC specs and evidence (every request and response, secrets redacted), the regression tests, and
@@ -124,6 +126,13 @@ counterparts, per-handler auth for each route handler and server action, the mid
 coverage, client sources only in browser code, and only the hard-coded fallback key reported as a
 secret.
 
+`examples/ferry-ops/` is a third fixture for a FastAPI, Azure Functions, Bicep/ARM and Azure
+DevOps stack: routers included across files with router-level and `include_router()` dependencies,
+route decorators quoted in a docstring, HTTP routes and triggers in a function app, misconfigured
+Bicep and ARM templates, and pipelines, each with safe counterparts. `self_test.py` checks every
+pattern hit exactly (24, none in the safe files), every entry point's path and auth, the pipelines,
+the secret placeholders and the offline dependency inventory.
+
 ```bash
 python scripts/validate_security_audit.py examples/security_audit.example.json \
     --repo examples/invoicer --candidates examples/run/candidates.json
@@ -139,8 +148,11 @@ python scripts/render_report.py examples/security_audit.example.json --brief
 - Traced findings list the guards checked; possible findings state the gap.
 - Every candidate and advisory is triaged once; dismissals must be checkable; reachable advisories
   have findings.
-- Locations match the source; agent-found findings' basis excerpts are on their lines; regression
+- Locations match the source; agent-found findings' basis excerpts and observations' excerpts are
+  on their lines; recon handler lines exist and are not inside a Python docstring; regression
   tests exist and fail on the vulnerable code.
+- Dependency advisories (schema 1.2): `assessed` needs a dependency tool that ran; `not_assessed`
+  must be in the limitations and rules out a "no vulnerable dependencies" headline.
 - No secret values in the report or evidence (values of real or undismissed secrets, searched in
   string values only, with errors that name the candidate and never the value); nothing written
   inside the repository; no `TODO(seed)` placeholder left.
@@ -151,22 +163,23 @@ python scripts/render_report.py examples/security_audit.example.json --brief
 
 - `SKILL.md`: complete agent instructions
 - `RUBRIC.md`: confidence, CVSS v4.0 anchors, exposure, priority, triage, safe PoCs, secrets, catalogue
-- `data/pitfalls.json`: 99 weakness patterns by CWE, with OWASP 2025 categories, CVSS hints, fixes and tool rule mappings
+- `data/pitfalls.json`: 118 weakness patterns by CWE, with OWASP 2025 categories, CVSS hints, fixes and tool rule mappings
 - `schemas/security_audit.schema.json`: output contract
 - `scripts/recon.py`: attack-surface map
 - `scripts/nextjs_auth.py`: Next.js route handlers, server actions and middleware, with per-handler auth (used by recon)
+- `scripts/py_routes.py`: FastAPI, Flask and Azure Functions entry points from the syntax tree, routers and their dependencies followed across files (used by recon)
 - `scripts/run_scanners.py`: detects and runs the open-source scanners, recording each one's status
 - `scripts/scan_pitfalls.py`: pattern scan
 - `scripts/scan_secrets.py`: secrets in the tree and git history, without values; whether each file is tracked, untracked or gitignored and was ever committed; credential files and paths to them listed separately
 - `scripts/merge_findings.py`: merges SARIF, Bandit, ESLint, dependency and built-in results into candidates; npm advisories get the installed version, range, dev flag and via chain from `package-lock.json`
 - `scripts/seed_report.py`: writes the report skeleton (entry points, tools, triage, dependencies) with TODO(seed) placeholders for the judgement
-- `scripts/self_test.py`: checks the built-in scanners against `examples/kite-notes/`
+- `scripts/self_test.py`: checks the built-in scanners against `examples/kite-notes/` and `examples/ferry-ops/`
 - `scripts/run_poc.py`: safety-linted PoC runner that records evidence
 - `scripts/cvss4.py`: CVSS v4.0 calculator (port of the FIRST reference implementation, BSD-2-Clause)
 - `scripts/validate_security_audit.py`: structure and honesty checks
 - `scripts/render_report.py`: coloured terminal/Markdown report and SARIF export
 - `scripts/sarif.py`: SARIF reader and writer (shared with UI Crash Hunter)
-- `examples/`: sample app, scanner outputs, PoCs, evidence, regression tests, variant rules and report; `kite-notes/`, the Next.js fixture
+- `examples/`: sample app, scanner outputs, PoCs, evidence, regression tests, variant rules and report; `kite-notes/`, the Next.js fixture; `ferry-ops/`, the FastAPI, Azure Functions, Bicep/ARM and Azure Pipelines fixture
 
 ## Design principles
 

@@ -281,3 +281,56 @@ these gaps; all are fixed, and `examples/kite-notes/` (a synthetic Next.js fixtu
   cache; the first run took 4 min 7 s cold); `recon.py` 10 s before, 9-15 s after (it now cuts out
   every handler and follows helpers); `scan_pitfalls.py` 3 s before, 7 s after (more patterns).
   npm audit's own time (about 6 minutes) is the registry's; it is now reported and bounded.
+
+## As built (v1.2.0): fixes from a run on a FastAPI, Azure Functions and Azure DevOps system
+
+A run over four repositories of one system (a FastAPI API, a React front end, Bicep
+infrastructure and Azure DevOps pipelines with Azure Functions) found the gaps below; they are
+fixed and covered by a new synthetic fixture, `examples/ferry-ops/`, in `self_test.py`.
+
+- **Python routes from the syntax tree.** recon matched decorators line by line: Black-style
+  decorators split over lines were missed, decorators quoted in docstrings became phantom Flask
+  routes, and router prefixes and dependencies were unknown. `py_routes.py` parses each file with
+  `ast` and follows routers across files: `APIRouter` (and subclasses) prefix and dependencies,
+  `include_router(prefix=, dependencies=)` on the app or another router, app dependencies,
+  route-level dependencies, `Depends`/`Security` parameters and `Annotated` aliases. A dependency
+  counts as auth when its name says so; `auth_evidence` names each one and where. A router that is
+  never included stays `unknown`. Flask blueprints and `register_blueprint(url_prefix=)` come from
+  the same pass (the invoicer example's recon is unchanged).
+- **Azure Functions.** `@app.route` (auth level, methods, the `host.json` route prefix) and blob,
+  queue, Service Bus, Event Hub, Event Grid, Cosmos DB and timer triggers are entry points.
+- **Azure DevOps pipelines** join `ci_workflows`: triggers (no `trigger:` key means every branch),
+  branches, runtime parameters, service connections, environments, deployment jobs and templates
+  (the files other pipelines include), with review leads.
+- **Pattern packs.** `azure_iac` (Bicep and ARM, claimed by content) and `azure_pipelines`
+  (claimed by content, GitHub workflows and Compose excluded), plus `PY-`/`JS-AUTH-ENV-BYPASS`
+  (bypass tokens or roles from the environment with no environment guard), `PY-UPLOAD-UNBOUNDED`
+  and `JS-UPLOAD-NO-LIMIT`. Packs can `require_content`/`exclude_content`; pitfalls can
+  `suppress_above`/`require_above`, look at the enclosing job (`scope_regex`/`scope_suppress`) and
+  skip f-strings that only interpolate constants (`constant_interpolation`).
+- **False positives.** `PY-SQL-FSTRING` needs a SQL statement shape (an error message with "with"
+  no longer matches), skips constant-only interpolation and a `noqa: S608` with a reason, and
+  handles quotes inside the string; on the invoicer example two constant-only lines (dismissed in
+  the example report) no longer match, so a rerun of its run would drop those two candidates.
+  `JS-COOKIE-FLAGS` skips a dev-server proxy's `secure: false`. `scan_secrets.py` treats `$NAME`,
+  `$(NAME)`, `$env:NAME`, `%NAME%`, ARM expressions and `Enabled`/`Disabled` as placeholders, in the
+  tree and in history.
+- **Dependencies offline.** `run_scanners.py` lists pinned packages from lockfiles without the
+  network (`dependencies.json`) and records `dependency_advisories` (assessed, partial or
+  not assessed); `--osv-local-db` runs osv-scanner against a local database. A missing and
+  networked tool now says both. Checkov applies to Bicep, ARM, Compose and pipeline files.
+- **Schema 1.2** (1.0 and 1.1 reports stay valid): `dependency_advisories` is required and checked
+  against the tools that ran, the limitations and the headline; observations may carry an
+  `excerpt` that `--repo` re-reads; recon handler lines must exist and not sit in a Python
+  docstring; `chains_with` may name `repo#F-n` in a sibling repository's report; variant rules may
+  be `grep` patterns. `seed_report.py` counts IaC and CI files in `files_in_scope`, copies the
+  advisory status (with a limitation when not assessed), and gives triggers internal exposure.
+- **Renderer.** `--sarif` writes only the SARIF file; `--brief` collapses not-applicable tools; the
+  dependencies section states the advisory status.
+- **Rubric and SKILL.md.** FastAPI and Azure framework notes; an unknown deployment setting goes in
+  AT (`traced` with `AT:P`), not in `possible`; an exposed service that still needs an
+  administrator credential is `PR:H` with exposure `restricted`; one report per repository with
+  cross-report links.
+- **Timing.** `scan_secrets.py` records `elapsed_breakdown_s` (tree, git lookups, history), so a
+  slow working-tree scan is told apart from a slow history scan.
+- **Not done:** a TOCTOU pattern (a status check around an external call is review-only by nature).

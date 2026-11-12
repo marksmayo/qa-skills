@@ -1,7 +1,7 @@
 ---
 name: code-security-auditor
 description: Audit a codebase for security weaknesses with open-source scanners (Semgrep OSS, Bandit, gosec, Brakeman, gitleaks, osv-scanner, pip-audit, npm audit, zizmor, Trivy, Checkov and more) plus a deep manual review, trace each finding from attacker-controlled input to the dangerous operation, rate it with CVSS v4.0, and write safe reproduction steps, a fix and a regression test. Optionally confirms findings with canary-only proofs of concept against localhost or a test environment the user names. Every candidate is triaged, every tool's status is recorded, and the report never calls the code secure.
-version: 1.1.0
+version: 1.2.0
 ---
 
 # Code Security Auditor
@@ -100,11 +100,45 @@ config (`dynamic`, `revalidate`, and `Cache-Control` on responses that read the 
 actions' argument checks, `redirect()`/`NextResponse.redirect`/`router.push` with values from
 `searchParams`, and Prisma writes that take the request body whole.
 
+**FastAPI and Flask.** recon reads Python routes from the syntax tree, so decorators split over
+several lines are found and decorators quoted in docstrings (usage examples) are not. It follows
+routers across files: a route's path is the `include_router(prefix=...)` (or
+`register_blueprint(url_prefix=...)`) chain plus the router's own `prefix`, and its auth is the
+union of the dependencies on the route (`dependencies=[...]`, `Depends()`/`Security()` parameters,
+`Annotated` aliases), on its router (`APIRouter(dependencies=[...])`, including a project's own
+APIRouter subclass), on the `include_router()` call and on the app. A dependency counts as auth when
+its name says so (`get_current_user`, `require_admin`, `check_..._permission`, an API-key header);
+`auth_evidence` names each one and where it is. A route whose router is never included anywhere
+recon can resolve stays `unknown`. In the deep review read those dependencies themselves: what they
+validate (signature, issuer, audience, expiry), any bypass for development (a static token or extra
+roles from an environment variable, which `PY-AUTH-ENV-BYPASS` flags), and whether a path parameter
+feeding a data-access lookup is also filtered by the caller's tenant or ownership.
+
+**Azure Functions and Azure DevOps.** Function apps (Python v2 model) are entry points too:
+`@app.route` with its `auth_level` (`ANONYMOUS` is `public`, `FUNCTION`/`ADMIN` need a key,
+`api_key`) under the `host.json` route prefix, and blob, queue, Service Bus, Event Hub, Cosmos DB
+and timer triggers (`queue_consumer`, or `other` for timers): whoever can write to the queue or
+container controls the input. Azure DevOps pipelines are listed in `ci_workflows` with their
+triggers (a pipeline with no `trigger:` key builds every branch), runtime parameters, service
+connections, environments and deployment jobs; templates are recognised as the files other
+pipelines include. Review leads point at every-branch triggers with secrets or service
+connections, runtime parameters, and service connections outside a deployment job.
+
 ### 2. Run the scanners
 
 ```bash
-python scripts/run_scanners.py <repo> --out-dir <out> [--offline]
+python scripts/run_scanners.py <repo> --out-dir <out> [--offline] [--osv-local-db <dir>]
 ```
+
+Whatever runs, the pinned packages in lockfiles and requirements files are listed offline in
+`<out>/dependencies.json`, and `scanners.json` records `dependency_advisories`: `assessed`,
+`partial` (a lockfile no tool covered, say npm with only pip-audit) or `not_assessed` (no advisory
+tool ran, for example with `--offline`). Copy it into the report's `dependency_advisories`; "not
+assessed" is never "no vulnerable dependencies", and the limitations must say it. With
+`--osv-local-db` (an osv-scanner offline database downloaded beforehand), osv-scanner checks
+advisories without the network. Without any advisory tool, packages you can see are risky by
+reading (an abandoned release line, a known-vulnerable pin) are agent findings with confidence
+`possible`.
 
 It runs every free, open-source tool that applies and is installed, writes their outputs to
 `<out>` (refused if inside the repository) and records each tool as `ran`, `not_run` (with why),
@@ -122,8 +156,16 @@ anything; a missing tool is recorded, not silently skipped.
 | Language-specific | Bandit (Python), gosec (Go), Brakeman (Rails), ESLint security plugins (JS/TS, only if the repo has them), Psalm taint analysis (PHP, only if installed in the repo), SpotBugs + FindSecBugs (Java/Kotlin: needs a build, run it there), MobSF (needs a package and a server) |
 | Secrets | gitleaks (including history), plus `scan_secrets.py` |
 | Dependencies | osv-scanner, pip-audit, npm audit |
-| CI | zizmor (GitHub Actions), plus the pattern pack |
-| IaC and containers | Trivy, Checkov, hadolint |
+| CI | zizmor (GitHub Actions), Checkov (GitHub Actions and Azure Pipelines), plus the pattern packs |
+| IaC and containers | Trivy, Checkov (Terraform, Bicep, ARM, CloudFormation, Kubernetes, Helm, Dockerfiles, Compose), hadolint |
+
+The built-in pattern packs cover Python, JavaScript/TypeScript, Java/Kotlin, Go, PHP, Ruby, C#, C,
+iOS and Android manifests, GitHub Actions, Dockerfiles and Terraform, and Azure: Bicep and ARM
+templates (public network access on data services, firewall rules from `0.0.0.0`, administrator
+password login, secret parameters without `@secure()`, Key Vault access policies that list every
+secret, FTP allowed, no `httpsOnly`, TLS below 1.2, account keys in app settings) and Azure
+Pipelines YAML (every-branch triggers, literal secret variables, branch names and runtime
+parameters pasted into scripts, service connections outside deployment jobs).
 
 Then the built-in scans, which work with no tools installed:
 
@@ -159,8 +201,9 @@ under 20 characters) are fixtures: they are counted and listed under `test_fixtu
 one by one; a real-looking key in a test is still a candidate. Placeholders are not secrets:
 values in `.env.example`/`.env.sample`/`.env.template` unless they look like real keys, instruction
 values (`generate-...`, `your-...`, `<...>`, `change-me`), words joined by hyphens in documentation,
-`postgresql://user:password@` in documentation, and lists of field names (`['clientSecret',
-'paymentIntentId']`). A hard-coded fallback (`getenv('KEY', 'dev-key')`) is always a candidate,
+`postgresql://user:password@` in documentation, lists of field names (`['clientSecret',
+'paymentIntentId']`), references to another variable (`$NAME`, `$(NAME)` in Azure Pipelines,
+`$env:NAME`, `%NAME%`), and ARM template expressions (`[parameters('x')]`). A hard-coded fallback (`getenv('KEY', 'dev-key')`) is always a candidate,
 whatever it looks like, because it is used whenever the variable is unset. Secrets that exist only
 in history become candidates too (`history_only`, `git_status: removed`, with the commits), so
 each is triaged and rotated. The git lookups are batched (two `git log` calls per hundred files,
@@ -231,8 +274,9 @@ a file outside the repository) so the team can add it to CI.
 Without Semgrep, test a variant as a regex: write a catalogue with one entry in the
 `data/pitfalls.json` shape (pack, regex, optional `require_near`/`suppress_near`/`suppress_file`)
 to a scratch file, run `scan_pitfalls.py <repo> --catalogue <that file>` on the repository and on
-a fixed copy, and record the result in the limitations (`variant_rules` only holds Semgrep rules,
-so say "variant checked with a regex, no Semgrep rule written").
+a fixed copy, and record it in `variant_rules` with `engine: "grep"` (the regex in `rule`, the
+catalogue file in `file`, what it matched in `matches`). When no finding is pattern-shaped, say so
+in the limitations instead.
 
 ### 7. Verify (opt-in)
 
@@ -284,6 +328,14 @@ setting, a particular browser). A condition that holds in the deployment as ship
 attacker can arrange (sending two requests at once, choosing an IPv6 literal, waiting for a token
 to be issued), is `AT:N`; put the difficulty in AC if there is any.
 
+**An unknown deployment setting belongs in AT, not in confidence.** When the code path is fully
+read (a development bypass that a deployed environment variable switches on) but you cannot see
+whether production sets it, the finding is `traced` with `AT:P` and the rationale names the
+setting; `possible` is for a path you could not read to the end. An exposed service that still
+needs a credential (a database open to the internet with password login) takes the privilege the
+attacker must hold (`PR:H` for an administrator password) and exposure `restricted`; RUBRIC.md has
+the anchors.
+
 ### 9. Repro steps, fix and regression test
 
 For every finding:
@@ -319,8 +371,15 @@ python scripts/cvss4.py "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:N/VA:N/SC:N/S
 ```
 
 Fix every validator error. The SARIF export carries titles, locations, CWE tags and a
-security-severity, not exploit steps, so it can go to GitHub code scanning. Give the user the
-rendered report, the P0 and P1 findings first, and what wasn't covered.
+security-severity, not exploit steps, so it can go to GitHub code scanning (with `--sarif` only the
+file is written). Give the user the rendered report, the P0 and P1 findings first, and what wasn't
+covered.
+
+One report covers one repository (`--repo` re-reads every location against one root, and the
+history scan and the commit are per repository). When several repositories make one system, write
+one report each and link findings across them in `chains_with` as `<repository>#F-n` (the
+repository name as in that report's `target.repository`); the validator checks local references
+and leaves sibling ones to that report.
 
 ## Report fields that the validator checks
 
@@ -335,8 +394,13 @@ rendered report, the P0 and P1 findings first, and what wasn't covered.
   reachable ones linked to findings.
 - Locations (file, line and snippet) against the source: the line must be the one that holds the
   snippet, so for a statement over several lines cite the line with the dangerous expression.
-  Agent-found findings' basis excerpts are checked the same way. Regression tests exist and fail
-  on the vulnerable code; variant rule files exist.
+  Agent-found findings' basis excerpts are checked the same way, and so are observations'
+  optional `excerpt`. Recon entry points' handler lines must exist, and in Python must not sit
+  inside a string or docstring. Regression tests exist and fail on the vulnerable code; variant
+  rule files exist.
+- `dependency_advisories` (required from schema 1.2): `assessed` or `partial` need a dependency
+  tool that ran, `not_assessed` lists no advisories, and anything but `assessed` has a reason, is
+  named in the limitations, and rules out a headline claiming no vulnerable dependencies.
 - No secret value in the report or the evidence, and nothing written inside the repository. The
   values come from findings with a secret block and from secret candidates that weren't dismissed
   (a dismissed one still counts if it looks like a real key); placeholder words and values under

@@ -25,10 +25,14 @@ environmental context.
 | AV | N: over the network; A: same network segment (a developer's machine on shared Wi-Fi); L: local or log access; P: physical | Debug server bound to 0.0.0.0 on a laptop: A |
 | AC | H when the attacker must beat something they don't control (a PIN, a race, state prediction) | Reset-token prediction: H |
 | AT | P only when a condition the attacker can't influence must hold and is unusual in production (a missing env var, a .netrc on the server, a browser without SameSite=Lax). N when the condition holds in the deployment as shipped or the attacker can arrange it (two requests at once, an IPv6 literal, a token that is issued anyway); put any difficulty in AC | Hard-coded fallback key: P. SSRF filter that misses IPv6: N. Double booking by racing two requests: N (AC:H if the window is narrow) |
-| PR | N: no account; L: any account; H: admin | Self-registration counts as L |
+| PR | N: no account; L: any account; H: admin, or a credential only operators hold | Self-registration counts as L. A database open to the internet that still needs its administrator password: PR:H, exposure `restricted` |
 | UI | N; P: victim does something normal; A: victim follows a crafted link or page | Open redirect: A |
 | VC/VI/VA | Impact on the app | SQLi read-only (sqlite3 single statement): VC:H, VI:N |
 | SC/SI/SA | Impact beyond the app | SSRF into internal services: SC:H; CI token writes to the repository: SI:H |
+
+A deployed setting you can't see (is the development bypass variable set in production?) is an
+attack requirement: `AT:P` with the setting named in the rationale, and the finding stays `traced`
+when the code path itself is read to the end. `possible` is for a path you could not read.
 
 `scripts/cvss4.py` computes the score; the validator recomputes it. Severity bands: critical 9.0-10,
 high 7.0-8.9, medium 4.0-6.9, low 0.1-3.9; a 0.0 score is an observation.
@@ -123,29 +127,31 @@ appears in the request is rejected.
 - Test fixtures and `.env.example` placeholders are not secrets; real-looking keys in tests still are.
   `scan_secrets.py` sets aside test-file literals without a provider format and under 4 bits per
   character or 20 characters (`test_fixtures`), and skips instruction values (`generate-...`,
-  `your-...`, `<...>`), hyphenated words in documentation and lists of field names. A hard-coded
+  `your-...`, `<...>`), hyphenated words in documentation, lists of field names, references to
+  another variable (`$NAME`, `$(NAME)`, `$env:NAME`, `%NAME%`) and ARM expressions. A hard-coded
   fallback is never a placeholder.
 - A secret only in history is a candidate (`history_only`, `git_status: removed`) and is rotated.
 
 ## Weakness catalogue
 
-`data/pitfalls.json` has 99 patterns in 13 packs (Python, JavaScript/TypeScript, Java/Kotlin,
-Android manifests, iOS, Go, PHP, Ruby, C#, C/C++, GitHub Actions, Dockerfiles, Terraform), each with
-a CWE, an OWASP 2025 category, a typical CVSS vector, a fix and the matching rules of other tools.
+`data/pitfalls.json` has 118 patterns in 15 packs (Python, JavaScript/TypeScript, Java/Kotlin,
+Android manifests, iOS, Go, PHP, Ruby, C#, C/C++, GitHub Actions, Dockerfiles, Terraform, Azure
+Bicep/ARM, Azure Pipelines), each with a CWE, an OWASP 2025 category, a typical CVSS vector, a fix
+and the matching rules of other tools.
 
 | Category | Weaknesses |
 |---|---|
 | Injection | SQL and NoSQL (including Prisma `$queryRawUnsafe`/`$executeRawUnsafe`, `Prisma.raw` and `$queryRaw` called with a string), OS command, template (SSTI), eval, LDAP/XPath, header and log injection, format strings, CSV formula injection |
 | Web | XSS sinks (including `dangerouslySetInnerHTML` with non-literal content and values in `<style>` blocks), CSRF, open redirect (`res.redirect`, `NextResponse.redirect`, `redirect()`, `router.push`, and `startsWith('/')`-only checks), CORS, cookie flags, postMessage origin checks, shared-cache headers on session responses |
-| Server-side | SSRF, path traversal and zip slip, XXE, unsafe uploads (including the client's `file.type` stored as the content type), unverified webhooks |
+| Server-side | SSRF, path traversal and zip slip, XXE, unsafe uploads (including the client's `file.type` stored as the content type, and uploads read whole into memory or handed to a parser with no size limit), unverified webhooks |
 | Access control | IDOR/BOLA, missing function-level checks (recon: handlers with no auth call), mass assignment (`data: body`, `data: { ...body }`), mostly agent review |
-| Authentication | Hard-coded session keys, JWT verification, reset tokens, rate limits, OAuth `state` not bound to the session |
+| Authentication | Hard-coded session keys, JWT verification, reset tokens, rate limits, OAuth `state` not bound to the session, development bypass tokens or extra roles read from an environment variable with no environment guard |
 | Cryptography | Weak hashes and ciphers, ECB, predictable randomness, disabled TLS verification |
 | Data exposure | Secrets in code or history, credentials in logs, verbose errors |
 | Language-specific | Deserialisation (pickle, YAML, Java, .NET, PHP, Ruby), prototype pollution, ReDoS, memory safety in C/C++ |
 | Mobile | Exported components and deep links, WebView bridges, cleartext traffic, ATS exceptions, insecure storage |
-| Supply chain and CI | `pull_request_target` checkouts, expression injection, unpinned actions, reachable vulnerable dependencies, `curl | sh` |
-| Configuration | Debug mode, public storage, open admin ports, unencrypted storage |
+| Supply chain and CI | `pull_request_target` checkouts, expression injection, unpinned actions, reachable vulnerable dependencies, `curl | sh`; Azure Pipelines every-branch triggers, literal secret variables, branch names and runtime parameters in scripts, service connections outside deployment jobs |
+| Configuration | Debug mode, public storage, open admin ports, unencrypted storage; Azure public network access on data services, `0.0.0.0` firewall rules ("allow Azure services" admits every tenant), administrator password login, secret parameters without `@secure()`, Key Vault access policies listing every secret, FTP, no `httpsOnly`, TLS below 1.2, account keys in app settings |
 
 OWASP Top 10 (2025): A01 Broken Access Control, A02 Security Misconfiguration, A03 Software Supply
 Chain Failures, A04 Cryptographic Failures, A05 Injection, A06 Insecure Design, A07 Authentication
@@ -170,6 +176,21 @@ JavaScript source patterns cover Express (`req.query`, `req.body`, `req.params`)
 - Responses that read the session must not carry `Cache-Control: public` or `s-maxage`.
 - Prisma: `$queryRaw` as a tagged template is parameterised; the `Unsafe` variants and `Prisma.raw`
   are not. `data: body` lets the caller set any column, including owner and role fields.
+
+## Framework notes: FastAPI and Azure
+
+- A FastAPI route's auth is the union of its own dependencies (`dependencies=[...]`,
+  `Depends`/`Security` parameters, `Annotated` aliases), its router's, the `include_router()` call's
+  and the app's. recon resolves these across files and names each dependency; read them.
+- Development bypasses (a static token compared to the bearer, roles merged from an environment
+  variable) are findings unless something fails closed outside local development.
+- `UploadFile.file.read()` reads the whole body; parsers such as openpyxl then expand compressed
+  content. Check for a limit at the proxy, the server and in the handler.
+- Azure Functions: `auth_level=ANONYMOUS` is public; FUNCTION/ADMIN keys are shared secrets, not
+  user identity. Triggers (blob, queue, Service Bus) take input from whoever can write to the source.
+- Azure Pipelines: template expressions (`${{ parameters.x }}`) are pasted into scripts before the
+  shell runs; predefined variables such as `$(Build.SourceBranchName)` carry attacker-chosen branch
+  names. Service connections belong in deployment jobs behind an environment with approvals.
 
 ## Reviewer checklist
 
