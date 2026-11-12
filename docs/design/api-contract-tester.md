@@ -256,3 +256,55 @@ Where the build differs from the design above, and what the example showed.
 - **Testing:** 36 of 36 seeded report violations are caught. The sender refuses a non-loopback
   host without `authorised_by` and writes without authorisation or to a production host, blocks
   every write case in safe mode, and backs off on 429.
+
+## As built (v1.1.0): gaps found on a real Next.js app
+
+A run against a mid-size Next.js 16 App Router app (a code-built OpenAPI contract with no
+operationIds and no security, behind a proxy with per-prefix rate limits, and a staging deployment
+whose database was down) found these gaps. What changed:
+
+- **Case ids are filesystem-safe.** With no operationId the default id is `"GET /api/x"`, and the
+  sender crashed writing `exchanges/GET /api/x-001.json` after requests had gone out. `gen_cases.py`
+  now makes unsafe ids a slug plus a short hash (`GET_api_x-1a2b3c4d-001`); safe ids are unchanged,
+  so the example's cases are byte-identical. The sender applies the same function to file names.
+- **429 policy.** `--max-retries-429` (default 3) and `--max-retry-after` (default 60 s): a
+  Retry-After longer than the maximum is not retried early. `--on-429 stop-path` stops only that path
+  (its `--path-budget` prefix, else the operation's path) and carries on; `--path-budget PREFIX=N`
+  caps requests per prefix (a first send needs room for its re-send); `--max-requests` caps the attempt.
+  Cases not sent are in `blocked` and the run is `incomplete`.
+- **Resumable, crash-safe runs.** `--resume earlier/run.json` reuses answered cases (not 429s),
+  copies their exchanges and records the earlier attempt in `resumed_from`; `requests_sent` counts
+  both. If the sender aborts, the partial run.json is still written. The report's
+  `metadata.aborted_attempts` lists earlier attempts and the validator requires every resumed one.
+- **Liveness.** `--probe` takes a path with or without its leading slash (Git Bash rewrote `/` to
+  `C:/Program Files/Git/`; a rewritten path is now refused with a hint about `MSYS_NO_PATHCONV=1`),
+  and `--probe-expect` sets what "up" means. Without `--probe`, the default probe is an API
+  operation, and its 5xx no longer marks the whole target down.
+- **Environment outage.** When every answer over two or more operations is a 5xx, the server-error
+  failures merge into one candidate (`environment_outage`, confidence low) instead of one Critical
+  per operation; the headline's confidence is low, run_status `partial`, and the summary must say
+  "outage". On the staging run this would have been 1 candidate, not 11.
+- **Session auth.** `--cookie-env` sends a Cookie header (redacted, each cookie value scrubbed).
+  `load_contract.py` raises a `no_security_declared` contract issue, and `gen_cases.py --auth-required`
+  marks operations the contract leaves unsecured as needing credentials (agent judgment, recorded in
+  cases.json), so they get a no_auth case that expects 401/403.
+- **Static-only reports.** Top-level `run_status` (`complete`, `partial`, `not_run`) with
+  `run_status_reason`. `merge_findings.py` and `validate_report.py` work without a run: every
+  operation untested, no findings, evidence `none`, confidence low, and the summary must say the API
+  was not run and may not claim anything a run would show. `examples/report.static.example.json` is
+  one. Missing files are a usage message, not a traceback.
+- **Contract vs handlers.** `handler_map.py` reads Next.js App Router `route.ts` exports (including
+  `export { handler as GET }`), Pages Router API files, Express, Flask and FastAPI routes, and reports
+  undocumented handlers, documented operations without a handler, methods not handled and
+  path-parameter name differences, in the report's `handler_check`; the validator compares it with
+  handlers.json and re-reads each cited line. On the app above it found the same 190 handlers,
+  148 undocumented and the documented-but-unhandled `POST .../reschedule` as a hand-written script,
+  in 0.5 s. Mount prefixes (Express `app.use`, Flask blueprints, FastAPI routers) are not resolved.
+- **spec_diff** reports a removed required property once (as removed), not also as "no longer required".
+- **Validator.** A finding's `actual` must state a status its exchanges show; generic triage reasons
+  ("not a real issue") and three or more triage entries sharing one reason that names no candidate
+  are rejected; placeholder summaries are rejected; limitations may not be empty when the run was
+  partial, not run, had excluded or untested operations, or earlier attempts.
+- **Not built:** recording CDN cache headers, a re-send sample option, grouping the
+  missing-operationId lint, mapping code-built contracts' lines back to source, and checking that
+  cases.json equals what `gen_cases.py` would generate for the recorded seed.

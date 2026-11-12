@@ -2,6 +2,7 @@
   "contract_sha256": "bbc3ac4d3a170c9814594d1d7f45ae2ee781e96699d0ece85bd79dab69b1bcbc",
   "seed": 1611,
   "run_status": "complete",
+  "environment_outage": false,
   "operations": [
     {
       "operation_id": "healthCheck",

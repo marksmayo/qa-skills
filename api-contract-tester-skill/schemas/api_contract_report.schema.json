@@ -4,13 +4,18 @@
   "title": "API contract test report",
   "type": "object",
   "additionalProperties": false,
-  "required": ["skill", "scope", "metadata", "headline", "operations", "findings", "needs_review", "triage",
-               "contract_issues", "breaking_changes", "limitations", "next_steps"],
+  "required": ["skill", "run_status", "run_status_reason", "scope", "metadata", "headline", "operations", "findings",
+               "needs_review", "triage", "contract_issues", "handler_check", "breaking_changes", "limitations", "next_steps"],
   "properties": {
     "skill": {
       "type": "object", "additionalProperties": false, "required": ["name", "version"],
       "properties": {"name": {"enum": ["api-contract-tester"]}, "version": {"type": "string"}}
     },
+    "run_status": {
+      "description": "complete: the run finished; partial: it ran but stopped early, was down, or hit an outage; not_run: static only (contract, diff, handler check), no request was sent",
+      "enum": ["complete", "partial", "not_run"]
+    },
+    "run_status_reason": {"type": ["string", "null"]},
     "scope": {
       "type": "object", "additionalProperties": false,
       "required": ["contract", "previous_contract", "base_url", "authorised_by", "writes_allowed", "production_hosts", "seed",
@@ -34,33 +39,41 @@
                             "api_version": {"type": ["string", "null"]}}}
           ]
         },
-        "base_url": {"type": "string", "pattern": "^https?://"},
+        "base_url": {"oneOf": [{"type": "null"}, {"type": "string", "pattern": "^https?://"}]},
         "authorised_by": {"type": ["string", "null"]},
         "writes_allowed": {"type": "boolean"},
         "production_hosts": {"type": "array", "items": {"type": "string"}},
-        "seed": {"type": "integer"},
+        "seed": {"type": ["integer", "null"]},
         "operations_filter": {
           "type": "object", "additionalProperties": false, "required": ["include", "exclude"],
           "properties": {"include": {"type": "array", "items": {"type": "string"}}, "exclude": {"type": "array", "items": {"type": "string"}}}
         },
-        "max_cases_per_operation": {"type": "integer", "minimum": 1}
+        "max_cases_per_operation": {"oneOf": [{"type": "null"}, {"type": "integer", "minimum": 1}]}
       }
     },
     "metadata": {
       "type": "object", "additionalProperties": false,
-      "required": ["generated_at", "tools", "generator", "requests_sent", "rate_limited", "run_status", "secret_env", "run"],
+      "required": ["generated_at", "tools", "generator", "requests_sent", "rate_limited", "run_status", "secret_env", "run",
+                   "aborted_attempts"],
       "properties": {
         "generated_at": {"type": "string"},
         "tools": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/tool"}},
-        "generator": {"enum": ["stdlib", "schemathesis", "both"]},
+        "generator": {"enum": ["stdlib", "schemathesis", "both", null]},
         "requests_sent": {"type": "integer", "minimum": 0},
         "rate_limited": {
           "type": "object", "additionalProperties": false, "required": ["events", "backoff_seconds"],
           "properties": {"events": {"type": "integer", "minimum": 0}, "backoff_seconds": {"type": "number", "minimum": 0}}
         },
-        "run_status": {"enum": ["complete", "incomplete", "down"]},
+        "run_status": {"enum": ["complete", "incomplete", "down", "not_run"]},
         "secret_env": {"type": "array", "items": {"type": "string"}},
-        "run": {"type": "string"}
+        "run": {"type": ["string", "null"]},
+        "aborted_attempts": {
+          "description": "Earlier attempts against the same target whose requests are not all in the run's results (crashed, stopped, superseded). requests_sent includes them when the run resumed them.",
+          "type": "array",
+          "items": {"type": "object", "additionalProperties": false, "required": ["requests_sent", "reason", "record"],
+                    "properties": {"requests_sent": {"type": "integer", "minimum": 0}, "reason": {"type": "string", "minLength": 10},
+                                   "record": {"type": ["string", "null"]}}}
+        }
       }
     },
     "headline": {
@@ -80,7 +93,7 @@
           "properties": {"breaking": {"type": "integer"}, "potentially_breaking": {"type": "integer"}, "compatible": {"type": "integer"}}
         },
         "operation_coverage": {"$ref": "#/$defs/coverage"},
-        "evidence_completeness": {"enum": ["complete", "partial", "incomplete"]},
+        "evidence_completeness": {"enum": ["complete", "partial", "incomplete", "none"]},
         "overall_confidence": {"enum": ["high", "medium", "low"]}
       }
     },
@@ -110,6 +123,28 @@
         "properties": {"id": {"type": "string"}, "kind": {"type": "string"}, "location": {"type": "string"},
                        "line": {"type": ["integer", "null"]}, "message": {"type": "string"}}
       }
+    },
+    "handler_check": {
+      "description": "Contract operations compared with the route handlers in the code (handler_map.py); null when not run",
+      "oneOf": [
+        {"type": "null"},
+        {"type": "object", "additionalProperties": false,
+         "required": ["source", "frameworks", "contract_prefix", "handlers_found", "counts", "issues"],
+         "properties": {
+           "source": {"type": "string"},
+           "frameworks": {"type": "array", "items": {"type": "string"}},
+           "contract_prefix": {"type": "string"},
+           "handlers_found": {"type": "integer", "minimum": 0},
+           "counts": {"type": "object", "additionalProperties": {"type": "integer"}},
+           "issues": {"type": "array", "items": {
+             "type": "object", "additionalProperties": false,
+             "required": ["id", "kind", "method", "path", "operation_id", "file", "line", "message"],
+             "properties": {"id": {"type": "string", "pattern": "^H[0-9]+$"},
+                            "kind": {"enum": ["undocumented_handler", "missing_handler", "method_not_handled", "parameter_name_mismatch"]},
+                            "method": {"type": "string"}, "path": {"type": "string"}, "operation_id": {"type": ["string", "null"]},
+                            "file": {"type": ["string", "null"]}, "line": {"type": ["integer", "null"]}, "message": {"type": "string"}}}}
+         }}
+      ]
     },
     "breaking_changes": {
       "type": "array",

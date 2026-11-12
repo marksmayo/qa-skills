@@ -1,0 +1,728 @@
+{
+  "skill": {
+    "name": "api-contract-tester",
+    "version": "1.1.0"
+  },
+  "run_status": "not_run",
+  "run_status_reason": "No test instance was available, so no request was sent: the contract was loaded and linted, cases were planned, and 1.5.0 was diffed against 1.4.0.",
+  "scope": {
+    "contract": {
+      "kind": "openapi",
+      "version": "3.1.0",
+      "api_version": "1.5.0",
+      "source": "examples/clinic-api/openapi.yaml",
+      "sha256": "bbc3ac4d3a170c9814594d1d7f45ae2ee781e96699d0ece85bd79dab69b1bcbc"
+    },
+    "previous_contract": {
+      "source": "examples/clinic-api/openapi.v1.yaml",
+      "sha256": "318e8330b0968d6ac3619341c43bc6642c3c6fc6f8b70ebb7e32df2175d038e0",
+      "api_version": "1.4.0"
+    },
+    "base_url": null,
+    "authorised_by": null,
+    "writes_allowed": false,
+    "production_hosts": [],
+    "seed": 1611,
+    "operations_filter": {
+      "include": [],
+      "exclude": [
+        "cancelAppointment"
+      ]
+    },
+    "max_cases_per_operation": 50
+  },
+  "metadata": {
+    "generated_at": "2026-11-12T09:00:00Z",
+    "tools": [
+      {
+        "name": "load_contract.py",
+        "version": "1.1.0",
+        "status": "ran",
+        "note": "9 operations, 2 contract issues"
+      },
+      {
+        "name": "gen_cases.py (stdlib generator)",
+        "version": "1.1.0",
+        "status": "ran",
+        "note": "129 cases planned, seed 1611; none sent"
+      },
+      {
+        "name": "send_cases.py",
+        "version": "1.1.0",
+        "status": "not_run",
+        "note": "no test instance"
+      },
+      {
+        "name": "schemathesis",
+        "version": null,
+        "status": "not_run",
+        "note": "needs a running instance"
+      },
+      {
+        "name": "spec_diff (stdlib)",
+        "version": "1.1.0",
+        "status": "ran",
+        "note": null
+      },
+      {
+        "name": "oasdiff",
+        "version": null,
+        "status": "not_run",
+        "note": "not installed and no saved output given"
+      }
+    ],
+    "generator": "stdlib",
+    "requests_sent": 0,
+    "rate_limited": {
+      "events": 0,
+      "backoff_seconds": 0
+    },
+    "run_status": "not_run",
+    "secret_env": [],
+    "run": null,
+    "aborted_attempts": []
+  },
+  "headline": {
+    "verdict": "not_established",
+    "summary": "The API was not run, so conformance not established: no request was sent and every operation is untested. Statically, 1.5.0 has 10 breaking changes against 1.4.0 without a major version bump, and the contract has 2 issues of its own.",
+    "severity_counts": {
+      "Critical": 0,
+      "High": 0,
+      "Medium": 0,
+      "Low": 0
+    },
+    "flaky_findings": 0,
+    "breaking_change_counts": {
+      "breaking": 10,
+      "potentially_breaking": 1,
+      "compatible": 16
+    },
+    "operation_coverage": {
+      "total": 9,
+      "exercised": 0,
+      "excluded": 1,
+      "skipped_write": 0,
+      "skipped_auth": 0,
+      "untested": 8
+    },
+    "evidence_completeness": "none",
+    "overall_confidence": "low"
+  },
+  "operations": [
+    {
+      "operation_id": "healthCheck",
+      "method": "GET",
+      "path": "/health",
+      "status": "untested",
+      "cases_sent": 0,
+      "checks": {
+        "status_documented": "untested",
+        "server_error": "untested",
+        "content_type": "untested",
+        "schema_conformance": "untested",
+        "required_headers": "untested",
+        "negative_accepted": "untested",
+        "positive_rejected": "untested",
+        "auth_enforced": "untested",
+        "graphql_errors": "untested"
+      }
+    },
+    {
+      "operation_id": "listClinicians",
+      "method": "GET",
+      "path": "/clinicians",
+      "status": "untested",
+      "cases_sent": 0,
+      "checks": {
+        "status_documented": "untested",
+        "server_error": "untested",
+        "content_type": "untested",
+        "schema_conformance": "untested",
+        "required_headers": "untested",
+        "negative_accepted": "untested",
+        "positive_rejected": "untested",
+        "auth_enforced": "untested",
+        "graphql_errors": "untested"
+      }
+    },
+    {
+      "operation_id": "getClinician",
+      "method": "GET",
+      "path": "/clinicians/{clinicianId}",
+      "status": "untested",
+      "cases_sent": 0,
+      "checks": {
+        "status_documented": "untested",
+        "server_error": "untested",
+        "content_type": "untested",
+        "schema_conformance": "untested",
+        "required_headers": "untested",
+        "negative_accepted": "untested",
+        "positive_rejected": "untested",
+        "auth_enforced": "untested",
+        "graphql_errors": "untested"
+      }
+    },
+    {
+      "operation_id": "listAppointments",
+      "method": "GET",
+      "path": "/appointments",
+      "status": "untested",
+      "cases_sent": 0,
+      "checks": {
+        "status_documented": "untested",
+        "server_error": "untested",
+        "content_type": "untested",
+        "schema_conformance": "untested",
+        "required_headers": "untested",
+        "negative_accepted": "untested",
+        "positive_rejected": "untested",
+        "auth_enforced": "untested",
+        "graphql_errors": "untested"
+      }
+    },
+    {
+      "operation_id": "createAppointment",
+      "method": "POST",
+      "path": "/appointments",
+      "status": "untested",
+      "cases_sent": 0,
+      "checks": {
+        "status_documented": "untested",
+        "server_error": "untested",
+        "content_type": "untested",
+        "schema_conformance": "untested",
+        "required_headers": "untested",
+        "negative_accepted": "untested",
+        "positive_rejected": "untested",
+        "auth_enforced": "untested",
+        "graphql_errors": "untested"
+      }
+    },
+    {
+      "operation_id": "getAppointment",
+      "method": "GET",
+      "path": "/appointments/{appointmentId}",
+      "status": "untested",
+      "cases_sent": 0,
+      "checks": {
+        "status_documented": "untested",
+        "server_error": "untested",
+        "content_type": "untested",
+        "schema_conformance": "untested",
+        "required_headers": "untested",
+        "negative_accepted": "untested",
+        "positive_rejected": "untested",
+        "auth_enforced": "untested",
+        "graphql_errors": "untested"
+      }
+    },
+    {
+      "operation_id": "cancelAppointment",
+      "method": "DELETE",
+      "path": "/appointments/{appointmentId}",
+      "status": "excluded",
+      "cases_sent": 0,
+      "checks": {
+        "status_documented": "untested",
+        "server_error": "untested",
+        "content_type": "untested",
+        "schema_conformance": "untested",
+        "required_headers": "untested",
+        "negative_accepted": "untested",
+        "positive_rejected": "untested",
+        "auth_enforced": "untested",
+        "graphql_errors": "untested"
+      }
+    },
+    {
+      "operation_id": "dailyReport",
+      "method": "GET",
+      "path": "/reports/daily",
+      "status": "untested",
+      "cases_sent": 0,
+      "checks": {
+        "status_documented": "untested",
+        "server_error": "untested",
+        "content_type": "untested",
+        "schema_conformance": "untested",
+        "required_headers": "untested",
+        "negative_accepted": "untested",
+        "positive_rejected": "untested",
+        "auth_enforced": "untested",
+        "graphql_errors": "untested"
+      }
+    },
+    {
+      "operation_id": "listSlots",
+      "method": "GET",
+      "path": "/slots",
+      "status": "untested",
+      "cases_sent": 0,
+      "checks": {
+        "status_documented": "untested",
+        "server_error": "untested",
+        "content_type": "untested",
+        "schema_conformance": "untested",
+        "required_headers": "untested",
+        "negative_accepted": "untested",
+        "positive_rejected": "untested",
+        "auth_enforced": "untested",
+        "graphql_errors": "untested"
+      }
+    }
+  ],
+  "findings": [],
+  "needs_review": [],
+  "triage": [],
+  "contract_issues": [
+    {
+      "kind": "example_mismatch",
+      "location": "components.schemas.Clinician.example",
+      "message": "the example for Clinician doesn't match its own schema: $.id: expected integer, got string",
+      "id": "C1",
+      "line": null
+    },
+    {
+      "kind": "unsupported_keyword",
+      "location": "dependentRequired",
+      "message": "response schemas use 'dependentRequired', which the stdlib checker can't evaluate; schema_conformance is cantTell for dailyReport unless another keyword fails",
+      "id": "C2",
+      "line": null
+    }
+  ],
+  "handler_check": null,
+  "breaking_changes": [
+    {
+      "id": "B1",
+      "kind": "response_property_removed",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "response",
+      "operation_ids": [
+        "listAppointments",
+        "createAppointment",
+        "getAppointment"
+      ],
+      "location": "Appointment.room",
+      "detail": "room removed from the response",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B2",
+      "kind": "additional_properties_disallowed",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "request",
+      "operation_ids": [
+        "createAppointment"
+      ],
+      "location": "NewAppointment",
+      "detail": "additionalProperties: false added",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B3",
+      "kind": "bound_tightened",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "request",
+      "operation_ids": [
+        "createAppointment"
+      ],
+      "location": "NewAppointment.clinician_id",
+      "detail": "minimum none -> 1",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B4",
+      "kind": "bound_tightened",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "request",
+      "operation_ids": [
+        "createAppointment"
+      ],
+      "location": "NewAppointment.patient_name",
+      "detail": "minLength none -> 1",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B5",
+      "kind": "bound_tightened",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "request",
+      "operation_ids": [
+        "createAppointment"
+      ],
+      "location": "NewAppointment.patient_name",
+      "detail": "maxLength 80 -> 60",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B6",
+      "kind": "pattern_changed",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "request",
+      "operation_ids": [
+        "createAppointment"
+      ],
+      "location": "NewAppointment.time",
+      "detail": "pattern none -> '^([01][0-9]|2[0-3]):[0-5][0-9]$'",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B7",
+      "kind": "bound_tightened",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "request",
+      "operation_ids": [
+        "getAppointment"
+      ],
+      "location": "parameter path.appointmentId",
+      "detail": "minimum none -> 1",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B8",
+      "kind": "bound_tightened",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "request",
+      "operation_ids": [
+        "getClinician"
+      ],
+      "location": "parameter path.clinicianId",
+      "detail": "minimum none -> 1",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B9",
+      "kind": "required_parameter_added",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "request",
+      "operation_ids": [
+        "listAppointments"
+      ],
+      "location": "parameter query.clinic_id",
+      "detail": "new required query parameter clinic_id",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B10",
+      "kind": "response_status_removed",
+      "rating": "breaking",
+      "severity": "High",
+      "direction": "response",
+      "operation_ids": [
+        "getClinician"
+      ],
+      "location": "response 404",
+      "detail": "404 is no longer documented",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B11",
+      "kind": "enum_value_added",
+      "rating": "potentially_breaking",
+      "severity": "Medium",
+      "direction": "response",
+      "operation_ids": [
+        "listAppointments",
+        "createAppointment",
+        "getAppointment"
+      ],
+      "location": "Appointment.status",
+      "detail": "enum gained no_show",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B12",
+      "kind": "property_now_required",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "listAppointments",
+        "createAppointment",
+        "getAppointment"
+      ],
+      "location": "Appointment.clinic_id",
+      "detail": "clinic_id is now always returned",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B13",
+      "kind": "pattern_changed",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "listAppointments",
+        "createAppointment",
+        "getAppointment"
+      ],
+      "location": "Appointment.time",
+      "detail": "pattern none -> '^([01][0-9]|2[0-3]):[0-5][0-9]$'",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B14",
+      "kind": "bound_tightened",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "listClinicians",
+        "getClinician"
+      ],
+      "location": "Clinician.id",
+      "detail": "minimum none -> 1",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B15",
+      "kind": "bound_tightened",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "listClinicians",
+        "getClinician"
+      ],
+      "location": "Clinician.name",
+      "detail": "minLength none -> 1",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B16",
+      "kind": "operation_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "operation",
+      "operation_ids": [
+        "dailyReport"
+      ],
+      "location": "GET /reports/daily",
+      "detail": "dailyReport added",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B17",
+      "kind": "operation_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "operation",
+      "operation_ids": [
+        "listSlots"
+      ],
+      "location": "GET /slots",
+      "detail": "listSlots added",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B18",
+      "kind": "property_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "request",
+      "operation_ids": [
+        "createAppointment"
+      ],
+      "location": "NewAppointment.portal_pin",
+      "detail": "portal_pin added",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B19",
+      "kind": "parameter_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "request",
+      "operation_ids": [
+        "listClinicians"
+      ],
+      "location": "parameter query.limit",
+      "detail": "new optional query parameter limit",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B20",
+      "kind": "response_header_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "getClinician"
+      ],
+      "location": "response 200 header X-Request-Id",
+      "detail": "X-Request-Id is now always sent",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B21",
+      "kind": "enum_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "healthCheck"
+      ],
+      "location": "response 200.status",
+      "detail": "now restricted to ['ok']",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B22",
+      "kind": "property_now_required",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "healthCheck"
+      ],
+      "location": "response 200.status",
+      "detail": "status is now always returned",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B23",
+      "kind": "property_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "healthCheck"
+      ],
+      "location": "response 200.version",
+      "detail": "version added",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B24",
+      "kind": "response_header_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "createAppointment"
+      ],
+      "location": "response 201 header Location",
+      "detail": "Location is now always sent",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B25",
+      "kind": "response_status_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "listClinicians",
+        "getClinician",
+        "listAppointments",
+        "createAppointment",
+        "getAppointment"
+      ],
+      "location": "response 400",
+      "detail": "400 added",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B26",
+      "kind": "response_status_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "listAppointments",
+        "createAppointment",
+        "getAppointment",
+        "cancelAppointment"
+      ],
+      "location": "response 401",
+      "detail": "401 added",
+      "sources": [
+        "stdlib"
+      ]
+    },
+    {
+      "id": "B27",
+      "kind": "response_status_added",
+      "rating": "compatible",
+      "severity": null,
+      "direction": "response",
+      "operation_ids": [
+        "cancelAppointment"
+      ],
+      "location": "response 404",
+      "detail": "404 added",
+      "sources": [
+        "stdlib"
+      ]
+    }
+  ],
+  "limitations": [
+    "No request was sent: every check is untested and nothing here says how the API behaves.",
+    "The handler comparison was not run: the sample server is a plain http.server, which handler_map.py does not read.",
+    "oasdiff is not installed: the breaking-change diff is the stdlib one only."
+  ],
+  "next_steps": [
+    "Start a test instance and run send_cases.py with the planned cases (seed 1611), then merge and triage.",
+    "Decide on the 10 breaking changes before release: bump the major version or restore the removed parts."
+  ]
+}

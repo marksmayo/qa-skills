@@ -23,7 +23,12 @@ or `added` (with `valid: true`). The most severe instance decides.
 |---|---|
 | high | The failure happened again on the re-send, and no repeated instance is a write |
 | medium | It happened again, but a repeated instance is a write (it depends on server state) |
-| low | It didn't happen again on the re-send: flaky. Kept, never dismissed |
+| low | It didn't happen again on the re-send: flaky. Kept, never dismissed. Also an environment outage (below) |
+
+**Environment outage.** When every answer of a run (first sends and re-sends) over two or more
+operations is a 5xx, the server-error failures are one candidate (`environment_outage: true`,
+cause "environment outage: every request answered 5xx", reach by the operations affected) with
+confidence low: the run shows the environment failing, not N handlers.
 
 ## Reach
 
@@ -54,8 +59,11 @@ Compatible changes are listed without severity.
 
 - **Verdict:** `violations_found` when there is at least one finding, otherwise `not_established`.
   There is no "conforms".
-- **Evidence completeness:** `incomplete` when the run stopped (rate limits, the request cap) or
-  the instance was down; `partial` when an operation is untested or skipped for auth, a check is
-  `cantTell`, or a tool errored; otherwise `complete`.
-- **Overall confidence:** low when incomplete; medium when partial or any finding isn't high;
-  otherwise high.
+- **Run status** (top level): `not_run` when no run was given (static only); `complete` when the
+  run finished and wasn't an environment outage; otherwise `partial`, with a reason.
+- **Evidence completeness:** `none` when not run; `incomplete` when the run stopped (rate limits,
+  a request or path budget, a 429 on a path) or the instance was down; `partial` when an operation
+  is untested or skipped for auth, a check is `cantTell`, a tool errored, or the run was an
+  environment outage; otherwise `complete`.
+- **Overall confidence:** low when not run, incomplete or an environment outage; medium when
+  partial or any finding isn't high; otherwise high.

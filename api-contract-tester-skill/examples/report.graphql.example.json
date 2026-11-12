@@ -1,8 +1,10 @@
 {
   "skill": {
     "name": "api-contract-tester",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
+  "run_status": "complete",
+  "run_status_reason": null,
   "scope": {
     "contract": {
       "kind": "graphql",
@@ -53,7 +55,8 @@
     },
     "run_status": "complete",
     "secret_env": [],
-    "run": "run-graphql/run.json"
+    "run": "run-graphql/run.json",
+    "aborted_attempts": []
   },
   "headline": {
     "verdict": "violations_found",
@@ -159,7 +162,7 @@
         }
       ],
       "expected": "specialty is non-null (Specialty!), so every Clinician returned has one of GP, PHYSIO or DENTAL.",
-      "actual": "clinicians and clinician(id: \"3\") both return specialty: null for clinician 3, with no error. A GraphQL server should have nulled the parent and raised an error; this one returned invalid data.",
+      "actual": "200 on every send: clinicians and clinician(id: \"3\") both return specialty: null for clinician 3, with no error. A GraphQL server should have nulled the parent and raised an error; this one returned invalid data.",
       "fix_direction": "fix_api",
       "fix_direction_basis": "agent_judgment",
       "handler": {
@@ -199,7 +202,7 @@
         }
       ],
       "expected": "A valid query returns data and no errors; with no dental clinicians, an empty list.",
-      "actual": "{\"data\": null, \"errors\": [{\"message\": \"Internal error\", \"path\": [\"clinicians\"]}]} on both sends.",
+      "actual": "200 with {\"data\": null, \"errors\": [{\"message\": \"Internal error\", \"path\": [\"clinicians\"]}]} on both sends.",
       "fix_direction": "fix_api",
       "fix_direction_basis": "agent_judgment",
       "handler": {
@@ -236,6 +239,7 @@
       "line": null
     }
   ],
+  "handler_check": null,
   "breaking_changes": [],
   "limitations": [
     "Only queries were tested; the schema has no mutations.",

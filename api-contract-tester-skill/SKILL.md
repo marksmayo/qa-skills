@@ -1,7 +1,7 @@
 ---
 name: api-contract-tester
 description: Check that a running HTTP API behaves the way its contract says. Read an OpenAPI 3.0/3.1 document or a GraphQL schema, generate requests from it (documented examples, boundary values, one-violation negatives, a seeded random sample, and requests without credentials), send them to a test instance in safe mode, and check every response for undocumented status codes, server errors, wrong content types, schema violations, missing headers, invalid input accepted, valid input rejected and auth not enforced. Every finding has a saved, redacted request and response and is re-sent once to separate repeatable from flaky. With a previous contract it also rates the breaking changes between versions. Uses Schemathesis and oasdiff when installed; works with the standard library alone. No findings never means the API conforms.
-version: 1.0.0
+version: 1.1.0
 ---
 
 # API contract tester
@@ -37,10 +37,15 @@ rate them with CVSS. It writes no tests by default; each finding carries a regre
    `format: password` or `writeOnly`, and every occurrence of a configured secret value. Read
    credentials from environment variables, never from the command line or the report.
 6. **Respect rate limits**: 5 requests per second by default, back off on `429` and `Retry-After`.
-   A run stopped by limits is `incomplete`.
+   Read the app's own limits first (middleware, a proxy, a gateway config) and set `--rate`,
+   `--path-budget` and `--max-requests` under them. A run stopped by limits is `incomplete`, and
+   every earlier attempt against the target is recorded, never hidden.
 7. **The fix direction is judgment.** `fix_api` or `fix_contract`, always with
    `fix_direction_basis: agent_judgment`.
 8. **Record every tool** as `ran`, `not_run` or `errored`, with versions.
+9. **Not run is a valid answer.** When the API can't be run, write a `not_run` report from the
+   static half (contract issues, breaking changes, the handler check). It claims nothing about
+   behaviour: every operation is untested and there are no findings.
 
 ## Inputs
 
@@ -49,14 +54,17 @@ rate them with CVSS. It writes no tests by default; each finding carries a regre
 | `contract` | required | OpenAPI 3.0/3.1 (JSON or YAML) or GraphQL SDL, as a file or URL. Swagger 2.0 needs Schemathesis to convert it; otherwise `not_assessed` |
 | `base_url` | required | The test instance |
 | `authorised_by` | required for non-loopback | Who authorised testing this host |
-| `auth` | none | A bearer token or API key in an environment variable (`--bearer-env`, `--api-key-env`) |
+| `auth` | none | A bearer token, API key or session cookie in an environment variable (`--bearer-env`, `--api-key-env`, `--cookie-env`) |
+| `auth_required` | none | Operations the contract leaves unsecured that need credentials (`--auth-required`, agent judgment from the handlers) |
+| `request_budget` | 5000 | `--max-requests` per attempt, `--path-budget PREFIX=N` per path prefix (for app rate limits) |
+| `liveness_probe` | first parameterless GET | `--probe` path and `--probe-expect` statuses; use a health endpoint when there is one |
 | `allow_writes` | `false` | Also needs `authorised_by` and a confirmed non-production target |
 | `production_hosts` | `[]` | Hosts that never receive writes |
 | `operations` | all | `--include`/`--exclude` by operationId, `tag:T` or `path:/prefix` |
 | `max_cases_per_operation` | 50 | |
 | `seed` | random, recorded | Makes the generated cases repeatable |
 | `previous_contract` | none | Turns on the breaking-change diff |
-| `repo` | none | Used to point each finding at its handler |
+| `repo` | none | Points each finding at its handler, and feeds the contract-vs-handler check |
 
 ## Workflow
 
@@ -75,14 +83,30 @@ It resolves `$ref`s (local, and external files or same-host URLs when the fragme
 refs of its own), lists the operations with their line in the contract, and reports **contract
 issues**: a missing operationId, a 2xx response without a schema, an example that doesn't match
 its own schema, a keyword the checker can't evaluate, an unresolved `$ref`, or (GraphQL) a served
-schema that differs from the SDL. Contract issues are a separate section: they are not API failures.
+schema that differs from the SDL. Contract issues are a separate section: they are not API failures. `no_security_declared` means no
+operation requires credentials, so `auth_enforced` can't be evaluated from the contract: read the
+handlers and mark the operations that do need a session or token with `--auth-required` (step 2).
+
+**A contract built in code** (a TypeScript object served by a route, zod-to-openapi, a framework's
+generator, JSDoc) has no file to load. Produce the file the app itself would serve: run the
+project's own generator or export script, or import the builder with the project's toolchain
+(`node`/`tsx`, `python -c`), or fetch the route from a running local instance; save the JSON and
+load that. Record in `limitations` how it was produced and which source file builds it, since
+contract lines then point into the generated file. For a previous contract, extract the same
+builder at an earlier commit (list the commits that touched the builder file and show the file
+at one of them).
 
 ### 2. Plan and generate
 
 ```bash
 python scripts/gen_cases.py <run>/contract.json --out <run>/cases.json --seed 1611 [--exclude cancelAppointment] \
-  [--allow-writes] [--auth-configured] [--add-cases extra.json]
+  [--allow-writes] [--auth-configured] [--auth-required path:api/appointments] [--add-cases extra.json]
 ```
+
+Selectors are an operationId, `tag:T` or `path:/prefix` (the leading slash is optional, because
+Git Bash rewrites a leading `/` into a Windows path; or set `MSYS_NO_PATHCONV=1`). Case ids are
+`<operationId>-NNN`; an operationId that isn't filesystem-safe (the default `GET /api/x`) becomes a
+slug plus a short hash.
 
 The plan lists every operation as `planned`, `excluded`, `skipped_write` or `skipped_auth`; it is
 the coverage denominator. Cases per operation, in order: the documented example; boundaries (each
@@ -121,7 +145,23 @@ python scripts/send_cases.py <run>/contract.json <run>/cases.json --base-url htt
   --bearer-env API_TOKEN [--allow-writes --authorised-by "who" --confirm-non-production] [--production-host api.example.com]
 ```
 
-It probes one `GET` first and stops if the instance is down. Every response is checked:
+```bash
+# a deployed target with app-level rate limits and session auth
+python scripts/send_cases.py <run>/contract.json <run>/cases.json --base-url https://staging.example.com --out <run>/run.json \
+  --authorised-by "who" --cookie-env SESSION_COOKIE --rate 1 --probe api/health --probe-expect 200 \
+  --path-budget api/appointments=15 --max-requests 150 --max-retries-429 0 --on-429 stop-path
+python scripts/send_cases.py ... --out <run>/run.2.json --resume <run>/run.json     # finish a stopped run
+```
+
+It probes first and stops if the instance is down: the probe can't connect or misses
+`--probe-expect` (default: any status below 500). Without `--probe` it uses the first parameterless
+GET operation, and a 5xx from that alone doesn't mark the target down (it is an API answer, sent as
+a case). A 429 is retried after its `Retry-After` up to `--max-retries-429` times when the wait is
+at most `--max-retry-after` seconds; when it persists, `--on-429 stop-run` (default) stops the run
+and `stop-path` stops only that path and carries on. Cases over a budget or on a stopped path are
+listed in `blocked`. `--resume` reuses the answered cases of an earlier run.json and sends the rest;
+if the sender aborts, it still writes the partial run.json. List every earlier attempt in
+`metadata.aborted_attempts`. Every response is checked:
 
 | Check | Fails when |
 |---|---|
@@ -139,6 +179,12 @@ Failing exchanges are saved, redacted, and each failing case is re-sent once. Bo
 truncated with the full body's SHA-256 kept. Timestamps and ids are checked by schema only, never
 compared between sends.
 
+**An environment that is down looks like N defects.** When every answer over two or more operations
+is a 5xx, `merge_findings.py` makes one `environment_outage` candidate (confidence low) instead of
+one per operation, the headline confidence is low and the run is `partial`. Say "outage" in the
+summary, check a health endpoint, and treat any other failures seen only on those 5xx responses as
+the same cause. Nothing about the handlers' contract behaviour has been shown.
+
 ### 6. Diff contracts (with a previous contract)
 
 ```bash
@@ -146,11 +192,27 @@ python scripts/load_contract.py openapi.v1.yaml --out <run>/contract.v1.json
 python scripts/spec_diff.py <run>/contract.v1.json <run>/contract.json --out <run>/diff.json [--run-oasdiff old.yaml new.yaml]
 ```
 
+### 6b. Optional: compare the contract with the handlers (with a repo)
+
+```bash
+python scripts/handler_map.py <repo> --contract <run>/contract.json --out <run>/handlers.json [--contract-prefix /api]
+```
+
+Reads the route handlers (Next.js App Router `route.ts` exports including `export { h as GET }`,
+Pages Router API files, Express, Flask, FastAPI) and lists undocumented handlers, documented
+operations with no handler, documented methods the handler doesn't export, and path-parameter
+name differences. It works without a running API. Copy its summary and issues into the report's
+`handler_check`. They are review leads, not findings: mount prefixes (Express `app.use`, Flask
+blueprints, FastAPI routers) aren't resolved, and a handler registered through a wrapper can be
+missed. Coverage is still the contract's operations; say in `limitations` how many handlers the
+contract doesn't document.
+
 ### 7. Merge into candidates
 
 ```bash
 python scripts/merge_findings.py <run>/contract.json <run>/cases.json <run>/run.json --out <run>/candidates.json \
   [--diff <run>/diff.json] [--schemathesis <run>/schemathesis.json]
+python scripts/merge_findings.py <run>/contract.json [<run>/cases.json] --out <run>/candidates.json    # not run: static only
 ```
 
 One candidate per (check, cause); a cause shared by several operations (an undocumented status, a
@@ -160,10 +222,12 @@ confidence, reach, score and priority are computed (`RUBRIC.md`).
 ### 8. Triage
 
 Every candidate is `promoted` (to a finding), `needs_review`, or `dismissed` with a checkable
-reason (for a Schemathesis candidate: "same failure as K2"). A Schemathesis candidate is promoted
+reason (for a Schemathesis candidate: "same failure as K2"). A generic reason ("not a real issue")
+is rejected; candidates dismissed for one shared cause name it by id ("same outage as K1"). A Schemathesis candidate is promoted
 only through its reproduced stdlib candidate. For each finding write:
 
-- `title`, `expected` (what the contract says) and `actual` (what the exchange shows);
+- `title`, `expected` (what the contract says) and `actual` (what the exchange shows, including
+  its status code);
 - `fix_direction` (`fix_api` or `fix_contract`) and the reason, as `agent_judgment`;
 - `handler` (file and line) when the repo is available; `null` otherwise;
 - `remediation`, a `verification_step` (rerun with the same seed and name the case that should
@@ -178,7 +242,10 @@ Write `<run>/report.json` (`schemas/api_contract_report.schema.json`), then:
 
 ```bash
 python scripts/validate_report.py <run>/report.json --run <run>/run.json --candidates <run>/candidates.json \
-  --contract <run>/contract.json --cases <run>/cases.json [--diff <run>/diff.json] [--repo <repo>] [--write-summary]
+  --contract <run>/contract.json --cases <run>/cases.json [--diff <run>/diff.json] [--handlers <run>/handlers.json] \
+  [--repo <repo>] [--write-summary]
+python scripts/validate_report.py <run>/report.json --contract <run>/contract.json [--cases ...] [--diff ...] \
+  [--handlers ...] [--repo <repo>]                                   # a not_run report
 python scripts/render_report.py <run>/report.json [--brief] [--sarif findings.sarif --contract <run>/contract.json]
 ```
 
@@ -187,15 +254,20 @@ environment variables before validating, so the exchanges are scanned for their 
 
 ## Output fields
 
+- `run_status`: `complete`, `partial` (stopped early, down, or an environment outage) or `not_run`
+  (static only), with `run_status_reason` whenever it isn't complete.
 - `scope`: the contract (kind, version, API version, source, SHA-256), the previous contract,
-  base URL, `authorised_by`, writes allowed, production hosts, seed, filter and case limit.
+  base URL, `authorised_by`, writes allowed, production hosts, seed, filter and case limit (base
+  URL, seed and limit are null when nothing was run or planned).
 - `metadata`: tools, generator (`stdlib`, `schemathesis` or `both`), requests sent, rate-limit
-  events and backoff, run status, the secret environment variable names, and the run file.
+  events and backoff, run status, the secret environment variable names, the run file, and
+  `aborted_attempts` (earlier attempts against the target: requests sent, why they stopped, their
+  record).
 - `headline`: verdict (`violations_found` or `not_established`), a summary, severity counts, flaky
   findings, breaking-change counts, operation coverage, evidence completeness and overall confidence.
 - `operations[]`: every operation with status, cases sent and the result of each check.
-- `findings[]`, `needs_review[]`, `triage[]`, `contract_issues[]`, `breaking_changes[]`,
-  `limitations[]`, `next_steps[]`.
+- `findings[]`, `needs_review[]`, `triage[]`, `contract_issues[]`, `handler_check` (null when not
+  run), `breaking_changes[]`, `limitations[]`, `next_steps[]`.
 
 ## What the validator enforces
 
@@ -203,4 +275,10 @@ The operations, coverage, candidates, ratings and headline are recomputed from t
 cases and the run. Every finding needs a saved exchange belonging to its candidate. No configured
 secret, credential header, API key or password field may appear unredacted. No write may appear
 when writes weren't allowed, and none may go to a production host. A non-loopback target needs
-`authorised_by`. Every candidate is triaged exactly once. The summary may not claim conformance.
+`authorised_by`. Every candidate is triaged exactly once, with a specific reason. A finding's
+`actual` states a status its exchanges show. The summary may not claim conformance or be a
+placeholder; after an outage it must say so. Limitations may not be empty when the run was partial
+or not run, operations were excluded or untested, or there were earlier attempts, and every attempt
+the run resumed must be in `aborted_attempts`. A `not_run` report has no run, findings or triage,
+and its summary says the API was not run and claims nothing a run would show. The handler check
+must equal handlers.json, and with `--repo` each cited line is re-read.

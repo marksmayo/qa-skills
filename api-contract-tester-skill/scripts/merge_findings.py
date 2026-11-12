@@ -3,6 +3,7 @@
 
     python merge_findings.py contract.json cases.json run/run.json --out run/candidates.json [--diff diff.json]
         [--schemathesis run/schemathesis.json]
+    python merge_findings.py contract.json [cases.json] --out candidates.json [--diff diff.json]     # static only
 
 Operations: every operation in the contract, with its plan status (exercised, excluded,
 skipped_write, skipped_auth, untested), cases sent, and per check passed / failed / cantTell /
@@ -13,6 +14,14 @@ Candidates: one per (check, cause). The cause is operation-independent for statu
 schema_conformance on a named component schema (the schema and the first error) and graphql_errors
 on a field type, so a cause shared by several operations is one candidate with a wider reach.
 Other checks are per operation.
+
+Environment outage: when every answer (first sends and re-sends) over two or more operations was a
+5xx, the server_error failures are one candidate (`environment_outage: true`, cause "environment
+outage") with confidence low, instead of one defect per operation: the run shows the environment
+failing, not the handlers.
+
+Static mode: `merge_findings.py contract.json [cases.json] --out candidates.json` without a run lists
+every operation as untested (or its plan status) with no candidates, and run_status `not_run`.
 
 Each candidate carries the computed severity, confidence, reach, score and priority (RUBRIC.md); the
 validator recomputes them from the run. Schemathesis failures, when given, are added as candidates
@@ -106,10 +115,13 @@ def load_exchanges(run_dir: Path, results: list[dict]) -> dict:
     return out
 
 
-def operations(contract: dict, cases: dict, run: dict) -> list[dict]:
-    plan = {p['operation_id']: p for p in cases['plan']}
+def operations(contract: dict, cases: dict | None, run: dict | None) -> list[dict]:
+    """Every contract operation with its status and check results. Without a run (static mode) every
+    operation that was planned or never planned is `untested` and every check `untested`."""
+    plan = {p['operation_id']: p for p in (cases or {}).get('plan') or []}
+    marked = set(((cases or {}).get('auth_required') or {}).get('operation_ids') or [])
     by_op: dict[str, list[dict]] = {}
-    for r in run['results']:
+    for r in (run or {}).get('results') or []:
         by_op.setdefault(r['operation_id'], []).append(r)
     out = []
     for op in contract['operations']:
@@ -131,7 +143,7 @@ def operations(contract: dict, cases: dict, run: dict) -> list[dict]:
             elif 'passed' in vals:
                 checks[c] = 'passed'
             else:
-                applicable = (c == 'auth_enforced' and op['security']) or (c == 'positive_rejected' and contract['kind'] == 'openapi') \
+                applicable = (c == 'auth_enforced' and (op['security'] or oid in marked)) or (c == 'positive_rejected' and contract['kind'] == 'openapi') \
                     or (c == 'graphql_errors' and contract['kind'] == 'graphql')
                 checks[c] = 'untested' if applicable else 'not_applicable'
         out.append({'operation_id': oid, 'method': op['method'], 'path': op['path'], 'status': status,
@@ -146,13 +158,26 @@ def coverage(ops: list[dict]) -> dict:
     return cov
 
 
-def candidates(contract: dict, run: dict, run_dir: Path) -> list[dict]:
+def is_outage(run: dict | None) -> bool:
+    """Every answer (first sends and re-sends) was a 5xx, over at least two operations: the environment
+    is failing, not N separate handlers."""
+    rs = (run or {}).get('results') or []
+    statuses = [r['status'] for r in rs] + [(r.get('resend') or {}).get('status') for r in rs if r.get('resend')]
+    return len({r['operation_id'] for r in rs}) >= 2 and bool(statuses) and all(st is not None and st >= 500 for st in statuses)
+
+
+def candidates(contract: dict, run: dict | None, run_dir: Path | None) -> list[dict]:
+    if not run:
+        return []
     ops = {o['operation_id']: o for o in contract['operations']}
+    outage = is_outage(run)
     exchanges = load_exchanges(run_dir, run['results'])
     groups: dict[tuple, dict] = {}
     for r in run['results']:
         for c in r['failed']:
             cause, shared = cause_of(c, r, ops.get(r['operation_id']))
+            if outage and c == 'server_error':
+                cause, shared = 'environment outage: every request answered 5xx', True
             key = (c, cause) if shared else (c, cause, r['operation_id'])
             g = groups.setdefault(key, {'check': c, 'cause': cause, 'operation_ids': [], 'instances': []})
             if r['operation_id'] not in g['operation_ids']:
@@ -165,11 +190,13 @@ def candidates(contract: dict, run: dict, run_dir: Path) -> list[dict]:
     out = []
     for i, g in enumerate(groups.values(), 1):
         sev = severity_of(g['check'], g['instances'], exchanges)
-        conf = confidence_of(g['instances'])
+        env = outage and g['check'] == 'server_error'
+        conf = 'low' if env else confidence_of(g['instances'])
         reach = reach_of(len(g['operation_ids']))
         score, prio = priority_of(sev, reach, conf)
         out.append({'id': f'K{i}', 'source': 'stdlib', **{k: g[k] for k in ('check', 'cause', 'operation_ids')},
                     'repeatable': any(x['repeated'] for x in g['instances']), 'instances': g['instances'],
+                    **({'environment_outage': True} if env else {}),
                     'severity': sev, 'confidence': conf, 'reach': reach, 'score': score, 'priority': prio,
                     'regression_test_sketch': sketch(g, ops, exchanges, contract)})
     order = {'P0': 0, 'P1': 1, 'P2': 2, 'P3': 3}
@@ -234,20 +261,28 @@ def schemathesis_candidates(path: Path, start: int, contract: dict) -> list[dict
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('contract', type=Path)
-    ap.add_argument('cases', type=Path)
-    ap.add_argument('run', type=Path)
+    ap.add_argument('cases', type=Path, nargs='?', help='omit (with run) for a static-only merge')
+    ap.add_argument('run', type=Path, nargs='?', help='omit when the API was not run: every operation is untested')
     ap.add_argument('--out', type=Path, required=True)
     ap.add_argument('--diff', type=Path)
     ap.add_argument('--schemathesis', type=Path)
     a = ap.parse_args()
+    for p in (a.contract, a.cases, a.run, a.diff, a.schemathesis):
+        if p is not None and not p.is_file():
+            print(f'error: {p} does not exist', file=sys.stderr)
+            return 2
+    if a.schemathesis and not a.run:
+        print('error: --schemathesis needs the run', file=sys.stderr)
+        return 2
     contract = json.loads(a.contract.read_text(encoding='utf-8'))
-    cases = json.loads(a.cases.read_text(encoding='utf-8'))
-    run = json.loads(a.run.read_text(encoding='utf-8'))
+    cases = json.loads(a.cases.read_text(encoding='utf-8')) if a.cases else None
+    run = json.loads(a.run.read_text(encoding='utf-8')) if a.run else None
     ops = operations(contract, cases, run)
-    cands = candidates(contract, run, a.run.parent)
+    cands = candidates(contract, run, a.run.parent if a.run else None)
     if a.schemathesis:
         cands += schemathesis_candidates(a.schemathesis, 1, contract)
-    out = {'contract_sha256': contract['sha256'], 'seed': cases['seed'], 'run_status': run['status'],
+    out = {'contract_sha256': contract['sha256'], 'seed': (cases or {}).get('seed'), 'run_status': run['status'] if run else 'not_run',
+           'environment_outage': is_outage(run),
            'operations': ops, 'operation_coverage': coverage(ops), 'candidates': cands,
            'contract_issues': contract['issues'],
            'breaking_changes': json.loads(a.diff.read_text(encoding='utf-8'))['changes'] if a.diff else []}

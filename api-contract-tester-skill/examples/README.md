@@ -10,6 +10,9 @@ contract `openapi.yaml` (OpenAPI 3.1), the previous release's `openapi.v1.yaml` 
 - `run-graphql/` is the GraphQL run, including the fetched introspection.
 - `run/commands.sh` lists every step.
 - `report.example.json` and `report.graphql.example.json` are the triaged reports.
+- `report.static.example.json` is the REST contract reported without a run (`run_status:
+  not_run`): contract issues, the planned cases' coverage (every operation untested) and the
+  breaking changes against 1.4.0, with no findings.
 
 ## Answer key
 

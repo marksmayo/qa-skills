@@ -15,6 +15,12 @@ or a GraphQL schema and a test instance. The skill:
   required headers, invalid input accepted, valid input rejected, auth not enforced, GraphQL errors.
 - **Saves and re-sends** each failing exchange, redacted, to separate repeatable from flaky.
 - **Diffs two contract versions** and rates each change breaking, potentially breaking or compatible.
+- **Compares the contract with the route handlers** in the code (Next.js App Router and Pages
+  Router, Express, Flask, FastAPI): undocumented handlers, documented operations with no handler,
+  and documented methods the handler doesn't export. No running API needed.
+- **Copes with real deployments**: session-cookie auth, per-path request budgets, a stop-on-429
+  policy per path, resumable runs, a configurable health probe, and an environment outage reported
+  as one cause instead of a defect per operation.
 - **Uses Schemathesis and oasdiff** when they're installed, and works without them.
 
 It is strict about what a run can show:
@@ -26,6 +32,7 @@ It is strict about what a run can show:
 - Credentials are redacted before anything is written; non-loopback targets need `authorised_by`;
   production hosts never receive writes.
 - Whether to fix the API or the contract is marked as judgment.
+- When the API can't be run, the report says `not_run` and claims nothing about behaviour.
 
 ## Install
 
@@ -60,8 +67,28 @@ python scripts/send_cases.py run/contract.json run/cases.json --base-url http://
 python scripts/load_contract.py openapi.previous.yaml --out run/contract.prev.json
 python scripts/spec_diff.py run/contract.prev.json run/contract.json --out run/diff.json
 python scripts/merge_findings.py run/contract.json run/cases.json run/run.json --diff run/diff.json --schemathesis run/schemathesis.json --out run/candidates.json
-python scripts/validate_report.py run/report.json --run run/run.json --candidates run/candidates.json --contract run/contract.json --cases run/cases.json --diff run/diff.json
+python scripts/handler_map.py . --contract run/contract.json --out run/handlers.json
+python scripts/validate_report.py run/report.json --run run/run.json --candidates run/candidates.json --contract run/contract.json --cases run/cases.json --diff run/diff.json --handlers run/handlers.json --repo .
 python scripts/render_report.py run/report.json [--brief] [--sarif findings.sarif --contract run/contract.json]
+```
+
+Against a deployed target with app-level rate limits and session auth:
+
+```bash
+python scripts/send_cases.py run/contract.json run/cases.json --base-url https://staging.example.com --out run/run.json \
+  --authorised-by "who" --cookie-env SESSION_COOKIE --rate 1 --probe api/health --probe-expect 200 \
+  --path-budget api/appointments=15 --max-requests 150 --max-retries-429 0 --on-429 stop-path
+```
+
+On Git Bash for Windows, a command-line path starting with `/` is rewritten into a Windows path:
+write paths without the leading slash (as above) or set `MSYS_NO_PATHCONV=1`.
+
+Without a test instance, write a static-only report (`run_status: not_run`) from the contract, the
+diff and the handler check:
+
+```bash
+python scripts/merge_findings.py run/contract.json --out run/candidates.json
+python scripts/validate_report.py run/report.json --contract run/contract.json --diff run/diff.json --handlers run/handlers.json --repo .
 ```
 
 ## Example
@@ -74,8 +101,12 @@ Schemathesis 4.33.2 in safe mode for the REST one), listed in `examples/run/comm
 
 ```bash
 python scripts/validate_report.py examples/report.example.json --run examples/run/run.json --candidates examples/run/candidates.json --contract examples/run/contract.json --cases examples/run/cases.json --diff examples/run/diff.json --repo examples/clinic-api
+python scripts/validate_report.py examples/report.static.example.json --contract examples/run/contract.json --cases examples/run/cases.json --diff examples/run/diff.json
 python scripts/render_report.py examples/report.example.json
+python scripts/handler_map.py --self-test
 ```
+
+`examples/report.static.example.json` is the same contract reported without a run.
 
 ## Files
 
@@ -86,7 +117,9 @@ python scripts/render_report.py examples/report.example.json
 - `scripts/yaml_lite.py`: stdlib YAML subset parser (used without PyYAML)
 - `scripts/jsonschema_lite.py`: stdlib JSON Schema subset; unsupported keywords make a check `cantTell`
 - `scripts/gen_cases.py`: plan and case generator (examples, boundaries, negatives, seeded random, no-auth)
-- `scripts/send_cases.py`: rate-limited sender in safe mode, with checks, redaction, exchanges and re-sends
+- `scripts/send_cases.py`: rate-limited sender in safe mode, with checks, redaction, exchanges and re-sends,
+  request and path budgets, a 429 policy and resumable runs
+- `scripts/handler_map.py`: static contract-vs-handler comparison (`--self-test` checks it on fixtures)
 - `scripts/run_schemathesis.py`: optional Schemathesis wrapper with the same safe mode
 - `scripts/spec_diff.py`: breaking-change diff; merges oasdiff output when present
 - `scripts/merge_findings.py`: operation coverage and rated candidates

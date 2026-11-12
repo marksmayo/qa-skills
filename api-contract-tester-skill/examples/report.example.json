@@ -1,8 +1,10 @@
 {
   "skill": {
     "name": "api-contract-tester",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
+  "run_status": "complete",
+  "run_status_reason": null,
   "scope": {
     "contract": {
       "kind": "openapi",
@@ -73,7 +75,8 @@
     "secret_env": [
       "CLINIC_TOKEN"
     ],
-    "run": "run/run.json"
+    "run": "run/run.json",
+    "aborted_attempts": []
   },
   "headline": {
     "verdict": "violations_found",
@@ -340,7 +343,7 @@
         }
       ],
       "expected": "Every Clinician has id, name and specialty (one of gp, physio, dental), in both the list and the single view.",
-      "actual": "GET /clinicians returns clinician 3 with no specialty, and so does GET /clinicians/3. The seeded sample never hit id 3 on getClinician; Schemathesis did (S4), and the added case getClinician-015 reproduced it.",
+      "actual": "200 from both operations: GET /clinicians returns clinician 3 with no specialty, and so does GET /clinicians/3. The seeded sample never hit id 3 on getClinician; Schemathesis did (S4), and the added case getClinician-015 reproduced it.",
       "fix_direction": "fix_api",
       "fix_direction_basis": "agent_judgment",
       "handler": {
@@ -640,7 +643,7 @@
         }
       ],
       "expected": "The 400 response is application/json, as documented.",
-      "actual": "Content-Type: text/html; charset=utf-8 with a JSON Error body, for \"abc\" and \"1.5\".",
+      "actual": "400 with Content-Type: text/html; charset=utf-8 and a JSON Error body, for \"abc\" and \"1.5\".",
       "fix_direction": "fix_api",
       "fix_direction_basis": "agent_judgment",
       "handler": {
@@ -820,6 +823,7 @@
       "line": null
     }
   ],
+  "handler_check": null,
   "breaking_changes": [
     {
       "id": "B1",

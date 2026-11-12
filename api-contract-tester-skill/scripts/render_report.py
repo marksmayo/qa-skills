@@ -71,16 +71,29 @@ def main() -> int:
            hl['summary'], '',
            f'Operations: {cov["exercised"]}/{cov["total"]} exercised' +
            ''.join(f', {cov[k]} {k.replace("_", " ")}' for k in ('excluded', 'skipped_write', 'skipped_auth', 'untested') if cov[k]) +
-           f'. Evidence {hl["evidence_completeness"]}, confidence {hl["overall_confidence"]}.',
-           f'{md["requests_sent"]} requests to {sc["base_url"]} ({md["run_status"]}); seed {sc["seed"]}; generator {md["generator"]}; '
-           f'writes {"allowed" if sc["writes_allowed"] else "not allowed"}' +
-           (f' (authorised by {sc["authorised_by"]})' if sc['authorised_by'] else '') + '.']
+           f'. Evidence {hl["evidence_completeness"]}, confidence {hl["overall_confidence"]}.']
+    run_status = d.get('run_status', 'complete')
+    if run_status == 'not_run':
+        out.append(P('Not run: no request was sent; every check is untested.', YELLOW + BOLD) +
+                   (f' {d["run_status_reason"]}' if d.get('run_status_reason') else ''))
+    else:
+        out.append(f'{md["requests_sent"]} requests to {sc["base_url"]} ({md["run_status"]}); seed {sc["seed"]}; generator {md["generator"]}; '
+                   f'writes {"allowed" if sc["writes_allowed"] else "not allowed"}' +
+                   (f' (authorised by {sc["authorised_by"]})' if sc['authorised_by'] else '') + '.')
+        if run_status == 'partial':
+            out.append(P(f'Run partial: {d.get("run_status_reason") or "see limitations"}', YELLOW))
+    for x in md.get('aborted_attempts') or []:
+        out.append(f'Earlier attempt: {x["requests_sent"]} request(s), {x["reason"]}' + (f' ({x["record"]})' if x['record'] else '') + '.')
     if md['rate_limited']['events']:
         out.append(f'Rate limited {md["rate_limited"]["events"]} time(s), {md["rate_limited"]["backoff_seconds"]} s of backoff.')
     bc = hl['breaking_change_counts']
     if sc['previous_contract']:
         out.append(f'Against {sc["previous_contract"]["api_version"]}: {bc["breaking"]} breaking, {bc["potentially_breaking"]} potentially '
                    f'breaking, {bc["compatible"]} compatible change(s).')
+    hc = d.get('handler_check')
+    if hc:
+        counts = ', '.join(f'{n} {k.replace("_", " ")}' for k, n in hc['counts'].items() if n) or 'no differences'
+        out.append(f'Handlers ({", ".join(hc["frameworks"]) or "none recognised"}): {hc["handlers_found"]} found; {counts}.')
     if a.brief:
         out.append('')
         for f in d['findings']:
@@ -114,6 +127,13 @@ def main() -> int:
     dismissed = [t for t in d['triage'] if t['decision'] == 'dismissed']
     if dismissed:
         out += ['', P('## Dismissed candidates', BOLD), ''] + [f'- {t["candidate_id"]}: {t["reason"]}' for t in dismissed]
+    if hc and hc['issues']:
+        out += ['', P('## Contract vs handlers', BOLD), '',
+                'From reading the route handlers (handler_map.py); leads to review, not run results.', '']
+        shown = hc['issues'] if len(hc['issues']) <= 60 else hc['issues'][:60]
+        out += [f'- {i["id"]} {i["kind"].replace("_", " ")}: {i["message"]}' for i in shown]
+        if len(hc['issues']) > len(shown):
+            out.append(f'- and {len(hc["issues"]) - len(shown)} more (see the report JSON)')
     if d['contract_issues']:
         out += ['', P('## Contract issues', BOLD), '', 'Problems in the contract itself, not the API.', '']
         out += [f'- {i["id"]} {i["kind"]} at {i["location"]}: {i["message"]}' for i in d['contract_issues']]

@@ -44,3 +44,6 @@ python scripts/validate_report.py examples/report.example.json --run $R/run.json
   --contract $R/contract.json --cases $R/cases.json --diff $R/diff.json --repo examples/clinic-api
 python scripts/validate_report.py examples/report.graphql.example.json --run $G/run.json --candidates $G/candidates.json \
   --contract $G/contract.json --cases $G/cases.json --repo examples/clinic-api
+# the static-only report uses the same contract, cases and diff, and no run
+python scripts/validate_report.py examples/report.static.example.json --contract $R/contract.json --cases $R/cases.json --diff $R/diff.json
+python scripts/handler_map.py --self-test
