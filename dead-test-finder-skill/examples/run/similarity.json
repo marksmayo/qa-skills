@@ -1,6 +1,14 @@
 {
   "tree_hash_before": "9dc597e7cc054a07bc9406665890814748a17f4e35ee62b46293cec4b1d1aeae",
   "tree_hash_after": "9dc597e7cc054a07bc9406665890814748a17f4e35ee62b46293cec4b1d1aeae",
+  "sessions": [
+    {
+      "package": "core",
+      "tests": 2,
+      "exit_code": 0,
+      "command": "python -m pytest -q -p no:cacheprovider -p dtf_lines <2 test ids>"
+    }
+  ],
   "pairs": [
     {
       "candidate_id": "C7",
@@ -12,18 +20,20 @@
       "threshold": 0.9,
       "command": "python -m pytest -q -p no:cacheprovider -p dtf_lines tests/test_tax.py::test_gst_on_one_hundred_dollars tests/test_tax.py::test_gst_on_a_hundred_dollar_invoice",
       "exit_code": 0,
-      "lines_a": 10,
-      "lines_b": 10,
+      "status_a": "passed",
+      "status_b": "passed",
+      "lines_a": 2,
+      "lines_b": 2,
       "coverage_identical": true,
       "only_in_a": [],
       "only_in_b": [],
       "values_a": [
-        "10000",
-        "1500"
+        "sha256:39e5b4830d4d",
+        "sha256:9f69998560dc"
       ],
       "values_b": [
-        "10000",
-        "1500"
+        "sha256:39e5b4830d4d",
+        "sha256:9f69998560dc"
       ],
       "values_identical": true,
       "verdict": "duplicate"

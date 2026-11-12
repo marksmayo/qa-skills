@@ -3,7 +3,7 @@
     "repo": "ledger",
     "commit": null,
     "generated_at": "2026-11-11T05:00:00Z",
-    "skill_version": "1.1.0",
+    "skill_version": "1.2.0",
     "frameworks": [
       {
         "package": "client",
@@ -471,7 +471,7 @@
         "line": 11
       },
       "confidence": "confirmed",
-      "why": "The two GST tests are the same test with renamed variables: 100% similar after normalising names and literals, the same 10 product lines run, and the same values.",
+      "why": "The two GST tests are the same test with renamed variables: 100% similar after normalising names and literals, the same 2 product lines run, and the same values.",
       "criticality": 3,
       "criticality_reason": "GST is money; the duplicate adds maintenance, not risk.",
       "evidence": {
