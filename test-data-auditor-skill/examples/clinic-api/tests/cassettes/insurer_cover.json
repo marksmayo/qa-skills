@@ -2,7 +2,7 @@
   "request": {
     "method": "GET",
     "path": "/members/M-1001/cover",
-    "headers": {"Authorization": "Bearer EXAMPLE-NOT-A-REAL-TOKEN-0000"}
+    "headers": {"Authorization": "Bearer EXAMPLE-NOT-A-REAL-TOKEN-0000", "x-api-key": "example-key-0000000000000000"}
   },
   "response": {
     "status": 200,

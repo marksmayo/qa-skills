@@ -1,0 +1,8 @@
+<html><body>
+<table>
+<tr><th>room</th><th>capacity</th></tr>
+<tr><td>Studio 1</td><td>2</td></tr>
+<tr><td>Studio 2</td><td>2</td></tr>
+<tr><td>Gym</td><td>6</td></tr>
+</table>
+</body></html>

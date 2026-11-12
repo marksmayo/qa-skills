@@ -46,12 +46,11 @@
       ]
     }
   ],
-  "unmatched_records": [
-    "tests/cassettes/insurer_cover.json:3",
-    "tests/cassettes/insurer_cover.json:5",
-    "tests/cassettes/insurer_cover.json:8",
-    "tests/fixtures/legacy_rooms.csv:2",
-    "tests/fixtures/legacy_rooms.csv:3",
-    "tests/fixtures/legacy_rooms.csv:4"
-  ]
+  "unmatched_records": {
+    "tests/cassettes/insurer_cover.json": 3,
+    "tests/fixtures/legacy_rooms.csv": 3,
+    "tests/fixtures/referral_export.csv": 24,
+    "tests/fixtures/room_report.xls": 3
+  },
+  "unmatched_total": 33
 }

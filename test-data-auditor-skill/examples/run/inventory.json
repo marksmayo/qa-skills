@@ -1,11 +1,12 @@
 {
   "repo": "clinic-api",
+  "data_dirs": [],
   "inventory": [
     {
       "path": "db/seed.sql",
       "kind": "seed",
       "format": "sql",
-      "bytes": 262,
+      "bytes": 266,
       "loaded_by": [
         "tests/test_patients.py::test_patient_fixture_builds_models",
         "tests/test_patients.py::test_seed_patient_is_loaded"
@@ -18,7 +19,7 @@
       "path": "tests/conftest.py",
       "kind": "inline",
       "format": "python",
-      "bytes": 1092,
+      "bytes": 1135,
       "loaded_by": [
         "tests/test_appointments.py::test_appointments_load",
         "tests/test_appointments.py::test_total_minutes",
@@ -36,7 +37,7 @@
       "path": "tests/factories.py",
       "kind": "factory",
       "format": "python",
-      "bytes": 293,
+      "bytes": 305,
       "loaded_by": [
         "tests/test_factories.py::test_factory_patients_use_reserved_addresses"
       ],
@@ -48,7 +49,7 @@
       "path": "tests/test_appointments.py",
       "kind": "inline",
       "format": "python",
-      "bytes": 341,
+      "bytes": 351,
       "loaded_by": [
         "tests/test_appointments.py::test_appointments_load",
         "tests/test_appointments.py::test_total_minutes"
@@ -61,7 +62,7 @@
       "path": "tests/test_billing.py",
       "kind": "inline",
       "format": "python",
-      "bytes": 125,
+      "bytes": 130,
       "loaded_by": [
         "tests/test_billing.py::test_fee_is_shown_in_dollars"
       ],
@@ -70,10 +71,23 @@
       "lines": 5
     },
     {
+      "path": "tests/test_exports.py",
+      "kind": "inline",
+      "format": "python",
+      "bytes": 406,
+      "loaded_by": [
+        "tests/test_exports.py::test_referral_export_has_every_row",
+        "tests/test_exports.py::test_room_report_is_an_html_table"
+      ],
+      "status": "scanned",
+      "reason": null,
+      "lines": 14
+    },
+    {
       "path": "tests/test_factories.py",
       "kind": "inline",
       "format": "python",
-      "bytes": 152,
+      "bytes": 157,
       "loaded_by": [
         "tests/test_factories.py::test_factory_patients_use_reserved_addresses"
       ],
@@ -85,7 +99,7 @@
       "path": "tests/test_insurer.py",
       "kind": "inline",
       "format": "python",
-      "bytes": 479,
+      "bytes": 495,
       "loaded_by": [
         "tests/test_insurer.py::test_cover_is_read_from_the_insurer"
       ],
@@ -97,7 +111,7 @@
       "path": "tests/test_membership.py",
       "kind": "inline",
       "format": "python",
-      "bytes": 273,
+      "bytes": 282,
       "loaded_by": [
         "tests/test_membership.py::test_ten_pack_member_is_active",
         "tests/test_membership.py::test_expired_casual_member_is_not_active"
@@ -110,7 +124,7 @@
       "path": "tests/test_patients.py",
       "kind": "inline",
       "format": "python",
-      "bytes": 370,
+      "bytes": 382,
       "loaded_by": [
         "tests/test_patients.py::test_seed_patient_is_loaded",
         "tests/test_patients.py::test_patient_fixture_builds_models"
@@ -120,10 +134,23 @@
       "lines": 12
     },
     {
+      "path": "tests/test_settings.py",
+      "kind": "inline",
+      "format": "python",
+      "bytes": 289,
+      "loaded_by": [
+        "tests/test_settings.py::test_default_currency",
+        "tests/test_settings.py::test_currency_can_be_overridden"
+      ],
+      "status": "scanned",
+      "reason": null,
+      "lines": 13
+    },
+    {
       "path": "tests/test_waitlist.py",
       "kind": "inline",
       "format": "python",
-      "bytes": 154,
+      "bytes": 161,
       "loaded_by": [
         "tests/test_waitlist.py::test_waitlist_starts_empty",
         "tests/test_waitlist.py::test_join_waitlist"
@@ -136,7 +163,7 @@
       "path": "tests/cassettes/insurer_cover.json",
       "kind": "recording",
       "format": "json",
-      "bytes": 237,
+      "bytes": 282,
       "loaded_by": [
         "tests/test_insurer.py::test_cover_is_read_from_the_insurer"
       ],
@@ -148,7 +175,7 @@
       "path": "tests/fixtures/appointments.yaml",
       "kind": "fixture",
       "format": "yaml",
-      "bytes": 248,
+      "bytes": 261,
       "loaded_by": [
         "tests/test_appointments.py::test_appointments_load",
         "tests/test_appointments.py::test_total_minutes"
@@ -161,7 +188,7 @@
       "path": "tests/fixtures/legacy_rooms.csv",
       "kind": "fixture",
       "format": "csv",
-      "bytes": 49,
+      "bytes": 53,
       "loaded_by": [],
       "status": "scanned",
       "reason": null,
@@ -171,7 +198,7 @@
       "path": "tests/fixtures/memberships.json",
       "kind": "fixture",
       "format": "json",
-      "bytes": 169,
+      "bytes": 173,
       "loaded_by": [
         "tests/test_membership.py::test_expired_casual_member_is_not_active",
         "tests/test_membership.py::test_ten_pack_member_is_active"
@@ -184,34 +211,63 @@
       "path": "tests/fixtures/patients.json",
       "kind": "fixture",
       "format": "json",
-      "bytes": 482,
+      "bytes": 502,
       "loaded_by": [
         "tests/test_patients.py::test_patient_fixture_builds_models"
       ],
       "status": "scanned",
       "reason": null,
       "lines": 20
+    },
+    {
+      "path": "tests/fixtures/referral_export.csv",
+      "kind": "fixture",
+      "format": "csv",
+      "bytes": 1217,
+      "loaded_by": [
+        "tests/test_exports.py::test_referral_export_has_every_row"
+      ],
+      "status": "scanned",
+      "reason": null,
+      "lines": 25
+    },
+    {
+      "path": "tests/fixtures/room_report.xls",
+      "kind": "fixture",
+      "format": "html",
+      "bytes": 191,
+      "loaded_by": [
+        "tests/test_exports.py::test_room_report_is_an_html_table"
+      ],
+      "status": "scanned",
+      "reason": null,
+      "lines": 8,
+      "note": "HTML text with an .xls extension (sniffed), scanned as text"
     }
   ],
   "tests": [
     "tests/test_appointments.py::test_appointments_load",
     "tests/test_appointments.py::test_total_minutes",
     "tests/test_billing.py::test_fee_is_shown_in_dollars",
+    "tests/test_exports.py::test_referral_export_has_every_row",
+    "tests/test_exports.py::test_room_report_is_an_html_table",
     "tests/test_factories.py::test_factory_patients_use_reserved_addresses",
     "tests/test_insurer.py::test_cover_is_read_from_the_insurer",
     "tests/test_membership.py::test_expired_casual_member_is_not_active",
     "tests/test_membership.py::test_ten_pack_member_is_active",
     "tests/test_patients.py::test_patient_fixture_builds_models",
     "tests/test_patients.py::test_seed_patient_is_loaded",
+    "tests/test_settings.py::test_currency_can_be_overridden",
+    "tests/test_settings.py::test_default_currency",
     "tests/test_waitlist.py::test_join_waitlist",
     "tests/test_waitlist.py::test_waitlist_starts_empty"
   ],
   "summary": {
-    "sources": 15,
+    "sources": 19,
     "by_kind": {
       "factory": 1,
-      "fixture": 4,
-      "inline": 8,
+      "fixture": 6,
+      "inline": 10,
       "recording": 1,
       "seed": 1
     },

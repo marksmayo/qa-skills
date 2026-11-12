@@ -7,17 +7,17 @@
       "junit_paths": [
         "junit/B-1.xml"
       ],
-      "started_at": "2026-11-11T01:44:15Z",
+      "started_at": "2026-11-12T23:26:40Z",
       "totals": {
-        "tests": 11,
-        "passed": 11,
+        "tests": 15,
+        "passed": 15,
         "failed": 0,
         "error": 0,
         "skipped": 0
       },
       "file_hashes": {},
       "notes": [],
-      "duration_s": 1.234,
+      "duration_s": 0.727,
       "timed_out": false,
       "label": "baseline",
       "preset": "pytest",
@@ -34,7 +34,7 @@
         "isolate": false,
         "env": {}
       },
-      "code_hash": "37577a4002265a4bc78dba67fa40d40678f4e93504249604758352624aa76a04"
+      "code_hash": "a7725989d885f1fefb13f42d3732a3a1cdc1fba2b57bbd4754256f512f0bd18a"
     },
     {
       "id": "B-2",
@@ -43,17 +43,17 @@
       "junit_paths": [
         "junit/B-2.xml"
       ],
-      "started_at": "2026-11-11T01:44:16Z",
+      "started_at": "2026-11-12T23:26:41Z",
       "totals": {
-        "tests": 11,
-        "passed": 11,
+        "tests": 15,
+        "passed": 15,
         "failed": 0,
         "error": 0,
         "skipped": 0
       },
       "file_hashes": {},
       "notes": [],
-      "duration_s": 0.926,
+      "duration_s": 0.709,
       "timed_out": false,
       "label": "baseline",
       "preset": "pytest",
@@ -70,7 +70,7 @@
         "isolate": false,
         "env": {}
       },
-      "code_hash": "37577a4002265a4bc78dba67fa40d40678f4e93504249604758352624aa76a04"
+      "code_hash": "a7725989d885f1fefb13f42d3732a3a1cdc1fba2b57bbd4754256f512f0bd18a"
     },
     {
       "id": "S-1",
@@ -79,17 +79,17 @@
       "junit_paths": [
         "junit/S-1.xml"
       ],
-      "started_at": "2026-11-11T01:44:17Z",
+      "started_at": "2026-11-12T23:26:42Z",
       "totals": {
-        "tests": 11,
-        "passed": 10,
+        "tests": 15,
+        "passed": 14,
         "failed": 1,
         "error": 0,
         "skipped": 0
       },
       "file_hashes": {},
       "notes": [],
-      "duration_s": 0.997,
+      "duration_s": 0.835,
       "timed_out": false,
       "label": "clock +400d",
       "preset": "custom",
@@ -108,7 +108,7 @@
           "TDA_CLOCK_SHIFT": "+400d"
         }
       },
-      "code_hash": "37577a4002265a4bc78dba67fa40d40678f4e93504249604758352624aa76a04"
+      "code_hash": "a7725989d885f1fefb13f42d3732a3a1cdc1fba2b57bbd4754256f512f0bd18a"
     },
     {
       "id": "M-1",
@@ -117,17 +117,17 @@
       "junit_paths": [
         "junit/M-1.xml"
       ],
-      "started_at": "2026-11-11T01:44:18Z",
+      "started_at": "2026-11-12T23:26:43Z",
       "totals": {
-        "tests": 11,
-        "passed": 10,
+        "tests": 15,
+        "passed": 14,
         "failed": 1,
         "error": 0,
         "skipped": 0
       },
       "file_hashes": {},
       "notes": [],
-      "duration_s": 0.955,
+      "duration_s": 0.813,
       "timed_out": false,
       "label": "clock month-end 2027-01-31",
       "preset": "custom",
@@ -146,7 +146,7 @@
           "TDA_CLOCK_DATE": "2027-01-31"
         }
       },
-      "code_hash": "37577a4002265a4bc78dba67fa40d40678f4e93504249604758352624aa76a04"
+      "code_hash": "a7725989d885f1fefb13f42d3732a3a1cdc1fba2b57bbd4754256f512f0bd18a"
     },
     {
       "id": "L-1",
@@ -155,17 +155,17 @@
       "junit_paths": [
         "junit/L-1.xml"
       ],
-      "started_at": "2026-11-11T01:44:19Z",
+      "started_at": "2026-11-12T23:26:44Z",
       "totals": {
-        "tests": 11,
-        "passed": 10,
+        "tests": 15,
+        "passed": 14,
         "failed": 1,
         "error": 0,
         "skipped": 0
       },
       "file_hashes": {},
       "notes": [],
-      "duration_s": 1.184,
+      "duration_s": 0.739,
       "timed_out": false,
       "label": "clock leap-day 2028-02-29",
       "preset": "custom",
@@ -184,7 +184,7 @@
           "TDA_CLOCK_DATE": "2028-02-29"
         }
       },
-      "code_hash": "37577a4002265a4bc78dba67fa40d40678f4e93504249604758352624aa76a04"
+      "code_hash": "a7725989d885f1fefb13f42d3732a3a1cdc1fba2b57bbd4754256f512f0bd18a"
     },
     {
       "id": "O-1",
@@ -193,7 +193,7 @@
       "junit_paths": [
         "junit/O-1.xml"
       ],
-      "started_at": "2026-11-11T01:44:21Z",
+      "started_at": "2026-11-12T23:26:45Z",
       "totals": {
         "tests": 2,
         "passed": 1,
@@ -203,7 +203,7 @@
       },
       "file_hashes": {},
       "notes": [],
-      "duration_s": 0.854,
+      "duration_s": 0.75,
       "timed_out": false,
       "label": "order reverse",
       "preset": "pytest",
@@ -223,7 +223,7 @@
         "isolate": false,
         "env": {}
       },
-      "code_hash": "37577a4002265a4bc78dba67fa40d40678f4e93504249604758352624aa76a04"
+      "code_hash": "a7725989d885f1fefb13f42d3732a3a1cdc1fba2b57bbd4754256f512f0bd18a"
     },
     {
       "id": "I-1",
@@ -232,7 +232,7 @@
       "junit_paths": [
         "junit/I-1.xml"
       ],
-      "started_at": "2026-11-11T01:44:23Z",
+      "started_at": "2026-11-12T23:26:47Z",
       "totals": {
         "tests": 1,
         "passed": 1,
@@ -242,7 +242,7 @@
       },
       "file_hashes": {},
       "notes": [],
-      "duration_s": 0.994,
+      "duration_s": 0.696,
       "timed_out": false,
       "label": "isolate",
       "preset": "pytest",
@@ -261,7 +261,7 @@
         "isolate": true,
         "env": {}
       },
-      "code_hash": "37577a4002265a4bc78dba67fa40d40678f4e93504249604758352624aa76a04"
+      "code_hash": "a7725989d885f1fefb13f42d3732a3a1cdc1fba2b57bbd4754256f512f0bd18a"
     },
     {
       "id": "I-2",
@@ -270,7 +270,7 @@
       "junit_paths": [
         "junit/I-2.xml"
       ],
-      "started_at": "2026-11-11T01:44:24Z",
+      "started_at": "2026-11-12T23:26:48Z",
       "totals": {
         "tests": 1,
         "passed": 1,
@@ -280,7 +280,7 @@
       },
       "file_hashes": {},
       "notes": [],
-      "duration_s": 1.114,
+      "duration_s": 0.689,
       "timed_out": false,
       "label": "isolate",
       "preset": "pytest",
@@ -299,7 +299,122 @@
         "isolate": true,
         "env": {}
       },
-      "code_hash": "37577a4002265a4bc78dba67fa40d40678f4e93504249604758352624aa76a04"
+      "code_hash": "a7725989d885f1fefb13f42d3732a3a1cdc1fba2b57bbd4754256f512f0bd18a"
+    },
+    {
+      "id": "R-1",
+      "command": "python -m pytest -q -p no:cacheprovider --junitxml=junit/R-1.xml tests/test_settings.py::test_currency_can_be_overridden tests/test_settings.py::test_default_currency",
+      "exit_code": 1,
+      "junit_paths": [
+        "junit/R-1.xml"
+      ],
+      "started_at": "2026-11-12T23:26:50Z",
+      "totals": {
+        "tests": 2,
+        "passed": 1,
+        "failed": 1,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {},
+      "notes": [],
+      "duration_s": 0.749,
+      "timed_out": false,
+      "label": "order reverse",
+      "preset": "pytest",
+      "tests_selected": [
+        "tests/test_settings.py::test_currency_can_be_overridden",
+        "tests/test_settings.py::test_default_currency"
+      ],
+      "variation": {
+        "order": "reverse",
+        "seed": null,
+        "hash_seed": null,
+        "workers": null,
+        "tz": null,
+        "tz_applied": null,
+        "locale": null,
+        "cpu_load": 0,
+        "isolate": false,
+        "env": {}
+      },
+      "code_hash": "a7725989d885f1fefb13f42d3732a3a1cdc1fba2b57bbd4754256f512f0bd18a"
+    },
+    {
+      "id": "J-1",
+      "command": "python -m pytest -q -p no:cacheprovider --junitxml=junit/J-1.xml tests/test_settings.py::test_default_currency",
+      "exit_code": 0,
+      "junit_paths": [
+        "junit/J-1.xml"
+      ],
+      "started_at": "2026-11-12T23:26:51Z",
+      "totals": {
+        "tests": 1,
+        "passed": 1,
+        "failed": 0,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {},
+      "notes": [],
+      "duration_s": 0.694,
+      "timed_out": false,
+      "label": "isolate",
+      "preset": "pytest",
+      "tests_selected": [
+        "tests/test_settings.py::test_default_currency"
+      ],
+      "variation": {
+        "order": "given",
+        "seed": null,
+        "hash_seed": null,
+        "workers": null,
+        "tz": null,
+        "tz_applied": null,
+        "locale": null,
+        "cpu_load": 0,
+        "isolate": true,
+        "env": {}
+      },
+      "code_hash": "a7725989d885f1fefb13f42d3732a3a1cdc1fba2b57bbd4754256f512f0bd18a"
+    },
+    {
+      "id": "J-2",
+      "command": "python -m pytest -q -p no:cacheprovider --junitxml=junit/J-2.xml tests/test_settings.py::test_currency_can_be_overridden",
+      "exit_code": 0,
+      "junit_paths": [
+        "junit/J-2.xml"
+      ],
+      "started_at": "2026-11-12T23:26:52Z",
+      "totals": {
+        "tests": 1,
+        "passed": 1,
+        "failed": 0,
+        "error": 0,
+        "skipped": 0
+      },
+      "file_hashes": {},
+      "notes": [],
+      "duration_s": 0.752,
+      "timed_out": false,
+      "label": "isolate",
+      "preset": "pytest",
+      "tests_selected": [
+        "tests/test_settings.py::test_currency_can_be_overridden"
+      ],
+      "variation": {
+        "order": "given",
+        "seed": null,
+        "hash_seed": null,
+        "workers": null,
+        "tz": null,
+        "tz_applied": null,
+        "locale": null,
+        "cpu_load": 0,
+        "isolate": true,
+        "env": {}
+      },
+      "code_hash": "a7725989d885f1fefb13f42d3732a3a1cdc1fba2b57bbd4754256f512f0bd18a"
     },
     {
       "id": "C-1",
@@ -379,6 +494,30 @@
     },
     {
       "run_id": "B-1",
+      "id": "tests.test_exports::test_referral_export_has_every_row",
+      "name": "test_referral_export_has_every_row",
+      "classname": "tests.test_exports",
+      "file": "tests/test_exports.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.001
+    },
+    {
+      "run_id": "B-1",
+      "id": "tests.test_exports::test_room_report_is_an_html_table",
+      "name": "test_room_report_is_an_html_table",
+      "classname": "tests.test_exports",
+      "file": "tests/test_exports.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "B-1",
       "id": "tests.test_factories::test_factory_patients_use_reserved_addresses",
       "name": "test_factory_patients_use_reserved_addresses",
       "classname": "tests.test_factories",
@@ -399,7 +538,7 @@
       "failure_type": null,
       "signals": [],
       "message_excerpt": "",
-      "time": 0.001
+      "time": 0.0
     },
     {
       "run_id": "B-1",
@@ -411,7 +550,7 @@
       "failure_type": null,
       "signals": [],
       "message_excerpt": "",
-      "time": 0.001
+      "time": 0.0
     },
     {
       "run_id": "B-1",
@@ -423,7 +562,7 @@
       "failure_type": null,
       "signals": [],
       "message_excerpt": "",
-      "time": 0.001
+      "time": 0.0
     },
     {
       "run_id": "B-1",
@@ -435,7 +574,7 @@
       "failure_type": null,
       "signals": [],
       "message_excerpt": "",
-      "time": 0.001
+      "time": 0.0
     },
     {
       "run_id": "B-1",
@@ -443,6 +582,390 @@
       "name": "test_patient_fixture_builds_models",
       "classname": "tests.test_patients",
       "file": "tests/test_patients.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "B-1",
+      "id": "tests.test_settings::test_default_currency",
+      "name": "test_default_currency",
+      "classname": "tests.test_settings",
+      "file": "tests/test_settings.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "B-1",
+      "id": "tests.test_settings::test_currency_can_be_overridden",
+      "name": "test_currency_can_be_overridden",
+      "classname": "tests.test_settings",
+      "file": "tests/test_settings.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.001
+    },
+    {
+      "run_id": "B-1",
+      "id": "tests.test_waitlist::test_waitlist_starts_empty",
+      "name": "test_waitlist_starts_empty",
+      "classname": "tests.test_waitlist",
+      "file": "tests/test_waitlist.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "B-1",
+      "id": "tests.test_waitlist::test_join_waitlist",
+      "name": "test_join_waitlist",
+      "classname": "tests.test_waitlist",
+      "file": "tests/test_waitlist.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "B-2",
+      "id": "tests.test_appointments::test_appointments_load",
+      "name": "test_appointments_load",
+      "classname": "tests.test_appointments",
+      "file": "tests/test_appointments.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.001
+    },
+    {
+      "run_id": "B-2",
+      "id": "tests.test_appointments::test_total_minutes",
+      "name": "test_total_minutes",
+      "classname": "tests.test_appointments",
+      "file": "tests/test_appointments.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.001
+    },
+    {
+      "run_id": "B-2",
+      "id": "tests.test_billing::test_fee_is_shown_in_dollars",
+      "name": "test_fee_is_shown_in_dollars",
+      "classname": "tests.test_billing",
+      "file": "tests/test_billing.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "B-2",
+      "id": "tests.test_exports::test_referral_export_has_every_row",
+      "name": "test_referral_export_has_every_row",
+      "classname": "tests.test_exports",
+      "file": "tests/test_exports.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.001
+    },
+    {
+      "run_id": "B-2",
+      "id": "tests.test_exports::test_room_report_is_an_html_table",
+      "name": "test_room_report_is_an_html_table",
+      "classname": "tests.test_exports",
+      "file": "tests/test_exports.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "B-2",
+      "id": "tests.test_factories::test_factory_patients_use_reserved_addresses",
+      "name": "test_factory_patients_use_reserved_addresses",
+      "classname": "tests.test_factories",
+      "file": "tests/test_factories.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "B-2",
+      "id": "tests.test_insurer::test_cover_is_read_from_the_insurer",
+      "name": "test_cover_is_read_from_the_insurer",
+      "classname": "tests.test_insurer",
+      "file": "tests/test_insurer.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "B-2",
+      "id": "tests.test_membership::test_ten_pack_member_is_active",
+      "name": "test_ten_pack_member_is_active",
+      "classname": "tests.test_membership",
+      "file": "tests/test_membership.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "B-2",
+      "id": "tests.test_membership::test_expired_casual_member_is_not_active",
+      "name": "test_expired_casual_member_is_not_active",
+      "classname": "tests.test_membership",
+      "file": "tests/test_membership.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "B-2",
+      "id": "tests.test_patients::test_seed_patient_is_loaded",
+      "name": "test_seed_patient_is_loaded",
+      "classname": "tests.test_patients",
+      "file": "tests/test_patients.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "B-2",
+      "id": "tests.test_patients::test_patient_fixture_builds_models",
+      "name": "test_patient_fixture_builds_models",
+      "classname": "tests.test_patients",
+      "file": "tests/test_patients.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "B-2",
+      "id": "tests.test_settings::test_default_currency",
+      "name": "test_default_currency",
+      "classname": "tests.test_settings",
+      "file": "tests/test_settings.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "B-2",
+      "id": "tests.test_settings::test_currency_can_be_overridden",
+      "name": "test_currency_can_be_overridden",
+      "classname": "tests.test_settings",
+      "file": "tests/test_settings.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.001
+    },
+    {
+      "run_id": "B-2",
+      "id": "tests.test_waitlist::test_waitlist_starts_empty",
+      "name": "test_waitlist_starts_empty",
+      "classname": "tests.test_waitlist",
+      "file": "tests/test_waitlist.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "B-2",
+      "id": "tests.test_waitlist::test_join_waitlist",
+      "name": "test_join_waitlist",
+      "classname": "tests.test_waitlist",
+      "file": "tests/test_waitlist.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "S-1",
+      "id": "tests.test_appointments::test_appointments_load",
+      "name": "test_appointments_load",
+      "classname": "tests.test_appointments",
+      "file": "tests/test_appointments.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.001
+    },
+    {
+      "run_id": "S-1",
+      "id": "tests.test_appointments::test_total_minutes",
+      "name": "test_total_minutes",
+      "classname": "tests.test_appointments",
+      "file": "tests/test_appointments.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.001
+    },
+    {
+      "run_id": "S-1",
+      "id": "tests.test_billing::test_fee_is_shown_in_dollars",
+      "name": "test_fee_is_shown_in_dollars",
+      "classname": "tests.test_billing",
+      "file": "tests/test_billing.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "S-1",
+      "id": "tests.test_exports::test_referral_export_has_every_row",
+      "name": "test_referral_export_has_every_row",
+      "classname": "tests.test_exports",
+      "file": "tests/test_exports.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "S-1",
+      "id": "tests.test_exports::test_room_report_is_an_html_table",
+      "name": "test_room_report_is_an_html_table",
+      "classname": "tests.test_exports",
+      "file": "tests/test_exports.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "S-1",
+      "id": "tests.test_factories::test_factory_patients_use_reserved_addresses",
+      "name": "test_factory_patients_use_reserved_addresses",
+      "classname": "tests.test_factories",
+      "file": "tests/test_factories.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "S-1",
+      "id": "tests.test_insurer::test_cover_is_read_from_the_insurer",
+      "name": "test_cover_is_read_from_the_insurer",
+      "classname": "tests.test_insurer",
+      "file": "tests/test_insurer.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "S-1",
+      "id": "tests.test_membership::test_ten_pack_member_is_active",
+      "name": "test_ten_pack_member_is_active",
+      "classname": "tests.test_membership",
+      "file": "tests/test_membership.py",
+      "status": "failed",
+      "failure_type": "assertion",
+      "signals": [],
+      "message_excerpt": "AssertionError: assert False\n +  where False = is_active(Membership(patient_id=1, plan='ten-pack', expires=FakeDate(2026, 12, 1), visits_left=6))\n +    where Membership(patient_id=1, plan='ten-pack', expires=FakeDate(2026, 12, 1), visits_left=6) = from_record({'patient_id': 1, 'plan': 'ten-pack', 'expires': '2026-12-01', 'visits_left': 6})\nmemberships = [{'patient_id': 1, 'plan': 'ten-pack', 'expires': '2026-12-01', 'visits_left': 6}, {'patient_id': 2, 'plan': 'casual', 'expires': '2025-06-30', 'visits_left': 0}]\n\n    def test_ten_pack_member_is_active(memberships):\n>       assert is_active(fr \u00e2\u20ac\u00a6",
+      "time": 0.001
+    },
+    {
+      "run_id": "S-1",
+      "id": "tests.test_membership::test_expired_casual_member_is_not_active",
+      "name": "test_expired_casual_member_is_not_active",
+      "classname": "tests.test_membership",
+      "file": "tests/test_membership.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.001
+    },
+    {
+      "run_id": "S-1",
+      "id": "tests.test_patients::test_seed_patient_is_loaded",
+      "name": "test_seed_patient_is_loaded",
+      "classname": "tests.test_patients",
+      "file": "tests/test_patients.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "S-1",
+      "id": "tests.test_patients::test_patient_fixture_builds_models",
+      "name": "test_patient_fixture_builds_models",
+      "classname": "tests.test_patients",
+      "file": "tests/test_patients.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "S-1",
+      "id": "tests.test_settings::test_default_currency",
+      "name": "test_default_currency",
+      "classname": "tests.test_settings",
+      "file": "tests/test_settings.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "S-1",
+      "id": "tests.test_settings::test_currency_can_be_overridden",
+      "name": "test_currency_can_be_overridden",
+      "classname": "tests.test_settings",
+      "file": "tests/test_settings.py",
       "status": "passed",
       "failure_type": null,
       "signals": [],
@@ -450,270 +973,6 @@
       "time": 0.002
     },
     {
-      "run_id": "B-1",
-      "id": "tests.test_waitlist::test_waitlist_starts_empty",
-      "name": "test_waitlist_starts_empty",
-      "classname": "tests.test_waitlist",
-      "file": "tests/test_waitlist.py",
-      "status": "passed",
-      "failure_type": null,
-      "signals": [],
-      "message_excerpt": "",
-      "time": 0.0
-    },
-    {
-      "run_id": "B-1",
-      "id": "tests.test_waitlist::test_join_waitlist",
-      "name": "test_join_waitlist",
-      "classname": "tests.test_waitlist",
-      "file": "tests/test_waitlist.py",
-      "status": "passed",
-      "failure_type": null,
-      "signals": [],
-      "message_excerpt": "",
-      "time": 0.0
-    },
-    {
-      "run_id": "B-2",
-      "id": "tests.test_appointments::test_appointments_load",
-      "name": "test_appointments_load",
-      "classname": "tests.test_appointments",
-      "file": "tests/test_appointments.py",
-      "status": "passed",
-      "failure_type": null,
-      "signals": [],
-      "message_excerpt": "",
-      "time": 0.001
-    },
-    {
-      "run_id": "B-2",
-      "id": "tests.test_appointments::test_total_minutes",
-      "name": "test_total_minutes",
-      "classname": "tests.test_appointments",
-      "file": "tests/test_appointments.py",
-      "status": "passed",
-      "failure_type": null,
-      "signals": [],
-      "message_excerpt": "",
-      "time": 0.001
-    },
-    {
-      "run_id": "B-2",
-      "id": "tests.test_billing::test_fee_is_shown_in_dollars",
-      "name": "test_fee_is_shown_in_dollars",
-      "classname": "tests.test_billing",
-      "file": "tests/test_billing.py",
-      "status": "passed",
-      "failure_type": null,
-      "signals": [],
-      "message_excerpt": "",
-      "time": 0.001
-    },
-    {
-      "run_id": "B-2",
-      "id": "tests.test_factories::test_factory_patients_use_reserved_addresses",
-      "name": "test_factory_patients_use_reserved_addresses",
-      "classname": "tests.test_factories",
-      "file": "tests/test_factories.py",
-      "status": "passed",
-      "failure_type": null,
-      "signals": [],
-      "message_excerpt": "",
-      "time": 0.0
-    },
-    {
-      "run_id": "B-2",
-      "id": "tests.test_insurer::test_cover_is_read_from_the_insurer",
-      "name": "test_cover_is_read_from_the_insurer",
-      "classname": "tests.test_insurer",
-      "file": "tests/test_insurer.py",
-      "status": "passed",
-      "failure_type": null,
-      "signals": [],
-      "message_excerpt": "",
-      "time": 0.001
-    },
-    {
-      "run_id": "B-2",
-      "id": "tests.test_membership::test_ten_pack_member_is_active",
-      "name": "test_ten_pack_member_is_active",
-      "classname": "tests.test_membership",
-      "file": "tests/test_membership.py",
-      "status": "passed",
-      "failure_type": null,
-      "signals": [],
-      "message_excerpt": "",
-      "time": 0.001
-    },
-    {
-      "run_id": "B-2",
-      "id": "tests.test_membership::test_expired_casual_member_is_not_active",
-      "name": "test_expired_casual_member_is_not_active",
-      "classname": "tests.test_membership",
-      "file": "tests/test_membership.py",
-      "status": "passed",
-      "failure_type": null,
-      "signals": [],
-      "message_excerpt": "",
-      "time": 0.001
-    },
-    {
-      "run_id": "B-2",
-      "id": "tests.test_patients::test_seed_patient_is_loaded",
-      "name": "test_seed_patient_is_loaded",
-      "classname": "tests.test_patients",
-      "file": "tests/test_patients.py",
-      "status": "passed",
-      "failure_type": null,
-      "signals": [],
-      "message_excerpt": "",
-      "time": 0.0
-    },
-    {
-      "run_id": "B-2",
-      "id": "tests.test_patients::test_patient_fixture_builds_models",
-      "name": "test_patient_fixture_builds_models",
-      "classname": "tests.test_patients",
-      "file": "tests/test_patients.py",
-      "status": "passed",
-      "failure_type": null,
-      "signals": [],
-      "message_excerpt": "",
-      "time": 0.001
-    },
-    {
-      "run_id": "B-2",
-      "id": "tests.test_waitlist::test_waitlist_starts_empty",
-      "name": "test_waitlist_starts_empty",
-      "classname": "tests.test_waitlist",
-      "file": "tests/test_waitlist.py",
-      "status": "passed",
-      "failure_type": null,
-      "signals": [],
-      "message_excerpt": "",
-      "time": 0.0
-    },
-    {
-      "run_id": "B-2",
-      "id": "tests.test_waitlist::test_join_waitlist",
-      "name": "test_join_waitlist",
-      "classname": "tests.test_waitlist",
-      "file": "tests/test_waitlist.py",
-      "status": "passed",
-      "failure_type": null,
-      "signals": [],
-      "message_excerpt": "",
-      "time": 0.0
-    },
-    {
-      "run_id": "S-1",
-      "id": "tests.test_appointments::test_appointments_load",
-      "name": "test_appointments_load",
-      "classname": "tests.test_appointments",
-      "file": "tests/test_appointments.py",
-      "status": "passed",
-      "failure_type": null,
-      "signals": [],
-      "message_excerpt": "",
-      "time": 0.001
-    },
-    {
-      "run_id": "S-1",
-      "id": "tests.test_appointments::test_total_minutes",
-      "name": "test_total_minutes",
-      "classname": "tests.test_appointments",
-      "file": "tests/test_appointments.py",
-      "status": "passed",
-      "failure_type": null,
-      "signals": [],
-      "message_excerpt": "",
-      "time": 0.001
-    },
-    {
-      "run_id": "S-1",
-      "id": "tests.test_billing::test_fee_is_shown_in_dollars",
-      "name": "test_fee_is_shown_in_dollars",
-      "classname": "tests.test_billing",
-      "file": "tests/test_billing.py",
-      "status": "passed",
-      "failure_type": null,
-      "signals": [],
-      "message_excerpt": "",
-      "time": 0.001
-    },
-    {
-      "run_id": "S-1",
-      "id": "tests.test_factories::test_factory_patients_use_reserved_addresses",
-      "name": "test_factory_patients_use_reserved_addresses",
-      "classname": "tests.test_factories",
-      "file": "tests/test_factories.py",
-      "status": "passed",
-      "failure_type": null,
-      "signals": [],
-      "message_excerpt": "",
-      "time": 0.0
-    },
-    {
-      "run_id": "S-1",
-      "id": "tests.test_insurer::test_cover_is_read_from_the_insurer",
-      "name": "test_cover_is_read_from_the_insurer",
-      "classname": "tests.test_insurer",
-      "file": "tests/test_insurer.py",
-      "status": "passed",
-      "failure_type": null,
-      "signals": [],
-      "message_excerpt": "",
-      "time": 0.001
-    },
-    {
-      "run_id": "S-1",
-      "id": "tests.test_membership::test_ten_pack_member_is_active",
-      "name": "test_ten_pack_member_is_active",
-      "classname": "tests.test_membership",
-      "file": "tests/test_membership.py",
-      "status": "failed",
-      "failure_type": "assertion",
-      "signals": [],
-      "message_excerpt": "AssertionError: assert False\n +  where False = is_active(Membership(patient_id=1, plan='ten-pack', expires=FakeDate(2026, 12, 1), visits_left=6))\n +    where Membership(patient_id=1, plan='ten-pack', expires=FakeDate(2026, 12, 1), visits_left=6) = from_record({'patient_id': 1, 'plan': 'ten-pack', 'expires': '2026-12-01', 'visits_left': 6})\nmemberships = [{'patient_id': 1, 'plan': 'ten-pack', 'expires': '2026-12-01', 'visits_left': 6}, {'patient_id': 2, 'plan': 'casual', 'expires': '2025-06-30', 'visits_left': 0}]\n\n    def test_ten_pack_member_is_active(memberships):\n>       assert is_active(fr …",
-      "time": 0.001
-    },
-    {
-      "run_id": "S-1",
-      "id": "tests.test_membership::test_expired_casual_member_is_not_active",
-      "name": "test_expired_casual_member_is_not_active",
-      "classname": "tests.test_membership",
-      "file": "tests/test_membership.py",
-      "status": "passed",
-      "failure_type": null,
-      "signals": [],
-      "message_excerpt": "",
-      "time": 0.001
-    },
-    {
-      "run_id": "S-1",
-      "id": "tests.test_patients::test_seed_patient_is_loaded",
-      "name": "test_seed_patient_is_loaded",
-      "classname": "tests.test_patients",
-      "file": "tests/test_patients.py",
-      "status": "passed",
-      "failure_type": null,
-      "signals": [],
-      "message_excerpt": "",
-      "time": 0.0
-    },
-    {
-      "run_id": "S-1",
-      "id": "tests.test_patients::test_patient_fixture_builds_models",
-      "name": "test_patient_fixture_builds_models",
-      "classname": "tests.test_patients",
-      "file": "tests/test_patients.py",
-      "status": "passed",
-      "failure_type": null,
-      "signals": [],
-      "message_excerpt": "",
-      "time": 0.001
-    },
-    {
       "run_id": "S-1",
       "id": "tests.test_waitlist::test_waitlist_starts_empty",
       "name": "test_waitlist_starts_empty",
@@ -771,7 +1030,31 @@
       "failure_type": null,
       "signals": [],
       "message_excerpt": "",
-      "time": 0.001
+      "time": 0.0
+    },
+    {
+      "run_id": "M-1",
+      "id": "tests.test_exports::test_referral_export_has_every_row",
+      "name": "test_referral_export_has_every_row",
+      "classname": "tests.test_exports",
+      "file": "tests/test_exports.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "M-1",
+      "id": "tests.test_exports::test_room_report_is_an_html_table",
+      "name": "test_room_report_is_an_html_table",
+      "classname": "tests.test_exports",
+      "file": "tests/test_exports.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
     },
     {
       "run_id": "M-1",
@@ -795,7 +1078,7 @@
       "failure_type": null,
       "signals": [],
       "message_excerpt": "",
-      "time": 0.001
+      "time": 0.0
     },
     {
       "run_id": "M-1",
@@ -806,7 +1089,7 @@
       "status": "failed",
       "failure_type": "assertion",
       "signals": [],
-      "message_excerpt": "AssertionError: assert False\n +  where False = is_active(Membership(patient_id=1, plan='ten-pack', expires=FakeDate(2026, 12, 1), visits_left=6))\n +    where Membership(patient_id=1, plan='ten-pack', expires=FakeDate(2026, 12, 1), visits_left=6) = from_record({'patient_id': 1, 'plan': 'ten-pack', 'expires': '2026-12-01', 'visits_left': 6})\nmemberships = [{'patient_id': 1, 'plan': 'ten-pack', 'expires': '2026-12-01', 'visits_left': 6}, {'patient_id': 2, 'plan': 'casual', 'expires': '2025-06-30', 'visits_left': 0}]\n\n    def test_ten_pack_member_is_active(memberships):\n>       assert is_active(fr …",
+      "message_excerpt": "AssertionError: assert False\n +  where False = is_active(Membership(patient_id=1, plan='ten-pack', expires=FakeDate(2026, 12, 1), visits_left=6))\n +    where Membership(patient_id=1, plan='ten-pack', expires=FakeDate(2026, 12, 1), visits_left=6) = from_record({'patient_id': 1, 'plan': 'ten-pack', 'expires': '2026-12-01', 'visits_left': 6})\nmemberships = [{'patient_id': 1, 'plan': 'ten-pack', 'expires': '2026-12-01', 'visits_left': 6}, {'patient_id': 2, 'plan': 'casual', 'expires': '2025-06-30', 'visits_left': 0}]\n\n    def test_ten_pack_member_is_active(memberships):\n>       assert is_active(fr \u00e2\u20ac\u00a6",
       "time": 0.001
     },
     {
@@ -844,6 +1127,30 @@
       "signals": [],
       "message_excerpt": "",
       "time": 0.001
+    },
+    {
+      "run_id": "M-1",
+      "id": "tests.test_settings::test_default_currency",
+      "name": "test_default_currency",
+      "classname": "tests.test_settings",
+      "file": "tests/test_settings.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "M-1",
+      "id": "tests.test_settings::test_currency_can_be_overridden",
+      "name": "test_currency_can_be_overridden",
+      "classname": "tests.test_settings",
+      "file": "tests/test_settings.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.003
     },
     {
       "run_id": "M-1",
@@ -903,7 +1210,31 @@
       "failure_type": null,
       "signals": [],
       "message_excerpt": "",
-      "time": 0.001
+      "time": 0.0
+    },
+    {
+      "run_id": "L-1",
+      "id": "tests.test_exports::test_referral_export_has_every_row",
+      "name": "test_referral_export_has_every_row",
+      "classname": "tests.test_exports",
+      "file": "tests/test_exports.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "L-1",
+      "id": "tests.test_exports::test_room_report_is_an_html_table",
+      "name": "test_room_report_is_an_html_table",
+      "classname": "tests.test_exports",
+      "file": "tests/test_exports.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
     },
     {
       "run_id": "L-1",
@@ -927,7 +1258,7 @@
       "failure_type": null,
       "signals": [],
       "message_excerpt": "",
-      "time": 0.001
+      "time": 0.0
     },
     {
       "run_id": "L-1",
@@ -938,7 +1269,7 @@
       "status": "failed",
       "failure_type": "assertion",
       "signals": [],
-      "message_excerpt": "AssertionError: assert False\n +  where False = is_active(Membership(patient_id=1, plan='ten-pack', expires=FakeDate(2026, 12, 1), visits_left=6))\n +    where Membership(patient_id=1, plan='ten-pack', expires=FakeDate(2026, 12, 1), visits_left=6) = from_record({'patient_id': 1, 'plan': 'ten-pack', 'expires': '2026-12-01', 'visits_left': 6})\nmemberships = [{'patient_id': 1, 'plan': 'ten-pack', 'expires': '2026-12-01', 'visits_left': 6}, {'patient_id': 2, 'plan': 'casual', 'expires': '2025-06-30', 'visits_left': 0}]\n\n    def test_ten_pack_member_is_active(memberships):\n>       assert is_active(fr …",
+      "message_excerpt": "AssertionError: assert False\n +  where False = is_active(Membership(patient_id=1, plan='ten-pack', expires=FakeDate(2026, 12, 1), visits_left=6))\n +    where Membership(patient_id=1, plan='ten-pack', expires=FakeDate(2026, 12, 1), visits_left=6) = from_record({'patient_id': 1, 'plan': 'ten-pack', 'expires': '2026-12-01', 'visits_left': 6})\nmemberships = [{'patient_id': 1, 'plan': 'ten-pack', 'expires': '2026-12-01', 'visits_left': 6}, {'patient_id': 2, 'plan': 'casual', 'expires': '2025-06-30', 'visits_left': 0}]\n\n    def test_ten_pack_member_is_active(memberships):\n>       assert is_active(fr \u00e2\u20ac\u00a6",
       "time": 0.001
     },
     {
@@ -971,6 +1302,30 @@
       "name": "test_patient_fixture_builds_models",
       "classname": "tests.test_patients",
       "file": "tests/test_patients.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "L-1",
+      "id": "tests.test_settings::test_default_currency",
+      "name": "test_default_currency",
+      "classname": "tests.test_settings",
+      "file": "tests/test_settings.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "L-1",
+      "id": "tests.test_settings::test_currency_can_be_overridden",
+      "name": "test_currency_can_be_overridden",
+      "classname": "tests.test_settings",
+      "file": "tests/test_settings.py",
       "status": "passed",
       "failure_type": null,
       "signals": [],
@@ -1011,7 +1366,7 @@
       "failure_type": null,
       "signals": [],
       "message_excerpt": "",
-      "time": 0.001
+      "time": 0.0
     },
     {
       "run_id": "O-1",
@@ -1023,7 +1378,7 @@
       "failure_type": "assertion",
       "signals": [],
       "message_excerpt": "assert [1] == []\n  \n  Left contains one more item: 1\n  Use -v to get more diff\nwaitlist = [1]\n\n    def test_waitlist_starts_empty(waitlist):\n>       assert waitlist == []\nE       assert [1] == []\nE         \nE         Left contains one more item: 1\nE         Use -v to get more diff\n\ntests\\test_waitlist.py:2: AssertionError",
-      "time": 0.001
+      "time": 0.0
     },
     {
       "run_id": "I-1",
@@ -1035,7 +1390,7 @@
       "failure_type": null,
       "signals": [],
       "message_excerpt": "",
-      "time": 0.001
+      "time": 0.0
     },
     {
       "run_id": "I-2",
@@ -1043,6 +1398,54 @@
       "name": "test_join_waitlist",
       "classname": "tests.test_waitlist",
       "file": "tests/test_waitlist.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "R-1",
+      "id": "tests.test_settings::test_currency_can_be_overridden",
+      "name": "test_currency_can_be_overridden",
+      "classname": "tests.test_settings",
+      "file": "tests/test_settings.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.001
+    },
+    {
+      "run_id": "R-1",
+      "id": "tests.test_settings::test_default_currency",
+      "name": "test_default_currency",
+      "classname": "tests.test_settings",
+      "file": "tests/test_settings.py",
+      "status": "failed",
+      "failure_type": "assertion",
+      "signals": [],
+      "message_excerpt": "AssertionError: assert 'NZD' == 'AUD'\n  \n  - AUD\n  + NZD\ndef test_default_currency():\n>       assert settings.CURRENCY == \"AUD\"\nE       AssertionError: assert 'NZD' == 'AUD'\nE         \nE         - AUD\nE         + NZD\n\ntests\\test_settings.py:7: AssertionError",
+      "time": 0.0
+    },
+    {
+      "run_id": "J-1",
+      "id": "tests.test_settings::test_default_currency",
+      "name": "test_default_currency",
+      "classname": "tests.test_settings",
+      "file": "tests/test_settings.py",
+      "status": "passed",
+      "failure_type": null,
+      "signals": [],
+      "message_excerpt": "",
+      "time": 0.0
+    },
+    {
+      "run_id": "J-2",
+      "id": "tests.test_settings::test_currency_can_be_overridden",
+      "name": "test_currency_can_be_overridden",
+      "classname": "tests.test_settings",
+      "file": "tests/test_settings.py",
       "status": "passed",
       "failure_type": null,
       "signals": [],
@@ -1058,8 +1461,12 @@
       "status": "failed",
       "failure_type": "assertion",
       "signals": [],
-      "message_excerpt": "ValueError: Currency formatting is not possible using the 'C' locale.\ndef test_fee_is_shown_in_dollars():\n>       assert format_fee(123450) == \"$1,234.50\"\n               ^^^^^^^^^^^^^^^^^^\n\ntests/test_billing.py:5: \n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ \nclinic_api/billing.py:6: in format_fee\n    return locale.currency(cents / 100, grouping=True)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ \n\nval = 1234.5, symbol = True, grouping = True, international = False\n\n    …",
+      "message_excerpt": "ValueError: Currency formatting is not possible using the 'C' locale.\ndef test_fee_is_shown_in_dollars():\n>       assert format_fee(123450) == \"$1,234.50\"\n               ^^^^^^^^^^^^^^^^^^\n\ntests/test_billing.py:5: \n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ \nclinic_api/billing.py:6: in format_fee\n    return locale.currency(cents / 100, grouping=True)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ \n\nval = 1234.5, symbol = True, grouping = True, international = False\n\n    \u00e2\u20ac\u00a6",
       "time": 0.001
     }
-  ]
+  ],
+  "code_hash_basis": {
+    "method": "walk",
+    "files": 31
+  }
 }

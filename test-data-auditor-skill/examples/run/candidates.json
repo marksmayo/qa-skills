@@ -5,6 +5,24 @@
     {
       "id": "C1",
       "category": "secret",
+      "rule": "api_key_field",
+      "file": "tests/cassettes/insurer_cover.json",
+      "line": 5,
+      "field": null,
+      "data_type": "secret",
+      "why": "looks like a secret (api key field)",
+      "fingerprint": "2002dcd3e769adde",
+      "auto_dismiss": "placeholder secret: the value contains the placeholder word \"example\"",
+      "details": {
+        "route_to": null
+      },
+      "affected_tests": [
+        "tests/test_insurer.py::test_cover_is_read_from_the_insurer"
+      ]
+    },
+    {
+      "id": "C2",
+      "category": "secret",
       "rule": "authorization_header",
       "file": "tests/cassettes/insurer_cover.json",
       "line": 5,
@@ -21,7 +39,7 @@
       ]
     },
     {
-      "id": "C2",
+      "id": "C3",
       "category": "shared_mutable",
       "rule": "mutated_wide_fixture",
       "file": "tests/conftest.py",
@@ -51,7 +69,7 @@
       ]
     },
     {
-      "id": "C3",
+      "id": "C4",
       "category": "schema_drift",
       "rule": "extra_field",
       "file": "tests/fixtures/appointments.yaml",
@@ -75,7 +93,7 @@
       ]
     },
     {
-      "id": "C4",
+      "id": "C5",
       "category": "unused_or_duplicate",
       "rule": "unused",
       "file": "tests/fixtures/legacy_rooms.csv",
@@ -89,7 +107,7 @@
       "affected_tests": []
     },
     {
-      "id": "C5",
+      "id": "C6",
       "category": "time_bomb",
       "rule": "fixed_expiry",
       "file": "tests/fixtures/memberships.json",
@@ -118,7 +136,7 @@
       ]
     },
     {
-      "id": "C6",
+      "id": "C7",
       "category": "personal_data",
       "rule": "email",
       "file": "tests/fixtures/patients.json",
@@ -137,7 +155,7 @@
       ]
     },
     {
-      "id": "C7",
+      "id": "C8",
       "category": "personal_data",
       "rule": "phone",
       "file": "tests/fixtures/patients.json",
@@ -153,7 +171,7 @@
       ]
     },
     {
-      "id": "C8",
+      "id": "C9",
       "category": "personal_data",
       "rule": "medicare",
       "file": "tests/fixtures/patients.json",
@@ -169,7 +187,7 @@
       ]
     },
     {
-      "id": "C9",
+      "id": "C10",
       "category": "personal_data",
       "rule": "name_and_address",
       "file": "tests/fixtures/patients.json",
@@ -188,7 +206,7 @@
       ]
     },
     {
-      "id": "C10",
+      "id": "C11",
       "category": "personal_data",
       "rule": "dob_with_name",
       "file": "tests/fixtures/patients.json",
@@ -207,7 +225,7 @@
       ]
     },
     {
-      "id": "C11",
+      "id": "C12",
       "category": "personal_data",
       "rule": "email",
       "file": "tests/fixtures/patients.json",
@@ -226,7 +244,7 @@
       ]
     },
     {
-      "id": "C12",
+      "id": "C13",
       "category": "personal_data",
       "rule": "phone",
       "file": "tests/fixtures/patients.json",
@@ -242,7 +260,7 @@
       ]
     },
     {
-      "id": "C13",
+      "id": "C14",
       "category": "personal_data",
       "rule": "name_and_address",
       "file": "tests/fixtures/patients.json",
@@ -261,7 +279,7 @@
       ]
     },
     {
-      "id": "C14",
+      "id": "C15",
       "category": "personal_data",
       "rule": "dob_with_name",
       "file": "tests/fixtures/patients.json",
@@ -280,7 +298,29 @@
       ]
     },
     {
-      "id": "C15",
+      "id": "C16",
+      "category": "personal_data",
+      "rule": "customer_extract",
+      "file": "tests/fixtures/referral_export.csv",
+      "line": 1,
+      "field": "customer_name",
+      "data_type": "person or customer names in a tabular extract",
+      "why": "column customer_name holds 24 distinct name-like values across 24 rows: possibly person or customer data copied from a production extract",
+      "fingerprint": "2c779ac934996f86",
+      "auto_dismiss": null,
+      "details": {
+        "column": "customer_name",
+        "rows": 24,
+        "populated": 24,
+        "name_like_share": 1.0,
+        "distinct_values": 24
+      },
+      "affected_tests": [
+        "tests/test_exports.py::test_referral_export_has_every_row"
+      ]
+    },
+    {
+      "id": "C17",
       "category": "locale_assumption",
       "rule": "machine_locale_literal",
       "file": "tests/test_billing.py",
@@ -299,7 +339,7 @@
       ]
     },
     {
-      "id": "C16",
+      "id": "C18",
       "category": "magic_id",
       "rule": "literal_lookup",
       "file": "tests/test_patients.py",
@@ -316,6 +356,30 @@
       },
       "affected_tests": [
         "tests/test_patients.py::test_seed_patient_is_loaded"
+      ]
+    },
+    {
+      "id": "C19",
+      "category": "shared_mutable",
+      "rule": "module_reload",
+      "file": "tests/test_settings.py",
+      "line": 12,
+      "field": "settings",
+      "data_type": null,
+      "why": "test_currency_can_be_overridden reloads settings with importlib.reload; the module-level state it rebuilds (environment read at import: clinic_api/settings.py:4) stays changed for later tests, so other tests can pass only after it and fail alone or in another order",
+      "fingerprint": null,
+      "auto_dismiss": null,
+      "details": {
+        "module": "clinic_api.settings",
+        "module_file": "clinic_api/settings.py",
+        "env_reads_at_import": [
+          "clinic_api/settings.py:4"
+        ],
+        "reloaded_in": "test_currency_can_be_overridden"
+      },
+      "affected_tests": [
+        "tests/test_settings.py::test_default_currency",
+        "tests/test_settings.py::test_currency_can_be_overridden"
       ]
     }
   ],
@@ -340,6 +404,10 @@
       "status": "scanned",
       "reason": null
     },
+    "tests/test_exports.py": {
+      "status": "scanned",
+      "reason": null
+    },
     "tests/test_factories.py": {
       "status": "scanned",
       "reason": null
@@ -353,6 +421,10 @@
       "reason": null
     },
     "tests/test_patients.py": {
+      "status": "scanned",
+      "reason": null
+    },
+    "tests/test_settings.py": {
       "status": "scanned",
       "reason": null
     },
@@ -379,18 +451,26 @@
     "tests/fixtures/patients.json": {
       "status": "scanned",
       "reason": null
+    },
+    "tests/fixtures/referral_export.csv": {
+      "status": "scanned",
+      "reason": null
+    },
+    "tests/fixtures/room_report.xls": {
+      "status": "scanned",
+      "reason": null
     }
   },
   "summary": {
-    "candidates": 16,
-    "auto_dismissed": 4,
+    "candidates": 19,
+    "auto_dismissed": 5,
     "by_category": {
       "locale_assumption": 1,
       "magic_id": 1,
-      "personal_data": 9,
+      "personal_data": 10,
       "schema_drift": 1,
-      "secret": 1,
-      "shared_mutable": 1,
+      "secret": 2,
+      "shared_mutable": 2,
       "time_bomb": 1,
       "unused_or_duplicate": 1
     }

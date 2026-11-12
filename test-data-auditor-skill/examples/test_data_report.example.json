@@ -4,7 +4,7 @@
     "commit": null,
     "generated_at": "2026-11-11T03:30:00Z",
     "today": "2026-11-11",
-    "skill_version": "1.1.0",
+    "skill_version": "1.2.0",
     "clock_shift": "+400d",
     "apply_fixes": false,
     "candidates_file": "run/candidates.json",
@@ -17,7 +17,7 @@
       "path": "db/seed.sql",
       "kind": "seed",
       "format": "sql",
-      "bytes": 262,
+      "bytes": 266,
       "loaded_by": [
         "tests/test_patients.py::test_patient_fixture_builds_models",
         "tests/test_patients.py::test_seed_patient_is_loaded"
@@ -30,7 +30,7 @@
       "path": "tests/conftest.py",
       "kind": "inline",
       "format": "python",
-      "bytes": 1092,
+      "bytes": 1135,
       "loaded_by": [
         "tests/test_appointments.py::test_appointments_load",
         "tests/test_appointments.py::test_total_minutes",
@@ -48,7 +48,7 @@
       "path": "tests/factories.py",
       "kind": "factory",
       "format": "python",
-      "bytes": 293,
+      "bytes": 305,
       "loaded_by": [
         "tests/test_factories.py::test_factory_patients_use_reserved_addresses"
       ],
@@ -60,7 +60,7 @@
       "path": "tests/test_appointments.py",
       "kind": "inline",
       "format": "python",
-      "bytes": 341,
+      "bytes": 351,
       "loaded_by": [
         "tests/test_appointments.py::test_appointments_load",
         "tests/test_appointments.py::test_total_minutes"
@@ -73,7 +73,7 @@
       "path": "tests/test_billing.py",
       "kind": "inline",
       "format": "python",
-      "bytes": 125,
+      "bytes": 130,
       "loaded_by": [
         "tests/test_billing.py::test_fee_is_shown_in_dollars"
       ],
@@ -82,10 +82,23 @@
       "lines": 5
     },
     {
+      "path": "tests/test_exports.py",
+      "kind": "inline",
+      "format": "python",
+      "bytes": 406,
+      "loaded_by": [
+        "tests/test_exports.py::test_referral_export_has_every_row",
+        "tests/test_exports.py::test_room_report_is_an_html_table"
+      ],
+      "status": "scanned",
+      "reason": null,
+      "lines": 14
+    },
+    {
       "path": "tests/test_factories.py",
       "kind": "inline",
       "format": "python",
-      "bytes": 152,
+      "bytes": 157,
       "loaded_by": [
         "tests/test_factories.py::test_factory_patients_use_reserved_addresses"
       ],
@@ -97,7 +110,7 @@
       "path": "tests/test_insurer.py",
       "kind": "inline",
       "format": "python",
-      "bytes": 479,
+      "bytes": 495,
       "loaded_by": [
         "tests/test_insurer.py::test_cover_is_read_from_the_insurer"
       ],
@@ -109,7 +122,7 @@
       "path": "tests/test_membership.py",
       "kind": "inline",
       "format": "python",
-      "bytes": 273,
+      "bytes": 282,
       "loaded_by": [
         "tests/test_membership.py::test_ten_pack_member_is_active",
         "tests/test_membership.py::test_expired_casual_member_is_not_active"
@@ -122,7 +135,7 @@
       "path": "tests/test_patients.py",
       "kind": "inline",
       "format": "python",
-      "bytes": 370,
+      "bytes": 382,
       "loaded_by": [
         "tests/test_patients.py::test_seed_patient_is_loaded",
         "tests/test_patients.py::test_patient_fixture_builds_models"
@@ -132,10 +145,23 @@
       "lines": 12
     },
     {
+      "path": "tests/test_settings.py",
+      "kind": "inline",
+      "format": "python",
+      "bytes": 289,
+      "loaded_by": [
+        "tests/test_settings.py::test_default_currency",
+        "tests/test_settings.py::test_currency_can_be_overridden"
+      ],
+      "status": "scanned",
+      "reason": null,
+      "lines": 13
+    },
+    {
       "path": "tests/test_waitlist.py",
       "kind": "inline",
       "format": "python",
-      "bytes": 154,
+      "bytes": 161,
       "loaded_by": [
         "tests/test_waitlist.py::test_waitlist_starts_empty",
         "tests/test_waitlist.py::test_join_waitlist"
@@ -148,7 +174,7 @@
       "path": "tests/cassettes/insurer_cover.json",
       "kind": "recording",
       "format": "json",
-      "bytes": 252,
+      "bytes": 282,
       "loaded_by": [
         "tests/test_insurer.py::test_cover_is_read_from_the_insurer"
       ],
@@ -160,7 +186,7 @@
       "path": "tests/fixtures/appointments.yaml",
       "kind": "fixture",
       "format": "yaml",
-      "bytes": 248,
+      "bytes": 261,
       "loaded_by": [
         "tests/test_appointments.py::test_appointments_load",
         "tests/test_appointments.py::test_total_minutes"
@@ -173,7 +199,7 @@
       "path": "tests/fixtures/legacy_rooms.csv",
       "kind": "fixture",
       "format": "csv",
-      "bytes": 49,
+      "bytes": 53,
       "loaded_by": [],
       "status": "scanned",
       "reason": null,
@@ -183,7 +209,7 @@
       "path": "tests/fixtures/memberships.json",
       "kind": "fixture",
       "format": "json",
-      "bytes": 169,
+      "bytes": 173,
       "loaded_by": [
         "tests/test_membership.py::test_expired_casual_member_is_not_active",
         "tests/test_membership.py::test_ten_pack_member_is_active"
@@ -196,13 +222,38 @@
       "path": "tests/fixtures/patients.json",
       "kind": "fixture",
       "format": "json",
-      "bytes": 482,
+      "bytes": 502,
       "loaded_by": [
         "tests/test_patients.py::test_patient_fixture_builds_models"
       ],
       "status": "scanned",
       "reason": null,
       "lines": 20
+    },
+    {
+      "path": "tests/fixtures/referral_export.csv",
+      "kind": "fixture",
+      "format": "csv",
+      "bytes": 1217,
+      "loaded_by": [
+        "tests/test_exports.py::test_referral_export_has_every_row"
+      ],
+      "status": "scanned",
+      "reason": null,
+      "lines": 25
+    },
+    {
+      "path": "tests/fixtures/room_report.xls",
+      "kind": "fixture",
+      "format": "html",
+      "bytes": 191,
+      "loaded_by": [
+        "tests/test_exports.py::test_room_report_is_an_html_table"
+      ],
+      "status": "scanned",
+      "reason": null,
+      "lines": 8,
+      "note": "HTML text with an .xls extension (sniffed), scanned as text"
     }
   ],
   "tools": [
@@ -245,10 +296,10 @@
       "category": "personal_data",
       "title": "Patient 1 in patients.json looks like a real person's record",
       "candidates": [
-        "C6",
-        "C8",
+        "C7",
         "C9",
-        "C10"
+        "C10",
+        "C11"
       ],
       "location": {
         "file": "tests/fixtures/patients.json",
@@ -275,7 +326,7 @@
       "category": "time_bomb",
       "title": "The ten-pack membership expires on 2026-12-01, so its test fails from 2026-12-02",
       "candidates": [
-        "C5"
+        "C6"
       ],
       "location": {
         "file": "tests/fixtures/memberships.json",
@@ -316,7 +367,7 @@
       "category": "shared_mutable",
       "title": "The session-scoped waitlist fixture is mutated by one test and read by another",
       "candidates": [
-        "C2"
+        "C3"
       ],
       "location": {
         "file": "tests/conftest.py",
@@ -354,7 +405,7 @@
       "category": "locale_assumption",
       "title": "The fee test expects \"$1,234.50\" from machine-locale formatting",
       "candidates": [
-        "C15"
+        "C17"
       ],
       "location": {
         "file": "tests/test_billing.py",
@@ -391,7 +442,7 @@
       "category": "magic_id",
       "title": "test_seed_patient_is_loaded depends on seed row id 42",
       "candidates": [
-        "C16"
+        "C18"
       ],
       "location": {
         "file": "tests/test_patients.py",
@@ -416,7 +467,7 @@
       "category": "schema_drift",
       "title": "appointments.yaml still has a room field the Appointment model dropped",
       "candidates": [
-        "C3"
+        "C4"
       ],
       "location": {
         "file": "tests/fixtures/appointments.yaml",
@@ -442,7 +493,7 @@
       "category": "unused_or_duplicate",
       "title": "legacy_rooms.csv is not loaded by any test",
       "candidates": [
-        "C4"
+        "C5"
       ],
       "location": {
         "file": "tests/fixtures/legacy_rooms.csv",
@@ -459,38 +510,108 @@
       "reach": 1,
       "score": 1,
       "priority": "P3"
+    },
+    {
+      "id": "F8",
+      "category": "personal_data",
+      "title": "referral_export.csv looks like a customer extract: a name column across 24 rows",
+      "candidates": [
+        "C16"
+      ],
+      "location": {
+        "file": "tests/fixtures/referral_export.csv",
+        "line": 1,
+        "field": "customer_name"
+      },
+      "data_type": "person or customer names in a tabular extract",
+      "why_flagged": "The header names a customer_name column, and 24 distinct name-like values fill it across 24 rows, beside referral ids and dated batch ids: the shape of an export copied from a live system. The repository cannot tell whether these people exist, so the file is treated as real. The batch ids (date and time) are not phone or card numbers and raised no candidate.",
+      "real_looking": true,
+      "anonymised_by": null,
+      "confidence": "static",
+      "affected_tests": [
+        "tests/test_exports.py::test_referral_export_has_every_row"
+      ],
+      "fix": "Replace the extract with a generated file: placeholder names (Test Customer 1, 2, ...) or a seeded fake-data generator, keeping the row count the test needs. If it came from a live system, treat it as a privacy incident and remove it from history as well.",
+      "verification_step": "Rerun scan_data.py: referral_export.csv raises no customer_extract candidate, and tests/test_exports.py passes.",
+      "severity": "critical",
+      "reach": 1,
+      "score": 4,
+      "priority": "P0"
+    },
+    {
+      "id": "F9",
+      "category": "shared_mutable",
+      "title": "test_currency_can_be_overridden reloads clinic_api.settings, and the default-currency test passes only before it",
+      "candidates": [
+        "C19"
+      ],
+      "location": {
+        "file": "tests/test_settings.py",
+        "line": 12,
+        "field": "settings"
+      },
+      "data_type": null,
+      "why_flagged": "clinic_api/settings.py reads CLINIC_CURRENCY once, at import. test_currency_can_be_overridden sets the variable and calls importlib.reload(settings); monkeypatch restores the variable afterwards but not the module, so the overridden currency stays for every later test. test_default_currency passes only because it runs first.",
+      "confidence": "confirmed",
+      "affected_tests": [
+        "tests/test_settings.py::test_default_currency",
+        "tests/test_settings.py::test_currency_can_be_overridden"
+      ],
+      "experiment": {
+        "run_ids": [
+          "R-1"
+        ],
+        "baseline_run_ids": [
+          "B-1",
+          "B-2"
+        ],
+        "variation": "reverse order of the two settings tests",
+        "result": "failed_as_predicted",
+        "note": "test_default_currency failed when run after test_currency_can_be_overridden; each passed alone (J-1, J-2)."
+      },
+      "fix": "Read the setting when it is used (a function returning os.getenv(...)), or reload the module again in the test's teardown (a fixture that yields and then reloads it after monkeypatch has undone the variable).",
+      "verification_step": "Rerun the reverse-order run of the two settings tests: both pass.",
+      "severity": "serious",
+      "reach": 2,
+      "score": 6,
+      "priority": "P1"
     }
   ],
   "dismissed": [
     {
-      "candidate_id": "C7",
+      "candidate_id": "C8",
       "by": "rule",
       "reason": "ACMA number reserved for creative works (data/reserved.json)"
-    },
-    {
-      "candidate_id": "C11",
-      "by": "rule",
-      "reason": "reserved documentation domain (RFC 2606 and RFC 6761) (data/reserved.json)"
     },
     {
       "candidate_id": "C12",
       "by": "rule",
-      "reason": "ACMA number reserved for creative works (data/reserved.json)"
+      "reason": "reserved documentation domain (RFC 2606 and RFC 6761) (data/reserved.json)"
     },
     {
       "candidate_id": "C13",
-      "by": "review",
-      "reason": "Patient 2 is a placeholder record: its name, street and suburb are made of placeholder words (Test, Example), beside an example.com address."
+      "by": "rule",
+      "reason": "ACMA number reserved for creative works (data/reserved.json)"
     },
     {
       "candidate_id": "C14",
       "by": "review",
+      "reason": "Patient 2 is a placeholder record: its name, street and suburb are made of placeholder words (Test, Example), beside an example.com address."
+    },
+    {
+      "candidate_id": "C15",
+      "by": "review",
       "reason": "The date of birth sits beside a placeholder name in the same placeholder record as C13."
+    },
+    {
+      "candidate_id": "C2",
+      "by": "rule",
+      "reason": "scan_data.py rule: placeholder secret: the value contains the placeholder word \"example\". The recorded request's Authorization header holds a token that says it is not real, so it is not handed to code-security-auditor."
     },
     {
       "candidate_id": "C1",
       "by": "rule",
-      "reason": "scan_data.py rule: placeholder secret: the value contains the placeholder word \"example\". The recorded request's Authorization header holds a token that says it is not real, so it is not handed to code-security-auditor."
+      "reason": "scan_data.py rule: placeholder secret: the value contains the placeholder word \"example\". The recorded request's x-api-key header says it is an example key, so it is not handed to code-security-auditor."
     }
   ],
   "handoffs": [
@@ -503,44 +624,55 @@
         "line": 42
       },
       "reason": "Confirmed order dependence in the waitlist tests; a full investigation with repeats and bisection belongs there."
+    },
+    {
+      "to": "flaky-test-hunter",
+      "candidate_id": null,
+      "finding_id": "F9",
+      "location": {
+        "file": "tests/test_settings.py",
+        "line": 12
+      },
+      "reason": "Confirmed order dependence through a module reload; repeats and bisection across the suite belong there."
     }
   ],
   "summary": {
-    "headline": "P0: patients.json holds a real-looking patient record (email, Medicare number, address, date of birth). A membership time bomb fails on 2026-12-02, and shared-fixture, locale, seed-id, drift and unused-file findings follow.",
-    "files_scanned": 15,
+    "headline": "P0: patients.json holds a real-looking patient record (email, Medicare number, address, date of birth), and referral_export.csv looks like a customer extract. A membership time bomb fails on 2026-12-02, two confirmed shared-state problems (a session fixture and a module reload) follow, then locale, seed-id, drift and unused-file findings.",
+    "files_scanned": 19,
     "not_assessed": 0,
     "findings_by_category": {
       "locale_assumption": 1,
       "magic_id": 1,
-      "personal_data": 1,
+      "personal_data": 2,
       "schema_drift": 1,
-      "shared_mutable": 1,
+      "shared_mutable": 2,
       "time_bomb": 1,
       "unused_or_duplicate": 1
     },
     "by_priority": {
-      "P0": 1,
-      "P1": 2,
+      "P0": 2,
+      "P1": 3,
       "P2": 1,
       "P3": 3
     },
     "by_severity": {
-      "critical": 2,
+      "critical": 3,
       "minor": 1,
       "moderate": 3,
-      "serious": 1
+      "serious": 2
     },
     "earliest_time_bomb_date": "2026-12-02",
     "evidence_completeness": 0.9167,
-    "dismissed": 6,
-    "handoffs": 1
+    "dismissed": 7,
+    "handoffs": 2
   },
   "limitations": [
-    "15 data sources in 5 formats (JSON, YAML, CSV, SQL, Python) were scanned; none was binary or encrypted.",
-    "Personal-data rules cover emails, phone numbers, cards, Medicare, TFN, SSN, NI and NHS numbers, IBANs, names with addresses and dates of birth beside names. Other kinds of personal data are not detected.",
+    "19 data sources in 6 formats (JSON, YAML, CSV, SQL, Python, and HTML saved with an .xls extension, found by sniffing) were scanned; none was binary or encrypted.",
+    "Personal-data rules cover emails, phone numbers, cards, Medicare, TFN, SSN, NI and NHS numbers, IBANs, names with addresses, dates of birth beside names, and name columns in tabular extracts (judged by the header). Other kinds of personal data, and name columns under abbreviated headers, are not detected.",
     "The time-bomb rules look for fixed expiry dates compared with now and for future literals in tests with a now() call. Ages from fixed birth dates and \"next Tuesday\" logic are not detected.",
     "clock_shift.py moves Python's clock only: C extensions, subprocesses and databases keep the real time.",
-    "The locale run used WSL because Windows ignores LANG; it changes platform as well as locale."
+    "The locale run used WSL because Windows ignores LANG; it changes platform as well as locale.",
+    "The locale run C-1 is kept from the first run of this example, made before test_settings.py, test_exports.py and their fixtures were added; it ran tests/test_billing.py only, which did not change."
   ],
   "files_changed": []
 }
