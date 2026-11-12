@@ -16,7 +16,27 @@ migrated.
 Config (dict):
     browser               chromium (default), firefox or webkit
     authorised_by         who confirmed testing the target is allowed; required unless every URL is loopback
-    allow_form_submission false (default): every non-GET/HEAD/OPTIONS request is aborted and logged
+    read_only             true (default): every request other than GET, HEAD and OPTIONS (form posts, fetch
+                          writes, sendBeacon, CSP reports, telemetry) is aborted and logged in h.blocked with
+                          reason write, its method, and site same_site (the target's own site) or third_party.
+                          allow_form_submission is the older name: allow_form_submission true == read_only
+                          false. Giving both with opposite meanings is an error. Only a login recipe posts.
+    bypass_csp            true (default): pages run with Content-Security-Policy bypassed, so styles and scripts
+                          the skills inject (freeze CSS, engines, probes) work under hash- or nonce-based CSPs.
+                          h.metadata() records it, so a report can say the page's CSP was not enforced; set
+                          false to test the site as its CSP really behaves.
+    request_budget        none (default), or the most requests the run may send: once reached, every further
+                          request is aborted (reason budget) and h.requests['budget_exhausted'] is true, so the
+                          run must be reported as incomplete
+    init_scripts          JavaScript run in every page before the site's own scripts: a list of source strings
+                          or {"path": file}; new_page(init_scripts=[...]) adds more for one page (e.g. make
+                          localStorage throw)
+    launch_args           extra browser command-line arguments (e.g. Chromium flags), recorded in metadata
+    firefox_user_prefs    Firefox preferences ({"dom.storage.enabled": false}); Firefox only
+    max_retries           2 (default): how many times goto() retries a 429 or 503
+    max_retry_after_seconds  60 (default): the longest Retry-After goto() will wait; a longer one stops retrying
+    stop_on_429           false (default); true: the first 429 stops the run: no retry, and every later goto()
+                          returns at once without sending (h.stopped says why)
     third_party           block (default): every request to a host that isn't loopback (including *.test and
                           host_map hosts), a host the run navigated to with goto(), a host in targets, or a
                           host in allowed_hosts is aborted and logged in h.blocked with reason third_party,
@@ -25,7 +45,7 @@ Config (dict):
     targets               URLs whose hosts are part of the site under test (goto() adds each host it visits)
     allowed_hosts         further hosts to let through: ["cdn.example.com", "*.example-cdn.net"]
     service_workers       allow (default) or block, for every page unless new_page() says otherwise
-    rate_limit_seconds    0.5 between page loads; 429/503 back off (Retry-After) up to twice
+    rate_limit_seconds    0.5 between page loads; 429/503 back off (Retry-After) up to max_retries times
     auth                  {"storage_state": file} or {"login": {"url", "steps": [...], "wait_for"}};
                           login steps use {"fill": sel, "env": NAME}, so credentials never appear in output;
                           an identity provider the login redirects to must be listed in allowed_hosts
@@ -42,9 +62,22 @@ offline, or a dict {download_kbps, upload_kbps, rtt_ms}. new_page(service_worker
 a cold run cold; mobile=True sets is_mobile and has_touch (Chromium). h.cdp(page) returns the
 page's CDP session, and h.start_trace(page) / h.stop_trace() record a DevTools performance trace. The clock uses Playwright's page.clock (1.45+): the page sees that fixed time, and
 time runs on from it.
+
+Request accounting: h.requests counts every request the browser routed through the harness
+({seen, sent, blocked: {write, third_party, budget}, by_method, budget, budget_exhausted}).
+Requests the page's own CSP stopped never reach the harness (unless bypass_csp), and service
+worker fetches may not be routed. h.metadata() returns the run settings a report should state
+(browser, version, read_only, bypass_csp, third_party, allowed hosts, request budget, init
+scripts, launch arguments, prefs, retry policy, stop) with the request counts.
+
+retry_decision(status, retry_after, attempt, ...) is the 429/503 policy goto() uses, for skills
+that send requests themselves (page.goto, fetch): it returns ("retry", seconds), ("stop", why)
+or ("ok", None), honouring Retry-After in seconds or as an HTTP date.
 """
 from __future__ import annotations
 import ipaddress, os, struct, time, zlib
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -76,6 +109,59 @@ def check_authorised(urls: list[str], authorised_by: str | None) -> None:
     remote = [u for u in urls if not is_loopback(u)]
     if remote and not (authorised_by or '').strip():
         raise NotAuthorised(f'{remote[0]} is not on loopback: say who authorised testing it (authorised_by)')
+
+
+def retry_after_seconds(value: str | None) -> float | None:
+    """Retry-After as seconds: a number of seconds or an HTTP date; None when absent or unreadable."""
+    value = (value or '').strip()
+    if not value:
+        return None
+    if value.isdigit():
+        return float(value)
+    try:
+        when = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return max(0.0, (when - datetime.now(timezone.utc)).total_seconds())
+
+
+def retry_decision(status: int | None, retry_after: str | None, attempt: int, max_retries: int = 2,
+                   max_wait: float = 60, stop_on_429: bool = False) -> tuple[str, float | str | None]:
+    """The 429/503 policy: ("ok", None) for any other status; ("retry", seconds) to wait and try again;
+    ("stop", reason) when retrying would hammer the site or the caller asked to stop at the first 429.
+    attempt counts from 0 (the first response)."""
+    if status not in (429, 503):
+        return 'ok', None
+    if status == 429 and stop_on_429:
+        return 'stop', 'HTTP 429: stopping at the first rate limit (stop_on_429)'
+    if attempt >= max_retries:
+        return 'stop', f'HTTP {status} after {max_retries} retr{"y" if max_retries == 1 else "ies"}'
+    wait = retry_after_seconds(retry_after)
+    if wait is None:
+        wait = 10.0 * (attempt + 1)
+    if wait > max_wait:
+        return 'stop', f'HTTP {status} with Retry-After {wait:.0f}s, longer than the {max_wait:.0f}s maximum'
+    return 'retry', wait
+
+
+_SECOND_LEVEL = {'co', 'com', 'net', 'org', 'gov', 'edu', 'ac', 'govt', 'nhs', 'ltd', 'plc', 'or', 'ne', 'go'}
+
+
+def site_of(host: str) -> str:
+    """An approximate registrable domain ("site"): the last two labels, three under a two-letter country code with
+    a common second level (shop.example.co.uk -> example.co.uk). IP addresses and single labels are themselves."""
+    host = (host or '').lower().rstrip('.')
+    try:
+        ipaddress.ip_address(host.strip('[]'))
+        return host
+    except ValueError:
+        pass
+    parts = host.split('.')
+    if len(parts) >= 3 and len(parts[-1]) == 2 and parts[-2] in _SECOND_LEVEL:
+        return '.'.join(parts[-3:])
+    return '.'.join(parts[-2:])
 
 
 def parse_vp(s: str) -> tuple[int, int]:
@@ -152,14 +238,33 @@ class Harness:
     def __init__(self, cfg: dict):
         self.cfg = cfg
         self.browser_name = cfg.get('browser', 'chromium')
-        self.allow_post = bool(cfg.get('allow_form_submission', False))
+        ro, afs = cfg.get('read_only'), cfg.get('allow_form_submission')
+        if ro is not None and afs is not None and bool(ro) == bool(afs):
+            raise ValueError('read_only and allow_form_submission disagree; give one of them')
+        self.read_only = bool(ro) if ro is not None else not bool(afs)
+        self.allow_post = not self.read_only        # older name, kept for callers that read it
+        self.bypass_csp = bool(cfg.get('bypass_csp', True))
         self.third_party = cfg.get('third_party', 'block')
         if self.third_party not in ('block', 'allow'):
             raise ValueError("third_party must be 'block' or 'allow'")
         self.allowed_hosts = [h.lower() for h in cfg.get('allowed_hosts', [])] + [h.lower() for h in (cfg.get('host_map') or {})]
         self.targets: set[str] = {(urlparse(u).hostname or '').lower() for u in cfg.get('targets', [])}
+        self.visited: set[str] = set(self.targets)   # every host goto() opened, loopback included: the "same site"
         self.service_workers = cfg.get('service_workers', 'allow')
         self.rate = float(cfg.get('rate_limit_seconds', 0.5))
+        self.max_retries = int(cfg.get('max_retries', 2))
+        self.max_retry_after = float(cfg.get('max_retry_after_seconds', 60))
+        self.stop_on_429 = bool(cfg.get('stop_on_429', False))
+        self.stopped: dict | None = None
+        budget = cfg.get('request_budget')
+        self.requests = {'seen': 0, 'sent': 0, 'blocked': {'write': 0, 'third_party': 0, 'budget': 0}, 'by_method': {},
+                         'budget': int(budget) if budget is not None else None, 'budget_exhausted': False}
+        self.init_scripts = [self._script_source(s) for s in cfg.get('init_scripts') or []]
+        self.launch_args = [str(a) for a in cfg.get('launch_args') or []]
+        self.firefox_user_prefs = dict(cfg.get('firefox_user_prefs') or {})
+        if self.firefox_user_prefs and self.browser_name != 'firefox':
+            raise ValueError('firefox_user_prefs is for browser firefox only')
+        self.version = None
         self.blocked: list[dict] = []
         self.events: list[dict] = []
         self.last_load = 0.0
@@ -173,15 +278,37 @@ class Harness:
         from playwright.sync_api import sync_playwright
         self._pw = sync_playwright().start()
         launcher = getattr(self._pw, self.browser_name)
-        args = []
+        args = list(self.launch_args)
         if self.cfg.get('host_map'):
             if self.browser_name != 'chromium':
                 raise RuntimeError('host_map is Chromium only')
             args.append('--host-resolver-rules=' + ', '.join(f'MAP {h} {ip}' for h, ip in self.cfg['host_map'].items()))
-        self._browser = launcher.launch(headless=self.cfg.get('headless', True), args=args)
+        kw = {'headless': self.cfg.get('headless', True), 'args': args}
+        if self.firefox_user_prefs:
+            kw['firefox_user_prefs'] = self.firefox_user_prefs
+        self._browser = launcher.launch(**kw)
         self.version = self._browser.version
         self.login()
         return self
+
+    @staticmethod
+    def _script_source(s) -> str:
+        if isinstance(s, dict) and 'path' in s:
+            return Path(s['path']).read_text(encoding='utf-8')
+        if isinstance(s, str):
+            return s
+        raise ValueError('init_scripts entries are JavaScript source strings or {"path": file}')
+
+    def metadata(self) -> dict:
+        """The settings and counts a report should state about how the browser ran."""
+        return {'browser': self.browser_name, 'version': self.version, 'read_only': self.read_only,
+                'bypass_csp': self.bypass_csp, 'third_party': self.third_party, 'allowed_hosts': list(self.allowed_hosts),
+                'request_budget': self.requests['budget'], 'init_scripts': len(self.init_scripts),
+                'launch_args': list(self.launch_args), 'firefox_user_prefs': dict(self.firefox_user_prefs),
+                'retry': {'max_retries': self.max_retries, 'max_retry_after_seconds': self.max_retry_after,
+                          'stop_on_429': self.stop_on_429},
+                'stopped': self.stopped, 'requests': {**self.requests, 'blocked': dict(self.requests['blocked']),
+                                                      'by_method': dict(self.requests['by_method'])}}
 
     def __exit__(self, *exc):
         try:
@@ -201,23 +328,48 @@ class Harness:
             return True
         return any(host == p or (p.startswith('*.') and host.endswith(p[1:])) for p in self.allowed_hosts)
 
+    def site(self, url: str) -> str:
+        """same_site when the URL is on the site under test (a host goto() opened or a target, or the same
+        registrable domain), else third_party. Loopback hosts count as the site only when the run opened them."""
+        host = (urlparse(url).hostname or '').lower()
+        if not host or host in self.visited:
+            return 'same_site'
+        s = site_of(host)
+        return 'same_site' if any(site_of(v) == s for v in self.visited if v) else 'third_party'
+
+    def _block(self, request, reason: str):
+        self.requests['blocked'][reason] = self.requests['blocked'].get(reason, 0) + 1
+        self.blocked.append({'method': request.method, 'url': request.url.split('?')[0], 'reason': reason,
+                             'site': self.site(request.url), 'at': now()})
+
     def guard(self, route, request):
+        r = self.requests
+        r['seen'] += 1
+        r['by_method'][request.method] = r['by_method'].get(request.method, 0) + 1
         if self.third_party == 'block' and not self.host_allowed(request.url):
-            self.blocked.append({'method': request.method, 'url': request.url.split('?')[0], 'reason': 'third_party', 'at': now()})
+            self._block(request, 'third_party')
             return route.abort('blockedbyclient')
-        if request.method in SAFE_METHODS or self.allow_post:
-            return route.continue_()
-        self.blocked.append({'method': request.method, 'url': request.url.split('?')[0], 'reason': 'write', 'at': now()})
-        return route.abort()
+        if request.method not in SAFE_METHODS and not self.allow_post:
+            self._block(request, 'write')
+            return route.abort()
+        if r['budget'] is not None and r['sent'] >= r['budget']:
+            if not r['budget_exhausted']:
+                r['budget_exhausted'] = True
+                self.events.append({'url': request.url.split('?')[0], 'event': f'request budget of {r["budget"]} used up; '
+                                    'every further request is aborted', 'at': now()})
+            self._block(request, 'budget')
+            return route.abort('blockedbyclient')
+        r['sent'] += 1
+        return route.continue_()
 
     def new_page(self, viewport: str = '1280x800', timezone: str | None = None, locale: str | None = None,
                  clock: str | None = None, cpu_throttle: float | None = None, network: str | None = None,
                  reduced_motion: str = 'no-preference', trace: bool = False, user_agent: str | None = None,
-                 service_workers: str | None = None, mobile: bool = False):
+                 service_workers: str | None = None, mobile: bool = False, init_scripts: list | None = None):
         service_workers = service_workers or self.service_workers
         w, h = parse_vp(viewport)
         kw = {'viewport': {'width': w, 'height': h}, 'reduced_motion': reduced_motion, 'storage_state': self.storage_state,
-              'service_workers': service_workers}
+              'service_workers': service_workers, 'bypass_csp': self.bypass_csp}
         if mobile and self.browser_name == 'chromium':
             kw.update(is_mobile=True, has_touch=True)
         if timezone:
@@ -228,12 +380,17 @@ class Harness:
             kw['user_agent'] = user_agent
         ctx = self._browser.new_context(**kw)
         ctx.route('**/*', self.guard)
+        page_scripts = self.init_scripts + [self._script_source(s) for s in init_scripts or []]
+        for src in page_scripts:
+            ctx.add_init_script(script=src)
         if trace:
             ctx.tracing.start(screenshots=True, snapshots=True)
         page = ctx.new_page()
         log = {'console': [], 'page_errors': [], 'failed_requests': [], 'applied': {'viewport': viewport, 'timezone': timezone,
                                                                                     'locale': locale, 'clock': clock,
-                                                                                    'service_workers': service_workers},
+                                                                                    'service_workers': service_workers,
+                                                                                    'bypass_csp': self.bypass_csp,
+                                                                                    'init_scripts': len(page_scripts)},
                'not_applied': [], 'trace': trace}
         if mobile and self.browser_name != 'chromium':
             log['not_applied'].append('mobile: is_mobile/has_touch emulation is Chromium only')
@@ -301,26 +458,37 @@ class Harness:
         self.last_load = time.time()
 
     def goto(self, page, url: str, wait_until: str = 'load') -> dict:
+        if self.stopped:
+            return {'ok': False, 'status': None, 'error': f'not sent: the run stopped ({self.stopped["reason"]})',
+                    'stopped': True}
         status = None
         host = (urlparse(url).hostname or '').lower()
         if host and not is_loopback(url):
             self.targets.add(host)  # a page the run navigates to is a target, not a third party
-        for attempt in range(3):
+        if host:
+            self.visited.add(host)
+        attempt = 0
+        while True:
             self.throttle()
             try:
                 resp = page.goto(url, wait_until=wait_until, timeout=45000)
             except Exception as e:
                 return {'ok': False, 'status': None, 'error': f'{type(e).__name__}: {str(e).splitlines()[0]}'}
             status = resp.status if resp else None
-            if status in (429, 503) and attempt < 2:
-                ra = resp.headers.get('retry-after', '')
-                delay = min(int(ra) if ra.isdigit() else 10 * (attempt + 1), 60)
-                self.events.append({'url': url, 'event': f'HTTP {status}; backing off {delay}s', 'at': now()})
-                time.sleep(delay)
+            action, detail = retry_decision(status, resp.headers.get('retry-after') if resp else None, attempt,
+                                            self.max_retries, self.max_retry_after, self.stop_on_429)
+            if action == 'retry':
+                self.events.append({'url': url, 'event': f'HTTP {status}; backing off {detail:.0f}s', 'at': now()})
+                time.sleep(detail)
+                attempt += 1
                 continue
+            if action == 'stop':
+                self.events.append({'url': url, 'event': detail, 'at': now()})
+                if status == 429 and self.stop_on_429:
+                    self.stopped = {'url': url, 'status': status, 'reason': detail, 'at': now()}
+                return {'ok': False, 'status': status, 'error': detail, 'stopped': bool(self.stopped)}
             self.settle(page)
             return {'ok': status is None or status < 400, 'status': status, 'final_url': page.url}
-        return {'ok': False, 'status': status, 'error': 'rate limited after retries'}
 
     def settle(self, page, idle_ms: int = 300, max_ms: int = 5000):
         try:
