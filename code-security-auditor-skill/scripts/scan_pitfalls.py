@@ -99,11 +99,11 @@ def constant_fstring(line: str, text: str) -> bool:
     if not names:
         return False
     def constant(n: str) -> bool:
-        if re.fullmatch(r'[A-Z][A-Z0-9_]*', n):
+        if re.fullmatch(r'_?[A-Z][A-Z0-9_]*', n):
             return True
         if re.search(rf'^{re.escape(n)}\s*(:[^=\n]+)?=\s*[\(\["\']', text, re.M):
             return True
-        m = re.search(rf'\bfor\s+{re.escape(n)}\s+in\s+([A-Z][A-Z0-9_]*\b|[\(\[])', text)
+        m = re.search(rf'\bfor\s+(?:\w+\s*,\s*)*{re.escape(n)}(?:\s*,\s*\w+)*\s+in\s+(_?[A-Z][A-Z0-9_]*\b|[\(\[])', text)
         return bool(m)
     return all(constant(n) for n in names)
 

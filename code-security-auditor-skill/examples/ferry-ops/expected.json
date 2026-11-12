@@ -22,7 +22,7 @@
     ["pipelines/azure-pipelines.yml", 5, "ADO-TRIGGER-ALL-BRANCHES"],
     ["pipelines/azure-pipelines.yml", 17, "ADO-SECRET-VARIABLE-LIST"],
     ["pipelines/azure-pipelines.yml", 29, "ADO-SCRIPT-INJECTION"],
-    ["pipelines/azure-pipelines.yml", 30, "ADO-SCRIPT-INJECTION"],
+    ["pipelines/azure-pipelines.yml", 30, "ADO-PARAM-INJECTION"],
     ["pipelines/azure-pipelines.yml", 40, "ADO-DEPLOY-NO-ENVIRONMENT"],
     ["web/server/dev-auth.js", 4, "JS-AUTH-ENV-BYPASS"]
   ],
