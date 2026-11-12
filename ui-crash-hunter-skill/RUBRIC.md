@@ -23,7 +23,7 @@ hardest at what is outside all of them.
 
 | Platform | Boundaries | Not caught by them |
 |---|---|---|
-| React | Class components with `getDerivedStateFromError`/`componentDidCatch`, `react-error-boundary`, `Sentry.ErrorBoundary` | Event handlers, async code, `setTimeout`, errors in the boundary itself, anything above the topmost boundary (since React 16, an uncaught render error unmounts the whole root) |
+| React | Class components with `getDerivedStateFromError`/`componentDidCatch`, `react-error-boundary` (`<ErrorBoundary>`, `withErrorBoundary`), `Sentry.ErrorBoundary`; router boundaries: a route's `errorElement` or `ErrorBoundary` (React Router 6.4+ data routers and 7, Remix; also a route module's exported `ErrorBoundary`) and TanStack Router's `errorComponent`, which catch render, loader and action errors and failed `lazy()` imports in their route and its children (scope `route`: a throw there is B2) | Event handlers, async code, `setTimeout`, errors in the boundary itself, anything above the topmost boundary (since React 16, an uncaught render error unmounts the whole root), and anything above the router: providers, the root render and module-scope code |
 | Next.js | `app/**/error.tsx` (its segment's page and nested segments, not the `layout` in its own folder), `app/global-error.tsx` (app: replaces the whole document, effect `app_fallback`), `pages/_error` | The root layout and everything it renders (providers, the shell, `next/dynamic` widgets) is caught only by `global-error`, so a throw there is B1 on every page. Server component errors during SSR become error pages; their trigger is server data (seed a test database), not a browser mock. `middleware.ts`/`proxy.ts` runs before every matched page. Route handlers (`app/**/route.ts`) are API code: a throw is an HTTP 500, not a UI crash, so they are out of scope |
 | Vue | `errorCaptured` / `onErrorCaptured` (subtree), `app.config.errorHandler` (global, logs only) | A global handler doesn't re-render; the component stays broken |
 | Angular | `ErrorHandler` (global; logs, does not recover the view) | A throw in a template can leave the view half-rendered |
@@ -44,8 +44,8 @@ nothing and can't be `caught_by`.
 | Confidence | Evidence type | Needs |
 |---|---|---|
 | `reproduced` | `reproduced` | A probe that lists the finding, with its evidence file, a screenshot and the trace, and either a stack trace with the error's effect, or the effect alone (`effect_observed`: every `expect` assertion held) with `repro.observed_effect`. An effect alone suffices for B3/B4; a B1/B2 crash without a stack trace also needs `root_empty` (a screen fallback for B2, or the app-wide fallback text for `app_fallback`). A stack trace is the one the probe captured: its error line appears in the evidence and it has frames. One probe's stack or effect reproduces one finding; minified frames are mapped to source in `repro.source_mapping` |
-| `traced` | `trace` or `agent_judgment` | At least two `file:line` hops from the input to the throw, and the boundary that catches it |
-| `pattern` | `tool` or `agent_judgment` | A rule match you didn't trace further. Capped at P1 |
+| `traced` | `trace` | At least two `file:line` hops from the input to the throw, and the boundary that catches it. The same for a `source: "agent"` finding: if you traced it, the evidence type is `trace` |
+| `pattern` | `tool` or `agent_judgment` | A rule match (`tool`) or your reading of the code (`agent_judgment`) that you didn't trace further. Capped at P1 |
 
 Effect assertions must pin the defect, not something that could have another cause: "search shows
 nothing **and** the index is not requested again after the server recovers", not just "search shows
@@ -145,7 +145,11 @@ that line (or `{"evidence": "<path>"}` for runtime evidence). The validator re-r
 degraded) or `not_run` (static only), with `run_status_reason` unless complete. A `not_run` report has
 no reproduced findings, no probe outcomes that need a running app, and no headline implying a runtime
 check. Probe outcome `baseline_not_clean` records a baseline that showed the app's own errors (a
-degraded target), and `errored` a probe that couldn't run; both need a note.
+degraded target), `errored` a probe that couldn't run, and `inconclusive` a probe whose page ended off
+the app (the browser's error page, a sign-in redirect to an identity provider, no app root), so none of
+its checks ran on the app; all three need a note. An app behind sign-in is probed with a captured
+test-account session (`--storage-state`) or its own test mode, never a real account; otherwise the
+signed-in routes are not probed and `run_status` is `partial`.
 
 **Targets.** Every probe's evidence must have run against `app_run.target`'s host. A target that is
 not loopback needs `app_run.authorised_by`, and runs read-only (`probe_web.py` answers every
@@ -164,6 +168,10 @@ diff or reading. Full entries, triggers and fixes are in `data/pitfalls.json`.
   initial value.
 - SSR and browser APIs: `window`/`localStorage` at module scope in SSR code, hydration mismatches,
   APIs missing in the declared targets.
+- Configuration at module scope: a Next.js root layout reading configuration, or a Vite module that
+  reads `import.meta.env` and throws when a value is missing or invalid (recon's
+  `module_scope_config`). It runs on import, before any boundary renders, so it blanks the app (B1);
+  the trigger is a build or deployment with the variable unset.
 - Async and lifecycle: unhandled rejections (the scan reads each promise chain whole, across lines, and counts a `.catch` or two-argument `.then` anywhere in it, or a returned, awaited or passed-on chain, as handled), responses applied after unmount or out of order,
   `setState` during render, effect-dependency loops.
 - Type escapes and resources: TypeScript `!` and `as any`, deep recursion, huge unvirtualised lists,

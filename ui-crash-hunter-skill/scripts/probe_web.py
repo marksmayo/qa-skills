@@ -33,7 +33,16 @@ scenario.expect (and expect steps) hold observable-effect assertions that descri
 computed style, an error message), and when every one holds the effect is observed. That is how a
 silent failure (a swallowed fetch error leaving a feature dead) or a non-script failure (a 404 page
 whose relative asset URLs break at nested paths) is reproduced. A scenario with "kind": "baseline"
-asserts healthy behaviour instead and never counts as reproduced.
+asserts healthy behaviour instead and never counts as reproduced. A probe whose page ended off the app
+(the browser's own error page after a navigation to a blocked host, a redirect to another origin such
+as an identity provider, or the observe.root_selector missing) is inconclusive (evidence inconclusive
+and inconclusive_reason): never a clean baseline and never a reproduction.
+
+Signed-in apps: --storage-state loads a Playwright storage-state file (cookies and localStorage) that a
+person saved after signing in to a test account by hand. The file is read, never copied into the
+evidence (which records only signed_in_session: true); keep it outside the repository and never commit
+it. sessionStorage is not part of a storage state, so a session kept there (MSAL's default cache) needs
+the app's own test configuration instead.
 
 Third parties are blocked: every request to a host that is not loopback, the base URL's host or in
 scenario.allowed_hosts is aborted and listed in blocked_requests (GETs included), so a probe never
@@ -116,13 +125,30 @@ def launch_options(scenario: dict, headed: bool = False) -> dict:
         opts['firefox_user_prefs'] = dict(scenario['browser_prefs'])
     return opts
 
-def context_options(scenario: dict, base_url: str) -> dict:
+def context_options(scenario: dict, base_url: str, storage_state=None) -> dict:
     """Browser context options. bypass_csp defaults to true in read-only mode, so a CSP violation never
-    sends a report to the target."""
-    return {'viewport': scenario.get('viewport') or {'width': 1280, 'height': 800},
+    sends a report to the target. storage_state is a Playwright storage-state file a person saved after
+    signing in to a test account (cookies and localStorage); it is loaded, never copied into the evidence."""
+    opts = {'viewport': scenario.get('viewport') or {'width': 1280, 'height': 800},
             'locale': scenario.get('locale'), 'timezone_id': scenario.get('timezone'),
             'user_agent': scenario.get('user_agent'), 'service_workers': scenario.get('service_workers', 'allow'),
             'bypass_csp': bool(scenario.get('bypass_csp', read_only(scenario, base_url)))}
+    if storage_state:
+        opts['storage_state'] = str(storage_state)
+    return opts
+
+def left_app(final_url: str, base_url: str) -> str | None:
+    """Why the page is no longer the app under test, or None: the browser's own error page (a navigation
+    to a blocked third party or a refused connection ends on chrome-error://, about:neterror, about:blank)
+    or another origin (a sign-in redirect to an identity provider)."""
+    from urllib.parse import urlparse
+    u = (final_url or '').lower()
+    if u.startswith(('chrome-error:', 'about:', 'edge-error:')) or 'neterror' in u:
+        return f'the page ended on the browser\'s own page ({final_url.split("?")[0][:80]}), not the app'
+    a, b = urlparse(final_url or ''), urlparse(base_url or '')
+    if a.scheme in ('http', 'https') and (a.hostname, a.port) != (b.hostname, b.port):
+        return f'the page navigated away from the app to {a.hostname} (a sign-in redirect or an external link)'
+    return None
 
 def install_guards(context, base_url: str, scenario: dict, blocked: list, writes: list) -> None:
     """The third-party guard, then (registered last, so it runs first) the read-only guard: every
@@ -330,7 +356,7 @@ def observe(page, obs: dict) -> dict:
     }"""
     return page.evaluate(js, [root, obs.get('fallback_text') or []])
 
-def probe(scenario: dict, base_url: str, out_dir: Path, headed: bool = False) -> dict:
+def probe(scenario: dict, base_url: str, out_dir: Path, headed: bool = False, storage_state=None) -> dict:
     from playwright.sync_api import sync_playwright, Error as PwError
     out_dir.mkdir(parents=True, exist_ok=True)
     errors, console, failed, steps_log = [], [], [], []
@@ -338,7 +364,7 @@ def probe(scenario: dict, base_url: str, out_dir: Path, headed: bool = False) ->
     with sync_playwright() as pw:
         bt = getattr(pw, scenario.get('browser', 'chromium'))
         browser = bt.launch(**launch_options(scenario, headed))
-        context = browser.new_context(**context_options(scenario, base_url))
+        context = browser.new_context(**context_options(scenario, base_url, storage_state))
         blocked: list = []
         writes: list = []
         install_guards(context, base_url, scenario, blocked, writes)
@@ -371,8 +397,13 @@ def probe(scenario: dict, base_url: str, out_dir: Path, headed: bool = False) ->
         page.screenshot(path=str(shot), full_page=True)
         own = own_errors()
         baseline = scenario.get('kind') == 'baseline'
-        crash = bool(errors or own) and (state['root_empty'] or bool(state['fallback_visible']))
-        effect = bool(expectations) and all(e['passed'] for e in expectations) and step_error is None
+        # a probe that ended off the app (the browser's error page, a sign-in redirect), or without the app's root
+        # when the scenario names one, checked nothing about the app: inconclusive, never clean or reproduced
+        away = left_app(page.url, base_url)
+        if not away and (scenario.get('observe') or {}).get('root_selector') and not state['root_found']:
+            away = f"the app root ({scenario['observe']['root_selector']}) was not on the page"
+        crash = not away and bool(errors or own) and (state['root_empty'] or bool(state['fallback_visible']))
+        effect = not away and bool(expectations) and all(e['passed'] for e in expectations) and step_error is None
         evidence = {
             'scenario': scenario.get('name'), 'base_url': base_url, 'final_url': page.url,
             'browser': f"{scenario.get('browser', 'chromium')} {browser.version}",
@@ -387,7 +418,9 @@ def probe(scenario: dict, base_url: str, out_dir: Path, headed: bool = False) ->
             'read_only': read_only(scenario, base_url), 'writes_blocked': writes,
             'bypass_csp': context_options(scenario, base_url)['bypass_csp'],
             'context': {k: scenario[k] for k in ('storage_blocked', 'launch_args', 'browser_prefs', 'authorised_by')
-                        if scenario.get(k)} | ({'init_scripts': len(scenario['init_scripts'])} if scenario.get('init_scripts') else {}),
+                        if scenario.get(k)} | ({'init_scripts': len(scenario['init_scripts'])} if scenario.get('init_scripts') else {})
+                       | ({'signed_in_session': True} if storage_state else {}),
+            'inconclusive': bool(away), 'inconclusive_reason': away,
             # defect probe: every assertion describes the bad effect and held; baseline: every assertion held
             'effect_observed': effect,
             # an error boundary catches the throw and React logs it with console.error, so both count
@@ -395,7 +428,8 @@ def probe(scenario: dict, base_url: str, out_dir: Path, headed: bool = False) ->
             'reproduced_by': [] if baseline else [k for k, v in (('crash', crash), ('effect', effect)) if v],
         }
         if baseline:
-            evidence['baseline_ok'] = not errors and not own and step_error is None and all(e['passed'] for e in expectations)
+            evidence['baseline_ok'] = not away and not errors and not own and step_error is None and \
+                all(e['passed'] for e in expectations)
         browser.close()
     (out_dir / 'evidence.json').write_text(json.dumps(evidence, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
     return evidence
@@ -408,9 +442,10 @@ def main():
     if not is_loopback(base_url) and not SCENARIO.get('authorised_by'):
         print('Refusing: ' + base_url + ' is not loopback and the scenario names no authorised_by.')
         return 2
+    storage_state = sys.argv[sys.argv.index('--storage-state') + 1] if '--storage-state' in sys.argv else None
     with sync_playwright() as pw:
         browser = getattr(pw, SCENARIO.get('browser', 'chromium')).launch(**launch_options(SCENARIO))
-        context = browser.new_context(**context_options(SCENARIO, base_url))
+        context = browser.new_context(**context_options(SCENARIO, base_url, storage_state))
         writes = []
         install_guards(context, base_url, SCENARIO, [], writes)
         for script in init_scripts(SCENARIO, base_url):
@@ -435,7 +470,11 @@ def main():
         if SCENARIO.get('expect'):
             checks('final', SCENARIO['expect'])
         state = observe(page, SCENARIO.get('observe') or {})
+        away = left_app(page.url, base_url)
         browser.close()
+    if away:
+        print('Inconclusive: ' + away + '; nothing about the app was checked.')
+        return 2
     crashed = bool(errors) and (state['root_empty'] or bool(state['fallback_visible']))
     # the expectations describe the defect's visible effect; in a baseline they describe healthy behaviour
     effect = SCENARIO.get('kind') != 'baseline' and bool(results) and all(r['passed'] for r in results)
@@ -461,11 +500,12 @@ def emit_spec(scenario: dict, base_url: str, path: Path, title: str) -> None:
     funcs = '\n\n'.join(inspect.getsource(f) for f in (
         seed_script, is_loopback, read_only, blocked_storage_script, init_scripts, launch_options, context_options,
         install_guards, console_entry, console_haystack, guard_third_party, apply_routes, glob_rx, log_requests,
-        check_expectations, run_steps, observe))
+        check_expectations, run_steps, observe, left_app))
     funcs = f'CONSOLE_ARG_JS = """{CONSOLE_ARG_JS}"""\n\n{funcs}'
     sc = dict(scenario, base_url=scenario.get('base_url') or base_url)
     body = (f'#!/usr/bin/env python3\n"""Repro spec: {title}\n\nReplays the crash trigger with Playwright. Exits 1 while the crash '
-            f'reproduces and 0 once it is fixed.\n    python {path.name} [--base-url http://localhost:5173]\n"""\n'
+            f'reproduces, 0 once it is fixed and 2 when the page left the app (inconclusive).\n'
+            f'    python {path.name} [--base-url http://localhost:5173] [--storage-state <signed-in state file>]\n"""\n'
             f'import json, sys, time\n\nSCENARIO = json.loads(r"""{json.dumps(sc, indent=2, ensure_ascii=False)}""")\n\n'
             f'{funcs}\n{SPEC_MAIN}')
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -479,7 +519,13 @@ def main() -> int:
     ap.add_argument('--emit-spec', type=Path, help='write a standalone repro script here')
     ap.add_argument('--headed', action='store_true')
     ap.add_argument('--authorised-by', help='who approved probing a non-loopback target (required for one)')
+    ap.add_argument('--storage-state', type=Path,
+                    help='a Playwright storage-state file a person saved after signing in to a test account; loaded '
+                         'into the browser context, never copied into the evidence. Keep it outside the repository')
     args = ap.parse_args()
+    if args.storage_state and not args.storage_state.is_file():
+        print(f'--storage-state {args.storage_state} not found', file=sys.stderr)
+        return 2
     try:
         scenario = json.loads(args.scenario.read_text(encoding='utf-8'))
     except (OSError, ValueError) as exc:
@@ -510,10 +556,11 @@ def main() -> int:
         print('Playwright for Python is not installed. Ask the user before installing: '
               'pip install -r requirements.txt && python -m playwright install chromium', file=sys.stderr)
         return 3
-    ev = probe(scenario, base_url, args.out_dir, args.headed)
+    ev = probe(scenario, base_url, args.out_dir, args.headed, args.storage_state)
     if args.emit_spec:
         emit_spec(scenario, base_url, args.emit_spec, scenario.get('name', 'crash repro'))
-    verdict = ('baseline ' + ('ok' if ev['baseline_ok'] else 'NOT CLEAN')) if ev['kind'] == 'baseline' else \
+    verdict = f"INCONCLUSIVE ({ev['inconclusive_reason']})" if ev['inconclusive'] else \
+        ('baseline ' + ('ok' if ev['baseline_ok'] else 'NOT CLEAN')) if ev['kind'] == 'baseline' else \
         (f"REPRODUCED ({', '.join(ev['reproduced_by'])})" if ev['reproduced'] else 'not reproduced')
     if ev['writes_blocked']:
         print(f"read-only: {len(ev['writes_blocked'])} write request(s) answered in the browser and never sent")

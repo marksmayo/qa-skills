@@ -65,14 +65,14 @@ Crashes are ranked by blast radius × reach × likelihood × recoverability into
 Scripts, in the order the skill runs them:
 
 ```bash
-python scripts/recon.py <repo> --out recon.json                          # site model, routes or pages, boundaries, contracts, stored state; Next.js layouts, proxy, route handlers
-python scripts/ui_graph.py <repo> --out graph.json                        # UI entry points and the files they import (resolves tsconfig paths)
-python scripts/strict_overlay.py tsc <repo> --scratch <tmp> --out tsc.json  # strict tsc in a scratch config (checkJs for plain JS); --scope ui|all
+python scripts/recon.py <repo> --out recon.json                          # site model, routes or pages, boundaries (incl. router errorElement), contracts (incl. FastAPI), stored state, module-scope env config; Next.js layouts, proxy, route handlers
+python scripts/ui_graph.py <repo> --out graph.json                        # UI entry points and the files they import (tsconfig paths incl. referenced projects, Vite resolve.alias); warns on unresolved imports
+python scripts/strict_overlay.py tsc <repo> --scratch <tmp> --out tsc.json  # strict tsc in a scratch config (checkJs for plain JS; a solution tsconfig compiles its app project); --scope ui|all
 python scripts/strict_overlay.py eslint <repo> --scratch <tmp> --out eslint.json
-python scripts/contract_diff.py <repo> --out contract.json               # nullable contract fields vs unguarded access (OpenAPI, GraphQL, Prisma, types)
+python scripts/contract_diff.py <repo> --out contract.json               # nullable contract fields vs unguarded access (OpenAPI, GraphQL, Prisma, types); --contract f --discover, --scope all, --defaults-present
 python scripts/scan_pitfalls.py <repo> --sarif semgrep.sarif --extra tsc.json eslint.json contract.json --out candidates.json  # UI code only; --all-files
 python scripts/scan_pitfalls.py --self-test                               # the multi-line promise-chain test
-python scripts/probe_web.py probes/C-1.json --out-dir evidence/C-1 --emit-spec repro/repro_C-1.py  # --authorised-by for a non-loopback target
+python scripts/probe_web.py probes/C-1.json --out-dir evidence/C-1 --emit-spec repro/repro_C-1.py  # --authorised-by for a non-loopback target; --storage-state for a signed-in test session
 python scripts/validate_crash_report.py crash_report.json --repo <repo> --candidates candidates.json --write-summary
 python scripts/render_report.py crash_report.json --sarif crashes.sarif  # --brief, --color always|never
 python scripts/sarif.py read detekt.sarif swiftlint.sarif                 # normalise any SARIF file

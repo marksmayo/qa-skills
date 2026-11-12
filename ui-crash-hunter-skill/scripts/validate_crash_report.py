@@ -31,7 +31,7 @@ EFFECT_TIER = {'app_terminated': 'B1', 'white_screen': 'B1', 'app_fallback': 'B1
                'console_only': 'B4'}
 CAUGHT_EFFECTS = {'screen_replaced', 'component_replaced', 'app_fallback'}
 TOOL_STATUS = {'ran', 'not_run', 'errored', 'not_applicable'}
-PROBE_OUTCOMES = {'reproduced', 'not_reproduced', 'baseline_clean', 'baseline_not_clean', 'errored'}
+PROBE_OUTCOMES = {'reproduced', 'not_reproduced', 'baseline_clean', 'baseline_not_clean', 'errored', 'inconclusive'}
 # a stack frame: V8 "    at fn (file:1:2)", Firefox/Safari "fn@file:1:2"
 FRAME = re.compile(r'^\s+at\s+\S|\S@\S+:\d+(:\d+)?\s*$|\(\S+:\d+:\d+\)', re.M)
 GENERIC_REASON = re.compile(r'^\W*(not an? (real |actual )?(crash|issue|bug|problem)( path)?|false[- ]positive|n/?a|'
@@ -87,6 +87,70 @@ def compute_summary(d: dict) -> dict:
         'evidence_completeness': round(len(ran) / len(applicable), 2) if applicable else 0.0,
         'surface_coverage': round(sum(1 for r in routes if r.get('analysed')) / len(routes), 2) if routes else 0.0,
     }
+
+WORDS = {'no': 0, 'zero': 0, 'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6, 'seven': 7, 'eight': 8,
+         'nine': 9, 'ten': 10, 'eleven': 11, 'twelve': 12}
+NUM = r'(?<![\w.])(\d+|' + '|'.join(WORDS) + r')(?![\w]|\.\d)'
+QUAL = r'(?:(?:likely|possible|potential|new|reproduced|traced|pattern(?:-only| only)?|confirmed|static|B[1-4]|P[0-3]|' \
+       r'app-fatal|screen-fatal|unique|distinct|ranked)[\s,]+)*'
+HL_OF = re.compile(NUM + r'\s+of\s+(?:the\s+|all\s+)?' + NUM + r'\s+(?:[\w-]+\s+){0,2}?(?:candidates?\s+)?(?:were\s+|was\s+|are\s+)?'
+                   r'(dismissed|promoted)\b', re.I)
+HL_TRIAGE = re.compile(r'(?<!of )' + NUM + r'\s+(?:candidates?\s+)?(?:were\s+|was\s+|are\s+)?(dismissed|promoted)\b', re.I)
+HL_OF_THEM = re.compile(NUM + r'\s+of\s+them\s+(?:were\s+|was\s+|are\s+|have\s+been\s+)?(reproduced|traced|pattern)\b', re.I)
+HL_NOUN = re.compile(r'(?<!of )' + NUM + r'\s+(' + QUAL + r')(crash(?:es)?|degradations?|candidates?)\b'
+                     r'(?:\s+(?:was|were|is|are|has\s+been|have\s+been)\s+(reproduced|confirmed|traced))?', re.I)
+
+def headline_numbers(headline: str, d: dict, want: dict) -> list[str]:
+    """Numbers the headline states, compared with the report: "N of M dismissed", "N promoted",
+    "N of them reproduced", "N [traced|B2|P0 ...] crashes", "N degradations", "N candidates"."""
+    errs = []
+    crashes, degr = d.get('crashes', []), d.get('degradations', [])
+    val = lambda s: WORDS[s.lower()] if s.lower() in WORDS else int(s)
+    taken: list[tuple[int, int]] = []
+    def seen(m) -> bool:
+        if any(a <= m.start() < b for a, b in taken):
+            return True
+        taken.append(m.span())
+        return False
+    tri = {'dismissed': want['candidates_dismissed'], 'promoted': want['candidates_promoted']}
+    for m in HL_OF.finditer(headline):
+        seen(m)
+        n, total, kind = val(m.group(1)), val(m.group(2)), m.group(3).lower()
+        if n != tri[kind] or total != want['candidates_total']:
+            errs.append(f'summary.headline says "{m.group(0)}", but {tri[kind]} of {want["candidates_total"]} '
+                        f'candidates were {kind}')
+    for m in HL_TRIAGE.finditer(headline):
+        if seen(m):
+            continue
+        n, kind = val(m.group(1)), m.group(2).lower()
+        if n != tri[kind]:
+            errs.append(f'summary.headline says "{m.group(0)}", but {tri[kind]} candidate(s) were {kind}')
+    for m in HL_OF_THEM.finditer(headline):
+        seen(m)
+        n, conf = val(m.group(1)), m.group(2).lower()
+        have = sum(1 for f in crashes if f.get('confidence') == conf)
+        if n != have:
+            errs.append(f'summary.headline says "{m.group(0)}", but {have} crash(es) are {conf}')
+    for m in HL_NOUN.finditer(headline):
+        if seen(m):
+            continue
+        n, quals, noun = val(m.group(1)), m.group(2).lower().split(), m.group(3).lower()
+        quals = [q.strip(',') for q in quals] + ([m.group(4).lower()] if m.group(4) else [])
+        if noun.startswith('candidate'):
+            if not quals and n != want['candidates_total']:
+                errs.append(f'summary.headline says "{m.group(0)}", but the triage has {want["candidates_total"]} candidates')
+            continue
+        tiers = {q.upper() for q in quals if re.fullmatch(r'b[1-4]', q)} | ({'B1'} if 'app-fatal' in quals else set()) | \
+            ({'B2'} if 'screen-fatal' in quals else set())
+        pool = degr if noun.startswith('degradation') or tiers & {'B3', 'B4'} else crashes
+        confs = {'confirmed': 'reproduced', 'reproduced': 'reproduced', 'traced': 'traced'}
+        conf = {confs[q] for q in quals if q in confs} | ({'pattern'} if any(q.startswith('pattern') for q in quals) else set())
+        prios = {q.upper() for q in quals if re.fullmatch(r'p[0-3]', q)}
+        have = sum(1 for f in pool if (not tiers or f.get('tier') in tiers) and (not conf or f.get('confidence') in conf)
+                   and (not prios or (f.get('ranking') or {}).get('priority') in prios))
+        if n != have:
+            errs.append(f'summary.headline says "{m.group(0)}", but the report has {have}')
+    return errs
 
 def norm(s: str) -> str:
     return ' '.join(str(s or '').split())
@@ -218,10 +282,13 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tu
                 evidence[p.get('id')] = json.loads((base / p['evidence_file']).read_text(encoding='utf-8'))
             except ValueError:
                 E(f"probe {p.get('id')}: evidence file {p['evidence_file']} is not valid JSON")
-        if p.get('outcome') in ('errored', 'baseline_not_clean') and len(norm(p.get('note'))) < 10:
+        if p.get('outcome') in ('errored', 'baseline_not_clean', 'inconclusive') and len(norm(p.get('note'))) < 10:
             E(f"probe {p.get('id')}: outcome {p.get('outcome')} needs a note saying what failed (environment down, "
-              'degraded target, step error)')
+              'degraded target, step error, the page left the app)')
         ev = evidence.get(p.get('id'))
+        if ev is not None and ev.get('inconclusive') and p.get('outcome') not in ('inconclusive', 'errored'):
+            E(f"probe {p.get('id')}: its evidence is inconclusive ({ev.get('inconclusive_reason') or 'the page left the app'}): "
+              f"nothing about the app was checked, so its outcome must be 'inconclusive', not '{p.get('outcome')}'")
         if ev is not None:
             eh = host(ev.get('base_url'))
             if eh and target_host and eh != target_host:
@@ -270,6 +337,11 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tu
             E(f'{fid}: confidence "reproduced" and evidence_type "reproduced" go together')
         if conf == 'pattern' and ev == 'trace':
             E(f'{fid}: a traced finding must have confidence "traced", not "pattern"')
+        if conf == 'traced' and ev != 'trace':
+            # traced means a hop-by-hop trace, whoever found it (a tool candidate or source "agent");
+            # agent_judgment is a reading without a full trace, which is pattern confidence
+            E(f'{fid}: confidence "traced" needs evidence_type "trace" (got "{ev}"); a judgment without a hop-by-hop '
+              'trace is confidence "pattern"')
         if not f.get('title'):
             E(f'{fid}: title is required')
         locs = f.get('locations') or []
@@ -534,6 +606,8 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tu
     headline = s.get('headline') or ''
     if BANNED.search(headline):
         E(f'summary.headline overclaims ("{BANNED.search(headline).group(0)}"): no findings is not evidence of no crashes')
+    for e in headline_numbers(headline, d, want):
+        E(e)
     if not d['crashes'] and not d['probes']:
         W('no crashes and no dynamic confirmation: say clearly that this is a static result only')
     if want['evidence_completeness'] < 0.5:

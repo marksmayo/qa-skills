@@ -1,7 +1,7 @@
 ---
 name: ui-crash-hunter
 description: Hunt for code paths in web and mobile UI code that are likely to crash the app (B1, app-fatal) or a whole screen (B2, screen-fatal), rank them by real-world severity, and write reproduction steps for each. Uses static analysis, an API-contract diff and the error-boundary map, then confirms crashes in the running app where possible. Every finding has a file and line, a concrete trigger and a confidence level (reproduced, traced or pattern); degradations are listed separately and never ranked as crashes.
-version: 1.2.0
+version: 1.3.0
 ---
 
 # UI Crash Hunter
@@ -105,12 +105,27 @@ Read the output, then confirm and complete it by reading the code:
   after hydration), and the route handlers with their HTTP methods. Route handlers are API code: they
   are not UI routes and never count as analysed routes. Server components run during SSR; their
   triggers are server data (a seeded test database), not browser mocks.
+  The Next.js file conventions apply only when the project's `package.json` depends on `next`, and only
+  to `app/` and `pages/` at its root or under `src/`: a `pages/` folder inside a plain React app is
+  just a folder, not routes.
 - **Code-built contracts.** Recon lists OpenAPI documents built in code (`openapi-in-code`) and
   Prisma schemas. To use a code-built OpenAPI document, run its own builder or export endpoint into
-  the output directory and pass that file to `contract_diff.py --contract`.
+  the output directory and pass that file to `contract_diff.py --contract`. A FastAPI app builds its
+  document at runtime; recon names the module and gives the export command
+  (`python -c "import json, main as m; print(json.dumps(m.app.openapi()))" > <out_dir>/openapi.json`,
+  run from the API's directory; it imports the app, so ask first). A repository that is only a FastAPI
+  service is `site.kind: "api"`: hunt crashes in the UI that calls it, with its document as the contract.
 - **The error-boundary map.** For each boundary, record its `scope` (`app`, `route`/`screen`,
   `component`, `global`) and what it covers. Check what is *outside* every boundary: the root
-  render, the shell, providers, and code that runs before the first render.
+  render, the shell, providers, and code that runs before the first render. Recon finds router
+  boundaries too (`kind: route_prop`/`route_module`): a route's `errorElement` or `ErrorBoundary`
+  (React Router 6.4+ data routers and 7, Remix), a route module's exported `ErrorBoundary`, TanStack
+  Router's `errorComponent`, and `withErrorBoundary` from `react-error-boundary`. A throw under a
+  route's `errorElement` (render, loader or a failed `lazy()` import) is B2, not B1.
+- **Module-scope configuration** (`module_scope_config`): modules that read `import.meta.env` (Vite)
+  or `process.env` and throw at module scope fail on import, before any boundary renders, so a
+  missing or invalid value blanks the app (B1). This is the Vite analogue of configuration read in a
+  Next.js root layout.
   Framework specifics are in `RUBRIC.md` (React, Next.js, Vue, Angular, React Native, Flutter,
   Android, iOS).
 - **The data layer** (fetch, axios, React Query, Apollo, Retrofit, URLSession, Dio) and whether
@@ -137,7 +152,7 @@ python scripts/scan_pitfalls.py <repo> --sarif <semgrep/detekt/swiftlint .sarif 
 
 | Stack | Tools (only if already installed, or the user agrees to install) |
 |---|---|
-| TypeScript / JavaScript | `strict_overlay.py tsc` (strictNullChecks, noUncheckedIndexedAccess; plain JavaScript without a tsconfig is checked with `checkJs` through a config generated in the scratch directory, using the repo's or the PATH's `tsc`, and is `not_applicable` only when there is no `tsc`) and `eslint` (react-hooks/exhaustive-deps, no-floating-promises, no-non-null-assertion, no-unnecessary-condition) using the repo's own installs. Both compile or lint only what the UI entry points reach (`--scope ui`, the default; `--scope all` for everything), and the baseline and strict compiles run side by side through scratch configs, so nothing (not even `tsconfig.tsbuildinfo`) is written into the repo. The ESLint step asks ESLint which plugins the config really loads (`--print-config`), so plugins that come in through `eslint-config-next` count; type-aware rules run only when the config has type information |
+| TypeScript / JavaScript | `strict_overlay.py tsc` (strictNullChecks, noUncheckedIndexedAccess; plain JavaScript without a tsconfig is checked with `checkJs` through a config generated in the scratch directory, using the repo's or the PATH's `tsc`, and is `not_applicable` only when there is no `tsc`) and `eslint` (react-hooks/exhaustive-deps, no-floating-promises, no-non-null-assertion, no-unnecessary-condition) using the repo's own installs. Both compile or lint only what the UI entry points reach (`--scope ui`, the default; `--scope all` for everything), and the baseline and strict compiles run side by side through scratch configs, so nothing (not even `tsconfig.tsbuildinfo`) is written into the repo. The ESLint step asks ESLint which plugins the config really loads (`--print-config`), so plugins that come in through `eslint-config-next` count (it asks about a source file under `src/`, never `eslint.config.js`, which a flat config for `**/*.{ts,tsx}` does not cover); type-aware rules run only when the config has type information. A solution-style `tsconfig.json` (`"files": []` plus `references`, the create-vite layout) compiles nothing, so the overlay compiles the referenced project whose `include` covers `src/` (`tsconfig.app.json`) and says so, or is `errored` when none does. A compile that covered no source file is `errored`, never "0 new errors"; a baseline with more than 50 errors carries a `warning` that the tsconfig is probably not the one the build uses (pass `--tsconfig`) |
 | Android | Android Lint (`./gradlew lint`, SARIF via `lint { sarifReport = true }`), detekt (`--report sarif:...`) |
 | iOS | SwiftLint (`swiftlint lint --reporter sarif`) with force_unwrapping, force_cast, force_try enabled in a scratch config |
 | Flutter | `dart analyze` / `flutter analyze` (null-check and `use_build_context_synchronously` diagnostics) |
@@ -149,13 +164,25 @@ contract marks nullable or optional, dereferenced in the UI without a guard. It 
 GraphQL, Prisma schemas (`?` fields are nullable; required relations are not), exported TypeScript
 types and mobile models, but not a route handler's private row types. A field name that is non-null
 in another type is skipped as a name collision and counted (`--include-collisions` lists them), and
-`prisma.model.findMany()` delegates are not field reads. The strict `tsc` overlay finds the same class
+`prisma.model.findMany()` delegates are not field reads. A call such as `.filter(` or `.trim(` is a
+method on something else, not a read of a field with that name, and is skipped (counted in
+`skipped.method_call`) unless a contract field of that name is a function type that is not a built-in
+method name. In a FastAPI-generated OpenAPI document a property with a non-null default is always
+serialised, so it is not "optional" (`--defaults-present` forces this for other documents), and a
+Pydantic `X-Input` schema is skipped when `X-Output` exists. Access sites are looked for only in files
+the UI entry points reach (`--scope all` for every file), never in tool configs (`vite.config.ts`,
+`eslint.config.js`). With `--contract`, only the listed files are read, so the UI's own TypeScript
+types drop out; add `--discover` to read both. The strict `tsc` overlay finds the same class
 of bug through the types, including accesses after destructuring that name matching misses.
 
 `scan_pitfalls.py` scans UI code only: it follows imports from the UI entry points (resolving
-`tsconfig`/`jsconfig` `paths` such as `@/*`) and excludes tests, route handlers and unreachable
+`tsconfig`/`jsconfig` `paths` such as `@/*`, including those of the projects a solution tsconfig
+references, and a literal Vite `resolve.alias`) and excludes tests, route handlers and unreachable
 modules from its own scan and from the `--extra`/`--sarif` candidates, counting each in
-`scope.excluded` with examples. `--all-files` scans route handlers and unreachable modules too.
+`scope.excluded` with examples. `--all-files` scans route handlers and unreachable modules too; tool
+configs stay out either way. Read `scope.warnings`: imports that did not resolve (an `@/` alias the
+graph doesn't know), or under 30% of the UI files reachable, mean the scope is wrong, not that the app
+is small; fix the alias or use `--all-files`, and say so in the coverage.
 
 ### 3. Triage every candidate
 
@@ -172,7 +199,8 @@ source `rule`, `snippet` regex), the specific reason, and the ids; the validator
 candidate matches. Don't paste one sentence onto many individual dismissals: more than three
 identical reasons are rejected. Then read the code for crash classes no tool finds (unsupported APIs in
 the declared targets, render loops, stale responses, lifecycle misuse, deep links, permission
-denial, process death, configuration read at module scope in the root layout): see the catalogue in
+denial, process death, configuration read at module scope in the root layout or, in a Vite app, from
+`import.meta.env` in a module that throws when a value is missing): see the catalogue in
 `RUBRIC.md`. Those findings set `"source": "agent"`, `sources: [{"tool": "agent"}]`, a `basis` (file,
 line and an excerpt of that line, re-read by the validator) and no candidate ids.
 
@@ -234,6 +262,27 @@ server component's trigger is server data: seed a test database, since `page.rou
 browser's requests. Pages behind `middleware.ts`/`proxy.ts` auth need a test session (a `goto` +
 `fill` sign-in, or a seeded cookie in an init script).
 
+**Apps behind MSAL, OIDC or another identity provider.** A single-page app that signs in through an
+identity provider (Entra ID with MSAL, Auth0, Okta, Cognito) renders only its sign-in page without a
+session, and the sign-in redirect leaves the app's origin, so a probe that follows it is
+`inconclusive`. Options, least invasive first, all with the owner's agreement:
+
+- **A captured session (`storage_state`).** A person signs in to a **test account** by hand in a
+  Playwright browser and saves the context's storage state to a file outside the repository; probes
+  load it with `probe_web.py --storage-state <file>` (and the repro spec takes the same flag). The file
+  holds live tokens: never commit it, never copy its contents into the report or the evidence (which
+  record only `signed_in_session: true`), and delete it after the run. A storage state carries cookies
+  and localStorage, not sessionStorage, so it works for MSAL only when the test build caches tokens in
+  `localStorage`.
+- **The app's own test mode**: a mock-auth flag or test identity provider the app already supports for
+  local development or end-to-end tests.
+- **Seeding an MSAL cache entry** in an init script, only with the owner's explicit consent and test
+  credentials.
+
+Never use a real user's account, and never sign in to a production tenant. When none is available, probe
+what renders without a session (the sign-in page, public routes), set `run_status` to `partial`, and
+say in the limitations which routes went unprobed because they need a session.
+
 **Third parties are blocked.** Every request to a host that isn't loopback, the base URL's host or
 in `allowed_hosts` is aborted and listed in `blocked_requests`, GETs included, so a probe never
 sends analytics hits or ad requests. Console errors caused by that blocking go to
@@ -267,7 +316,11 @@ as reproduced; `baseline_ok` is true when there were no errors of the app's own 
 held. If the baseline already errors or fails, fix the scenario before blaming the code; if the
 target itself is degraded (its own API returns 500s), mock the failing requests in the browser, or
 record the probe as `baseline_not_clean` with a note and set `run_status` to `partial`. A probe that
-couldn't run at all is `errored`, with a note.
+couldn't run at all is `errored`, with a note. A probe whose page ended off the app (the browser's
+own error page after following a link to a blocked host, a redirect to an identity provider, or the
+`observe.root_selector` missing) is `inconclusive`: its evidence says `inconclusive` with the reason,
+`baseline_ok` is false and nothing is reproduced, because none of its checks ran on the app. Record
+the outcome `inconclusive` with a note.
 
 Triggers worth forcing: null fields, `[]`, missing keys, 10,000-character strings, emoji and
 right-to-left text, HTTP 401/404/500, slow responses, offline, another locale or time zone, stored
@@ -373,7 +426,10 @@ worst finding plainly ("5 likely crashes, 4 reproduced; a P0 crash loop for user
 - Every probe ran against `app_run.target`'s host; a non-loopback target has `authorised_by`.
 - `run_status` agrees with the probes, and a `not_run` report claims nothing that needs the app.
 - No route handler or `/api/` path is an analysed UI route.
-- On a `per_script` site, a B1/B2 crash whose probe didn't show an empty root draws a warning. `traced`: at least two trace hops.
+- On a `per_script` site, a B1/B2 crash whose probe didn't show an empty root draws a warning. `traced`: at least two trace hops,
+  and evidence type `trace` (for a `source: "agent"` finding too; a judgment without a full trace is `pattern`).
+- A probe whose evidence is inconclusive (the page left the app) has the outcome `inconclusive`, never
+  `baseline_clean` or `reproduced`; `inconclusive`, `baseline_not_clean` and `errored` probes have a note.
 - Crashes are B1/B2 with a ranking whose score and priority are recomputed; a crash loop needs a
   stored-state trigger; ranks follow the score. Degradations are B3/B4 and unranked.
 - Every candidate is promoted or dismissed with a specific reason (not "false positive", not one
@@ -381,4 +437,6 @@ worst finding plainly ("5 likely crashes, 4 reproduced; a P0 crash loop for user
 - Every route or screen is analysed or listed as not analysed with a reason; coverage counts match.
 - Every tool that didn't run says why; at least one tool ran.
 - Nothing listed in `files_written` is inside the repository.
-- Summary counts are recomputed, and overclaiming headlines are rejected.
+- Summary counts are recomputed, and overclaiming headlines are rejected. Numbers the headline states
+  ("162 of 163 dismissed", "1 promoted", "2 traced B2 crashes", "4 of them reproduced", "3 degradations")
+  are compared with the report.

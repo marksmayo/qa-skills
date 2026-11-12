@@ -282,6 +282,48 @@ Status: **built** (v1.2.0). The implementation differs from the original plan as
     `baseline_not_clean`, and notes on errored probes. The renderer has `--brief`, a probes section and
     the full (trimmed) stack. The example's repro specs were re-emitted from the same scenarios; its
     evidence is unchanged.
+- **v1.3.0** (a run on a React 18 + Vite 7 single-page app with a React Router data router, MUI and an
+  identity-provider sign-in):
+  - The defaults analysed a fraction of the app without saying so. `ui_graph.py` read only
+    `tsconfig.json`, so a solution-style config (`"files": []` plus `references` to
+    `tsconfig.app.json`, the create-vite layout) lost every `@/` alias: 29 of 275 files were reachable
+    and the unresolved count said 0. It now follows `references`, reads a literal Vite
+    `resolve.alias`, counts `@/`/`~/` specifiers that resolve nowhere, and warns when imports did not
+    resolve or under 30% of UI files are reachable (`scan_pitfalls.py` copies the warnings into
+    `scope.warnings`). `strict_overlay.py tsc` extended the solution file, so `--scope all` compiled
+    nothing and reported "0 new errors"; it now compiles the referenced app project, is `errored` when
+    the compile covered no source file (`--listFiles`), and warns on a baseline of more than 50 errors.
+    The ESLint plugin probe asked about `eslint.config.js` (outside a `**/*.{ts,tsx}` flat config) and
+    reported no plugins; it now asks about a source file under `src/`. ESLint candidates carry their
+    source line as the snippet.
+  - The Next.js file heuristics fired on a plain React app (`src/modules/x/pages/...` became 21 routes
+    and UI entry points); they now apply only when `next` is a dependency, to `app/` and `pages/` at the
+    project root or under `src/`. Recon missed React Router `errorElement` boundaries and said every
+    throw was B1; it now finds `errorElement`/`ErrorBoundary` route props, route-module
+    `ErrorBoundary` exports, TanStack `errorComponent` and `withErrorBoundary`. It lists modules that
+    read `import.meta.env` and throw at module scope (`module_scope_config`), recognises a FastAPI app
+    as a code-built OpenAPI document (with the export command) and a FastAPI-only repository as
+    `site.kind: "api"` instead of a static site.
+  - False positives: `contract_diff.py` matched `products.filter(` against an optional field named
+    `filter` (132 of 142 candidates); calls of built-in method names, and calls of non-function fields,
+    are now skipped and counted. FastAPI defaults (`list = []`) were "optional"; in a FastAPI document a
+    non-null default now counts as present (`--defaults-present` elsewhere), and `X-Input` schemas are
+    skipped when `X-Output` exists. Access sites are looked for only in UI-reachable files and never in
+    tool configs (`eslint.config.js` matched a contract field), which `scan_pitfalls.py` now excludes
+    even with `--all-files`. `--discover` keeps the UI's own types alongside `--contract`.
+    `WEB-NUMBER-FORMAT-ON-NULL` no longer fires on receivers that are always numbers (`Math.max(...)`,
+    `parseFloat`, arithmetic) or after an `isNaN`/`Number.isFinite` check on the two lines before.
+  - A baseline probe whose page ended on `chrome-error://` after a sign-in click was `baseline_ok:
+    true`. `probe_web.py` now marks a probe that left the app's origin, landed on the browser's own
+    page or lost the app root as `inconclusive` (never clean or reproduced), with the new probe outcome
+    `inconclusive`; the repro spec exits 2 in that case. `--storage-state` loads a test-account session
+    a person captured by signing in (recorded only as `signed_in_session: true`), and SKILL.md
+    describes the options for apps behind MSAL or OIDC.
+  - The validator compares the numbers a headline states ("161 of 163 dismissed") with the report, and
+    requires evidence type `trace` for `traced` findings (RUBRIC no longer pairs `traced` with
+    `agent_judgment`).
+  - The example is unchanged: rerunning `scan_pitfalls.py` and `contract_diff.py` on `pantry/` gives the
+    same candidates.
 
 ```text
 ui-crash-hunter-skill/

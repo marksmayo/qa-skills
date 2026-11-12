@@ -180,7 +180,7 @@ def main() -> int:
         print('  None: the app was not run, so nothing was confirmed dynamically.')
     for p in d['probes']:
         style = {'reproduced': GREEN, 'baseline_clean': GREEN, 'not_reproduced': YELLOW,
-                 'baseline_not_clean': RED, 'errored': RED}.get(p['outcome'], '')
+                 'baseline_not_clean': RED, 'errored': RED, 'inconclusive': YELLOW}.get(p['outcome'], '')
         fl = f" -> {', '.join(p['findings'])}" if p.get('findings') else ''
         env = f"  {p['environment']}" if p.get('environment') else ''
         print(paint(f"  [{p['outcome']:18}]", style, c) + f" {p['id']}{fl}{env}")

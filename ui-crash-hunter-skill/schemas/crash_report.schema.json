@@ -66,7 +66,8 @@
             "properties": {
               "id": {"type": "string"},
               "framework": {"type": "string"},
-              "kind": {"enum": ["definition", "usage", "route_file", "global_handler"]},
+              "kind": {"enum": ["definition", "usage", "route_file", "global_handler", "route_prop", "route_module", "hoc"],
+                       "description": "route_prop: a route's errorElement / ErrorBoundary (React Router, Remix) or errorComponent (TanStack Router); route_module: a route module's exported ErrorBoundary; hoc: react-error-boundary's withErrorBoundary"},
               "name": {"type": ["string", "null"]},
               "file": {"type": "string"},
               "line": {"type": "integer"},
@@ -76,8 +77,8 @@
             }
           }
         },
-        "site_model": {"enum": ["spa", "ssr", "multi_page", "single_page_static", "native", "unknown"],
-                       "description": "From recon.py site.kind: one render tree (spa, ssr), static HTML pages that each load their own scripts, or a native app"},
+        "site_model": {"enum": ["spa", "ssr", "multi_page", "single_page_static", "native", "api", "unknown"],
+                       "description": "From recon.py site.kind: one render tree (spa, ssr), static HTML pages that each load their own scripts, a native app, or an API service with no UI (api)"},
         "blast_radius": {
           "type": "object", "required": ["model"],
           "properties": {
@@ -143,8 +144,8 @@
           "scenario_file": {"type": "string"},
           "evidence_file": {"type": "string"},
           "findings": {"type": "array", "items": {"type": "string"}},
-          "outcome": {"enum": ["reproduced", "not_reproduced", "baseline_clean", "baseline_not_clean", "errored"],
-                      "description": "baseline_not_clean: the baseline showed errors of the app's own (a degraded target); errored: the probe could not run (environment down, step failed). Both need a note"},
+          "outcome": {"enum": ["reproduced", "not_reproduced", "baseline_clean", "baseline_not_clean", "errored", "inconclusive"],
+                      "description": "baseline_not_clean: the baseline showed errors of the app's own (a degraded target); errored: the probe could not run (environment down, step failed); inconclusive: the page ended off the app (the browser's error page, a sign-in redirect, no app root), so nothing was checked. All three need a note"},
           "environment": {"type": "string"},
           "note": {"type": "string"}
         }
