@@ -173,7 +173,7 @@ Agreed with the user before the build.
 2. **Commercial device cloud?** No: open-source only.
 3. **Code-only static feature scan?** Yes, as a lighter mode.
 
-## As built (v1.0.0)
+## As built (v1.1.0)
 
 Where the build differs from the design above, and what the example showed.
 
@@ -237,3 +237,42 @@ Where the build differs from the design above, and what the example showed.
     `third_party`, `allowed_hosts` and `service_workers`, keeps the console errors and failed
     requests the blocking causes out of the runs, and the report carries the blocked hosts as
     `scope.third_party` with a limitation. The example's capture predates this and records none.
+- **Found on a Next.js site behind a strict CSP, fixed (v1.1.0):**
+  - *Capture was impossible under a hashed or nonce `style-src`*: the freeze style was refused in all
+    three engines, every run failed, and the engines were still recorded as `ran`. Contexts are now
+    created with Playwright's `bypass_csp` (`"bypass_csp": true` by default, passed to the harness
+    and applied by capture itself when the harness copy doesn't), each injected style is read back
+    through a marker custom property, and a run that didn't load, inject or capture is `errored`
+    with the error text. An engine with no captured run is `errored`. Checked on a loopback fixture
+    with a hashed `style-src`: with `bypass_csp` false all 6 runs errored with each engine's CSP
+    message; with the default all ran.
+  - *Total failure validated as "no differences detected"* (0 of 9 runs, confidence medium). Errored
+    runs are no longer compared (they would produce false "missing element" differences),
+    `comparisons` in `candidates.json` lists every planned engine-versus-reference pair and why any
+    wasn't made, the verdict gains `inconclusive`, the headline counts comparisons planned and made,
+    confidence is low when none or fewer than half were made, and the validator rejects
+    `no_differences_detected` with zero comparisons, an inconclusive summary that doesn't say so or
+    claims no differences, and a missing limitation for comparisons not made.
+  - *No 429 back-off and a fixed 0.1 s rate limit in capture*: loads now go through capture's own
+    loop with a configurable rate limit (0.5 s off loopback) and Retry-After (seconds or a date)
+    capped at `max_retry_after_seconds`, each wait recorded in the run; requests sent are counted per
+    run and engine, and `request_budget` skips the remaining runs once reached. `scope.capture` and
+    `scope.requests` carry the settings and counts.
+  - *Forced reduced motion wasn't listed as out of scope*; it is now configurable
+    (`reduced_motion`, `freeze_animations`) and, when on, the validator requires `out_of_scope` to
+    say motion wasn't compared.
+  - *The feature scan took 4 min 08 s* walking and sorting all of `node_modules` before filtering.
+    It now prunes excluded folders before descending (adding `.next`, `out`, `coverage`, caches,
+    `playwright-report`, `storybook-static`) and skips tests and stories: about 4-5 s on the same
+    repository with a warm file cache (10.5 s with the old walk, warm).
+  - *Wrong targets for Next.js*: with no browserslist config it used `defaults`. A project
+    depending on `next` now gets Next's documented default support (16+: Chrome, Edge and Firefox
+    111, Safari 16.4; 13-15: Chrome 64, Edge 79, Firefox 67, Opera 51, Safari 12), with the version
+    read from the installed package or the range, and iOS Safari taken to follow Safari; `source`
+    says so.
+  - *Tailwind was invisible*: class strings are matched against known non-baseline utilities when
+    the repo depends on Tailwind (`utility_css` records it); built CSS is scanned with `--built-css`
+    or from `.next/static/css`, with new patterns for `oklch()`/`oklab()`, `color-mix()` and
+    `@property`. Without built CSS, `features.json` carries a limitation the report must repeat.
+  - The example's capture predates these settings, so its report has no `scope.capture` or
+    `scope.requests`; `candidates.json` was regenerated (only `comparisons` added, 8 of 8 made).

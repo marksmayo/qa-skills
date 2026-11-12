@@ -17,6 +17,10 @@ movement, within 4 px or 5% in size), native form controls drawn at another size
 size because something inside it changed, a box resized with its container, an element that moved
 because a box above it grew, an input's box when its type fell back, or an element inside another
 missing element.
+Only captured runs are compared: a page, viewport and engine with any run errored or skipped
+(run_status) is left out, and `comparisons` in the output lists every planned engine-versus-reference
+pair, how many were made and why the others weren't. No comparison made means nothing was compared,
+never "no differences".
 A difference counts only when the observation holds in every run of the affected engine and in no run
 of the reference (or the reverse). Anything in between is flaky, listed with its run counts. The same
 observation in several engines, or several states of one page, is one candidate.
@@ -163,10 +167,50 @@ def all_runs(runs: list[dict], key, cond=lambda v: True) -> list[bool]:
     return [key in r['obs'] and cond(r['obs'][key]) for r in runs]
 
 
+def captured(run: dict) -> bool:
+    """A run that produced data. capture.py records run_status; an older capture's run captured unless it has an error."""
+    status = run.get('run_status') or ('errored' if run.get('error') else 'ran')
+    return status == 'ran' and 'elements' in run
+
+
+def comparisons(doc: dict, ref: str) -> dict:
+    """Every planned (page or state, viewport, engine) pair against the reference, and whether it could be compared: both
+    the engine and the reference need every rerun captured (a difference must hold in every run). Errored, skipped or
+    missing runs leave it not compared, with the reason."""
+    plan = doc.get('planned') or [{'page': p, 'viewport': v} for p, v in sorted({(r['page'], r['viewport']) for r in doc['runs']})]
+    engines = [e['name'] for e in doc.get('engines') or []] or sorted({r['engine'] for r in doc['runs']})
+    reruns = doc.get('reruns') or 1
+    by: dict[tuple, list] = {}
+    for r in doc['runs']:
+        by.setdefault((r['page'], r['viewport'], r['engine']), []).append(r)
+    rows = []
+    for chk in plan:
+        for eng in engines:
+            if eng == ref:
+                continue
+            why = []
+            for e in (ref, eng):
+                rs = by.get((chk['page'], chk['viewport'], e), [])
+                ok = sum(1 for r in rs if captured(r))
+                if ok < reruns:
+                    err = next((r.get('error') for r in rs if not captured(r) and r.get('error')), None)
+                    why.append(f'{e}: {ok} of {reruns} runs captured' + (f' ({err[:160]})' if err else ''))
+            rows.append({'page': chk['page'], 'viewport': chk['viewport'], 'engine': eng, 'compared': not why,
+                         'reason': '; '.join(why) or None})
+    return {'planned': len(rows), 'made': sum(1 for r in rows if r['compared']),
+            'not_made': [r for r in rows if not r['compared']]}
+
+
 def compare(doc: dict, base: Path, ref: str, jobs: int | None = None) -> tuple[list[dict], list[dict], list[dict]]:
+    """Differences, flaky observations and automatic dismissals, from the captured runs only: a run that errored or was
+    skipped has no observations, and comparing it would turn the error into differences."""
     inks = all_inks(doc, base, ref, default_jobs() if jobs is None else jobs)
     groups: dict[tuple, dict[str, list]] = {}
+    complete = {(r['page'], r['viewport'], r['engine']) for r in doc['runs']}
+    complete -= {(r['page'], r['viewport'], r['engine']) for r in doc['runs'] if not captured(r)}
     for i, r in enumerate(doc['runs']):
+        if (r['page'], r['viewport'], r['engine']) not in complete:
+            continue
         r = dict(r, obs=observations(r, inks[i]))
         groups.setdefault((r['page'], r['viewport']), {}).setdefault(r['engine'], []).append(r)
     diffs, flaky, dismissed = [], [], []
@@ -497,9 +541,15 @@ def main() -> int:
             f['linked_differences'] = [c['id'] for c in cands if f['feature'] in c['features']]
             f['status'] = 'confirmed_at_runtime' if f['linked_differences'] else f['status']
     out = {'runs_file': a.runs.name, 'reference': a.reference, 'engines': doc['engines'], 'reruns': doc['reruns'],
-           'third_party': third_party(doc), 'candidates': cands, 'flaky': flaky, 'dismissed_automatically': dismissed, 'features': features}
+           'third_party': third_party(doc), 'candidates': cands, 'flaky': flaky, 'dismissed_automatically': dismissed, 'features': features,
+           'comparisons': comparisons(doc, a.reference)}
     a.out.write_text(json.dumps(out, indent=1) + '\n', encoding='utf-8')
-    print(f'{len(cands)} candidate(s), {len(flaky)} flaky, {len(dismissed)} dismissed automatically -> {a.out}', file=sys.stderr)
+    cmp = out['comparisons']
+    print(f'{len(cands)} candidate(s), {len(flaky)} flaky, {len(dismissed)} dismissed automatically; {cmp["made"]} of '
+          f'{cmp["planned"]} engine comparison(s) made -> {a.out}', file=sys.stderr)
+    if cmp['not_made']:
+        print(f'warning: {len(cmp["not_made"])} comparison(s) not made (runs errored or skipped): the verdict can only be '
+              'inconclusive for them', file=sys.stderr)
     return 0
 
 

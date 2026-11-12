@@ -1,7 +1,7 @@
 ---
 name: cross-browser-checker
 description: Run the same pages, states and journeys in Playwright's Chromium, Firefox and WebKit, three times each, and report where they behave differently - script errors, failing steps, content that isn't rendered, missing elements, input fallbacks, layout and network differences - keeping only differences that repeat in every run and listing the rest as flaky. With a repository, also scan CSS, JavaScript and HTML for features the project's browserslist targets don't all support (web-features and caniuse data, pinned and hash-checked), and link them to the runtime differences they explain. Never says "compatible", and never treats WebKit as Safari.
-version: 1.0.0
+version: 1.1.0
 ---
 
 # Cross-browser checker
@@ -19,9 +19,9 @@ cross-browser finding, even if it's a bug: note it for the crash hunter.
 
 ## Non-negotiable rules
 
-1. **Never "compatible".** The verdict is `differences_found` or `no_differences_detected`, the second
-   scoped to these pages, states and engines. Real Safari, older versions and real devices are
-   `untested` unless the user ran them.
+1. **Never "compatible".** The verdict is `differences_found`, `no_differences_detected` (scoped to
+   these pages, states and engines) or `inconclusive`. Real Safari, older versions and real devices
+   are `untested` unless the user ran them.
 2. **WebKit is not Safari.** Playwright's WebKit lacks Apple's media, font and platform layers (on
    Windows and Linux it is a different build again). Never call a WebKit result a Safari result;
    `out_of_scope` always lists Safari and real devices. Some differences come from the Playwright
@@ -44,6 +44,28 @@ cross-browser finding, even if it's a bug: note it for the crash hunter.
    requests caused by the blocking are left out of the runs. Their behaviour is then **not
    compared**: the report's `scope.third_party` lists the blocked hosts and a limitation says so.
    `"third_party": "allow"` compares them too.
+9. **Pages are modified for capture, and the page's CSP is bypassed to do it.** Capture injects a
+   style that freezes animations and transitions, and one that sets `content-visibility: visible`
+   for the screenshot. A Content-Security-Policy with a hash or nonce in `style-src` (usual on
+   Next.js) refuses both, so every context is created with Playwright's `bypass_csp` (`"bypass_csp":
+   true`, the default; it changes nothing for real users). Each style is read back after injection;
+   one that didn't apply makes the run `errored`. With `"bypass_csp": false` on such a site, every
+   run errors and the verdict is `inconclusive`.
+10. **Be gentle with remote sites.** Page loads are spaced by `rate_limit_seconds` (0.5 s off
+   loopback); a 429 or 503 is retried after `Retry-After`, capped at `max_retry_after_seconds`, and
+   recorded; every run counts the requests it sent, `runs.json` totals them, and `request_budget`
+   stops capturing once reached (later runs are `skipped`). Each check costs engines × reruns page
+   loads, and a framework page can make 50 or more requests: size pages × viewports to the agreed
+   budget first.
+11. **A failed capture is never a pass.** A run that couldn't load, inject its styles or capture is
+   `errored` (or `skipped` when the request budget ran out), with the error text; an engine none of
+   whose runs captured is `errored`. Only captured runs are compared, and when any planned
+   engine-versus-reference comparison couldn't be made and no difference was found, the verdict is
+   `inconclusive`: the summary says so and a limitation names what wasn't compared. Zero comparisons
+   made is never "no differences", and confidence is then low.
+12. **Motion isn't compared by default.** Runs ask for reduced motion and freeze animations, for
+   stable screenshots, so `out_of_scope` says engine differences in motion weren't compared.
+   `"reduced_motion": "no-preference"` and `"freeze_animations": false` turn that off.
 
 ## Inputs
 
@@ -54,8 +76,13 @@ cross-browser finding, even if it's a bug: note it for the crash hunter.
 | `allowed_hosts` | `[]` | Other hosts that are part of the site (its own CDN) |
 | `service_workers` | `allow` | `block` blocks them in every run |
 | `scroll` | `true` | Scroll through each page before the full-page screenshot (see Capture) |
+| `bypass_csp` | `true` | Create contexts with Playwright's `bypass_csp` so the capture styles apply under a strict CSP |
+| `reduced_motion`, `freeze_animations` | `reduce`, `true` | `no-preference` / `false` to compare motion too |
+| `rate_limit_seconds` | 0.1 on loopback, else 0.5 | Seconds between page loads |
+| `retries`, `max_retry_after_seconds` | 2, 60 | 429/503 retries after `Retry-After`, never waiting longer than the cap |
+| `request_budget` | none | Stop capturing once the pages have sent this many requests; later runs are `skipped` |
 | `engines` | all three | Missing ones are `not_run` |
-| `browserslist` | from the repo, else `defaults` | `package.json` or `.browserslistrc` |
+| `browserslist` | from the repo, else Next.js's defaults for a Next.js project, else `defaults` | `package.json` or `.browserslistrc` |
 | `repo` | none | Turns on the static feature scan |
 | `static_only` | false | Feature scan without browsers; every finding stays `possible` |
 | `reruns` | 3 | Per engine and check |
@@ -86,8 +113,11 @@ images and returns to the top, and sets `content-visibility: visible` while the 
 Firefox and WebKit draw a full-page screenshot without scrolling, so `loading=lazy` images and
 `content-visibility: auto` sections below the fold would otherwise come out blank and look like
 content that isn't rendered (`"scroll": false` turns this off). `runs.json` records the platform,
-the capture settings, the planned checks (page or state × viewport) and what each scroll did. Run one
-engine at a time (`--engines webkit`) when memory is short.
+the capture settings, the planned checks (page or state × viewport) and what each scroll did, and
+per run `run_status` (`ran`, `errored`, `skipped`), the error, `requests_sent` and any 429/503
+`backoff`; `requests` totals them. Check the engines' status and the warning capture prints before
+going on: an errored run is never a pass. Run one engine at a time (`--engines webkit`) when memory
+is short.
 
 ### 3. Static feature scan (with a repo)
 
@@ -97,7 +127,17 @@ python scripts/feature_scan.py --repo <repo> --out <run>/features.json
 ```
 
 Unresolvable browserslist terms (Firefox ESR, `and`, regional usage) are listed, and the scan can't
-assess them.
+assess them. A Next.js project with no browserslist config compiles for Next's own documented
+targets (Next 16: Chrome, Edge and Firefox 111, Safari 16.4), so those are used, and `source` says so.
+The walk prunes `node_modules`, `.next`, build output, coverage and caches, and skips tests and
+stories (they don't ship).
+
+Utility-class CSS (Tailwind) lives in class strings, not stylesheets. When the repo depends on
+Tailwind, class strings are matched against the known non-baseline utilities (`text-balance`,
+`backdrop-blur-*`, `bg-clip-text`, `has-[...]`, `@container`, `field-sizing-*`, `starting:`), and
+`utility_css` says only those were scanned. The CSS the framework generates (colour functions,
+`@property`, layers) is scanned only from built CSS (`--built-css <dir>`, or `.next/static/css`
+when it exists); otherwise `features.json` carries a limitation, which the report must repeat.
 
 ### 4. Compare engines
 
@@ -105,7 +145,8 @@ assess them.
 python scripts/compare_engines.py <run>/capture/runs.json --features <run>/features.json --out <run>/candidates.json [--jobs 4]
 ```
 
-Differences: page and console errors, failed steps, failed requests and undecoded images, missing or
+Only captured runs are compared; `comparisons` lists every planned engine-versus-reference pair and
+why any wasn't made (an errored or skipped run on either side). Differences: page and console errors, failed steps, failed requests and undecoded images, missing or
 extra elements, input type fallbacks, box differences, overflow, and content not rendered (an element
 with under 40% of the reference's ink). Font metrics, native form controls, consequences of other
 differences (a box that grew because something inside it changed) and cumulative drift (an element
@@ -126,6 +167,10 @@ engines (never "Safari"), a remediation that addresses the cause (a feature chec
 When a site serves different scripts per engine (compare `scripts` across engines), say so for every
 difference on that page.
 
+A feature finding is `possible`, not a defect: say when it is a progressive enhancement that degrades
+harmlessly (`text-wrap: balance` wraps normally, `::-webkit-scrollbar` keeps default scrollbars)
+rather than leaving it to read as a break.
+
 ### 6. Validate and render
 
 ```bash
@@ -139,12 +184,14 @@ targets there and compare by hand.
 
 ## Output fields
 
-- `scope`: site, pages, viewports, engines with versions, reference engine, resolved browserslist,
-  `out_of_scope`, reruns, `authorised_by`, and `third_party` (as in `candidates.json`; required when
-  the capture recorded it).
+- `scope`: site, pages, viewports, engines with versions and status (`ran`, `not_run`, `errored`),
+  reference engine, resolved browserslist, `out_of_scope`, reruns, `authorised_by`, `third_party`
+  (as in `candidates.json`; required when the capture recorded it), and `capture` and `requests`
+  (copies of `runs.json`'s, required when the capture recorded them).
 - `metadata`: tools, data versions and hashes, runs file.
-- `headline`: verdict, summary, severity counts, flaky count, checks planned and run, evidence
-  completeness, overall confidence.
+- `headline`: verdict (`differences_found`, `no_differences_detected`, `inconclusive`), summary,
+  severity counts, flaky count, checks planned and run, engine comparisons planned and made,
+  evidence completeness, overall confidence.
 - `differences[]`: kind and subkind, engines affected, reference, page and states, element, severity,
   confidence, priority, score, usage share, runs per state and engine, evidence per engine, linked
   feature cause, remediation and verification step.
@@ -156,7 +203,13 @@ Candidates, ratings, flaky list and feature links are recomputed from the record
 difference is consistent across its reruns, differs from the reference, and has screenshots (matching
 their hashes) from both sides. Safari is never an engine or a title, and a summary sentence that
 names Safari must say it wasn't tested (sentences split at a full stop and a space, so "Safari 16.4"
-is one sentence). No compatibility claims; no "no differences" while an engine didn't run. Every
+is one sentence). No compatibility claims. The verdict follows from the runs: `inconclusive`
+whenever a planned comparison wasn't made and nothing was promoted, never `no_differences_detected`
+with zero comparisons; an inconclusive summary must say so and not claim "no differences", and a
+limitation must name what wasn't compared. Confidence is low when no comparison, or under half of
+them or of the runs, was made. `scope.capture` and `scope.requests` equal `runs.json`'s; forced
+reduced motion or frozen animations need `out_of_scope` to say motion wasn't compared; the feature
+scan's limitations (utility CSS not scanned) must appear in the report's. Every
 candidate is triaged once, and none with `build_limitations` is promoted. Checks planned come from
 `runs.json`'s recorded plan, `--targets` (which must agree with it), or for an older capture the
 page and viewport pairs that ran, so the count is the same with and without `--targets`. Blocked

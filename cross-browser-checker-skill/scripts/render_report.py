@@ -41,14 +41,27 @@ def main() -> int:
     d = json.loads(a.report.read_text(encoding='utf-8'))
     P = (lambda s, st: f'{st}{s}{RESET}') if supports_color(a.color) else (lambda s, st: s)
     sc, hl = d['scope'], d['headline']
-    verdict = P('DIFFERENCES FOUND', RED + BOLD) if hl['verdict'] == 'differences_found' else \
-        P('NO DIFFERENCES DETECTED', GREEN + BOLD) + ' (for these pages, states and engines only)'
+    verdict = {'differences_found': P('DIFFERENCES FOUND', RED + BOLD),
+               'inconclusive': P('INCONCLUSIVE', YELLOW + BOLD) + ' (engine comparisons were not all made; see limitations)'}.get(
+        hl['verdict'], P('NO DIFFERENCES DETECTED', GREEN + BOLD) + ' (for these pages, states and engines only)')
     engines = ', '.join(f'{e["name"]} {e["version"] or ""} ({e["status"]})'.replace(' ()', '') for e in sc['engines'])
+    ck = hl['checks']
     out = [P('# Cross-browser check', BOLD), '', verdict, '', hl['summary'], '',
-           f'Engines: {engines}; reference {sc["reference_engine"]}; {sc["reruns"]} runs each. Checks: {hl["checks"]["ran"]} of '
-           f'{hl["checks"]["planned"]} ran. Flaky: {hl["flaky_count"]}. Evidence {hl["evidence_completeness"]}, confidence {hl["overall_confidence"]}.',
+           f'Engines: {engines}; reference {sc["reference_engine"]}; {sc["reruns"]} runs each. Checks: {ck["ran"]} of '
+           f'{ck["planned"]} ran; {ck["comparisons_made"]} of {ck["comparisons_planned"]} engine comparisons made. '
+           f'Flaky: {hl["flaky_count"]}. Evidence {hl["evidence_completeness"]}, confidence {hl["overall_confidence"]}.',
            f'Targets: {sc["browserslist"]["query"]} ({sc["browserslist"]["resolved_count"]} versions, {sc["browserslist"]["coverage"]}% '
-           f'of global usage).', third_party_line(sc.get('third_party')), P('Out of scope: ' + '; '.join(sc['out_of_scope']), DIM)]
+           f'of global usage).', third_party_line(sc.get('third_party'))]
+    if sc.get('capture'):
+        c = sc['capture']
+        out.append(f'Capture: page CSP {"bypassed" if c.get("bypass_csp") else "enforced"}; reduced motion {c.get("reduced_motion")}; '
+                   f'animations {"frozen" if c.get("freeze_animations") else "running"}; {c.get("rate_limit_seconds")} s between loads.')
+    if sc.get('requests'):
+        r = sc['requests']
+        out.append(f'Requests sent: {r["sent"]} (' + ', '.join(f'{k} {v}' for k, v in r['by_engine'].items()) + ')'
+                   + (f'; budget {r["budget"]}' + (' reached' if r['budget_reached'] else '') if r['budget'] is not None else '')
+                   + (f'; {r["backoffs"]} back-off(s) on 429/503' if r['backoffs'] else '') + '.')
+    out.append(P('Out of scope: ' + '; '.join(sc['out_of_scope']), DIM))
     if a.brief:
         out.append('')
         out += [f'{P(x["id"], BOLD)} {P(x["priority"] + " " + x["severity"], SEV[x["severity"]])} {", ".join(x["engines_affected"])}: '

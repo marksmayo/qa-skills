@@ -54,15 +54,22 @@ A feature is reported when at least one resolved browserslist target lacks it (w
 version for that browser, or a later one). `fallback` is true when an `@supports` block or a pattern's
 fallback check is in the same file. Status: `possible`, `confirmed_at_runtime` (linked to a difference
 whose error message names the feature, or whose element matches the feature's CSS selector, in an
-engine family that lacks it), or `not_assessed` (no data).
+engine family that lacks it), or `not_assessed` (no data). Utility classes (Tailwind) count as uses
+of the feature they generate; a pattern with `emits_fallback` (the framework writes a prefixed
+alternative too) has a fallback.
 
 ## Headline
 
-- **Verdict:** `differences_found` with at least one promoted difference; otherwise
-  `no_differences_detected`, never with an engine `not_run`.
+- **Verdict:** `differences_found` with at least one promoted difference; otherwise `inconclusive`
+  when any planned engine-versus-reference comparison wasn't made (an engine `not_run` or `errored`,
+  or a run of either side errored or skipped: a comparison needs every rerun captured on both
+  sides); otherwise `no_differences_detected`. No comparison made is never "no differences".
+- **Comparisons:** planned (page or state, viewport) pairs times the engines other than the
+  reference, and how many were made.
 - **Checks planned:** the (page or state, viewport) pairs in `runs.json`'s `planned` (per-page and
   per-state `viewports` honoured), or from `--targets`, or the pairs that ran for an older capture;
   times engines and reruns.
-- **Evidence completeness:** `partial` when an engine didn't run, a check didn't run, anything is flaky
-  or needs review, or a feature is not assessed.
-- **Overall confidence:** medium when partial or any difference isn't high; otherwise high.
+- **Evidence completeness:** `partial` when an engine didn't run, a check or comparison didn't run,
+  anything is flaky or needs review, or a feature is not assessed.
+- **Overall confidence:** low when no comparison was made, or fewer than half of the planned
+  comparisons or runs; medium when partial or any difference isn't high; otherwise high.

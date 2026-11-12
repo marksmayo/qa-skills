@@ -13,8 +13,17 @@ Also fails when:
     or it lacks evidence (screenshots that exist and match runs.json) from the reference and every
     affected engine;
   * "Safari" appears as an engine or in a difference title, or out_of_scope omits Safari and real devices;
-  * the verdict is no_differences_detected while a planned engine didn't run, or any text says
-    "compatible", "works in all browsers" or similar;
+  * the verdict isn't the one the runs support: differences_found with a promoted difference, else inconclusive
+    when any planned engine comparison wasn't made (an engine not run or errored, a run errored or skipped; see
+    compare_engines.comparisons), else no_differences_detected; in particular no_differences_detected with no
+    comparison made;
+  * an inconclusive summary doesn't say so (errored, skipped, not compared) or claims no differences; comparisons
+    weren't made and no limitation says so;
+  * any text says "compatible", "works in all browsers" or similar;
+  * overall confidence isn't low when no comparison was made, or fewer than half of the comparisons or runs;
+  * the capture recorded its settings (bypass_csp, reduced motion, rate limit, request budget) or request counts and
+    scope.capture / scope.requests don't equal them; motion was forced or frozen and out_of_scope doesn't say motion
+    wasn't compared; the feature scan listed limitations (utility-class CSS not scanned) the report doesn't carry;
   * a feature finding is confirmed_at_runtime with no linked difference, or possible with one;
   * a candidate is missing from triage or triaged twice;
   * a candidate that matches a known Playwright engine-build limitation (data/engine-limitations.json) is promoted:
@@ -38,6 +47,10 @@ import compare_engines as ce  # noqa: E402
 import schema_check  # noqa: E402
 
 COMPAT = re.compile(r'\b(compatible|works (fine )?in all browsers|cross-browser (safe|ready)|fully supported everywhere|no browser issues)\b', re.I)
+INCONCLUSIVE_SAYS = re.compile(r'inconclusive|errored|not compared|could not|couldn.t|did not (run|capture|load)|skipped|'
+                               r'not captured|no comparison', re.I)
+NO_DIFF_CLAIM = re.compile(r'\b(no (\w+ )?differences (were |was )?(found|detected|seen)|no differences detected|'
+                           r'all (engines|browsers) (match|agree|behave the same))\b', re.I)
 FIELDS = ('kind', 'subkind', 'page', 'states', 'element', 'severity', 'confidence', 'priority', 'score', 'usage_share', 'runs')
 
 
@@ -188,6 +201,9 @@ def main() -> int:
                     'third-party behaviour was not compared')
 
     # headline
+    cmp = ce.comparisons(runs, cands_doc['reference'])
+    if 'comparisons' in cands_doc and cands_doc['comparisons'] != cmp:
+        errs.append('candidates.json comparisons do not follow from runs.json; rerun compare_engines.py')
     planned_engines = [e for e in sc['engines']]
     plan = runs.get('planned')
     if a.targets:
@@ -198,22 +214,47 @@ def main() -> int:
     if plan is None:   # a capture that didn't record its plan: count what ran
         plan = [{'page': p, 'viewport': v} for p, v in sorted({(r['page'], r['viewport']) for r in runs['runs']})]
     n_states = len(plan)
-    exp = {'verdict': 'differences_found' if rep['differences'] else 'no_differences_detected',
+    incomplete = cmp['made'] < cmp['planned']
+    exp = {'verdict': 'differences_found' if rep['differences'] else 'inconclusive' if incomplete else 'no_differences_detected',
            'severity_counts': dict(Counter(d['severity'] for d in rep['differences'])), 'flaky_count': len(rep['flaky']),
-           'checks': {'planned': n_states * len(planned_engines) * sc['reruns'], 'ran': sum(1 for r in runs['runs'] if r['ok'])}}
+           'checks': {'planned': n_states * len(planned_engines) * sc['reruns'], 'ran': sum(1 for r in runs['runs'] if r['ok']),
+                      'comparisons_planned': cmp['planned'], 'comparisons_made': cmp['made']}}
     not_run = [e['name'] for e in sc['engines'] if e['status'] != 'ran']
-    partial = bool(not_run or rep['flaky'] or rep['needs_review'] or exp['checks']['ran'] < exp['checks']['planned']
+    partial = bool(not_run or incomplete or rep['flaky'] or rep['needs_review'] or exp['checks']['ran'] < exp['checks']['planned']
                    or (features and any(f['status'] == 'not_assessed' for f in rep['feature_findings'])))
     exp['evidence_completeness'] = 'partial' if partial else 'complete'
-    exp['overall_confidence'] = 'medium' if partial or any(d['confidence'] != 'high' for d in rep['differences']) else 'high'
+    chk = exp['checks']
+    thin = cmp['made'] == 0 or cmp['made'] * 2 < cmp['planned'] or chk['ran'] * 2 < chk['planned']
+    exp['overall_confidence'] = ('low' if thin else
+                                 'medium' if partial or any(d['confidence'] != 'high' for d in rep['differences']) else 'high')
     for k, v in exp.items():
         if hl[k] != v:
             if a.write_summary:
                 hl[k] = v
             else:
                 errs.append(f'headline.{k} is {hl[k]!r}; expected {v!r}')
-    if hl['verdict'] == 'no_differences_detected' and not_run:
-        errs.append(f'no_differences_detected while {", ".join(not_run)} did not run')
+    if hl['verdict'] == 'no_differences_detected' and cmp['made'] == 0:
+        errs.append('no_differences_detected with no engine comparison made: nothing was compared, so the verdict is inconclusive')
+    elif hl['verdict'] == 'no_differences_detected' and (not_run or incomplete):
+        errs.append(f'no_differences_detected while {", ".join(not_run) or "some runs"} did not run or capture: the verdict is inconclusive')
+    if hl['verdict'] == 'inconclusive' or exp['verdict'] == 'inconclusive':
+        if not INCONCLUSIVE_SAYS.search(hl['summary']):
+            errs.append('headline.summary must say the check was inconclusive (runs errored, were skipped or not compared)')
+        if NO_DIFF_CLAIM.search(hl['summary']):
+            errs.append('headline.summary claims no differences, but the comparison was inconclusive')
+    if cmp['not_made'] and not any(INCONCLUSIVE_SAYS.search(x) for x in rep['limitations']):
+        errs.append(f'limitations: {len(cmp["not_made"])} engine comparison(s) were not made (runs errored or skipped); '
+                    'say which and why')
+    cap = runs.get('capture') or {}
+    if 'bypass_csp' in cap and sc.get('capture') != cap:
+        errs.append('scope.capture should equal runs.json capture settings')
+    if 'requests' in runs and sc.get('requests') != runs['requests']:
+        errs.append('scope.requests should equal runs.json requests (sent, by engine, budget, back-offs)')
+    if (cap.get('reduced_motion') == 'reduce' or cap.get('freeze_animations')) and not re.search(r'motion|animation', oos, re.I):
+        errs.append('scope.out_of_scope must say motion was not compared (the capture forced reduced motion or froze animations)')
+    for lim in (features or {}).get('limitations') or []:
+        if lim not in rep['limitations']:
+            errs.append(f'limitations: the feature scan says "{lim[:80]}..."; carry it into the report')
     if COMPAT.search(hl['summary']):
         errs.append('headline.summary claims compatibility; the best verdict is "no differences detected" for these pages and engines')
     for sentence in sentences(hl['summary']):

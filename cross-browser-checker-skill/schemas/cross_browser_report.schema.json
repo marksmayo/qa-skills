@@ -25,6 +25,9 @@
         "out_of_scope": {"type": "array", "minItems": 2, "items": {"type": "string"}},
         "reruns": {"type": "integer", "minimum": 1},
         "authorised_by": {"type": ["string", "null"]},
+        "capture": {"type": "object", "description": "runs.json capture settings (bypass_csp, reduced_motion, freeze_animations, rate limit, retries, request budget, third parties); required when the capture recorded bypass_csp."},
+        "requests": {"type": "object", "required": ["sent", "by_engine", "budget", "budget_reached", "backoffs"],
+                     "description": "runs.json requests: requests the pages sent (blocked ones excluded), per engine, the budget, whether it was reached, and 429/503 back-offs; required when the capture recorded them."},
         "third_party": {"type": ["object", "null"], "additionalProperties": false, "required": ["mode", "allowed_hosts", "blocked"],
                         "description": "What the harness did with requests to third-party hosts, as compare_engines.py summarises runs.json (candidates.json third_party). Required when the capture recorded it. Blocked requests' behaviour was not compared.",
                         "properties": {"mode": {"enum": ["block", "allow"]}, "allowed_hosts": {"type": "array", "items": {"type": "string"}},
@@ -45,12 +48,15 @@
       "type": "object", "additionalProperties": false,
       "required": ["verdict", "summary", "severity_counts", "flaky_count", "checks", "evidence_completeness", "overall_confidence"],
       "properties": {
-        "verdict": {"enum": ["differences_found", "no_differences_detected"]},
+        "verdict": {"enum": ["differences_found", "no_differences_detected", "inconclusive"],
+                    "description": "inconclusive when no difference was promoted and any planned engine comparison wasn't made (an engine not run or errored, a run errored or skipped)."},
         "summary": {"type": "string", "minLength": 20},
         "severity_counts": {"type": "object"},
         "flaky_count": {"type": "integer"},
-        "checks": {"type": "object", "additionalProperties": false, "required": ["planned", "ran"],
-                   "properties": {"planned": {"type": "integer"}, "ran": {"type": "integer"}}},
+        "checks": {"type": "object", "additionalProperties": false, "required": ["planned", "ran", "comparisons_planned", "comparisons_made"],
+                   "properties": {"planned": {"type": "integer"}, "ran": {"type": "integer"},
+                                  "comparisons_planned": {"type": "integer", "description": "planned (page or state, viewport) x engines other than the reference"},
+                                  "comparisons_made": {"type": "integer", "description": "those where the engine and the reference captured every rerun"}}},
         "evidence_completeness": {"enum": ["complete", "partial"]},
         "overall_confidence": {"enum": ["high", "medium", "low"]}
       }

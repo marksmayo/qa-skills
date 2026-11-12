@@ -1,7 +1,7 @@
 {
  "skill": {
   "name": "cross-browser-checker",
-  "version": "1.0.0"
+  "version": "1.1.0"
  },
  "scope": {
   "site": "http://127.0.0.1:8145/",
@@ -48,7 +48,8 @@
    "Safari (Playwright WebKit on Windows is not Safari: no Apple media, font or platform layers)",
    "real devices and touch",
    "older browser versions (only the installed engines ran)",
-   "branded Chrome and Edge channels (not installed)"
+   "branded Chrome and Edge channels (not installed)",
+   "motion: every run asked for reduced motion and froze CSS animations and transitions, so engine differences in animation and prefers-reduced-motion handling were not compared"
   ],
   "reruns": 3,
   "authorised_by": null
@@ -106,7 +107,9 @@
   "flaky_count": 2,
   "checks": {
    "planned": 36,
-   "ran": 36
+   "ran": 36,
+   "comparisons_planned": 8,
+   "comparisons_made": 8
   },
   "evidence_completeness": "partial",
   "overall_confidence": "medium"

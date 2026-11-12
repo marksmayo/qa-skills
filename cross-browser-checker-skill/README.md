@@ -19,7 +19,15 @@ where they behave differently:
 - **Third parties blocked by default**, and recorded; the report says their behaviour wasn't
   compared.
 - **Static feature scan**: CSS, JavaScript and HTML checked against the project's browserslist targets
-  with web-features and caniuse data, and linked to the runtime differences they explain.
+  (or Next.js's default targets in a Next.js project without one) with web-features and caniuse
+  data, and linked to the runtime differences they explain. Tailwind class strings are checked for
+  known non-baseline utilities, and built CSS is scanned when given.
+- **Honest about failed captures**: pages are captured with the site's CSP bypassed (the capture
+  injects styles), a style that didn't apply or a page that didn't load makes the run errored, and
+  with any comparison not made and nothing found the verdict is `inconclusive`, never "no
+  differences".
+- **Gentle on remote sites**: a rate limit between loads, 429/503 back-off honouring Retry-After
+  (capped), request counts per run and engine, and an optional request budget.
 
 It is strict about scope: it never says "compatible", never treats Playwright's WebKit as Safari, and
 lists Safari, real devices and older versions as untested.
