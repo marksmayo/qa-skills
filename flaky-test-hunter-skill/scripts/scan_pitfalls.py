@@ -7,46 +7,169 @@ Applies data/pitfalls.json to test files (and, for smells with scope "source", t
 source files that tests import). Every hit is a lead with a file, line and the cause class it
 usually leads to. A smell is never a flake on its own: it becomes one only when runs show a
 pass and a fail. Smells whose tests never failed stay in the report as smells.
+
+For JavaScript and TypeScript tests a smell's `test` is the describe chain and title joined with
+" > ", the way Vitest and Jest name tests in JUnit ("checkout > applies a code"), so a smell can
+be matched to a flake by file and name. A smell whose risk the repo already handles (Math.random
+stubbed, fake timers in the file or a setup file) is kept, with a `mitigation` saying where.
+The `tz-in-thread-setup` smell is a project check: `process.env.TZ` assigned in a Vitest setup
+file while the tests run in worker threads, where the assignment does not change the zone.
 """
 from __future__ import annotations
-import argparse, json, re, sys
+import argparse, json, os, re, sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE.parent / 'data' / 'pitfalls.json'
-SKIP = {'.git', 'node_modules', '__pycache__', '.venv', 'venv', 'dist', 'build', 'target', '.pytest_cache', '.tox'}
-TEST_NAME = re.compile(r'^\s*(?:async\s+)?def\s+(test_\w+)|^\s*(?:it|test)\s*\(\s*[\'"`]([^\'"`]+)|'
+# pruned before descending (never walked, then filtered)
+SKIP = {'.git', 'node_modules', '__pycache__', '.venv', 'venv', 'dist', 'build', 'target', '.pytest_cache', '.tox',
+        '.next', '.nuxt', 'out', 'coverage', '.turbo', '.cache', '.stryker-tmp', '.mypy_cache', '.gradle', '.idea'}
+TEST_NAME = re.compile(r'^\s*(?:async\s+)?def\s+(test_\w+)|'
+                       r'^\s*(?:it|test)(?:\.(?:only|skip|concurrent|sequential|fails|todo|runIf\([^)]*\)|skipIf\([^)]*\)))*'
+                       r'\s*\(\s*([\'"`])((?:(?!\2).)+)\2|'
                        r'^\s*(?:public\s+)?(?:void|fun)\s+(\w+)\s*\(|^func\s+(Test\w+)\s*\(')
+DESCRIBE = re.compile(r'^(\s*)describe(?:\.(?:only|skip|concurrent|sequential|shuffle|todo|runIf\([^)]*\)|skipIf\([^)]*\)))*'
+                      r'\s*\(\s*([\'"`])((?:(?!\2).)+)\2')
+JS_LANGS = ('javascript', 'typescript')
+SETUP_NAME = re.compile(r'(^|/)(?:vitest|jest)\.setup\.[cm]?[jt]sx?$|(^|/)setupTests\.[jt]sx?$|'
+                        r'(^|/)test[-_.]?setup\.[cm]?[jt]sx?$')
+CONFIG_NAME = re.compile(r'(^|/)(?:vitest|vite|jest)\.(?:config|workspace)\.[cm]?[jt]s$')
+SETUP_LIST = re.compile(r'setupFiles(?:AfterEnv)?\s*:\s*(\[[^\]]*\]|[\'"][^\'"]+[\'"])')
+POOL = re.compile(r'\bpool\s*:\s*[\'"](\w+)[\'"]')
 
 
 def files(root: Path):
-    for p in sorted(root.rglob('*')):
-        if p.is_file() and not any(part in SKIP for part in p.relative_to(root).parts):
-            yield p
+    """Every file under root, pruning SKIP directories before descending into them."""
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d not in SKIP)
+        for f in sorted(filenames):
+            yield Path(dirpath) / f
 
 
-def enclosing_test(lines: list[str], i: int) -> str | None:
+def enclosing_test(lines: list[str], i: int, js: bool) -> str | None:
+    """The test the line sits in. For JS/TS, the describe chain and title joined with ' > '."""
     for j in range(i, -1, -1):
         m = TEST_NAME.match(lines[j])
-        if m:
-            return next(g for g in m.groups() if g)
+        if not m:
+            continue
+        name = m.group(1) or m.group(3) or m.group(4) or m.group(5)
+        if not js or not m.group(3):
+            return name
+        chain, indent = [name], len(lines[j]) - len(lines[j].lstrip())
+        for k in range(j - 1, -1, -1):
+            d = DESCRIBE.match(lines[k])
+            if d and len(d.group(1)) < indent:
+                chain.insert(0, d.group(3))
+                indent = len(d.group(1))
+                if indent == 0:
+                    break
+        return ' > '.join(chain)
+    return None
+
+
+def first_match(rx: re.Pattern, lines: list[str]) -> int | None:
+    for i, line in enumerate(lines):
+        if rx.search(line) and not line.strip().startswith(('//', '#', '*', '/*')):
+            return i + 1
+    return None
+
+
+def setup_files(root: Path, all_files: list[Path]) -> tuple[set[str], dict[str, str]]:
+    """Setup files (named in a Vitest/Jest config or package.json, or by convention) and each config's pool."""
+    setups, pools = set(), {}
+    for p in all_files:
+        rel = p.relative_to(root).as_posix()
+        if SETUP_NAME.search(rel):
+            setups.add(rel)
+        if not (CONFIG_NAME.search(rel) or rel == 'package.json'):
+            continue
+        try:
+            text = p.read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            continue
+        for m in SETUP_LIST.finditer(text):
+            for name in re.findall(r'[\'"]([^\'"]+)[\'"]', m.group(1)):
+                name = name.replace('<rootDir>/', '')
+                cand = (p.parent / name).resolve()
+                try:
+                    setups.add(cand.relative_to(root).as_posix())
+                except ValueError:
+                    pass
+        if re.search(r'(^|/)vit(?:est|e)\.(?:config|workspace)\.', rel):
+            pm = POOL.search(text)
+            pools[rel] = pm.group(1) if pm else ''
+    return setups, pools
+
+
+def vitest_major(root: Path) -> int | None:
+    try:
+        pkg = json.loads((root / 'package.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    for sec in ('devDependencies', 'dependencies'):
+        v = (pkg.get(sec) or {}).get('vitest')
+        if v:
+            m = re.search(r'(\d+)', v)
+            return int(m.group(1)) if m else None
+    return None
+
+
+def thread_pool(root: Path, pools: dict[str, str]) -> str | None:
+    """'threads' when Vitest runs tests in worker threads: set in a config, or the default before Vitest 2."""
+    for cfg, pool in pools.items():
+        if pool in ('threads', 'vmThreads'):
+            return f"{cfg} sets pool: '{pool}'"
+    if pools and not any(pools.values()):
+        major = vitest_major(root)
+        if major is not None and major < 2:
+            return f'Vitest {major}.x runs tests in worker threads by default'
     return None
 
 
 def scan(root: Path, data: dict) -> list[dict]:
     test_rx = [re.compile(p) for p in data['test_file_patterns']]
-    smells = [{**s, 'rx': re.compile(s['pattern'])} for s in data['smells']]
+    smells = [{**s, 'rx': re.compile(s['pattern']),
+               'prev_rx': re.compile(s['skip_if_prev']) if s.get('skip_if_prev') else None,
+               'next_rx': re.compile(s['skip_if_next']) if s.get('skip_if_next') else None,
+               'mit_rx': re.compile(s['mitigated_by']) if s.get('mitigated_by') else None}
+              for s in data['smells'] if s.get('scope') != 'thread_setup']
+    project = [s for s in data['smells'] if s.get('scope') == 'thread_setup']
+    all_files = list(files(root))
+    setups, pools = setup_files(root, all_files)
+    texts: dict[str, list[str]] = {}
+
+    def read(p: Path) -> list[str] | None:
+        rel = p.relative_to(root).as_posix()
+        if rel not in texts:
+            try:
+                texts[rel] = p.read_text(encoding='utf-8', errors='replace').splitlines()
+            except OSError:
+                return None
+        return texts[rel]
+
+    # global mitigations: a setup file that stubs the risk for every test
+    global_mit = {}
+    for sm in smells:
+        if not sm['mit_rx']:
+            continue
+        for rel in sorted(setups):
+            lines = read(root / rel) if (root / rel).is_file() else None
+            n = first_match(sm['mit_rx'], lines) if lines else None
+            if n:
+                global_mit[sm['id']] = f'{sm["mitigation"]} globally in {rel}:{n}'
+                break
+
     out = []
-    for p in files(root):
+    for p in all_files:
         lang = data['language_by_suffix'].get(p.suffix)
         if not lang:
             continue
         rel = p.relative_to(root).as_posix()
         is_test = any(rx.search(rel) for rx in test_rx)
-        try:
-            lines = p.read_text(encoding='utf-8', errors='replace').splitlines()
-        except OSError:
+        lines = read(p)
+        if lines is None:
             continue
+        local_mit = {}
         for i, line in enumerate(lines):
             s = line.strip()
             if s.startswith(('#', '//', '*', '/*')):
@@ -56,10 +179,40 @@ def scan(root: Path, data: dict) -> list[dict]:
                     continue
                 if (sm.get('scope') == 'source') == is_test:
                     continue
-                if sm['rx'].search(line):
-                    out.append({'id': f'SM-{len(out) + 1}', 'smell': sm['id'], 'file': rel, 'line': i + 1,
-                                'excerpt': s[:160], 'cause': sm['cause'], 'message': sm['message'], 'fix': sm['fix'],
-                                'test': enclosing_test(lines, i) if is_test else None, 'in_test_file': is_test})
+                if not sm['rx'].search(line):
+                    continue
+                if sm['prev_rx'] is not None:
+                    prev = next((lines[k] for k in range(i - 1, -1, -1) if lines[k].strip()), '')
+                    if sm['prev_rx'].search(prev):
+                        continue
+                if sm['next_rx'] is not None:
+                    nxt = next((lines[k] for k in range(i + 1, len(lines)) if lines[k].strip()), '')
+                    if sm['next_rx'].search(nxt):
+                        continue
+                mitigation = None
+                if sm['mit_rx'] is not None:
+                    if sm['id'] not in local_mit:
+                        n = first_match(sm['mit_rx'], lines)
+                        local_mit[sm['id']] = f'{sm["mitigation"]} in this file (line {n})' if n else None
+                    mitigation = global_mit.get(sm['id']) or local_mit[sm['id']]
+                out.append({'id': f'SM-{len(out) + 1}', 'smell': sm['id'], 'file': rel, 'line': i + 1,
+                            'excerpt': s[:160], 'cause': sm['cause'], 'message': sm['message'], 'fix': sm['fix'],
+                            'test': enclosing_test(lines, i, lang in JS_LANGS) if is_test else None,
+                            'in_test_file': is_test, 'mitigation': mitigation})
+
+    # project checks: process.env.TZ assigned in a setup file that runs in worker threads
+    why = thread_pool(root, pools) if project else None
+    if why:
+        for sm in project:
+            rx = re.compile(sm['pattern'])
+            for rel in sorted(setups):
+                lines = read(root / rel) if (root / rel).is_file() else None
+                for i, line in enumerate(lines or []):
+                    if rx.search(line) and not line.strip().startswith(('//', '*', '/*')):
+                        out.append({'id': f'SM-{len(out) + 1}', 'smell': sm['id'], 'file': rel, 'line': i + 1,
+                                    'excerpt': line.strip()[:160], 'cause': sm['cause'],
+                                    'message': f"{sm['message']} ({why})", 'fix': sm['fix'], 'test': None,
+                                    'in_test_file': False, 'mitigation': None})
     return out
 
 
@@ -79,7 +232,9 @@ def main(argv=None) -> int:
     by: dict[str, int] = {}
     for h in hits:
         by[h['smell']] = by.get(h['smell'], 0) + 1
-    print(f"{len(hits)} smell(s): " + (', '.join(f'{v} {k}' for k, v in sorted(by.items())) or 'none'), file=sys.stderr)
+    mitigated = sum(1 for h in hits if h['mitigation'])
+    print(f"{len(hits)} smell(s): " + (', '.join(f'{v} {k}' for k, v in sorted(by.items())) or 'none')
+          + (f'; {mitigated} with a mitigation noted' if mitigated else ''), file=sys.stderr)
     return 0
 
 

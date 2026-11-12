@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "skill": {
     "name": "flaky-test-hunter",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "generated_at": "2026-11-11T11:00:00Z",
   "metadata": {
@@ -697,10 +697,10 @@
         "wilson_high": 1.0
       },
       "worst": {
-        "label": "repeat",
-        "runs": 20,
-        "fails": 20,
-        "wilson_low": 0.8389
+        "label": "pooled",
+        "runs": 31,
+        "fails": 31,
+        "wilson_low": 0.8897
       },
       "by_label": [
         {
@@ -1332,7 +1332,7 @@
       "masking": 2,
       "score": 24,
       "priority": "P0",
-      "priority_note": "4 (worst Wilson low 56.5%) x gate 3 x masking 2 = 24"
+      "priority_note": "4 (worst Wilson low 56.5%, 5/5 under cpu_load_20) x gate 3 x masking 2 = 24"
     },
     {
       "id": "FL-1",
@@ -1394,7 +1394,7 @@
       "masking": 1,
       "score": 12,
       "priority": "P1",
-      "priority_note": "4 (worst Wilson low 20.8%) x gate 3 x masking 1 = 12"
+      "priority_note": "4 (worst Wilson low 20.8%, 2/3 under order_shuffle) x gate 3 x masking 1 = 12"
     },
     {
       "id": "FL-2",
@@ -1444,7 +1444,7 @@
       "masking": 1,
       "score": 12,
       "priority": "P1",
-      "priority_note": "4 (worst Wilson low 83.9%) x gate 3 x masking 1 = 12"
+      "priority_note": "4 (worst Wilson low 83.9%, 20/20 under repeat) x gate 3 x masking 1 = 12"
     },
     {
       "id": "FL-3",
@@ -1493,7 +1493,7 @@
       "masking": 1,
       "score": 12,
       "priority": "P1",
-      "priority_note": "4 (worst Wilson low 83.9%) x gate 3 x masking 1 = 12"
+      "priority_note": "4 (worst Wilson low 83.9%, 20/20 under repeat) x gate 3 x masking 1 = 12"
     },
     {
       "id": "FL-5",
@@ -1546,7 +1546,7 @@
       "masking": 1,
       "score": 12,
       "priority": "P1",
-      "priority_note": "4 (worst Wilson low 23.1%) x gate 3 x masking 1 = 12"
+      "priority_note": "4 (worst Wilson low 23.1%, 3/5 under parallel_2) x gate 3 x masking 1 = 12"
     },
     {
       "id": "FL-6",
@@ -1598,7 +1598,7 @@
       "masking": 1,
       "score": 9,
       "priority": "P1",
-      "priority_note": "3 (worst Wilson low 11.8%) x gate 3 x masking 1 = 9"
+      "priority_note": "3 (worst Wilson low 11.8%, 2/5 under parallel_2) x gate 3 x masking 1 = 9"
     }
   ],
   "consistently_failing": [
@@ -1691,17 +1691,6 @@
       "smell_id": "SM-8",
       "smell": "fixed-port",
       "file": "tests/test_status_server.py",
-      "line": 11,
-      "test": "test_health_endpoint_answers",
-      "cause": "resource_contention",
-      "status": "linked_to_flake",
-      "flake_id": "FL-5",
-      "note": "Behind FL-5."
-    },
-    {
-      "smell_id": "SM-9",
-      "smell": "fixed-port",
-      "file": "tests/test_status_server.py",
       "line": 18,
       "test": "test_health_endpoint_status_code",
       "cause": "resource_contention",
@@ -1710,23 +1699,12 @@
       "note": "Behind FL-6."
     },
     {
-      "smell_id": "SM-10",
+      "smell_id": "SM-9",
       "smell": "fixed-sleep",
       "file": "tests/test_status_server.py",
       "line": 20,
       "test": "test_health_endpoint_status_code",
       "cause": "async_wait",
-      "status": "linked_to_flake",
-      "flake_id": "FL-6",
-      "note": "Behind FL-6."
-    },
-    {
-      "smell_id": "SM-11",
-      "smell": "fixed-port",
-      "file": "tests/test_status_server.py",
-      "line": 21,
-      "test": "test_health_endpoint_status_code",
-      "cause": "resource_contention",
       "status": "linked_to_flake",
       "flake_id": "FL-6",
       "note": "Behind FL-6."

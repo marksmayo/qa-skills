@@ -20,9 +20,12 @@ fails; skipped results are left out.
 Every rate is `fails/runs` with a 95% Wilson score interval (`scripts/stats.py`).
 
 - **Normal rate:** over the `baseline` and `repeat` labels, the configuration CI normally uses.
-- **Worst rate:** the label with the highest Wilson lower bound, leaving out `bisect` runs. A
-  flake that only shows under load or in another time zone still happens in real CI, so ranking
-  uses the worst rate.
+- **Worst rate:** the highest Wilson lower bound among the labels with at least 3 runs and the
+  pool of all runs (`pooled`), leaving out `bisect` runs. A flake that only shows under load or in
+  another time zone still happens in real CI, so ranking uses the worst rate. A label with fewer
+  than 3 runs can't set it on its own: 1/1 has a lower bound of 20.6%, which would rank one
+  failure in a single baseline run like 3 failures in 3 runs (43.8%). Its runs still count in the
+  pool. **(checked)**
 
 | Wilson lower bound of the worst rate | Rate factor |
 |---|---|
@@ -93,7 +96,13 @@ Examples:
 
 - Never a retry or rerun (`@pytest.mark.flaky`, `--reruns`, `retryTimes`, Playwright `retries`,
   `test-retry`, `@RepeatedTest`).
-- The diff names only test files, fixtures (`conftest.py`) or test config.
+- The diff names only test files, fixtures (`conftest.py`) or test config: `vitest.config.*`,
+  `vitest.workspace.*`, `jest.config.*`, `playwright.config.*`, `cypress.config.*`,
+  `karma.config.*`, `vitest.setup.*`, `jest.setup.*`, `setupTests.*`, `pytest.ini`, `.mocharc.*`,
+  and the pytest section of `pyproject.toml`, `setup.cfg` or `tox.ini` (every hunk must sit in
+  `[tool.pytest.ini_options]`, `[pytest]` or `[tool:pytest]`; pass `--repo` so the section can be
+  read). `vite.config.*` and `package.json` also configure the product build, so they are not
+  accepted.
 - An applied fix has at least the budget's number of verification runs, and its files are in
   `files_changed`. An unapplied fix has none.
 - A quarantine is a proposal (`applied: false`), with an owner and a ticket.
@@ -106,8 +115,10 @@ that tool recorded as ran **(checked)**. A `clock` variation that ran must name 
 the clock (`TDA_CLOCK_SHIFT`, `TDA_CLOCK_DATE` or `FAKETIME` in the run's environment)
 **(checked)**; record clock runs under `clock`, never `tz`.
 
-A smell links to a flake on the same test function, whichever parametrised case the flake names
-**(checked)**.
+A smell links to a flake on the same test, whichever parametrised case the flake names: same
+file, and the smell's test name equal to the flake's name or its trailing part (a Vitest/Jest
+smell names `Describe > title`; a bare title matches the last segment) **(checked)**. A smell
+with no test (a setup file, product code) may link to the flake it explains.
 
 ## Wording (checked)
 

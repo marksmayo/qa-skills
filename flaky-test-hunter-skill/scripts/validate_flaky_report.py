@@ -25,8 +25,17 @@ NORMAL_LABELS = ('baseline', 'repeat')
 NOT_WORST = ('bisect',)
 GATE = {'required': 3, 'ci': 2, 'local': 1}
 CLOCK_ENV = ('TDA_CLOCK_SHIFT', 'TDA_CLOCK_DATE', 'FAKETIME')
-TEST_PATH = re.compile(r'(^|/)tests?/|(^|/)test_[^/]+\.py$|_test\.(py|go)$|\.(test|spec)\.[jt]sx?$|(^|/)src/test/|'
-                       r'(^|/)__tests__/|(^|/)e2e/|(^|/)conftest\.py$|Test\.(java|kt)$')
+MIN_LABEL_RUNS = 3      # a label needs this many runs to set the worst rate on its own
+POOLED = 'pooled'       # the worst-rate candidate made of every non-bisect run
+TEST_PATH = re.compile(r'(^|/)tests?/|(^|/)test_[^/]+\.py$|_test\.(py|go)$|\.(test|spec)\.[cm]?[jt]sx?$|(^|/)src/test/|'
+                       r'(^|/)__tests__/|(^|/)e2e/|(^|/)conftest\.py$|Test\.(java|kt)$|'
+                       # test runner config and setup files (RUBRIC: fixes may touch test config)
+                       r'(^|/)(?:vitest|jest|playwright|cypress|karma)\.config\.[cm]?[jt]s$|'
+                       r'(^|/)vitest\.workspace\.[cm]?[jt]s$|(^|/)(?:vitest|jest)\.setup\.[cm]?[jt]sx?$|'
+                       r'(^|/)setupTests\.[jt]sx?$|(^|/)pytest\.ini$|(^|/)\.mocharc\.[a-z]+$')
+# shared config files: a fix may touch only their test-runner section
+SECTION_FILES = re.compile(r'(^|/)(?:pyproject\.toml|setup\.cfg|tox\.ini)$')
+TEST_SECTION = re.compile(r'^\[(?:tool\.pytest\.ini_options|pytest|tool:pytest)\]\s*$')
 RETRY = re.compile(r'@pytest\.mark\.flaky|\bflaky\b\s*\(|rerunfailures|--reruns|\breruns\s*=|retryTimes|'
                    r'\bretries\s*[:=]\s*[1-9]|test-retry|@Retry|@RepeatedTest|rerunFailingTestsCount|--retry', re.I)
 BANNED = re.compile(r'\bnot flaky\b|\bflake[- ]free\b|\bno flaky tests\b|\b(suite|tests?) (is|are) (now )?(stable|reliable|'
@@ -113,10 +122,17 @@ def test_stats(tid: str, obs: list, file: str | None) -> dict:
         by[label][0] += 1
         by[label][1] += o == 'fail'
     normal = [o for _, label, o in obs if label in NORMAL_LABELS]
+    # Worst rate: the label with the highest Wilson lower bound, among labels with at least
+    # MIN_LABEL_RUNS runs, and the pool of every non-bisect run. A 1/1 label (lower bound 20.6%)
+    # cannot rank a flake like 3/3 (43.8%); its runs still count in the pool.
+    cands = [(label, n, k) for label, (n, k) in sorted(by.items())
+             if label not in NOT_WORST and k and n >= MIN_LABEL_RUNS]
+    pn = sum(n for label, (n, _) in by.items() if label not in NOT_WORST)
+    pk = sum(k for label, (_, k) in by.items() if label not in NOT_WORST)
+    if pk:
+        cands.append((POOLED, pn, pk))
     worst = {'label': None, 'runs': 0, 'fails': 0, 'wilson_low': 0.0}
-    for label, (n, k) in by.items():
-        if label in NOT_WORST or not k:
-            continue
+    for label, n, k in cands:
         low = stats.wilson(k, n)[0]
         if low > worst['wilson_low'] or worst['label'] is None:
             worst = {'label': label, 'runs': n, 'fails': k, 'wilson_low': low}
@@ -147,7 +163,11 @@ def score_flake(f: dict, t: dict | None, meta: dict) -> dict:
     if f.get('history_only') and order.index(pr) < 2:
         pr = 'P2'
         notes.append('capped at P2: seen in CI history only, never reproduced here')
-    note = f'{rf} (worst Wilson low {100 * worst_low:.1f}%) x gate {gate} x masking {masking} = {score}'
+    where = ''
+    if t and t['worst']['label']:
+        w = t['worst']
+        where = f", {w['fails']}/{w['runs']} {'over all runs' if w['label'] == POOLED else 'under ' + w['label']}"
+    note = f'{rf} (worst Wilson low {100 * worst_low:.1f}%{where}) x gate {gate} x masking {masking} = {score}'
     return {'rate_factor': rf, 'gate': gate, 'masking': masking, 'score': score, 'priority': pr,
             'priority_note': note + ('; ' + '; '.join(notes) if notes else '')}
 
@@ -210,8 +230,61 @@ def base_test_id(test_id: str) -> str:
     return re.sub(r'\[.*\]$', '', test_id)
 
 
+def same_file(flake_file: str | None, flake_id: str, smell_file: str) -> bool:
+    """The flake's test file is the smell's file. Pytest ids name a dotted module, JUnit from
+    Vitest/Jest the file path; when neither says, the name match alone decides."""
+    smell_file = smell_file.replace('\\', '/')
+    cands = [flake_file.replace('\\', '/')] if flake_file else []
+    head = flake_id.split('::')[0]
+    cands.append(head.replace('\\', '/'))
+    if '/' not in head and '.' in head and not re.search(r'\.[cm]?[jt]sx?$', head):
+        cands.append(head.replace('.', '/') + '.py')
+    known = [c for c in cands if '/' in c or re.search(r'\.\w+$', c)]
+    if not known:
+        return True
+    return any(c == smell_file or c.endswith('/' + smell_file) or smell_file.endswith('/' + c) for c in known)
+
+
+def smell_in_test(flake_id: str, flake_file: str | None, smell: dict) -> bool:
+    """A smell sits in the flake's test: same file, and the smell's test name is the flake's name,
+    or its trailing part. Pytest: tests.test_x::test_y[case] matches test_y. Vitest/Jest name tests
+    'Describe > Inner > title'; the scanner records that chain, and a bare title still matches the
+    last segment."""
+    base = base_test_id(flake_id)
+    name = base.split('::', 1)[1] if '::' in base else base
+    want = base_test_id(smell['test'])
+    names_match = (name == want or base.endswith('::' + want) or name.endswith(' > ' + want))
+    return names_match and same_file(flake_file, flake_id, smell['file'])
+
+
 def diff_paths(diff: str) -> list[str]:
     return [m.group(1).strip() for m in re.finditer(r'^\+\+\+ (?:b/)?(\S+)', diff, re.M) if m.group(1) != '/dev/null']
+
+
+def section_problem(diff: str, path: str, repo: Path | None) -> str | None:
+    """For pyproject.toml / setup.cfg / tox.ini: every hunk must sit in the test runner's section."""
+    blocks = [b for b in re.split(r'(?m)^(?=--- )', diff) if re.search(r'(?m)^\+\+\+ (?:b/)?' + re.escape(path) + r'\s*$', b)]
+    file_lines = None
+    if repo is not None and (repo / path).is_file():
+        file_lines = (repo / path).read_text(encoding='utf-8').splitlines()
+    for block in blocks:
+        for h in re.finditer(r'(?m)^@@ -(\d+)(?:,\d+)? \+\d+(?:,\d+)? @@.*\n((?:[ +\-\\].*(?:\n|$))*)', block):
+            section = None
+            if file_lines is not None:
+                for line in reversed(file_lines[:max(int(h.group(1)) - 1, 0)]):
+                    if re.match(r'^\[.*\]\s*$', line):
+                        section = line.strip()
+                        break
+            for line in h.group(2).split('\n'):
+                if not line or line[0] == '\\':
+                    continue
+                if re.match(r'^\[.*\]\s*$', line[1:]) and line[0] in ' +':
+                    section = line[1:].strip()
+                if line[0] in '+-' and not (section and TEST_SECTION.match(section)):
+                    if section is None and file_lines is None:
+                        return f'{path}: cannot tell which section the hunk at line {h.group(1)} edits (pass --repo)'
+                    return f'{path}: the hunk at line {h.group(1)} edits {section or "the top of the file"}, not the test runner section'
+    return None
 
 
 def apply_diff(repo: Path, diff: str) -> str | None:
@@ -283,8 +356,12 @@ def check(d: dict, runs_data: dict | None, smells: dict | None, bisect: dict | N
         if RETRY.search(f['fix']['diff']) or RETRY.search(f['fix']['rationale']):
             errs.append(f'{at}: a retry or rerun is proposed as the fix; it hides the flake instead of removing the cause')
         for p in diff_paths(f['fix']['diff']):
-            if not TEST_PATH.search(p):
-                errs.append(f'{at}: the fix edits {p}, which is not test code; product code is never changed')
+            if SECTION_FILES.search(p):
+                problem = section_problem(f['fix']['diff'], p, repo)
+                if problem:
+                    errs.append(f'{at}: the fix edits {problem}; only test runner config may change')
+            elif not TEST_PATH.search(p):
+                errs.append(f'{at}: the fix edits {p}, which is not test code or test config; product code is never changed')
         if not diff_paths(f['fix']['diff']):
             errs.append(f'{at}: the fix diff names no file (+++ b/<path>)')
         elif repo is not None and not f['fix']['applied']:
@@ -311,8 +388,10 @@ def check(d: dict, runs_data: dict | None, smells: dict | None, bisect: dict | N
         if s['status'] == 'linked_to_flake':
             if s['flake_id'] not in flake_ids:
                 errs.append(f"smell {s['smell_id']}: linked to unknown flake {s['flake_id']}")
-            elif s['test'] and not base_test_id(flake_ids[s['flake_id']]['test_id']).endswith('::' + base_test_id(s['test'])):
-                errs.append(f"smell {s['smell_id']} is in {s['test']} but linked to {flake_ids[s['flake_id']]['test_id']}")
+            elif s['test']:
+                fid = flake_ids[s['flake_id']]['test_id']
+                if not smell_in_test(fid, (tests.get(fid) or {}).get('file'), s):
+                    errs.append(f"smell {s['smell_id']} is in {s['file']} :: {s['test']} but linked to {fid}")
         elif s['flake_id'] is not None:
             errs.append(f"smell {s['smell_id']} is {s['status']} but names a flake")
     if smells is not None:

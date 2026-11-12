@@ -3,11 +3,15 @@
 
     python render_report.py flaky_report.json [--color auto|always|never] [--brief]
 
---brief prints the headline, the ranked flakes and the per-test table without fixes or smells.
+--brief prints the headline, the ranked flakes and only the flaky and consistently failing tests
+(the rest as one line with their run counts), without fixes or smells.
 """
 from __future__ import annotations
 import argparse, json, os, sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import stats  # noqa: E402
 
 RESET = "\033[0m"; BOLD = "\033[1m"; DIM = "\033[2m"
 RED = "\033[31m"; GREEN = "\033[32m"; YELLOW = "\033[33m"; MAGENTA = "\033[35m"; CYAN = "\033[36m"
@@ -111,12 +115,28 @@ def main() -> int:
             w('')
     w(P('## Tests', BOLD))
     w('')
-    w('| Test | Status | Normal runs | Worst | Runs |')
-    w('|---|---|---|---|---|')
-    for t in d['tests']:
+    shown = [t for t in d['tests'] if not args.brief or t['status'] in ('flaky', 'consistently_failing')]
+    if shown:
+        w('| Test | Status | Normal runs | Worst | Runs |')
+        w('|---|---|---|---|---|')
+    for t in shown:
         worst = f"{t['worst']['label']}: {t['worst']['fails']}/{t['worst']['runs']}" if t['worst']['label'] else '-'
         w(f"| {t['id']} | {P(t['status'].replace('_', ' '), STATUS_STYLE[t['status']])} | {rate_text(t['normal'])} | "
           f"{worst} | {t['runs']} |")
+    if args.brief:
+        quiet = [t for t in d['tests'] if t['status'] == 'not_observed_flaky']
+        if quiet:
+            by_runs: dict[int, int] = {}
+            for t in quiet:
+                by_runs[t['runs']] = by_runs.get(t['runs'], 0) + 1
+            fewest = min(by_runs)
+            groups = ', '.join(f'{n} with {r} run{"s" if r != 1 else ""}' for r, n in sorted(by_runs.items(), reverse=True)[:6])
+            w('')
+            w(f"{len(quiet)} other tests were not observed flaky ({groups}{', ...' if len(by_runs) > 6 else ''}). "
+              f"0/{fewest} has a 95% upper bound of {pct(stats.wilson(0, fewest)[1])}, so a test with "
+              f"{fewest} run(s) could still fail that often; the full report (without --brief) lists every test.")
+        if s['not_run']:
+            w(f"{s['not_run']} test(s) were not run on this code.")
     w('')
     if d['consistently_failing']:
         w(P('## Consistently failing (not flaky)', BOLD))

@@ -289,3 +289,34 @@ Agreed with the user before the build.
     `TDA_CLOCK_SHIFT`, `TDA_CLOCK_DATE` or `FAKETIME`. The shared runner is unchanged: the clock
     is moved through `--env`. Tested with real runs on a copy of the example; the example itself
     has no clock variation.
+- **Found on a real Next.js/TypeScript repository with Vitest (v1.1.0)** (about 3,700 tests,
+  pool `threads`, 19 workers):
+  - **Fix paths.** The real fix for a time-zone flake was a line in `vitest.config.js`, which the
+    validator rejected as product code. Test runner config (`vitest.config.*`, `jest.config.*`,
+    `playwright.config.*`, setup files, `pytest.ini`, and the pytest section of `pyproject.toml`,
+    `setup.cfg` or `tox.ini`, checked hunk by hunk against the file's sections) is now accepted.
+  - **Smells in Vitest tests.** The scanner recorded only the `it()` title, while Vitest ids are
+    `file::Describe > Inner > title`, so smells in confirmed flakes could not be linked. The
+    scanner now records the describe chain (by indentation), and the validator matches the file
+    and the name (equal, or a trailing ` > ` part).
+  - **Ranking.** The worst rate came from any label, so one failure in a single `baseline` run
+    (1/1, lower bound 20.6%) gave rate factor 4, the same as 3/3. A label now needs 3 runs to set
+    the worst rate; the pool of all non-bisect runs (`pooled`) is the other candidate. On that
+    repository 13 one-run flakes dropped from 4 to 1-3, and the 3/3 time-zone flakes stayed at 4.
+    The example's flakes are unchanged; its consistently failing test now shows `pooled` 31/31.
+  - **`--brief`** printed every test (3,760 lines); it now lists the flaky and consistently
+    failing tests and summarises the rest in one line (113 lines there).
+  - **False smells.** `fixed-port` matched every `localhost:NNNN` string (209 hits, all URLs and
+    connection strings); it now needs a bind or listen call. `test.setTimeout(...)` no longer
+    counts as a sleep. `missing-await` skips a locator argument inside a multi-line
+    `await expect(`. Smells whose risk the file or a setup file handles (Math.random stubbed,
+    fake timers) carry a `mitigation`. `data/pitfalls.json` is 1.2.0; the example lost its two
+    URL `fixed-port` hits and was regenerated.
+  - **`tz-in-thread-setup`**, a new project smell: `process.env.TZ` assigned in a Vitest setup
+    file while tests run in worker threads, where it does not change the zone. It was the root
+    cause of the repository's eight time-zone flakes.
+  - **Speed.** The scan walked `node_modules` before filtering (2 min 13 s); it now prunes
+    before descending (2 s).
+  - SKILL.md has Vitest notes (pools, isolation, shuffle, ids, timeouts under load), the Node
+    clock preload `plugins/clock_shift.mjs` (shared), IANA time zones, and keeping suspect-only
+    repeats apart from full-suite repeats.

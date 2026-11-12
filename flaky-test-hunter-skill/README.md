@@ -59,7 +59,13 @@ python scripts/render_report.py flaky_report.json [--brief]
 ```
 
 `run_tests.py` has presets for pytest, Jest, Vitest, Playwright and gotestsum, and a `custom`
-preset with `{junit}` and `{tests}` placeholders for anything that writes JUnit XML.
+preset with `{junit}` and `{tests}` placeholders for anything that writes JUnit XML. For Vitest
+and Jest, pass the repo's own test command and environment (`--cmd`, `--env TZ=...`) when its
+`npm test` script adds them; SKILL.md has notes on pools, isolation, shuffling and timeouts.
+
+The worst rate that ranks a flake comes from a label with at least 3 runs, or from all runs
+pooled, so one failure in a single run cannot rank like 3 failures in 3. `render_report.py --brief`
+lists only the flaky and consistently failing tests.
 
 | Priority | Score = rate factor × gate × masking |
 |---|---|
@@ -111,6 +117,7 @@ python scripts/render_report.py examples/flaky_report.example.json --brief
 - `scripts/parse_results.py`, `scripts/detect_conventions.py`: JUnit parsing and convention detection (shared)
 - `scripts/scan_pitfalls.py`: static smells
 - `plugins/clock_shift.py`: a pytest plugin that moves the clock for the `clock` variation (the same file as test-data-auditor's)
+- `plugins/clock_shift.mjs`: the same for Node (Vitest, Jest), loaded with `NODE_OPTIONS=--import=<file URL>` (shared)
 - `scripts/bisect_polluter.py`: finds the test that pollutes an order-dependent victim
 - `scripts/validate_flaky_report.py`: recomputes counts from the runs and checks the honesty rules
 - `scripts/render_report.py`: coloured terminal/Markdown report
