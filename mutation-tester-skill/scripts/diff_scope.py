@@ -11,11 +11,16 @@ untracked files included) with rename detection; --committed-only diffs <merge b
 Every file gets a status (added, modified, deleted, renamed), a kind (source, test, generated,
 migration, vendored, types, config, docs, binary, other) with the reason, its added and
 modified lines as ranges of the new file, the points where lines were deleted, and the
-functions those lines fall in. Python functions come from `ast`; other languages use a
-brace/indent heuristic, and each file records which method was used.
+functions those lines fall in. Python functions come from `ast`; JavaScript and TypeScript use
+a scanner that blanks strings, comments and regex literals and skips (multi-line, typed)
+parameter lists and return types before looking for the body, so declarations, exported
+async functions, arrow functions and function expressions assigned to variables or
+properties, and class and object methods are found, while calls such as `new Error(...)` are
+not. Other languages use a brace/indent heuristic. Each file records which method was used
+(`heuristic` for both scanners); `functions(path, text)` picks the method for a file.
 """
 from __future__ import annotations
-import argparse, ast, json, re, subprocess, sys
+import argparse, ast, bisect, json, re, subprocess, sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -39,10 +44,31 @@ FUNC_START = [
     re.compile(r'^\s*func\s+(?:\([^)]*\)\s*)?([A-Za-z_]\w*)\s*\('),
     re.compile(r'^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+([A-Za-z_]\w*)'),
     re.compile(r'^\s*(?:(?:public|private|protected|internal|static|final|override|open|suspend|async|virtual|abstract)\s+)*'
-               r'(?:fun\s+)?(?:[\w<>\[\],.?]+\s+)?([A-Za-z_]\w*)\s*\([^;]*\)\s*(?::\s*[\w<>\[\],.? ]+)?\s*(?:throws [\w., ]+)?\{?\s*$'),
+               r'(?:fun\s+)?(?!(?:new|return|throw|await|yield|typeof|void|delete|case|else|in|of|instanceof)\s)'
+               r'(?:[\w<>\[\],.?]+\s+)?([A-Za-z_]\w*)\s*\([^;]*\)\s*(?::\s*[\w<>\[\],.? ]+)?\s*(?:throws [\w., ]+)?\{?\s*$'),
     re.compile(r'^\s*def\s+([A-Za-z_]\w*[?!]?)'),
 ]
-NOT_FUNCS = {'if', 'for', 'while', 'switch', 'catch', 'return', 'else', 'with', 'elif', 'when', 'match'}
+NOT_FUNCS = {'if', 'for', 'while', 'switch', 'catch', 'return', 'else', 'with', 'elif', 'when', 'match', 'new', 'throw',
+             'typeof', 'await', 'yield', 'super', 'this', 'function', 'do', 'try', 'finally', 'import', 'require'}
+JS_EXT = ('.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.mts', '.cts', '.vue', '.svelte')
+_ID = r'[A-Za-z_$][\w$]*'
+JS_STARTS = [
+    # function declarations and expressions: [export] [default] [async] function [*] name<T>(
+    re.compile(rf'^\s*(?:export\s+)?(?:default\s+)?(?:declare\s+)?(?:async\s+)?function\s*\*?\s*({_ID})\s*(?:<[^(]*>)?\s*\('),
+    # const name = [async] (...) => / x => / function (...) / <T>(...) =>, with an optional type annotation
+    re.compile(rf'^\s*(?:export\s+)?(?:const|let|var)\s+({_ID})\s*(?::[^=]+)?=\s*(?:async\s+)?'
+               rf'(?:function\b\s*\*?\s*(?:{_ID})?\s*(?:<[^(]*>)?\s*\(|<[^(=]*>\s*\(|\(|{_ID}\s*=>)'),
+    # class and object methods: [modifiers] name<T>( ; the body check below rejects plain calls
+    re.compile(rf'^\s*(?:(?:public|private|protected|static|readonly|async|override|abstract|get|set|declare)\s+)*'
+               rf'\*?\s*(#?{_ID})\s*(?:<[^(]*>)?\s*\('),
+    # object properties holding functions: name: [async] function ( / name: [async] (...) =>
+    re.compile(rf'^\s*({_ID})\s*:\s*(?:async\s+)?(?:function\b\s*\*?\s*(?:{_ID})?\s*\(|\(|{_ID}\s*=>)'),
+]
+TS_TYPE_BODY = re.compile(r'(?:void|string|number|boolean|any|unknown|never|undefined|null|object|bigint|symbol)(?:\[\])*'
+                          r'|[A-Z][\w$.]*\s*<.*>(?:\[\])*', re.S)
+JS_NOT_FUNCS = NOT_FUNCS | {'describe', 'it', 'test', 'expect', 'beforeEach', 'afterEach', 'beforeAll', 'afterAll',
+                            'case', 'default', 'delete', 'void', 'in', 'of', 'instanceof', 'let', 'const', 'var',
+                            'export', 'async', 'static'}
 
 
 def git(repo: Path, *args: str) -> str:
@@ -245,14 +271,188 @@ def heuristic_functions(text: str) -> list[dict]:
     return out
 
 
+def js_blank(text: str) -> str:
+    """The text with comments, strings, template literals and regex literals replaced by spaces (newlines kept), so
+    brackets can be counted. Approximate: a / after an operator or opening bracket starts a regex."""
+    out, i, n = list(text), 0, len(text)
+    last = ''   # last significant code character
+    while i < n:
+        c = text[i]
+        nxt = text[i + 1] if i + 1 < n else ''
+        if c == '/' and nxt == '/':
+            j = text.find('\n', i)
+            j = n if j < 0 else j
+        elif c == '/' and nxt == '*':
+            j = text.find('*/', i + 2)
+            j = n if j < 0 else j + 2
+        elif c in '"\'`':
+            j = i + 1
+            while j < n and text[j] != c:
+                if text[j] == '\\':
+                    j += 1
+                elif text[j] == '\n' and c != '`':
+                    break
+                j += 1
+            j = min(j + 1, n)
+        elif c == '/' and (last == '' or last in '(,=:[!&|?{};+-*%<>~^'):
+            j, in_class = i + 1, False
+            while j < n and text[j] != '\n':
+                if text[j] == '\\':
+                    j += 1
+                elif text[j] == '[':
+                    in_class = True
+                elif text[j] == ']':
+                    in_class = False
+                elif text[j] == '/' and not in_class:
+                    break
+                j += 1
+            j = min(j + 1, n)
+        else:
+            if not c.isspace():
+                last = c
+            i += 1
+            continue
+        for k in range(i, j):
+            if out[k] != '\n':
+                out[k] = ' '
+        last = 'x'   # a literal ends like an operand
+        i = j
+    return ''.join(out)
+
+
+def js_body(code: str, pos: int) -> tuple[int, int] | None:
+    """Given the offset of a parameter list's '(' (or of a lone arrow parameter), return (body start, body end)
+    offsets, or None when what follows is not a function body (a call, a signature without a body)."""
+    n = len(code)
+    if code[pos] == '(':
+        depth, i = 0, pos
+        while i < n:
+            if code[i] in '([{':
+                depth += 1
+            elif code[i] in ')]}':
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        if i >= n:
+            return None
+        i += 1
+    else:   # x => ...
+        m = re.compile(r'[A-Za-z_$][\w$]*').match(code, pos)
+        if not m:
+            return None
+        i = m.end()
+    # optional return type annotation, then an optional arrow, then the body
+    j = i
+    while j < n and code[j].isspace():
+        j += 1
+    if j < n and code[j] == ':':
+        j += 1
+        depth, prev = 0, ':'
+        while j < n:
+            c = code[j]
+            if depth == 0 and c == '{' and prev not in ':|&<,(=?[':
+                break                                   # a '{' after a complete type is the body
+            if depth == 0 and code.startswith('=>', j):
+                break
+            if depth == 0 and c in ';)':
+                return None
+            if c in '([{<':
+                depth += 1
+            elif c in ')]}>' and not (c == '>' and j and code[j - 1] == '='):
+                depth -= 1
+            if not c.isspace():
+                prev = c
+            j += 1
+    while j < n and code[j].isspace():
+        j += 1
+    arrow = code.startswith('=>', j)
+    if arrow:
+        j += 2
+        while j < n and code[j].isspace():
+            j += 1
+    if j < n and code[j] == '{':
+        depth, k = 0, j
+        while k < n:
+            if code[k] == '{':
+                depth += 1
+            elif code[k] == '}':
+                depth -= 1
+                if depth == 0:
+                    return j, k
+            k += 1
+        return j, n - 1
+    if not arrow or j >= n:
+        return None
+    depth, k = 0, j   # expression body: ends at ; or , or a closing bracket at depth 0, or a line break at depth 0
+    while k < n:
+        c = code[k]
+        if c in '([{':
+            depth += 1
+        elif c in ')]}':
+            if depth == 0:
+                return j, k - 1
+            depth -= 1
+        elif depth == 0 and c in ';,':
+            return j, k
+        elif depth == 0 and c == '\n':
+            rest = code[k:].lstrip()
+            if not rest or rest[0] not in '.?:+-*/&|=<>':
+                return j, k - 1
+        k += 1
+    return j, n - 1
+
+
+def js_functions(text: str) -> list[dict]:
+    """Functions in JavaScript/TypeScript: declarations, arrow functions and function expressions assigned to
+    variables or properties, class and object methods. Multi-line parameter lists, typed parameters (object type
+    literals included) and return types are skipped before the body brace is looked for."""
+    code = js_blank(text)
+    starts, off = [], 0
+    for line in code.split('\n'):
+        starts.append(off)
+        off += len(line) + 1
+    out = []
+    for idx, line in enumerate(code.split('\n')):
+        for rx in JS_STARTS:
+            m = rx.match(line)
+            if not m or m.group(1) in JS_NOT_FUNCS:
+                continue
+            if line[m.end() - 1] == '(':
+                pos = starts[idx] + m.end() - 1
+            else:   # x => ...: the parameter is the identifier before =>
+                am = re.search(r'([A-Za-z_$][\w$]*)\s*=>\s*$', line[:m.end()])
+                if not am:
+                    continue
+                pos = starts[idx] + am.start(1)
+            body = js_body(code, pos)
+            if body is None:
+                continue
+            if code[body[0]] != '{' and TS_TYPE_BODY.fullmatch(code[body[0]:body[1] + 1].strip().rstrip(',;')):
+                continue   # `cb: (err: Error) => void` is a function type in a signature, not a function
+            end = bisect.bisect_right(starts, body[1])
+            out.append({'name': m.group(1), 'qualname': m.group(1), 'start': idx + 1, 'end': max(end, idx + 1)})
+            break
+    return out
+
+
+def functions(path: str, text: str) -> tuple[list[dict], str]:
+    """(functions, method) for a file: Python's ast, else a JavaScript/TypeScript scanner, else the brace/indent
+    heuristic. Use this rather than calling the parsers directly, so every language gets its best method."""
+    if path.endswith('.py'):
+        funcs = py_functions(text)
+        if funcs is not None:
+            return funcs, 'ast'
+    if path.lower().endswith(JS_EXT):
+        return js_functions(text), 'heuristic'
+    return heuristic_functions(text), 'heuristic'
+
+
 def attach_functions(entry: dict, text: str | None) -> None:
     entry['functions'], entry['function_method'] = [], 'none'
     if text is None or entry['status'] == 'deleted' or entry['kind'] in ('binary', 'docs', 'config'):
         return
-    funcs = py_functions(text) if entry['path'].endswith('.py') else None
-    entry['function_method'] = 'ast' if funcs is not None else 'heuristic'
-    if funcs is None:
-        funcs = heuristic_functions(text)
+    funcs, entry['function_method'] = functions(entry['path'], text)
     changed = [n for a, b in entry['ranges'] for n in range(a, b + 1)]
     for f in funcs:
         inner = [g for g in funcs if g is not f and f['start'] <= g['start'] and g['end'] <= f['end']]
