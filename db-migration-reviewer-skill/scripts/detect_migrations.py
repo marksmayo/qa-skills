@@ -4,7 +4,10 @@
     python detect_migrations.py --repo examples/ledger --out run/migrations.json [--since 0002] [--engine postgresql --engine-version 16]
 
 Tools: Alembic (Python AST of upgrade() and downgrade(): op.* calls become the SQL they run, op.execute SQL
-is split), Django (the operations list: AddField, RemoveField, RenameField, AlterField, AddIndex, RunSQL,
+is split; calls to the migration's own helper functions are followed and f-strings built from literal
+arguments resolved; op.get_bind()/conn.execute data steps, SQLAlchemy Core statements, functions imported
+from the application and files read at run time are listed under not_analysed; each script location with
+its own env.py and versions/ is a chain, and a repository with several needs --chain <dir>), Django (the operations list: AddField, RemoveField, RenameField, AlterField, AddIndex, RunSQL,
 RunPython), Knex (the schema builder, knex.raw SQL and knex('table') deletes and updates in up and down, by
 source pattern; anything else is listed as not analysed), and SQL files (Flyway V__/U__, Prisma migration.sql,
 any other .sql). Rails and Liquibase are listed as not parsed in this version.
@@ -17,8 +20,9 @@ Archived history: migration files under a folder that looks archived or squashed
 old) are left out of the chain and listed under "excluded"; --include-archived keeps them, --exclude-dir adds
 more. Archived SQL still feeds the column type history.
 
-Engine and version: --engine/--engine-version, else settings URLs (postgresql://, mysql://), infrastructure
-(CloudFormation or Terraform Engine and EngineVersion), and docker-compose or Dockerfile image tags (postgres:16.4,
+Engine and version: --engine/--engine-version (--engine-source records where it came from), else settings
+URLs (postgresql://, mysql://), infrastructure (CloudFormation or Terraform Engine and EngineVersion, Azure
+Bicep or ARM flexibleServers version, also in --infra folders outside the repo), and docker-compose or Dockerfile image tags (postgres:16.4,
 also behind a registry prefix). Without a version, the oldest the repository claims is assumed; a version
 taken only from docker-compose, a Dockerfile or CI is a development source and is also marked assumed.
 
@@ -124,14 +128,168 @@ def alembic_op(call: ast.Call) -> list[str]:
         return [f'DROP INDEX {lit(a[0])}']
     if name == 'create_foreign_key':
         return [f'ALTER TABLE {lit(a[1])} ADD CONSTRAINT {lit(a[0])} FOREIGN KEY ({", ".join(lit(a[3]) or [])}) REFERENCES {lit(a[2])} ({", ".join(lit(a[4]) or []) if len(a) > 4 else ""})']
+    if name == 'drop_constraint' and len(a) > 1:
+        return [f'ALTER TABLE {lit(a[1])} DROP CONSTRAINT {name_of(a[0])}']
+    if name == 'create_check_constraint' and len(a) > 2:
+        cond = lit(a[2])
+        return [f'ALTER TABLE {lit(a[1])} ADD CONSTRAINT {name_of(a[0])} CHECK ({cond if isinstance(cond, str) else "?"})']
+    if name == 'create_unique_constraint' and len(a) > 2:
+        return [f'ALTER TABLE {lit(a[1])} ADD CONSTRAINT {name_of(a[0])} UNIQUE ({", ".join(lit(a[2]) or [])})']
+    if name == 'create_primary_key' and len(a) > 2:
+        return [f'ALTER TABLE {lit(a[1])} ADD CONSTRAINT {name_of(a[0])} PRIMARY KEY ({", ".join(lit(a[2]) or [])})']
     return []
 
 
+def name_of(node) -> str:
+    """A constraint or index name: a literal, or op.f('name')."""
+    if isinstance(node, ast.Call) and src(node.func).endswith('.f') and node.args:
+        node = node.args[0]
+    v = lit(node)
+    return v if isinstance(v, str) else '?'
+
+
+# op.* calls that run no SQL themselves (or are handled elsewhere)
+OP_NO_SQL = {'f', 'get_context', 'get_bind', 'inline_literal', 'implementation_for', 'invoke'}
+# modules whose functions a migration calls without running SQL of its own
+SAFE_MODULES = re.compile(r'^(alembic|sqlalchemy|typing|datetime|decimal|uuid|enum|re|json|os|pathlib|logging|collections|functools|itertools|__future__)(\.|$)')
+FILE_READ = re.compile(r'(^|\.)(open|read_text|read_bytes|glob|rglob|iglob|iterdir|listdir|scandir|walk|safe_load|load|loadtxt|read_csv)$')
+PATHISH = re.compile(r'^[\w.\-*/\\{}]+\.(ya?ml|json|csv|sql|txt|toml|ini|xml|tsv|xlsx?)$|^[\w.\-]+(/[\w.\-*{}]+)+/?$', re.I)
+
+
+def value_of(node, env: dict):
+    """A string (or tuple of strings) an expression evaluates to with the names in env: literals, names, f-strings
+    whose parts are known, + of strings and tuples; None when any part is unknown."""
+    if isinstance(node, ast.Constant):
+        return node.value if isinstance(node.value, str) else None
+    if isinstance(node, ast.Name):
+        return env.get(node.id)
+    if isinstance(node, ast.JoinedStr):
+        out = []
+        for part in node.values:
+            if isinstance(part, ast.Constant):
+                out.append(str(part.value))
+            elif isinstance(part, ast.FormattedValue) and part.format_spec is None and part.conversion in (-1, 115):
+                v = value_of(part.value, env)
+                if not isinstance(v, str):
+                    return None
+                out.append(v)
+            else:
+                return None
+        return ''.join(out)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        x, y = value_of(node.left, env), value_of(node.right, env)
+        return x + y if isinstance(x, str) and isinstance(y, str) else None
+    if isinstance(node, ast.Tuple):
+        vals = [value_of(e, env) for e in node.elts]
+        return tuple(vals) if all(isinstance(v, str) for v in vals) else None
+    return None
+
+
+def bind_call(fn: ast.FunctionDef, call: ast.Call, env: dict, module_env: dict) -> dict:
+    """The names a helper sees when called with literal arguments: its parameters, then simple assignments at the top
+    of its body (old, new = pair). Anything not literal stays unknown, so its SQL is listed as not analysed."""
+    out = dict(module_env)
+    params = [x.arg for x in fn.args.args]
+    for i, arg in enumerate(call.args[:len(params)]):
+        out[params[i]] = value_of(arg, env)
+    for k in call.keywords:
+        if k.arg:
+            out[k.arg] = value_of(k.value, env)
+    for st in fn.body:
+        if isinstance(st, ast.Assign) and len(st.targets) == 1:
+            v, t = value_of(st.value, out), st.targets[0]
+            if isinstance(t, ast.Name):
+                out[t.id] = v
+            elif isinstance(t, ast.Tuple) and isinstance(v, tuple) and len(v) == len(t.elts):
+                for e, x in zip(t.elts, v):
+                    if isinstance(e, ast.Name):
+                        out[e.id] = x
+    return out
+
+
+def sql_literal(node, env: dict | None = None):
+    """The SQL string of op.execute / connection.execute arguments: a literal, text('...') / sa.text('...'), or an
+    f-string whose values are known (a helper called with literal arguments)."""
+    if isinstance(node, ast.Call) and src(node.func).split('.')[-1] == 'text' and node.args:
+        node = node.args[0]
+    v = value_of(node, env or {})
+    return v if isinstance(v, str) else None
+
+
 def parse_alembic(path: Path) -> dict:
+    """op.* calls in upgrade() and downgrade(), following calls to the module's own helper functions; data steps
+    through the connection, SQLAlchemy Core statements, functions imported from other modules and files read at
+    run time are listed as not analysed (never guessed at)."""
     tree = ast.parse(path.read_text(encoding='utf-8'))
     mod = {n.targets[0].id: lit(n.value) for n in tree.body if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Name)}
+    funcs = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
+    imported = {}
+    for n in tree.body:
+        if isinstance(n, ast.ImportFrom) and n.module and not SAFE_MODULES.match(n.module):
+            for al in n.names:
+                imported[al.asname or al.name] = n.module
     rec = {'revision': mod.get('revision'), 'down_revision': mod.get('down_revision'), 'up': [], 'down': [], 'transactional': True,
-           'not_analysed': [], 'down_state': 'missing'}
+           'not_analysed': [], 'down_state': 'missing', 'reads_files': []}
+    noted: set = set()
+    followed: set = set()
+
+    def note(line: int, what: str, key: str):
+        if (line, key) not in noted:  # one entry per line: conn.execute(sa.insert(t)) is one data step
+            noted.add((line, key))
+            rec['not_analysed'].append({'line': line, 'what': what, 'direction': key})
+
+    module_env = {k: v for k, v in mod.items() if isinstance(v, (str, tuple))}
+
+    def visit(fn: ast.FunctionDef, key: str, chain: tuple[str, ...], env: dict):
+        via_sfx = f' (in {chain[-1]}(), called from {"upgrade" if key == "up" else "downgrade"}())' if chain else ''
+        for node in ast.walk(fn):
+            if not isinstance(node, ast.Call):
+                continue
+            f = src(node.func)
+            name = f.split('.')[-1]
+            if f.startswith('op.'):
+                if name == 'execute':
+                    sql = sql_literal(node.args[0], env) if node.args else None
+                    if sql is not None:
+                        rec[key] += [{'line': node.lineno + ln - 1, 'sql': s, 'via': 'op.execute' + via_sfx} for ln, s in split_sql.split(sql)]
+                    else:
+                        note(node.lineno, 'op.execute with SQL built at runtime or a SQLAlchemy Core statement (read by hand)', key)
+                elif 'autocommit_block' in f:
+                    rec['transactional'] = False
+                elif name == 'get_bind':
+                    note(node.lineno, 'op.get_bind(): a data step on the connection (read by hand; whole-table updates, missing reverse)', key)
+                elif name == 'bulk_insert':
+                    note(node.lineno, 'op.bulk_insert: seed rows (read by hand)', key)
+                elif name == 'batch_alter_table':
+                    note(node.lineno, 'op.batch_alter_table block: batch_op calls are not translated (read by hand)', key)
+                elif name in OP_NO_SQL or f.startswith('op.get_context'):
+                    continue
+                else:
+                    sqls = alembic_op(node)
+                    if sqls:
+                        rec[key] += [{'line': node.lineno, 'sql': s, 'via': f'op.{name}' + via_sfx} for s in sqls]
+                    else:
+                        note(node.lineno, f'op.{name} not translated (read by hand)', key)
+            elif isinstance(node.func, ast.Name) and node.func.id in funcs and node.func.id not in ('upgrade', 'downgrade'):
+                if node.func.id not in chain and (node.func.id, key) not in followed:  # a helper defined in the migration: follow it once
+                    followed.add((node.func.id, key))
+                    visit(funcs[node.func.id], key, chain + (node.func.id,), bind_call(funcs[node.func.id], node, env, module_env))
+            elif isinstance(node.func, ast.Name) and node.func.id in imported:
+                note(node.lineno, f'{node.func.id}() from {imported[node.func.id]} is not analysed (read it by hand: it may run SQL)', key)
+            elif name == 'execute':  # conn.execute / bind.execute / session.execute
+                sql = sql_literal(node.args[0], env) if node.args else None
+                if sql is not None:
+                    rec[key] += [{'line': node.lineno + ln - 1, 'sql': s, 'via': f'{f}(text)' + via_sfx} for ln, s in split_sql.split(sql)]
+                else:
+                    note(node.lineno, f'{f}() with SQL built at runtime or a SQLAlchemy Core statement: a data step (read by hand)', key)
+            elif name in ('insert', 'update', 'delete') and (f.startswith(('sa.', 'sqlalchemy.')) or f in ('insert', 'update', 'delete')
+                                                            or isinstance(node.func, ast.Attribute) and not node.args):
+                note(node.lineno, f'SQLAlchemy Core {name}(): a data step (read by hand)', key)
+            elif FILE_READ.search(f) and not f.startswith(('re.', 'json.loads')):
+                paths = sorted({v for v in (lit(x) for x in ast.walk(node) if isinstance(x, ast.Constant)) if isinstance(v, str) and PATHISH.match(v)})
+                rec['reads_files'].append({'line': node.lineno, 'call': f, 'direction': key, 'paths': paths})
+                note(node.lineno, f'{f}(): reads files at run time; the step depends on files that must still exist (read by hand)', key)
+
     for fn in tree.body:
         if not isinstance(fn, ast.FunctionDef) or fn.name not in ('upgrade', 'downgrade'):
             continue
@@ -141,21 +299,16 @@ def parse_alembic(path: Path) -> dict:
             rec['down_line'] = fn.lineno
             rec['down_state'] = 'pass' if all(isinstance(s, ast.Pass) for s in body) else \
                 'raises' if any(isinstance(s, ast.Raise) for s in body) else 'empty' if not body else 'ok'
-        for node in ast.walk(fn):
-            if isinstance(node, ast.Call) and src(node.func).startswith('op.'):
-                name = src(node.func).split('.')[-1]
-                if name == 'execute':
-                    sql = lit(node.args[0]) if node.args else None
-                    if isinstance(sql, str):
-                        rec[key] += [{'line': node.lineno + ln - 1, 'sql': s, 'via': 'op.execute'} for ln, s in split_sql.split(sql)]
-                    else:
-                        rec['not_analysed'].append({'line': node.lineno, 'what': 'op.execute with SQL built at runtime'})
-                elif 'autocommit_block' in src(node.func) or name == 'get_context':
-                    rec['transactional'] = False
-                else:
-                    rec[key] += [{'line': node.lineno, 'sql': s, 'via': f'op.{name}'} for s in alembic_op(node)]
+        visit(fn, key, (), module_env)
+    # paths named in module-level constants (SEED_DIR = 'seeds/sites') count for the file reads too
+    consts = sorted({v for v in mod.values() if isinstance(v, str) and PATHISH.match(v)})
+    for r in rec['reads_files']:
+        r['paths'] = sorted(set(r['paths']) | set(consts))
     for k in ('up', 'down'):
         rec[k].sort(key=lambda s: s['line'])
+    rec['not_analysed'].sort(key=lambda s: s['line'])
+    if not rec['reads_files']:
+        del rec['reads_files']
     return rec
 
 
@@ -578,7 +731,34 @@ def archived(rel: str, extra: list[str], use_default: bool) -> str | None:
     return None
 
 
-def detect(repo: Path, exclude_dirs: list[str] | None = None, include_archived: bool = False) -> tuple[str, list[Path], dict]:
+class ChainError(Exception):
+    pass
+
+
+def alembic_chains(repo: Path, files: list[Path], versions: list[Path]) -> list[dict]:
+    """Each Alembic script location (the folder holding versions/ and env.py) is its own chain, with the
+    alembic.ini whose script_location names it."""
+    inis = []
+    for p in files:
+        if p.suffix == '.ini':
+            t = p.read_text(encoding='utf-8', errors='replace')
+            m = re.search(r'^\s*script_location\s*=\s*(.+?)\s*$', t, re.M)
+            if m and '[alembic' in t:
+                loc = m.group(1).replace('%(here)s', str(p.parent))
+                target = (p.parent / loc) if not Path(loc).is_absolute() else Path(loc)
+                inis.append((p, target.resolve()))
+    out = []
+    for d in sorted({p.parent.parent for p in versions}):
+        env = d / 'env.py'
+        ini = next((i for i, t in inis if t == d.resolve()), None)
+        out.append({'dir': d.relative_to(repo).as_posix() or '.', 'env': env.relative_to(repo).as_posix() if env.is_file() else None,
+                    'ini': ini.relative_to(repo).as_posix() if ini else None,
+                    'migrations': sum(1 for p in versions if p.parent.parent == d)})
+    return out
+
+
+def detect(repo: Path, exclude_dirs: list[str] | None = None, include_archived: bool = False,
+           chain: str | None = None) -> tuple[str, list[Path], dict]:
     files = list(repo_walk.files(repo))
     extra: dict = {'excluded': []}
 
@@ -593,6 +773,23 @@ def detect(repo: Path, exclude_dirs: list[str] | None = None, include_archived: 
         return out
     alembic = keep(sorted(p for p in files if p.suffix == '.py' and p.parent.name == 'versions' and 'revision' in p.read_text(encoding='utf-8', errors='replace')))
     if alembic:
+        chains = alembic_chains(repo, files, alembic)
+        if chain:
+            want = chain.strip('/').replace('\\', '/')
+            pick = [c for c in chains if c['dir'] == want or c['dir'].endswith('/' + want) or (c['ini'] or '') == want]
+            if len(pick) != 1:
+                raise ChainError(f'--chain {chain} matches {len(pick)} Alembic chain(s); the chains are: '
+                                 + ', '.join(c['dir'] for c in chains))
+        elif len(chains) > 1:
+            raise ChainError(f'{len(chains)} Alembic chains in this repository (one per script location): '
+                             + '; '.join(f'{c["dir"]} ({c["migrations"]} migrations, env {c["env"] or "none"})' for c in chains)
+                             + '. Review one chain per run with --chain <dir>, e.g. --chain ' + chains[0]['dir'])
+        else:
+            pick = chains
+        sel = pick[0]
+        extra['chain'] = dict(sel, chains=[c['dir'] for c in chains])
+        alembic = [p for p in alembic if p.parent.parent.relative_to(repo).as_posix() == sel['dir'] or
+                   (sel['dir'] == '.' and p.parent.parent == repo)]
         return 'alembic', alembic, extra
     django = keep(sorted(p for p in files if p.suffix == '.py' and p.parent.name == 'migrations' and 'migrations.Migration' in p.read_text(encoding='utf-8', errors='replace')))
     if django:
@@ -629,6 +826,34 @@ def detect(repo: Path, exclude_dirs: list[str] | None = None, include_archived: 
     return 'sql', keep(sorted(p for p in files if p.suffix == '.sql')), extra
 
 
+AZURE_DB = re.compile(r'Microsoft\.DBfor(PostgreSQL|MySQL|MariaDB)/(flexibleServers|servers)\b', re.I)
+
+
+def azure_claim(t: str) -> dict | None:
+    """An Azure database server's engine and version from Bicep or ARM JSON: the resource type
+    Microsoft.DBforPostgreSQL/flexibleServers (or MySQL/MariaDB) and its version property, following a Bicep
+    param default (param version string = '16') or an ARM [parameters('x')] defaultValue."""
+    m = AZURE_DB.search(t)
+    if not m:
+        return None
+    eng = {'postgresql': 'postgresql', 'mysql': 'mysql', 'mariadb': 'mariadb'}[m.group(1).lower()]
+    after = t[m.start():]
+
+    def line_of(i: int) -> int:
+        return t[:i].count('\n') + 1
+    v = re.search(r'''["']?version["']?\s*:\s*["']((\d+)(?:\.\d+)?)["']''', after)
+    if v:
+        return {'kind': 'infrastructure', 'name': eng, 'version': v.group(1), 'line': line_of(m.start() + v.start())}
+    ref = re.search(r'\bversion\s*:\s*(\w+)\b', after) or re.search(r'''"version"\s*:\s*"\[parameters\('(\w+)'\)\]"''', after)
+    if ref:
+        p = ref.group(1)
+        d = re.search(rf'^\s*param\s+{re.escape(p)}\s+string\s*=\s*["\'](\d+(?:\.\d+)?)["\']', t, re.M) or \
+            re.search(rf'"{re.escape(p)}"\s*:\s*\{{[^}}]*?"defaultValue"\s*:\s*"(\d+(?:\.\d+)?)"', t, re.S)
+        if d:
+            return {'kind': 'infrastructure', 'name': eng, 'version': d.group(1), 'line': line_of(d.start(1))}
+    return None
+
+
 DEV_SOURCE = re.compile(r'(^|/)(docker-compose[^/]*|compose[^/]*\.ya?ml|Dockerfile[^/]*|\.github/|\.gitlab-ci|\.circleci/|.*\.dev\.|.*\.test\.)', re.I)
 
 
@@ -638,19 +863,26 @@ def engine(repo: Path, a, prisma: dict | None = None) -> dict:
     several versions, the oldest from the most production-like source is used, and every claim is listed. A version
     taken only from a docker-compose file, a Dockerfile or CI (development sources) is marked assumed."""
     if a.engine:
-        return {'name': a.engine, 'version': a.engine_version, 'source': 'given', 'assumed': a.engine_version is None}
+        return {'name': a.engine, 'version': a.engine_version, 'source': f'given: {a.engine_source}' if getattr(a, 'engine_source', None) else 'given',
+                'assumed': a.engine_version is None}
     name, url_source, claims = None, None, []
     names = {'postgres': 'postgresql', 'postgresql': 'postgresql', 'aurora-postgresql': 'postgresql', 'mysql': 'mysql',
              'aurora-mysql': 'mysql', 'aurora': 'mysql', 'mariadb': 'mariadb'}
-    for p in repo_walk.files(repo):
-        if p.suffix not in ('.ini', '.py', '.yml', '.yaml', '.env', '.toml', '.json', '.tf') and not p.name.startswith('Dockerfile'):
+    roots = [(repo, '')] + [(Path(r), Path(r).as_posix().rstrip('/') + '/') for r in (getattr(a, 'infra', None) or [])]
+    for root, label, p in ((r, lb, p) for r, lb in roots for p in repo_walk.files(r)):
+        if p.suffix not in ('.ini', '.py', '.yml', '.yaml', '.env', '.toml', '.json', '.tf', '.bicep') and not p.name.startswith('Dockerfile'):
             continue
         if p.name == 'package-lock.json' or p.name.endswith('.lock.json'):
             continue
         t = p.read_text(encoding='utf-8', errors='replace')
-        rel = p.relative_to(repo).as_posix()
+        rel = label + p.relative_to(root).as_posix()
+        az = azure_claim(t)
+        if az:
+            line = az.pop('line', None)
+            claims.append(dict(az, source=f'{rel}:{line}' if line else rel))
+            continue
         m = re.search(r'\b(postgresql|postgres|mysql)(?:\+\w+)?://', t)
-        if m and not name:
+        if m and not name and not label:
             name, url_source = ('mysql' if m.group(1) == 'mysql' else 'postgresql'), rel
         for m in re.finditer(r'(?:image:\s*|FROM\s+)["\']?(?:[\w.\-]+(?::\d+)?/)*(postgres|mysql|mariadb):(\d+(?:\.\d+)?)', t):
             claims.append({'kind': 'image', 'name': names[m.group(1)], 'version': m.group(2), 'source': rel})
@@ -806,6 +1038,32 @@ def type_history(repo: Path, tool: str, migs: list[dict], extra: dict) -> dict:
     return hist
 
 
+def files_exist(repo: Path, mig_file: Path, chain: dict | None, pattern: str) -> bool:
+    """Whether a path a migration reads at run time exists now (relative to the migration, its chain or the repo;
+    a glob or a {placeholder} matches if any file does)."""
+    pat = re.sub(r'\{[^}]*\}', '*', pattern.replace('\\', '/')).lstrip('/')
+    # the migration's folder and every folder above it up to the repo root (a path is usually relative to one of them)
+    bases, d = [], (repo / mig_file).parent.resolve()
+    root = repo.resolve()
+    while True:
+        bases.append(d)
+        if d == root or root not in d.parents:
+            break
+        d = d.parent
+    if chain:
+        bases.append((repo / chain['dir']).resolve())
+    for b in bases:
+        try:
+            if any(ch in pat for ch in '*?['):
+                if next(iter(b.glob(pat)), None):
+                    return True
+            elif (b / pat).exists():
+                return True
+        except (OSError, ValueError):
+            continue
+    return False
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--repo', type=Path, required=True)
@@ -815,10 +1073,18 @@ def main() -> int:
     ap.add_argument('--exclude-dir', action='append', default=[], help='a folder (relative to the repo, or a folder name) to leave out of the chain')
     ap.add_argument('--include-archived', action='store_true',
                     help='keep folders that look like archived or squashed history (archive, squashed, history, old) in the chain')
+    ap.add_argument('--chain', help='Alembic: the script location (folder holding env.py and versions/) to review, when the repo has several chains')
     ap.add_argument('--engine', choices=['postgresql', 'mysql', 'mariadb', 'sqlite'])
     ap.add_argument('--engine-version')
+    ap.add_argument('--engine-source', help='where a given --engine-version comes from (e.g. infra-repo/db.bicep:11), recorded as provenance')
+    ap.add_argument('--infra', type=Path, action='append', default=[],
+                    help='another repository or folder holding the infrastructure (Terraform, CloudFormation, Bicep, ARM) to read the engine version from')
     a = ap.parse_args()
-    tool, files, extra = detect(a.repo, a.exclude_dir, a.include_archived)
+    try:
+        tool, files, extra = detect(a.repo, a.exclude_dir, a.include_archived, a.chain)
+    except ChainError as ex:
+        print(f'error: {ex}', file=sys.stderr)
+        return 2
     parser = {'alembic': parse_alembic, 'django': parse_django, 'knex': parse_knex}.get(tool)
     migs = []
     for p in files:
@@ -830,6 +1096,8 @@ def main() -> int:
         if tool == 'flyway':
             undo = p.with_name('U' + p.name[1:])
             r['down_state'] = 'ok' if undo.exists() else 'missing'
+        for rf in r.get('reads_files', []):
+            rf['exists'] = {x: files_exist(a.repo, p.relative_to(a.repo), extra.get('chain'), x) for x in rf['paths']}
         r['created_tables'] = [sqlshape.ident(m.group(1)) for s in r['up']
                                for m in [re.match(r'CREATE (?:UNLOGGED |TEMP(?:ORARY)? )?TABLE (?:IF NOT EXISTS )?(\S+)', sqlshape.norm_sql(s['sql']), re.I)] if m]
         migs.append(r)
@@ -851,7 +1119,11 @@ def main() -> int:
     ids = [m['id'] for m in migs]
     if len(set(ids)) != len(ids):
         dup = sorted({i for i in ids if ids.count(i) > 1})
-        print(f'error: migration ids are not unique ({", ".join(dup[:5])}); pass --migrations by file instead', file=sys.stderr)
+        files_of = {i: [m['file'] for m in migs if m['id'] == i] for i in dup[:3]}
+        print(f'error: migration ids are not unique within the chain ({", ".join(dup[:5])}): '
+              + '; '.join(f'{i} in {", ".join(fs)}' for i, fs in files_of.items())
+              + '. Leave the copy that is not part of the chain out with --exclude-dir <folder>'
+              + (' (or pick the chain with --chain)' if tool == 'alembic' else ''), file=sys.stderr)
         return 2
     if a.migrations:
         pending = [x.strip() for x in a.migrations.split(',') if x.strip()]
@@ -878,6 +1150,8 @@ def main() -> int:
            'not_parsed': [m['file'] for m in migs if not m.get('parsed', True)] + ([] if tool != 'not_parsed' else [])}
     if extra.get('prisma'):
         out['prisma'] = extra['prisma']
+    if extra.get('chain'):
+        out['chain'] = extra['chain']
     out['type_history'] = type_history(a.repo, tool, migs, extra)
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(json.dumps(out, indent=1) + '\n', encoding='utf-8', newline='\n')

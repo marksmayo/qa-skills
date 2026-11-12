@@ -290,6 +290,15 @@
  ],
  "excluded": [],
  "not_parsed": [],
+ "chain": {
+  "dir": "migrations",
+  "env": "migrations/env.py",
+  "ini": "alembic.ini",
+  "migrations": 9,
+  "chains": [
+   "migrations"
+  ]
+ },
  "type_history": {
   "transactions.amount_cents": [
    {
