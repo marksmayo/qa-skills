@@ -3,7 +3,7 @@
   "kinds": {
     "branch": {"factor": 3, "meaning": "changes a branch or boundary: comparison, negation, condition, logical operator, loop control"},
     "value": {"factor": 2, "meaning": "changes a computed value, a returned value, an argument, or removes a call"},
-    "display": {"factor": 1, "meaning": "changes a string literal (usually text shown or logged)"}
+    "display": {"factor": 1, "meaning": "changes a string literal that is not compared and not a named constant (usually text shown or logged)"}
   },
   "operators": {
     "comparison_boundary": {"kind": "branch", "example": "a < b -> a <= b"},
@@ -21,7 +21,10 @@
     "default_arg": {"kind": "value", "example": "def f(x=False) -> def f(x=True)"},
     "remove_call": {"kind": "value", "example": "log.info(...) -> pass"},
     "remove_block": {"kind": "value", "example": "{ ... } -> {}"},
-    "constant_string": {"kind": "display", "example": "\"priced\" -> \"\""},
+    "remove_method_call": {"kind": "value", "example": "name.upper() == ADMIN -> name == ADMIN; s.strip() -> s", "note": "survives when no test uses an input whose case or whitespace differs"},
+    "constant_string_compared": {"kind": "branch", "example": "if role != \"*\": -> if role != \"\":", "note": "a string that is an operand of a comparison (==, !=, in, a literal tuple compared with in) decides a branch, like the comparison itself"},
+    "constant_string_named": {"kind": "value", "example": "ADMIN_ROLE = \"admin\" -> ADMIN_ROLE = \"\"", "note": "an UPPER_CASE module or class constant: usually a key, role or code that logic compares against, not display text"},
+    "constant_string": {"kind": "display", "example": "\"priced\" -> \"\"", "note": "builtin mutants inside a typing Literal[...] carry a note: they change behaviour only where the type is checked at run time (pydantic, typeguard), so judge them by whether such a check is in reach of the tests"},
     "other": {"kind": "value", "example": "anything not matched above"}
   },
   "engines": {

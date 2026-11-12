@@ -10,7 +10,13 @@ end_line, function, operator (data/operators.json), kind, original and mutated s
 status (killed, survived, no_coverage, timeout, runtime_error, compile_error, not_run),
 engine_status, covering_tests and killed_by.
 
-- Mutants outside the scope's changed lines are dropped and counted per engine.
+- Mutants outside the scope's changed lines are dropped and counted per engine. Ids are
+  assigned per engine in file and line order, except that a builtin.json with "ids":
+  "position" (builtin_mutator.py 1.1+) keeps its own ids, so they match its console and file;
+  every mutant keeps the engine's id in raw_id.
+- A string-literal mutant that is compared (== "x", in ("a", "b")) or is an UPPER_CASE
+  constant becomes constant_string_compared or constant_string_named, which rank like the
+  logic they feed (data/operators.json).
 - mutmut prints each mutant as a diff of its function; the line is mapped back to the file by
   finding the function with `ast` and checked against the file's text. Its operator is inferred
   from the tokens that differ. mutmut counts some non-test exits as killed; anything but exit
@@ -37,6 +43,11 @@ import ts_scan  # noqa: E402
 OPS = json.loads((HERE.parent / 'data' / 'operators.json').read_text(encoding='utf-8'))
 CMP = {'<', '<=', '>', '>=', '==', '!=', 'is', 'is not', 'in', 'not in', '===', '!=='}
 BOUNDARY = {frozenset(p) for p in (('<', '<='), ('>', '>='))}
+STRIP_METHODS = {'upper', 'lower', 'casefold', 'strip', 'lstrip', 'rstrip', 'title', 'capitalize', 'swapcase', 'copy',
+                 'removeprefix', 'removesuffix', 'toUpperCase', 'toLowerCase', 'trim', 'trimStart', 'trimEnd',
+                 'toLocaleUpperCase', 'toLocaleLowerCase'}
+NAMED_CONST_LINE = re.compile(r'^\s*(?:export\s+)?(?:const\s+|static\s+|final\s+|readonly\s+)*_?[A-Z][A-Z0-9_]*\s*'
+                              r'(?::[^=]*)?=\s*[rbufRBUF]*["\'`]')
 ARITH = {'+', '-', '*', '/', '//', '%', '**', '+=', '-=', '*=', '/=', '//=', '%=', '**=', '&', '|', '^', '<<', '>>'}
 STATUS_STRYKER = {'Killed': 'killed', 'Survived': 'survived', 'NoCoverage': 'no_coverage', 'Timeout': 'timeout',
                   'RuntimeError': 'runtime_error', 'CompileError': 'compile_error', 'Ignored': 'not_run',
@@ -90,9 +101,28 @@ def infer_operator(original: str, mutated: str) -> str:
         return 'constant_string'
     if {sa, sb} & {'break', 'continue', 'return'}:
         return 'control_flow'
+    if not db and len(da) >= 4 and da[0] == '.' and da[2] == '(' and da[-1] == ')' and da[1] in STRIP_METHODS:
+        return 'remove_method_call'
     if len(b) < len(a) and not db:
         return 'call_args'
     return 'other'
+
+
+def refine_string(op: str, original: str) -> str:
+    """A string literal that is compared, or is a named constant, ranks like the logic it feeds
+    (operators.json constant_string_compared / constant_string_named); the builtin engine knows
+    this from the ast, other engines' mutants are judged from the original line's tokens."""
+    if op != 'constant_string':
+        return op
+    if NAMED_CONST_LINE.match(original):
+        return 'constant_string_named'
+    tokens = toks(original)
+    cmps = {t for t in tokens if t in CMP}
+    if 'for' in tokens:          # `for x in "abc"` iterates, it doesn't compare
+        cmps -= {'in'}
+    if cmps:
+        return 'constant_string_compared'
+    return op
 
 
 def mutmut_func(key: str) -> tuple[str, str | None, str]:
@@ -249,7 +279,8 @@ def from_mutmut(raw: dict, src: Sources) -> tuple[list[dict], list[str]]:
         st = STATUS_MUTMUT.get(status, 'runtime_error')
         code = raw.get('exit_codes', {}).get(key)
         m = {'engine': 'mutmut', 'raw_id': key, 'file': rel, 'line': line, 'end_line': end,
-             'operator': infer_operator(original, mutated), 'original': original, 'mutated': mutated,
+             'operator': refine_string(infer_operator(original, mutated), original), 'original': original,
+             'mutated': mutated,
              'status': st, 'engine_status': status,
              'covering_tests': sorted(raw.get('tests_by_function', {}).get(key.rsplit('__mutmut_', 1)[0], [])),
              'killed_by': None}
@@ -290,6 +321,7 @@ def from_stryker(raw: dict) -> tuple[list[dict], list[str]]:
             op = names.get(mu.get('mutatorName', ''), 'other')
             if op == 'comparison_boundary' and mu.get('replacement') and re.search(r'[!=]==?', mu['replacement']):
                 op = 'comparison_negate'
+            op = refine_string(op, original)
             out.append({'engine': 'stryker', 'raw_id': str(mu['id']), 'file': path, 'line': a, 'end_line': b,
                         'operator': op, 'original': original, 'mutated': mutated,
                         'status': STATUS_STRYKER.get(mu.get('status'), 'runtime_error'), 'engine_status': mu.get('status'),
@@ -353,8 +385,12 @@ def main(argv=None) -> int:
                 rec['code_hash'] = run['code_hash']
             ms, probs = from_stryker(raw)
             problems += probs
+        # builtin_mutator.py 1.1+ numbers its mutants by position ("ids": "position") and only makes them on
+        # scoped lines, so its ids are kept as they are: the console, builtin.json and the report agree
+        keep_ids = name == 'builtin' and raw.get('ids') == 'position'
+        order = (lambda m: int(m['raw_id'][1:])) if keep_ids else (lambda m: (m['file'], m['line'], m['raw_id']))
         kept = []
-        for m in sorted(ms, key=lambda m: (m['file'], m['line'], m['raw_id'])):
+        for m in sorted(ms, key=order):
             lines = in_scope.get(m['file'], set())
             if not any(n in lines for n in range(m['line'], m['end_line'] + 1)):
                 continue
@@ -368,7 +404,7 @@ def main(argv=None) -> int:
                     m['note'] = 'no test executed this line (per-test line coverage); the engine only tracks functions'
             kept.append(m)
         for i, m in enumerate(kept, 1):
-            m['id'] = f'{prefix[name]}{i}'
+            m['id'] = m['raw_id'] if keep_ids else f'{prefix[name]}{i}'
         rec['generated'] = len(ms)
         rec['in_scope'] = len(kept)
         rec['out_of_scope'] = len(ms) - len(kept)

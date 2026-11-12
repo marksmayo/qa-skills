@@ -3,6 +3,9 @@
 # Every step is real. mutmut 3 needs fork(), so its step ran under WSL (Ubuntu, Python 3.12, a
 # throwaway venv with mutmut, pytest and coverage); everything else ran on Windows, Python 3.14.
 # Mutant ids (B.., M..) are the ones normalize_results.py assigns, not the engines' raw ids.
+# builtin.json was made by builtin_mutator.py 1.0.0, before ids by position: a rerun with 1.1+
+# numbers the builtin mutants differently (and keeps those ids), adds the newer operators, and
+# would need the report, proofs and the ids below redone.
 # Durations and the timeout differ on another machine; validate against these files.
 set -e
 X=examples/fare-calc
