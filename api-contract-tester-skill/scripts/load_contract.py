@@ -17,7 +17,7 @@ checked against it with jsonschema_lite.py. A Swagger 2.0 document is not conver
 Schemathesis); kind is swagger2 and every operation is not_assessed.
 
 Contract issues are problems in the contract itself, not in the API: a missing operationId, a 2xx
-response without a schema, an example that doesn't match its own schema, a keyword the checker
+response without a schema or with an empty one ({}, which every body matches), an example that doesn't match its own schema, a keyword the checker
 can't evaluate, an unresolved $ref, an OpenAPI contract in which no operation requires security
 (auth_enforced can't be evaluated), or a GraphQL schema served by the API that differs from the SDL.
 
@@ -193,6 +193,13 @@ def load_openapi(doc: dict, text: str, issues: list) -> list[dict]:
                         if s is None:
                             issues.append({'kind': 'missing_response_schema', 'location': f'{where}.responses.{status}.{mt}',
                                            'message': f'{oid} {status} {mt} has no schema'})
+                        elif s == {}:
+                            issues.append({'kind': 'empty_response_schema', 'location': f'{where}.responses.{status}.{mt}',
+                                           'message': f'{oid} {status} {mt} has an empty schema {{}}, which every body matches, so '
+                                                      f'schema_conformance passes whatever is returned. Generators write this for a '
+                                                      f'handler that returns a raw Response, a stream or a file, or has no return '
+                                                      f'model: read the handler and document what it sends (handler_map.py reports '
+                                                      f'a stream documented as JSON)'})
             security = op['security'] if 'security' in op else root_security
             schemes = sorted({k for req in security for k in req})
             ops.append({'operation_id': oid, 'method': method.upper(), 'path': path, 'tags': op.get('tags') or [],

@@ -15,6 +15,10 @@ Response side: widening breaks (removed property or status, a field no longer re
 return more); a new enum value or loosened bound is potentially breaking. Removing an operation or a
 response status is breaking.
 
+A schema wrapped as `anyOf`/`oneOf` [X, {type: null}] (how Pydantic v2 writes Optional[X]) is unwrapped
+before comparing: X is compared with the other side's X, and the change of null-ness is reported once
+(now_nullable / no_longer_nullable), so keywords that moved into the branch are not reported as removed.
+
 Severity (for the report): breaking without a major version bump is High, potentially breaking without
 one is Medium; with a major bump a breaking change is Low (expected); compatible changes have none.
 
@@ -29,7 +33,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import jsonschema_lite as jl  # noqa: E402
 
-LOWER_BOUNDS = ('minimum', 'minLength', 'minItems', 'minProperties', 'exclusiveMinimum')
+FRAMEWORK_DEFAULT_VERSIONS = {'0.1.0', '1.0.0', '1.0', '0.0.1', 'v1', '1'}   # FastAPI, generators and templates
+LOWER_BOUNDS =('minimum', 'minLength', 'minItems', 'minProperties', 'exclusiveMinimum')
 UPPER_BOUNDS = ('maximum', 'maxLength', 'maxItems', 'maxProperties', 'exclusiveMaximum')
 
 
@@ -58,6 +63,7 @@ class Differ:
     def __init__(self, old: dict, new: dict):
         self.old, self.new = old, new
         self.changes: list[dict] = []
+        self._keep: list[dict] = []
 
     def add(self, kind, rating, direction, oid, location, detail):
         self.changes.append({'kind': kind, 'rating': rating, 'direction': direction, 'operation_ids': [oid],
@@ -84,7 +90,22 @@ class Differ:
             return
         seen.add(key)
         req = direction == 'request'
+        o, o_null = self.unwrap_nullable(o, self.old['root'])
+        n, n_null = self.unwrap_nullable(n, self.new['root'])
         ot, nt = types_of(o, self.old['dialect']), types_of(n, self.new['dialect'])
+        if o_null is not None or n_null is not None:
+            # `X | None` written as anyOf [X, {type: null}]: compare X with X and the null-ness separately
+            was = bool(o_null) or 'null' in (ot or set())
+            now = bool(n_null) or 'null' in (nt or set())
+            if ot: ot.discard('null')
+            if nt: nt.discard('null')
+            if was != now:
+                if now:
+                    self.add('now_nullable', 'compatible' if req else 'breaking', direction, oid, loc,
+                             'now nullable (null is accepted)' if req else 'now nullable (null can be returned)')
+                else:
+                    self.add('no_longer_nullable', 'breaking' if req else 'compatible', direction, oid, loc,
+                             'no longer nullable (null is rejected)' if req else 'no longer nullable')
         if ot and nt and ot != nt:
             if req and widens(nt, ot):
                 self.add('type_narrowed', 'breaking', direction, oid, loc, f'type {sorted(ot)} -> {sorted(nt)}')
@@ -159,6 +180,24 @@ class Differ:
         for kw in ('oneOf', 'anyOf', 'allOf', 'not'):
             if json.dumps(o.get(kw), sort_keys=True) != json.dumps(n.get(kw), sort_keys=True):
                 self.add(f'{kw}_changed', 'potentially_breaking', direction, oid, loc, f'{kw} changed; check it by hand')
+
+    def unwrap_nullable(self, s: dict, root: dict):
+        """(schema, nullable) for `anyOf`/`oneOf` [X, {type: null}] (how Pydantic v2 and others write Optional[X]):
+        X's keywords merged with the wrapper's own (title, default, description), so X is compared with the
+        other side's X. nullable is None when the schema isn't such a wrapper."""
+        for kw in ('anyOf', 'oneOf'):
+            br = s.get(kw)
+            if not (isinstance(br, list) and len(br) == 2 and all(isinstance(b, dict) for b in br)):
+                continue
+            is_null = [b.get('type') in ('null', ['null']) and len(b) == 1 for b in br]
+            if sum(is_null) != 1:
+                continue
+            other, _ = self.deref(br[is_null.index(False)], root)
+            merged = {k: v for k, v in s.items() if k != kw}
+            merged.update(other)
+            self._keep.append(merged)          # keep it alive: the seen-set holds ids
+            return merged, True
+        return s, None
 
     def bound(self, b, ov, nv, tightened, req, direction, oid, loc):
         if req:
@@ -338,6 +377,10 @@ def main() -> int:
     a.out.write_text(json.dumps(out, indent=2) + '\n', encoding='utf-8')
     counts = {r: sum(c['rating'] == r for c in changes) for r in order}
     print(f'{old.get("api_version")} -> {new.get("api_version")}{" (major bump)" if bump else ""}: {counts} -> {a.out}', file=sys.stderr)
+    if counts['breaking'] and old.get('api_version') == new.get('api_version'):
+        print(f'note: info.version is {new.get("api_version")!r} in both contracts'
+              + (', a framework default' if str(new.get('api_version')) in FRAMEWORK_DEFAULT_VERSIONS else '')
+              + '; the API does not version its contract, so say so in limitations (severity stays as rated)', file=sys.stderr)
     return 0
 
 
