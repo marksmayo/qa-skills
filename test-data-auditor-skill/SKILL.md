@@ -215,7 +215,6 @@ messages. The validator rejects any evidence file that holds a flagged value. Th
 validator's own matching, and prints only counts and candidate ids.
 
 ```bash
-# the K=V pairs must follow --env directly (--env K=V --out ..., never --env --out ... K=V)
 python scripts/run_tests.py --preset pytest --cwd <copy> --out <run>/runs.json --label baseline --run-prefix B --repeat 2
 python scripts/run_tests.py --preset custom --cmd "python -m pytest -q -p no:cacheprovider -p clock_shift --junitxml={junit}" \
     --cwd <copy> --env TDA_CLOCK_SHIFT=+400d --out <run>/runs.json --label "clock +400d" --run-prefix S
@@ -231,12 +230,17 @@ python scripts/run_tests.py --preset pytest --cwd <copy> --out <run>/runs.json -
     - libfaketime, for whole processes;
     - `clock_shift.py`, which moves Python's `date`, `datetime` and `time`, and must sit in the
       directory pytest starts from;
-    - for Vitest and Jest, `scripts/clock_shift.mjs`, which moves `Date` and `Date.now` for the whole
-      run. Load it as a setup file; its header shows how, with the same `TDA_CLOCK_SHIFT` and
-      `TDA_CLOCK_DATE` settings.
+    - for Node runners (Vitest, Jest), `scripts/clock_shift.mjs`, which replaces `Date` for the whole
+      run, with the same `TDA_CLOCK_SHIFT` and `TDA_CLOCK_DATE` settings. Load it with
+      `--env NODE_OPTIONS=--import=file:///<abs path>/clock_shift.mjs` (it reaches Vitest's workers),
+      or first in `setupFiles` of a scratch config that extends the repo's. Check it with
+      `node scripts/clock_shift.mjs --self-test`. It doesn't change the time zone (use `--tz`), and a
+      test that installs fake timers replaces it while they are on.
   - Bracket the first failing day with dated runs, and report that date as `fails_on_date`.
   - Where the repo's test command sets flags or a time zone (a `package.json` script such as
-    `TZ=... vitest --configLoader native`), copy them into a `custom` preset.
+    `TZ=... vitest --configLoader native`), run it with `--npm-script <name>` so the experiment
+    uses the same environment, and pass extra flags with `--runner-args`. The `vitest` preset
+    re-runs single tests by id (file plus `-t`).
 - **Shared state:** reverse or shuffle the order, and run each test in isolation. The `vitest`
   preset shuffles (`--order shuffle --seed N`, with two seeds) but can't reverse.
 - **Residue:** snapshot the copy before the runs, and diff it after:

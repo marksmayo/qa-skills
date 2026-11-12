@@ -351,10 +351,11 @@ Python-only.
 - **Residue.** A new category for files a run leaves in the working tree. `residue.py snapshot` and
   `diff` record them, and a run that wrote uploads into `public/` is Serious. The evidence file
   confirms the finding.
+- **Shared helpers.** `clock_shift.mjs` (shared) moves `Date` for Node runners, so the clock
+  experiments that needed a hand-written setup file on the repository now use the skill's own tool.
+  The shared `run_tests.py` gained `--npm-script` (the repo's own test command and environment),
+  `--runner-args`, `--env` in any position, and Vitest re-runs by id. Its `vitest` preset shuffles
+  but can't reverse; SKILL.md says so.
 - **Not changed here.**
-  - `run_tests.py` is shared. Its `--env` takes `nargs='*'`, so `--env --cwd x K=V` fails, and
-    `action='append'` would fix that. The `vitest` preset can shuffle but not reverse; SKILL.md
-    says so.
-  - The JS clock tool `clock_shift.mjs` is shared too; SKILL.md refers to it.
   - Prisma `schema.prisma` is still not a drift source.
   - JS `loaded_by` is still per file.
