@@ -22,13 +22,26 @@ layout becomes a shell item, and "nextjs" lists layouts, template/not-found/load
 middleware.ts/proxy.ts with its matcher, next/dynamic imports (and whether they skip SSR) and the
 route handlers with their HTTP methods. Route handlers are API code and never UI routes. A
 `path: "/..."` object is a route only in router configuration, not in cookie options or OpenAPI
-documents; OpenAPI documents built in code and Prisma schemas are listed as contracts. Boundary
-definitions that nothing renders are marked used: false.
+documents; OpenAPI documents built in code (including a FastAPI app, with the command that exports
+it) and Prisma schemas are listed as contracts. Boundary definitions that nothing renders are marked
+used: false. The Next.js file conventions apply only in a project whose package.json depends on next,
+to app/ and pages/ at its root or under src/.
+
+Router boundaries count: a route's errorElement / ErrorBoundary (React Router 6.4+ and 7, Remix), a
+route module's exported ErrorBoundary, TanStack Router's errorComponent and react-error-boundary's
+withErrorBoundary. Modules that read import.meta.env / process.env and throw at module scope are
+listed in module_scope_config: they fail on import, before any boundary renders. A FastAPI service
+with no UI is site.kind "api".
 """
 from __future__ import annotations
 import argparse, json, re, sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+sys.dont_write_bytecode = True  # importing a sibling must not write __pycache__ into the skill folder
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ui_graph import projects, next_path_in_project  # noqa: E402
+from scan_pitfalls import mask_code  # noqa: E402
 
 SKIP_DIRS = {'.git', 'node_modules', 'dist', 'build', 'out', '.next', '.nuxt', '.svelte-kit', '.output', 'coverage',
              'vendor', 'Pods', 'Carthage', 'DerivedData', '.gradle', '.dart_tool', '.idea', '.vscode', '__pycache__',
@@ -38,6 +51,32 @@ TEST_NAME = re.compile(r'(\.|_)(test|spec|stories)\.\w+$|Tests?\.(swift|kt|java)
 CODE_EXT = {'.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.vue', '.svelte', '.kt', '.java', '.swift', '.dart'}
 Q = r'["\'`]'
 
+# Python web frameworks named in requirements files or pyproject.toml (one dependency per line)
+PY_WEB = re.compile(r'''^\s*["']?(fastapi|flask|django)(?=[\s"'<>=~!\[;,]|$)''', re.I | re.M)
+FASTAPI_APP = re.compile(r'^(\w+)\s*(?::\s*[\w.]+\s*)?=\s*(?:fastapi\.)?FastAPI\(', re.M)
+# configuration read from import.meta.env (Vite) or process.env at module scope, next to a top-level throw:
+# it runs on import, before any boundary renders, so a missing or bad value blanks the app (B1)
+ENV_READ = re.compile(r'\bimport\.meta\.env\b|\bprocess\.env\b')
+CONTROL_BLOCK = re.compile(r'(?:\b(?:if|else|try|catch|finally)\b\s*(?:\([^{};]*\))?|\}\s*)\s*$')
+
+
+def module_scope_throws(code: str) -> list[int]:
+    """Offsets of `throw` statements that run when the module is imported: at the top level, or only inside
+    if/else/try blocks there (not inside a function, class or callback). `code` has strings and comments
+    blanked (scan_pitfalls.mask_code)."""
+    out, stack, last = [], [], 0
+    for m in re.finditer(r'[{}]|\bthrow\b', code):
+        tok = m.group(0)
+        if tok == '{':
+            stack.append('ctl' if CONTROL_BLOCK.search(code[last:m.start()].rsplit('\n', 1)[-1]) else 'other')
+            last = m.end()
+        elif tok == '}':
+            if stack:
+                stack.pop()
+            last = m.end()
+        elif all(k == 'ctl' for k in stack):
+            out.append(m.start())
+    return out
 PLATFORM_DEPS = {'react': 'react', 'next': 'nextjs', 'vue': 'vue', 'nuxt': 'nuxt', '@angular/core': 'angular',
                  'svelte': 'svelte', '@sveltejs/kit': 'sveltekit', '@remix-run/react': 'remix', 'react-native': 'react-native',
                  'expo': 'expo', 'preact': 'preact', 'solid-js': 'solid'}
@@ -66,6 +105,23 @@ BOUNDARY_RX = [
     ('android', 'global_handler', re.compile(r'setDefaultUncaughtExceptionHandler\(|\bCoroutineExceptionHandler\b')),
     ('ios', 'global_handler', re.compile(r'\bNSSetUncaughtExceptionHandler\(')),
 ]
+# Router-level boundaries: a route's errorElement / ErrorBoundary (React Router 6.4+ data routers and 7, Remix),
+# TanStack Router's errorComponent, a route module's exported ErrorBoundary, react-error-boundary's HOC.
+# (framework, kind, regex, needs a router file); group 1, when present, names the fallback component.
+ROUTE_BOUNDARY_RX = [
+    ('react-router', 'route_prop', re.compile(r'\berrorElement\s*(?::|=\s*\{)\s*(?:<\s*([\w.]+))?'), False),
+    ('react-router', 'route_prop', re.compile(r'<Route\b[^>]*?\bErrorBoundary\s*=\s*\{\s*([\w.]+)'), False),
+    ('react-router', 'route_prop', re.compile(r'(?<![\w.$])ErrorBoundary\s*:\s*([A-Za-z_$][\w.$]*)'), True),
+    ('tanstack-router', 'route_prop', re.compile(r'\b(?:defaultErrorComponent|errorComponent)\s*:\s*([A-Za-z_$][\w.$]*)?'), True),
+    ('react-router', 'route_module', re.compile(r'^\s*export\s+(?:async\s+)?(?:function|const|let)\s+(ErrorBoundary)\b', re.M), False),
+    ('react', 'hoc', re.compile(r'\b(withErrorBoundary)\s*\('), False),
+]
+ROUTE_BOUNDARY_COVERS = {
+    'route_prop': "the route's element and its child routes up to the next errorElement: render errors, loader and "
+                  'action errors and failed lazy() imports (not event handlers or async code)',
+    'route_module': "this route module's component and its child routes: render, loader and action errors",
+    'hoc': 'the wrapped component only',
+}
 CLASS_NAME = re.compile(r'class\s+(\w+)')
 ROUTE_RX = [
     ('jsx-route', re.compile(r'<Route\b[^>]*?\bpath=\{?' + Q + r'([^"\'`]+)' + Q)),
@@ -78,7 +134,8 @@ ROUTE_RX = [
     ('android-screen', re.compile(r'class\s+(\w+(?:Activity|Fragment))\b[^{]*?:\s*\w*(?:Activity|Fragment)\b')),
     ('flutter-screen', re.compile(r'class\s+(\w+(?:Screen|Page))\s+extends\s+(?:Stateless|Stateful)Widget')),
 ]
-NEXT_FILES = re.compile(r'(^|/)(app|src/app)/(.*/)?(page|error|global-error|layout)\.(tsx|jsx|js|ts)$|(^|/)(pages|src/pages)/(?!api/).+\.(tsx|jsx|js|ts)$')
+# matched against the path inside a Next.js project (see ui_graph.next_path_in_project)
+NEXT_FILES = re.compile(r'^(app|src/app)/(.*/)?(page|error|global-error|layout)\.(tsx|jsx|js|ts)$|^(pages|src/pages)/(?!api/).+\.(tsx|jsx|js|ts)$')
 NEXT_SPECIAL = re.compile(r'^(?P<dir>(?:src/)?app(?:/.*)?)/(?P<kind>layout|template|not-found|loading|error|global-error|default)\.(tsx|jsx|js|ts)$')
 NEXT_HANDLER = re.compile(r'^(?:src/)?app/(?P<seg>(?:.*/)?)route\.(ts|js|mts|mjs|tsx|jsx)$|^(?:src/)?pages/(?P<api>api/.+)\.(ts|js|tsx|jsx)$')
 HTTP_EXPORT = re.compile(r'\bexport\s+(?:async\s+)?(?:function|const|let)\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b|'
@@ -157,6 +214,8 @@ def detect_platforms(root: Path, files: list[Path]) -> tuple[list[str], dict]:
                 targets.setdefault('ios_deployment_target', {'value': m.group(1), 'file': rel})
         elif f.name == 'Package.swift':
             plats.add('ios')
+        elif re.match(r'^(requirements[\w.-]*\.txt|pyproject\.toml|Pipfile|setup\.cfg)$', f.name):
+            plats |= {m.lower() for m in PY_WEB.findall(read(f))}
         elif f.name == 'pubspec.yaml':
             text = read(f)
             if re.search(r'^\s*flutter\s*:', text, re.M):
@@ -242,6 +301,11 @@ def site_model(root: Path, files: list[Path], platforms: list[str]) -> dict:
         return {'kind': 'ssr' if set(fw) & SSR_PLATFORMS else 'spa', 'frameworks': fw, 'html_pages': len(html)}
     if set(platforms) & {'android', 'ios', 'flutter'}:
         return {'kind': 'native', 'frameworks': [], 'html_pages': len(html)}
+    if 'fastapi' in platforms and len(html) <= 3:
+        # an API service with an HTML file or two (a docs page, a template) is not a static site
+        return {'kind': 'api', 'frameworks': ['fastapi'], 'html_pages': len(html),
+                'note': 'An API service, not a UI: a throw in a handler is an HTTP 500, not a UI crash. Hunt crashes in '
+                        'the UI that calls it, and use its OpenAPI document (contracts) as that UI\'s contract.'}
     if not html:
         return {'kind': 'unknown', 'frameworks': [], 'html_pages': 0}
     pages = [html_page(root, f) for f in html]
@@ -353,8 +417,9 @@ def main() -> int:
     code = [f for f in files if f.suffix in CODE_EXT and not TEST_NAME.search(f.name) and not is_bundle(f)
             and not TEST_PART.search(f.relative_to(root).as_posix())]
 
-    routes, boundaries, data_layer, persisted, contracts = [], [], {}, [], []
+    routes, boundaries, data_layer, persisted, contracts, env_config = [], [], {}, [], [], []
     code_set = set(code)
+    projs = projects(root, files)
     data_rx = {k: re.compile(v) for k, v in DATA_LAYER.items()}
     pers_rx = {k: re.compile(v) for k, v in PERSISTED.items()}
     for f in code:
@@ -362,13 +427,16 @@ def main() -> int:
         text = read(f)
         if not text:
             continue
-        if NEXT_FILES.search(rel):
-            kind = 'route_file' if re.search(r'(^|/)(global-)?error\.\w+$', rel) else None
+        # Next.js file conventions apply only inside a project whose package.json depends on next, and only to
+        # app/ and pages/ at its root or under src/: a pages/ folder in a plain React app is not a router
+        sub = next_path_in_project(rel, projs)
+        if sub is not None and NEXT_FILES.match(sub):
+            kind = 'route_file' if re.search(r'(^|/)(global-)?error\.\w+$', sub) else None
             if kind:
                 boundaries.append({'framework': 'nextjs', 'kind': kind, 'name': f.name, 'file': rel, 'line': 1,
                                    'scope': 'app' if 'global-error' in f.name else 'route'})
-            elif re.search(r'(^|/)page\.\w+$|(^|/)pages/', rel):
-                routes.append({'kind': 'route', 'path': next_path(re.sub(r'^(src/)?(app|pages)/?|/?page\.\w+$|\.\w+$', '', rel)),
+            elif re.search(r'(^|/)page\.\w+$|^(src/)?pages/', sub):
+                routes.append({'kind': 'route', 'path': next_path(re.sub(r'^(src/)?(app|pages)/?|/?page\.\w+$|\.\w+$', '', sub)),
                                'file': rel, 'line': 1, 'detector': 'nextjs-file'})
         handler = bool(NEXT_HANDLER.match(rel))
         router_file = bool(ROUTER_FILE.search(text)) and not NOT_ROUTER_FILE.search(text) and not handler
@@ -393,6 +461,24 @@ def main() -> int:
                     if any(b['kind'] == 'definition' and b['file'] == rel and b['name'] == name for b in boundaries):
                         continue
                 boundaries.append({'framework': fw, 'kind': kind, 'name': name, 'file': rel, 'line': ln})
+        for fw, kind, rx, needs_router in ROUTE_BOUNDARY_RX:
+            if needs_router and not router_file:
+                continue
+            for m in rx.finditer(text):
+                boundaries.append({'framework': 'remix' if kind == 'route_module' and 'remix' in platforms else fw,
+                                   'kind': kind,
+                                   'name': (m.group(1) if m.lastindex else None) or m.group(0).split(':')[0].split('=')[0].strip(' <{'),
+                                   'file': rel, 'line': line_of(text, m.start()),
+                                   'scope': 'component' if kind == 'hoc' else 'route',
+                                   'covers': [ROUTE_BOUNDARY_COVERS[kind]]})
+        if f.suffix in ('.js', '.jsx', '.mjs', '.ts', '.tsx') and ENV_READ.search(text) and 'throw' in text:
+            throws = module_scope_throws(mask_code(text))
+            if throws:
+                env_config.append({'file': rel, 'line': line_of(text, throws[0]),
+                                   'reads': sorted(set(re.findall(r'(?:import\.meta|process)\.env\.(\w+)', text)))[:20],
+                                   'note': 'reads environment configuration and throws at module scope: this runs when the '
+                                           'module is imported, before any error boundary renders, so a missing or invalid '
+                                           'value blanks the app (B1) wherever the module is imported'})
         for k, rx in data_rx.items():
             n = len(rx.findall(text))
             if n:
@@ -413,6 +499,19 @@ def main() -> int:
                 contracts.append({'kind': 'openapi', 'file': rel})
         elif f.suffix == '.prisma':
             contracts.append({'kind': 'prisma', 'file': rel})
+        elif f.suffix == '.py' and not TEST_PART.search(rel) and not TEST_NAME.search(f.name) and \
+                not re.search(r'(^|/)test_\w+\.py$', rel):
+            text = read(f)
+            m = FASTAPI_APP.search(text) if 'FastAPI' in text else None
+            if m:
+                module = rel[:-3].replace('/', '.')
+                contracts.append({
+                    'kind': 'openapi-in-code', 'framework': 'fastapi', 'file': rel, 'line': line_of(text, m.start()),
+                    'note': 'FastAPI builds its OpenAPI document at runtime. Export it (it imports the app, so it needs the '
+                            "API's dependencies and any settings read at import; ask before running it): from the "
+                            f'directory that makes {module} importable, python -c "import json, {module} as m; '
+                            f'print(json.dumps(m.{m.group(1)}.openapi()))" > <out_dir>/openapi.json, then pass it to '
+                            'contract_diff.py --contract'})
         elif f in code_set and f.suffix in ('.ts', '.js', '.mjs') and OPENAPI_CODE.search(read(f)):
             contracts.append({'kind': 'openapi-in-code', 'file': rel,
                               'note': 'an OpenAPI document built in code: export it (run its builder) to use it as a contract'})
@@ -499,8 +598,18 @@ def main() -> int:
                  if site['kind'] in ('spa', 'ssr') else
                  {'model': 'per_process', 'note': 'An uncaught exception terminates the app (B1) unless code or a handler catches it.'}
                  if native else
+                 {'model': 'unknown', 'note': site['note']} if site['kind'] == 'api' else
                  {'model': 'unknown', 'note': 'No framework, app platform or HTML pages recognised; decide by reading the code.'})
-        notes = ['No error boundary or global handler found: any uncaught render error is app-fatal (B1).'] if not boundaries else []
+        notes = ['No error boundary or global handler found: any uncaught render error is app-fatal (B1).'] \
+            if not boundaries and site['kind'] != 'api' else []
+        if any(b['kind'] in ('route_prop', 'route_module') for b in boundaries):
+            notes.append('Router error boundaries (errorElement / ErrorBoundary / errorComponent on routes) catch render, '
+                         'loader and lazy-import errors in their route and its children: a throw under one is B2 '
+                         '(screen_replaced), not B1. Code above the router (providers, the root render, module-scope '
+                         'code) is outside them.')
+    for e in env_config:
+        notes.append(f"{e['file']}:{e['line']} reads environment configuration and throws at module scope: a missing "
+                     'or invalid value blanks the app on import, before any boundary renders (B1).')
     out = {
         'generated_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
         'repository': root.name,
@@ -511,6 +620,7 @@ def main() -> int:
         'data_layer': [{'library': k, **v} for k, v in sorted(data_layer.items(), key=lambda kv: -kv[1]['uses'])],
         'contracts': contracts,
         'persisted_state': persisted,
+        'module_scope_config': env_config,
         'source_files': len(code),
         'site': site,
         **({'nextjs': nextjs, 'api_endpoints': len(nextjs['route_handlers'])} if nextjs else {}),
