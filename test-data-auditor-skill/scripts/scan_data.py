@@ -258,8 +258,12 @@ def not_card(text: str, start: int, end: int, field: str = '') -> bool:
         return True  # part of a version, a decimal, or a date followed by a time
     # a digit run that is part of a path or an identifier (runs/20261103-142530/, order_4111..., x4111...) is not a card
     # number, unless the field says it holds one
-    if (re.match(r'[A-Za-z_/\\]', before) or re.match(r'[A-Za-z_/\\]', after[:1])) and not CARD_FIELD.search(field or ''):
+    joined = re.match(r'[A-Za-z_/\\]', before) or re.match(r'[A-Za-z_/\\]', after[:1]) or \
+        (before == '-' and re.match(r'[A-Za-z]', text[max(0, start - 2):start - 1]))           # key-0000..., run-2026...
+    if joined and not CARD_FIELD.search(field or ''):
         return True
+    if len(set(digits(run))) <= 2:
+        return True  # one or two repeated digits (0000 0000 0000 0000): a placeholder, never a card
     # a date that overlaps the run's edge ("2024-01-15 ..." where the match starts mid-date)
     off = max(0, start - 12)
     if any(m.start() + off < end and m.end() + off > start for m in DATE_TOKEN.finditer(text[off:end + 12])):
