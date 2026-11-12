@@ -5,11 +5,21 @@
 
 Patterns are in data/feature-patterns.json; support comes from web-features (the first version of each
 core browser that supports the feature), and targets from browserslist_lite.py (the repo's
-package.json or .browserslistrc, else Next.js's defaults for a Next.js project, else `defaults`). CSS is
-read with a small tokeniser (comments removed, rules split into selectors and declarations, @supports
-blocks tracked); scripts and markup are matched with the patterns' regexes, ignoring comments in scripts.
-The walk prunes dependency, build and cache folders (node_modules, .next, dist, build, out, coverage, ...)
-before descending.
+package.json or .browserslistrc, else Next.js's defaults for a Next.js project, else a Vite project's
+build.target or Vite's default, else `defaults`). CSS is read with a small tokeniser (comments removed,
+rules split into selectors and declarations, declarations before a nested rule kept with their parent,
+@supports blocks tracked); scripts and markup are matched with the patterns' regexes, ignoring comments
+in scripts. The walk prunes dependency, build and cache folders (node_modules, .next, dist, build, out,
+coverage, ...) before descending.
+
+CSS-in-JS: when package.json depends on Emotion, MUI, styled-components (CSS_IN_JS_DEPS), scripts that use
+it are also read for CSS written literally: object styles (camelCase property with a string value, or a
+selector / at-rule key) and tagged template literals (styled.div`...`, css`...`). Those uses carry
+via "css-in-js", `css_in_js` records the libraries, and a limitation says runtime-computed styles were
+not scanned. Minified built CSS (lines over 1000 characters) gives each use a column and collapses
+repeats of one feature on one line (occurrences). With Tailwind 4, its `@layer properties` fallback in
+built CSS counts as the fallback for @property, and targets below Tailwind 4's own browser floor are
+listed (utility_css.targets_below_floor) with a limitation.
 
 Utility-class CSS: when package.json depends on Tailwind CSS, class strings in scripts and markup are
 matched against the `utility-class` patterns (known non-baseline utilities such as text-balance,
@@ -41,34 +51,43 @@ TEST_FILE = re.compile(r'\.(test|spec|stories)\.[cm]?[jt]sx?$')   # tests and st
 SUFFIXES = ('.css', '.scss', '.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx', '.html', '.htm', '.vue', '.svelte')
 MARKUP = ('.html', '.htm', '.vue', '.svelte')
 CLASS_SOURCES = ('.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx') + MARKUP
+# browsers a CSS framework major itself requires (its documented floor), web-features browser keys of caniuse names
+FRAMEWORK_FLOORS = {('tailwind', 4): {'chrome': '111', 'edge': '111', 'firefox': '128', 'safari': '16.4', 'ios_saf': '16.4'}}
 
 
-def css_rules(text: str):
-    """Yield (selector, declarations, line, inside_supports_condition) for every rule, with nesting depth."""
-    text = re.sub(r'/\*.*?\*/', lambda m: '\n' * m.group(0).count('\n'), text, flags=re.S)
-    stack: list[tuple[str, int]] = []
-    buf, start_line, i, line = '', 1, 0, 1
+def css_rules(text: str, columns: bool = False):
+    """Yield (selector, declarations, line, inside_supports_condition, ancestors) for every rule, with nesting depth;
+    with columns, a sixth item: the rule's column on its line (minified CSS puts every rule on line 1)."""
+    # comments go; with columns they are blanked instead, so offsets stay true
+    text = re.sub(r'/\*.*?\*/', (lambda m: re.sub(r'[^\n]', ' ', m.group(0))) if columns else
+                  (lambda m: '\n' * m.group(0).count('\n')), text, flags=re.S)
+    stack: list[tuple[str, int, int]] = []
+    buf, start_line, start_col, i, line, line_start = '', 1, 1, 0, 1, 0
     while i < len(text):
         ch = text[i]
         if ch == '\n':
             line += 1
+            line_start = i + 1
         if ch == '{':
-            stack.append((buf.strip(), start_line))
-            buf, start_line = '', line
+            if ';' in buf and stack:
+                # nested CSS (SCSS, CSS nesting, CSS-in-JS): declarations before a nested rule belong to the parent
+                decl, buf = buf.rsplit(';', 1)
+                psel, pln, pcol = stack[-1]
+                row = (psel, '' if psel.startswith('@') else decl.strip(), pln,
+                       ' '.join(s for s, _, _ in stack[:-1] if s.startswith('@supports')), [s for s, _, _ in stack[:-1]])
+                yield row + (pcol,) if columns else row
+            stack.append((buf.strip(), start_line, start_col))
+            buf, start_line, start_col = '', line, i - line_start + 2
         elif ch == '}':
-            sel, ln = stack.pop() if stack else ('', line)
-            supports = ' '.join(s for s, _ in stack if s.startswith('@supports'))
-            if not sel.startswith('@'):
-                yield sel, buf.strip(), ln, supports, [s for s, _ in stack]
-            elif sel.startswith('@'):
-                yield sel, '', ln, supports, [s for s, _ in stack]
-            buf, start_line = '', line
+            sel, ln, col = stack.pop() if stack else ('', line, 1)
+            supports = ' '.join(s for s, _, _ in stack if s.startswith('@supports'))
+            row = (sel, '' if sel.startswith('@') else buf.strip(), ln, supports, [s for s, _, _ in stack])
+            yield row + (col,) if columns else row
+            buf, start_line, start_col = '', line, i - line_start + 2
         else:
             if not buf.strip():
-                start_line = line
+                start_line, start_col = line, i - line_start + 1
             buf += ch
-            if ch == ';' and stack and not stack[-1][0].startswith('@'):
-                pass
         i += 1
 
 
@@ -135,18 +154,110 @@ def rel_name(f: Path, repo: Path) -> str:
         return f.as_posix()
 
 
-def scan(repo: Path, patterns: list[dict], utility: bool = False, built: list[Path] | None = None) -> list[dict]:
-    """Uses of every pattern in the repo's sources; utility-class patterns only when `utility` (Tailwind found); the
-    built CSS files with the CSS patterns."""
+def scan(repo: Path, patterns: list[dict], utility: bool = False, built: list[Path] | None = None,
+         css_in_js: bool = False, tailwind_major: int | None = None) -> list[dict]:
+    """Uses of every pattern in the repo's sources; utility-class patterns only when `utility` (Tailwind found); CSS
+    written in scripts when `css_in_js` (a CSS-in-JS library found); the built CSS files with the CSS patterns."""
     uses = []
     for f in files(repo):
-        uses += scan_file(f, rel_name(f, repo), patterns, utility)
+        uses += scan_file(f, rel_name(f, repo), patterns, utility, css_in_js)
     for f in built_css_files(built or []):
-        uses += scan_file(f, rel_name(f, repo), patterns, False)
+        uses += scan_file(f, rel_name(f, repo), patterns, False, tailwind_major=tailwind_major)
     return uses
 
 
-def scan_file(f: Path, rel: str, patterns: list[dict], utility: bool) -> list[dict]:
+CSS_IN_JS_DEPS = ('@emotion/react', '@emotion/styled', '@emotion/css', 'styled-components', '@mui/material', '@mui/system',
+                  '@mui/joy', '@stitches/react', 'goober', '@linaria/core')
+CSS_IN_JS_FILE = re.compile(r'''from\s+['"](@emotion/|@mui/|styled-components|@stitches/|goober|@linaria/)|\bsx\s*[=:]|'''
+                            r'''\bstyled\s*[.(]|\bcss\s*`|\bmakeStyles\s*\(''')
+# a tagged template literal holding CSS: styled.div`...`, styled(Box)`...`, css`...`, keyframes`...`, createGlobalStyle`...`
+CSS_TAG = re.compile(r'\b(?:styled(?:\.\w+|\([^()`]*\))(?:\.attrs\([^`]*?\))?|css|keyframes|createGlobalStyle|injectGlobal|globalCss)\s*`')
+# an object-style entry: backdropFilter: 'blur(4px)', '&:has(> img)': {...}, '@container (min-width: 30em)': {...}
+OBJ_ENTRY = re.compile(r'''(?<![\w$.])(?:(['"])([^'"\n]{1,120})\1|([A-Za-z_$][\w$]*))\s*:\s*(?:(['"`])([^'"`\n]{0,200})\4|(\{))''')
+
+
+def css_in_js_libraries(repo: Path) -> list[str]:
+    pkg = repo / 'package.json'
+    try:
+        d = json.loads(pkg.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return []
+    deps = {**(d.get('devDependencies') or {}), **(d.get('dependencies') or {})}
+    return [k for k in CSS_IN_JS_DEPS if k in deps]
+
+
+def template_css(js: str) -> list[tuple[str, int]]:
+    """CSS from tagged template literals, ${...} replaced by a placeholder; (css, line offset). Bare declarations
+    (styled.div`color: red`) are wrapped in a rule so the tokeniser sees them."""
+    out = []
+    for m in CSS_TAG.finditer(js):
+        i, depth, buf = m.end(), 0, []
+        while i < len(js):
+            c = js[i]
+            if c == '\\':
+                buf.append(js[i:i + 2])
+                i += 2
+                continue
+            if depth == 0 and c == '`':
+                break
+            if js.startswith('${', i):
+                depth += 1
+                i += 2
+                continue
+            if depth and c == '}':
+                depth -= 1
+                if depth == 0:
+                    buf.append('0')
+                i += 1
+                continue
+            if depth == 0:
+                buf.append(c)
+            elif c == '\n':
+                buf.append('\n')
+            i += 1
+        css = ''.join(buf)
+        offset = js[:m.end()].count('\n')
+        out.append((css if re.search(r'[{}]', css) and not re.match(r'\s*[\w-]+\s*:', css) else '& {' + css + '}', offset))
+    return out
+
+
+def kebab(key: str) -> str:
+    """backdropFilter -> backdrop-filter, WebkitBackdropFilter -> -webkit-backdrop-filter."""
+    k = re.sub(r'([A-Z])', lambda m: '-' + m.group(1).lower(), key)
+    return k if not k.startswith(('-webkit', '-moz', '-ms')) or key[0].isupper() else k.lstrip('-')
+
+
+def object_style_uses(js: str, rel: str, patterns: list[dict], fb_of) -> list[dict]:
+    """CSS features in object styles (sx props, styled({...}), theme styleOverrides): a camelCase property with a
+    string value, or a selector / at-rule key."""
+    uses = []
+    lines = js.splitlines()
+    for m in OBJ_ENTRY.finditer(js):
+        key = m.group(2) or m.group(3)
+        val = m.group(5)
+        nested = bool(m.group(6))
+        ln = js[:m.start()].count('\n') + 1
+        snippet = lines[ln - 1].strip()[:160] if ln - 1 < len(lines) else ''
+        for p in patterns:
+            k, hit = p['kind'], False
+            if nested and (key.startswith(('&', ':', '@')) or ':' in key):
+                if k == 'css-selector' and p['match'] in key:
+                    hit = True
+                elif k == 'css-pseudo-regex' and re.search(p['match'], key):
+                    hit = True
+                elif k == 'css-at-rule' and key.startswith(p['match']):
+                    hit = True
+            elif val is not None and k == 'css-declaration' and re.fullmatch(r'[A-Za-z]+', key):
+                prop = kebab(key)
+                hit = bool(re.fullmatch(p['property'], prop)) and (not p.get('value') or p['value'] in val.lower())
+            if hit:
+                uses.append({'feature': p['feature'], 'file': rel, 'line': ln, 'snippet': snippet,
+                             'selector': key if nested else None, 'fallback': fb_of(p), 'via': 'css-in-js'})
+    return uses
+
+
+def scan_file(f: Path, rel: str, patterns: list[dict], utility: bool, css_in_js: bool = False,
+              tailwind_major: int | None = None) -> list[dict]:
     uses = []
     text = f.read_text(encoding='utf-8', errors='replace')
     css_parts, js_parts = [], []
@@ -159,12 +270,23 @@ def scan_file(f: Path, rel: str, patterns: list[dict], utility: bool) -> list[di
             js_parts.append((m.group(1), text[:m.start(1)].count('\n')))
     else:
         js_parts.append((text, 0))
+    fb_of = lambda p: bool(p.get('emits_fallback')) or any(re.search(x, text) for x in p.get('fallback') or [])
+    if css_in_js and f.suffix in CLASS_SOURCES and f.suffix not in MARKUP and CSS_IN_JS_FILE.search(text):
+        clean = strip_js_comments(text)
+        css_parts += template_css(clean)
+        uses += object_style_uses(clean, rel, [p for p in patterns if p['kind'].startswith('css')], fb_of)
+    # minified CSS (built output): every rule is on line 1, so uses carry a column and repeats of one feature collapse
+    minified = f.suffix == '.css' and any(len(l) > 1000 for l in text.splitlines())
+    # Tailwind 4 emits @layer properties { @supports (...) { *, ::before, ::after { --tw-...: initial } } } as the
+    # fallback for engines without @property: its registered properties then fall back to plain custom properties
+    tw4_props = bool(tailwind_major and tailwind_major >= 4 and re.search(r'@layer\s+properties\s*\{\s*@supports', text)
+                     and '--tw-' in text)
     for p in patterns:
-        fb = bool(p.get('emits_fallback')) or any(re.search(x, text) for x in p.get('fallback') or [])
+        fb = fb_of(p) or (tw4_props and p['feature'] == 'registered-custom-properties')
         k = p['kind']
         if k.startswith('css'):
             for css, offset in css_parts:
-                for sel, block, ln, supports, ancestors in css_rules(css):
+                for sel, block, ln, supports, ancestors, col in css_rules(css, columns=True):
                     hit = None
                     if k == 'css-selector' and p['match'] in sel:
                         hit = sel
@@ -182,9 +304,13 @@ def scan_file(f: Path, rel: str, patterns: list[dict], utility: bool) -> list[di
                             hit = f'{sel} {{ display: {ds["display"]}; gap: {ds.get("gap") or ds.get("row-gap") or ds.get("column-gap")} }}'
                     if hit:
                         in_supports = bool(supports) and any(re.search(x, supports) for x in p.get('fallback') or [])
-                        uses.append({'feature': p['feature'], 'file': rel, 'line': ln + offset, 'snippet': hit[:160],
-                                     'selector': sel if not sel.startswith('@') else None,
-                                     'fallback': in_supports or fb})
+                        use = {'feature': p['feature'], 'file': rel, 'line': ln + offset, 'snippet': hit[:160],
+                               'selector': sel if not sel.startswith('@') else None, 'fallback': in_supports or fb}
+                        if minified:
+                            use['column'] = col
+                        if f.suffix not in ('.css', '.scss') and f.suffix not in MARKUP:
+                            use['via'] = 'css-in-js'   # CSS from a tagged template literal in a script
+                        uses.append(use)
         elif k == 'js-api':
             for js, offset in js_parts:
                 clean = strip_js_comments(js)
@@ -205,6 +331,16 @@ def scan_file(f: Path, rel: str, patterns: list[dict], utility: bool) -> list[di
                 ln = clean[:m.start()].count('\n') + 1
                 uses.append({'feature': p['feature'], 'file': rel, 'line': ln, 'snippet': text.splitlines()[ln - 1].strip()[:160],
                              'selector': None, 'fallback': fb})
+    if minified:  # one entry per feature and line, with how many uses it stands for and the first one's column
+        merged: dict[tuple, dict] = {}
+        for u in uses:
+            m = merged.get((u['feature'], u['line']))
+            if m is None:
+                merged[(u['feature'], u['line'])] = dict(u, occurrences=1)
+            else:
+                m['occurrences'] += 1
+                m['fallback'] = m['fallback'] and u['fallback']
+        uses = list(merged.values())
     return uses
 
 
@@ -239,7 +375,12 @@ def main() -> int:
         built = [auto_built]
     built_files = [rel_name(f, a.repo) for f in built_css_files(built)]
     fw = utility_framework(a.repo)
-    uses = scan(a.repo, pats, utility=bool(fw), built=built)
+    tw_major = None
+    if fw:
+        m = re.search(r'(\d+)', str(fw['version']))
+        tw_major = int(m.group(1)) if m else None
+    cij = css_in_js_libraries(a.repo)
+    uses = scan(a.repo, pats, utility=bool(fw), built=built, css_in_js=bool(cij), tailwind_major=tw_major)
     limitations = []
     if fw:
         fw.update(classes='known non-baseline utilities only (utility-class patterns in data/feature-patterns.json)',
@@ -248,8 +389,34 @@ def main() -> int:
             limitations.append(f'Utility-class CSS ({fw["framework"]} {fw["version"]}) was scanned only for the known non-baseline '
                                'utilities; the CSS it generates (colour functions, @property, cascade layers, nesting) was not '
                                'scanned: build the site and pass --built-css')
+        floor = FRAMEWORK_FLOORS.get(('tailwind', tw_major)) if tw_major else None
+        if floor:
+            low: dict[str, list[str]] = {}
+            for t in targets['resolved']:
+                if t['browser'] in floor and bl.vnum(t['version']) < bl.vnum(floor[t['browser']]):
+                    low.setdefault(t['browser'], []).append(t['version'])
+            below = []
+            for b, vs in sorted(low.items()):
+                vs = sorted(vs, key=bl.vnum)
+                below.append(f'{b} {vs[0]}' + (f'-{vs[-1]}' if len(vs) > 1 else ''))
+            fw['framework_floor'] = {b: v for b, v in floor.items()}
+            if below:
+                fw['targets_below_floor'] = below
+                limitations.append(f'Tailwind CSS {tw_major} itself requires {", ".join(f"{b} {v}" for b, v in floor.items())} '
+                                   f'or later, above some declared targets ({", ".join(below[:6])}'
+                                   f'{", ..." if len(below) > 6 else ""}): the project\'s real support floor is ambiguous, '
+                                   'and its utility CSS is not expected to work below it')
     elif built_files:
         fw = {'framework': None, 'version': None, 'classes': 'not scanned', 'built_css': built_files}
+    css_in_js = None
+    if cij:
+        n = sum(1 for u in uses if u.get('via') == 'css-in-js')
+        css_in_js = {'libraries': cij, 'uses': n,
+                     'scanned': 'styles written literally in scripts that use the library: object styles (sx props, '
+                                'styled({...}), theme styleOverrides) and tagged template literals (styled.div`...`, css`...`)'}
+        limitations.append(f'CSS-in-JS ({", ".join(cij)}) generates its CSS at runtime: only styles written literally in '
+                           'scripts were scanned; styles computed at runtime (theme functions, spread or conditional '
+                           'objects, values from variables) were not, and neither the source scan nor --built-css sees them')
     findings = []
     by_feature: dict[str, list] = {}
     for u in uses:
@@ -275,15 +442,18 @@ def main() -> int:
         if not unsupported:
             continue
         findings.append({'feature': feat, 'name': pat['name'], 'baseline_status': baseline,
-                         'files': [{k: u[k] for k in ('file', 'line', 'snippet', 'selector', 'fallback')} for u in us],
+                         'files': [{k: u[k] for k in ('file', 'line', 'column', 'occurrences', 'snippet', 'selector',
+                                                       'fallback', 'via') if k in u} for u in us],
                          'unsupported_in': unsupported, 'unsupported_usage': round(sum(x['usage'] for x in unsupported), 3),
                          'not_assessed': sorted(not_assessed), 'fallback': all(u['fallback'] for u in us),
                          'status': 'possible', 'linked_differences': []})
     out = {'repo': a.repo.as_posix(), 'browserslist': {'query': query, 'source': source, 'resolved_count': len(targets['resolved']),
                                                        'coverage': targets['coverage'], 'unresolved': targets['unresolved']},
-           'uses': len(uses), 'features': findings}
+           'uses': sum(u.get('occurrences', 1) for u in uses), 'features': findings}
     if fw:   # only written when there is something to say, so a plain CSS/JS repo's output is unchanged
         out['utility_css'] = fw
+    if css_in_js:
+        out['css_in_js'] = css_in_js
     if limitations:
         out['limitations'] = limitations
     a.out.parent.mkdir(parents=True, exist_ok=True)

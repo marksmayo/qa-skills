@@ -32,6 +32,22 @@
     {"feature": "container-queries", "name": "@container", "kind": "utility-class", "match": "@container(?![\\w-])|@(3xs|2xs|xs|sm|md|lg|xl|[2-7]xl|min-\\[[^\\]]+\\]|max-\\[[^\\]]+\\]):[\\w-]+", "fallback": []},
     {"feature": "field-sizing", "name": "field-sizing", "kind": "utility-class", "match": "field-sizing-(content|fixed)(?![\\w-])", "fallback": []},
     {"feature": "starting-style", "name": "@starting-style", "kind": "utility-class", "match": "starting:[\\w-]+", "fallback": []},
-    {"feature": "requestidlecallback", "name": "requestIdleCallback()", "kind": "js-api", "match": "\\brequestIdleCallback\\s*\\(", "fallback": ["['\"]requestIdleCallback['\"]\\s+in\\s+(window|self|globalThis)", "typeof\\s+(window\\.|self\\.|globalThis\\.)?requestIdleCallback", "requestIdleCallback\\s*\\|\\|", "if\\s*\\(\\s*!?\\s*(window\\.|self\\.|globalThis\\.)?requestIdleCallback\\s*\\)"]}
+    {"feature": "requestidlecallback", "name": "requestIdleCallback()", "kind": "js-api", "match": "\\brequestIdleCallback\\s*\\(", "fallback": ["['\"]requestIdleCallback['\"]\\s+in\\s+(window|self|globalThis)", "typeof\\s+(window\\.|self\\.|globalThis\\.)?requestIdleCallback", "requestIdleCallback\\s*\\|\\|", "if\\s*\\(\\s*!?\\s*(window\\.|self\\.|globalThis\\.)?requestIdleCallback\\s*\\)"]},
+    {"feature": "array-at", "name": "Array.prototype.at() / String.prototype.at()", "kind": "js-api", "match": "\\.at\\(\\s*-?\\d+\\s*\\)", "fallback": []},
+    {"feature": "array-findlast", "name": "findLast() / findLastIndex()", "kind": "js-api", "match": "\\.findLast(Index)?\\s*\\(", "fallback": []},
+    {"feature": "array-by-copy", "name": "toSorted() / toReversed() / toSpliced()", "kind": "js-api", "match": "\\.(toSorted|toReversed|toSpliced)\\s*\\(", "fallback": []},
+    {"feature": "object-hasown", "name": "Object.hasOwn()", "kind": "js-api", "match": "\\bObject\\.hasOwn\\s*\\(", "fallback": []},
+    {"feature": "array-group", "name": "Object.groupBy() / Map.groupBy()", "kind": "js-api", "match": "\\b(Object|Map)\\.groupBy\\s*\\(", "fallback": ["typeof\\s+(Object|Map)\\.groupBy", "['\"]groupBy['\"]\\s+in\\s+(Object|Map)"]},
+    {"feature": "set-methods", "name": "Set methods (union, intersection, ...)", "kind": "js-api", "match": "\\.(symmetricDifference|isSubsetOf|isSupersetOf|isDisjointFrom)\\s*\\(|\\b\\w*[Ss]et\\w*\\.(union|intersection|difference)\\s*\\(", "fallback": []},
+    {"feature": "promise-withresolvers", "name": "Promise.withResolvers()", "kind": "js-api", "match": "\\bPromise\\.withResolvers\\s*\\(", "fallback": []},
+    {"feature": "array-fromasync", "name": "Array.fromAsync()", "kind": "js-api", "match": "\\bArray\\.fromAsync\\s*\\(", "fallback": []},
+    {"feature": "iterator-methods", "name": "Iterator helpers", "kind": "js-api", "match": "\\bIterator\\.from\\s*\\(|\\.(values|keys|entries)\\(\\)\\s*\\.(map|filter|take|drop|flatMap|reduce|toArray|some|every|find)\\s*\\(", "fallback": []},
+    {"feature": "abortsignal-any", "name": "AbortSignal.any()", "kind": "js-api", "match": "\\bAbortSignal\\.any\\s*\\(", "fallback": []},
+    {"feature": "async-clipboard", "name": "Async Clipboard API (needs a secure context)", "kind": "js-api", "match": "\\bnavigator\\.clipboard\\.(writeText|readText|write|read)\\s*\\(", "fallback": ["navigator\\.clipboard\\s*\\?\\.", "if\\s*\\(\\s*!?\\s*navigator\\.clipboard\\b", "['\"]clipboard['\"]\\s+in\\s+navigator"]},
+    {"feature": "string-replaceall", "name": "String.prototype.replaceAll()", "kind": "js-api", "match": "\\.replaceAll\\s*\\(", "fallback": []},
+    {"feature": "promise-any", "name": "Promise.any()", "kind": "js-api", "match": "\\bPromise\\.any\\s*\\(", "fallback": []},
+    {"feature": "intl-segmenter", "name": "Intl.Segmenter", "kind": "js-api", "match": "\\bnew\\s+Intl\\.Segmenter\\s*\\(", "fallback": ["typeof\\s+Intl\\.Segmenter", "['\"]Segmenter['\"]\\s+in\\s+Intl"]},
+    {"feature": "weak-references", "name": "WeakRef / FinalizationRegistry", "kind": "js-api", "match": "\\bnew\\s+(WeakRef|FinalizationRegistry)\\s*\\(", "fallback": ["typeof\\s+(WeakRef|FinalizationRegistry)"]},
+    {"feature": "error-cause", "name": "Error cause", "kind": "js-api", "match": "\\bnew\\s+\\w*Error\\s*\\([^;]*?\\{\\s*cause\\s*:", "fallback": []}
   ]
 }
