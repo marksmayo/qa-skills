@@ -53,7 +53,14 @@ P2 ≥ 6, otherwise P3. A Critical finding is at least P1.
 Removing an operation is breaking; a changed operationId is potentially breaking (breaking when
 links use it). Severity: breaking without a major version bump is High, potentially breaking
 without one Medium; with a major bump, breaking is Low (expected) and the rest have none.
-Compatible changes are listed without severity.
+Compatible changes are listed without severity. When `info.version` never changes (a framework
+default such as FastAPI's `0.1.0`), the ratings stand: consumers can't learn of a break from the
+version, which is the risk the High rating describes. Say in `limitations` that the API doesn't
+version its contract.
+
+`X | None` written as `anyOf`/`oneOf` [X, `{type: null}`] is compared as X plus a null-ness change:
+`now_nullable` is compatible in a request and breaking in a response (a client may now get null),
+`no_longer_nullable` the reverse.
 
 ## Verdict, completeness and overall confidence
 

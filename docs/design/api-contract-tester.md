@@ -308,3 +308,35 @@ whose database was down) found these gaps. What changed:
 - **Not built:** recording CDN cache headers, a re-send sample option, grouping the
   missing-operationId lint, mapping code-built contracts' lines back to source, and checking that
   cases.json equals what `gen_cases.py` would generate for the recorded seed.
+
+## As built (v1.2.0): gaps found on a FastAPI monorepo with generated contracts
+
+A static-only run against two FastAPI services whose contracts came from `app.openapi()` found
+these gaps. What changed:
+
+- **Python handlers are parsed, not pattern-matched.** `handler_map.py` reads Flask, FastAPI and
+  Azure Functions routes with `ast` (`py_routes.py`, shared in content with the journey mapper), so
+  decorators inside docstrings no longer count. FastAPI paths include `APIRouter(prefix=...)`, also
+  on subclasses of `APIRouter`, and every `include_router(..., prefix=...)` above it across modules;
+  Flask paths include blueprint prefixes. On the services above the check went from 35 and 37
+  false issues to none. `--handler-prefix` prepends a prefix to handler paths, and
+  `unresolved_mounts` counts handlers whose router was never seen being included.
+- **`response_class_mismatch`.** A handler that streams or returns a file, text or HTML where the
+  contract documents only JSON is a handler-check issue. **`empty_response_schema`** is a new
+  contract lint: `{}` matches every body, so `schema_conformance` can't fail.
+- **Contract issues found by review.** `contract_issues` may end with entries the agent found by
+  reading (`source: agent`, a `basis` file, line and optional excerpt), re-read under `--repo`; the
+  loader's issues must still equal contract.json's. The static example has one.
+- **spec_diff** unwraps `anyOf`/`oneOf` [X, `{type: null}`] (Pydantic's Optional) before comparing,
+  so a field that became nullable is one `now_nullable` change instead of "anyOf changed" plus a
+  removed bound that was only moved into the branch. It notes when `info.version` is unchanged (a
+  framework default such as `0.1.0`); the ratings stand and the agent says so in limitations.
+- **Report.** `scope.contract.title` names the API, and the rendered heading uses it, so two
+  services' reports can be told apart. `scope.contract.source` is compared with contract.json's
+  as a path (relative, `./`, backslashes or absolute).
+- **SKILL.md** says that a contract generated from the handlers makes the contract-vs-handler check
+  close to a tautology and where to look instead (actual returns against the declared model,
+  routes outside the router, `Decimal` serialised as a string, naive datetimes against
+  `format: date-time`, recorded payloads checked with `jsonschema_lite.py`).
+- **Not built:** dismissing individual handler-check issues in the report, and a `--samples` step
+  that checks recorded client payloads against the contract.

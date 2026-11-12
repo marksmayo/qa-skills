@@ -1,7 +1,7 @@
 ---
 name: api-contract-tester
 description: Check that a running HTTP API behaves the way its contract says. Read an OpenAPI 3.0/3.1 document or a GraphQL schema, generate requests from it (documented examples, boundary values, one-violation negatives, a seeded random sample, and requests without credentials), send them to a test instance in safe mode, and check every response for undocumented status codes, server errors, wrong content types, schema violations, missing headers, invalid input accepted, valid input rejected and auth not enforced. Every finding has a saved, redacted request and response and is re-sent once to separate repeatable from flaky. With a previous contract it also rates the breaking changes between versions. Uses Schemathesis and oasdiff when installed; works with the standard library alone. No findings never means the API conforms.
-version: 1.1.0
+version: 1.2.0
 ---
 
 # API contract tester
@@ -81,8 +81,9 @@ python scripts/load_contract.py schema.graphql --introspect-url http://127.0.0.1
 
 It resolves `$ref`s (local, and external files or same-host URLs when the fragment has no local
 refs of its own), lists the operations with their line in the contract, and reports **contract
-issues**: a missing operationId, a 2xx response without a schema, an example that doesn't match
-its own schema, a keyword the checker can't evaluate, an unresolved `$ref`, or (GraphQL) a served
+issues**: a missing operationId, a 2xx response without a schema, an empty response schema
+(`{}`, which every body matches, so `schema_conformance` can't fail: generators write it for a
+handler that returns a raw `Response`, a stream or a file), an example that doesn't match its own schema, a keyword the checker can't evaluate, an unresolved `$ref`, or (GraphQL) a served
 schema that differs from the SDL. Contract issues are a separate section: they are not API failures. `no_security_declared` means no
 operation requires credentials, so `auth_enforced` can't be evaluated from the contract: read the
 handlers and mark the operations that do need a session or token with `--auth-required` (step 2).
@@ -95,6 +96,29 @@ load that. Record in `limitations` how it was produced and which source file bui
 contract lines then point into the generated file. For a previous contract, extract the same
 builder at an earlier commit (list the commits that touched the builder file and show the file
 at one of them).
+
+**A contract generated from the handlers** (FastAPI's `app.openapi()`, NestJS Swagger, springdoc)
+documents every routed handler by construction, so the contract-vs-handler check (step 6b) is
+close to a tautology: an empty result shows the generator ran, not that the contract is right.
+Say so in `limitations`, and spend the static effort where generated contracts go wrong:
+
+- what each handler actually returns against its declared response model and examples (a dict
+  built by hand, a raw `Response`, a stream or file documented as JSON, which handler_map reports
+  as `response_class_mismatch`, an example that names other fields than the code returns);
+- routes added outside the framework's router (mounted sub-apps, middleware that answers
+  requests, static files), which the generated contract never shows;
+- serialisation the schema describes correctly but clients don't expect: Pydantic sends
+  `Decimal` as a string (`type: string`), so a client or a recorded payload that uses numbers is
+  stale, not the contract; and a naive `datetime` is serialised without an offset, which fails
+  `format: date-time` (RFC 3339 needs one), so once run it is a `schema_conformance` failure on a
+  2xx, rated High. Find these by reading the models (`Decimal`, `datetime` without a timezone or
+  `AwareDatetime`) and, when the repository has recorded payloads (frontend fixtures, mocks, saved
+  responses), checking a few against the contract's schemas with `jsonschema_lite.py`.
+
+Record what you find by reading as contract issues with `"source": "agent"` and a `basis` (the
+file, line and an excerpt of the line that shows it), after the loader's issues, with ids of your
+own (`CA1`, ...). They are leads, not findings: a finding needs a saved exchange. The validator
+re-reads each basis under `--repo`.
 
 ### 2. Plan and generate
 
@@ -192,20 +216,33 @@ python scripts/load_contract.py openapi.v1.yaml --out <run>/contract.v1.json
 python scripts/spec_diff.py <run>/contract.v1.json <run>/contract.json --out <run>/diff.json [--run-oasdiff old.yaml new.yaml]
 ```
 
+`X | None` written as `anyOf` [X, `{type: null}`] (Pydantic v2's Optional) is unwrapped, so a field
+that became optional is one `now_nullable` change, not a removed bound. Severity assumes the API
+bumps `info.version` for a break. Many never do (FastAPI's default `0.1.0` stays in every
+release, and spec_diff prints a note when the version is unchanged): keep the ratings, and say in
+`limitations` that the API doesn't version its contract, so consumers can't tell a breaking release
+from the version.
+
 ### 6b. Optional: compare the contract with the handlers (with a repo)
 
 ```bash
-python scripts/handler_map.py <repo> --contract <run>/contract.json --out <run>/handlers.json [--contract-prefix /api]
+python scripts/handler_map.py <repo> --contract <run>/contract.json --out <run>/handlers.json [--contract-prefix /api] [--handler-prefix /api]
 ```
 
 Reads the route handlers (Next.js App Router `route.ts` exports including `export { h as GET }`,
-Pages Router API files, Express, Flask, FastAPI) and lists undocumented handlers, documented
-operations with no handler, documented methods the handler doesn't export, and path-parameter
-name differences. It works without a running API. Copy its summary and issues into the report's
-`handler_check`. They are review leads, not findings: mount prefixes (Express `app.use`, Flask
-blueprints, FastAPI routers) aren't resolved, and a handler registered through a wrapper can be
-missed. Coverage is still the contract's operations; say in `limitations` how many handlers the
-contract doesn't document.
+Pages Router API files, Express, Flask, FastAPI, Azure Functions) and lists undocumented handlers,
+documented operations with no handler, documented methods the handler doesn't export,
+path-parameter name differences, and handlers that stream or return a file, text or HTML where the
+contract documents only JSON (`response_class_mismatch`). It works without a running API. Python
+is parsed, not pattern-matched: decorators in docstrings don't count, and FastAPI `APIRouter`
+prefixes (also on subclasses), `include_router(prefix=...)` and Flask blueprint prefixes are
+applied. `unresolved_mounts` counts handlers whose router was never seen being included, or whose
+prefix is computed. Express `app.use` mounts are not resolved: use `--contract-prefix` when the
+contract's paths lack a prefix the code has, `--handler-prefix` when the code's lack one. Copy its
+summary and issues into the report's `handler_check`. They are review leads, not findings: a
+handler registered through a wrapper can be missed. Coverage is still the contract's operations;
+say in `limitations` how many handlers the contract doesn't document. For a contract generated
+from the handlers, read step 1 first: this check can't disagree with it.
 
 ### 7. Merge into candidates
 
@@ -256,7 +293,8 @@ environment variables before validating, so the exchanges are scanned for their 
 
 - `run_status`: `complete`, `partial` (stopped early, down, or an environment outage) or `not_run`
   (static only), with `run_status_reason` whenever it isn't complete.
-- `scope`: the contract (kind, version, API version, source, SHA-256), the previous contract,
+- `scope`: the contract (kind, version, title, API version, source, SHA-256; copy them from
+  contract.json, whose `source` is the path as load_contract.py was given it), the previous contract,
   base URL, `authorised_by`, writes allowed, production hosts, seed, filter and case limit (base
   URL, seed and limit are null when nothing was run or planned).
 - `metadata`: tools, generator (`stdlib`, `schemathesis` or `both`), requests sent, rate-limit
@@ -266,8 +304,9 @@ environment variables before validating, so the exchanges are scanned for their 
 - `headline`: verdict (`violations_found` or `not_established`), a summary, severity counts, flaky
   findings, breaking-change counts, operation coverage, evidence completeness and overall confidence.
 - `operations[]`: every operation with status, cases sent and the result of each check.
-- `findings[]`, `needs_review[]`, `triage[]`, `contract_issues[]`, `handler_check` (null when not
-  run), `breaking_changes[]`, `limitations[]`, `next_steps[]`.
+- `findings[]`, `needs_review[]`, `triage[]`, `contract_issues[]` (the loader's, then any found by
+  reading, with `source: agent` and a `basis`), `handler_check` (null when not run),
+  `breaking_changes[]`, `limitations[]`, `next_steps[]`.
 
 ## What the validator enforces
 
@@ -280,5 +319,8 @@ when writes weren't allowed, and none may go to a production host. A non-loopbac
 placeholder; after an outage it must say so. Limitations may not be empty when the run was partial
 or not run, operations were excluded or untested, or there were earlier attempts, and every attempt
 the run resumed must be in `aborted_attempts`. A `not_run` report has no run, findings or triage,
-and its summary says the API was not run and claims nothing a run would show. The handler check
-must equal handlers.json, and with `--repo` each cited line is re-read.
+and its summary says the API was not run and claims nothing a run would show. The loader's contract
+issues must equal contract.json's; issues found by review need a `basis`, re-read with `--repo`
+(the line must exist and hold the excerpt). The contract's source is compared as a path, so a
+relative and an absolute path to the same file match. The handler check must equal handlers.json,
+and with `--repo` each cited line is re-read.

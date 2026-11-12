@@ -101,12 +101,14 @@ Schemathesis 4.33.2 in safe mode for the REST one), listed in `examples/run/comm
 
 ```bash
 python scripts/validate_report.py examples/report.example.json --run examples/run/run.json --candidates examples/run/candidates.json --contract examples/run/contract.json --cases examples/run/cases.json --diff examples/run/diff.json --repo examples/clinic-api
-python scripts/validate_report.py examples/report.static.example.json --contract examples/run/contract.json --cases examples/run/cases.json --diff examples/run/diff.json
+python scripts/validate_report.py examples/report.static.example.json --contract examples/run/contract.json --cases examples/run/cases.json --diff examples/run/diff.json --repo examples/clinic-api
 python scripts/render_report.py examples/report.example.json
 python scripts/handler_map.py --self-test
 ```
 
-`examples/report.static.example.json` is the same contract reported without a run.
+`examples/report.static.example.json` is the same contract reported without a run. It also
+carries a contract issue found by reading the server (`source: agent`, with a `basis` file, line
+and excerpt that `--repo` re-reads).
 
 ## Files
 
@@ -120,6 +122,8 @@ python scripts/handler_map.py --self-test
 - `scripts/send_cases.py`: rate-limited sender in safe mode, with checks, redaction, exchanges and re-sends,
   request and path budgets, a 429 policy and resumable runs
 - `scripts/handler_map.py`: static contract-vs-handler comparison (`--self-test` checks it on fixtures)
+- `scripts/py_routes.py`: Flask, FastAPI and Azure Functions routes read with `ast`, with router and
+  blueprint prefixes resolved (the same file as the journey mapper's copy)
 - `scripts/run_schemathesis.py`: optional Schemathesis wrapper with the same safe mode
 - `scripts/spec_diff.py`: breaking-change diff; merges oasdiff output when present
 - `scripts/merge_findings.py`: operation coverage and rated candidates
