@@ -17,7 +17,8 @@
         "repository",
         "assessment_mode",
         "execution",
-        "generated_at"
+        "generated_at",
+        "skill_version"
       ],
       "properties": {
         "repository": {
@@ -38,13 +39,14 @@
             "static_only",
             "not_executable"
           ],
-          "description": "Strongest execution evidence: the suite was run in full or in part during the assessment (full_run, partial_run), credible existing reports were read instead (reports_only), nothing was run and no reports exist (static_only), or discovery or execution was attempted and failed with no credible reports (not_executable)."
+          "description": "Strongest execution evidence: every test layer was run during the assessment (full_run); some layers or tests were run and at least one layer was not (partial_run); credible existing reports were read instead (reports_only); nothing was run and no reports exist (static_only); or discovery or execution was attempted and failed with no credible reports (not_executable)."
         },
         "generated_at": {
           "type": "string"
         },
         "provisional": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "true exactly when no execution evidence supports the scores (execution static_only or not_executable)."
         },
         "notes": {
           "type": "array",
@@ -53,7 +55,164 @@
           }
         },
         "skill_version": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "description": "The SKILL.md version this evaluation was written for; it names the contract."
+        },
+        "execution_result": {
+          "type": "object",
+          "description": "What the runs showed. Required for full_run and partial_run.",
+          "required": [
+            "layers",
+            "runs"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "layers": {
+              "type": "array",
+              "minItems": 1,
+              "description": "Every test layer the repository has (unit, component, integration, e2e...), run or not.",
+              "items": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "status"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "framework": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "enum": [
+                      "run",
+                      "partial",
+                      "not_run"
+                    ]
+                  },
+                  "reason": {
+                    "type": "string",
+                    "description": "Why the layer was not run or only partly run."
+                  }
+                }
+              }
+            },
+            "runs": {
+              "type": "array",
+              "description": "Each execution the counts come from, in order.",
+              "items": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "origin",
+                  "layers",
+                  "passed",
+                  "failed",
+                  "skipped",
+                  "errored"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "origin": {
+                    "enum": [
+                      "assessor",
+                      "ci_report",
+                      "local_report"
+                    ],
+                    "description": "assessor: run during this assessment. Assessor runs never count as historical CI."
+                  },
+                  "command": {
+                    "type": "string"
+                  },
+                  "layers": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "passed": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "failed": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "skipped": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "errored": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "duration_seconds": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "coverage": {
+                    "type": "boolean",
+                    "description": "true when the run was instrumented for coverage."
+                  },
+                  "notes": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "failures": {
+              "type": "array",
+              "description": "Failing or erroring tests (or groups of them), each classified.",
+              "items": {
+                "type": "object",
+                "required": [
+                  "test",
+                  "class",
+                  "evidence"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "test": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "count": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Tests in this group (default 1)."
+                  },
+                  "class": {
+                    "enum": [
+                      "product",
+                      "test",
+                      "environment",
+                      "unknown"
+                    ]
+                  },
+                  "runs_failed": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Ids of the runs it failed in; fewer than all runs is a flakiness observation."
+                  },
+                  "evidence": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -240,8 +399,10 @@
               "verified",
               "specification_derived",
               "test_derived",
+              "mixed",
               "unknown"
-            ]
+            ],
+            "description": "The level of all the dimension's evidence. When its evidence items have different levels, use mixed and give every item its own level."
           },
           "finding": {
             "type": "string",
@@ -250,7 +411,34 @@
           "evidence": {
             "type": "array",
             "items": {
-              "type": "string"
+              "type": [
+                "string",
+                "object"
+              ],
+              "description": "A string inherits the dimension's evidence level; an object states its own. In a mixed dimension every item is an object.",
+              "required": [
+                "text",
+                "level"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][\\w-]*$",
+                  "description": "Lets a sentence of the finding, risks or recommendations cite this item as [id]."
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "level": {
+                  "enum": [
+                    "verified",
+                    "specification_derived",
+                    "test_derived"
+                  ]
+                }
+              }
             }
           },
           "risks": {
@@ -310,6 +498,28 @@
           },
           "remediated": {
             "type": "boolean"
+          },
+          "dimensions": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "effectiveness",
+                "trust",
+                "reliability",
+                "design",
+                "assertions",
+                "coverage",
+                "isolation",
+                "maintainability",
+                "ci",
+                "debuggability",
+                "performance",
+                "test_data",
+                "portability",
+                "security_a11y",
+                "ownership"
+              ]
+            }
           }
         }
       }
@@ -321,6 +531,7 @@
         "required": [
           "title",
           "priority",
+          "category",
           "impact",
           "effort",
           "action",
@@ -333,6 +544,16 @@
           "priority": {
             "type": "integer",
             "minimum": 1
+          },
+          "category": {
+            "enum": [
+              "critical_risk",
+              "top_improvement",
+              "quick_win",
+              "structural",
+              "evidence_needed"
+            ],
+            "description": "Step 9 group: critical confidence risks, the three highest-leverage improvements, quick wins, structural improvements, evidence needed for a stronger reassessment. Priorities rank the groups in this order."
           },
           "impact": {
             "enum": [
@@ -380,6 +601,23 @@
             "items": {
               "type": "string"
             }
+          },
+          "evidence_kinds": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "application_source",
+                "test_source",
+                "ci_configuration",
+                "recent_execution",
+                "historical_ci",
+                "runtime_coverage",
+                "mutation_report",
+                "requirements",
+                "defect_history"
+              ]
+            },
+            "description": "For evidence_needed: the inventory kinds (missing or partial) the evidence would supply."
           }
         }
       }
@@ -422,6 +660,19 @@
           },
           "details": {
             "type": "string"
+          },
+          "origin": {
+            "enum": [
+              "repository",
+              "ci",
+              "supplied",
+              "assessor"
+            ],
+            "description": "Where the evidence came from. assessor: produced during this assessment (never historical_ci)."
+          },
+          "as_of": {
+            "type": "string",
+            "description": "Date the evidence describes, for reports and logs."
           }
         }
       }
@@ -479,6 +730,24 @@
               "unknown"
             ]
           },
+          "concurrency": {
+            "enum": [
+              "covered",
+              "partial",
+              "not_covered",
+              "not_applicable",
+              "unknown"
+            ]
+          },
+          "recovery": {
+            "enum": [
+              "covered",
+              "partial",
+              "not_covered",
+              "not_applicable",
+              "unknown"
+            ]
+          },
           "notes": {
             "type": "string"
           }
@@ -486,6 +755,67 @@
         "required": [
           "feature"
         ]
+      }
+    },
+    "interface_coverage": {
+      "type": "array",
+      "description": "Interfaces (routes, endpoints, server actions, pages, operations) mapped to the tests that reach them. Not code coverage.",
+      "items": {
+        "type": "object",
+        "required": [
+          "interface",
+          "kind",
+          "total",
+          "tested",
+          "method",
+          "evidence_level"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "interface": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "enum": [
+              "routes",
+              "endpoints",
+              "server_actions",
+              "pages",
+              "operations",
+              "other"
+            ]
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "tested": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "method": {
+            "type": "string",
+            "minLength": 1,
+            "description": "How interfaces were matched to tests."
+          },
+          "evidence_level": {
+            "enum": [
+              "verified",
+              "specification_derived",
+              "test_derived"
+            ]
+          },
+          "untested": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
       }
     },
     "commands": {
@@ -504,9 +834,22 @@
           },
           "summary": {
             "type": "string"
+          },
+          "duration_seconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "environment": {
+            "type": "string",
+            "description": "Relevant environment: OS, runtime version, workers, fake env vars set, network guard."
+          },
+          "run": {
+            "type": "string",
+            "description": "The execution_result run id this command produced."
           }
         }
       }
     }
-  }
+  },
+  "description": "Output contract of the test-suite-evaluator skill, 1.2. Dimension ids renamed in 1.1: trustworthiness->trust, oracles->assertions, scope->coverage, data->test_data, environment->portability, crosscutting->security_a11y."
 }

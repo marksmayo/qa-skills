@@ -42,22 +42,31 @@ python scripts/render_report.py evaluation.json --color always
 python scripts/render_report.py evaluation.json --color never
 ```
 
+Write a Markdown report (all sections: score card, findings, dimensions with their evidence, behavioural and interface coverage, execution results, recommendations by group with acceptance criteria, limitations, and a commands appendix):
+
+```bash
+python scripts/render_report.py evaluation.json --markdown report.md
+```
+
 Validate an evaluation:
 
 ```bash
 python scripts/validate_evaluation.py evaluation.json
 ```
 
-The validator checks the JSON against the schema, then recomputes what the rubric defines: all fifteen dimensions with their weights, the raw weighted and group scores, every cap that applies, the overall score and its band, and evidence completeness from the inventory. It also checks that the assessment mode and execution evidence match the inventory, and that every score has evidence. It rejects any code-coverage claim made without a runtime coverage report or from test-derived evidence. Both scripts read and write UTF-8 on every platform.
+The validator checks the JSON against the schema, then recomputes what the rubric defines: all fifteen dimensions with their weights, the raw weighted and group scores, every cap that applies, the overall score and its band, and evidence completeness from the inventory. It also checks that the assessment mode and execution evidence match the inventory, and that every score has evidence. It checks that each dimension's evidence level holds for all of its evidence (or is `mixed` with a level per item), that the execution value matches the layers and runs recorded, that every failure is classified, that the assessor's own runs are not offered as CI history, and that recommendations follow the Step 9 groups. It rejects any code-coverage claim made without a runtime coverage report or from evidence that is not verified; a stated percentage is a claim even in a sentence that also says "no", while file names and backticked identifiers are not claims. Both scripts read and write UTF-8 on every platform.
+
+Evaluations written for an older contract fail with a migration hint; SKILL.md "Migrating older evaluations" lists the changes.
 
 ## Files
 
 - `SKILL.md` — complete agent instructions
 - `RUBRIC.md` — detailed scoring anchors and evidence rules
 - `schemas/evaluation.schema.json` — machine-readable output contract
-- `scripts/render_report.py` — coloured terminal/Markdown renderer
+- `scripts/render_report.py` — terminal renderer (ANSI colour) and Markdown renderer (`--markdown`)
 - `scripts/validate_evaluation.py` — schema and rubric validator (recomputes scores, caps and completeness)
-- `examples/evaluation.example.json` — sample result
+- `examples/evaluation.example.json` — sample result: a black-box, static-only evaluation
+- `examples/evaluation.partial-run.example.json` — sample result: a white-box partial run of a synthetic Next.js app (unit layer run twice and with coverage, end-to-end layer not run), with execution results, interface coverage and mixed evidence levels
 
 ## Design principles
 

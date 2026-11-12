@@ -1,7 +1,7 @@
 ---
 name: test-suite-evaluator
 description: Evaluate an automated test suite for effectiveness, trustworthiness, engineering quality, CI readiness, maintainability, coverage evidence, and operational health. Produces evidence-backed 1–10 scores, confidence ratings, critical caps, and prioritised remediation. Works with standalone test repositories and must not invent application-code coverage.
-version: 1.1.0
+version: 1.2.0
 ---
 
 # Test Suite Evaluator
@@ -58,6 +58,8 @@ Can assess implementation-linked coverage, untested modules, branch gaps, mutati
 
 Record the mode and explain why it applies. The inventory must support it: white-box needs application source, grey-box needs requirements or specifications.
 
+White-box with only source (no runtime coverage or mutation report) is weaker than white-box with instrumentation. Say which in `metadata.notes`; the validator warns when white-box rests on source alone. If the suite has a coverage provider configured (`@vitest/coverage-v8`, `coverage.py`, `jest --coverage`, JaCoCo), try a coverage run before settling for source only.
+
 ## Step 2: Inventory available evidence
 
 Inspect, where available:
@@ -73,7 +75,9 @@ Inspect, where available:
 - Documentation and contribution guidance
 - Secrets handling and environment configuration
 
-Create an evidence inventory with status: `available`, `partial`, `missing`, or `not_applicable`. Give each entry a `kind` naming the RUBRIC evidence-completeness item it counts as (`application_source`, `test_source`, `ci_configuration`, `recent_execution`, `historical_ci`, `runtime_coverage`, `mutation_report`, `requirements`, `defect_history`, or `other`), and list all nine RUBRIC items, as `missing` when absent. Evidence completeness is computed from these entries.
+Create an evidence inventory with status: `available`, `partial`, `missing`, or `not_applicable`. Give each entry a `kind` naming the RUBRIC evidence-completeness item it counts as (`application_source`, `test_source`, `ci_configuration`, `recent_execution`, `historical_ci`, `runtime_coverage`, `mutation_report`, `requirements`, `defect_history`, or `other`), and list all nine RUBRIC items, as `missing` when absent. Evidence completeness is computed from these entries. `RUBRIC.md` ("What counts as each evidence kind") says precisely what qualifies for each kind, including defect history and requirements; follow it rather than judging case by case.
+
+Give an entry an `origin` (`repository`, `ci`, `supplied`, or `assessor`) and, for reports and logs, the date it describes (`as_of`). Your own runs during the assessment are `recent_execution` with origin `assessor`; they are never `historical_ci`, however many times you repeat them (the validator rejects that). Stale or hand-written artefacts committed to the repository (an old local run log, a hand-written per-route percentage summary) are `other`: mention them, but they earn no points and cannot support coverage claims.
 
 Do not block the assessment merely because some evidence is absent. Continue with explicit limitations.
 
@@ -91,16 +95,46 @@ Examples:
 
 Do not install large dependencies, access production systems, rotate secrets, delete data, or run destructive suites without explicit permission.
 
-Record commands attempted, exit status, and whether results are representative.
+### Check that running the tests is safe
+
+Before running anything, find out what the tests would touch:
+
+1. Read the test setup files (`vitest.setup.ts`, `jest.setup.js`, `conftest.py`, `globalSetup`) and the test environment files (`.env.test`). Look for defaults such as `process.env.DATABASE_URL ??= ...`, real API keys, and base URLs that point at shared or remote services.
+2. Run in a scratch copy, not the checkout: export the tracked files (`git archive HEAD | tar -x -C <scratch>`, or a plain copy without `.git`) and link the existing dependency directory into it rather than installing. Point every output at the scratch copy or a temporary directory (`--outputFile`, `--coverage.reportsDirectory`, `--junitxml`). Test runners write caches (`node_modules/.vite`, `.pytest_cache`), so the original tree must not be the working directory.
+3. Supply fake configuration for anything the tests read: a loopback database URL, obviously fake keys (`sk_test_fake`), and `NODE_ENV=test`.
+4. Guard the network. Block every non-loopback connection for the run and count the attempts. For Node, preload a small module with `NODE_OPTIONS=--require ./net-guard.cjs` that wraps `net.Socket.prototype.connect` and `dns.lookup` to refuse anything other than `127.0.0.1`, `::1`, or `localhost` and log each refusal; it also applies inside Vitest and Jest worker threads. For Python, a `conftest.py` or `sitecustomize.py` that patches `socket.socket.connect` does the same. Zero refused attempts is verified evidence for the isolation dimension; refused attempts are findings, with the hosts named.
+
+If the tests need services you cannot provide safely (a real database, staging, credentials), do not run that layer. Record it as not run with the reason.
+
+### Time budget
+
+A full run of a large suite can take ten minutes or more, and a coverage run longer. Your own tool time limit is not evidence about the suite: if a command times out on your side, run it in the background and wait, or run part of it and record `partial_run`. Never score performance from your own timeout. Use a machine-readable reporter (`vitest run --reporter=json --outputFile=<tmp>/run1.json`, `jest --json --outputFile`, `pytest --junitxml`, Playwright `--reporter=json`): it gives per-file timings and makes comparing runs exact.
+
+Run the suite twice when practical. Tests that fail in one run and pass in the other are a verified flakiness observation for the reliability dimension. Repeated runs during the assessment are still recent execution, not CI history.
+
+When you measure coverage, tell the runner to write the report even when tests fail (Vitest `--coverage.reportOnFailure=true`; Jest writes it by default; `pytest --cov` writes it unless the session errors). Otherwise a single flaky failure leaves you with no coverage at all. Instrumentation slows the run and can add timeout failures; compare its failures with the uninstrumented run before blaming the product.
+
+### Record what ran and what it showed
+
+Record commands attempted, exit status, duration, the environment that matters (runtime version, worker count, fake variables set, network guard on), and whether results are representative.
 
 Record the strongest execution evidence as `metadata.execution`:
 
-- `full_run` / `partial_run`: you ran all or part of the suite during the assessment
+- `full_run`: you ran every test layer the repository has during the assessment
+- `partial_run`: you ran some layers or some tests, and at least one layer (for example an end-to-end layer that needs the app and a database) was not run or only partly run
 - `reports_only`: you did not run it, but credible recent reports or CI results exist
 - `static_only`: nothing was run and no reports exist
 - `not_executable`: discovery or execution was attempted and failed, and no credible reports exist
 
-The first three need recent execution results in the inventory; the last two must not claim them.
+The first three need recent execution results in the inventory; the last two must not claim them, and mark the evaluation `provisional` (`metadata.provisional: true`). `provisional` means exactly that: no execution evidence supports the scores. It is false for every other execution value.
+
+For `full_run` and `partial_run`, record `metadata.execution_result`:
+
+- `layers`: every test layer the repository has (unit, component, integration, end-to-end...), each `run`, `partial`, or `not_run`, with the reason when not fully run. A layer that exists and was not run makes the execution `partial_run`, never `full_run`.
+- `runs`: each execution with its `origin` (`assessor`, `ci_report`, `local_report`), the layers it covered, and its passed, failed, skipped, and errored counts, duration, and whether it was instrumented for coverage.
+- `failures`: every failing or erroring test, or a group of them with a `count`, classified as `product` (the system under test is wrong), `test` (the test is wrong, brittle, or timing-dependent), `environment` (the machine, a missing service, configuration), or `unknown` (not yet established; say what would settle it). Name the runs it failed in (`runs_failed`); a test that failed in some runs and not others is flaky.
+
+A static review of a layer that did not run (for example Playwright specs read but not executed) may support design, assertion, maintainability and effectiveness judgements as `test_derived` evidence, but never execution, reliability or performance claims.
 
 ## Step 4: Build a behaviour model
 
@@ -115,7 +149,17 @@ From each test or scenario, derive where possible:
 - Input classes
 - Positive, negative, boundary, permission, concurrency, dependency-failure, and recovery dimensions
 
-Aggregate this into behavioural coverage matrices. State clearly that these are test-derived unless matched against specifications or source.
+Aggregate this into behavioural coverage matrices (`behavioural_coverage`: happy path, negative, boundary, permissions, concurrency, dependency failure, recovery). State clearly that these are test-derived unless matched against specifications or source.
+
+### Interface coverage
+
+When the application's interfaces can be listed, map each one to the tests that reach it and record the result in `interface_coverage` (total, tested, the untested ones, and how you matched them). This is cheap and often gives the strongest finding: an untested authentication, payment or data-deletion handler. It is interface coverage, not code coverage.
+
+- **Next.js App Router:** list `app/**/route.ts` (and `.js`) handlers; a handler is tested when a test file imports it (resolve `@/` and other `tsconfig.json` `paths` aliases) or calls its URL. Count each exported method (`GET`, `POST`, `PATCH`, `DELETE`) when the tests show which method they exercise. Server actions (`'use server'`) and `page.tsx` files are separate interfaces.
+- **Express, Fastify, Flask, Django, Rails, Spring:** the router or URL configuration lists the endpoints; match tests by URL and method.
+- **OpenAPI or GraphQL:** operations from the specification (that makes it `specification_derived`).
+
+Import mapping is `test_derived`; a coverage report listing each handler's executed lines makes it `verified`.
 
 ## Step 5: Score the dimensions
 
@@ -145,15 +189,21 @@ Weights total 100. List all fifteen dimensions, each once. Reweight only when a 
 
 For each dimension output:
 
-- `score`: integer 1–10, or null when not assessed (never 0)
+- `score`: integer 1–10, or null when not assessed (never 0). Use the anchors for the dimension in `RUBRIC.md`.
 - `confidence`: high, medium, or low
-- `evidence_level`: verified, specification_derived, test_derived, or unknown
+- `evidence_level`: verified, specification_derived, test_derived, mixed, or unknown
 - concise finding
 - concrete supporting evidence with file paths or command results
 - risks
 - recommendations
 
-A scored dimension must carry at least one piece of evidence and cannot have evidence level `unknown`; a dimension the evidence does not support is not assessed (score null), with the finding saying why.
+A scored dimension must carry at least one piece of evidence and cannot have evidence level `unknown`; a dimension the evidence does not support is not assessed (score null, evidence level `unknown`), with the finding starting "Not assessed" and saying why. Placeholder findings are rejected.
+
+**Evidence levels belong to evidence, not to a whole dimension.** The dimension's level must hold for every piece of its evidence. When a dimension rests on evidence of different levels (a coverage run and inferences read from tests), set `evidence_level: mixed` and write each evidence item as an object with its own level and an id: `{"id": "e1", "level": "verified", "text": "vitest --coverage: lines 81.2%"}`. A sentence of the finding, risks or recommendations that states a coverage figure must cite a verified item by its id (`[e1]`). Never pick `verified` for a dimension because some of its evidence is verified: that would license coverage wording for the inferred parts.
+
+`confidence: high` needs at least two consistent evidence items and direct evidence (not `test_derived` alone).
+
+Map file names and identifiers into evidence freely, including names that contain "coverage" (`service-form-branch-coverage.test.tsx`); write them in backticks when quoting. The coverage-language check ignores file names, identifiers and backticked text.
 
 ## Step 6: Apply score caps and critical findings
 
@@ -170,7 +220,11 @@ Default caps (with the `rule` id recorded in `headline.applied_caps`):
 - Broad error swallowing, globally excessive retries, or systematic false-pass behaviour → critical finding with `category: systematic_false_pass`; maximum 4 (`systematic_false_pass`)
 - Static-only assessment (`execution: static_only` or `not_executable`) → maximum 8 (`static_only`)
 
-List every cap whose condition holds, with its limit and an explanation, even when it does not bind because the score is already lower. The overall score is the raw weighted score lowered to the smallest limit. Explain every cap. Never silently modify the score.
+List every cap whose condition holds, with its limit and an explanation, even when it does not bind because the score is already lower. The overall score is the raw weighted score lowered to the smallest limit. Explain every cap. Never silently modify the score. When no cap applies, say so in the report ("No caps applied").
+
+The reliability anchors in `RUBRIC.md` decide whether the reliability cap applies: a suite that was red in every assessed run for non-product reasons scores 3 or lower, not 4.
+
+`critical_findings` holds findings at `critical`, `high`, or `medium` severity; the report separates critical ones from the rest. Only the categories above cap the score. An untested security- or money-critical path (sign-in, two-factor, payments, data deletion, permissions) is at least a `high` finding with `category: other`, and lowers `effectiveness` and `coverage` through their anchors; it does not cap the score on its own unless the evidence shows systematic false passes. Give each finding the `dimensions` it affects.
 
 ## Step 7: Calculate headline results
 
@@ -224,24 +278,35 @@ Explicitly check for:
 - Snapshots or golden files accepted without review discipline
 - Reports that are attractive but diagnostically weak
 - Test names implying behaviour not actually asserted
+- Coverage-chasing tests: files named for coverage (`*-coverage.test.*`), titles starting "covers …", comments citing source line numbers, tests that call code without asserting its outcome
+- Assertion-free tests (no `expect`/`assert` in the body; the `expect-expect` lint rule finds them) and `try { … } catch {}` inside a test body
+- Configured thresholds that never run: coverage thresholds in `vitest.config.*` or `jest.config.*` when CI runs tests without `--coverage`, or quality gates on a job that is not required
+
+JavaScript and TypeScript stacks (Vitest, Jest, Next.js, Playwright) add signs that are easy to miss:
+
+- A global `environment: 'jsdom'` applied to API route or server tests, so server code runs with browser globals it never has in production
+- A global `vi.mock`/`jest.mock` in a setup file that replaces a module (the database client, auth, a payment SDK) in every test, hiding integration behaviour everywhere
+- The database client (Prisma, Drizzle, TypeORM) mocked in every test while CI provisions a real database only for migrations, so no test exercises a real query
+- `npm test` script environment variables (`TZ=UTC`, `NODE_ENV`) silently overridden in a setup file, or tests that depend on `npm_package_version` and other variables only `npm run` sets (they pass under `npm test` and fail under `npx vitest`)
+- An end-to-end layer (Playwright, Cypress) that CI never runs, or runs with retries that hide first-attempt failures
 
 ## Step 9: Prioritise recommendations
 
 Do not produce an unranked dump.
 
-Return:
+Return these groups, each recommendation carrying its group as `category`, and rank `priority` through the groups in this order:
 
-1. **Critical confidence risks**
-2. **Three highest-leverage improvements**
-3. **Quick wins**
-4. **Structural improvements**
-5. **Evidence needed for a stronger reassessment**
+1. **Critical confidence risks** (`critical_risk`): required when a critical finding or a cap (other than the static-only caps) applies
+2. **Three highest-leverage improvements** (`top_improvement`): one to three
+3. **Quick wins** (`quick_win`): small effort only
+4. **Structural improvements** (`structural`)
+5. **Evidence needed for a stronger reassessment** (`evidence_needed`): required when any inventory item is missing or partial; name the inventory kinds it would supply in `evidence_kinds`
 
 Each recommendation must include:
 
 - impact: critical, high, medium, low
 - effort: small, medium, large
-- expected score dimensions affected
+- expected score dimensions affected (`dimensions_affected`; optional for evidence needed)
 - concrete implementation suggestion
 - acceptance criteria
 
@@ -252,7 +317,9 @@ Generate both:
 1. `evaluation.json`, conforming to `schemas/evaluation.schema.json`
 2. A concise human report in Markdown or terminal format
 
-Run `python scripts/validate_evaluation.py evaluation.json` and fix every error before reporting. Besides the schema it recomputes the weights, the raw and group scores, the caps, the overall score and band, and evidence completeness, and rejects scores without evidence and any code-coverage claim made without a runtime coverage report or from test-derived evidence. Write and read the JSON as UTF-8.
+Run `python scripts/validate_evaluation.py evaluation.json` and fix every error before reporting. Besides the schema it recomputes the weights, the raw and group scores, the caps, the overall score and band, and evidence completeness, and rejects scores without evidence, evidence levels that do not hold for every item, high confidence without direct and multiple evidence, an execution value its layers and runs contradict, unclassified failures, assessor runs offered as CI history, recommendations outside the Step 9 groups, and any code-coverage claim made without a runtime coverage report or from evidence that is not verified. A stated coverage percentage is a claim whatever else its sentence says ("No tests for 2FA, so branch coverage is 83%" is a claim). Write and read the JSON as UTF-8.
+
+Render the report with `python scripts/render_report.py evaluation.json` for the terminal, or `--markdown report.md` for a Markdown file. Both show every section below.
 
 When terminal colour is supported, use ANSI colour through `scripts/render_report.py`:
 
@@ -268,13 +335,20 @@ Never rely on colour alone. Include text labels and symbols.
 Recommended report order:
 
 1. Title and assessment mode
-2. Overall score card
+2. Overall score card (raw and capped score, each cap or "No caps applied", the decimal-significance warning)
 3. Critical findings
-4. Dimension scorecard
-5. Behavioural coverage matrix
-6. Highest-leverage improvements
+4. Dimension scorecard, with each dimension's evidence, risks and recommendations
+5. Behavioural coverage matrix and interface coverage
+6. Recommendations by group, with acceptance criteria
 7. Evidence limitations
-8. Appendix with commands and inspected artifacts
+8. Appendix with execution results, commands and inspected artifacts
+
+## Migrating older evaluations
+
+`metadata.skill_version` is required and names the contract an evaluation was written for. The validator warns when it differs from this skill's version. To bring an older evaluation forward:
+
+- **Before 1.1:** rename dimension ids `trustworthiness` → `trust`, `oracles` → `assertions`, `scope` → `coverage`, `data` → `test_data`, `environment` → `portability`, `crosscutting` → `security_a11y`; add `metadata.execution` and a `kind` for every inventory entry.
+- **1.1 → 1.2:** add `metadata.skill_version`; add `metadata.execution_result` for `full_run` and `partial_run`; set `provisional` true only for `static_only` and `not_executable`; give every recommendation a `category` (and `evidence_kinds` for evidence needed); set unassessed dimensions' evidence level to `unknown`; split mixed-evidence dimensions into per-item levels (`mixed`).
 
 ## Required honesty language
 

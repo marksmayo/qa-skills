@@ -1,0 +1,796 @@
+{
+  "metadata": {
+    "repository": "example-booking-app",
+    "assessment_mode": "white_box",
+    "execution": "partial_run",
+    "generated_at": "2026-11-12T00:00:00Z",
+    "skill_version": "1.2.0",
+    "provisional": false,
+    "notes": [
+      "A synthetic example: a Next.js App Router application with Vitest unit and component tests and a Playwright layer.",
+      "Tests ran in a scratch copy made with git archive, with node_modules linked, a fake DATABASE_URL on 127.0.0.1, fake payment keys, and a network guard preloaded with NODE_OPTIONS.",
+      "The unit layer was run twice to observe flakiness; these runs are recent execution, not CI history.",
+      "Weighted decimals are indicative; differences of a few tenths are not material."
+    ],
+    "execution_result": {
+      "layers": [
+        {
+          "name": "unit",
+          "framework": "Vitest 4 (jsdom)",
+          "status": "run"
+        },
+        {
+          "name": "e2e",
+          "framework": "Playwright",
+          "status": "not_run",
+          "reason": "Needs the built app and a Postgres database; no disposable database was available. The specs were read, not run."
+        }
+      ],
+      "runs": [
+        {
+          "id": "r1",
+          "origin": "assessor",
+          "command": "npx vitest run --reporter=json --outputFile=<tmp>/r1.json",
+          "layers": [
+            "unit"
+          ],
+          "passed": 1404,
+          "failed": 19,
+          "skipped": 8,
+          "errored": 0,
+          "duration_seconds": 531
+        },
+        {
+          "id": "r2",
+          "origin": "assessor",
+          "command": "npx vitest run --reporter=json --outputFile=<tmp>/r2.json",
+          "layers": [
+            "unit"
+          ],
+          "passed": 1407,
+          "failed": 16,
+          "skipped": 8,
+          "errored": 0,
+          "duration_seconds": 548
+        },
+        {
+          "id": "r3",
+          "origin": "assessor",
+          "command": "npx vitest run --coverage --coverage.reportOnFailure=true --coverage.reportsDirectory=<tmp>/coverage",
+          "layers": [
+            "unit"
+          ],
+          "passed": 1399,
+          "failed": 24,
+          "skipped": 8,
+          "errored": 0,
+          "duration_seconds": 802,
+          "coverage": true,
+          "notes": "Instrumentation added 8 timeouts"
+        }
+      ],
+      "failures": [
+        {
+          "test": "src/lib/pricing.test.ts > applies the weekend surcharge once",
+          "class": "product",
+          "runs_failed": [
+            "r1",
+            "r2",
+            "r3"
+          ],
+          "evidence": "Expected 54.00, received 59.40 in every run: the surcharge is applied twice"
+        },
+        {
+          "test": "src/lib/availability.test.ts > rejects overlapping bookings",
+          "count": 2,
+          "class": "product",
+          "runs_failed": [
+            "r1",
+            "r2",
+            "r3"
+          ],
+          "evidence": "Overlap at the end boundary accepted in every run"
+        },
+        {
+          "test": "booking-form and calendar component tests timing out",
+          "count": 13,
+          "class": "test",
+          "runs_failed": [
+            "r1",
+            "r2",
+            "r3"
+          ],
+          "evidence": "Test timed out in 5000ms; fixed waitFor intervals under 16 workers"
+        },
+        {
+          "test": "notification and calendar tests failing in one run only",
+          "count": 6,
+          "class": "test",
+          "runs_failed": [
+            "r1"
+          ],
+          "evidence": "Passed in r2 with no change: flaky"
+        },
+        {
+          "test": "extra timeouts under coverage instrumentation",
+          "count": 8,
+          "class": "environment",
+          "runs_failed": [
+            "r3"
+          ],
+          "evidence": "Passed in r1 and r2; slower instrumented run"
+        }
+      ]
+    }
+  },
+  "headline": {
+    "raw_weighted_score": 5.2,
+    "overall_score": 5,
+    "rating_band": "Serviceable",
+    "testing_effectiveness": 6.0,
+    "suite_trustworthiness": 5.0,
+    "engineering_quality": 5.8,
+    "operational_health": null,
+    "evidence_completeness": 65.0,
+    "overall_confidence": "medium",
+    "applied_caps": [
+      {
+        "rule": "reliability_below_4",
+        "limit": 5,
+        "explanation": "Reliability scored 3: red in both assessed runs from timeouts, with six tests flaky between runs. The cap of 5 lowers the overall from 5.2."
+      }
+    ]
+  },
+  "dimensions": [
+    {
+      "id": "effectiveness",
+      "name": "Test effectiveness",
+      "weight": 16,
+      "score": 6,
+      "confidence": "medium",
+      "evidence_level": "mixed",
+      "finding": "Booking and pricing rules have meaningful outcome tests [e1], but two-factor sign-in and refund handlers have none [e2].",
+      "evidence": [
+        {
+          "id": "e1",
+          "level": "verified",
+          "text": "Run r1: 1,404 of 1,431 tests passed, including src/lib/pricing.test.ts outcome checks on totals and VAT"
+        },
+        {
+          "id": "e2",
+          "level": "test_derived",
+          "text": "Route-to-test mapping: app/api/auth/two-factor/verify/route.ts and app/api/refunds/route.ts are imported by no test"
+        }
+      ],
+      "risks": [
+        "A broken two-factor check or refund calculation would ship green"
+      ],
+      "recommendations": [
+        "Add handler tests for two-factor verification and refunds, including rejection paths"
+      ]
+    },
+    {
+      "id": "trust",
+      "name": "Suite trustworthiness",
+      "weight": 14,
+      "score": 5,
+      "confidence": "medium",
+      "evidence_level": "mixed",
+      "finding": "Failures are believable when they occur [e1], but every run was red from timeouts, so a red build carries little signal [e2].",
+      "evidence": [
+        {
+          "id": "e1",
+          "level": "verified",
+          "text": "The 3 product failures in run r1 reproduce in run r2 with the same assertion messages"
+        },
+        {
+          "id": "e2",
+          "level": "verified",
+          "text": "Runs r1 and r2 both failed: 19 and 16 failures, 13 of them timeouts in src/components/booking-form.test.tsx"
+        },
+        {
+          "id": "e3",
+          "level": "test_derived",
+          "text": "vitest.setup.ts mocks @/lib/db globally, so no unit test exercises a real query"
+        }
+      ],
+      "risks": [
+        "Developers learn to ignore red runs, and a real regression hides among timeouts"
+      ],
+      "recommendations": [
+        "Fix or quarantine the timing-dependent component tests so a red run means a defect"
+      ]
+    },
+    {
+      "id": "reliability",
+      "name": "Reliability and determinism",
+      "weight": 10,
+      "score": 3,
+      "confidence": "high",
+      "evidence_level": "verified",
+      "finding": "Red in both assessed runs for non-product reasons: timing-dependent component tests time out under load, and 6 tests failed in only one of the two runs.",
+      "evidence": [
+        "Runs r1 and r2: 13 timeouts in src/components/booking-form.test.tsx and src/components/calendar.test.tsx",
+        "execution_result.failures: 6 tests failed in exactly one of two runs",
+        "Coverage run r3 raised timeouts from 13 to 21"
+      ],
+      "risks": [
+        "Real failures are lost among flaky ones"
+      ],
+      "recommendations": [
+        "Replace fixed waits in component tests with findBy* queries; raise the per-test timeout only where justified"
+      ]
+    },
+    {
+      "id": "design",
+      "name": "Test design and level selection",
+      "weight": 8,
+      "score": 6,
+      "confidence": "medium",
+      "evidence_level": "test_derived",
+      "finding": "Rules are mostly tested at unit level and the end-to-end layer is small, but route handlers are tested in jsdom rather than a Node environment.",
+      "evidence": [
+        "vitest.config.ts sets environment: \"jsdom\" globally, including app/api/**/route.test.ts",
+        "e2e/ holds 9 Playwright specs for booking and sign-in journeys"
+      ],
+      "risks": [
+        "Server code runs with browser globals it never has in production"
+      ],
+      "recommendations": [
+        "Use environmentMatchGlobs (or per-file // @vitest-environment node) for route handler tests"
+      ]
+    },
+    {
+      "id": "assertions",
+      "name": "Assertion and oracle quality",
+      "weight": 8,
+      "score": 5,
+      "confidence": "medium",
+      "evidence_level": "test_derived",
+      "finding": "Most tests assert concrete outcomes; 23 tests have no assertion and 4 swallow errors in try/catch.",
+      "evidence": [
+        "23 test bodies with no expect() (expect-expect lint)",
+        "src/lib/notify.test.ts wraps the call in try { ... } catch {} with no assertion in the catch"
+      ],
+      "risks": [
+        "Assertion-free tests pass whatever the code does"
+      ],
+      "recommendations": [
+        "Enable vitest/expect-expect and remove empty catch blocks"
+      ]
+    },
+    {
+      "id": "coverage",
+      "name": "Test scope and coverage",
+      "weight": 8,
+      "score": 6,
+      "confidence": "medium",
+      "evidence_level": "mixed",
+      "finding": "Instrumented line coverage is 81.2% [e1]; untested interfaces are concentrated in authentication and refunds [e2].",
+      "evidence": [
+        {
+          "id": "e1",
+          "level": "verified",
+          "text": "Run r3 (vitest run --coverage --coverage.reportOnFailure=true): lines 81.2%, branches 74.5% (coverage/coverage-summary.json)"
+        },
+        {
+          "id": "e2",
+          "level": "test_derived",
+          "text": "interface_coverage: 41 of 46 route handlers imported by a test; the 5 untested are listed"
+        }
+      ],
+      "risks": [
+        "Coverage is lowest where the risk is highest"
+      ],
+      "recommendations": [
+        "Test the five untested handlers before raising coverage elsewhere"
+      ]
+    },
+    {
+      "id": "isolation",
+      "name": "Isolation and state management",
+      "weight": 7,
+      "score": 6,
+      "confidence": "medium",
+      "evidence_level": "mixed",
+      "finding": "No test reached the network [e1], but a global database mock means isolation from the real database is never tested either way [e2].",
+      "evidence": [
+        {
+          "id": "e1",
+          "level": "verified",
+          "text": "Network guard (NODE_OPTIONS --require net-guard.cjs) logged 0 non-loopback connection attempts across runs r1 to r3"
+        },
+        {
+          "id": "e2",
+          "level": "test_derived",
+          "text": "vitest.setup.ts: vi.mock(\"@/lib/db\") applies to every test"
+        }
+      ],
+      "risks": [
+        "Query and transaction defects are invisible to the suite"
+      ],
+      "recommendations": [
+        "Run repository tests against a disposable Postgres container"
+      ]
+    },
+    {
+      "id": "maintainability",
+      "name": "Maintainability and appropriate reuse",
+      "weight": 7,
+      "score": 6,
+      "confidence": "medium",
+      "evidence_level": "test_derived",
+      "finding": "Tests sit next to the code they test and use small builders; 31 files named *-coverage.test.ts duplicate scenarios from the main test files.",
+      "evidence": [
+        "src/test/builders.ts provides booking and customer builders",
+        "31 files match *-coverage.test.ts, e.g. `booking-form-branch-coverage.test.tsx`"
+      ],
+      "risks": [
+        "Coverage-chasing duplicates double the cost of every behaviour change"
+      ],
+      "recommendations": [
+        "Fold coverage-named files into the behaviour tests they duplicate"
+      ]
+    },
+    {
+      "id": "ci",
+      "name": "CI/CD integration",
+      "weight": 6,
+      "score": 4,
+      "confidence": "medium",
+      "evidence_level": "test_derived",
+      "finding": "CI runs the unit layer on pull requests but never the end-to-end layer, and the coverage thresholds in vitest.config.ts never run because CI omits --coverage.",
+      "evidence": [
+        ".github/workflows/ci.yml runs npm test on pull_request; no job runs playwright",
+        "vitest.config.ts sets an 80% coverage threshold; ci.yml never passes --coverage"
+      ],
+      "risks": [
+        "End-to-end regressions and coverage drops are not gated"
+      ],
+      "recommendations": [
+        "Add a Playwright job with a service database, and run coverage in CI"
+      ]
+    },
+    {
+      "id": "debuggability",
+      "name": "Debuggability and reporting",
+      "weight": 4,
+      "score": 5,
+      "confidence": "medium",
+      "evidence_level": "test_derived",
+      "finding": "Assertion diffs are clear, but CI keeps no JUnit, coverage or Playwright artefacts.",
+      "evidence": [
+        "ci.yml has no upload-artifact step",
+        "playwright.config.ts sets trace: \"retain-on-failure\" (unused in CI)"
+      ],
+      "risks": [
+        "CI failures must be reproduced locally to diagnose"
+      ],
+      "recommendations": [
+        "Upload JUnit and coverage reports from CI"
+      ]
+    },
+    {
+      "id": "performance",
+      "name": "Performance and feedback speed",
+      "weight": 3,
+      "score": 4,
+      "confidence": "medium",
+      "evidence_level": "verified",
+      "finding": "The unit layer takes about nine minutes on 16 workers, and a pre-commit hook runs all of it.",
+      "evidence": [
+        "Runs r1 and r2 took 531 s and 548 s (vitest --reporter=json durations)",
+        ".husky/pre-commit runs npm test"
+      ],
+      "risks": [
+        "Slow feedback encourages skipping the hook"
+      ],
+      "recommendations": [
+        "Run only related tests in the pre-commit hook (vitest related --run)"
+      ]
+    },
+    {
+      "id": "test_data",
+      "name": "Test data management",
+      "weight": 3,
+      "score": 6,
+      "confidence": "medium",
+      "evidence_level": "test_derived",
+      "finding": "Builders create synthetic customers and bookings; boundary dates are covered for pricing only.",
+      "evidence": [
+        "src/test/builders.ts",
+        "src/lib/pricing.test.ts covers month-end and leap-day bookings"
+      ],
+      "risks": [
+        "Date edge cases elsewhere are unchecked"
+      ],
+      "recommendations": [
+        "Add boundary dates to the availability tests"
+      ]
+    },
+    {
+      "id": "portability",
+      "name": "Environment portability and realism",
+      "weight": 2,
+      "score": 5,
+      "confidence": "medium",
+      "evidence_level": "mixed",
+      "finding": "The unit layer runs anywhere with fake environment values [e1], but the npm test script sets TZ=UTC and vitest.setup.ts overrides it [e2].",
+      "evidence": [
+        {
+          "id": "e1",
+          "level": "verified",
+          "text": "Runs r1 to r3 used a fake DATABASE_URL on 127.0.0.1 and fake payment keys; no test needed a real service"
+        },
+        {
+          "id": "e2",
+          "level": "test_derived",
+          "text": "package.json \"test\": \"TZ=UTC vitest run\"; vitest.setup.ts sets process.env.TZ = \"Europe/London\""
+        }
+      ],
+      "risks": [
+        "Time-zone-dependent results differ between npm test and npx vitest"
+      ],
+      "recommendations": [
+        "Set the time zone in one place"
+      ]
+    },
+    {
+      "id": "security_a11y",
+      "name": "Security, privacy, accessibility, compatibility",
+      "weight": 2,
+      "score": 4,
+      "confidence": "low",
+      "evidence_level": "test_derived",
+      "finding": "Authorisation negatives exist for bookings only; two-factor and refund handlers have no tests, and no accessibility checks run.",
+      "evidence": [
+        "app/api/bookings/[id]/route.test.ts checks another customer gets 403",
+        "No axe or accessibility assertions in e2e/"
+      ],
+      "risks": [
+        "Authentication and permission regressions would ship green"
+      ],
+      "recommendations": [
+        "Add authorisation-negative tests for every handler that reads or changes customer data"
+      ]
+    },
+    {
+      "id": "ownership",
+      "name": "Ownership and operational discipline",
+      "weight": 2,
+      "score": 5,
+      "confidence": "low",
+      "evidence_level": "test_derived",
+      "finding": "CODEOWNERS covers the test directories; 7 skipped tests have no ticket or expiry.",
+      "evidence": [
+        ".github/CODEOWNERS lists src/ and e2e/",
+        "7 it.skip calls with no linked issue"
+      ],
+      "risks": [
+        "Skipped tests are forgotten"
+      ],
+      "recommendations": [
+        "Require an issue link and expiry on every skip"
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "title": "Two-factor and refund handlers have no tests",
+      "severity": "high",
+      "category": "other",
+      "dimensions": [
+        "effectiveness",
+        "coverage",
+        "security_a11y"
+      ],
+      "evidence": [
+        "app/api/auth/two-factor/verify/route.ts: no test imports it or calls /api/auth/two-factor/verify",
+        "app/api/refunds/route.ts: no test imports it or calls /api/refunds"
+      ],
+      "impact": "A regression in second-factor checks or refund amounts would ship with a green build."
+    },
+    {
+      "title": "The suite is never green",
+      "severity": "high",
+      "category": "other",
+      "dimensions": [
+        "trust",
+        "reliability"
+      ],
+      "evidence": [
+        "Runs r1 to r3 all failed; 13 timeouts recur in every run",
+        "6 tests failed in only one of two runs"
+      ],
+      "impact": "Red no longer means a defect, so the three product failures found in every run go unnoticed."
+    },
+    {
+      "title": "CI does not run the end-to-end layer or the coverage thresholds",
+      "severity": "medium",
+      "category": "other",
+      "dimensions": [
+        "ci"
+      ],
+      "evidence": [
+        ".github/workflows/ci.yml runs npm test only",
+        "vitest.config.ts thresholds apply only with --coverage"
+      ],
+      "impact": "Journey regressions and coverage drops are not gated."
+    }
+  ],
+  "recommendations": [
+    {
+      "title": "Make a red run mean a defect",
+      "priority": 1,
+      "category": "critical_risk",
+      "impact": "critical",
+      "effort": "medium",
+      "action": "Fix the 13 timing-dependent component tests (findBy* queries instead of fixed waits), quarantine the 6 flaky ones with an issue and expiry, and fix the 3 product failures.",
+      "dimensions_affected": [
+        "reliability",
+        "trust"
+      ],
+      "acceptance_criteria": [
+        "Two consecutive full unit runs are green",
+        "Every quarantined test links an issue with an expiry date"
+      ]
+    },
+    {
+      "title": "Test the two-factor and refund handlers",
+      "priority": 2,
+      "category": "top_improvement",
+      "impact": "high",
+      "effort": "medium",
+      "action": "Add route handler tests for two-factor setup and verification and for refunds, covering success, rejection and permission paths.",
+      "dimensions_affected": [
+        "effectiveness",
+        "coverage",
+        "security_a11y"
+      ],
+      "acceptance_criteria": [
+        "interface_coverage lists no untested authentication or refund handler",
+        "Each new test fails when the handler's check is removed"
+      ]
+    },
+    {
+      "title": "Run the end-to-end layer in CI",
+      "priority": 3,
+      "category": "top_improvement",
+      "impact": "high",
+      "effort": "medium",
+      "action": "Add a Playwright job with a Postgres service container that runs on pull requests.",
+      "dimensions_affected": [
+        "ci",
+        "effectiveness"
+      ],
+      "acceptance_criteria": [
+        "The Playwright job is a required check",
+        "Traces are uploaded on failure"
+      ]
+    },
+    {
+      "title": "Test the database layer against a real database",
+      "priority": 4,
+      "category": "top_improvement",
+      "impact": "high",
+      "effort": "large",
+      "action": "Remove the global @/lib/db mock and run repository tests against a disposable Postgres container.",
+      "dimensions_affected": [
+        "isolation",
+        "trust",
+        "design"
+      ],
+      "acceptance_criteria": [
+        "No vi.mock of @/lib/db in setup files",
+        "Repository tests run against a container in CI"
+      ]
+    },
+    {
+      "title": "Enforce assertions in every test",
+      "priority": 5,
+      "category": "quick_win",
+      "impact": "medium",
+      "effort": "small",
+      "action": "Enable the vitest/expect-expect lint rule and remove empty catch blocks in tests.",
+      "dimensions_affected": [
+        "assertions"
+      ],
+      "acceptance_criteria": [
+        "Lint passes with expect-expect enabled"
+      ]
+    },
+    {
+      "title": "Run route handler tests in a Node environment",
+      "priority": 6,
+      "category": "structural",
+      "impact": "medium",
+      "effort": "medium",
+      "action": "Split the Vitest configuration so app/api tests use environment node and component tests use jsdom.",
+      "dimensions_affected": [
+        "design",
+        "portability"
+      ],
+      "acceptance_criteria": [
+        "No route handler test runs under jsdom"
+      ]
+    },
+    {
+      "title": "Supply CI history and the issue tracker",
+      "priority": 7,
+      "category": "evidence_needed",
+      "impact": "medium",
+      "effort": "small",
+      "action": "Export the last 30 CI runs with durations and retries, and give read access to the bug tracker, so operational health and defect yield can be assessed.",
+      "evidence_kinds": [
+        "historical_ci",
+        "defect_history"
+      ],
+      "acceptance_criteria": [
+        "Operational health can be scored",
+        "Escaped defects can be compared with the untested interfaces"
+      ]
+    }
+  ],
+  "evidence_inventory": [
+    {
+      "name": "Application source",
+      "kind": "application_source",
+      "status": "available",
+      "origin": "repository",
+      "details": "Next.js App Router application in src/ and app/"
+    },
+    {
+      "name": "Test source",
+      "kind": "test_source",
+      "status": "available",
+      "origin": "repository",
+      "details": "1,431 Vitest tests and 9 Playwright specs"
+    },
+    {
+      "name": "CI configuration",
+      "kind": "ci_configuration",
+      "status": "available",
+      "origin": "repository",
+      "details": ".github/workflows/ci.yml"
+    },
+    {
+      "name": "Assessment runs r1 to r3",
+      "kind": "recent_execution",
+      "status": "partial",
+      "origin": "assessor",
+      "as_of": "2026-11-12",
+      "details": "Unit layer run twice and once with coverage; the Playwright layer was not run"
+    },
+    {
+      "name": "CI run history",
+      "kind": "historical_ci",
+      "status": "missing",
+      "details": "No access to the CI system's run history"
+    },
+    {
+      "name": "Coverage report from run r3",
+      "kind": "runtime_coverage",
+      "status": "available",
+      "origin": "assessor",
+      "as_of": "2026-11-12",
+      "details": "V8 coverage, coverage/coverage-summary.json"
+    },
+    {
+      "name": "Mutation report",
+      "kind": "mutation_report",
+      "status": "missing",
+      "details": "No mutation tool configured"
+    },
+    {
+      "name": "API documentation",
+      "kind": "requirements",
+      "status": "partial",
+      "origin": "repository",
+      "details": "docs/api.md covers bookings and pricing only"
+    },
+    {
+      "name": "Fix commits",
+      "kind": "defect_history",
+      "status": "partial",
+      "origin": "repository",
+      "details": "42 fix: commits in the last six months; no issue tracker access"
+    },
+    {
+      "name": "coverage-notes.md",
+      "kind": "other",
+      "status": "available",
+      "origin": "repository",
+      "as_of": "2026-04-02",
+      "details": "Hand-written per-route percentages from April; not a coverage report, no points"
+    }
+  ],
+  "behavioural_coverage": [
+    {
+      "feature": "Booking",
+      "happy_path": "covered",
+      "negative": "covered",
+      "boundary": "partial",
+      "permissions": "covered",
+      "concurrency": "not_covered",
+      "dependency_failure": "partial",
+      "recovery": "not_covered",
+      "notes": "Test-derived; double-booking under concurrent requests is untested"
+    },
+    {
+      "feature": "Sign-in and two-factor",
+      "happy_path": "partial",
+      "negative": "partial",
+      "boundary": "not_covered",
+      "permissions": "not_covered",
+      "concurrency": "not_applicable",
+      "dependency_failure": "not_covered",
+      "recovery": "not_covered",
+      "notes": "Test-derived; two-factor handlers untested"
+    },
+    {
+      "feature": "Payments and refunds",
+      "happy_path": "covered",
+      "negative": "partial",
+      "boundary": "partial",
+      "permissions": "not_covered",
+      "concurrency": "not_covered",
+      "dependency_failure": "covered",
+      "recovery": "partial",
+      "notes": "Test-derived; refunds untested"
+    }
+  ],
+  "interface_coverage": [
+    {
+      "interface": "App Router route handlers (app/api/**/route.ts)",
+      "kind": "routes",
+      "total": 46,
+      "tested": 41,
+      "method": "Each route.ts matched to test files that import it (resolving the @/ alias from tsconfig.json) or call its URL",
+      "evidence_level": "test_derived",
+      "untested": [
+        "app/api/auth/two-factor/setup/route.ts",
+        "app/api/auth/two-factor/verify/route.ts",
+        "app/api/refunds/route.ts",
+        "app/api/admin/retention/route.ts",
+        "app/api/payments/reconcile/route.ts"
+      ],
+      "notes": "Import mapping shows a handler is reached by a test, not which of its branches run."
+    }
+  ],
+  "commands": [
+    {
+      "command": "git archive HEAD | tar -x -C <scratch>",
+      "exit_code": 0,
+      "summary": "Scratch copy; node_modules linked, not installed"
+    },
+    {
+      "command": "npx vitest run --reporter=json --outputFile=<tmp>/r1.json",
+      "exit_code": 1,
+      "duration_seconds": 531,
+      "run": "r1",
+      "environment": "Node 22, 16 workers, fake DATABASE_URL, network guard on",
+      "summary": "1,404 passed, 19 failed, 8 skipped"
+    },
+    {
+      "command": "npx vitest run --reporter=json --outputFile=<tmp>/r2.json",
+      "exit_code": 1,
+      "duration_seconds": 548,
+      "run": "r2",
+      "environment": "Node 22, 16 workers, fake DATABASE_URL, network guard on",
+      "summary": "1,407 passed, 16 failed, 8 skipped"
+    },
+    {
+      "command": "npx vitest run --coverage --coverage.reportOnFailure=true --coverage.reportsDirectory=<tmp>/coverage",
+      "exit_code": 1,
+      "duration_seconds": 802,
+      "run": "r3",
+      "environment": "Node 22, 16 workers, V8 coverage, network guard on",
+      "summary": "1,399 passed, 24 failed; coverage report written despite failures"
+    },
+    {
+      "command": "npx playwright test --list",
+      "exit_code": 0,
+      "summary": "9 specs listed; not run (needs the app and a database)"
+    }
+  ]
+}

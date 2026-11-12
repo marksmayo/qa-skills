@@ -48,12 +48,32 @@ BANDS = [(9.0, 'Exceptional'), (8.0, 'Excellent'), (6.5, 'Strong'), (5.0, 'Servi
 STATIC = ('static_only', 'not_executable')
 TOL = 0.05 + 1e-9
 
+# A code-coverage claim: a named implementation-coverage measure, a coverage percentage, or a share of the code,
+# lines, branches... said to be covered or executed. Matches inside a file name or identifier
+# (service-form-branch-coverage.test.tsx, branch_coverage) and text in backticks are not claims.
+_NOT_IN_NAME_BEFORE = r'(?<![\w./\\-])'
+_NOT_IN_NAME_AFTER = r'(?![\w/\\-]|\.\w)'
 COVERAGE_CLAIM = re.compile(
-    r'\b(code|line|branch|statement|condition|function|instrumented|implementation|source)[- ]coverage\b'
+    _NOT_IN_NAME_BEFORE + r'(code|line|branch|statement|condition|function|instrumented|implementation|source)[- ]coverage'
+    + _NOT_IN_NAME_AFTER +
     r'|\b\d+(\.\d+)?\s*%\s*(of\s+)?(the\s+)?(code\s+|line\s+|branch\s+|statement\s+|test\s+)?coverage\b'
-    r'|\bcoverage\s+(of|is|at|was|reached|reaches|=|:)\s*\d+(\.\d+)?\s*%', re.I)
+    r'|\bcoverage\s+(of|is|at|was|reached|reaches|=|:)\s*\d+(\.\d+)?\s*%'
+    r'|\b\d+(\.\d+)?\s*%\s+of\s+(the\s+|all\s+)?(application\s+|app\s+|production\s+|source\s+)?'
+    r'(code(base)?|lines|branches|statements|functions|conditions)\b'
+    r'|\b(lines|branches|statements|functions|conditions)\s*[:=]?\s*\d+(\.\d+)?\s*%', re.I)
+NUMBER = re.compile(r'\d+(\.\d+)?\s*%')
 NEGATION = re.compile(r"\b(not|no|never|without|unavailable|unmeasured|unmeasurable|unknown|cannot|missing|absent|lacks?|"
                       r"lacking|none|nor)\b|n't\b", re.I)
+# A configured threshold or target is not a claim that it was reached.
+TARGET = re.compile(r'\b(thresholds?|targets?|goals?|minimums?|floors?|gates?|required|requires?)\b', re.I)
+# Clauses: a negation in one clause ("No tests for 2FA,") does not excuse a claim in the next ("so branch coverage is low").
+CLAUSE_SPLIT = re.compile(r'[,;:()–—]|\s-\s|\b(?:so|but|while|whereas|because|although|though|yet|hence|thus|therefore)\b', re.I)
+CODE_SPAN = re.compile(r'`[^`\n]*`')
+OLD_DIMENSION_IDS = {'trustworthiness': 'trust', 'oracles': 'assertions', 'scope': 'coverage', 'data': 'test_data',
+                     'environment': 'portability', 'crosscutting': 'security_a11y'}
+PLACEHOLDER = re.compile(r'\b(placeholder|todo|tbd|lorem ipsum|fixme)\b|^\W*$|^\s*(n/?a|-+|\.\.\.)\s*$', re.I)
+REC_ORDER = ['critical_risk', 'top_improvement', 'quick_win', 'structural', 'evidence_needed']
+REF = re.compile(r'\[([A-Za-z][\w-]*)\]')
 
 
 # ---------------------------------------------------------------- schema (subset of JSON Schema)
@@ -148,37 +168,88 @@ def expected_caps(rep: dict, dims: dict) -> dict[str, float]:
     return caps
 
 
+def ev_text(e) -> str:
+    return e.get('text', '') if isinstance(e, dict) else str(e)
+
+
+def ev_level(e, d: dict) -> str:
+    """An evidence item's level: its own when it states one, otherwise its dimension's."""
+    return e['level'] if isinstance(e, dict) else d['evidence_level']
+
+
 def texts(rep: dict):
-    """Yield (path, dimension or None, text) for every free-text field a reader sees."""
+    """Yield (path, dimension or None, evidence item or None, text) for every free-text field a reader sees."""
     m, h = rep['metadata'], rep['headline']
     for i, n in enumerate(m.get('notes', [])):
-        yield f'metadata.notes[{i}]', None, n
+        yield f'metadata.notes[{i}]', None, None, n
     for i, c in enumerate(h.get('applied_caps', [])):
-        yield f'headline.applied_caps[{i}].explanation', None, c.get('explanation', '')
+        yield f'headline.applied_caps[{i}].explanation', None, None, c.get('explanation', '')
+    er = m.get('execution_result') or {}
+    for i, l in enumerate(er.get('layers', [])):
+        yield f'metadata.execution_result.layers[{i}].reason', None, None, l.get('reason', '')
+    for i, r in enumerate(er.get('runs', [])):
+        yield f'metadata.execution_result.runs[{i}].notes', None, None, r.get('notes', '')
+    for i, f in enumerate(er.get('failures', [])):
+        yield f'metadata.execution_result.failures[{i}]', None, None, f.get('evidence', '')
     for d in rep['dimensions']:
-        yield f'dimensions[{d["id"]}].finding', d, d.get('finding', '')
-        for key in ('evidence', 'risks', 'recommendations'):
+        yield f'dimensions[{d["id"]}].finding', d, None, d.get('finding', '')
+        for i, e in enumerate(d.get('evidence', [])):
+            yield f'dimensions[{d["id"]}].evidence[{i}]', d, e, ev_text(e)
+        for key in ('risks', 'recommendations'):
             for i, t in enumerate(d.get(key, [])):
-                yield f'dimensions[{d["id"]}].{key}[{i}]', d, t
+                yield f'dimensions[{d["id"]}].{key}[{i}]', d, None, t
     for i, f in enumerate(rep['critical_findings']):
         for t in [f.get('title', ''), f.get('impact', '')] + list(f.get('evidence', [])):
-            yield f'critical_findings[{i}]', None, t
+            yield f'critical_findings[{i}]', None, None, t
     for i, r in enumerate(rep['recommendations']):
         for t in [r.get('title', ''), r.get('action', '')] + list(r.get('acceptance_criteria', [])):
-            yield f'recommendations[{i}]', None, t
+            yield f'recommendations[{i}]', None, None, t
     for i, e in enumerate(rep['evidence_inventory']):
-        yield f'evidence_inventory[{i}].details', None, e.get('details', '')
+        yield f'evidence_inventory[{i}].details', None, None, e.get('details', '')
     for i, b in enumerate(rep.get('behavioural_coverage', [])):
-        yield f'behavioural_coverage[{i}].notes', None, b.get('notes', '')
+        yield f'behavioural_coverage[{i}].notes', None, None, b.get('notes', '')
+    for i, b in enumerate(rep.get('interface_coverage', [])):
+        for t in [b.get('method', ''), b.get('notes', '')]:
+            yield f'interface_coverage[{i}]', None, None, t
     for i, c in enumerate(rep.get('commands', [])):
-        yield f'commands[{i}].summary', None, c.get('summary', '')
+        yield f'commands[{i}].summary', None, None, c.get('summary', '')
+
+
+def sentences(text: str) -> list[str]:
+    return [s.strip() for s in re.split(r'(?<=[.;!?])\s+|\n', text or '') if s.strip()]
 
 
 def coverage_claims(text: str) -> list[str]:
+    """Sentences that claim code coverage.
+
+    A stated percentage is always a claim, whatever else the sentence says, unless its clause is about a configured
+    threshold or target. A named measure without a number ("branch coverage") is a claim unless its own clause
+    negates it ("Instrumented code coverage was not measurable"). Backticked text, file names and identifiers are
+    never claims.
+    """
     out = []
-    for sentence in re.split(r'(?<=[.;!?])\s+|\n', text or ''):
-        if COVERAGE_CLAIM.search(sentence) and not NEGATION.search(sentence):
-            out.append(sentence.strip())
+    for sentence in sentences(text):
+        plain = CODE_SPAN.sub(' ', sentence)
+        if not COVERAGE_CLAIM.search(plain):
+            continue
+        for clause in CLAUSE_SPLIT.split(plain):
+            clause = clause or ''
+            m = COVERAGE_CLAIM.search(clause)
+            if not m:
+                continue
+            numeric = any(NUMBER.search(x.group(0)) for x in COVERAGE_CLAIM.finditer(clause))
+            if numeric and not TARGET.search(clause):
+                out.append(sentence)
+                break
+            if not numeric and not NEGATION.search(clause):
+                out.append(sentence)
+                break
+        else:
+            # the claim straddles a clause boundary ("coverage: 83%"): judge the whole sentence
+            if not any(COVERAGE_CLAIM.search(c or '') for c in CLAUSE_SPLIT.split(plain)):
+                numeric = any(NUMBER.search(x.group(0)) for x in COVERAGE_CLAIM.finditer(plain))
+                if (numeric and not TARGET.search(plain)) or (not numeric and not NEGATION.search(plain)):
+                    out.append(sentence)
     return out
 
 
@@ -216,14 +287,42 @@ def check(rep: dict) -> tuple[list[str], list[str]]:
     if abs(total - 100) > 0.5:
         errs.append(f'dimension weights total {total}, not 100')
 
-    # every score has evidence, confidence and reasoning
+    # every score has evidence, confidence and reasoning; evidence levels are per item when they differ
     for i, d in dims.items():
+        evidence = [e for e in d.get('evidence', []) if ev_text(e).strip()]
+        level = d['evidence_level']
+        item_levels = {e['level'] for e in evidence if isinstance(e, dict)}
+        ids = [e['id'] for e in evidence if isinstance(e, dict) and e.get('id')]
+        if len(ids) != len(set(ids)):
+            errs.append(f'{i}: evidence ids repeat')
+        if level == 'mixed':
+            if any(not isinstance(e, dict) for e in evidence):
+                errs.append(f'{i}: a mixed dimension gives every evidence item its own level ({{"text", "level"}})')
+            if len(item_levels) < 2:
+                errs.append(f'{i}: evidence_level mixed needs evidence items of at least two levels; '
+                            f'otherwise use their one level')
+        elif item_levels - {level}:
+            errs.append(f'{i}: evidence items at {", ".join(sorted(item_levels - {level}))} in a dimension recorded as '
+                        f'{level}; use mixed (the dimension level must hold for all its evidence)')
+        if PLACEHOLDER.search(d.get('finding', '')):
+            errs.append(f'{i}: finding is a placeholder ("{d["finding"][:40]}")')
         if d['score'] is None:
+            if d.get('applicable') is not False:
+                if level != 'unknown':
+                    errs.append(f'{i}: not assessed (score null) but evidence_level is {level}; an unassessed dimension '
+                                f'is unknown, or score it from its evidence')
+                if 'not assessed' not in d.get('finding', '').lower():
+                    errs.append(f'{i}: score null, so the finding must say "Not assessed" and why')
             continue
-        if not [e for e in d.get('evidence', []) if str(e).strip()]:
+        if not evidence:
             errs.append(f'{i}: scored {d["score"]} without evidence')
-        if d['evidence_level'] == 'unknown':
+        if level == 'unknown':
             errs.append(f'{i}: scored {d["score"]} with evidence_level unknown; an unsupported dimension is not assessed (score null)')
+        if d['confidence'] == 'high':
+            if level == 'test_derived':
+                errs.append(f'{i}: confidence high needs direct evidence; test_derived inference is medium at most')
+            if len(evidence) < 2:
+                errs.append(f'{i}: confidence high needs multiple consistent evidence sources (at least two evidence items)')
     scored = [i for i, d in dims.items() if d['score'] is not None]
     if not scored:
         errs.append('no dimension is scored, so there is no weighted score to report')
@@ -236,6 +335,11 @@ def check(rep: dict) -> tuple[list[str], list[str]]:
             if e['kind'] in inv:
                 errs.append(f'evidence_inventory lists {e["kind"]} twice')
             inv[e['kind']] = e['status']
+        if e['kind'] == 'historical_ci' and e.get('origin') == 'assessor' and e['status'] in ('available', 'partial'):
+            errs.append('historical_ci cannot come from the assessor\'s own runs: they are recent execution evidence '
+                        '(and may support a flakiness observation), not CI history')
+        if e['status'] in ('missing', 'partial') and e['kind'] != 'other' and not (e.get('details') or '').strip():
+            warns.append(f'evidence_inventory {e["kind"]} is {e["status"]} with no details saying what is lacking')
     absent = [k for k in EVIDENCE_POINTS if k not in inv]
     if absent:
         errs.append(f'evidence_inventory lacks {", ".join(absent)} (list every RUBRIC item, as missing if absent)')
@@ -256,9 +360,21 @@ def check(rep: dict) -> tuple[list[str], list[str]]:
     order = ['black_box', 'grey_box', 'white_box']
     if order.index(strongest) > order.index(mode):
         warns.append(f'the inventory supports {strongest} mode but the evaluation records {mode}')
+    if mode == 'white_box' and not (has('runtime_coverage') or has('mutation_report')):
+        warns.append('white_box mode from application source only: no runtime coverage or mutation report, so say in '
+                     'metadata.notes that implementation-linked claims rest on reading source, not instrumentation')
     for i, d in dims.items():
-        if d['evidence_level'] == 'specification_derived' and not has('requirements'):
+        levels = {d['evidence_level']} | {e['level'] for e in d.get('evidence', []) if isinstance(e, dict)}
+        if 'specification_derived' in levels and not has('requirements'):
             errs.append(f'{i}: specification_derived evidence needs requirements or specifications in the inventory')
+    for i, b in enumerate(rep.get('interface_coverage', [])):
+        if b['tested'] > b['total']:
+            errs.append(f'interface_coverage[{i}]: tested {b["tested"]} exceeds total {b["total"]}')
+        if len(b.get('untested', [])) > b['total'] - b['tested']:
+            errs.append(f'interface_coverage[{i}]: lists {len(b["untested"])} untested of only '
+                        f'{b["total"] - b["tested"]} untested')
+        if b['evidence_level'] == 'specification_derived' and not has('requirements'):
+            errs.append(f'interface_coverage[{i}]: specification_derived needs requirements or specifications in the inventory')
 
     # execution evidence
     execution = meta['execution']
@@ -266,10 +382,14 @@ def check(rep: dict) -> tuple[list[str], list[str]]:
         errs.append(f'execution {execution} needs recent execution results in the evidence inventory')
     if execution in STATIC and has('recent_execution'):
         errs.append(f'execution {execution} contradicts recent execution results marked {inv["recent_execution"]}')
-    if execution == 'not_executable' and meta.get('provisional') is not True:
-        errs.append('a suite that could not be discovered or executed makes the evaluation provisional (metadata.provisional true)')
+    if execution in STATIC and meta.get('provisional') is not True:
+        errs.append(f'execution {execution}: no execution evidence supports the scores, so the evaluation is '
+                    f'provisional (metadata.provisional true)')
+    if execution not in STATIC and meta.get('provisional'):
+        errs.append(f'provisional is true only when nothing was executed (static_only or not_executable), not for {execution}')
     if execution in STATIC and head['overall_confidence'] == 'high':
         errs.append('overall confidence cannot be high without execution evidence')
+    errs += execution_errors(meta)
 
     # raw weighted score and group scores
     raw = weighted(dims, [i for i, _, _ in DIMENSIONS])
@@ -320,20 +440,133 @@ def check(rep: dict) -> tuple[list[str], list[str]]:
     if execution in STATIC and head['rating_band'] == 'Exceptional':
         errs.append('a static-only assessment cannot be labelled Exceptional')
 
-    # recommendations
-    prios = [r['priority'] for r in rep['recommendations']]
+    # recommendations: the Step 9 groups, ranked in their order
+    recs = rep['recommendations']
+    prios = [r['priority'] for r in recs]
     if len(prios) != len(set(prios)):
         errs.append('recommendation priorities repeat; rank them')
+    cats = [r['category'] for r in sorted(recs, key=lambda r: r['priority'])]
+    if cats != sorted(cats, key=REC_ORDER.index):
+        errs.append('recommendation priorities must rank the groups in Step 9 order: critical_risk, top_improvement, '
+                    'quick_win, structural, evidence_needed')
+    n_top = cats.count('top_improvement')
+    if not 1 <= n_top <= 3:
+        errs.append(f'{n_top} top_improvement recommendations; Step 9 asks for the three highest-leverage ones (1 to 3)')
+    serious = [f for f in rep['critical_findings']
+               if f['severity'] == 'critical' or f.get('category', 'other') != 'other'] or \
+        [r for r in caps if r not in ('static_only', 'not_executable')]
+    if serious and 'critical_risk' not in cats:
+        errs.append('a critical finding or score cap applies, so at least one recommendation is a critical_risk')
+    lacking = {k for k, s in inv.items() if s in ('missing', 'partial')}
+    if lacking and 'evidence_needed' not in cats:
+        errs.append(f'evidence is missing or partial ({", ".join(sorted(lacking))}); add an evidence_needed '
+                    f'recommendation saying what would strengthen a reassessment')
+    for r in recs:
+        if r['category'] == 'quick_win' and r['effort'] != 'small':
+            errs.append(f'recommendation "{r["title"]}": a quick win is small effort, not {r["effort"]}')
+        if r['category'] == 'evidence_needed':
+            kinds = r.get('evidence_kinds') or []
+            if not kinds:
+                errs.append(f'recommendation "{r["title"]}": evidence_needed names the evidence_kinds it would supply')
+            for k in kinds:
+                if k not in lacking:
+                    errs.append(f'recommendation "{r["title"]}": evidence kind {k} is not missing or partial in the inventory')
+        elif not r.get('dimensions_affected'):
+            errs.append(f'recommendation "{r["title"]}": name the dimensions_affected')
+    for c in ('quick_win', 'structural'):
+        if c not in cats:
+            warns.append(f'no {c} recommendation; Step 9 asks for one unless none exists (say so in metadata.notes)')
 
-    # code-coverage claims
+    # code-coverage claims: need a runtime coverage report, and inside a dimension, verified evidence for that sentence
     cov_evidence = has('runtime_coverage')
-    for path, d, text in texts(rep):
+    for path, d, item, text in texts(rep):
         for claim in coverage_claims(text):
             if not cov_evidence:
                 errs.append(f'{path}: claims code coverage without a runtime coverage report in the inventory: "{claim[:100]}"')
-            elif d is not None and d['evidence_level'] in ('test_derived', 'unknown'):
+                continue
+            if d is None:
+                continue
+            if item is not None:
+                lvl = ev_level(item, d)
+                if lvl != 'verified':
+                    errs.append(f'{path}: claims code coverage from {lvl} evidence: "{claim[:100]}"')
+            elif d['evidence_level'] == 'mixed':
+                verified = {e['id'] for e in d.get('evidence', []) if isinstance(e, dict) and e.get('id')
+                            and e['level'] == 'verified'}
+                if not set(REF.findall(claim)) & verified:
+                    errs.append(f'{path}: claims code coverage in a mixed dimension without citing a verified evidence '
+                                f'item as [id]: "{claim[:100]}"')
+            elif d['evidence_level'] != 'verified':
                 errs.append(f'{path}: claims code coverage from {d["evidence_level"]} evidence: "{claim[:100]}"')
+    for d in dims.values():
+        known = {e['id'] for e in d.get('evidence', []) if isinstance(e, dict) and e.get('id')}
+        for key in ('finding', 'risks', 'recommendations'):
+            vals = [d.get(key, '')] if key == 'finding' else d.get(key, [])
+            for t in vals:
+                for ref in REF.findall(t):
+                    if known and ref not in known and re.fullmatch(r'[A-Za-z]{1,3}\d+', ref):
+                        errs.append(f'{d["id"]}.{key}: cites [{ref}], which is not an evidence id of this dimension')
     return errs, warns
+
+
+def execution_errors(meta: dict) -> list[str]:
+    """What the runs showed: layers run or not, counts, and classified failures."""
+    errs = []
+    execution = meta['execution']
+    er = meta.get('execution_result')
+    if execution in ('full_run', 'partial_run') and not er:
+        return [f'execution {execution} needs metadata.execution_result: the layers, each run\'s pass/fail/skip/error '
+                f'counts, and the failures classified']
+    if not er:
+        return errs
+    layers = {l['name']: l for l in er['layers']}
+    if len(layers) != len(er['layers']):
+        errs.append('execution_result.layers repeat a name')
+    for l in er['layers']:
+        if l['status'] != 'run' and not (l.get('reason') or '').strip():
+            errs.append(f'execution_result layer {l["name"]} is {l["status"]}; give the reason')
+    statuses = {l['status'] for l in er['layers']}
+    if execution == 'full_run' and statuses != {'run'}:
+        not_run = [l['name'] for l in er['layers'] if l['status'] != 'run']
+        errs.append(f'execution full_run but layer(s) {", ".join(not_run)} were not fully run; that is partial_run')
+    if execution == 'partial_run' and statuses == {'run'}:
+        errs.append('execution partial_run but every layer is recorded as run; record the layer or tests left out')
+    runs = er['runs']
+    run_ids = [r['id'] for r in runs]
+    if len(run_ids) != len(set(run_ids)):
+        errs.append('execution_result run ids repeat')
+    assessor = [r for r in runs if r['origin'] == 'assessor']
+    if execution in ('full_run', 'partial_run') and not assessor:
+        errs.append(f'execution {execution} means the assessor ran the suite; record at least one run with origin assessor')
+    if execution == 'reports_only' and assessor:
+        errs.append('execution reports_only but runs with origin assessor are recorded; that is full_run or partial_run')
+    if execution in STATIC and any(r['passed'] + r['failed'] for r in runs):
+        errs.append(f'execution {execution} but runs with test results are recorded')
+    for r in runs:
+        for name in r['layers']:
+            if name not in layers:
+                errs.append(f'run {r["id"]} names layer {name!r}, which is not in execution_result.layers')
+            elif layers[name]['status'] == 'not_run' and r['origin'] == 'assessor':
+                errs.append(f'run {r["id"]} ran layer {name!r}, which is recorded as not_run')
+    for name, l in layers.items():
+        if l['status'] in ('run', 'partial') and execution in ('full_run', 'partial_run') and \
+                not any(name in r['layers'] for r in assessor):
+            errs.append(f'layer {name!r} is recorded as {l["status"]} but no assessor run covers it')
+    failures = er.get('failures', [])
+    failing = max([r['failed'] + r['errored'] for r in runs] or [0])
+    classified = sum(f.get('count', 1) for f in failures)
+    if failing and classified < failing:
+        errs.append(f'a run had {failing} failing or erroring tests but execution_result.failures classifies only '
+                    f'{classified}; classify each as product, test, environment or unknown')
+    for f in failures:
+        for rid in f.get('runs_failed', []):
+            if rid not in run_ids:
+                errs.append(f'failure {f["test"]!r} names run {rid!r}, which is not recorded')
+        for rid in f.get('runs_failed', []):
+            r = next((x for x in runs if x['id'] == rid), None)
+            if r is not None and r['failed'] + r['errored'] == 0:
+                errs.append(f'failure {f["test"]!r} says it failed in run {rid}, which had no failures')
+    return errs
 
 
 def main(argv=None) -> int:
@@ -354,7 +587,22 @@ def main(argv=None) -> int:
         print('INVALID (schema)')
         for e in errs[:40]:
             print('  ' + e)
+        old = sorted({d.get('id') for d in rep.get('dimensions', []) if isinstance(d, dict)} & set(OLD_DIMENSION_IDS))
+        if old:
+            print('  hint: this looks like an evaluation written for a contract before 1.1; rename dimension ids '
+                  + ', '.join(f'{o} -> {OLD_DIMENSION_IDS[o]}' for o in old)
+                  + ', then add the fields SKILL.md "Migrating older evaluations" lists')
+        written = (rep.get('metadata') or {}).get('skill_version') if isinstance(rep.get('metadata'), dict) else None
+        current = skill_version()
+        if written and current and str(written).split('.')[:2] != current.split('.')[:2]:
+            print(f'  hint: written for skill {written}; this validator checks the {current} contract. '
+                  f'See SKILL.md "Migrating older evaluations".')
         return 1
+    current = skill_version()
+    written = rep['metadata']['skill_version']
+    if current and written.split('.')[:2] != current.split('.')[:2]:
+        print(f'WARNING: written for skill {written}, this validator checks the {current} contract; '
+              f'see SKILL.md "Migrating older evaluations"')
     errs, warns = check(rep)
     for w in warns:
         print('WARNING: ' + w)
@@ -367,8 +615,17 @@ def main(argv=None) -> int:
     scored = sum(1 for d in rep['dimensions'] if d['score'] is not None)
     print(f'VALID: overall {h["overall_score"]:.1f} ({h["rating_band"]}), raw {h["raw_weighted_score"]:.1f}, '
           f'{len(h["applied_caps"])} cap(s), {scored}/{len(rep["dimensions"])} dimensions scored, '
-          f'evidence {h["evidence_completeness"]:g}%')
+          f'evidence {h["evidence_completeness"]:.1f}%')
     return 0
+
+
+def skill_version() -> str | None:
+    """The version in SKILL.md's frontmatter, which names the contract this validator checks."""
+    try:
+        m = re.search(r'^version:\s*([\d.]+)\s*$', (HERE.parent / 'SKILL.md').read_text(encoding='utf-8'), re.M)
+    except OSError:
+        return None
+    return m.group(1) if m else None
 
 
 if __name__ == '__main__':

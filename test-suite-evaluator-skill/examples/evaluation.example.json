@@ -3,14 +3,15 @@
     "repository": "example-tests",
     "assessment_mode": "black_box",
     "execution": "static_only",
-    "generated_at": "2026-07-16T00:00:00Z",
-    "skill_version": "1.1.0",
+    "generated_at": "2026-11-12T00:00:00Z",
+    "skill_version": "1.2.0",
     "provisional": true,
     "notes": [
       "Application source was unavailable.",
       "The suite was listed but not run: it needs a staging environment and credentials that were not supplied, and no recent CI reports were provided.",
       "Instrumented code coverage was not measurable from the supplied evidence.",
-      "Weighted decimals are indicative; differences of a few tenths are not material."
+      "Weighted decimals are indicative; differences of a few tenths are not material.",
+      "Repeating the run to observe flakiness was not possible because nothing could be run."
     ]
   },
   "headline": {
@@ -83,7 +84,7 @@
       "name": "Reliability and determinism",
       "weight": 10,
       "score": 3,
-      "confidence": "high",
+      "confidence": "medium",
       "evidence_level": "test_derived",
       "finding": "Fixed sleeps and a shared test user make execution order-sensitive.",
       "evidence": [
@@ -103,11 +104,19 @@
       "weight": 8,
       "score": 6,
       "confidence": "medium",
-      "evidence_level": "test_derived",
-      "finding": "Most checks run end to end through the browser; a few API-level tests cover pricing rules cheaply.",
+      "evidence_level": "mixed",
+      "finding": "Most checks run end to end through the browser [e1]; a few API-level tests cover pricing rules cheaply [e2].",
       "evidence": [
-        "71 of 84 listed tests are in tests/e2e/",
-        "tests/api/pricing.spec.ts calls the pricing endpoint directly"
+        {
+          "id": "e1",
+          "level": "verified",
+          "text": "npm test -- --list: 71 of 84 listed tests are in tests/e2e/"
+        },
+        {
+          "id": "e2",
+          "level": "test_derived",
+          "text": "tests/api/pricing.spec.ts calls the pricing endpoint directly"
+        }
       ],
       "risks": [
         "Slow feedback for rules that an API test could check"
@@ -317,13 +326,31 @@
   ],
   "recommendations": [
     {
-      "title": "Eliminate shared mutable test state",
+      "title": "Stop retries hiding first-run failures",
       "priority": 1,
+      "category": "critical_risk",
+      "impact": "critical",
+      "effort": "small",
+      "action": "Set retries to 0 on pull requests, keep at most 1 on the nightly run, and report first-attempt failures as their own metric.",
+      "dimensions_affected": [
+        "trust",
+        "reliability"
+      ],
+      "acceptance_criteria": [
+        "playwright.config.ts uses retries 0 when CI runs for a pull request",
+        "The CI summary lists tests that passed only on retry"
+      ]
+    },
+    {
+      "title": "Eliminate shared mutable test state",
+      "priority": 2,
+      "category": "top_improvement",
       "impact": "high",
       "effort": "medium",
       "action": "Create unique users and order data per test, then enable parallel execution in CI.",
       "dimensions_affected": [
         "reliability",
+        "isolation",
         "trust"
       ],
       "acceptance_criteria": [
@@ -333,17 +360,85 @@
     },
     {
       "title": "Strengthen negative-path assertions",
-      "priority": 2,
+      "priority": 3,
+      "category": "top_improvement",
       "impact": "high",
       "effort": "medium",
       "action": "Add explicit rejection, timeout, and recovery scenarios with state and side-effect assertions.",
       "dimensions_affected": [
         "effectiveness",
-        "coverage"
+        "coverage",
+        "assertions"
       ],
       "acceptance_criteria": [
         "Each critical flow has positive and negative scenarios",
         "Failures identify the incorrect business outcome"
+      ]
+    },
+    {
+      "title": "Replace fixed sleeps with condition waits",
+      "priority": 4,
+      "category": "top_improvement",
+      "impact": "medium",
+      "effort": "medium",
+      "action": "Replace the 27 waitForTimeout calls with expect(...).toBeVisible() or waitForResponse on the request the step depends on.",
+      "dimensions_affected": [
+        "reliability",
+        "performance"
+      ],
+      "acceptance_criteria": [
+        "No waitForTimeout remains in tests/",
+        "The suite passes three consecutive runs with no retries"
+      ]
+    },
+    {
+      "title": "Upload the report and traces on failure",
+      "priority": 5,
+      "category": "quick_win",
+      "impact": "medium",
+      "effort": "small",
+      "action": "Add an upload-artifact step for playwright-report/ and test-results/ that runs if: failure(), and record traces with retain-on-failure.",
+      "dimensions_affected": [
+        "debuggability",
+        "ci"
+      ],
+      "acceptance_criteria": [
+        "A failed CI run has the HTML report and a trace attached"
+      ]
+    },
+    {
+      "title": "Move validation rules below the browser",
+      "priority": 6,
+      "category": "structural",
+      "impact": "medium",
+      "effort": "large",
+      "action": "Test pricing and form-validation rules through the API, keeping a few end-to-end journeys per critical flow.",
+      "dimensions_affected": [
+        "design",
+        "performance",
+        "maintainability"
+      ],
+      "acceptance_criteria": [
+        "Validation-rule checks run as API tests",
+        "The end-to-end layer keeps one journey per critical flow"
+      ]
+    },
+    {
+      "title": "Supply run results, CI history and the application's specification",
+      "priority": 7,
+      "category": "evidence_needed",
+      "impact": "high",
+      "effort": "small",
+      "action": "Provide a staging environment and credentials to run the suite twice, the last 30 CI runs with retry counts, and the API specification or application source.",
+      "evidence_kinds": [
+        "recent_execution",
+        "historical_ci",
+        "requirements",
+        "application_source"
+      ],
+      "acceptance_criteria": [
+        "Reliability, performance and operational health can be scored from execution evidence",
+        "Behavioural coverage can be checked against a specification"
       ]
     }
   ],
@@ -411,6 +506,8 @@
       "boundary": "not_covered",
       "permissions": "not_covered",
       "dependency_failure": "not_covered",
+      "concurrency": "not_covered",
+      "recovery": "not_covered",
       "notes": "Test-derived only"
     }
   ],
@@ -418,7 +515,8 @@
     {
       "command": "npm test -- --list",
       "exit_code": 0,
-      "summary": "84 tests discovered (listing only; nothing executed)"
+      "summary": "84 tests discovered (listing only; nothing executed)",
+      "duration_seconds": 6
     }
   ]
 }
