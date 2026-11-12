@@ -1,7 +1,7 @@
 {
   "skill": {
     "name": "api-contract-tester",
-    "version": "1.1.0"
+    "version": "1.2.0"
   },
   "run_status": "complete",
   "run_status_reason": null,
@@ -9,6 +9,7 @@
     "contract": {
       "kind": "openapi",
       "version": "3.1.0",
+      "title": "Clinic API",
       "api_version": "1.5.0",
       "source": "examples/clinic-api/openapi.yaml",
       "sha256": "bbc3ac4d3a170c9814594d1d7f45ae2ee781e96699d0ece85bd79dab69b1bcbc"

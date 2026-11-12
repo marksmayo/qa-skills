@@ -1,7 +1,7 @@
 {
   "skill": {
     "name": "api-contract-tester",
-    "version": "1.1.0"
+    "version": "1.2.0"
   },
   "run_status": "complete",
   "run_status_reason": null,
@@ -9,6 +9,7 @@
     "contract": {
       "kind": "graphql",
       "version": null,
+      "title": null,
       "api_version": null,
       "source": "examples/clinic-api/schema.graphql",
       "sha256": "931107eca8279b9473c2c4b418bc2dde62c14e68c6b9fa0af45005221daeeda9"

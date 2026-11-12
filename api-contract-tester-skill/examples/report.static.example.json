@@ -1,7 +1,7 @@
 {
   "skill": {
     "name": "api-contract-tester",
-    "version": "1.1.0"
+    "version": "1.2.0"
   },
   "run_status": "not_run",
   "run_status_reason": "No test instance was available, so no request was sent: the contract was loaded and linted, cases were planned, and 1.5.0 was diffed against 1.4.0.",
@@ -9,6 +9,7 @@
     "contract": {
       "kind": "openapi",
       "version": "3.1.0",
+      "title": "Clinic API",
       "api_version": "1.5.0",
       "source": "examples/clinic-api/openapi.yaml",
       "sha256": "bbc3ac4d3a170c9814594d1d7f45ae2ee781e96699d0ece85bd79dab69b1bcbc"
@@ -84,7 +85,7 @@
   },
   "headline": {
     "verdict": "not_established",
-    "summary": "The API was not run, so conformance not established: no request was sent and every operation is untested. Statically, 1.5.0 has 10 breaking changes against 1.4.0 without a major version bump, and the contract has 2 issues of its own.",
+    "summary": "The API was not run, so conformance not established: no request was sent and every operation is untested. Statically, 1.5.0 has 10 breaking changes against 1.4.0 without a major version bump, and the contract has 2 issues of its own; reading the server found one more lead (CA1) for the next run.",
     "severity_counts": {
       "Critical": 0,
       "High": 0,
@@ -289,6 +290,19 @@
       "message": "response schemas use 'dependentRequired', which the stdlib checker can't evaluate; schema_conformance is cantTell for dailyReport unless another keyword fails",
       "id": "C2",
       "line": null
+    },
+    {
+      "id": "CA1",
+      "kind": "data_contradicts_schema",
+      "location": "components.schemas.Clinician.required",
+      "line": 40,
+      "message": "Found by reading the server: clinician 3 is stored without a specialty, which Clinician requires, so GET /clinicians/3 would fail schema_conformance. A lead for the next run, not a finding: nothing was sent.",
+      "source": "agent",
+      "basis": {
+        "file": "server.py",
+        "line": 22,
+        "excerpt": "{'id': 3, 'name': 'Dr Test Three', 'rooms': []},"
+      }
     }
   ],
   "handler_check": null,

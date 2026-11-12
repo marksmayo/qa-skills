@@ -66,7 +66,9 @@ def main() -> int:
     verdict = P('VIOLATIONS FOUND', RED + BOLD) if hl['verdict'] == 'violations_found' else P('CONFORMANCE NOT ESTABLISHED', YELLOW + BOLD)
     sev = ', '.join(f'{n} {k}' for k, n in hl['severity_counts'].items() if n) or 'no findings'
     kind = f'{c["kind"]} {c["version"]}' if c.get('version') else c['kind']
-    out = [P(f'# API contract test: {c.get("api_version") or c["source"]} ({kind})', BOLD), '',
+    name = c.get('title') or c['source']
+    version = f' {c["api_version"]}' if c.get('api_version') else ''
+    out = [P(f'# API contract test: {name}{version} ({kind})', BOLD), '',
            f'{verdict}  {sev}' + (f'; {hl["flaky_findings"]} flaky' if hl['flaky_findings'] else ''), '',
            hl['summary'], '',
            f'Operations: {cov["exercised"]}/{cov["total"]} exercised' +
@@ -136,7 +138,12 @@ def main() -> int:
             out.append(f'- and {len(hc["issues"]) - len(shown)} more (see the report JSON)')
     if d['contract_issues']:
         out += ['', P('## Contract issues', BOLD), '', 'Problems in the contract itself, not the API.', '']
-        out += [f'- {i["id"]} {i["kind"]} at {i["location"]}: {i["message"]}' for i in d['contract_issues']]
+        for i in d['contract_issues']:
+            if i.get('source') == 'agent':
+                b = i['basis']
+                out.append(f'- {i["id"]} {i["kind"]} at {i["location"]} (found by review, {b["file"]}:{b["line"]}): {i["message"]}')
+            else:
+                out.append(f'- {i["id"]} {i["kind"]} at {i["location"]}: {i["message"]}')
     rated = [b for b in d['breaking_changes'] if b['rating'] != 'compatible']
     if rated:
         out += ['', P('## Breaking changes', BOLD), '']

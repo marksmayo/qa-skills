@@ -14,8 +14,10 @@ Recomputed and compared (any difference is an error):
   * the headline: verdict, severity counts, flaky count, breaking-change counts, evidence
     completeness and overall confidence (an environment outage caps confidence at low);
   * the top-level run_status (complete, partial or not_run) against the run;
-  * breaking changes against the diff, contract issues against the loaded contract, and the
-    handler check against handlers.json (with --repo, every cited handler file and line is re-read).
+  * breaking changes against the diff, contract issues against the loaded contract (issues found by
+    review are extra entries with source "agent" and a basis file and line, re-read with --repo), and the
+    handler check against handlers.json (with --repo, every cited handler file and line is re-read);
+  * scope.contract against contract.json (the source is compared as a path, the title when given).
 
 Also fails when:
   * a finding has no saved exchange, an exchange file is missing or isn't one of its candidate's,
@@ -153,6 +155,63 @@ def check_triage_reasons(rep: dict, errs: list[str]):
                         f'{reason!r}; give each its own reason, or name the shared cause by its candidate or finding id')
 
 
+def same_source(reported: str, recorded: str | None, contract_path: Path) -> bool:
+    """The report's contract source names the same contract as contract.json's. load_contract.py records the
+    path as it was given, so a relative path, ./path, backslashes and an absolute path to the same file all
+    match. (The contract's identity is its sha256, which is checked separately.)"""
+    if recorded is None:
+        return False
+    if reported == recorded:
+        return True
+    if re.match(r'^[a-z]+://', reported, re.I) or re.match(r'^[a-z]+://', recorded, re.I):
+        return reported.rstrip('/') == recorded.rstrip('/')
+
+    def parts(p: str) -> list[str]:
+        return [x for x in p.replace('\\', '/').split('/') if x not in ('', '.')]
+    a, b = parts(reported), parts(recorded)
+    if a == b:
+        return True
+    for base in (Path.cwd(), contract_path.resolve().parent):
+        try:
+            if (base / reported).resolve() == (base / recorded).resolve():
+                return True
+        except OSError:
+            pass
+    shorter, longer = (a, b) if len(a) <= len(b) else (b, a)
+    return len(shorter) >= 2 and longer[-len(shorter):] == shorter   # the same trailing directory and file name
+
+
+def check_contract_issues(rep: dict, contract: dict, repo: Path | None, errs: list[str]):
+    """Loader issues must equal contract.json's; agent issues need a basis, re-read under --repo."""
+    loader = [{k: v for k, v in i.items() if k != 'source'} for i in rep['contract_issues'] if i.get('source', 'loader') == 'loader']
+    agent = [i for i in rep['contract_issues'] if i.get('source') == 'agent']
+    if loader != contract['issues']:
+        errs.append('contract_issues do not match the loaded contract (copy contract.json\'s issues, then add any found by '
+                    'review with source "agent")')
+    ids = [i['id'] for i in rep['contract_issues']]
+    for dup in sorted({x for x in ids if ids.count(x) > 1}):
+        errs.append(f'contract_issues: id {dup} is used twice')
+    for i in rep['contract_issues']:
+        if i.get('source', 'loader') == 'loader' and 'basis' in i:
+            errs.append(f'contract issue {i["id"]}: a basis is only for issues found by review (source "agent")')
+    for i in agent:
+        b = i.get('basis')
+        if not b:
+            errs.append(f'contract issue {i["id"]}: an issue found by review needs a basis (file and line)')
+            continue
+        if repo is None:
+            continue
+        p = repo / b['file']
+        if not p.is_file():
+            errs.append(f'contract issue {i["id"]}: basis file {b["file"]} does not exist under --repo')
+            continue
+        lines = p.read_text(encoding='utf-8', errors='replace').splitlines()
+        if b['line'] > len(lines) or not lines[b['line'] - 1].strip():
+            errs.append(f'contract issue {i["id"]}: {b["file"]}:{b["line"]} is not a line of code')
+        elif b.get('excerpt') and ' '.join(b['excerpt'].split()) not in ' '.join(lines[b['line'] - 1].split()):
+            errs.append(f'contract issue {i["id"]}: excerpt {b["excerpt"]!r} is not on {b["file"]}:{b["line"]}')
+
+
 def check_handler_check(rep: dict, handlers: dict | None, contract: dict, repo: Path | None, errs: list[str]):
     hc = rep['handler_check']
     if handlers is None:
@@ -166,6 +225,9 @@ def check_handler_check(rep: dict, handlers: dict | None, contract: dict, repo: 
     if hc is None:
         errs.append('handler_check is null but --handlers was given; copy its summary and issues into the report')
         return
+    for k in ('handler_prefix', 'unresolved_mounts'):
+        if k in hc or k in handlers:
+            expected[k] = handlers.get(k)
     for k, v in expected.items():
         if hc.get(k) != v:
             errs.append(f'handler_check.{k} does not match handlers.json')
@@ -239,9 +301,14 @@ def main() -> int:
     # identity of the inputs
     if sc['contract']['sha256'] != contract['sha256']:
         errs.append('scope.contract.sha256 is not the loaded contract')
-    for k in ('kind', 'version', 'api_version', 'source'):
+    for k in ('kind', 'version', 'api_version'):
         if sc['contract'][k] != contract.get(k):
             errs.append(f'scope.contract.{k} {sc["contract"][k]!r} != contract {contract.get(k)!r}')
+    if 'title' in sc['contract'] and sc['contract']['title'] != contract.get('title'):
+        errs.append(f'scope.contract.title {sc["contract"]["title"]!r} != contract {contract.get("title")!r}')
+    if not same_source(sc['contract']['source'], contract.get('source'), a.contract):
+        errs.append(f'scope.contract.source {sc["contract"]["source"]!r} is not the contract\'s source {contract.get("source")!r} '
+                    f'(copy the source from contract.json)')
     if cases is not None:
         if cases['contract_sha256'] != contract['sha256']:
             errs.append('cases.json was made from a different contract')
@@ -442,8 +509,7 @@ def main() -> int:
                 errs.append(f'{f["id"]}: handler line {f["handler"]["line"]} is past the end of {f["handler"]["file"]}')
 
     # contract issues, handler check and breaking changes
-    if rep['contract_issues'] != contract['issues']:
-        errs.append('contract_issues do not match the loaded contract')
+    check_contract_issues(rep, contract, a.repo, errs)
     check_handler_check(rep, handlers, contract, a.repo, errs)
     diff_changes = diff['changes'] if diff else []
     if diff:
