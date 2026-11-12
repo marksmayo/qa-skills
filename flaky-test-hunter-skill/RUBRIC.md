@@ -39,7 +39,7 @@ Every rate is `fails/runs` with a 95% Wilson score interval (`scripts/stats.py`)
 | `shared_state` | Module globals, singletons, class attributes, a shared row | A polluter pair | Reset the state in a fixture, or inject it |
 | `order_dependence` | Passes alone, fails after a specific test | A polluter pair, or reverse order fails and isolation passes | Make each test set up what it needs |
 | `external_dependency` | Real HTTP, DNS, outside sandboxes | Blocking the network fails it every time | Stub or record and replay |
-| `time_and_locale` | `today()`, `now()`, DST and month ends, locale formatting | One TZ or locale passes every run, another fails | Freeze the clock, or compare in one zone |
+| `time_and_locale` | `today()`, `now()`, DST and month ends, locale formatting | One TZ, clock date or locale passes every run, another fails (`tz`, `clock` and `locale` variations) | Freeze the clock, or compare in one zone |
 | `randomness` | Unseeded random or Faker, set and dict ordering | One seed fails every run, another passes | Seed it, sort it, or assert on properties |
 | `resource_contention` | Fixed ports, shared temp files, locks | Fails only with parallel workers | Port 0, `tmp_path`, per-worker resources |
 | `product_race` | The race is in product code | Reproduces outside the test, or the stack is all product code | Report it; don't patch the product |
@@ -102,7 +102,12 @@ Examples:
 
 `evidence_completeness` = variations ran ÷ variations ran or not run. Not applicable variations
 (no e2e tests, so no latency variation) are left out. A variation that used a tool must have
-that tool recorded as ran **(checked)**.
+that tool recorded as ran **(checked)**. A `clock` variation that ran must name runs that moved
+the clock (`TDA_CLOCK_SHIFT`, `TDA_CLOCK_DATE` or `FAKETIME` in the run's environment)
+**(checked)**; record clock runs under `clock`, never `tz`.
+
+A smell links to a flake on the same test function, whichever parametrised case the flake names
+**(checked)**.
 
 ## Wording (checked)
 

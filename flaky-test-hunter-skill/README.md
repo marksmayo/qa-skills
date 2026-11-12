@@ -4,8 +4,8 @@ A portable skill for Claude Code, OpenAI Codex, Gemini CLI, and other coding age
 
 It finds tests that pass and fail on the same code, proves what makes each one fail, and
 proposes a fix. It reruns the suite many times under controlled variations: reversed and
-shuffled order, each test alone, fixed hash seeds, parallel workers, other time zones and
-locales, and CPU load. For order-dependent failures it bisects to the test that pollutes the
+shuffled order, each test alone, fixed hash seeds, parallel workers, other time zones, a moved
+clock, other locales, and CPU load. For order-dependent failures it bisects to the test that pollutes the
 state.
 
 It is strict about what the runs show:
@@ -51,6 +51,8 @@ or
 python scripts/scan_pitfalls.py <repo> --out smells.json
 python scripts/run_tests.py --preset pytest --cwd <repo> --out runs.json --repeat 20 --label repeat
 python scripts/run_tests.py --preset pytest --cwd <repo> --out runs.json --order shuffle --seed 11 --label order_shuffle
+python scripts/run_tests.py --preset pytest --cwd <repo> --out runs.json --tests <ids> --label clock_back_1d \
+    --env PYTHONPATH=<plugins/, relative to the repo> "PYTEST_ADDOPTS=-p clock_shift" TDA_CLOCK_SHIFT=-1d
 python scripts/bisect_polluter.py --runs runs.json --from-run O-1 --victim <case id> --cwd <repo> --out bisect.json
 python scripts/validate_flaky_report.py flaky_report.json --runs runs.json --smells smells.json --bisect bisect.json --repo <repo> --write-summary
 python scripts/render_report.py flaky_report.json [--brief]
@@ -108,6 +110,7 @@ python scripts/render_report.py examples/flaky_report.example.json --brief
 - `scripts/stats.py`: Wilson intervals and rate bands (shared)
 - `scripts/parse_results.py`, `scripts/detect_conventions.py`: JUnit parsing and convention detection (shared)
 - `scripts/scan_pitfalls.py`: static smells
+- `plugins/clock_shift.py`: a pytest plugin that moves the clock for the `clock` variation (the same file as test-data-auditor's)
 - `scripts/bisect_polluter.py`: finds the test that pollutes an order-dependent victim
 - `scripts/validate_flaky_report.py`: recomputes counts from the runs and checks the honesty rules
 - `scripts/render_report.py`: coloured terminal/Markdown report

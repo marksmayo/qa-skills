@@ -42,7 +42,7 @@
     "variations": {"type": "array", "items": {
       "type": "object", "required": ["kind", "status", "labels", "reason"], "additionalProperties": false,
       "properties": {
-        "kind": {"enum": ["repeat", "order", "isolate", "seed", "parallel", "tz", "locale", "cpu_load", "latency"]},
+        "kind": {"enum": ["repeat", "order", "isolate", "seed", "parallel", "tz", "clock", "locale", "cpu_load", "latency"]},
         "status": {"enum": ["ran", "not_run", "not_applicable"]},
         "labels": {"type": "array", "items": {"type": "string"}},
         "tool": {"type": "string"},

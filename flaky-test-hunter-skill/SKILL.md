@@ -1,6 +1,6 @@
 ---
 name: flaky-test-hunter
-description: Find tests that pass and fail on the same code, show why with experiments, and propose a fix for each. Reruns the suite under controlled variations (repeats, reversed and shuffled order, isolation, hash seeds, parallel workers, time zone, locale, CPU load), bisects order-dependent failures to their polluter, reports every rate as failures/runs with a 95% Wilson interval, separates flakes from tests that simply fail, and ranks flakes by rate, CI gate and what they hide. Never calls a test or suite "not flaky"; never proposes a retry as the fix; never changes product code.
+description: Find tests that pass and fail on the same code, show why with experiments, and propose a fix for each. Reruns the suite under controlled variations (repeats, reversed and shuffled order, isolation, hash seeds, parallel workers, time zone, clock, locale, CPU load), bisects order-dependent failures to their polluter, reports every rate as failures/runs with a 95% Wilson interval, separates flakes from tests that simply fail, and ranks flakes by rate, CI gate and what they hide. Never calls a test or suite "not flaky"; never proposes a retry as the fix; never changes product code.
 version: 1.0.0
 ---
 
@@ -61,7 +61,7 @@ Output:
 | Repo | required | |
 | Targets | whole suite | Paths, node ids or a tag; or tests named by another skill or by CI history |
 | Budget | 20 repeats, 60-minute cap | `--minutes` changes the cap; stopping early is recorded |
-| Variations | all that apply | order, isolate, seed, parallel, tz, locale, cpu_load, latency (e2e) |
+| Variations | all that apply | order, isolate, seed, parallel, tz, clock, locale, cpu_load, latency (e2e) |
 | History | none | JUnit XML from past CI runs. Use `gh run download` only if the user allows it |
 | Gate | `ci` if a CI workflow runs the tests, else `local` | `required` only when the user says the check blocks merging |
 | Critical tests | none | Tests covering P0/P1 journeys (from journey-mapper), which double the ranking |
@@ -105,9 +105,19 @@ other). Typical commands:
 | Isolation | `--isolate` (each test in its own process) |
 | Seed | `--hash-seed 0`, `--hash-seed 1` (PYTHONHASHSEED); framework seeds through `--env` |
 | Parallel | `--workers 2` on the suspects (needs pytest-xdist for pytest); the same tests serially as the "off" side |
-| Time | `--tz UTC`, `--tz Pacific/Kiritimati`, `--tz America/St_Johns` |
+| Time zone (`tz`) | `--tz UTC`, `--tz Pacific/Kiritimati`, `--tz America/St_Johns` |
+| Clock (`clock`) | `--env PYTHONPATH=<path to plugins/> "PYTEST_ADDOPTS=-p clock_shift" TDA_CLOCK_DATE=2026-11-10` (or `TDA_CLOCK_SHIFT=-1d`), against the same tests without it |
 | Locale | `--locale tr_TR.UTF-8`, `--locale de_DE.UTF-8` |
 | Load | `--cpu-load 20` (busy sibling processes) against the same tests without load |
+
+The clock variation moves the date and time the tests see, which a time zone can't do on its
+own: a date stamped on one day and checked the next, a month end, 29 February. Prefer the
+repo's own clock (freezegun, time-machine, fake timers, an injected `Clock`); otherwise use
+`plugins/clock_shift.py`, a pytest plugin that moves Python's `date`, `datetime` and `time`, or
+libfaketime (`FAKETIME`) for whole processes. Give `PYTHONPATH` relative to `--cwd`, so no home
+path is recorded, and keep the plugin in its own directory so nothing else on that path shadows
+the repo's modules. Record these runs under the `clock` variation, not `tz`; the validator
+checks a clock variation's runs set `TDA_CLOCK_SHIFT`, `TDA_CLOCK_DATE` or `FAKETIME`.
 
 On Windows, time zones become fixed offsets with three-letter names and locales are often
 ignored by the runtime; the run's notes say so, and the report's limitations should too.
@@ -138,7 +148,8 @@ For each flaky test, write one flake entry:
 
 RUBRIC.md has the causes, their experiments and the usual fixes. Account for every static smell:
 
-- `linked_to_flake` when it caused one;
+- `linked_to_flake` when it caused one (a smell names the test function, so it links to a flake on
+  any of that function's parametrised cases, `test_x[case]`);
 - `linked_to_failure` when it sits in a consistently failing test;
 - `not_observed` when its test never failed. Say how many runs, so nobody reads it as "safe".
 

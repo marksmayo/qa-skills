@@ -58,7 +58,7 @@ How it differs from the other skills:
 | `repo` | required | |
 | `targets` | whole suite | Test paths, node ids or a tag; or `--from-history` to pick tests that failed in CI |
 | `budget` | 20 repeats, 60-minute cap | Per suspect test; `--minutes` changes the cap, and runs completed are recorded |
-| `variations` | all applicable | `order`, `seed`, `parallel`, `tz`, `locale`, `latency`, `cpu` |
+| `variations` | all applicable | `order`, `seed`, `parallel`, `tz`, `clock`, `locale`, `latency`, `cpu` |
 | `history` | optional | JUnit XML from past CI runs (a directory the user provides, or fetched with `gh run download` only when the user allows it) |
 | `apply_fixes` | false | |
 
@@ -271,3 +271,21 @@ Agreed with the user before the build.
     compares the report's hash with the runs' hashes, never with a fresh one.
   - What to watch: runs added to that `runs.json` now would not count with the old ones.
     Regenerate all of them with `commands.sh`.
+- **Found on a real repository, and fixed** (a large pytest suite of a static site, parametrised
+  over about 2,000 pages):
+  - **Network calls with a variable URL.** The `real-network` smell matched only a literal
+    `https://` URL, so `requests.post(url, ...)` and `requests.get(URL)` were missed. It now
+    matches `requests`/`httpx` calls (get, post, put, patch, delete, head, options, request) and
+    `urlopen` whatever the URL is, unless it is a literal loopback address; a variable that
+    points at a local test server is dismissed with that note. `data/pitfalls.json` is 1.1.0; the
+    example's smells are unchanged.
+  - **Smells on parametrised tests.** A flake on one case (`test_x[case]`) couldn't be linked to
+    the smell in `test_x`; the validator now compares the function, without the case.
+  - **A clock variation.** The run moved the runner's date back a day with the test data
+    auditor's `clock_shift.py`, and had to record those runs under `tz`, because the schema had
+    no clock kind. `clock` is now a variation kind (schema, SKILL.md, RUBRIC.md, README), the
+    plugin ships as `plugins/clock_shift.py` (its own directory, so `PYTHONPATH` doesn't shadow
+    the repo's modules), and the validator rejects a clock variation none of whose runs set
+    `TDA_CLOCK_SHIFT`, `TDA_CLOCK_DATE` or `FAKETIME`. The shared runner is unchanged: the clock
+    is moved through `--env`. Tested with real runs on a copy of the example; the example itself
+    has no clock variation.

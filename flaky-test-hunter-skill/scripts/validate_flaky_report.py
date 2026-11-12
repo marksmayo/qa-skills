@@ -24,6 +24,7 @@ SCHEMA = HERE.parent / 'schemas' / 'flaky_report.schema.json'
 NORMAL_LABELS = ('baseline', 'repeat')
 NOT_WORST = ('bisect',)
 GATE = {'required': 3, 'ci': 2, 'local': 1}
+CLOCK_ENV = ('TDA_CLOCK_SHIFT', 'TDA_CLOCK_DATE', 'FAKETIME')
 TEST_PATH = re.compile(r'(^|/)tests?/|(^|/)test_[^/]+\.py$|_test\.(py|go)$|\.(test|spec)\.[jt]sx?$|(^|/)src/test/|'
                        r'(^|/)__tests__/|(^|/)e2e/|(^|/)conftest\.py$|Test\.(java|kt)$')
 RETRY = re.compile(r'@pytest\.mark\.flaky|\bflaky\b\s*\(|rerunfailures|--reruns|\breruns\s*=|retryTimes|'
@@ -198,6 +199,17 @@ def walk_strings(x, path=''):
         yield path, x
 
 
+def moves_clock(run: dict) -> bool:
+    """The run moved the clock: plugins/clock_shift.py (TDA_CLOCK_SHIFT / TDA_CLOCK_DATE) or libfaketime (FAKETIME)."""
+    env = (run.get('variation') or {}).get('env') or {}
+    return any(env.get(k) for k in CLOCK_ENV)
+
+
+def base_test_id(test_id: str) -> str:
+    """tests.test_x::test_y[case-1] -> tests.test_x::test_y: a smell names the function, a flake may name one case."""
+    return re.sub(r'\[.*\]$', '', test_id)
+
+
 def diff_paths(diff: str) -> list[str]:
     return [m.group(1).strip() for m in re.finditer(r'^\+\+\+ (?:b/)?(\S+)', diff, re.M) if m.group(1) != '/dev/null']
 
@@ -299,7 +311,7 @@ def check(d: dict, runs_data: dict | None, smells: dict | None, bisect: dict | N
         if s['status'] == 'linked_to_flake':
             if s['flake_id'] not in flake_ids:
                 errs.append(f"smell {s['smell_id']}: linked to unknown flake {s['flake_id']}")
-            elif s['test'] and not flake_ids[s['flake_id']]['test_id'].endswith('::' + s['test']):
+            elif s['test'] and not base_test_id(flake_ids[s['flake_id']]['test_id']).endswith('::' + base_test_id(s['test'])):
                 errs.append(f"smell {s['smell_id']} is in {s['test']} but linked to {flake_ids[s['flake_id']]['test_id']}")
         elif s['flake_id'] is not None:
             errs.append(f"smell {s['smell_id']} is {s['status']} but names a flake")
@@ -324,6 +336,10 @@ def check(d: dict, runs_data: dict | None, smells: dict | None, bisect: dict | N
             for l in v['labels']:
                 if l not in labels:
                     errs.append(f"variation {v['kind']} names label {l!r}, which no run has")
+            if v['kind'] == 'clock' and v['status'] == 'ran' and not any(
+                    moves_clock(r) for r in runs.values() if r.get('label') in v['labels']):
+                errs.append(f"variation clock ran, but none of its runs ({', '.join(v['labels'])}) records a clock change "
+                            f"({', '.join(CLOCK_ENV)} in the run's variation.env)")
         obs, _, _ = outcomes(runs_data, meta['code_hash'])
         for tid, t in rc.items():
             if t['status'] == 'flaky' and tid not in seen_tests:
