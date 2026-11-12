@@ -3,6 +3,7 @@
 
     python diff_scope.py --repo <repo> [--base main] [--committed-only] --out scope.json
     python diff_scope.py --repo <repo> --diff change.diff --out scope.json
+    python diff_scope.py --repo <repo> --last-merges 3 --out scope.json   # what the last 3 merges changed
 
 Git mode diffs the merge base of --base and HEAD against the working tree (uncommitted and
 untracked files included) with rename detection; --committed-only diffs <merge base>...HEAD.
@@ -522,10 +523,31 @@ def main(argv=None) -> int:
     ap.add_argument('--base', default='main', help='branch or ref to diff against (git mode; default main)')
     ap.add_argument('--diff', type=Path, help='read this unified diff instead of running git')
     ap.add_argument('--committed-only', action='store_true', help='git mode: <merge base>...HEAD, no working-tree changes')
+    ap.add_argument('--last-merges', type=int, metavar='N',
+                    help='git mode: the changes of the last N merges into HEAD (first-parent history), committed only. '
+                         'In a squash-merge history (no merge commits) the last N first-parent commits are used')
     ap.add_argument('--out', type=Path)
     args = ap.parse_args(argv)
     repo = args.repo.resolve()
     warnings = []
+    if args.last_merges is not None:
+        if args.diff:
+            ap.error('--last-merges is a git mode option; it cannot be combined with --diff')
+        if args.last_merges < 1:
+            ap.error('--last-merges takes a positive number')
+        merges = git(repo, 'rev-list', '--first-parent', '--merges', '-n', str(args.last_merges), 'HEAD').split()
+        if len(merges) == args.last_merges:
+            args.base = merges[-1] + '^1'
+            how = f'the last {args.last_merges} merge(s) on the first-parent history'
+        else:
+            commits = git(repo, 'rev-list', '--first-parent', '-n', str(args.last_merges + 1), 'HEAD').split()
+            if len(commits) <= args.last_merges:
+                raise SystemExit(f'--last-merges {args.last_merges}: the history has only {len(commits)} commit(s)')
+            args.base = commits[-1]
+            how = (f'the last {args.last_merges} first-parent commit(s): only {len(merges)} merge commit(s) were found, '
+                   'so the history is read as squash merges')
+            warnings.append(f'--last-merges {args.last_merges}: used {how}')
+        args.committed_only = True
     if args.diff:
         text = args.diff.read_text(encoding='utf-8', errors='replace')
         source = {'kind': 'diff', 'diff_file': args.diff.as_posix(), 'base_ref': None, 'merge_base': None, 'head': None}
@@ -545,6 +567,8 @@ def main(argv=None) -> int:
         text = git(repo, 'diff', '-M', '--relative', '--no-color', '--no-ext-diff', *rng)
         source = {'kind': 'git', 'diff_file': None, 'base_ref': args.base, 'merge_base': merge_base, 'head': head,
                   'command': 'git diff -M --relative ' + ' '.join(rng), 'working_tree': not args.committed_only}
+        if args.last_merges is not None:
+            source['last_merges'] = args.last_merges
         untracked = [] if args.committed_only else git(repo, 'ls-files', '--others', '--exclude-standard').splitlines()
     files = scope_from_diff(text, repo)
     for f in files:
