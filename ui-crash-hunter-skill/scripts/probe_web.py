@@ -2,14 +2,30 @@
 """Force a crash trigger in a running web app with Playwright, and capture the evidence.
 
     python probe_web.py scenario.json --out-dir crash-evidence/C-1 [--base-url URL] [--emit-spec repro_C-1.py]
+                        [--authorised-by "who approved a non-loopback target"]
 
 The scenario mocks API responses (page.route), seeds web storage once, sets locale, time zone and
 viewport, then runs steps (goto, click, fill, type, press, reload, back, offline, unroute, expect,
-wait_for, wait_ms). It records uncaught page errors with stack traces, console errors, every request
-and its status, failed requests, whether the app root is empty (white screen) and whether a fallback
-text is visible, plus a screenshot. Output is evidence.json in --out-dir. --emit-spec writes a
-standalone script that replays the scenario and exits 1 while it still reproduces; keep it outside
-the repository unless the user asks for it there.
+wait_for, wait_ms). It records uncaught page errors with stack traces, console errors (with their
+arguments evaluated: an Error logged by an error boundary is kept as {name, message, stack}), every
+request and its status, failed requests, whether the app root is empty (white screen) and whether a
+fallback text is visible, plus a screenshot. Output is evidence.json in --out-dir. --emit-spec writes a
+standalone script that replays the scenario (with the same browser, context options, init scripts
+and guards) and exits 1 while it still reproduces; keep it outside the repository unless the user
+asks for it there.
+
+Environment options: "storage_blocked": true (or {"except": [stack substrings]}) makes the
+localStorage/sessionStorage getters throw SecurityError, as when the browser blocks site data;
+"init_scripts": [js string | {"file": path relative to the scenario}] run before the page's scripts;
+"browser_prefs" (Firefox about:config, e.g. {"network.cookie.cookieBehavior": 2}) and "launch_args"
+(Chromium switches); "bypass_csp".
+
+Read-only mode ("read_only", the default for any target that is not loopback): every request that is
+not GET, HEAD or OPTIONS is answered in the browser with 204 and never sent, to any host including
+the target (the app's own POSTs, CSP reports, beacons); navigator.sendBeacon is stubbed, same-origin
+analytics (/_vercel/*) is aborted and CSP is bypassed so no violation report is sent. Intercepted
+writes are listed in writes_blocked. A non-loopback target is refused unless --authorised-by (or
+the scenario's authorised_by) names who approved it.
 
 A probe reproduces a crash (an error plus an empty root or a fallback text), or an effect:
 scenario.expect (and expect steps) hold observable-effect assertions that describe the defect
@@ -43,6 +59,124 @@ def seed_script(storage: dict) -> str:
             " for (const [k, v] of Object.entries(s.localStorage || {})) localStorage.setItem(k, v);"
             " for (const [k, v] of Object.entries(s.sessionStorage || {})) sessionStorage.setItem(k, v);"
             " sessionStorage.setItem('__probe_seeded', '1'); } catch (e) {} })();")
+
+def is_loopback(url: str) -> bool:
+    """True for localhost, *.localhost, *.test and loopback addresses."""
+    from urllib.parse import urlparse
+    import ipaddress
+    host = (urlparse(url).hostname or '').lower()
+    if host == 'localhost' or host.endswith(('.localhost', '.test')):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+def read_only(scenario: dict, base_url: str) -> bool:
+    """Read-only mode is the default for any target that is not loopback."""
+    return bool(scenario.get('read_only', not is_loopback(base_url)))
+
+def blocked_storage_script(spec) -> str:
+    """Init script: window.localStorage / sessionStorage getters throw SecurityError, as when the browser
+    blocks site data. spec is true, or {"except": [stack substrings]} to spare callers whose stack
+    contains one of them (to isolate one of several throwing call sites)."""
+    spare = json.dumps((spec or {}).get('except', []) if isinstance(spec, dict) else [])
+    return ("(() => { const spare = " + spare + "; const real = {};"
+            " for (const k of ['localStorage', 'sessionStorage']) { try { real[k] = window[k]; } catch (e) {} }"
+            " const deny = (k) => { const ex = new DOMException(\"Failed to read the '\" + k + \"' property from 'Window': "
+            "Access is denied for this document.\", 'SecurityError');"
+            " try { Error.captureStackTrace(ex, deny); } catch (e) {} throw ex; };"
+            " for (const k of ['localStorage', 'sessionStorage']) { try { Object.defineProperty(window, k, {"
+            " configurable: true, get: () => { const st = String(new Error().stack);"
+            " if (spare.some((x) => st.includes(x))) return real[k]; return deny(k); } }); } catch (e) {} } })();")
+
+def init_scripts(scenario: dict, base_url: str) -> list:
+    """Every init script, in order: the read-only beacon stub, blocked storage, the storage seed, then
+    the scenario's own init_scripts (inline strings; files are read in when the scenario is loaded)."""
+    out = []
+    if read_only(scenario, base_url):
+        out.append("(() => { try { navigator.sendBeacon = () => true; } catch (e) {} })();")
+    if scenario.get('storage_blocked'):
+        out.append(blocked_storage_script(scenario['storage_blocked']))
+    else:
+        out.append(seed_script(scenario.get('storage')))
+    for s in scenario.get('init_scripts') or []:
+        out.append(s['content'] if isinstance(s, dict) else s)
+    return out
+
+def launch_options(scenario: dict, headed: bool = False) -> dict:
+    """Browser launch options: launch_args (Chromium/WebKit command-line switches) and browser_prefs
+    (Firefox about:config preferences, e.g. network.cookie.cookieBehavior 2 to block site data)."""
+    opts: dict = {'headless': not headed}
+    if scenario.get('launch_args'):
+        opts['args'] = list(scenario['launch_args'])
+    if scenario.get('browser_prefs'):
+        if scenario.get('browser', 'chromium') != 'firefox':
+            raise ValueError('browser_prefs are Firefox preferences; use launch_args for Chromium')
+        opts['firefox_user_prefs'] = dict(scenario['browser_prefs'])
+    return opts
+
+def context_options(scenario: dict, base_url: str) -> dict:
+    """Browser context options. bypass_csp defaults to true in read-only mode, so a CSP violation never
+    sends a report to the target."""
+    return {'viewport': scenario.get('viewport') or {'width': 1280, 'height': 800},
+            'locale': scenario.get('locale'), 'timezone_id': scenario.get('timezone'),
+            'user_agent': scenario.get('user_agent'), 'service_workers': scenario.get('service_workers', 'allow'),
+            'bypass_csp': bool(scenario.get('bypass_csp', read_only(scenario, base_url)))}
+
+def install_guards(context, base_url: str, scenario: dict, blocked: list, writes: list) -> None:
+    """The third-party guard, then (registered last, so it runs first) the read-only guard: every
+    request that is not GET or HEAD is answered in the browser with 204 and never sent, to any host,
+    the target included (the app's own POSTs, CSP reports, beacons), and same-origin analytics
+    (/_vercel/*) is aborted."""
+    guard_third_party(context, base_url, scenario, blocked)
+    if not read_only(scenario, base_url):
+        return
+    def handler(route, request):
+        url = request.url.split('?')[0]
+        if '/_vercel/' in url:
+            blocked.append(url)
+            return route.abort('blockedbyclient')
+        if request.method in ('GET', 'HEAD', 'OPTIONS'):
+            return route.fallback()
+        writes.append({'method': request.method, 'url': url})
+        return route.fulfill(status=204, body='')
+    context.route('**/*', handler)
+
+CONSOLE_ARG_JS = """(e) => { try {
+    if (e instanceof Error || (e && typeof e === 'object' && 'message' in e && 'name' in e && 'stack' in e))
+        return {name: String(e.name), message: String(e.message), stack: String(e.stack || '')};
+    if (e && typeof e === 'object') return JSON.parse(JSON.stringify(e));
+    return e === undefined ? null : e;
+} catch (x) { return String(e); } }"""
+
+def console_entry(m, step: int) -> dict:
+    """A console message with its arguments evaluated: Error objects as {name, message, stack} (React
+    logs an error caught by a boundary with console.error(error), and Firefox's text for it is just
+    'JSHandle@object'), other objects as JSON."""
+    args, err = [], None
+    for a in m.args[:4]:
+        try:
+            v = a.evaluate(CONSOLE_ARG_JS)
+        except Exception:  # the page navigated away; keep the text
+            v = None
+        if isinstance(v, dict) and {'name', 'message', 'stack'} <= set(v) and err is None:
+            err = {'name': v['name'], 'message': v['message'], 'stack': v['stack'][:4000]}
+        args.append(v if not isinstance(v, str) else v[:1000])
+    text = m.text[:1000]
+    if err and err['message'] not in text:
+        text = f"{err['name']}: {err['message']} ({text[:200]})"
+    entry = {'after_step': step, 'type': m.type, 'text': text}
+    if err:
+        entry['error'] = err
+    if args and any(a is not None for a in args):
+        entry['args'] = json.loads(json.dumps(args, default=str))[:4]
+    return entry
+
+def console_haystack(c: dict) -> str:
+    e = c.get('error') or {}
+    return ' '.join([c.get('text', ''), f"{e.get('name', '')}: {e.get('message', '')}", e.get('stack', ''),
+                     json.dumps(c.get('args') or [], default=str)])
 
 def guard_third_party(context, base_url: str, scenario: dict, blocked: list) -> None:
     """Abort every request to a host that is not loopback, the base URL's host or an allowed host."""
@@ -147,7 +281,7 @@ def check_expectations(page, assertions, ctx: dict) -> list:
             actual = [e['message'] for e in ctx.get('page_errors', []) if a['page_error'] in f"{e['name']}: {e['message']}"]
             ok = bool(actual)
         elif 'console_error' in a:
-            actual = [c['text'] for c in ctx.get('console_errors', []) if a['console_error'] in c['text']]
+            actual = [c['text'] for c in ctx.get('console_errors', []) if a['console_error'] in console_haystack(c)]
             ok = bool(actual)
         else:
             raise ValueError(f'unknown expectation: {a}')
@@ -203,19 +337,17 @@ def probe(scenario: dict, base_url: str, out_dir: Path, headed: bool = False) ->
     current = lambda: steps_log[-1]['step'] if steps_log else 0
     with sync_playwright() as pw:
         bt = getattr(pw, scenario.get('browser', 'chromium'))
-        browser = bt.launch(headless=not headed)
-        context = browser.new_context(viewport=scenario.get('viewport') or {'width': 1280, 'height': 800},
-                                      locale=scenario.get('locale'), timezone_id=scenario.get('timezone'),
-                                      user_agent=scenario.get('user_agent'),
-                                      service_workers=scenario.get('service_workers', 'allow'))
+        browser = bt.launch(**launch_options(scenario, headed))
+        context = browser.new_context(**context_options(scenario, base_url))
         blocked: list = []
-        guard_third_party(context, base_url, scenario, blocked)
-        context.add_init_script(seed_script(scenario.get('storage')))
+        writes: list = []
+        install_guards(context, base_url, scenario, blocked, writes)
+        for script in init_scripts(scenario, base_url):
+            context.add_init_script(script)
         page = context.new_page()
         page.on('pageerror', lambda e: errors.append({'after_step': current(), 'name': e.name, 'message': e.message,
                                                       'stack': e.stack}))
-        page.on('console', lambda m: console.append({'after_step': current(), 'type': m.type, 'text': m.text[:1000]})
-                if m.type in ('error', 'warning') else None)
+        page.on('console', lambda m: console.append(console_entry(m, current())) if m.type in ('error', 'warning') else None)
         page.on('requestfailed', lambda r: None if r.url.split('?')[0] in blocked else
                 failed.append({'after_step': current(), 'url': r.url, 'failure': r.failure}))
         apply_routes(page, scenario.get('routes'))
@@ -252,6 +384,10 @@ def probe(scenario: dict, base_url: str, out_dir: Path, headed: bool = False) ->
             'blocked_console_errors': [c for c in console if c['type'] == 'error' and 'ERR_BLOCKED_BY_CLIENT' in c['text']],
             'blocked_requests': sorted(set(blocked)), 'failed_requests': failed, **state, 'screenshot': shot.name,
             'kind': 'baseline' if baseline else 'defect', 'requests': requests, 'expectations': expectations,
+            'read_only': read_only(scenario, base_url), 'writes_blocked': writes,
+            'bypass_csp': context_options(scenario, base_url)['bypass_csp'],
+            'context': {k: scenario[k] for k in ('storage_blocked', 'launch_args', 'browser_prefs', 'authorised_by')
+                        if scenario.get(k)} | ({'init_scripts': len(scenario['init_scripts'])} if scenario.get('init_scripts') else {}),
             # defect probe: every assertion describes the bad effect and held; baseline: every assertion held
             'effect_observed': effect,
             # an error boundary catches the throw and React logs it with console.error, so both count
@@ -269,21 +405,25 @@ def main():
     from playwright.sync_api import sync_playwright
     base_url = sys.argv[sys.argv.index('--base-url') + 1] if '--base-url' in sys.argv else SCENARIO['base_url']
     errors, page_errors, console, requests, results = [], [], [], [], []
+    if not is_loopback(base_url) and not SCENARIO.get('authorised_by'):
+        print('Refusing: ' + base_url + ' is not loopback and the scenario names no authorised_by.')
+        return 2
     with sync_playwright() as pw:
-        browser = getattr(pw, SCENARIO.get('browser', 'chromium')).launch()
-        context = browser.new_context(viewport=SCENARIO.get('viewport') or {'width': 1280, 'height': 800},
-                                      locale=SCENARIO.get('locale'), timezone_id=SCENARIO.get('timezone'),
-                                      service_workers=SCENARIO.get('service_workers', 'allow'))
-        guard_third_party(context, base_url, SCENARIO, [])
-        context.add_init_script(seed_script(SCENARIO.get('storage')))
+        browser = getattr(pw, SCENARIO.get('browser', 'chromium')).launch(**launch_options(SCENARIO))
+        context = browser.new_context(**context_options(SCENARIO, base_url))
+        writes = []
+        install_guards(context, base_url, SCENARIO, [], writes)
+        for script in init_scripts(SCENARIO, base_url):
+            context.add_init_script(script)
         page = context.new_page()
         def on_error(e):
-            errors.append(e.message)
+            errors.append(e.name + ': ' + e.message)
             page_errors.append({'name': e.name, 'message': e.message})
         def on_console(m):
             if m.type == 'error' and 'ERR_BLOCKED_BY_CLIENT' not in m.text:
-                errors.append(m.text.splitlines()[0])
-                console.append({'text': m.text})
+                c = console_entry(m, 0)
+                errors.append(c['text'].splitlines()[0][:300])
+                console.append(c)
         page.on('pageerror', on_error)
         page.on('console', on_console)
         apply_routes(page, SCENARIO.get('routes'))
@@ -299,9 +439,12 @@ def main():
     crashed = bool(errors) and (state['root_empty'] or bool(state['fallback_visible']))
     # the expectations describe the defect's visible effect; in a baseline they describe healthy behaviour
     effect = SCENARIO.get('kind') != 'baseline' and bool(results) and all(r['passed'] for r in results)
+    if writes:
+        print(f'{len(writes)} write request(s) answered in the browser and never sent (read-only mode).')
     if crashed or effect:
-        held = [json.dumps({k: v for k, v in r.items() if k != 'passed'}, ensure_ascii=False) for r in results]
-        print('REPRODUCED: ' + '; '.join(errors + held))
+        held = [json.dumps({k: v for k, v in r.items() if k != 'passed'}, ensure_ascii=False)[:200] for r in results]
+        lines = list(dict.fromkeys(errors))[:5] + held[:5]
+        print('REPRODUCED:\\n  ' + '\\n  '.join(lines))
         return 1
     if SCENARIO.get('kind') == 'baseline':
         ok = not errors and all(r['passed'] for r in results)
@@ -315,8 +458,11 @@ if __name__ == '__main__':
 '''
 
 def emit_spec(scenario: dict, base_url: str, path: Path, title: str) -> None:
-    funcs = '\n\n'.join(inspect.getsource(f) for f in (seed_script, guard_third_party, apply_routes, glob_rx, log_requests,
-                                                         check_expectations, run_steps, observe))
+    funcs = '\n\n'.join(inspect.getsource(f) for f in (
+        seed_script, is_loopback, read_only, blocked_storage_script, init_scripts, launch_options, context_options,
+        install_guards, console_entry, console_haystack, guard_third_party, apply_routes, glob_rx, log_requests,
+        check_expectations, run_steps, observe))
+    funcs = f'CONSOLE_ARG_JS = """{CONSOLE_ARG_JS}"""\n\n{funcs}'
     sc = dict(scenario, base_url=scenario.get('base_url') or base_url)
     body = (f'#!/usr/bin/env python3\n"""Repro spec: {title}\n\nReplays the crash trigger with Playwright. Exits 1 while the crash '
             f'reproduces and 0 once it is fixed.\n    python {path.name} [--base-url http://localhost:5173]\n"""\n'
@@ -332,6 +478,7 @@ def main() -> int:
     ap.add_argument('--base-url', help='overrides scenario.base_url')
     ap.add_argument('--emit-spec', type=Path, help='write a standalone repro script here')
     ap.add_argument('--headed', action='store_true')
+    ap.add_argument('--authorised-by', help='who approved probing a non-loopback target (required for one)')
     args = ap.parse_args()
     try:
         scenario = json.loads(args.scenario.read_text(encoding='utf-8'))
@@ -341,6 +488,21 @@ def main() -> int:
     base_url = args.base_url or scenario.get('base_url')
     if not base_url:
         print('No base URL: set scenario.base_url or pass --base-url', file=sys.stderr)
+        return 2
+    if args.authorised_by:
+        scenario['authorised_by'] = args.authorised_by
+    if not is_loopback(base_url) and not scenario.get('authorised_by'):
+        print(f'Refusing to probe {base_url}: it is not a loopback address. Probe only environments the user approved: '
+              'pass --authorised-by "<who approved it>" (or set authorised_by in the scenario). The probe then runs '
+              'read-only unless the scenario sets "read_only": false.', file=sys.stderr)
+        return 2
+    try:  # init scripts given as files are read in now, so the evidence and the repro spec carry their content
+        scenario['init_scripts'] = [
+            {'file': s['file'], 'content': (args.scenario.parent / s['file']).read_text(encoding='utf-8')}
+            if isinstance(s, dict) and 'file' in s and 'content' not in s else s
+            for s in scenario.get('init_scripts') or []]
+    except OSError as exc:
+        print(f'Unable to read an init script: {exc}', file=sys.stderr)
         return 2
     try:
         import playwright  # noqa: F401
@@ -353,6 +515,8 @@ def main() -> int:
         emit_spec(scenario, base_url, args.emit_spec, scenario.get('name', 'crash repro'))
     verdict = ('baseline ' + ('ok' if ev['baseline_ok'] else 'NOT CLEAN')) if ev['kind'] == 'baseline' else \
         (f"REPRODUCED ({', '.join(ev['reproduced_by'])})" if ev['reproduced'] else 'not reproduced')
+    if ev['writes_blocked']:
+        print(f"read-only: {len(ev['writes_blocked'])} write request(s) answered in the browser and never sent")
     held = sum(1 for e in ev['expectations'] if e['passed'])
     print(f"{verdict}: {len(ev['page_errors'])} page error(s), root empty: {ev['root_empty']}, "
           f"fallback: {', '.join(ev['fallback_visible']) or 'none'}, expectations held: {held}/{len(ev['expectations'])}"
