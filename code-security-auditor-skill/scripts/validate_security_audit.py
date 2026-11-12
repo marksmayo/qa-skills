@@ -32,9 +32,15 @@ SEVERITY_W = {'critical': 4, 'high': 3, 'medium': 2, 'low': 1}
 CONFIDENCE_W = {'confirmed': 4, 'traced': 3, 'possible': 2}
 EXPOSURE_W = {'public': 3, 'authenticated': 2, 'restricted': 1}
 CONF_ORDER = {'confirmed': 0, 'traced': 1, 'possible': 2}
+RAISING_IMPACT = {'direct_financial_loss', 'fraud', 'regulated_data_breach'}
+SEED_TODO = 'TODO(seed)'  # left by seed_report.py for the agent to replace
 SECRET_CWES = {'CWE-798', 'CWE-259', 'CWE-321', 'CWE-547', 'CWE-1394'}
-BANNED_HEADLINE = re.compile(r'(?i)\b(is|are) (secure|safe)\b|\bno (vulnerabilit|security issue|security problem|risk)|'
-                             r'vulnerability[- ]free|\bfully secure|\bsafe to (deploy|ship|release)|passed (the )?security|\bsecure\b')
+# Verdicts about the code are banned; "secure" in a technical phrase ("the Secure cookie flag") is not.
+BANNED_HEADLINE = re.compile(r'(?i)\b(is|are|looks|appears|seems|now|remains?|considered|deemed|be) (now |fully |reasonably |)(secure|safe)\b|'
+                             r'\bno (vulnerabilit|security issue|security problem|risk)|vulnerability[- ]free|\bfully secure|'
+                             r'\bsafe to (deploy|ship|release)|passed (the )?security|\bsecure (code|codebase|app|application|system|overall)\b|'
+                             r'\b(code|codebase|app|application|system|repository|service)\b[^.;]{0,30}\bsecure\b(?!\s*(cookie|flag|attribute|context|'
+                             r'channel|transport|connection|header|storage|random|hash|compare|comparison|-?coding|defaults?))')
 VAGUE_REASON = re.compile(r'(?i)^\W*(false positive|fp|not exploitable|not an issue|not a problem|n/?a|safe|ok|fine|ignore)\W*$')
 LOC_REF = re.compile(r'[\w./-]+\.\w+:\d+')
 
@@ -95,12 +101,17 @@ def schema_errors(value, schema: dict, root: dict, path: str = '$') -> list[str]
 def priority_score(f: dict) -> int:
     return SEVERITY_W.get(f['cvss']['severity'], 0) * CONFIDENCE_W.get(f['confidence'], 0) * EXPOSURE_W.get(f['exposure'], 0)
 
-def priority(score: int, confidence: str) -> str:
+PRIO_ORDER = ['P0', 'P1', 'P2', 'P3']
+
+def priority(score: int, confidence: str, business_impact: dict | None = None) -> str:
     p = 'P0' if score >= 32 else 'P1' if score >= 18 else 'P2' if score >= 8 else 'P3'
+    if business_impact and business_impact.get('kind') in RAISING_IMPACT and p in ('P2', 'P3'):
+        p = PRIO_ORDER[PRIO_ORDER.index(p) - 1]  # direct money or fraud loss raises one level, never to P0
     return 'P1' if confidence == 'possible' and p == 'P0' else p
 
 def rank_key(f: dict):
-    return (-f['priority_score'], -float(f['cvss']['score']), CONF_ORDER.get(f['confidence'], 9))
+    return (PRIO_ORDER.index(f['priority']) if f.get('priority') in PRIO_ORDER else 9, -f['priority_score'],
+            -float(f['cvss']['score']), CONF_ORDER.get(f['confidence'], 9))
 
 def compute_summary(d: dict) -> dict:
     fs = d.get('findings') or []
@@ -132,6 +143,56 @@ def git_ignored(path: Path, repo: Path) -> bool:
         return p.returncode == 0
     except (OSError, subprocess.TimeoutExpired):
         return False
+
+def json_strings(value, path: str = '$'):
+    """(JSON path, string) for every string value; keys are field names, never secrets."""
+    if isinstance(value, str):
+        yield path, value
+    elif isinstance(value, list):
+        for i, v in enumerate(value):
+            yield from json_strings(v, f'{path}[{i}]')
+    elif isinstance(value, dict):
+        for k, v in value.items():
+            yield from json_strings(v, f'{path}.{k}')
+
+def _line(repo: Path, file: str | None, line: int | None) -> tuple[str, str] | None:
+    if not file or not line:
+        return None
+    src = repo / file
+    if not src.is_file():
+        return None
+    lines = src.read_text(encoding='utf-8', errors='replace').splitlines()
+    return (lines[line - 1], src.name) if 0 < line <= len(lines) else None
+
+def secret_values(findings: list[dict], cand_secrets: dict, triaged: dict, repo: Path) -> list[tuple[str, str]]:
+    """(value, where it came from) for every value the report must not contain. Never print the value.
+
+    Values come from findings with a secret block (their locations) and from secret candidates that
+    were not dismissed. A dismissed candidate (a placeholder or a fixture) still counts when its
+    value looks like a real key: 16 or more characters with at least 3.5 bits of entropy per
+    character. Placeholder words and values under 8 characters are skipped: they are words, not keys."""
+    out: dict[str, str] = {}
+    def add(text_name, origin, strong_only=False):
+        if not text_name:
+            return
+        text, name = text_name
+        for s in scan_secrets.find_in_line(text, name):
+            v = s['value']
+            if len(v) < 8 or scan_secrets.is_placeholder(v, name, s.get('fallback', False)) or v in out:
+                continue
+            if strong_only and not (len(v) >= 16 and scan_secrets.entropy(v) >= 3.5):
+                continue
+            out[v] = origin
+    for f in findings:
+        if f.get('secret'):
+            for l in f['locations']:
+                add(_line(repo, l['file'], l['line']), f"{f['id']} ({l['file']}:{l['line']})")
+    for cid, c in cand_secrets.items():
+        if c.get('history_only'):
+            continue  # not in the working tree; its value can't be re-read without the history
+        dismissed = (triaged.get(cid) or {}).get('decision') == 'dismissed'
+        add(_line(repo, c.get('file'), c.get('line')), f"{cid} ({c.get('file')}:{c.get('line')})", strong_only=dismissed)
+    return [(v, o) for v, o in out.items()]
 
 # ---------------------------------------------------------------- checks
 def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tuple[list[str], list[str]]:
@@ -247,9 +308,33 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tu
         ps = priority_score(f)
         if ps != f['priority_score']:
             P(f"priority_score {f['priority_score']} should be {ps} (severity x confidence x exposure)")
-        pr = priority(ps, f['confidence'])
+        bi = f.get('business_impact')
+        pr = priority(ps, f['confidence'], bi)
         if pr != f['priority']:
-            P(f"priority {f['priority']} should be {pr}")
+            P(f"priority {f['priority']} should be {pr}" + (f" (business_impact {bi['kind']} raises P2/P3 one level)" if bi else ''))
+        if bi and bi['kind'] in RAISING_IMPACT and not LOC_REF.search(bi['basis']) and len(bi['basis'].split()) < 10:
+            P('business_impact.basis must say where the loss happens (file:line) or how, in a sentence someone can check')
+        # agent-found findings (no tool candidate): the basis is re-read from the source
+        if f.get('source') == 'agent':
+            if 'agent' not in f['sources']:
+                P('source is agent, so sources must include "agent"')
+            if not f.get('basis'):
+                P('a finding with source agent needs a basis: file, line and excerpt (or runtime evidence)')
+            for b in f.get('basis') or []:
+                if b.get('evidence'):
+                    if not (base / b['evidence']).exists():
+                        P(f"basis evidence {b['evidence']} not found")
+                    continue
+                if not (b.get('file') and b.get('line') and b.get('excerpt')):
+                    P('each basis entry needs file, line and excerpt, or evidence')
+                elif repo:
+                    got = _line(repo, b['file'], b['line'])
+                    if got is None:
+                        P(f"basis {b['file']}:{b['line']} does not exist in the repository")
+                    elif norm(b['excerpt']) not in norm(got[0]):
+                        P(f"basis excerpt is not on {b['file']}:{b['line']} (line reads {got[0].strip()[:80]!r})")
+            if f['candidates']:
+                P('source agent means no tool candidate led to it; list candidates only on tool findings')
         if f['entry_point'] and f['entry_point'] not in eps:
             P(f"entry_point {f['entry_point']} is not in recon.entry_points")
         for c in f['candidates']:
@@ -358,6 +443,8 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tu
                     P(f'dependency {dep} is not in dependencies')
                 elif x.get('finding') != fid:
                     P(f'dependency {dep} is not linked back to {fid}')
+                elif x['package'].lower() != f['dependency']['package'].lower():
+                    P(f"dependency {dep} is {x['package']}, not {f['dependency']['package']}: group advisories by package")
         for ref in (f.get('chains_with') or []) + (f.get('variants') or []) + ([f['variant_of']] if f.get('variant_of') else []):
             if ref not in fids or ref == fid:
                 P(f'refers to {ref}, which is not another finding')
@@ -423,35 +510,24 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tu
             E(f'limitations: the git history secret scan was {hist}; say how much of the history was not scanned')
 
     # secrets must never appear
-    for s in scan_secrets.find_in_line(report_text):
-        if s['type'] != 'generic_secret':
-            E(f"report contains what looks like a {s['type']} value; secrets must be redacted")
+    strings = list(json_strings(d))
+    for where, text in strings:
+        for s in scan_secrets.find_in_line(text):
+            if s['type'] != 'generic_secret':
+                E(f"report contains what looks like a {s['type']} value at {where}; secrets must be redacted")
     if repo:
-        secret_locs = [(f['locations'], f) for f in findings if f.get('secret')]
-        values = set()
-        for locs, _ in secret_locs:
-            for l in locs:
-                src = repo / l['file']
-                if src.exists():
-                    lines = src.read_text(encoding='utf-8', errors='replace').splitlines()
-                    if 0 < l['line'] <= len(lines):
-                        values |= {s['value'] for s in scan_secrets.find_in_line(lines[l['line'] - 1], src.name)}
-        for c in cand_secrets.values():
-            src = repo / c['file']
-            if src.exists() and c.get('line'):
-                lines = src.read_text(encoding='utf-8', errors='replace').splitlines()
-                if 0 < c['line'] <= len(lines):
-                    values |= {s['value'] for s in scan_secrets.find_in_line(lines[c['line'] - 1], src.name)}
-        texts = {'the report': report_text}
+        texts = list(strings)
         for f in findings:
             for k in ('file', 'evidence'):
                 p = f['poc'].get(k)
                 if p and (base / p).exists():
-                    texts[p] = (base / p).read_text(encoding='utf-8', errors='replace')
-        for v in values:
-            for where, text in texts.items():
-                if v and v in text:
-                    E(f'a secret value from the repository appears in {where}; report only its fingerprint')
+                    texts.append((p, (base / p).read_text(encoding='utf-8', errors='replace')))
+        for value, origin in secret_values(findings, cand_secrets, triaged, repo):
+            rx = None if len(value) >= 16 else re.compile(r'(?<![A-Za-z0-9_])' + re.escape(value) + r'(?![A-Za-z0-9_])')
+            for where, text in texts:
+                if (value in text) if rx is None else bool(rx.search(text)):
+                    E(f'the secret value of {origin} appears in {where}; report only its fingerprint')
+                    break
 
     # files written
     for w in d['files_written']:
@@ -460,6 +536,11 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tu
         p = Path(w) if Path(w).is_absolute() else base / w
         if repo and inside(p, repo) and not git_ignored(p, repo):
             E(f'files_written: {w} is inside the repository and not gitignored')
+
+    # placeholders left by seed_report.py
+    for where, text in strings:
+        if SEED_TODO in text:
+            E(f'{where}: still holds a {SEED_TODO} placeholder from seed_report.py; replace it with the real assessment')
 
     # summary
     want = compute_summary(d)

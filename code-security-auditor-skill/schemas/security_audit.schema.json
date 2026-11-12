@@ -9,7 +9,7 @@
                "files_written", "summary"],
   "additionalProperties": false,
   "properties": {
-    "schema_version": {"const": "1.0"},
+    "schema_version": {"enum": ["1.0", "1.1"], "description": "1.1 adds machine-credential auth values, server_action and middleware entry points, agent-found findings (source, basis), business_impact, and npm dependency facts (range, dev, via)."},
     "skill": {
       "type": "object", "required": ["name", "version"], "additionalProperties": false,
       "properties": {"name": {"const": "code-security-auditor"}, "version": {"type": "string"}}
@@ -38,13 +38,14 @@
             "type": "object", "required": ["id", "kind", "method", "path", "handler", "auth", "exposure", "reviewed"], "additionalProperties": false,
             "properties": {
               "id": {"type": "string", "pattern": "^EP-\\d+$"},
-              "kind": {"enum": ["http_route", "webhook", "graphql", "queue_consumer", "cli", "file_parser", "deep_link", "exported_component", "ci_workflow", "client_source", "other"]},
+              "kind": {"enum": ["http_route", "webhook", "graphql", "queue_consumer", "cli", "file_parser", "deep_link", "exported_component", "ci_workflow", "client_source", "server_action", "middleware", "other"]},
               "method": {"type": "string"},
               "path": {"type": "string"},
               "handler": {"type": "string", "pattern": "^[^:]+:\\d+$"},
-              "auth": {"enum": ["public", "authenticated", "admin", "unknown"]},
+              "auth": {"enum": ["public", "authenticated", "admin", "cron_secret", "api_key", "signature", "token", "unknown"], "description": "cron_secret, api_key, signature and token are machine credentials: a shared secret in a header, a webhook signature, or a single-purpose token in the URL"},
               "exposure": {"enum": ["internet", "internal", "local"]},
               "reviewed": {"type": "boolean"},
+              "auth_evidence": {"type": ["string", "null"]},
               "note": {"type": "string"}
             }
           }
@@ -57,6 +58,7 @@
         "data_stores": {"type": "array", "items": {"type": "string"}},
         "outbound_calls": {"type": "array", "items": {"type": "string"}},
         "secret_config": {"type": "array", "items": {"type": "string"}},
+        "middleware": {"type": "array", "items": {"type": "string"}, "description": "global auth middleware and what it covers (Next.js matcher paths)"},
         "high_risk_areas": {
           "type": "array",
           "items": {
@@ -123,6 +125,9 @@
           "summary": {"type": "string"},
           "reachable": {"enum": ["yes", "conditional", "no", "unknown"]},
           "basis": {"type": "string", "minLength": 10},
+          "range": {"type": "string", "description": "the advisory's own vulnerable range"},
+          "dev": {"type": ["boolean", "null"], "description": "every installed copy is a devDependency (from the lockfile)"},
+          "via": {"type": "array", "items": {"type": "string"}, "description": "packages that pull it in (npm audit effects)"},
           "finding": {"type": ["string", "null"], "pattern": "^F-\\d+$"}
         }
       }
@@ -200,7 +205,7 @@
   },
   "$defs": {
     "area": {"enum": ["injection", "web", "server_side", "access_control", "authentication", "business_logic", "cryptography",
-                      "data_exposure", "language_specific", "mobile", "supply_chain_ci", "configuration"]},
+                      "data_exposure", "language_specific", "mobile", "supply_chain_ci", "configuration", "availability"]},
     "location": {
       "type": "object", "required": ["file", "line", "snippet", "role"], "additionalProperties": false,
       "properties": {
@@ -224,6 +229,17 @@
         "cwe": {"type": "array", "items": {"type": "string", "pattern": "^CWE-\\d+$"}, "minItems": 1},
         "owasp": {"type": "string", "pattern": "^A(0[1-9]|10):20(21|25) .+"},
         "confidence": {"enum": ["confirmed", "traced", "possible"]},
+        "source": {"enum": ["tool", "agent"], "description": "agent: found by review, with no tool candidate; then basis is required"},
+        "basis": {
+          "type": "array", "minItems": 1,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "properties": {
+              "file": {"type": "string"}, "line": {"type": "integer", "minimum": 1}, "excerpt": {"type": "string", "minLength": 3},
+              "evidence": {"type": "string", "description": "runtime evidence, relative to the report's directory"}
+            }
+          }
+        },
         "sources": {"type": "array", "items": {"type": "string"}, "minItems": 1},
         "candidates": {"type": "array", "items": {"type": "string"}},
         "entry_point": {"type": ["string", "null"]},
@@ -241,6 +257,14 @@
         },
         "priority_score": {"type": "integer"},
         "priority": {"enum": ["P0", "P1", "P2", "P3"]},
+        "business_impact": {
+          "type": "object", "required": ["kind", "basis"], "additionalProperties": false,
+          "description": "direct_financial_loss, fraud and regulated_data_breach raise a P2 or P3 finding one level (never to P0)",
+          "properties": {
+            "kind": {"enum": ["direct_financial_loss", "fraud", "regulated_data_breach", "none"]},
+            "basis": {"type": "string", "minLength": 20}
+          }
+        },
         "locations": {"type": "array", "items": {"$ref": "#/$defs/location"}, "minItems": 1},
         "path": {
           "type": "object", "required": ["summary", "sanitisers_checked"], "additionalProperties": false,
@@ -297,7 +321,7 @@
             "fingerprint": {"type": "string", "pattern": "^sha256:[0-9a-f]{8,64}$"},
             "in_git_history": {"enum": ["yes", "no", "unknown"]},
             "history_basis": {"enum": ["full", "path", null], "description": "full: every scanned commit; path: only commits touching this file"},
-            "git_status": {"enum": ["tracked", "untracked", "ignored", "unknown"]},
+            "git_status": {"enum": ["tracked", "untracked", "ignored", "removed", "unknown"], "description": "removed: only in git history"},
             "rotate": {"type": "boolean"},
             "note": {"type": "string"}
           }

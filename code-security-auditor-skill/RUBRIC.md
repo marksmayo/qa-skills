@@ -24,7 +24,7 @@ environmental context.
 |---|---|---|
 | AV | N: over the network; A: same network segment (a developer's machine on shared Wi-Fi); L: local or log access; P: physical | Debug server bound to 0.0.0.0 on a laptop: A |
 | AC | H when the attacker must beat something they don't control (a PIN, a race, state prediction) | Reset-token prediction: H |
-| AT | P when a deployment condition must hold (a missing env var, a .netrc on the server, a browser without SameSite=Lax) | Hard-coded fallback key: P |
+| AT | P only when a condition the attacker can't influence must hold and is unusual in production (a missing env var, a .netrc on the server, a browser without SameSite=Lax). N when the condition holds in the deployment as shipped or the attacker can arrange it (two requests at once, an IPv6 literal, a token that is issued anyway); put any difficulty in AC | Hard-coded fallback key: P. SSRF filter that misses IPv6: N. Double booking by racing two requests: N (AC:H if the window is narrow) |
 | PR | N: no account; L: any account; H: admin | Self-registration counts as L |
 | UI | N; P: victim does something normal; A: victim follows a crafted link or page | Open redirect: A |
 | VC/VI/VA | Impact on the app | SQLi read-only (sqlite3 single statement): VC:H, VI:N |
@@ -50,10 +50,19 @@ authenticated route public), say so in `impact` and `chains_with`; don't re-rate
 (confirmed 4, traced 3, possible 2) x exposure weight (3, 2, 1)`.
 
 P0 >= 32, P1 >= 18, P2 >= 8, P3 < 8. Caps: Critical severity needs `traced` or `confirmed`;
-`possible` findings are at most P1. Rank: priority score, then CVSS score, then confidence.
+`possible` findings are at most P1.
+
+**Business impact** (`business_impact`) raises a P2 or P3 finding one level when exploiting it
+causes `direct_financial_loss` (revenue lost on every use: a reusable discount, a price taken from
+the client, a refund without a check), `fraud`, or a `regulated_data_breach` (health, payment or
+government-id data). The basis says where the loss happens. It never creates a P0 and the
+`possible` cap still applies; `none` records that it was considered.
+
+Rank: priority, then priority score, then CVSS score, then confidence.
 
 Examples: confirmed critical public = 48 (P0); confirmed high authenticated = 24 (P1); traced high
-authenticated = 18 (P1); confirmed medium authenticated = 16 (P2); traced critical restricted = 12 (P2).
+authenticated = 18 (P1); confirmed medium authenticated = 16 (P2); traced critical restricted = 12 (P2);
+traced medium authenticated with direct financial loss = 12, raised to P1.
 
 ## Triage
 
@@ -71,8 +80,13 @@ concatenation are one finding).
 **Observation** for real but informational issues. "False positive" alone is rejected.
 
 **Dependencies:** `yes` (the vulnerable path is used), `conditional` (only under a stated
-condition), `no` (the advisory needs an API or setting the code doesn't use), `unknown` (say what
-would settle it). `yes` and `conditional` need a finding.
+condition), `no` (the advisory needs an API or setting the code doesn't use, or every installed
+copy is a devDependency that isn't bundled into production), `unknown` (say what would settle it).
+`yes` and `conditional` need a finding; several advisories in one package that one upgrade fixes
+can share one "upgrade X" finding.
+
+**Agent-found findings** (`source: agent`): no tool candidate led to them, so the `basis` (file,
+line and an excerpt on that line, or runtime evidence) is what makes them checkable.
 
 ## Safe PoCs
 
@@ -107,20 +121,25 @@ appears in the request is rejected.
   secrets. Note a credential file's existence and git status; its path can be named.
 - Snippets stop before the value (`os.environ.get("SECRET_KEY",`).
 - Test fixtures and `.env.example` placeholders are not secrets; real-looking keys in tests still are.
+  `scan_secrets.py` sets aside test-file literals without a provider format and under 4 bits per
+  character or 20 characters (`test_fixtures`), and skips instruction values (`generate-...`,
+  `your-...`, `<...>`), hyphenated words in documentation and lists of field names. A hard-coded
+  fallback is never a placeholder.
+- A secret only in history is a candidate (`history_only`, `git_status: removed`) and is rotated.
 
 ## Weakness catalogue
 
-`data/pitfalls.json` has 90 patterns in 13 packs (Python, JavaScript/TypeScript, Java/Kotlin,
+`data/pitfalls.json` has 99 patterns in 13 packs (Python, JavaScript/TypeScript, Java/Kotlin,
 Android manifests, iOS, Go, PHP, Ruby, C#, C/C++, GitHub Actions, Dockerfiles, Terraform), each with
 a CWE, an OWASP 2025 category, a typical CVSS vector, a fix and the matching rules of other tools.
 
 | Category | Weaknesses |
 |---|---|
-| Injection | SQL and NoSQL, OS command, template (SSTI), eval, LDAP/XPath, header and log injection, format strings |
-| Web | XSS sinks, CSRF, open redirect, CORS, cookie flags, postMessage origin checks |
-| Server-side | SSRF, path traversal and zip slip, XXE, unsafe uploads |
-| Access control | IDOR/BOLA, missing function-level checks, mass assignment (mostly agent review) |
-| Authentication | Hard-coded session keys, JWT verification, reset tokens, rate limits |
+| Injection | SQL and NoSQL (including Prisma `$queryRawUnsafe`/`$executeRawUnsafe`, `Prisma.raw` and `$queryRaw` called with a string), OS command, template (SSTI), eval, LDAP/XPath, header and log injection, format strings, CSV formula injection |
+| Web | XSS sinks (including `dangerouslySetInnerHTML` with non-literal content and values in `<style>` blocks), CSRF, open redirect (`res.redirect`, `NextResponse.redirect`, `redirect()`, `router.push`, and `startsWith('/')`-only checks), CORS, cookie flags, postMessage origin checks, shared-cache headers on session responses |
+| Server-side | SSRF, path traversal and zip slip, XXE, unsafe uploads (including the client's `file.type` stored as the content type), unverified webhooks |
+| Access control | IDOR/BOLA, missing function-level checks (recon: handlers with no auth call), mass assignment (`data: body`, `data: { ...body }`), mostly agent review |
+| Authentication | Hard-coded session keys, JWT verification, reset tokens, rate limits, OAuth `state` not bound to the session |
 | Cryptography | Weak hashes and ciphers, ECB, predictable randomness, disabled TLS verification |
 | Data exposure | Secrets in code or history, credentials in logs, verbose errors |
 | Language-specific | Deserialisation (pickle, YAML, Java, .NET, PHP, Ruby), prototype pollution, ReDoS, memory safety in C/C++ |
@@ -133,9 +152,28 @@ Chain Failures, A04 Cryptographic Failures, A05 Injection, A06 Insecure Design, 
 Failures, A08 Software or Data Integrity Failures, A09 Security Logging and Alerting Failures, A10
 Mishandling of Exceptional Conditions.
 
+JavaScript source patterns cover Express (`req.query`, `req.body`, `req.params`) and Next.js
+(`request.nextUrl.searchParams`, `searchParams.get(...)`, `await request.json()`/`formData()`,
+`params.x`, `body.x`, `headers().get`, `cookies().get`).
+
+## Framework notes: Next.js
+
+- Route handlers (`app/**/route.ts`) and `pages/api` are public endpoints unless the handler checks
+  the session: `middleware.ts` (or `proxy.ts`) only covers what its `matcher` and any prefix list
+  say, and page-protecting middleware usually leaves `/api/*` out. recon records per handler
+  whether it calls a session or guard helper, a machine credential check, or nothing.
+- Server actions (`'use server'`) are POST endpoints any client can call by action id; they need
+  their own session and ownership checks, and their arguments are untrusted.
+- NextAuth: `callbacks.redirect` (open redirect), `callbacks.jwt`/`session` (what goes in the
+  token, stale roles after a change), `authorize` (rate limits, enumeration), and whether a deleted
+  or disabled user keeps a valid JWT.
+- Responses that read the session must not carry `Cache-Control: public` or `s-maxage`.
+- Prisma: `$queryRaw` as a tagged template is parameterised; the `Unsafe` variants and `Prisma.raw`
+  are not. `data: body` lets the caller set any column, including owner and role fields.
+
 ## Reviewer checklist
 
-- [ ] Recon covers every entry point (including CI workflows), with auth confirmed by reading.
+- [ ] Recon covers every entry point (including CI workflows, server actions and middleware), with auth confirmed by reading.
 - [ ] Every tool is ran, not_run (why), errored (why) or not_applicable; no licensed tools.
 - [ ] Every candidate and advisory triaged with checkable reasons.
 - [ ] Every finding has a traced path (or a stated gap), a CVSS vector with rationale, repro steps,

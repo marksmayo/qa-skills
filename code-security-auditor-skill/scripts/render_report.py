@@ -4,13 +4,16 @@ optionally export the findings as SARIF for code-scanning dashboards.
 
     python render_report.py security_audit.json [--color auto|always|never] [--brief] [--sarif findings.sarif]
 
---brief prints the summary, the ranked table and dependencies without per-finding detail.
+--brief prints the summary, the ranked table and dependencies without per-finding detail, and
+counts dismissed candidates by reason instead of listing each one. Findings found by review
+(source: agent) are labelled "found by review".
 The SARIF export gives each rule its CWE tags and a security-severity (the CVSS v4.0 score), which
 GitHub code scanning uses to rank alerts. It contains titles, locations and fixes, not exploit
 steps, so it is safer to upload than the report itself.
 """
 from __future__ import annotations
-import argparse, json, os, sys
+import argparse, json, os, re, sys
+from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -37,6 +40,12 @@ def paint(text: str, code: str, enabled: bool) -> str:
 def primary(f: dict) -> dict:
     return next((l for l in f['locations'] if l['role'] in ('sink', 'config')), f['locations'][0])
 
+def reason_group(reason: str) -> str:
+    """A short key for grouping dismissals: the reason up to its first clause, without file:line references."""
+    text = re.sub(r'[\w./-]+\.\w+(:\d+)?', '<file>', reason)
+    head = re.split(r'\.\s|;|:\s|\(| - ', text, maxsplit=1)[0]
+    return ' '.join(head.split())[:90] or reason[:90]
+
 def to_sarif(d: dict) -> dict:
     results = []
     for f in d['findings']:
@@ -54,7 +63,7 @@ def to_sarif(d: dict) -> dict:
     return sarif.build('code-security-auditor', d['skill'].get('version'), results)
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('json_file', type=Path)
     ap.add_argument('--color', choices=['auto', 'always', 'never'], default='auto')
     ap.add_argument('--brief', action='store_true', help='summary and tables only')
@@ -101,15 +110,21 @@ def main() -> int:
         l = primary(f)
         w(f"| {f['rank']} | {f['id']} | {P(f['priority'], PRIO_STYLE[f['priority']])} | "
           f"{P(f['cvss']['severity'] + ' ' + str(f['cvss']['score']), SEV_STYLE[f['cvss']['severity']])} | "
-          f"{P(f['confidence'], CONF_STYLE[f['confidence']])} | {f['exposure']} | {', '.join(f['cwe'])} | {f['title']} | {l['file']}:{l['line']} |")
+          f"{P(f['confidence'], CONF_STYLE[f['confidence']])} | {f['exposure']} | {', '.join(f['cwe'])} | {f['title']}"
+          f"{' (found by review)' if f.get('source') == 'agent' else ''} | {l['file']}:{l['line']} |")
     if not args.brief:
         for f in sorted(d['findings'], key=lambda f: f['rank']):
             w('')
             w(P(f"### {f['id']} [{f['priority']}] {f['title']}", BOLD))
-            w(f"{', '.join(f['cwe'])} | {f['owasp']} | {f['category']} | sources: {', '.join(f['sources'])}")
+            w(f"{', '.join(f['cwe'])} | {f['owasp']} | {f['category']} | sources: {', '.join(f['sources'])}"
+              + (' | found by review' if f.get('source') == 'agent' else ''))
+            for b in f.get('basis') or []:
+                w(f"  basis: {b['evidence']}" if b.get('evidence') else f"  basis: {b['file']}:{b['line']}  `{b['excerpt']}`")
             w(f"CVSS {f['cvss']['score']} {f['cvss']['severity']}: {f['cvss']['vector']}" + (f" - {f['cvss']['rationale']}" if f['cvss'].get('rationale') else ''))
             w(f"Confidence {P(f['confidence'], CONF_STYLE[f['confidence']])}, exposure {f['exposure']}" +
-              (f" ({f['exposure_note']})" if f.get('exposure_note') else '') + f", priority score {f['priority_score']}")
+              (f" ({f['exposure_note']})" if f.get('exposure_note') else '') + f", priority score {f['priority_score']}" +
+              (f"; business impact {f['business_impact']['kind']}: {f['business_impact']['basis']}"
+               if f.get('business_impact') and f['business_impact']['kind'] != 'none' else ''))
             w(f"Path: {f['path']['summary']}")
             if f['path'].get('gap'):
                 w(P(f"Gap: {f['path']['gap']}", YELLOW))
@@ -180,8 +195,17 @@ def main() -> int:
     if dismissed:
         w('')
         w(P('## Dismissed candidates', BOLD))
-        for t in dismissed:
-            w(f"- {t['candidate']}: {t['reason']}")
+        if args.brief:
+            groups = Counter(reason_group(t['reason']) for t in dismissed)
+            for reason, n in groups.most_common(12):
+                ids = [t['candidate'] for t in dismissed if reason_group(t['reason']) == reason]
+                w(f"- {n} x {reason}" + (f" ({', '.join(ids[:4])}{', ...' if len(ids) > 4 else ''})"))
+            if len(groups) > 12:
+                rest = sum(n for _, n in groups.most_common()[12:])
+                w(P(f"- {rest} more in {len(groups) - 12} other reason(s); each reason is in the JSON", DIM))
+        else:
+            for t in dismissed:
+                w(f"- {t['candidate']}: {t['reason']}")
     w('')
     w(P('## Coverage', BOLD))
     w(f"Languages: {', '.join(cov['languages_reviewed'])}  |  files read {cov['files_read']}/{cov['files_in_scope']}  |  "

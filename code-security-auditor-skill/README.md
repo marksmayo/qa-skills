@@ -66,19 +66,22 @@ Priority = severity (CVSS v4.0 band) x confidence x exposure (public, authentica
 Scripts, in the order the skill runs them:
 
 ```bash
-python scripts/recon.py <repo> --out recon.json                   # attack surface: routes, client-side sources, CI triggers, auth
-python scripts/run_scanners.py <repo> --out-dir <out>              # every applicable open-source scanner, statuses recorded
-python scripts/scan_pitfalls.py <repo> --out patterns.json         # 90 CWE-mapped patterns in 13 packs
+python scripts/recon.py <repo> --out recon.json                   # attack surface: routes (per-handler auth for Next.js), server actions, middleware, client-side sources, CI triggers
+python scripts/run_scanners.py <repo> --out-dir <out>              # every applicable open-source scanner: status, time and results recorded
+python scripts/scan_pitfalls.py <repo> --out patterns.json         # 99 CWE-mapped patterns in 13 packs (Express and Next.js sources)
 python scripts/scan_secrets.py <repo> --history --out secrets.json # secrets, never their values; git status and history per file
 #   large repositories: --history-budget 300 (seconds; coverage recorded as partial) --history-exclude '*.html'
 python scripts/merge_findings.py --root <repo> --patterns patterns.json --secrets secrets.json \
-    --sarif semgrep.sarif zizmor.sarif --bandit bandit.json --deps pip-audit.json --out candidates.json
+    --sarif semgrep.sarif zizmor.sarif --bandit bandit.json --deps pip-audit.json npm-audit.json --out candidates.json
+python scripts/seed_report.py --recon recon.json --candidates candidates.json --scanners <out>/scanners.json \
+    --out security_audit.json                                      # copied parts of the report; judgement left as TODO(seed)
 python scripts/run_poc.py poc.json --check                         # safety lint only
 python scripts/run_poc.py poc.json --target http://127.0.0.1:5057 --permission "..." --out evidence/F-1.json
 python scripts/cvss4.py "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"
 python scripts/validate_security_audit.py security_audit.json --repo <repo> --candidates candidates.json --write-summary
 python scripts/render_report.py security_audit.json [--brief] [--sarif findings.sarif]
 python scripts/sarif.py read results.sarif                          # normalise any SARIF file
+python scripts/self_test.py                                         # built-in scanners against examples/kite-notes
 ```
 
 ## Output
@@ -114,6 +117,13 @@ evidence and test runs are real:
 - 2 Semgrep variant rules that match exactly the vulnerable lines;
 - 4 dismissed candidates with reasons, 3 observations, and the tools that weren't installed.
 
+`examples/kite-notes/` is a second, smaller fixture: a Next.js App Router + Prisma + NextAuth
+source tree (not runnable) with planted weaknesses, and `expected.json` saying what the built-in
+scanners must find there. `scripts/self_test.py` checks them: 13 pattern hits and none in the safe
+counterparts, per-handler auth for each route handler and server action, the middleware's
+coverage, client sources only in browser code, and only the hard-coded fallback key reported as a
+secret.
+
 ```bash
 python scripts/validate_security_audit.py examples/security_audit.example.json \
     --repo examples/invoicer --candidates examples/run/candidates.json
@@ -129,27 +139,34 @@ python scripts/render_report.py examples/security_audit.example.json --brief
 - Traced findings list the guards checked; possible findings state the gap.
 - Every candidate and advisory is triaged once; dismissals must be checkable; reachable advisories
   have findings.
-- Locations match the source; regression tests exist and fail on the vulnerable code.
-- No secret values in the report or evidence; nothing written inside the repository.
-- Summary counts recomputed; "secure" headlines rejected.
+- Locations match the source; agent-found findings' basis excerpts are on their lines; regression
+  tests exist and fail on the vulnerable code.
+- No secret values in the report or evidence (values of real or undismissed secrets, searched in
+  string values only, with errors that name the candidate and never the value); nothing written
+  inside the repository; no `TODO(seed)` placeholder left.
+- Business impact raises a P2 or P3 one level, never to P0.
+- Summary counts recomputed; headlines that call the code secure or safe rejected.
 
 ## Files
 
 - `SKILL.md`: complete agent instructions
 - `RUBRIC.md`: confidence, CVSS v4.0 anchors, exposure, priority, triage, safe PoCs, secrets, catalogue
-- `data/pitfalls.json`: 90 weakness patterns by CWE, with OWASP 2025 categories, CVSS hints, fixes and tool rule mappings
+- `data/pitfalls.json`: 99 weakness patterns by CWE, with OWASP 2025 categories, CVSS hints, fixes and tool rule mappings
 - `schemas/security_audit.schema.json`: output contract
 - `scripts/recon.py`: attack-surface map
+- `scripts/nextjs_auth.py`: Next.js route handlers, server actions and middleware, with per-handler auth (used by recon)
 - `scripts/run_scanners.py`: detects and runs the open-source scanners, recording each one's status
 - `scripts/scan_pitfalls.py`: pattern scan
 - `scripts/scan_secrets.py`: secrets in the tree and git history, without values; whether each file is tracked, untracked or gitignored and was ever committed; credential files and paths to them listed separately
-- `scripts/merge_findings.py`: merges SARIF, Bandit, ESLint, dependency and built-in results into candidates
+- `scripts/merge_findings.py`: merges SARIF, Bandit, ESLint, dependency and built-in results into candidates; npm advisories get the installed version, range, dev flag and via chain from `package-lock.json`
+- `scripts/seed_report.py`: writes the report skeleton (entry points, tools, triage, dependencies) with TODO(seed) placeholders for the judgement
+- `scripts/self_test.py`: checks the built-in scanners against `examples/kite-notes/`
 - `scripts/run_poc.py`: safety-linted PoC runner that records evidence
 - `scripts/cvss4.py`: CVSS v4.0 calculator (port of the FIRST reference implementation, BSD-2-Clause)
 - `scripts/validate_security_audit.py`: structure and honesty checks
 - `scripts/render_report.py`: coloured terminal/Markdown report and SARIF export
 - `scripts/sarif.py`: SARIF reader and writer (shared with UI Crash Hunter)
-- `examples/`: sample app, scanner outputs, PoCs, evidence, regression tests, variant rules and report
+- `examples/`: sample app, scanner outputs, PoCs, evidence, regression tests, variant rules and report; `kite-notes/`, the Next.js fixture
 
 ## Design principles
 

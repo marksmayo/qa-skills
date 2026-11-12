@@ -1,7 +1,7 @@
 ---
 name: code-security-auditor
 description: Audit a codebase for security weaknesses with open-source scanners (Semgrep OSS, Bandit, gosec, Brakeman, gitleaks, osv-scanner, pip-audit, npm audit, zizmor, Trivy, Checkov and more) plus a deep manual review, trace each finding from attacker-controlled input to the dangerous operation, rate it with CVSS v4.0, and write safe reproduction steps, a fix and a regression test. Optionally confirms findings with canary-only proofs of concept against localhost or a test environment the user names. Every candidate is triaged, every tool's status is recorded, and the report never calls the code secure.
-version: 1.0.0
+version: 1.1.0
 ---
 
 # Code Security Auditor
@@ -74,14 +74,31 @@ python scripts/recon.py <repo> --out <out>/recon.json
 It finds the stack, entry points (HTTP routes, GraphQL operations, webhooks, queue consumers, CLI
 commands, mobile deep links and exported components, CI workflow triggers such as
 `pull_request_target`, `workflow_run` and `issue_comment`, and client-side sources in JavaScript and
-inline scripts: `location.search`/`hash`, `URLSearchParams`, `postMessage`, `document.referrer`,
+inline scripts: `location.search`/`hash`, `useSearchParams()`, `postMessage`, `document.referrer`,
 `window.name`, web storage and cookies, so a static site has entry points too; an inline script
-repeated across generated pages is listed once with `also_in`), a first guess at each route's auth
-requirement, data stores, outbound calls, secret configuration, dependency manifests, CI workflows
-and review leads. Then read the code to confirm it: add entry points the patterns missed (CI
-workflows, dynamically registered routes), correct auth guesses (`unknown` is not `public`), and
-write the trust boundaries and the auth model (authentication, sessions, authorisation). The map
-decides where the deep review goes; record it in `recon`.
+repeated across generated pages is listed once with `also_in`; server code, config files and test
+setup are not client sources), a first guess at each route's auth requirement, data stores,
+outbound calls, secret configuration, dependency manifests, CI workflows and review leads. Then
+read the code to confirm it: add entry points the patterns missed (CI workflows, dynamically
+registered routes), correct auth guesses (`unknown` is not `public`), and write the trust
+boundaries and the auth model (authentication, sessions, authorisation). The map decides where the
+deep review goes; record it in `recon`.
+
+**Next.js.** recon models the App Router and `pages/api`: every exported handler (`export async
+function GET`, `export const POST = ...`, `export { handler as GET, handler as POST }`) is an entry
+point at the line of its export, and its auth is read from the handler body (and the same-file
+functions it calls): a session or guard call (`getServerSession`, `auth()`, `getToken`, or one of
+the repository's own helpers that wraps them, listed in `auth_helpers` with where each is
+defined), a machine credential (`cron_secret`, `api_key`, `signature`, `token`), coverage by
+`middleware.ts`/`proxy.ts` (its `matcher` and any protected-prefix list are parsed and recorded in
+`middleware`), or none, which is reported as `public` with "no session, guard or credential check
+in this handler". That is the main access-control lead in a Next app: page middleware usually does
+not cover `/api/*` unless the matcher says so, so each route handler must check auth itself.
+Server actions (`'use server'`) are entry points too (`server_action`, POST by action id). In the
+deep review also read: NextAuth callbacks (`jwt`, `session`, `redirect`, `signIn`), route segment
+config (`dynamic`, `revalidate`, and `Cache-Control` on responses that read the session), server
+actions' argument checks, `redirect()`/`NextResponse.redirect`/`router.push` with values from
+`searchParams`, and Prisma writes that take the request body whole.
 
 ### 2. Run the scanners
 
@@ -92,7 +109,10 @@ python scripts/run_scanners.py <repo> --out-dir <out> [--offline]
 It runs every free, open-source tool that applies and is installed, writes their outputs to
 `<out>` (refused if inside the repository) and records each tool as `ran`, `not_run` (with why),
 `errored` or `not_applicable` in `<out>/scanners.json`. Copy those statuses into the report's
-`tools`. Use only tools whose licences allow scanning closed-source code without a paid account:
+`tools`, with the elapsed time and number of results each one recorded. npm audit on a large lockfile
+(over a thousand packages) can take several minutes; it has its own limit (`--npm-audit-timeout`,
+default 600 seconds; every other tool has `--timeout`, default 900), and long runs print progress
+every 30 seconds. Use only tools whose licences allow scanning closed-source code without a paid account:
 CodeQL is excluded, and so are Semgrep rules or features that need a login. Ask before installing
 anything; a missing tool is recorded, not silently skipped.
 
@@ -112,8 +132,15 @@ python scripts/scan_pitfalls.py <repo> --out <out>/patterns.json     # data/pitf
 python scripts/scan_secrets.py <repo> --history --out <out>/secrets.json
 python scripts/merge_findings.py --root <repo> --patterns <out>/patterns.json --secrets <out>/secrets.json \
     --sarif <out>/semgrep.sarif <out>/zizmor.sarif ... --bandit <out>/bandit.json \
-    --deps <out>/pip-audit.json <out>/npm-audit.json <out>/osv.json --out <out>/candidates.json
+    --deps <out>/pip-audit.json <out>/npm-audit.json <out>/osv.json [--npm-lock <repo>/package-lock.json] \
+    --out <out>/candidates.json
+python scripts/seed_report.py --recon <out>/recon.json --candidates <out>/candidates.json \
+    --scanners <out>/scanners.json --repo <repo> --out <out>/security_audit.json
 ```
+
+`seed_report.py` writes the copied parts of the report (entry points, tools rows, one triage row per
+candidate, one dependencies row per advisory, coverage totals and counts) and marks everything that
+needs judgement `TODO(seed)`; the validator rejects any placeholder left behind.
 
 `scan_secrets.py` records each secret's file as `tracked`, `untracked` or `ignored` in git and
 checks that path's history cheaply, so "present locally, gitignored, never committed"
@@ -127,9 +154,26 @@ service-account fields (`token_uri`, certificate URLs) are not secrets; the cred
 references are listed under `credential_files`: say in the report that the file exists and
 whether it is committed, and name its path freely.
 
+Low-entropy literals in test files (no provider format, under 4 bits of entropy per character or
+under 20 characters) are fixtures: they are counted and listed under `test_fixtures`, not triaged
+one by one; a real-looking key in a test is still a candidate. Placeholders are not secrets:
+values in `.env.example`/`.env.sample`/`.env.template` unless they look like real keys, instruction
+values (`generate-...`, `your-...`, `<...>`, `change-me`), words joined by hyphens in documentation,
+`postgresql://user:password@` in documentation, and lists of field names (`['clientSecret',
+'paymentIntentId']`). A hard-coded fallback (`getenv('KEY', 'dev-key')`) is always a candidate,
+whatever it looks like, because it is used whenever the variable is unset. Secrets that exist only
+in history become candidates too (`history_only`, `git_status: removed`, with the commits), so
+each is triaged and rotated. The git lookups are batched (two `git log` calls per hundred files,
+not two per file), and the output records `elapsed_s`.
+
 `merge_findings.py` merges hits on the same sink (overlapping lines and a shared pitfall or CWE)
 into one candidate (`CAND-nnn`) with all its sources; secrets become `SEC-nnn` and dependency
-advisories `DEP-nnn`, deduplicated across aliases. Secret values are never copied.
+advisories `DEP-nnn`, deduplicated across aliases. Secret values are never copied. For npm audit,
+each advisory is checked against the copies installed according to `package-lock.json`: `version`
+is the installed version, `range` the advisory's own vulnerable range, `dev` whether every copy is
+a devDependency, `via` the packages that pull it in, and `fixed_in` the first fixed version; a
+package installed in two majors (a production copy and a dev copy) gives one entry per major, so an
+advisory that only affects the dev copy doesn't read as production.
 
 ### 3. Triage every candidate
 
@@ -141,8 +185,12 @@ sanitiser or framework protection apply (parameterised queries, auto-escaping, a
 
 For each `DEP`, decide reachability: is the vulnerable function or code path used? `yes` and
 `conditional` (reachable only under a stated condition) need a finding; `no` needs a basis
-(which API the advisory needs and that the code doesn't call it). Note when a recommended fix
-would make a not-reachable advisory reachable (for example, switching to the API it affects).
+(which API the advisory needs and that the code doesn't call it; "devDependency only, not in the
+production bundle" is a basis once confirmed). Note when a recommended fix would make a
+not-reachable advisory reachable (for example, switching to the API it affects). Several
+advisories in one package that one upgrade fixes (`conditional` ones especially, such as
+self-hosting-only issues in a framework) can be one "upgrade X" finding listing every `DEP` id in
+`dependency.ids`; the validator only requires that they are the same package.
 
 ### 4. Deep review: what tools miss
 
@@ -161,7 +209,10 @@ Go through the high-risk areas from recon, entry point by entry point:
   `${{ github.event.* }}` in `run:`, unpinned third-party actions with tokens, reachable vulnerable
   dependencies.
 
-Findings from this step have `sources: ["agent"]`.
+Findings from this step have `sources: ["agent"]`, and should set `"source": "agent"` with a
+`basis`: a list of `{file, line, excerpt}` (or `{evidence}` for runtime evidence). With `--repo`
+the validator re-reads each line and checks the excerpt is on it; the renderer labels these
+findings "found by review". A finding with `source: agent` lists no candidates.
 
 ### 5. Trace each finding
 
@@ -176,6 +227,12 @@ For each confirmed or traced bug pattern, search the whole codebase for siblings
 Semgrep rule when you can (taint mode for source -> sink bugs). Run it: it should match the known
 instances, nothing safe, and nothing on a fixed copy. Ship it in `variant_rules` (the rule text and
 a file outside the repository) so the team can add it to CI.
+
+Without Semgrep, test a variant as a regex: write a catalogue with one entry in the
+`data/pitfalls.json` shape (pack, regex, optional `require_near`/`suppress_near`/`suppress_file`)
+to a scratch file, run `scan_pitfalls.py <repo> --catalogue <that file>` on the repository and on
+a fixed copy, and record the result in the limitations (`variant_rules` only holds Semgrep rules,
+so say "variant checked with a regex, no Semgrep rule written").
 
 ### 7. Verify (opt-in)
 
@@ -214,6 +271,19 @@ confidence; a `possible` finding is at most P1. Rank by priority score, then CVS
 confidence. Rate each finding on its own and use `chains_with` for combinations (a forged session
 that makes an "authenticated" bug public), rather than inflating one rating.
 
+**Business impact.** CVSS rates the technical impact; it doesn't see that a discount code anyone
+can reuse loses money on every order. When exploiting a finding causes direct financial loss,
+fraud, or a breach of regulated data, set `business_impact` (`direct_financial_loss`, `fraud` or
+`regulated_data_breach`, with a `basis` saying where and how). It raises a P2 or P3 finding one
+level; it never makes a P0 (that still needs the score), and the `possible` cap still applies.
+Ranking is by priority, then priority score, then CVSS score, then confidence.
+
+**AT (attack requirements).** Use `AT:P` only for a condition the attacker cannot influence and
+that is unusual in a production deployment (a missing environment variable, a non-default
+setting, a particular browser). A condition that holds in the deployment as shipped, or that any
+attacker can arrange (sending two requests at once, choosing an IPv6 literal, waiting for a token
+to be issued), is `AT:N`; put the difficulty in AC if there is any.
+
 ### 9. Repro steps, fix and regression test
 
 For every finding:
@@ -227,6 +297,14 @@ For every finding:
   repository: it must fail (`fails_on_vulnerable_code`), and should pass with the fix applied
   (`passes_after_fix`). For CI, configuration and dependency findings, the guard is a CI check
   (zizmor, Semgrep, pip-audit) with `result: not_run` and a note.
+
+  For Node and Next.js apps, running a test against a copy means `npm ci` (often five minutes or
+  more) and mocks for the database client and the session library. Budget for it: run tests for
+  the P0 and P1 findings first, reuse one prepared copy for all of them, and mock at the module
+  boundary (`vi.mock('@/lib/prisma')`, `vi.mock('next-auth')`) so each test calls the route handler
+  function directly with a `Request`. If the brief rules out installing or running the toolchain,
+  write the test as a sketch with `result: not_run` and a note that says so; never claim a result
+  you didn't run.
 
 ### 10. Report, validate and render
 
@@ -255,10 +333,18 @@ rendered report, the P0 and P1 findings first, and what wasn't covered.
 - Traced findings list the guards checked; possible findings state the gap.
 - Every candidate triaged once, every dismissal checkable, every dependency advisory assessed, and
   reachable ones linked to findings.
-- Locations (file, line and snippet) against the source; regression tests exist and fail on the
-  vulnerable code; variant rule files exist.
-- No secret value in the report or the evidence, and nothing written inside the repository.
+- Locations (file, line and snippet) against the source: the line must be the one that holds the
+  snippet, so for a statement over several lines cite the line with the dangerous expression.
+  Agent-found findings' basis excerpts are checked the same way. Regression tests exist and fail
+  on the vulnerable code; variant rule files exist.
+- No secret value in the report or the evidence, and nothing written inside the repository. The
+  values come from findings with a secret block and from secret candidates that weren't dismissed
+  (a dismissed one still counts if it looks like a real key); placeholder words and values under
+  8 characters are skipped, only JSON string values are searched (not keys), short values must
+  match as whole tokens, and an error names the candidate and the JSON path, never the value.
+- No `TODO(seed)` placeholder from `seed_report.py` left anywhere.
 - Secret blocks agree with the scanner: a secret it found in history is not reported as absent,
   `no` is not claimed when it could not tell, and `git_status` matches. A `partial` or `errored`
   history scan is named in the limitations.
-- Summary counts recomputed; headlines claiming the code is secure are rejected.
+- Summary counts recomputed; headlines claiming the code is secure, safe or free of issues are
+  rejected ("secure" in a technical phrase such as "the Secure cookie flag" is fine).

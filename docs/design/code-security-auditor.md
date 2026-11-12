@@ -1,6 +1,6 @@
 # Design: `code-security-auditor-skill`
 
-Status: Built (v1.0.0), see "As built" at the end. Build order: 5.
+Status: Built (v1.1.0), see "As built" at the end. Build order: 5.
 
 ## Mission
 
@@ -209,3 +209,75 @@ Differences from the draft above, and decisions made while building:
   can start it (new entry-point kind `client_source`). On the example it now finds the
   `pull_request_target` entry point the agent had added by hand. `run_scanners.py` no longer
   leaves an empty `checkov/` folder when Checkov doesn't run.
+
+## As built (v1.1.0): fixes from a run on a real Next.js application
+
+A run on a Next.js 16 App Router + Prisma + NextAuth application (128 route handlers, about 440
+TypeScript files, 179 commits, `node_modules` installed, only npm of the scanners available) showed
+these gaps; all are fixed, and `examples/kite-notes/` (a synthetic Next.js fixture) with
+`scripts/self_test.py` keeps them fixed.
+
+- **The validator's secret-value check** collected every value on every secret candidate's line,
+  dismissed placeholders included, and searched the serialised JSON, keys included. A report could
+  not contain "password", "pass" (so not `passes_after_fix`, "bypass" or a reset-password route).
+  Values now come only from findings with a secret block and from candidates that weren't dismissed
+  (a dismissed one counts only if it looks like a real key: 16+ characters, 3.5+ bits per
+  character); placeholders and values under 8 characters are skipped; only string values are
+  searched, short values as whole tokens; the error names the candidate and the JSON path.
+- **Next.js patterns.** The JavaScript pack only knew Express sources. Sources now include
+  `nextUrl.searchParams`, `searchParams.get`, `await request.json()`/`formData()`, `params.x`,
+  `body.x`, `headers().get` and `cookies().get`; the open-redirect pattern knows
+  `NextResponse.redirect`, `redirect()` and `router.push`. Nine patterns were added: Prisma raw SQL
+  from a variable, mass assignment (`data: body`), `startsWith('/')`-only redirect checks, CSV
+  formula injection, `<style>` interpolation, shared-cache headers on session responses, OAuth
+  `state` not bound to the session, unverified webhooks, and uploads stored with the client's
+  content type. `dangerouslySetInnerHTML` with a string literal is no longer flagged.
+  `scan_pitfalls.py` gained `suppress_file` and `require_path`.
+- **recon and Next.js auth** (`scripts/nextjs_auth.py`). 193 of 221 entry points had come back
+  `auth: unknown` with the handler at line 1, and `export { handler as GET }` was missed. Each
+  exported handler is now cut out by bracket matching (strings, comments, regex literals and
+  templates skipped) at its real line, with the same-file functions it calls, and classified: a
+  session call, one of the repository's guard helpers (found by following helper calls up to three
+  levels across the repository; recorded in `auth_helpers`), a machine credential (new auth values
+  `cron_secret`, `api_key`, `signature`, `token`), middleware coverage (`middleware.ts`/`proxy.ts`
+  matcher and protected-prefix lists parsed; new entry kind `middleware`), or none: `public`, with
+  that reason. Server actions are entry points (`server_action`). On the application, unknown fell
+  from 193 to 16. Client sources no longer include server files, config files or test setup, and
+  `URLSearchParams` that builds an outbound query; data stores skip `*.config.*`; auth-flow leads
+  ignore route parameters (`/track/:token/open`).
+- **Secret scan.** 185 hits, none real: 160 were test literals, 6 `.env.example` placeholders, 8
+  hyphenated placeholders in documentation, and two lists of field names. Test-file literals that
+  don't look real go to `test_fixtures`; template env files, instruction values, hyphenated words
+  in documentation, documented `user:password@` connection strings and list elements are not
+  secrets; a hard-coded fallback always is. The application now gives 5 candidates. Per-file git
+  lookups (two per file) are batched (two per hundred files), and `elapsed_s` is recorded.
+  Secrets only in history become candidates (`history_only`, `git_status: removed`).
+- **Dependencies.** npm audit's range was reported as the version, `fixed_in` was empty, and a
+  package installed twice (a production 6.x and a dev 8.x) read as one. `merge_findings.py` now
+  reads `package-lock.json`: installed version, the advisory's own range (a small npm range
+  matcher), a `dev` flag, `via` (npm audit's effects plus the lockfile's dependents) and
+  `fixed_in` from the range; one entry per installed major.
+- **Scale.** 211 candidates and 220 entry points had to be copied into the report by hand.
+  `seed_report.py` writes everything that is copied and marks the judgement `TODO(seed)`, which
+  the validator rejects. `run_scanners.py` records `elapsed_s` and `results` per tool, prints
+  progress every 30 seconds, and gives npm audit its own timeout (`--npm-audit-timeout`, 600 s).
+- **Schema 1.1** (1.0 reports stay valid): the auth values and entry kinds above, `auth_evidence` on
+  entry points, `recon.middleware`, area `availability`, secret `git_status: removed`, dependency
+  `range`/`dev`/`via`, agent-found findings (`source: agent` with a `basis` the validator re-reads
+  with `--repo`; the renderer labels them "found by review"), and `business_impact`, which raises
+  a P2 or P3 finding one level (never to P0) for direct financial loss, fraud or a regulated-data
+  breach. Ranking is now priority first. The headline ban allows "secure" in technical phrases
+  ("the Secure cookie flag") and still rejects verdicts. Advisories in one package may share one
+  "upgrade X" finding (the validator checks they are the same package).
+- **Rubric.** AT:P is for conditions the attacker can't influence and that are unusual in
+  production; traced issues that need only common conditions are AT:N. A Next.js framework
+  section covers middleware coverage, server actions, NextAuth callbacks and Prisma.
+- **SKILL.md.** Next.js guidance, testing a variant without Semgrep (a one-entry catalogue for
+  `scan_pitfalls.py --catalogue`), and a budget for Node regression tests (prepare one copy, mock
+  Prisma and NextAuth at the module boundary, `not_run` with a note when the brief rules it out).
+- **Renderer.** `--brief` counts dismissals by reason instead of listing each one, and `--help`
+  prints the whole description.
+- **Timings on the application:** `scan_secrets.py --history` 28 s before, 18-20 s after (warm
+  cache; the first run took 4 min 7 s cold); `recon.py` 10 s before, 9-15 s after (it now cuts out
+  every handler and follows helpers); `scan_pitfalls.py` 3 s before, 7 s after (more patterns).
+  npm audit's own time (about 6 minutes) is the registry's; it is now reported and bounded.
