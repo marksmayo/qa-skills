@@ -58,7 +58,7 @@ Can assess implementation-linked coverage, untested modules, branch gaps, mutati
 
 Record the mode and explain why it applies. The inventory must support it: white-box needs application source, grey-box needs requirements or specifications.
 
-White-box with only source (no runtime coverage or mutation report) is weaker than white-box with instrumentation. Say which in `metadata.notes`; the validator warns when white-box rests on source alone. If the suite has a coverage provider configured (`@vitest/coverage-v8`, `coverage.py`, `jest --coverage`, JaCoCo), try a coverage run before settling for source only.
+White-box with only source (no runtime coverage or mutation report) is weaker than white-box with instrumentation. Say which in `metadata.notes`; the validator warns when white-box rests on source alone. If the suite has a coverage provider configured (`@vitest/coverage-v8`, `coverage.py`, `jest --coverage`, JaCoCo; for Rust `grcov`, `cargo-llvm-cov`, or `cargo-tarpaulin`; for Go `go test -cover`, and the equivalent for other ecosystems), try a coverage run before settling for source only.
 
 ## Step 2: Inventory available evidence
 
@@ -96,6 +96,8 @@ Examples:
 - Static searches for sleeps, retries, skips, weak assertions, hard-coded state, secrets, or unstable selectors
 
 Do not access production systems, rotate secrets, delete data, or run destructive suites without explicit permission. Installing dependencies is fine when it goes into a scratch environment and nowhere else: a scratch virtual environment per Python component (`python -m venv <tmp>/venv` or `uv venv`, then the component's requirements, as CI does), or a scratch `node_modules` in the scratch copy. Never install into the checkout or a shared interpreter. Adding a measurement tool to that scratch environment only (pytest-cov or coverage.py, pytest-randomly) is also fine when the repository has none configured; say so in the run's notes.
+
+A scoped test command that compiles cleanly and exits zero while running **zero tests** is not a pass: check the reported test count, not just the exit code (for example `cargo test -p <crate>` when that crate's tests live elsewhere, or a path/pattern filter that matches nothing).
 
 ### Python components and unavailable dependencies
 
@@ -169,6 +171,7 @@ When the application's interfaces can be listed, map each one to the tests that 
 - **FastAPI:** count operations (method and path), not functions. List them from `app.openapi()["paths"]` when the app imports in your scratch environment (note that `include_in_schema=False` routes are left out), or by walking each router's routes with its `APIRouter(prefix=...)` and the `include_router(..., prefix=...)` that mounts it. Do not walk `app.routes` for `APIRoute` objects alone: newer FastAPI releases keep included routers as wrapper objects there, so the walk finds only the routes declared on the app itself (one of sixteen in one assessment). Match tests by method and path template (`/items/{item_id}`).
 - **Express, Fastify, Flask, Django, Rails, Spring:** the router or URL configuration lists the endpoints; match tests by URL and method.
 - **OpenAPI or GraphQL:** operations from the specification (that makes it `specification_derived`).
+- **CLI and other multi-call binaries:** when a tool dispatches to many sub-commands or utilities (a `git`-style subcommand table, a coreutils-style multi-call binary, a plugin or handler registry), that dispatch table *is* the interface list. Map each sub-command or utility to the tests that invoke it (by name on the command line, or by calling its entry function), and record it with `kind: "commands"` (or `kind: "cli"`). An untested destructive sub-command (delete, overwrite, force) is often the strongest finding here.
 
 `python scripts/list_interfaces.py <repo> --tests <test dir>` lists FastAPI, Flask, Azure Functions, Next.js and Express interfaces from source (it never imports the app) and marks the ones a test's URL literal reaches; read its output before using it, as the method field says.
 
@@ -324,6 +327,11 @@ Azure DevOps pipelines:
 
 - No `pr:` trigger in the YAML: pull-request validation then depends on branch policies that live in the project settings, not the repository. Record `ci_configuration` as `partial` and the gating as unknown rather than assuming either way
 - `template:` references to files in another repository or a `templates/` folder you cannot read: the jobs they define are unknown, so say which stages you could not see
+
+Other ecosystems have their own false-pass traps:
+
+- **Rust:** a scoped command that compiles and reports success while running **0 tests** (`cargo test -p <crate>` when the integration tests live in a different crate, or a `--test`/name filter that matches nothing) is not a pass — read the "running N tests" line. `#[ignore]` on a test with no owner or expiry is a permanently silenced test, not a passing one. `#[cfg(unix)]`, `#[cfg(target_os = ...)]`, or feature-gated tests silently compile out on other platforms or without the feature, so CI on one target reports green while those tests never run anywhere; check which targets and feature sets CI actually exercises.
+- **Generally:** tests gated behind a platform, OS, feature flag, environment variable, or build tag that the pipeline never sets are dead weight that still shows green; confirm the gated paths are run somewhere, and treat a run that executed no tests as `not_run`, never a pass.
 
 ## Step 9: Prioritise recommendations
 

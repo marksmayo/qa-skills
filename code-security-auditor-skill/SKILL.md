@@ -308,7 +308,7 @@ Add the CWE ids and the OWASP Top 10 (2025) category.
 | critical (9.0-10) | 4 | confirmed | 4 | public (no account) | 3 |
 | high (7.0-8.9) | 3 | traced | 3 | authenticated (any account) | 2 |
 | medium (4.0-6.9) | 2 | possible | 2 | restricted (admin, internal network, log access, upstream compromise) | 1 |
-| low (0.1-3.9) | 1 | | | | |
+| low (0.1-3.9) | 1 | | | local (attacker-supplied input: file/arg/stdin/env) | 1 |
 
 P0 >= 32, P1 >= 18, P2 >= 8, otherwise P3. Caps: a Critical finding needs at least `traced`
 confidence; a `possible` finding is at most P1. Rank by priority score, then CVSS score, then
@@ -335,6 +335,18 @@ setting; `possible` is for a path you could not read to the end. An exposed serv
 needs a credential (a database open to the internet with password login) takes the privilege the
 attacker must hold (`PR:H` for an administrator password) and exposure `restricted`; RUBRIC.md has
 the anchors.
+
+**Low-level, CLI and Rust targets.** For a command-line tool or a library with no network listener,
+the attacker is usually local: they supply a file, an argument, stdin or an environment variable.
+Rate those findings with `exposure: "local"` (weight 1, the same as `restricted`); the local attack
+vector is already carried by the CVSS vector as `AV:L`, which lowers the score, so don't double-count
+it. `scan_pitfalls.py` has a `rust` pack (`.rs`) for the usual low-level leads: `unsafe` blocks and
+functions (CWE-119), `from_raw_parts`/`set_len`/`transmute` (CWE-125/787/704), narrowing integer
+casts near size arithmetic (CWE-190/197), `Command::new` (CWE-78), symlink-following filesystem
+calls (CWE-59/22 TOCTOU), and `unwrap()`/`expect()` on parsed input (a panic is a denial of
+service). If the repository's dominant language has no pack, `scan_pitfalls.py` prints a loud
+warning rather than a clean-looking candidate list drawn only from incidental files (CI workflows, a
+Dockerfile); add a pack before trusting the run.
 
 ### 9. Repro steps, fix and regression test
 

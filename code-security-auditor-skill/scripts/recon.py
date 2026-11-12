@@ -94,7 +94,9 @@ SECRET_CFG = re.compile(r'\b(os\.environ|os\.getenv|process\.env|System\.getenv|
                         r'[^\n]{0,40}(SECRET|KEY|TOKEN|PASSWORD|PASSWD|CREDENTIAL|DSN|DATABASE_URL)', re.I)
 QUEUE = re.compile(r'@(app\.task|shared_task|celery\.task)|@KafkaListener|@RabbitListener|@SqsListener|\.subscribe\(|'
                    r'channel\.consume\(|receive_message\(|@JmsListener|\bconsumer\s*=|Sidekiq::Worker|ApplicationJob')
-CLI = re.compile(r'@click\.command|@\w+\.command\(|typer\.Typer\(|argparse\.ArgumentParser\(|cobra\.Command\{|commander')
+CLI = re.compile(r'@click\.command|@\w+\.command\(|typer\.Typer\(|argparse\.ArgumentParser\(|cobra\.Command\{|commander|'
+                 r'\bclap::|use\s+clap\b|#\[derive\([^)]*\b(?:Parser|Subcommand)\b|'
+                 r'\b(?:std::)?env::args\s*\(|\b(?:std::)?io::stdin\s*\(')
 UPLOAD = re.compile(r'request\.files\b|\bUploadFile\b|multer\(|MultipartFile|IFormFile|\$_FILES|upload\.(single|array|fields)\(')
 GLOBAL_AUTH = re.compile(r'before_request|before_app_request|app\.use\([^)]*(auth|session|jwt|passport)|dependencies\s*=\s*\[\s*Depends|'
                          r'MIDDLEWARE\s*=|SecurityFilterChain|authorizeHttpRequests')

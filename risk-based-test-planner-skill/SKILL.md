@@ -194,12 +194,32 @@ catalogue that shows a price doesn't move money.
 - Type declaration files (`.d.ts`) are skipped.
 
 Scores:
-- 5 for moving money, controlling access, exposing personal data or destroying data;
+- 5 for moving money, controlling access, exposing personal data or destroying data; and, in the
+  systems/CLI pack, for destroying files or directories (`remove_file`, `remove_dir_all`,
+  `unlink`, `shred`) and changing ownership, permissions or privilege (`setuid`/`setgid`,
+  `chroot`, `chown`/`lchown`, `chmod`/`set_permissions`, `Permissions::from_mode`);
 - 4 for compliance;
-- 3 for a public entry point (route handler, server action) or an external integration;
+- 3 for a public entry point (route handler, server action), an external integration, a
+  filesystem write (`symlink`, `hard_link`, `rename`, `create_dir`) or a raw syscall/unsafe block;
 - 1 for none.
 
 Review the surfaces and mark any you see differently as `judged`.
+
+**Systems and CLI codebases (Rust, Go, C).** The money/access/personal-data classes are tuned for
+web and app stacks and misfire on systems idioms (a Rust `drop(x)` is not a delete, `matcher: &M`
+is a struct field, `diagnostics::capture(args)` is not a payment). The patterns now language-scope
+these (Rust-specific excludes) and add a Rust-only pack for filesystem and privilege semantics, so
+the dangerous utilities (`chown`, `chroot`, `rm`, `install`, `ln`) score on their real surface and
+pure text filters (`cat`, `cut`, `echo`) do not. Two cautions remain:
+- **Surface is low-trust outside web stacks.** When an area's impact rests only on a surface match
+  in systems code, say so and mark the factor `judged` — do not present it as confidently
+  assessed. A match can be real-but-internal (a utility removing its own temp directory calls
+  `remove_dir` just as `rm` does); read the cited line before trusting the band.
+- **Tests.** Rust keeps unit tests inline (`#[cfg(test)] mod tests`, not counted as a surface)
+  and integration tests in a separate tree (`tests/**/test_<util>.rs`), which reference the
+  utility by name. Those integration tests are linked to `src/uu/<util>/` by the filename
+  convention; without it every area would look untested. Complexity for `.rs` counts `match` arms
+  (`=>`) and the `?` try-operator as branches.
 
 ## Score
 

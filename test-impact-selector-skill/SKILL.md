@@ -95,6 +95,14 @@ modules and the like. The import graph parses Python (`ast`), and JavaScript and
 Languages without a parser (Go, Java, Kotlin, C#, Swift, Dart and others) are listed as
 `no_parser`. Their files rely on the other evidence sources, and on blind spots.
 
+**Language support / Rust.** The only import parsers are Python (`ast`) and JavaScript/TypeScript
+(regex). Rust (`.rs`) is `no_parser`, so it yields no import edges, and there is no cargo coverage
+ingestion either: `coverage_map.py` reads coverage.py JSON (or the mutation tester's
+`coverage.json`), not cargo-llvm-cov or grcov output. So for a Rust-only change with no other
+source, every evidence source is empty and the selector honestly falls back to running everything
+(a blind spot per changed file widening to the package or full suite) rather than claiming an
+impact-based subset. Don't read that empty selection as "nothing to run".
+
 ## Step 2: Evidence sources
 
 Prepare the sources that the repo already has. Install nothing without asking.

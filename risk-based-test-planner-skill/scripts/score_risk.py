@@ -604,10 +604,41 @@ def area_of_dir(d: str, areas: list[dict]) -> str | None:
     return best[0] if best else None
 
 
+RUST_TEST = re.compile(r'(?:^|/)test[_-]([A-Za-z0-9_]+)\.rs$')
+
+
+def rust_test_areas(test_path: str, areas: list[dict], files: list[str]) -> set[str]:
+    """Areas a Rust integration test exercises, by path convention. Rust integration tests sit in a
+    separate tree (coreutils `tests/by-util/test_<util>.rs`, generally `tests/**/test_*.rs`) and
+    reference the utility by name, not by a resolvable import path, so the filename is the link:
+    `test_<util>.rs` -> `src/uu/<util>/` (the coreutils layout), else any `<util>.rs` source file or
+    `<util>/` source directory. Returns the matching area ids."""
+    m = RUST_TEST.search(test_path)
+    if not m:
+        return set()
+    util = m.group(1)
+    hits = set()
+    for cand in (f'src/uu/{util}/src', f'src/uu/{util}', f'crates/{util}/src', f'crates/{util}', f'src/{util}', util):
+        aid = area_of_dir(cand, areas)
+        if aid:
+            hits.add(aid)
+    if not hits:                                        # fall back to a source file or directory named for the util
+        for sf in files:
+            if not sf.endswith('.rs') or is_test(sf):
+                continue
+            parts = PurePosixPath(sf).parts
+            if PurePosixPath(sf).stem == util or util in parts[:-1]:
+                aid = area_of(sf, areas)
+                if aid:
+                    hits.add(aid)
+    return hits
+
+
 def tests_by_area(files: list[str], areas: list[dict], flaky: set[str], imports: Imports) -> tuple[dict, list[str]]:
     """{area: [test files that exercise it]}, and flaky test files left out. A test exercises an area when it imports a
     file of the area (resolved to the file, so a top-level 'src/*' area matches only files directly in src/), imports
-    a package directory inside the area, or sits inside the area itself (a co-located test)."""
+    a package directory inside the area, or sits inside the area itself (a co-located test). Rust integration tests,
+    which import the utility by name rather than by a resolvable path, are linked by the `test_<util>.rs` convention."""
     out: dict[str, set[str]] = {a['id']: set() for a in areas}
     skipped = []
     for t in files:
@@ -619,6 +650,8 @@ def tests_by_area(files: list[str], areas: list[dict], flaky: set[str], imports:
         hit = {area_of(t, areas)}
         for r in imports.resolved(t):
             hit.add(area_of_dir(r.rstrip('/'), areas) if r.endswith('/') else area_of(r, areas))
+        if t.endswith('.rs'):
+            hit |= rust_test_areas(t, areas, files)
         for aid in hit - {None}:
             out[aid].add(t)
     return {k: sorted(v) for k, v in out.items()}, skipped
@@ -797,6 +830,22 @@ def code_view(text: str, suffix: str) -> str:
     return rx.sub(lambda m: '""' + '\n' * m.group(0).count('\n'), text)
 
 
+RUST_TEST_CFG = re.compile(r'^#\[cfg\((?:test\)|all\(\s*test\b)')
+
+
+def rust_test_mod_cut(raw_lines: list[str]) -> int | None:
+    """Line index at which a trailing top-level `#[cfg(test)] mod ... { ... }` begins, or None. Rust
+    keeps unit tests inline in the source file, conventionally in a module at the end; that is test
+    code, not a surface, so it is dropped before scanning (the integration tests under tests/ are
+    linked separately). Only a top-level (column 0) cfg(test) attribute followed by a `mod` is cut."""
+    for i, line in enumerate(raw_lines):
+        if RUST_TEST_CFG.match(line):
+            nxt = next((raw_lines[j] for j in range(i + 1, len(raw_lines)) if raw_lines[j].strip()), '')
+            if re.match(r'(pub\s+)?mod\s+\w', nxt):
+                return i
+    return None
+
+
 def surface_scan(root: Path, files: list[str]) -> tuple[int, list[str], list[str]]:
     """Surface classes found in the area's files. Patterns run on code with comments and strings blanked;
     raw_patterns (SQL statements, the 'use server' directive) run on the line as written. Type declaration files
@@ -804,7 +853,10 @@ def surface_scan(root: Path, files: list[str]) -> tuple[int, list[str], list[str
     hits: dict[str, list[str]] = {}
     compiled = {cls: ([re.compile(p, re.I) for p in spec.get('patterns', [])],
                       [re.compile(p, re.I) for p in spec.get('raw_patterns', [])],
-                      [re.compile(p, re.I) for p in spec.get('exclude', [])]) for cls, spec in SURFACES['classes'].items()}
+                      [re.compile(p, re.I) for p in spec.get('exclude', [])],
+                      spec.get('langs'),
+                      {ext: [re.compile(p, re.I) for p in pats] for ext, pats in (spec.get('lang_exclude') or {}).items()})
+                for cls, spec in SURFACES['classes'].items()}
     by_path = {cls: [re.compile(p, re.I) for p in spec.get('path_patterns', [])] for cls, spec in SURFACES['classes'].items()}
     for f in files:
         if f.endswith('.d.ts'):
@@ -816,11 +868,19 @@ def surface_scan(root: Path, files: list[str]) -> tuple[int, list[str], list[str
             text = (root / f).read_text(encoding='utf-8', errors='replace')
         except OSError:
             continue
+        suffix = PurePosixPath(f).suffix
         raw_lines = text.splitlines()
-        code_lines = code_view(text, PurePosixPath(f).suffix).splitlines()
+        code_lines = code_view(text, suffix).splitlines()
+        if suffix == '.rs':                                 # drop a trailing top-level #[cfg(test)] mod (unit tests)
+            cut = rust_test_mod_cut(raw_lines)
+            if cut is not None:
+                raw_lines, code_lines = raw_lines[:cut], code_lines[:cut]
         for i, (raw, code) in enumerate(zip(raw_lines, code_lines), 1):
-            for cls, (pats, raws, excl) in compiled.items():
-                if (any(p.search(code) for p in pats) or any(p.search(raw) for p in raws)) and not any(p.search(code) for p in excl):
+            for cls, (pats, raws, excl, langs, lang_excl) in compiled.items():
+                if langs and suffix not in langs:        # the systems/CLI pack is Rust-only
+                    continue
+                excludes = excl + lang_excl.get(suffix, [])    # web-tuned idioms the language reuses harmlessly
+                if (any(p.search(code) for p in pats) or any(p.search(raw) for p in raws)) and not any(p.search(code) for p in excludes):
                     hits.setdefault(cls, []).append(f'{f}:{i}')
     if not hits:
         return SURFACES['none_score'], [], ['no surface pattern matched in data/surfaces.json']

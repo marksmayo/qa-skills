@@ -105,6 +105,21 @@ collected ids back to `--cwd` and says so in the run's notes. A test directory t
 (a missing private dependency or submodule) are left out of `--tests`, listed in `limitations`,
 and their tests are not counted as run.
 
+**Rust / cargo.** `run_tests.py` has `cargo` and `nextest` presets, so Rust suites run and repeat
+like any other. Prefer `--preset nextest` (`cargo nextest run`): it writes per-case JUnit, so each
+test gets its own rate; plain `--preset cargo` (`cargo test`) emits no JUnit, so a run parses no
+cases and is flagged `errored` ("no test cases were parsed") and never counts as a pass.
+`scan_pitfalls.py` now has
+a Rust smell pack: fixed sleeps (`thread::sleep`, `sleep(Duration)`), wall-clock and
+monotonic-clock reads (`SystemTime::now`, `Instant::now`, `Local/Utc::now`, `chrono::…now()`),
+randomness (`rand::`, `thread_rng`, `rng()`, `random()`/`random_range()`, `gen_range`; a seeded
+RNG is noted as a mitigation), fixed ports, hardcoded `/tmp` paths, process-global env/cwd changes
+(`env::set_var`, `set_current_dir` — these leak across cargo's parallel test threads) and
+`static mut`. Remember cargo runs a crate's tests as threads in one process by default, so
+process-global state and `--test-threads` are first-class `shared_state` / `resource_contention`
+levers. If `scan_pitfalls.py` prints a loud warning that the repo's dominant language has no smell
+pack, treat it as "not scanned", not "clean": the tests of that language were skipped.
+
 ## Step 2: Baseline and repeats
 
 Use `run_tests.py` for every run so each is recorded the same way. Give every batch a label;

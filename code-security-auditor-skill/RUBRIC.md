@@ -44,6 +44,7 @@ high 7.0-8.9, medium 4.0-6.9, low 0.1-3.9; a 0.0 score is an observation.
 | `public` | 3 | Reachable without an account: public routes, any GitHub user opening a pull request, a malicious web page (CSRF) |
 | `authenticated` | 2 | Any account of the normal kind (sign-up or customer accounts count) |
 | `restricted` | 1 | Admin-only, internal network, adjacent network, log or server access, or a compromised third party |
+| `local` | 1 | A local attacker supplies the input the program processes (a file, argument, stdin or environment variable): a CLI tool or library with no network listener. The attack vector is local (`AV:L`), which the CVSS score already reflects |
 
 Exposure describes the finding alone. When another finding changes it (a forged session makes an
 authenticated route public), say so in `impact` and `chains_with`; don't re-rate.
@@ -51,7 +52,7 @@ authenticated route public), say so in `impact` and `chains_with`; don't re-rate
 ## Priority
 
 `priority_score = severity weight (critical 4, high 3, medium 2, low 1) x confidence weight
-(confirmed 4, traced 3, possible 2) x exposure weight (3, 2, 1)`.
+(confirmed 4, traced 3, possible 2) x exposure weight (public 3, authenticated 2, restricted 1, local 1)`.
 
 P0 >= 32, P1 >= 18, P2 >= 8, P3 < 8. Caps: Critical severity needs `traced` or `confirmed`;
 `possible` findings are at most P1.

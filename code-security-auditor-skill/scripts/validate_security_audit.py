@@ -30,7 +30,7 @@ import scan_secrets  # noqa: E402
 SCHEMA = HERE.parent / 'schemas' / 'security_audit.schema.json'
 SEVERITY_W = {'critical': 4, 'high': 3, 'medium': 2, 'low': 1}
 CONFIDENCE_W = {'confirmed': 4, 'traced': 3, 'possible': 2}
-EXPOSURE_W = {'public': 3, 'authenticated': 2, 'restricted': 1}
+EXPOSURE_W = {'public': 3, 'authenticated': 2, 'restricted': 1, 'local': 1}
 CONF_ORDER = {'confirmed': 0, 'traced': 1, 'possible': 2}
 RAISING_IMPACT = {'direct_financial_loss', 'fraud', 'regulated_data_breach'}
 SEED_TODO = 'TODO(seed)'  # left by seed_report.py for the agent to replace

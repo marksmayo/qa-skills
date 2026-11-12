@@ -22,8 +22,14 @@ import detect_conventions  # noqa: E402
 CODE_EXT = {'.py', '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.java', '.kt', '.go', '.cs', '.swift', '.dart', '.rb', '.php',
             '.scala', '.rs'}
 KEYWORDS = re.compile(r'\b(if|for|while|case|catch|elif|elsif|when|guard)\b|&&|\|\||\?\?|\?(?=[^.:?]*:)')
+# Rust: if/for/while plus each match arm (=>) and each `?` try-operator (an early-return branch);
+# `match` itself is not counted, its arms are. Scoped to .rs so JS `str.match(` is untouched.
+RUST_KEYWORDS = re.compile(r'\b(if|for|while)\b|&&|\|\||=>|(?<![?<>=!])\?(?![?.])')
 STRINGS = re.compile(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|`(?:\\.|[^`\\])*`', re.S)
+# Rust strings (incl. raw r#"..."# and byte strings) and single char literals, but not lifetimes ('a).
+RUST_STRINGS = re.compile(r'r#+"(?:[^"]|"(?!#))*?"#+|b?r?"(?:\\.|[^"\\])*"|b?\'(?:\\.|[^\\\'])\'|b?\'\\.\'', re.S)
 COMMENTS = re.compile(r'/\*.*?\*/|//[^\n]*|#[^\n]*', re.S)
+RUST_COMMENTS = re.compile(r'/\*.*?\*/|//[^\n]*', re.S)
 
 
 def py_branches(tree: ast.AST) -> int:
@@ -53,6 +59,10 @@ def measure(path: Path) -> dict | None:
         loc = len([l for l in text.splitlines() if l.strip() and not l.strip().startswith('#')])
         if tree is not None:
             return {'loc': loc, 'branches': py_branches(tree), 'method': 'ast'}
+    if path.suffix == '.rs':
+        code = RUST_COMMENTS.sub('', RUST_STRINGS.sub('""', text))
+        loc = len([l for l in code.splitlines() if l.strip()])
+        return {'loc': loc, 'branches': len(RUST_KEYWORDS.findall(code)), 'method': 'keywords-rust'}
     code = COMMENTS.sub('', STRINGS.sub('""', text))
     loc = len([l for l in code.splitlines() if l.strip()])
     return {'loc': loc, 'branches': len(KEYWORDS.findall(code)), 'method': 'keywords'}

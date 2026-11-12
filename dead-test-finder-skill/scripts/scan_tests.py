@@ -30,6 +30,70 @@ ASSERT_CALL = re.compile(PY['assert_calls'])
 KEY = re.compile(RULES['ticket_key'])
 TEST_DIR_PARTS = {'tests', 'test', '__tests__', 'spec', 'e2e', 'testing'}
 
+# scan_tests can parse only Python and JavaScript/TypeScript test suites. We recognise other common
+# languages purely to warn when the repository's dominant language is one we cannot analyse, so that a
+# handful of incidental supported files is never presented as a real dead-test analysis of the repo.
+SUPPORTED_LANG = 'Python / JavaScript / TypeScript'
+LANG_BY_EXT = {
+    '.py': SUPPORTED_LANG, '.pyi': SUPPORTED_LANG,
+    '.js': SUPPORTED_LANG, '.jsx': SUPPORTED_LANG, '.mjs': SUPPORTED_LANG, '.cjs': SUPPORTED_LANG,
+    '.ts': SUPPORTED_LANG, '.tsx': SUPPORTED_LANG, '.mts': SUPPORTED_LANG, '.cts': SUPPORTED_LANG,
+    '.rs': 'Rust',
+    '.go': 'Go',
+    '.java': 'Java', '.kt': 'Kotlin', '.kts': 'Kotlin',
+    '.rb': 'Ruby',
+    '.php': 'PHP',
+    '.cs': 'C#', '.fs': 'F#',
+    '.c': 'C', '.cpp': 'C++', '.cc': 'C++', '.cxx': 'C++', '.hpp': 'C++', '.hh': 'C++',
+    '.swift': 'Swift',
+    '.scala': 'Scala',
+    '.dart': 'Dart',
+    '.ex': 'Elixir', '.exs': 'Elixir',
+    '.clj': 'Clojure', '.cljs': 'Clojure',
+    '.erl': 'Erlang',
+    '.hs': 'Haskell',
+    '.lua': 'Lua',
+    '.r': 'R', '.R': 'R',
+    '.pl': 'Perl', '.pm': 'Perl',
+    '.groovy': 'Groovy',
+    '.ml': 'OCaml',
+    '.jl': 'Julia',
+    '.zig': 'Zig',
+    '.vb': 'Visual Basic',
+}
+
+
+def language_breakdown(files: list[str]) -> Counter:
+    """Count source files per recognised programming language (documentation, config and data files are
+    not counted), so scan() can tell whether the dominant language is one it can actually parse."""
+    counts: Counter = Counter()
+    for rel in files:
+        lang = LANG_BY_EXT.get(PurePosixPath(rel).suffix)
+        if lang:
+            counts[lang] += 1
+    return counts
+
+
+def unsupported_dominant(counts: Counter) -> dict | None:
+    """When the repository is dominated by a language scan_tests cannot parse, return the honesty-guard
+    payload; otherwise None. The guard fires when the single largest unsupported language has more source
+    files than all supported (Python/JS/TS) files combined, so a minority of supported files is never
+    presented as a dead-test analysis of the whole repository."""
+    supported = counts.get(SUPPORTED_LANG, 0)
+    unsupported = {k: v for k, v in counts.items() if k != SUPPORTED_LANG}
+    if not unsupported:
+        return None
+    lang, n = max(unsupported.items(), key=lambda kv: (kv[1], kv[0]))
+    if n <= supported:
+        return None
+    warning = (f'This repository is predominantly {lang} ({n} source files), which scan_tests.py cannot '
+               f'analyse: it parses Python and JavaScript/TypeScript test suites only. '
+               f'Only {supported} supported (Python/JS/TS) source file(s) were found, so the definitions and '
+               f'candidates below cover that small minority and are NOT a dead-test analysis of this '
+               f'repository\'s {lang} test suite. Do not present the result as one.')
+    return {'warning': warning, 'dominant_unsupported_language': lang, 'dominant_unsupported_files': n,
+            'supported_files': supported, 'breakdown': dict(counts.most_common())}
+
 
 PRUNE = detect_conventions.SKIP_DIRS | {'.git', '.hg', '.svn', 'node_modules', '.next', '.nuxt', 'dist', 'build', 'out',
                                        'coverage', '.venv', 'venv', '__pycache__', '.turbo', '.cache'}
@@ -1367,13 +1431,17 @@ def scan(root: Path) -> dict:
     out = []
     for i, c in enumerate(sorted(cands, key=lambda c: (c['file'], c['line'], c['category'])), 1):
         out.append({'id': f'C{i}', **c})
-    return {'repo': root.name, 'definitions': defs, 'candidates': out,
-            'pytest_config': {r: pytest_config(root, r) for r in roots if (root / r / 'pyproject.toml').exists() or r == '.'},
-            'summary': {'tests_defined': len(defs), 'candidates': len(out),
-                        'by_category': {k: len([c for c in out if c['category'] == k]) for k in sorted({c['category'] for c in out})},
-                        **({'near_duplicates': near} if near else {})},
-            'notes': notes + ([f'{near} pairs of same-shape tests in one package differ only in their literal values (input '
-                               'cases, worth parametrising); they are not duplicate candidates'] if near else [])}
+    result = {'repo': root.name, 'definitions': defs, 'candidates': out,
+              'pytest_config': {r: pytest_config(root, r) for r in roots if (root / r / 'pyproject.toml').exists() or r == '.'},
+              'summary': {'tests_defined': len(defs), 'candidates': len(out),
+                          'by_category': {k: len([c for c in out if c['category'] == k]) for k in sorted({c['category'] for c in out})},
+                          **({'near_duplicates': near} if near else {})},
+              'notes': notes + ([f'{near} pairs of same-shape tests in one package differ only in their literal values (input '
+                                 'cases, worth parametrising); they are not duplicate candidates'] if near else [])}
+    guard = unsupported_dominant(language_breakdown(files))
+    if guard:
+        result['language_coverage'] = guard
+    return result
 
 
 def main(argv=None) -> int:
@@ -1384,8 +1452,15 @@ def main(argv=None) -> int:
     res = scan(args.repo.resolve())
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(res, indent=2) + '\n', encoding='utf-8')
+    guard = res.get('language_coverage')
+    if guard:
+        print('=' * 78, file=sys.stderr)
+        print('WARNING: unsupported dominant language - this is NOT a dead-test analysis.', file=sys.stderr)
+        print(guard['warning'], file=sys.stderr)
+        print('=' * 78, file=sys.stderr)
     s = res['summary']
-    print(f'{s["tests_defined"]} tests defined, {s["candidates"]} candidates: '
+    scope = ' (minority supported files only; see WARNING above)' if guard else ''
+    print(f'{s["tests_defined"]} tests defined{scope}, {s["candidates"]} candidates: '
           + ', '.join(f'{v} {k}' for k, v in s['by_category'].items()) + f' -> {args.out}')
     return 0
 

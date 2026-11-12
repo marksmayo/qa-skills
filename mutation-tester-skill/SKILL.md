@@ -112,6 +112,16 @@ time on a large repo, so ask first, and say in the report what was installed and
 `@stryker-mutator/typescript-checker`, a mutant that doesn't compile shows up as killed or as a
 runtime error rather than `compile_error`; say so in the limitations.
 
+**Rust / cargo-mutants.** `detect_tools.py` recognises Rust and recommends cargo-mutants, but
+there is no scripted runner, normaliser or kill-prover for it: `run_engine.py`,
+`builtin_mutator.py`, `normalize_results.py` and `prove_kill.py` cover only Python (mutmut,
+builtin) and JavaScript/TypeScript (Stryker). So for Rust you run cargo-mutants by hand (typically
+`cargo mutants --in-diff <diff>` for a scoped change, or `cargo mutants` for the whole crate) and
+read its own output. There is no automated normalisation or kill-proving, so Rust mutation
+findings are agent-driven: they follow the same honesty rules as every other finding (no
+fabricated kills, survivors stay survivors until a real run shows otherwise, mark unproven
+suggestions as unproven, and show every score with its counts and scope).
+
 ## Step 2: Scope
 
 ```bash

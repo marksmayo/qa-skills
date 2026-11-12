@@ -28,6 +28,8 @@ SEV_STYLE = {'critical': RED + BOLD, 'high': RED, 'medium': YELLOW, 'low': DIM}
 CONF_STYLE = {'confirmed': GREEN, 'traced': CYAN, 'possible': DIM}
 TOOL_STYLE = {'ran': GREEN, 'not_run': YELLOW, 'errored': RED, 'not_applicable': DIM}
 REACH_STYLE = {'yes': RED, 'conditional': YELLOW, 'no': DIM, 'unknown': MAGENTA}
+EXPOSURE_LABEL = {'public': 'public', 'authenticated': 'authenticated', 'restricted': 'restricted',
+                  'local': 'local (attacker-supplied input: file/arg/stdin/env)'}
 
 def supports_color(mode: str) -> bool:
     if mode == 'always':
@@ -128,7 +130,7 @@ def main() -> int:
             for b in f.get('basis') or []:
                 w(f"  basis: {b['evidence']}" if b.get('evidence') else f"  basis: {b['file']}:{b['line']}  `{b['excerpt']}`")
             w(f"CVSS {f['cvss']['score']} {f['cvss']['severity']}: {f['cvss']['vector']}" + (f" - {f['cvss']['rationale']}" if f['cvss'].get('rationale') else ''))
-            w(f"Confidence {P(f['confidence'], CONF_STYLE[f['confidence']])}, exposure {f['exposure']}" +
+            w(f"Confidence {P(f['confidence'], CONF_STYLE[f['confidence']])}, exposure {EXPOSURE_LABEL.get(f['exposure'], f['exposure'])}" +
               (f" ({f['exposure_note']})" if f.get('exposure_note') else '') + f", priority score {f['priority_score']}" +
               (f"; business impact {f['business_impact']['kind']}: {f['business_impact']['basis']}"
                if f.get('business_impact') and f['business_impact']['kind'] != 'none' else ''))

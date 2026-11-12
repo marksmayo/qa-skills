@@ -760,7 +760,7 @@
     },
     "interface_coverage": {
       "type": "array",
-      "description": "Interfaces (routes, endpoints, server actions, pages, operations) mapped to the tests that reach them. Not code coverage.",
+      "description": "Interfaces (routes, endpoints, server actions, pages, operations, CLI commands) mapped to the tests that reach them. Not code coverage.",
       "items": {
         "type": "object",
         "required": [
@@ -784,6 +784,8 @@
               "server_actions",
               "pages",
               "operations",
+              "commands",
+              "cli",
               "other"
             ]
           },

@@ -85,6 +85,11 @@
     ".hpp"
    ]
   },
+  "rust": {
+   "extensions": [
+    ".rs"
+   ]
+  },
   "github_actions": {
    "extensions": [
     ".yml",
@@ -1538,6 +1543,106 @@
    "tools": [
     "flawfinder:shell"
    ]
+  },
+  {
+   "id": "RUST-UNSAFE",
+   "pack": "rust",
+   "cwe": "CWE-119",
+   "owasp": "A06:2025 Insecure Design",
+   "category": "language_specific",
+   "title": "unsafe block or function: manual memory-safety review needed",
+   "regex": "\\bunsafe\\s*\\{|\\bunsafe\\s+(fn|impl)\\b",
+   "fix": "Confine unsafe to a small, reviewed core with documented invariants; prefer safe abstractions and bounds-checked APIs.",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:H/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "clippy:undocumented_unsafe_blocks"
+   ]
+  },
+  {
+   "id": "RUST-RAW-SLICE",
+   "pack": "rust",
+   "cwe": "CWE-125",
+   "owasp": "A06:2025 Insecure Design",
+   "category": "language_specific",
+   "title": "Slice built from a raw pointer and length (out-of-bounds read/write if the length is wrong): CWE-125/CWE-787",
+   "regex": "\\bfrom_raw_parts(_mut)?\\s*\\(",
+   "fix": "Derive the length from the real allocation and validate the pointer is non-null and aligned; prefer safe slicing or bytemuck.",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "RUST-TRANSMUTE",
+   "pack": "rust",
+   "cwe": "CWE-704",
+   "owasp": "A06:2025 Insecure Design",
+   "category": "language_specific",
+   "title": "mem::transmute reinterprets bytes (type confusion / invalid values)",
+   "regex": "\\btransmute(_copy)?\\s*(::\\s*<[^>]*>)?\\s*\\(",
+   "fix": "Use safe conversions (From/TryFrom, to_ne_bytes/from_ne_bytes, validated pointer casts); transmute must uphold the type's validity invariants.",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "RUST-SET-LEN",
+   "pack": "rust",
+   "cwe": "CWE-787",
+   "owasp": "A06:2025 Insecure Design",
+   "category": "language_specific",
+   "title": "Vec::set_len can expose uninitialised or out-of-range memory",
+   "regex": "\\.set_len\\s*\\(",
+   "fix": "Only call set_len after that many elements are initialised; prefer resize/extend or spare_capacity_mut with MaybeUninit.",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:N/PR:N/UI:N/VC:H/VI:N/VA:H/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "RUST-INT-TRUNCATION",
+   "pack": "rust",
+   "cwe": "CWE-190",
+   "owasp": "A06:2025 Insecure Design",
+   "category": "language_specific",
+   "title": "Integer cast next to a size/length computation (truncation or wraparound): CWE-190/CWE-197",
+   "regex": "\\bas\\s+(u8|u16|u32|usize|i8|i16|i32)\\b",
+   "require_near": "(?i)(\\blen\\b|size|count|capacity|alloc|reserve|offset|\\bidx\\b|index|nmemb|\\bbytes\\b)",
+   "window": 2,
+   "fix": "Use try_into()/TryFrom for narrowing conversions and checked_add/checked_mul for size arithmetic; reject values that do not fit.",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:H/AT:P/PR:N/UI:N/VC:L/VI:L/VA:H/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "RUST-CMD",
+   "pack": "rust",
+   "cwe": "CWE-78",
+   "owasp": "A05:2025 Injection",
+   "category": "injection",
+   "title": "Subprocess spawned (std::process::Command); check arguments built from input",
+   "regex": "\\bCommand::new\\s*\\(|\\.(arg|args)\\s*\\(\\s*&?\\s*format!",
+   "fix": "Pass each argument as a separate .arg() value, never a shell string; validate any interpolated input and avoid sh -c.",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "RUST-SYMLINK-TOCTOU",
+   "pack": "rust",
+   "cwe": "CWE-59",
+   "owasp": "A01:2025 Broken Access Control",
+   "category": "server_side",
+   "title": "Filesystem operation that may follow a symlink (TOCTOU / symlink attack): CWE-59/CWE-22",
+   "regex": "\\bfs::(remove_dir_all|rename|hard_link|read_link)\\s*\\(|\\b(symlink|symlink_file|symlink_dir)\\s*\\(|\\.(read_link|symlink_metadata)\\s*\\(",
+   "fix": "Open with O_NOFOLLOW or the *at syscalls, check metadata on the opened fd, or canonicalize and re-check the result stays under a trusted base directory.",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:H/AT:N/PR:N/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "RUST-UNWRAP-INPUT",
+   "pack": "rust",
+   "cwe": "CWE-248",
+   "owasp": "A10:2025 Mishandling of Exceptional Conditions",
+   "category": "availability",
+   "title": "unwrap()/expect() on parsed or external input (panic becomes a denial of service)",
+   "regex": "(?i)(env::args\\s*\\(\\s*\\)|\\bargs\\s*\\(\\s*\\)|\\bargv\\b|stdin\\s*\\(\\s*\\)|read_line|read_to_string|from_str|\\.parse\\s*\\(\\s*\\))[^;]*\\.(unwrap|expect)\\s*\\(",
+   "fix": "Handle the Result/Option (match, the ? operator, unwrap_or) and exit with a diagnostic instead of panicking on bad input.",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:N/PR:N/UI:N/VC:N/VI:N/VA:L/SC:N/SI:N/SA:N",
+   "tools": []
   },
   {
    "id": "GHA-PR-TARGET-CHECKOUT",

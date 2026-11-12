@@ -16,7 +16,7 @@ The `tz-in-thread-setup` smell is a project check: `process.env.TZ` assigned in 
 file while the tests run in worker threads, where the assignment does not change the zone.
 """
 from __future__ import annotations
-import argparse, json, os, re, sys
+import argparse, json, os, re, sys, tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -27,7 +27,8 @@ SKIP = {'.git', 'node_modules', '__pycache__', '.venv', 'venv', 'dist', 'build',
 TEST_NAME = re.compile(r'^\s*(?:async\s+)?def\s+(test_\w+)|'
                        r'^\s*(?:it|test)(?:\.(?:only|skip|concurrent|sequential|fails|todo|runIf\([^)]*\)|skipIf\([^)]*\)))*'
                        r'\s*\(\s*([\'"`])((?:(?!\2).)+)\2|'
-                       r'^\s*(?:public\s+)?(?:void|fun)\s+(\w+)\s*\(|^func\s+(Test\w+)\s*\(')
+                       r'^\s*(?:public\s+)?(?:void|fun)\s+(\w+)\s*\(|^func\s+(Test\w+)\s*\(|'
+                       r'^\s*(?:pub\s+)?(?:async\s+)?(?:unsafe\s+)?fn\s+(\w+)\s*(?:<[^>]*>)?\s*\(')
 DESCRIBE = re.compile(r'^(\s*)describe(?:\.(?:only|skip|concurrent|sequential|shuffle|todo|runIf\([^)]*\)|skipIf\([^)]*\)))*'
                       r'\s*\(\s*([\'"`])((?:(?!\2).)+)\2')
 JS_LANGS = ('javascript', 'typescript')
@@ -36,6 +37,14 @@ SETUP_NAME = re.compile(r'(^|/)(?:vitest|jest)\.setup\.[cm]?[jt]sx?$|(^|/)setupT
 CONFIG_NAME = re.compile(r'(^|/)(?:vitest|vite|jest)\.(?:config|workspace)\.[cm]?[jt]s$')
 SETUP_LIST = re.compile(r'setupFiles(?:AfterEnv)?\s*:\s*(\[[^\]]*\]|[\'"][^\'"]+[\'"])')
 POOL = re.compile(r'\bpool\s*:\s*[\'"](\w+)[\'"]')
+# A broad suffix -> language map used only to name a repo's dominant language, so an unsupported
+# language (no smell pack) is still recognised and reported rather than silently skipped.
+LANG_BY_SUFFIX_BROAD = {
+    '.py': 'python', '.js': 'javascript', '.jsx': 'javascript', '.mjs': 'javascript', '.cjs': 'javascript',
+    '.ts': 'typescript', '.tsx': 'typescript', '.java': 'java', '.kt': 'kotlin', '.kts': 'kotlin',
+    '.go': 'go', '.rs': 'rust', '.rb': 'ruby', '.php': 'php', '.cs': 'csharp', '.swift': 'swift',
+    '.scala': 'scala', '.clj': 'clojure', '.ex': 'elixir', '.exs': 'elixir', '.dart': 'dart',
+    '.cpp': 'cpp', '.cc': 'cpp', '.cxx': 'cpp', '.hpp': 'cpp', '.c': 'c', '.h': 'c', '.m': 'objc'}
 
 
 def files(root: Path):
@@ -52,7 +61,7 @@ def enclosing_test(lines: list[str], i: int, js: bool) -> str | None:
         m = TEST_NAME.match(lines[j])
         if not m:
             continue
-        name = m.group(1) or m.group(3) or m.group(4) or m.group(5)
+        name = m.group(1) or m.group(3) or m.group(4) or m.group(5) or m.group(6)
         if not js or not m.group(3):
             return name
         chain, indent = [name], len(lines[j]) - len(lines[j].lstrip())
@@ -257,13 +266,109 @@ def fills_unused_field(lines: list[str], i: int, rx: re.Pattern) -> bool:
     return not any(j != i and named.search(l) and compared.search(l) for j, l in enumerate(lines))
 
 
+def coverage_warning(root: Path, data: dict) -> str | None:
+    """A loud warning when the repo's dominant language has no smell pack, so scanning it found
+    ~nothing of the primary language. Returns None when the dominant language is supported (so it
+    never fires on a Python, JS/TS, Java/Kotlin, Go or Rust repo) or no source files were seen.
+    This stops an unsupported-language skip from reading as a clean '0 smells' result."""
+    supported = set(data['language_by_suffix'].values())
+    counts: dict[str, int] = {}
+    for p in files(root):
+        lang = LANG_BY_SUFFIX_BROAD.get(p.suffix.lower())
+        if lang:
+            counts[lang] = counts.get(lang, 0) + 1
+    if not counts:
+        return None
+    dominant = max(counts, key=lambda k: (counts[k], k))
+    if dominant in supported:
+        return None
+    return (f"WARNING: '{dominant}' is this repo's most common language ({counts[dominant]} file(s)) "
+            f"but has no smell pack, so 0 of its files were scanned. This is NOT a clean result: "
+            f"the {dominant} tests were skipped, not found flake-free. "
+            f"Supported languages: {', '.join(sorted(supported))}.")
+
+
+RUST_SAMPLE_TEST = """\
+use std::thread;
+use std::time::{Duration, SystemTime};
+
+#[test]
+fn test_waits() {
+    thread::sleep(Duration::from_millis(100));
+    let _ = SystemTime::now();
+    let mut rng = rand::rng();
+    let _ = rng.random_range(0..10);
+    let _ = std::net::TcpListener::bind("127.0.0.1:8080");
+    let _ = "/tmp/fixed-file";
+    std::env::set_var("FOO", "bar");
+}
+"""
+RUST_SAMPLE_SRC = "pub static mut COUNTER: u32 = 0;\n"
+
+
+def self_test() -> int:
+    data = json.loads(DATA.read_text(encoding='utf-8'))
+    ok = True
+    lines = []
+
+    # 1) The Rust pack fires on a sample Rust test and source file.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        (root / 'tests').mkdir()
+        (root / 'src').mkdir()
+        (root / 'tests' / 'test_sample.rs').write_text(RUST_SAMPLE_TEST, encoding='utf-8')
+        (root / 'src' / 'lib.rs').write_text(RUST_SAMPLE_SRC, encoding='utf-8')
+        hits = scan(root, data)
+        found = {h['smell'] for h in hits}
+        expect = {'fixed-sleep-rust', 'wall-clock-rust', 'unseeded-random-rust', 'fixed-port-rust',
+                  'shared-temp-path-rust', 'shared-env-rust', 'static-mut-rust'}
+        missing = expect - found
+        named = any(h.get('test') == 'test_waits' for h in hits if h['in_test_file'])
+        no_warn_rust = coverage_warning(root, data) is None
+        if missing:
+            ok = False
+        lines.append(f"rust pack: {'ok' if not missing else 'FAILED, missing ' + str(sorted(missing))} "
+                     f"({len(found)} smell id(s) hit); enclosing test named: {named}; "
+                     f"warning silent on rust repo: {no_warn_rust}")
+        ok = ok and named and no_warn_rust
+
+    # 2) The coverage warning fires for an unsupported dominant language, not for a supported one.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        for i in range(3):
+            (root / f'app{i}.rb').write_text('x = rand\n', encoding='utf-8')
+        (root / 'helper.py').write_text('x = 1\n', encoding='utf-8')
+        w = coverage_warning(root, data)
+        fires = w is not None and 'ruby' in w
+        lines.append(f"warning on unsupported dominant (ruby): {'ok' if fires else 'FAILED'}")
+        ok = ok and fires
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        for i in range(3):
+            (root / f'mod{i}.py').write_text('x = 1\n', encoding='utf-8')
+        silent = coverage_warning(root, data) is None
+        lines.append(f"warning silent on python repo: {'ok' if silent else 'FAILED'}")
+        ok = ok and silent
+
+    print('self-test ' + ('passed' if ok else 'FAILED') + ':\n  ' + '\n  '.join(lines),
+          file=sys.stderr)
+    return 0 if ok else 1
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument('repo', type=Path)
+    ap.add_argument('repo', type=Path, nargs='?')
     ap.add_argument('--out', type=Path)
+    ap.add_argument('--self-test', action='store_true',
+                    help='run the built-in Rust-pack and coverage-warning checks and exit')
     args = ap.parse_args(argv)
+    if args.self_test:
+        return self_test()
+    if args.repo is None:
+        ap.error('repo is required')
     data = json.loads(DATA.read_text(encoding='utf-8'))
-    hits = scan(args.repo.resolve(), data)
+    root = args.repo.resolve()
+    hits = scan(root, data)
     result = {'pitfalls_version': data['version'], 'smells': hits}
     text = json.dumps(result, indent=2, ensure_ascii=False) + '\n'
     if args.out:
@@ -274,6 +379,10 @@ def main(argv=None) -> int:
     for h in hits:
         by[h['smell']] = by.get(h['smell'], 0) + 1
     mitigated = sum(1 for h in hits if h['mitigation'])
+    warning = coverage_warning(root, data)
+    if warning:
+        bar = '!' * 72
+        print(f"\n{bar}\n{warning}\n{bar}", file=sys.stderr)
     print(f"{len(hits)} smell(s): " + (', '.join(f'{v} {k}' for k, v in sorted(by.items())) or 'none')
           + (f'; {mitigated} with a mitigation noted' if mitigated else ''), file=sys.stderr)
     return 0

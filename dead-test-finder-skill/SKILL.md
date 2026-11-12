@@ -92,6 +92,13 @@ python scripts/collect_check.py <repo> --candidates <run>/candidates.json --run-
     [--env DATABASE_URL=postgresql://fake:fake@127.0.0.1:5432/fake] [--scope candidates | --files <file> ...] [--reuse]
 ```
 
+`scan_tests.py` supports **Python and JavaScript/TypeScript test suites only**. When a repository's
+dominant language is one it cannot parse (for example Rust, Go, Java or Ruby) — specifically, when the
+largest unsupported language has more source files than all Python/JS/TS files combined — it adds a
+`language_coverage` warning to the output and prints a loud warning: the few supported files it did scan
+are a minority and the result is **not** a dead-test analysis of that repository. Do not present such a
+run as a real analysis; report that the primary language was not analysed and stop.
+
 `scan_tests.py` lists every test definition, whether or not it would be collected:
 - Python is parsed with `ast`;
 - JavaScript and TypeScript go through a small lexer first, so strings, template literals,

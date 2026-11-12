@@ -1,5 +1,5 @@
 {
-  "$comment": "Impact surfaces found by pattern in an area's source files. `patterns` and `exclude` are case-insensitive regexes run per line on the code with comments and string literals blanked, so a provider named in a CSP header, marketing copy, an API description or a comment doesn't count; `raw_patterns` run on the line as written, so SQL inside a string (op.execute(\"ALTER TABLE x DROP COLUMN y\"), an f-string TRUNCATE) and directives count; the bare TRUNCATE and DROP forms are upper-case only, so prose doesn't match. `path_patterns` match the file's path (a page or screen module of a UI). Decorated Python handlers (Flask, FastAPI, Azure Functions triggers) are entry points; calls through an API client wrapper (apiClient.postJson) are external integrations. (?-i:...) makes part of a pattern case-sensitive, which is how a camelCase verb (captureMessage) is told from capture( or capture_payment(. A line that matches one of the class's exclude patterns doesn't count. Type declaration files (.d.ts) are skipped. The highest-scoring class an area matches sets its surface factor; a person may judge it differently, with a reason. Patterns are about doing (charging, deleting, authenticating, enforcing access), not mentioning or reading: a catalogue that shows a price does not move money, and useSession() reads who is signed in without enforcing anything.",
+  "$comment": "Impact surfaces found by pattern in an area's source files. `patterns` and `exclude` are case-insensitive regexes run per line on the code with comments and string literals blanked, so a provider named in a CSP header, marketing copy, an API description or a comment doesn't count; `raw_patterns` run on the line as written, so SQL inside a string (op.execute(\"ALTER TABLE x DROP COLUMN y\"), an f-string TRUNCATE) and directives count; the bare TRUNCATE and DROP forms are upper-case only, so prose doesn't match. `path_patterns` match the file's path (a page or screen module of a UI). Decorated Python handlers (Flask, FastAPI, Azure Functions triggers) are entry points; calls through an API client wrapper (apiClient.postJson) are external integrations. (?-i:...) makes part of a pattern case-sensitive, which is how a camelCase verb (captureMessage) is told from capture( or capture_payment(. A line that matches one of the class's exclude patterns doesn't count. An optional `langs` restricts a class to files with those suffixes (the systems/CLI pack is Rust-only), and an optional `lang_exclude` maps a suffix to extra excludes that apply only to files of that language (so a Rust `drop(` or `matcher: &M` does not fire the web-tuned classes without weakening JS/TS detection). Type declaration files (.d.ts) are skipped. The highest-scoring class an area matches sets its surface factor; a person may judge it differently, with a reason. Patterns are about doing (charging, deleting, authenticating, enforcing access), not mentioning or reading: a catalogue that shows a price does not move money, and useSession() reads who is signed in without enforcing anything. NOTE: the money/access/personal-data classes are tuned for web and app stacks; outside them (systems and CLI code) a surface factor that rests only on these patterns is low-trust and should be flagged, not presented as confidently assessed.",
   "classes": {
     "money": {
       "score": 5,
@@ -18,7 +18,12 @@
         "\\bcapture(Message|Exception|Event|Error|Console|Screenshot|Stack|Trace|Feedback|Log)\\b",
         "\\b(Sentry|posthog|analytics|telemetry|mixpanel|logger|console)\\.\\w+\\s*\\(",
         "\\btransfer(Focus|Control|Ownership)\\b"
-      ]
+      ],
+      "lang_exclude": {
+        ".rs": [
+          "\\bcapture\\s*\\("
+        ]
+      }
     },
     "access": {
       "score": 5,
@@ -36,7 +41,12 @@
       "exclude": [
         "\\buse_?session\\s*\\(",
         "\\blog(Info|Debug|Warn|Error)\\b"
-      ]
+      ],
+      "lang_exclude": {
+        ".rs": [
+          "\\bmatcher\\s*:"
+        ]
+      }
     },
     "personal_data": {
       "score": 5,
@@ -72,6 +82,62 @@
         "\\b(Plotly|chart|echarts|\\w*(?-i:Chart|Plot|Graph))\\.purge\\s*\\(",
         "\\b(removeEventListener|removeChild|removeAttribute|removeItem|deleteProperty)\\s*\\(",
         "\\b(Reflect\\.deleteProperty|cookies\\(\\)\\.delete)\\b"
+      ],
+      "lang_exclude": {
+        ".rs": [
+          "\\bdrop\\s*\\(",
+          "\\btruncate\\s*\\("
+        ]
+      }
+    },
+    "filesystem_destruction": {
+      "score": 5,
+      "label": "destroys files or directories",
+      "langs": [".rs"],
+      "patterns": [
+        "\\b(remove_file|remove_dir_all|remove_dir)\\s*\\(",
+        "\\bfs::remove\\w*\\s*\\(",
+        "\\b(unlink|unlinkat|rmdir)\\s*\\(",
+        "\\b(shred|secure_erase|wipe_file)\\w*\\s*\\("
+      ],
+      "lang_exclude": {
+        ".rs": [
+          "\\blet\\s+_\\s*=.*\\b(remove_file|remove_dir_all|remove_dir|unlink)\\b"
+        ]
+      }
+    },
+    "privilege": {
+      "score": 5,
+      "label": "changes ownership, permissions or privilege",
+      "langs": [".rs"],
+      "patterns": [
+        "\\b(setuid|setgid|seteuid|setegid|setgroups|setresuid|setresgid|setfsuid|setfsgid)\\s*\\(",
+        "\\bchroot\\s*\\(",
+        "\\b(chown|lchown|fchown|fchownat|chown_base|chown_optional_user_group)\\s*\\(",
+        "\\bwrap_chown\\s*\\(",
+        "\\b(chmod|fchmod|fchmodat)\\s*\\(",
+        "\\bset_permissions\\s*\\(",
+        "\\b\\w*[Pp]ermissions\\w*\\.set_mode\\s*\\("
+      ]
+    },
+    "filesystem_write": {
+      "score": 3,
+      "label": "creates, links or renames files on disk",
+      "langs": [".rs"],
+      "patterns": [
+        "\\b(symlink|symlink_file|symlink_dir|hard_link)\\s*\\(",
+        "\\bfs::(rename|hard_link|copy|create_dir(_all)?)\\s*\\(",
+        "\\b(rename|mkdir|mkdirat|symlinkat|linkat)\\s*\\("
+      ]
+    },
+    "raw_syscall": {
+      "score": 3,
+      "label": "raw syscall or unsafe block (systems-level)",
+      "langs": [".rs"],
+      "patterns": [
+        "\\bunsafe\\s*\\{",
+        "\\blibc::\\w+\\s*\\(",
+        "\\brustix::(fs|process|thread|io|net)::\\w+\\s*\\("
       ]
     },
     "compliance": {

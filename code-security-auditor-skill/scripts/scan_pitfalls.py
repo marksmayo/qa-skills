@@ -28,6 +28,7 @@ Test files, dependencies, build output and minified files are skipped.
 """
 from __future__ import annotations
 import argparse, json, re, sys
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -42,6 +43,40 @@ ALLOWED_DOT_DIRS = {'.github', '.azuredevops', '.pipelines', '.azure-pipelines',
 TEST_FILE = re.compile(r'(^test_.*\.py$|_test\.(py|go)$|(\.|_)(test|spec)\.\w+$|Tests?\.(java|kt|swift|cs)$|\.min\.js$|'
                        r'^(vitest|jest|playwright)\.(setup|config)\.\w+$|^setupTests\.\w+$)', re.I)
 COMMENT = re.compile(r'^\s*(//|/\*|\*\s|#(?!!)|<!--|--\s)')
+# Source-code extensions, to spot a repository whose dominant language has no pack scanning it.
+LANG_NAMES = {
+    '.py': 'Python', '.js': 'JavaScript', '.jsx': 'JavaScript', '.mjs': 'JavaScript', '.cjs': 'JavaScript',
+    '.ts': 'TypeScript', '.tsx': 'TypeScript', '.vue': 'Vue', '.svelte': 'Svelte', '.java': 'Java', '.kt': 'Kotlin',
+    '.kts': 'Kotlin', '.go': 'Go', '.php': 'PHP', '.rb': 'Ruby', '.erb': 'Ruby', '.cs': 'C#', '.swift': 'Swift',
+    '.m': 'Objective-C', '.c': 'C', '.h': 'C/C++', '.cc': 'C++', '.cpp': 'C++', '.cxx': 'C++', '.hpp': 'C++',
+    '.rs': 'Rust', '.scala': 'Scala', '.dart': 'Dart', '.ex': 'Elixir', '.exs': 'Elixir', '.clj': 'Clojure',
+    '.cljs': 'Clojure', '.hs': 'Haskell', '.ml': 'OCaml', '.mli': 'OCaml', '.lua': 'Lua', '.pl': 'Perl', '.pm': 'Perl',
+    '.r': 'R', '.jl': 'Julia', '.groovy': 'Groovy', '.nim': 'Nim', '.zig': 'Zig', '.cr': 'Crystal', '.elm': 'Elm',
+    '.fs': 'F#', '.vb': 'Visual Basic', '.sql': 'SQL'}
+CODE_EXT = set(LANG_NAMES)
+
+def dominant_unscanned(ext_counts: Counter, covered_exts: set[str], scanned_files: int) -> str | None:
+    """A loud warning when the repository's main language has no pack scanning it.
+
+    Without it, a run over (say) a Rust repository with no rust pack would skip every .rs file and
+    emit a clean-looking candidate list drawn only from incidental files (CI workflows, a Dockerfile),
+    reading like a clean result for code that was never scanned."""
+    if not ext_counts:
+        return None
+    lang_counts: Counter = Counter()
+    lang_covered: dict[str, bool] = {}
+    for ext, n in ext_counts.items():
+        lang = LANG_NAMES.get(ext, ext)
+        lang_counts[lang] += n
+        lang_covered[lang] = lang_covered.get(lang, False) or (ext in covered_exts)
+    lang, n = lang_counts.most_common(1)[0]
+    if lang_covered.get(lang) or n < 3:
+        return None
+    exts = '/'.join(sorted(e for e in ext_counts if LANG_NAMES.get(e, e) == lang))
+    return (f"No pitfall pack scanned {lang} ({exts}): it is the repository's main language "
+            f"({n} file(s)) but none of those files were scanned. The {scanned_files} file(s) that were "
+            f"scanned are incidental (CI workflows, containers, scripts), so the candidates below are NOT a "
+            f"result for the {lang} code. Add a '{lang.lower()}' pack to data/pitfalls.json before trusting this run.")
 
 def load_catalogue(path: Path = CATALOGUE) -> dict:
     return json.loads(path.read_text(encoding='utf-8'))
@@ -152,8 +187,12 @@ def scan(root: Path, catalogue: dict, wanted: set[str] | None = None, include_te
     wanted = wanted or set(packs)
     active = [compile_pitfall(p) for p in catalogue['pitfalls'] if p.get('regex') and p['pack'] in wanted]
     cands, files_by_pack = [], {}
+    ext_counts: Counter = Counter()
     for path in walk(root, include_tests):
         rel = path.relative_to(root).as_posix()
+        ext = path.suffix.lower()
+        if ext in CODE_EXT:
+            ext_counts[ext] += 1
         names = [n for n in pack_of(path, rel, packs) if n in wanted]
         if any(packs[n].get('require_content') or packs[n].get('exclude_content') for n in names):
             try:
@@ -168,11 +207,13 @@ def scan(root: Path, catalogue: dict, wanted: set[str] | None = None, include_te
             files_by_pack[n] = files_by_pack.get(n, 0) + 1
         cands.extend(scan_file(path, rel, [p for p in active if p['pack'] in names]))
     cands.sort(key=lambda c: (c['file'], c['line'], c['pitfall_id']))
+    covered_exts = {e for n in wanted for e in packs[n].get('extensions', [])}
+    warnings = [w for w in [dominant_unscanned(ext_counts, covered_exts, sum(files_by_pack.values()))] if w]
     return {'tool': 'scan_pitfalls', 'status': 'ran',
             'generated_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
             'repository': root.name, 'files_scanned': files_by_pack, 'catalogue_version': catalogue.get('version'),
             'note': 'Candidates are pattern-level leads, not findings. Trace a source-to-sink path or dismiss each one.',
-            'candidates': cands}
+            'warnings': warnings, 'candidates': cands}
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -195,6 +236,10 @@ def main() -> int:
         print(f"Unknown pack(s): {', '.join(sorted(unknown))}. Known: {', '.join(cat['packs'])}", file=sys.stderr)
         return 2
     out = scan(root, cat, wanted, args.include_tests)
+    for w in out.get('warnings') or []:
+        print('!' * 78, file=sys.stderr)
+        print(f'WARNING: {w}', file=sys.stderr)
+        print('!' * 78, file=sys.stderr)
     text = json.dumps(out, indent=2, ensure_ascii=False)
     if args.out:
         args.out.write_text(text + '\n', encoding='utf-8')

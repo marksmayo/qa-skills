@@ -255,7 +255,7 @@
         "sources": {"type": "array", "items": {"type": "string"}, "minItems": 1},
         "candidates": {"type": "array", "items": {"type": "string"}},
         "entry_point": {"type": ["string", "null"]},
-        "exposure": {"enum": ["public", "authenticated", "restricted"]},
+        "exposure": {"enum": ["public", "authenticated", "restricted", "local"], "description": "local: a local attacker supplies the input the program processes (a file, argument, stdin or environment variable), as for a CLI tool or library with no network listener"},
         "exposure_note": {"type": "string"},
         "cvss": {
           "type": "object", "required": ["version", "vector", "score", "severity"], "additionalProperties": false,
