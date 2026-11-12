@@ -57,6 +57,8 @@ def main() -> int:
         out += [f'Earliest time bomb: {P(s["earliest_time_bomb_date"], RED)}', '']
     order = {'P0': 0, 'P1': 1, 'P2': 2, 'P3': 3}
     out.append(P('## Findings', BOLD))
+    if not d['findings']:
+        out.append('- None from the rules or the runs; see the inventory, the tools and the limitations for what was read')
     for f in sorted(d['findings'], key=lambda f: (order[f['priority']], -f['score'], f['id'])):
         loc = f'{f["location"]["file"]}:{f["location"]["line"]}' + (f' ({f["location"]["field"]})' if f['location'].get('field') else '')
         by_review = ', found by review' if f.get('source') == 'agent' else ''
@@ -93,10 +95,11 @@ def main() -> int:
     if not args.brief:
         out += ['', P(f'## Dismissed ({len(d["dismissed"])})', BOLD)]
         for x in d['dismissed']:
-            out.append(f'- {x["candidate_id"]} ({x["by"]}): {x["reason"]}')
+            out.append(f'- {x["candidate_id"]} ({x["by"]}{", not personal data" if x.get("not_personal_data") else ""}): {x["reason"]}')
         out += ['', P('## Inventory', BOLD)]
         for i in d['inventory']:
-            state = '' if i['status'] == 'scanned' else P(f' not assessed: {i.get("reason")}', YELLOW)
+            state = (P(f' ({i["note"]})', DIM) if i.get('note') else '') if i['status'] == 'scanned' else \
+                P(f' not assessed: {i.get("reason")}', YELLOW)
             out.append(f'- `{i["path"]}` {i["kind"]}, {i["format"]}, loaded by {len(i["loaded_by"])} test(s){state}')
         out += ['', P('## Tools', BOLD)]
         for t in d['tools']:

@@ -147,9 +147,12 @@ def completeness(rep: dict) -> float:
     inv = rep['inventory']
     scanned = len([i for i in inv if i['status'] == 'scanned']) / len(inv) if inv else 1.0
     conf = [f for f in rep['findings'] if f['category'] in CONFIRMABLE]
-    exp = len([f for f in conf if f.get('experiment', {}).get('result') in ('failed_as_predicted', 'passed')]) / len(conf) if conf else 1.0
     tools = [t for t in rep['tools'] if t['status'] != 'not_applicable']
     ran = len([t for t in tools if t['status'] == 'ran']) / len(tools) if tools else 1.0
+    if not conf:
+        # nothing to confirm is not evidence that experiments ran: the share is left out, not counted as complete
+        return round((scanned + ran) / 2, 4)
+    exp = len([f for f in conf if (f.get('experiment') or {}).get('result') in ('failed_as_predicted', 'passed')]) / len(conf)
     return round((scanned + exp + ran) / 3, 4)
 
 
@@ -165,14 +168,63 @@ def summary(rep: dict) -> dict:
 
 
 # ---------------------------------------------------------------- values that must never appear
+VALUE_SPANS = [scan_data.CARD, scan_data.PHONE_TEXT, scan_data.SSN, scan_data.IBAN, re.compile(r'(?<![\w])\d[\d -]{4,}\d(?![\w])')]
+
+
+def spans_on(line: str) -> set[str]:
+    """Every string on a line that a personal-data rule could have taken as its value: quoted strings, delimited
+    fields, and the digit runs, cards, phones, SSNs, NINOs and IBANs the scanner matches."""
+    out = {q[0] or q[1] for q in re.findall(r'"([^"]+)"|\'([^\']+)\'', line)}
+    out |= {x.strip() for x in re.split(r'[,\t;|<>]', line) if x.strip()}
+    for rx in VALUE_SPANS:
+        out |= {m.group(0) for m in rx.finditer(line)}
+    out |= {m.group(0) for m in scan_data.NINO.finditer(line.upper())}
+    return out
+
+
+def extract_values(c: dict, p: Path) -> set[str]:
+    """The values of a flagged extract column that could identify someone: names of two or more words, or long ones."""
+    vals = set()
+    try:
+        for r in datafiles.load_records(p, c['file']):
+            v = r['fields'].get(c['field'], {}).get('value')
+            if isinstance(v, str) and (len(v.strip()) >= 8 or (' ' in v.strip() and len(v.strip()) >= 6)):
+                vals.add(v.strip())
+            if len(vals) >= 5000:
+                break
+    except datafiles.NotAssessed:
+        pass
+    return vals
+
+
 def flagged_values(c: dict, repo: Path) -> set[str]:
     p = repo / c['file']
+    if c['rule'] == 'customer_extract':
+        return extract_values(c, p)
     try:
-        lines = p.read_text(encoding='utf-8', errors='replace').split('\n')
-    except OSError:
+        lines = datafiles.text_of(p).split('\n')
+    except (OSError, datafiles.NotAssessed):
         return set()
     line = lines[c['line'] - 1] if 0 < c['line'] <= len(lines) else ''
     vals: set[str] = set()
+    fpr = c.get('fingerprint')
+    if c['category'] == 'personal_data' and fpr and c['rule'] not in ('name_and_address', 'dob_with_name'):
+        # the candidate's own value: the span on its line whose fingerprint is the candidate's, not every number on the line
+        for s in spans_on(line):
+            d = scan_data.digits(s)
+            if scan_data.fp(s) == fpr or (len(d) >= 6 and scan_data.fp(d) == fpr):
+                if scan_data.fp(s) == fpr or not re.sub(r'[\d\s().+/-]', '', s):
+                    vals.add(s)            # the value as written (a number with its separators), never the text around it
+                if len(d) >= 6 and c['rule'] != 'email':
+                    vals.add(d)
+                if c['rule'] == 'email':
+                    m = scan_data.EMAIL.search(s)
+                    local = m.group(1) if m else ''
+                    if len(local) >= 5 and re.search(r'[A-Za-z][._-][A-Za-z]', local) and local.lower() not in GENERIC_LOCAL:
+                        vals.add(local)
+        if vals:
+            return {v for v in vals if len(v) >= 4}
+        # no span carries the fingerprint (the line changed, or an older candidates file): fall back to every value on it
     if c['category'] == 'secret':
         rx = scan_data.SECRETS.get(c['rule'])
         for m in (rx.finditer(line) if rx else []):
@@ -206,6 +258,45 @@ def flagged_values(c: dict, repo: Path) -> set[str]:
         if c['rule'] != 'email' and len(d) >= 6:
             vals |= {s, d}
     return {v for v in vals if len(v) >= 4}
+
+
+def repo_paths(cand_doc: dict | None) -> list[str]:
+    """Every repository path the scanner reported (the inventory and the candidates' files) and each parent directory,
+    longest first. A path is a fact about the repository, not a value someone copied: a dated run directory in a
+    fixture's path is not a phone or a card wherever the path is named."""
+    if not cand_doc:
+        return []
+    paths = set(cand_doc.get('inventory_status', {})) | {c['file'] for c in cand_doc.get('candidates', [])}
+    out = set()
+    for p in paths:
+        parts = p.split('/')
+        out |= {'/'.join(parts[:i]) + '/' for i in range(1, len(parts))}
+        out.add(p)
+    out |= {x.replace('/', '\\') for x in out}
+    return sorted(out, key=len, reverse=True)
+
+
+_PATH_RX: dict[tuple, re.Pattern] = {}
+
+
+def without_paths(text: str, paths: list[str]) -> str:
+    """The text with every known repository path blanked out (so its digits are not read as a value)."""
+    if not paths:
+        return text
+    key = tuple(paths)
+    if key not in _PATH_RX:
+        _PATH_RX.clear()
+        _PATH_RX[key] = re.compile('|'.join(re.escape(x) for x in paths))
+    return _PATH_RX[key].sub(' ', text)
+
+
+def protected_values(cands: dict, repo: Path, rep: dict | None = None) -> dict[str, set[str]]:
+    """{candidate id: values that must never appear}: every personal-data and secret candidate no rule dismissed,
+    except a personal-data candidate the review dismissed as not personal data at all (not_personal_data: true)."""
+    exempt = {d['candidate_id'] for d in (rep or {}).get('dismissed', []) if d.get('not_personal_data') and d.get('by') == 'review'}
+    per = {c['id']: flagged_values(c, repo) for c in cands.values()
+           if c['category'] in ('personal_data', 'secret') and not c['auto_dismiss'] and c['id'] not in exempt}
+    return {k: v for k, v in per.items() if v}
 
 
 def leaks(values: set[str], text: str, flat: str | None = None) -> list[str]:
@@ -301,8 +392,8 @@ def basis_errors(f: dict, repo: Path | None, evidence: Path | None) -> list[str]
         if repo is not None:
             p = repo / b['file']
             try:
-                lines = p.read_text(encoding='utf-8', errors='replace').split('\n')
-            except OSError:
+                lines = datafiles.text_of(p).split('\n')
+            except (OSError, datafiles.NotAssessed):
                 errs.append(f'{where}: {b["file"]} is not in the repository')
                 continue
             if not 0 < b['line'] <= len(lines):
@@ -319,16 +410,52 @@ def basis_errors(f: dict, repo: Path | None, evidence: Path | None) -> list[str]
 
 
 # ---------------------------------------------------------------- checks
-def run_tests_of(runs: dict, rid: str) -> dict[str, str]:
+def run_tests_of(runs: dict, rid: str, cwd: str | None = None) -> dict[str, str]:
+    """{test id: status} for one run. Case files are relative to the directory the run started in; with the
+    experiment's cwd (repo-relative) they are made repo-relative, like the inventory's and the findings' ids."""
     out = {}
+    prefix = (cwd or '').replace('\\', '/').strip('/')
     for c in runs['cases']:
         if c['run_id'] == rid:
             f = (c.get('file') or '').replace('\\', '/')
+            if prefix and prefix != '.' and f:
+                f = f'{prefix}/{f}'
             out[f'{f}::{c["name"]}'] = c['status']
     return out
 
 
-def check(rep: dict, cands: dict | None, runs: dict | None, repo: Path | None, evidence: Path | None, report_text: str) -> list[str]:
+def run_errored(run: dict) -> str | None:
+    """Why a run is not a result (a crash, a timeout, a usage error, no tests), or None. A crashed interpreter can
+    leave exit code 3221225725 or -11 and no cases, which a runner may record as 0 passed, 0 failed."""
+    t = run.get('totals') or {}
+    if run.get('timed_out'):
+        return 'timed out'
+    if not t.get('tests'):
+        return f'ran no tests (0 cases parsed, exit code {run.get("exit_code")})'
+    code = run.get('exit_code')
+    if code is None or code in (0, 1):
+        return None
+    if run.get('preset') != 'custom' or code < 0 or code > 255 or 'pytest' in (run.get('command') or ''):
+        return f'exit code {code} (not a test result: a crash, an interrupted run or a usage error)'
+    return None
+
+
+def _var(r: dict) -> dict:
+    return r.get('variation') or {}
+
+
+VARIATION_CHECKS = [
+    (re.compile(r'revers', re.I), lambda r: _var(r).get('order') == 'reverse', 'order reverse'),
+    (re.compile(r'shuffl|random order', re.I), lambda r: _var(r).get('order') == 'shuffle', 'order shuffle'),
+    (re.compile(r'\blocale\b|\bLANG\b|\bLC_ALL\b', re.I),
+     lambda r: bool(_var(r).get('locale')) or bool({'LANG', 'LC_ALL'} & set(_var(r).get('env') or {})), 'a locale'),
+    (re.compile(r'time ?zone|\bTZ\b'), lambda r: bool(_var(r).get('tz')) or 'TZ' in (_var(r).get('env') or {}), 'a time zone'),
+    (re.compile(r'isolat', re.I), lambda r: bool(_var(r).get('isolate')) or len(r.get('tests_selected') or []) == 1, 'isolation'),
+]
+
+
+def check(rep: dict, cands: dict | None, runs: dict | None, repo: Path | None, evidence: Path | None, report_text: str,
+          paths: list[str] | None = None, candidates_path: Path | None = None) -> list[str]:
     errs = []
     fs = rep['findings']
     ids = [f['id'] for f in fs]
@@ -348,6 +475,9 @@ def check(rep: dict, cands: dict | None, runs: dict | None, repo: Path | None, e
             errs.append(f'{c}: not a candidate in the candidates file')
         for d in rep['dismissed']:
             c = cands.get(d['candidate_id'])
+            if d.get('not_personal_data') and (d['by'] != 'review' or (c and c['category'] != 'personal_data')):
+                errs.append(f'{d["candidate_id"]}: not_personal_data is a review judgement on a personal_data candidate '
+                            '(a dated run id, an order number); it lifts the leak check for that candidate only')
             if c and c['auto_dismiss'] and (d['by'] != 'rule' or c['auto_dismiss'] not in d['reason']):
                 errs.append(f'{d["candidate_id"]}: dismissed by a reserved-value rule; say so (by: rule) and quote the rule')
             if c and not c['auto_dismiss'] and d['by'] == 'rule':
@@ -391,20 +521,33 @@ def check(rep: dict, cands: dict | None, runs: dict | None, repo: Path | None, e
             if not (exp and exp['result'] == 'failed_as_predicted') and not arithmetic and not residue:
                 errs.append(f'{w}: confirmed needs a failing experiment' + (' or a fails_on_date from date arithmetic'
                                                                              if f['category'] == 'time_bomb' else ''))
+        if exp and exp['result'] in ('failed_as_predicted', 'passed') and runs is not None:
+            by_id = {r['id']: r for r in runs['runs']}
+            for r in exp['run_ids'] + exp.get('baseline_run_ids', []):
+                why = run_errored(by_id[r]) if r in by_id else None
+                if why:
+                    errs.append(f'{w}: run {r} {why}; a crashed or empty run is not a result: set the experiment result to '
+                                'errored, or fix the run and rerun it')
+            for rx, ok, what in VARIATION_CHECKS:
+                if rx.search(exp['variation']) and exp['run_ids'] and not any(ok(by_id[r]) for r in exp['run_ids'] if r in by_id):
+                    errs.append(f'{w}: the variation says {what}, but no experiment run records it in runs.json '
+                                '(check the option reached run_tests.py)')
         if exp and exp['result'] == 'failed_as_predicted':
             if runs is None:
                 errs.append(f'{w}: pass --runs to check the experiment')
             else:
                 all_ids = {r['id'] for r in runs['runs']}
+                cwd = exp.get('cwd')
                 missing = [r for r in exp['run_ids'] + exp.get('baseline_run_ids', []) if r not in all_ids]
                 if missing:
                     errs.append(f'{w}: experiment runs {missing} are not in the runs file')
                 else:
-                    failed = any(run_tests_of(runs, r).get(t) in ('failed', 'error') for r in exp['run_ids'] for t in f['affected_tests'])
+                    failed = any(run_tests_of(runs, r, cwd).get(t) in ('failed', 'error') for r in exp['run_ids'] for t in f['affected_tests'])
                     if not failed:
-                        errs.append(f'{w}: no affected test failed in the experiment runs')
+                        errs.append(f'{w}: no affected test failed in the experiment runs' +
+                                    ('' if cwd else ' (if the runs started in a subdirectory, give the experiment its cwd)'))
                     for r in exp.get('baseline_run_ids', []):
-                        res = run_tests_of(runs, r)
+                        res = run_tests_of(runs, r, cwd)
                         bad = [t for t in f['affected_tests'] if res.get(t) in ('failed', 'error')]
                         if bad:
                             errs.append(f'{w}: {bad[0]} also fails in baseline run {r}, so the variation is not what broke it')
@@ -424,16 +567,21 @@ def check(rep: dict, cands: dict | None, runs: dict | None, repo: Path | None, e
         m = BANNED.search(t)
         if m:
             errs.append(f'{where}: "{m.group(0)}" — say which files and formats were scanned, never that the data is clean')
-    if any(f['priority'] == 'P0' for f in fs) and 'P0' not in rep['summary'].get('headline', ''):
+    headline = rep['summary'].get('headline', '')
+    if any(f['priority'] == 'P0' for f in fs) and 'P0' not in headline:
         errs.append('summary.headline: name the P0 findings')
+    m = re.search(r'\b(\d+) findings?\b', headline)
+    if m and int(m.group(1)) != len(fs):
+        errs.append(f'summary.headline: says {m.group(1)} finding(s), but the report has {len(fs)}')
+    if fs and re.search(r'\bno findings\b', headline, re.I):
+        errs.append(f'summary.headline: says no findings, but the report has {len(fs)}')
     # no personal data or secret value anywhere
     if repo is not None and cands is not None:
-        per = {c['id']: flagged_values(c, repo) for c in cands.values()
-               if c['category'] in ('personal_data', 'secret') and not c['auto_dismiss']}
-        per = {k: v for k, v in per.items() if v}
+        per = protected_values(cands, repo, rep)
 
         def leak_errors(where: str, text: str) -> list[str]:
             # the candidate id is safe to name and saves hunting for the leak; the value never is
+            text = without_paths(text, paths or [])
             flat, out = re.sub(r'[\s-]', '', text), []
             for cid in sorted(per, key=lambda x: int(x[1:])):
                 for kind in sorted(set(leaks(per[cid], text, flat))):
@@ -442,7 +590,10 @@ def check(rep: dict, cands: dict | None, runs: dict | None, repo: Path | None, e
             return out
         errs += leak_errors('the report', report_text)
         if evidence is not None:
+            skip = candidates_path.resolve() if candidates_path else None
             for p in sorted(evidence.rglob('*')):
+                if skip is not None and p.resolve() == skip:
+                    continue               # the scanner's own output: fingerprints and paths, never values (as redact_evidence.py)
                 if p.is_file() and p.suffix.lower() in ('.json', '.xml', '.txt', '.md', '.log', '.html', '.sh'):
                     errs += leak_errors(p.relative_to(evidence).as_posix(), p.read_text(encoding='utf-8', errors='replace'))
     # computed
@@ -470,7 +621,8 @@ def main(argv=None) -> int:
     ap.add_argument('--write-summary', action='store_true')
     args = ap.parse_args(argv)
     rep = json.loads(args.report.read_text(encoding='utf-8'))
-    cands = {c['id']: c for c in json.loads(args.candidates.read_text(encoding='utf-8'))['candidates']} if args.candidates else None
+    cand_doc = json.loads(args.candidates.read_text(encoding='utf-8')) if args.candidates else None
+    cands = {c['id']: c for c in cand_doc['candidates']} if cand_doc else None
     if args.write_summary:
         if cands is None:
             print('INVALID: --write-summary needs --candidates')
@@ -490,7 +642,8 @@ def main(argv=None) -> int:
             print('  ' + e)
         return 1
     runs = json.loads(args.runs.read_text(encoding='utf-8')) if args.runs else None
-    errs = check(rep, cands, runs, args.repo.resolve() if args.repo else None, args.evidence, args.report.read_text(encoding='utf-8'))
+    errs = check(rep, cands, runs, args.repo.resolve() if args.repo else None, args.evidence, args.report.read_text(encoding='utf-8'),
+                 repo_paths(cand_doc), args.candidates)
     if errs:
         print('INVALID')
         for e in errs:

@@ -39,7 +39,8 @@
           "loaded_by": {"type": "array", "items": {"type": "string"}},
           "status": {"enum": ["scanned", "not_assessed"]},
           "reason": {"type": ["string", "null"]},
-          "anonymised_by": {"type": "string"}
+          "anonymised_by": {"type": "string"},
+          "note": {"type": "string"}
         }
       }
     },
@@ -104,7 +105,8 @@
               "run_ids": {"type": "array", "items": {"type": "string"}},
               "baseline_run_ids": {"type": "array", "items": {"type": "string"}},
               "variation": {"type": "string"},
-              "result": {"enum": ["failed_as_predicted", "passed", "not_run"]},
+              "result": {"enum": ["failed_as_predicted", "passed", "not_run", "errored"]},
+              "cwd": {"type": "string", "description": "Repo-relative directory the runs started in; run case files are relative to it"},
               "note": {"type": "string"}
             }
           },
@@ -126,7 +128,8 @@
         "properties": {
           "candidate_id": {"type": "string", "pattern": "^C\\d+$"},
           "reason": {"type": "string", "minLength": 15},
-          "by": {"enum": ["rule", "review"]}
+          "by": {"enum": ["rule", "review"]},
+          "not_personal_data": {"type": "boolean", "description": "Review judgement that a personal_data candidate is not personal data at all (a dated run id, an order number); lifts the leak check for it"}
         }
       }
     },

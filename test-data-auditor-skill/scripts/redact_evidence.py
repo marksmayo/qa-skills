@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Redact flagged personal-data and secret values from evidence files, in place (stdlib only).
 
-    python redact_evidence.py --candidates candidates.json --repo <repo> <run dir or files>...
+    python redact_evidence.py --candidates candidates.json --repo <repo> [--report report.json] <run dir or files>...
 
 Test runners copy test data into their output: Vitest and Jest put it in test names and failure
 messages, pytest in assertion diffs. The validator rejects any evidence file holding a flagged
@@ -14,7 +14,11 @@ what it removes is exactly what the validator would reject:
   ignored) has its digits replaced by X.
 
 JSON files are parsed and only their strings (keys included) are changed, so numbers such as
-durations stay intact; other text files are rewritten as text. Only counts and candidate ids are
+durations stay intact; other text files are rewritten as text. Repository paths the scanner
+reported (and their directories) are never rewritten: a dated run directory in a fixture's path is
+a path, not a value. With --report, candidates the review dismissed as not personal data
+(`not_personal_data: true`) are left alone, as the validator leaves them. The candidates file is
+skipped: it holds fingerprints, never values. Only counts and candidate ids are
 printed, never a value. Run the validator afterwards: it remains the check.
 """
 from __future__ import annotations
@@ -30,7 +34,8 @@ DIGIT_RUN = re.compile(r'\d(?:[\s-]*\d){5,}')
 
 
 class Redactor:
-    def __init__(self, values_by_cand: dict[str, set[str]]):
+    def __init__(self, values_by_cand: dict[str, set[str]], paths: list[str] | None = None):
+        self.paths_rx = re.compile('|'.join(re.escape(x) for x in paths)) if paths else None
         self.words, self.full, self.windows = set(), set(), set()
         self.owner: dict[str, str] = {}
         for cid, vals in values_by_cand.items():
@@ -52,6 +57,18 @@ class Redactor:
         self.cands: set[str] = set()
 
     def text(self, s: str) -> str:
+        if self.paths_rx:
+            # redact between the known repository paths, never inside one
+            out, last = [], 0
+            for m in self.paths_rx.finditer(s):
+                out.append(self._text(s[last:m.start()]))
+                out.append(m.group(0))
+                last = m.end()
+            out.append(self._text(s[last:]))
+            return ''.join(out)
+        return self._text(s)
+
+    def _text(self, s: str) -> str:
         if self.full_rx:
             s = self.full_rx.sub(self._full, s)
         if self.word_rx:
@@ -100,13 +117,14 @@ def main(argv=None) -> int:
     ap.add_argument('paths', nargs='+', type=Path, help='evidence files or directories (the run directory)')
     ap.add_argument('--candidates', type=Path, required=True)
     ap.add_argument('--repo', type=Path, required=True)
+    ap.add_argument('--report', type=Path, help='the report, so review dismissals marked not_personal_data are honoured')
     ap.add_argument('--dry-run', action='store_true', help='count what would be redacted without writing')
     args = ap.parse_args(argv)
-    cands = json.loads(args.candidates.read_text(encoding='utf-8'))['candidates']
+    doc = json.loads(args.candidates.read_text(encoding='utf-8'))
     repo = args.repo.resolve()
-    values = {c['id']: v.flagged_values(c, repo) for c in cands
-              if c['category'] in ('personal_data', 'secret') and not c['auto_dismiss']}
-    red = Redactor({k: x for k, x in values.items() if x})
+    rep = json.loads(args.report.read_text(encoding='utf-8')) if args.report else None
+    values = v.protected_values({c['id']: c for c in doc['candidates']}, repo, rep)
+    red = Redactor(values, v.repo_paths(doc))
     total = 0
     for f in files_of(args.paths):
         if f.resolve() == args.candidates.resolve():
