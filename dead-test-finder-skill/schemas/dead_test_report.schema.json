@@ -77,8 +77,8 @@
             "properties": {
               "neutralisation": {"type": "object", "required": ["test_id", "original_run_id", "targets", "outcome"],
                                  "properties": {"test_id": {"type": "string"}, "original_run_id": {"type": "string"},
-                                                "targets": {"type": "array"}, "outcome": {"enum": ["passed_neutralised", "failed_neutralised", "not_run"]},
-                                                "checks_no_exception": {"type": "boolean"}}},
+                                                "targets": {"type": "array"}, "outcome": {"enum": ["passed_neutralised", "failed_neutralised", "not_run", "errored"]},
+                                                "checks_no_exception": {"type": "boolean"}, "error_reason": {"type": "string"}}},
               "collection": {"type": "object", "required": ["not_collected", "raw_output"],
                              "properties": {"not_collected": {"type": "boolean"}, "raw_output": {"type": "string"}, "marker": {"type": "string"}}},
               "similarity": {"type": "object", "required": ["similarity"],

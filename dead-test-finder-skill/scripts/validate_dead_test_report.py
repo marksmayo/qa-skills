@@ -8,8 +8,11 @@ The evidence files named in metadata.evidence_files (candidates, collection, run
 neutralisations, similarity, skips) are read from --base. Checks: every candidate is a finding or
 dismissed; every confirmed cant_fail or mock_only has a neutralisation where the test passed on
 the original code and with the neutral body; every confirmed never_runs is missing from the
-collect output; a duplicate has identical coverage and values (otherwise it is an overlap); a
-stale skip has a done ticket or an age over the threshold; every proof passed on the original
+collect output; every neutralisation outcome agrees with its runs (passed or failed neutralised
+only when the unchanged test passed and a neutral-body run ran it, otherwise errored); a duplicate
+has identical coverage and values (otherwise it is an overlap), and a similarity verdict needs
+both tests passed with traced lines (otherwise not_assessed), with literal values stored only as
+hashes; a stale skip has a done ticket or an age over the threshold; every proof passed on the original
 and failed neutralised, in real runs; delete and merge are never applied; the tree hash is
 unchanged across the runs. A finding found by review (`source: agent`) needs no candidate but a
 basis, and a dismissal with `scanner_error` needs one too; --repo re-reads every basis line and
@@ -33,6 +36,8 @@ CANDIDATE_TO = {'never_runs': {'never_runs'}, 'no_assertion': {'cant_fail', 'wea
                 'async_not_awaited': {'async_not_awaited', 'cant_fail'}, 'mock_only': {'mock_only'}, 'skipped': {'stale_skip'},
                 'duplicate': {'duplicate', 'overlap'}}
 STRENGTHENING = {'cant_fail', 'async_not_awaited', 'weak', 'never_runs'}
+NEUTRALISED = ('passed_neutralised', 'failed_neutralised')
+RAN = ('passed', 'failed', 'error')
 BANNED = re.compile(r'\bno dead tests\b|\b(suite|tests?) (is|are) (healthy|effective|sound|clean)\b|\bhealthy (test )?suite\b|'
                     r'\ball (the )?tests (are )?(effective|meaningful|can fail)\b|\bdead[- ]test[- ]free\b|\bevery test can fail\b', re.I)
 
@@ -112,8 +117,8 @@ def completeness(rep: dict, ev: dict) -> float:
     collected = len([p for p in pk if p['status'] == 'ran']) / len(pk) if pk else 1.0
     neut_cands = [c for c in ev['candidates']['candidates']
                   if c['category'] in ('no_assertion', 'tautology', 'unreached_assertion', 'swallowed_failure', 'async_not_awaited', 'mock_only')]
-    done = {base_id(r['test_id']) for r in ev['neutralisations']['results'] if not r.get('patch') and r['outcome'] != 'not_run'}
-    noth = {base_id(r['test_id']) for r in ev['neutralisations']['results'] if not r.get('patch') and r['outcome'] == 'not_run'
+    done = {def_id(ev, r['test_id']) for r in ev['neutralisations']['results'] if not r.get('patch') and r['outcome'] in NEUTRALISED}
+    noth = {def_id(ev, r['test_id']) for r in ev['neutralisations']['results'] if not r.get('patch') and r['outcome'] == 'not_run'
             and r.get('note')}
     neut = len([c for c in neut_cands if c['test_ids'][0] in done or c['test_ids'][0] in noth]) / len(neut_cands) if neut_cands else 1.0
     skips = (ev.get('skips') or {}).get('skips', [])
@@ -141,6 +146,20 @@ def base_id(test_id: str) -> str:
     return base_name(test_id) if '.py::' in test_id else test_id
 
 
+def def_id(ev: dict, test_id: str) -> str:
+    """The definition a run's test id belongs to: itself, its parametrised function (Python [case]), or the JavaScript
+    definition whose name pattern (it.each, a template name) matches the expanded name."""
+    defs = ev['candidates']['definitions']
+    ids = {d['id'] for d in defs}
+    if test_id in ids or base_id(test_id) in ids:
+        return test_id if test_id in ids else base_id(test_id)
+    file, _, name = test_id.partition('::')
+    for d in defs:
+        if d['file'] == file and d.get('name_pattern') and re.fullmatch(d['name_pattern'], name, re.S):
+            return d['id']
+    return test_id
+
+
 def merge_status(statuses: list[str]) -> str:
     """One status for every parametrised case of a test: failed or error if any case did, passed if every case ran."""
     for s in ('error', 'failed'):
@@ -149,14 +168,64 @@ def merge_status(statuses: list[str]) -> str:
     return 'passed' if 'passed' in statuses else statuses[0]
 
 
-def case_status(runs: dict, run_id: str, test_id: str) -> str | None:
-    name = test_id.split('::')[-1]
+def case_status(runs: dict, run_id: str, test_id: str, pattern: str | None = None) -> str | None:
+    name = test_id.split('::')[-1] if '.py::' in test_id else test_id.split('::', 1)[-1]
     exact = [c['status'] for c in runs['cases'] if c['run_id'] == run_id and
-             (c['name'] == name or c['name'] == name.split(' > ')[-1])]
+             (c['name'] == name or c['name'] == name.split(' > ')[-1] or c['name'] == test_id.split('::')[-1])]
     if exact:
         return exact[0]
     cases = [c['status'] for c in runs['cases'] if c['run_id'] == run_id and '[' in c['name'] and base_name(c['name']) == name]
+    if not cases and pattern:
+        cases = [c['status'] for c in runs['cases'] if c['run_id'] == run_id and re.fullmatch(pattern, c['name'], re.S)]
     return merge_status(cases) if cases else None
+
+
+def neutralisation_errors(rec: dict, runs: dict, run_ids: set, pattern: str | None) -> list[str]:
+    """A neutralisation result whose outcome its runs don't support: passed or failed neutralised needs the unchanged
+    test passed and at least one neutral-body (return) run that ran it, each status as the runs show it."""
+    w = f'neutralisations[{rec["test_id"]}{" with " + rec["patch"] if rec.get("patch") else ""}]'
+    errs, out = [], rec['outcome']
+    if out == 'errored':
+        return [] if rec.get('error_reason') else [f'{w}: errored needs an error_reason']
+    if out not in NEUTRALISED:
+        return []
+    orig = rec.get('original') or {}
+    if orig.get('test_status') != 'passed':
+        errs.append(f'{w}: the unchanged test {orig.get("test_status")}, so the outcome is errored, not {out}')
+    elif orig.get('run_id') not in run_ids or case_status(runs, orig['run_id'], rec['test_id'], pattern) != 'passed':
+        errs.append(f'{w}: the original run {orig.get("run_id")} does not show the test passed')
+    returns = [v for t in rec['targets'] for v in t['variants'] if v['variant'] == 'return']
+    ran = [v for v in returns if v['test_status'] in RAN]
+    if not ran:
+        errs.append(f'{w}: no neutral-body run ran the test ({", ".join(sorted({v["test_status"] for v in returns})) or "none"}), '
+                    f'so the outcome is errored, not {out}')
+    elif out == 'passed_neutralised' and any(v['test_status'] != 'passed' for v in ran):
+        errs.append(f'{w}: a neutral-body run did not pass, so it is failed_neutralised')
+    elif out == 'failed_neutralised' and all(v['test_status'] == 'passed' for v in ran):
+        errs.append(f'{w}: every neutral-body run passed, so it is passed_neutralised')
+    for v in ran:
+        if v['run_id'] not in run_ids or case_status(runs, v['run_id'], rec['test_id'], pattern) != v['test_status']:
+            errs.append(f'{w}: run {v["run_id"]} does not show the test {v["test_status"]}')
+    return errs
+
+
+def similarity_errors(pair: dict) -> list[str]:
+    """A duplicate or overlap verdict needs both tests passed in the traced session with product lines traced; literal
+    values are kept only as hashes."""
+    w = f'similarity[{pair["candidate_id"]}]'
+    errs = []
+    for k in ('values_a', 'values_b'):
+        if any(not str(v).startswith('sha256:') for v in pair.get(k) or []):
+            errs.append(f'{w}: {k} holds literal values; similarity.json keeps only their hashes (rerun similarity.py)')
+    if pair.get('verdict') in ('duplicate', 'overlap'):
+        st = [pair.get('status_a', 'passed'), pair.get('status_b', 'passed')]
+        if any(x != 'passed' for x in st):
+            errs.append(f'{w}: a test did not pass in the traced session ({", ".join(st)}), so the pair is not_assessed')
+        if not pair.get('lines_a') or not pair.get('lines_b'):
+            errs.append(f'{w}: no product lines were traced for a test, so the pair is not_assessed, not {pair["verdict"]}')
+    elif pair.get('verdict') == 'not_assessed' and not pair.get('reason'):
+        errs.append(f'{w}: not_assessed needs a reason')
+    return errs
 
 
 def check(rep: dict, ev: dict, repo: Path | None, base: Path) -> list[str]:
@@ -168,6 +237,12 @@ def check(rep: dict, ev: dict, repo: Path | None, base: Path) -> list[str]:
     neut = ev['neutralisations']['results']
     sims = {p['candidate_id']: p for p in (ev.get('similarity') or {}).get('pairs', [])}
     skips = {s['candidate_id']: s for s in (ev.get('skips') or {}).get('skips', [])}
+    patterns = {d['id']: d.get('name_pattern') for d in ev['candidates']['definitions']}
+    pattern_of = lambda tid: patterns.get(tid) if def_id(ev, tid) == tid else None  # noqa: E731
+    for r in neut:
+        errs += neutralisation_errors(r, runs, run_ids, pattern_of(r['test_id']))
+    for pair in sims.values():
+        errs += similarity_errors(pair)
     # triage
     seen = [c for f in rep['findings'] for c in f['candidates']] + [d['candidate_id'] for d in rep['dismissed']]
     for c in sorted(set(cands) - set(seen), key=lambda x: int(x[1:])):
@@ -180,7 +255,7 @@ def check(rep: dict, ev: dict, repo: Path | None, base: Path) -> list[str]:
     tests = {t['id']: t for t in rep['tests']}
     if set(tests) != defs:
         errs.append(f'tests: must list every defined test exactly ({len(defs)} in the candidates file)')
-    neutralised = {base_id(r['test_id']) for r in neut if not r.get('patch') and r['outcome'] != 'not_run'}
+    neutralised = {def_id(ev, r['test_id']) for r in neut if not r.get('patch') and r['outcome'] in NEUTRALISED}
     for tid, t in tests.items():
         if (t['status'] == 'neutralised') != (tid in neutralised):
             errs.append(f'tests[{tid}]: status neutralised must match the neutralisation runs')
@@ -222,7 +297,8 @@ def check(rep: dict, ev: dict, repo: Path | None, base: Path) -> list[str]:
                     errs.append(f'{w}: the test must pass on the original code first')
                 for t in rec['targets']:
                     for v in t['variants']:
-                        if v['run_id'] not in run_ids or case_status(runs, v['run_id'], rec['test_id']) != v['test_status']:
+                        if v['run_id'] not in run_ids or case_status(runs, v['run_id'], rec['test_id'],
+                                                                     pattern_of(rec['test_id'])) != v['test_status']:
                             errs.append(f'{w}: neutralisation run {v["run_id"]} does not show {rec["test_id"]} {v["test_status"]}')
         if f['category'] == 'cant_fail' and f['confidence'] == 'confirmed':
             n = e.get('neutralisation') or {}

@@ -36,6 +36,8 @@ def evidence_line(e: dict) -> str | None:
         n = e['neutralisation']
         parts = [f'{t["target"].split(".")[-1]}: ' + ', '.join(f'{v["variant"]} -> {v["test_status"]}' for v in t['variants'])
                  for t in n['targets']]
+        if n.get('outcome') == 'errored':
+            return 'Neutralisation errored: ' + (n.get('error_reason') or 'the test did not run')
         return 'Neutralised: ' + ('; '.join(parts) if parts else 'nothing to neutralise')
     if e.get('collection'):
         return f'Collect output ({e["collection"]["raw_output"]}): not collected' if e['collection'].get('not_collected') else None

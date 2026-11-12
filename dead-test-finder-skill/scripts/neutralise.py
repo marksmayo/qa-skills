@@ -3,10 +3,11 @@
 
     python neutralise.py --repo <repo> --candidates candidates.json --test <test id> [--test ...] --run-dir run
         [--tests-file ids.txt] [--target <test id>=<module.function>] [--cwd client=/copy/with/node_modules]
-        [--patch fix.diff] [--env K=V ...] [--npm-script test] [--runner-args "..."]
+        [--patch fix.diff] [--env K=V ...] [--package-env PACKAGE:K=V ...] [--npm-script test] [--runner-args "..."]
 
 For each test the targets are the functions it calls that come from product code (Python: the
-imported names in candidates.json; JavaScript/TypeScript: the names it imports from relative or
+imported names in candidates.json, never the standard library; a method is named
+`module.Class.method` with --target; JavaScript/TypeScript: the names it imports from relative or
 alias paths, `@/lib/x` through tsconfig `paths` or a vite/vitest `alias`, and calls or renders as
 JSX). A JavaScript target is followed through default imports (`export default function`,
 `export default Name`) and re-exports (`export { x } from './y'`, `export * from './y'`) to the
@@ -19,8 +20,15 @@ Runs go through run_tests.py, appended to <run-dir>/runs.json with labels like
 "neutralise gst return". A test that passes with the `return` variant can't fail on that code;
 whether it passes with `raise` says whether it at least checks that nothing raises. When
 run_tests.py records no run, its own error output is shown and kept in the result (`errors`),
-never replaced by a missing-file error. --env, --npm-script and --runner-args are passed to
-run_tests.py (a fake DATABASE_URL for a setup file, the repo's `npm test` flags).
+never replaced by a missing-file error. --env K=V [K=V ...], --npm-script and --runner-args are
+passed to run_tests.py (a fake DATABASE_URL for a setup file, the repo's `npm test` flags);
+--package-env PACKAGE:K=V adds variables for one package's runs only.
+
+The outcome is `passed_neutralised` or `failed_neutralised` only when the unchanged test passed
+and at least one neutralised (`return`) run ran it. When the unchanged test did not run (not
+found, no run recorded) or failed, or no neutralised run ran it, the outcome is `errored`, with
+`error_reason`: nothing was learnt about the test. `not_run` means there was nothing to
+neutralise (no product function found, or a Playwright test).
 
 --patch applies a proposed test fix (a unified diff with repo-relative paths) to the scratch copy
 first, so a strengthening fix can be proved: it passes on the original code and fails when the
@@ -39,6 +47,9 @@ the reason).
 
 A parametrised test can be named by its function (`tests/test_x.py::test_y`: every case runs,
 and the test passes only if every case passes) or by one case (`tests/test_x.py::test_y[a-1]`).
+A JavaScript `it.each` / `test.each` / template-name test works the same way: its definition id
+(`src/x.test.ts::rows > %s keeps its fields`) runs every case its name pattern matches in the
+JUnit output, and an expanded name (`src/x.test.ts::rows > rye keeps its fields`) runs that case.
 """
 from __future__ import annotations
 import argparse, ast, fnmatch, hashlib, json, os, re, shutil, subprocess, sys, tempfile
@@ -46,7 +57,7 @@ from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import run_tests, scan_tests, unified_diff  # noqa: E402
+import collect_check, run_tests, scan_tests, unified_diff  # noqa: E402
 
 MARK = 'neutralised by dead-test-finder'
 # Never copied into the scratch copy: VCS data, caches and installed dependencies. --copy-ignore adds more.
@@ -107,27 +118,41 @@ def tree_hash(root: Path, skip: Path) -> str:
 
 
 def py_target_file(pkg_dir: Path, dotted: str) -> tuple[Path, str] | None:
-    """'ledger.tax.gst' -> (pkg_dir/ledger/tax.py, 'gst')."""
+    """'ledger.tax.gst' -> (pkg_dir/ledger/tax.py, 'gst'); 'ledger.rows.Grouper.number' -> (.../rows.py, 'Grouper.number')."""
     parts = dotted.split('.')
     for cut in range(len(parts) - 1, 0, -1):
         base = pkg_dir.joinpath(*parts[:cut])
         for cand in (base.with_suffix('.py'), base / '__init__.py', pkg_dir / 'src' / Path(*parts[:cut]).with_suffix('.py')):
             if cand.is_file():
-                return cand, parts[cut]
+                return cand, '.'.join(parts[cut:])
     return None
+
+
+def py_find(tree: ast.Module, qual: str) -> ast.AST | None:
+    """The definition a qualified name names in a module: a function, a class, or Class.method (classes nested too). A
+    bare name that is no module-level definition falls back to the first function of that name anywhere."""
+    body, node = tree.body, None
+    for part in qual.split('.'):
+        node = next((n for n in body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and n.name == part), None)
+        if node is None:
+            break
+        body = node.body if isinstance(node, ast.ClassDef) else []
+    if node is None and '.' not in qual:
+        node = next((n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == qual), None)
+    return node
 
 
 def py_patch(text: str, func: str, variant: str) -> str | None:
     tree = ast.parse(text)
     lines = text.split('\n')
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == func:
-            first = node.body[0]
-            indent = ' ' * first.col_offset
-            stmt = 'return None' if variant == 'return' else f'raise RuntimeError("{MARK}")'
-            eol = '\r' if lines[first.lineno - 1].endswith('\r') else ''
-            return '\n'.join(lines[:first.lineno - 1] + [f'{indent}{stmt}  # {MARK}{eol}'] + lines[node.end_lineno:])
-    return None
+    node = py_find(tree, func)
+    if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return None
+    first = node.body[0]
+    indent = ' ' * first.col_offset
+    stmt = 'return None' if variant == 'return' else f'raise RuntimeError("{MARK}")'
+    eol = '\r' if lines[first.lineno - 1].endswith('\r') else ''
+    return '\n'.join(lines[:first.lineno - 1] + [f'{indent}{stmt}  # {MARK}{eol}'] + lines[node.end_lineno:])
 
 
 # ---------------------------------------------------------------- JavaScript / TypeScript targets
@@ -293,9 +318,17 @@ def base_id(test_id: str) -> str:
     return re.sub(r'\[.*\]$', '', test_id) if '.py::' in test_id else test_id
 
 
-def case_status(cases: list[dict], run_id: str, want: str, python: bool) -> str:
+def merged(statuses: list[str]) -> str:
+    for s in ('error', 'failed'):
+        if s in statuses:
+            return s
+    return 'passed' if 'passed' in statuses else statuses[0]
+
+
+def case_status(cases: list[dict], run_id: str, want: str, python: bool, pattern: str | None = None) -> str:
     """The test's status in a run. A Python id without a [case] matches every parametrised case of the function:
-    failed or error if any case did, passed when they all ran and passed."""
+    failed or error if any case did, passed when they all ran and passed. A JavaScript definition with a name pattern
+    (it.each, a template name) matches every case whose name the pattern matches, the same way."""
     mine = [c for c in cases if c['run_id'] == run_id]
     if python:
         name = want.split('::')[-1]
@@ -312,7 +345,21 @@ def case_status(cases: list[dict], run_id: str, want: str, python: bool) -> str:
     for c in mine:
         if c['name'] == want or c['name'] == want.split(' > ')[-1]:
             return c['status']
+    if pattern:
+        rx = re.compile(pattern + '$', re.S)
+        hits = [c['status'] for c in mine if rx.match(c['name'])]
+        if hits:
+            return merged(hits)
     return 'not_found'
+
+
+def pattern_definition(defs: dict, tid: str) -> dict | None:
+    """The parametrised JavaScript definition (it.each, template name) whose name pattern matches an expanded id."""
+    file, _, name = tid.partition('::')
+    for d in defs.values():
+        if d['file'] == file and d.get('name_pattern') and re.fullmatch(d['name_pattern'], name, re.S):
+            return d
+    return None
 
 
 def run_test(defn: dict, work: Path, run_dir: Path, label: str, prefix: str, extra: list[str]) -> tuple[str, str, str | None]:
@@ -334,7 +381,30 @@ def run_test(defn: dict, work: Path, run_dir: Path, label: str, prefix: str, ext
         print(f'run_tests.py recorded no run (exit {res.returncode}):\n{err}', file=sys.stderr)
         return 'none', 'not_run', err
     rid = new[-1]['id']
-    return rid, case_status(data['cases'], rid, defn['run_id'].split('::', 1)[1], defn['lang'] == 'python'), None
+    pattern = defn.get('name_pattern') if defn['run_id'] == defn['id'] else None
+    return rid, case_status(data['cases'], rid, defn['run_id'].split('::', 1)[1], defn['lang'] == 'python', pattern), None
+
+
+RAN = ('passed', 'failed', 'error')
+
+
+def outcome_of(original: str, targets: list[dict]) -> dict:
+    """The outcome of one test's neutralisation. Passed or failed neutralised needs the unchanged test to have passed and
+    at least one neutral-body run to have run it; a test that never ran, or failed unchanged, taught nothing (errored),
+    and having no target to neutralise is not_run."""
+    returns = {t['target']: next((v['test_status'] for v in t['variants'] if v['variant'] == 'return'), None) for t in targets
+               if t['variants']}
+    ran = {k: v for k, v in returns.items() if v in RAN}
+    if original not in RAN:
+        return {'outcome': 'errored', 'error_reason': f'the unchanged test did not run ({original}), so nothing was learnt'}
+    if original != 'passed':
+        return {'outcome': 'errored', 'error_reason': f'the unchanged test {original}, so a neutralised result says nothing'}
+    if not returns:
+        return {'outcome': 'not_run'}
+    if not ran:
+        return {'outcome': 'errored', 'error_reason': 'no neutral-body run ran the test (' +
+                ', '.join(sorted({str(v) for v in returns.values()})) + ')'}
+    return {'outcome': 'passed_neutralised' if all(v == 'passed' for v in ran.values()) else 'failed_neutralised'}
 
 
 def localise(text: str, prefix: str) -> str:
@@ -370,7 +440,10 @@ def main(argv=None) -> int:
     ap.add_argument('--copy-ignore', action='append', default=[], metavar='GLOB',
                     help='leave matching files or directories out of the scratch copy ("*.jpg", "images", "data/raw/*"); '
                          'only what the tests never read')
-    ap.add_argument('--env', action='append', default=[], metavar='K=V', help='passed to run_tests.py (repeat)')
+    ap.add_argument('--env', nargs='+', action='append', default=[], metavar='K=V',
+                    help='passed to run_tests.py (several pairs per flag, or repeat the flag)')
+    ap.add_argument('--package-env', action='append', default=[], metavar='PACKAGE:K=V',
+                    help="passed to run_tests.py for that package's runs only (repeat)")
     ap.add_argument('--npm-script', help='passed to run_tests.py: reuse package.json\'s script (its env and runner flags)')
     ap.add_argument('--runner-args', help='passed to run_tests.py: extra runner flags')
     ap.add_argument('--out', type=Path)
@@ -380,8 +453,13 @@ def main(argv=None) -> int:
         tests += [ln.strip() for ln in args.tests_file.read_text(encoding='utf-8').splitlines() if ln.strip() and not ln.startswith('#')]
     if not tests:
         ap.error('name at least one test with --test or --tests-file')
-    extra = (['--env', *args.env] if args.env else []) + (['--npm-script', args.npm_script] if args.npm_script else []) + \
+    env, pkg_env = collect_check.parse_env(args.env, args.package_env)
+    runner = (['--npm-script', args.npm_script] if args.npm_script else []) + \
         (['--runner-args', args.runner_args] if args.runner_args else [])
+
+    def extra_for(pkg: str) -> list[str]:
+        pairs = {**env, **pkg_env.get(pkg, {})}
+        return (['--env', *[f'{k}={v}' for k, v in pairs.items()]] if pairs else []) + runner
     root = args.repo.resolve()
     defs = {d['id']: d for d in json.loads(args.candidates.read_text(encoding='utf-8'))['definitions']}
     packages = sorted({d['package'] for d in defs.values()}, key=len, reverse=True)
@@ -405,7 +483,7 @@ def main(argv=None) -> int:
     copies = []
     try:
         for tid in tests:
-            d = defs.get(tid) or defs.get(base_id(tid))
+            d = defs.get(tid) or defs.get(base_id(tid)) or pattern_definition(defs, tid)
             if not d:
                 if not args.patch:
                     print(f'unknown test id {tid}', file=sys.stderr)
@@ -441,12 +519,18 @@ def main(argv=None) -> int:
                                 restore.setdefault(p, p.read_bytes() if p.is_file() else None)
                     unified_diff.apply_patch(localise(text, prefix), work)
                 works[d['package']] = work
+            extra = extra_for(d['package'])
             n += 1
             rid, status, err = run_test(d, work, args.run_dir, 'original' + (' (patched)' if args.patch else ''), f'N{n}', extra)
             entry['original'] = {'run_id': rid, 'test_status': status}
             if err:
                 entry['errors'] = [err]
             targets = forced.get(tid) or d['calls']
+            if d['lang'] == 'python' and not forced.get(tid):
+                skipped = [t for t in targets if t.split('.')[0] in scan_tests.STDLIB]
+                if skipped:                              # the standard library is never the code under test
+                    entry['skipped_targets'] = skipped
+                    targets = [t for t in targets if t not in skipped]
             if not targets:
                 entry['note'] = 'no product function to neutralise (the test calls nothing it imports)'
             for tgt in targets:
@@ -455,11 +539,17 @@ def main(argv=None) -> int:
                 else:
                     loc, patcher = js_target(work / d['file'][len(prefix):], tgt, work), js_patch
                 if not loc:
-                    entry['targets'].append({'target': tgt, 'file': None, 'variants': [], 'note': 'definition not found'})
+                    entry['targets'].append({'target': tgt, 'file': None, 'variants': [], 'note': (
+                        'definition not found in this package (another package or an installed library); name the function '
+                        'with --target if it is the code under test' if d['lang'] == 'python' else 'definition not found')})
                     continue
                 path, func = loc
                 original = path.read_bytes()
                 text = original.decode('utf-8')
+                if d['lang'] == 'python' and isinstance(py_find(ast.parse(text), func), ast.ClassDef):
+                    entry['targets'].append({'target': tgt, 'file': None, 'variants': [], 'note': (
+                        f'{func} is a class; name the method under test with --target {tid}={tgt}.<method>')})
+                    continue
                 tres = {'target': tgt, 'file': prefix + path.relative_to(work.resolve()).as_posix() if path.is_relative_to(work.resolve())
                         else prefix + Path(os.path.relpath(path, work)).as_posix(), 'variants': []}
                 for variant in ('return', 'raise'):
@@ -478,12 +568,10 @@ def main(argv=None) -> int:
                         entry.setdefault('errors', []).append(err)
                     tres['variants'].append({'variant': variant, 'run_id': rid, 'test_status': st})
                 entry['targets'].append(tres)
+            entry.update(outcome_of(status, entry['targets']))
             ran = [t for t in entry['targets'] if t['variants']]
-            passed_return = [t for t in ran if any(v['variant'] == 'return' and v['test_status'] == 'passed' for v in t['variants'])]
-            entry['outcome'] = ('not_run' if not ran else 'passed_neutralised' if len(passed_return) == len(ran) else
-                                'failed_neutralised')
-            entry['checks_no_exception'] = any(v['variant'] == 'raise' and v['test_status'] in ('failed', 'error')
-                                               for t in ran for v in t['variants'])
+            entry['checks_no_exception'] = entry['outcome'] != 'errored' and any(
+                v['variant'] == 'raise' and v['test_status'] in ('failed', 'error') for t in ran for v in t['variants'])
             results = [r for r in results if not (r['test_id'] == tid and r.get('patch') == patch_name)] + [entry]
             print(f'{tid}{" (patched)" if patch_name else ""}: original {status}, {entry["outcome"]}' +
                   ''.join(f'\n  {t["target"]}: ' + (', '.join(f'{v["variant"]} -> {v["test_status"]}' for v in t['variants'])
