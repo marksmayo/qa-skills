@@ -2,8 +2,8 @@
 """Compare the tests defined in the code with the tests each framework actually collects (stdlib only).
 
     python collect_check.py <repo> --candidates candidates.json --run-dir run [--cwd client=/path/with/node_modules]
-        [--env DATABASE_URL=postgresql://fake:fake@localhost:5432/fake ...] [--scope all|candidates] [--files F ...]
-        [--reuse]
+        [--env DATABASE_URL=postgresql://fake:fake@localhost:5432/fake ...] [--package-env api:PYTHONPATH=/x ...]
+        [--scope all|candidates] [--files F ...] [--reuse]
 
 For every package and framework with tests, runs the framework's own list command and keeps its
 raw output in the run directory:
@@ -16,8 +16,17 @@ raw output in the run directory:
 A JavaScript test file that imports @playwright/test, or sits in a Playwright testDir, is listed
 with Playwright, never with Vitest or Jest (which exclude e2e/ and would report it as not
 collected). --cwd PACKAGE=DIR runs a package's commands in another directory holding the same
-files (a copy with node_modules installed). --env K=V sets environment variables the setup files
-read at collection time (a fake DATABASE_URL, never a real one).
+files (a copy with node_modules installed). --env K=V [K=V ...] sets environment variables the setup
+files read at collection time (a fake DATABASE_URL, never a real one) for every package, and
+--package-env PACKAGE:K=V for one package only (two services that each need their own PYTHONPATH).
+Only the variable names are recorded, never the values.
+
+pytest names tests relative to its rootdir, the directory of the nearest pytest.ini /
+pyproject.toml / setup.cfg / tox.ini above the arguments, which can be an ancestor of the package
+(`services/pytest.ini` for `services/api`). Every listed id is mapped back to a path relative to
+the package by finding its file, so ids are never prefixed twice. A pytest package that contains
+another one (`services/api` inside `services`) is listed with `--ignore` for the inner one, so no
+test is collected twice.
 
 --scope candidates lists only the files that hold a candidate, and --files only the files given
 (repo-relative): a JavaScript list command imports every file it lists, so on a large suite it
@@ -56,6 +65,38 @@ def js_runner(pkg_dir: Path) -> str:
     return 'jest' if 'jest' in deps and 'vitest' not in deps else 'vitest'
 
 
+def parse_env(pairs: list, per_package: list[str]) -> tuple[dict, dict[str, dict]]:
+    """(--env pairs, {package: pairs} from --package-env PACKAGE:K=V). --env may hold several pairs per flag."""
+    flat = [x for item in pairs for x in (item if isinstance(item, list) else [item])]
+    bad = [x for x in flat if '=' not in x] + [x for x in per_package if ':' not in x or '=' not in x.split(':', 1)[1]]
+    if bad:
+        raise SystemExit(f'not K=V (or PACKAGE:K=V for --package-env): {bad[0].split("=", 1)[0]}')
+    glob = dict(x.split('=', 1) for x in flat)
+    per: dict[str, dict] = {}
+    for x in per_package:
+        pkg, _, kv = x.partition(':')
+        k, _, v = kv.partition('=')
+        per.setdefault(pkg.strip().strip('/') or '.', {})[k] = v
+    return glob, per
+
+
+def map_pytest_path(path: str, cwd: Path, known: set[str]) -> str:
+    """A file path from a pytest node id, made relative to the package directory cwd. pytest writes it relative to
+    its rootdir, which may be an ancestor of cwd (an ini file higher up) or below it; known holds the package's test
+    files relative to cwd."""
+    if path in known or (cwd / path).is_file():
+        return path
+    for anc in cwd.parents:
+        full = anc / path
+        if full.is_file():
+            try:
+                return full.resolve().relative_to(cwd.resolve()).as_posix()
+            except ValueError:
+                break                                            # outside the package: leave it as it is
+    ends = [k for k in known if k.endswith('/' + path)] or [k for k in known if path.endswith('/' + k)]
+    return ends[0] if len(ends) == 1 else path
+
+
 def run(cmd: list[str], cwd: Path, env_extra: dict) -> tuple[int, str]:
     exe = cmd
     if os.name == 'nt':
@@ -90,13 +131,15 @@ def playwright_ids(data: dict, cwd: Path, prefix: str) -> list[str]:
 
 
 def collect(pkg: str, fw: str, cwd: Path, run_dir: Path, files: list[str] | None, env: dict, reuse: dict | None,
-            n_defined: int = 0) -> dict:
+            n_defined: int = 0, known: set[str] | None = None, ignore: list[str] | None = None) -> dict:
     prefix = '' if pkg == '.' else pkg + '/'
     tag = (pkg.replace('/', '_') if pkg != '.' else 'root') + ('' if fw in ('pytest', 'vitest', 'jest') else f'-{fw}')
     local = [f[len(prefix):] for f in files] if files is not None else []
     if fw == 'pytest':
-        cmd = [sys.executable, '-m', 'pytest', '--collect-only', '-q', '-p', 'no:cacheprovider', *local]
-        shown = 'python -m pytest --collect-only -q -p no:cacheprovider' + (f' <{len(local)} files>' if local else '')
+        ign = [f'--ignore={d}' for d in (ignore or [])] if files is None else []
+        cmd = [sys.executable, '-m', 'pytest', '--collect-only', '-q', '-p', 'no:cacheprovider', *ign, *local]
+        shown = 'python -m pytest --collect-only -q -p no:cacheprovider' + ''.join(f' {x}' for x in ign) + \
+            (f' <{len(local)} files>' if local else '')
         raw = run_dir / f'collect-{tag}.txt'
     elif fw == 'playwright':
         cmd = ['npx', 'playwright', 'test', '--list', '--reporter=json', *local]
@@ -127,7 +170,8 @@ def collect(pkg: str, fw: str, cwd: Path, run_dir: Path, files: list[str] | None
         for line in out.splitlines():
             line = line.strip()
             if '::' in line and not line.startswith(('=', '<')):
-                ids.append(prefix + re.sub(r'\[.*\]$', '', line))
+                path, _, rest = re.sub(r'\[.*\]$', '', line).partition('::')
+                ids.append(prefix + map_pytest_path(path, cwd, known or set()) + '::' + rest)
         ok = code in (0, 5)
     else:
         start = out.find('{' if fw == 'playwright' else '[')
@@ -158,7 +202,7 @@ def collect(pkg: str, fw: str, cwd: Path, run_dir: Path, files: list[str] | None
                    encoding='utf-8')
     return {'package': pkg, 'framework': fw, 'command': shown, 'exit_code': code, 'status': 'ran' if ok else 'errored',
             'raw_output': raw.name, 'scope': 'all' if files is None else f'{len(local)} files', 'input_hash': input_hash,
-            'collected': sorted(set(ids)), **({'note': note} if note else {})}
+            **({'env': sorted(env)} if env else {}), 'collected': sorted(set(ids)), **({'note': note} if note else {})}
 
 
 def main(argv=None) -> int:
@@ -167,7 +211,10 @@ def main(argv=None) -> int:
     ap.add_argument('--candidates', type=Path, required=True)
     ap.add_argument('--run-dir', type=Path, required=True)
     ap.add_argument('--cwd', action='append', default=[], help='PACKAGE=DIR: run that package\'s list commands in DIR')
-    ap.add_argument('--env', action='append', default=[], metavar='K=V', help='environment for the list commands (repeat)')
+    ap.add_argument('--env', nargs='+', action='append', default=[], metavar='K=V',
+                    help='environment for every list command (several pairs per flag, or repeat the flag)')
+    ap.add_argument('--package-env', action='append', default=[], metavar='PACKAGE:K=V',
+                    help="environment for one package's list command only (repeat)")
     ap.add_argument('--scope', choices=['all', 'candidates'], default='all',
                     help='candidates: list only the files that hold a candidate (the other tests are not_assessed)')
     ap.add_argument('--files', nargs='+', help='list only these repo-relative test files (the other tests are not_assessed)')
@@ -178,7 +225,7 @@ def main(argv=None) -> int:
     data = json.loads(args.candidates.read_text(encoding='utf-8'))
     defs = data['definitions']
     overrides = dict(x.split('=', 1) for x in args.cwd)
-    env = dict(x.split('=', 1) for x in args.env)
+    env, pkg_env = parse_env(args.env, args.package_env)
     args.run_dir.mkdir(parents=True, exist_ok=True)
     out_path = args.out or args.run_dir / 'collection.json'
     previous = {}
@@ -189,14 +236,22 @@ def main(argv=None) -> int:
     for d in defs:
         pdir = root / d['package'] if d['package'] != '.' else root
         groups.setdefault((d['package'], framework_of(d, pdir)), []).append(d)
+    unknown = sorted(set(pkg_env) - {p for p, _ in groups})
+    if unknown:
+        print(f'--package-env names no package with tests: {", ".join(unknown)}', file=sys.stderr)
+        return 2
     pkgs = []
     for (pkg, fw), ds in sorted(groups.items()):
         cwd = Path(overrides[pkg]).resolve() if pkg in overrides else (root / pkg if pkg != '.' else root)
         files = sorted({d['file'] for d in ds if d['file'] in scope}) if scope is not None else None
         if files == []:
             continue
-        pkgs.append(collect(pkg, fw, cwd, args.run_dir, files, env, previous.get((pkg, fw)),
-                            len([d for d in ds if files is None or d['file'] in files])))
+        prefix = '' if pkg == '.' else pkg + '/'
+        # a package holding another package of the same framework leaves the inner one to its own list command
+        inner = sorted({p[len(prefix):] for p, f in groups if f == fw and p != pkg and (pkg == '.' or p.startswith(prefix))})
+        pkgs.append(collect(pkg, fw, cwd, args.run_dir, files, {**env, **pkg_env.get(pkg, {})}, previous.get((pkg, fw)),
+                            len([d for d in ds if files is None or d['file'] in files]),
+                            {d['file'][len(prefix):] for d in ds}, inner))
     ran = {(p['package'], p['framework']): p for p in pkgs if p['status'] == 'ran'}
     collected = {i for p in ran.values() for i in p['collected']}
     files_listed = {i.split('::')[0] for i in collected if i.endswith('::*')}
