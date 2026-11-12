@@ -27,7 +27,7 @@ where they behave differently:
   with any comparison not made and nothing found the verdict is `inconclusive`, never "no
   differences".
 - **Gentle on remote sites**: a rate limit between loads, 429/503 back-off honouring Retry-After
-  (capped), request counts per run and engine, and an optional request budget.
+  (within a maximum wait), request counts per run and engine, and an optional request budget.
 
 It is strict about scope: it never says "compatible", never treats Playwright's WebKit as Safari, and
 lists Safari, real devices and older versions as untested.

@@ -26,6 +26,7 @@
         "reruns": {"type": "integer", "minimum": 1},
         "authorised_by": {"type": ["string", "null"]},
         "capture": {"type": "object", "description": "runs.json capture settings (bypass_csp, reduced_motion, freeze_animations, rate limit, retries, request budget, third parties); required when the capture recorded bypass_csp."},
+        "harness": {"type": "object", "description": "runs.json harness: browser_harness.py metadata() per engine (CSP bypass, read-only, request totals, retry policy); required when the capture recorded it."},
         "requests": {"type": "object", "required": ["sent", "by_engine", "budget", "budget_reached", "backoffs"],
                      "description": "runs.json requests: requests the pages sent (blocked ones excluded), per engine, the budget, whether it was reached, and 429/503 back-offs; required when the capture recorded them."},
         "third_party": {"type": ["object", "null"], "additionalProperties": false, "required": ["mode", "allowed_hosts", "blocked"],

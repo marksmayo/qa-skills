@@ -11,7 +11,8 @@ targets.json:
      "authorised_by": null, "auth": null, "allow_form_submission": false,
      "third_party": "block", "allowed_hosts": [], "service_workers": "allow", "scroll": true,
      "bypass_csp": true, "reduced_motion": "reduce", "freeze_animations": true,
-     "rate_limit_seconds": 0.5, "retries": 2, "max_retry_after_seconds": 60, "request_budget": null}
+     "rate_limit_seconds": 0.5, "max_retries": 2, "max_retry_after_seconds": 60, "stop_on_429": false,
+     "request_budget": null}
 
 bypass_csp: true (the default) creates every context with Playwright's bypass_csp, so the styles capture injects
 (animation freeze, content-visibility) apply on sites whose Content-Security-Policy has a hash or nonce in
@@ -23,7 +24,7 @@ stops CSS animations and transitions, for stable screenshots; engine differences
 compared, and the report lists that as out of scope. "no-preference" and false turn them off.
 
 Remote-site hygiene: rate_limit_seconds between page loads (default 0.1 on loopback, 0.5 elsewhere); a 429 or
-503 is retried up to `retries` times after Retry-After (seconds or a date), never waiting more than
+503 is retried up to `max_retries` times after Retry-After (seconds or a date), unless it asks for more than
 max_retry_after_seconds, and each wait is recorded in the run's `backoff`; still 429/503 after that, the run
 is errored. Every run records requests_sent (requests the page made that the harness let out), runs.json totals
 them in `requests`, and with request_budget set, runs after the total reaches it are recorded as skipped.
@@ -58,14 +59,12 @@ is not Safari; the scope says so, and nothing here calls it Safari.
 """
 from __future__ import annotations
 import argparse, hashlib, json, re, sys, time
-from datetime import datetime, timezone
-from email.utils import parsedate_to_datetime
 from pathlib import Path
 from urllib.parse import urljoin
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from browser_harness import Harness, check_authorised, is_loopback, NotAuthorised, now  # noqa: E402
+from browser_harness import Harness, check_authorised, is_loopback, NotAuthorised, now, retry_decision  # noqa: E402
 from compare_engines import planned_checks  # noqa: E402
 
 STABLE_CSS = ('*, *::before, *::after { animation-duration: 0s !important; animation-delay: 0s !important; '
@@ -73,7 +72,6 @@ STABLE_CSS = ('*, *::before, *::after { animation-duration: 0s !important; anima
 # Each injected style sets a marker custom property, read back to prove the style applied: a Content-Security-Policy
 # that refuses inline styles fails silently in some engines.
 APPLIED = "(name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() === '1'"
-RETRY_STATUS = (429, 503)
 
 # Firefox and WebKit draw a full-page screenshot without scrolling, so content-visibility:auto content outside the
 # viewport would come out blank; a user scrolling to it would see it rendered.
@@ -138,42 +136,25 @@ SNAP = r"""
 """
 
 
-def retry_delay(header: str | None, attempt: int, max_wait: float) -> tuple[float, str]:
-    """Seconds to wait before retrying a 429 or 503: Retry-After (seconds or an HTTP date), else 10 s, 20 s, ...;
-    never more than max_wait."""
-    asked = None
-    if header:
-        h = header.strip()
-        if h.isdigit():
-            asked = float(h)
-        else:
-            try:
-                asked = max(0.0, (parsedate_to_datetime(h) - datetime.now(timezone.utc)).total_seconds())
-            except (TypeError, ValueError):
-                asked = None
-    wait = asked if asked is not None else 10.0 * (attempt + 1)
-    how = f'Retry-After {header!r}' if asked is not None else 'no Retry-After'
-    if wait > max_wait:
-        how += f', capped at {max_wait:g}s'
-    return min(wait, max_wait), how
-
-
 def load(h: Harness, page, url: str, net: dict, rec: dict):
-    """page.goto with the run's rate limit, backing off on 429 and 503 (Retry-After, capped) up to net['retries'] times."""
-    resp = None
-    for attempt in range(net['retries'] + 1):
+    """page.goto with the run's rate limit and the shared 429/503 policy (browser_harness.retry_decision: Retry-After,
+    never waiting longer than the maximum, at most max_retries times, optionally stopping at the first 429). capture
+    waits for 'load' only (not the harness's settle), then freezes animations itself. Each wait is recorded."""
+    attempt = 0
+    while True:
         h.throttle()
         resp = page.goto(url, wait_until='load', timeout=45000)
         status = resp.status if resp else None
-        if status not in RETRY_STATUS:
+        action, detail = retry_decision(status, resp.headers.get('retry-after') if resp else None, attempt,
+                                        net['max_retries'], net['max_retry_after_seconds'], net['stop_on_429'])
+        if action == 'ok':
             return resp
-        if attempt == net['retries']:
-            break
-        delay, how = retry_delay(resp.headers.get('retry-after'), attempt, net['max_retry_after_seconds'])
-        rec['backoff'].append({'status': status, 'waited_seconds': round(delay, 1), 'why': how, 'at': now()})
-        time.sleep(delay)
-    raise RuntimeError(f'HTTP {resp.status if resp else None} after {net["retries"]} retr{"y" if net["retries"] == 1 else "ies"}: '
-                       'the site is rate limiting or unavailable')
+        if action == 'stop':
+            raise RuntimeError(f'{detail}: the site is rate limiting or unavailable')
+        rec['backoff'].append({'status': status, 'waited_seconds': round(detail, 1),
+                               'retry_after': resp.headers.get('retry-after'), 'at': now()})
+        time.sleep(detail)
+        attempt += 1
 
 
 def inject(page, css: str, marker: str, what: str) -> None:
@@ -186,7 +167,8 @@ def inject(page, css: str, marker: str, what: str) -> None:
 
 def run_once(h: Harness, url: str, viewport: str, actions: list, shot: Path, scroll: bool = True, settings: dict | None = None) -> dict:
     s = settings or {}
-    net = {'retries': s.get('retries', 2), 'max_retry_after_seconds': s.get('max_retry_after_seconds', 60)}
+    net = {'max_retries': s.get('max_retries', 2), 'max_retry_after_seconds': s.get('max_retry_after_seconds', 60),
+           'stop_on_429': s.get('stop_on_429', False)}
     n_blocked = len(h.blocked)
     page = h.new_page(viewport=viewport, reduced_motion=s.get('reduced_motion', 'reduce'))
     log = h.log(page)
@@ -266,7 +248,8 @@ def settings_from(cfg: dict, urls: list[str]) -> dict:
     return {'bypass_csp': bool(cfg.get('bypass_csp', True)), 'reduced_motion': rm,
             'freeze_animations': bool(cfg.get('freeze_animations', True)),
             'rate_limit_seconds': float(cfg.get('rate_limit_seconds', 0.5 if remote else 0.1)),
-            'retries': int(cfg.get('retries', 2)), 'max_retry_after_seconds': float(cfg.get('max_retry_after_seconds', 60)),
+            'max_retries': int(cfg.get('max_retries', cfg.get('retries', 2))), 'stop_on_429': bool(cfg.get('stop_on_429', False)),
+            'max_retry_after_seconds': float(cfg.get('max_retry_after_seconds', 60)),
             'request_budget': budget}
 
 
@@ -298,7 +281,8 @@ def main() -> int:
                'content_visibility': 'visible during the screenshot' if scroll else 'as the page sets it',
                'bypass_csp': s['bypass_csp'], 'bypass_csp_applied_by': None, 'reduced_motion': s['reduced_motion'],
                'freeze_animations': s['freeze_animations'], 'rate_limit_seconds': s['rate_limit_seconds'],
-               'retries': s['retries'], 'max_retry_after_seconds': s['max_retry_after_seconds'], 'request_budget': s['request_budget']}
+               'max_retries': s['max_retries'], 'max_retry_after_seconds': s['max_retry_after_seconds'],
+               'stop_on_429': s['stop_on_429'], 'request_budget': s['request_budget']}
     doc = {'site': cfg['site'], 'captured_at': now(), 'platform': sys.platform, 'reruns': reruns, 'capture': capture,
            'planned': plan, 'engines': [], 'runs': [], 'blocked_requests': [],
            'requests': {'sent': 0, 'by_engine': {}, 'budget': s['request_budget'], 'budget_reached': False, 'backoffs': 0}}
@@ -311,7 +295,9 @@ def main() -> int:
             with Harness({'browser': eng, 'authorised_by': cfg.get('authorised_by'), 'auth': cfg.get('auth'),
                           'allow_form_submission': cfg.get('allow_form_submission', False),
                           'rate_limit_seconds': s['rate_limit_seconds'], 'bypass_csp': s['bypass_csp'],
-                          'request_budget': s['request_budget'],
+                          'request_budget': None if s['request_budget'] is None else max(1, s['request_budget'] - req['sent']),
+                          'max_retries': s['max_retries'], 'max_retry_after_seconds': s['max_retry_after_seconds'],
+                          'stop_on_429': s['stop_on_429'],
                           'third_party': capture['third_party'], 'allowed_hosts': capture['allowed_hosts'],
                           'service_workers': capture['service_workers'], 'targets': [cfg['site']] + urls}) as h:
                 capture['bypass_csp_applied_by'] = csp_bypass(h, s['bypass_csp'])
@@ -327,12 +313,19 @@ def main() -> int:
                                                 'error': f'request budget of {req["budget"]} reached before this run', 'steps': []})
                             continue
                         shot = a.out / eng / vp / f'{name}.r{r}.png'
+                        exhausted = bool((getattr(h, 'requests', None) or {}).get('budget_exhausted'))
                         rec = run_once(h, urljoin(cfg['site'], p['path']), vp, (st or {}).get('actions') or [], shot, scroll, s)
+                        if not exhausted and (getattr(h, 'requests', None) or {}).get('budget_exhausted') and rec['run_status'] == 'ran':
+                            # the harness aborted this page's requests once the budget ran out: what it captured is incomplete
+                            rec.update(run_status='errored', ok=False,
+                                       error=f'request budget of {req["budget"]} ran out during this run; the page loaded incompletely')
                         req['sent'] += rec['requests_sent']
                         req['by_engine'][eng] = req['by_engine'].get(eng, 0) + rec['requests_sent']
                         req['backoffs'] += len(rec.get('backoff') or [])
                         doc['runs'].append({**base, **rec})
                 doc['blocked_requests'].extend(h.blocked)
+                if hasattr(h, 'metadata'):   # the harness's own record: CSP bypass, read-only, request totals, retry policy
+                    doc.setdefault('harness', {})[eng] = h.metadata()
             mine = doc['runs'][start:]
             captured = [r for r in mine if r.get('run_status') == 'ran']
             failed = [r for r in mine if r.get('run_status') != 'ran']

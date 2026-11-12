@@ -255,7 +255,7 @@ Where the build differs from the design above, and what the example showed.
     claims no differences, and a missing limitation for comparisons not made.
   - *No 429 back-off and a fixed 0.1 s rate limit in capture*: loads now go through capture's own
     loop with a configurable rate limit (0.5 s off loopback) and Retry-After (seconds or a date)
-    capped at `max_retry_after_seconds`, each wait recorded in the run; requests sent are counted per
+    following the shared harness's `retry_decision` (a wait over `max_retry_after_seconds` errors the run instead), each wait recorded in the run, and the harness's `metadata()` is kept per engine in `runs.json` and the report's `scope.harness`; requests sent are counted per
     run and engine, and `request_budget` skips the remaining runs once reached. `scope.capture` and
     `scope.requests` carry the settings and counts.
   - *Forced reduced motion wasn't listed as out of scope*; it is now configurable

@@ -52,7 +52,7 @@ cross-browser finding, even if it's a bug: note it for the crash hunter.
    one that didn't apply makes the run `errored`. With `"bypass_csp": false` on such a site, every
    run errors and the verdict is `inconclusive`.
 10. **Be gentle with remote sites.** Page loads are spaced by `rate_limit_seconds` (0.5 s off
-   loopback); a 429 or 503 is retried after `Retry-After`, capped at `max_retry_after_seconds`, and
+   loopback); a 429 or 503 is retried after `Retry-After` (the shared harness policy: a wait over `max_retry_after_seconds` stops instead), and
    recorded; every run counts the requests it sent, `runs.json` totals them, and `request_budget`
    stops capturing once reached (later runs are `skipped`). Each check costs engines × reruns page
    loads, and a framework page can make 50 or more requests: size pages × viewports to the agreed
@@ -79,7 +79,7 @@ cross-browser finding, even if it's a bug: note it for the crash hunter.
 | `bypass_csp` | `true` | Create contexts with Playwright's `bypass_csp` so the capture styles apply under a strict CSP |
 | `reduced_motion`, `freeze_animations` | `reduce`, `true` | `no-preference` / `false` to compare motion too |
 | `rate_limit_seconds` | 0.1 on loopback, else 0.5 | Seconds between page loads |
-| `retries`, `max_retry_after_seconds` | 2, 60 | 429/503 retries after `Retry-After`, never waiting longer than the cap |
+| `max_retries`, `max_retry_after_seconds`, `stop_on_429` | 2, 60, false | 429/503 retries after `Retry-After` (the shared harness policy); a longer Retry-After, or any 429 with `stop_on_429`, errors the run |
 | `request_budget` | none | Stop capturing once the pages have sent this many requests; later runs are `skipped` |
 | `engines` | all three | Missing ones are `not_run` |
 | `browserslist` | from the repo, else Next.js's defaults for a Next.js project, else `defaults` | `package.json` or `.browserslistrc` |
@@ -186,8 +186,9 @@ targets there and compare by hand.
 
 - `scope`: site, pages, viewports, engines with versions and status (`ran`, `not_run`, `errored`),
   reference engine, resolved browserslist, `out_of_scope`, reruns, `authorised_by`, `third_party`
-  (as in `candidates.json`; required when the capture recorded it), and `capture` and `requests`
-  (copies of `runs.json`'s, required when the capture recorded them).
+  (as in `candidates.json`; required when the capture recorded it), and `capture`, `requests` and `harness`
+  (copies of `runs.json`'s, required when the capture recorded them; `harness` is the shared harness's
+  `metadata()` per engine: CSP bypass, read-only mode, request totals, retry policy).
 - `metadata`: tools, data versions and hashes, runs file.
 - `headline`: verdict (`differences_found`, `no_differences_detected`, `inconclusive`), summary,
   severity counts, flaky count, checks planned and run, engine comparisons planned and made,
@@ -207,7 +208,7 @@ is one sentence). No compatibility claims. The verdict follows from the runs: `i
 whenever a planned comparison wasn't made and nothing was promoted, never `no_differences_detected`
 with zero comparisons; an inconclusive summary must say so and not claim "no differences", and a
 limitation must name what wasn't compared. Confidence is low when no comparison, or under half of
-them or of the runs, was made. `scope.capture` and `scope.requests` equal `runs.json`'s; forced
+them or of the runs, was made. `scope.capture`, `scope.requests` and `scope.harness` equal `runs.json`'s; forced
 reduced motion or frozen animations need `out_of_scope` to say motion wasn't compared; the feature
 scan's limitations (utility CSS not scanned) must appear in the report's. Every
 candidate is triaged once, and none with `build_limitations` is promoted. Checks planned come from

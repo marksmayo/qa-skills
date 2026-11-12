@@ -248,6 +248,9 @@ def main() -> int:
     cap = runs.get('capture') or {}
     if 'bypass_csp' in cap and sc.get('capture') != cap:
         errs.append('scope.capture should equal runs.json capture settings')
+    if 'harness' in runs and sc.get('harness') != runs['harness']:
+        errs.append('scope.harness should equal runs.json harness (the shared harness metadata per engine: CSP bypass, '
+                    'read-only, request totals, retry policy)')
     if 'requests' in runs and sc.get('requests') != runs['requests']:
         errs.append('scope.requests should equal runs.json requests (sent, by engine, budget, back-offs)')
     if (cap.get('reduced_motion') == 'reduce' or cap.get('freeze_animations')) and not re.search(r'motion|animation', oos, re.I):
