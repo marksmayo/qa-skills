@@ -20,6 +20,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import run_tests  # noqa: E402
+import ts_scan  # noqa: E402
 
 SCHEMA = HERE.parent / 'schemas' / 'mutation_report.schema.json'
 OPS = json.loads((HERE.parent / 'data' / 'operators.json').read_text(encoding='utf-8'))
@@ -104,6 +105,14 @@ def calls_in(func: ast.AST, name: str) -> bool:
 def test_calls(repo: Path, test_id: str, name: str, cache: dict) -> bool | None:
     """Does the test's own body (or its class's) call `name` directly? None if the test can't be found."""
     path, _, rest = test_id.partition('::')
+    if ts_scan.is_js(path):
+        if path not in cache:
+            p = repo / path
+            cache[path] = p.read_text(encoding='utf-8') if p.is_file() else None
+        if cache[path] is None or not rest:
+            return None
+        t = ts_scan.find_test(cache[path], rest)
+        return None if t is None else ts_scan.calls(cache[path], t['start'], t['end'], name)
     parts = [p.split('[')[0] for p in rest.split('::') if p]
     if path not in cache:
         p = repo / path
@@ -257,6 +266,9 @@ def check(d: dict, mutants_file: dict | None, runs: dict | None, proofs: dict | 
             errs.append(f'engine {e["name"]}: counts {e["counts"]} do not match its mutants {counts}')
         if e['tree_changed'] is None and e['status'] == 'ran':
             errs.append(f'engine {e["name"]}: the working tree was not checked before and after the run')
+        if e.get('code_hash') and e['code_hash'] != md['code_hash']:
+            errs.append(f'engine {e["name"]}: ran on other code (its code_hash differs from the baseline\'s), so its '
+                        'mutants are not tied to the green baseline')
         for path in e['tree_changed'] or []:
             if path not in d['files_changed']:
                 errs.append(f'engine {e["name"]}: the run changed {path}, which is not in files_changed')
@@ -414,7 +426,8 @@ def check(d: dict, mutants_file: dict | None, runs: dict | None, proofs: dict | 
             if o is None:
                 errs.append(f'engine {e["name"]}: not in the normalised results')
                 continue
-            for k in ('version', 'config_source', 'status', 'generated', 'in_scope', 'out_of_scope', 'tree_changed', 'counts'):
+            for k in ('version', 'config_source', 'status', 'generated', 'in_scope', 'out_of_scope', 'tree_changed', 'counts',
+                      'code_hash'):
                 if e.get(k) != o.get(k):
                     errs.append(f'engine {e["name"]}: {k} differs from the normalised results')
         if mutants_file.get('problems'):

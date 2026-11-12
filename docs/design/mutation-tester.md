@@ -258,3 +258,34 @@ Agreed with the user before the build.
   - **Timeouts:** one per engine.
   - **Proofs:** all four kill every mutant they target.
 - **Validator:** 47 of 47 seeded violations are caught.
+- **Found on a real Next.js/TypeScript repository with Vitest and StrykerJS 10 (v1.1.0)**:
+  - **Stryker test ids.** `covering_tests` and `killed_by` held Stryker's numeric test ids, so no
+    finding could name its test. They are now mapped through the report's `testFiles`; where
+    the embedded test source shows the describe chain, the name is joined with ` > `, the form
+    Vitest's JUnit ids (and `run_tests.py`) use. An unknown id is a normalisation problem.
+  - **Engine metadata.** The version now comes from `framework` (the report has no
+    `frameworkInfo`), and the command, config source and tree check come from the run record.
+  - **`run_engine.py stryker`** runs StrykerJS in place: a config in the run directory mutates
+    only the scope's line ranges (`run_engine.py ranges` prints them), uses perTest coverage, and
+    puts Stryker's sandbox and JSON report in the run directory. A JSON Stryker config in the
+    repo is used underneath (`repo`), otherwise the config is `scratch`. The repository tree is
+    hashed before and after, and the code hash it ran on is recorded; the validator rejects an
+    engine whose code hash differs from the baseline's (optional `code_hash` on the engine
+    record).
+  - **TypeScript functions.** `ts_scan.py` (new, in this skill) finds JS/TS function ranges:
+    multi-line parameter lists with object type literals, return types with braces, arrow
+    functions assigned to names, class methods; `new Error(...)` and type-literal members are
+    not functions. Mutants now name their function, and proximity reads JS/TS tests by describe
+    chain and title, so TypeScript findings can reach proximity 2 (and P0). On the real
+    repository 130 of 132 mutants got a function, and proximity was 2 for the promotion-engine
+    findings (their tests call the function) and 1 for the URL-safety ones (reached through
+    calendar sync).
+  - **Proofs for Vitest and Jest.** `prove_kill.py` runs one test by file and `-t` name, links
+    the repo's `node_modules` into the scratch copy (symlink or Windows junction, removed before
+    the copy), and passes the repo's test environment (`--env`, `--extra-args`).
+  - **`detect_tools.py`** took 85 s walking `node_modules`; it now prunes before descending
+    (3.5 s there), lists TypeScript apart from JavaScript, and needs a project marker for a
+    language, so one helper script no longer makes a Python recommendation.
+  - SKILL.md now says what the baseline is for a scoped run (the tests that exercise the scoped
+    code, named in `baseline.note`) and how a flaky test in it is handled.
+  - The example (Python) is unchanged and still validates; no example uses Stryker.

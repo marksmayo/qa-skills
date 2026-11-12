@@ -15,8 +15,20 @@ on Windows it is recorded as not_run: use WSL, or the builtin engine.
 
 builtin: runs builtin_mutator.py (stdlib AST mutations, pytest only) in place; see that script.
 
-Other engines (StrykerJS, Stryker.NET, PIT, cargo-mutants, ...) are run with their own commands
-(SKILL.md lists them); normalize_results.py reads Stryker's mutation-testing-elements JSON.
+    python run_engine.py stryker --repo <repo> --scope scope.json --run-dir <dir> [--minutes 30]
+        [--stryker "npx stryker"] [--test-runner vitest] [--concurrency 4] [--timeout-ms 20000]
+    python run_engine.py ranges --scope scope.json      # print the scope as Stryker --mutate ranges
+
+stryker (StrykerJS, which must already be installed in the repo): writes a config to <dir> that
+mutates only the scope's changed lines ('file:start-end' ranges), uses perTest coverage, puts
+Stryker's sandbox (tempDirName) and JSON report in <dir>, and runs `npx stryker run <config>` from
+the repo. A JSON Stryker config in the repo is used with those settings on top (config_source
+"repo"); otherwise the config is a scratch one with the test runner from package.json. Stryker
+mutates only its sandbox; the repository tree is hashed before and after, and its code hash is
+recorded, in <dir>/stryker.run.json, which normalize_results.py --stryker-run reads.
+
+Other engines (Stryker.NET, PIT, cargo-mutants, ...) are run with their own commands (SKILL.md
+lists them); normalize_results.py reads the mutation-testing-elements JSON.
 """
 from __future__ import annotations
 import argparse, configparser, json, os, re, shlex, shutil, subprocess, sys, time
@@ -70,6 +82,7 @@ def run(cmd: list[str], cwd: Path, timeout: float | None = None) -> tuple[int, s
 
 def clean_log(text: str) -> str:
     """mutmut redraws a progress line with \\r; keep the last state of each line."""
+    text = re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', text)
     lines = [l.split('\r')[-1] for l in text.replace('\r\n', '\n').split('\n')]
     return run_tests.redact_home('\n'.join(l for l in lines if l.strip())) + '\n'
 
@@ -160,18 +173,140 @@ def do_mutmut(args) -> int:
     return 0
 
 
+JS_SUFFIXES = ('.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.mts', '.cts', '.vue', '.svelte')
+STRYKER_CONFIGS = ('stryker.config.json', 'stryker.conf.json', '.stryker.conf.json', 'stryker.config.mjs',
+                   'stryker.config.js', 'stryker.config.cjs', 'stryker.conf.js', 'stryker.conf.mjs', 'stryker.conf.cjs')
+
+
+def mutate_ranges(scope: dict) -> list[str]:
+    """Stryker --mutate entries for the scope's changed lines: 'file:start-end' per range."""
+    out = []
+    for f in scope['files']:
+        if f['kind'] == 'source' and f['status'] != 'deleted' and f['path'].endswith(JS_SUFFIXES):
+            out += [f"{f['path']}:{a}-{b}" for a, b in f['ranges']]
+    return out
+
+
+def detect_runner(repo: Path) -> str | None:
+    try:
+        pkg = json.loads((repo / 'package.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    deps = {**(pkg.get('dependencies') or {}), **(pkg.get('devDependencies') or {})}
+    for name in ('vitest', 'jest', 'mocha', 'karma'):
+        if name in deps:
+            return name
+    return None
+
+
+def do_stryker(args) -> int:
+    """StrykerJS in place: Stryker mutates in its own sandbox; its sandbox and reports go to the run
+    directory, and the repository tree is hashed before and after to show it was not changed."""
+    repo, run_dir = args.repo.resolve(), args.run_dir.resolve()
+    run_dir.mkdir(parents=True, exist_ok=True)
+    scope = json.loads(args.scope.read_text(encoding='utf-8'))
+    exe = shlex.split(args.stryker)
+    exe[0] = shutil.which(exe[0]) or exe[0]     # npx is npx.cmd on Windows
+    out_path = run_dir / 'stryker.run.json'
+    report = run_dir / 'stryker-report.json'
+    record = {'engine': {'name': 'stryker', 'version': None, 'command': None, 'config_source': None, 'config': None},
+              'status': 'ran', 'reason': '', 'report': report.name,
+              'started_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}
+
+    def finish(status: str, reason: str) -> int:
+        record.update(status=status, reason=reason)
+        out_path.write_text(json.dumps(record, indent=1, ensure_ascii=False) + '\n', encoding='utf-8')
+        print(f'stryker {status}: {reason}')
+        return 0
+
+    mutate = mutate_ranges(scope)
+    if not mutate:
+        return finish('not_run', 'no JavaScript/TypeScript source lines in scope')
+    if not (repo / 'node_modules' / '@stryker-mutator' / 'core').exists():
+        return finish('not_run', '@stryker-mutator/core is not installed in the repo (and the runner plugin, e.g. '
+                      '@stryker-mutator/vitest-runner); install it only with the user\'s agreement')
+    config: dict = {}
+    repo_cfg = next((n for n in STRYKER_CONFIGS if (repo / n).is_file()), None)
+    if repo_cfg and repo_cfg.endswith('.json'):
+        config = json.loads((repo / repo_cfg).read_text(encoding='utf-8'))
+        record['engine']['config_source'] = 'repo'
+    else:
+        record['engine']['config_source'] = 'scratch'
+        if repo_cfg:
+            record['scratch_note'] = f'{repo_cfg} is JavaScript and cannot be merged here; a scratch config was used'
+        runner = args.test_runner or detect_runner(repo)
+        if runner:
+            config['testRunner'] = runner
+        if runner == 'vitest':
+            config['vitest'] = {'related': True}
+    sandbox = run_dir / 'stryker-tmp'
+    config.update({'mutate': mutate, 'reporters': ['json', 'clear-text'], 'jsonReporter': {'fileName': str(report)},
+                   'coverageAnalysis': 'perTest', 'tempDirName': str(sandbox), 'cleanTempDir': True,
+                   'incremental': False})
+    if args.concurrency:
+        config['concurrency'] = args.concurrency
+    if args.timeout_ms:
+        config['timeoutMS'] = args.timeout_ms
+    cfg_path = run_dir / 'stryker.config.json'
+    cfg_path.write_text(json.dumps(config, indent=2) + '\n', encoding='utf-8')
+    record['engine']['config'] = (f'{repo_cfg} + ' if record['engine']['config_source'] == 'repo' else '') + \
+        f'{cfg_path.name} (mutate: {len(mutate)} line ranges from the scope)'
+    record['engine']['command'] = f'{args.stryker} run <run>/{cfg_path.name}'
+    record['mutate'] = mutate
+    skip = {run_dir}
+    before = run_tests.tree_snapshot(repo, skip)
+    record['code_hash'] = run_tests.code_hash(repo)
+    t0 = time.monotonic()
+    code, out, timed_out = run(exe + ['run', str(cfg_path)], repo, timeout=args.minutes * 60)
+    record['duration_s'] = round(time.monotonic() - t0, 1)
+    record['exit_code'] = code
+    (run_dir / 'stryker.log').write_text(clean_log(out), encoding='utf-8')
+    after = run_tests.tree_snapshot(repo, skip)
+    record['tree_changed'] = sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
+    try:
+        record['engine']['version'] = json.loads((repo / 'node_modules' / '@stryker-mutator' / 'core' / 'package.json')
+                                                 .read_text(encoding='utf-8')).get('version')
+    except (OSError, ValueError):
+        pass
+    if timed_out:
+        record.update(status='errored', reason=f'stopped at the {args.minutes}-minute budget; see stryker.log')
+    elif not report.exists():
+        record.update(status='errored', reason=f'Stryker exited {code} without a JSON report; see stryker.log')
+    out_path.write_text(json.dumps(record, indent=1, ensure_ascii=False) + '\n', encoding='utf-8')
+    print(f'stryker ({record["engine"]["config_source"]} config, {len(mutate)} ranges): {record["status"]} '
+          f'in {record["duration_s"]} s -> {report if report.exists() else "no report"}')
+    if record['tree_changed']:
+        print('ERROR: the repository changed during the run: ' + ', '.join(record['tree_changed'][:10]), file=sys.stderr)
+        return 3
+    return 0 if record['status'] == 'ran' else 1
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument('engine', choices=['mutmut', 'builtin'])
-    ap.add_argument('--repo', type=Path, required=True)
+    ap.add_argument('engine', choices=['mutmut', 'builtin', 'stryker', 'ranges'])
+    ap.add_argument('--repo', type=Path)
     ap.add_argument('--scope', type=Path, required=True)
-    ap.add_argument('--run-dir', type=Path, required=True)
+    ap.add_argument('--run-dir', type=Path)
+    ap.add_argument('--stryker', default='npx stryker', help='command that runs StrykerJS (default: npx stryker)')
+    ap.add_argument('--test-runner', help='Stryker testRunner for a scratch config (default: from package.json)')
+    ap.add_argument('--concurrency', type=int)
+    ap.add_argument('--timeout-ms', type=int, help='Stryker timeoutMS')
     ap.add_argument('--minutes', type=float, default=30.0)
     ap.add_argument('--mutmut', default='mutmut', help='command that runs mutmut (default: mutmut)')
     ap.add_argument('--source-paths', nargs='*', help='scratch config: directories to mutate (default: from the scope)')
     ap.add_argument('--tests', nargs='*', help='scratch config: test paths (default: tests/)')
     ap.add_argument('--keep-work', action='store_true', help='keep the scratch copy')
     args, rest = ap.parse_known_args(argv)
+    if args.engine == 'ranges':
+        for r in mutate_ranges(json.loads(args.scope.read_text(encoding='utf-8'))):
+            print(r)
+        return 0
+    if args.repo is None or args.run_dir is None:
+        ap.error(f'{args.engine} needs --repo and --run-dir')
+    if args.engine == 'stryker':
+        if rest:
+            ap.error(f'unrecognised arguments: {" ".join(rest)}')
+        return do_stryker(args)
     if args.engine == 'builtin':
         import builtin_mutator
         return builtin_mutator.main(['--repo', str(args.repo), '--scope', str(args.scope), '--run-dir', str(args.run_dir),

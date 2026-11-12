@@ -15,6 +15,12 @@ engine_status, covering_tests and killed_by.
   finding the function with `ast` and checked against the file's text. Its operator is inferred
   from the tokens that differ. mutmut counts some non-test exits as killed; anything but exit
   code 1 becomes runtime_error, with the engine's status kept in engine_status.
+- StrykerJS (mutation-testing-elements JSON): covering_tests and killed_by are test names from
+  the report's testFiles (`<test file>::Describe > title`, the Vitest/Jest JUnit form, when the
+  embedded test source shows the describe chain), never Stryker's numeric ids. The version
+  comes from `framework`. --stryker-run (written by `run_engine.py stryker`) supplies the command,
+  config source and the before/after tree check; without it tree_changed stays null. JS/TS
+  mutants get their function from ts_scan.py.
 - --coverage (builtin_mutator.py --coverage-only) gives per-test line coverage. mutmut only knows
   which tests call a function, so a mutmut mutant that survived on a line no test executed
   becomes no_coverage, marked reclassified_from "survived".
@@ -25,6 +31,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import ts_scan  # noqa: E402
 OPS = json.loads((HERE.parent / 'data' / 'operators.json').read_text(encoding='utf-8'))
 CMP = {'<', '<=', '>', '>=', '==', '!=', 'is', 'is not', 'in', 'not in', '===', '!=='}
 BOUNDARY = {frozenset(p) for p in (('<', '<='), ('>', '>='))}
@@ -146,8 +154,9 @@ def enclosing_function(tree: ast.AST, line: int) -> str | None:
 
 
 class Sources:
+    """File text, lines, and a function finder: Python's ast, or ts_scan for JS/TS."""
     def __init__(self, repo: Path):
-        self.repo, self.cache = repo, {}
+        self.repo, self.cache, self.funcs = repo, {}, {}
 
     def get(self, rel: str):
         if rel not in self.cache:
@@ -161,6 +170,46 @@ class Sources:
                     pass
             self.cache[rel] = (text, text.splitlines() if text is not None else [], tree)
         return self.cache[rel]
+
+    def function_at(self, rel: str, line: int) -> str | None:
+        text, _, tree = self.get(rel)
+        if tree is not None:
+            return enclosing_function(tree, line)
+        if text is not None and ts_scan.is_js(rel):
+            if rel not in self.funcs:
+                self.funcs[rel] = ts_scan.functions(text)
+            return ts_scan.enclosing(self.funcs[rel], line)
+        return None
+
+
+def rel_to(root: str | None, path: str) -> str:
+    """A report path relative to the project root, with forward slashes."""
+    p = path.replace('\\', '/')
+    if root:
+        r = root.replace('\\', '/').rstrip('/') + '/'
+        if p.lower().startswith(r.lower()):
+            p = p[len(r):]
+    return p
+
+
+def stryker_test_names(raw: dict) -> dict[str, str]:
+    """Stryker test id -> '<test file>::<name>'. Where the test file's source (embedded in the
+    report) shows the describe chain, the name is joined with ' > ' like Vitest/Jest JUnit ids
+    (run_tests.py); otherwise it is Stryker's own name (describe and title joined by spaces)."""
+    root = raw.get('projectRoot')
+    names = {}
+    for f, tf in (raw.get('testFiles') or {}).items():
+        rel = rel_to(root, f)
+        text = tf.get('source')
+        for t in tf.get('tests', []):
+            name = t.get('name', str(t['id']))
+            line = ((t.get('location') or {}).get('start') or {}).get('line')
+            if text and line and ts_scan.is_js(rel):
+                hit = ts_scan.test_at(text, line)
+                if hit and ' '.join(hit['chain']) == name:
+                    name = ' > '.join(hit['chain'])
+            names[str(t['id'])] = f'{rel}::{name}' if rel else name
+    return names
 
 
 def from_builtin(raw: dict) -> list[dict]:
@@ -211,10 +260,21 @@ def from_mutmut(raw: dict, src: Sources) -> tuple[list[dict], list[str]]:
     return out, problems
 
 
-def from_stryker(raw: dict) -> list[dict]:
+def from_stryker(raw: dict) -> tuple[list[dict], list[str]]:
     names = OPS['engines']['stryker']['names']
+    tests = stryker_test_names(raw)
+    unknown: set[str] = set()
+
+    def test_name(tid) -> str:
+        tid = str(tid)
+        if tid not in tests:
+            unknown.add(tid)
+        return tests.get(tid, tid)
+
     out = []
+    root = raw.get('projectRoot')
     for path, f in sorted(raw.get('files', {}).items()):
+        path = rel_to(root, path)
         lines = (f.get('source') or '').splitlines()
         for mu in f.get('mutants', []):
             loc = mu['location']
@@ -231,9 +291,13 @@ def from_stryker(raw: dict) -> list[dict]:
             out.append({'engine': 'stryker', 'raw_id': str(mu['id']), 'file': path, 'line': a, 'end_line': b,
                         'operator': op, 'original': original, 'mutated': mutated,
                         'status': STATUS_STRYKER.get(mu.get('status'), 'runtime_error'), 'engine_status': mu.get('status'),
-                        'covering_tests': sorted(str(t) for t in mu.get('coveredBy') or []),
-                        'killed_by': (mu.get('killedBy') or [None])[0]})
-    return out
+                        'covering_tests': sorted(test_name(t) for t in mu.get('coveredBy') or []),
+                        'killed_by': test_name(mu['killedBy'][0]) if mu.get('killedBy') else None})
+    problems = []
+    if unknown:
+        problems.append(f'Stryker test id(s) {", ".join(sorted(unknown)[:5])} are not in the report\'s testFiles, so '
+                        'their test names are unknown (run Stryker with coverageAnalysis "perTest" and a json reporter)')
+    return out, problems
 
 
 def main(argv=None) -> int:
@@ -244,6 +308,8 @@ def main(argv=None) -> int:
     ap.add_argument('--builtin', type=Path)
     ap.add_argument('--mutmut', type=Path)
     ap.add_argument('--stryker', type=Path)
+    ap.add_argument('--stryker-run', type=Path, help="run_engine.py stryker's record (command, config source, "
+                    'tree check); without it the tree is unchecked and the validator says so')
     ap.add_argument('--coverage', type=Path)
     args = ap.parse_args(argv)
     repo = args.repo.resolve()
@@ -272,17 +338,25 @@ def main(argv=None) -> int:
             ms, probs = from_mutmut(raw, src) if rec['status'] == 'ran' else ([], [])
             problems += probs
         else:
-            rec.update(version=raw.get('frameworkInfo', {}).get('version') or raw.get('schemaVersion'),
-                       command=raw.get('frameworkInfo', {}).get('name', 'stryker'), config_source='repo', config=None,
-                       timeout_s=None, sampled=None, tree_changed=None)
-            ms = from_stryker(raw)
+            fw = raw.get('framework') or raw.get('frameworkInfo') or {}
+            run = json.loads(args.stryker_run.read_text(encoding='utf-8')) if args.stryker_run else {}
+            e = run.get('engine', {})
+            rec.update(status=run.get('status', 'ran'), reason=run.get('reason', ''),
+                       version=fw.get('version') or e.get('version'),
+                       command=e.get('command') or (fw.get('name') or 'stryker') + ' (command not recorded)',
+                       config_source=e.get('config_source'), config=e.get('config'),
+                       timeout_s=(raw.get('config') or {}).get('timeoutMS', 0) / 1000 or None,
+                       sampled=None, tree_changed=run.get('tree_changed'))
+            if run.get('code_hash'):
+                rec['code_hash'] = run['code_hash']
+            ms, probs = from_stryker(raw)
+            problems += probs
         kept = []
         for m in sorted(ms, key=lambda m: (m['file'], m['line'], m['raw_id'])):
             lines = in_scope.get(m['file'], set())
             if not any(n in lines for n in range(m['line'], m['end_line'] + 1)):
                 continue
-            text, flines, tree = src.get(m['file'])
-            m['function'] = enclosing_function(tree, m['line']) if tree else None
+            m['function'] = src.function_at(m['file'], m['line'])
             m['kind'] = kind_of(m['operator'])
             if (cov and m['engine'] != 'builtin' and m['status'] == 'survived'):
                 hit = cov['lines'].get(m['file'], {})

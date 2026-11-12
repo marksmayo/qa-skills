@@ -134,6 +134,7 @@
         "sampled": {"type": ["object", "null"]},
         "timeout_s": {"type": ["number", "null"]},
         "tree_changed": {"type": ["array", "null"], "items": {"type": "string"}},
+        "code_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "Code hash of the tree the engine ran on, when the engine ran outside the builtin path (run_engine.py stryker); must equal metadata.code_hash."},
         "counts": {"type": "object"}
       }
     },

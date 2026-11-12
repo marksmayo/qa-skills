@@ -10,12 +10,18 @@ cargo-mutants (.cargo/mutants.toml, mutants.toml), Muter (muter.conf.yml), mutat
 Dart (mutation_test.xml or dev_dependencies), go-mutesting (go.mod). Each tool gets configured
 (with the file), available (found on PATH or in node_modules, with the version when cheap to
 ask) and a recommendation of which engine to use. Nothing is installed.
+
+Languages come from one walk that prunes node_modules, build output and caches before
+descending. A language is listed only with a project marker (pyproject.toml, setup.py,
+requirements*.txt, package.json, tsconfig.json, go.mod, Cargo.toml, a .csproj, ...); files of a
+language with no marker (a helper script) are counted under without_project_marker and get no
+recommendation. JavaScript and TypeScript are listed separately; both use StrykerJS.
 """
 from __future__ import annotations
 import argparse, json, os, re, shutil, subprocess, sys
 from pathlib import Path
 
-LANG_DEFAULT = {'python': 'mutmut', 'javascript': 'stryker', 'csharp': 'stryker-net', 'jvm': 'pit', 'rust': 'cargo-mutants',
+LANG_DEFAULT = {'python': 'mutmut', 'javascript': 'stryker', 'typescript': 'stryker', 'csharp': 'stryker-net', 'jvm': 'pit', 'rust': 'cargo-mutants',
                 'go': 'go-mutesting', 'swift': 'muter', 'dart': 'mutation_test'}
 LICENCE = {'mutmut': 'BSD-3-Clause', 'cosmic-ray': 'MIT', 'stryker': 'Apache-2.0', 'stryker-net': 'Apache-2.0',
            'pit': 'Apache-2.0', 'cargo-mutants': 'MIT', 'go-mutesting': 'MIT', 'muter': 'MIT', 'mutation_test': 'BSD-3-Clause',
@@ -41,16 +47,44 @@ def version(cmd: list[str]) -> str | None:
     return m.group(0) if res.returncode == 0 and m else None
 
 
-def languages(repo: Path) -> list[str]:
-    seen = set()
-    for p in repo.rglob('*'):
-        if any(part in ('node_modules', '.git', '.venv', 'venv', 'build', 'dist', 'target') for part in p.parts):
-            continue
-        ext = p.suffix
-        seen.update({'.py': ['python'], '.js': ['javascript'], '.ts': ['javascript'], '.tsx': ['javascript'],
-                     '.jsx': ['javascript'], '.cs': ['csharp'], '.java': ['jvm'], '.kt': ['jvm'], '.rs': ['rust'],
-                     '.go': ['go'], '.swift': ['swift'], '.dart': ['dart']}.get(ext, []))
-    return sorted(seen)
+SKIP = {'node_modules', '.git', '.venv', 'venv', 'build', 'dist', 'target', '.next', '.nuxt', 'out', 'coverage',
+        '__pycache__', '.turbo', '.cache', '.stryker-tmp', 'mutants', '.gradle', '.idea', '.tox', '.mypy_cache',
+        '.pytest_cache', 'Pods', 'DerivedData', 'bin', 'obj'}
+LANG_BY_EXT = {'.py': 'python', '.js': 'javascript', '.jsx': 'javascript', '.mjs': 'javascript', '.cjs': 'javascript',
+               '.ts': 'typescript', '.tsx': 'typescript', '.mts': 'typescript', '.cts': 'typescript', '.cs': 'csharp',
+               '.java': 'jvm', '.kt': 'jvm', '.rs': 'rust', '.go': 'go', '.swift': 'swift', '.dart': 'dart'}
+# a language counts only with a project marker: one helper script is not a Python project
+MARKERS = {'python': re.compile(r'^(pyproject\.toml|setup\.py|setup\.cfg|Pipfile|tox\.ini|requirements[\w.-]*\.txt)$'),
+           'javascript': re.compile(r'^package\.json$'), 'typescript': re.compile(r'^(package\.json|tsconfig[\w.-]*\.json)$'),
+           'csharp': re.compile(r'\.(csproj|sln)$'), 'jvm': re.compile(r'^(pom\.xml|build\.gradle(\.kts)?)$'),
+           'rust': re.compile(r'^Cargo\.toml$'), 'go': re.compile(r'^go\.mod$'),
+           'swift': re.compile(r'^Package\.swift$|\.xcodeproj$'), 'dart': re.compile(r'^pubspec\.yaml$')}
+
+
+def walk(repo: Path) -> tuple[dict[str, int], set[str], list[str]]:
+    """One pruned walk: file counts per language, the project markers seen, and stryker-config.json paths."""
+    counts: dict[str, int] = {}
+    marked: set[str] = set()
+    net_cfgs: list[str] = []
+    for dirpath, dirnames, filenames in os.walk(repo):
+        names = dirnames + filenames
+        for lang, rx in MARKERS.items():
+            if any(rx.search(n) for n in names):
+                marked.add(lang)
+        dirnames[:] = sorted(d for d in dirnames if d not in SKIP and not d.endswith('.egg-info'))
+        for f in filenames:
+            lang = LANG_BY_EXT.get(os.path.splitext(f)[1])
+            if lang:
+                counts[lang] = counts.get(lang, 0) + 1
+            if f == 'stryker-config.json':
+                net_cfgs.append(Path(dirpath, f).relative_to(repo).as_posix())
+    return counts, marked, sorted(net_cfgs)
+
+
+def languages(repo: Path, scan=None) -> tuple[list[str], dict[str, int]]:
+    """Languages with source files and a project marker; and those with files but no marker."""
+    counts, marked, _ = scan or walk(repo)
+    return sorted(l for l in counts if l in marked), {l: n for l, n in sorted(counts.items()) if l not in marked}
 
 
 def detect(repo: Path) -> dict:
@@ -74,7 +108,8 @@ def detect(repo: Path) -> dict:
         sj = 'package.json (@stryker-mutator)'
     add('stryker', sj, (repo / 'node_modules' / '@stryker-mutator' / 'core').exists(),
         note='run with npx stryker run --reporters json,clear-text' if sj else '')
-    sn = next((str(p.relative_to(repo)) for p in repo.rglob('stryker-config.json') if 'node_modules' not in p.parts), None)
+    scan = walk(repo)
+    sn = scan[2][0] if scan[2] else None
     add('stryker-net', sn, bool(shutil.which('dotnet-stryker')) or bool(version(['dotnet', 'stryker', '--version'])) if sn else False)
     pit = None
     for name in ('pom.xml', 'build.gradle', 'build.gradle.kts'):
@@ -89,7 +124,7 @@ def detect(repo: Path) -> dict:
     mt = 'mutation_test.xml' if (repo / 'mutation_test.xml').exists() else (
         'pubspec.yaml (dev_dependencies)' if re.search(r'^\s+mutation_test:', read(repo / 'pubspec.yaml'), re.M) else None)
     add('mutation_test', mt, bool(mt))
-    langs = languages(repo)
+    langs, unmarked = languages(repo, scan)
     recs = []
     for lang in langs:
         default = LANG_DEFAULT[lang]
@@ -107,9 +142,13 @@ def detect(repo: Path) -> dict:
                          ('mutmut is not available here' if os.name != 'nt' else 'mutmut 3 does not run on Windows') +
                          '; use the builtin engine (stdlib, pytest only), or mutmut under WSL'})
         else:
+            tool = next((t for t in tools if t['name'] == default), None)
+            how = ('installed; run_engine.py stryker runs it from a scratch config' if default == 'stryker' and tool and tool['available']
+                   else 'not configured; run from a scratch config if installed (installing it needs the user\'s agreement)')
             recs.append({'language': lang, 'engine': default, 'config_source': 'scratch',
-                         'why': f'standard open-source tool for {lang}; not configured, run from a scratch config if installed'})
-    return {'repo': repo.name, 'platform': sys.platform, 'languages': langs, 'tools': tools, 'recommended': recs}
+                         'why': f'standard open-source tool for {lang}; {how}'})
+    return {'repo': repo.name, 'platform': sys.platform, 'languages': langs, 'files_by_language': scan[0],
+            'without_project_marker': unmarked, 'tools': tools, 'recommended': recs}
 
 
 def main(argv=None) -> int:

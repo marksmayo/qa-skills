@@ -97,9 +97,12 @@ python scripts/validate_mutation_report.py examples/mutation_report.example.json
 python scripts/render_report.py examples/mutation_report.example.json --brief
 ```
 
-The example exercises the builtin engine and mutmut. The Stryker/PIT reader in
-`normalize_results.py` follows the published mutation-testing-elements schema but no example
-uses it.
+The example exercises the builtin engine and mutmut. StrykerJS (JavaScript, TypeScript) runs
+through `run_engine.py stryker`, which mutates only the changed line ranges and records the
+tree check; `normalize_results.py --stryker ... --stryker-run ...` turns Stryker's test ids into
+test names and finds each mutant's function with `ts_scan.py`, and `prove_kill.py` proves Vitest
+and Jest tests. These were tested on a real Next.js/Vitest repository; no example in this
+directory uses them.
 
 ## Files
 
@@ -111,7 +114,8 @@ uses it.
 - `scripts/diff_scope.py`: changed files, lines and functions from git or a diff (shared)
 - `scripts/run_tests.py`, `scripts/parse_results.py`, `scripts/detect_conventions.py`: test runs and conventions (shared)
 - `scripts/builtin_mutator.py`: stdlib AST mutation engine and per-test line coverage for pytest
-- `scripts/run_engine.py`: runs mutmut in a scratch copy and keeps its raw results
+- `scripts/run_engine.py`: runs mutmut in a scratch copy, or StrykerJS on the scope's line ranges, and keeps the raw results and the tree check
+- `scripts/ts_scan.py`: function ranges and tests by name for JavaScript and TypeScript
 - `scripts/normalize_results.py`: one mutant list across engines, limited to the scope
 - `scripts/prove_kill.py`: proves a suggested test passes on the original and fails on the mutants
 - `scripts/validate_mutation_report.py`: checks the report against the evidence and the rules

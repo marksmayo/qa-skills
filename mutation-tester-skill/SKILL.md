@@ -1,7 +1,7 @@
 ---
 name: mutation-tester
 description: Run mutation testing on the code that changed (or a path you name) and turn the surviving mutants into a short, ranked list of weak assertions and missing cases, each naming the test that should have caught it and the assertion or input that would. Uses the repo's own mutation tool when it is configured, the standard open-source tool otherwise (from a scratch config, never added to the repo), and a stdlib AST engine for Python as a fallback. Every score is shown with its counts and scope; equivalent mutants need a checkable reason; timeouts and errors are never counted as kills; no-coverage mutants are coverage gaps, not weak assertions. Never claims code is "well tested".
-version: 1.0.0
+version: 1.1.0
 ---
 
 # Mutation tester
@@ -92,7 +92,7 @@ or not applicable, with the reason.
 |---|---|---|
 | Python | mutmut 3 (BSD-3-Clause); builtin fallback | `run_engine.py mutmut` (needs fork(): Linux, macOS, WSL); `builtin_mutator.py` |
 | Python | Cosmic Ray (MIT) | its own commands; convert results to mutation-testing-elements JSON |
-| JavaScript, TypeScript | StrykerJS (Apache-2.0) | `npx stryker run --reporters json,clear-text --mutate <scoped files>` |
+| JavaScript, TypeScript | StrykerJS (Apache-2.0) | `run_engine.py stryker` (needs `@stryker-mutator/core` and the runner plugin, e.g. `@stryker-mutator/vitest-runner`, in the repo) |
 | C# | Stryker.NET (Apache-2.0) | `dotnet stryker --reporter json --mutate <scoped files>` |
 | Java, Kotlin, Android unit tests | PIT (Apache-2.0) + JUnit 5 plugin | `mvn org.pitest:pitest-maven:mutationCoverage -DoutputFormats=XML,HTML` (or Gradle `pitest`) with the mutation-testing-elements report plugin |
 | Rust | cargo-mutants (MIT) | `cargo mutants --in-diff <diff>` |
@@ -103,6 +103,14 @@ or not applicable, with the reason.
 `normalize_results.py` reads the builtin engine, mutmut and the mutation-testing-elements JSON
 (Stryker, and PIT with its report plugin). For other tools, convert their output to that JSON or
 record the engine as `not_run`; never hand-copy results.
+
+`detect_tools.py` lists a language only when the repo has a project marker for it
+(`package.json`, `pyproject.toml`, `go.mod`, ...), so one helper script doesn't make a Python
+project. StrykerJS is often not installed: installing it (`npm i -D @stryker-mutator/core
+@stryker-mutator/vitest-runner`, plus a fresh `npm ci` if you work in a copy) can take a long
+time on a large repo, so ask first, and say in the report what was installed and where. Without
+`@stryker-mutator/typescript-checker`, a mutant that doesn't compile shows up as killed or as a
+runtime error rather than `compile_error`; say so in the limitations.
 
 ## Step 2: Scope
 
@@ -123,12 +131,41 @@ Both runs must pass on the same code hash. If either fails, or a test passes in 
 the other, stop: report `baseline.passed: false`, run no mutants, and point at
 flaky-test-hunter.
 
+**What the baseline is for a scoped run.** The baseline proves the tests the engine will run are
+green on this code. For `all`, that is the whole suite. For `changed` or a path, it is the test
+files that exercise the scoped code: the files that import the scoped modules (directly, or
+through the module that re-exports them), or the related tests the engine itself selects
+(Stryker's `related` mode, mutmut's per-function test map). Pass those files with `--tests`, use
+the repo's own test command and environment (`--cmd`, `--env TZ=...` when `npm test` sets them),
+and list the files, and how you chose them, in `baseline.note`. A failure elsewhere in the suite
+doesn't stop a scoped run, but it goes in the limitations.
+
+**Flaky tests.** If a test in the baseline set passes in one run and fails in the other, the
+baseline is flaky: list it in `baseline.flaky_tests`, set `passed: false`, and stop; a mutant
+"killed" by a flaky test proves nothing. Don't drop the flaky test to get a green baseline unless
+it covers none of the scoped lines (check the engine's coverage), and then say so in the note.
+If flaky-test-hunter has already reported tests in this set as flaky, start from its report.
+
 ## Step 4: Mutate and run
 
 ```bash
 python scripts/builtin_mutator.py --repo <repo> --scope <run>/scope.json --run-dir <run> [--minutes 30]
 python scripts/run_engine.py mutmut --repo <repo> --scope <run>/scope.json --run-dir <run>
 ```
+
+For JavaScript and TypeScript:
+
+```bash
+python scripts/run_engine.py ranges --scope <run>/scope.json        # the scope as Stryker --mutate ranges
+python scripts/run_engine.py stryker --repo <repo> --scope <run>/scope.json --run-dir <run> [--concurrency 4]
+```
+
+`run_engine.py stryker` writes a config to the run directory that mutates only the changed line
+ranges (`src/x.ts:12-30`), with perTest coverage and Stryker's sandbox and JSON report in the run
+directory; a JSON Stryker config in the repo is used underneath. Stryker mutates only its
+sandbox, but the repository tree is still hashed before and after, and the code hash it ran on is
+recorded in `stryker.run.json`; the validator rejects an engine that ran on other code than the
+baseline. Run it with the same environment as the baseline (`TZ=... python scripts/run_engine.py ...`).
 
 The builtin engine also writes `coverage.json` (per-test line coverage). Run it with
 `--coverage-only` when another engine does the mutating, so mutants on unexecuted lines can be
@@ -138,8 +175,15 @@ classified. The per-mutant timeout is 3 times one untraced suite run, at least 1
 
 ```bash
 python scripts/normalize_results.py --scope <run>/scope.json --repo <repo> --builtin <run>/builtin.json \
-    --mutmut <run>/mutmut.json [--stryker report.json] --coverage <run>/coverage.json --out <run>/mutants.json
+    --mutmut <run>/mutmut.json [--stryker <run>/stryker-report.json --stryker-run <run>/stryker.run.json] \
+    --coverage <run>/coverage.json --out <run>/mutants.json
 ```
+
+For Stryker, covering tests and `killed_by` are test names from the report's `testFiles`
+(`src/__tests__/x.test.ts::describe > title`, the same form as Vitest's JUnit ids), never
+Stryker's numeric ids. Each mutant's `function` comes from `ast` for Python and from
+`ts_scan.py` (a light JS/TS scanner) otherwise, so TypeScript findings name their function and
+proximity can be 2.
 
 It drops mutants outside the scope (and counts them), maps operators to the common set in
 `data/operators.json`, and assigns the ids the report uses (B1.., M1.., S1..). It exits non-zero
@@ -170,6 +214,11 @@ python scripts/prove_kill.py --repo <repo> --mutants <run>/mutants.json --mutant
     --test-file tests/test_pricing.py --test-code new_test.py --test-name test_total_adds_one_booking_fee \
     --finding F1 --run-dir <run>/proof --out <run>/proofs.json
 ```
+
+For a JS/TS test file it runs Vitest (or `--runner jest`) on that file with `-t "<describe> <title>"`;
+give the test's full name as `--test-name`, and the repo's test environment with `--env TZ=...`
+and `--extra-args "--configLoader native"`. The scratch copy links the repo's `node_modules`
+rather than copying it.
 
 The new test runs on the original code (must pass) and on each mutant (must fail), in a scratch
 copy. Prove every ranked suggestion you can; cite the proof ids on the finding or gap. With

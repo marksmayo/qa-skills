@@ -5,6 +5,12 @@
         --test-file tests/test_pricing.py --test-code new_test.py --test-name test_concession_starts_at_65
         --run-dir <dir> --out proofs.json [--finding F2 | --gap G1] [--in-place] [--timeout 60]
 
+Runners: pytest (test_file::test_name), and for a JS/TS test file Vitest (default) or Jest
+(--runner jest): the file plus `-t` with the test's full name ("describe title", or the
+" > "-joined id form). The scratch copy links the repo's node_modules (a symlink, or a junction
+on Windows) instead of copying it, and removes the link before deleting the copy. --env and
+--extra-args pass what the repo's own test command adds (TZ=..., --configLoader native).
+
 The test code is appended to --test-file (created if missing) in a scratch copy of the repo under
 <dir>, and only the named test is run: once on the original code, then once per mutant with the
 mutant's lines swapped in (after checking the file still holds the mutant's original text). The
@@ -17,7 +23,7 @@ there on the original code; mutants are still only ever applied in the scratch c
 appended to --out; the repository is never committed to.
 """
 from __future__ import annotations
-import argparse, hashlib, json, os, shutil, subprocess, sys, time
+import argparse, hashlib, json, os, re, shlex, shutil, subprocess, sys, time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -27,11 +33,60 @@ import parse_results  # noqa: E402
 import run_tests  # noqa: E402
 
 COPY_SKIP = {'.git', 'mutants', '__pycache__', '.pytest_cache', '.mypy_cache', '.tox', '.nox', '.venv', 'venv',
-             'node_modules'}
+             'node_modules', '.next', '.nuxt', '.turbo', '.cache', 'coverage', '.stryker-tmp', 'dist', 'build', 'out'}
+JS_SUFFIXES = ('.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.mts', '.cts')
 
 
-def run_test(cwd: Path, test_id: str, junit: Path, env: dict, timeout: float) -> dict:
-    cmd = [sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', f'--junitxml={junit}', test_id]
+def runner_for(test_file: str) -> str:
+    return 'vitest' if test_file.endswith(JS_SUFFIXES) else 'pytest'
+
+
+def test_command(runner: str, test_file: str, test_name: str, junit: Path, extra: list[str]) -> tuple[list[str], str]:
+    """The command that runs only the new test, and how it is recorded (no absolute paths)."""
+    if runner == 'pytest':
+        tid = f'{test_file}::{test_name}'
+        return ([sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', f'--junitxml={junit}', tid, *extra],
+                f'python -m pytest -q -p no:cacheprovider {tid}' + (' ' + ' '.join(extra) if extra else ''))
+    # Vitest and Jest select a test by file and a name pattern over "describe title" joined by spaces
+    pattern = '^' + re.escape(test_name.replace(' > ', ' ')) + '$'
+    npx = shutil.which('npx') or 'npx'
+    if runner == 'vitest':
+        cmd = [npx, 'vitest', 'run', test_file, '-t', pattern, '--reporter=junit', f'--outputFile={junit}', *extra]
+    else:
+        cmd = [npx, 'jest', '--ci', test_file, '-t', pattern, '--reporters=default', '--reporters=jest-junit', *extra]
+    return cmd, f'npx {runner} {"run " if runner == "vitest" else ""}{test_file} -t "{pattern}"' + (' ' + ' '.join(extra) if extra else '')
+
+
+def link_node_modules(repo: Path, work: Path) -> Path | None:
+    """Make the repo's node_modules visible in the scratch copy (a symlink, or a junction on Windows)."""
+    src, dst = repo / 'node_modules', work / 'node_modules'
+    if not src.is_dir():
+        return None
+    try:
+        os.symlink(src, dst, target_is_directory=True)
+    except OSError:
+        if os.name != 'nt':
+            raise
+        import _winapi
+        _winapi.CreateJunction(str(src), str(dst))
+    return dst
+
+
+def unlink_dir(link: Path | None) -> None:
+    """Remove a symlink or junction itself, never what it points at."""
+    if link is None or not os.path.lexists(link):
+        return
+    try:
+        os.unlink(link)
+    except OSError:
+        os.rmdir(link)       # a junction
+
+
+def run_test(cwd: Path, runner: str, test_file: str, test_name: str, junit: Path, env: dict, timeout: float,
+             extra: list[str]) -> dict:
+    cmd, shown = test_command(runner, test_file, test_name, junit, extra)
+    if runner == 'jest':
+        env = {**env, 'JEST_JUNIT_OUTPUT_FILE': str(junit)}
     kw = {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == 'nt' else {'start_new_session': True}
     t0 = time.monotonic()
     proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **kw)
@@ -43,9 +98,11 @@ def run_test(cwd: Path, test_id: str, junit: Path, env: dict, timeout: float) ->
         out, _ = proc.communicate()
         timed_out = True
     cases, _ = parse_results.parse_junit(junit, junit.stem) if junit.exists() else ([], [])
-    mine = [c for c in cases if c['id'] == test_id or c['id'].endswith('::' + test_id.split('::')[-1])]
+    tail = test_name.split('::')[-1]
+    mine = [c for c in cases if c['status'] != 'skipped' and (
+        c['id'] == f'{test_file}::{test_name}' or c['id'].endswith('::' + tail) or c['id'].endswith(' > ' + tail))]
     status = 'timeout' if timed_out else (mine[0]['status'] if mine else 'not_run')
-    rec = {'command': f'python -m pytest -q -p no:cacheprovider {test_id}', 'exit_code': proc.returncode,
+    rec = {'command': shown, 'exit_code': proc.returncode,
            'test_status': status, 'duration_s': round(time.monotonic() - t0, 3)}
     if status in ('failed', 'error') and mine and mine[0].get('message'):
         rec['message'] = run_tests.redact_home(mine[0]['message'])[:300]
@@ -89,8 +146,14 @@ def main(argv=None) -> int:
     ap.add_argument('--out', type=Path, required=True)
     ap.add_argument('--in-place', action='store_true', help='write_tests: also add the test to the repository file')
     ap.add_argument('--timeout', type=float, default=60.0)
+    ap.add_argument('--runner', choices=['pytest', 'vitest', 'jest'],
+                    help='default: vitest for a JS/TS test file, else pytest')
+    ap.add_argument('--env', nargs='*', default=[], metavar='K=V', help="environment the repo's test command sets (e.g. TZ=...)")
+    ap.add_argument('--extra-args', default='', help="extra runner arguments the repo's test command adds")
     args = ap.parse_args(argv)
     repo, run_dir = args.repo.resolve(), args.run_dir.resolve()
+    runner = args.runner or runner_for(args.test_file)
+    extra = shlex.split(args.extra_args)
     data = json.loads(args.mutants.read_text(encoding='utf-8'))
     by_id = {m['id']: m for m in data['mutants']}
     missing = [i for i in args.mutant if i not in by_id]
@@ -99,24 +162,34 @@ def main(argv=None) -> int:
     code = args.test_code.read_text(encoding='utf-8')
     test_id = f'{args.test_file}::{args.test_name}'
     pycache = run_dir / '_pycache'
-    env = {**os.environ, 'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONPYCACHEPREFIX': str(pycache)}
+    env = {**os.environ, 'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONPYCACHEPREFIX': str(pycache),
+           **dict(kv.split('=', 1) for kv in args.env)}
     work = run_dir / 'proof-work'
+    old_link = work / 'node_modules'     # left by an interrupted run: remove the link, never its target
+    if old_link.is_symlink() or getattr(os.path, 'isjunction', lambda p: False)(old_link):
+        unlink_dir(old_link)
     shutil.rmtree(work, ignore_errors=True)
     shutil.copytree(repo, work, ignore=lambda d, names: [n for n in names if n in COPY_SKIP or n.endswith('.egg-info')])
+    link = link_node_modules(repo, work) if runner != 'pytest' else None
     append_test(work / args.test_file, code)
     before = run_tests.tree_snapshot(repo, {run_dir})
+    t = (args.test_file, args.test_name, env, args.timeout, extra)
+
+    def go(cwd: Path, junit: Path) -> dict:
+        return run_test(cwd, runner, t[0], t[1], junit, t[2], t[3], t[4])
+
     if args.in_place:
         append_test(repo / args.test_file, code)
-        original = run_test(repo, test_id, run_dir / 'proof-orig.xml', env, args.timeout)
+        original = go(repo, run_dir / 'proof-orig.xml')
     else:
-        original = run_test(work, test_id, run_dir / 'proof-orig.xml', env, args.timeout)
+        original = go(work, run_dir / 'proof-orig.xml')
     pristine = {m: (work / by_id[m]['file']).read_bytes() for m in args.mutant}
     results = []
     for mid in args.mutant:
         m = by_id[mid]
         apply_mutant(work, m)
         try:
-            res = run_test(work, test_id, run_dir / f'proof-{mid}.xml', env, args.timeout)
+            res = go(work, run_dir / f'proof-{mid}.xml')
         finally:
             (work / m['file']).write_bytes(pristine[mid])
         if original['test_status'] != 'passed':
@@ -131,6 +204,7 @@ def main(argv=None) -> int:
         print(f'{mid:>5} {m["file"]}:{m["line"]} {verdict}')
     after = run_tests.tree_snapshot(repo, {run_dir})
     changed = sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
+    unlink_dir(link)          # the link first, so removing the copy never reaches the repo's node_modules
     shutil.rmtree(work, ignore_errors=True)
     shutil.rmtree(pycache, ignore_errors=True)
     store = json.loads(args.out.read_text(encoding='utf-8')) if args.out.exists() else {'proofs': []}
