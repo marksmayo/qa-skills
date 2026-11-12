@@ -16,6 +16,7 @@
       "required": [
         "repository",
         "assessment_mode",
+        "execution",
         "generated_at"
       ],
       "properties": {
@@ -29,6 +30,16 @@
             "white_box"
           ]
         },
+        "execution": {
+          "enum": [
+            "full_run",
+            "partial_run",
+            "reports_only",
+            "static_only",
+            "not_executable"
+          ],
+          "description": "Strongest execution evidence: the suite was run in full or in part during the assessment (full_run, partial_run), credible existing reports were read instead (reports_only), nothing was run and no reports exist (static_only), or discovery or execution was attempted and failed with no credible reports (not_executable)."
+        },
         "generated_at": {
           "type": "string"
         },
@@ -40,6 +51,9 @@
           "items": {
             "type": "string"
           }
+        },
+        "skill_version": {
+          "type": "string"
         }
       }
     },
@@ -49,8 +63,13 @@
         "raw_weighted_score",
         "overall_score",
         "rating_band",
+        "testing_effectiveness",
+        "suite_trustworthiness",
+        "engineering_quality",
+        "operational_health",
         "evidence_completeness",
-        "overall_confidence"
+        "overall_confidence",
+        "applied_caps"
       ],
       "properties": {
         "raw_weighted_score": {
@@ -64,31 +83,46 @@
           "maximum": 10
         },
         "rating_band": {
-          "type": "string"
+          "enum": [
+            "Dysfunctional",
+            "Weak",
+            "Serviceable",
+            "Strong",
+            "Excellent",
+            "Exceptional"
+          ]
         },
         "testing_effectiveness": {
           "type": [
             "number",
             "null"
-          ]
+          ],
+          "minimum": 1,
+          "maximum": 10
         },
         "suite_trustworthiness": {
           "type": [
             "number",
             "null"
-          ]
+          ],
+          "minimum": 1,
+          "maximum": 10
         },
         "engineering_quality": {
           "type": [
             "number",
             "null"
-          ]
+          ],
+          "minimum": 1,
+          "maximum": 10
         },
         "operational_health": {
           "type": [
             "number",
             "null"
-          ]
+          ],
+          "minimum": 1,
+          "maximum": 10
         },
         "evidence_completeness": {
           "type": "number",
@@ -105,7 +139,35 @@
         "applied_caps": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "required": [
+              "rule",
+              "limit",
+              "explanation"
+            ],
+            "properties": {
+              "rule": {
+                "enum": [
+                  "effectiveness_below_4",
+                  "trust_below_4",
+                  "reliability_below_4",
+                  "assertions_below_3",
+                  "not_executable",
+                  "secret_or_production_data",
+                  "systematic_false_pass",
+                  "static_only"
+                ]
+              },
+              "limit": {
+                "type": "number",
+                "minimum": 1,
+                "maximum": 10
+              },
+              "explanation": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
           }
         }
       }
@@ -125,13 +187,38 @@
         ],
         "properties": {
           "id": {
-            "type": "string"
+            "enum": [
+              "effectiveness",
+              "trust",
+              "reliability",
+              "design",
+              "assertions",
+              "coverage",
+              "isolation",
+              "maintainability",
+              "ci",
+              "debuggability",
+              "performance",
+              "test_data",
+              "portability",
+              "security_a11y",
+              "ownership"
+            ]
           },
           "name": {
             "type": "string"
           },
           "weight": {
-            "type": "number"
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "applicable": {
+            "type": "boolean",
+            "description": "false only when the dimension genuinely does not apply; its weight is then 0 and its score null. Missing evidence is not a reason."
+          },
+          "not_applicable_reason": {
+            "type": "string"
           },
           "score": {
             "type": [
@@ -157,7 +244,8 @@
             ]
           },
           "finding": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "evidence": {
             "type": "array",
@@ -205,10 +293,23 @@
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "minItems": 1
           },
           "impact": {
             "type": "string"
+          },
+          "category": {
+            "enum": [
+              "secret_exposure",
+              "production_data_exposure",
+              "systematic_false_pass",
+              "other"
+            ],
+            "description": "secret_exposure and production_data_exposure must be severity critical and cap the overall at 4 until remediated; systematic_false_pass (broad error swallowing, globally excessive retries, systematic false passes) caps it at 4."
+          },
+          "remediated": {
+            "type": "boolean"
           }
         }
       }
@@ -230,7 +331,8 @@
             "type": "string"
           },
           "priority": {
-            "type": "integer"
+            "type": "integer",
+            "minimum": 1
           },
           "impact": {
             "enum": [
@@ -253,11 +355,28 @@
           "dimensions_affected": {
             "type": "array",
             "items": {
-              "type": "string"
+              "enum": [
+                "effectiveness",
+                "trust",
+                "reliability",
+                "design",
+                "assertions",
+                "coverage",
+                "isolation",
+                "maintainability",
+                "ci",
+                "debuggability",
+                "performance",
+                "test_data",
+                "portability",
+                "security_a11y",
+                "ownership"
+              ]
             }
           },
           "acceptance_criteria": {
             "type": "array",
+            "minItems": 1,
             "items": {
               "type": "string"
             }
@@ -271,11 +390,27 @@
         "type": "object",
         "required": [
           "name",
+          "kind",
           "status"
         ],
         "properties": {
           "name": {
             "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "application_source",
+              "test_source",
+              "ci_configuration",
+              "recent_execution",
+              "historical_ci",
+              "runtime_coverage",
+              "mutation_report",
+              "requirements",
+              "defect_history",
+              "other"
+            ],
+            "description": "The RUBRIC evidence-completeness item this entry counts as; 'other' entries score no points."
           },
           "status": {
             "enum": [
@@ -300,24 +435,57 @@
             "type": "string"
           },
           "happy_path": {
-            "type": "string"
+            "enum": [
+              "covered",
+              "partial",
+              "not_covered",
+              "not_applicable",
+              "unknown"
+            ]
           },
           "negative": {
-            "type": "string"
+            "enum": [
+              "covered",
+              "partial",
+              "not_covered",
+              "not_applicable",
+              "unknown"
+            ]
           },
           "boundary": {
-            "type": "string"
+            "enum": [
+              "covered",
+              "partial",
+              "not_covered",
+              "not_applicable",
+              "unknown"
+            ]
           },
           "permissions": {
-            "type": "string"
+            "enum": [
+              "covered",
+              "partial",
+              "not_covered",
+              "not_applicable",
+              "unknown"
+            ]
           },
           "dependency_failure": {
-            "type": "string"
+            "enum": [
+              "covered",
+              "partial",
+              "not_covered",
+              "not_applicable",
+              "unknown"
+            ]
           },
           "notes": {
             "type": "string"
           }
-        }
+        },
+        "required": [
+          "feature"
+        ]
       }
     },
     "commands": {

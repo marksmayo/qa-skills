@@ -34,7 +34,7 @@ def main():
     ap.add_argument('--color', choices=['auto','always','never'], default='auto')
     args=ap.parse_args()
     try:
-        data=json.loads(args.json_file.read_text())
+        data=json.loads(args.json_file.read_text(encoding='utf-8-sig'))
     except Exception as exc:
         print(f"Unable to read evaluation: {exc}", file=sys.stderr); return 2
     color=supports_color(args.color)
@@ -42,17 +42,28 @@ def main():
     title=f"TEST SUITE EVALUATION — {meta['repository']}"
     print(paint(title,BOLD,color)); print('='*len(title))
     overall=head['overall_score']; label=head['rating_band']
-    print(f"Mode: {meta['assessment_mode'].replace('_',' ')}  |  Confidence: {head['overall_confidence']}  |  Evidence: {head['evidence_completeness']:.0f}%")
+    execution=meta.get('execution','unknown').replace('_',' ')
+    print(f"Mode: {meta['assessment_mode'].replace('_',' ')}  |  Execution: {execution}  |  Confidence: {head['overall_confidence']}  |  Evidence: {head['evidence_completeness']:.0f}%")
+    if meta.get('provisional'): print(paint('PROVISIONAL evaluation',MAGENTA,color))
     print(paint(f"Overall: {overall:.1f}/10  {bar(overall)}  {label}",score_style(overall),color))
-    if head.get('applied_caps'):
-        print(paint('Caps: '+'; '.join(head['applied_caps']),MAGENTA,color))
+    raw=head.get('raw_weighted_score')
+    if raw is not None and abs(raw-overall)>1e-9: print(f"Raw weighted score: {raw:.1f}/10 (capped to {overall:.1f})")
+    for key,name in (('testing_effectiveness','Testing effectiveness'),('suite_trustworthiness','Suite trustworthiness'),
+                     ('engineering_quality','Engineering quality'),('operational_health','Operational health')):
+        if key in head:
+            v=head[key]; shown='not assessed' if v is None else f"{v:.1f}/10"
+            print(paint(f"  {name:22} {shown}",score_style(v),color))
+    for cap in head.get('applied_caps',[]):
+        text=cap if isinstance(cap,str) else f"cap {cap['rule']} (max {cap['limit']:g}): {cap['explanation']}"
+        print(paint('! '+text,MAGENTA,color))
 
     findings=data.get('critical_findings',[])
     if findings:
         print('\n'+paint('CRITICAL FINDINGS',BOLD,color))
         for f in findings:
             sev=f['severity'].upper(); code=RED if sev in ('CRITICAL','HIGH') else YELLOW
-            print(paint(f"[{sev}] {f['title']}",code,color))
+            cat=f.get('category','other'); tag='' if cat=='other' else f" ({cat.replace('_',' ')})"
+            print(paint(f"[{sev}] {f['title']}{tag}",code,color))
             if f.get('impact'): print('  '+f['impact'])
             for e in f.get('evidence',[])[:4]: print('  - '+e)
 
@@ -62,6 +73,7 @@ def main():
         line=f"{d['name'][:34]:34} {shown:>5} {bar(score,12)}  {d['confidence']}/{d['evidence_level']}"
         print(paint(line,score_style(score),color))
         print('  '+d['finding'])
+        if d.get('applicable') is False: print('  not applicable: '+d.get('not_applicable_reason',''))
 
     recs=sorted(data.get('recommendations',[]),key=lambda x:x.get('priority',999))
     if recs:
@@ -76,7 +88,10 @@ def main():
         for item in missing: print(f"- {item['name']}: {item['status']} — {item.get('details','')}")
     return 0
 
-if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+# Write UTF-8 whatever the locale (cp1252 on Windows would crash on "ō" or the bar glyphs), and
+# replace anything that still cannot be encoded rather than failing.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, 'reconfigure'):
+        _stream.reconfigure(encoding='utf-8', errors='replace')
 
 if __name__=='__main__': raise SystemExit(main())

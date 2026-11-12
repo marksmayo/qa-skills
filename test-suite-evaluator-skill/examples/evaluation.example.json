@@ -2,24 +2,43 @@
   "metadata": {
     "repository": "example-tests",
     "assessment_mode": "black_box",
+    "execution": "static_only",
     "generated_at": "2026-07-16T00:00:00Z",
+    "skill_version": "1.1.0",
     "provisional": true,
     "notes": [
-      "Application source was unavailable."
+      "Application source was unavailable.",
+      "The suite was listed but not run: it needs a staging environment and credentials that were not supplied, and no recent CI reports were provided.",
+      "Instrumented code coverage was not measurable from the supplied evidence.",
+      "Weighted decimals are indicative; differences of a few tenths are not material."
     ]
   },
   "headline": {
-    "raw_weighted_score": 6.2,
-    "overall_score": 5.0,
-    "rating_band": "Serviceable",
+    "raw_weighted_score": 4.5,
+    "overall_score": 4.0,
+    "rating_band": "Weak",
     "testing_effectiveness": 5.0,
     "suite_trustworthiness": 4.0,
-    "engineering_quality": 7.1,
+    "engineering_quality": 5.5,
     "operational_health": null,
-    "evidence_completeness": 42,
-    "overall_confidence": "medium",
+    "evidence_completeness": 25,
+    "overall_confidence": "low",
     "applied_caps": [
-      "Reliability below 4 caps overall score at 5"
+      {
+        "rule": "systematic_false_pass",
+        "limit": 4,
+        "explanation": "Global retries of 3 with no first-attempt metric can turn intermittent failures green; this caps the overall at 4 and lowers it from 4.5."
+      },
+      {
+        "rule": "reliability_below_4",
+        "limit": 5,
+        "explanation": "Reliability scored 3 (fixed sleeps, shared user); the cap of 5 does not bind because the overall is already lower."
+      },
+      {
+        "rule": "static_only",
+        "limit": 8,
+        "explanation": "The suite was not run and no reports were supplied; static inspection caps the overall at 8 (does not bind)."
+      }
     ]
   },
   "dimensions": [
@@ -79,6 +98,44 @@
       ]
     },
     {
+      "id": "design",
+      "name": "Test design and level selection",
+      "weight": 8,
+      "score": 6,
+      "confidence": "medium",
+      "evidence_level": "test_derived",
+      "finding": "Most checks run end to end through the browser; a few API-level tests cover pricing rules cheaply.",
+      "evidence": [
+        "71 of 84 listed tests are in tests/e2e/",
+        "tests/api/pricing.spec.ts calls the pricing endpoint directly"
+      ],
+      "risks": [
+        "Slow feedback for rules that an API test could check"
+      ],
+      "recommendations": [
+        "Move validation-rule checks from e2e to API tests"
+      ]
+    },
+    {
+      "id": "assertions",
+      "name": "Assertion and oracle quality",
+      "weight": 8,
+      "score": 4,
+      "confidence": "medium",
+      "evidence_level": "test_derived",
+      "finding": "Many tests assert only that a page loaded or a toast appeared, not the resulting order or balance.",
+      "evidence": [
+        "tests/checkout.spec.ts asserts toBeVisible() on the confirmation banner only",
+        "19 tests end with a URL check"
+      ],
+      "risks": [
+        "Wrong totals or duplicate orders would pass"
+      ],
+      "recommendations": [
+        "Assert the order record and amounts, not only the banner"
+      ]
+    },
+    {
       "id": "coverage",
       "name": "Test scope and coverage",
       "weight": 8,
@@ -95,6 +152,155 @@
       "recommendations": [
         "Publish source-linked coverage or an API specification"
       ]
+    },
+    {
+      "id": "isolation",
+      "name": "Isolation and state management",
+      "weight": 7,
+      "score": 3,
+      "confidence": "medium",
+      "evidence_level": "test_derived",
+      "finding": "All tests sign in as one shared user and reuse its basket; no teardown removes created orders.",
+      "evidence": [
+        "fixtures/user.ts exports a single shared account",
+        "No afterEach or cleanup hook in tests/"
+      ],
+      "risks": [
+        "Order-dependent passes and failures"
+      ],
+      "recommendations": [
+        "Create a user per test and clean up created orders"
+      ]
+    },
+    {
+      "id": "maintainability",
+      "name": "Maintainability and appropriate reuse",
+      "weight": 7,
+      "score": 6,
+      "confidence": "medium",
+      "evidence_level": "test_derived",
+      "finding": "Page objects are thin and readable; selectors mix data-testid with CSS chains.",
+      "evidence": [
+        "pages/ holds 9 page objects under 80 lines each",
+        "23 selectors use nth-child chains"
+      ],
+      "risks": [
+        "Layout changes break unrelated tests"
+      ],
+      "recommendations": [
+        "Prefer role or data-testid selectors"
+      ]
+    },
+    {
+      "id": "ci",
+      "name": "CI/CD integration",
+      "weight": 6,
+      "score": 5,
+      "confidence": "low",
+      "evidence_level": "test_derived",
+      "finding": "A workflow runs the suite on pull requests, but no run history was supplied to show it gates merges.",
+      "evidence": [
+        ".github/workflows/e2e.yml triggers on pull_request",
+        "No required-check configuration was available"
+      ],
+      "risks": [
+        "Failures may not block merges"
+      ],
+      "recommendations": [
+        "Make the e2e job a required check"
+      ]
+    },
+    {
+      "id": "debuggability",
+      "name": "Debuggability and reporting",
+      "weight": 4,
+      "score": 5,
+      "confidence": "low",
+      "evidence_level": "test_derived",
+      "finding": "Traces are kept on first retry only, and the HTML report is not uploaded as an artifact.",
+      "evidence": [
+        "playwright.config.ts sets trace: 'on-first-retry'",
+        "e2e.yml has no upload-artifact step"
+      ],
+      "risks": [
+        "CI failures are hard to diagnose"
+      ],
+      "recommendations": [
+        "Upload the report and traces on failure"
+      ]
+    },
+    {
+      "id": "performance",
+      "name": "Performance and feedback speed",
+      "weight": 3,
+      "score": null,
+      "confidence": "low",
+      "evidence_level": "unknown",
+      "finding": "Not assessed: the suite was not run and no timings were supplied.",
+      "evidence": [],
+      "risks": [],
+      "recommendations": []
+    },
+    {
+      "id": "test_data",
+      "name": "Test data management",
+      "weight": 3,
+      "score": 4,
+      "confidence": "medium",
+      "evidence_level": "test_derived",
+      "finding": "Product and price data are hard-coded and depend on the staging catalogue.",
+      "evidence": [
+        "tests/checkout.spec.ts hard-codes SKU and price literals"
+      ],
+      "risks": [
+        "Catalogue changes cause false failures"
+      ],
+      "recommendations": [
+        "Seed products through the API per run"
+      ]
+    },
+    {
+      "id": "portability",
+      "name": "Environment portability and realism",
+      "weight": 2,
+      "score": 5,
+      "confidence": "low",
+      "evidence_level": "test_derived",
+      "finding": "Base URL comes from an environment variable, but prerequisites are undocumented.",
+      "evidence": [
+        "playwright.config.ts reads BASE_URL",
+        "README.md has no setup section"
+      ],
+      "risks": [
+        "New contributors cannot run the suite"
+      ],
+      "recommendations": [
+        "Document the environment and credentials needed"
+      ]
+    },
+    {
+      "id": "security_a11y",
+      "name": "Security, privacy, accessibility, compatibility",
+      "weight": 2,
+      "score": null,
+      "confidence": "low",
+      "evidence_level": "unknown",
+      "finding": "Not assessed: no security, accessibility or cross-browser checks were found to judge, and no requirements say which apply.",
+      "evidence": [],
+      "risks": [],
+      "recommendations": []
+    },
+    {
+      "id": "ownership",
+      "name": "Ownership and operational discipline",
+      "weight": 2,
+      "score": null,
+      "confidence": "low",
+      "evidence_level": "unknown",
+      "finding": "Not assessed: no ownership, triage or skip-expiry information was supplied.",
+      "evidence": [],
+      "risks": [],
+      "recommendations": []
     }
   ],
   "critical_findings": [
@@ -105,7 +311,8 @@
         "Global retry count is 3",
         "No first-attempt failure metric found"
       ],
-      "impact": "A green build may not represent deterministic behaviour."
+      "impact": "A green build may not represent deterministic behaviour.",
+      "category": "systematic_false_pass"
     }
   ],
   "recommendations": [
@@ -142,24 +349,58 @@
   ],
   "evidence_inventory": [
     {
-      "name": "Test source",
-      "status": "available",
-      "details": "Repository inspected"
-    },
-    {
       "name": "Application source",
+      "kind": "application_source",
       "status": "missing",
       "details": "Standalone test repository"
     },
     {
+      "name": "Test source",
+      "kind": "test_source",
+      "status": "available",
+      "details": "Repository inspected"
+    },
+    {
+      "name": "CI configuration",
+      "kind": "ci_configuration",
+      "status": "available",
+      "details": ".github/workflows/e2e.yml"
+    },
+    {
+      "name": "Recent execution results",
+      "kind": "recent_execution",
+      "status": "missing",
+      "details": "Suite not run; no reports supplied"
+    },
+    {
       "name": "Historical CI outcomes",
+      "kind": "historical_ci",
       "status": "missing",
       "details": "No run history supplied"
     },
     {
       "name": "Runtime coverage",
+      "kind": "runtime_coverage",
       "status": "missing",
       "details": "No source-linked report supplied"
+    },
+    {
+      "name": "Mutation report",
+      "kind": "mutation_report",
+      "status": "missing",
+      "details": "None supplied"
+    },
+    {
+      "name": "Requirements or specifications",
+      "kind": "requirements",
+      "status": "missing",
+      "details": "None supplied"
+    },
+    {
+      "name": "Defect or incident history",
+      "kind": "defect_history",
+      "status": "missing",
+      "details": "None supplied"
     }
   ],
   "behavioural_coverage": [
@@ -167,9 +408,9 @@
       "feature": "Checkout",
       "happy_path": "covered",
       "negative": "partial",
-      "boundary": "missing",
-      "permissions": "missing",
-      "dependency_failure": "missing",
+      "boundary": "not_covered",
+      "permissions": "not_covered",
+      "dependency_failure": "not_covered",
       "notes": "Test-derived only"
     }
   ],
@@ -177,7 +418,7 @@
     {
       "command": "npm test -- --list",
       "exit_code": 0,
-      "summary": "84 tests discovered"
+      "summary": "84 tests discovered (listing only; nothing executed)"
     }
   ]
 }

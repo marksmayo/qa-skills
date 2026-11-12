@@ -42,11 +42,13 @@ python scripts/render_report.py evaluation.json --color always
 python scripts/render_report.py evaluation.json --color never
 ```
 
-Validate JSON structure:
+Validate an evaluation:
 
 ```bash
 python scripts/validate_evaluation.py evaluation.json
 ```
+
+The validator checks the JSON against the schema, then recomputes what the rubric defines: all fifteen dimensions with their weights, the raw weighted and group scores, every cap that applies, the overall score and its band, and evidence completeness from the inventory. It also checks that the assessment mode and execution evidence match the inventory, and that every score has evidence. It rejects any code-coverage claim made without a runtime coverage report or from test-derived evidence. Both scripts read and write UTF-8 on every platform.
 
 ## Files
 
@@ -54,7 +56,7 @@ python scripts/validate_evaluation.py evaluation.json
 - `RUBRIC.md` — detailed scoring anchors and evidence rules
 - `schemas/evaluation.schema.json` — machine-readable output contract
 - `scripts/render_report.py` — coloured terminal/Markdown renderer
-- `scripts/validate_evaluation.py` — lightweight schema validator
+- `scripts/validate_evaluation.py` — schema and rubric validator (recomputes scores, caps and completeness)
 - `examples/evaluation.example.json` — sample result
 
 ## Design principles

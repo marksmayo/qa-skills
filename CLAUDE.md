@@ -15,7 +15,7 @@ Scripts run with plain `python` and take an evaluation JSON file as input:
 python test-suite-evaluator-skill/scripts/render_report.py evaluation.json
 python test-suite-evaluator-skill/scripts/render_report.py evaluation.json --color always|never
 
-# Validate an evaluation JSON against the required structure
+# Validate an evaluation JSON against the schema and the rubric (recomputes weights, scores, caps, band and evidence completeness)
 python test-suite-evaluator-skill/scripts/validate_evaluation.py evaluation.json
 ```
 

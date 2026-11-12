@@ -130,3 +130,22 @@ Suggested point values:
 - Defect/incident history: 5
 
 Count only evidence that is usable and relevant. Partial evidence receives half credit.
+
+Record each item in the evidence inventory with its `kind` (`application_source`, `test_source`, `ci_configuration`, `recent_execution`, `historical_ci`, `runtime_coverage`, `mutation_report`, `requirements`, `defect_history`). Evidence completeness is the sum of their points: `available` scores full points, `partial` half, and `missing` or `not_applicable` none. Entries of kind `other` score nothing. The validator recomputes it, allowing one point either way for rounding.
+
+## Weighted and group scores
+
+Dimension ids and default weights are in SKILL.md Step 5. All fifteen dimensions appear in every evaluation.
+
+- **Raw weighted score:** `sum(score × weight) / sum(weight)` over the scored dimensions, to one decimal. Unassessed dimensions (score null) keep their default weight but are left out of the mean; they never count as zero.
+- **Re-weighting:** only for a dimension marked `applicable: false` with a reason. Its weight becomes 0 and the other defaults are rescaled proportionally (`default × 100 / sum of applicable defaults`).
+- **Testing effectiveness:** the `effectiveness` score.
+- **Suite trustworthiness:** the `trust` score.
+- **Engineering quality:** the weighted mean of `design`, `maintainability`, `debuggability`, `test_data`, and `portability`.
+- **Operational health:** the weighted mean of `ci`, `performance`, and `ownership`, only when historical CI outcomes (`historical_ci`) are available or partial. Otherwise it is null (not assessed), because a CI file alone shows no operational history.
+- **Overall score:** the raw weighted score lowered to the smallest limit among the caps that apply (SKILL.md Step 6). Every cap whose condition holds is listed with its rule, limit, and explanation, whether or not it binds.
+- **Rating band:** taken from the overall score: below 3.0 Dysfunctional, below 5.0 Weak, below 6.5 Serviceable, below 8.0 Strong, below 9.0 Excellent, otherwise Exceptional.
+
+## Coverage language
+
+The words "code", "line", "branch", "statement", "condition", "function", "instrumented", "implementation", or "source" coverage, and coverage percentages, may appear only when a runtime coverage report is in the inventory and, inside a dimension, only when that dimension's evidence level is `verified`. Statements that a measure was not available ("Instrumented code coverage was not measurable from the supplied evidence") are always allowed.
