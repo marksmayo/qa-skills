@@ -1,7 +1,7 @@
 ---
 name: db-migration-reviewer
 description: Review database migrations before they ship and find the ones that are dangerous in production - locks that block a busy table, table rewrites, data loss and silent narrowing, down migrations that can't roll back, and schema changes that break code still running during a rolling deploy. Reads Alembic, Django, Knex, Flyway, Prisma and raw SQL migrations for PostgreSQL and MySQL, sizes each table from real statistics, searches the code for readers of dropped or renamed columns, and can run the migrations on a throwaway local database to time them, watch the locks and test the rollback. Never runs against production, never edits a migration, and never says "safe to deploy" without saying what was checked.
-version: 1.0.0
+version: 1.1.0
 ---
 
 # Database migration reviewer
@@ -42,15 +42,20 @@ code, new code and the new schema coexist.
    apart and never count.
 8. **Every candidate is triaged**: promoted to a finding or dismissed with a reason code. A data-loss
    candidate may only be dismissed as an intended contract step with zero code readers.
+9. **What the rules miss, the review still reports.** A hazard found by reading the migration (SQL inside
+   a `DO` block or built in a function, a narrowing the type history can't show) becomes a finding with
+   `"source": "agent"` and a `basis` of `{file, line, excerpt}` lines that show it. It cites no candidate,
+   is rated like any other finding, and is labelled "found by review".
 
 ## Inputs
 
 | Input | Default | Notes |
 |---|---|---|
 | `repo` | required | The repository |
-| `migrations` | the pending set | `--since <revision>` (everything after the deployed head), `--migrations a,b`, or all |
-| `engine` | detected | From URLs in config, infrastructure templates (CloudFormation or Terraform `Engine`/`EngineVersion`, including a parameter's default) and docker-compose or Dockerfile image tags (with or without a registry prefix); the oldest version from the most production-like source, every claim listed; with no version, the oldest the repo claims, marked `assumed` |
-| `table_stats` | none | JSON `{"source": ..., "tables": {name: {"rows", "bytes"}}}` |
+| `migrations` | the pending set | `--since <revision>` (everything after the deployed head; for Prisma the folder name of the last applied migration), `--migrations a,b`, or all. An id that matches nothing is an error |
+| `exclude_dir` | archive folders | Folders that look like archived or squashed history (`archive`, `squashed`, `history`, `old`) are left out of the chain and listed in `excluded`; `--exclude-dir` adds folders, `--include-archived` keeps them |
+| `engine` | detected | From URLs in config, infrastructure templates (CloudFormation or Terraform `Engine`/`EngineVersion`, including a parameter's default) and docker-compose or Dockerfile image tags (with or without a registry prefix); the oldest version from the most production-like source, every claim listed; with no version, the oldest the repo claims, marked `assumed`. A version found only in docker-compose, a Dockerfile or CI is a development source and is also `assumed` (with `assumed_reason`) until the user or infrastructure confirms it |
+| `table_stats` | none | JSON `{"source": ..., "tables": {name: {"rows", "bytes"}}}`, keyed by the plain table name (`Order`, as `pg_class.relname` returns it); quoted names in migrations match it |
 | `deploy_model` | `rolling` | `rolling`, `blue_green` or `stop_the_world`; record where it came from |
 | `dynamic` | `auto` | `container` when Docker or Podman is present, a loopback `--dsn`, or `off`; otherwise static only, and the report says so |
 | `seed_rows` | 100 000 | Synthetic rows for tables the candidates name (1 000 for the rest) |
@@ -67,14 +72,25 @@ python scripts/scan_migrations.py --migrations <run>/migrations.json --repo <rep
 python scripts/dynamic_check.py --migrations <run>/migrations.json --candidates <run>/candidates.json --mode container --out <run>/dynamic.json
 ```
 
+Directory walks prune `node_modules`, virtual environments, build output and VCS folders before descending,
+so a JavaScript repository with dependencies installed scans in seconds. `python scripts/self_test.py`
+checks the parsers and rules against the examples.
+
 1. **Detect.** The tool, the engine and version (and how they were found), the chain and its heads, and
    the pending set. Each migration becomes SQL-shaped statements with lines, its transaction mode, and
    the state of its down migration (`ok`, `pass`, `empty`, `raises`, `missing`). Code the parser can't
-   analyse (runtime-built SQL, `RunPython` bodies, Java migrations) is listed, never guessed at.
+   analyse (runtime-built SQL, `RunPython` bodies, Java migrations) is listed, never guessed at. For every
+   column a pending migration retypes, `type_history` lists the types it had before: earlier migrations,
+   archived migrations, and for Prisma `schema.prisma` before the first pending migration (from git).
 2. **Scan.** The rules in `data/rules.json` give candidates with their facts: table size and its
    source, whether the table was created in the same release, whether a default is constant, code
    readers of a renamed or dropped column (`find_readers.py`), code that inserts without a column made
-   NOT NULL, and whether a `lock_timeout` is set anywhere.
+   NOT NULL, and whether a `lock_timeout` is set anywhere. Quoted identifiers are compared unquoted, and
+   each clause of a multi-clause `ALTER TABLE` is checked on its own. A type change is compared with
+   every earlier type on every upgrade path (`from_path`, `from_source`), so a column that is already
+   `NUMERIC` on fresh databases but still `DOUBLE PRECISION` on older ones is a narrowing.
+   Then **read the pending migrations yourself** for what no rule matches (SQL in `DO` blocks or
+   functions, data steps) and record it as agent findings (rule 9).
 3. **Dynamic (when possible).** Throwaway database, earlier migrations, synthetic seed, then each pending
    migration with lock polling every 100 ms and a concurrent SELECT and INSERT per affected table, then
    the down migration with schema, row-count and row-hash comparison. A finding the run confirms becomes
@@ -109,24 +125,44 @@ python scripts/render_report.py <run>/migration_review.json [--brief]
   applied; type changes copy the table unless the operation is INSTANT or INPLACE.
 - **MariaDB and SQLite:** engine-neutral rules only in this version; the report says so.
 - **No migration tool:** plain SQL scripts are reviewed as raw SQL.
+- **Prisma.** A migration's id is its folder name (`20260101120000_add_orders`) and the chain is the
+  folder named by `prisma.config.*` `migrations.path` (else the one holding `migration_lock.toml`), in
+  folder order. Prisma has **no down migrations**: rollback is rolling forward or restoring a backup, so
+  the release gets one `IRREVERSIBLE` candidate, not one per migration; a reverse script can be drafted
+  with `prisma migrate diff`. `prisma migrate deploy` sends each `migration.sql` as one script, which
+  PostgreSQL runs as one transaction: every lock is held until the end of the file, so put a long
+  rewrite or index build in a migration of its own (a migration holding only `CREATE INDEX
+  CONCURRENTLY` runs outside a transaction). "Pending" means not in `_prisma_migrations`; without
+  database access, ask for the last applied folder and pass `--since`. A squashed baseline marked
+  applied with `prisma migrate resolve --applied` means older databases took a different path: their
+  columns can still have the archived types, so check `type_history` for both paths. A shadow database
+  (`postgres-shadow` in docker-compose) is a development aid, not evidence of the production version.
+  Drift between `schema.prisma` and the chain is checked with `prisma migrate diff
+  --from-migrations <dir> --to-schema-datamodel <schema> --shadow-database-url <url>`; without a shadow
+  database, list it under `not_checked`. Readers are searched by column and by Prisma field name
+  (`@map`), and writers include `prisma.<model>.create`, `createMany` and `upsert`; a data object that is
+  a variable or a spread can't be read and is counted, not guessed.
+- **Serverless deploys** (Vercel and similar) usually run `prisma migrate deploy` as a build or release
+  step while the previous deployment keeps serving: treat that as `rolling`.
 
 ## Output fields
 
-`scope` (repo, tool, engine with source, deploy model with source, migrations reviewed, checked,
-not_checked), `metadata` (tools and status, table stats source), `migrations[]` (file, transaction mode,
+`scope` (repo, tool, engine with source and `assumed_reason`, deploy model with source, migrations
+reviewed, excluded archive files, checked, not_checked), `metadata` (tools and status, table stats source), `migrations[]` (file, transaction mode,
 down state, findings), `findings[]` (rule, category, statement and line, table, column, engine range,
 effect, size with source, hazard, size factor, exposure, score, priority, floor, cap, confidence, code
-hits, rewrite, verification), `triage[]`, `dynamic` (status and reason, or per-migration timings, locks,
+hits, rewrite, verification; `source: "agent"` and `basis` for a finding found by review), `triage[]`, `dynamic` (status and reason, or per-migration timings, locks,
 probes, row changes and rollback comparison), `safe_sequence[]`, `headline` (counts, migrations with a
 P0, verdict, statement, scope statement), `limitations[]`.
 
 ## What the validator enforces
 
-Findings match their candidates (rule, file, line, statement, table, size, code hits) and every cited
-line exists. Hazard, size factor, exposure, score, priority, floors and caps are recomputed. Unknown
+Findings match their candidates (rule, file, line, statement, table, size, code hits); every cited
+line exists and names the finding's column or table; an agent finding's basis excerpts are on their
+lines. An engine detection marked `assumed` can't be reported as known from the same source. Hazard, size factor, exposure, score, priority, floors and caps are recomputed. Unknown
 sizes rate as large; a finding depending on an unknown is `assumed`, and an `assumed` finding is never
 P0. Compatibility findings have code hits outside tests and migrations. A `measured` finding has a
 dynamic result, and dynamic results come only from a `qa_migrate_` database on loopback with no row
 values. Every candidate is triaged once, dismissals use a reason code the facts support, and data-loss
-dismissals need zero code readers. The headline counts and verdict are recomputed, and it has a scope
-statement.
+dismissals need zero code readers. The headline counts and verdict are recomputed, it has a scope
+statement, and its statement can't contradict the verdict ("safe to deploy", "no findings").

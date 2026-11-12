@@ -21,7 +21,10 @@ server) to time them, watch the locks, probe for blocked queries and test the ro
 connects to anything else, never prints row values, and never edits a migration.
 
 Supported: Alembic, Django, Knex, Flyway, Prisma and raw SQL; PostgreSQL and MySQL rules (MariaDB and SQLite
-get engine-neutral rules only).
+get engine-neutral rules only). For Prisma it reads `prisma.config.*`, `schema.prisma` and
+`migration_lock.toml`, names migrations by folder, leaves archived or squashed history out of the chain
+but uses it (and the previous `schema.prisma` from git) to find type narrowing on older databases, and
+finds Prisma readers and `create`/`upsert` writers.
 
 ## Install
 
@@ -51,7 +54,11 @@ python scripts/validate_migration_review.py run/migration_review.json --candidat
 python scripts/render_report.py run/migration_review.json [--brief]
 ```
 
-A statistics file for PostgreSQL (row counts only):
+For Prisma, `--since` is the folder name of the last applied migration (`--since 20260301000000_baseline`);
+an id that matches nothing stops with an error.
+
+A statistics file for PostgreSQL (row counts only; keys are plain table names, which match quoted names
+in migrations):
 
 ```sql
 SELECT relname, reltuples::bigint AS rows, pg_total_relation_size(oid) AS bytes
@@ -62,11 +69,16 @@ FROM pg_class WHERE relkind = 'r' AND relnamespace = 'public'::regnamespace;
 
 `examples/ledger/` is a small Flask and SQLAlchemy app with Alembic migrations against PostgreSQL 16.4
 and planted problems; `examples/run/` is the run (listed in `examples/run/commands.sh`);
-`examples/migration_review.example.json` is the review. `examples/README.md` has the answer key.
+`examples/migration_review.example.json` is the review. `examples/greenhouse/` is a Prisma app with a
+squashed baseline and archived history; `examples/run-prisma/` is its run and
+`examples/migration_review.prisma.example.json` its review, including a finding found by review.
+`examples/README.md` has both answer keys.
 
 ```bash
 python scripts/validate_migration_review.py examples/migration_review.example.json --candidates examples/run/candidates.json --migrations examples/run/migrations.json --repo examples/ledger
+python scripts/validate_migration_review.py examples/migration_review.prisma.example.json --candidates examples/run-prisma/candidates.json --migrations examples/run-prisma/migrations.json --repo examples/greenhouse
 python scripts/render_report.py examples/migration_review.example.json
+python scripts/self_test.py
 ```
 
 ## Files
@@ -78,12 +90,15 @@ python scripts/render_report.py examples/migration_review.example.json
 - `data/images.lock.json`: database images for the dynamic check
 - `scripts/detect_migrations.py`: tool, engine, chain, pending set, statements with lines, down state
 - `scripts/split_sql.py`: statement splitter (quotes, comments, dollar quoting, DELIMITER)
+- `scripts/sqlshape.py`: identifiers, multi-clause ALTER TABLE, column types, `schema.prisma`
+- `scripts/repo_walk.py`: repository walk that prunes dependency and build folders
+- `scripts/self_test.py`: checks the parsers and rules against the examples
 - `scripts/scan_migrations.py`: rules to candidates, with facts; merges Squawk SARIF
 - `scripts/find_readers.py`: code that reads a column, or inserts without it
 - `scripts/dynamic_check.py`: throwaway database, timings, locks, blocked queries, rollback comparison
 - `scripts/validate_migration_review.py`, `scripts/render_report.py`
 - `scripts/diff_scope.py`, `scripts/sarif.py`: shared copies (edit them in `shared/`)
-- `examples/`: the app, the run and the review
+- `examples/`: the apps (Alembic and Prisma), the runs and the reviews
 
 ## Design principles
 

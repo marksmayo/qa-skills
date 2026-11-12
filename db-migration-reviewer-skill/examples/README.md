@@ -31,7 +31,41 @@ The safer sequence in the review splits the release in three: lock timeout, conc
 new column first; dual writes, batched backfill and a NOT VALID check next; reads switched, SET NOT NULL
 and the old column dropped last.
 
+The engine version comes from `ledger/infra/database.tf` (the production instance); the
+docker-compose image agrees but, being a development source, would only give an assumed version.
+
 ```bash
 python scripts/validate_migration_review.py examples/migration_review.example.json --candidates examples/run/candidates.json --migrations examples/run/migrations.json --repo examples/ledger
 python scripts/render_report.py examples/migration_review.example.json
+```
+
+# Example: greenhouse (Prisma)
+
+`greenhouse/` is a small Prisma app (TypeScript) on PostgreSQL. Its chain was squashed into
+`20260301000000_baseline`; the original migrations are kept in `prisma/migration_history_archive/`, where
+money and weight columns are `DOUBLE PRECISION`. The baseline is deployed (older databases marked it
+applied with `prisma migrate resolve`); `20260415000000_release_hardening` is the release under review.
+The only engine version in the repository is the docker-compose image, so it is assumed. All data is
+invented.
+
+`run-prisma/` is the run, listed in `run-prisma/commands.sh` (13 candidates);
+`migration_review.prisma.example.json` is the review.
+
+| Planted | Expected | Got |
+|---|---|---|
+| Archive folder next to the chain | left out of the chain, used for type history | `excluded` lists both files |
+| `CREATE TABLE IF NOT EXISTS "StockAlert"`, `CREATE UNIQUE INDEX IF NOT EXISTS` on it | no crash; index on a new table | C007 dismissed, `table_created_in_release` |
+| Two-clause ALTER of Plant to DECIMAL with `USING ROUND` | both clauses checked; narrowing on pre-squash databases | F01 and F02 (P0, from the archived type); one rewrite F11 (P2), C003 dismissed as `duplicate` |
+| Order.total to DECIMAL(10,2) | narrowing and a rewrite of a 2.6 million row table | F03 (P0), F08 (P1, assumed engine) |
+| `ADD COLUMN "giftNote" TEXT, ADD COLUMN "channel" TEXT NOT NULL` | second clause found; `prisma.order.create` without channel | F04 (P0); the variable `data` in `importOrder()` counted as not analysed |
+| Index built inside a `DO` block | no rule matches; found by review | F09 (P1, `source: agent`, basis lines 26 and 29) |
+| RENAME phone, read by a Prisma `select` | compatibility | F05 (P0) |
+| DROP legacy_ref, read as the Prisma field `legacyRef` | data loss and compatibility | F06 and F07 (P0) |
+| No down migration (Prisma) | one irreversible finding for the release | F12 (P3) |
+| No lock_timeout | lock queueing | F10 (P1) |
+| Foreign key on the new table | not flagged | no candidate |
+
+```bash
+python scripts/validate_migration_review.py examples/migration_review.prisma.example.json --candidates examples/run-prisma/candidates.json --migrations examples/run-prisma/migrations.json --repo examples/greenhouse
+python scripts/render_report.py examples/migration_review.prisma.example.json
 ```

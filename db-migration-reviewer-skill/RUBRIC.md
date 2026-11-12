@@ -4,14 +4,21 @@
 
 | Category | Hazard | Examples |
 |---|---|---|
-| `data_loss` | 4 | DROP TABLE, DROP COLUMN, TRUNCATE, narrowing a type (NUMERIC to INTEGER, BIGINT to INTEGER, TEXT to VARCHAR(n)), UPDATE or DELETE without WHERE |
+| `data_loss` | 4 | DROP TABLE, DROP COLUMN, TRUNCATE, narrowing a type (NUMERIC to INTEGER, BIGINT to INTEGER, TEXT to VARCHAR(n), DOUBLE PRECISION or REAL to NUMERIC(p,s): rounding to s places and overflow at 10^(p-s), NUMERIC(p,s) to a smaller scale or integer part), UPDATE or DELETE without WHERE |
 | `blocking_lock` | 3 | CREATE INDEX without CONCURRENTLY, ALTER COLUMN TYPE with a rewrite, ADD COLUMN with a volatile default (or any default before PostgreSQL 11), SET NOT NULL without a validated CHECK, ADD FOREIGN KEY without NOT VALID, MySQL ALGORITHM=COPY |
 | `compatibility` | 3 | A rename or drop while code still reads the column; NOT NULL while code inserts without it |
-| `irreversible` | 2 | A down migration that is `pass`, empty, raises or is missing |
+| `irreversible` | 2 | A down migration that is `pass`, empty, raises or is missing (Prisma: one for the release, since it has no down migrations) |
 | `lock_queueing` | 2 | DDL with no `lock_timeout`: one slow query makes every later query wait behind the migration |
 | `transaction_mistake` | 2 | CREATE INDEX CONCURRENTLY inside a transaction; MySQL DDL that commits half a migration |
 | `backfill_cost` | 2 | One UPDATE across a large table in one transaction, unbatched |
 | `ordering` | 1 | Two heads; a migration that depends on a later one |
+
+A finding found by review (`source: "agent"`) with a rule from `data/rules.json` takes that rule's
+category and hazard; with a rule of its own it takes its category's hazard from this table.
+
+A narrowing counts on any upgrade path: if the column is already the new type on databases built from
+a baseline but still the old type on databases older than a squash (archived migrations, or the previous
+`schema.prisma`), the finding stands and the effect says which databases lose data.
 
 ## Table size
 
@@ -58,7 +65,7 @@ query breaks whatever the table's size.
 |---|---|
 | `measured` | The dynamic run showed the lock, the blocked query, the failed rollback or the changed rows |
 | `matched` | A rule matched the statement, and the engine version and table size are known |
-| `assumed` | A condition rests on an unknown: engine version or table size |
+| `assumed` | A condition rests on an unknown: engine version (including one taken only from docker-compose, a Dockerfile or CI) or table size |
 
 ## Verdict
 

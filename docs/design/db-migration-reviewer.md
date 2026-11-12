@@ -286,4 +286,37 @@ Where the build differs from the design above, and what the example showed.
 - **Images are pinned by tag** in `data/images.lock.json`; record digests on first pull.
 - **Example results:** 7 pending migrations, 13 candidates, 10 findings (6 P0, 4 P1) matching every
   planted problem, and all three decoys dismissed with checkable reasons.
+
+## As built (v1.1.0): fixes from a run on a real Prisma repository
+
+- **Crashes fixed:** `CREATE TABLE "Name"` and `CREATE TABLE IF NOT EXISTS` (detection) and `CREATE INDEX
+  IF NOT EXISTS` (the lock_timeout rule) no longer crash. All identifiers go through `sqlshape.py`:
+  quotes and the default schema are stripped and `"T"("col")` becomes `T (col)`, so table statistics,
+  created-table facts, FK and index checks and code searches all use plain names.
+- **Multi-clause ALTER TABLE** is split per clause (top-level commas), each with its own line.
+- **Prisma:** folder-name ids in folder order; the chain is `prisma.config.*` `migrations.path` or the
+  folder with `migration_lock.toml`; archived or squashed folders are excluded by default
+  (`--exclude-dir`, `--include-archived`) and listed; `--since` that matches nothing exits with an error
+  instead of selecting everything; the provider comes from `schema.prisma`/`migration_lock.toml`; one
+  `IRREVERSIBLE` candidate per release.
+- **Type history:** for each retyped column, the types it had on the chain, in archived migrations and,
+  for Prisma, in `schema.prisma` before the first pending migration (`git show <sha>^:schema.prisma`, only
+  when the repository is the git top level). Renames carry history across. Narrowing now covers
+  `DOUBLE PRECISION`/`REAL` to `NUMERIC(p,s)`, `NUMERIC` scale and precision cuts and integer-to-NUMERIC
+  overflow; candidates carry `same_type_on_chain` so a rewrite that is a no-op on fresh databases is visible.
+- **Readers and writers:** `.prisma` files are read; Prisma queries are labelled `orm_query` (not
+  `raw_sql`); readers search the Prisma field name too (`@map`, or camelCase of a dropped snake_case
+  column); writers include `prisma.<model>.create/createMany/upsert` whose literal data leaves the field
+  out, and `@default`/`@updatedAt` fields are skipped.
+- **Engine:** a version taken only from docker-compose, a Dockerfile or CI is `assumed`, with
+  `assumed_reason`; the ledger example now carries its production Terraform.
+- **Agent findings:** `source: "agent"` with a `basis`; the validator re-reads each basis line with
+  `--repo`. It also checks a cited line names the column or table, rejects an engine reported as known
+  when detection assumed it from the same source, and rejects a headline that contradicts the verdict.
+- **Speed:** all walks prune dependency and build folders (`repo_walk.py`). On a Next.js repository with
+  `node_modules` installed, detection went from 3 min 16 s cold (8.8 s warm) to 1.2 s, and the scan
+  from 58 s cold (1.7 s warm) to 0.2 s.
+- **Not built:** a static drift check of `schema.prisma` against the chain, no-op detection for
+  `CREATE ... IF NOT EXISTS` of tables the chain already created, and schema-file validation of
+  `metadata.tools`.
 - **Testing:** 30 of 30 seeded review violations are caught.
