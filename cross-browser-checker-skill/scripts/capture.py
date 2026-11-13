@@ -137,13 +137,35 @@ SNAP = r"""
               box: [Math.round(r.left + scrollX), Math.round(r.top + scrollY), Math.round(r.width), Math.round(r.height)]};
     // an inline element's line boxes, one per line it spans, so a wrap is told apart from content that isn't drawn
     if (cs.display === 'inline') { const n = el.getClientRects().length; if (n > 1) item.lines = n; }
+    // the computed font family of text and form controls: a control that doesn't inherit the page font is drawn in the
+    // engine's own default face (a serif in some builds), which box metrics alone dismiss as noise
+    if (own || ['input', 'button', 'select', 'textarea'].includes(item.tag)) item.font = cs.fontFamily;
+    // covered by another element at its centre (a modal overlay, a sticky panel): its ink is the cover's, not its own
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    if (cx >= 0 && cy >= 0 && cx < innerWidth && cy < innerHeight) {
+      const top = document.elementFromPoint(cx, cy);
+      if (top && top !== el && !el.contains(top) && !top.contains(el)) { item.occluded = true; item.covered_by = sigOf(top); }
+    }
     els.push(item);
     if (els.length >= 2000) break;
   }
   const imgs = [...document.images].map(i => ({sig: sigOf(i), src: i.currentSrc || i.src, complete: i.complete, natural: [i.naturalWidth, i.naturalHeight]}));
   const scripts = [...document.scripts].map(s => s.src || ('inline:' + s.textContent.length));
   const de = document.documentElement;
-  return {elements: els, images: imgs, scripts, overflow_x: de.scrollWidth > de.clientWidth + 1, size: [de.scrollWidth, de.scrollHeight]};
+  // panels that scroll their own content (an app shell of height 100vh): the full-page screenshot shows only their
+  // first box, and an automation scroll inside one (to reach an element) moves its content, not the layout
+  const scrollers = [];
+  for (const el of document.querySelectorAll('body *')) {
+    const cs = getComputedStyle(el);
+    if (!/(auto|scroll)/.test(cs.overflowY + ' ' + cs.overflowX)) continue;
+    const hidden = el.scrollHeight - el.clientHeight;
+    if (el.clientHeight < 80 || (hidden < 50 && el.scrollWidth - el.clientWidth < 50)) continue;
+    scrollers.push({sig: sigOf(el), scroll_top: Math.round(el.scrollTop), scroll_left: Math.round(el.scrollLeft),
+                    hidden_px: Math.max(0, hidden), box_height: el.clientHeight});
+    if (scrollers.length >= 20) break;
+  }
+  return {elements: els, images: imgs, scripts, scrollers, overflow_x: de.scrollWidth > de.clientWidth + 1,
+          size: [de.scrollWidth, de.scrollHeight]};
 }
 """
 

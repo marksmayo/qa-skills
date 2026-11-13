@@ -72,6 +72,7 @@ python scripts/feature_scan.py --repo . --out run/features.json
 python scripts/compare_engines.py run/capture/runs.json --features run/features.json --out run/candidates.json
 python scripts/validate_report.py run/report.json --runs run/capture/runs.json --candidates run/candidates.json --features run/features.json --targets targets.json
 python scripts/render_report.py run/report.json [--brief]
+python scripts/self_test.py   # feature scan of HTML in Go string constants, capture snapshot fields, compare and validator checks
 ```
 
 Static only (no browser): the feature scan, then a candidates file with every engine `not_run`, and a

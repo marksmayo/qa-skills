@@ -70,6 +70,12 @@ def main() -> int:
         out.append('')
         out += [f'{P(x["id"], BOLD)} {P(x["priority"] + " " + x["severity"], SEV[x["severity"]])} {", ".join(x["engines_affected"])}: '
                 f'{x["title"]}' for x in d['differences']]
+        # needs review and limitations are often the only actionable part: never left out of the brief
+        if d.get('needs_review'):
+            out += ['', P(f'Needs review ({len(d["needs_review"])}):', BOLD)] + \
+                   [f'- {n["candidate_id"]}: {n["reason"]}' for n in d['needs_review']]
+        if d.get('limitations'):
+            out += ['', P('Limitations:', BOLD)] + [f'- {x}' for x in d['limitations']]
         print('\n'.join(out))
         return 0
     if d['differences']:

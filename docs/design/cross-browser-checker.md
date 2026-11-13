@@ -345,3 +345,30 @@ Where the build differs from the design above, and what the example showed.
     `{"fill": sel, "value": v}` (the harness's) and `{"fill": [sel, v]}` (the crash hunter's probe form).
   - The example's capture is unchanged; `candidates.json` was regenerated from it (each candidate gains
     `pages`; the candidates, flaky list and 42 automatic dismissals are otherwise the same).
+- **v1.4.0** (a Go CLI whose HTML report is a Go `html/template` string constant, a `100vh` app shell with
+  scrolling panels and a modal):
+  - *Silent empty scan*: `.go` was skipped and the output said "0 uses" with no limitation, in a
+    repository 99% Go. HTML held in string constants of server-side code (Go raw strings, Python and
+    Java/Kotlin triple-quoted strings, Rust raw strings) and template files is now read like a page
+    (its `<style>` and `<script>` blocks and the html patterns); vendored and third-party trees are
+    left out through the shared `lang_census.py`; when another language dominates, `features.json`
+    carries `language_coverage` and a limitation (and a stderr warning) saying what was and wasn't read.
+  - *Serif controls dismissed as noise*: WebKit drew buttons and an input that don't inherit the page
+    font in a serif face, and 178 boxes were dismissed as font metrics, native controls or wraps.
+    Capture records each text element's computed `font`; a family that differs in every run is one
+    `font_family_differs` difference per pair of families. `data/engine-limitations.json` gains
+    `webkit-windows-serif-controls` (Playwright WebKit on Windows; Safari uses the system font), so it
+    goes to needs review.
+  - *Covered elements*: boxes under a modal overlay or a sticky panel are marked `occluded`
+    (`elementFromPoint` at the centre, inside the viewport) and their differences dismissed.
+  - *Automation scroll inside panels*: Playwright scrolled an inner panel by different amounts per
+    engine; capture records `scrollers` (scroll offset, hidden height), and a box inside one that moved
+    by exactly the offset difference is dismissed as a scroll offset. SKILL.md says content below a
+    panel's first box is compared by DOM box only.
+  - *Validator*: `feature_findings` must match the `--features` file passed, use for use, and
+    `candidates.json` must have been built from it. `render_report.py --brief` lists needs review and
+    limitations.
+  - `scripts/self_test.py` covers all of these (the snapshot check needs Playwright). Runs recorded
+    before this have no `font`, `occluded` or `scrollers`, so the example's candidates are unchanged.
+  - Not done: patterns for `user-select` and `scrollIntoView` options, asking for targets when there is
+    no browserslist, and SKILL guidance for a generated one-file-per-run page.

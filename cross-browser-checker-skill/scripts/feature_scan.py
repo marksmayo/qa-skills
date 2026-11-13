@@ -47,6 +47,7 @@ HERE = Path(__file__).resolve().parent
 SKILL = HERE.parent
 sys.path.insert(0, str(HERE))
 import browserslist_lite as bl  # noqa: E402
+import lang_census  # noqa: E402  (shared copy; edit shared/scripts/lang_census.py)
 
 WF_BROWSER = {'chrome': 'chrome', 'and_chr': 'chrome_android', 'edge': 'edge', 'firefox': 'firefox', 'and_ff': 'firefox_android',
               'safari': 'safari', 'ios_saf': 'safari_ios'}
@@ -65,6 +66,21 @@ NODE_ONLY = re.compile(r'''\A#!.*\bnode\b|(?:\bfrom\s*|\brequire\(\s*|\bimport\(
 SUFFIXES = ('.css', '.scss', '.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx', '.html', '.htm', '.vue', '.svelte')
 MARKUP = ('.html', '.htm', '.vue', '.svelte')
 CLASS_SOURCES = ('.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx') + MARKUP
+# server-side code that may hold a whole HTML page in a string constant (a Go raw string for html/template, a Python
+# or Java/Kotlin triple-quoted string, a Rust raw string), and template files: their <style>/<script> blocks ship
+HOST_SUFFIXES = ('.go', '.py', '.rb', '.rs', '.java', '.kt', '.cs', '.php', '.scala', '.ex', '.exs', '.swift')
+TEMPLATE_FILE = re.compile(r'\.(tmpl|gohtml|gotmpl|tpl|jinja2?|j2|erb|hbs|handlebars|mustache|njk|liquid|twig|ejs)$', re.I)
+HTML_STRING = re.compile(r'(`[^`]*`|"""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\'|r#+"[\s\S]*?"#+)')
+HTML_DOC = re.compile(r'<(!doctype\s+html|html\b|body\b|style\b|script\b)', re.I)
+# the languages whose browser code this scan reads (CSS and HTML files are not source languages in the census)
+SCANNED_LANGUAGES = {'JavaScript', 'TypeScript', 'Vue', 'Svelte'}
+
+
+def embedded_html(text: str) -> bool:
+    """Whether server-side source holds an HTML document (or a <style>/<script> block) in a string constant."""
+    return any(HTML_DOC.search(m.group(0)) for m in HTML_STRING.finditer(text))
+
+
 # browsers a CSS framework major itself requires (its documented floor), web-features browser keys of caniuse names
 FRAMEWORK_FLOORS = {('tailwind', 4): {'chrome': '111', 'edge': '111', 'firefox': '128', 'safari': '16.4', 'ios_saf': '16.4'}}
 
@@ -127,7 +143,7 @@ def node_only(text: str) -> bool:
     return bool(NODE_ONLY.search(text[:20000]))
 
 
-def files(repo: Path, skipped: dict | None = None):
+def files(repo: Path, skipped: dict | None = None, excluded: list[str] | None = None):
     """Source files, walking with excluded directories pruned before descending (a node_modules tree is never listed).
     Test directories (is_test_dir), test and story files, and Node-only scripts (CLIs, build scripts, servers) don't ship
     to browsers and are left out; with `skipped`, the test directories and Node-only files are listed there."""
@@ -136,6 +152,9 @@ def files(repo: Path, skipped: dict | None = None):
         for d in sorted(dirs):
             if d in SKIP_DIRS:
                 continue
+            if excluded and lang_census.excluded_path({'excluded': [{'path': e, 'reason': ''} for e in excluded]},
+                                                      rel_name(Path(root) / d, repo)) is not None:
+                continue   # vendored or third-party (shared lang_census)
             if is_test_dir(Path(root) / d):
                 if skipped is not None:
                     skipped.setdefault('test_dirs', []).append(rel_name(Path(root) / d, repo))
@@ -144,6 +163,19 @@ def files(repo: Path, skipped: dict | None = None):
         dirs[:] = keep
         for n in sorted(names):
             p = Path(root) / n
+            if p.suffix in HOST_SUFFIXES or TEMPLATE_FILE.search(n):
+                # a page held in a Go/Python/... string constant or a template file: its inline blocks ship
+                if re.search(r'_test\.go$|^test_.*\.py$|_test\.py$', n):
+                    continue
+                try:
+                    text = p.read_text(encoding='utf-8', errors='replace')
+                except OSError:
+                    continue
+                if (TEMPLATE_FILE.search(n) and HTML_DOC.search(text)) or (p.suffix in HOST_SUFFIXES and embedded_html(text)):
+                    if skipped is not None:
+                        skipped.setdefault('embedded_html', []).append(rel_name(p, repo))
+                    yield p, True
+                continue
             if p.suffix not in SUFFIXES or TEST_FILE.search(n):
                 continue
             if p.suffix in SCRIPT_SUFFIXES:
@@ -223,11 +255,12 @@ def rel_name(f: Path, repo: Path) -> str:
 
 
 def scan(repo: Path, patterns: list[dict], utility: bool = False, built: list[Path] | None = None,
-         css_in_js: bool = False, tailwind_major: int | None = None, skipped: dict | None = None) -> list[dict]:
+         css_in_js: bool = False, tailwind_major: int | None = None, skipped: dict | None = None,
+         excluded: list[str] | None = None) -> list[dict]:
     """Uses of every pattern in the repo's sources; utility-class patterns only when `utility` (Tailwind found); CSS
     written in scripts when `css_in_js` (a CSS-in-JS library found); the built CSS files with the CSS patterns."""
     uses = []
-    for f, markup in files(repo, skipped):
+    for f, markup in files(repo, skipped, excluded):
         uses += scan_file(f, rel_name(f, repo), patterns, utility, css_in_js, markup=markup)
     for f in built_css_files(built or []):
         uses += scan_file(f, rel_name(f, repo), patterns, False, tailwind_major=tailwind_major)
@@ -451,8 +484,23 @@ def main() -> int:
         tw_major = int(m.group(1)) if m else None
     cij = css_in_js_libraries(a.repo)
     skipped: dict = {}
-    uses = scan(a.repo, pats, utility=bool(fw), built=built, css_in_js=bool(cij), tailwind_major=tw_major, skipped=skipped)
+    census = lang_census.census(a.repo)
+    excluded = [e['path'] for e in census['excluded']]
+    uses = scan(a.repo, pats, utility=bool(fw), built=built, css_in_js=bool(cij), tailwind_major=tw_major, skipped=skipped,
+                excluded=excluded)
+    embedded = skipped.pop('embedded_html', [])
+    cov = lang_census.language_coverage(census, SCANNED_LANGUAGES, tool='feature_scan.py', what='feature scan')
     limitations = []
+    if cov['status'] == 'unsupported_dominant':
+        lang = cov['dominant_unsupported_language']
+        note = (f'The repository is predominantly {lang} ({cov["dominant_unsupported_files"]} source files, vendored and '
+                f'third-party trees excluded), which the feature scan does not read as browser code. ' +
+                (f'HTML, CSS and scripts held in {len(embedded)} {lang} string constant(s) or template file(s) were scanned '
+                 f'({", ".join(embedded[:3])}); any page {lang} code builds another way was not.' if embedded else
+                 f'No HTML held in a {lang} string constant or template file was found, so the browser code (if any) was not '
+                 'scanned: 0 uses is not evidence that the targets support the page; scan a rendered page instead.'))
+        limitations.append(note)
+        print(f'WARN: {note}', file=sys.stderr)
     if fw:
         fw.update(classes='known non-baseline utilities only (utility-class patterns in data/feature-patterns.json)',
                   built_css=built_files)
@@ -525,6 +573,10 @@ def main() -> int:
         out['utility_css'] = fw
     if css_in_js:
         out['css_in_js'] = css_in_js
+    if cov['status'] == 'unsupported_dominant' or embedded:
+        out['language_coverage'] = {k: cov.get(k) for k in ('status', 'dominant', 'supported', 'unsupported', 'warning',
+                                                           'excluded_source_files')} | {
+            'embedded_html': embedded, 'excluded': excluded[:30]}
     if skipped:   # test directories and Node-only scripts left out (they don't ship to browsers); only written when any
         out['skipped'] = skipped
     if limitations:

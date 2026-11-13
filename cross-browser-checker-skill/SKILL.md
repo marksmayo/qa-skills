@@ -1,7 +1,7 @@
 ---
 name: cross-browser-checker
 description: Run the same pages, states and journeys in Playwright's Chromium, Firefox and WebKit, three times each, and report where they behave differently - script errors, failing steps, content that isn't rendered, missing elements, input fallbacks, layout and network differences - keeping only differences that repeat in every run and listing the rest as flaky. With a repository, also scan CSS, JavaScript and HTML for features the project's browserslist targets don't all support (web-features and caniuse data, pinned and hash-checked), and link them to the runtime differences they explain. Never says "compatible", and never treats WebKit as Safari.
-version: 1.3.0
+version: 1.4.0
 ---
 
 # Cross-browser checker
@@ -116,7 +116,12 @@ Firefox and WebKit draw a full-page screenshot without scrolling, so `loading=la
 content that isn't rendered (`"scroll": false` turns this off). `runs.json` records the platform,
 the capture settings, the planned checks (page or state × viewport) and what each scroll did, and
 per run `run_status` (`ran`, `errored`, `skipped`), the error, `requests_sent` and any 429/503
-`backoff`; `requests` totals them. Check the engines' status and the warning capture prints before
+`backoff`; `requests` totals them. Each text element and form control records its computed
+`font` family, an element another element covers at its centre (a modal overlay, a sticky panel) is
+marked `occluded` with `covered_by`, and panels that scroll their own content are listed in
+`scrollers` with their scroll offset. A full-page screenshot shows only the first box of such a panel
+(an app shell of height `100vh`): content further down is compared by DOM box only, so say so in the
+limitations and scroll the panel by hand when a finding depends on it. Check the engines' status and the warning capture prints before
 going on: an errored run is never a pass. Run one engine at a time (`--engines webkit`) when memory
 is short.
 
@@ -156,8 +161,16 @@ test directories (`e2e`, `test`, `tests`, `spec`, `specs`, unless the directory 
 manifest such as `package.json`, which makes it a product package of that name) and Node-only
 scripts (a node shebang, or an import of a `node:` module, `fs`, `child_process` and other Node
 built-ins: CLIs, build scripts, dev servers). A Node server that renders pages from template
-literals still has its inline `<script>` and `<style>` blocks scanned. `features.json` lists what
-was left out under `skipped`; look at it when a finding you expected is missing.
+literals still has its inline `<script>` and `<style>` blocks scanned, and so does an HTML page held
+in a string constant of server-side code (a Go raw string for `html/template`, a Python or Java/Kotlin
+triple-quoted string) or a template file (`.tmpl`, `.gohtml`, `.jinja`, `.erb`). Vendored and
+third-party trees are left out (the shared `lang_census.py`: `vendor/`, `third_party/`, bundles, a
+package with its own manifest and LICENSE under `drivers/` or an SDK directory). When another language
+dominates (a Go tool), `features.json` carries `language_coverage` and a limitation (also a warning on
+stderr) saying what was and wasn't read: with no page in a string constant, 0 uses is not evidence,
+so scan a rendered page instead (copy it outside the repository and pass that folder as `--repo`).
+`features.json` lists what was left out under `skipped`; look at it when a finding you expected is
+missing.
 
 JavaScript APIs, not syntax: a build transpiles syntax for its targets but doesn't polyfill APIs, so
 the scan looks for APIs that newer targets have and older ones don't (`structuredClone`, `.at(-1)`,
@@ -206,10 +219,16 @@ with no item resized beyond font metrics: the whole row and what moved with it i
 consequences of other differences (a box that grew because something inside it changed, an element
 below it that moved), cumulative drift (an element that moved with the content just above it, by text
 metrics adding up down a long page) and ink measured on boxes of different shape (an inline element
-on another number of lines, or a box whose area changed more than twofold) are dismissed
-automatically and counted, with reasons in `candidates.json`. A layout difference of one element (by
+on another number of lines, or a box whose area changed more than twofold), boxes of an element
+another element covers (`occluded`: an overlay or sticky panel lies over it) and boxes inside a panel
+the automation scrolled by a different amount in each engine (moved by exactly that offset) are
+dismissed automatically and counted, with reasons in `candidates.json`. A layout difference of one element (by
 its signature, such as a shared header or footer) on several pages is one candidate: `pages` lists
-them and reach counts them. When comparisons were made and nothing at all came out (no candidate,
+them and reach counts them. Text whose computed font family differs between engines in every run
+(a control that doesn't inherit the page font is drawn in the engine's own default face) is one
+`font_family_differs` difference per pair of families, listing its elements; Playwright WebKit on
+Windows draws such text in a serif face (`webkit-windows-serif-controls`), so that one goes to needs
+review until a real Safari confirms it. When comparisons were made and nothing at all came out (no candidate,
 flaky entry or dismissal), `candidates.json` carries a `self_check` line saying how many element
 boxes were compared and how many were identical: open one screenshot pair per engine and confirm the
 pages really rendered alike before reporting no differences. Each screenshot is decoded once, in
@@ -243,6 +262,10 @@ python scripts/validate_report.py <run>/report.json --runs <run>/capture/runs.js
   --features <run>/features.json --targets targets.json [--write-summary]
 python scripts/render_report.py <run>/report.json [--brief]
 ```
+
+`--brief` shows the differences, the needs-review items and the limitations. The validator checks
+`feature_findings` against the `--features` file passed (use for use), not only against the copy in
+`candidates.json`.
 
 **Static only** (`static_only`, or when no engine can run): skip the capture and write the
 candidates file of the feature scan alone, then a report with `run_status: "not_run"`, a

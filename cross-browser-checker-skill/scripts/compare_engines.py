@@ -341,7 +341,81 @@ def compare(doc: dict, base: Path, ref: str, jobs: int | None = None,
                                   'runs': {ref: [False] * len(R), eng: low}})
             wraps(diffs, first, dismissed, moves, sizes)
             drift(diffs, first, dismissed, moves)
+            scrolled(diffs, first, dismissed, R, E, eng)
+            covered(diffs, first, dismissed, R, E)
+            font_families(diffs, R, E, page, vp, eng, ref)
     return diffs, flaky, dismissed
+
+
+def _family(f: str | None) -> str:
+    return ', '.join(x.strip().strip('"\'').lower() for x in (f or '').split(',') if x.strip())
+
+
+def font_families(diffs: list[dict], R: list[dict], E: list[dict], page: str, vp: str, eng: str, ref: str) -> None:
+    """Text and controls whose computed font family differs between the engines in every run (a control that does
+    not inherit the page font is drawn in the engine's default face): one difference per pair of families, listing
+    its elements, instead of box deltas dismissed as font metrics. Runs recorded before font capture have no font."""
+    groups: dict[tuple, list[str]] = {}
+    tags: dict[tuple, str] = {}
+    for k in sorted({k for r in R for k in r['obs'] if k[0] == 'present'}, key=str):
+        if not all(k in r['obs'] and r['obs'][k].get('font') for r in R + E):
+            continue
+        rf = {_family(r['obs'][k]['font']) for r in R}
+        ef = {_family(r['obs'][k]['font']) for r in E}
+        if len(rf) == 1 and len(ef) == 1 and rf != ef:
+            pair = (next(iter(rf)), next(iter(ef)))
+            groups.setdefault(pair, []).append(k[1])
+            tags.setdefault(pair, R[0]['obs'][k]['tag'])
+    for (rf, ef), els in sorted(groups.items()):
+        diffs.append({'page': page, 'viewport': vp, 'engine': eng, 'ref': ref, 'kind': 'layout', 'subkind': 'font_family_differs',
+                      'key': f'{rf} -> {ef}', 'element': els[0], 'elements': els[:50], 'element_tag': tags[(rf, ef)],
+                      'runs': {ref: [False] * len(R), eng: [True] * len(E)},
+                      'detail': f'{len(els)} element(s) draw in font family "{ef}" in {eng} but "{rf}" in {ref} '
+                                f'(e.g. {", ".join(els[:3])}): set font-family (or font: inherit) on them'})
+
+
+def covered(diffs: list[dict], first: int, dismissed: list[dict], R: list[dict], E: list[dict]) -> None:
+    """A box or ink difference of an element that another element covers at its centre (a modal overlay, a sticky
+    panel) in any run: what was measured is the cover, not the element."""
+    keep = []
+    for d in diffs[first:]:
+        el = d.get('element')
+        cover = None
+        if el and d['subkind'] in ('box_differs', 'content_not_rendered'):
+            cover = next((r['obs'][('present', el)].get('covered_by') or 'another element' for r in R + E
+                          if ('present', el) in r['obs'] and r['obs'][('present', el)].get('occluded')), None)
+        if cover:
+            dismissed.append(dict(d, reason=f'covered by {cover} (an overlay or sticky element lies over it), so its '
+                                            'box and ink are not what a user sees'))
+        else:
+            keep.append(d)
+    diffs[first:] = keep
+
+
+def scrolled(diffs: list[dict], first: int, dismissed: list[dict], R: list[dict], E: list[dict], eng: str) -> None:
+    """Boxes inside a panel that scrolls its own content, moved by the panel's scroll offset: the automation scrolled
+    the panel (to reach an element) by a different amount in each engine, which is not layout."""
+    def tops(runs):
+        out: dict[str, set] = {}
+        for r in runs:
+            for s in r.get('scrollers') or []:
+                out.setdefault(s['sig'], set()).add(s.get('scroll_top', 0))
+        return out
+    rt, et = tops(R), tops(E)
+    offsets = {sig: next(iter(et[sig])) - next(iter(rt[sig])) for sig in rt.keys() & et.keys()
+               if len(rt[sig]) == 1 and len(et[sig]) == 1 and et[sig] != rt[sig]}
+    if not offsets:
+        return
+    keep = []
+    for d in diffs[first:]:
+        sig = next((s for s in offsets if (d.get('element') or '').startswith(s + '>')), None)
+        delta = d.get('delta')
+        if sig and d['subkind'] == 'box_differs' and delta and abs(delta[0]) <= 4 and abs(delta[1] + offsets[sig]) <= 4:
+            dismissed.append(dict(d, reason=f'inside {sig}, which the automation scrolled {offsets[sig]} px further in {eng}: '
+                                            'a scroll offset of the panel, not a layout difference'))
+        else:
+            keep.append(d)
+    diffs[first:] = keep
 
 
 def drift(diffs: list[dict], first: int, dismissed: list[dict], moves: list[tuple[str, list, list]]) -> None:
@@ -565,7 +639,7 @@ def severity_of(c: dict, all_c: list[dict]) -> str:
         return 'Critical' if broke else 'High'
     if c['subkind'] in ('content_not_rendered', 'element_missing', 'image_not_decoded'):
         return 'High'
-    if c['subkind'] in ('overflow', 'box_differs', 'element_extra', 'request_failed', 'input_type_fallback'):
+    if c['subkind'] in ('overflow', 'box_differs', 'element_extra', 'request_failed', 'input_type_fallback', 'font_family_differs'):
         return 'Medium'
     return 'Low'
 

@@ -226,6 +226,17 @@ def main() -> int:
 
     # features
     if features:
+        # the report's feature findings come from the feature scan passed here, use for use, not only from the copy
+        # inside candidates.json (which may have been built from another scan)
+        uses_of = lambda fs: [(f['feature'], sorted((u.get('file'), u.get('line')) for u in f.get('files') or [])) for f in fs]
+        if uses_of(rep['feature_findings']) != uses_of(features.get('features') or []):
+            errs.append(f'feature_findings do not match --features ({len(rep["feature_findings"])} finding(s) in the report, '
+                        f'{len(features.get("features") or [])} in the feature scan passed): validate with the features '
+                        'file the report was built from')
+        if cands_doc.get('features') is not None and \
+                uses_of(cands_doc['features'].get('features') or []) != uses_of(features.get('features') or []):
+            errs.append('candidates.json was built from another feature scan than --features; rerun compare_engines.py '
+                        'with this features file')
         fmap = {f['feature']: f for f in cands_doc['features']['features']} if cands_doc.get('features') else {}
         if [f['feature'] for f in rep['feature_findings']] != [f['feature'] for f in fmap.values()]:
             errs.append('feature_findings do not match the feature scan')
