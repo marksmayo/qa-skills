@@ -106,9 +106,9 @@ Read the output, then confirm and complete it by reading the code:
 - **Language coverage and vendored trees** (`language_coverage`, `warnings`). Vendored and bundled
   third-party trees (`vendor/`, `third_party/`, a bundled driver such as WebDriverAgent, a nested
   directory with its own LICENSE and a manifest of another ecosystem) are left out of everything.
-  When the dominant language is one no pack reads (Go, Rust, Python, ...), recon and the scan say so
-  in `warnings`, and with under a quarter of the source in an analysed language recon sets `site.kind`
-  and `blast_radius` to `unknown` rather than model the app from incidental files. Say in the report
+  When an unanalysed language dominates (Go, Rust, Python, ...; `language_coverage.status`
+  `unsupported_dominant`), recon and the scan say so in `warnings`, and recon sets `site.kind` and
+  `blast_radius` to `unknown` rather than model the app from incidental files. Say in the report
   that the dominant language was not analysed (limitations, coverage); never present the empty static
   result as evidence.
 - **HTML held in string constants** (`site.embedded_templates`): a page a Go `html/template` constant,

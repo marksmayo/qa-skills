@@ -526,7 +526,7 @@ def self_test_go() -> list[str]:
         except ValueError:
             return fails + [f'recon.py failed: {recon.stderr[-300:]}']
         lc = r.get('language_coverage') or {}
-        if lc.get('dominant') != 'go' or lc.get('analysed') is not False:
+        if lc.get('dominant') != 'Go' or lc.get('status') != 'unsupported_dominant':
             fails.append(f'recon language_coverage does not say Go is dominant and not analysed: {lc or "missing"}')
         if not any('Go' in w for w in r.get('warnings') or []):
             fails.append('recon has no top-level warning that the dominant language (Go) is not analysed')
@@ -543,8 +543,8 @@ def self_test_go() -> list[str]:
                          'the Go string constant in internal/summary/page.go with 1 inline script')
         if any('No error boundary' in n for n in r['notes']):
             fails.append('recon claims "no error boundary ... B1" with no analysed UI code')
-        if 'drivers/agent' not in (lc.get('vendored') or []):
-            fails.append(f"recon language_coverage.vendored does not list drivers/agent: {lc.get('vendored')}")
+        if 'drivers/agent' not in (lc.get('excluded') or []):
+            fails.append(f"recon language_coverage.excluded does not list drivers/agent (lang_census): {lc.get('excluded')}")
         scan = run('scan_pitfalls.py')
         try:
             s = json.loads(scan.stdout)
@@ -557,7 +557,7 @@ def self_test_go() -> list[str]:
                          f'internal/summary/page.go:{want}; got {sorted(got)[:5]})')
         if any(c['file'].startswith(('drivers/', 'tools/probe/')) for c in s['candidates']):
             fails.append('scan_pitfalls scanned a vendored tree or an Xcode test target')
-        if not any('Go' in w for w in s['scope'].get('warnings') or []) or (s.get('language_coverage') or {}).get('dominant') != 'go':
+        if not any('Go' in w for w in s['scope'].get('warnings') or []) or (s.get('language_coverage') or {}).get('status') != 'unsupported_dominant':
             fails.append('scan_pitfalls does not warn that the dominant language (Go) is not analysed')
         cd = run('contract_diff.py')
         try:
@@ -634,9 +634,9 @@ def main() -> int:
         note_packages(root, repo_files)
     # vendored and bundled third-party trees are not the app's code; the language census decides whether the
     # repository is mostly in a language no pack reads (a Go tool), which must be said loudly
-    vendored = vendored_roots(root, repo_files)
-    lang = language_census(root, repo_files, vendored, is_test=lambda r: classify(r) == 'test')
-    lang_warning = language_warning(lang, 'scan_pitfalls.py')
+    lang = language_census(root, tool='scan_pitfalls.py')   # shared lang_census: counts and excluded trees
+    vendored = lang['excluded']
+    lang_warning = language_warning(lang)
     roles: dict[str, str | None] = {}
     def role_of(rel: str) -> str | None:
         if rel not in roles:

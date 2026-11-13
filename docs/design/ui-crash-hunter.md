@@ -369,14 +369,13 @@ Status: **built** (v1.2.0). The implementation differs from the original plan as
 - Go CLI with a generated HTML report (a Go `html/template` page held in a string constant, a bundled
   third-party iOS driver tree):
   - Recon modelled the repository as an iOS app from a SwiftUI test fixture in the bundled driver, with
-    no word about Go. `langs.py` now leaves vendored trees out before anything is counted: `vendor/`,
-    `third_party/`, `external/`, bundled trees known by name (WebDriverAgent, an XCTest framework) and
-    any nested directory with its own LICENSE and a manifest of another ecosystem than the root. Recon
-    and `scan_pitfalls.py` record `language_coverage` (files per language, the dominant one, whether it
-    is analysed, the vendored trees) and a top-level warning (also on stderr) when the dominant language
-    is not analysed. With under 25% of the source in an analysed language, recon sets `site.kind` and
-    the blast radius to `unknown` instead of building them from incidental files, and drops the "no error
-    boundary, B1" note.
+    no word about Go. `langs.py` uses the shared `lang_census.py` to leave vendored and third-party
+    trees out before anything is counted or scanned (vendor/, third_party/, built bundles, header trees,
+    submodules, a nested package with its own manifest and LICENSE under drivers/ or an SDK directory).
+    Recon and `scan_pitfalls.py` record `language_coverage` (status, counts per language, the excluded
+    trees) and a top-level warning (also on stderr) when an unanalysed language dominates; recon then
+    sets `site.kind` and the blast radius to `unknown` instead of building them from incidental files,
+    and drops the "no error boundary, B1" note.
   - HTML held in string constants (a Go raw string, a Python/Java/Kotlin triple-quoted string, a Rust raw
     string) and template files (`.tmpl`, `.gohtml`, `.jinja`, `.erb`, ...) are listed in
     `site.embedded_templates` with their inline scripts, and `scan_pitfalls.py` scans those inline

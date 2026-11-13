@@ -42,10 +42,10 @@ holding next.config.* is a Next.js project root even without its own package.jso
 directory (e2e/, tests/) with its own package manifest is a package, not tests. Comment lines never
 count as persisted-state uses.
 
-Vendored and bundled third-party trees are left out of everything (see langs.py). language_coverage counts
-source files per language; when the dominant language is not one the packs read (a Go tool), a top-level
-warning says so, and with under a quarter of the source in an analysed language site.kind and the blast
-radius are "unknown" rather than modelled from incidental files. HTML held in string constants (a Go
+Vendored and bundled third-party trees are left out of everything (langs.py, via the shared
+lang_census.py). language_coverage counts source files per language; when an unanalysed language
+dominates (a Go tool), a top-level warning says so, and site.kind and the blast radius are "unknown"
+rather than modelled from incidental files. HTML held in string constants (a Go
 html/template constant, a Python triple-quoted string) and template files are listed in
 site.embedded_templates; scan_pitfalls.py scans their inline scripts. Xcode <Name>Tests targets are tests.
 """
@@ -544,12 +544,11 @@ def main() -> int:
     files = list(walk(root))
     # vendored and bundled third-party trees (a driver with its own LICENSE and package.json inside a Go module)
     # are not the app: they never decide the platforms, the site model or the screens
-    vendored = vendored_roots(root, files)
+    lang = language_census(root, tool='the crash hunter')   # shared lang_census: counts and excluded trees
+    vendored = lang['excluded']
     files = [f for f in files if not under(f.relative_to(root).as_posix(), vendored)]
     note_packages(root, files)  # a test-named directory with its own package manifest is a package, not tests
-    lang = language_census(root, files, [], is_test=lambda r: in_test_dir(r) or bool(TEST_NAME.search(r.rsplit('/', 1)[-1])))
-    lang['vendored'] = vendored
-    lang_warning = language_warning(lang, 'this skill')
+    lang_warning = language_warning(lang)
     platforms, targets = detect_platforms(root, [f for f in files if not in_test_dir(f.relative_to(root).as_posix())])
     code = [f for f in files if f.suffix in CODE_EXT and not TEST_NAME.search(f.name) and not is_bundle(f)
             and not in_test_dir(f.relative_to(root).as_posix())]
