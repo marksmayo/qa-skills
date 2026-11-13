@@ -1,7 +1,7 @@
 ---
 name: test-data-auditor
 description: Audit the data tests depend on (fixtures, factories, seeds, snapshots, HTTP recordings and inline literals, in Python and JavaScript/TypeScript suites) for time bombs, real-looking personal data, magic ids, environment coupling, shared mutable fixtures, unseeded randomness, schema drift, snapshot rot, unused or duplicate files, locale assumptions and files tests leave behind. Every rule runs statically; time bombs, shared state and locale assumptions are then confirmed with real runs under a moved clock, reversed order or another locale. Personal data is never echoed (only file, line, field and data type), secrets are handed to code-security-auditor, and the report never calls test data "clean".
-version: 1.2.0
+version: 1.3.0
 ---
 
 # Test data auditor
@@ -97,6 +97,21 @@ share, scanned like test code but never counted as a test:
 - helpers in a test area (`__tests__/helpers/`, `e2e/helpers.ts`, `test-support/`): loaded by the
   tests that import them.
 
+**Test areas and product packages.** A directory named `e2e`, `tests`, `test`, `spec`,
+`fixtures` and the like is a test area, unless it is a product package: it holds a manifest
+(`package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, ...) and ships code (a `src/`
+directory, a `package.json` with `main`/`module`/`exports`/`bin`, a Cargo `[lib]`/`[[bin]]`, the
+Python package its manifest names). A workspace package named `e2e` is then product code, while
+its own `tests/` is still a test area; a Playwright `e2e/` folder with only specs and a
+`package.json` stays a test area. `inventory.json` lists such packages under `product_dirs`, and
+`scan_data.py` repeats them in its notes. This is the rule `diff_scope.py` uses for other skills.
+
+The walk prunes dependency, build and VCS directories (`node_modules`, `dist`, `build`, `.git`,
+`.turbo`, ...) before descending, reads each test file once, counts lines in chunks (a huge
+fixture is never held in memory), and treats a text-named file holding NUL bytes as binary
+(`not_assessed`). `scan_data.py` tokenizes a JavaScript or TypeScript product file only when its
+text mentions the clock or a locale call, so a large monorepo scans in minutes.
+
 A test loads a source when the source's file name appears in one of four places:
 - **a test function:** that test;
 - **a test module outside any function:** every test in the module;
@@ -132,7 +147,7 @@ python scripts/schema_drift.py <repo> --inventory <run>/inventory.json --out <ru
 
 | Category | Rules |
 |---|---|
-| `personal_data` | A tabular extract (CSV, TSV, HTML or `.xlsx` sheet, JSON list) with 20 or more rows whose column is named for a person or customer (`customer_name`, `client`, `Cust Name`) and holds mostly names: judged by the header and the row count, reported by file, header line and column only (`customer_extract`; extend `person_columns` in `data/rules.json` for a repo's own abbreviations); email at a public or non-reserved domain; phone outside the reserved ranges; Luhn-valid card not on a test list (dates, times, version strings and epoch timestamps are never phones or cards); Medicare, TFN or NHS number with a valid check digit; SSN or National Insurance number in valid format; IBAN with a valid checksum; full name with a street address; date of birth beside a name |
+| `personal_data` | A tabular extract (CSV, TSV, HTML or `.xlsx` sheet, JSON list) with 20 or more rows whose column is named for a person or customer (`customer_name`, `client`, `Cust Name`) and holds mostly names: judged by the header and the row count, reported by file, header line and column only (`customer_extract`; extend `person_columns` in `data/rules.json` for a repo's own abbreviations); email at a public or non-reserved domain (a package spec such as `name@1.2.3`, a host given as an IP address and a file name such as `icon@2x.png` are not addresses); phone outside the reserved ranges; Luhn-valid card not on a test list (dates, times, version strings and epoch timestamps are never phones or cards); Medicare, TFN or NHS number with a valid check digit; SSN or National Insurance number in valid format; IBAN with a valid checksum; full name with a street address; date of birth beside a name |
 | `time_bomb` | A fixed expiry date in the future that the code compares with now, giving the date it fails on; a future literal date in a test that also reads the clock |
 | `magic_id` | A lookup by a literal id where a database or seed is in reach (the test loads a seed, has a database or integration marker, requests a database fixture, or sits in an integration tree), checked against the seed rows; not a large id in a "not found" test, nor an all-nines sentinel; a literal UUID; an equality assertion on an auto-increment id (`x.id == 3`, not `x.id > 0`) |
 | `environment_coupling` | A production or staging host, a real bucket, an AWS account id, an absolute path on someone's machine (platform roots such as `/home/site/wwwroot` or a CI runner's home are the same everywhere, so they are not) |
@@ -163,10 +178,13 @@ beside a name, phone and email fields. The JS/TS rules:
   - date calls count: `new Date('...')`, `new Date(2027, 4, 12)` (months count from 0), `Date.UTC`,
     dayjs, moment, `parseISO`, `DateTime.fromISO`.
 - **`magic_id`:** literal UUIDs; `getById(42)`, `findOne(7)`, `where: { id: 7 }`; `expect(x.id).toBe(1)`.
-- **`nondeterministic`:** `Math.random()` or faker with no seed or stub in the file; `randomUUID()`,
-  uuid v4 and nanoid in fixtures and factories.
+- **`nondeterministic`:** `Math.random()` or faker with no seed or stub in the file (also inside a
+  template literal's `${...}`, which is code); `randomUUID()`, uuid v4 and nanoid in fixtures and
+  factories.
 - **`shared_mutable`:** a module-level array, object, Map or Set that tests change and no
-  `beforeEach` or `afterEach` resets.
+  `beforeEach` or `afterEach` resets; a module-level `let` or `var` holding a plain value that a
+  test body reassigns, with no `beforeEach`/`afterEach` putting it back (`reassigned_module_let`).
+  Assignments in `beforeAll`/`afterAll` and at module level are setup, not a test's change.
 - **`locale_assumption`:** a literal compared with one of these, when it formats with the machine
   locale: a direct call, a product function, or a rendered component.
 

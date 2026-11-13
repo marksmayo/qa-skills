@@ -159,14 +159,51 @@ def tokenize(text: str) -> list[Tok]:
     return out
 
 
+def _mask_template(src: str) -> str:
+    """A template literal with its text blanked and its ${...} expressions kept (string literals inside them blanked):
+    `k-${Math.random()}` is code that runs, and must stay visible to the call patterns."""
+    out, i, n = ['`'], 1, len(src)
+    blank = lambda s: re.sub(r'[^\n]', ' ', s)  # noqa: E731
+    while i < n - 1:
+        if src[i] == '\\' and i + 1 < n - 1:
+            out.append(blank(src[i:i + 2]))
+            i += 2
+            continue
+        if src.startswith('${', i):
+            out.append('${')
+            depth, j = 1, i + 2
+            while j < n - 1 and depth:
+                ch = src[j]
+                if ch in '\'"`':
+                    k = j + 1
+                    while k < n - 1 and src[k] != ch:
+                        k += 2 if src[k] == '\\' else 1
+                    out.append(ch + blank(src[j + 1:k]) + (src[k] if k < n - 1 else ''))
+                    j = k + 1
+                    continue
+                depth += ch == '{'
+                depth -= ch == '}'
+                out.append(ch)
+                j += 1
+            i = j
+            continue
+        out.append(blank(src[i]))
+        i += 1
+    out.append(src[-1] if n > 1 else '')
+    return ''.join(out)
+
+
 def masked(text: str, toks: list[Tok] | None = None) -> str:
-    """The source with comments removed and string/regex contents replaced by spaces (newlines kept)."""
+    """The source with comments removed and string/regex contents replaced by spaces (newlines kept). The ${...}
+    expressions of a template literal are code, so they are kept."""
     toks = toks if toks is not None else tokenize(text)
     out, last = [], 0
     for t in toks:
         gap = text[last:t.pos]
         out.append(re.sub(r'[^\n]', ' ', gap))             # whitespace and comments
-        if t.kind in ('str', 'tpl', 'regex'):
+        if t.kind == 'tpl':
+            out.append(_mask_template(t.text))
+        elif t.kind in ('str', 'regex'):
             out.append(t.text[0] + re.sub(r'[^\n]', ' ', t.text[1:-1]) + t.text[-1] if len(t.text) >= 2 else t.text)
         else:
             out.append(t.text)

@@ -354,7 +354,7 @@ def excerpt_echoes_value(excerpt: str) -> str | None:
         if len(re.sub(r'\D', '', s)) >= 6 and not (scan_data.DATE_TIME.match(s.strip()) or scan_data.DATE_SHAPE.match(s.strip())):
             return 'a quoted number of six or more digits'
     for m in scan_data.EMAIL.finditer(excerpt):
-        if scan_data.email_class(m.group(2))[0] != 'reserved':
+        if scan_data.email_class(m.group(2))[0] != 'reserved' and not scan_data.not_mailbox(excerpt, m):
             return 'an email address'
     return None
 

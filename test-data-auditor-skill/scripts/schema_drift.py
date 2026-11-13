@@ -147,6 +147,7 @@ def match_model(record: dict, path: str, models: dict, roots: set[str] | None = 
 
 def drift(root: Path, inventory: dict) -> dict:
     files = inv.walk(root)
+    inv.set_product_dirs(root, files)          # a product package named e2e or tests holds models, not test data
     models, enums = python_models(root, files)
     models.update(schema_models(root, files))
     roots = inv.package_roots(files)

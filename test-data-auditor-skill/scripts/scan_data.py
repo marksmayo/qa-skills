@@ -72,6 +72,9 @@ PLACEHOLDER_SECRET = re.compile(RULES['placeholder_secret_words'], re.I)
 # JavaScript and TypeScript (matched on masked source: comments removed, string contents blanked)
 JS_NOW = re.compile(r'\bDate\.now\s*\(\s*\)|\bnew\s+Date\s*\(\s*\)|\b(?:dayjs|moment)\s*\(\s*\)|\bDateTime\.(?:now|utc)\s*\(\s*\)'
                     r'|\bTemporal\.Now\b')
+# a loose raw-text prefilter for JS_NOW and JS_DATE_HELPER (a comment inside the call cannot hide a file from it)
+JS_CLOCK_WORDS = re.compile(r'\bDate\.now\b|\bnew\s+Date\b|\bdayjs\b|\bmoment\b|\bDateTime\.|\bTemporal\b|\bis(?:Past|Future|Before|After|Expired)\b|'
+                            r'\bdifferenceIn|\bcompare(?:Asc|Desc)\b')
 JS_NOW_VAR = re.compile(r'\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::\s*[\w.]+\s*)?=\s*(?:Date\.now\s*\(\s*\)|new\s+Date\s*\(\s*\)'
                         r'(?:\.getTime\(\))?|(?:dayjs|moment)\s*\(\s*\)|DateTime\.(?:now|utc)\s*\(\s*\))\s*;?\s*$')
 JS_CMP = re.compile(r'(?<![=!<>])(<=|>=|<|>)(?![=>])')
@@ -92,6 +95,8 @@ FORMATTED_LITERAL = re.compile(r"""['"`][^'"`]*(\d{1,3},\d{3}\b|\d{1,3}\.\d{3},\
                                r"""|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w* \d{1,2}\b|\b\d{1,2}:\d{2}\s?[AaPp][Mm]\b)""")
 JS_KEYWORDS = {'if', 'for', 'while', 'switch', 'catch', 'with', 'return', 'function', 'else', 'do', 'try'}
 JS_TOP_DECL = re.compile(r'^(?:export\s+)?(let|const|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*(?:\[|\{|new\s+(?:Map|Set|Array|WeakMap)\b)')
+# any other module-level let/var (a plain value, or none): flagged only when a test body reassigns it
+JS_TOP_LET = re.compile(r'^(?:export\s+)?(let|var)\s+([A-Za-z_$][\w$]*)\b')
 JS_FUNC = re.compile(r'\bfunction\s*\*?\s*([A-Za-z_$][\w$]*)\s*\(|\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*'
                      r'(?:async\s+)?(?:function\b|\([^)]*\)\s*(?::[^=]+)?=>|[A-Za-z_$][\w$]*\s*=>)|^\s*(?:async\s+)?([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*'
                      r'(?::[^{]+)?\{')
@@ -285,6 +290,23 @@ def phone_reserved(d: str) -> str | None:
     return placeholder_digits(d)
 
 
+FILE_SUFFIX_TLD = {'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'avif', 'ico', 'js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx', 'css', 'map',
+                   'json', 'txt', 'md', 'html', 'yaml', 'yml'}
+
+
+def not_mailbox(value: str, m: re.Match) -> str | None:
+    """Why an EMAIL match is not a mailbox, or None. A package spec (`pnpm@10.2.1`, `left-pad@1.3.0-rc.1`) or a host
+    given as an IP address has no alphabetic top-level label; `icon@2x.png` is a file name. URL user-info with a named
+    host (`user:pass@db.example.org`) is still matched: no other rule flags credentials in a URL."""
+    labels = m.group(2).split('.')
+    tld = labels[-1]
+    if not (tld.isalpha() and len(tld) >= 2) or all(x.isdigit() for x in labels[:-1]):
+        return 'a version or an IP address after @ (a package spec or a host), not a mail domain'
+    if tld.lower() in FILE_SUFFIX_TLD:
+        return 'a file name with an @ (icon@2x.png), not a mail domain'
+    return None
+
+
 def email_class(domain: str) -> tuple[str, str]:
     d = domain.lower()
     r = RESERVED['email_domains_reserved']
@@ -338,20 +360,25 @@ class Scanner:
         inv.DATA_DIRS.clear()
         inv.DATA_DIRS.update(inventory.get('data_dirs', []))       # trees inventory.py was told hold test data
         self.cands: list[dict] = []
+        self._keys: set[tuple] = set()
         self.by_path = {i['path']: i for i in inventory['inventory']}
         self.seed_loaders = {t for i in inventory['inventory'] if i['kind'] == 'seed' for t in i['loaded_by']}
         self.files = inv.walk(root)
+        # directories named e2e/tests/spec that are product packages (a manifest that ships code) are not test areas
+        inv.set_product_dirs(root, self.files)
         self.sources = [f for f in self.files if f.endswith('.py') and not inv.in_test_area(f)]
         # JS/TS product code and tests (declaration files and bundles are not read)
         self.js_files = [f for f in self.files if jsparse.is_js(f) and not re.search(r'\.d\.[cm]?ts$|\.min\.js$', f)]
         self._js: dict[str, tuple] = {}
-        self.notes: list[str] = []
+        self._raw: dict[str, str | None] = {}
+        self.notes: list[str] = [f'{why}: scanned as product code, not test data' for why in inv.PRODUCT_DIRS.values()]
 
     def add(self, category: str, rule: str, file: str, line: int, why: str, field: str | None = None, data_type: str | None = None,
             value=None, auto_dismiss: str | None = None, details: dict | None = None, tests: list[str] | None = None):
         key = (category, rule, file, line, field, fp(value) if value is not None else None)
-        if any(c['_key'] == key for c in self.cands):
+        if key in self._keys:
             return
+        self._keys.add(key)
         c = {'_key': key, 'category': category, 'rule': rule, 'file': file, 'line': line, 'field': field, 'data_type': data_type,
              'why': why, 'fingerprint': fp(value) if value is not None and category in ('personal_data', 'secret') else None,
              'auto_dismiss': auto_dismiss, 'details': details or {},
@@ -369,6 +396,8 @@ class Scanner:
         for m in EMAIL.finditer(value):
             if re.search(r'(UID|Message-ID|Content-ID|References|In-Reply-To)\s*:\s*<?$', value[:m.start()], re.I):
                 continue                   # an iCalendar UID or a mail header id, not a mailbox
+            if not_mailbox(value, m):
+                continue
             cls, why = email_class(m.group(2))
             self.add('personal_data', 'email', file, line, why, field, 'email address', m.group(0),
                      auto_dismiss=why if cls == 'reserved' else None,
@@ -591,7 +620,8 @@ class Scanner:
         if py is not None and rel in py.tests and isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
             if any(DB_FIXTURE.search(f) for f in py.requested(fn, py.visible_fixtures(rel)) | {a.arg for a in fn.args.args}):
                 return True
-        return bool(set(PurePosixPath(rel).parts[:-1]) & DB_DIRS)
+        parts = PurePosixPath(rel).parts[:-1]   # a product package named e2e is not an integration tree
+        return any(seg in DB_DIRS and '/'.join(parts[:i + 1]) not in inv.PRODUCT_DIRS for i, seg in enumerate(parts))
 
     def test_code(self, rel: str, tree: ast.AST, seeds: dict[int, str], py: inv.PyTests | None = None):
         item = self.by_path.get(rel, {})
@@ -807,10 +837,23 @@ class Scanner:
                          auto_dismiss=why, details={'route_to': None if why else 'code-security-auditor'})
 
     # ---------------- JavaScript and TypeScript
+    def js_raw(self, rel: str) -> str | None:
+        """A JS/TS file's text, read once (None when it can't be read or is over large_file_mb)."""
+        if rel not in self._raw:
+            p = self.root / rel
+            try:
+                big = p.stat().st_size > RULES['large_file_mb'] * 1_000_000
+                self._raw[rel] = None if big else p.read_text(encoding='utf-8', errors='replace')
+            except OSError:
+                self._raw[rel] = None
+        return self._raw[rel]
+
     def js_parsed(self, rel: str):
         """(text, tokens, masked text, masked lines) for a JS/TS file, cached."""
         if rel not in self._js:
-            text = (self.root / rel).read_text(encoding='utf-8', errors='replace')
+            text = self.js_raw(rel)
+            if text is None:
+                text = (self.root / rel).read_text(encoding='utf-8', errors='replace')
             toks = jsparse.tokenize(text)
             m = jsparse.masked(text, toks)
             self._js[rel] = (text, toks, m, m.split('\n'))
@@ -820,6 +863,11 @@ class Scanner:
         """Add {field: [{file, line, op}]} for JS/TS lines comparing a property with the clock (Date.now(), new Date(),
         a variable holding either, or isPast/isBefore/isAfter against now)."""
         for rel in self.js_files:
+            # tokenizing is the slow part: only files whose raw text reads the clock can compare with it (masking only
+            # removes matches, so a file with no raw match has none after masking either)
+            raw = self.js_raw(rel)
+            if raw is None or not JS_CLOCK_WORDS.search(raw):
+                continue
             try:
                 _, _, _, lines = self.js_parsed(rel)
             except OSError:
@@ -931,6 +979,9 @@ class Scanner:
         for n, ln in enumerate(lines, 1):
             d = JS_TOP_DECL.match(ln)
             if not d:
+                s = JS_TOP_LET.match(ln)
+                if s:
+                    self.js_reassigned_let(rel, lines, n, s.group(2), s.group(1), hooks, tests)
                 continue
             name, keyword = d.group(2), d.group(1)
             mut = re.compile(rf'\b{re.escape(name)}\s*\.\s*(push|pop|shift|unshift|splice|set|add|delete|clear|sort|reverse|fill)\s*\('
@@ -948,14 +999,39 @@ class Scanner:
                          f'(first at line {muts[0]}) and no beforeEach/afterEach resets', name, None,
                          details={'name': name, 'mutated_at': muts[:20], 'shared_by': tests}, tests=tests)
 
+    def js_reassigned_let(self, rel: str, lines: list[str], n: int, name: str, keyword: str, hooks: list, tests: list[str]):
+        """A module-level `let`/`var` holding a plain value (null, a number, a string, a function result) that a test body
+        reassigns, with no beforeEach/afterEach putting it back: the next test sees what the last one left. Assignments
+        in beforeAll/afterAll and at module level are setup, not a test's change."""
+        assign = re.compile(rf'(?<![.\w$]){re.escape(name)}\s*(?:=(?![=>])|\+\+|--|(?:[-+*/%|&^]|\?\?|\|\||&&)=)')
+        shadow = re.compile(rf'\b(?:let|const|var)\s+{re.escape(name)}\b|\bfunction\s+[\w$]*\s*\([^)]*\b{re.escape(name)}\b')
+        muts, resets = [], []
+        for k, other in enumerate(lines, 1):
+            if k == n or not other[:1].isspace() or not assign.search(other) or shadow.search(other):
+                continue
+            hook = next((h for h in hooks if h[1] <= k <= h[2]), None)
+            if hook is None:
+                muts.append(k)
+            elif hook[0] in ('beforeEach', 'afterEach'):
+                resets.append(k)
+        if muts and not resets:
+            self.add('shared_mutable', 'reassigned_module_let', rel, n,
+                     f'module-level {keyword} {name} is reassigned inside a test ({len(muts)} line(s), first at line {muts[0]}) '
+                     'and no beforeEach/afterEach puts it back', name, None,
+                     details={'name': name, 'mutated_at': muts[:20], 'shared_by': tests}, tests=tests)
+
     def js_locale(self):
         """Tests that compare a literal with JS formatting that uses the machine locale (no explicit locale argument)."""
         calls = '|'.join(re.escape(c.split('(')[0].split('.')[-1]) for c in RULES['locale_calls_js'])
         machine = re.compile(rf'(?:\.|\bIntl\.)({calls})\s*\(\s*(\)|undefined\b|\[\s*\])')
+        named_call = re.compile(rf'\b(?:{calls})\b')
         dependent: dict[str, dict] = {}
         for rel in self.js_files:
             if inv.in_test_area(rel):
                 continue
+            raw = self.js_raw(rel)
+            if raw is None or not named_call.search(raw):
+                continue                   # cheap raw-text check before tokenizing (masking only removes matches)
             _, _, _, lines = self.js_parsed(rel)
             for n, ln in enumerate(lines, 1):
                 m = machine.search(ln)

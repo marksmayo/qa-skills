@@ -27,7 +27,7 @@ and the like; --data-dir names any other tree (repeatable). --markers reads {"an
 file anonymised on purpose is recorded with its reference.
 """
 from __future__ import annotations
-import argparse, ast, fnmatch, json, os, re, sys
+import argparse, ast, codecs, fnmatch, json, os, re, sys
 from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
@@ -70,6 +70,7 @@ MOBILE_ASSETS = re.compile(r'(^|/)(androidTest|test)/assets/|\.xctest|TestResour
 
 
 def walk(root: Path) -> list[str]:
+    """Every file under root; build output, dependencies and VCS directories are pruned before descending."""
     out = []
     for dp, dns, fns in os.walk(root):
         dns[:] = sorted(d for d in dns if d not in SKIP_DIRS and not d.endswith('.egg-info'))
@@ -78,9 +79,79 @@ def walk(root: Path) -> list[str]:
     return out
 
 
+# Directories named like a test directory (e2e, tests, spec...) that are product packages (a manifest that ships code),
+# repo-relative. Filled by set_product_dirs() from the walked tree; the same rule as diff_scope.is_test_path.
+PRODUCT_DIRS: dict[str, str] = {}
+MANIFESTS = ('package.json', 'pyproject.toml', 'setup.py', 'setup.cfg', 'Cargo.toml', 'go.mod', 'pom.xml',
+             'build.gradle', 'build.gradle.kts', 'composer.json', 'pubspec.yaml', 'deno.json', 'deno.jsonc')
+
+
+def product_package(root: Path, rel_dir: str, names: set[str], subdirs: set[str]) -> str | None:
+    """Why rel_dir (a directory with a test-like name) is a product package, or None.
+
+    A product package holds a package manifest AND ships code: a src/ directory, a package.json with
+    main/module/exports/bin, a Cargo.toml with [lib] or [[bin]], non-test .go files beside a go.mod, or the Python
+    package a pyproject.toml/setup.py/setup.cfg names. A manifest alone does not make one: a workspace package that
+    holds only specs and a runner config (a Playwright e2e/ package) is the known test layout and stays test code.
+    The rule is diff_scope.py's is_test_path (shared), copied because this skill does not carry diff_scope.py."""
+    d = root / rel_dir
+    found = [m for m in MANIFESTS if m in names]
+    if not found:
+        return None
+    m = found[0]
+    try:
+        if 'src' in subdirs:
+            return f'{m} and a src/ directory'
+        if m == 'package.json':
+            try:
+                pkg = json.loads((d / m).read_text(encoding='utf-8', errors='replace'))
+            except ValueError:
+                pkg = {}
+            fields = [k for k in ('main', 'module', 'exports', 'bin') if isinstance(pkg, dict) and pkg.get(k)]
+            return f'package.json declaring {"/".join(fields)}' if fields else None
+        if m == 'Cargo.toml':
+            text = (d / m).read_text(encoding='utf-8', errors='replace')
+            return 'Cargo.toml with a [lib] or [[bin]] target' if re.search(r'^\s*\[(lib|\[bin\])\]', text, re.M) else None
+        if m == 'go.mod':
+            return 'go.mod and non-test .go files' if any(n.endswith('.go') and not n.endswith('_test.go') for n in names) else None
+        if m in ('pyproject.toml', 'setup.py', 'setup.cfg'):
+            text = (d / m).read_text(encoding='utf-8', errors='replace')
+            pk = {re.sub(r'[-.]', '_', n).lower() for n in re.findall(r'''(?m)^\s*name\s*[=:]\s*["']?([\w.-]+)''', text)}
+            hit = [s for s in subdirs if s.lower() in pk and (d / s / '__init__.py').is_file()]
+            return f'{m} and its Python package {hit[0]}/' if hit else None
+    except OSError:
+        return None
+    return None
+
+
+def set_product_dirs(root: Path, files: list[str]) -> dict[str, str]:
+    """Find the directories named like test directories that are product packages, from the walked file list."""
+    PRODUCT_DIRS.clear()
+    names: dict[str, set[str]] = {}
+    subdirs: dict[str, set[str]] = {}
+    for f in files:
+        p = PurePosixPath(f)
+        names.setdefault(p.parent.as_posix(), set()).add(p.name)
+        parts = p.parts[:-1]
+        for i in range(1, len(parts)):
+            subdirs.setdefault('/'.join(parts[:i]), set()).add(parts[i])
+    for d, ns in names.items():
+        if PurePosixPath(d).name in TEST_DIRS and ns & set(MANIFESTS):
+            why = product_package(root, d, ns, subdirs.get(d, set()))
+            if why:
+                PRODUCT_DIRS[d] = f'{d}/ is a product package ({why})'
+    return dict(PRODUCT_DIRS)
+
+
+def test_dirs_of(path: str) -> set[str]:
+    """The test-like directory names on path, leaving out any that is a product package (packages/e2e with its own
+    manifest and src/ is product code; its tests/ is still tests)."""
+    parts = PurePosixPath(path).parts[:-1]
+    return {seg for i, seg in enumerate(parts) if seg in TEST_DIRS and '/'.join(parts[:i + 1]) not in PRODUCT_DIRS}
+
+
 def in_test_area(path: str) -> bool:
-    parts = set(PurePosixPath(path).parts[:-1])
-    return bool(parts & TEST_DIRS) or detect_conventions.is_test_file(path) or PurePosixPath(path).name == 'conftest.py' or \
+    return bool(test_dirs_of(path)) or detect_conventions.is_test_file(path) or PurePosixPath(path).name == 'conftest.py' or \
         any(path.startswith(d.rstrip('/') + '/') for d in DATA_DIRS)
 
 
@@ -110,11 +181,11 @@ def is_support(path: str) -> bool:
         return True
     dirs = [d.lower() for d in p.parts[:-1]]
     if p.stem.lower() in ('helpers', 'helper', 'utils', 'test-utils', 'test_utils', 'support', 'setup', 'fixtures') and \
-            set(p.parts[:-1]) & TEST_DIRS:
+            test_dirs_of(path):
         return True                        # e2e/helpers.ts, e2e/fixtures.ts (Playwright fixtures)
     if any(d in ('test-support', 'test_support', 'test-helpers', 'test_helpers', 'test-utils', 'test_utils', 'testutils') for d in dirs):
         return not re.search(r'\.(test|spec)\.', p.name)
-    return bool(set(dirs) & SUPPORT_DIRS) and (bool(set(p.parts[:-1]) & TEST_DIRS)) and not re.search(r'\.(test|spec)\.', p.name)
+    return bool(set(dirs) & SUPPORT_DIRS) and bool(test_dirs_of(path)) and not re.search(r'\.(test|spec)\.', p.name)
 
 
 def kind_of(path: str) -> str | None:
@@ -288,18 +359,53 @@ class FileRef:
         globbed = any(('*' in s or '?' in s) and fnmatch.fnmatch(self.name, s.rsplit('/', 1)[-1]) for s in strs)
         return self.decide(bare, globbed, self.dir_named(strs), self.parent_named(strings_in(module)), rel)
 
-    def named_in_text(self, text: str, where: str) -> bool:
-        """The same test for a JavaScript or TypeScript file, on its text."""
-        t = text.replace('\\', '/')
+    def named_in_text(self, view: tuple[str, list[str]], where: str) -> bool:
+        """The same test for a JavaScript or TypeScript file, on its text (view: js_view()'s text and string literals)."""
+        t, strs = view
         if self.rel in t or self.tail in t:
             return True
         rel = self.relation(where)
         if not rel:
             return False
         bare = bool(self.name_rx.search(t) or re.search(r'''['"/]''' + re.escape(self.stem) + r'''['"]''', t))
-        strs = re.findall(r'''['"`]([^'"`\n]*)['"`]''', t)
         globbed = any(('*' in s or '?' in s) and fnmatch.fnmatch(self.name, s.rsplit('/', 1)[-1]) for s in strs)
         return self.decide(bare, globbed, self.dir_named(strs), self.parent_named(strs), rel)
+
+
+def count_lines(p: Path) -> int:
+    """Lines in a UTF-8 text file, read in 1 MB chunks so a huge fixture is never held in memory whole. Raises
+    UnicodeDecodeError for a file that is not UTF-8 (a NUL byte marks a binary file under a text extension)."""
+    dec = codecs.getincrementaldecoder('utf-8')()
+    lines, last, empty = 0, '', True
+    with p.open('rb') as fh:
+        while True:
+            chunk = fh.read(1 << 20)
+            if not chunk:
+                break
+            if b'\x00' in chunk:
+                raise UnicodeDecodeError('utf-8', chunk[:1], 0, 1, 'NUL byte: a binary file')
+            text = dec.decode(chunk)
+            if text:
+                empty, last = False, text[-1]
+                lines += text.count('\n')
+    dec.decode(b'', final=True)
+    return lines + (0 if empty or last == '\n' else 1)
+
+
+_VIEWS: dict[tuple[str, str], tuple[str, list[str]] | None] = {}
+
+
+def js_view(root: Path, rel: str) -> tuple[str, list[str]] | None:
+    """A JS/TS file's text (backslashes as slashes) and its string literals, read once per run (None if unreadable).
+    Every data file is matched against every test file, so reading them per data file was 100k+ reads on a monorepo."""
+    key = (str(root), rel)
+    if key not in _VIEWS:
+        try:
+            t = (root / rel).read_text(encoding='utf-8', errors='replace').replace('\\', '/')
+            _VIEWS[key] = (t, re.findall(r'''['"`]([^'"`\n]*)['"`]''', t))
+        except OSError:
+            _VIEWS[key] = None
+    return _VIEWS[key]
 
 
 def importers(py: PyTests, module_path: str) -> set[str]:
@@ -343,11 +449,8 @@ def loaded_by(rel: str, py: PyTests, js_tests: list[str], root: Path, ref: FileR
         elif PurePosixPath(p).name != 'conftest.py':
             out |= importers(py, p)
     for t in js_tests:
-        try:
-            text = (root / t).read_text(encoding='utf-8', errors='replace')
-        except OSError:
-            continue
-        if t != rel and ref.named_in_text(text, t):
+        view = js_view(root, t)
+        if view is not None and t != rel and ref.named_in_text(view, t):
             out.add(f'{t}::*')
     return sorted(out)
 
@@ -355,7 +458,9 @@ def loaded_by(rel: str, py: PyTests, js_tests: list[str], root: Path, ref: FileR
 def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[str] | None = None) -> dict:
     DATA_DIRS.clear()
     DATA_DIRS.update(d.replace('\\', '/').strip('/') for d in data_dirs or [] if d.strip('/'))
+    _VIEWS.clear()
     all_files = walk(root)
+    set_product_dirs(root, all_files)
     files = all_files
     if paths:
         files = [f for f in files if any(f == p or f.startswith(p.rstrip('/') + '/') for p in paths)]
@@ -401,10 +506,11 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
                          format=ext[1:])
         else:
             try:
-                text = p.read_text(encoding='utf-8')
-                entry['lines'] = text.count('\n') + (0 if text.endswith('\n') or not text else 1)
+                entry['lines'] = count_lines(p)
             except UnicodeDecodeError:
                 entry.update(status='not_assessed', reason='not UTF-8 text')
+            except OSError as exc:
+                entry.update(status='not_assessed', reason=f'cannot be read: {exc.__class__.__name__}')
         if rel in anonymised:
             entry['anonymised_by'] = anonymised[rel]
         if k == 'inline' and PurePosixPath(rel).name == 'conftest.py':
@@ -428,21 +534,17 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
             tail = re.compile(r'''['"][^'"]*''' + re.escape(f'{p.parent.name}/{p.stem}') + r'''(\.[cm]?[jt]sx?)?['"]''')
             out = []
             for t in js_tests:
-                try:
-                    if tail.search((root / t).read_text(encoding='utf-8', errors='replace')):
-                        out.append(f'{t}::*')
-                except OSError:
-                    pass
+                view = js_view(root, t)
+                if view is not None and tail.search(view[0]):
+                    out.append(f'{t}::*')
             if p.parent.name in TEST_DIRS or p.parent.as_posix() == '.':
                 near = re.compile(r'''['"]\.{1,2}/(?:[\w.-]+/)*''' + re.escape(p.stem) + r'''(\.[cm]?[jt]sx?)?['"]''')
                 for t in js_tests:
                     if f'{t}::*' in out or PurePosixPath(t).parent != p.parent:
                         continue
-                    try:
-                        if near.search((root / t).read_text(encoding='utf-8', errors='replace')):
-                            out.append(f'{t}::*')
-                    except OSError:
-                        pass
+                    view = js_view(root, t)
+                    if view is not None and near.search(view[0]):
+                        out.append(f'{t}::*')
             entry['loaded_by'] = sorted(out)
         elif k == 'factory' and rel.endswith('.py'):
             entry['loaded_by'] = sorted(importers(py, rel) | set(loaded_by(rel, py, js_tests, root, FileRef(rel, roots, name_counts, by_dir.get(PurePosixPath(rel).parent.as_posix())))))
@@ -450,7 +552,8 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
             entry['loaded_by'] = loaded_by(rel, py, js_tests, root, FileRef(rel, roots, name_counts, by_dir.get(PurePosixPath(rel).parent.as_posix())))
         items.append(entry)
     tests = sorted({py.test_id(p, fn) for p, fn in py.all_tests()} | {f'{t}::*' for t in js_tests})
-    return {'repo': root.name, 'data_dirs': sorted(DATA_DIRS), 'inventory': items, 'tests': tests,
+    return {'repo': root.name, 'data_dirs': sorted(DATA_DIRS), 'product_dirs': dict(sorted(PRODUCT_DIRS.items())),
+            'inventory': items, 'tests': tests,
             'summary': {'sources': len(items), 'by_kind': {k: len([i for i in items if i['kind'] == k])
                                                             for k in sorted({i['kind'] for i in items})},
                         'not_assessed': len([i for i in items if i['status'] == 'not_assessed']),
