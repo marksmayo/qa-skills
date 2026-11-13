@@ -28,6 +28,7 @@
         "area_basis": {"type": "string"},
         "unassigned": {"type": "array", "items": {"type": "string"}},
         "journey_map_scope": {"type": ["object", "null"]},
+        "release": {"type": ["object", "null"], "description": "the release base, pending changesets and breaking commits, copied from risk.json (release_scope.py, score_risk.py --release)"},
         "warnings": {"type": "array", "items": {"type": "string"}}
       }
     },
@@ -43,7 +44,7 @@
           "files": {"type": "integer"},
           "journeys": {"type": "array", "items": {"type": "string"}},
           "surfaces": {"type": "array", "items": {"type": "string"}},
-          "flags": {"type": "array", "items": {"enum": ["novel", "open_findings", "unconfirmed_findings"]}},
+          "flags": {"type": "array", "items": {"enum": ["novel", "breaking_change", "open_findings", "unconfirmed_findings"]}},
           "open_findings": {"type": "array", "items": {"type": "object", "required": ["skill", "id", "severity", "source_rating", "confidence"],
                                                         "properties": {"severity": {"enum": ["critical", "high", "medium", "low", "unknown"]},
                                                                        "source_rating": {"type": "string"},

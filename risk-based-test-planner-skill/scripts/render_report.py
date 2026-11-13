@@ -6,7 +6,8 @@
 
 The Markdown plan follows the sections of ISO/IEC/IEEE 29119-3 loosely: scope, risk register,
 approach, effort, entry and exit criteria, what is not tested, assumptions and open questions.
---brief prints the headline, the risk register, the effort and what is not tested. Areas are
+--brief prints the headline, the risk register (its Judged column names each factor a person
+judged, computed -> judged score), the effort and what is not tested. Areas are
 listed by risk, highest first, after any judged factors (not in risk.json's order).
 """
 from __future__ import annotations
@@ -48,14 +49,28 @@ def lines(d: dict, P, brief: bool, md: bool) -> list[str]:
             + (f'; missing: {", ".join(m["inputs_missing"])}' if m['inputs_missing'] else '')]
     if m.get('area_basis'):
         out.append(f'- Areas: {m["area_basis"]}')
+    rel = m.get('release')
+    if rel:
+        b = rel.get('base') or {}
+        brk = [n for n, p in (rel.get('packages') or {}).items() if p.get('breaking')]
+        out.append(f'- Release: base `{b.get("tag")}` ({b.get("commits_since")} commits before HEAD); '
+                   f'{rel.get("changesets", 0)} pending changeset(s) for {len(rel.get("packages") or {})} package(s); '
+                   f'breaking: {", ".join(brk) or "none"}; {rel.get("breaking_commits", 0)} breaking commit(s)')
     out += [f'- Warning: {w}' for w in m.get('warnings', [])]
     out.append('')
     out += [P('## Risk register', BOLD), '',
-            '| Area | Likelihood | Impact | Risk | Band | Confidence | Flags |', '|---|---|---|---|---|---|---|']
+            '| Area | Likelihood | Impact | Risk | Band | Confidence | Flags | Judged |', '|---|---|---|---|---|---|---|---|']
+    judged = 0
     for a in ordered:
+        j = [FACTOR_LABEL[k].lower() + (f' {f["computed_score"]}->{f["score"]}' if f.get('computed_score') != f['score'] else '')
+             for k, f in a['factors'].items() if f['status'] == 'judged']
+        judged += len(j)
         out.append(f'| {a["id"]} | {a["likelihood"]} | {a["impact"]} | {a["risk"]} | {P(a["band"], BAND[a["band"]])} | '
-                   f'{a["confidence"]} | {", ".join(a["flags"]) or "-"} |')
+                   f'{a["confidence"]} | {", ".join(a["flags"]) or "-"} | {", ".join(j) or "-"} |')
     out.append('')
+    if judged:
+        out += [f'{judged} factor score(s) were judged by a person rather than computed (Judged column; the reasons are in '
+                'the evidence per area).', '']
     if not brief:
         out.append(P('### Evidence per area', BOLD))
         for a in ordered:

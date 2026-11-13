@@ -13,9 +13,12 @@ confidence they had in their source report (--input, which may name several repo
 findings are matched by kind, id and source report), the open_findings flag is set exactly when
 one is critical or high at a confidence its report stands by (unconfirmed_findings when they are
 only assumed or possible), a finding moved by --finding-area is explained in an assumption, and
-a risk file warning that UI impact rests on surfaces alone is acknowledged; the headline doesn't contradict the register (no "no area reaches
+a risk file warning that UI impact rests on surfaces alone is acknowledged, and when no area has
+journey criticality or reach assessed the headline says the ranking rests on surface patterns; a
+breaking_change area is planned with regression or contract testing (or left untested with a reason
+that names the breaking change); the headline doesn't contradict the register (no "no area reaches
 High" when one does, band counts and quoted risks and bands match); no "safe", "fully tested" or
-"risk-free". --write-summary fills in each area's computed fields, the effort and the summary;
+"risk-free". A judged factor may keep the computed score with a new reason (a reviewed surface). --write-summary fills in each area's computed fields, the effort and the summary;
 the headline stays yours.
 """
 from __future__ import annotations
@@ -174,6 +177,8 @@ def check(plan: dict, risk: dict, inputs: dict) -> list[str]:
             errs.append(f'strategy[{a["id"]}]: a Medium area needs a test type plus regression')
         if 'novel' in a['flags'] and 'exploratory' not in types:
             errs.append(f'strategy[{a["id"]}]: novel code needs an exploratory charter')
+        if 'breaking_change' in a['flags'] and not types & {'regression', 'contract'}:
+            errs.append(f'strategy[{a["id"]}]: a breaking change needs regression or contract testing of what callers rely on')
         if (s['effort_sessions'], s['effort_share']) != (ws['effort_sessions'], ws['effort_share']):
             errs.append(f'strategy[{a["id"]}]: effort {s["effort_sessions"]} ({s["effort_share"]}) but the allocation gives '
                         f'{ws["effort_sessions"]} ({ws["effort_share"]}) (run --write-summary)')
@@ -191,6 +196,8 @@ def check(plan: dict, risk: dict, inputs: dict) -> list[str]:
             errs.append(f'not_tested[{a["id"]}]: a High area is left untested only when the budget is short, and the reason must say so')
         if a['band'] == 'Medium' and 'novel' in a['flags']:
             errs.append(f'not_tested[{a["id"]}]: novel code is not left untested')
+        if 'breaking_change' in a['flags'] and not re.search(r'\bbreak', n['reason'], re.I):
+            errs.append(f'not_tested[{a["id"]}]: the area carries a breaking change; the reason must say why it is left untested')
         for m in re.finditer(r'\b(High|Medium|Low) risk \((\d+(?:\.\d+)?)\)', n['reason']):
             if m.group(1) != a['band'] or a['risk'] is None or abs(float(m.group(2)) - a['risk']) > 0.05:
                 errs.append(f'not_tested[{a["id"]}]: reason says "{m.group(0)}", but the area computes to {a["band"]} risk ({a["risk"]})')
@@ -221,6 +228,13 @@ def check(plan: dict, risk: dict, inputs: dict) -> list[str]:
         if not re.search(r'journey', said, re.I):
             errs.append('the risk file warns that UI impact rests on surface patterns alone (no journey map); the headline, '
                         'an assumption or an open question must say so')
+    # When no area has journey criticality or reach assessed, impact is the surface factor alone and the ranking is a
+    # ranking by surface patterns: the headline itself must say so (an assumption is not enough).
+    surface_only = plan['areas'] and all(a['factors'][k]['status'] == 'not_assessed'
+                                         for a in plan['areas'] for k in ('journey_criticality', 'reach'))
+    if surface_only and not re.search(r'\bsurface', plan['summary'].get('headline', ''), re.I):
+        errs.append('summary.headline: no area has journey criticality or reach assessed, so impact is the surface factor '
+                    'alone; the headline must say the ranking rests on surface patterns')
     return errs
 
 

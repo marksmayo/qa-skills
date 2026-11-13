@@ -1,17 +1,20 @@
 {
-  "$comment": "Impact surfaces found by pattern in an area's source files. `patterns` and `exclude` are case-insensitive regexes run per line on the code with comments and string literals blanked, so a provider named in a CSP header, marketing copy, an API description or a comment doesn't count; `raw_patterns` run on the line as written, so SQL inside a string (op.execute(\"ALTER TABLE x DROP COLUMN y\"), an f-string TRUNCATE) and directives count; the bare TRUNCATE and DROP forms are upper-case only, so prose doesn't match. `path_patterns` match the file's path (a page or screen module of a UI). Decorated Python handlers (Flask, FastAPI, Azure Functions triggers) are entry points; calls through an API client wrapper (apiClient.postJson) are external integrations. (?-i:...) makes part of a pattern case-sensitive, which is how a camelCase verb (captureMessage) is told from capture( or capture_payment(. A line that matches one of the class's exclude patterns doesn't count. An optional `langs` restricts a class to files with those suffixes (the systems/CLI pack is Rust-only), and an optional `lang_exclude` maps a suffix to extra excludes that apply only to files of that language (so a Rust `drop(` or `matcher: &M` does not fire the web-tuned classes without weakening JS/TS detection). Type declaration files (.d.ts) are skipped. The highest-scoring class an area matches sets its surface factor; a person may judge it differently, with a reason. Patterns are about doing (charging, deleting, authenticating, enforcing access), not mentioning or reading: a catalogue that shows a price does not move money, and useSession() reads who is signed in without enforcing anything. NOTE: the money/access/personal-data classes are tuned for web and app stacks; outside them (systems and CLI code) a surface factor that rests only on these patterns is low-trust and should be flagged, not presented as confidently assessed.",
+  "$comment": "Impact surfaces found by pattern in an area's source files. `patterns` and `exclude` are case-insensitive regexes run per line on the code with comments and string literals blanked, so a provider named in a CSP header, marketing copy, an API description or a comment doesn't count; `raw_patterns` run on the line as written, so SQL inside a string (op.execute(\"ALTER TABLE x DROP COLUMN y\"), an f-string TRUNCATE) and directives count; the bare TRUNCATE and DROP forms are upper-case only, so prose doesn't match. `path_patterns` match the file's path (a page or screen module of a UI). Decorated Python handlers (Flask, FastAPI, Azure Functions triggers) are entry points; calls through an API client wrapper (apiClient.postJson) are external integrations. (?-i:...) makes part of a pattern case-sensitive, which is how a camelCase verb (captureMessage) is told from capture( or capture_payment(. A line that matches one of the class's exclude patterns doesn't count. An optional `langs` restricts a class to files with those suffixes (the systems/CLI pack is Rust-only), and an optional `lang_exclude` maps a suffix to extra excludes that apply only to files of that language (so a Rust `drop(` or `matcher: &M` does not fire the web-tuned classes without weakening JS/TS detection). Type declaration files (.d.ts) are skipped. The highest-scoring class an area matches sets its surface factor; a person may judge it differently, with a reason. Patterns are about doing (charging, deleting, authenticating, enforcing access), not mentioning or reading: a catalogue that shows a price does not move money, and useSession() reads who is signed in without enforcing anything. NOTE: the money/access/personal-data classes are tuned for web and app stacks; outside them (systems and CLI code) a surface factor that rests only on these patterns is low-trust and should be flagged, not presented as confidently assessed. Call-aware patterns don't match a TypeScript member signature with no body (`settle(): Promise<void>;` in an interface or abstract class): it declares, it doesn't do. Bare capture/settle/transfer need a money noun (capturePayment, settle_invoice) or a money argument on the line, because in UI-automation code they mean 'take a screenshot' or 'wait until stable'; truncate needs a table or data noun, since truncating a string destroys nothing; Node stream and socket .destroy() and optional-chained map deletes (seen?.delete(k)) are not data destruction. The `secrets` class is credential handling (redaction, an Authorization header set, basic auth, storing or rotating a secret). The `public_api` class (`manifest_entries`) also scores the files a package manifest names as its public entry points: package.json main, module, exports and bin (a dist/, lib/ or build/ target is mapped back to its src/ file) and pyproject [project.scripts]; for a library or CLI that is what every user calls.",
   "classes": {
     "money": {
       "score": 5,
       "label": "moves money",
       "patterns": [
-        "\\b(charge|capture|refund|payout|settle|transfer)(_\\w+)?\\s*\\(",
-        "\\b(charge|capture|refund|payout|settle|transfer)(?-i:[A-Z])\\w*\\s*\\(",
+        "\\b(charge|refund|payout)(_\\w+)?\\s*\\(",
+        "\\b(charge|refund|payout)(?-i:[A-Z])\\w*\\s*\\(",
+        "\\b(capture|settle|transfer)_(payment|charge|funds|amount|invoice|order|transaction|balance|money)\\w*\\s*\\(",
+        "\\b(capture|settle|transfer)(?-i:(Payment|Charge|Funds|Amount|Invoice|Order|Transaction|Balance|Money))\\w*\\s*\\(",
+        "\\b(capture|settle|transfer)(_\\w+)?\\s*\\(.*\\b(amount|amount_cents|amountCents|payment|payment_id|paymentId|charge_id|chargeId|cents|currency|invoice)\\b",
         "\\b(redeem|debit|top_?up|issue_gift_card|apply_gift_card)\\w*\\s*\\(",
         "\\bpayment_intent\\b|\\bpaymentIntents\\.(create|capture|confirm|update|cancel|incrementAuthorization)\\s*\\(",
         "\\b(charges|refunds|payouts|transfers|subscriptions|invoices|subscriptionItems|setupIntents)\\.(create|capture|confirm|update|cancel|del|pay|finalizeInvoice)\\s*\\(",
         "\\bcheckout\\.sessions\\.create\\s*\\(|\\bconfirm(Card)?Payment\\s*\\(",
-        "\\bledger\\b",
+        "\\bledger\\.(post|record|debit|credit|book|add_entry|addEntry|insert_entry|insertEntry)\\w*\\s*\\(|\\b(LedgerEntry|ledger_entry|JournalEntry)\\s*\\(",
         "\\bnew\\s+Stripe\\s*\\(|\\b(stripe|braintree|adyen)\\.\\w+(\\.\\w+)*\\.(create|capture|confirm|update|cancel|del|pay|refund|sale|submitForSettlement|void)\\s*\\("
       ],
       "exclude": [
@@ -29,14 +32,14 @@
       "score": 5,
       "label": "controls access",
       "patterns": [
-        "\\b(log_?in|sign_?in|authenticate|authori[sz]e|has_?permission|check_?permission|require_?(role|auth|user|admin|login|session)|verify_?password|check_?password|ensure_?authenticated|with_?auth)(_\\w+)?\\s*\\(",
+        "\\b(log_?in|sign_?in|authenticate|authori[sz]e|has_?permission|check_?permission|require_?(role|auth|user|admin|login)|verify_?password|check_?password|ensure_?authenticated|with_?auth)(_\\w+)?\\s*\\(",
         "@login_required\\b|@requires?_\\w+\\b|@permission_required\\b",
         "\\bpassword_?hash\\b|\\bhash_?password\\b|\\bcheck_password_hash\\s*\\(|\\b(bcrypt|bcryptjs|argon2)\\.(compare|hash|verify)(Sync)?\\s*\\(",
         "\\bsession_?token\\b\\s*=(?!=)|\\bsession\\[[^\\]]+\\]\\s*=(?!=)|\\bsession\\.(create|destroy|invalidate|regenerate|cycle_key|flush)\\s*\\(",
         "\\bjwt\\.(sign|verify|decode|encode)\\s*\\(|\\bjwtVerify\\s*\\(|\\bnew\\s+SignJWT\\b",
         "\\bcompare_digest\\b|\\btimingSafeEqual\\s*\\(",
         "\\bgetServerSession\\s*\\(|\\bgetServerAuthSession\\s*\\(|\\bNextAuth\\s*\\(|\\bawait\\s+auth\\s*\\(\\s*\\)|\\bgetToken\\s*\\(",
-        "\\bmatcher\\s*:"
+        "\\bmatcher\\s*:\\s*(\\[|\"\")"
       ],
       "exclude": [
         "\\buse_?session\\s*\\(",
@@ -56,12 +59,29 @@
         "\\b(email|phone|address|date_of_birth|dob)\\b.*\\b(export|csv|send|share)\\b"
       ]
     },
+    "secrets": {
+      "score": 5,
+      "label": "handles secrets or credentials",
+      "patterns": [
+        "\\b(function\\*?|def)\\s+redact\\w*\\s*\\(|\\b(const|let|var)\\s+redact\\w*\\s*=\\s*(async\\s*)?(\\(|function\\b|\\w+\\s*=>)|\\bclass\\s+\\w*(Redact|Secret|Credential)\\w*",
+        "^\\s*(?:(?:public|private|protected|static|async|override)\\s+)*#?redact\\w*\\s*\\([^()]*\\)\\s*(?::\\s*[^={;]+)?\\{\\s*$",
+        "\\bbasic_?auth\\b|\\bhttp_?credentials\\b",
+        "\\b(get|read|load|resolve|store|save|set|put|rotate|fetch|decrypt|encrypt|mask)_?(secret|credential|api_?key|access_?token|auth_?token|refresh_?token|bearer_?token)s?\\w*\\s*\\(",
+        "\\bauthorization\\s*:\\s*(\"\"|\\w+\\s*\\+)",
+        "\\bkeytar\\.\\w+\\s*\\(|\\b(keyring|keychain)\\.(get|set|delete)\\w*\\s*\\("
+      ],
+      "raw_patterns": [
+        "['\"](?:Proxy-)?Authorization['\"]\\s*[:,\\]]",
+        "['\"]x-api-key['\"]\\s*[:,\\]]"
+      ]
+    },
     "destructive": {
       "score": 5,
       "label": "destroys data",
       "patterns": [
-        "\\b(delete|purge|truncate|drop|erase|wipe)(_\\w+)?\\s*\\(",
-        "\\b(delete|purge|truncate|erase|wipe)(?-i:[A-Z])\\w*\\s*\\(",
+        "\\b(delete|purge|drop|erase|wipe)(_\\w+)?\\s*\\(",
+        "\\b(delete|purge|erase|wipe)(?-i:[A-Z])\\w*\\s*\\(",
+        "\\btruncate_(table|tables|all|db|database|collection|data|records|rows)\\w*\\s*\\(|\\btruncate(?-i:(Table|Tables|All|Db|Database|Collection|Data|Records|Rows))\\w*\\s*\\(",
         "\\.(deleteMany|destroy)\\s*\\("
       ],
       "raw_patterns": [
@@ -73,10 +93,16 @@
         "(?-i:\\bDROP\\s+(?:SCHEMA|DATABASE|COLUMN|INDEX|VIEW)\\b)"
       ],
       "exclude": [
-        "\\b(searchParams|params|query|headers|url|map|set|cache|seen|visited|selected|state|formData|weakMap|style|classList|dataset|attributes|listeners|subscribers|timers|pending|queue|ids|keys|subscriptions|observers|handlers|callbacks|registry|entries|traces|sent)\\.delete\\s*\\(",
-        "\\b\\w*(Map|Set|Params|Headers|Cache|Ids|Keys|Tracker|Sent|Traces|Timers|Queue|Registry|Store|Buffer|Pending|Seen)\\.delete\\s*\\(",
-        "\\bthis\\.#?\\w+\\.delete\\s*\\(",
-        "\\b(?!session\\b)\\w+\\.delete\\s*\\(\\s*[\\w.$\\[\\]\"']+\\s*\\)",
+        "\\b(searchParams|params|query|headers|url|map|set|cache|seen|visited|selected|state|formData|weakMap|style|classList|dataset|attributes|listeners|subscribers|timers|pending|queue|ids|keys|subscriptions|observers|handlers|callbacks|registry|entries|traces|sent)\\??\\.delete\\s*\\(",
+        "\\b\\w*(Map|Set|Params|Headers|Cache|Ids|Keys|Tracker|Sent|Traces|Timers|Queue|Registry|Store|Buffer|Pending|Seen)\\??\\.delete\\s*\\(",
+        "\\bthis\\.#?\\w+\\??\\.delete\\s*\\(",
+        "\\b(?!session\\b)\\w+\\??\\.delete\\s*\\(\\s*[\\w.$\\[\\]\"']+\\s*\\)",
+        "\\b(res|req|response|request|socket|sock|stream|readable|writable|gunzip|gzip|inflate|deflate|child|proc|pipe|transport|ws|tunnel|upstream|downstream|conn|connection|body|input|output|server|agent|outgoing|incoming|stdout|stderr|stdin|duplex|reader|writer|controller|watcher|client|pool|knex)\\??\\.destroy\\s*\\(",
+        "\\)\\??\\.delete\\s*\\(\\s*[\\w.$\\[\\]\"']+\\s*\\)|\\.delete\\s*\\(\\s*\\w+\\.keys\\(\\)",
+        "\\bdelete\\s+\\([^)]*\\)\\s*[\\[.]",
+        "\\b(window|screen|line|lines|terminal|term|cursor|canvas|ctx|region|live|status)\\.(erase|wipe)\\w*\\s*\\(|\\bthis\\.(erase|wipe)\\s*\\(\\s*\\)|^\\s*(?:(?:public|private|protected)\\s+)?(erase|wipe)\\s*\\(\\s*\\)\\s*:\\s*void\\b",
+        "\\b\\w*(?-i:Stream|Socket|Conn|Connection|Pipe|Transport|Request|Response|Tunnel|Server|Agent|Reader|Writer|Watcher)\\??\\.destroy\\s*\\(",
+        "\\.destroy\\s*\\(\\s*(err|error|cause|e|reason|new\\s+\\w*Error)\\b",
         "\\b(function|const|let|as)\\s+DELETE\\b",
         "\\b(delete|remove|erase)(?-i:[A-Z])\\w*\\s*\\(\\s*(index|idx|i|rowIndex|row|position|pos|key|itemIndex|fieldIndex)\\s*\\)",
         "\\b(Plotly|chart|echarts|\\w*(?-i:Chart|Plot|Graph))\\.purge\\s*\\(",
@@ -144,7 +170,23 @@
       "score": 4,
       "label": "compliance-relevant",
       "patterns": [
-        "\\b(gdpr|consent|retention|audit_?log|right_to_erasure|accessibility_statement)\\b"
+        "\\b(gdpr|right_to_erasure|accessibility_statement|audit_?log|data_?retention|retention_?polic(y|ies))\\b",
+        "\\b\\w*(consent|retention)\\w*\\s*\\("
+      ],
+      "exclude": [
+        "\\[\\s*\\w+\\s*,\\s*set\\w*\\s*\\]\\s*=\\s*(React\\.)?use(State|Reducer)\\b",
+        "\\bset(?-i:[A-Z])\\w*\\s*\\(\\s*(!?\\w+|true|false)\\s*\\)"
+      ]
+    },
+    "public_api": {
+      "score": 3,
+      "label": "public API or CLI entry point (package exports, bin, CLI command)",
+      "manifest_entries": true,
+      "patterns": [
+        "\\bnew\\s+Command\\s*\\(",
+        "\\b(program|cli|yargs|cmd|commander|cac|sade)\\.command\\s*\\(",
+        "\\bdefineCommand\\s*\\(",
+        "^\\s*@\\w+\\.command\\s*\\(|^\\s*@click\\.(command|group)\\b"
       ]
     },
     "entry": {

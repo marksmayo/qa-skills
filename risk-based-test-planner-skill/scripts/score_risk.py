@@ -4,7 +4,8 @@
     python score_risk.py --repo <repo> --history history.json --complexity complexity.json --scope scope.json \
         --out risk.json [--journeys journey_map.json] [--input security=security_audit.json] [--input flaky=flaky_report.json]
         [--input crash=crash_report.json] [--input wcag=audit.json] [--usage usage.json] [--areas areas.json]
-        [--defects bugs.json] [--finding-area KIND:ID=AREA]
+        [--defects bugs.json] [--finding-area KIND:ID=AREA] [--release release.json]
+    python score_risk.py --self-test
 
 Areas are the workspace packages when the repo has several (a package with more than
 SPLIT_PACKAGE source files is split by subdirectory below its source root); for a Next.js App Router project,
@@ -15,7 +16,14 @@ main source directory (the top-level directory holding the most source files, fo
 while one subdirectory holds nearly all of it), with container directories such as modules/ and
 common/ split again. --areas gives them explicitly as {"areas": [{"id": ..., "paths": [...]}]}.
 Test, generated, vendored, tool-configuration and docs files are not areas. Source files no area
-covers are scored as the area "unassigned" and named in a warning, never dropped.
+covers are scored as the area "unassigned" and named in a warning, never dropped; every other code
+file outside the areas (docs, configuration, generated, fixtures, root tooling and scripts) is
+listed in excluded with its reason, and root tooling gets a warning. A directory named e2e, test,
+tests or spec is test code unless it is a product package (a manifest plus src/, or a package.json
+with main/module/exports/bin). Live tests (live/) and test helpers or fixtures don't count as tests
+(tests_not_counted). --release (release_scope.py) adds pending changesets and breaking commits to
+the change-in-scope evidence and flags breaking_change areas (at least Medium). --self-test checks
+the surface idioms and the directory rule.
 
 Tests are linked to areas through their imports, resolved to files (so a top-level 'src/*' area
 matches only files directly in src/; Python through the sys.path roots a test would have:
@@ -86,11 +94,14 @@ def weighted(factors: dict, weights: dict) -> float | None:
     return round(sum(s * w for s, w in got) / sum(w for _, w in got), 1)
 
 
+MEDIUM_FLOOR = ('novel', 'unconfirmed_findings', 'breaking_change')
+
+
 def band_of(risk: float | None, flags: list[str]) -> str:
     band = 'Low' if risk is None else 'High' if risk >= 15 else 'Medium' if risk >= 8 else 'Low'
     if 'open_findings' in flags:
         band = 'High'
-    if ('novel' in flags or 'unconfirmed_findings' in flags) and band == 'Low':
+    if any(x in flags for x in MEDIUM_FLOOR) and band == 'Low':
         band = 'Medium'
     return band
 
@@ -206,9 +217,43 @@ CONTAINERS = {'modules', 'features', 'domains', 'common', 'shared', 'packages', 
 CONFIG_NAME = re.compile(r'^\.|.*\.(config|setup)\.\w+$|.*rc\.(js|cjs|mjs|ts|cts|mts)$|^(noxfile|fabfile|setup|conftest)\.py$')
 
 
+# A directory named like test code (e2e/, test/, tests/, spec/) is test code unless it is a product package: it holds a
+# package manifest and either a src/ directory or a package.json that declares main, module, exports or bin (a
+# workspace package named e2e). A Playwright project's e2e/package.json with only specs stays test code. This is the
+# rule diff_scope.py's classification uses (convention shared across the skills), copied here because areas need it.
+TEST_DIR_NAMES = {'e2e', 'test', 'tests', 'spec'}
+MANIFESTS = ('package.json', 'pyproject.toml', 'Cargo.toml', 'setup.py', 'go.mod', 'pom.xml', 'build.gradle', 'build.gradle.kts')
+PRODUCT_DIRS: set[str] = set()     # set by score() from the repository's files
+
+
+def product_dirs(root: Path, files: list[str]) -> set[str]:
+    out = set()
+    for f in files:
+        p = PurePosixPath(f)
+        if p.name not in MANIFESTS or p.parent.name not in TEST_DIR_NAMES:
+            continue
+        d = str(p.parent)
+        declares = False
+        if p.name == 'package.json':
+            try:
+                pkg = json.loads((root / f).read_text(encoding='utf-8'))
+                declares = isinstance(pkg, dict) and any(pkg.get(k) for k in ('main', 'module', 'exports', 'bin'))
+            except (OSError, ValueError):
+                pass
+        if declares or any(x.startswith(d + '/src/') for x in files):
+            out.add(d)
+    return out
+
+
+def dir_names(path: str) -> set[str]:
+    """The directory names on a path, leaving out a test-named directory that is a product package (PRODUCT_DIRS)."""
+    parts = PurePosixPath(path).parts[:-1]
+    return {x for i, x in enumerate(parts) if not (x in TEST_DIR_NAMES and '/'.join(parts[:i + 1]) in PRODUCT_DIRS)}
+
+
 def is_source(f: str) -> bool:
     p = PurePosixPath(f)
-    return (p.suffix in CODE_EXT and not is_test(f) and not f.endswith('.d.ts') and not set(p.parts[:-1]) & NOT_SOURCE_DIRS
+    return (p.suffix in CODE_EXT and not is_test(f) and not f.endswith('.d.ts') and not dir_names(f) & NOT_SOURCE_DIRS
             and not CONFIG_NAME.match(p.name))
 
 
@@ -221,23 +266,24 @@ def is_area_code(f: str) -> bool:
     destructive surface); is_source() is the stricter test for choosing areas."""
     p = PurePosixPath(f)
     return (p.suffix in CODE_EXT and not is_test(f) and not CONFIG_NAME.match(p.name)
-            and not set(p.parts[:-1]) & DOC_DIRS)
+            and not dir_names(f) & DOC_DIRS)
 
 
 def prefix_token(stem: str) -> str:
     return re.split(r'[-_.]|(?<=[a-z0-9])(?=[A-Z])', stem)[0].lower() or stem.lower()
 
 
-def split_dir(d: str, source: list[str], label: str) -> list[dict]:
+def split_dir(d: str, source: list[str], label: str, by_prefix: bool = True) -> list[dict]:
     """Areas for one source directory: a subdirectory each; flat files grouped by file-name prefix (stripe.ts and
-    stripe-webhooks.ts together) when there are many, the rest as '<label> (top level)'."""
+    stripe-webhooks.ts together) when there are many and by_prefix (the Next.js lib/ layout), the rest as
+    '<label> (top level)'. Outside Next.js a prefix ('read*', 'cdp*') is not a module and gives two-file areas."""
     inside = [f for f in source if f.startswith(d + '/')]
     subs = sorted({f[len(d) + 1:].split('/')[0] for f in inside if f[len(d) + 1:].count('/') >= 1})
     flat = sorted(f for f in inside if f[len(d) + 1:].count('/') == 0 and PurePosixPath(f).name != '__init__.py')
     if not subs and len(flat) <= SPLIT_FLAT:
         return [{'id': label, 'paths': [d]}] if flat else []
     areas = [{'id': f'{label}/{s}', 'paths': [f'{d}/{s}']} for s in subs]
-    if len(flat) > SPLIT_FLAT:
+    if by_prefix and len(flat) > SPLIT_FLAT:
         groups: dict[str, list[str]] = {}
         for f in flat:
             groups.setdefault(prefix_token(PurePosixPath(f).stem), []).append(f)
@@ -318,11 +364,11 @@ def module_areas(d: str, source: list[str], label: str) -> list[dict]:
     """split_dir, then each container subdirectory (modules/, features/, common/ ...) with two or more subdirectories
     of its own is split again: a Vite or React app's src/modules/<module> are the modules, not src/modules."""
     out = []
-    for a in split_dir(d, source, label):
+    for a in split_dir(d, source, label, by_prefix=False):
         p = a['paths'][0]
         name = PurePosixPath(p).name
         if len(a['paths']) == 1 and not p.endswith('*') and name in CONTAINERS:
-            inner = split_dir(p, source, a['id'])
+            inner = split_dir(p, source, a['id'], by_prefix=False)
             if len([x for x in inner if not x['id'].endswith('(top level)')]) >= 2:
                 out += inner
                 continue
@@ -371,8 +417,14 @@ def define_areas(root: Path, files: list[str], explicit: Path | None) -> tuple[l
     return areas, f'subdirectories of the main source directory {main_root}/'
 
 
+SURFACE_ONLY_WARNING = ('impact rests on the surface factor alone for every area (journey criticality and reach are not '
+                        'assessed): the ranking is by surface patterns, so the headline must say so; for a library or CLI, '
+                        'give --usage (downloads or calls per package or entry point) or a journey map')
+OUTSIDE_REASON ='outside the workspace packages and the main source tree (root tooling and scripts); add it to --areas to score it'
+
+
 def is_test(path: str) -> bool:
-    return detect_conventions.is_test_file(path) or bool(set(PurePosixPath(path).parts[:-1]) & {'tests', 'test', '__tests__', 'spec'})
+    return detect_conventions.is_test_file(path) or bool(dir_names(path) & {'tests', 'test', '__tests__', 'spec'})
 
 
 def area_of(path: str, areas: list[dict]) -> str | None:
@@ -634,18 +686,39 @@ def rust_test_areas(test_path: str, areas: list[dict], files: list[str]) -> set[
     return hits
 
 
-def tests_by_area(files: list[str], areas: list[dict], flaky: set[str], imports: Imports) -> tuple[dict, list[str]]:
-    """{area: [test files that exercise it]}, and flaky test files left out. A test exercises an area when it imports a
+LIVE_TEST_DIRS = {'live', 'tests-live', 'live-tests', 'live_tests'}
+HELPER_DIRS = {'helpers', 'helper', 'support', 'fixtures', '__fixtures__', 'utils', 'testutils', 'test-utils', 'test_utils',
+               'mocks', '__mocks__'}
+
+
+def not_a_counted_test(t: str) -> str | None:
+    """Why a file in a test tree doesn't count as a test of the areas it imports, or None when it does: live tests need
+    real credentials or services and don't run in a routine CI run; helpers and fixtures in a test tree are not tests."""
+    names = dir_names(t)
+    if names & LIVE_TEST_DIRS:
+        return 'live test: needs real credentials or services, so it does not run in a routine CI run'
+    if names & HELPER_DIRS and not detect_conventions.is_test_file(t):
+        return 'test helper or fixture, not a test'
+    return None
+
+
+def tests_by_area(files: list[str], areas: list[dict], flaky: set[str], imports: Imports) -> tuple[dict, list[str], list[dict]]:
+    """{area: [test files that exercise it]}, flaky test files left out, and the other test-tree files not counted (live
+    tests, helpers) with the reason. A test exercises an area when it imports a
     file of the area (resolved to the file, so a top-level 'src/*' area matches only files directly in src/), imports
     a package directory inside the area, or sits inside the area itself (a co-located test). Rust integration tests,
     which import the utility by name rather than by a resolvable path, are linked by the `test_<util>.rs` convention."""
     out: dict[str, set[str]] = {a['id']: set() for a in areas}
-    skipped = []
+    skipped, not_counted = [], []
     for t in files:
         if not is_test(t) or PurePosixPath(t).suffix not in CODE_EXT:
             continue
         if t in flaky:
             skipped.append(t)
+            continue
+        why = not_a_counted_test(t)
+        if why:
+            not_counted.append({'path': t, 'reason': why})
             continue
         hit = {area_of(t, areas)}
         for r in imports.resolved(t):
@@ -654,7 +727,7 @@ def tests_by_area(files: list[str], areas: list[dict], flaky: set[str], imports:
             hit |= rust_test_areas(t, areas, files)
         for aid in hit - {None}:
             out[aid].add(t)
-    return {k: sorted(v) for k, v in out.items()}, skipped
+    return {k: sorted(v) for k, v in out.items()}, skipped, not_counted
 
 
 # ---------------------------------------------------------------- inputs from other skills
@@ -846,24 +919,142 @@ def rust_test_mod_cut(raw_lines: list[str]) -> int | None:
     return None
 
 
-def surface_scan(root: Path, files: list[str]) -> tuple[int, list[str], list[str]]:
+TS_EXT = {'.ts', '.tsx', '.mts', '.cts'}
+# A TypeScript member signature with no body (an interface or abstract member): `settle(): Promise<void>;`,
+# `delete(id: string, signal: AbortSignal): Promise<boolean>;`. It declares a method; it doesn't call one.
+TS_SIGNATURE = re.compile(r'^\s*(?:(?:public|private|protected|static|readonly|abstract|declare|async|override)\s+)*'
+                          r'[\w$#]+\??\s*(?:<[^>]*>)?\s*\(.*\)\s*:\s*[^={}]+;\s*$')
+_COMPILED: dict | None = None
+
+
+def _any(patterns: list[str]):
+    """One case-insensitive regex matching any of the patterns (None for none): one search per line, not one each."""
+    return re.compile('|'.join(f'(?:{p})' for p in patterns), re.I) if patterns else None
+
+
+def compiled_surfaces() -> dict:
+    global _COMPILED
+    if _COMPILED is None:
+        _COMPILED = {cls: (_any(spec.get('patterns', [])), _any(spec.get('raw_patterns', [])),
+                           _any(spec.get('exclude', [])), spec.get('langs'),
+                           {ext: _any(pats) for ext, pats in (spec.get('lang_exclude') or {}).items()})
+                     for cls, spec in SURFACES['classes'].items()}
+    return _COMPILED
+
+
+def line_classes(raw: str, code: str, suffix: str) -> list[str]:
+    """The surface classes one line matches: patterns on the code view (comments and strings blanked), raw_patterns on
+    the line as written, minus the class's excludes; a TypeScript member signature matches nothing."""
+    if not raw.strip() or (suffix in TS_EXT and TS_SIGNATURE.match(code)):
+        return []
+    out = []
+    for cls, (pat, rawp, excl, langs, lang_excl) in compiled_surfaces().items():
+        if langs and suffix not in langs:        # the systems/CLI pack is Rust-only
+            continue
+        if not ((pat and pat.search(code)) or (rawp and rawp.search(raw))):
+            continue
+        lx = lang_excl.get(suffix)               # web-tuned idioms the language reuses harmlessly
+        if (excl and excl.search(code)) or (lx and lx.search(code)):
+            continue
+        out.append(cls)
+    return out
+
+
+DIST_DIR = re.compile(r'^(?:dist|lib|build|out)(?:/(?:esm|cjs|es|umd|mjs))?/')
+JS_OUT_EXT = re.compile(r'\.(?:m|c)?jsx?$')
+
+
+def manifest_entries(root: Path, files: list[str]) -> dict[str, str]:
+    """{source file: why it is a public entry point}: the files package.json main, module, exports and bin name (a
+    dist/, lib/, build/ or out/ target mapped back to its src/ file, extensions swapped for TypeScript) and the modules
+    pyproject.toml [project.scripts] / [tool.poetry.scripts] name. Type-only export conditions are skipped."""
+    fileset = set(files)
+    out: dict[str, str] = {}
+
+    def to_source(pre: str, target: str) -> str | None:
+        t = norm(target)
+        if t.endswith('.d.ts'):
+            return None
+        stems = [t]
+        if DIST_DIR.match(t):
+            stems += ['src/' + DIST_DIR.sub('', t), DIST_DIR.sub('', t)]
+        for s in stems:
+            base = JS_OUT_EXT.sub('', s)
+            for cand in (pre + s, *(pre + base + e for e in ('.ts', '.tsx', '.mts', '.cts', '.js', '.mjs', '.jsx')),
+                         *(f'{pre}{base}/index{e}' for e in ('.ts', '.tsx', '.js'))):
+                if cand in fileset:
+                    return cand
+        return None
+
+    def walk_exports(v, label: str, acc: list):
+        if isinstance(v, str):
+            acc.append((label, v))
+        elif isinstance(v, dict):
+            for k, x in v.items():
+                if k == 'types':
+                    continue
+                walk_exports(x, f'exports "{k}"' if k.startswith('.') else label, acc)
+        elif isinstance(v, list):
+            for x in v:
+                walk_exports(x, label, acc)
+
+    for f in files:
+        p = PurePosixPath(f)
+        if 'node_modules' in p.parts or p.name not in ('package.json', 'pyproject.toml'):
+            continue
+        pre = '' if str(p.parent) == '.' else str(p.parent) + '/'
+        try:
+            text = (root / f).read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            continue
+        targets: list[tuple[str, str]] = []
+        if p.name == 'package.json':
+            try:
+                pkg = json.loads(text)
+            except ValueError:
+                continue
+            if not isinstance(pkg, dict):
+                continue
+            for k in ('main', 'module'):
+                if isinstance(pkg.get(k), str):
+                    targets.append((k, pkg[k]))
+            walk_exports(pkg.get('exports'), 'exports', targets)
+            b = pkg.get('bin')
+            if isinstance(b, str):
+                targets.append(('bin', b))
+            elif isinstance(b, dict):
+                targets += [(f'bin "{k}"', v) for k, v in b.items() if isinstance(v, str)]
+            for label, t in targets:
+                src = to_source(pre, t)
+                if src:
+                    out.setdefault(src, f'{f} {label}')
+        else:
+            m = re.search(r'^\[(?:project|tool\.poetry)\.scripts\]\s*$(.*?)(?=^\[|\Z)', text, re.M | re.S)
+            for name, mod in re.findall(r'''^\s*["']?([\w.-]+)["']?\s*=\s*["']([\w.]+)(?::[\w.]+)?["']''', m.group(1) if m else '', re.M):
+                rel = mod.replace('.', '/')
+                for cand in (f'{pre}{rel}.py', f'{pre}src/{rel}.py', f'{pre}{rel}/__init__.py', f'{pre}src/{rel}/__init__.py'):
+                    if cand in fileset:
+                        out.setdefault(cand, f'{f} scripts "{name}"')
+                        break
+    return out
+
+
+def surface_scan(root: Path, files: list[str], entries: dict[str, str] | None = None) -> tuple[int, list[str], list[str]]:
     """Surface classes found in the area's files. Patterns run on code with comments and strings blanked;
     raw_patterns (SQL statements, the 'use server' directive) run on the line as written. Type declaration files
-    (.d.ts) declare, they don't do, so they are skipped."""
+    (.d.ts) declare, they don't do, so they are skipped. `entries` (manifest_entries) are the files a package manifest
+    names as public entry points; they match the class with manifest_entries set."""
     hits: dict[str, list[str]] = {}
-    compiled = {cls: ([re.compile(p, re.I) for p in spec.get('patterns', [])],
-                      [re.compile(p, re.I) for p in spec.get('raw_patterns', [])],
-                      [re.compile(p, re.I) for p in spec.get('exclude', [])],
-                      spec.get('langs'),
-                      {ext: [re.compile(p, re.I) for p in pats] for ext, pats in (spec.get('lang_exclude') or {}).items()})
-                for cls, spec in SURFACES['classes'].items()}
     by_path = {cls: [re.compile(p, re.I) for p in spec.get('path_patterns', [])] for cls, spec in SURFACES['classes'].items()}
+    entry_cls = next((c for c, spec in SURFACES['classes'].items() if spec.get('manifest_entries')), None)
     for f in files:
         if f.endswith('.d.ts'):
             continue
         for cls, pats in by_path.items():
             if any(p.search(f) for p in pats):
                 hits.setdefault(cls, []).append(f'{f} (path)')
+        if entry_cls and entries and f in entries:
+            hits.setdefault(entry_cls, []).append(f'{f} ({entries[f]})')
         try:
             text = (root / f).read_text(encoding='utf-8', errors='replace')
         except OSError:
@@ -876,12 +1067,8 @@ def surface_scan(root: Path, files: list[str]) -> tuple[int, list[str], list[str
             if cut is not None:
                 raw_lines, code_lines = raw_lines[:cut], code_lines[:cut]
         for i, (raw, code) in enumerate(zip(raw_lines, code_lines), 1):
-            for cls, (pats, raws, excl, langs, lang_excl) in compiled.items():
-                if langs and suffix not in langs:        # the systems/CLI pack is Rust-only
-                    continue
-                excludes = excl + lang_excl.get(suffix, [])    # web-tuned idioms the language reuses harmlessly
-                if (any(p.search(code) for p in pats) or any(p.search(raw) for p in raws)) and not any(p.search(code) for p in excludes):
-                    hits.setdefault(cls, []).append(f'{f}:{i}')
+            for cls in line_classes(raw, code, suffix):
+                hits.setdefault(cls, []).append(f'{f}:{i}')
     if not hits:
         return SURFACES['none_score'], [], ['no surface pattern matched in data/surfaces.json']
     best = max(hits, key=lambda c: SURFACES['classes'][c]['score'])
@@ -896,7 +1083,10 @@ def score(args) -> dict:
     hist = json.loads(args.history.read_text(encoding='utf-8'))
     cx = json.loads(args.complexity.read_text(encoding='utf-8'))['files']
     scope = json.loads(args.scope.read_text(encoding='utf-8')) if args.scope else None
+    # history.json lists every tracked file (mine_history adds the ones the window didn't touch, with zero counts)
     files = sorted(p for p in hist['files'] if (root / p).is_file())
+    PRODUCT_DIRS.clear()
+    PRODUCT_DIRS.update(product_dirs(root, files))
     areas, area_basis = define_areas(root, files, args.areas)
     warnings = []
     excluded = []
@@ -922,6 +1112,34 @@ def score(args) -> dict:
         warnings.append(f'{len(unassigned)} source file(s) are in no area and were scored as "unassigned": '
                         + ', '.join(unassigned[:8]) + (f' (+{len(unassigned) - 8})' if len(unassigned) > 8 else '')
                         + '; add them to --areas')
+    # Every other code file outside the areas is listed in excluded with its reason, so nothing leaves silently: docs and
+    # examples, tool configuration, generated or vendored code, fixtures and migrations outside an area, and (in the
+    # default layout) root tooling and scripts outside the workspace packages or the main source tree.
+    outside = []
+    for f in files:
+        p = PurePosixPath(f)
+        if (owner[f] is not None or f in excluded_paths or p.suffix not in CODE_EXT or is_test(f) or f.endswith('.d.ts')
+                or cx.get(f, {}).get('loc', 0) == 0):
+            continue
+        kind, why = diff_scope.classify(f, '', False)
+        names = dir_names(f)
+        if kind in ('generated', 'vendored'):
+            reason = why
+        elif CONFIG_NAME.match(p.name):
+            reason = 'tool configuration file'
+        elif names & DOC_DIRS:
+            reason = 'documentation or examples directory'
+        elif names & NOT_SOURCE_DIRS:
+            reason = f'{sorted(names & NOT_SOURCE_DIRS)[0]}/ directory (fixtures, mocks, stories, static files or migrations)'
+        else:
+            reason = OUTSIDE_REASON
+        outside.append({'path': f, 'reason': reason})
+    excluded += outside
+    tooling = [e['path'] for e in outside if e['reason'] == OUTSIDE_REASON]
+    if tooling:
+        warnings.append(f'{len(tooling)} code file(s) outside the workspace packages and the main source tree are not scored '
+                        '(listed in excluded): ' + ', '.join(tooling[:8]) + (f' (+{len(tooling) - 8})' if len(tooling) > 8 else '')
+                        + '; release and build tooling decides what ships, so add them to --areas if they matter')
     inputs = [load_input(k, Path(p)) for k, p in (x.split('=', 1) for x in args.input)]
     names = [(i['skill'], i['path']) for i in inputs]
     if len(set(names)) != len(names):
@@ -955,7 +1173,19 @@ def score(args) -> dict:
     if args.defects:
         data = json.loads(args.defects.read_text(encoding='utf-8'))
         bugs = [t for t in data.get('tickets', [data]) if (t.get('type') or '').lower() in ('bug', 'defect')]
-    tests, flaky_skipped = tests_by_area(files, areas, flaky_files, imports)
+    tests, flaky_skipped, tests_not_counted = tests_by_area(files, areas, flaky_files, imports)
+    entries = manifest_entries(root, files)
+    release = json.loads(args.release.read_text(encoding='utf-8')) if args.release else None
+    rel_pkgs = {n: p for n, p in ((release or {}).get('packages') or {}).items() if isinstance(p, dict) and p.get('dir') is not None}
+
+    def package_of(f: str) -> str | None:
+        """The release package whose directory holds f (the deepest, so packages/x/y beats packages/x)."""
+        best = None
+        for n, p in rel_pkgs.items():
+            d = p['dir'].rstrip('/')
+            if (d in ('', '.') or f.startswith(d + '/')) and (best is None or len(d) > best[1]):
+                best = (n, len(d))
+        return best[0] if best else None
     aof = lambda x: owner.get(x) or area_of(x, areas)  # noqa: E731
     for j in journeys:
         j['areas'] = {}
@@ -995,7 +1225,12 @@ def score(args) -> dict:
             'bugs': [f'{t["key"]} ({t.get("type")}, {t.get("status")}) {(t.get("summary") or "")[:80]}' for t in area_bugs],
             'branch_density': round(branches / len(code_files), 2) if code_files else 0.0,
             'scope_lines': scope_lines, 'tests': tests[a['id']], 'test_loc': test_loc,
+            'packages': sorted({package_of(x) for x in mine} - {None}),
+            'breaking_commits': [c for c in (release or {}).get('breaking_commits') or [] if set(c.get('files') or []) & mine_set],
         }
+    # A package with a breaking pending changeset (major, or a "Breaking" note) flags the areas of it the scope changed;
+    # when the scope changed none of them (or there is no scope), every area of the package.
+    changed_pkgs = {n for r in raw.values() if r['scope_lines'] for n in r['packages']}
     live = [k for k in raw if raw[k]['files']]
     vals = lambda key, only=None: [raw[k][key] for k in live if (only is None or only(k))]  # noqa: E731
     hist_ok = not hist['shallow']
@@ -1036,6 +1271,21 @@ def score(args) -> dict:
                                                  + (f' (percentile {pct}, capped at {cap} for a change this size)' if cap < pct else '')]}
         else:
             f['change_in_scope'] = {'score': None, 'status': 'not_assessed', 'evidence': ['no scope diff given']}
+        breaking = False
+        for n in r['packages']:
+            p = rel_pkgs[n]
+            if not p.get('bump') and not p.get('breaking'):
+                continue
+            brk = p.get('breaking_changesets') or []
+            files_cs = brk + [c for c in p.get('changesets') or [] if c not in brk]     # the breaking ones first
+            f['change_in_scope']['evidence'].append(
+                f'pending changeset(s) for {n}: {p.get("bump") or "no bump"}' + (' (breaking)' if p.get('breaking') else '')
+                + (f' ({", ".join(files_cs[:3])}' + (f' +{len(files_cs) - 3}' if len(files_cs) > 3 else '') + ')' if files_cs else ''))
+            if p.get('breaking') and (r['scope_lines'] or n not in changed_pkgs):
+                breaking = True
+        for c in r['breaking_commits'][:5]:
+            f['change_in_scope']['evidence'].append(f'breaking commit {c.get("sha", "")[:12]} {c.get("subject", "")[:100]}')
+            breaking = True
         if not r['tests']:
             tw, tev = 5, ['no test imports this area' + (f' ({len(flaky_skipped)} flaky test file(s) not counted)' if flaky_skipped else '')]
         else:
@@ -1059,7 +1309,7 @@ def score(args) -> dict:
             f['journey_criticality'] = {'score': None, 'status': 'not_assessed', 'evidence': [partial_note]}
         else:
             f['journey_criticality'] = {'score': None, 'status': 'not_assessed', 'evidence': ['no journey map: run journey-mapper']}
-        s, classes, sev = surface_scan(root, r['files'])
+        s, classes, sev = surface_scan(root, r['files'], entries)
         f['surface'] = {'score': s, 'status': 'assessed', 'evidence': sev}
         if usage and a['id'] in usage.get('areas', {}):
             share = usage['areas'][a['id']]
@@ -1086,7 +1336,7 @@ def score(args) -> dict:
                     if moved:
                         fnd['reassigned_from'] = sorted(x for x in {aof(x) for x in it['files']} if x) or None
                     findings.append(fnd)
-        flags = (['novel'] if r['novel'] else []) + finding_flags(findings)
+        flags = (['novel'] if r['novel'] else []) + (['breaking_change'] if breaking else []) + finding_flags(findings)
         area = {'id': a['id'], 'paths': a['paths'], 'files': len(r['files']),
                 'journeys': [j['id'] for j in linked], 'surfaces': classes, 'flags': flags, 'open_findings': findings,
                 'tests': r['tests'], 'factors': {k: f[k] for k in list(LIKELIHOOD) + list(IMPACT)}}
@@ -1099,6 +1349,14 @@ def score(args) -> dict:
                         + (f' +{len(ui) - 6}' if len(ui) > 6 else '') + ') rests on surface patterns alone, so a page that '
                         'drives an important flow can rank Low; run journey-mapper (or give --usage) before trusting the UI '
                         'ranking, and say so in the plan')
+    if out_areas and all(a['factors'][k]['status'] == 'not_assessed' for a in out_areas for k in ('journey_criticality', 'reach')):
+        warnings.append(SURFACE_ONLY_WARNING)
+    rel_meta = None
+    if release:
+        rel_meta = {'base': release.get('base'), 'changesets': len(release.get('changesets') or []),
+                    'packages': {n: {'dir': p['dir'], 'bump': p.get('bump'), 'breaking': bool(p.get('breaking'))}
+                                 for n, p in sorted(rel_pkgs.items()) if p.get('bump') or p.get('breaking')},
+                    'breaking_commits': len(release.get('breaking_commits') or [])}
     return {'repo': root.name, 'head': hist['head'],
             'history': {**window, 'commits': hist['summary']['commits'], 'shallow': hist['shallow'],
                         'excluded_formatting': hist['excluded_formatting']},
@@ -1112,8 +1370,99 @@ def score(args) -> dict:
             'journey_map_scope': ({'domains': jscope['domains'], 'partial': jscope['partial'],
                                    'out_of_scope_files': len(jscope['out_of_scope_files'])} if have_map else None),
             'area_basis': area_basis, 'unassigned': unassigned, 'warnings': warnings + list(hist.get('notes') or []),
-            'excluded': excluded, 'flaky_tests_not_counted': flaky_skipped,
+            'excluded': excluded, 'flaky_tests_not_counted': flaky_skipped, 'tests_not_counted': tests_not_counted,
+            'release': rel_meta,
             'weights': {'likelihood': LIKELIHOOD, 'impact': IMPACT}, 'areas': out_areas}
+
+
+# (file suffix, line as written, the classes it must match). Synthetic idioms from SDK, CLI and UI-automation code that
+# used to misfire, and the real surfaces next to them that must still match.
+SELF_TEST_CASES = [
+    ('.ts', 'const opts = settleDefaults(input);', []),
+    ('.ts', 'await this.settlePendingFrames(view);', []),
+    ('.ts', '  settle(): Promise<void>;', []),
+    ('.ts', 'const shot = await captureSnapshot(page);', []),
+    ('.ts', 'captureOutput(proc);', []),
+    ('.ts', 'return await capture({ ...step, timeoutMs: 5 });', []),
+    ('.ts', 'queue.settleRejected(err);', []),
+    ('.ts', 'const id = await capturePayment(order);', ['money']),
+    ('.py', 'charge_id = capture(payment_id, amount)', ['money']),
+    ('.py', 'def charge_card(card_token, amount_cents, currency):', ['money']),
+    ('.ts', 'await stripe.refunds.create({ charge });', ['money']),
+    ('.ts', 'constructor(private readonly ledger: StepLedger) {}', []),
+    ('.ts', 'if (state.ledger.length) lines.push(state.ledger);', []),
+    ('.py', 'ledger.post_entry(account, -amount)', ['money']),
+    ('.ts', 'return truncateBytes(clean(label), 4096);', []),
+    ('.ts', 'const short = truncate(label, 80);', []),
+    ('.py', 'truncate_table(conn, "orders")', ['destructive']),
+    ('.ts', 'inflater.destroy(err);', []),
+    ('.ts', "socket.on('error', () => res.destroy());", []),
+    ('.ts', 'proc.stdout.destroy();', []),
+    ('.js', 'await order.destroy({ where: { id } });', ['destructive']),
+    ('.ts', 'inflight?.delete(req.id);', []),
+    ('.ts', 'locks?.delete(slot.key);', []),
+    ('.ts', '  delete(recordId: string, opts: Options): Promise<boolean>;', []),
+    ('.ts', 'await prisma.user.deleteMany({ where: { orgId } });', ['destructive']),
+    ('.ts', 'private requireSession(): BrowserSession {', []),
+    ('.py', '@require_login', ['access']),
+    ('.py', 'require_admin(request)', ['access']),
+    ('.ts', 'function formatRule(matcher: RuleMatcher): string {', []),
+    ('.ts', "export const config = { matcher: ['/dashboard/:path*'] };", ['access']),
+    ('.tsx', 'const [consent, setConsent] = useState(false);', []),
+    ('.py', 'record_consent(user_id, consent)', ['compliance']),
+    ('.tsx', 'if (!consent) {', []),
+    ('.tsx', 'onClick={() => setConsent(!consent)}', []),
+    ('.ts', 'return () => registry().delete(worker);', []),
+    ('.ts', 'delete (target as Record<string, unknown>)[key];', []),
+    ('.ts', 'this.window.erase();', []),
+    ('.ts', "conn.on('close', () => client.destroy());", []),
+    ('.ts', 'const safe = redactSecrets(report, vault);', []),
+    ('.ts', 'export function redactSecrets(text: string): string {', ['secrets']),
+    ('.py', 'def redact_tokens(text):', ['secrets']),
+    ('.ts', 'const creds = resolveSecrets(settings, env);', ['secrets']),
+    ('.ts', "headers['Authorization'] = token;", ['secrets']),
+    ('.ts', 'const init = { headers: { Authorization: `Bearer ${token}` } };', ['secrets']),
+    ('.ts', 'if (opts.basicAuth) answerChallenge(opts.basicAuth);', ['secrets']),
+    ('.ts', 'const tokens = countTokens(prompt);', []),
+    ('.ts', "program.command('run').action(run);", ['public_api']),
+    ('.ts', 'export default defineCommand({ meta: { name: "init" } });', ['public_api']),
+    ('.rs', 'let m = diagnostics::capture(args);', []),
+]
+
+
+def self_test() -> int:
+    """Check the surface idioms in SELF_TEST_CASES and the test/product directory rule; prints failures, returns 0/1."""
+    bad = []
+    for suffix, line, want in SELF_TEST_CASES:
+        got = line_classes(line, code_view(line, suffix), suffix)
+        if sorted(got) != sorted(want):
+            bad.append(f'{suffix} {line!r}: matched {got}, expected {want}')
+    files = ['packages/e2e/package.json', 'packages/e2e/src/run.ts', 'packages/e2e/tests/run.test.ts',
+             'apps/shop/e2e/package.json', 'apps/shop/e2e/checkout.spec.ts', 'apps/shop/e2e/helpers.ts',
+             'apps/shop/src/cart.ts']
+    saved = set(PRODUCT_DIRS)
+    PRODUCT_DIRS.clear()
+    PRODUCT_DIRS.update(product_dirs(Path('.'), files))
+    try:
+        for f, want_test in (('packages/e2e/src/run.ts', False), ('packages/e2e/tests/run.test.ts', True),
+                             ('apps/shop/e2e/checkout.spec.ts', True), ('apps/shop/src/cart.ts', False)):
+            if is_test(f) != want_test:
+                bad.append(f'{f}: is_test {is_test(f)}, expected {want_test} (product dirs {sorted(PRODUCT_DIRS)})')
+        for f, want_src in (('packages/e2e/src/run.ts', True), ('apps/shop/e2e/helpers.ts', False)):
+            if is_source(f) != want_src:
+                bad.append(f'{f}: is_source {not want_src}, expected {want_src} (a package named e2e is product source; '
+                           'an e2e/ test project is not)')
+        for t, want in (('packages/sdk/tests/live/oauth.ts', True), ('packages/sdk/tests/helpers/server.ts', True),
+                        ('packages/sdk/tests/client.test.ts', False)):
+            if bool(not_a_counted_test(t)) != want:
+                bad.append(f'{t}: not counted {not want}, expected {want}')
+    finally:
+        PRODUCT_DIRS.clear()
+        PRODUCT_DIRS.update(saved)
+    for b in bad:
+        print('FAIL ' + b)
+    print(f'self-test: {len(SELF_TEST_CASES) + 9 - len(bad)} passed, {len(bad)} failed')   # 9 path-rule checks
+    return 1 if bad else 0
 
 
 def main(argv=None) -> int:
@@ -1129,7 +1478,10 @@ def main(argv=None) -> int:
     ap.add_argument('--defects', type=Path, help='bug tickets from fetch_ticket.py --jql (read-only)')
     ap.add_argument('--finding-area', action='append', default=[],
                     help='KIND:ID=AREA: carry this input finding on AREA, when its report cites the wrong file (repeatable)')
+    ap.add_argument('--release', type=Path, help='release.json from release_scope.py: pending changesets and breaking commits')
     ap.add_argument('--out', type=Path, required=True)
+    if '--self-test' in (sys.argv[1:] if argv is None else argv):
+        return self_test()
     args = ap.parse_args(argv)
     res = score(args)
     args.out.parent.mkdir(parents=True, exist_ok=True)
