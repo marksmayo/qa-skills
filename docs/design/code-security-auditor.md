@@ -1,6 +1,6 @@
 # Design: `code-security-auditor-skill`
 
-Status: Built (v1.1.0), see "As built" at the end. Build order: 5.
+Status: Built (v1.3.0), see the "As built" sections at the end. Build order: 5.
 
 ## Mission
 
@@ -334,3 +334,68 @@ fixed and covered by a new synthetic fixture, `examples/ferry-ops/`, in `self_te
 - **Timing.** `scan_secrets.py` records `elapsed_breakdown_s` (tree, git lookups, history), so a
   slow working-tree scan is told apart from a slow history scan.
 - **Not done:** a TOCTOU pattern (a status check around an external call is review-only by nature).
+
+## As built (v1.3.0): fixes from a run on a TypeScript CLI, SDK and MCP server monorepo
+
+A run on a pnpm workspace (a command-line tool, an SDK, an MCP server over stdio, a loopback MCP
+HTTP bridge, an OAuth callback server, and GitHub Actions with composite actions) found the
+surface map built for web apps.
+
+- **Product packages named like tests.** The product lived in `packages/e2e/`, and recon, the
+  pattern scan and the secret scan all skipped it as an end-to-end test folder. `test_paths.py`
+  now applies the repository-wide rule: a directory named `e2e`, `test(s)`, `spec`, `playwright`
+  or `cypress` is test code unless it is a package of its own (a `package.json` with `bin`, `main`
+  or `exports`, or a published one; or another language's manifest). A private test workspace
+  stays test code. File names such as `*.e2e.ts` are always tests. The logic is copied, not
+  imported, because skills ship alone.
+- **Node entry points with a local tier.** recon adds package.json `bin` commands, commander and
+  yargs subcommands and `process.argv` dispatch (`cli`); MCP tools with their transport
+  (`mcp_tool`, stdio or HTTP, the tool name read from the line after `registerTool(` when needed);
+  `createServer`/`WebSocketServer` listeners with the bind host (`listener`: loopback, all, or
+  unknown; a host constant in the file counts); config files read from the working directory
+  (`config_input`); and agent permission handlers as review leads. `seed_report.py` makes CLIs,
+  config inputs, stdio MCP tools and loopback listeners `local`, and leaves an unknown bind host
+  at `internet` for the agent to settle. Schema 1.3 adds the three kinds.
+- **Workflow triggers.** Triggers were matched as any `issues:` or `release:` key at shallow
+  indent, so `issues: write` under `permissions:` and a job named `release` became public triggers
+  with review leads. They are now read only from the `on:` block (inline, list or block form).
+  Composite actions (`action.yml`) are listed with the inputs their `run:` scripts expand, the
+  github_actions pack reads them (pack `path_regex`), with a new `GHA-ACTION-INPUT-IN-RUN` pattern,
+  and `key: ${{ ... }}` lines (env indirection, `with:`) are no longer injection hits.
+- **Stack labels and examples.** GraphQL with no schema or server library is `GraphQL (client
+  only)`; a framework seen only under `examples/`, `samples/`, `demos/` or a benchmark or testbed
+  app is labelled `(examples only: ...)`, and entry points there carry `example: true`.
+- **Pattern pack.** `JS-CMD-VAR` (spawn, execFile, fork, execa with a program from a variable;
+  `process.execPath` excepted) and `JS-CMD-SHELL-OPTION` (any `shell:` that is not `false`, such as
+  `process.platform === 'win32'`) replace the single-line `shell: true` alternative; JS-CMD no
+  longer matches `RegExp.prototype.exec`. False hits removed: cookie flags outside a cookie
+  context, string-literal `innerHTML` assignments, WebSocket `message` listeners (also as a recon
+  client source), SSRF in a file with no request source.
+- **Dependencies.** Coverage is per lockfile: each tool row lists what it `covers`, so npm audit on
+  a composite action's nested `package-lock.json` no longer makes a pnpm workspace look assessed.
+  `pnpm audit --json` runs when pnpm is installed, else it is `not_run` with the corepack or `npx`
+  command. `merge_findings.py` reads `pnpm-lock.yaml` (v6 to v9) for `dev` and `via`
+  (`importer>direct dependency`) on osv-scanner and pnpm audit advisories, and parses pnpm audit's
+  JSON. zizmor runs online audits when a GitHub token is in the environment (never on the command
+  line).
+- **gitleaks.** History hits keep `partialFingerprints.commitSha`; a hit in a file gone from HEAD
+  is `history_only` with `git_status: removed`. Generic-rule hits that scan_secrets' rules call a
+  placeholder (cache-key hashes, field names) and low-entropy test literals go to
+  `secrets_set_aside` with reasons. Tool versions come from `scanners.json`, not the SARIF driver.
+  scan_secrets no longer lists URL routes under a `*Path` key as credential files or reports a bare
+  private-key header joined to a constant.
+- **Confirmation without HTTP.** `run_poc.py` runs command PoCs (argument lists only, no shells, in
+  a copy outside the repository with HOME and temp inside it and proxies pointed at a closed
+  port), with `marker_in_output`, `exit_code` and `file_created` proofs; the validator accepts
+  their evidence for `confirmed` when `verification.local_copy` names the copy.
+- **Validator.** `--recon` requires every recon entry point to be in the report or in
+  `recon.removed_entry_points` with a reason, so an agent can't shrink the surface silently. A
+  dismissed history-only secret must say it was rotated or why it needs none, matching the rubric.
+  The renderer's `--brief` grouping no longer cuts reasons at a one-word `key:` or a leading file
+  path. SKILL.md documents `seed_report.py --force`, pnpm/yarn installs and corepack for regression
+  tests, and a Node CLI / MCP server / agent bridge review note.
+- **Fixture.** `examples/quill-cli/` (a synthetic pnpm workspace) is checked by `self_test.py`.
+- **Not done:** recon is still a regex pass (65 s on 1,400 files was mostly per-line regexes; it now
+  prints progress every 30 seconds); Semgrep registry noise (non-literal RegExp, Django CSRF on
+  static HTML) is left to triage; high-entropy fake keys in a project's own secret-scanner tests
+  remain candidates by design; ACP-specific permission semantics are a review lead, not a model.

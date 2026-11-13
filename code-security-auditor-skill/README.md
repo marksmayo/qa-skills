@@ -61,28 +61,31 @@ or
 | P2 | Score >= 8 |
 | P3 | Score < 8 |
 
-Priority = severity (CVSS v4.0 band) x confidence x exposure (public, authenticated, restricted).
+Priority = severity (CVSS v4.0 band) x confidence x exposure (public, authenticated, restricted, local).
 
 Scripts, in the order the skill runs them:
 
 ```bash
-python scripts/recon.py <repo> --out recon.json                   # attack surface: routes (per-handler auth for Next.js; FastAPI routers and dependencies), Azure Functions triggers, server actions, middleware, client-side sources, GitHub Actions and Azure DevOps triggers
+python scripts/recon.py <repo> --out recon.json                   # attack surface: routes (per-handler auth for Next.js; FastAPI routers and dependencies), Azure Functions triggers, server actions, middleware, client-side sources, Node CLIs (bin, commander), MCP tools, listeners with their bind host, config inputs, GitHub Actions (on: block only) and composite actions, Azure DevOps triggers
 python scripts/run_scanners.py <repo> --out-dir <out> [--offline] [--osv-local-db <dir>]
-#   every applicable open-source scanner: status, time and results; lockfiles listed offline and advisories recorded as assessed, partial or not assessed
-python scripts/scan_pitfalls.py <repo> --out patterns.json         # 118 CWE-mapped patterns in 15 packs (Express and Next.js sources, Azure Bicep/ARM and Azure Pipelines)
+#   every applicable open-source scanner: status, time and results; lockfiles listed offline, each tool's covered lockfiles,
+#   advisories recorded as assessed, partial or not assessed; pnpm audit for pnpm workspaces; zizmor online audits with GH_TOKEN
+python scripts/scan_pitfalls.py <repo> --out patterns.json         # 129 CWE-mapped patterns in 16 packs (Express and Next.js sources, Node child processes, composite actions, Azure Bicep/ARM and Azure Pipelines)
 python scripts/scan_secrets.py <repo> --history --out secrets.json # secrets, never their values; git status and history per file
 #   large repositories: --history-budget 300 (seconds; coverage recorded as partial) --history-exclude '*.html'
 python scripts/merge_findings.py --root <repo> --patterns patterns.json --secrets secrets.json \
-    --sarif semgrep.sarif zizmor.sarif --bandit bandit.json --deps pip-audit.json npm-audit.json --out candidates.json
+    --sarif semgrep.sarif zizmor.sarif gitleaks.sarif --bandit bandit.json --deps pip-audit.json npm-audit.json osv.json \
+    --scanners <out>/scanners.json --out candidates.json          # pnpm-lock.yaml dev/via facts; gitleaks history and set-aside hits
 python scripts/seed_report.py --recon recon.json --candidates candidates.json --scanners <out>/scanners.json \
-    --out security_audit.json                                      # copied parts of the report; judgement left as TODO(seed)
+    --out security_audit.json                                      # copied parts of the report; judgement left as TODO(seed); --force overwrites
 python scripts/run_poc.py poc.json --check                         # safety lint only
 python scripts/run_poc.py poc.json --target http://127.0.0.1:5057 --permission "..." --out evidence/F-1.json
+python scripts/run_poc.py poc.json --workdir <copy outside the repo> --repo <repo> --permission "..." --out evidence/F-2.json  # command PoC (CLI, library, stdio server)
 python scripts/cvss4.py "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"
-python scripts/validate_security_audit.py security_audit.json --repo <repo> --candidates candidates.json --write-summary
+python scripts/validate_security_audit.py security_audit.json --repo <repo> --candidates candidates.json --recon recon.json --write-summary
 python scripts/render_report.py security_audit.json [--brief] [--sarif findings.sarif]   # --sarif writes only the SARIF file
 python scripts/sarif.py read results.sarif                          # normalise any SARIF file
-python scripts/self_test.py                                         # built-in scanners against examples/kite-notes and examples/ferry-ops
+python scripts/self_test.py                                         # built-in scanners against examples/kite-notes, examples/ferry-ops and examples/quill-cli
 ```
 
 ## Output
@@ -133,9 +136,17 @@ Bicep and ARM templates, and pipelines, each with safe counterparts. `self_test.
 pattern hit exactly (24, none in the safe files), every entry point's path and auth, the pipelines,
 the secret placeholders and the offline dependency inventory.
 
+`examples/quill-cli/` is a fourth fixture: a TypeScript pnpm workspace whose product package is
+named `e2e`, with a commander CLI, a stdio MCP server, a loopback OAuth callback, a preview server
+on every interface, a config loader, GitHub Actions workflows (with `issues: write` permissions and
+a job named `release`, neither of them a trigger) and a composite action. `self_test.py` checks the
+pattern hits (none in the private `apps/e2e` test workspace or the safe forms), every entry point
+with its transport and bind host, the workflow triggers, the framework labels, the secret scan's
+URL-route and key-header rules, and the dev-only packages read from `pnpm-lock.yaml`.
+
 ```bash
 python scripts/validate_security_audit.py examples/security_audit.example.json \
-    --repo examples/invoicer --candidates examples/run/candidates.json
+    --repo examples/invoicer --candidates examples/run/candidates.json --recon examples/run/recon.json
 python scripts/render_report.py examples/security_audit.example.json --brief
 ```
 
@@ -143,8 +154,11 @@ python scripts/render_report.py examples/security_audit.example.json --brief
 
 - The schema, the sensitive notice, and CVSS scores recomputed from vectors.
 - Priority and rank recomputed; Critical needs at least traced confidence; possible findings are at most P1.
-- Confirmed findings need permitted verification against loopback or a named test host, a PoC that
-  passes the safety lint, and evidence showing the proof passed.
+- Confirmed findings need permitted verification against loopback or a named test host (or a
+  command PoC run in `verification.local_copy`, outside the repository), a PoC that passes the
+  safety lint, and evidence showing the proof passed.
+- With `--recon`, every recon entry point is in the report or in `removed_entry_points` with a reason.
+- A dismissed history-only secret says it was rotated, or why it needs no rotation.
 - Traced findings list the guards checked; possible findings state the gap.
 - Every candidate and advisory is triaged once; dismissals must be checkable; reachable advisories
   have findings.
@@ -163,23 +177,24 @@ python scripts/render_report.py examples/security_audit.example.json --brief
 
 - `SKILL.md`: complete agent instructions
 - `RUBRIC.md`: confidence, CVSS v4.0 anchors, exposure, priority, triage, safe PoCs, secrets, catalogue
-- `data/pitfalls.json`: 118 weakness patterns by CWE, with OWASP 2025 categories, CVSS hints, fixes and tool rule mappings
+- `data/pitfalls.json`: 129 weakness patterns by CWE, with OWASP 2025 categories, CVSS hints, fixes and tool rule mappings
 - `schemas/security_audit.schema.json`: output contract
 - `scripts/recon.py`: attack-surface map
 - `scripts/nextjs_auth.py`: Next.js route handlers, server actions and middleware, with per-handler auth (used by recon)
 - `scripts/py_routes.py`: FastAPI, Flask and Azure Functions entry points from the syntax tree, routers and their dependencies followed across files (used by recon; a shared file, canonical in `shared/scripts/py_routes.py` in the repository)
-- `scripts/run_scanners.py`: detects and runs the open-source scanners, recording each one's status
+- `scripts/run_scanners.py`: detects and runs the open-source scanners, recording each one's status and the lockfiles it covered
+- `scripts/test_paths.py`: tells test code from product code by path (a package named `e2e` with its own manifest is product code; used by recon and the scans)
 - `scripts/scan_pitfalls.py`: pattern scan
 - `scripts/scan_secrets.py`: secrets in the tree and git history, without values; whether each file is tracked, untracked or gitignored and was ever committed; credential files and paths to them listed separately
-- `scripts/merge_findings.py`: merges SARIF, Bandit, ESLint, dependency and built-in results into candidates; npm advisories get the installed version, range, dev flag and via chain from `package-lock.json`
+- `scripts/merge_findings.py`: merges SARIF, Bandit, ESLint, dependency and built-in results into candidates; npm advisories get the installed version, range, dev flag and via chain from `package-lock.json` or `pnpm-lock.yaml`; gitleaks history hits keep their commits
 - `scripts/seed_report.py`: writes the report skeleton (entry points, tools, triage, dependencies) with TODO(seed) placeholders for the judgement
-- `scripts/self_test.py`: checks the built-in scanners against `examples/kite-notes/` and `examples/ferry-ops/`
-- `scripts/run_poc.py`: safety-linted PoC runner that records evidence
+- `scripts/self_test.py`: checks the built-in scanners against `examples/kite-notes/`, `examples/ferry-ops/` and `examples/quill-cli/`
+- `scripts/run_poc.py`: safety-linted PoC runner that records evidence: HTTP steps against a local or test target, or command steps in a copy outside the repository
 - `scripts/cvss4.py`: CVSS v4.0 calculator (port of the FIRST reference implementation, BSD-2-Clause)
 - `scripts/validate_security_audit.py`: structure and honesty checks
 - `scripts/render_report.py`: coloured terminal/Markdown report and SARIF export
 - `scripts/sarif.py`: SARIF reader and writer (shared with UI Crash Hunter)
-- `examples/`: sample app, scanner outputs, PoCs, evidence, regression tests, variant rules and report; `kite-notes/`, the Next.js fixture; `ferry-ops/`, the FastAPI, Azure Functions, Bicep/ARM and Azure Pipelines fixture
+- `examples/`: sample app, scanner outputs, PoCs, evidence, regression tests, variant rules and report; `kite-notes/`, the Next.js fixture; `ferry-ops/`, the FastAPI, Azure Functions, Bicep/ARM and Azure Pipelines fixture; `quill-cli/`, the Node CLI, MCP server and GitHub Actions fixture
 
 ## Design principles
 

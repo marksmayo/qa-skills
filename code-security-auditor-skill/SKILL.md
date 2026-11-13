@@ -1,7 +1,7 @@
 ---
 name: code-security-auditor
 description: Audit a codebase for security weaknesses with open-source scanners (Semgrep OSS, Bandit, gosec, Brakeman, gitleaks, osv-scanner, pip-audit, npm audit, zizmor, Trivy, Checkov and more) plus a deep manual review, trace each finding from attacker-controlled input to the dangerous operation, rate it with CVSS v4.0, and write safe reproduction steps, a fix and a regression test. Optionally confirms findings with canary-only proofs of concept against localhost or a test environment the user names. Every candidate is triaged, every tool's status is recorded, and the report never calls the code secure.
-version: 1.2.0
+version: 1.3.0
 ---
 
 # Code Security Auditor
@@ -28,7 +28,8 @@ What sets this apart from asking for a quick review:
    points, tools and review areas, and what was not covered. Never write that the code is secure,
    safe or free of vulnerabilities.
 2. **A tool hit is a candidate until a path is traced.** Confidence levels:
-   - `confirmed`: a proof of concept ran against a local or test instance and its proof passed.
+   - `confirmed`: a proof of concept ran against a local or test instance (or, for a CLI, library
+     or stdio server, a command PoC in a copy outside the repository) and its proof passed.
    - `traced`: a complete source -> sink path with no effective sanitiser, read in the code.
    - `possible`: the weakness is real but part of the path is not shown (say which part in `path.gap`).
    Informational issues go in `observations`, not findings.
@@ -72,8 +73,9 @@ python scripts/recon.py <repo> --out <out>/recon.json
 ```
 
 It finds the stack, entry points (HTTP routes, GraphQL operations, webhooks, queue consumers, CLI
-commands, mobile deep links and exported components, CI workflow triggers such as
-`pull_request_target`, `workflow_run` and `issue_comment`, and client-side sources in JavaScript and
+commands, MCP tools, local listeners, config files the program loads, mobile deep links and
+exported components, CI workflow triggers such as `pull_request_target`, `workflow_run` and
+`issue_comment` (read only from the workflow's `on:` block), and client-side sources in JavaScript and
 inline scripts: `location.search`/`hash`, `useSearchParams()`, `postMessage`, `document.referrer`,
 `window.name`, web storage and cookies, so a static site has entry points too; an inline script
 repeated across generated pages is listed once with `also_in`; server code, config files and test
@@ -82,7 +84,35 @@ outbound calls, secret configuration, dependency manifests, CI workflows and rev
 read the code to confirm it: add entry points the patterns missed (CI workflows, dynamically
 registered routes), correct auth guesses (`unknown` is not `public`), and write the trust
 boundaries and the auth model (authentication, sessions, authorisation). The map decides where the
-deep review goes; record it in `recon`.
+deep review goes; record it in `recon`. If you drop an entry point recon found (a duplicate, a
+string that only looks like a listener), list it in `recon.removed_entry_points` with the reason:
+the validator's `--recon` checks every recon entry point is either in the report or removed with a
+reason.
+
+A directory named `e2e`, `test(s)`, `spec`, `playwright` or `cypress` is test code only when it is
+not a package of its own: a workspace package `packages/e2e/` whose `package.json` has `bin`,
+`main` or `exports` is product code, and recon, the pattern scan and the secret scan read it
+(`scripts/test_paths.py`). Entry points under `examples/`, `samples/`, `demos/` or a benchmark or
+testbed app carry `example: true` (seeded with a note), and `frameworks` labels frameworks seen
+only there (`Next.js (examples only: examples)`) or used only as a client (`GraphQL (client only)`).
+
+**Node CLIs, MCP servers and agent bridges.** recon lists package.json `bin` commands and
+commander/yargs/`parseArgs`/`process.argv` dispatch (`cli`, one entry per named subcommand), MCP
+tools registered with `registerTool`/`server.tool` (`mcp_tool`, with the transport: `stdio` or
+`http`), `http`/`net` `createServer` and `WebSocketServer` listeners with their bind host
+(`listener`: `loopback`, `all` for `listen(port)` with no host, or `unknown`), and config files
+loaded from the working directory (`config_input`). `seed_report.py` gives CLIs, config inputs,
+stdio MCP tools and loopback listeners exposure `local`; a listener on every interface or with an
+unknown bind host stays `internet` until you read it. Agent permission handlers (ACP
+`requestPermission`, `canUseTool`) and composite actions that expand an input in `run:` are review
+leads. In the deep review check: where config files are searched for (parent directories, the home
+directory) and whether a `.js`/`.ts` config is executed; `npx -y <pkg>` and other install-on-run
+commands in plugin or MCP manifests; MCP tool argument validation (paths outside the workspace,
+commands built from arguments) remembering that a prompt-injected model supplies those arguments;
+loopback servers (bind address, Host and Origin checks against DNS rebinding, a random path token
+or secret, CORS); `spawn`/`execFile` with a program taken from config or a flag, and any
+`shell:` option (Windows re-parses arguments through `cmd.exe`); and what an agent permission
+handler approves without asking.
 
 **Next.js.** recon models the App Router and `pages/api`: every exported handler (`export async
 function GET`, `export const POST = ...`, `export { handler as GET, handler as POST }`) is an entry
@@ -124,6 +154,12 @@ connections, environments and deployment jobs; templates are recognised as the f
 pipelines include. Review leads point at every-branch triggers with secrets or service
 connections, runtime parameters, and service connections outside a deployment job.
 
+**GitHub Actions.** Triggers come only from the `on:` block, so `issues: write` under
+`permissions:` and a job named `release` are not triggers. Composite actions (`action.yml` under
+`.github/` or at the root of an action repository) are listed in `ci_workflows` with their inputs
+and `inputs_in_run` (inputs a `run:` script expands directly); the github_actions pack and zizmor
+read them too. An input passed through `env:` and used as `"$NAME"` is the safe form.
+
 ### 2. Run the scanners
 
 ```bash
@@ -133,7 +169,11 @@ python scripts/run_scanners.py <repo> --out-dir <out> [--offline] [--osv-local-d
 Whatever runs, the pinned packages in lockfiles and requirements files are listed offline in
 `<out>/dependencies.json`, and `scanners.json` records `dependency_advisories`: `assessed`,
 `partial` (a lockfile no tool covered, say npm with only pip-audit) or `not_assessed` (no advisory
-tool ran, for example with `--offline`). Copy it into the report's `dependency_advisories`; "not
+tool ran, for example with `--offline`). Coverage is per lockfile: each tool row lists the lockfiles
+it `covers`, so npm audit on one nested `package-lock.json` (a composite action's) does not count
+as checking a pnpm workspace. `pnpm audit --json` runs next to each `pnpm-lock.yaml` when pnpm is
+installed; when it isn't (corepack not enabled), the row is `not_run` with how to run it, and only
+osv-scanner covers that lockfile. Copy the status into the report's `dependency_advisories`; "not
 assessed" is never "no vulnerable dependencies", and the limitations must say it. With
 `--osv-local-db` (an osv-scanner offline database downloaded beforehand), osv-scanner checks
 advisories without the network. Without any advisory tool, packages you can see are risky by
@@ -146,7 +186,10 @@ It runs every free, open-source tool that applies and is installed, writes their
 `tools`, with the elapsed time and number of results each one recorded. npm audit on a large lockfile
 (over a thousand packages) can take several minutes; it has its own limit (`--npm-audit-timeout`,
 default 600 seconds; every other tool has `--timeout`, default 900), and long runs print progress
-every 30 seconds. Use only tools whose licences allow scanning closed-source code without a paid account:
+every 30 seconds. zizmor audits workflows and composite actions; its online audits
+(impostor commits, known-vulnerable actions, ref confusion) run when `GH_TOKEN` or `GITHUB_TOKEN` is
+set and `--offline` is not given (the token is read from the environment, never put on the command
+line), and the row's note says when they were skipped. Use only tools whose licences allow scanning closed-source code without a paid account:
 CodeQL is excluded, and so are Semgrep rules or features that need a login. Ask before installing
 anything; a missing tool is recorded, not silently skipped.
 
@@ -155,8 +198,8 @@ anything; a missing tool is recorded, not silently skipped.
 | Multi-language SAST | Semgrep OSS with `p/default` and `p/owasp-top-ten` |
 | Language-specific | Bandit (Python), gosec (Go), Brakeman (Rails), ESLint security plugins (JS/TS, only if the repo has them), Psalm taint analysis (PHP, only if installed in the repo), SpotBugs + FindSecBugs (Java/Kotlin: needs a build, run it there), MobSF (needs a package and a server) |
 | Secrets | gitleaks (including history), plus `scan_secrets.py` |
-| Dependencies | osv-scanner, pip-audit, npm audit |
-| CI | zizmor (GitHub Actions), Checkov (GitHub Actions and Azure Pipelines), plus the pattern packs |
+| Dependencies | osv-scanner, pip-audit, npm audit, pnpm audit |
+| CI | zizmor (GitHub Actions workflows and composite actions), Checkov (GitHub Actions and Azure Pipelines), plus the pattern packs |
 | IaC and containers | Trivy, Checkov (Terraform, Bicep, ARM, CloudFormation, Kubernetes, Helm, Dockerfiles, Compose), hadolint |
 
 The built-in pattern packs cover Python, JavaScript/TypeScript, Java/Kotlin, Go, PHP, Ruby, C#, C,
@@ -173,8 +216,9 @@ Then the built-in scans, which work with no tools installed:
 python scripts/scan_pitfalls.py <repo> --out <out>/patterns.json     # data/pitfalls.json, organised by CWE
 python scripts/scan_secrets.py <repo> --history --out <out>/secrets.json
 python scripts/merge_findings.py --root <repo> --patterns <out>/patterns.json --secrets <out>/secrets.json \
-    --sarif <out>/semgrep.sarif <out>/zizmor.sarif ... --bandit <out>/bandit.json \
-    --deps <out>/pip-audit.json <out>/npm-audit.json <out>/osv.json [--npm-lock <repo>/package-lock.json] \
+    --sarif <out>/semgrep.sarif <out>/zizmor.sarif <out>/gitleaks.sarif ... --bandit <out>/bandit.json \
+    --deps <out>/pip-audit.json <out>/npm-audit.json <out>/pnpm-audit.json <out>/osv.json \
+    [--npm-lock <repo>/package-lock.json] [--pnpm-lock <repo>/pnpm-lock.yaml] --scanners <out>/scanners.json \
     --out <out>/candidates.json
 python scripts/seed_report.py --recon <out>/recon.json --candidates <out>/candidates.json \
     --scanners <out>/scanners.json --repo <repo> --out <out>/security_audit.json
@@ -182,7 +226,10 @@ python scripts/seed_report.py --recon <out>/recon.json --candidates <out>/candid
 
 `seed_report.py` writes the copied parts of the report (entry points, tools rows, one triage row per
 candidate, one dependencies row per advisory, coverage totals and counts) and marks everything that
-needs judgement `TODO(seed)`; the validator rejects any placeholder left behind.
+needs judgement `TODO(seed)`; the validator rejects any placeholder left behind. It refuses to
+overwrite an existing file; to seed again (after a recon or merge rerun), seed to a new file, or
+pass `--force` knowing it replaces everything you wrote. Never re-seed into a report you have
+edited and then merge by hand: entry points and triage rows would be duplicated.
 
 `scan_secrets.py` records each secret's file as `tracked`, `untracked` or `ignored` in git and
 checks that path's history cheaply, so "present locally, gitignored, never committed"
@@ -211,12 +258,23 @@ not two per file), and the output records `elapsed_s`.
 
 `merge_findings.py` merges hits on the same sink (overlapping lines and a shared pitfall or CWE)
 into one candidate (`CAND-nnn`) with all its sources; secrets become `SEC-nnn` and dependency
-advisories `DEP-nnn`, deduplicated across aliases. Secret values are never copied. For npm audit,
+advisories `DEP-nnn`, deduplicated across aliases. Secret values are never copied. A gitleaks hit
+from git history keeps its commit (`history_commits`, `in_git_history: yes`), and one in a file
+that is gone from HEAD is `history_only` with `git_status: removed`, like scan_secrets'. Generic
+gitleaks hits (`generic-api-key`) on a line where scan_secrets' own rules see no secret (a cache-key
+hash, a field name, a placeholder), and low-entropy test-file literals, go to `secrets_set_aside`
+with the reason instead of becoming candidates; provider-specific rules always stay candidates.
+With `--scanners`, each tool's version comes from `scanners.json` (the gitleaks SARIF driver
+reports a fixed placeholder version). For npm audit,
 each advisory is checked against the copies installed according to `package-lock.json`: `version`
 is the installed version, `range` the advisory's own vulnerable range, `dev` whether every copy is
 a devDependency, `via` the packages that pull it in, and `fixed_in` the first fixed version; a
 package installed in two majors (a production copy and a dev copy) gives one entry per major, so an
-advisory that only affects the dev copy doesn't read as production.
+advisory that only affects the dev copy doesn't read as production. For a pnpm workspace,
+`--pnpm-lock` (default `<repo>/pnpm-lock.yaml`) gives osv-scanner and pnpm audit advisories the
+same facts: `dev` is true when every copy is reachable only from some workspace package's
+devDependencies, and `via` names `importer>direct dependency` (`apps/lab>@vendor/devtools`), so
+"only a dev tool of a private app pulls it in" no longer needs `pnpm why` by hand.
 
 ### 3. Triage every candidate
 
@@ -295,6 +353,23 @@ and `{env:NAME}` values (such as a forged cookie) are redacted in the evidence. 
 the same PoCs against a copy with your recommended fixes applied: each proof should fail
 (`poc.fixed_build_result: not_confirmed`).
 
+For a CLI, a library or a stdio MCP server there is no HTTP target. Use a command PoC
+(`"kind": "command"`): files to write into the copy (the attacker's config file, input file or
+fixture), then steps that are argument lists (never a shell string or `sh -c`), and a proof:
+`marker_in_output`, `exit_code` or `file_created`. A regression test that fails on the vulnerable
+code is a command PoC too (run the test runner, prove the failure with `exit_code` and a marker from
+the assertion message).
+
+```bash
+python scripts/run_poc.py poc.json --check
+python scripts/run_poc.py poc.json --workdir <copy outside the repo> --repo <repo> --permission "<...>" --out <out>/evidence/F-2.json
+```
+
+It runs in the copy with HOME, temp and XDG folders inside it and HTTP(S)_PROXY pointed at a closed
+loopback port, refuses a working copy inside the repository, and records argv, exit codes and
+output excerpts. Record the copy in `verification.local_copy`; the validator then accepts the
+evidence for `confirmed`.
+
 ### 8. Rate
 
 **Severity:** a CVSS v4.0 base vector (`cvss.vector`), its score and severity, which the validator
@@ -362,8 +437,12 @@ For every finding:
   (`passes_after_fix`). For CI, configuration and dependency findings, the guard is a CI check
   (zizmor, Semgrep, pip-audit) with `result: not_run` and a note.
 
-  For Node and Next.js apps, running a test against a copy means `npm ci` (often five minutes or
-  more) and mocks for the database client and the session library. Budget for it: run tests for
+  For Node and Next.js apps, running a test against a copy means installing the dependencies
+  (often five minutes or more) and mocks for the database client and the session library. Use the
+  repository's own package manager: `npm ci` for a package-lock.json; for a pnpm or yarn workspace,
+  `pnpm install --frozen-lockfile` / `yarn install --immutable` in the copy's root. When `corepack`
+  is not on PATH, `npx -y pnpm@<the version in package.json's packageManager> install
+  --frozen-lockfile` works; then run the test inside the package (`npx vitest run <file>`). Budget for it: run tests for
   the P0 and P1 findings first, reuse one prepared copy for all of them, and mock at the module
   boundary (`vi.mock('@/lib/prisma')`, `vi.mock('next-auth')`) so each test calls the route handler
   function directly with a `Request`. If the brief rules out installing or running the toolchain,
@@ -377,7 +456,8 @@ with coverage, limitations (every tool that didn't run, every finding that could
 and why) and every file you wrote. Then:
 
 ```bash
-python scripts/validate_security_audit.py security_audit.json --repo <repo> --candidates candidates.json --write-summary
+python scripts/validate_security_audit.py security_audit.json --repo <repo> --candidates candidates.json \
+    --recon recon.json --write-summary
 python scripts/render_report.py security_audit.json [--brief] [--sarif findings.sarif]
 python scripts/cvss4.py "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N"
 ```
@@ -399,11 +479,16 @@ and leaves sibling ones to that report.
 - CVSS scores and severities recomputed from the vectors (`scripts/cvss4.py`, a port of the FIRST
   calculator tested against 206,094 reference vectors); priority scores, priorities, the caps and
   the rank order.
-- Confirmed findings: verification permitted, a loopback or named test target, a PoC that passes
-  the safety lint, evidence for that finding showing the proof passed and the permission recorded.
+- Confirmed findings: verification permitted, a loopback or named test target (or, for a command
+  PoC, `verification.local_copy` outside the repository and evidence that ran there), a PoC that
+  passes the safety lint, evidence for that finding showing the proof passed and the permission
+  recorded.
+- With `--recon`: every entry point in recon.json is in `recon.entry_points` or in
+  `recon.removed_entry_points` with a reason.
 - Traced findings list the guards checked; possible findings state the gap.
 - Every candidate triaged once, every dismissal checkable, every dependency advisory assessed, and
-  reachable ones linked to findings.
+  reachable ones linked to findings. A dismissed secret that only git history holds must say it was
+  rotated or revoked, or why it needs none (public by design, a placeholder, a fake test value).
 - Locations (file, line and snippet) against the source: the line must be the one that holds the
   snippet, so for a statement over several lines cite the line with the dangerous expression.
   Agent-found findings' basis excerpts are checked the same way, and so are observations'

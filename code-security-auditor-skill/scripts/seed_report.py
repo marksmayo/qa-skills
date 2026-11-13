@@ -89,6 +89,9 @@ def tool_rows(scanners: dict | None, cands: dict, recon: dict) -> list[dict]:
                'output': (t.get('outputs') or [None])[0], 'results': t.get('results'), 'reason': t.get('reason')}
         if t.get('elapsed_s') is not None:
             row['config'] = f"{t.get('note') or 'default configuration'}; took {t['elapsed_s']}s"
+        if t.get('covers') and t['area'] == 'dependencies':  # which lockfiles this tool read (or would have)
+            shown = ', '.join(t['covers'][:4]) + (f' and {len(t["covers"]) - 4} more' if len(t['covers']) > 4 else '')
+            row['config'] = (row.get('config') + '; ' if row.get('config') else '') + f'lockfiles: {shown}'
         rows.append({k: v for k, v in row.items() if v is not None or k in ('version', 'reason')})
     for t in cands.get('tools', []):
         if t['tool'] == 'scan_pitfalls':

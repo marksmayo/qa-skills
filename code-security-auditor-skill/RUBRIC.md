@@ -7,7 +7,7 @@ Anchors for confidence, CVSS v4.0 metrics, exposure, priority, triage, safe PoCs
 
 | Confidence | Needs | Typical evidence |
 |---|---|---|
-| `confirmed` | A PoC ran against localhost or a named test environment, with permission, and its proof passed. Evidence file with every request and response | Boolean diff, computed marker, Location header |
+| `confirmed` | A PoC ran against localhost or a named test environment, with permission, and its proof passed. Evidence file with every request and response. For a CLI, library or stdio server: a command PoC (`run_poc.py --workdir`) in a copy outside the repository, with every command, exit code and output excerpt | Boolean diff, computed marker, Location header; a computed marker in a CLI's output, a canary file the payload created, a regression test failing with its assertion message |
 | `traced` | The full path read in code: source (file:line) -> transforms -> sink, and the guards that were checked and why they fail | At least a source and a sink location, or the config line for configuration findings |
 | `possible` | The weakness is real but part of the path is not shown; `path.gap` says which part | Weak randomness with no demonstrated prediction; a sink whose input source is unclear |
 
@@ -132,12 +132,19 @@ appears in the request is rejected.
   another variable (`$NAME`, `$(NAME)`, `$env:NAME`, `%NAME%`) and ARM expressions. A hard-coded
   fallback is never a placeholder.
 - A secret only in history is a candidate (`history_only`, `git_status: removed`) and is rotated.
+  Dismissing one is allowed only with a reason that says it was rotated or revoked, or why it needs
+  no rotation (a public key by design such as an analytics write key, a placeholder, a fake test
+  value); the validator rejects a dismissal that says neither. gitleaks history hits get the same
+  facts (`history_commits`, and `history_only` when the file is gone from HEAD).
+- Generic gitleaks hits (`generic-api-key`) where scan_secrets' rules see no secret, and low-entropy
+  test-file literals, are set aside by `merge_findings.py` (`secrets_set_aside`, with reasons);
+  provider-format hits are never set aside.
 
 ## Weakness catalogue
 
-`data/pitfalls.json` has 118 patterns in 15 packs (Python, JavaScript/TypeScript, Java/Kotlin,
-Android manifests, iOS, Go, PHP, Ruby, C#, C/C++, GitHub Actions, Dockerfiles, Terraform, Azure
-Bicep/ARM, Azure Pipelines), each with a CWE, an OWASP 2025 category, a typical CVSS vector, a fix
+`data/pitfalls.json` has 129 patterns in 16 packs (Python, JavaScript/TypeScript, Java/Kotlin,
+Android manifests, iOS, Go, PHP, Ruby, C#, C/C++, Rust, GitHub Actions workflows and composite
+actions, Dockerfiles, Terraform, Azure Bicep/ARM, Azure Pipelines), each with a CWE, an OWASP 2025 category, a typical CVSS vector, a fix
 and the matching rules of other tools.
 
 | Category | Weaknesses |
@@ -195,7 +202,7 @@ JavaScript source patterns cover Express (`req.query`, `req.body`, `req.params`)
 
 ## Reviewer checklist
 
-- [ ] Recon covers every entry point (including CI workflows, server actions and middleware), with auth confirmed by reading.
+- [ ] Recon covers every entry point (including CI workflows, composite actions, server actions, middleware, CLI commands, MCP tools, local listeners and config inputs), with auth confirmed by reading; any recon entry point dropped is in `removed_entry_points` with the reason.
 - [ ] Every tool is ran, not_run (why), errored (why) or not_applicable; no licensed tools.
 - [ ] Every candidate and advisory triaged with checkable reasons.
 - [ ] Every finding has a traced path (or a stated gap), a CVSS vector with rationale, repro steps,
