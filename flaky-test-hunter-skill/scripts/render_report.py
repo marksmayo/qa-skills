@@ -17,7 +17,8 @@ RESET = "\033[0m"; BOLD = "\033[1m"; DIM = "\033[2m"
 RED = "\033[31m"; GREEN = "\033[32m"; YELLOW = "\033[33m"; MAGENTA = "\033[35m"; CYAN = "\033[36m"
 PRIO_STYLE = {'P0': RED + BOLD, 'P1': RED, 'P2': YELLOW, 'P3': DIM}
 CONF_STYLE = {'confirmed': GREEN, 'indicated': CYAN, 'suspected': DIM}
-STATUS_STYLE = {'flaky': YELLOW, 'consistently_failing': RED, 'not_observed_flaky': DIM, 'not_run': MAGENTA}
+STATUS_STYLE = {'flaky': YELLOW, 'consistently_failing': RED, 'platform_dependent': RED, 'not_observed_flaky': DIM,
+                'not_run': MAGENTA}
 TOOL_STYLE = {'ran': GREEN, 'not_run': YELLOW, 'errored': RED, 'not_applicable': DIM}
 
 
@@ -107,6 +108,10 @@ def main() -> int:
             elif f['polluter']:
                 w(f"  Polluter: {f['polluter']['test_id']} (pair run {f['polluter']['pair_run_id']} fails, "
                   f"victim alone {f['polluter']['alone_run_id']} passes)")
+            if f.get('history_only'):
+                w(P('  Seen in CI history only, never reproduced in the local runs (priority capped at P2):', MAGENTA))
+                for h in f.get('history_evidence', [])[:6]:
+                    w(f"    {h['id']} {h['outcome']}: {h['source']}, {h['ref']}" + (f" - {h['excerpt'][:100]}" if h['excerpt'] else ''))
             w(f"  Passing runs: {', '.join(f['evidence_runs']['passing'][:6])}"
               f"{' ...' if len(f['evidence_runs']['passing']) > 6 else ''}  |  failing: "
               f"{', '.join(f['evidence_runs']['failing'][:6])}{' ...' if len(f['evidence_runs']['failing']) > 6 else ''}")
@@ -120,7 +125,7 @@ def main() -> int:
                 q = f['quarantine']
                 w(P(f"  Stopgap (proposed, not applied): {q['how']}; owner {q['owner']}, ticket {q['ticket']}", DIM))
             w('')
-    shown = [t for t in d['tests'] if not args.brief or t['status'] in ('flaky', 'consistently_failing')]
+    shown = [t for t in d['tests'] if not args.brief or t['status'] in ('flaky', 'consistently_failing', 'platform_dependent')]
     if shown or d['tests']:
         w(P('## Tests', BOLD))
         w('')
@@ -150,7 +155,8 @@ def main() -> int:
     if d['consistently_failing']:
         w(P('## Consistently failing (not flaky)', BOLD))
         for x in d['consistently_failing']:
-            w(f"- {x['test_id']} ({x['runs']} runs): {x['note']}")
+            on = f" on {', '.join(x['platforms'])} only" if x.get('platforms') else ''
+            w(f"- {x['test_id']} ({x['runs']} runs{on}): {x['note']}")
         w('')
     if not args.brief:
         w(P('## Variations', BOLD))

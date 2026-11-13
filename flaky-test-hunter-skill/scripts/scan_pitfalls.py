@@ -23,7 +23,8 @@ HERE = Path(__file__).resolve().parent
 DATA = HERE.parent / 'data' / 'pitfalls.json'
 # pruned before descending (never walked, then filtered)
 SKIP = {'.git', 'node_modules', '__pycache__', '.venv', 'venv', 'dist', 'build', 'target', '.pytest_cache', '.tox',
-        '.next', '.nuxt', 'out', 'coverage', '.turbo', '.cache', '.stryker-tmp', '.mypy_cache', '.gradle', '.idea'}
+        '.next', '.nuxt', 'out', 'coverage', '.turbo', '.cache', '.stryker-tmp', '.mypy_cache', '.gradle', '.idea',
+        'vendor', 'third_party', 'Pods', 'Carthage'}
 TEST_NAME = re.compile(r'^\s*(?:async\s+)?def\s+(test_\w+)|'
                        r'^\s*(?:it|test)(?:\.(?:only|skip|concurrent|sequential|fails|todo|runIf\([^)]*\)|skipIf\([^)]*\)))*'
                        r'\s*\(\s*([\'"`])((?:(?!\2).)+)\2|'
@@ -141,8 +142,9 @@ def scan(root: Path, data: dict) -> list[dict]:
                'prev_rx': re.compile(s['skip_if_prev']) if s.get('skip_if_prev') else None,
                'next_rx': re.compile(s['skip_if_next']) if s.get('skip_if_next') else None,
                'mit_rx': re.compile(s['mitigated_by']) if s.get('mitigated_by') else None}
-              for s in data['smells'] if s.get('scope') not in ('thread_setup', 'reload_target', 'module_let')]
+              for s in data['smells'] if s.get('scope') not in ('thread_setup', 'reload_target', 'module_let', *GO_SCOPES)]
     module_let = [s for s in data['smells'] if s.get('scope') == 'module_let']
+    go_body = {s['scope']: s for s in data['smells'] if s.get('scope') in GO_SCOPES}
     project = [s for s in data['smells'] if s.get('scope') == 'thread_setup']
     reload_targets = [s for s in data['smells'] if s.get('scope') == 'reload_target']
     all_files = list(files(root))
@@ -202,6 +204,8 @@ def scan(root: Path, data: dict) -> list[dict]:
                         continue
                 if sm.get('skip_unless_compared') and fills_unused_field(lines, i, sm['rx']):
                     continue
+                if sm['id'] == 'shared-env-go' and is_test and enclosing_test(lines, i, False) == 'TestMain':
+                    continue          # TestMain sets the environment once for the whole test binary, before any test
                 mitigation = None
                 if sm['mit_rx'] is not None:
                     if sm['id'] not in local_mit:
@@ -212,6 +216,14 @@ def scan(root: Path, data: dict) -> list[dict]:
                             'excerpt': s[:160], 'cause': sm['cause'], 'message': sm['message'], 'fix': sm['fix'],
                             'test': enclosing_test(lines, i, lang in JS_LANGS) if is_test else None,
                             'in_test_file': is_test, 'mitigation': mitigation})
+        if is_test and lang == 'go' and go_body:
+            for scope, line, test, name in go_body_hits(lines):
+                sm = go_body.get(scope)
+                if sm:
+                    out.append({'id': f'SM-{len(out) + 1}', 'smell': sm['id'], 'file': rel, 'line': line + 1,
+                                'excerpt': lines[line].strip()[:160], 'cause': sm['cause'],
+                                'message': sm['message'] + (f' ({name})' if name else ''), 'fix': sm['fix'],
+                                'test': test, 'in_test_file': True, 'mitigation': None})
         if is_test and lang in JS_LANGS:
             for sm in module_let:
                 for name, line, test, mitigation in module_let_hits(lines, re.compile(sm['pattern'])):
@@ -251,6 +263,66 @@ def scan(root: Path, data: dict) -> list[dict]:
                                     'message': f"{sm['message']} ({p.stem} is reloaded by a test)", 'fix': sm['fix'],
                                     'test': None, 'in_test_file': False, 'mitigation': None})
     return out
+
+
+GO_SCOPES = ('go_parallel', 'go_goroutine')
+GO_TEST_FUNC = re.compile(r'^func\s+(Test\w*|Benchmark\w*|Fuzz\w*|Example\w*)\s*\(')
+GO_WAITS = re.compile(r'\.Wait\(\)|<-|\berrgroup\b|\bEventually\w*\(|\bsynctest\.(?:Run|Test|Wait)\(')
+GO_GOROUTINE = re.compile(r'^\s*go\s+(?:func\b|[\w.]+\()')
+
+
+def go_package_vars(lines: list[str]) -> set[str]:
+    """Names declared by package-level var statements (`var x int`, `var x, y = ...` and `var ( ... )` blocks)."""
+    names, block = set(), False
+    for line in lines:
+        if block:
+            if line.startswith(')'):
+                block = False
+                continue
+            m = re.match(r'^\s+([A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)*)\b', line)
+            if m and not line.strip().startswith('//'):
+                names.update(x.strip() for x in m.group(1).split(','))
+            continue
+        if re.match(r'^var\s*\(\s*$', line):
+            block = True
+            continue
+        m = re.match(r'^var\s+([A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)*)\b', line)
+        if m:
+            names.update(x.strip() for x in m.group(1).split(','))
+    return names - {'_'}
+
+
+def go_body_hits(lines: list[str]) -> list[tuple[str, int, str, str | None]]:
+    """Go test-body checks, as (scope, line index, test name, detail): a package-level variable written in a test
+    that calls t.Parallel() (go_parallel, one hit per variable and test), and a goroutine started in a test whose
+    body never waits for anything (go_goroutine, at the first `go` statement). A test body runs from its
+    `func TestX(` line to the next line that is a closing brace at column 0 (gofmt layout)."""
+    pkg_vars = go_package_vars(lines)
+    hits = []
+    i = 0
+    while i < len(lines):
+        m = GO_TEST_FUNC.match(lines[i])
+        if not m:
+            i += 1
+            continue
+        start, end = i, i + 1
+        while end < len(lines) and not lines[end].startswith('}'):
+            end += 1
+        body = [(k, lines[k]) for k in range(start + 1, end) if not lines[k].strip().startswith('//')]
+        name = m.group(1)
+        if any('.Parallel()' in l for _, l in body):
+            for var in sorted(pkg_vars):
+                write = re.compile(r'(?<![\w.])' + re.escape(var) +
+                                   r'(?:\[[^\]]*\])?\s*(?:=(?!=)|\+\+|--|[-+*/%|&^]=|<<=|>>=)')
+                k = next((k for k, l in body if write.search(l)), None)
+                if k is not None:
+                    hits.append(('go_parallel', k, name, var))
+        if not any(GO_WAITS.search(l) for _, l in body):
+            k = next((k for k, l in body if GO_GOROUTINE.match(l)), None)
+            if k is not None:
+                hits.append(('go_goroutine', k, name, None))
+        i = end + 1
+    return sorted(hits, key=lambda h: h[1])
 
 
 HOOK = re.compile(r'^\s*(beforeEach|afterEach|beforeAll|afterAll)\s*\(')
@@ -402,6 +474,67 @@ it('counts a visit', () => {
 """
 
 
+GO_SAMPLE_TEST = """\
+package cart
+
+import (
+\t"math/rand"
+\t"net"
+\t"net/http"
+\t"os"
+\t"sync"
+\t"testing"
+\t"time"
+)
+
+var hits int
+
+func TestWaits(t *testing.T) {
+\ttime.Sleep(50 * time.Millisecond)
+\tstart := time.Now()
+\t_ = start
+\tn := rand.Intn(10)
+\t_ = n
+\tln, _ := net.Listen("tcp", "127.0.0.1:8080")
+\t_ = ln
+\tos.Setenv("CART_MODE", "test")
+\t_ = os.TempDir()
+}
+
+func TestParallelShared(t *testing.T) {
+\tt.Parallel()
+\thits++
+}
+
+func TestGoroutine(t *testing.T) {
+\tgo func() {
+\t\thits = 2
+\t}()
+}
+
+func TestGoroutineSynced(t *testing.T) {
+\tvar wg sync.WaitGroup
+\twg.Add(1)
+\tgo func() {
+\t\tdefer wg.Done()
+\t}()
+\twg.Wait()
+}
+
+func TestMain(m *testing.M) {
+\tos.Setenv("CART_TELEMETRY", "off")
+\tos.Exit(m.Run())
+}
+
+func TestStub(t *testing.T) {
+\tsrv := startOn(2000)
+\tcases := []struct{ port int }{{port: 2000}}
+\t_ = http.ListenAndServe
+\t_, _ = srv, cases
+}
+"""
+
+
 def self_test() -> int:
     data = json.loads(DATA.read_text(encoding='utf-8'))
     ok = True
@@ -458,6 +591,21 @@ def self_test() -> int:
                 ('tests/reset.test.ts', 'counts a visit', True)}
         good = got == want
         lines.append(f"module-level let reassigned in a test: {'ok' if good else 'FAILED, got ' + str(sorted(got))}")
+        ok = ok and good
+
+    # 4) The Go pack: each smell once in the test that has it, and no fixed-port hit on a stub or a table field.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        (root / 'go.mod').write_text('module example.test/harbour\n\ngo 1.26\n', encoding='utf-8')
+        (root / 'cart').mkdir()
+        (root / 'cart' / 'cart_test.go').write_text(GO_SAMPLE_TEST, encoding='utf-8')
+        hits = [h for h in scan(root, data) if h['file'].endswith('.go')]
+        got = {(h['smell'], h['test']) for h in hits}
+        want = {('fixed-sleep-go', 'TestWaits'), ('wall-clock-go', 'TestWaits'), ('unseeded-random-go', 'TestWaits'),
+                ('fixed-port-go', 'TestWaits'), ('shared-env-go', 'TestWaits'), ('shared-temp-path-go', 'TestWaits'),
+                ('parallel-shared-state-go', 'TestParallelShared'), ('goroutine-unsynced-go', 'TestGoroutine')}
+        good = got == want and len(hits) == len(want)
+        lines.append(f"go pack: {'ok' if good else 'FAILED, missing ' + str(sorted(want - got)) + ', extra ' + str(sorted(got - want))}")
         ok = ok and good
 
     print('self-test ' + ('passed' if ok else 'FAILED') + ':\n  ' + '\n  '.join(lines),

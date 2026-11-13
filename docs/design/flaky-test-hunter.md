@@ -1,6 +1,6 @@
 # Design: `flaky-test-hunter-skill`
 
-Status: Built (v1.3.0), see "As built" at the end. Build order: 8.
+Status: Built (v1.4.0), see "As built" at the end. Build order: 8.
 
 ## Mission
 
@@ -374,3 +374,33 @@ Agreed with the user before the build.
     refusals name the calling file and line; SKILL.md tells the agent to run with them.
   - **Guidance.** RUBRIC and README say that a CI-gated flake that guards no critical journey
     tops out at P2 by design.
+- **Found on a Go CLI (v1.4.0)** (a Go module with a urfave/cli command table, gotestsum runs on
+  Windows and Linux, CI history read with `gh`):
+  - **History-only flakes are reportable.** The schema allowed `history_only` but the validator
+    demanded a local pass and fail, so CI-only flakes went to `limitations`. A `history_only`
+    flake now needs `history_evidence` (CI runs with references and excerpts, one pass and one
+    fail), `metadata.history` used, never a `confirmed` cause or a polluter, and stays capped at
+    P2; a test the local runs show flaky can't carry the flag. Schema 1.2.0.
+  - **Go smells link to Go flakes.** Go ids are `<import path>::TestX` with no file, so
+    `same_file()` never matched a smell's `_test.go`. The import path is now mapped to its package
+    directory through every `go.mod` (with `--repo`; otherwise the path must end in the
+    directory), and a smell in `TestX` links to a flake in `TestX/sub`. Fixes may touch Go
+    `testdata/`.
+  - **`race` and `platform` variation kinds; `platform_dependent`.** Runs that record `platform`
+    are judged per platform: a test all-pass on one and all-fail on another is
+    `platform_dependent` (listed in `consistently_failing` with `platforms`), never a flake, and
+    `tests[].by_platform` shows the split.
+  - **Go smell pack** (`data/pitfalls.json` 1.5.0): `time.Now` without an injected clock,
+    `math/rand` global draws, fixed ports in `net.Listen`/`ListenAndServe`/`Addr:`/`net.Dial`,
+    `os.Setenv`/`os.Chdir` outside `TestMain`, `os.TempDir()`/`/tmp/` paths, a package-level var
+    written in a `t.Parallel()` test, and a goroutine never waited for. The generic `fixed-port`
+    smell no longer applies to Go (it matched a stub's `startOn(2000)` and table fields).
+    `vendor/` and `third_party/` trees are pruned.
+  - **Guidance.** SKILL.md has a Go section (`--tests ./...`, `-race`, subtest double counting,
+    `[build failed]` as `TestMain`, `-run` reruns, shell quoting through wrappers, the proxy
+    fallback for the network) and tells the agent to look for home-directory writes and device or
+    process control before running, with a scratch `HOME` and `USERPROFILE`.
+  - **Not fixed here (shared `run_tests.py`/`parse_results.py`):** the gotestsum preset's default
+    package (`./...`), translating Go ids to `-run` patterns, a `race` flag, recording `platform`
+    on each run, and reading a `[build failed]` package as an errored run rather than a failed
+    `TestMain`.

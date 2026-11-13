@@ -28,7 +28,7 @@ CLOCK_ENV = ('TDA_CLOCK_SHIFT', 'TDA_CLOCK_DATE', 'FAKETIME')
 MIN_LABEL_RUNS = 3      # a label needs this many runs to set the worst rate on its own
 POOLED = 'pooled'       # the worst-rate candidate made of every non-bisect run
 REPEAT_SUFFIX = re.compile(r'#\d+$')  # parse_results' suffix for a repeated name; a '#' inside a title stays
-TEST_PATH = re.compile(r'(^|/)tests?/|(^|/)test_[^/]+\.py$|_test\.(py|go)$|\.(test|spec)\.[cm]?[jt]sx?$|(^|/)src/test/|'
+TEST_PATH = re.compile(r'(^|/)tests?/|(^|/)testdata/|(^|/)test_[^/]+\.py$|_test\.(py|go)$|\.(test|spec)\.[cm]?[jt]sx?$|(^|/)src/test/|'
                        r'(^|/)__tests__/|(^|/)e2e/|(^|/)conftest\.py$|Test\.(java|kt)$|'
                        # test runner config and setup files (RUBRIC: fixes may touch test config)
                        r'(^|/)(?:vitest|jest|playwright|cypress|karma)\.config\.[cm]?[jt]s$|'
@@ -117,7 +117,12 @@ def rate(n: int, k: int) -> dict:
     return {'runs': n, 'fails': k, 'rate': round(k / n, 4) if n else None, 'wilson_low': low, 'wilson_high': high}
 
 
-def test_stats(tid: str, obs: list, file: str | None) -> dict:
+def platform_of(run: dict) -> str | None:
+    """The platform a run recorded (`platform`, added to each run when a suite ran on more than one OS)."""
+    return run.get('platform') or (run.get('variation') or {}).get('platform')
+
+
+def test_stats(tid: str, obs: list, file: str | None, plat: dict | None = None) -> dict:
     passes = sum(o == 'pass' for _, _, o in obs)
     fails = len(obs) - passes
     by = defaultdict(lambda: [0, 0])
@@ -140,9 +145,27 @@ def test_stats(tid: str, obs: list, file: str | None) -> dict:
         if low > worst['wilson_low'] or worst['label'] is None:
             worst = {'label': label, 'runs': n, 'fails': k, 'wilson_low': low}
     status = 'not_run' if not obs else 'flaky' if passes and fails else 'consistently_failing' if fails else 'not_observed_flaky'
+    extra = {}
+    platforms = sorted({(plat or {}).get(rid) or '(not recorded)' for rid, _, _ in obs})
+    if len(platforms) > 1:
+        # Runs on more than one platform (one code hash): a test that passes every run on one platform and fails every
+        # run on another is a deterministic platform difference, not a flake. Flaky means mixed on one platform.
+        per = {p: [0, 0] for p in platforms}
+        for rid, _, o in obs:
+            k = (plat or {}).get(rid) or '(not recorded)'
+            per[k][0] += 1
+            per[k][1] += o == 'fail'
+        extra['by_platform'] = [{'platform': p, 'runs': n, 'fails': k} for p, (n, k) in per.items()]
+        if status == 'flaky' and not any(0 < k < n for n, k in per.values()):
+            status = 'platform_dependent'
     return {'id': tid, 'file': file, 'runs': len(obs), 'passes': passes, 'fails': fails,
             'normal': rate(len(normal), sum(o == 'fail' for o in normal)), 'worst': worst,
-            'by_label': [{'label': l, 'runs': n, 'fails': k} for l, (n, k) in sorted(by.items())], 'status': status}
+            'by_label': [{'label': l, 'runs': n, 'fails': k} for l, (n, k) in sorted(by.items())], 'status': status,
+            **extra}
+
+
+def failing_platforms(t: dict) -> list[str]:
+    return sorted(p['platform'] for p in t.get('by_platform', []) if p['runs'] and p['fails'] == p['runs'])
 
 
 def band(score: int) -> str:
@@ -177,7 +200,8 @@ def score_flake(f: dict, t: dict | None, meta: dict) -> dict:
 
 def compute(d: dict, runs_data: dict) -> tuple[list[dict], dict]:
     obs, files, runs = outcomes(runs_data, d['metadata']['code_hash'])
-    tests = [test_stats(tid, obs[tid], files.get(tid)) for tid in sorted(obs)]
+    plat = {rid: platform_of(r) for rid, r in runs.items()}
+    tests = [test_stats(tid, obs[tid], files.get(tid), plat) for tid in sorted(obs)]
     return tests, runs
 
 
@@ -192,7 +216,9 @@ def summary_numbers(d: dict, runs_data: dict, runs: dict) -> dict:
     planned = sum(v['status'] in ('ran', 'not_run') for v in d['variations'])
     return {'tests_run': sum(t['status'] != 'not_run' for t in tests), 'flaky': count('flaky'),
             'consistently_failing': count('consistently_failing'), 'not_observed_flaky': count('not_observed_flaky'),
-            'not_run': count('not_run'), 'by_cause': dict(sorted(by_cause.items())), 'by_priority': by_pr,
+            'not_run': count('not_run'),
+            **({'platform_dependent': count('platform_dependent')} if count('platform_dependent') else {}),
+            'by_cause': dict(sorted(by_cause.items())), 'by_priority': by_pr,
             'total_runs': len(runs), 'wall_minutes': round(sum(r.get('duration_s', 0) for r in runs.values()) / 60, 1),
             'evidence_completeness': round(ran / planned, 2) if planned else 0.0}
 
@@ -209,6 +235,36 @@ def write_summary(d: dict, runs_data: dict) -> None:
 
 
 # ---------------------------------------------------------------- checks
+def history_errors(f: dict, t: dict | None, meta: dict) -> list[str]:
+    """A history_only flake: seen to pass and fail in CI history, never reproduced in the local runs. Its evidence is
+    the CI runs themselves (history_evidence), each with a reference and an excerpt; it is never confirmed and its
+    priority is capped at P2 (score_flake)."""
+    at = f"{f['id']} ({f['test_id']})"
+    errs = []
+    ev = f.get('history_evidence') or []
+    if (meta.get('history') or {}).get('status') != 'used':
+        errs.append(f'{at}: history_only needs metadata.history used, with its source')
+    if not ev:
+        errs.append(f'{at}: history_only needs history_evidence: the CI runs that passed and failed, with references')
+        return errs
+    out = {e['id']: e['outcome'] for e in ev}
+    if 'pass' not in out.values() or 'fail' not in out.values():
+        errs.append(f'{at}: history_evidence needs at least one passing and one failing CI run')
+    for rid in f['evidence_runs']['passing']:
+        if out.get(rid) != 'pass':
+            errs.append(f'{at}: evidence run {rid} is not a passing run in history_evidence')
+    for rid in f['evidence_runs']['failing']:
+        if out.get(rid) != 'fail':
+            errs.append(f'{at}: evidence run {rid} is not a failing run in history_evidence')
+    if f['cause_confidence'] == 'confirmed':
+        errs.append(f'{at}: a history-only flake was never reproduced here, so its cause cannot be confirmed')
+    if f['polluter']:
+        errs.append(f'{at}: a polluter needs a local bisection; a history-only flake cannot name one')
+    if t and t['status'] == 'flaky':
+        errs.append(f'{at}: the local runs show it flaky, so it is not history_only (drop the flag and cite the runs)')
+    return errs
+
+
 def walk_strings(x, path=''):
     if isinstance(x, dict):
         for k, v in x.items():
@@ -233,12 +289,48 @@ def base_test_id(test_id: str) -> str:
     return re.sub(r'\[.*\]$', '', test_id)
 
 
+GO_MODULES: list[tuple[str, str]] = []   # (module path, its directory relative to --repo), from every go.mod
+
+
+def go_modules(repo: Path) -> list[tuple[str, str]]:
+    """Every go.mod under the repo (vendored and dependency trees pruned), longest module path first."""
+    import os
+    out = []
+    for dp, dns, fns in os.walk(repo):
+        dns[:] = [d for d in dns if d not in ('.git', 'vendor', 'node_modules', 'testdata', 'third_party')]
+        if 'go.mod' in fns:
+            text = (Path(dp) / 'go.mod').read_text(encoding='utf-8', errors='replace')
+            m = re.search(r'(?m)^\s*module\s+(\S+)', text)
+            if m:
+                rel = Path(dp).relative_to(repo).as_posix()
+                out.append((m.group(1).strip('"'), '' if rel == '.' else rel))
+    return sorted(out, key=lambda x: -len(x[0]))
+
+
+def go_package_dir(head: str) -> str | None:
+    """A Go test id's head is the package's import path (gotestsum / go test -json): map it to the package directory
+    through the module paths of the repo's go.mod files. None when no module is known (no --repo)."""
+    for mod, moddir in GO_MODULES:
+        if head == mod or head.startswith(mod + '/'):
+            rest = head[len(mod):].strip('/')
+            return '/'.join(x for x in (moddir, rest) if x)
+    return None
+
+
 def same_file(flake_file: str | None, flake_id: str, smell_file: str) -> bool:
     """The flake's test file is the smell's file. Pytest ids name a dotted module, JUnit from
-    Vitest/Jest the file path; when neither says, the name match alone decides."""
+    Vitest/Jest the file path; when neither says, the name match alone decides. Go ids name the
+    package's import path and no file: a smell in any _test.go file of that package's directory
+    matches (the directory comes from go.mod with --repo, otherwise the import path must end in it)."""
     smell_file = smell_file.replace('\\', '/')
     cands = [flake_file.replace('\\', '/')] if flake_file else []
     head = flake_id.split('::')[0]
+    if smell_file.endswith('_test.go') and not flake_file and '/' in head and not head.endswith('.go'):
+        sdir = smell_file.rpartition('/')[0]
+        pdir = go_package_dir(head)
+        if pdir is not None:
+            return pdir == sdir
+        return head == sdir or (bool(sdir) and head.endswith('/' + sdir))
     cands.append(head.replace('\\', '/'))
     if '/' not in head and '.' in head and not re.search(r'\.[cm]?[jt]sx?$', head):
         cands.append(head.replace('.', '/') + '.py')
@@ -256,7 +348,8 @@ def smell_in_test(flake_id: str, flake_file: str | None, smell: dict) -> bool:
     base = base_test_id(flake_id)
     name = base.split('::', 1)[1] if '::' in base else base
     want = base_test_id(smell['test'])
-    names_match = (name == want or base.endswith('::' + want) or name.endswith(' > ' + want))
+    names_match = (name == want or base.endswith('::' + want) or name.endswith(' > ' + want)
+                   or (smell['file'].endswith('_test.go') and name.split('/')[0] == want))  # Go subtest TestX/case
     return names_match and same_file(flake_file, flake_id, smell['file'])
 
 
@@ -326,6 +419,7 @@ def check(d: dict, runs_data: dict | None, smells: dict | None, bisect: dict | N
     if errs:
         return errs, []
     warns = []
+    GO_MODULES[:] = go_modules(repo) if repo is not None else []
     meta = d['metadata']
     tests = {t['id']: t for t in d['tests']}
     flakes = d['flakes']
@@ -444,13 +538,30 @@ def check(d: dict, runs_data: dict | None, smells: dict | None, bisect: dict | N
                 errs.append(f'{tid} passed and failed on the same code but has no flake entry')
             if t['status'] == 'consistently_failing' and tid not in {c['test_id'] for c in d['consistently_failing']}:
                 errs.append(f'{tid} failed in every run but is not listed in consistently_failing')
+            if t['status'] == 'platform_dependent':
+                listed = next((c for c in d['consistently_failing'] if c['test_id'] == tid), None)
+                if not listed:
+                    errs.append(f'{tid} failed every run on {", ".join(failing_platforms(t))} and passed on the other '
+                                'platform(s): list it in consistently_failing with its platforms (a platform difference, '
+                                'not a flake)')
+                elif sorted(listed.get('platforms') or []) != failing_platforms(t):
+                    errs.append(f'{tid}: consistently_failing platforms {listed.get("platforms")} but the runs fail on '
+                                f'{failing_platforms(t)}')
         for c in d['consistently_failing']:
-            if rc.get(c['test_id'], {}).get('status') != 'consistently_failing':
+            st = rc.get(c['test_id'], {}).get('status')
+            if st not in ('consistently_failing', 'platform_dependent'):
                 errs.append(f"{c['test_id']} is listed as consistently failing but the runs say "
-                            f"{rc.get(c['test_id'], {}).get('status', 'not run')}")
+                            f"{st or 'not run'}")
         for f in flakes:
             at = f"{f['id']} ({f['test_id']})"
             t = rc.get(f['test_id'])
+            if f.get('history_only'):
+                errs += history_errors(f, t, meta)
+                exp = score_flake(f, t, meta)
+                for k in ('rate_factor', 'gate', 'masking', 'score', 'priority'):
+                    if f[k] != exp[k]:
+                        errs.append(f'{at}: {k} is {f[k]!r} but the rubric gives {exp[k]!r}')
+                continue
             if not t or t['status'] != 'flaky':
                 errs.append(f"{at}: needs a pass and a fail on the same code; the runs say {t['status'] if t else 'not run'}")
                 continue
@@ -551,7 +662,155 @@ def same_test(a: str, b: str) -> bool:
     return x == y or x.endswith('.' + y) or y.endswith('.' + x)
 
 
+# ---------------------------------------------------------------- self-test
+SELF_HASH = 'a' * 64
+SELF_MOD = 'example.test/harbour/pkg/cart'
+
+
+def _self_fixture() -> tuple[dict, dict]:
+    """A small Go suite: TestTotal passed, failed, passed (a flake); TestTax passed every run."""
+    runs = {'runs': [], 'cases': []}
+    for i, label in enumerate(('baseline', 'repeat', 'repeat'), 1):
+        runs['runs'].append({'id': f'R-{i}', 'label': label, 'code_hash': SELF_HASH, 'duration_s': 6.0,
+                             'totals': {'tests': 2}, 'variation': {'env': {}}, 'platform': 'linux'})
+        runs['cases'].append({'run_id': f'R-{i}', 'id': f'{SELF_MOD}::TestTotal', 'file': None,
+                              'status': 'failed' if i == 2 else 'passed'})
+        runs['cases'].append({'run_id': f'R-{i}', 'id': f'{SELF_MOD}::TestTax', 'file': None, 'status': 'passed'})
+    diff = ('--- a/pkg/cart/cart_test.go\n+++ b/pkg/cart/cart_test.go\n@@ -10,1 +10,1 @@\n'
+            '-\ttime.Sleep(10 * time.Millisecond)\n+\t<-done\n')
+    flake = {'id': 'FL-1', 'test_id': f'{SELF_MOD}::TestTotal', 'cause': 'async_wait', 'cause_confidence': 'indicated',
+             'experiment': {'run_ids': ['R-1', 'R-2', 'R-3'], 'what_changed': 'Repeated the package three times.',
+                            'result': 'Failed once when the goroutine finished after the fixed sleep.'},
+             'evidence_runs': {'passing': ['R-1'], 'failing': ['R-2']}, 'polluter': None,
+             'failure_excerpts': ['cart_test.go:12: total = 0, want 30'], 'rate_factor': 1, 'gate': 1, 'masking': 1,
+             'score': 1, 'priority': 'P3', 'priority_note': '',
+             'fix': {'diff': diff, 'rationale': 'Wait on the done channel instead of a fixed sleep.', 'applied': False,
+                     'verification_run_ids': []}, 'quarantine': None}
+    rep = {'schema_version': '1.2.0', 'skill': {'name': 'flaky-test-hunter', 'version': 'self-test'},
+           'generated_at': '2026-11-14T00:00:00Z',
+           'metadata': {'repo': 'harbour', 'commit': None, 'code_hash': SELF_HASH, 'framework': 'go test',
+                        'run_command': 'go test -json ./...', 'runs_file': 'runs.json', 'platform': 'linux',
+                        'budget': {'repeats': 3, 'minutes': 10, 'stopped_early': False},
+                        'gate': {'level': 'local', 'evidence': 'self-test'}, 'critical_tests': [],
+                        'history': {'status': 'used', 'source': 'CI run history (read-only)'}},
+           'tools': [{'name': 'go', 'version': '1.26', 'status': 'ran', 'reason': "The repo's runner."}],
+           'variations': [{'kind': 'repeat', 'status': 'ran', 'labels': ['baseline', 'repeat'], 'reason': 'Three runs.'}],
+           'tests': [], 'flakes': [flake], 'consistently_failing': [], 'static_smells': [],
+           'summary': {'headline': '1 of 2 tests passed and failed on the same code across 3 runs.'},
+           'limitations': [], 'files_changed': []}
+    return rep, runs
+
+
+def self_test() -> int:
+    import copy
+    fails: list[str] = []
+
+    def run(name: str, mutate, want_valid: bool, want_text: str = '') -> None:
+        rep, runs = _self_fixture()
+        mutate(rep, runs)
+        write_summary(rep, runs)
+        errs, _ = check(rep, runs, None, None)
+        ok = (not errs) if want_valid else any(want_text in e for e in errs)
+        if not ok:
+            fails.append(f'{name}: expected {"VALID" if want_valid else "an error naming " + repr(want_text)}, got '
+                         + ('; '.join(errs[:3]) or 'VALID'))
+
+    run('baseline fixture', lambda r, x: None, True)
+
+    def go_smell(rep, runs):
+        rep['static_smells'].append({'smell_id': 'SM-1', 'smell': 'fixed-sleep-go', 'file': 'pkg/cart/cart_test.go',
+                                     'line': 10, 'test': 'TestTotal', 'cause': 'async_wait', 'status': 'linked_to_flake',
+                                     'flake_id': 'FL-1', 'note': 'The sleep the flake waits on.'})
+    run('a Go smell links to a Go flake by its package directory', go_smell, True)
+
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:          # with --repo the module path comes from go.mod
+        (Path(tmp) / 'go.mod').write_text('module example.test/harbour\n\ngo 1.26\n', encoding='utf-8')
+        rep, runs = _self_fixture()
+        go_smell(rep, runs)
+        write_summary(rep, runs)
+        errs, _ = check(rep, runs, None, None, Path(tmp))
+        errs = [e for e in errs if 'does not apply' not in e]     # the fixture repo holds only go.mod
+        if errs:
+            fails.append('a Go smell links through go.mod with --repo: ' + '; '.join(errs[:2]))
+        GO_MODULES.clear()
+
+    def go_smell_wrong_dir(rep, runs):
+        go_smell(rep, runs)
+        rep['static_smells'][0]['file'] = 'pkg/tax/tax_test.go'
+    run('a Go smell in another package does not link', go_smell_wrong_dir, False, 'but linked to')
+
+    def go_subtest(rep, runs):
+        go_smell(rep, runs)
+        for c in runs['cases']:
+            c['id'] = c['id'].replace('::TestTotal', '::TestTotal/with_discount')
+        rep['flakes'][0]['test_id'] += '/with_discount'
+    run('a smell in a test links to a flake in one of its subtests', go_subtest, True)
+
+    def history(rep, runs):
+        for i in (1, 2, 3):
+            runs['cases'].append({'run_id': f'R-{i}', 'id': f'{SELF_MOD}::TestRetry', 'file': None, 'status': 'passed'})
+        rep['flakes'].append({**copy.deepcopy(rep['flakes'][0]), 'id': 'FL-2', 'test_id': f'{SELF_MOD}::TestRetry',
+                              'cause': 'unknown', 'cause_confidence': 'suspected', 'history_only': True,
+                              'experiment': {'run_ids': ['R-1', 'R-2', 'R-3'], 'what_changed': 'Repeated three times.',
+                                             'result': 'Passed every local run; failed once in CI.'},
+                              'history_evidence': [
+                                  {'id': 'CI-101', 'source': 'ci', 'ref': 'workflow run 101, job test', 'outcome': 'fail',
+                                   'excerpt': '--- FAIL: TestRetry (0.10s)'},
+                                  {'id': 'CI-102', 'source': 'ci', 'ref': 'workflow run 102, job test', 'outcome': 'pass',
+                                   'excerpt': '--- PASS: TestRetry (0.01s)'}],
+                              'evidence_runs': {'passing': ['CI-102'], 'failing': ['CI-101']}})
+    run('a history-only flake with CI evidence is valid', history, True)
+
+    def history_no_evidence(rep, runs):
+        history(rep, runs)
+        del rep['flakes'][1]['history_evidence']
+    run('a history-only flake needs its history evidence', history_no_evidence, False, 'history_evidence')
+
+    def history_confirmed(rep, runs):
+        history(rep, runs)
+        rep['flakes'][1]['cause_confidence'] = 'confirmed'
+    run('a history-only flake cannot be confirmed', history_confirmed, False, 'never reproduced')
+
+    def history_not_used(rep, runs):
+        history(rep, runs)
+        rep['metadata']['history'] = {'status': 'not_given', 'source': None}
+    run('a history-only flake needs metadata.history used', history_not_used, False, 'metadata.history')
+
+    def race(rep, runs):
+        runs['runs'].append({'id': 'RC-1', 'label': 'race', 'code_hash': SELF_HASH, 'duration_s': 9.0,
+                             'totals': {'tests': 2}, 'variation': {'env': {}}, 'platform': 'linux'})
+        runs['cases'] += [{'run_id': 'RC-1', 'id': f'{SELF_MOD}::TestTotal', 'file': None, 'status': 'passed'},
+                          {'run_id': 'RC-1', 'id': f'{SELF_MOD}::TestTax', 'file': None, 'status': 'passed'}]
+        rep['variations'].append({'kind': 'race', 'status': 'ran', 'labels': ['race'], 'reason': 'go test -race.'})
+    run('a race variation is a kind of its own', race, True)
+
+    def platform(rep, runs):
+        for i in (1, 2):
+            runs['runs'].append({'id': f'W-{i}', 'label': 'repeat', 'code_hash': SELF_HASH, 'duration_s': 7.0,
+                                 'totals': {'tests': 2}, 'variation': {'env': {}}, 'platform': 'windows'})
+            runs['cases'] += [{'run_id': f'W-{i}', 'id': f'{SELF_MOD}::TestTax', 'file': None, 'status': 'failed'}]
+        rep['consistently_failing'].append({'test_id': f'{SELF_MOD}::TestTax', 'runs': 2, 'platforms': ['windows'],
+                                            'failure_excerpt': 'tax_test.go:9: path separator', 'note':
+                                            'Fails on every Windows run and passes on every Linux run: a portability bug.'})
+        rep['variations'].append({'kind': 'platform', 'status': 'ran', 'labels': ['repeat'], 'reason': 'Linux and Windows.'})
+    run('a test that fails on one platform and passes on another is not a flake', platform, True)
+
+    def platform_unlisted(rep, runs):
+        platform(rep, runs)
+        rep['consistently_failing'] = []
+    run('a platform-dependent failure must be listed', platform_unlisted, False, 'platform')
+
+    if fails:
+        print('validate_flaky_report self-test FAILED:\n  - ' + '\n  - '.join(fails))
+        return 1
+    print('validate_flaky_report self-test: ok')
+    return 0
+
+
 def main(argv=None) -> int:
+    if '--self-test' in (sys.argv[1:] if argv is None else argv):
+        return self_test()
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('report', type=Path)
     ap.add_argument('--runs', type=Path)

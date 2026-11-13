@@ -1,7 +1,7 @@
 ---
 name: flaky-test-hunter
 description: Find tests that pass and fail on the same code, show why with experiments, and propose a fix for each. Reruns the suite under controlled variations (repeats, reversed and shuffled order, isolation, hash seeds, parallel workers, time zone, clock, locale, CPU load), bisects order-dependent failures to their polluter, reports every rate as failures/runs with a 95% Wilson interval, separates flakes from tests that simply fail, and ranks flakes by rate, CI gate and what they hide. Never calls a test or suite "not flaky"; never proposes a retry as the fix; never changes product code.
-version: 1.3.0
+version: 1.4.0
 ---
 
 # Flaky test hunter
@@ -130,6 +130,49 @@ process-global state and `--test-threads` are first-class `shared_state` / `reso
 levers. If `scan_pitfalls.py` prints a loud warning that the repo's dominant language has no smell
 pack, treat it as "not scanned", not "clean": the tests of that language were skipped.
 
+**Go.** Use `--preset gotestsum` (it writes JUnit) and know its traps:
+
+- Name the packages: `--tests ./...`. With no `--tests` the preset runs `go test` in the root
+  directory only, which is one package (or none: the run errors with 0 cases).
+- `-count=1` is already set, so results are never cached. `-shuffle=N` is applied only with
+  `--order shuffle --seed N`. Race runs go through `--runner-args "-race"` and are their own
+  variation (`race`, not `parallel`); `-race` needs cgo, so on a host without a C compiler it has
+  to run elsewhere (record which platform).
+- Ids are `<import path>::TestX` and `<import path>::TestX/sub`, with no file. A failing subtest
+  also fails its parent, so one failure counts twice; say so when quoting counts. A package whose
+  test binary does not build shows up as a failed `TestMain` (`[build failed]`): that is a build
+  failure on that platform, not a test failure, and it never counts as a flake.
+- `--tests` and `--isolate` pass ids to `go test` as package patterns, so they can't rerun one
+  test. Rerun a suspect with `--preset custom` and `go test -json -count=1 -run '^TestX$' ./pkg/x`
+  (a gotestsum `--junitfile` wrapper keeps the JUnit), quoting the pattern for the shell that runs
+  it: a wrapper such as `wsl.exe` or `sh -c` re-parses arguments, so `|`, `(` and `\` need quoting
+  again or the run errors.
+- `bisect_polluter.py` refuses Go (`go test -run` runs tests in source order). Use seeded shuffles
+  (`-shuffle=N`, 3+ passes one way, 2+ failures the other) as the order experiment.
+- The clock and network plugins don't load into a Go test binary (libfaketime doesn't reach it
+  either). For the network, run with `HTTP_PROXY`/`HTTPS_PROXY` set to a dead loopback port
+  (`http://127.0.0.1:1`): that stops clients using Go's default transport, logs nothing, and
+  misses raw `net.Dial` and clients with their own transport, so record network isolation as
+  partial.
+- `scan_pitfalls.py` has a Go pack: fixed sleeps, `time.Now` with no injected clock, draws from
+  `math/rand`'s global source, fixed ports in `net.Listen`/`ListenAndServe`/`Addr:`/`net.Dial`,
+  `os.Setenv`/`os.Chdir` (use `t.Setenv`/`t.Chdir`), `os.TempDir()` and `/tmp/` paths (use
+  `t.TempDir()`), a package-level var written in a test that calls `t.Parallel()`, and a goroutine
+  a test starts and never waits for. A Go smell links to a flake by package: the flake's import path
+  is mapped to its directory through `go.mod` (pass `--repo`), and a smell in `TestX` links to a
+  flake in `TestX/sub`.
+
+**Tests that write outside the tree.** Before the first run, grep the tests for what they touch
+on the host: writes under the home directory (`os.UserHomeDir`, `~`, `$HOME`, `Path.home()`,
+`os.homedir()`), caches and downloads (a browser fetched on first use), and commands that
+control devices or processes (`adb`, `xcrun simctl`, `emulator`, `pgrep`/`kill`, `docker`). Run
+with a scratch home: set `HOME` **and** `USERPROFILE` (Windows reads the profile from
+`USERPROFILE`, so setting only `HOME` still writes into the real profile), plus `XDG_CONFIG_HOME`
+and `XDG_CACHE_HOME`, all to a directory outside the repository, and keep device and process tools
+off `PATH` unless the user agreed to them. A test that needs one of those is `not_run` with the
+reason. Check the tree after the runs too: a test that writes stray files into the source tree
+changes the `code_hash` between runs (report it, and exclude only those files from the hash).
+
 ## Step 2: Baseline and repeats
 
 Use `run_tests.py` for every run so each is recorded the same way. Give every batch a label;
@@ -172,6 +215,16 @@ other). Typical commands:
 | Clock (`clock`) | Python: `--env PYTHONPATH=<path to plugins/> "PYTEST_ADDOPTS=-p clock_shift" TDA_CLOCK_DATE=2026-11-10` (or `TDA_CLOCK_SHIFT=-1d`); Node: `--env "NODE_OPTIONS=--import=<file URL of plugins/clock_shift.mjs>" TDA_CLOCK_SHIFT=-1d`; against the same tests without it |
 | Locale | `--locale tr_TR.UTF-8`, `--locale de_DE.UTF-8` |
 | Load | `--cpu-load 20` (busy sibling processes) against the same tests without load |
+| Race (`race`) | Go `--runner-args "-race"`, a sanitizer build elsewhere; against the same tests without it |
+| Platform (`platform`) | The same code on a second OS, each run recording `platform` (below) |
+
+**Two platforms, one code hash.** Runs of the same code on two operating systems can share one
+`runs.json` only if every run records its `platform` (add `"platform": "linux"` / `"windows"` to
+each run record; `run_tests.py` does not write it). The validator then works per platform: a test
+that passes every run on one platform and fails every run on another is `platform_dependent`, a
+deterministic portability failure listed in `consistently_failing` with `platforms` (the ones it
+failed on), never a flake. Only a test that both passes and fails on one platform is flaky. Without
+`platform` on the runs, keep each platform's runs in its own file and report.
 
 The clock variation moves the date and time the tests see, which a time zone can't do on its
 own: a date stamped on one day and checked the next, a month end, 29 February. Prefer the
@@ -306,6 +359,15 @@ value (`created_at=datetime.now()`) whose name nothing in the file compares or a
 
 List consistently failing tests separately, with what they show.
 
+**Flakes seen only in CI history.** A test that passed and failed in CI history (on one commit, or
+a re-run attempt that passed) but never failed in your runs is still a flake entry, with
+`history_only: true`: set `metadata.history` to `used` with its source, list the CI runs in
+`history_evidence` (an id, the source, a reference such as the run and job, `pass` or `fail`, and
+the failing line), and name those ids in `evidence_runs`. Its cause is `indicated` or `suspected`,
+never `confirmed` (nothing was reproduced), it names no polluter, and its priority is capped at
+P2. If the local runs do show it flaky, it is an ordinary flake: drop the flag. CI runs that never
+reached the tests (an approval wait, a job-less failure, a cancelled run) are not evidence.
+
 ## Step 6: Validate and report
 
 ```bash
@@ -334,9 +396,9 @@ Show the rendered report:
 |---|---|
 | `metadata` | Repo, code hash, framework, run command, budget, gate and its evidence, critical tests, platform |
 | `tools[]`, `variations[]` | Each with ran, not run or not applicable and the reason; variations name their run labels |
-| `tests[]` | Per test: runs, passes, fails, the normal rate and the worst label with Wilson bounds, and status (computed) |
-| `flakes[]` | Cause, confidence, experiment, evidence runs, polluter or enabler (`polluter.relation`), excerpts, ranking, fix and optional quarantine |
-| `consistently_failing[]` | Tests that failed every run, with what they show |
+| `tests[]` | Per test: runs, passes, fails, the normal rate and the worst label with Wilson bounds, `by_platform` when runs name more than one platform, and status (computed; `platform_dependent` for an all-pass/all-fail split by platform) |
+| `flakes[]` | Cause, confidence, experiment, evidence runs, polluter or enabler (`polluter.relation`), excerpts, ranking, fix and optional quarantine; `history_only` with `history_evidence` for a flake seen only in CI |
+| `consistently_failing[]` | Tests that failed every run (or every run on some platforms, with `platforms`), with what they show |
 | `static_smells[]` | Every smell from `scan_pitfalls.py` and what became of it |
 | `summary` | Headline, counts, causes, priorities, total runs, minutes and evidence completeness |
 | `limitations[]`, `files_changed[]` | What the runs couldn't show; files changed by applied fixes |

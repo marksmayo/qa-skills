@@ -8,7 +8,7 @@
                "consistently_failing", "static_smells", "summary", "limitations", "files_changed"],
   "additionalProperties": false,
   "properties": {
-    "schema_version": {"enum": ["1.0.0", "1.1.0"]},
+    "schema_version": {"enum": ["1.0.0", "1.1.0", "1.2.0"]},
     "skill": {"type": "object", "required": ["name", "version"], "additionalProperties": false,
               "properties": {"name": {"const": "flaky-test-hunter"}, "version": {"type": "string"}}},
     "generated_at": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T"},
@@ -42,7 +42,7 @@
     "variations": {"type": "array", "items": {
       "type": "object", "required": ["kind", "status", "labels", "reason"], "additionalProperties": false,
       "properties": {
-        "kind": {"enum": ["repeat", "order", "isolate", "seed", "parallel", "tz", "clock", "locale", "cpu_load", "latency"]},
+        "kind": {"enum": ["repeat", "order", "isolate", "seed", "parallel", "tz", "clock", "locale", "cpu_load", "latency", "race", "platform"]},
         "status": {"enum": ["ran", "not_run", "not_applicable"]},
         "labels": {"type": "array", "items": {"type": "string"}},
         "tool": {"type": "string"},
@@ -64,7 +64,11 @@
         "by_label": {"type": "array", "items": {"type": "object", "required": ["label", "runs", "fails"],
                      "additionalProperties": false,
                      "properties": {"label": {"type": "string"}, "runs": {"type": "integer"}, "fails": {"type": "integer"}}}},
-        "status": {"enum": ["flaky", "consistently_failing", "not_observed_flaky", "not_run"]}
+        "status": {"enum": ["flaky", "consistently_failing", "platform_dependent", "not_observed_flaky", "not_run"]},
+        "by_platform": {"type": "array", "description": "per platform, only when the runs name more than one platform",
+                        "items": {"type": "object", "required": ["platform", "runs", "fails"], "additionalProperties": false,
+                                  "properties": {"platform": {"type": "string"}, "runs": {"type": "integer"},
+                                                 "fails": {"type": "integer"}}}}
       }}},
     "flakes": {"type": "array", "items": {
       "type": "object",
@@ -99,6 +103,12 @@
         "priority": {"enum": ["P0", "P1", "P2", "P3"]},
         "priority_note": {"type": "string"},
         "history_only": {"type": "boolean"},
+        "history_evidence": {"type": "array", "minItems": 1,
+          "description": "for a history_only flake: the CI runs (or logs) that passed and failed; evidence_runs name these ids",
+          "items": {"type": "object", "required": ["id", "source", "ref", "outcome", "excerpt"], "additionalProperties": false,
+                    "properties": {"id": {"type": "string", "minLength": 1}, "source": {"type": "string", "minLength": 1},
+                                   "ref": {"type": "string", "minLength": 1}, "outcome": {"enum": ["pass", "fail"]},
+                                   "excerpt": {"type": "string"}}}},
         "fix": {"type": "object", "required": ["diff", "rationale", "applied", "verification_run_ids"],
                 "additionalProperties": false,
                 "properties": {"diff": {"type": "string", "minLength": 1}, "rationale": {"type": "string", "minLength": 1},
@@ -112,6 +122,8 @@
     "consistently_failing": {"type": "array", "items": {
       "type": "object", "required": ["test_id", "runs", "failure_excerpt", "note"], "additionalProperties": false,
       "properties": {"test_id": {"type": "string"}, "runs": {"type": "integer"},
+                     "platforms": {"type": "array", "items": {"type": "string"},
+                                   "description": "for a platform_dependent test: the platforms it failed on in every run"},
                      "failure_excerpt": {"type": "string"}, "note": {"type": "string", "minLength": 1}}}},
     "static_smells": {"type": "array", "items": {
       "type": "object", "required": ["smell_id", "smell", "file", "line", "test", "cause", "status", "flake_id", "note"],
@@ -129,6 +141,7 @@
         "headline": {"type": "string", "minLength": 1},
         "tests_run": {"type": "integer"}, "flaky": {"type": "integer"}, "consistently_failing": {"type": "integer"},
         "not_observed_flaky": {"type": "integer"}, "not_run": {"type": "integer"},
+        "platform_dependent": {"type": "integer"},
         "by_cause": {"type": "object"}, "by_priority": {"type": "object"},
         "total_runs": {"type": "integer"}, "wall_minutes": {"type": "number"},
         "evidence_completeness": {"type": "number", "minimum": 0, "maximum": 1}

@@ -89,7 +89,14 @@ Floors and caps:
 
 - a `product_race` is at least P1;
 - a `suspected` cause is at most P2;
-- a history-only flake (seen in CI, never reproduced here) is at most P2.
+- a history-only flake (seen in CI, never reproduced here) is at most P2. It needs
+  `history_evidence` (CI runs that passed and failed, each with a reference and an excerpt) and
+  `metadata.history` used; its rate factor comes from the local runs (usually 1, since it never
+  failed here), and its cause is never `confirmed`.
+
+A test that passes every run on one platform and fails every run on another (runs that record
+`platform`, one code hash) is `platform_dependent`: a portability failure, listed with the
+consistently failing tests and never ranked as a flake.
 
 Examples:
 

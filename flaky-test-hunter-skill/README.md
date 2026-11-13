@@ -63,6 +63,13 @@ python scripts/render_report.py flaky_report.json [--brief]
 preset with `{junit}` and `{tests}` placeholders for anything that writes JUnit XML. For Vitest
 and Jest, pass the repo's own test command and environment (`--cmd`, `--env TZ=...`) when its
 `npm test` script adds them (`--preset node-test` runs `node --test` suites); SKILL.md has notes on pools, isolation, shuffling and timeouts.
+For Go, SKILL.md covers `--tests ./...`, `-race` as its own `race` variation, subtest double
+counting, build failures, rerunning one test with `-run`, and running with a scratch `HOME` and
+`USERPROFILE`; `scan_pitfalls.py` has a Go smell pack. Runs of one code hash on two platforms
+pool when each run records `platform`: an all-pass/all-fail split is `platform_dependent`, not a
+flake. A flake seen only in CI history is reported with `history_only` and its `history_evidence`
+(capped at P2). `python scripts/validate_flaky_report.py --self-test` and `python
+scripts/scan_pitfalls.py --self-test` check these rules on synthetic fixtures.
 
 The worst rate that ranks a flake comes from a label with at least 3 runs, or from all runs
 pooled, so one failure in a single run cannot rank like 3 failures in 3. `render_report.py --brief`
