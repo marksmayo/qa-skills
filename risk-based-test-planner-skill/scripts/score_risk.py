@@ -4,10 +4,11 @@
     python score_risk.py --repo <repo> --history history.json --complexity complexity.json --scope scope.json \
         --out risk.json [--journeys journey_map.json] [--input security=security_audit.json] [--input flaky=flaky_report.json]
         [--input crash=crash_report.json] [--input wcag=audit.json] [--usage usage.json] [--areas areas.json]
-        [--defects bugs.json] [--finding-area KIND:ID=AREA] [--release release.json]
+        [--defects bugs.json] [--finding-area KIND:ID=AREA] [--release release.json] [--coverage coverage.out]
     python score_risk.py --self-test
 
-Areas are the workspace packages when the repo has several (a package with more than
+A root go.mod makes the module's Go packages the areas (nested packages and non-Go code under the module beside
+them); --coverage takes a Go coverprofile as the test-weakness evidence. Otherwise areas are the workspace packages when the repo has several (a package with more than
 SPLIT_PACKAGE source files is split by subdirectory below its source root); for a Next.js App Router project,
 one per API resource (app/api/<x>), one per top-level route segment or group, app (root),
 middleware/proxy, and lib/, components/ and the other source directories split by subdirectory

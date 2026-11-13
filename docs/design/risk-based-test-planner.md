@@ -1,6 +1,6 @@
 # Design: `risk-based-test-planner-skill`
 
-Status: Built (v1.3.0), see "As built" at the end. Build order: 13.
+Status: Built (v1.4.0), see "As built" at the end. Build order: 13.
 
 ## Mission
 
@@ -411,3 +411,44 @@ Where the build differs from the design above, and what the example showed.
   the unmerged patterns took 48 s on the same loaded machine, with identical output. Windows antivirus time in `complexity.py` is documented in the README, not changed.
 - The example was re-scored with `release_scope.py` added to `commands.sh` (base `v1.4`, no
   changesets): scores, bands and areas are unchanged.
+
+### v1.4.0: found planning a Go CLI with vendored Swift and Objective-C driver code, and fixed
+
+- **The Go module was not an area.** With two nested `package.json` directories (an npm wrapper,
+  a bundled iOS driver) the default rule picked "workspace packages", and every Go file went to
+  `excluded` as root tooling. A root `go.mod` now makes the module's Go packages the areas (one
+  per directory with non-test `.go` files; the root package's files as `(root package)`); nested
+  packages stay areas of their own, a split one keeps a catch-all area for its own tests, and
+  non-Go code under the module (a Swift runner app) gets areas by directory below its nearest Go
+  package. A nested `go.mod` is split the same way. Any root manifest whose code is most of the
+  source is scored by the main-source rule beside the nested packages, and a loud warning names
+  the dominant language when most of its files are outside every area.
+- **`complexity.py` lost Go code after an apostrophe in a comment.** It stripped strings before
+  comments, so `// the frame's context` opened a "string" that swallowed code. Comments and
+  strings are now removed in one left-to-right scan; Go has its own tokens (backquoted raw strings,
+  one-character runes) and branches (`if`, `for`, `case`, `&&`, `||`). On the review repository
+  the Go total now equals a go/ast count (25,641 over 567 files; it was 16,201). `#` is a comment
+  only for Ruby, PHP and unparseable Python, so a JavaScript private field no longer hides a line.
+- **Surfaces misfired on Go.** Go's builtin `delete(m, k)`, lowercase `x.delete(` and `drop(`
+  methods, `eraseText(`-style text clearing and `DeleteSession(` no longer destroy data; device
+  commands in strings (`"uninstall"`, `pm clear`, `simctl erase|delete|uninstall`) do. Raw
+  patterns run on the line with comments blanked. `SetBasicAuth(`, credential environment
+  variables, Go redactors (`func RedactX(`) and urfave/cli and cobra commands count. The systems
+  pack covers Go (`os.RemoveAll`, `os.Chmod`, `os.Rename`, `unsafe.Pointer`), and a Go-only
+  class scores `exec.Command` and `net.Listen` at 3.
+- **Objective-C was invisible**: `.m`, `.mm`, `.h`, `.c`, `.cc`, `.cpp`, `.hpp` now count in
+  areas and complexity, and `risk.json` records `language_coverage` from the shared language
+  census, with a warning naming code in languages no script measures.
+- **`release_scope.py` picked HEAD when HEAD was tagged**, giving an empty scope. A release tag on
+  HEAD is now `head_release` and the base is the release before it; releases a CHANGELOG says were
+  withdrawn (in a heading or a sentence such as "whose release was withdrawn") and `go.mod`
+  retractions are passed over and listed in `skipped_releases`. On the review repository it now
+  picks the release the reviewer chose by hand.
+- **An XCUITest runner app was counted as tests.** A `*Tests` directory with no XCTest assertion,
+  or one that opens a network listener with fewer assertions than files, is a runner and product
+  code; an XCTest bundle's Objective-C files are tests.
+- **Test weakness by size ratio called every Go package well tested.** `--coverage` takes a Go
+  coverprofile and scores statement coverage per area (80/60/40/20% bands).
+- Not changed: GitHub issues as defect history (needs path mapping), a CLI reach proxy, a `--repo`
+  re-read of judged surface reasons, and `--brief` length. The example's areas, scores and plans
+  are unchanged; `risk.json` gained `language_coverage` and `release.json` the new fields.
