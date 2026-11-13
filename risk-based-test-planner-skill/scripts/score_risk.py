@@ -57,7 +57,7 @@ Also usable as a module: allocate(planned, budget) is the effort allocation the 
 recomputes.
 """
 from __future__ import annotations
-import argparse, ast, json, math, re, sys
+import argparse, ast, json, math, os, re, sys
 from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
@@ -72,7 +72,10 @@ SEVERE = {'critical', 'high'}
 UI_EXT = {'.tsx', '.jsx', '.vue', '.svelte'}
 STDLIB = set(getattr(sys, 'stdlib_module_names', ())) | {'__future__'}
 CODE_EXT = {'.py', '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.java', '.kt', '.go', '.cs', '.swift', '.dart', '.rb', '.php',
-            '.scala', '.rs', '.vue', '.svelte', '.sql'}
+            '.scala', '.rs', '.vue', '.svelte', '.sql', '.m', '.mm', '.h', '.c', '.cc', '.cpp', '.hpp'}
+# Code in a language no script here measures: counted per area and warned about, never silently dropped.
+UNMEASURED_EXT = {'.lua', '.pl', '.pm', '.ex', '.exs', '.erl', '.hs', '.ml', '.fs', '.zig', '.nim', '.clj', '.cljs', '.jl',
+                  '.r', '.R', '.groovy', '.cr', '.v', '.d', '.f90', '.asm', '.s', '.S'}
 
 
 # ---------------------------------------------------------------- shared arithmetic (the validator imports these)
@@ -235,6 +238,104 @@ def product_dirs(root: Path, files: list[str]) -> set[str]:
     return {d for d in dirs if diff_scope.product_package(root, d)}
 
 
+# An XCUITest runner app (WebDriverAgent-style: a *UITests target whose "test" starts a server and never asserts) is the
+# product's on-device agent, not tests of it. detect_conventions treats every *Tests/*UITests directory as test code;
+# a directory of that name whose Swift/Objective-C files hold no XCTest assertion is a runner. Set by score().
+RUNNER_DIRS: set[str] = set()
+APPLE_EXT = {'.swift', '.m', '.mm'}
+C_FAMILY = {'.m', '.mm', '.h', '.c', '.cc', '.cpp', '.hpp'}
+# A "test" target that opens a network listener is an on-device server (the runner), whatever it asserts.
+XCT_SERVER = re.compile(r'\b(NWListener|GCDWebServer\w*|HTTPServer|FBWebServer|CFSocketCreate\w*|RoutingHTTPServer)\b|'
+                        r'\b(listen|bind)\s*\(\s*\w+\s*,')
+XCT_ASSERT = re.compile(r'\bXCT(Assert\w*|Fail|Expect\w*|Unwrap|Skip\w*)\b|#expect\s*\(|#require\s*\(|\bwaitForExpectations\b')
+
+
+def set_runner_dirs(root: Path, files: list[str]) -> None:
+    RUNNER_DIRS.clear()
+    by_dir: dict[str, list[str]] = {}
+    for f in files:
+        p = PurePosixPath(f)
+        if p.suffix not in APPLE_EXT:
+            continue
+        inner = [i for i, x in enumerate(p.parts[:-1]) if x.endswith('Tests')]
+        if inner:                                       # the innermost *Tests directory holding the file
+            by_dir.setdefault('/'.join(p.parts[:inner[-1] + 1]), []).append(f)
+    for d, fs in by_dir.items():
+        asserts, serves = 0, False
+        for f in fs:
+            try:
+                text = (root / f).read_text(encoding='utf-8', errors='replace')
+            except OSError:
+                continue
+            asserts += len(XCT_ASSERT.findall(text))
+            serves = serves or bool(XCT_SERVER.search(text))
+        # No assertion at all, or a listener with fewer assertions than files (a runner XCTFails when its wait ends;
+        # a server's own unit tests assert many times per file).
+        if not asserts or (serves and asserts < len(fs)):
+            RUNNER_DIRS.add(d)
+
+
+def in_runner_dir(path: str) -> bool:
+    return bool(RUNNER_DIRS) and any(path.startswith(d + '/') for d in RUNNER_DIRS)
+
+
+# Test weakness from a coverage profile (--coverage): statement coverage per area. A Go coverprofile
+# (`go test -coverprofile`, "mode: set|count|atomic" then "<import path>/<file>.go:a.b,c.d <statements> <count>") is
+# mapped to repository files through the module path in go.mod (nested go.mod modules too).
+COVER_LINE = re.compile(r'^(?P<file>.+?\.go):\d+\.\d+,\d+\.\d+ (?P<n>\d+) (?P<count>\d+)$')
+
+
+def go_modules(root: Path) -> list[tuple[str, str]]:
+    """[(module path, directory relative to root)], longest module path first."""
+    mods = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in ('.git', 'vendor', 'node_modules', 'testdata', 'third_party')]
+        if 'go.mod' in filenames:
+            try:
+                text = (Path(dirpath) / 'go.mod').read_text(encoding='utf-8', errors='replace')
+            except OSError:
+                continue
+            m = re.search(r'^\s*module\s+"?([^\s"]+)"?', text, re.M)
+            if m:
+                rel = Path(dirpath).relative_to(root).as_posix()
+                mods.append((m.group(1), '' if rel == '.' else rel))
+    return sorted(mods, key=lambda x: -len(x[0]))
+
+
+def read_coverage(root: Path, path: Path) -> dict[str, tuple[int, int]]:
+    """{repository file: (statements, statements covered)} from a Go coverprofile. Blocks repeated by several test
+    binaries (one profile per package, concatenated) count once, covered if any run covered them."""
+    mods = go_modules(root)
+    blocks: dict[tuple[str, str], tuple[int, bool]] = {}
+    for line in path.read_text(encoding='utf-8', errors='replace').splitlines():
+        line = line.strip()
+        m = COVER_LINE.match(line)
+        if not m:
+            continue
+        imp, n, hit = m.group('file'), int(m.group('n')), int(m.group('count')) > 0
+        rel = None
+        for mod, d in mods:
+            if imp.startswith(mod + '/'):
+                rel = (d + '/' if d else '') + imp[len(mod) + 1:]
+                break
+        if rel is None:
+            continue
+        key = (rel, line.rsplit(' ', 2)[0])
+        old = blocks.get(key)
+        blocks[key] = (n, hit or bool(old and old[1]))
+    out: dict[str, list[int]] = {}
+    for (rel, _), (n, hit) in blocks.items():
+        acc = out.setdefault(rel, [0, 0])
+        acc[0] += n
+        acc[1] += n if hit else 0
+    return {k: (v[0], v[1]) for k, v in sorted(out.items())}
+
+
+def coverage_score(frac: float) -> int:
+    """Test weakness from statement coverage: 80%+ is 1, 60%+ 2, 40%+ 3, 20%+ 4, below 20% 5 (RUBRIC.md)."""
+    return 1 if frac >= 0.8 else 2 if frac >= 0.6 else 3 if frac >= 0.4 else 4 if frac >= 0.2 else 5
+
+
 def dir_names(path: str) -> set[str]:
     """The directory names on a path, leaving out a test-named directory that is a product package (PRODUCT_DIRS)."""
     parts = PurePosixPath(path).parts[:-1]
@@ -373,18 +474,56 @@ def define_areas(root: Path, files: list[str], explicit: Path | None) -> tuple[l
     all_source = [f for f in files if is_area_code(f)]
     pkgs = sorted({a['root'] for a in det['areas'] if a['root'] != '.'})
     pkgs = [p for p in pkgs if any(f.startswith(p + '/') for f in all_source)]   # not an empty or unchecked-out package
+    in_pkg = lambda f: any(f.startswith(p + '/') for p in pkgs)  # noqa: E731
+
+    def workspace(p: str) -> tuple[list[dict], bool]:
+        mine = [f for f in all_source if f.startswith(p + '/') and not any(
+            q != p and q.startswith(p + '/') and f.startswith(q + '/') for q in pkgs)]
+        if (root / p / 'go.mod').is_file() and any(f.endswith('.go') for f in mine):
+            return go_package_areas(p, mine), True       # a nested Go module: one area per Go package
+        base = descend(p, mine)
+        parts = module_areas(base, mine, p) if len(mine) > SPLIT_PACKAGE else []
+        return (parts, True) if len(parts) >= 2 else ([{'id': p, 'paths': [p]}], False)
+
+    # A root manifest is a package too. A root go.mod makes the module's Go packages the areas, whatever nested
+    # package.json directories (an npm wrapper, a bundled driver) the repository also carries; otherwise, when the
+    # code outside the nested packages is most of the source and the root has a product manifest, that code is scored
+    # by the main-source rule beside the nested packages instead of being called root tooling.
+    root_go = [f for f in all_source if f.endswith('.go') and not in_pkg(f)] if (root / 'go.mod').is_file() else []
+    outside = [f for f in all_source if not in_pkg(f)]
+    root_manifest = next((m for m in ROOT_MANIFESTS if (root / m).is_file()), None)
+    if root_go or (pkgs and root_manifest and len(outside) > len(all_source) / 2):
+        if root_go:
+            areas, basis = go_package_areas('', root_go), 'Go packages of the root module (go.mod)'
+            others = other_code_areas([f for f in outside if not f.endswith('.go')], areas)
+            if others:
+                areas += others
+                basis += ', and the other code under the module by directory'
+        else:
+            areas = main_source_areas([f for f in outside if '/' in f])
+            basis = (f'the root package ({root_manifest}): subdirectories of '
+                     + (areas[0].pop('_main_root') + '/' if areas else 'nothing'))
+        split = []
+        for p in pkgs:
+            got, was_split = workspace(p)
+            areas += got
+            if was_split:
+                split.append(p)
+                if p not in {a['id'] for a in got}:
+                    # holds the package's own tests and loose files, so they do not fall to a Go package above it
+                    areas.append({'id': p, 'paths': [p]})
+        if pkgs:
+            basis += f'; nested packages: {", ".join(pkgs)}'
+        if split:
+            basis += f' (split: {", ".join(split)})'
+        return areas, basis
     if len(pkgs) > 1:
         areas, split = [], []
         for p in pkgs:
-            mine = [f for f in all_source if f.startswith(p + '/') and not any(
-                q != p and q.startswith(p + '/') and f.startswith(q + '/') for q in pkgs)]
-            base = descend(p, mine)
-            parts = module_areas(base, mine, p) if len(mine) > SPLIT_PACKAGE else []
-            if len(parts) >= 2:
-                areas += parts
+            got, was_split = workspace(p)
+            areas += got
+            if was_split:
                 split.append(p)
-            else:
-                areas.append({'id': p, 'paths': [p]})
         basis = 'workspace packages'
         if split:
             basis += f' (split by subdirectory where larger than {SPLIT_PACKAGE} source files: {", ".join(split)})'
@@ -392,19 +531,74 @@ def define_areas(root: Path, files: list[str], explicit: Path | None) -> tuple[l
     nxt = next_app_areas(root, files, [f for f in files if is_source(f)])
     if nxt:
         return nxt, 'Next.js App Router (route segments, API resources, source modules)'
-    source = [f for f in all_source if '/' in f]
+    areas = main_source_areas([f for f in all_source if '/' in f])
+    if not areas:
+        return [], 'none'
+    return areas, f'subdirectories of the main source directory {areas[0].pop("_main_root")}/'
+
+
+ROOT_MANIFESTS = ('go.mod', 'Cargo.toml', 'pyproject.toml', 'setup.py', 'pom.xml', 'build.gradle', 'build.gradle.kts')
+
+
+def main_source_areas(source: list[str]) -> list[dict]:
+    """The immediate subdirectories of the main source directory (the top-level directory holding the most source
+    files, followed down while one subdirectory holds nearly all of it), containers split again."""
     tops: dict[str, int] = {}
     for f in source:
         tops[f.split('/')[0]] = tops.get(f.split('/')[0], 0) + 1
     if not tops:
-        return [], 'none'
+        return []
     main_root = descend(max(sorted(tops), key=lambda t: tops[t]), source)
     areas = module_areas(main_root, source, '')
     for a in areas:     # ids relative to the main source directory, as before: 'payments', 'modules/orders'
         a['id'] = a['id'].lstrip('/') or main_root
         if a['id'] == ' (top level)':
             a['id'] = f'{main_root} (top level)'
-    return areas, f'subdirectories of the main source directory {main_root}/'
+    if areas:
+        areas[0]['_main_root'] = main_root
+    return areas
+
+
+def other_code_areas(code: list[str], go_areas: list[dict]) -> list[dict]:
+    """Areas for code under a Go module that is not Go (a Swift runner app, a TypeScript helper beside the Go packages):
+    each file goes with the highest directory below its nearest Go package directory (or the root), and each such
+    directory is split by subdirectory like a main source tree. Code in a Go package's own directory stays with it."""
+    pkg_dirs = {p for a in go_areas for p in a['paths'] if not p.endswith('.go')} | \
+               {str(PurePosixPath(p).parent) for a in go_areas for p in a['paths'] if p.endswith('.go')}
+    groups: dict[str, list[str]] = {}
+    for f in code:
+        parts = PurePosixPath(f).parts[:-1]
+        if not parts or '/'.join(parts) in pkg_dirs:
+            continue
+        cut = max((i + 1 for i in range(len(parts)) if '/'.join(parts[:i + 1]) in pkg_dirs), default=0)
+        if cut >= len(parts):
+            continue
+        groups.setdefault('/'.join(parts[:cut + 1]), []).append(f)
+    areas = []
+    for top, fs in sorted(groups.items()):
+        base = descend(top, fs)
+        parts = module_areas(base, fs, base) if base != top or len(fs) > SPLIT_FLAT else []
+        areas += parts if len(parts) >= 2 else [{'id': base, 'paths': [base]}]
+    return areas
+
+
+def go_package_areas(base: str, go_files: list[str]) -> list[dict]:
+    """One area per Go package below a module directory (base, '' for the repository root): each directory holding
+    non-test .go files, id = its path (the module directory itself: the files at its top, listed). A directory without
+    Go files of its own (testdata, assets) goes with the nearest package above it."""
+    dirs: dict[str, list[str]] = {}
+    for f in go_files:
+        if f.endswith('_test.go') or 'testdata' in PurePosixPath(f).parts:
+            continue
+        dirs.setdefault(str(PurePosixPath(f).parent), []).append(f)
+    areas = []
+    for d, fs in sorted(dirs.items()):
+        if d in ('.', base) or (not base and d == '.'):
+            top = sorted(x for x in go_files if str(PurePosixPath(x).parent) == d)   # main.go and its _test.go files
+            areas.append({'id': f'{base} (root package)' if base else '(root package)', 'paths': top})
+        else:
+            areas.append({'id': d, 'paths': [d]})
+    return areas
 
 
 SURFACE_ONLY_WARNING = ('impact rests on the surface factor alone for every area (journey criticality and reach are not '
@@ -414,6 +608,11 @@ OUTSIDE_REASON ='outside the workspace packages and the main source tree (root t
 
 
 def is_test(path: str) -> bool:
+    if in_runner_dir(path):                  # an XCUITest runner app is the product's on-device agent
+        return False
+    p = PurePosixPath(path)
+    if p.suffix in C_FAMILY and any(x.endswith('Tests') for x in p.parts[:-1]):   # an XCTest bundle's Objective-C
+        return True
     return detect_conventions.is_test_file(path) or bool(dir_names(path) & {'tests', 'test', '__tests__', 'spec'})
 
 
@@ -893,6 +1092,14 @@ def code_view(text: str, suffix: str) -> str:
     return rx.sub(lambda m: '""' + '\n' * m.group(0).count('\n'), text)
 
 
+def comment_free(text: str, suffix: str) -> str:
+    """The text with comments blanked but string literals kept (newlines kept): what raw_patterns run on, so SQL or a
+    device command inside a string counts and the same words in a comment do not."""
+    rx = PY_TOKENS if suffix in HASH_COMMENT else JS_TOKENS
+    return rx.sub(lambda m: (' ' + '\n' * m.group(0).count('\n')) if m.group(0).startswith(('#', '//', '/*'))
+                  else m.group(0), text)
+
+
 RUST_TEST_CFG = re.compile(r'^#\[cfg\((?:test\)|all\(\s*test\b)')
 
 
@@ -1050,12 +1257,11 @@ def surface_scan(root: Path, files: list[str], entries: dict[str, str] | None = 
         except OSError:
             continue
         suffix = PurePosixPath(f).suffix
-        raw_lines = text.splitlines()
+        cut = rust_test_mod_cut(text.splitlines()) if suffix == '.rs' else None   # a trailing #[cfg(test)] mod
+        raw_lines = comment_free(text, suffix).splitlines()     # raw_patterns see strings, not comments
         code_lines = code_view(text, suffix).splitlines()
-        if suffix == '.rs':                                 # drop a trailing top-level #[cfg(test)] mod (unit tests)
-            cut = rust_test_mod_cut(raw_lines)
-            if cut is not None:
-                raw_lines, code_lines = raw_lines[:cut], code_lines[:cut]
+        if cut is not None:
+            raw_lines, code_lines = raw_lines[:cut], code_lines[:cut]
         for i, (raw, code) in enumerate(zip(raw_lines, code_lines), 1):
             for cls in line_classes(raw, code, suffix):
                 hits.setdefault(cls, []).append(f'{f}:{i}')
@@ -1068,6 +1274,28 @@ def surface_scan(root: Path, files: list[str], entries: dict[str, str] | None = 
 
 
 # ---------------------------------------------------------------- scoring
+def uncovered_language(files: list[str], owner: dict, cx: dict, root: Path, area_basis: str) -> str | None:
+    """A warning when most code files of the dominant language (vendored and generated left out) are outside every
+    area: the plan would rank incidental files and miss the product, so it must not look complete."""
+    by_lang: dict[str, list[int]] = {}
+    for f in files:
+        sfx = PurePosixPath(f).suffix
+        if sfx in CODE_EXT and not is_test(f) and cx.get(f, {}).get('loc', 0) > 0 and \
+                diff_scope.classify(f, '', False, root)[0] not in ('generated', 'vendored'):
+            acc = by_lang.setdefault(sfx, [0, 0])
+            acc[0] += 1
+            acc[1] += 1 if owner.get(f) is not None else 0
+    if not by_lang:
+        return None
+    dominant = max(sorted(by_lang), key=lambda k: by_lang[k][0])
+    total, inside = by_lang[dominant]
+    if total >= 5 and inside < total / 2:
+        return (f'the dominant language\'s code is not in the areas: {total - inside} of {total} {dominant} file(s) are '
+                f'outside every area (area basis: {area_basis}); the ranking does not cover the product code, so give '
+                '--areas before building a plan')
+    return None
+
+
 def score(args) -> dict:
     root = args.repo.resolve()
     hist = json.loads(args.history.read_text(encoding='utf-8'))
@@ -1077,6 +1305,7 @@ def score(args) -> dict:
     files = sorted(p for p in hist['files'] if (root / p).is_file())
     PRODUCT_DIRS.clear()
     PRODUCT_DIRS.update(product_dirs(root, files))
+    set_runner_dirs(root, files)
     areas, area_basis = define_areas(root, files, args.areas)
     warnings = []
     excluded = []
@@ -1129,7 +1358,20 @@ def score(args) -> dict:
     if tooling:
         warnings.append(f'{len(tooling)} code file(s) outside the workspace packages and the main source tree are not scored '
                         '(listed in excluded): ' + ', '.join(tooling[:8]) + (f' (+{len(tooling) - 8})' if len(tooling) > 8 else '')
-                        + '; release and build tooling decides what ships, so add them to --areas if they matter')
+                        + '; root tooling and scripts decide what ships, so add them to --areas if they matter')
+    # Loud fail: when most of the repository's code (by language) is outside every area, the plan would rank incidental
+    # files. Say which language and how much, so a plausible-looking plan is not built on the wrong code.
+    lost = uncovered_language(files, owner, cx, root, area_basis)
+    if lost:
+        warnings.append(lost)
+    unmeasured: dict[str, int] = {}
+    for f in hist['files']:
+        sfx = PurePosixPath(f).suffix
+        if sfx in UNMEASURED_EXT and not is_test(f) and diff_scope.classify(f, '', False, root)[0] not in ('generated', 'vendored'):
+            unmeasured[sfx] = unmeasured.get(sfx, 0) + 1
+    if unmeasured:
+        warnings.append('code in languages these scripts do not measure is not scored (no complexity, churn or surface): '
+                        + ', '.join(f'{n} {k}' for k, n in sorted(unmeasured.items())) + '; judge those areas by hand')
     inputs = [load_input(k, Path(p)) for k, p in (x.split('=', 1) for x in args.input)]
     names = [(i['skill'], i['path']) for i in inputs]
     if len(set(names)) != len(names):
@@ -1164,6 +1406,15 @@ def score(args) -> dict:
         data = json.loads(args.defects.read_text(encoding='utf-8'))
         bugs = [t for t in data.get('tickets', [data]) if (t.get('type') or '').lower() in ('bug', 'defect')]
     tests, flaky_skipped, tests_not_counted = tests_by_area(files, areas, flaky_files, imports)
+    coverage: dict[str, tuple[int, int]] = {}
+    for prof in args.coverage:
+        got = read_coverage(root, prof)
+        if not got:
+            warnings.append(f'--coverage {prof.name}: no line mapped to a repository file (is it a Go coverprofile of this '
+                            'module?); test weakness falls back to the test-size ratio')
+        for k, (n, c) in got.items():
+            o = coverage.get(k, (0, 0))
+            coverage[k] = (max(o[0], n), max(o[1], c))
     entries = manifest_entries(root, files)
     release = json.loads(args.release.read_text(encoding='utf-8')) if args.release else None
     rel_pkgs = {n: p for n, p in ((release or {}).get('packages') or {}).items() if isinstance(p, dict) and p.get('dir') is not None}
@@ -1206,7 +1457,7 @@ def score(args) -> dict:
         area_bugs = [t for t in bugs if a['id'].lower() in {x.lower() for x in (t.get('components') or []) + (t.get('labels') or [])}
                      and t['key'] not in commit_keys]
         raw[a['id']] = {
-            'files': mine, 'novel': novel, 'loc': loc, 'branches': branches, 'code_files': len(code_files),
+            'files': mine, 'novel': novel, 'loc': loc, 'branches': branches,
             'churn': sum(x['lines_added'] + x['lines_deleted'] for x in h),
             'commits': len({c['sha'] for c in hist['commits'] if not c['formatting'] and any(fl['path'] in mine_set for fl in c['files'])}),
             'authors': sorted({au for x in h for au in x['authors']}),
@@ -1214,7 +1465,7 @@ def score(args) -> dict:
             'keys': sorted(commit_keys),
             'bugs': [f'{t["key"]} ({t.get("type")}, {t.get("status")}) {(t.get("summary") or "")[:80]}' for t in area_bugs],
             'branch_density': round(branches / len(code_files), 2) if code_files else 0.0,
-            'scope_lines': scope_lines, 'tests': tests[a['id']], 'test_loc': test_loc,
+            'scope_lines': scope_lines, 'tests': tests[a['id']], 'test_loc': test_loc, 'code_files': code_files,
             'packages': sorted({package_of(x) for x in mine} - {None}),
             'breaking_commits': [c for c in (release or {}).get('breaking_commits') or [] if set(c.get('files') or []) & mine_set],
         }
@@ -1250,7 +1501,7 @@ def score(args) -> dict:
                                         + r['fix_subjects'][:8] + r['bugs'][:5] +
                                         ([f'linked issues: {", ".join(r["keys"])}'] if r['keys'] else [])}
         f['complexity'] = {'score': pct_score(r['branch_density'], vals('branch_density')), 'status': 'assessed',
-                           'evidence': [f'{r["branches"]} branches in {r["code_files"]} file(s), {r["branch_density"]} per file; '
+                           'evidence': [f'{r["branches"]} branches in {len(r["code_files"])} file(s), {r["branch_density"]} per file; '
                                         f'{r["loc"]} lines of code (complexity.py)']}
         if scope is not None:
             pct = pct_score(r['scope_lines'], vals('scope_lines'))
@@ -1283,7 +1534,18 @@ def score(args) -> dict:
             tw = 4 if ratio < 0.2 else 3 if ratio < 0.5 else 2 if ratio < 1 else 1
             tev = [f'{len(r["tests"])} test file(s) import it ({", ".join(r["tests"][:4])}); {r["test_loc"]} test lines for '
                    f'{r["loc"]} lines of code (ratio {ratio:.2f})']
-        f['test_weakness'] = {'score': tw, 'status': 'assessed', 'evidence': tev}
+        cov_files = [x for x in r['files'] if x in coverage]
+        stmts = sum(coverage[x][0] for x in cov_files)
+        if stmts:                         # a coverage profile measures it: statement coverage, not the size ratio
+            covered = sum(coverage[x][1] for x in cov_files)
+            tw = coverage_score(covered / stmts)
+            tev = [f'statement coverage {covered / stmts:.1%} ({covered} of {stmts} statements in {len(cov_files)} file(s), '
+                   f'{", ".join(p.name for p in args.coverage)})'
+                   + (f'; {len(r["code_files"]) - len(cov_files)} code file(s) of the area are not in the profile'
+                      if len(r['code_files']) > len(cov_files) else '')] + tev
+            f['test_weakness'] = {'score': tw, 'status': 'assessed', 'command': 'go test -coverprofile', 'evidence': tev}
+        else:
+            f['test_weakness'] = {'score': tw, 'status': 'assessed', 'evidence': tev}
         linked = [j for j in journeys if a['id'] in j['areas']]
         # A partial journey map (run scoped to some domains, or items declared out_of_scope) says nothing about the
         # areas it didn't map: those are not_assessed, not "no journey". An area the map did reach stays assessed.
@@ -1417,6 +1679,38 @@ SELF_TEST_CASES = [
     ('.ts', "program.command('run').action(run);", ['public_api']),
     ('.ts', 'export default defineCommand({ meta: { name: "init" } });', ['public_api']),
     ('.rs', 'let m = diagnostics::capture(args);', []),
+    # Go: the builtin delete(map, key), clearing a text field and closing a WebDriver-style session destroy nothing
+    ('.go', '\tdelete(pending, id)', []),
+    ('.go', '\tdelete(s.handlers, name)', []),
+    ('.go', 'return d.eraseText(ctx, n)', []),
+    ('.go', 'if err := c.DeleteSession(); err != nil {', []),
+    ('.go', 'func (c *Client) DeleteSession() error {', []),
+    ('.go', 'if err := store.DeleteRecord(ctx, id); err != nil {', ['destructive']),
+    # Go: real surfaces the Rust-only systems pack and the JS/Python idioms missed
+    ('.go', 'req.SetBasicAuth(user, key)', ['secrets']),
+    ('.go', 'key := os.Getenv("SAMPLE_ACCESS_KEY")', ['secrets']),
+    ('.go', 'func RedactTypedText(s string) string {', ['secrets']),
+    ('.go', 'func redactURL(u string) string {', ['secrets']),
+    ('.go', 'out, err := exec.Command("adb", "-s", serial, "uninstall", pkg).Output()', ['destructive', 'subprocess']),
+    ('.go', 'cmd := fmt.Sprintf("pm clear %s", pkg)', ['destructive']),
+    ('.go', 'Commands: []*cli.Command{', ['public_api']),
+    ('.go', 'var rootCmd = &cobra.Command{', ['public_api']),
+    ('.go', 'if err := os.RemoveAll(dir); err != nil {', ['filesystem_destruction']),
+    ('.go', 'ln, err := net.Listen("tcp", addr)', ['subprocess']),
+    ('.go', 'cmd := exec.CommandContext(ctx, bin, args...)', ['subprocess']),
+    ('.go', 'if err := os.Chmod(path, 0o600); err != nil {', ['privilege']),
+    ('.go', 'n := len(items) // the frame\'s context', []),
+    ('.go', '// clearState runs pm clear, or an uninstall, on the device', []),
+    ('.go', '_, err := c.delete(c.sessionPath())', []),
+    ('.go', 'func (c *Client) delete(path string) (map[string]any, error) {', []),
+    ('.go', 'in.drop(page.key())', []),
+    ('.go', 'if err := client.DeleteSessionWithin(timeout); err != nil {', []),
+    ('.go', '"deleteCount": eraseCount(n),', []),
+    ('.swift', 'let erased = eraseTrailingCharacters(app: app, count: n)', []),
+    ('.go', 'if _, err := d.shell("pm clear " + appID); err != nil {', ['destructive']),
+    ('.go', 'func (d *Driver) wipeData(bundle string) error {', ['destructive']),
+    ('.py', 'cur.execute("DELETE FROM sessions WHERE id = %s", (sid,))', ['destructive']),
+    ('.py', 'x = 1  # DELETE FROM is never run here', []),
 ]
 
 
@@ -1424,7 +1718,7 @@ def self_test() -> int:
     """Check the surface idioms in SELF_TEST_CASES and the test/product directory rule; prints failures, returns 0/1."""
     bad = []
     for suffix, line, want in SELF_TEST_CASES:
-        got = line_classes(line, code_view(line, suffix), suffix)
+        got = line_classes(comment_free(line, suffix), code_view(line, suffix), suffix)
         if sorted(got) != sorted(want):
             bad.append(f'{suffix} {line!r}: matched {got}, expected {want}')
     files = ['packages/e2e/package.json', 'packages/e2e/src/run.ts', 'packages/e2e/tests/run.test.ts',
@@ -1458,10 +1752,96 @@ def self_test() -> int:
         PRODUCT_DIRS.clear()
         PRODUCT_DIRS.update(saved)
         tmp.cleanup()
+    checks = go_layout_checks()
+    bad += [name for name, ok in checks if not ok]
     for b in bad:
         print('FAIL ' + b)
-    print(f'self-test: {len(SELF_TEST_CASES) + 9 - len(bad)} passed, {len(bad)} failed')   # 9 path-rule checks
+    total = len(SELF_TEST_CASES) + 9 + len(checks)       # 9 path-rule checks, then the Go layout checks
+    print(f'self-test: {total - len(bad)} passed, {len(bad)} failed')
     return 1 if bad else 0
+
+
+def go_layout_checks() -> list[tuple[str, bool]]:
+    """A synthetic Go module at the repository root with two small nested package.json directories (an npm wrapper and
+    a bundled driver), an XCUITest runner app, Objective-C sources and a coverprofile: the Go packages must be areas,
+    the runner is not tests, Objective-C counts, and the coverprofile becomes test-weakness evidence."""
+    import tempfile
+    out: list[tuple[str, bool]] = []
+    saved = (set(PRODUCT_DIRS), set(RUNNER_DIRS) if 'RUNNER_DIRS' in globals() else set())
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        layout = {
+            'go.mod': 'module example.test/sample\n\ngo 1.22\n',
+            'main.go': 'package main\n\nfunc main() { run() }\n',
+            'pkg/alpha/alpha.go': 'package alpha\n\nfunc A(x int) int {\n\tif x > 0 {\n\t\treturn 1\n\t}\n\treturn 0\n}\n',
+            'pkg/alpha/alpha_test.go': 'package alpha\n\nimport "testing"\n\nfunc TestA(t *testing.T) {}\n',
+            'pkg/beta/beta.go': 'package beta\n\nfunc B() {}\n',
+            'pkg/beta/inner/inner.go': 'package inner\n\nfunc C() {}\n',
+            'npm/wrapper/package.json': '{"name": "sample-wrapper", "bin": {"sample": "./index.js"}}\n',
+            'npm/wrapper/index.js': 'module.exports = 1;\n',
+            'drivers/agent/package.json': '{"name": "agent-tools", "private": true}\n',
+            'drivers/agent/tool.js': 'module.exports = 2;\n',
+            'drivers/agent/Agent/Server.m': '#import "Server.h"\n@implementation Server\n@end\n',
+            'drivers/agent/Agent/Server.h': '@interface Server\n@end\n',
+            'drivers/runner/SampleRunnerUITests/SampleRunnerUITests.swift':
+                'import XCTest\nclass SampleRunnerUITests: XCTestCase {\n  func testRun() {\n'
+                '    if !Server().serveForever() { XCTFail("runner wait ended") }\n  }\n}\n',
+            'drivers/runner/SampleRunnerUITests/Server.swift':
+                'import Network\nfinal class Server {\n  func serveForever() -> Bool {\n'
+                '    let l = try? NWListener(using: .tcp)\n    return l != nil\n  }\n}\n',
+            'drivers/ios/HostApp/main.swift': 'print("host")\n',
+            'drivers/embed.go': 'package drivers\n\nvar Files = 1\n',
+            'app/SampleAppTests/LoginTests.swift': 'import XCTest\nclass LoginTests: XCTestCase {\n  func testA() { XCTAssertTrue(true) }\n}\n',
+            'drivers/agent/AgentTests/ServerTests.m': '- (void)testServe { XCTAssertNotNil(self.server); }\n',
+            'drivers/agent/AgentTests/ServerTests.h': '@interface ServerTests\n@end\n',
+        }
+        for rel, text in layout.items():
+            p = root / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(text, encoding='utf-8')
+        files = sorted(layout)
+        try:
+            PRODUCT_DIRS.clear()
+            PRODUCT_DIRS.update(product_dirs(root, files))
+            set_runner_dirs(root, files)
+            areas, basis = define_areas(root, files, None)
+            ids = {a['id'] for a in areas}
+            out.append((f'root go.mod: Go packages are areas (got {sorted(ids)}, {basis})',
+                        {'pkg/alpha', 'pkg/beta', 'pkg/beta/inner'} <= ids and any('main.go' in a['paths'] for a in areas)))
+            out.append(('root go.mod: pkg/alpha/alpha.go is owned by pkg/alpha', area_of('pkg/alpha/alpha.go', areas) == 'pkg/alpha'))
+            out.append((f'Swift code under a Go package directory is its own area, not the Go package\'s '
+                        f'(got {area_of("drivers/ios/HostApp/main.swift", areas)})',
+                        area_of('drivers/ios/HostApp/main.swift', areas) not in (None, 'drivers')))
+            out.append(('an XCUITest runner app (no assertions) is not test code',
+                        not is_test('drivers/runner/SampleRunnerUITests/Server.swift')
+                        and not is_test('drivers/runner/SampleRunnerUITests/SampleRunnerUITests.swift')))
+            out.append(('an XCTest bundle with assertions stays test code', is_test('app/SampleAppTests/LoginTests.swift')))
+            out.append(('Objective-C files of an XCTest bundle are test code', is_test('drivers/agent/AgentTests/ServerTests.m')
+                        and is_test('drivers/agent/AgentTests/ServerTests.h')))
+            out.append(('Objective-C sources are area code', is_area_code('drivers/agent/Agent/Server.m')
+                        and is_area_code('drivers/agent/Agent/Server.h')))
+            gofiles = [f'pkg/m{i}/m.go' for i in range(6)]
+            w = uncovered_language(gofiles + ['npm/w/index.js'], {f: None for f in gofiles} | {'npm/w/index.js': 'npm/w'},
+                                   {f: {'loc': 3} for f in gofiles + ['npm/w/index.js']}, root, 'workspace packages')
+            out.append((f'loud warning when the dominant language is outside every area (got {w!r})', bool(w) and '.go' in w))
+            prof = root / 'coverage.out'
+            prof.write_text('mode: set\nexample.test/sample/pkg/alpha/alpha.go:3.20,4.11 1 1\n'
+                            'example.test/sample/pkg/alpha/alpha.go:4.11,6.3 1 0\n'
+                            'example.test/sample/pkg/alpha/alpha.go:7.2,7.10 2 1\n'
+                            'example.test/sample/pkg/beta/beta.go:3.12,3.13 0 0\n', encoding='utf-8')
+            cov = read_coverage(root, prof)
+            out.append((f'coverprofile maps module paths to files (got {cov})',
+                        cov.get('pkg/alpha/alpha.go') == (4, 3)))
+            out.append(('coverage 75% scores test weakness 2, 30% scores 4', coverage_score(0.75) == 2 and coverage_score(0.30) == 4))
+        except Exception as e:                       # a missing function is a failed check, not a crash
+            out.append((f'Go layout checks raised {type(e).__name__}: {e}', False))
+        finally:
+            PRODUCT_DIRS.clear()
+            PRODUCT_DIRS.update(saved[0])
+            if 'RUNNER_DIRS' in globals():
+                RUNNER_DIRS.clear()
+                RUNNER_DIRS.update(saved[1])
+    return out
 
 
 def main(argv=None) -> int:
@@ -1478,6 +1858,9 @@ def main(argv=None) -> int:
     ap.add_argument('--finding-area', action='append', default=[],
                     help='KIND:ID=AREA: carry this input finding on AREA, when its report cites the wrong file (repeatable)')
     ap.add_argument('--release', type=Path, help='release.json from release_scope.py: pending changesets and breaking commits')
+    ap.add_argument('--coverage', type=Path, action='append', default=[],
+                    help='a Go coverprofile (go test -coverprofile=coverage.out ./...): statement coverage per area '
+                         'becomes the test-weakness evidence (repeatable)')
     ap.add_argument('--out', type=Path, required=True)
     if '--self-test' in (sys.argv[1:] if argv is None else argv):
         return self_test()

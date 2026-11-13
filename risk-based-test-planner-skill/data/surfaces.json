@@ -63,16 +63,18 @@
       "score": 5,
       "label": "handles secrets or credentials",
       "patterns": [
-        "\\b(function\\*?|def)\\s+redact\\w*\\s*\\(|\\b(const|let|var)\\s+redact\\w*\\s*=\\s*(async\\s*)?(\\(|function\\b|\\w+\\s*=>)|\\bclass\\s+\\w*(Redact|Secret|Credential)\\w*",
+        "\\b(function\\*?|def|func)\\s+(\\([^)]*\\)\\s*)?redact\\w*\\s*\\(|\\b(const|let|var)\\s+redact\\w*\\s*=\\s*(async\\s*)?(\\(|function\\b|\\w+\\s*=>)|\\bclass\\s+\\w*(Redact|Secret|Credential)\\w*",
         "^\\s*(?:(?:public|private|protected|static|async|override)\\s+)*#?redact\\w*\\s*\\([^()]*\\)\\s*(?::\\s*[^={;]+)?\\{\\s*$",
         "\\bbasic_?auth\\b|\\bhttp_?credentials\\b",
         "\\b(get|read|load|resolve|store|save|set|put|rotate|fetch|decrypt|encrypt|mask)_?(secret|credential|api_?key|access_?token|auth_?token|refresh_?token|bearer_?token)s?\\w*\\s*\\(",
         "\\bauthorization\\s*:\\s*(\"\"|\\w+\\s*\\+)",
-        "\\bkeytar\\.\\w+\\s*\\(|\\b(keyring|keychain)\\.(get|set|delete)\\w*\\s*\\("
+        "\\bkeytar\\.\\w+\\s*\\(|\\b(keyring|keychain)\\.(get|set|delete)\\w*\\s*\\(",
+        "\\bset_?basic_?auth\\s*\\("
       ],
       "raw_patterns": [
         "['\"](?:Proxy-)?Authorization['\"]\\s*[:,\\]]",
-        "['\"]x-api-key['\"]\\s*[:,\\]]"
+        "['\"]x-api-key['\"]\\s*[:,\\]]",
+        "\\b(Getenv|LookupEnv|getenv|environ\\.get|environ\\[|process\\.env|ENV\\[|env::var)\\b[^\\n]*(SECRET|TOKEN|ACCESS_KEY|API_KEY|APIKEY|PASSWORD|PASSWD|CREDENTIAL)"
       ]
     },
     "destructive": {
@@ -90,7 +92,10 @@
         "\\bTRUNCATE\\s+TABLE\\b",
         "(?-i:\\bTRUNCATE\\s+(?:ONLY\\s+)?[\\w\"`{\\[])",
         "(?-i:\\bALTER\\s+TABLE\\b.*\\bDROP\\s+(?:COLUMN|CONSTRAINT)\\b)",
-        "(?-i:\\bDROP\\s+(?:SCHEMA|DATABASE|COLUMN|INDEX|VIEW)\\b)"
+        "(?-i:\\bDROP\\s+(?:SCHEMA|DATABASE|COLUMN|INDEX|VIEW)\\b)",
+        "['\\\"]uninstall['\\\"]|['\\\"][^'\\\"\\n]*\\badb\\b[^'\\\"\\n]*\\buninstall\\b",
+        "['\\\"][^'\\\"\\n]*\\bpm\\s+clear\\b|['\\\"]pm['\\\"]\\s*,\\s*['\\\"]clear['\\\"]",
+        "['\\\"][^'\\\"\\n]*\\bsimctl\\s+(erase|delete|uninstall)\\b|['\\\"]simctl['\\\"]\\s*,\\s*['\\\"](erase|delete|uninstall)['\\\"]"
       ],
       "exclude": [
         "\\b(searchParams|params|query|headers|url|map|set|cache|seen|visited|selected|state|formData|weakMap|style|classList|dataset|attributes|listeners|subscribers|timers|pending|queue|ids|keys|subscriptions|observers|handlers|callbacks|registry|entries|traces|sent)\\??\\.delete\\s*\\(",
@@ -107,24 +112,34 @@
         "\\b(delete|remove|erase)(?-i:[A-Z])\\w*\\s*\\(\\s*(index|idx|i|rowIndex|row|position|pos|key|itemIndex|fieldIndex)\\s*\\)",
         "\\b(Plotly|chart|echarts|\\w*(?-i:Chart|Plot|Graph))\\.purge\\s*\\(",
         "\\b(removeEventListener|removeChild|removeAttribute|removeItem|deleteProperty)\\s*\\(",
-        "\\b(Reflect\\.deleteProperty|cookies\\(\\)\\.delete)\\b"
+        "\\b(Reflect\\.deleteProperty|cookies\\(\\)\\.delete)\\b",
+        "\\berase(?-i:(Text|Field|Input|Chars|Characters|Count|Line|Lines|Screen|Display|Trailing|Leading|Backward|Forward|Selection|Selected))\\w*\\s*\\(",
+        "\\bdelete_?session\\w*\\s*\\("
       ],
       "lang_exclude": {
         ".rs": [
           "\\bdrop\\s*\\(",
           "\\btruncate\\s*\\("
+        ],
+        ".go": [
+          "(?<![.\\w])delete\\s*\\(\\s*[\\w.\\[\\]()*]+\\s*,",
+          "\\.(?-i:delete|drop)\\s*\\(|^\\s*func\\s+\\([^)]*\\)\\s*(?-i:delete|drop)\\s*\\("
         ]
       }
     },
     "filesystem_destruction": {
       "score": 5,
       "label": "destroys files or directories",
-      "langs": [".rs"],
+      "langs": [
+        ".rs",
+        ".go"
+      ],
       "patterns": [
         "\\b(remove_file|remove_dir_all|remove_dir)\\s*\\(",
         "\\bfs::remove\\w*\\s*\\(",
         "\\b(unlink|unlinkat|rmdir)\\s*\\(",
-        "\\b(shred|secure_erase|wipe_file)\\w*\\s*\\("
+        "\\b(shred|secure_erase|wipe_file)\\w*\\s*\\(",
+        "\\bos\\.(Remove|RemoveAll|Truncate)\\s*\\("
       ],
       "lang_exclude": {
         ".rs": [
@@ -135,7 +150,10 @@
     "privilege": {
       "score": 5,
       "label": "changes ownership, permissions or privilege",
-      "langs": [".rs"],
+      "langs": [
+        ".rs",
+        ".go"
+      ],
       "patterns": [
         "\\b(setuid|setgid|seteuid|setegid|setgroups|setresuid|setresgid|setfsuid|setfsgid)\\s*\\(",
         "\\bchroot\\s*\\(",
@@ -143,27 +161,50 @@
         "\\bwrap_chown\\s*\\(",
         "\\b(chmod|fchmod|fchmodat)\\s*\\(",
         "\\bset_permissions\\s*\\(",
-        "\\b\\w*[Pp]ermissions\\w*\\.set_mode\\s*\\("
+        "\\b\\w*[Pp]ermissions\\w*\\.set_mode\\s*\\(",
+        "\\b(os|syscall|unix)\\.(Chmod|Chown|Lchown|Fchmod|Fchown|Setuid|Setgid|Seteuid|Setegid|Setgroups|Setresuid|Chroot)\\s*\\("
       ]
     },
     "filesystem_write": {
       "score": 3,
       "label": "creates, links or renames files on disk",
-      "langs": [".rs"],
+      "langs": [
+        ".rs",
+        ".go"
+      ],
       "patterns": [
         "\\b(symlink|symlink_file|symlink_dir|hard_link)\\s*\\(",
         "\\bfs::(rename|hard_link|copy|create_dir(_all)?)\\s*\\(",
-        "\\b(rename|mkdir|mkdirat|symlinkat|linkat)\\s*\\("
+        "\\b(rename|mkdir|mkdirat|symlinkat|linkat)\\s*\\(",
+        "\\bos\\.(Rename|Symlink|Link|Mkdir|MkdirAll|WriteFile|Create)\\s*\\("
       ]
     },
     "raw_syscall": {
       "score": 3,
       "label": "raw syscall or unsafe block (systems-level)",
-      "langs": [".rs"],
+      "langs": [
+        ".rs",
+        ".go"
+      ],
       "patterns": [
         "\\bunsafe\\s*\\{",
         "\\blibc::\\w+\\s*\\(",
-        "\\brustix::(fs|process|thread|io|net)::\\w+\\s*\\("
+        "\\brustix::(fs|process|thread|io|net)::\\w+\\s*\\(",
+        "\\bunsafe\\.Pointer\\b|\\bsyscall\\.(Syscall\\w*|RawSyscall\\w*)\\s*\\("
+      ],
+      "raw_patterns": [
+        "^\\s*import\\s+\\\"C\\\"\\s*$"
+      ]
+    },
+    "subprocess": {
+      "score": 3,
+      "label": "runs external processes or opens network listeners",
+      "langs": [
+        ".go"
+      ],
+      "patterns": [
+        "\\bexec\\.Command(Context)?\\s*\\(",
+        "\\bnet\\.Listen(TCP|UDP|Unix|Packet)?\\s*\\(|\\bhttp\\.ListenAndServe(TLS)?\\s*\\(|\\btls\\.Listen\\s*\\("
       ]
     },
     "compliance": {
@@ -186,7 +227,8 @@
         "\\bnew\\s+Command\\s*\\(",
         "\\b(program|cli|yargs|cmd|commander|cac|sade)\\.command\\s*\\(",
         "\\bdefineCommand\\s*\\(",
-        "^\\s*@\\w+\\.command\\s*\\(|^\\s*@click\\.(command|group)\\b"
+        "^\\s*@\\w+\\.command\\s*\\(|^\\s*@click\\.(command|group)\\b",
+        "\\b(cli|cobra)\\.Command\\s*\\{|\\bcli\\.App\\s*\\{|\\bcli\\.NewApp\\s*\\("
       ]
     },
     "entry": {
