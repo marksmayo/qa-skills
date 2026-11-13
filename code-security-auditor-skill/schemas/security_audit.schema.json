@@ -9,7 +9,7 @@
                "files_written", "summary"],
   "additionalProperties": false,
   "properties": {
-    "schema_version": {"enum": ["1.0", "1.1", "1.2"], "description": "1.1 adds machine-credential auth values, server_action and middleware entry points, agent-found findings (source, basis), business_impact, and npm dependency facts (range, dev, via). 1.2 requires dependency_advisories (were advisories checked at all), and adds observation excerpts, grep variant rules and chains_with references to findings in a sibling repository's report (repo#F-n)."},
+    "schema_version": {"enum": ["1.0", "1.1", "1.2", "1.3"], "description": "1.3 adds the mcp_tool, listener and config_input entry-point kinds, example entry points, recon.removed_entry_points (each recon entry point dropped from the report, with the reason) and verification.local_copy for local command PoCs. 1.1 adds machine-credential auth values, server_action and middleware entry points, agent-found findings (source, basis), business_impact, and npm dependency facts (range, dev, via). 1.2 requires dependency_advisories (were advisories checked at all), and adds observation excerpts, grep variant rules and chains_with references to findings in a sibling repository's report (repo#F-n)."},
     "dependency_advisories": {
       "type": "object", "required": ["status", "tools", "reason"], "additionalProperties": false,
       "description": "Whether the dependencies were checked against an advisory database. not_assessed (no tool ran, e.g. offline) is not the same as no vulnerable dependencies. Required from schema 1.2.",
@@ -49,7 +49,7 @@
             "type": "object", "required": ["id", "kind", "method", "path", "handler", "auth", "exposure", "reviewed"], "additionalProperties": false,
             "properties": {
               "id": {"type": "string", "pattern": "^EP-\\d+$"},
-              "kind": {"enum": ["http_route", "webhook", "graphql", "queue_consumer", "cli", "file_parser", "deep_link", "exported_component", "ci_workflow", "client_source", "server_action", "middleware", "other"]},
+              "kind": {"enum": ["http_route", "webhook", "graphql", "queue_consumer", "cli", "file_parser", "deep_link", "exported_component", "ci_workflow", "client_source", "server_action", "middleware", "mcp_tool", "listener", "config_input", "other"], "description": "mcp_tool: a tool an MCP server registers (stdio or HTTP); listener: a socket a Node process listens on (http/net createServer, WebSocketServer); config_input: a config file the program loads from the working directory or a path it is given"},
               "method": {"type": "string"},
               "path": {"type": "string"},
               "handler": {"type": "string", "pattern": "^[^:]+:\\d+$"},
@@ -57,6 +57,7 @@
               "exposure": {"enum": ["internet", "internal", "local"]},
               "reviewed": {"type": "boolean"},
               "auth_evidence": {"type": ["string", "null"]},
+              "example": {"type": "boolean", "description": "example or fixture code (examples/, samples/, a benchmark or testbed app), not part of the shipped product unless it is deployed"},
               "note": {"type": "string"}
             }
           }
@@ -70,6 +71,13 @@
         "outbound_calls": {"type": "array", "items": {"type": "string"}},
         "secret_config": {"type": "array", "items": {"type": "string"}},
         "middleware": {"type": "array", "items": {"type": "string"}, "description": "global auth middleware and what it covers (Next.js matcher paths)"},
+        "removed_entry_points": {
+          "type": "array", "description": "recon.json entry points left out of entry_points (a false trigger, a duplicate), each with a reason someone can check; validate_security_audit.py --recon requires one for every recon entry point that is missing",
+          "items": {
+            "type": "object", "required": ["id", "handler", "reason"], "additionalProperties": false,
+            "properties": {"id": {"type": "string", "pattern": "^EP-\\d+$"}, "handler": {"type": "string"}, "reason": {"type": "string", "minLength": 15}}
+          }
+        },
         "high_risk_areas": {
           "type": "array",
           "items": {
@@ -105,6 +113,7 @@
         "target_kind": {"enum": ["localhost", "test_environment", "production", "none"]},
         "production_written_permission": {"type": ["string", "null"]},
         "runner": {"type": "string"},
+        "local_copy": {"type": ["string", "null"], "description": "the working copy outside the repository that command PoCs (run_poc.py --workdir) ran in"},
         "notes": {"type": "string"}
       }
     },

@@ -1,0 +1,25 @@
+name: setup
+description: Install the workspace and print the label being applied
+
+inputs:
+  label:
+    description: Label text
+    required: true
+  node-version:
+    description: Node version
+    default: '22'
+
+runs:
+  using: composite
+  steps:
+    - name: Install
+      shell: bash
+      env:
+        NODE_VERSION: ${{ inputs.node-version }}
+      run: |
+        echo "node $NODE_VERSION"
+        pnpm install --frozen-lockfile
+    - name: Announce
+      shell: bash
+      run: |
+        echo "labelling: ${{ inputs.label }}"

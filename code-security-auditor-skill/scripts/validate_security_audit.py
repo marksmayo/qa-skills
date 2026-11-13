@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Validate a code security audit (structure and honesty rules).
 
-    python validate_security_audit.py security_audit.json [--repo <repo>] [--candidates candidates.json] [--write-summary]
+    python validate_security_audit.py security_audit.json [--repo <repo>] [--candidates candidates.json]
+                                      [--recon recon.json] [--write-summary]
 
 Checks the report against schemas/security_audit.schema.json, then the rules a schema can't
 express: CVSS v4.0 scores are recomputed from their vectors, priorities and ranks are recomputed,
@@ -14,7 +15,12 @@ Paths to PoCs, evidence, regression tests and variant rules are relative to the 
 directory. --repo re-checks every location (file, line, snippet) against the source, re-reads each
 secret to make sure its value isn't in the report or the evidence, and checks that nothing the run
 wrote is inside the repository. --candidates checks every candidate and dependency advisory was
-triaged. --write-summary recomputes the summary counts in place (the headline is kept).
+triaged, and that a secret found only in git history is not dismissed without saying whether it
+was rotated (or why it needs no rotation). --recon checks every entry point recon.py found is in
+the report or in recon.removed_entry_points with a reason. A confirmed finding is proved either by
+an HTTP PoC against the verification target or by a local command PoC (run_poc.py --workdir) in
+verification.local_copy, outside the repository. --write-summary recomputes the summary counts in
+place (the headline is kept).
 Exit code 0 when valid, 1 when invalid.
 """
 from __future__ import annotations
@@ -43,6 +49,11 @@ BANNED_HEADLINE = re.compile(r'(?i)\b(is|are|looks|appears|seems|now|remains?|co
                              r'channel|transport|connection|header|storage|random|hash|compare|comparison|-?coding|defaults?))')
 VAGUE_REASON = re.compile(r'(?i)^\W*(false positive|fp|not exploitable|not an issue|not a problem|n/?a|safe|ok|fine|ignore)\W*$')
 LOC_REF = re.compile(r'[\w./-]+\.\w+:\d+')
+# A dismissed secret that only git history holds is still exposed to anyone with a clone: the reason must say it was
+# rotated or revoked, or why rotation isn't needed (a public key by design, a placeholder, a fake test value).
+ROTATION_REASON = re.compile(r'(?i)rotat|revok|invalidat|expired|deactivat|disabled|\bpublic\b[^.;]{0,30}\b(by design|key|identifier|client)\b|'
+                             r'publishable|(not|never) a (real |live )?(secret|credential|key|token|password)|placeholder|fixture|'
+                             r'\bfake\b|dummy|example value|test (value|key|literal|token)')
 
 # ---------------------------------------------------------------- minimal JSON Schema (the subset the schema uses)
 def schema_errors(value, schema: dict, root: dict, path: str = '$') -> list[str]:
@@ -222,7 +233,7 @@ def advisory_errors(d: dict) -> list[str]:
     adv = d.get('dependency_advisories')
     dep_ran = [t['name'] for t in d['tools'] if t['area'] == 'dependencies' and t['status'] == 'ran']
     if adv is None:
-        if d['schema_version'] == '1.2':
+        if d['schema_version'] in ('1.2', '1.3'):
             E('dependency_advisories: required from schema 1.2 (assessed, partial or not_assessed)')
     else:
         if adv['status'] in ('assessed', 'partial') and not dep_ran:
@@ -243,7 +254,33 @@ def advisory_errors(d: dict) -> list[str]:
                 E('summary.headline claims no vulnerable dependencies, but advisories were not (fully) assessed')
     return errors
 
-def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tuple[list[str], list[str]]:
+def recon_errors(d: dict, recon: dict) -> list[str]:
+    """Every entry point recon.py found is in the report, or listed in recon.removed_entry_points with a reason.
+
+    Entry points are matched by handler and kind (ids may be renumbered); a silently dropped entry point would let
+    a report shrink its attack surface without anyone noticing."""
+    errors: list[str] = []
+    have = {(e['handler'], e['kind']) for e in d['recon']['entry_points']}
+    have_handlers = {e['handler'] for e in d['recon']['entry_points']}
+    removed = d['recon'].get('removed_entry_points') or []
+    removed_ids = {r['id'] for r in removed}
+    removed_handlers = {r['handler'] for r in removed}
+    for e in recon.get('entry_points') or []:
+        if (e['handler'], e['kind']) in have or e['handler'] in have_handlers:
+            continue
+        if e['id'] in removed_ids or e['handler'] in removed_handlers:
+            continue
+        errors.append(f"recon: {e['id']} ({e['kind']} {e['method']} at {e['handler']}) from recon.json is not in "
+                      'recon.entry_points; add it, or list it in recon.removed_entry_points with the reason')
+    known = {e['id'] for e in recon.get('entry_points') or []}
+    for r in removed:
+        if r['id'] not in known:
+            errors.append(f"recon.removed_entry_points: {r['id']} is not an entry point in recon.json")
+        elif any(e['id'] == r['id'] and (e['handler'], e['kind']) in have for e in recon['entry_points']):
+            errors.append(f"recon.removed_entry_points: {r['id']} is still in recon.entry_points")
+    return errors
+
+def check(d: dict, base: Path, repo: Path | None, candidates: dict | None, recon: dict | None = None) -> tuple[list[str], list[str]]:
     schema = json.loads(SCHEMA.read_text(encoding='utf-8'))
     errors = schema_errors(d, schema, schema)
     warnings: list[str] = []
@@ -283,6 +320,8 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tu
             host = urllib.parse.urlsplit(ver['target']).hostname or ''
             if not run_poc.is_loopback(host):
                 E(f'verification: target_kind is localhost but {host!r} is not a loopback address')
+    if ver.get('local_copy') and repo and (inside(Path(ver['local_copy']), repo) or inside(repo, Path(ver['local_copy']))):
+        E('verification: local_copy must be a copy outside the repository')
 
     # triage
     triaged: dict[str, dict] = {}
@@ -318,6 +357,11 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tu
         for extra in sorted(deps_have - deps_want):
             E(f'dependencies: {extra} is not in the candidates file')
         cand_secrets = {s['id']: s for s in candidates.get('secrets', [])}
+        for cid, c in cand_secrets.items():
+            t = triaged.get(cid)
+            if c.get('history_only') and t and t['decision'] == 'dismissed' and not ROTATION_REASON.search(t['reason']):
+                E(f"triage[{cid}]: a secret only in git history is still in every clone; the dismissal must say it was "
+                  'rotated or revoked, or why it needs no rotation (public by design, a placeholder, a fake test value)')
     else:
         cand_secrets = {}
 
@@ -407,12 +451,22 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tu
                 P('possible findings must say what is missing from the path (path.gap)')
         # PoC and evidence
         poc = f['poc']
+        spec = None
+        if poc.get('file') and (base / poc['file']).exists():
+            try:
+                spec = json.loads((base / poc['file']).read_text(encoding='utf-8'))
+            except ValueError:
+                P(f"PoC file {poc['file']} is not JSON")
+        command_poc = bool(spec and spec.get('kind') == 'command')
         if f['confidence'] == 'confirmed':
             if poc['result'] != 'confirmed':
                 P('confidence confirmed needs poc.result confirmed')
             if not ver['permitted']:
                 P('confirmed, but verification was not permitted')
-            if ver['target_kind'] not in ('localhost', 'test_environment') and not (ver['target_kind'] == 'production' and ver.get('production_written_permission')):
+            if command_poc:
+                if not ver.get('local_copy'):
+                    P('confirmed by a command PoC, but verification.local_copy (the working copy it ran in) is not recorded')
+            elif ver['target_kind'] not in ('localhost', 'test_environment') and not (ver['target_kind'] == 'production' and ver.get('production_written_permission')):
                 P(f"confirmed against target_kind {ver['target_kind']!r}")
         elif poc['result'] == 'confirmed':
             P(f"poc.result confirmed but confidence is {f['confidence']}")
@@ -425,10 +479,10 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tu
                 pf, ev = base / poc['file'], base / poc['evidence']
                 if not pf.exists():
                     P(f"PoC file {poc['file']} not found")
-                else:
-                    spec = json.loads(pf.read_text(encoding='utf-8'))
+                elif spec is not None:
                     host = urllib.parse.urlsplit(ver.get('target') or '').hostname
-                    issues = run_poc.lint(spec, ver.get('target'), [host] if host and ver['target_kind'] == 'test_environment' else [])
+                    issues = run_poc.lint(spec, None if command_poc else ver.get('target'),
+                                          [host] if host and ver['target_kind'] == 'test_environment' else [])
                     for i in issues:
                         P(f'PoC fails the safety lint: {i}')
                     if spec.get('finding') != fid:
@@ -445,10 +499,20 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tu
                         P('evidence does not show the proof passing')
                     if not e.get('permission'):
                         P('evidence does not record the permission')
-                    if ver.get('target') and e.get('target') and urllib.parse.urlsplit(e['target']).hostname != urllib.parse.urlsplit(ver['target']).hostname:
-                        P(f"evidence target {e['target']} is not the verification target")
-                    if not e.get('steps'):
-                        P('evidence has no request/response steps')
+                    if command_poc:
+                        if e.get('kind') != 'command':
+                            P('the PoC is a command PoC but the evidence is not (run it with run_poc.py --workdir)')
+                        elif ver.get('local_copy') and Path(e.get('workdir') or '').resolve() != Path(ver['local_copy']).resolve():
+                            P(f"evidence ran in {e.get('workdir')}, not in verification.local_copy")
+                        if repo and e.get('workdir') and inside(Path(e['workdir']), repo):
+                            P('the command PoC ran inside the repository; run it in a copy outside it')
+                        if not e.get('steps') or any('exit_code' not in st for st in e['steps']):
+                            P('evidence has no command steps with exit codes')
+                    else:
+                        if ver.get('target') and e.get('target') and urllib.parse.urlsplit(e['target']).hostname != urllib.parse.urlsplit(ver['target']).hostname:
+                            P(f"evidence target {e['target']} is not the verification target")
+                        if not e.get('steps'):
+                            P('evidence has no request/response steps')
         for label, rx in run_poc.BANNED:
             if re.search(rx, f['repro']['safe_payload']['payload']):
                 P(f'repro.safe_payload is not a canary ({label})')
@@ -541,7 +605,7 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tu
                 E(f"observations[{o['id']}]: {o['file']}:{o['line']} does not exist")
             elif o.get('excerpt') and norm(o['excerpt']) not in norm(got[0]):
                 E(f"observations[{o['id']}]: excerpt is not on {o['file']}:{o['line']} (line reads {got[0].strip()[:80]!r})")
-            elif not o.get('excerpt') and d['schema_version'] == '1.2':
+            elif not o.get('excerpt') and d['schema_version'] in ('1.2', '1.3'):
                 W(f"observations[{o['id']}]: no excerpt, so {o['file']}:{o['line']} can only be checked for existence")
         # recon entry points: the handler line must exist and, in Python, not sit inside a string or docstring
         for e in eps.values():
@@ -554,6 +618,8 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tu
                   '(a usage example, not a route)')
 
     errors += advisory_errors(d)
+    if recon is not None:
+        errors += recon_errors(d, recon)
 
     # coverage
     cov = d['coverage']
@@ -622,6 +688,7 @@ def main() -> int:
     ap.add_argument('report', type=Path)
     ap.add_argument('--repo', type=Path)
     ap.add_argument('--candidates', type=Path)
+    ap.add_argument('--recon', type=Path, help='recon.json: every entry point it lists must be in the report or removed with a reason')
     ap.add_argument('--write-summary', action='store_true')
     args = ap.parse_args()
     if hasattr(sys.stdout, 'reconfigure'):
@@ -629,13 +696,14 @@ def main() -> int:
     try:
         d = json.loads(args.report.read_text(encoding='utf-8'))
         cands = json.loads(args.candidates.read_text(encoding='utf-8')) if args.candidates else None
+        recon = json.loads(args.recon.read_text(encoding='utf-8')) if args.recon else None
     except (OSError, ValueError) as exc:
         print(f'Unable to read input: {exc}', file=sys.stderr)
         return 1
     if args.write_summary and isinstance(d.get('summary'), dict):
         d['summary']['counts'] = compute_summary(d)
         args.report.write_text(json.dumps(d, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
-    errors, warnings = check(d, args.report.resolve().parent, args.repo.resolve() if args.repo else None, cands)
+    errors, warnings = check(d, args.report.resolve().parent, args.repo.resolve() if args.repo else None, cands, recon)
     for w in warnings:
         print(f'WARNING: {w}')
     for e in errors:

@@ -4,7 +4,8 @@
     python merge_findings.py --root <repo> [--patterns patterns.json] [--secrets secrets.json]
                              [--sarif semgrep.sarif gosec.sarif ...] [--bandit bandit.json]
                              [--eslint eslint.json] [--deps pip-audit.json npm-audit.json osv.json ...]
-                             [--npm-lock package-lock.json] [--out candidates.json]
+                             [--npm-lock package-lock.json] [--pnpm-lock pnpm-lock.yaml]
+                             [--scanners scanners.json] [--out candidates.json]
 
 Code candidates (CAND-nnn) are merged by sink location (file and line): one line flagged by
 three tools is one candidate with three sources and every CWE they reported. Secrets (SEC-nnn)
@@ -16,7 +17,20 @@ removed, with the commits); test-file fixtures it set aside are counted, not lis
 npm audit advisories are matched against the copies package-lock.json says are installed (--npm-lock,
 default <root>/package-lock.json): version is the installed version, range the advisory's own range,
 dev whether every copy is a devDependency, via the packages that pull it in, fixed_in the first
-fixed version. A package installed in two majors gives one entry per major.
+fixed version. A package installed in two majors gives one entry per major. For a pnpm workspace,
+--pnpm-lock (default <root>/pnpm-lock.yaml, lockfile v6 to v9) gives the same facts to osv-scanner
+and pnpm audit advisories: dev is true when every installed copy is reachable only from some
+workspace package's devDependencies, and via names the direct dependencies (importer > package)
+that pull it in. pnpm audit --json output (the npm audit v6 shape) is read too.
+
+gitleaks: a hit from git history keeps its commit (partialFingerprints.commitSha) in
+history_commits with in_git_history yes, and a hit in a file that no longer exists at HEAD is
+history_only with git_status removed, as scan_secrets.py records them. A generic gitleaks rule
+(generic-api-key) on a line where scan_secrets.py's own rules see no secret (a cache key hash, a
+field name, a placeholder) and any gitleaks hit in a test file that scan_secrets.py would set aside
+as a low-entropy fixture are listed under secrets_set_aside with the reason, not triaged one by one;
+provider-specific rules always stay candidates. --scanners replaces the version a SARIF driver
+reports (gitleaks prints a fixed placeholder version) with the one run_scanners.py recorded.
 
 Secret values are never copied: snippets from secret scanners are dropped, and any secret found
 in another tool's snippet or message is replaced with [REDACTED].
@@ -27,9 +41,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+sys.dont_write_bytecode = True
 sys.path.insert(0, str(HERE))
 import sarif  # noqa: E402
 import scan_secrets  # noqa: E402
+import test_paths  # noqa: E402
 
 CATALOGUE = HERE.parent / 'data' / 'pitfalls.json'
 SECRET_TOOLS = ('gitleaks', 'trufflehog', 'detect-secrets', 'ggshield')
@@ -84,17 +100,68 @@ def from_patterns(path: Path) -> list[dict]:
     return [code_candidate(c['file'], c['line'], c.get('cwe'), c.get('pitfall_id'), c.get('message'), c.get('snippet'),
                            {'tool': 'scan_pitfalls', 'rule_id': c.get('pitfall_id')}) for c in data.get('candidates', [])]
 
+GENERIC_SECRET_RULES = re.compile(r'(?i)^(generic[-_]api[-_]key|generic[-_]secret|generic)$')
+
+def sarif_commits(path: Path, root: Path) -> dict[tuple, list[str]]:
+    """(file, line, rule) -> commit ids, from SARIF partialFingerprints.commitSha (gitleaks history hits)."""
+    out: dict[tuple, list[str]] = {}
+    try:
+        data = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return out
+    for run in data.get('runs') or []:
+        for r in run.get('results') or []:
+            sha = (r.get('partialFingerprints') or {}).get('commitSha')
+            loc = ((r.get('locations') or [{}])[0].get('physicalLocation') or {})
+            uri = (loc.get('artifactLocation') or {}).get('uri') or ''
+            line = (loc.get('region') or {}).get('startLine')
+            if sha:
+                out.setdefault((norm_path(uri, root), line, r.get('ruleId')), []).append(sha[:12])
+    return out
+
+def secret_triage_hint(s: dict, root: Path, tests: test_paths.Classifier) -> str | None:
+    """Why a gitleaks hit can be set aside (scan_secrets.py's own placeholder and fixture rules), or None to keep it."""
+    if s.get('history_only') or not s.get('file') or not s.get('line'):
+        return None
+    rule = s.get('type') or ''
+    try:
+        lines = (root / s['file']).read_text(encoding='utf-8', errors='replace').splitlines()
+    except OSError:
+        return None
+    if not 0 < s['line'] <= len(lines):
+        return None
+    line = lines[s['line'] - 1]
+    ours = scan_secrets.find_in_line(line, Path(s['file']).name)
+    in_test = tests.is_test(s['file'])
+    if not ours and GENERIC_SECRET_RULES.match(rule):
+        return ('generic rule; scan_secrets.py sees no secret on this line (an identifier, a hash used as a cache '
+                'key, a field name or a placeholder)')
+    if in_test and ours and not any(scan_secrets.real_looking({'type': o['type'], 'entropy': scan_secrets.entropy(o['value']),
+                                                                'length': len(o['value'])}) for o in ours):
+        return 'low-entropy literal in a test file (a fixture, as scan_secrets.py sets aside)'
+    if in_test and not ours and GENERIC_SECRET_RULES.match(rule):
+        return 'generic rule in a test file; no secret by scan_secrets.py rules'
+    return None
+
 def from_sarif(path: Path, root: Path, idx: dict) -> tuple[list[dict], list[dict]]:
     code, secrets = [], []
+    commits = sarif_commits(path, root)
     for r in sarif.read(path, root):
         tool = r['tool'] or 'sarif'
         src = {'tool': tool, 'version': r.get('version'), 'rule_id': r.get('rule_id'), 'level': r.get('level')}
         file = norm_path(r['file'], root)
         rule = (r.get('rule_id') or '').lower()
         if tool.lower().startswith(SECRET_TOOLS) or (tool.lower().startswith('trivy') and 'secret' in rule):
-            secrets.append({'type': r.get('rule_id') or 'secret', 'file': file, 'line': r['line'], 'column': r.get('column'),
-                            'key': None, 'fingerprint': r.get('fingerprint'), 'message': redact(r.get('message') or ''),
-                            'sources': [src]})
+            item = {'type': r.get('rule_id') or 'secret', 'file': file, 'line': r['line'], 'column': r.get('column'),
+                    'key': None, 'fingerprint': r.get('fingerprint'), 'message': redact(r.get('message') or ''),
+                    'sources': [src]}
+            shas = sorted(set(commits.get((file, r['line'], r.get('rule_id'))) or []))
+            if shas:  # found in a commit: the line number is from that commit, not necessarily HEAD
+                item.update(history_commits=shas, in_git_history='yes', history_basis='full')
+                if not (root / file).exists():
+                    item.update(git_status='removed', history_only=True, history_line=r['line'], line=None,
+                                files=[file])
+            secrets.append(item)
             continue
         code.append(code_candidate(file, r['line'], r.get('cwe'), map_pitfall(idx, tool, r.get('rule_id')),
                                    r.get('message'), r.get('snippet'), src, r.get('end_line')))
@@ -190,6 +257,107 @@ def lock_packages(lock: Path | None) -> dict[str, list[dict]]:
         out.setdefault(name, []).append({'version': meta['version'], 'path': key, 'dev': dev, 'required_by': req})
     return out
 
+def _yaml_key(line: str) -> tuple[int, str, str] | None:
+    """(indent, key, inline value) of a `key: value` line in a lockfile, with quotes removed."""
+    m = re.match(r"^( *)(?:'([^']+)'|\"([^\"]+)\"|([^\s:'\"][^:]*?))\s*:(?:\s+(.*?))?\s*$", line)
+    if not m:
+        return None
+    return len(m.group(1)), m.group(2) or m.group(3) or m.group(4), (m.group(5) or '').strip("'\"")
+
+def _pnpm_node(key: str) -> tuple[str, str] | None:
+    """name and version from a pnpm package key: 'hono@4.1.0', '@scope/x@1.0.0(peer@2)', '/x@1.0.0', '/x/1.0.0'."""
+    key = key.lstrip('/')
+    key = re.sub(r'\(.*$', '', key)
+    m = re.match(r'^(@[^/@]+/[^@/]+|[^@/]+)[@/](\d[^\s]*)$', key)
+    return (m.group(1), m.group(2)) if m else None
+
+def pnpm_packages(lock: Path | None) -> dict[str, list[dict]]:
+    """package name -> installed copies [{version, dev, required_by, importers}] from pnpm-lock.yaml (v6 to v9).
+
+    A copy is dev when only workspace devDependencies reach it; required_by lists the direct dependencies
+    (importer>package) through which it is installed."""
+    if not lock or not lock.exists():
+        return {}
+    try:
+        lines = lock.read_text(encoding='utf-8', errors='replace').splitlines()
+    except OSError:
+        return {}
+    roots: list[tuple[str, str, bool]] = []  # (importer, node, dev)
+    graph: dict[str, set[str]] = {}
+    section = importer = kind = node = None
+    sub = None
+    for line in lines:
+        if not line.strip() or line.lstrip().startswith('#') or line.startswith('---'):
+            continue
+        k = _yaml_key(line)
+        if k is None:
+            continue
+        indent, key, val = k
+        if indent == 0:
+            section, importer, kind, node, sub = key, None, None, None, None
+            continue
+        if section == 'importers':
+            if indent == 2:
+                importer, kind = key, None
+            elif indent == 4:
+                kind = key if key in ('dependencies', 'devDependencies', 'optionalDependencies') else None
+                cur = None
+            elif indent == 6 and kind:
+                cur = key
+                if val:  # v5 style: name: version
+                    v = re.sub(r'\(.*$', '', val)
+                    if not v.startswith(('link:', 'file:', 'workspace:')):
+                        roots.append((importer, f'{key}@{v}', kind == 'devDependencies'))
+            elif indent == 8 and kind and key == 'version' and cur:
+                v = re.sub(r'\(.*$', '', val)
+                if not v.startswith(('link:', 'file:', 'workspace:')):
+                    roots.append((importer, f'{cur}@{v}', kind == 'devDependencies'))
+        elif section in ('packages', 'snapshots'):
+            if indent == 2:
+                nv = _pnpm_node(key)
+                node = f'{nv[0]}@{nv[1]}' if nv else None
+                if node:
+                    graph.setdefault(node, set())
+                sub = None
+            elif indent == 4:
+                sub = key if key in ('dependencies', 'optionalDependencies') else None
+            elif indent == 6 and sub and node and val:
+                v = re.sub(r'\(.*$', '', val)
+                if not v.startswith(('link:', 'file:')):
+                    graph[node].add(f'{key}@{v}')
+    reach: dict[str, dict] = {}
+    for imp, root_node, dev in roots:
+        via = f"{imp}>{root_node.rsplit('@', 1)[0]}" if imp not in ('.', None) else root_node.rsplit('@', 1)[0]
+        stack, seen = [root_node], set()
+        while stack:
+            n = stack.pop()
+            if n in seen:
+                continue
+            seen.add(n)
+            r = reach.setdefault(n, {'prod': False, 'dev': False, 'via': set(), 'importers': set()})
+            r['dev' if dev else 'prod'] = True
+            if len(r['via']) < 8:
+                r['via'].add(via)
+            r['importers'].add(imp)
+            stack.extend(graph.get(n, ()))
+    out: dict[str, list[dict]] = {}
+    for n, r in reach.items():
+        name, version = n.rsplit('@', 1)
+        out.setdefault(name, []).append({'version': version, 'path': f'pnpm-lock.yaml:{n}', 'dev': r['dev'] and not r['prod'],
+                                         'required_by': sorted(r['via'])[:5], 'importers': sorted(i for i in r['importers'] if i)[:5]})
+    return out
+
+def annotate_from_lock(items: list[dict], copies: dict[str, list[dict]]) -> None:
+    """Fill dev/via/installed on npm advisories (osv-scanner, pnpm audit) from pnpm-lock.yaml facts."""
+    for d in items:
+        if (d.get('ecosystem') or '').lower() != 'npm' or d.get('dev') is not None:
+            continue
+        have = [c for c in copies.get(d['package']) or [] if not d.get('version') or c['version'] == d['version']]
+        if have:
+            d['dev'] = all(c['dev'] for c in have)
+            d['via'] = sorted({v for c in have for v in c['required_by']})[:8]
+            d['installed'] = have
+
 def fixed_from_range(rng: str) -> list[str]:
     """The first fixed version implied by an upper bound (`<1.2.3` -> 1.2.3)."""
     return sorted({m for m in re.findall(r'<\s*(\d[\w.-]*)', rng or '')})
@@ -247,6 +415,17 @@ def from_deps(path: Path, lock: dict[str, list[dict]] | None = None) -> tuple[li
     elif isinstance(data, dict) and 'vulnerabilities' in data and isinstance(data['vulnerabilities'], dict):  # npm audit v7+
         tool = 'npm audit'
         out = from_npm_audit(data, lock or {})
+    elif isinstance(data, dict) and isinstance(data.get('advisories'), dict):  # pnpm audit --json (npm audit v6 shape)
+        tool = 'pnpm audit'
+        for a in data['advisories'].values():
+            ghsa = a.get('github_advisory_id') or (re.search(r'GHSA-[\w-]+', a.get('url') or '') or [None])[0]
+            for f in a.get('findings') or [{'version': None, 'paths': []}]:
+                via = sorted({'>'.join(x.split('>')[:2]) for x in f.get('paths') or [] if '>' in x})[:8]
+                out.append({'ecosystem': 'npm', 'package': a.get('module_name'), 'version': f.get('version'),
+                            'advisory': ghsa or str(a.get('id')), 'aliases': sorted(a.get('cves') or []),
+                            'fixed_in': fixed_from_range(a.get('vulnerable_versions') or ''),
+                            'summary': a.get('title') or '', 'severity': a.get('severity'),
+                            'range': a.get('vulnerable_versions') or '', 'via_paths': via})
     elif isinstance(data, dict) and 'results' in data:  # osv-scanner
         tool = 'osv-scanner'
         for res in data['results']:
@@ -260,7 +439,7 @@ def from_deps(path: Path, lock: dict[str, list[dict]] | None = None) -> tuple[li
                                 'summary': v.get('summary') or ' '.join((v.get('details') or '').split())[:300],
                                 'manifest': (res.get('source') or {}).get('path')})
     else:
-        raise ValueError('not pip-audit, npm audit (v7+) or osv-scanner JSON')
+        raise ValueError('not pip-audit, npm audit (v7+), pnpm audit or osv-scanner JSON')
     for d in out:
         d['sources'] = [{'tool': tool, 'advisory': d['advisory']}]
     return out, {'tool': tool, 'input': str(path), 'results': len(out)}
@@ -351,6 +530,8 @@ def main() -> int:
     ap.add_argument('--eslint', type=Path)
     ap.add_argument('--deps', nargs='*', type=Path, default=[])
     ap.add_argument('--npm-lock', type=Path, help='package-lock.json for npm audit input (default: <root>/package-lock.json)')
+    ap.add_argument('--pnpm-lock', type=Path, help='pnpm-lock.yaml for dev/via facts on npm advisories (default: <root>/pnpm-lock.yaml)')
+    ap.add_argument('--scanners', type=Path, help="run_scanners.py's scanners.json: tool versions replace the SARIF drivers' own")
     ap.add_argument('--out', type=Path)
     args = ap.parse_args()
     if hasattr(sys.stdout, 'reconfigure'):
@@ -358,6 +539,15 @@ def main() -> int:
     root = args.root.resolve()
     idx = tool_index()
     code, secrets, deps, tools, cred_files = [], [], [], [], []
+    set_aside: list[dict] = []
+    versions: dict[str, str] = {}
+    if args.scanners:
+        try:
+            versions = {t['name'].lower(): t['version'] for t in json.loads(args.scanners.read_text(encoding='utf-8')).get('tools', [])
+                        if t.get('version')}
+        except (OSError, ValueError) as exc:
+            print(f'Unable to read {args.scanners}: {exc}', file=sys.stderr)
+            return 2
     try:
         if args.patterns:
             c = from_patterns(args.patterns); code += c
@@ -382,10 +572,27 @@ def main() -> int:
             if hist.get('note'):
                 tools[-1]['history_note'] = hist['note']
             cred_files += data.get('credential_files', [])
+        tests = test_paths.Classifier(root)
         for path in args.sarif:
-            c, s = from_sarif(path, root, idx); code += c; secrets += s
+            c, s = from_sarif(path, root, idx)
+            for x in c + s:  # the version run_scanners.py recorded beats a SARIF driver's placeholder
+                for src in x['sources']:
+                    v = versions.get((src.get('tool') or '').lower().split()[0]) if src.get('tool') else None
+                    if v and v != src.get('version'):
+                        src['sarif_version'], src['version'] = src.get('version'), v
+            kept = []
+            for x in s:
+                why = secret_triage_hint(x, root, tests)
+                if why:
+                    set_aside.append({'tool': x['sources'][0]['tool'], 'rule': x['type'], 'file': x['file'], 'line': x['line'],
+                                      'reason': why})
+                else:
+                    kept.append(x)
+            code += c; secrets += kept
             names = sorted({x['sources'][0]['tool'] for x in c + s}) or [path.stem]
             tools.append({'tool': ', '.join(names), 'input': str(path), 'results': len(c) + len(s)})
+            if len(kept) < len(s):
+                tools[-1]['set_aside'] = len(s) - len(kept)
         if args.bandit:
             c = from_bandit(args.bandit, root, idx); code += c
             tools.append({'tool': 'bandit', 'input': str(args.bandit), 'results': len(c)})
@@ -394,10 +601,15 @@ def main() -> int:
             tools.append({'tool': 'eslint', 'input': str(args.eslint), 'results': len(c)})
         lock_path = args.npm_lock or (root / 'package-lock.json')
         lock = lock_packages(lock_path)
+        pnpm_path = args.pnpm_lock or (root / 'pnpm-lock.yaml')
+        pnpm = pnpm_packages(pnpm_path)
         for path in args.deps:
             d, info = from_deps(path, lock); deps += d; tools.append(info)
             if info['tool'] == 'npm audit':
                 info['lockfile'] = str(lock_path) if lock else None
+            if pnpm and info['tool'] in ('osv-scanner', 'pnpm audit'):
+                annotate_from_lock(d, pnpm)
+                info['pnpm_lockfile'] = str(pnpm_path)
     except (OSError, ValueError, KeyError) as exc:
         print(f'Unable to merge: {exc}', file=sys.stderr)
         return 2
@@ -411,6 +623,8 @@ def main() -> int:
         'dependencies': merge_deps(deps),
         # credential files and references to them (paths, not secrets): note them in the report, no triage needed
         'credential_files': cred_files,
+        # gitleaks hits scan_secrets.py's own rules call placeholders or test fixtures: listed, not triaged
+        'secrets_set_aside': {'count': len(set_aside), 'items': set_aside},
     }
     text = json.dumps(out, indent=2, ensure_ascii=False)
     if args.out:

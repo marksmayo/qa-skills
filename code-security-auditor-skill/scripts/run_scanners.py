@@ -24,8 +24,17 @@ With --osv-local-db <dir> (an osv-scanner offline database downloaded beforehand
 checks advisories without the network, also under --offline.
 
 Whatever runs, the pinned packages in lockfiles and requirements files are listed offline in
-dependencies.json, and scanners.json records dependency_advisories: assessed, partial (some
-ecosystem's lockfile no tool covered) or not_assessed (no advisory tool ran), for the report.
+dependencies.json, and scanners.json records dependency_advisories: assessed, partial (a lockfile
+no tool covered) or not_assessed (no advisory tool ran), for the report. Coverage is per lockfile:
+each tool record lists the lockfiles it `covers`, so npm audit on one nested package-lock.json does
+not count as checking a pnpm workspace's pnpm-lock.yaml. pnpm audit runs on each pnpm-lock.yaml
+when pnpm is installed (corepack or a global install); otherwise it is recorded as not_run with how
+to run it, and only osv-scanner can cover that lockfile.
+
+zizmor audits workflows and composite actions. Its online audits (impostor commits, known
+vulnerable actions, ref confusion) run when GH_TOKEN or GITHUB_TOKEN is set and --offline is not
+given (zizmor reads the token from the environment; it is never put on the command line);
+otherwise it runs with --offline and the record says which audits were skipped.
 
 Only free, open-source tools whose licences allow scanning closed-source code are used: Semgrep
 OSS with community rules, Bandit, gosec, Brakeman, ESLint security plugins, Psalm, gitleaks,
@@ -63,7 +72,10 @@ def inventory(root: Path) -> dict:
         'requirements': [n for n in names if re.search(r'(^|/)requirements[\w.-]*\.txt$', n)],
         'pyproject': 'pyproject.toml' in base,
         'package_lock': [n for n in names if n.endswith('package-lock.json')],
+        'pnpm_lock': [n for n in names if Path(n).name == 'pnpm-lock.yaml'],
         'other_js_locks': [n for n in names if n.endswith(('yarn.lock', 'pnpm-lock.yaml'))],
+        'gha': [n for n in names if (n.startswith('.github/workflows/') and n.endswith(('.yml', '.yaml'))) or
+                re.search(r'(^|/)action\.ya?ml$', n) and (n.startswith('.github/') or '/' not in n)],
         'lockfiles': [n for n in names if Path(n).name in {'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'poetry.lock',
                       'Pipfile.lock', 'go.mod', 'Gemfile.lock', 'composer.lock', 'Cargo.lock', 'pom.xml', 'build.gradle',
                       'gradle.lockfile', 'pubspec.lock', 'packages.lock.json'} or re.search(r'requirements[\w.-]*\.txt$', n)],
@@ -154,11 +166,25 @@ def dependency_inventory(root: Path, inv: dict) -> dict:
         packages += [{'ecosystem': e, 'name': a, 'version': b, 'dev': dev, 'file': n} for e, a, b, dev in uniq]
     return {'lockfiles': lockfiles, 'packages': packages}
 
+def covered_lockfiles(records: list[dict], deps: dict) -> set[str]:
+    """Lockfiles some advisory tool that ran actually read: osv-scanner reads them all; npm audit, pnpm audit and
+    pip-audit only the files in their record's `covers` (an older record without it covers its ecosystem)."""
+    ran = [r for r in records if r.get('area') == 'dependencies' and r.get('status') == 'ran']
+    files = {l['file'] for l in deps['lockfiles'] if l.get('ecosystem')}
+    if any(r['name'] == 'osv-scanner' for r in ran):
+        return files
+    out: set[str] = set()
+    for r in ran:
+        if r.get('covers') is not None:
+            out |= set(r['covers']) & files
+        else:
+            eco = {'pip-audit': 'PyPI', 'npm-audit': 'npm', 'pnpm-audit': 'npm'}.get(r['name'])
+            out |= {l['file'] for l in deps['lockfiles'] if l.get('ecosystem') == eco}
+    return out
+
 def advisory_status(records: list[dict], deps: dict) -> dict:
-    """assessed / partial / not_assessed, from which dependency tools ran and which ecosystems they cover."""
+    """assessed / partial / not_assessed, from which dependency tools ran and which lockfiles they read."""
     ran = [r['name'] for r in records if r.get('area') == 'dependencies' and r.get('status') == 'ran']
-    ecos = {l['ecosystem'] for l in deps['lockfiles'] if l.get('ecosystem')}
-    covered = set(ecos) if 'osv-scanner' in ran else ({'PyPI'} if 'pip-audit' in ran else set()) | ({'npm'} if 'npm-audit' in ran else set())
     if not deps['lockfiles']:
         return {'status': 'assessed' if ran else 'not_assessed', 'tools': ran,
                 'reason': None if ran else 'no lockfile or pinned requirements file was found'}
@@ -166,9 +192,12 @@ def advisory_status(records: list[dict], deps: dict) -> dict:
         why = [f"{r['name']}: {r.get('reason')}" for r in records if r.get('area') == 'dependencies' and r.get('status') != 'not_applicable']
         return {'status': 'not_assessed', 'tools': [], 'reason': 'no dependency advisory tool ran (' + '; '.join(why) + '); '
                 f"{sum(l.get('packages') or 0 for l in deps['lockfiles'])} pinned package(s) listed offline in dependencies.json"}
-    missing = sorted(ecos - covered)
+    covered = covered_lockfiles(records, deps)
+    missing = sorted({l['file'] for l in deps['lockfiles'] if l.get('ecosystem')} - covered)
     if missing:
-        return {'status': 'partial', 'tools': ran, 'reason': f"no tool covered the {', '.join(missing)} lockfile(s)"}
+        ecos = sorted({l['ecosystem'] for l in deps['lockfiles'] if l['file'] in missing})
+        return {'status': 'partial', 'tools': ran, 'reason': f"no tool covered the {', '.join(ecos)} lockfile(s) "
+                f"{', '.join(missing[:5])}" + (f' and {len(missing) - 5} more' if len(missing) > 5 else '')}
     return {'status': 'assessed', 'tools': ran, 'reason': None}
 
 def eslint_security_plugin(root: Path) -> bool:
@@ -192,14 +221,15 @@ def tool_env() -> dict:
     env.update({'PYTHONUTF8': '1', 'PYTHONIOENCODING': 'utf-8', 'SEMGREP_SEND_METRICS': 'off', 'NO_COLOR': '1'})
     return env
 
-def plan(root: Path, out: Path, inv: dict, semgrep_configs: list[str], osv_local_db: Path | None = None) -> list[dict]:
+def plan(root: Path, out: Path, inv: dict, semgrep_configs: list[str], osv_local_db: Path | None = None,
+         online_ci: bool = False) -> list[dict]:
     """One entry per tool: {name, area, network, applies (reason if not), exe, runs: [{cmd, cwd, output, stdout_to}]}."""
     L = inv['langs']
     src = sum(L.values()) > 0
     tools = []
-    def add(name, area, exe, applies, runs, network=False, not_run=None, note=None):
+    def add(name, area, exe, applies, runs, network=False, not_run=None, note=None, covers=None):
         tools.append({'name': name, 'area': area, 'exe': exe, 'applies': applies, 'runs': runs, 'network': network,
-                      'not_run': not_run, 'note': note})
+                      'not_run': not_run, 'note': note, 'covers': covers})
     cfg = [a for c in semgrep_configs for a in ('--config', c)]
     add('semgrep', 'sast', 'semgrep', True if src else 'no source files',
         [{'cmd': ['semgrep', 'scan', *cfg, '--metrics=off', '--disable-version-check', '--sarif', '--output', str(out / 'semgrep.sarif'), '--quiet', str(root)],
@@ -240,23 +270,37 @@ def plan(root: Path, out: Path, inv: dict, semgrep_configs: list[str], osv_local
         osv_runs = [{'cmd': ['osv-scanner', 'scan', 'source', '-r', '--format', 'json', '--output', str(out / 'osv.json'), str(root)], 'output': 'osv.json',
                      'fallback': ['osv-scanner', '--format', 'json', '--output', str(out / 'osv.json'), '-r', str(root)], 'ok_codes': [0, 1]}]
     add('osv-scanner', 'dependencies', 'osv-scanner', True if inv['lockfiles'] else 'no lockfile or manifest', osv_runs,
-        network=not osv_local_db, note=f'offline, local advisory database {osv_local_db}' if osv_local_db else None)
+        network=not osv_local_db, note=f'offline, local advisory database {osv_local_db}' if osv_local_db else None,
+        covers=list(inv['lockfiles']))
     pip_runs = [{'cmd': ['pip-audit', '-r', str(root / r), '-f', 'json', '-o', str(out / f"pip-audit{'' if i == 0 else '-' + str(i)}.json"),
                          '--progress-spinner', 'off'], 'output': f"pip-audit{'' if i == 0 else '-' + str(i)}.json", 'ok_codes': [0, 1]}
                 for i, r in enumerate(inv['requirements'])]
     if not pip_runs and inv['pyproject']:
         pip_runs = [{'cmd': ['pip-audit', str(root), '-f', 'json', '-o', str(out / 'pip-audit.json'), '--progress-spinner', 'off'],
                      'output': 'pip-audit.json', 'ok_codes': [0, 1]}]
-    add('pip-audit', 'dependencies', 'pip-audit', True if pip_runs else 'no requirements files or pyproject.toml', pip_runs, network=True)
+    add('pip-audit', 'dependencies', 'pip-audit', True if pip_runs else 'no requirements files or pyproject.toml', pip_runs, network=True,
+        covers=list(inv['requirements']) or (['pyproject.toml'] if inv['pyproject'] else []))
     npm_runs = [{'cmd': ['npm', 'audit', '--json'], 'cwd': str(root / Path(lock).parent), 'stdout_to': f"npm-audit{'' if i == 0 else '-' + str(i)}.json",
                  'output': f"npm-audit{'' if i == 0 else '-' + str(i)}.json", 'ok_codes': [0, 1], 'timeout_key': 'npm_audit'}
                 for i, lock in enumerate(inv['package_lock'])]
-    add('npm-audit', 'dependencies', 'npm', True if npm_runs else ('yarn/pnpm lockfile only: use osv-scanner, or pnpm audit / yarn npm audit'
-        if inv['other_js_locks'] else 'no package-lock.json'), npm_runs, network=True)
-    workflows = [n for n in inv['files'] if n.startswith('.github/workflows/') and n.endswith(('.yml', '.yaml'))]
-    add('zizmor', 'ci', 'zizmor', True if workflows else 'no GitHub Actions workflows',
-        [{'cmd': ['zizmor', '--format', 'sarif', '--offline', str(root)], 'cwd': str(root), 'stdout_to': 'zizmor.sarif',
-          'output': 'zizmor.sarif', 'ok_codes': [0, 10, 11, 12, 13, 14]}])
+    other = [l for l in inv['other_js_locks']]
+    add('npm-audit', 'dependencies', 'npm', True if npm_runs else ('yarn/pnpm lockfile only: see pnpm-audit, or use osv-scanner'
+        if inv['other_js_locks'] else 'no package-lock.json'), npm_runs, network=True, covers=list(inv['package_lock']),
+        note=(f"reads only {', '.join(inv['package_lock'][:3])}; it does not check {', '.join(other[:3])}" if npm_runs and other else None))
+    pnpm_runs = [{'cmd': ['pnpm', 'audit', '--json'], 'cwd': str(root / Path(lock).parent), 'stdout_to': f"pnpm-audit{'' if i == 0 else '-' + str(i)}.json",
+                  'output': f"pnpm-audit{'' if i == 0 else '-' + str(i)}.json", 'ok_codes': [0, 1], 'timeout_key': 'npm_audit'}
+                 for i, lock in enumerate(inv['pnpm_lock'])]
+    add('pnpm-audit', 'dependencies', 'pnpm', True if pnpm_runs else 'no pnpm-lock.yaml', pnpm_runs, network=True,
+        covers=list(inv['pnpm_lock']))
+    token = bool(os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN'))
+    online = online_ci and token
+    skipped = 'online audits (impostor-commit, known-vulnerable-actions, ref-confusion) skipped'
+    zizmor_note = ('online audits on (the token comes from GH_TOKEN/GITHUB_TOKEN in the environment)' if online else
+                   f'--offline: {skipped}' if not online_ci else f'{skipped}: GH_TOKEN/GITHUB_TOKEN is not set')
+    add('zizmor', 'ci', 'zizmor', True if inv['gha'] else 'no GitHub Actions workflows or composite actions',
+        [{'cmd': ['zizmor', '--format', 'sarif', *([] if online else ['--offline']), str(root)], 'cwd': str(root),
+          'stdout_to': 'zizmor.sarif', 'output': 'zizmor.sarif', 'ok_codes': [0, 10, 11, 12, 13, 14]}], network=online,
+        note=zizmor_note)
     add('trivy', 'iac_containers', 'trivy', True,
         [{'cmd': ['trivy', 'fs', '--scanners', 'vuln,misconfig,secret', '--format', 'sarif', '--output', str(out / 'trivy.sarif'),
                   '--quiet', str(root)], 'output': 'trivy.sarif'}], network=True)
@@ -300,6 +344,8 @@ def count_results(path: Path) -> int | None:
         return sum(len(x.get('vulns') or []) for x in d['dependencies'])
     if isinstance(d, dict) and isinstance(d.get('vulnerabilities'), dict):  # npm audit
         return sum(1 for v in d['vulnerabilities'].values() for via in v.get('via') or [] if isinstance(via, dict))
+    if isinstance(d, dict) and isinstance(d.get('advisories'), dict):  # pnpm audit (npm audit v6 format)
+        return len(d['advisories'])
     if isinstance(d, dict) and isinstance(d.get('results'), list):  # osv-scanner
         return sum(len(p.get('vulnerabilities') or []) for r in d['results'] for p in r.get('packages') or [])
     return None
@@ -307,6 +353,8 @@ def count_results(path: Path) -> int | None:
 def run_tool(t: dict, out: Path, timeout: int, timeouts: dict | None = None) -> dict:
     rec = {'name': t['name'], 'area': t['area'], 'network': t['network'], 'status': None, 'version': None,
            'commands': [], 'outputs': [], 'reason': None, 'elapsed_s': None, 'results': None}
+    if t.get('covers') is not None:
+        rec['covers'] = t['covers']
     t0 = time.monotonic()
     if t.get('note'):
         rec['note'] = t['note']
@@ -386,7 +434,8 @@ def main() -> int:
     if args.path_prepend:
         os.environ['PATH'] = os.pathsep.join([str(Path(p).resolve()) for p in args.path_prepend] + [os.environ.get('PATH', '')])
     inv = inventory(root)
-    tools = plan(root, out, inv, args.semgrep_config, args.osv_local_db.resolve() if args.osv_local_db else None)
+    tools = plan(root, out, inv, args.semgrep_config, args.osv_local_db.resolve() if args.osv_local_db else None,
+                 online_ci=not args.offline)
     only = set(args.only.split(',')) if args.only else None
     skip = set(args.skip.split(',')) if args.skip else set()
     if not args.dry_run:
@@ -403,6 +452,11 @@ def main() -> int:
             installed = not t['exe'] or shutil.which(t['exe']) or Path(t['exe']).exists()
             reason = '--offline: this tool needs the network' if installed else f"{t['exe']} is not installed, and --offline: it also needs the network"
             records.append({'name': t['name'], 'area': t['area'], 'status': 'not_run', 'reason': reason}); continue
+        if t['name'] == 'pnpm-audit' and not shutil.which('pnpm'):
+            records.append({'name': t['name'], 'area': t['area'], 'status': 'not_run', 'covers': t['covers'],
+                            'reason': 'pnpm is not installed: enable it with corepack (corepack enable) or run '
+                                      '"npx -y pnpm@<the version in packageManager> audit --json" next to each pnpm-lock.yaml; '
+                                      'until then only osv-scanner covers those lockfiles'}); continue
         if args.dry_run:
             exe = shutil.which(t['exe']) if t['exe'] else None
             records.append({'name': t['name'], 'area': t['area'], 'status': 'planned' if exe else 'not_run',

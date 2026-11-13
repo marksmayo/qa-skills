@@ -1,0 +1,10 @@
+{
+  "name": "quill-e2e",
+  "private": true,
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "2.1.8"
+  }
+}

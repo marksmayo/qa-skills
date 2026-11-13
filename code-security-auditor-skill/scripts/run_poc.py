@@ -30,10 +30,29 @@ Safety (checked before anything is sent, and again by the validator):
   - a marker must not appear in the request itself, unless the proof is that input is reflected
     unescaped (set "reflection_is_the_bug": true);
   - at most 30 requests, 10 s timeout each.
+
+Local command PoCs (a CLI, a library or an MCP stdio server with no network listener):
+
+    python run_poc.py poc.json --workdir <copy outside the repo> --repo <repo> --permission "<...>" --out evidence/F-2.json
+
+    {"finding": "F-2", "kind": "command",
+     "files": {"proj/tool.config.json": "{\\"hook\\": \\"echo CANARY-$((7*191))\\"}"},
+     "steps": [{"name": "run", "argv": ["node", "{workdir}/app/dist/cli.js", "check"], "cwd": "proj", "stdin": null}],
+     "proof": {"type": "marker_in_output", "step": "run", "marker": "CANARY-1337"}}
+
+  Steps run with an argument list (never a shell string, and never `sh -c`/`cmd /c`), in the
+  --workdir copy, which must be outside the repository; `files` are written inside it first (the
+  attacker-controlled config, input file or fixture). HOME, USERPROFILE, TMP and XDG folders point
+  inside the copy, HTTP(S)_PROXY points at a closed loopback port so stray network calls fail, and
+  each step has a 60 s timeout (at most 10 steps). The same canary rules apply to argv, stdin, env
+  values and file contents. Proof types: marker_in_output {step, marker} (stdout or stderr),
+  exit_code {step, code}, file_created {path} (a canary file the payload creates inside the copy).
+  A failing regression test is a command PoC too: run the test runner on the copy and prove the
+  failure with exit_code and a marker from the assertion message.
 Exit codes: 0 confirmed, 1 not confirmed, 2 refused or invalid.
 """
 from __future__ import annotations
-import argparse, http.cookiejar, ipaddress, json, os, re, sys, time, urllib.error, urllib.parse, urllib.request
+import argparse, http.cookiejar, ipaddress, json, os, re, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -74,8 +93,64 @@ def is_loopback(host: str) -> bool:
     except ValueError:
         return False
 
+MAX_COMMAND_STEPS = 10
+SHELLS = re.compile(r'(?i)(^|[\\/])(sh|bash|zsh|dash|ksh|fish|cmd|cmd\.exe|powershell|powershell\.exe|pwsh|pwsh\.exe)$')
+COMMAND_PROOFS = ('marker_in_output', 'exit_code', 'file_created')
+
+def lint_command(poc: dict) -> list[str]:
+    """Safety problems in a local command PoC; empty means it may run."""
+    issues = []
+    steps = poc.get('steps') or []
+    if not steps:
+        issues.append('no steps')
+    if len(steps) > MAX_COMMAND_STEPS:
+        issues.append(f'{len(steps)} steps: at most {MAX_COMMAND_STEPS} commands are allowed')
+    for s in steps:
+        argv = s.get('argv')
+        if not isinstance(argv, list) or not argv or not all(isinstance(a, str) for a in argv):
+            issues.append(f"step {s.get('name')!r}: argv must be a non-empty list of strings (no shell command line)")
+            continue
+        if SHELLS.search(argv[0]):
+            issues.append(f"step {s.get('name')!r} runs a shell ({argv[0]}): call the program directly with an argument list")
+        cwd = s.get('cwd') or ''
+        if Path(cwd).is_absolute() or '..' in Path(cwd).parts:
+            issues.append(f"step {s.get('name')!r}: cwd must be a relative path inside the working copy")
+    for rel in (poc.get('files') or {}):
+        if Path(rel).is_absolute() or '..' in Path(rel).parts:
+            issues.append(f'file {rel!r} must be a relative path inside the working copy')
+    payload = list(walk_strings([{k: v for k, v in s.items() if k != 'name'} for s in steps])) + \
+        list(walk_strings(poc.get('files') or {}, '$.files'))
+    for where, text in payload:
+        for label, rx in BANNED:
+            if label == 'code-execution primitive' and where.endswith(('.argv[0]', '.argv[1]')):
+                continue  # the program under test may itself be a runtime (node, python) given a script path
+            if re.search(rx, text):
+                issues.append(f'{label} in {where}: {text[:80]!r}')
+        for url in re.findall(r'(?i)\b(?:https?|ftp|gopher|file|dict)://([^/\s"\'?#]+)', text):
+            host = url.rsplit('@', 1)[-1].split(':')[0].strip('[]')
+            if host and not SAFE_HOST.match(host) and not is_loopback(host):
+                issues.append(f'URL to a non-test host in {where}: {host}')
+    proof = poc.get('proof') or {}
+    ptype = proof.get('type')
+    names = {s.get('name') for s in steps}
+    if ptype not in COMMAND_PROOFS:
+        issues.append(f'unknown proof type {ptype!r} for a command PoC (one of {", ".join(COMMAND_PROOFS)})')
+    if ptype in ('marker_in_output', 'exit_code') and proof.get('step') not in names:
+        issues.append(f"proof step {proof.get('step')!r} is not a step name")
+    if ptype == 'file_created' and (not proof.get('path') or Path(proof['path']).is_absolute() or '..' in Path(proof['path']).parts):
+        issues.append('file_created needs a relative path inside the working copy')
+    marker = proof.get('marker')
+    if ptype == 'marker_in_output' and (not marker or len(str(marker)) < 3):
+        issues.append('proof needs a marker of at least 3 characters')
+    if marker and not proof.get('reflection_is_the_bug') and any(str(marker) in t for _, t in payload):
+        issues.append('the marker appears in the input itself, so finding it in the output proves nothing '
+                      '(use a computed marker such as $((7*191)) -> 1337, or set reflection_is_the_bug)')
+    return issues
+
 def lint(poc: dict, target: str | None, allow_hosts: list[str]) -> list[str]:
     """Return a list of safety problems; empty means the PoC may be sent."""
+    if poc.get('kind') == 'command':
+        return lint_command(poc)
     issues = []
     steps = poc.get('steps') or []
     if not steps:
@@ -204,10 +279,86 @@ def evaluate(proof: dict, results: dict) -> tuple[bool, str]:
         return ok, f"status {r['response']['status'] if r else None} (expected {proof['status']})"
     return False, 'unknown proof type'
 
+def inside(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except ValueError:
+        return False
+
+def run_command_poc(poc: dict, workdir: Path, permission: str, poc_file: Path) -> dict:
+    """Run a linted command PoC in the working copy and return the evidence (secrets and env values scrubbed)."""
+    workdir = workdir.resolve()
+    for rel, content in (poc.get('files') or {}).items():
+        dest = workdir / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(content, encoding='utf-8')
+    home = workdir / '.poc-home'
+    for sub in ('', 'tmp', 'config', 'cache', 'data'):
+        (home / sub).mkdir(parents=True, exist_ok=True)
+    used_env: dict = {}
+    sub = lambda v: substitute(v.replace('{workdir}', str(workdir)), '', used_env) if isinstance(v, str) else v  # noqa: E731
+    base_env = {k: v for k, v in os.environ.items() if k.upper() in ('PATH', 'SYSTEMROOT', 'COMSPEC', 'PATHEXT', 'WINDIR', 'LANG', 'TERM')}
+    base_env.update({'HOME': str(home), 'USERPROFILE': str(home), 'TMP': str(home / 'tmp'), 'TEMP': str(home / 'tmp'),
+                     'TMPDIR': str(home / 'tmp'), 'XDG_CONFIG_HOME': str(home / 'config'), 'XDG_CACHE_HOME': str(home / 'cache'),
+                     'XDG_DATA_HOME': str(home / 'data'), 'APPDATA': str(home / 'config'), 'LOCALAPPDATA': str(home / 'data'),
+                     'HTTP_PROXY': 'http://127.0.0.1:9', 'HTTPS_PROXY': 'http://127.0.0.1:9', 'http_proxy': 'http://127.0.0.1:9',
+                     'https_proxy': 'http://127.0.0.1:9', 'NO_PROXY': '', 'CI': '1', 'NO_COLOR': '1'})
+    started = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    records, outputs, error = [], {}, None
+    for s in poc['steps']:
+        argv = [sub(a) for a in s['argv']]
+        env = {**base_env, **{k: sub(v) for k, v in (s.get('env') or {}).items()}}  # {env:NAME} values are scrubbed below
+        cwd = workdir / (s.get('cwd') or '.')
+        t0 = time.monotonic()
+        try:
+            p = subprocess.run(argv, cwd=str(cwd), env=env, input=sub(s.get('stdin')) if s.get('stdin') is not None else None,
+                               capture_output=True, text=True, timeout=60, encoding='utf-8', errors='replace')
+            code, out, err = p.returncode, p.stdout or '', p.stderr or ''
+        except subprocess.TimeoutExpired:
+            error = f"step {s.get('name')!r}: timed out after 60s"
+            break
+        except OSError as exc:
+            error = f"step {s.get('name')!r}: {exc}"
+            break
+        outputs[s.get('name')] = (code, out + '\n' + err)
+        shown = lambda t: scrub(t.replace(str(workdir), '{workdir}'), used_env)  # noqa: E731
+        records.append({'name': s.get('name'), 'argv': [shown(a) for a in argv], 'cwd': s.get('cwd') or '.',
+                        'stdin': shown(s['stdin'])[:2000] if s.get('stdin') else None, 'exit_code': code,
+                        'stdout_excerpt': shown(out[-1500:]), 'stderr_excerpt': shown(err[-1500:]),
+                        'elapsed_ms': int((time.monotonic() - t0) * 1000)})
+    proof = poc['proof']
+    if error:
+        passed, observed = False, error
+    elif proof['type'] == 'marker_in_output':
+        got = outputs.get(proof['step'])
+        passed = bool(got) and str(proof['marker']) in got[1]
+        observed = f"marker {'found' if passed else 'not found'} in the output of {proof['step']!r}"
+    elif proof['type'] == 'exit_code':
+        got = outputs.get(proof['step'])
+        passed = bool(got) and got[0] == proof.get('code')
+        observed = f"exit code {got[0] if got else None} (expected {proof.get('code')})"
+    else:
+        passed = (workdir / proof['path']).exists()
+        observed = f"{proof['path']} {'was' if passed else 'was not'} created"
+    return {
+        'tool': 'run_poc', 'version': VERSION, 'kind': 'command', 'finding': poc.get('finding'), 'poc_file': str(poc_file),
+        'target': f'local copy {workdir}', 'workdir': str(workdir), 'permission': permission,
+        'started_at': started, 'finished_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+        'safety': {'checked': True, 'issues': [], 'isolation': 'argument lists only, HOME/TMP inside the copy, '
+                   'HTTP(S)_PROXY to a closed loopback port'},
+        'files_written': sorted(poc.get('files') or {}),
+        'steps': records,
+        'proof': {**proof, 'passed': passed, 'observed': observed},
+        'result': 'confirmed' if passed else 'not_confirmed',
+    }
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('poc', type=Path)
     ap.add_argument('--target', help='base URL of the local or test instance')
+    ap.add_argument('--workdir', type=Path, help='command PoCs: the working copy to run in (outside the repository)')
+    ap.add_argument('--repo', type=Path, help='command PoCs: the repository, so a working copy inside it is refused')
     ap.add_argument('--permission', help="what the user said when allowing verification (recorded in the evidence)")
     ap.add_argument('--allow-host', nargs='*', default=[], help='non-loopback test hosts the user named')
     ap.add_argument('--out', type=Path)
@@ -224,6 +375,25 @@ def main() -> int:
     if args.check:
         print('\n'.join(f'REFUSED: {i}' for i in issues) or 'payloads pass the safety checks')
         return 2 if issues else 0
+    if poc.get('kind') == 'command':
+        if not args.workdir or not args.repo or not args.permission or not args.out:
+            print('--workdir, --repo, --permission and --out are required to run a command PoC', file=sys.stderr)
+            return 2
+        if not args.workdir.is_dir():
+            issues.append(f'--workdir {args.workdir} is not a directory')
+        elif inside(args.workdir, args.repo) or inside(args.repo, args.workdir):
+            issues.append('--workdir must be a copy outside the repository (and must not contain it)')
+        if inside(args.out, args.repo):
+            issues.append('--out must be outside the repository')
+        if issues:
+            for i in issues:
+                print(f'REFUSED: {i}', file=sys.stderr)
+            return 2
+        evidence = run_command_poc(poc, args.workdir, args.permission, args.poc)
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(json.dumps(evidence, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+        print(f"{evidence['result']}: {evidence['proof']['observed']} -> {args.out}")
+        return 0 if evidence['result'] == 'confirmed' else 1
     if not args.target or not args.permission or not args.out:
         print('--target, --permission and --out are required to send requests', file=sys.stderr)
         return 2

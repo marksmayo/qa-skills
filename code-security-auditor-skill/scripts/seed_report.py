@@ -48,15 +48,35 @@ def git_commit(repo: Path | None) -> str | None:
     except (OSError, subprocess.TimeoutExpired):
         return None
 
+def exposure_of(e: dict) -> str:
+    """local: the attacker supplies a file, argument, stdin, environment or config (a CLI, a stdio MCP server, a
+    loopback listener); internal: reached through a platform (queues, timers); internet otherwise. A listener or
+    HTTP MCP endpoint whose bind host recon could not read stays internet until the agent reads it."""
+    if e['kind'] in ('cli', 'config_input', 'file_parser'):
+        return 'local'
+    if e['kind'] == 'mcp_tool' and e.get('transport') == 'stdio':
+        return 'local'
+    if e['kind'] in ('listener', 'mcp_tool'):
+        return 'local' if e.get('bind') == 'loopback' else 'internet'
+    return 'internal' if e['kind'] in ('queue_consumer', 'other') else 'internet'
+
 def entry_point(e: dict) -> dict:
-    # a CLI runs locally; queue, blob and timer triggers are reached through the platform, not by a request
-    exposure = 'local' if e['kind'] == 'cli' else 'internal' if e['kind'] in ('queue_consumer', 'other') else 'internet'
     out = {'id': e['id'], 'kind': e['kind'], 'method': e['method'], 'path': e['path'], 'handler': e['handler'],
-           'auth': e['auth'], 'exposure': exposure, 'reviewed': False}
+           'auth': e['auth'], 'exposure': exposure_of(e), 'reviewed': False}
     if e.get('auth_evidence'):
         out['auth_evidence'] = e['auth_evidence']
+    notes = []
     if e.get('also_in'):
-        out['note'] = f"the same inline script is in {e['also_in']} more page(s)"
+        notes.append(f"the same inline script is in {e['also_in']} more page(s)")
+    if e.get('transport'):
+        notes.append(f"MCP transport {e['transport']}" + (f", bind {e['bind']}" if e.get('bind') else ''))
+    elif e.get('bind'):
+        notes.append(f"bind {e['bind']}")
+    if e.get('example'):
+        out['example'] = True
+        notes.append('example or fixture code (not part of the shipped product unless it is deployed)')
+    if notes:
+        out['note'] = '; '.join(notes)
     return out
 
 def tool_rows(scanners: dict | None, cands: dict, recon: dict) -> list[dict]:
@@ -134,7 +154,7 @@ def seed(recon: dict, cands: dict, scanners: dict | None, repo: Path | None) -> 
     not_ran = [t['name'] for t in tools if t['status'] in ('not_run', 'errored')]
     stores = list(OrderedDict((f"{s['kind']} ({s['file']}:{s['line']})", None) for s in recon.get('data_stores') or []))
     d = {
-        'schema_version': '1.2',
+        'schema_version': '1.3',
         'skill': {'name': 'code-security-auditor', 'version': skill_version()},
         'sensitive': True,
         'notice': NOTICE,

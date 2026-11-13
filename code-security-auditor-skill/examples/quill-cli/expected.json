@@ -1,0 +1,35 @@
+{
+  "about": "What scripts/self_test.py expects the built-in scanners to report on this fixture (all packs). Pattern hits must match exactly; the entry points must be present with these values and the count must match; workflows must list exactly these triggers.",
+  "patterns": [
+    [".github/actions/setup/action.yml", 25, "GHA-ACTION-INPUT-IN-RUN"],
+    ["packages/e2e/src/callback.ts", 15, "JS-OAUTH-STATE"],
+    ["packages/e2e/src/cli.ts", 12, "JS-CMD-SHELL-OPTION"],
+    ["packages/e2e/src/cli.ts", 12, "JS-CMD-VAR"],
+    ["packages/e2e/src/mcp.ts", 19, "JS-CMD-VAR"]
+  ],
+  "entry_points": [
+    {"kind": "cli", "method": "BIN", "path": "quill -> ./dist/cli.js", "handler": "packages/e2e/package.json:7"},
+    {"kind": "cli", "method": "COMMAND", "path": "init", "handler": "packages/e2e/src/cli.ts:8"},
+    {"kind": "cli", "method": "COMMAND", "path": "mcp", "handler": "packages/e2e/src/cli.ts:16"},
+    {"kind": "config_input", "method": "CONFIG", "handler": "packages/e2e/src/config.ts:13"},
+    {"kind": "mcp_tool", "method": "TOOL", "path": "read_note", "handler": "packages/e2e/src/mcp.ts:9", "transport": "stdio"},
+    {"kind": "listener", "method": "LISTEN", "handler": "packages/e2e/src/callback.ts:13", "bind": "loopback"},
+    {"kind": "listener", "method": "LISTEN", "handler": "packages/e2e/src/preview.ts:6", "bind": "all"},
+    {"kind": "ci_workflow", "method": "pull_request_target", "handler": ".github/workflows/label.yml:5", "auth": "public"},
+    {"kind": "ci_workflow", "method": "push", "handler": ".github/workflows/release.yml:3"},
+    {"kind": "ci_workflow", "method": "workflow_dispatch", "handler": ".github/workflows/release.yml:3"}
+  ],
+  "entry_point_count": 12,
+  "no_entry_points_in": ["apps/e2e/cli.spec.ts", "packages/e2e/src/ui.ts"],
+  "workflows": {
+    ".github/workflows/label.yml": {"triggers": ["pull_request_target"]},
+    ".github/workflows/release.yml": {"triggers": ["push", "workflow_dispatch"]},
+    ".github/actions/setup/action.yml": {"system": "github_actions_composite", "inputs_in_run": ["label"]}
+  },
+  "frameworks": ["MCP server", "Next.js (examples only: examples)", "commander"],
+  "lead_mentions": ["agent.ts", "action.yml expands input(s) label"],
+  "secrets": [],
+  "credential_files": [],
+  "pnpm_dev_only": ["tinyglob", "typescript", "vitest"],
+  "pnpm_prod": ["@modelcontextprotocol/sdk", "commander", "zod"]
+}

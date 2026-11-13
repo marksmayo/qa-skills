@@ -45,9 +45,16 @@ def primary(f: dict) -> dict:
     return next((l for l in f['locations'] if l['role'] in ('sink', 'config')), f['locations'][0])
 
 def reason_group(reason: str) -> str:
-    """A short key for grouping dismissals: the reason up to its first clause, without file:line references."""
+    """A short key for grouping dismissals: the reason up to its first clause, without file:line references.
+
+    A reason that opens with a file reference is grouped on what follows it, and a colon only ends the clause when
+    at least three words come before it ("secure: false is a form-field option" stays whole)."""
     text = re.sub(r'[\w./-]+\.\w+(:\d+)?', '<file>', reason)
-    head = re.split(r'\.\s|;|:\s|\(| - ', text, maxsplit=1)[0]
+    text = re.sub(r'^(?:<file>[\s,:;-]*)+', '', text)
+    head = re.split(r'\.\s|;|\(| - ', text, maxsplit=1)[0]
+    before, colon, _ = head.partition(': ')
+    if colon and len(before.split()) >= 3:
+        head = before
     return ' '.join(head.split())[:90] or reason[:90]
 
 def to_sarif(d: dict) -> dict:

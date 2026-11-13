@@ -156,6 +156,126 @@ def ferry(root: Path) -> None:
     check(any(n.endswith('.bicep') for n in inv['iac']) and any('pipelines/' in n for n in inv['iac']),
           'Checkov applies to Bicep and Azure Pipelines files')
 
+def quill(root: Path) -> None:
+    """The Node CLI, MCP server and GitHub Actions fixture (a pnpm workspace whose product package is named e2e)."""
+    want = json.loads((root / 'expected.json').read_text(encoding='utf-8'))
+    print('scan_pitfalls (all packs) on quill-cli')
+    got = {(c['file'], c['line'], c['pitfall_id']) for c in scan_pitfalls.scan(root, scan_pitfalls.load_catalogue())['candidates']}
+    exp = {tuple(x) for x in want['patterns']}
+    for x in sorted(exp - got):
+        check(False, f'missed {x[2]} at {x[0]}:{x[1]}')
+    for x in sorted(got - exp):
+        check(False, f'unexpected {x[2]} at {x[0]}:{x[1]}')
+    check(got == exp, f'{len(exp)} planted patterns in packages/e2e (a product package) and the composite action; nothing in '
+                      'apps/e2e (a test workspace), ui.ts (safe forms), env: indirection or regex .exec()')
+    print('recon on quill-cli')
+    d = run_recon(root)
+    eps = d['entry_points']
+    for e in want['entry_points']:
+        hit = [x for x in eps if all(x.get(k) == v for k, v in e.items())]
+        check(bool(hit), f"{e['kind']} {e['method']} {e.get('path', '')} at {e['handler']}"
+                         + ''.join(f', {k} {e[k]}' for k in ('transport', 'bind', 'auth') if k in e)
+                         + ('' if hit else f" (got {[(x['kind'], x['path'], x.get('bind')) for x in eps if x['handler'] == e['handler']]})"))
+    check(len(eps) == want['entry_point_count'], f"{want['entry_point_count']} entry points ({len(eps)})")
+    bad = [x['handler'] for x in eps if x['handler'].split(':')[0] in want['no_entry_points_in']]
+    check(not bad, f'nothing from the test workspace or a WebSocket listener ({bad})')
+    wf = {w['file']: w for w in d['ci_workflows']}
+    for f, facts in want['workflows'].items():
+        w = wf.get(f) or {}
+        check(all(w.get(k) == v for k, v in facts.items()), f'{f}: {facts} (permissions keys and job names are not triggers)'
+              + ('' if all(w.get(k) == v for k, v in facts.items()) else f' got {w}'))
+    check(d['frameworks'] == want['frameworks'], f"frameworks labelled ({d['frameworks']})")
+    leads = ' '.join(l['why'] for l in d['review_leads'])
+    check(all(m in leads for m in want['lead_mentions']), 'agent permission handler and composite-action input are review leads')
+    print('scan_secrets on quill-cli')
+    found, creds = scan_secrets.scan_tree(root)
+    check([(s['file'], s['line']) for s in found] == want['secrets'] and creds == want['credential_files'],
+          f'no URL route as a credential file, no bare private-key header as a key ({[(s["file"], s["line"]) for s in found]}, {creds})')
+    print('pnpm-lock.yaml facts')
+    pk = merge_findings.pnpm_packages(root / 'pnpm-lock.yaml')
+    dev = sorted(n for n, cs in pk.items() if all(c['dev'] for c in cs))
+    check(dev == want['pnpm_dev_only'] and sorted(n for n in pk if n not in dev) == want['pnpm_prod'],
+          f'dev-only packages from importers devDependencies ({dev})')
+    check(pk['vitest'][0]['required_by'] == ['apps/e2e>vitest', 'packages/e2e>vitest'], 'via names importer>direct dependency')
+
+def node_and_ci_rules() -> None:
+    print('recon, run_scanners and merge helpers (CI, lockfiles, gitleaks)')
+    import recon  # noqa: E402
+    import run_scanners  # noqa: E402
+    import test_paths  # noqa: E402
+    wf = 'on:\n  push:\n    branches: [main]\n  issues:\n    types: [opened]\npermissions:\n  issues: write\njobs:\n  release:\n    runs-on: x\n'
+    check([t for t, _ in recon.gha_triggers(wf)] == ['push', 'issues'], 'triggers only from the on: block')
+    check([t for t, _ in recon.gha_triggers('on: [push, pull_request]\njobs:\n  release: {}\n')] == ['push', 'pull_request'],
+          'inline on: list')
+    with tempfile.TemporaryDirectory() as tmp:
+        t = Path(tmp)
+        (t / 'packages' / 'e2e').mkdir(parents=True)
+        (t / 'packages' / 'e2e' / 'package.json').write_text('{"name": "x", "bin": {"x": "cli.js"}}', encoding='utf-8')
+        (t / 'apps' / 'e2e').mkdir(parents=True)
+        (t / 'apps' / 'e2e' / 'package.json').write_text('{"name": "x-e2e", "private": true}', encoding='utf-8')
+        c = test_paths.Classifier(t)
+        check(not c.is_test('packages/e2e/src/cli.ts') and c.is_test('apps/e2e/login.ts') and c.is_test('tests/a.py')
+              and c.is_test('packages/e2e/src/cli.test.ts'), 'a package named e2e is product code; a private e2e workspace is tests')
+    deps = {'lockfiles': [{'file': 'pnpm-lock.yaml', 'ecosystem': 'npm', 'packages': 900},
+                          {'file': '.github/actions/x/package-lock.json', 'ecosystem': 'npm', 'packages': 55}], 'packages': []}
+    adv = run_scanners.advisory_status([{'name': 'npm-audit', 'area': 'dependencies', 'status': 'ran',
+                                         'covers': ['.github/actions/x/package-lock.json']}], deps)
+    check(adv['status'] == 'partial' and 'pnpm-lock.yaml' in adv['reason'],
+          'npm audit on a nested package-lock.json leaves the pnpm workspace lockfile unassessed')
+    adv = run_scanners.advisory_status([{'name': 'osv-scanner', 'area': 'dependencies', 'status': 'ran'}], deps)
+    check(adv['status'] == 'assessed', 'osv-scanner covers every lockfile')
+    audit = {'advisories': {'1': {'module_name': 'hono', 'vulnerable_versions': '<4.9.7', 'severity': 'moderate',
+                                  'title': 'Example advisory', 'url': 'https://github.com/advisories/GHSA-aaaa-bbbb-cccc',
+                                  'github_advisory_id': 'GHSA-aaaa-bbbb-cccc', 'cves': [],
+                                  'findings': [{'version': '4.9.1', 'paths': ['apps__lab>@vendor/devtools>hono']}]}}}
+    with tempfile.TemporaryDirectory() as tmp:
+        f = Path(tmp) / 'pnpm-audit.json'
+        f.write_text(json.dumps(audit), encoding='utf-8')
+        items, info = merge_findings.from_deps(f)
+        check(info['tool'] == 'pnpm audit' and items[0]['version'] == '4.9.1' and items[0]['fixed_in'] == ['4.9.7'],
+              'pnpm audit --json (npm audit v6 shape) is read')
+        root = Path(tmp) / 'repo'
+        (root / 'src').mkdir(parents=True)
+        (root / 'src' / 'cache.json').write_text('{"key": "4f2a9c0d1e7b3a5f8c6d2e0b9a7f1c3e"}\n', encoding='utf-8')
+        sarif = {'version': '2.1.0', 'runs': [{'tool': {'driver': {'name': 'gitleaks', 'version': 'v8.0.0', 'rules': []}}, 'results': [
+            {'ruleId': 'generic-api-key', 'message': {'text': 'generic-api-key has detected secret for file src/cache.json.'},
+             'locations': [{'physicalLocation': {'artifactLocation': {'uri': 'src/cache.json'}, 'region': {'startLine': 1}}}]},
+            {'ruleId': 'github-pat', 'message': {'text': 'github-pat has detected secret for file src/old.ts.'},
+             'partialFingerprints': {'commitSha': 'abc123def4567890'},
+             'locations': [{'physicalLocation': {'artifactLocation': {'uri': 'src/old.ts'}, 'region': {'startLine': 7}}}]}]}]}
+        sp = Path(tmp) / 'gitleaks.sarif'
+        sp.write_text(json.dumps(sarif), encoding='utf-8')
+        code, secrets = merge_findings.from_sarif(sp, root, merge_findings.tool_index())
+        old = next((s for s in secrets if s['file'] == 'src/old.ts'), {})
+        check(old.get('history_only') and old.get('git_status') == 'removed' and old.get('history_commits') == ['abc123def456']
+              and old.get('line') is None, 'a gitleaks hit in a file gone from HEAD is history-only with its commit')
+        cache = next((s for s in secrets if s['file'] == 'src/cache.json'), None)
+        check(bool(cache) and merge_findings.secret_triage_hint(cache, root, test_paths.Classifier(root)) is not None,
+              'a generic gitleaks hit that scan_secrets sees no secret in (a cache key hash) is set aside')
+
+def poc_and_report_rules() -> None:
+    print('run_poc (command PoCs) and validator (recon removals, history-only secrets)')
+    import run_poc  # noqa: E402
+    ok = {'finding': 'F-1', 'kind': 'command', 'files': {'quill.config.json': '{"packageManager": "./hook"}'},
+          'steps': [{'name': 'run', 'argv': ['node', '{workdir}/cli.js', 'init']}],
+          'proof': {'type': 'marker_in_output', 'step': 'run', 'marker': 'CANARY-1337'}}
+    check(run_poc.lint(ok, None, []) == [], 'a command PoC with an argument list and a computed marker passes the lint')
+    bad = {**ok, 'steps': [{'name': 'run', 'argv': ['bash', '-c', 'rm -rf /tmp/x']}]}
+    issues = run_poc.lint(bad, None, [])
+    check(any('shell' in i for i in issues) and any('destructive' in i for i in issues), 'shells and destructive commands are refused')
+    check(any('marker' in i for i in run_poc.lint({**ok, 'files': {'a.txt': 'CANARY-1337'}}, None, [])),
+          'a marker planted in the input proves nothing')
+    report = {'recon': {'entry_points': [{'id': 'EP-1', 'handler': 'a.ts:1', 'kind': 'cli'}],
+                        'removed_entry_points': [{'id': 'EP-3', 'handler': '.github/workflows/x.yml:9', 'reason': 'a permissions key, not a trigger'}]}}
+    recon = {'entry_points': [{'id': 'EP-1', 'handler': 'a.ts:1', 'kind': 'cli', 'method': 'BIN'},
+                              {'id': 'EP-2', 'handler': 'b.ts:4', 'kind': 'listener', 'method': 'LISTEN'},
+                              {'id': 'EP-3', 'handler': '.github/workflows/x.yml:9', 'kind': 'ci_workflow', 'method': 'issues'}]}
+    errs = validator.recon_errors(report, recon)
+    check(len(errs) == 1 and 'EP-2' in errs[0], 'a recon entry point dropped without a reason is an error; a removal with one is not')
+    check(bool(validator.ROTATION_REASON.search('public analytics key by design, never a credential'))
+          and not validator.ROTATION_REASON.search('gone from HEAD, so nothing to do'),
+          'a dismissed history-only secret must say it was rotated or why it needs no rotation')
+
 def python_rules() -> None:
     print('Python helpers')
     text = 'COLUMNS = "a, b"\nTABLES = ("t1", "t2")\nfor table in TABLES:\n    pass\n'
@@ -182,6 +302,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('--fixture', type=Path, default=HERE.parent / 'examples' / 'kite-notes')
     ap.add_argument('--azure-fixture', type=Path, default=HERE.parent / 'examples' / 'ferry-ops')
+    ap.add_argument('--node-fixture', type=Path, default=HERE.parent / 'examples' / 'quill-cli')
     args = ap.parse_args()
     root = args.fixture.resolve()
     want = json.loads((root / 'expected.json').read_text(encoding='utf-8'))
@@ -189,6 +310,9 @@ def main() -> int:
     recon(root, want)
     secrets(root, want)
     ferry(args.azure_fixture.resolve())
+    quill(args.node_fixture.resolve())
+    node_and_ci_rules()
+    poc_and_report_rules()
     python_rules()
     advisory_rules()
     merge()

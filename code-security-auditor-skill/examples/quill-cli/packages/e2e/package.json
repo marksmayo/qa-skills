@@ -1,0 +1,17 @@
+{
+  "name": "quill",
+  "version": "0.4.0",
+  "description": "Take notes from the terminal",
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "quill": "./dist/cli.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.12.0",
+    "commander": "12.1.0"
+  },
+  "devDependencies": {
+    "vitest": "2.1.8"
+  }
+}
