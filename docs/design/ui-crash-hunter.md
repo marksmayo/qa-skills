@@ -366,6 +366,34 @@ Status: **built** (v1.2.0). The implementation differs from the original plan as
     server pages, a CLI script, a test-named package) and checks recon and the scan scope on it.
   - Not done: oxlint (`.oxlintrc.json`) is still not run by the ESLint overlay; it reports `not_run: no
     ESLint configuration`.
+- Go CLI with a generated HTML report (a Go `html/template` page held in a string constant, a bundled
+  third-party iOS driver tree):
+  - Recon modelled the repository as an iOS app from a SwiftUI test fixture in the bundled driver, with
+    no word about Go. `langs.py` now leaves vendored trees out before anything is counted: `vendor/`,
+    `third_party/`, `external/`, bundled trees known by name (WebDriverAgent, an XCTest framework) and
+    any nested directory with its own LICENSE and a manifest of another ecosystem than the root. Recon
+    and `scan_pitfalls.py` record `language_coverage` (files per language, the dominant one, whether it
+    is analysed, the vendored trees) and a top-level warning (also on stderr) when the dominant language
+    is not analysed. With under 25% of the source in an analysed language, recon sets `site.kind` and
+    the blast radius to `unknown` instead of building them from incidental files, and drops the "no error
+    boundary, B1" note.
+  - HTML held in string constants (a Go raw string, a Python/Java/Kotlin triple-quoted string, a Rust raw
+    string) and template files (`.tmpl`, `.gohtml`, `.jinja`, `.erb`, ...) are listed in
+    `site.embedded_templates` with their inline scripts, and `scan_pitfalls.py` scans those inline
+    scripts with the web pack at the host file's real line (candidates carry `embedded`).
+  - Xcode test targets (`<Name>Tests`, `<Name>UITests`, `<Name>Tests_<platform>`) are test directories.
+  - `contract_diff.py` skips vendored trees, matches a TypeScript type only in JavaScript/TypeScript (a
+    Kotlin/Swift/Dart model only in its own language; `skipped.other_language`), and warns when no UI
+    entry point was recognised.
+  - `probe_web.py` probes a local file (`--base-url report.html` or `file://...`): loopback by
+    definition, read-only by default, `goto` steps resolve against the file (`#flow-3`). Recorded and
+    blocked requests keep their query string; a request glob without `?` still matches the URL without
+    its query. The example's repro specs were emitted by the earlier version and are kept.
+  - The validator warns when `recon.site_model` is `native` but the probes ran in a browser or
+    `metadata.platforms` has `web`, and accepts a `coverage.not_analysed` item that starts with the route
+    id. `scripts/self_test.py` runs every check, including a live file:// probe when Playwright is installed.
+  - Not done: settle does not yet ignore a page that polls at a fixed interval (a live report polling
+    `report.json`), so such a probe can take longer than its steps.
 
 ```text
 ui-crash-hunter-skill/

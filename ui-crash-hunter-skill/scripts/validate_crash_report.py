@@ -311,6 +311,13 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tu
                     E(f"probe {p['id']}: outcome 'baseline_clean' but its healthy-behaviour expectations did not all hold")
     if d['probes'] and not app_run.get('attempted'):
         E('probes are listed but metadata.app_run.attempted is false')
+    # the site model should agree with how the app was probed: browser probes, or a web platform, against a
+    # "native" model (recon misread a repository from a bundled mobile fixture) is worth a second look
+    web_probed = any(str(ev.get('base_url') or '').startswith(('http:', 'https:', 'file:')) for ev in evidence.values())
+    if recon.get('site_model') == 'native' and (web_probed or 'web' in (meta.get('platforms') or [])):
+        W(f"recon.site_model is native (blast radius {(recon.get('blast_radius') or {}).get('model')}), but "
+          f"{'the probes ran in a browser' if web_probed else 'metadata.platforms includes web'}: check the site model "
+          '(a recon misled by a bundled mobile fixture or a test target) and correct site_model and blast_radius')
 
     # findings
     all_ids: set[str] = set()
@@ -583,7 +590,9 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tu
     analysed = sum(1 for r in routes if r.get('analysed'))
     if cov.get('routes_total') != len(routes) or cov.get('routes_analysed') != analysed:
         E(f"coverage: routes_total/routes_analysed must be {len(routes)}/{analysed} (from recon.routes_screens)")
-    listed = {x.get('item') for x in cov.get('not_analysed', [])}
+    # an item is the route id or path; a description after the id ("RT-3 (the about page)") is accepted too
+    listed = {x.get('item') for x in cov.get('not_analysed', [])} | \
+        {str(x.get('item') or '').split()[0].rstrip(':,;') for x in cov.get('not_analysed', []) if str(x.get('item') or '').strip()}
     for r in routes:
         if not r.get('analysed') and r.get('id') not in listed and r.get('path') not in listed:
             E(f"coverage: route {r.get('id')} was not analysed and is not in coverage.not_analysed with a reason")

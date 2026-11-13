@@ -1,7 +1,7 @@
 ---
 name: ui-crash-hunter
 description: Hunt for code paths in web and mobile UI code that are likely to crash the app (B1, app-fatal) or a whole screen (B2, screen-fatal), rank them by real-world severity, and write reproduction steps for each. Uses static analysis, an API-contract diff and the error-boundary map, then confirms crashes in the running app where possible. Every finding has a file and line, a concrete trigger and a confidence level (reproduced, traced or pattern); degradations are listed separately and never ranked as crashes.
-version: 1.4.0
+version: 1.5.0
 ---
 
 # UI Crash Hunter
@@ -101,7 +101,24 @@ Read the output, then confirm and complete it by reading the code:
   reads: read them, and probe the pages. The server modules and Node command-line scripts are server
   code (a throw is an HTTP 500 or a failed command), and `scan_pitfalls.py` excludes them.
   A directory named like a test folder (`e2e/`, `tests/`) that holds its own package manifest is a
-  product package and is analysed.
+  product package and is analysed. Xcode test targets (`<Name>Tests`, `<Name>UITests`,
+  `<Name>Tests_<platform>`) are tests.
+- **Language coverage and vendored trees** (`language_coverage`, `warnings`). Vendored and bundled
+  third-party trees (`vendor/`, `third_party/`, a bundled driver such as WebDriverAgent, a nested
+  directory with its own LICENSE and a manifest of another ecosystem) are left out of everything.
+  When the dominant language is one no pack reads (Go, Rust, Python, ...), recon and the scan say so
+  in `warnings`, and with under a quarter of the source in an analysed language recon sets `site.kind`
+  and `blast_radius` to `unknown` rather than model the app from incidental files. Say in the report
+  that the dominant language was not analysed (limitations, coverage); never present the empty static
+  result as evidence.
+- **HTML held in string constants** (`site.embedded_templates`): a page a Go `html/template` constant,
+  a Python or Java/Kotlin triple-quoted string, a Rust raw string or a template file (`.tmpl`,
+  `.gohtml`, `.jinja`, `.erb`) holds. `scan_pitfalls.py` scans their inline scripts at the host file's
+  real line (candidates marked `embedded`); read the rest of the template yourself, and probe a
+  rendered page. A generated report file is probed as a local file (see the probe step). A page whose
+  list is rendered by the server and whose detail is rendered by its script is `per_script`: a throw
+  in the script empties the script-rendered panel (B3), not the server-rendered list; mark the route
+  `content_rendered_by_js` when the script renders the main content.
 - **Platforms and frameworks**, and the supported targets (`browserslist`, `minSdkVersion`, iOS
   deployment target). Targets decide whether an API is "missing in a supported browser or OS".
 - **Routes and screens.** Add the app shell (header, navigation, layout) as an item: it renders on
@@ -289,6 +306,13 @@ sent, whatever its host, including the app's own POSTs, beacons and CSP reports;
 (`/_vercel/*`) is aborted. Intercepted writes are listed in `writes_blocked`. `probe_web.py` refuses a
 non-loopback target without `--authorised-by`.
 
+**Local files.** A generated page (a test report written to disk) is probed where people open it:
+`--base-url path/to/report.html` (or a `file://` URL). A local file counts as loopback and is probed
+read-only by default; `goto` steps resolve against the file (`{"goto": "#flow-3"}`). Behaviour can
+differ from the same page served over HTTP (polling, `fetch` of sibling files, URL encoding of paths),
+so probe the way it is used. Recorded requests keep their query string; a `request` glob without `?`
+also matches the URL without its query.
+
 **Next.js.** A throw in the root layout (or a provider or `next/dynamic` widget it renders) is caught
 only by `global-error`, which renders its own document: the root is not empty, so reproduce it with
 the stack trace, or by its effect with the global-error text in `observe.fallback_text` and an
@@ -469,7 +493,10 @@ worst finding plainly ("5 likely crashes, 4 reproduced; a P0 crash loop for user
   stored-state trigger; ranks follow the score. Degradations are B3/B4 and unranked.
 - Every candidate is promoted or dismissed with a specific reason (not "false positive", not one
   sentence pasted onto more than three candidates), or dismissed in a group whose match rule it fits.
-- Every route or screen is analysed or listed as not analysed with a reason; coverage counts match.
+- Every route or screen is analysed or listed as not analysed with a reason (`item` is the route id or
+  path, optionally followed by a description: `"RT-3 (the about page)"`); coverage counts match.
+- A `native` site model with browser probes (or `web` in `metadata.platforms`) draws a warning: recon
+  may have read a bundled mobile fixture; correct `site_model` and `blast_radius`.
 - Every tool that didn't run says why; at least one tool ran.
 - Nothing listed in `files_written` is inside the repository.
 - Summary counts are recomputed, and overclaiming headlines are rejected. Numbers the headline states

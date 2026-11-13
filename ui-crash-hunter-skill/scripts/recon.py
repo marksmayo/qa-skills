@@ -41,6 +41,13 @@ server and the modules it imports; /api/*, JSON and non-GET handlers are api_end
 holding next.config.* is a Next.js project root even without its own package.json. A test-named
 directory (e2e/, tests/) with its own package manifest is a package, not tests. Comment lines never
 count as persisted-state uses.
+
+Vendored and bundled third-party trees are left out of everything (see langs.py). language_coverage counts
+source files per language; when the dominant language is not one the packs read (a Go tool), a top-level
+warning says so, and with under a quarter of the source in an analysed language site.kind and the blast
+radius are "unknown" rather than modelled from incidental files. HTML held in string constants (a Go
+html/template constant, a Python triple-quoted string) and template files are listed in
+site.embedded_templates; scan_pitfalls.py scans their inline scripts. Xcode <Name>Tests targets are tests.
 """
 from __future__ import annotations
 import argparse, json, re, sys

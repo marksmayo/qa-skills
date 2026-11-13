@@ -38,6 +38,10 @@ asserts healthy behaviour instead and never counts as reproduced. A probe whose 
 as an identity provider, or the observe.root_selector missing) is inconclusive (evidence inconclusive
 and inconclusive_reason): never a clean baseline and never a reproduction.
 
+Local files: --base-url may be a local HTML file (a generated report) or a file:// URL. A local file is
+loopback and probed read-only by default; goto steps resolve against the file ("#flow-3"). Recorded and
+blocked requests keep their query string; a request glob without '?' also matches the URL without it.
+
 Signed-in apps: --storage-state loads a Playwright storage-state file (cookies and localStorage) that a
 person saved after signing in to a test account by hand. The file is read, never copied into the
 evidence (which records only signed_in_session: true); keep it outside the repository and never commit
@@ -70,9 +74,11 @@ def seed_script(storage: dict) -> str:
             " sessionStorage.setItem('__probe_seeded', '1'); } catch (e) {} })();")
 
 def is_loopback(url: str) -> bool:
-    """True for localhost, *.localhost, *.test and loopback addresses."""
+    """True for localhost, *.localhost, *.test, loopback addresses and local files (file://)."""
     from urllib.parse import urlparse
     import ipaddress
+    if urlparse(url).scheme == 'file':
+        return True
     host = (urlparse(url).hostname or '').lower()
     if host == 'localhost' or host.endswith(('.localhost', '.test')):
         return True
@@ -82,8 +88,27 @@ def is_loopback(url: str) -> bool:
         return False
 
 def read_only(scenario: dict, base_url: str) -> bool:
-    """Read-only mode is the default for any target that is not loopback."""
-    return bool(scenario.get('read_only', not is_loopback(base_url)))
+    """Read-only mode is the default for any target that is not loopback, and for a local file (a generated
+    report opened as file://: any request it makes to a server is not the user's to send)."""
+    return bool(scenario.get('read_only', not is_loopback(base_url) or base_url.startswith('file:')))
+
+def target_url(base: str) -> str:
+    """The probe target as a URL: a local file path (a generated report.html) becomes a file:// URL."""
+    from pathlib import Path as _P
+    if '://' in base or base.startswith(('about:', 'data:')):
+        return base
+    p = _P(base)
+    return p.resolve().as_uri() if p.exists() or p.suffix.lower() in ('.html', '.htm') else base
+
+def step_url(base_url: str, arg: str) -> str:
+    """The URL a goto step opens: absolute as given; on a file:// target relative to the file ('#flow-3',
+    'other.html'); on a server relative to its root."""
+    from urllib.parse import urljoin
+    if '://' in arg:
+        return arg
+    if base_url.startswith('file:'):
+        return urljoin(base_url, arg) if arg else base_url
+    return base_url.rstrip('/') + '/' + arg.lstrip('/')
 
 def blocked_storage_script(spec) -> str:
     """Init script: window.localStorage / sessionStorage getters throw SecurityError, as when the browser
@@ -229,7 +254,7 @@ def guard_third_party(context, base_url: str, scenario: dict, blocked: list) -> 
     def handler(route, request):
         if ok(request.url):
             return route.fallback()
-        blocked.append(request.url.split('?')[0])
+        blocked.append(request.url)
         return route.abort('blockedbyclient')
     context.route('**/*', handler)
 
@@ -247,6 +272,12 @@ def apply_routes(page, routes: list) -> None:
     for r in routes or []:
         page.route(r['url'], make(r))
 
+def url_matches(pattern: str, url: str) -> bool:
+    """A request glob against a recorded URL (query string kept): a glob without '?' also matches the URL
+    without its query, so '**/report.json' matches '/report.json?t=1' and '**/report.json?t=*' matches too."""
+    rx = glob_rx(pattern)
+    return bool(rx.match(url) or ('?' not in pattern and rx.match(url.split('?')[0])))
+
 def glob_rx(pattern: str):
     """Playwright-style URL glob: ** matches anything, * anything but '/'."""
     import re
@@ -256,18 +287,18 @@ def glob_rx(pattern: str):
     return re.compile('^' + out + '$')
 
 def log_requests(page, requests: list) -> None:
-    """Record every request the page makes (URL without the query, method, status), for request assertions."""
+    """Record every request the page makes (URL with its query string, method, status), for request assertions."""
     seen: dict = {}
     def on_response(resp):  # an HTTP error status still arrives here, even when the browser then drops the body
         if len(requests) < 2000:
-            seen[id(resp.request)] = entry = {'url': resp.url.split('?')[0], 'method': resp.request.method,
+            seen[id(resp.request)] = entry = {'url': resp.url, 'method': resp.request.method,
                                               'status': resp.status, 'failed': False}
             requests.append(entry)
     def on_failed(req):
         if id(req) in seen:
             seen[id(req)]['failed'] = True
         elif len(requests) < 2000:
-            requests.append({'url': req.url.split('?')[0], 'method': req.method, 'status': None, 'failed': True})
+            requests.append({'url': req.url, 'method': req.method, 'status': None, 'failed': True})
     page.on('response', on_response)
     page.on('requestfailed', on_failed)
 
@@ -298,8 +329,7 @@ def check_expectations(page, assertions, ctx: dict) -> list:
             ok = actual is not None and (actual == v if 'equals' in a else v in actual if 'contains' in a
                                          else actual != v if 'not_equals' in a else v not in actual)
         elif 'request' in a:
-            rx = glob_rx(a['request'])
-            hits = [r for r in ctx.get('requests', []) if rx.match(r['url'])
+            hits = [r for r in ctx.get('requests', []) if url_matches(a['request'], r['url'])
                     and ('status' not in a or r['status'] == a['status'])]
             actual = len(hits)
             ok = bool(hits) == bool(a.get('made', True))
@@ -381,7 +411,7 @@ def run_steps(page, context, steps: list, base_url: str, log: list, checks=None)
         action, arg = normalise_step(step)
         log.append({'step': n, 'action': action, 'arg': arg, 'at': round(time.time(), 3)})
         if action == 'goto':
-            page.goto(arg if '://' in arg else base_url.rstrip('/') + '/' + arg.lstrip('/'), wait_until='load')
+            page.goto(step_url(base_url, arg), wait_until='load')
         elif action == 'click':
             page.click(arg, timeout=5000)
         elif action == 'fill':
@@ -439,7 +469,7 @@ def probe(scenario: dict, base_url: str, out_dir: Path, headed: bool = False, st
         page.on('pageerror', lambda e: errors.append({'after_step': current(), 'name': e.name, 'message': e.message,
                                                       'stack': e.stack}))
         page.on('console', lambda m: console.append(console_entry(m, current())) if m.type in ('error', 'warning') else None)
-        page.on('requestfailed', lambda r: None if r.url.split('?')[0] in blocked else
+        page.on('requestfailed', lambda r: None if r.url in blocked else
                 failed.append({'after_step': current(), 'url': r.url, 'failure': r.failure}))
         apply_routes(page, scenario.get('routes'))
         requests: list = []
@@ -516,7 +546,7 @@ def probe(scenario: dict, base_url: str, out_dir: Path, headed: bool = False, st
 SPEC_MAIN = '''
 def main():
     from playwright.sync_api import sync_playwright
-    base_url = sys.argv[sys.argv.index('--base-url') + 1] if '--base-url' in sys.argv else SCENARIO['base_url']
+    base_url = target_url(sys.argv[sys.argv.index('--base-url') + 1] if '--base-url' in sys.argv else SCENARIO['base_url'])
     errors, page_errors, console, requests, results = [], [], [], [], []
     if not is_loopback(base_url) and not SCENARIO.get('authorised_by'):
         print('Refusing: ' + base_url + ' is not loopback and the scenario names no authorised_by.')
@@ -577,8 +607,8 @@ if __name__ == '__main__':
 
 def emit_spec(scenario: dict, base_url: str, path: Path, title: str) -> None:
     funcs = '\n\n'.join(inspect.getsource(f) for f in (
-        normalise_step, seed_script, is_loopback, read_only, blocked_storage_script, init_scripts, launch_options, context_options,
-        install_guards, console_entry, console_haystack, guard_third_party, apply_routes, glob_rx, log_requests,
+        normalise_step, seed_script, is_loopback, read_only, target_url, step_url, blocked_storage_script, init_scripts, launch_options, context_options,
+        install_guards, console_entry, console_haystack, guard_third_party, apply_routes, url_matches, glob_rx, log_requests,
         check_expectations, run_steps, observe, left_app))
     funcs = f'CONSOLE_ARG_JS = """{CONSOLE_ARG_JS}"""\n\nSTEP_ACTIONS = {STEP_ACTIONS!r}\n\n{funcs}'
     sc = dict(scenario, base_url=scenario.get('base_url') or base_url)
@@ -624,6 +654,7 @@ def main() -> int:
     if not base_url:
         print('No base URL: set scenario.base_url or pass --base-url', file=sys.stderr)
         return 2
+    base_url = target_url(base_url)
     if args.authorised_by:
         scenario['authorised_by'] = args.authorised_by
     if not is_loopback(base_url) and not scenario.get('authorised_by'):
