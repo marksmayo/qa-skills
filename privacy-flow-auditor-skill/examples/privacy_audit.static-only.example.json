@@ -1,5 +1,5 @@
 {
- "schema_version": "1.2.0",
+ "schema_version": "1.3.0",
  "run_status": "not_run",
  "run_status_reason": "static-only example: the live capture was not run (no browser in the environment), so only the code was read",
  "skill": "privacy-flow-auditor",
@@ -471,7 +471,8 @@
   "special_category_flows": [
    "F01",
    "F02"
-  ]
+  ],
+  "recipients_in_findings": []
  },
  "limitations": [
   "The browser capture was not run (run_status not_run): no consent state, request, cookie, storage entry or canary was tested, and findings rest on the code alone (traced or pattern).",

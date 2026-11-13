@@ -7,6 +7,8 @@
     {"id": "js-logger", "kind": "log", "langs": ["js", "ts"], "pattern": "\\b(logger|log|pino|winston)\\.(trace|debug|info|warn|warning|error|fatal|log)\\(", "hints": ["logger.", "log.", "pino.", "winston."]},
     {"id": "android-log", "kind": "log", "langs": ["java", "kt"], "pattern": "\\bLog\\.[dviwe]\\(", "hints": ["Log."]},
     {"id": "ios-log", "kind": "log", "langs": ["swift", "m"], "pattern": "\\b(NSLog|os_log|print)\\(", "hints": ["NSLog(", "os_log(", "print("]},
+    {"id": "go-log", "kind": "log", "langs": ["go"], "pattern": "\\b(log|slog|logger|logrus|zap|zerolog|klog)\\.(Print|Printf|Println|Fatal|Fatalf|Fatalln|Panic|Panicf|Info|Infof|Infow|Warn|Warnf|Warnw|Error|Errorf|Errorw|Debug|Debugf|Debugw|Trace|Tracef)\\(|\\bfmt\\.Fprint(f|ln)?\\(\\s*os\\.Std(err|out)", "hints": ["log.", "slog.", "logger.", "logrus.", "zap.", "zerolog.", "klog.", "fmt.Fprint"]},
+    {"id": "go-http", "kind": "http", "langs": ["go"], "pattern": "\\bhttp\\.(Post|PostForm|Get|Head|NewRequest|NewRequestWithContext)\\(", "hints": ["http."]},
     {"id": "ruby-logger", "kind": "log", "langs": ["rb"], "pattern": "\\b(Rails\\.logger|logger)\\.(debug|info|warn|error)\\b", "hints": ["logger."]},
     {"id": "gtag", "kind": "analytics", "vendor": "Google Analytics", "langs": ["js", "ts", "html"], "pattern": "\\bgtag\\(", "hints": ["gtag("]},
     {"id": "fbq", "kind": "analytics", "vendor": "Meta Pixel", "langs": ["js", "ts", "html"], "pattern": "\\bfbq\\(", "hints": ["fbq("]},

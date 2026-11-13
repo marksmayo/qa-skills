@@ -399,5 +399,34 @@
    "id": "S006",
    "source": "static"
   }
- ]
+ ],
+ "outbound_hosts": [],
+ "language_coverage": {
+  "tool": "scan_privacy.py",
+  "supported_languages": [
+   "Go",
+   "Java",
+   "JavaScript",
+   "Kotlin",
+   "Objective-C",
+   "Python",
+   "Ruby",
+   "Svelte",
+   "Swift",
+   "TypeScript",
+   "Vue"
+  ],
+  "supported": {
+   "JavaScript": 3,
+   "Python": 1
+  },
+  "unsupported": {},
+  "supported_files": 4,
+  "unsupported_files": 0,
+  "dominant": "JavaScript",
+  "excluded_source_files": 5,
+  "status": "ok",
+  "warning": null,
+  "needs_limitation": []
+ }
 }

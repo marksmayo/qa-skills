@@ -69,11 +69,47 @@ def vendors_named_in(texts) -> set[str]:
                 info = VENDORS.get('vendors', {}).get(v, {})
                 out |= {v, *info.get('aliases', []), *([info['company']] if info.get('company') else [])}
     return out
+def declared_covers(names: list[str], rep: dict, cfile: dict) -> bool:
+    """Whether the declared processors name a finding's recipient: its vendor (or that vendor's alias or parent company in
+    data/vendors.json) or its domain is in the --declared file the merge read, or the text of metadata.declared_processors
+    (a privacy policy or README section quoted by name) names the vendor or the domain."""
+    norm = lambda s: re.sub(r'[^a-z0-9]', '', (s or '').lower())  # noqa: E731
+    meta = ((rep.get('metadata') or {}).get('declared_processors') or '').lower()
+    path = (cfile.get('inputs') or {}).get('declared')
+    procs = []
+    if path and Path(path).is_file():
+        try:
+            procs = json.loads(Path(path).read_text(encoding='utf-8')).get('processors', [])
+        except ValueError:
+            procs = []
+    names_declared = {norm(p.get('vendor')) for p in procs}
+    domains_declared = {registrable(d.lower()) for p in procs for d in p.get('domains', [])}
+
+    def vendor_declared(v: str) -> bool:
+        info = VENDORS.get('vendors', {}).get(v, {})
+        forms = {v, *info.get('aliases', []), *([info['company']] if info.get('company') else [])}
+        return any(norm(x) in names_declared or (len(x) > 2 and x.lower() in meta) for x in forms)
+    for n in names:
+        low = n.lower()
+        if '.' in low:
+            reg = registrable(low)
+            entry = VENDORS['domains'].get(low) or VENDORS['domains'].get(reg)
+            if reg in domains_declared or low in meta or reg in meta or (entry and vendor_declared(entry['vendor'])):
+                return True
+        elif vendor_declared(n):
+            return True
+    return False
+
+
 ORDER = ['P0', 'P1', 'P2', 'P3']
 FLOW = {'undeclared_third_party': 3, 'before_consent': 3, 'after_reject': 3, 'declared_unexpected': 2, 'logs': 2,
         'insecure_storage': 2, 'url': 2, 'no_use': 1}
 TRANSFER = {'personal_data_to_third_party', 'session_replay_unmasked', 'undeclared_processor', 'cross_border_transfer',
-            'tracking_before_consent', 'tracking_after_reject'}
+            'tracking_before_consent', 'tracking_after_reject', 'telemetry'}
+# sends that need no form and no click: a review finding may rate them before_consent when it shows they are on by
+# default (default_on: true), the user's only choice an opt-out (a command-line tool's call home, a page beacon)
+DEFAULT_ON_TYPES = ('telemetry', 'first_party_beacon')
+URL_USERINFO = re.compile(r'\b[A-Za-z][A-Za-z0-9+.-]*://[^\s/@"\'<>]*$')
 JUDGMENT = {'excess_collection'}
 DISMISS = {'strictly_necessary', 'functional_no_identifier', 'constant_in_source', 'pii_disabled', 'duplicate', 'false_match',
            'not_personal_data', 'random_per_load_id'}
@@ -129,18 +165,25 @@ def ratable(f: dict) -> bool:
 
 
 def fill_ratings(f: dict) -> None:
-    """--write-summary: the computed rating fields, where the finding leaves them out."""
+    """--write-summary: the computed rating fields, where the finding leaves them out (each filled value is printed)."""
     if not ratable(f) or all(k in f for k in RATING):
         return
     sens, flow, _, score = rate(f)
     p, floor, cap = expected(f)
+    filled = []
     for k, v in zip(RATING, (sens, flow, score, p, floor, cap)):
+        if k not in f:
+            filled.append(f'{k} {v}')
         f.setdefault(k, v)
+    print(f'{f.get("id")}: filled ' + ', '.join(filled))
 
 
 def pii_problems(text: str, where: str, canary_values: list[str]) -> list[str]:
     out = []
     for m in EMAIL.finditer(text):
+        if URL_USERINFO.search(text[max(0, m.start() - 300):m.start()]):
+            out.append(f'{where}: a credential in a URL (scheme://user:password@host) - keep the host, drop the user-info')
+            continue
         out.append(f'{where}: email-like value {m.group(0)[:3]}...')
     for m in PHONE_RX.finditer(text):
         out.append(f'{where}: phone-like value')
@@ -169,7 +212,10 @@ def summary(rep: dict, cands: dict) -> dict:
     no_banner = 'no_banner' in m
     out = {'counts': counts, 'third_parties_before_consent': third('no_banner' if no_banner else 'before'),
            'third_parties_after_reject': third('reject'), 'states_not_tested': not_tested,
-           'special_category_flows': sorted(f['id'] for f in rep['findings'] if any(c in CATS['special'] for c in f.get('categories') or []))}
+           'special_category_flows': sorted(f['id'] for f in rep['findings'] if any(c in CATS['special'] for c in f.get('categories') or [])),
+           # recipients the findings name from code or runtime evidence outside the browser (a command-line tool's call
+           # home, a server-side send): the consent matrix only knows what the captured pages contacted
+           'recipients_in_findings': sorted({f['domain'] for f in rep['findings'] if f.get('domain') and f.get('recipient_kind') in ('third_party', 'declared_processor')})}
     if no_banner:  # no banner: everything happens "before consent", and there is no choice to reject or accept
         out['consent_banner'] = False
         out['states_not_applicable'] = {r['state']: r.get('reason') or 'no consent banner' for r in cands['consent_matrix']
@@ -310,7 +356,7 @@ def main() -> int:
         n_err = len(errs)
         for k in ('type', 'title', 'categories', 'flow_basis', 'reach', 'reach_source', 'confidence', 'evidence', 'references', 'fix', 'verification', 'candidates'):
             if k not in f or f[k] in (None, '', []):
-                if not (k == 'categories' and f.get('type', '').startswith(('tracking_', 'first_party_beacon'))) and not (k == 'candidates' and agent and 'candidates' in f):
+                if not (k == 'categories' and f.get('type', '').startswith(('tracking_', 'first_party_beacon', 'telemetry'))) and not (k == 'candidates' and agent and 'candidates' in f):
                     e(f'{fid}: missing {k}')
         if len(errs) > n_err:
             continue
@@ -339,7 +385,7 @@ def main() -> int:
         if f['type'] in JUDGMENT and f['confidence'] != 'pattern':
             e(f'{fid}: agent judgment ({f["type"]}) must be pattern confidence')
         if static_only:
-            if f['confidence'] == 'observed':
+            if f['confidence'] == 'observed' and not agent:
                 e(f'{fid}: observed, but the browser run did not happen (run_status not_run)')
             if f['evidence'].get('requests'):
                 e(f'{fid}: cites captured requests, but the browser run did not happen')
@@ -369,8 +415,9 @@ def main() -> int:
                             e(f'{fid}: basis excerpt is not on {b["file"]}:{b["line"]}')
                 else:
                     e(f'{fid}: each basis item needs file, line and excerpt, or evidence')
-            if f['confidence'] == 'observed' and not (runtime and not static_only):
-                e(f'{fid}: found by review, observed only with runtime evidence from a browser run')
+            if f['confidence'] == 'observed' and not runtime:
+                e(f'{fid}: found by review, observed needs recorded runtime evidence: a basis {{"evidence": file}} from a run '
+                  '(the browser capture, or a loopback sink or proxy log a command-line tool sent to); a code basis is at most traced')
             if f['type'] in TRANSFER and not own and not f['evidence'].get('code_path') and not runtime:
                 e(f'{fid}: a transfer finding needs a captured request or a code path')
         else:
@@ -406,6 +453,18 @@ def main() -> int:
         if f['flow_basis'] == 'declared_unexpected' and not (cfile.get('declared') or (rep.get('metadata') or {}).get('declared_processors')):
             e(f'{fid}: flow_basis declared_unexpected, but no declared processors were given (metadata.declared_processors '
               'is null and the candidates were merged without --declared)')
+        elif f['flow_basis'] == 'declared_unexpected':
+            named = [x for x in (f.get('vendor'), f.get('domain')) if x]
+            if not named and f['confidence'] != 'pattern':
+                e(f'{fid}: flow_basis declared_unexpected names no recipient (vendor or domain): a declared processor the '
+                  'finding cannot name is at most a pattern')
+            elif named and not declared_covers(named, rep, cfile):
+                e(f'{fid}: flow_basis declared_unexpected, but no declared processor names the recipient {" / ".join(named)} '
+                  '(the --declared file\'s vendors, aliases and domains, or the text of metadata.declared_processors)')
+            if named and f.get('recipient_kind') not in (None, 'declared_processor'):
+                e(f'{fid}: flow_basis declared_unexpected with recipient_kind {f["recipient_kind"]}')
+        if f.get('default_on') and f['type'] not in DEFAULT_ON_TYPES:
+            e(f'{fid}: default_on is for {" and ".join(DEFAULT_ON_TYPES)} findings (a send with no form and no choice)')
         if f.get('recipient_kind'):
             kinds = {c.get('recipient') for c in live if c.get('recipient')}
             if kinds and f['recipient_kind'] not in kinds:
@@ -418,7 +477,11 @@ def main() -> int:
         if states and live and not set(states) <= live_states:
             e(f'{fid}: consent states {states} are not all shown by its candidates ({sorted(live_states)})')
         static_before = f['confidence'] == 'pattern' and any(c['type'] == 'tracking_before_consent' for c in static_own)
-        if f['flow_basis'] == 'before_consent' and not static_before and not any(
+        # on by default, found by review (code that sends unless an opt-out is set, or a sink log of the first run) or
+        # from a static telemetry candidate: sent with no choice made, which is what before consent means
+        default_on = f.get('default_on') is True and f['type'] in DEFAULT_ON_TYPES and (
+            (agent and bool(f.get('basis'))) or any(c['type'] == 'telemetry' for c in static_own))
+        if f['flow_basis'] == 'before_consent' and not static_before and not default_on and not any(
                 c['type'] == 'tracking_before_consent' or {'before', 'no_banner'} & set(c.get('states') or []) or c.get('before_choice') for c in live):
             e(f'{fid}: flow_basis before_consent, but no candidate shows the before state')
         if f['flow_basis'] == 'after_reject' and not any(c['type'] == 'tracking_after_reject' or 'reject' in (c.get('states') or []) for c in live):
@@ -505,6 +568,13 @@ def main() -> int:
     static_path = Path(cfile['static']) if cfile.get('static') else None
     if static_path and static_path.is_file():
         st_ = json.loads(static_path.read_text(encoding='utf-8'))
+        # a language the scan does not analyse that holds much of the code: nothing it found there, so the report must say so
+        cov = st_.get('language_coverage') or {}
+        lims = ' '.join(rep['limitations'])
+        for lang in cov.get('needs_limitation') or ([cov['dominant_unsupported_language']] if cov.get('status') == 'unsupported_dominant' else []):
+            if not re.search(rf'(?<![\w+#]){re.escape(lang)}(?![\w+#])', lims, re.I):
+                e(f'the static scan does not analyse {lang}, which holds most of the code ({(cov.get("unsupported") or {}).get(lang, "?")} '
+                  f'files): a limitation must name {lang} and say its sends, logs and identifiers were not scanned')
         ups = [c for c in st_.get('collection', []) if c.get('kind') in FILE_KINDS]
         said = json.dumps([rep['inventory'], rep['limitations'], rep['scope'].get('not_covered'), rep['scope'].get('covered')], ensure_ascii=False)
         # a bare "file" ("417 files scanned") does not count: the follow-up must speak of uploads (or attachments,
@@ -524,8 +594,12 @@ def main() -> int:
             e(f'inventory {item.get("field")}: category {item.get("category")!r} unknown')
         for r in item.get('recipients', []):
             ok = any(item['field'] in (c.get('fields') or []) and c.get('domain') == r['domain'] for c in cfile['candidates'] if c['source'] == 'live')
+            # a recipient outside the browser (a command-line tool's call home, a server-side send) is shown by a finding that
+            # names the domain and the field, from its code path or runtime evidence
+            ok = ok or any(item['field'] in (f.get('fields') or []) and f.get('domain') == r['domain'] and f.get('confidence') in ('traced', 'observed')
+                           for f in rep['findings'])
             if not ok:
-                e(f'inventory {item["field"]}: recipient {r["domain"]} has no live candidate carrying that field')
+                e(f'inventory {item["field"]}: recipient {r["domain"]} has no live candidate, nor a traced or observed finding, carrying that field')
 
     # --- language and headline
     blob = json.dumps(rep, ensure_ascii=False)

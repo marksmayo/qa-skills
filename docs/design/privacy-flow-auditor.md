@@ -1,6 +1,6 @@
 # Design: `privacy-flow-auditor-skill`
 
-Status: Built (v1.0.0). Build order: 23.
+Status: Built (v1.4.0), see the "As built" sections. Build order: 23.
 
 ## Mission
 
@@ -437,3 +437,44 @@ Where the build differs from the design above, and what the example showed.
 - **Not changed:** the static-scan item for public analytics ingestion keys (a write-only key in a telemetry
   module is neither reported nor noted), and a dedicated class for dev-server traffic (long-poll writes from a
   local preview are still blocked first-party writes the report must explain).
+
+## As built (v1.4.0): fixes from a run on a Go command-line tool
+
+Found on a Go module (about 570 Go files) with vendored Swift, Objective-C and TypeScript driver code,
+whose real flows were an opt-out telemetry call home, an update check and what a generated HTML report
+embeds.
+
+- **The scan ignored Go silently.** It scanned 290 incidental files of the vendored driver code and said
+  nothing about Go. `scan_privacy.py` now counts source files per language with the shared
+  `lang_census.py` (vendored, bundled and embedded third-party trees left out) and records
+  `language_coverage` in `static.json`; when most of the code is in a language it doesn't read it prints
+  a warning, and the validator requires a limitation naming that language.
+- **Go support.** Go log calls (`log`, `slog`, `logrus`, `zap`, `fmt.Fprintf(os.Stderr`) and HTTP calls
+  are sinks; command-line flags are `cli_flag` collection points. A Go package that sends to a host and
+  reads an opt-out variable, sits in a telemetry package or reads a machine identifier is a `telemetry`
+  candidate (`call_home`, `side: client`, facts: opt-out variables, identifiers, hashing); other hosts
+  are listed under `outbound_hosts`. On the tool, its telemetry endpoint is now a candidate.
+- **A `telemetry` finding type** with its own references (GDPR Art. 5(1)(a), 5(1)(c), 6, 13, 21 and
+  ePrivacy Art. 5(3); APP 1, 3 and 5), instead of the web-page beacon type.
+- **Before consent from review.** A `telemetry` or `first_party_beacon` finding found by review with
+  `default_on: true` may be `before_consent`: sent with no choice made is what opt-out telemetry is.
+- **Declared processors must name the recipient.** `declared_unexpected` needs the finding's vendor
+  (alias, parent company) or domain in the `--declared` file or the `metadata.declared_processors` text;
+  a finding that names no recipient is at most `pattern`.
+- **Recipients outside the browser.** Inventory recipients may come from a traced or observed finding
+  naming the domain and the field; the headline lists `recipients_in_findings`, and the renderer says
+  "Third parties contacted by the captured pages" and names those recipients, so a CLI audit no longer
+  reads "Third parties contacted: none".
+- **Observed means recorded runtime evidence**, from the browser or not: a review finding with an
+  `{evidence}` basis (a loopback sink log) may be `observed`, in a `not_run` audit too, and the message
+  says so. A credential in a URL is reported as a credential, not an "email-like value".
+  `--write-summary` prints the ratings it fills.
+- **Guidance.** SKILL.md has a section for command-line tools and other non-web targets: the fake
+  endpoint recipe (an override variable pointed at a loopback sink, HOME isolated, proxies at a closed
+  port), the opt-out matrix, the notice before the first send, and the update check.
+- **Self-test.** `scripts/self_test.py` covers each of the above.
+- **Not changed:** `run_status` can't say the capture covered an auxiliary page only (the limitations
+  must); the capture doesn't search page content for canaries; prebuilt `*.app` bundles and `*Tests`
+  directories in vendored code are still scanned for permissions (no candidates came of it).
+- **Examples.** Re-validated: their headlines gain `recipients_in_findings`, `schema_version` is 1.3.0,
+  and `run/static.json` gains `language_coverage` and `outbound_hosts` (its candidates are unchanged).

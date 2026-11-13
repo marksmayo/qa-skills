@@ -59,12 +59,16 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from match_canaries import Matcher  # noqa: E402
 from domains import registrable  # noqa: E402
+import lang_census  # noqa: E402
 
 DATA = HERE.parent / 'data'
 CATS = json.loads((DATA / 'categories.json').read_text(encoding='utf-8'))
 SINKS = json.loads((DATA / 'sinks.json').read_text(encoding='utf-8'))
 LANG = {'.py': 'py', '.js': 'js', '.mjs': 'js', '.cjs': 'js', '.jsx': 'js', '.ts': 'ts', '.tsx': 'ts', '.mts': 'ts', '.cts': 'ts',
-        '.html': 'html', '.htm': 'html', '.java': 'java', '.kt': 'kt', '.swift': 'swift', '.m': 'm', '.rb': 'rb'}
+        '.html': 'html', '.htm': 'html', '.java': 'java', '.kt': 'kt', '.swift': 'swift', '.m': 'm', '.rb': 'rb', '.go': 'go'}
+# the languages lang_census counts that this scan reads: sinks, collection points and sends (Java, Kotlin, Swift and
+# Objective-C get logging and storage sinks only, besides manifests and usage strings)
+ANALYSED = {'Python', 'JavaScript', 'TypeScript', 'Go', 'Ruby', 'Java', 'Kotlin', 'Swift', 'Objective-C', 'Vue', 'Svelte'}
 SKIP = {'node_modules', '.git', 'dist', 'build', 'out', 'venv', '.venv', '__pycache__', 'Pods', '.next', '.nuxt', 'coverage',
         'bower_components', '.svelte-kit', '.parcel-cache', '.turbo', '.cache', '.tox', '.mypy_cache', '.pytest_cache'}
 TEST_DIRS = {'__tests__', '__mocks__', '__snapshots__', 'test', 'tests', 'spec', 'specs', 'e2e', 'cypress', 'playwright'}
@@ -80,7 +84,7 @@ TEST_EVIDENCE = re.compile(r'[._-](test|spec|e2e|cy)\.[cm]?[jt]sx?$|^(playwright
 NODE_FILE = re.compile(r'''^#!.*\bnode\b|\bfrom\s+["']node:|\brequire\(\s*["']node:|\bprocess\.argv\b|\bos\.homedir\(\)''', re.M)
 UI_FRAMEWORKS = {'react', 'react-dom', 'vue', 'svelte', 'next', '@angular/core', 'preact', 'solid-js', 'astro', 'nuxt', 'lit'}
 BROWSER_FILE = re.compile(r'\bdocument\.|\bwindow\.|\blocalStorage\b|["\']use client["\']')
-TEST_FILE = re.compile(r'[._-](test|spec|e2e)\.(js|jsx|ts|tsx|mjs|cjs|mts|cts|py|rb)$|^test_.*\.py$|_test\.py$', re.I)
+TEST_FILE = re.compile(r'[._-](test|spec|e2e)\.(js|jsx|ts|tsx|mjs|cjs|mts|cts|py|rb)$|^test_.*\.py$|_test\.(py|go)$', re.I)
 REDACT = Matcher({'id': 'none', 'fields': {}})
 GENERIC = set(CATS.get('generic_property_names', {}).get('names', []))
 VENDOR_DOMAINS = {d: v['vendor'] for d, v in json.loads((DATA / 'vendors.json').read_text(encoding='utf-8'))['domains'].items()}
@@ -121,6 +125,17 @@ CLAIM_CATEGORY = {'username': 'identity', 'preferred_username': 'identity', 'upn
 AUTH_LOCATION = re.compile(r'''cacheLocation\s*:\s*(?:["'`](\w+)["'`]|(?:msal\.)?BrowserCacheLocation\.(\w+))|store\s*:\s*(?:window\.)?(localStorage|sessionStorage)|(storeAuthStateInCookie)''')
 SCOPES = re.compile(r'''\bscopes?\s*:\s*(\[[^\]]{0,400}\]|["'`][^"'`]{0,200}["'`])''')
 FILE_KINDS = ('file_upload', 'file_parse', 'form_data_upload')
+# Go (and other compiled command-line tools): a send to a host, the opt-out it reads, and what identifies the machine
+GO_SEND = re.compile(r'\bhttp\.(Post|PostForm|Get|Head|NewRequest|NewRequestWithContext)\(|\.Do\(\s*req|\bhttp\.DefaultClient\b|\bresty\.New\(')
+GO_ENV = re.compile(r'\bos\.(?:Getenv|LookupEnv)\(\s*"([A-Za-z0-9_]+)"')
+OPT_OUT_ENV = re.compile(r'TELEMETRY|TRACK|ANALYTICS|METRICS|USAGE|OPT_?OUT|NO_UPDATE|UPDATE_CHECK|STATS|DIAGNOSTIC|CRASH_?REPORT', re.I)
+GO_IDENTIFIERS = {'os.Hostname': r'\bos\.Hostname\(', 'user.Current': r'\buser\.Current\(', 'net.Interfaces': r'\bnet\.Interfaces\(|\.HardwareAddr\b',
+                  'machineid': r'\bmachineid\.', 'os.Getuid': r'\bos\.Getuid\(', 'uuid.New': r'\buuid\.(New|NewString|NewRandom)\('}
+GO_HASH = re.compile(r'\b(sha256|sha1|sha512|md5|hmac|fnv)\.')
+TELEMETRY_PATH = re.compile(r'(^|/)(telemetry|analytics|metrics|usage|tracking|stats|crash(report)?s?)(/|$)', re.I)
+GO_FLAG = re.compile(r'\b(?:flag|\w+\.(?:Persistent)?Flags\(\))\.(?:String|StringP|StringVar|StringVarP)\(\s*(?:&[\w.]+\s*,\s*)?"(?P<name>[\w-]+)"')
+NOT_RECIPIENT = re.compile(r'(^|\.)(localhost|example\.(com|org|net)|[\w-]+\.(test|invalid|local|localhost|example))$|^127\.|^0\.0\.0\.0$'
+                           r'|(^|\.)(w3\.org|xmlsoap\.org|json-schema\.org)$|^schemas\.', re.I)
 
 
 def sdk_like(host: str, path: str) -> bool:
@@ -513,6 +528,11 @@ def main() -> int:
     a = ap.parse_args()
     repo = a.repo
     t0 = time.time()
+    # what the repository is written in (vendored and embedded third-party trees left out): a scan that reads only some
+    # languages says so, loudly, when most of the code is in another
+    cen = lang_census.census(repo, list(a.exclude))
+    coverage = lang_census.language_coverage(cen, ANALYSED, tool='scan_privacy.py', what='privacy scan')
+    coverage['needs_limitation'] = [coverage['dominant_unsupported_language']] if coverage['status'] == 'unsupported_dominant' else []
     collection, sinks, sdks, permissions, scripts, rum_inits, imports, skipped = [], [], [], [], [], [], [], []
     replay_inits, server_sends, wrappers, texts_meta = [], [], {}, {}
     aliases: dict[str, dict] = {}
@@ -534,6 +554,7 @@ def main() -> int:
     test_names = set() if a.include_tests else TEST_DIRS - set(a.exclude)
     kept_dirs: list[str] = []
     cli_packages = node_packages(repo)
+    go_pkgs: dict[str, dict] = {}   # package directory -> its sends, hosts, opt-out variables and identifiers
     for p in files(repo, pruned, SKIP | set(a.exclude), test_names, kept_dirs):
         rel = p.relative_to(repo).as_posix()
         lang = LANG.get(p.suffix.lower())
@@ -738,6 +759,23 @@ def main() -> int:
                                      'mask_options': bool(re.search(r'\b(maskAllText|maskAllInputs|blockAllMedia|mask|block|unmask|unblock|maskFn)\s*:', opts)),
                                      'session_sample_rate': float(rate.group(1)) if rate else None,
                                      'consent_check_nearby': consent_nearby(T, n), 'side': 'server' if server_file else 'client'})
+        if lang == 'go':
+            # command-line flags that take personal data (--email): collection points, so a log line naming them counts
+            for m in (GO_FLAG.finditer(text) if 'tring' in text else ()):
+                nm = m.group('name').replace('-', '_')
+                collection.append({'file': rel, 'line': T.line_of(m.start()), 'kind': 'cli_flag', 'field': nm, 'category': classify(nm)})
+                v = re.match(r'^\s*(\w+)\s*:?=', T.line(T.line_of(m.start())))
+                if v and v.group(1) != nm:
+                    alias[v.group(1)] = nm      # email := flag.String("email", ...) and user := flag.String("email", ...)
+            pkg = go_pkgs.setdefault(Path(rel).parent.as_posix(), {'hosts': [], 'sends': [], 'env': set(), 'ids': set(), 'hash': False})
+            for m in (URL_LIT.finditer(text) if '//' in text else ()):
+                host = (urlparse('//' + m.group(1)).hostname or m.group(1)).lower()
+                if not NOT_RECIPIENT.search(host) and not DOC_HOST.match(host):
+                    pkg['hosts'].append((host, rel, T.line_of(m.start())))
+            pkg['sends'] += [f'{rel}:{T.line_of(m.start())}' for m in GO_SEND.finditer(text)]
+            pkg['env'] |= {m.group(1) for m in GO_ENV.finditer(text)}
+            pkg['ids'] |= {k for k, rx in GO_IDENTIFIERS.items() if re.search(rx, text)}
+            pkg['hash'] = pkg['hash'] or bool(GO_HASH.search(text))
         texts_meta[rel] = (lang, T, server_file)
     # calls to app wrappers around a sink (found above, or named with --log-sinks / --analytics-sinks), one level deep
     for opt, kind in ((a.log_sinks, 'log'), (a.analytics_sinks, 'analytics')):
@@ -882,6 +920,35 @@ def main() -> int:
              side='server', note='a vendor endpoint called from server or Node code (a route handler, a server module, or a command-line '
              'tool such as a package with a "bin" sending telemetry): a browser capture never sees these requests, and the browser '
              'consent choice does not stop them unless the server checks it; trace what the payload carries')
+    # a Go package that sends to a host: a call home when it reads an opt-out variable, sits in a telemetry package, or
+    # reads what identifies the machine; otherwise a vendor host is a server_side_send, and the rest are listed for review
+    outbound_hosts = []
+    for d, pkg in sorted(go_pkgs.items()):
+        if not pkg['sends'] or not pkg['hosts']:
+            continue
+        opt_out = sorted(v for v in pkg['env'] if OPT_OUT_ENV.search(v))
+        callhome = bool(opt_out or TELEMETRY_PATH.search(d) or pkg['ids'])
+        seen_h = set()
+        for host, rel_, ln in pkg['hosts']:
+            if host in seen_h:
+                continue
+            seen_h.add(host)
+            vendor = VENDOR_DOMAINS.get(registrable(host))
+            excerpt = REDACT.redact(texts_meta[rel_][1].line(ln).strip())[:160]
+            if callhome:
+                cand(type='telemetry', subtype='call_home', file=rel_, line=ln, host=host, vendor=vendor, side='client', excerpt=excerpt,
+                     fields=[], categories=['online_identifier'] if pkg['ids'] else [], confidence='pattern',
+                     facts={'package': d, 'sends_at': pkg['sends'][:5], 'opt_out_env': opt_out, 'identifiers': sorted(pkg['ids']),
+                            'hashing': pkg['hash']},
+                     note="a command-line tool or service sends to this host from the user's machine: check whether it is on by default "
+                          '(an opt-out variable as the only choice), what the payload carries, and whether an update check honours the '
+                          'same opt-out. Point it at a loopback sink to observe it (SKILL.md, command-line tools)')
+            elif vendor:
+                cand(type='personal_data_to_third_party', subtype='server_side_send', file=rel_, line=ln, vendor=vendor, host=host,
+                     excerpt=excerpt, fields=[], categories=[], confidence='pattern', side='server',
+                     note='a vendor endpoint called from Go code: a browser capture never sees it; trace what the payload carries')
+            else:
+                outbound_hosts.append({'host': host, 'file': rel_, 'line': ln, 'package': d})
     for r in rum_inits:
         if r['replay'] and r['privacy_level'] in (None, 'allow'):
             how = 'set to allow' if r['privacy_level'] else 'not set, so the SDK version\'s default applies'
@@ -942,12 +1009,15 @@ def main() -> int:
            'collection': collection, 'collection_by_category': by_cat, 'sinks': sinks, 'sdks': sdks, 'permissions': permissions,
            'test_named_dirs_scanned': [{'dir': d + '/', 'reason': 'holds a package manifest (a product package)' if any(
                (repo / d / m).is_file() for m in PACKAGE_MANIFESTS) else 'named after a test tool but holds no test files'} for d in kept_dirs],
-           'wrappers': sorted(wrappers.values(), key=lambda w: (w['file'] or '', w['line'] or 0, w['name'])), 'candidates': candidates}
+           'wrappers': sorted(wrappers.values(), key=lambda w: (w['file'] or '', w['line'] or 0, w['name'])), 'candidates': candidates,
+           'outbound_hosts': outbound_hosts, 'language_coverage': coverage}
     # the validator rejects any email, phone or card-like value in the evidence: redact every remaining string
     # (labels, placeholders, notes) the same way, whatever pattern put it there; paths are left alone
     for k in ('collection', 'sinks', 'sdks', 'permissions', 'wrappers', 'candidates'):
         out[k] = redact_strings(out[k])
     a.out.parent.mkdir(parents=True, exist_ok=True)
+    if coverage.get('warning'):
+        print(f'WARNING: {coverage["warning"]}', file=sys.stderr)
     a.out.write_text(json.dumps(out, indent=1) + '\n', encoding='utf-8', newline='\n')
     print(f'{n_files} file(s) in {out["seconds"]}s: {len(collection)} collection point(s), {len(sinks)} sink(s), {len(sdks)} SDK reference(s), '
           f'{len(candidates)} candidate(s) -> {a.out}')

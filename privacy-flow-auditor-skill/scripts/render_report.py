@@ -47,11 +47,14 @@ def main() -> int:
         out += [c(f'Browser capture {"NOT RUN" if status == "not_run" else "PARTIAL"}: {(r.get("run_status_reason") or "-").rstrip(".")}.', 'bold')
                 + (' Static findings only; no consent state, request or canary was tested.' if status == 'not_run' else ''), '']
     if h.get('consent_banner') is False:
-        consent_line = (f'No consent banner (there is no choice to make). Third parties contacted: '
+        consent_line = (f'No consent banner (there is no choice to make). Third parties contacted by the captured pages: '
                         f'{seen("third_parties_before_consent", "no_banner")}. ')
     else:
-        consent_line = (f'Third parties before consent: {seen("third_parties_before_consent", "before")}. '
+        consent_line = (f'Third parties the captured pages contacted before consent: {seen("third_parties_before_consent", "before")}. '
                         f'After "Reject all": {seen("third_parties_after_reject", "reject")}. ')
+    # recipients outside the browser (a command-line tool's call home, server-side sends) come from the findings
+    if h.get('recipients_in_findings'):
+        consent_line += f'Recipients named by findings (code or runtime evidence outside the browser too): {", ".join(h["recipients_in_findings"])}. '
     out += [
            ' '.join(f'{c(p, p)} {n}' for p, n in h['counts'].items()), '', h['statement'], '',
            consent_line + f'Special-category flows: {", ".join(h["special_category_flows"]) or "none"}.', '']

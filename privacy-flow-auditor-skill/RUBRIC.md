@@ -26,10 +26,17 @@ Children's services (`children: true`): every category one level higher, up to 4
 
 An identity SDK's token cache in `localStorage` or `sessionStorage` (`auth_token_storage`) is
 `insecure_storage`; its reach is usually 3 (every signed-in user). With no consent banner (`no_banner`),
-anything sent is `before_consent`: there is no choice to wait for.
+anything sent is `before_consent`: there is no choice to wait for. The same holds for a send that is
+on by default with an opt-out as the only choice (a command-line tool's call home, a page beacon): a
+`telemetry` or `first_party_beacon` finding found by review sets `default_on: true` and may be
+`before_consent`, on its basis (the code that sends unless an opt-out is set, or a sink log of a run with
+no opt-out).
 
-The validator checks the basis against the candidates: `before_consent` needs the before state,
-`after_reject` the reject state, `undeclared_third_party` an undeclared recipient.
+The validator checks the basis against the candidates: `before_consent` needs the before state (or
+`default_on` as above), `after_reject` the reject state, `undeclared_third_party` an undeclared recipient,
+and `declared_unexpected` a declared processor that names the recipient: the finding's vendor (or its
+alias or parent company) or domain must be in the `--declared` file or in the text of
+`metadata.declared_processors`; a finding that names no recipient is at most `pattern`.
 
 ## Reach (from `flows.json`)
 
@@ -73,6 +80,7 @@ AU: the APPs), listed for the regions in scope:
 | `cross_border_transfer` | A vendor outside the regions receiving data (needs a region from the list) |
 | `missing_usage_description` | A mobile permission without a purpose string |
 | `first_party_beacon` | A first-party write fired without a form submission (telemetry, experiment exposure, autosave), usually before any choice |
+| `telemetry` | A call home from software on the user's machine (a command-line tool's usage events, a crash report, an update check carrying an identifier), usually on by default with an environment variable or setting as the opt-out |
 
 Tracking findings also cover first-party tracking paths (an analytics proxy or error-tracker tunnel on
 the site's own host) and vendor calls the site's own CSP stopped in the browser (attempted, never sent),
@@ -83,9 +91,11 @@ after a dismissal is tracking before consent.
 
 With `run_status: not_run` (no capture), findings rest on the code: `traced` with a full code path, or
 `pattern`. Nothing is `observed`, no consent state is named, and `before_consent` needs a static
-`tracking_before_consent` candidate (pattern). A finding found by reading the code (`source: agent`)
-carries a `basis` of re-checkable file lines (or runtime evidence) and is at most `traced` without
-runtime evidence.
+`tracking_before_consent` candidate (pattern), or a `default_on` review finding. A finding found by
+reading the code (`source: agent`) carries a `basis` of re-checkable file lines (or runtime evidence) and
+is at most `traced` without runtime evidence. With recorded runtime evidence (a `{"evidence": file}` basis:
+a loopback sink or proxy log a command-line tool sent to) it may be `observed`, in a `not_run` audit too:
+the browser run is one kind of runtime evidence, not the only one.
 
 ## Triage outcomes
 

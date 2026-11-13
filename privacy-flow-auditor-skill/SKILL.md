@@ -1,7 +1,7 @@
 ---
 name: privacy-flow-auditor
 description: Map where personal data goes in a web app - what it collects, where it stores it, what it logs, and which third parties receive it, and whether that happens before the user consents or after they reject. Combines a static scan of the code (collection points, logging, analytics, session replay, storage, SDKs, mobile permissions) with a live browser capture in three consent states (before a choice, after "Reject all", after "Accept all"), typing synthetic canary values and searching every request, cookie and storage entry for them raw, URL-encoded, Base64 and hashed. Produces a data inventory, recipients, a consent matrix and ranked findings with GDPR, UK GDPR and Australian Privacy Principles references for a privacy professional. Never types or stores real personal data, and never says an app is compliant.
-version: 1.3.0
+version: 1.4.0
 ---
 
 # Privacy flow auditor
@@ -100,7 +100,7 @@ consent state, request or canary was tested.
 **Findings found by review.** Code reading finds flows no pattern catches. Such a finding sets
 `"source": "agent"`, may have no candidates, and carries `"basis"`: `{file, line, excerpt}` items (the
 validator re-reads each line with `--repo`) or `{evidence: path}` for runtime evidence. It is at most
-`traced`, never `observed` without runtime evidence, and the renderer labels it "found by review". It may
+`traced`, never `observed` without recorded runtime evidence (a `{"evidence": file}` basis from a run: the browser capture, or a loopback sink log a command-line tool sent to), and the renderer labels it "found by review". It may
 name its `vendor` when a basis excerpt or a code-path line names a host `data/vendors.json` lists for that
 vendor (a telemetry module's `https://<region>.i.posthog.com` names PostHog), even when no candidate does.
 
@@ -129,10 +129,24 @@ vendor (a telemetry module's `https://<region>.i.posthog.com` names PostHog), ev
      verdict); marks sinks in server code (route handlers, middleware, `*.server.*`, Sentry server and
      edge configs) and in Node code no browser runs (a file that reads Node built-ins such as `node:os` or
      `process.argv`, or any file of a package whose `package.json` declares a `bin`, unless the file touches
-     the DOM) `side: server`, and raises a vendor endpoint called from such code (a command-line tool's
-     telemetry included) as a `server_side_send` candidate: a browser capture never sees it and the
+     the DOM) `side: server`, and raises a vendor endpoint called from such code (a Node command-line
+     tool's telemetry included) as a `server_side_send` candidate: a browser capture never sees it and the
      browser's consent choice doesn't stop it (a library shared by server and client code isn't recognised
-     as server code);
+     as server code). Sends from command-line tools are recognised in JavaScript, TypeScript, Python and Go
+     only; Rust, Java, C# and other compiled tools are not scanned for sends (see the language coverage
+     below);
+   - reads Go: `log.*`, `slog`, `logrus`, `zap` and `fmt.Fprintf(os.Stderr, ...)` are log sinks and
+     `http.Post`/`Get`/`NewRequest` HTTP sinks; command-line flags (`flag.String("email", ...)`, cobra
+     `Flags().StringVar`) are collection points (`cli_flag`), so logging one is a candidate. A Go package
+     that sends to a host (`http.Post`, `NewRequest`, a client's `Do`) and reads an opt-out variable
+     (`DO_NOT_TRACK`, `*_TELEMETRY`, `*_NO_UPDATE_CHECK`...), sits in a `telemetry`/`analytics`/`metrics`
+     package, or reads what identifies the machine (`os.Hostname`, `user.Current`, MAC addresses, a
+     machine id) is a `telemetry` candidate (`call_home`, `side: client`) with those facts and whether a
+     hash is applied; other hosts it sends to are listed under `outbound_hosts` for review;
+   - counts the repository's source files per language with `lang_census.py` (vendored, bundled and
+     embedded third-party trees left out) and records `language_coverage` in `static.json`; when most of
+     the code is in a language the scan doesn't read, it prints a warning and the validator requires a
+     limitation that names that language;
    - raises Sentry Session Replay with no masking options (`sdk_default_masking`, `masked_by_default`:
      dismissable as `pii_disabled` once the installed version's default is checked) and with no consent
      check nearby (`replay_before_consent`);
@@ -240,6 +254,33 @@ python scripts/render_report.py <run>/privacy_audit.json [--brief]
 - **Native apps:** the static scan reads manifests and usage strings; the live part belongs to the mobile
   app auditor, whose HAR can be searched with `match_canaries.py scan`.
 
+## Command-line tools and other non-web targets
+
+`flows.json` needs a site, so an audit of a command-line tool (or a service with no pages) is `not_run`
+for the browser part, unless it generates a page worth capturing (an HTML report: capture it, and say in
+the limitations that the capture covered that page only). The rest still applies:
+
+- **Find the sends.** The `telemetry` candidates, `outbound_hosts`, and reading the code: what is sent
+  (event names, error messages, file paths, an identifier and how it is derived: a hash of a host name or
+  user name is still an identifier), where, and when (the first run? before the notice is printed?).
+- **Observe them with a fake endpoint.** When the code lets the endpoint be overridden (an environment
+  variable such as `<TOOL>_TELEMETRY_URL`, a config key), point it at a loopback sink (a few lines of
+  `http.server` that log each request's method, path and body to a file in the run directory), and run
+  the tool in a sandbox: HOME set to an empty folder, `HTTP_PROXY`/`HTTPS_PROXY` at a closed loopback port
+  so nothing else leaves, update checks off, and no real device or account. With no override, use a
+  loopback logging proxy instead and record only hosts and paths. Never send to the real endpoint.
+- **Test the opt-out matrix.** Run with the opt-out unset, set to `1`, `0`, `false` and empty
+  (`DO_NOT_TRACK` and the tool's own variable), and record which runs reached the sink. Check that the
+  notice, if any, comes before the first send, and whether the update check honours the same opt-out.
+- **Report.** A finding found this way is `source: agent`, type `telemetry`, with `domain` (the real
+  endpoint's host, from the code) and a basis of the code lines plus `{"evidence": "<sink log>"}`; with
+  that runtime evidence it may be `observed`. A send that happens with no choice made sets
+  `default_on: true` and `flow_basis: before_consent`. `declared_unexpected` needs the recipient named in
+  the declaration (`metadata.declared_processors` text, such as a README's telemetry section that names
+  the host). Inventory items may list the recipient when such a finding carries the field, and the
+  headline's `recipients_in_findings` lists it, so the brief never reads as if nothing leaves. Keep the
+  sink logs free of personal data and credentials (the validator scans them).
+
 ## Output fields
 
 `run_status` and `run_status_reason`, `scope` (targets, repo, regions, flows with reach, consent states
@@ -247,9 +288,9 @@ tested, covered, not_covered),
 `metadata` (browser, canary set id, lists, declared processors source, tools), `inventory[]`,
 `recipients[]` (with `declared_as` and blocked request counts), `consent_matrix[]`, `findings[]` (type, title, candidates, categories, fields, vendor,
 recipient kind, consent states, flow basis, reach, sensitivity, flow, score, priority, floor, cap,
-confidence, evidence, references, fix, verification; `source: agent` and `basis` for a finding found by review), `triage[]`, `headline` (counts, third parties
+confidence, evidence, references, fix, verification; `source: agent` and `basis` for a finding found by review; `default_on` for a telemetry or beacon send with no choice made), `triage[]`, `headline` (counts, third parties
 before consent and after rejection - `null` for a state that wasn't tested - `states_not_tested`, special-category
-flows, statement, disclaimer; `consent_banner: false` and `states_not_applicable` for an app with no banner),
+flows, `recipients_in_findings` (domains the findings name, from code or runtime evidence outside the browser too), statement, disclaimer; `consent_banner: false` and `states_not_applicable` for an app with no banner),
 `metadata.session` (whose signed-in session the capture used), `limitations[]`.
 
 ## What the validator enforces
@@ -274,6 +315,6 @@ the evidence fails. File upload points from the scan must be followed up in the 
 limitations: the text must speak of uploads (or attachments, spreadsheets, a dropzone or file input; a bare
 "files" does not count) and, when several files hold upload points, name each of them. A finding with
 `flow_basis: declared_unexpected` needs declared processors (`--declared` at merge, or
-`metadata.declared_processors`). With no consent banner, the statement says so. `--write-summary` fills missing ratings and the
+`metadata.declared_processors`) that name its recipient (vendor, alias or parent company, or domain); one that names no recipient is at most `pattern`. `before_consent` from review needs `default_on: true` on a `telemetry` or `first_party_beacon` finding. An inventory recipient needs a live candidate, or a traced or observed finding naming the domain and the field. When the static scan reports that most of the code is in a language it does not analyse (`language_coverage`), a limitation must name that language. With no consent banner, the statement says so. `--write-summary` fills missing ratings and the
 headline instead of failing on them; `--fix-ratings` rewrites computed rating fields that are wrong and
 lists each change (the rating error shows the arithmetic).
