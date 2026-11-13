@@ -9,7 +9,13 @@ Needs `pip install -r requirements.txt` and `playwright install chromium`, plus 
 
 Config (JSON):
     targets            list of URLs (required) or "sitemap": URL
-    crawl              {"max_pages": 25, "same_origin": true}; omit to audit only the targets
+    crawl              {"max_pages": 25, "same_origin": true, "max_loads": 100}; omit to audit only the targets.
+                       The crawl prints each page it loads, loads at most max_loads (default 4 x max_pages) and
+                       stops sooner once max_pages templates are found or max_pages loads in a row add none.
+                       Non-HTML responses (a linked .txt, XML or JSON file) are skipped, not sampled.
+    settle_seconds     10: most time spent settling each load (network quiet 500 ms, then a quiet DOM).
+                       Event streams, websockets, long-poll and hot-reload requests, and any request open
+                       longer than long_lived_seconds (4), don't hold it open; events names them.
     wcag_version       "2.2" (default), "2.1" or "2.0";  level "AA" (default), "A" or "AAA"
     viewports          ["1280x800", "320x640"] (default)
     engines            ["axe-core", "ibm-equal-access", "htmlcs"] (+ "vnu" if Java and the jar are available)
@@ -49,7 +55,8 @@ Config (JSON):
                        reason says how it entered: critical_path, listed, structured, random or unreachable.
 
 Probes: the keyboard probe starts sequential focus from an invisible point at the top of the body (no
-click), so the first Tab reaches a skip link; target size is measured at the top of the page with
+click), so the first Tab reaches a skip link (in a named state with a modal open and focus inside it, it
+starts from the focused element and expects only the modal's controls); target size is measured at the top of the page with
 pointer targets only (never a tabindex-only container or a visually hidden link), and fixed or sticky
 targets are not compared with in-flow ones; motion watches fresh loads in their own pages, so the
 audited page is never reloaded under later probes.
@@ -78,6 +85,13 @@ AXE_TAGS = {'2.0': ['wcag2a', 'wcag2aa', 'wcag2aaa'], '2.1': ['wcag2a', 'wcag2aa
             '2.2': ['wcag2a', 'wcag2aa', 'wcag2aaa', 'wcag21a', 'wcag21aa', 'wcag22aa']}
 IBM_RULESET = {'2.0': 'WCAG_2_0', '2.1': 'WCAG_2_1', '2.2': 'WCAG_2_2'}
 HTMLCS_STD = {'A': 'WCAG2A', 'AA': 'WCAG2AA', 'AAA': 'WCAG2AAA'}
+# connections a dev server or live page keeps open: they never finish, so waiting for them is waiting forever
+LONG_LIVED_URL = re.compile(r'(?i)/socket\.io/|/sockjs(-node)?/|/_next/webpack-hmr|__webpack_hmr|/@vite/client|/livereload|'
+                            r'/hot-update|/_hmr|/__hmr|[?&]transport=polling|/event-?stream|/sse(?:[/?]|$)|/long-?poll')
+# landmarks that repeat with the content (code blocks, cards and panels as regions) rather than mark the template
+CONTENT_LANDMARKS = {'region', 'section', 'dialog', 'form'}
+HTML_TYPES = ('text/html', 'application/xhtml+xml')
+NON_PAGE_LINK = re.compile(r'(?i)\.(pdf|zip|gz|png|jpe?g|gif|webp|avif|svg|ico|mp[34]|webm|docx?|xlsx?|pptx?|csv|txt|xml|json|rss|atom|md|js|css|woff2?)$')
 
 
 def now() -> str:
@@ -97,6 +111,28 @@ def is_loopback(url: str) -> bool:
 def parse_vp(s: str) -> tuple[int, int]:
     w, h = s.lower().split('x')
     return int(w), int(h)
+
+
+def url_pattern(u: str) -> str:
+    path = urlparse(u).path or '/'
+    path = re.sub(r'/\d+(?=/|$)', '/{n}', path)
+    path = re.sub(r'/[0-9a-f]{8,}(?=/|$)', '/{id}', path)
+    return path
+
+
+def _distinct(parts) -> str:
+    """In order of first appearance, each once: three cards or code blocks give the same key as one."""
+    return '+'.join(dict.fromkeys(p for p in parts if p))
+
+
+def template_key(f: dict) -> str:
+    """The page's template: URL directory pattern, the page-level landmarks and the kinds of children of main.
+    Landmarks that come with the content (regions, labelled sections, forms, dialogs) and repeat counts are left
+    out, so a docs page with four code-block regions and one with none still share a template."""
+    sig = f.get('template_sig') or {}
+    lms = [x for x in (sig.get('landmarks') or '').split('+') if x not in CONTENT_LANDMARKS]
+    shape = (sig.get('main_shape') or '').split(',')
+    return f"{url_pattern(f['url']).rsplit('/', 1)[0] or '/'}|{_distinct(lms)}|{_distinct(shape)}"
 
 
 # ---------------------------------------------------------------- PNG diff (stdlib)
@@ -177,6 +213,11 @@ class Runner:
         self.probes_js = (HERE / 'probes.js').read_text(encoding='utf-8')
         self.storage_state = None
         self._session_script = None   # restores a captured sessionStorage; holds token values, so never recorded
+        self.settle_seconds = float(cfg.get('settle_seconds', 10))
+        self.long_lived_seconds = float(cfg.get('long_lived_seconds', 4))
+        self._inflight: dict[int, dict] = {}
+        self.crawl_info: dict | None = None
+        self.skipped_non_html: list[dict] = []
 
     # engines -------------------------------------------------------------
     def prepare_engines(self):
@@ -237,6 +278,7 @@ class Runner:
         return ctx
 
     def goto(self, page, url: str) -> dict:
+        self.track(page)
         for attempt in range(3):
             self.throttle()
             try:
@@ -250,18 +292,63 @@ class Runner:
                 self.events.append({'url': url, 'event': f'HTTP {status}; backing off {delay}s', 'at': now()})
                 time.sleep(delay)
                 continue
+            ctype = ((resp.headers.get('content-type') if resp else '') or '').split(';')[0].strip().lower()
+            if ctype and ctype not in HTML_TYPES:
+                # a text, XML or JSON file linked from a page: nothing to audit, and no settling to wait for
+                return {'ok': status is None or status < 400, 'status': status, 'final_url': page.url, 'content_type': ctype}
             self.settle(page)
-            return {'ok': status is None or status < 400, 'status': status, 'final_url': page.url}
+            return {'ok': status is None or status < 400, 'status': status, 'final_url': page.url, 'content_type': ctype or None}
         return {'ok': False, 'status': status, 'error': 'rate limited after retries'}
 
+    def track(self, page):
+        """Count the page's requests in flight, so settle() can wait for the network without Playwright's
+        networkidle, which never arrives while a dev server holds a long-poll or event stream open."""
+        key = id(page)
+        if key in self._inflight:
+            return self._inflight[key]
+        flights: dict = {}
+        self._inflight[key] = flights
+        page.on('request', lambda r: flights.__setitem__(r, (time.time(), r.url, r.resource_type)))
+        page.on('requestfinished', lambda r: flights.pop(r, None))
+        page.on('requestfailed', lambda r: flights.pop(r, None))
+        return flights
+
     def settle(self, page):
-        try:
-            page.wait_for_load_state('networkidle', timeout=8000)
-        except Exception:
-            self.events.append({'url': page.url, 'event': 'network did not go idle within 8s', 'at': now()})
-        page.evaluate("""() => new Promise(res => { let t = setTimeout(res, 500); const stop = setTimeout(res, 5000);
-            new MutationObserver(() => { clearTimeout(t); t = setTimeout(() => { clearTimeout(stop); res(); }, 500); })
-              .observe(document, {subtree: true, childList: true, attributes: true}); })""")
+        """Wait until no request is in flight for 500 ms, then for a quiet DOM; both bounded by settle_seconds
+        (default 10) in all. Long-lived connections (event streams, websockets, long-poll and hot-reload
+        endpoints, or any request open longer than long_lived_seconds, default 4) don't hold the wait open;
+        each page that had one gets an event naming them (path only), so the report can say so."""
+        t0 = time.time()
+        budget = self.settle_seconds
+        flights = self.track(page)
+        quiet_since, long_lived = None, set()
+        while time.time() - t0 < budget:
+            t = time.time()
+            busy = 0
+            for r, (start, url, rtype) in list(flights.items()):
+                if rtype in ('eventsource', 'websocket') or LONG_LIVED_URL.search(url) or t - start > self.long_lived_seconds:
+                    long_lived.add(urlparse(url).path or url[:80])
+                else:
+                    busy += 1
+            if busy:
+                quiet_since = None
+            elif quiet_since is None:
+                quiet_since = t
+            elif t - quiet_since >= 0.5:
+                break
+            page.wait_for_timeout(100)
+        else:
+            self.events.append({'url': page.url, 'event': f'network did not go idle within {budget:g}s (settle cap)', 'at': now()})
+        if long_lived:
+            self.events.append({'url': page.url, 'event': f'treated as idle despite {len(long_lived)} long-lived connection(s): '
+                                                          + ', '.join(sorted(long_lived)[:3]), 'at': now()})
+        dom_ms = int(max(0.5, min(5.0, budget - (time.time() - t0))) * 1000)
+        quiet = page.evaluate("""(cap) => new Promise(res => { let t = setTimeout(() => res(true), 500);
+            const stop = setTimeout(() => res(false), cap);
+            new MutationObserver(() => { clearTimeout(t); t = setTimeout(() => { clearTimeout(stop); res(true); }, 500); })
+              .observe(document, {subtree: true, childList: true, attributes: true}); })""", dom_ms)
+        if quiet is False:
+            self.events.append({'url': page.url, 'event': f'DOM still changing after {dom_ms / 1000:g}s; audited as it was then', 'at': now()})
         try:
             self.inject_helpers(page)
         except Exception as e:  # every probe on this page then errors, which is recorded; never a silent pass
@@ -405,21 +492,38 @@ class Runner:
             html_file.unlink(missing_ok=True)
 
     # probes --------------------------------------------------------------
-    def probe_keyboard(self, page, shots: Path, pid: str) -> dict:
+    def probe_keyboard(self, page, shots: Path, pid: str, from_active: bool = False) -> dict:
         targets = page.evaluate('() => window.__qa.focusTargets()')
         focusable = targets['focusable']
         # Sequential focus starts from the top of the document: an invisible starting point is focused at the start
         # of the body (never a click: a click at fixed coordinates can land inside a fixed header, past the skip
         # link, or activate a control), so the first Tab reaches the first focusable element.
-        if not page.evaluate('() => window.__qa.focusStart()'):
+        # In a named state with a modal open and focus inside it (a search dialog opened with a shortcut), Tab
+        # starts from the focused element instead: starting at the top of the body would tab through the page
+        # behind the overlay, which a keyboard user never reaches.
+        modal = page.evaluate('() => window.__qa.openModal()') if from_active else None
+        start = 'active_element' if modal and modal.get('focus_inside') else 'top_of_document'
+        if start == 'top_of_document' and not page.evaluate('() => window.__qa.focusStart()'):
             raise RuntimeError('could not set the focus starting point at the top of the document')
+        if start == 'active_element':
+            # only the modal's own controls are expected to be reachable while it is open
+            focusable = [f for f in focusable if (f.get('xpath') or '').startswith(modal['xpath'] + '/')]
         limit = min(400, 3 * len(focusable) + 20)
-        started = False
+        started = start == 'active_element'
         stops, moves, trap = [], [], None
         seen: set[str] = set()
         last_new = 0
         measure = 'focus_visible' in self.probes
         pending = None  # previous stop waiting for its unfocused screenshot
+        if start == 'active_element':
+            # the focused control the traversal starts from is its first stop
+            info = page.evaluate('() => window.__qa.activeInfo()')
+            if info:
+                if measure:
+                    info['indicator'] = self.start_indicator(page, info)
+                    pending = info
+                stops.append(info); moves.append(info['xpath']); seen.add(info['xpath'])
+                last_new = 1
         for i in range(limit):
             page.keyboard.press('Tab')
             page.wait_for_timeout(60)
@@ -468,7 +572,7 @@ class Runner:
         for s in stops:
             s.pop('_shot', None)
         unreached = [f for f in focusable if f['xpath'] not in seen]
-        hover_only = [] if trap else self.hover_only_menus(page, seen)
+        hover_only = [] if trap or start == 'active_element' else self.hover_only_menus(page, seen)
         pointer_only = targets['pointer_only'][:50]
         self.add_listeners(page, pointer_only)
         positive = [s for s in stops if s.get('tabindex') and s['tabindex'].lstrip('-').isdigit() and int(s['tabindex']) > 0]
@@ -478,9 +582,13 @@ class Runner:
                 jumps.append({'from': a['xpath'], 'to': b['xpath']})
         first = stops[0] if stops else None
         skip = bool(first and re.search(r'href="#', first.get('html') or '') and re.search(r'skip|main|content', first.get('html') or '', re.I))
+        if start == 'active_element':
+            skip = None  # not measured: the traversal started inside the modal
+            pointer_only = [p for p in pointer_only if (p.get('xpath') or '').startswith(modal['xpath'] + '/')]
         return {'presses': len(moves), 'stops': stops, 'focusable_count': len(focusable), 'unreached': unreached[:50],
                 'pointer_only': pointer_only, 'trap': trap, 'positive_tabindex': positive, 'jumps': jumps[:20],
-                'skip_link_first': skip, 'hover_only': hover_only}
+                'skip_link_first': skip, 'hover_only': hover_only, 'start': start,
+                **({'modal': {k: modal.get(k) for k in ('xpath', 'selector', 'html')}} if modal else {})}
 
     def hover_only_menus(self, page, seen: set) -> list[dict]:
         """Links and buttons that only appear on :hover and that no key opens.
@@ -657,7 +765,7 @@ class Runner:
         return page.evaluate('() => window.__qa.targetSize()')
 
     def probe_hover_focus(self, page) -> dict:
-        found = []
+        found, own_box = [], 0
         cands = page.evaluate('() => window.__qa.hoverCandidates()')
         for c in cands:
             try:
@@ -669,7 +777,8 @@ class Runner:
                     continue
                 el.first.hover(timeout=2000)
                 page.wait_for_timeout(400)
-                popups = page.evaluate('() => window.__qa.newlyVisible()')
+                popups = page.evaluate('(x) => window.__qa.newlyVisible(x)', c['xpath'])
+                own_box += page.evaluate('() => window.__qa.ownBoxChanges()')
                 if not popups:
                     continue
                 pop = popups[0]
@@ -691,7 +800,8 @@ class Runner:
             except Exception as e:
                 self.events.append({'url': page.url, 'event': f'hover probe skipped an element: {type(e).__name__}', 'at': now()})
         page.mouse.move(1, 1)
-        return {'checked': len(cands), 'popups': found}
+        # own_box_changes: elements that appeared only inside the hovered element's own box (not content on hover)
+        return {'checked': len(cands), 'popups': found, 'own_box_changes': own_box}
 
     def watch_motion(self, page) -> dict:
         # 2.2.2 concerns movement that lasts more than 5 seconds: compare 5.0 s and 7.5 s after load
@@ -753,39 +863,61 @@ class Runner:
         found, seen = [], set()
         ctx = self.new_context(browser, self.viewports[0])
         page = ctx.new_page()
-        limit = max_pages * 4 if crawl else len(queue)
-        while queue and len(found) < limit:
+        # max_loads bounds the crawl (default 4 x max_pages); it also stops early once the structured sample is
+        # full (max_pages templates) or once max_pages loads in a row found no new template (saturated)
+        limit = int((crawl or {}).get('max_loads', max_pages * 4)) if crawl else len(queue)
+        must = {urldefrag(u)[0] for u in targets + cp_urls}
+        templates: set[str] = set()
+        since_new, stopped = 0, 'queue empty'
+        while queue:
+            if len(found) >= limit:
+                stopped = f'load limit ({limit}) reached'
+                break
+            if crawl and not must - seen:
+                if len(templates) >= max_pages:
+                    stopped = f'template sample full ({len(templates)} templates for max_pages {max_pages})'
+                    break
+                if since_new >= max_pages:
+                    stopped = f'no new template in the last {since_new} pages'
+                    break
             url = queue.pop(0)
             if url in seen:
                 continue
             seen.add(url)
+            print(f'[crawl {len(found) + 1}/{limit}] {url}', file=sys.stderr, flush=True)
             nav = self.goto(page, url)
             if not nav['ok']:
                 found.append({'url': url, 'ok': False, 'error': nav.get('error') or f"HTTP {nav.get('status')}"})
                 continue
+            if nav.get('content_type') and nav['content_type'] not in HTML_TYPES:
+                self.skipped_non_html.append({'url': url, 'content_type': nav['content_type']})
+                continue
             info = self.page_info(page)
-            found.append({'url': url, 'ok': True, 'final_url': nav.get('final_url'), 'title': info['title'],
-                          'template_sig': info['template'], 'captcha': info['captcha']})
+            f = {'url': url, 'ok': True, 'final_url': nav.get('final_url'), 'title': info['title'],
+                 'template_sig': info['template'], 'captcha': info['captcha']}
+            found.append(f)
+            key = template_key(f)
+            since_new = 0 if key not in templates else since_new + 1
+            templates.add(key)
             if crawl:
                 for link in info['links']:
                     link = urldefrag(link)[0]
-                    if urlparse(link).netloc in origin and link not in seen and not re.search(r'\.(pdf|zip|png|jpe?g|gif|svg|mp4|docx?)$', link, re.I):
+                    if urlparse(link).netloc in origin and link not in seen and not NON_PAGE_LINK.search(urlparse(link).path):
                         queue.append(link)
         ctx.close()
+        self.crawl_info = {'loaded': len(found) + len(self.skipped_non_html), 'limit': limit, 'templates': len(templates),
+                           'stopped': stopped if crawl else 'no crawl: listed targets only',
+                           'skipped_non_html': self.skipped_non_html[:50]}
+        print(f'[crawl] {self.crawl_info["loaded"]} loaded, {len(templates)} template(s); stopped: {self.crawl_info["stopped"]}',
+              file=sys.stderr, flush=True)
         return self.sample(found, set(cp_urls), max_pages)
 
     def sample(self, found: list[dict], cp_urls: set, max_pages: int) -> list[dict]:
-        def pattern(u):
-            path = urlparse(u).path or '/'
-            path = re.sub(r'/\d+(?=/|$)', '/{n}', path)
-            path = re.sub(r'/[0-9a-f]{8,}(?=/|$)', '/{id}', path)
-            return path
         groups: dict[str, list[dict]] = {}
         for f in found:
             if not f['ok']:
                 continue
-            sig = f['template_sig']
-            key = f"{pattern(f['url']).rsplit('/', 1)[0] or '/'}|{sig['landmarks']}|{sig['main_shape']}"
+            key = template_key(f)
             f['template'] = 'T' + hashlib.sha1(key.encode()).hexdigest()[:6]
             f['template_key'] = key
             groups.setdefault(f['template'], []).append(f)
@@ -845,11 +977,11 @@ class Runner:
             self.events.append({'url': page.url, 'event': f'overlay dismissal failed: {type(e).__name__}', 'at': now()})
             return False
 
-    def run_probe(self, probe, page, browser, url, vp, shots, aria, tag) -> dict:
+    def run_probe(self, probe, page, browser, url, vp, shots, aria, tag, from_active: bool = False) -> dict:
         t0 = time.time()
         try:
             if probe in ('keyboard', 'focus_visible'):
-                result = self.probe_keyboard(page, shots, tag)
+                result = self.probe_keyboard(page, shots, tag, from_active=from_active)
             elif probe == 'resize_text':
                 result = self.probe_resize_text(browser, url, shots, tag)
             elif probe == 'motion':
@@ -962,7 +1094,7 @@ class Runner:
                   'screenshot': f'{tag}.png', 'engines': self.run_engines(page), 'probes': {}}
         out['engines'] = {k: v['status'] for k, v in record['engines'].items()}
         for probe in sorted(st.get('probes', []), key=lambda p: p == 'motion'):
-            result = self.run_probe(probe, page, browser, pg['url'], vp, self.out / 'screenshots', self.out / 'aria', tag)
+            result = self.run_probe(probe, page, browser, pg['url'], vp, self.out / 'screenshots', self.out / 'aria', tag, from_active=True)
             record['probes'][probe] = result
             out['probes'][probe] = result['status']
         (self.out / 'raw' / f'{tag}.json').write_text(json.dumps(record, indent=1, ensure_ascii=False), encoding='utf-8')
@@ -1053,7 +1185,8 @@ def main() -> int:
            'unsampled': getattr(r, 'unsampled', []), 'pages': pages, 'blocked_requests': r.blocked, 'events': r.events,
            'authorised_by': cfg.get('authorised_by') or ('loopback target' if all(is_loopback(u) for u in targets) else None),
            'auth_used': bool(auth_used), 'mode': 'plan_only' if args.plan_only else 'audit',
-           'bypass_csp': r.bypass_csp, 'consent': r.consent_cfg(), 'requests': r.requests}
+           'bypass_csp': r.bypass_csp, 'consent': r.consent_cfg(), 'requests': r.requests, 'crawl': r.crawl_info,
+           'settle': {'cap_seconds': r.settle_seconds, 'long_lived_seconds': r.long_lived_seconds}}
     (out / 'run.json').write_text(json.dumps(run, indent=1, ensure_ascii=False), encoding='utf-8')
     print(json.dumps({'mode': run['mode'], 'pages': len(sample),
                       'reachable': sum(1 for s in sample if s['reason'] != 'unreachable'),

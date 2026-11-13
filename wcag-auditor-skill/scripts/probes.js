@@ -13,6 +13,21 @@
   const LANDMARK = 'header,nav,main,footer,aside,form,section[aria-label],section[aria-labelledby],' +
     '[role=banner],[role=navigation],[role=main],[role=contentinfo],[role=complementary],[role=search],[role=form],[role=region],[role=dialog]';
 
+  // ids a framework generates per render (React useId, Base UI, Radix, Headless UI, React Aria), or a path or slug
+  // with a "/" (one per sidebar item): they name one instance, so they would split one component into a
+  // candidate per instance
+  const GENERATED_ID = /^(:r[0-9a-z]*:$|«r[0-9a-z]*»$|_r_[0-9a-z]+_$|base-ui-|radix-|headlessui-|react-aria|mui-[0-9])|\//i;
+
+  // Focus sentinels a dialog or popover library puts round its content to catch Tab (data-*focus-guard,
+  // 0 x 0 or clipped aria-hidden spans): they pass focus straight on, so they are not focus targets to measure.
+  function sentinel(el) {
+    if (!el || el.nodeType !== 1) return false;
+    if ([...el.attributes].some(a => /^data-([a-z-]*-)?focus-?guard/.test(a.name) || a.name === 'data-focus-trap-sentinel')) return true;
+    const r = el.getBoundingClientRect();
+    const tiny = r.width <= 1 && r.height <= 1;
+    return el.getAttribute('aria-hidden') === 'true' && (tiny || visuallyHidden(el));
+  }
+
   function xpath(el) {
     if (!el || el.nodeType !== 1) return null;
     const parts = [];
@@ -44,7 +59,7 @@
     const own = el.localName + stableClasses(el).map(c => '.' + c).join('');
     const p = el.parentElement;
     const parent = p ? p.localName + stableClasses(p).map(c => '.' + c).join('') : '';
-    const id = el.id && !/\d{3,}/.test(el.id) ? '#' + el.id : '';
+    const id = el.id && !/\d{3,}/.test(el.id) && !GENERATED_ID.test(el.id) ? '#' + el.id : '';
     return `${landmarkOf(el)} ${parent} > ${own}${id}`.replace(/\s+/g, ' ').trim();
   }
 
@@ -222,6 +237,24 @@
     return out.slice(0, 200);
   }
 
+  // A focusable link or button that sits with a pointer-only element and likely does the same thing: one in the
+  // same heading (a heading's text is clickable and its anchor link is focusable), or a sibling of it.
+  function keyboardEquivalent(el) {
+    const ok = c => c !== el && visible(c) && isFocusable(c) && c.matches('a[href],button,[role=link],[role=button]');
+    const h = el.closest('h1,h2,h3,h4,h5,h6,[role=heading]');
+    if (h) {
+      const c = [...h.querySelectorAll('a[href],button,[role=link],[role=button]')].find(ok)
+        || [...(h.parentElement ? h.parentElement.children : [])].filter(x => x !== h).flatMap(x => x.matches('a[href]') ? [x] : []).find(ok);
+      if (c) return { ...describe(c), where: 'heading' };
+    }
+    const p = el.parentElement;
+    if (p) {
+      const c = [...p.children].find(ok);
+      if (c) return { ...describe(c), where: 'sibling' };
+    }
+    return null;
+  }
+
   function landmarks() {
     return [...document.querySelectorAll(LANDMARK)].filter(visible).map(l => ({
       role: l.getAttribute('role') || l.localName, label: l.getAttribute('aria-label') || null, xpath: xpath(l) }));
@@ -236,7 +269,9 @@
   function template() {
     const lm = landmarks().map(l => l.role).join('+');
     const main = document.querySelector('main,[role=main]') || document.body;
-    const shape = [...main.children].slice(0, 6).map(c => c.localName).join(',');
+    // the kinds of element in main, each once in order of first appearance: how many code blocks or
+    // paragraphs a page has doesn't change its template
+    const shape = [...new Set([...main.children].map(c => c.localName))].slice(0, 8).join(',');
     return { landmarks: lm, main_shape: shape };
   }
 
@@ -253,7 +288,8 @@
       const top = document.elementFromPoint(x, y);
       if (top && top !== el && !el.contains(top) && !top.contains(el)) {
         const fixed = top.closest('*') && (() => { for (let n = top; n; n = n.parentElement) { const p = getComputedStyle(n).position; if (p === 'fixed' || p === 'sticky') return n; } return null; })();
-        if (fixed) { covered++; by = by || describe(fixed); }
+        // a layer inside the same fixed header or toolbar as the focused control moves with it: not obscuring it
+        if (fixed && !fixed.contains(el)) { covered++; by = by || describe(fixed); }
       }
     }
     return { covered, total, by };
@@ -337,7 +373,8 @@
 
     focusTargets() {
       const all = interactive();
-      return { focusable: all.filter(isFocusable).map(describe), pointer_only: pointerOnly().map(describe) };
+      return { focusable: all.filter(isFocusable).filter(el => !sentinel(el)).map(describe),
+               pointer_only: pointerOnly().map(el => ({ ...describe(el), keyboard_equivalent: keyboardEquivalent(el) })) };
     },
 
     activeInfo() {
@@ -348,7 +385,19 @@
       d.tabindex = a.getAttribute('tabindex');
       d.doc_y = Math.round(a.getBoundingClientRect().top + scrollY);
       d.in_dialog = !!a.closest('dialog,[role=dialog],[aria-modal=true]');
+      d.sentinel = sentinel(a);
       return d;
+    },
+    // The open modal dialog, if any (a <dialog> shown modally, aria-modal=true, or a visible role=dialog), and
+    // whether focus is inside it: a state such as "search open" then starts the keyboard probe from there.
+    openModal() {
+      const a = deepActive();
+      const dialogs = [...document.querySelectorAll('dialog[open],[aria-modal=true],[role=dialog],[role=alertdialog]')]
+        .filter(d => visible(d) && (d.getAttribute('aria-modal') === 'true' || (d.localName === 'dialog' && d.matches(':modal'))
+                                    || ['dialog', 'alertdialog'].includes(d.getAttribute('role'))));
+      if (!dialogs.length) return null;
+      const d = dialogs.find(x => a && x.contains(a)) || dialogs[dialogs.length - 1];
+      return { ...describe(d), focus_inside: !!(a && d.contains(a) && a !== d) };
     },
     blurActive() { const a = deepActive(); if (a && a.blur) a.blur(); },
     refocus(xp) { const el = byXpath(xp); if (el && el.focus) el.focus({ preventScroll: true }); },
@@ -476,12 +525,27 @@
     focusStartDone() { const s = document.getElementById('__qa_focus_start'); if (s) s.remove(); },
 
     visibleSet() { window.__qa_vis = snapshotVisible(); return window.__qa_vis.size; },
-    newlyVisible() {
+    // Elements that became visible since visibleSet(). With the hovered trigger's xpath, anything that appears
+    // entirely inside the trigger's own box (an icon, an underline, a tint) is not additional content: it covers
+    // nothing else and goes when the pointer leaves, and :hover still holds after Escape. Those are counted only.
+    newlyVisible(triggerXp) {
       const before = window.__qa_vis || new Set();
       const added = [...snapshotVisible()].filter(e => !before.has(e));
-      const roots = added.filter(e => !added.includes(e.parentElement));
+      let roots = added.filter(e => !added.includes(e.parentElement));
+      const t = triggerXp ? byXpath(triggerXp) : null;
+      let ownBox = 0;
+      if (t) {
+        const tr = t.getBoundingClientRect();
+        const inside = e => { const r = e.getBoundingClientRect();
+          return r.left >= tr.left - 2 && r.top >= tr.top - 2 && r.right <= tr.right + 2 && r.bottom <= tr.bottom + 2; };
+        const kept = roots.filter(e => !inside(e));
+        ownBox = roots.length - kept.length;
+        roots = kept;
+      }
+      window.__qa_own_box = ownBox;
       return roots.slice(0, 5).map(describe);
     },
+    ownBoxChanges() { return window.__qa_own_box || 0; },
     hoverCandidates(limit = 40) {
       const sel = '[aria-describedby],[data-tooltip],[data-toggle=tooltip],[aria-haspopup],[aria-expanded],nav li,.tooltip-trigger,.has-tooltip';
       const els = [...document.querySelectorAll(sel)].filter(visible);

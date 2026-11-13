@@ -29,6 +29,27 @@ def contrast_data(ctx, check=None):
     return {'contrast': ctx, **({'axe_check': check} if check else {})}
 
 
+SENTINEL_HTML = re.compile(r'data-(?:[a-z-]*-)?focus-?guard|data-focus-trap-sentinel', re.I)
+
+
+def is_sentinel(stop: dict) -> bool:
+    """A focus guard (data-*focus-guard, or a 0 x 0 aria-hidden span) that a dialog library uses to catch Tab."""
+    if stop.get('sentinel'):
+        return True
+    html = stop.get('html') or ''
+    if SENTINEL_HTML.search(html):
+        return True
+    r = stop.get('rect') or {}
+    return 'aria-hidden="true"' in html and (r.get('w') or 0) <= 1 and (r.get('h') or 0) <= 1
+
+
+def inside_box(inner: dict | None, outer: dict | None, slack: int = 2) -> bool:
+    if not inner or not outer:
+        return False
+    return (inner['x'] >= outer['x'] - slack and inner['y'] >= outer['y'] - slack and
+            inner['x'] + inner['w'] <= outer['x'] + outer['w'] + slack and inner['y'] + inner['h'] <= outer['y'] + outer['h'] + slack)
+
+
 class Norm:
     def __init__(self, run: dict):
         self.run = run
@@ -191,7 +212,16 @@ class Norm:
                                  'revealed_on_hover': hm['revealed_on_hover'], 'keys_tried': hm['keys_tried']})
             for po in k['pointer_only']:
                 ls = po.get('listeners')
-                if ls:
+                eq = po.get('keyboard_equivalent')
+                if eq and eq.get('where') == 'heading' and re.search(r'href="#', eq.get('html') or ''):
+                    # clickable heading text next to the heading's own focusable anchor link: the same action by keyboard
+                    continue
+                if eq:
+                    self.probe(rec, 'keyboard.unreachable', 'cantTell', el=po,
+                               message=(f"Has {', '.join(ls) + ' listener(s) and ' if ls else ''}a pointer cursor but is not focusable; "
+                                        f"a focusable {eq.get('where')} control ({(eq.get('html') or '')[:80]}) may do the same: check it does"),
+                               data={'listeners': ls, 'keyboard_equivalent': eq.get('xpath')})
+                elif ls:
                     self.probe(rec, 'keyboard.unreachable', 'failed', el=po,
                                message=f"Has {', '.join(ls)} listener(s) and a pointer cursor but is not focusable or a native control",
                                data={'listeners': ls})
@@ -205,6 +235,11 @@ class Norm:
                 self.probe(rec, 'keyboard.order', 'cantTell', el={'xpath': j['to']}, message='Focus jumped back up the page', data=j)
             for s in k['stops']:
                 ob = s.get('obscured') or {}
+                by = (ob.get('by') or {}).get('xpath') or ''
+                if by and (s.get('xpath') or '').startswith(by + '/'):
+                    # the "covering" fixed element contains the focused control (a layer of the same fixed header);
+                    # runs from probes.js 1.2 skip such points themselves
+                    ob = {}
                 full = ob.get('total') and ob['covered'] == ob['total']
                 if full:
                     self.probe(rec, 'focus.obscured', 'failed', el=s, message='Focused element entirely hidden by fixed or sticky content',
@@ -213,6 +248,8 @@ class Norm:
                     self.probe(rec, 'focus.partly_obscured', 'failed', el=s, message='Focused element partly hidden by fixed or sticky content',
                                data={'covered_points': ob['covered'], 'sampled_points': ob['total'], 'covered_by': ob.get('by')})
                 self.checked(['2.4.11'])
+                if is_sentinel(s):
+                    continue  # a focus guard passes focus straight on: no indicator to measure
                 ind = s.get('indicator') or {}
                 if ind.get('changed_px') is None or full:
                     continue  # not measurable; an obscured element is reported under 2.4.11, not 2.4.7
@@ -281,6 +318,8 @@ class Norm:
         if h and h.get('status') == 'ran':
             self.checked(['1.4.13'], h['checked'])
             for pop in h['popups']:
+                if inside_box(pop['content'].get('rect'), pop['trigger'].get('rect')):
+                    continue  # appeared within the hovered element's own box (an icon or tint): not content shown on hover
                 d = {'trigger': pop['trigger']['xpath'], 'content': pop['content']['xpath']}
                 if not pop['dismissible']:
                     self.probe(rec, 'hover_focus.not_dismissible', 'failed', el=pop['trigger'],

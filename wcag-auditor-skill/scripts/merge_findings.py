@@ -30,6 +30,16 @@ VERSION_ORDER = {'2.0': 0, '2.1': 1, '2.2': 2}
 SEVERITY_ORDER = ['minor', 'moderate', 'serious', 'critical']
 
 
+# An id that names one instance rather than the component: generated per render by React (useId: :r1:, «r1», _R_1p5x_),
+# Base UI, Radix, Headless UI, React Aria or MUI, or a path or slug carrying a "/" (a sidebar item per page).
+INSTANCE_ID = re.compile(r'#(?::r[0-9a-z]*:|«r[0-9a-z]*»|_r_[0-9a-z]+_|(?:base-ui-|radix-|headlessui-|react-aria|mui-\d)\S*|\S*/\S*)$', re.I)
+
+
+def component_sig(sig: str) -> str:
+    """The signature without an instance id, so repeated components group into one candidate."""
+    return INSTANCE_ID.sub('', sig or '') or sig
+
+
 def scs_overlap(a, b):
     return bool(set(a) & set(b)) or (not a and not b)
 
@@ -77,7 +87,7 @@ def merge(items: list[dict], scs: dict) -> list[dict]:
     cands: list[dict] = []
     by_sig: dict[tuple, list[dict]] = {}
     for inst in instances:
-        key = (inst['sig'], inst['kind'])
+        key = (component_sig(inst['sig']), inst['kind'])
         bucket = by_sig.setdefault(key, [])
         for c in bucket:
             if scs_overlap(c['sc'], inst['sc']):
@@ -85,7 +95,7 @@ def merge(items: list[dict], scs: dict) -> list[dict]:
                 c['sc'] = sorted(set(c['sc']) | set(inst['sc']), key=sc_key)
                 break
         else:
-            c = {'sig': inst['sig'], 'kind': inst['kind'], 'sc': list(inst['sc']), 'instances': [inst]}
+            c = {'sig': key[0], 'kind': inst['kind'], 'sc': list(inst['sc']), 'instances': [inst]}
             bucket.append(c)
             cands.append(c)
     cands = group_contrast(cands)
