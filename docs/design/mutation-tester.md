@@ -359,7 +359,6 @@ Agreed with the user before the build.
     `metadata.coverage` against `mutants.json`.
   - **Recon.** `detect_tools.py` finds Stryker where Node would resolve it (hoisted or in the
     package) and reports `node`: package manager, workspace root, runner and TypeScript versions.
-  - Not changed here: the shared `diff_scope.py` still classifies a product package named `e2e`
-    as tests from a workspace root, and the shared `detect_conventions.py` false positives; both
-    belong to the shared files. The example is unchanged apart from schema_version 1.1.0 and
+  - `path_scope.py` passes the repository root to the shared `diff_scope.classify`, so a product
+    package named `e2e` is source (the shared fix). The example is unchanged apart from schema_version 1.1.0 and
     validates.

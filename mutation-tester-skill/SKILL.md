@@ -343,9 +343,10 @@ editing computed fields. Show the user:
   `covering_tests` is not empty for code the tests obviously call.
 - **Monorepo packages.** Run every step with `--repo` (and the baseline's `--cwd`) set to the
   package directory, so pytest finds the package's own `pyproject.toml` and rootdir, and Vitest or
-  Jest the package's own config. From a workspace root, the shared `diff_scope.py` classifies paths
-  by directory names such as `e2e/` or `test/`; check that a product package with such a name
-  is not marked as tests in `scope.json`, and run from the package directory if it is.
+  Jest the package's own config. From a workspace root, `diff_scope.py` and `path_scope.py` treat
+  a directory named `e2e/` or `tests/` as test code only when it is not a product package (a
+  manifest and shipped code, such as `src/`); still check `scope.json` marks the scoped files
+  `source`.
 - **Stryker and Vitest projects.** A Vitest config with `projects` (unit, integration) is run as
   a whole by Stryker's Vitest runner; give it a unit-only config with `--stryker-option
   vitest.configFile=...` (Step 4).
