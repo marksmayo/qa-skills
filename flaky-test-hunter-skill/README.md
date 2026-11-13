@@ -83,7 +83,8 @@ the clock shift).
 
 Rate factor 1–4 comes from the Wilson lower bound of the worst observed rate. Gate is 3 when the
 check blocks merging, 2 in CI, and 1 for local-only tests. Masking is 2 when the test guards a
-critical journey or the flake is a product race.
+critical journey or the flake is a product race. A flake on a non-required CI check that guards no critical
+journey therefore tops out at 8 (P2) by design, even at 3/3.
 
 ## Output
 

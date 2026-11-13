@@ -141,7 +141,8 @@ def scan(root: Path, data: dict) -> list[dict]:
                'prev_rx': re.compile(s['skip_if_prev']) if s.get('skip_if_prev') else None,
                'next_rx': re.compile(s['skip_if_next']) if s.get('skip_if_next') else None,
                'mit_rx': re.compile(s['mitigated_by']) if s.get('mitigated_by') else None}
-              for s in data['smells'] if s.get('scope') not in ('thread_setup', 'reload_target')]
+              for s in data['smells'] if s.get('scope') not in ('thread_setup', 'reload_target', 'module_let')]
+    module_let = [s for s in data['smells'] if s.get('scope') == 'module_let']
     project = [s for s in data['smells'] if s.get('scope') == 'thread_setup']
     reload_targets = [s for s in data['smells'] if s.get('scope') == 'reload_target']
     all_files = list(files(root))
@@ -211,6 +212,13 @@ def scan(root: Path, data: dict) -> list[dict]:
                             'excerpt': s[:160], 'cause': sm['cause'], 'message': sm['message'], 'fix': sm['fix'],
                             'test': enclosing_test(lines, i, lang in JS_LANGS) if is_test else None,
                             'in_test_file': is_test, 'mitigation': mitigation})
+        if is_test and lang in JS_LANGS:
+            for sm in module_let:
+                for name, line, test, mitigation in module_let_hits(lines, re.compile(sm['pattern'])):
+                    out.append({'id': f'SM-{len(out) + 1}', 'smell': sm['id'], 'file': rel, 'line': line + 1,
+                                'excerpt': lines[line].strip()[:160], 'cause': sm['cause'],
+                                'message': f"{sm['message']} ({name})", 'fix': sm['fix'], 'test': test,
+                                'in_test_file': True, 'mitigation': mitigation})
 
     # project checks: process.env.TZ assigned in a setup file that runs in worker threads
     why = thread_pool(root, pools) if project else None
@@ -243,6 +251,61 @@ def scan(root: Path, data: dict) -> list[dict]:
                                     'message': f"{sm['message']} ({p.stem} is reloaded by a test)", 'fix': sm['fix'],
                                     'test': None, 'in_test_file': False, 'mitigation': None})
     return out
+
+
+HOOK = re.compile(r'^\s*(beforeEach|afterEach|beforeAll|afterAll)\s*\(')
+
+
+def enclosing_block(lines: list[str], i: int) -> tuple[str, int] | None:
+    """The innermost test or hook callback around line i, by indentation: ('test', j) or (hook name, j)."""
+    indent = len(lines[i]) - len(lines[i].lstrip())
+    for j in range(i - 1, -1, -1):
+        s = lines[j]
+        if not s.strip():
+            continue
+        ind = len(s) - len(s.lstrip())
+        if ind >= indent:
+            continue
+        indent = ind
+        h = HOOK.match(s)
+        if h:
+            return h.group(1), j
+        if TEST_NAME.match(s) and TEST_NAME.match(s).group(3):
+            return 'test', j
+        if ind == 0:
+            return None
+    return None
+
+
+def module_let_hits(lines: list[str], decl: re.Pattern) -> list[tuple[str, int, str | None, str | None]]:
+    """A module-level `let`/`var` (no indentation) reassigned inside a test body: the next test in the file sees the
+    value it left. One hit per variable and test, at the first reassignment; a reset in beforeEach/afterEach is
+    noted as the mitigation."""
+    hits = []
+    for d, line in enumerate(lines):
+        m = decl.match(line)
+        if not m:
+            continue
+        name = m.group(1)
+        assign = re.compile(r'(?<![\w$.])' + re.escape(name) + r'\s*(?:=(?![=>])|\+\+|--|(?:[-+*/%|&^]|\?\?|\|\||&&)=)')
+        shadow = re.compile(r'\b(?:let|const|var)\s+' + re.escape(name) + r'\b')
+        in_tests, reset = {}, None
+        for i, l in enumerate(lines):
+            if i == d or not l[:1].isspace() or l.strip().startswith(('//', '*', '/*')):
+                continue
+            if not assign.search(l) or shadow.search(l):
+                continue
+            where = enclosing_block(lines, i)
+            if where is None:
+                continue
+            kind, j = where
+            if kind in ('beforeEach', 'afterEach'):
+                reset = reset or f'{name} is reset in {kind} (line {i + 1})'
+            elif kind == 'test':
+                in_tests.setdefault(j, i)
+        for j, i in in_tests.items():
+            hits.append((name, i, enclosing_test(lines, i, True), reset))
+    return sorted(hits, key=lambda h: h[1])
 
 
 RELOAD_ARG = re.compile(r'reload\(\s*([A-Za-z_][\w.]*)\s*\)')
@@ -306,6 +369,39 @@ fn test_waits() {
 RUST_SAMPLE_SRC = "pub static mut COUNTER: u32 = 0;\n"
 
 
+JS_LET_SAMPLE = """\
+import { describe, it, expect } from 'vitest'
+
+let loadError: Error | null = null
+const reader = () => loadError
+
+describe('decoder', () => {
+  it('decodes a small image', () => {
+    expect(reader()).toBe(null)
+  })
+
+  it('reports a load failure', () => {
+    loadError = new Error('missing codec')
+    expect(reader()).not.toBe(null)
+  })
+})
+"""
+JS_LET_RESET_SAMPLE = """\
+import { beforeEach, it, expect } from 'vitest'
+
+let visits = 0
+
+beforeEach(() => {
+  visits = 0
+})
+
+it('counts a visit', () => {
+  visits += 1
+  expect(visits).toBe(1)
+})
+"""
+
+
 def self_test() -> int:
     data = json.loads(DATA.read_text(encoding='utf-8'))
     ok = True
@@ -349,6 +445,20 @@ def self_test() -> int:
         silent = coverage_warning(root, data) is None
         lines.append(f"warning silent on python repo: {'ok' if silent else 'FAILED'}")
         ok = ok and silent
+
+    # 3) A module-level let reassigned in a test is a smell; one reset in beforeEach is its mitigation.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        (root / 'tests').mkdir()
+        (root / 'tests' / 'loader.test.ts').write_text(JS_LET_SAMPLE, encoding='utf-8')
+        (root / 'tests' / 'reset.test.ts').write_text(JS_LET_RESET_SAMPLE, encoding='utf-8')
+        hits = [h for h in scan(root, data) if h['smell'] == 'module-let-reassigned']
+        got = {(h['file'], h['test'], bool(h['mitigation'])) for h in hits}
+        want = {('tests/loader.test.ts', 'decoder > reports a load failure', False),
+                ('tests/reset.test.ts', 'counts a visit', True)}
+        good = got == want
+        lines.append(f"module-level let reassigned in a test: {'ok' if good else 'FAILED, got ' + str(sorted(got))}")
+        ok = ok and good
 
     print('self-test ' + ('passed' if ok else 'FAILED') + ':\n  ' + '\n  '.join(lines),
           file=sys.stderr)

@@ -21,20 +21,32 @@ naming one (needs_several, fails_alone, passes_alone, not_reproduced). A run tha
 a collection error, an id pytest could not find) stops the bisection with outcome `errored`.
 
 The output names the test in both forms: `polluter` is the case id as runs.json records it (the
-form a report uses), `polluter_node_id` the pytest node id that was run. Works for presets that run
-explicit test ids in the order given (pytest).
+form a report uses), `polluter_node_id` the pytest node id that was run.
+
+Only pytest is supported: bisection needs a runner that runs explicit test ids in the order given.
+Vitest and Jest rerun `file -t pattern` in file order, node:test has no id filter, so "the polluter,
+then the victim" cannot be expressed. For any other preset the script runs nothing, writes
+`outcome: not_supported` with the reason (to --out if given) and exits 2. Find order dependence
+there with fixed shuffle seeds instead (SKILL.md Step 4).
 """
 from __future__ import annotations
 import argparse, json, re, subprocess, sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+SUPPORTED_PRESETS = ('pytest',)  # runners that run explicit ids in the order given
+REPEAT_SUFFIX = re.compile(r'#\d+$')
+
+
+def base_id(case_id: str) -> str:
+    """Drop the `#2` suffix parse_results adds to a repeated name; a `#` inside a test title stays."""
+    return REPEAT_SUFFIX.sub('', case_id)
 
 
 def node_id(case_id: str, file: str | None) -> str:
     """parse_results case id (tests.test_fares::name) -> pytest node id (tests/test_fares.py::name)."""
     cls, _, name = case_id.partition('::')
-    name = name.split('#')[0]
+    name = base_id(name)
     if file:
         return f'{file}::{name}'
     return cls.replace('.', '/') + '.py::' + name
@@ -43,7 +55,7 @@ def node_id(case_id: str, file: str | None) -> str:
 def same_test(case_id: str, node: str) -> bool:
     """A runs.json case id and a pytest node id name the same test, even when one is relative to pytest's rootdir
     and the other to --cwd (src.pkg.tests.test_x::t and pkg_dir/src/pkg/tests/test_x.py::t)."""
-    cm, _, cn = case_id.split('#')[0].partition('::')
+    cm, _, cn = base_id(case_id).partition('::')
     nm, _, nn = node.partition('::')
     if cn != nn:
         return False
@@ -67,7 +79,7 @@ class Runner:
         new = [r for r in data['runs'] if r['id'] not in before]
         run = new[-1]
         rid = run['id']
-        victim = next((c for c in data['cases'] if c['run_id'] == rid and c['id'].split('#')[0] == self.args.victim), None)
+        victim = next((c for c in data['cases'] if c['run_id'] == rid and base_id(c['id']) == self.args.victim), None)
         status = 'errored' if run.get('errored') else victim['status'] if victim else 'not_run'
         self.steps.append({'run_id': rid, 'why': why, 'tests': tests, 'victim_status': status}
                           | ({'error': run.get('error')} if run.get('errored') else {}))
@@ -95,13 +107,23 @@ def main(argv=None) -> int:
                          'earlier test makes it pass')
     ap.add_argument('--out', type=Path)
     args = ap.parse_args(argv)
+    if args.preset not in SUPPORTED_PRESETS:
+        result = {'victim': args.victim, 'from_run': args.from_run, 'relation': args.relation, 'polluter': None,
+                  'polluter_node_id': None, 'outcome': 'not_supported', 'steps': [],
+                  'reason': f'preset {args.preset!r} cannot run explicit test ids in a given order; bisection is '
+                            'pytest-only. Confirm order dependence with fixed shuffle seeds (file order passes, '
+                            'two seeds fail) and name no polluter.'}
+        if args.out:
+            args.out.write_text(json.dumps(result, indent=2) + '\n', encoding='utf-8')
+        print(f"outcome: not_supported ({result['reason']})")
+        return 2
     enabler = args.relation == 'enabler'
     data = json.loads(args.runs.read_text(encoding='utf-8'))
     run = next((r for r in data['runs'] if r['id'] == args.from_run), None)
     if not run:
         raise SystemExit(f'run {args.from_run} not found')
     cases = [c for c in data['cases'] if c['run_id'] == args.from_run]
-    vic = next((c for c in cases if c['id'].split('#')[0] == args.victim), None)
+    vic = next((c for c in cases if base_id(c['id']) == args.victim), None)
     if enabler and (not vic or vic['status'] != 'passed'):
         raise SystemExit(f'{args.victim} did not pass in {args.from_run}; an enabler search starts from a passing run')
     if not enabler and (not vic or vic['status'] not in ('failed', 'error')):
@@ -114,7 +136,7 @@ def main(argv=None) -> int:
     for c in cases:
         n = next((o for o in order if same_test(c['id'], o)), None)
         if n:
-            case_of.setdefault(n, c['id'].split('#')[0])
+            case_of.setdefault(n, base_id(c['id']))
     before = order[:order.index(victim_node)]
     r = Runner(args)
     result = {'victim': args.victim, 'from_run': args.from_run, 'relation': args.relation, 'candidates': len(before),

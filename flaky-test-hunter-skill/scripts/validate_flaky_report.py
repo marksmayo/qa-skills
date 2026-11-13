@@ -27,6 +27,7 @@ GATE = {'required': 3, 'ci': 2, 'local': 1}
 CLOCK_ENV = ('TDA_CLOCK_SHIFT', 'TDA_CLOCK_DATE', 'FAKETIME')
 MIN_LABEL_RUNS = 3      # a label needs this many runs to set the worst rate on its own
 POOLED = 'pooled'       # the worst-rate candidate made of every non-bisect run
+REPEAT_SUFFIX = re.compile(r'#\d+$')  # parse_results' suffix for a repeated name; a '#' inside a title stays
 TEST_PATH = re.compile(r'(^|/)tests?/|(^|/)test_[^/]+\.py$|_test\.(py|go)$|\.(test|spec)\.[cm]?[jt]sx?$|(^|/)src/test/|'
                        r'(^|/)__tests__/|(^|/)e2e/|(^|/)conftest\.py$|Test\.(java|kt)$|'
                        # test runner config and setup files (RUBRIC: fixes may touch test config)
@@ -105,7 +106,7 @@ def outcomes(runs_data: dict, code_hash: str) -> tuple[dict, dict, dict]:
         r = runs.get(c['run_id'])
         if not r or c['status'] == 'skipped':
             continue
-        tid = c['id'].split('#')[0]
+        tid = REPEAT_SUFFIX.sub('', c['id'])  # only the repeat suffix: a '#' in a title is part of the id
         out[tid].append((c['run_id'], r.get('label', 'run'), 'pass' if c['status'] == 'passed' else 'fail'))
         files.setdefault(tid, c.get('file'))
     return out, files, runs
@@ -333,6 +334,10 @@ def check(d: dict, runs_data: dict | None, smells: dict | None, bisect: dict | N
         m = BANNED.search(text)
         if m:
             errs.append(f'{path}: claims more than the runs show: {m.group(0)!r} (say "not observed flaky in N runs")')
+    headline = d['summary']['headline'].strip()
+    if PLACEHOLDER.search(headline) or len(headline.split()) < 6 or not re.search(r'\d', headline):
+        errs.append('summary.headline: write the result in a sentence with its numbers (tests, runs, flakes), '
+                    f'not a placeholder: {headline[:60]!r}')
 
     # tools and variations
     tools = {t['name']: t for t in d['tools']}
@@ -531,6 +536,7 @@ def check(d: dict, runs_data: dict | None, smells: dict | None, bisect: dict | N
     return errs, warns
 
 
+PLACEHOLDER = re.compile(r'\b(?:placeholder|todo|tbd|tbc|fixme|lorem ipsum|xxx)\b|^\W*$', re.I)
 UPPER_BOUND = re.compile(r'upper (?:bound|limit|end)[^0-9%.]{0,40}?(\d+(?:\.\d+)?)\s*%', re.I)
 
 
@@ -565,10 +571,14 @@ def main(argv=None) -> int:
             print('ERROR: --write-summary needs --runs')
             return 1
         write_summary(d, runs_data)
-        args.report.write_text(json.dumps(d, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
     smells = json.loads(args.smells.read_text(encoding='utf-8')) if args.smells else None
     bisect = [json.loads(p.read_text(encoding='utf-8')) for p in args.bisect] if args.bisect else None
     errs, warns = check(d, runs_data, smells, bisect, args.repo)
+    if args.write_summary:
+        if errs:
+            print('NOTE: the report was not rewritten because it is INVALID (fix the errors and run again)')
+        else:  # only a valid report is rewritten; flakes come back ordered by priority
+            args.report.write_text(json.dumps(d, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
     for w in warns:
         print(f'WARN: {w}')
     for e in errs:

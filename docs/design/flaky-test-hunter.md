@@ -1,6 +1,6 @@
 # Design: `flaky-test-hunter-skill`
 
-Status: Built (v1.0.0), see "As built" at the end. Build order: 8.
+Status: Built (v1.3.0), see "As built" at the end. Build order: 8.
 
 ## Mission
 
@@ -350,3 +350,26 @@ Agreed with the user before the build.
   - **Guidance.** SKILL.md covers per-package interpreters and one `code_hash` (`--hash-path`),
     environment from Makefile exports and pipelines given as fake `--env` values (`runs.json`
     keeps names only), Azure DevOps pipelines under any name, and uncollectable files.
+- **Found on a TypeScript pnpm monorepo (v1.3.0)** (Vitest 5 projects in several workspace
+  packages, a `node --test` script suite, Windows):
+  - **Test titles with `#` were cut.** The validator and `bisect_polluter.py` dropped everything
+    after the first `#` to strip the `#2` that `parse_results` adds to a repeated name, so seven
+    tests whose titles hold "# import" pooled into one id: a fake flake, and evidence runs that
+    could never match. Only a trailing `#<digits>` is stripped now.
+  - **Bisection is pytest-only, and now says so.** Vitest and Jest rerun a file with a `-t`
+    pattern in file order and node:test has no id filter, so "this test, then the victim" can't
+    be run. `bisect_polluter.py` writes `outcome: not_supported` for any other preset and runs
+    nothing; SKILL.md Step 4 describes confirming order dependence with fixed shuffle seeds.
+  - **`module-let-reassigned`**, a new JavaScript/TypeScript smell: a module-level `let` or
+    `var` reassigned inside a test (one hit per variable and test), with a reset in
+    `beforeEach`/`afterEach` noted as its mitigation. It was the cause of the confirmed order
+    flake there. `data/pitfalls.json` is 1.4.0; the example's smells are unchanged (Python only).
+  - **Validator.** The headline must be a sentence with numbers, not a placeholder.
+    `--write-summary` no longer rewrites (or reorders) a report that is INVALID.
+  - **Guidance.** The clock preload moves `Date`, not file times or other processes: lock or
+    cache ages computed from `mtime` look stale under a shifted clock. Workspace packages whose
+    Vitest ids are package-relative get one report each. RUBRIC and README say that a CI-gated
+    flake that guards no critical journey tops out at P2 by design.
+  - **Not fixed here (shared `run_tests.py`):** a hash root separate from `--cwd` for
+    `--npm-script`, repo-relative Vitest/Jest ids, and a node:test preset (shuffle flags, ids
+    with the file). The skill does not ship `net_guard.cjs` (mapped in `tools/check_shared.py`).

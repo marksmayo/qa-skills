@@ -96,6 +96,8 @@ Examples:
 - A shuffled-order flake failing 4/4 on a required check: rate 4 (lower bound 51%) × gate 3 = 12, P1.
 - The same on a critical journey: 24, P0.
 - A load-only flake at 2/5 on a CI check: Wilson low 11.8% gives rate 3, × gate 2 = 6, P2.
+- By design, a flake on a CI check that is not required and guards no critical journey tops out
+  at 4 × 2 × 1 = 8, P2, however often it fails: P1 needs a required gate, masking, or a product race.
 
 ## Fixes (checked)
 

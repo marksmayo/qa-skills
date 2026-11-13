@@ -1,7 +1,7 @@
 ---
 name: flaky-test-hunter
 description: Find tests that pass and fail on the same code, show why with experiments, and propose a fix for each. Reruns the suite under controlled variations (repeats, reversed and shuffled order, isolation, hash seeds, parallel workers, time zone, clock, locale, CPU load), bisects order-dependent failures to their polluter, reports every rate as failures/runs with a 95% Wilson interval, separates flakes from tests that simply fail, and ranks flakes by rate, CI gate and what they hide. Never calls a test or suite "not flaky"; never proposes a retry as the fix; never changes product code.
-version: 1.2.0
+version: 1.3.0
 ---
 
 # Flaky test hunter
@@ -101,7 +101,11 @@ different packages can share one `runs.json` and one report as long as each reco
 path>`) or widen the hash with `--hash-path <sibling package>` so the hash covers the code they
 share. pytest may take its rootdir from an ini file above or below `--cwd`; `run_tests.py` maps the
 collected ids back to `--cwd` and says so in the run's notes. A test directory that two suites run
-(a shared package under two services) is pooled across both: say so. Files that can't be collected
+(a shared package under two services) is pooled across both: say so. A JavaScript workspace run with
+`--npm-script` needs `--cwd` at the package (its `package.json`), and Vitest and Jest ids are
+relative to that package, so two packages can both have `tests/unit/cli.test.ts`: write one
+report per package (its own `runs.json` and `code_hash`) rather than pooling packages whose ids
+can collide. Files that can't be collected
 (a missing private dependency or submodule) are left out of `--tests`, listed in `limitations`,
 and their tests are not counted as run.
 
@@ -179,6 +183,13 @@ classes while they load, so they import safely after it, but their own clocks
 them. `python plugins/clock_shift.py --self-test`, run with the repo's interpreter, checks the
 plugin there first.
 
+Both plugins move only the clock the test process reads. File times (`mtime` from `stat`), child
+processes that don't load the preload or plugin, databases and other services keep the real
+clock, so code that ages a lock file, a cache entry or a row by `now - mtime` sees it as far in
+the past or the future under a shifted clock. A test that fails only under the shift for that
+reason shows skew sensitivity between two clocks, not a date bug: say which clocks disagree in the
+flake's experiment.
+
 Time zones: give IANA names. Node reads them on every platform; Python on Windows can't, so
 `run_tests.py` turns them into fixed offsets for Python runs only, and the run's notes say so.
 Locales (`LANG`, `LC_ALL`) are ignored by Node's `Intl` and by most runtimes on Windows: if a
@@ -234,8 +245,20 @@ original settings and enables the ones that need the changed ones. Fix the pollu
 check the enabled tests fail consistently (they were relying on it) and fix them too. Pass every
 bisect file to the validator (`--bisect a.json b.json`).
 
+Bisection is pytest-only: it needs a runner that runs explicit test ids in the order given.
+Vitest and Jest rerun a file with a `-t` name pattern in file order, and node:test has no id
+filter, so "this test, then the victim" can't be expressed; `bisect_polluter.py` writes
+`outcome: not_supported` for those presets and runs nothing. Confirm their order dependence with
+fixed seeds instead: the file in its own order passes 3+ times and fails 2+ times under each of one
+or two `--order shuffle --seed N` runs (`--sequence.seed` for Vitest, `--randomize --seed` for
+Jest; narrow with a `-t` subset if the file is large). Record that as an `order_dependence`
+experiment and name no polluter; read the file for the shared state (a module-level `let`
+reassigned by one test and never restored is the usual one).
+
 `scan_pitfalls.py` points at this shape: `module-reload` flags `importlib.reload` in a test, and
-`env-read-at-import` the module-level `os.getenv` reads in the module it reloads.
+`env-read-at-import` the module-level `os.getenv` reads in the module it reloads. For JavaScript and
+TypeScript, `module-let-reassigned` flags a module-level `let`/`var` that a test reassigns (a
+reset in `beforeEach`/`afterEach` is noted as its mitigation).
 
 ## Step 5: Classify and propose fixes
 
