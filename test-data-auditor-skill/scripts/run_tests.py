@@ -412,7 +412,7 @@ def probe_tz(runtime: str, value: str, env: dict, cwd: Path) -> tuple[bool | Non
 
 # ---------------------------------------------------------------- the repo's own npm script
 SCRIPT_PREFIX_OK = {'cross-env', 'cross-env-shell', 'env', 'npx', 'pnpm', 'yarn', 'exec', '--'}
-DROP_FLAGS = re.compile(r'^--(reporter|reporters|outputFile|output-file|watch|ui|coverage\.reporter|'
+DROP_FLAGS = re.compile(r'^--(reporter|reporters|outputFile|output-file|watch|ui|coverage\.reporter|json|'
                         r'test-reporter|test-reporter-destination)(=|$)')
 WS_DELEGATE = re.compile(r'^(?:pnpm|yarn|npm|bun)$')
 
@@ -520,6 +520,9 @@ def npm_script(cwd: Path, name: str, runner: str, depth: int = 0) -> tuple[dict,
             if DROP_FLAGS.match(t):
                 skip_next = '=' not in t and t in ('--reporter', '--reporters', '--outputFile', '--output-file',
                                                    '--test-reporter', '--test-reporter-destination')
+                # Vitest reads the word after a bare --json as an output path, which would overwrite a test file
+                if t == '--json' and i + 1 < len(rest) and rest[i + 1].endswith('.json'):
+                    skip_next = True
                 continue
             args.append(t)
         return env, args, script
@@ -943,7 +946,8 @@ def self_test() -> int:
         (root / 'package.json').write_text(json.dumps({'name': 'shop', 'scripts': {
             'build': 'tsc -b', 'test': 'pnpm run build && pnpm --filter @shop/cart run test',
             'test:scripts': 'pnpm run build && node --test --test-reporter=spec "scripts/*.test.mjs"',
-            'test:unit': 'pnpm run build && cross-env TZ=UTC vitest run --project unit'}}), encoding='utf-8')
+            'test:unit': 'pnpm run build && cross-env TZ=UTC vitest run --project unit',
+            'test:json': 'vitest run --json --project unit'}}), encoding='utf-8')
         pkg = root / 'packages' / 'cart'
         (pkg / 'tests').mkdir(parents=True)
         (pkg / 'package.json').write_text(json.dumps({'name': '@shop/cart', 'scripts': {
@@ -963,6 +967,9 @@ def self_test() -> int:
         env, args, _ = npm_script(root, 'test:unit', 'vitest')
         checks.append(('a build step before vitest is skipped, env and flags kept',
                        env == {'TZ': 'UTC'} and args == ['--project', 'unit'], (env, args)))
+        env, args, _ = npm_script(root, 'test:json', 'vitest')
+        checks.append(("a script's --json flag is dropped, so no test file is taken as its output path",
+                       args == ['--project', 'unit'], args))
         if shutil.which('node'):
             out = root / 'out' / 'runs.json'
             code = main(['--preset', 'node-test', '--npm-script', 'test', '--cwd', str(pkg), '--repo-root', str(root),
