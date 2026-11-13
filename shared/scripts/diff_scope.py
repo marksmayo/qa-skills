@@ -4,6 +4,8 @@
     python diff_scope.py --repo <repo> [--base main] [--committed-only] --out scope.json
     python diff_scope.py --repo <repo> --diff change.diff --out scope.json
     python diff_scope.py --repo <repo> --last-merges 3 --out scope.json   # what the last 3 merges changed
+    python diff_scope.py --repo <repo> --since-release [--release-tag 'core@*'] --out scope.json
+    python diff_scope.py --self-test                                    # check the test/source classification
 
 Git mode diffs the merge base of --base and HEAD against the working tree (uncommitted and
 untracked files included) with rename detection; --committed-only diffs <merge base>...HEAD.
@@ -17,7 +19,11 @@ file with no functions.
 Every file gets a status (added, modified, deleted, renamed), a kind (source, test, generated,
 migration, vendored, types, config, docs, binary, other) with the reason, its added and
 modified lines as ranges of the new file, the points where lines were deleted, and the
-functions those lines fall in. Python functions come from `ast`; JavaScript and TypeScript use
+functions those lines fall in. Test code is decided by `is_test_path(path, root)`, the shared
+rule other scripts should reuse: test file names count anywhere, and a directory named tests,
+test, e2e or __tests__ counts only when it is not a product package (a manifest such as
+package.json, pyproject.toml, Cargo.toml or go.mod together with shipped code such as src/), so a
+workspace package named `e2e` is source while its own tests/ stay tests. `--self-test` checks it. Python functions come from `ast`; JavaScript and TypeScript use
 a scanner that blanks strings, comments and regex literals and skips (multi-line, typed)
 parameter lists and return types before looking for the body, so declarations, exported
 async functions, arrow functions and function expressions assigned to variables or
@@ -36,9 +42,16 @@ SOURCE_EXT = {'.py', '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.go', '.rs',
               '.svelte', '.sql'}
 CONFIG_EXT = {'.toml', '.cfg', '.ini', '.yaml', '.yml', '.json', '.lock', '.xml', '.gradle', '.properties', '.env'}
 DOCS_EXT = {'.md', '.rst', '.txt', '.adoc'}
-TEST_PATH = re.compile(r'(^|/)tests?/|(^|/)test_[^/]+\.py$|_test\.(py|go)$|\.(test|spec)\.[cm]?[jt]sx?$|(^|/)src/test/|'
-                       r'(^|/)__tests__/|(^|/)e2e/|(^|/)conftest\.py$|Tests?\.(java|kt|cs|swift)$|_spec\.rb$|'
-                       r'(^|/)androidTest/|(^|/)integration_test/|_test\.dart$')
+# Test files are recognised by name anywhere; test directories by name, unless the directory is a product package
+# (see is_test_path). TEST_PATH is the purely textual union of both, kept for callers that have no tree to look at.
+TEST_FILE = re.compile(r'(^|/)test_[^/]+\.py$|_test\.(py|go|rs)$|\.(test|spec|e2e)\.[cm]?[jt]sx?$|(^|/)conftest\.py$|'
+                       r'Tests?\.(java|kt|cs|swift)$|_spec\.rb$|_test\.dart$')
+TEST_DIR = re.compile(r'^(tests?|e2e|__tests__|androidTest|integration_test)$')
+TEST_PATH = re.compile(TEST_FILE.pattern + r'|(^|/)(tests?|e2e|__tests__|androidTest|integration_test)/|(^|/)src/test/')
+MANIFESTS = ('package.json', 'pyproject.toml', 'setup.py', 'setup.cfg', 'Cargo.toml', 'go.mod', 'pom.xml',
+             'build.gradle', 'build.gradle.kts', 'composer.json', 'pubspec.yaml', 'deno.json', 'deno.jsonc')
+MANIFEST_GLOBS = ('*.csproj', '*.fsproj', '*.gemspec')
+_PRODUCT_CACHE: dict[tuple[str, str], str | None] = {}
 MIGRATION_PATH = re.compile(r'(^|/)(migrations?|alembic/versions|db/migrate|flyway|liquibase|changelogs?)/', re.I)
 VENDOR_PATH = re.compile(r'(^|/)(vendor|third_party|third-party|node_modules|Pods|external)/')
 GENERATED_PATH = re.compile(r'_pb2(_grpc)?\.pyi?$|\.pb\.go$|\.g\.dart$|\.freezed\.dart$|\.min\.[jc]ss?$|'
@@ -196,7 +209,88 @@ def ranges(lines: list[int]) -> list[list[int]]:
     return out
 
 
-def classify(path: str, head: str, binary: bool) -> tuple[str, str]:
+def product_package(root: Path | str | None, rel_dir: str) -> str | None:
+    """Why the directory rel_dir (relative to root) is a product package rather than a test directory, or None.
+
+    A directory is a product package when it holds a package manifest (package.json, pyproject.toml, setup.py,
+    Cargo.toml, go.mod, pom.xml, build.gradle, *.csproj, ...) AND ships code: a src/ directory, a package.json
+    with main/module/exports/bin, a Cargo.toml with [lib] or [[bin]], top-level non-test .go files beside a go.mod,
+    or the Python package a pyproject.toml/setup.py/setup.cfg names (a sub-directory with __init__.py). A manifest alone does not make one: a workspace package holding only spec files and a
+    runner config (a Playwright `e2e/` package) is the known test layout and stays a test directory.
+    Without a root (no tree to look at) nothing is a product package."""
+    if root is None:
+        return None
+    key = (str(root), rel_dir)
+    if key in _PRODUCT_CACHE:
+        return _PRODUCT_CACHE[key]
+    d = Path(root) / rel_dir
+    why = None
+    try:
+        found = [m for m in MANIFESTS if (d / m).is_file()] if d.is_dir() else []
+        if d.is_dir() and not found:
+            found = [p.name for g in MANIFEST_GLOBS for p in d.glob(g)][:1]
+        if found:
+            m = found[0]
+            if (d / 'src').is_dir():
+                why = f'{m} and a src/ directory'
+            elif m == 'package.json':
+                try:
+                    pkg = json.loads((d / m).read_text(encoding='utf-8', errors='replace'))
+                except (ValueError, OSError):
+                    pkg = {}
+                fields = [k for k in ('main', 'module', 'exports', 'bin') if isinstance(pkg, dict) and pkg.get(k)]
+                if fields:
+                    why = f'package.json declaring {"/".join(fields)}'
+            elif m == 'Cargo.toml':
+                text = (d / m).read_text(encoding='utf-8', errors='replace')
+                if re.search(r'^\s*\[(lib|\[bin\])\]', text, re.M):
+                    why = 'Cargo.toml with a [lib] or [[bin]] target'
+            elif m == 'go.mod':
+                if any(not p.name.endswith('_test.go') for p in d.glob('*.go')):
+                    why = 'go.mod and non-test .go files'
+            elif m in ('pyproject.toml', 'setup.py', 'setup.cfg'):
+                text = (d / m).read_text(encoding='utf-8', errors='replace')
+                names = {re.sub(r'[-.]', '_', n).lower()
+                         for n in re.findall(r'''(?m)^\s*name\s*[=:]\s*["']?([\w.-]+)''', text)}
+                pkgs = [p.name for p in d.iterdir() if p.is_dir() and p.name.lower() in names
+                        and (p / '__init__.py').is_file()]
+                if pkgs:
+                    why = f'{m} and its Python package {pkgs[0]}/'
+    except OSError:
+        why = None
+    if why:
+        why = f'{rel_dir}/ is a product package ({why})'
+    _PRODUCT_CACHE[key] = why
+    return why
+
+
+def is_test_path(path: str, root: Path | str | None = None) -> tuple[bool, str]:
+    """Whether path (relative to root, '/'-separated) is test code, and why.
+
+    Test file names (test_*.py, *_test.go, *.test.ts, *.spec.js, *.e2e.ts, conftest.py, FooTest.java, *_spec.rb,
+    *_test.dart) are tests wherever they are. A directory named tests, test, e2e, __tests__, androidTest,
+    integration_test (or src/test) makes what is under it tests, unless that directory is a product package (see
+    product_package): a workspace package named `e2e` with its own package.json and src/ is product code, while its
+    own tests/ directory is still tests. Give root whenever a tree is available; without it only names count."""
+    path = path.replace('\\', '/')
+    if TEST_FILE.search(path):
+        return True, 'test file name'
+    parts = path.split('/')[:-1]
+    product = None
+    for i, seg in enumerate(parts):
+        if TEST_DIR.match(seg):   # also covers src/test (Maven, Gradle)
+            rel_dir = '/'.join(parts[:i + 1])
+            why = product_package(root, rel_dir)
+            if why:
+                product = why
+                continue
+            return True, f'under the test directory {rel_dir}/'
+    return False, product or ''
+
+
+def classify(path: str, head: str, binary: bool, root: Path | str | None = None) -> tuple[str, str]:
+    """(kind, reason) for a changed file. Pass root (the directory paths are relative to) so a product package whose
+    directory happens to be named e2e or tests is not taken for test code (see is_test_path)."""
     ext = Path(path).suffix.lower()
     name = Path(path).name.lower()
     if binary:
@@ -209,16 +303,18 @@ def classify(path: str, head: str, binary: bool) -> tuple[str, str]:
         return 'generated', 'file header says it is generated'
     if MIGRATION_PATH.search(path):
         return 'migration', 'database migration directory'
-    if TEST_PATH.search(path):
+    is_test, why = is_test_path(path, root)
+    if is_test:
         return 'test', 'test file or directory'
+    note = f' ({why})' if why else ''
     if ext == '.pyi' or path.endswith('.d.ts'):
         return 'types', 'type declarations only'
     if ext in DOCS_EXT or path.startswith('docs/'):
         return 'docs', 'documentation'
     if ext in CONFIG_EXT or name in ('dockerfile', 'makefile', '.gitignore', '.gitattributes'):
-        return 'config', 'configuration or build file'
+        return 'config', 'configuration or build file' + note
     if ext in SOURCE_EXT:
-        return 'source', 'source code'
+        return 'source', 'source code' + note
     return 'other', f'unrecognised extension {ext or "(none)"}'
 
 
@@ -475,7 +571,7 @@ def scope_from_diff(text: str, repo: Path) -> list[dict]:
         p = repo / f['path']
         body = p.read_text(encoding='utf-8', errors='replace') if f['status'] != 'deleted' and p.is_file() else None
         head = '\n'.join((body or '').splitlines()[:5])
-        kind, why = classify(f['path'], head, f['binary'])
+        kind, why = classify(f['path'], head, f['binary'], repo)
         entry = {'path': f['path'], 'old_path': f['old_path'], 'status': f['status'], 'kind': kind, 'kind_reason': why,
                  'ranges': ranges(f['added']), 'deleted_at': f['deleted_at'], 'lines_added': f['lines_added'],
                  'lines_deleted': f['lines_deleted'], 'present': body is not None}
@@ -517,7 +613,125 @@ def relative_diff(text: str, prefix: str) -> tuple[str, int]:
     return ''.join(out), outside
 
 
+RELEASE_TAG = re.compile(r'^(?:(?:@[\w.-]+/)?[\w.-]+?(?:@|-v|-|_v?))?v?\d+\.\d+\.\d+(?:[-+][\w.-]+)?$')
+
+
+def newest_release_tag(repo: Path, glob: str | None = None) -> tuple[str | None, str]:
+    """The newest release-shaped tag that HEAD contains (by the tagged commit's date), and a note.
+    Pre-releases (1.2.0-beta.1) are skipped when a final release is present."""
+    args = ['tag', '--merged', 'HEAD', '--sort=-creatordate', '--format=%(refname:short)']
+    if glob:
+        args.append(glob)
+    tags = [t for t in git(repo, *args).split() if RELEASE_TAG.match(t)]
+    if not tags:
+        return None, (f'no release tag matching {glob!r} is an ancestor of HEAD' if glob else
+                      'no release-shaped tag (v1.2.3, name@1.2.3, ...) is an ancestor of HEAD')
+    finals = [t for t in tags if not re.search(r'\d-[\w.]+$', t)]
+    pick = (finals or tags)[0]
+    note = ''
+    if not glob:
+        names = {re.sub(r'(@|-v|-|_v?)?v?\d+\.\d+\.\d+.*$', '', t) for t in tags}
+        if len(names) > 1:
+            note = (f'{pick} is the newest of {len(names)} release tag families ({", ".join(sorted(n or "(plain)" for n in names)[:6])}'
+                    f'{", ..." if len(names) > 6 else ""}); pass --release-tag to pick one package')
+    return pick, note
+
+
+def self_test() -> int:
+    """Check the test/source classification on a synthetic monorepo."""
+    import tempfile
+    files = {
+        'packages/e2e/package.json': '{"name": "e2e", "exports": {".": "./dist/index.js"}}',
+        'packages/e2e/src/runner.ts': 'export function run() {}\n',
+        'packages/e2e/schema/config.json': '{}',
+        'packages/e2e/tests/unit/runner.test.ts': "test('runs', () => {})\n",
+        'packages/e2e/tests/helpers/repo.ts': 'export const repo = 1\n',
+        'packages/kit/package.json': '{"name": "kit", "main": "index.js"}',
+        'packages/kit/index.js': 'module.exports = {}\n',
+        'packages/kit/e2e/package.json': '{"private": true, "devDependencies": {"runner": "1.0.0"}}',
+        'packages/kit/e2e/checkout.ts': "test('checkout', () => {})\n",
+        'apps/shop/e2e/cart.ts': "test('cart', () => {})\n",
+        'apps/shop/bench/scenarios.e2e.ts': "test('bench', () => {})\n",
+        'apps/shop/src/cart.ts': 'export const cart = []\n',
+        'services/tests/pyproject.toml': '[project]\nname = "tests"\n',
+        'services/tests/conftest.py': '',
+        'services/tests/harness/__init__.py': '',
+        'services/e2e/pyproject.toml': '[project]\nname = "ledger-sync"\n',
+        'services/e2e/ledger_sync/__init__.py': '',
+        'tools/e2e/go.mod': 'module example.test/e2e\n',
+        'tools/e2e/client.go': 'package e2e\n',
+        'tools/e2e/client_test.go': 'package e2e\n',
+        'probe/e2e/go.mod': 'module example.test/probe\n',
+        'probe/e2e/flow_test.go': 'package e2e\n',
+        'probe/e2e/support/steps.go': 'package support\n',
+        'crates/tests/Cargo.toml': '[package]\nname = "tests"\n\n[lib]\npath = "lib.rs"\n',
+        'crates/tests/lib.rs': 'pub fn f() {}\n',
+        'lib/test/java/AppTest.java': 'class AppTest {}\n',
+        'lib/src/test/java/Helper.java': 'class Helper {}\n',
+    }
+    expect = {   # path -> (kind, reason fragment)
+        'packages/e2e/src/runner.ts': ('source', 'packages/e2e/ is a product package (package.json and a src/'),
+        'packages/e2e/schema/config.json': ('config', 'product package'),
+        'packages/e2e/tests/unit/runner.test.ts': ('test', ''),
+        'packages/e2e/tests/helpers/repo.ts': ('test', ''),
+        'packages/kit/index.js': ('source', ''),
+        'packages/kit/e2e/checkout.ts': ('test', ''),          # a spec-only workspace package: the known test layout
+        'apps/shop/e2e/cart.ts': ('test', ''),
+        'apps/shop/bench/scenarios.e2e.ts': ('test', ''),
+        'apps/shop/src/cart.ts': ('source', ''),
+        'services/tests/conftest.py': ('test', ''),
+        'services/tests/harness/__init__.py': ('test', ''),   # a test-support distribution, not the product
+        'services/e2e/ledger_sync/__init__.py': ('source', 'its Python package ledger_sync/'),
+        'tools/e2e/client.go': ('source', 'go.mod and non-test .go files'),
+        'tools/e2e/client_test.go': ('test', ''),
+        'probe/e2e/support/steps.go': ('test', ''),
+        'crates/tests/lib.rs': ('source', 'Cargo.toml with a [lib]'),
+        'lib/test/java/AppTest.java': ('test', ''),
+        'lib/src/test/java/Helper.java': ('test', ''),
+    }
+    failed = 0
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        for rel, body in files.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(body, encoding='utf-8')
+        for rel, (kind, frag) in expect.items():
+            got, why = classify(rel, '', False, root)
+            ok = got == kind and frag in why
+            failed += not ok
+            print(f"{'PASS' if ok else 'FAIL'} {rel}: {got} ({why})" + ('' if ok else f'  [expected {kind}, "{frag}"]'))
+        got, _ = classify('packages/e2e/src/runner.ts', '', False)
+        ok = got == 'test'
+        failed += not ok
+        print(f"{'PASS' if ok else 'FAIL'} without a root only names count: packages/e2e/src/runner.ts is {got}")
+    with tempfile.TemporaryDirectory() as d:   # --since-release on a changesets-style history
+        repo = Path(d)
+        env_git = ['-c', 'user.name=t', '-c', 'user.email=t@example.test', '-c', 'commit.gpgsign=false',
+                   '-c', 'tag.gpgsign=false']
+        run = lambda *a, date='2026-01-01T00:00:00Z': subprocess.run(  # noqa: E731
+            ['git', '-C', d, *env_git, *a], capture_output=True, text=True,
+            env={**__import__('os').environ, 'GIT_COMMITTER_DATE': date, 'GIT_AUTHOR_DATE': date})
+        run('init', '-q')
+        steps = [('one', ['core@1.0.0', 'kit@0.3.0']), ('two', ['core@1.1.0-beta.0']), ('three', ['kit@0.4.0']),
+                 ('four', [])]
+        for i, (msg, tags) in enumerate(steps):
+            (repo / f'{msg}.txt').write_text(msg, encoding='utf-8')
+            run('add', f'{msg}.txt')
+            run('commit', '-q', '-m', msg, date=f'2026-01-0{i + 1}T00:00:00Z')
+            for t in tags:
+                run('tag', '-a', t, '-m', t, date=f'2026-01-0{i + 1}T00:00:00Z')
+        for glob, want in ((None, 'kit@0.4.0'), ('core@*', 'core@1.0.0')):
+            got, _ = newest_release_tag(repo, glob)
+            ok = got == want
+            failed += not ok
+            print(f"{'PASS' if ok else 'FAIL'} --since-release {glob or ''}: {got}" + ('' if ok else f'  [expected {want}]'))
+    print(f'{failed} failed' if failed else 'ALL PASS')
+    return 1 if failed else 0
+
+
 def main(argv=None) -> int:
+    if '--self-test' in (sys.argv[1:] if argv is None else argv):
+        return self_test()
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('--repo', type=Path, required=True)
     ap.add_argument('--base', default='main', help='branch or ref to diff against (git mode; default main)')
@@ -526,10 +740,30 @@ def main(argv=None) -> int:
     ap.add_argument('--last-merges', type=int, metavar='N',
                     help='git mode: the changes of the last N merges into HEAD (first-parent history), committed only. '
                          'In a squash-merge history (no merge commits) the last N first-parent commits are used')
+    ap.add_argument('--since-release', action='store_true',
+                    help='git mode: diff from the newest release tag that HEAD contains (v1.2.3, 1.2.3, name@1.2.3, '
+                         '@scope/name@1.2.3, name-v1.2.3; the shapes changesets, semantic-release and lerna write), '
+                         'committed only')
+    ap.add_argument('--release-tag', metavar='GLOB',
+                    help="with --since-release: only tags matching this glob, e.g. 'core@*' for one package of a "
+                         'changesets monorepo')
     ap.add_argument('--out', type=Path)
     args = ap.parse_args(argv)
     repo = args.repo.resolve()
     warnings = []
+    release_tag = None
+    if args.release_tag and not args.since_release:
+        ap.error('--release-tag needs --since-release')
+    if args.since_release:
+        if args.diff or args.last_merges is not None:
+            ap.error('--since-release is a git mode option; it cannot be combined with --diff or --last-merges')
+        release_tag, why = newest_release_tag(repo, args.release_tag)
+        if not release_tag:
+            raise SystemExit(f'--since-release: {why}')
+        args.base = release_tag
+        args.committed_only = True
+        if why:
+            warnings.append(f'--since-release: {why}')
     if args.last_merges is not None:
         if args.diff:
             ap.error('--last-merges is a git mode option; it cannot be combined with --diff')
@@ -569,6 +803,8 @@ def main(argv=None) -> int:
                   'command': 'git diff -M --relative ' + ' '.join(rng), 'working_tree': not args.committed_only}
         if args.last_merges is not None:
             source['last_merges'] = args.last_merges
+        if release_tag:
+            source['since_release'] = release_tag
         untracked = [] if args.committed_only else git(repo, 'ls-files', '--others', '--exclude-standard').splitlines()
     files = scope_from_diff(text, repo)
     for f in files:
@@ -583,7 +819,7 @@ def main(argv=None) -> int:
             binary = False
         except (UnicodeDecodeError, OSError):
             body, n, binary = None, 0, True
-        kind, why = classify(rel, '\n'.join((body or '').splitlines()[:5]), binary)
+        kind, why = classify(rel, '\n'.join((body or '').splitlines()[:5]), binary, repo)
         entry = {'path': rel, 'old_path': None, 'status': 'added', 'kind': kind, 'kind_reason': why + ' (untracked)',
                  'ranges': [[1, n]] if n else [], 'deleted_at': [], 'lines_added': n, 'lines_deleted': 0,
                  'present': body is not None}
