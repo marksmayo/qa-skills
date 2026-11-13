@@ -5,8 +5,11 @@
   {
    "job": "unit",
    "job_id": 5101,
+   "log_status": "fetched",
    "step": "Run python -m pytest --junitxml=junit.xml",
    "kind": "test",
+   "source": "junit",
+   "step_kind": "test",
    "test_id": "tests.test_booking::test_sample_booking_is_open",
    "test_file": "tests/test_booking.py",
    "failure_type": "assertion",
@@ -51,8 +54,11 @@
   {
    "job": "unit",
    "job_id": 5101,
+   "log_status": "fetched",
    "step": "Run python -m pytest --junitxml=junit.xml",
    "kind": "test",
+   "source": "junit",
+   "step_kind": "test",
    "test_id": "tests.test_fares::test_fare_rounds_half_up",
    "test_file": "tests/test_fares.py",
    "failure_type": "assertion",
@@ -101,8 +107,11 @@
   {
    "job": "unit",
    "job_id": 5101,
+   "log_status": "fetched",
    "step": "Run python -m pytest --junitxml=junit.xml",
    "kind": "test",
+   "source": "junit",
+   "step_kind": "test",
    "test_id": "tests.test_slots::test_pick_two_gives_two_different_slots",
    "test_file": "tests/test_slots.py",
    "failure_type": "assertion",
@@ -139,20 +148,23 @@
   {
    "job": "install-check",
    "job_id": 5102,
+   "log_status": "fetched",
    "step": "Install internal pricing package",
    "kind": "step",
+   "source": "log",
+   "step_kind": "setup",
    "test_id": null,
    "test_file": null,
    "failure_type": "step",
    "message": "ERROR: Could not find a version that satisfies the requirement tidewater-internal-pricing==2.1 (from versions: none)",
    "frames": [],
+   "section": {
+    "title": "pip install --index-url http://127.0.0.1:9/simple/ tidewater-internal-pricing==2.1",
+    "basis": "order of the steps with an error"
+   },
    "log_excerpt": {
     "path": "logs/5102.txt",
     "lines": [
-     {
-      "n": 8,
-      "text": "##[endgroup]"
-     },
      {
       "n": 9,
       "text": "Looking in indexes: http://127.0.0.1:9/simple/"
@@ -168,10 +180,6 @@
      {
       "n": 12,
       "text": "##[error]Process completed with exit code 1."
-     },
-     {
-      "n": 13,
-      "text": ""
      }
     ]
    },

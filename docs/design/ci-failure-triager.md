@@ -1,6 +1,6 @@
 # Design: `ci-failure-triager-skill`
 
-Status: Built (v1.0.0); see "As built" at the end. Build order: 26.
+Status: Built (v1.1.0); see "As built" at the end. Build order: 26.
 
 ## Mission
 
@@ -190,3 +190,53 @@ Where the build differs from the design above, and what the example showed.
   why re-runs are asked for.
 - **Testing:** 29 of 29 seeded violations are caught, including a re-run without authorisation, a re-run
   of a job that hadn't failed, a token in a log excerpt, and the docs commit as owner.
+
+## As built (v1.1.0): fixes from a live run on a public TypeScript monorepo
+
+Run against four failed GitHub Actions runs of a public pnpm workspace (Vitest, no JUnit), the 1.0.0 skill
+could not download a single log and got 0 of 6 excerpts right. Fixed:
+
+- **Live downloads.** GitHub answers job-log and artifact downloads with a 302 to signed blob storage;
+  urllib re-sent the bearer token there and the storage host answered 401, so every log was silently
+  "missing" and any artifact crashed the fetch. `fetch_run.py` now follows redirects with a handler that
+  drops credential headers on any change of scheme, host or port (and refuses https to http except on
+  loopback). A failed download is recorded with its status (`unavailable` for 404/410, `fetch_failed`
+  otherwise) in `run.json` `fetch_problems`, printed, and the script exits 2 when a log fetch failed; the
+  validator requires the triage's limitations to name each such job. Artifacts over `--max-artifact-mb`
+  are skipped and recorded. Verified read-only against the public runs; `fetch_run.py --self-test` covers
+  it with two loopback servers.
+- **History is the same workflow.** It was the 20 newest runs of any workflow on the branch, so the last
+  green run could be another workflow on the same commit (an empty range) or missing entirely once 20
+  later runs existed. Now: the run's workflow, on the branch, created up to the run, plus every run of the
+  workflow on the same commit with its jobs. The last green run prefers the same event and skips a run
+  that did not pass the jobs that failed here.
+- **Flaky by history is job-level.** A same-commit run counts only if the same job passed in it; a push
+  run of the release workflow that ran a different job no longer makes a scheduled publish failure
+  "flaky, confirmed".
+- **Step excerpts.** GitHub titles a step's log group `Run <script>`, never the step's `name:`, so the
+  section was never found and the excerpt was the first "error" anywhere in the job (an action input, a
+  script name, the echoed script, a passing test line). Now the group is matched by title when unique and
+  otherwise by order of the groups holding `##[error]`; the echoed script is skipped and the excerpt
+  anchors on the error lines just before the step's closing `##[error]`. ANSI codes are stripped before
+  matching and quoting.
+- **Console test results.** Without JUnit, failing tests are read from Vitest, Jest and node:test summaries
+  (test id `file > suite > test`, message, frames), so the real rule can fire and the owning change has a
+  test file; paths printed relative to a package are matched to the tree, relative TypeScript imports are
+  followed, and in a monorepo only commits touching the failing package can own it.
+- **Step kind** is `test`, `setup` or `other` (was `setup` for every non-JUnit step, which let any step
+  failure be called environment).
+- **New class `consequence`** for aggregate gate jobs. A cross-run cause (a release run waiting on another
+  run's gate) is still not expressed.
+- **Signatures**: TLS handshake timeout, socket hang up, EAI_AGAIN/getaddrinfo, pnpm publish/fetch 404s,
+  and two `real` signatures (a toolchain below a tool's minimum version; compile/type errors).
+- **Re-runs someone else started** are recorded as `observed` (`rerun.py --observed`) with the run's
+  triggering actor and the jobs that actually ran again (a new start time), not as authorised by the triage.
+- **Override confidence**: the validator re-applies the rules to the log lines an agent quotes (once they
+  match the log), so a quoted signature can carry `confirmed`; otherwise overrides stay at `indicated`.
+- **Smaller**: `owning_change.py` writes a not_identified `changes.json` with the fetch command when a
+  pull request head is not in the clone; the requested repository and the API's name for it are both kept
+  (a renamed repository); evidence completeness counts console-parsed test results; `--defects-md` writes
+  no file when there are no drafts.
+- **Testing**: `scripts/self_test.py` runs the fetch and extraction self-tests and a synthetic run through
+  the whole pipeline with 10 seeded violations. The example's recordings gained workflow and definition
+  ids (`record_example_run.py` writes them); its classifications are unchanged.

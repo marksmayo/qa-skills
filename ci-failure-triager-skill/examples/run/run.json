@@ -10,18 +10,22 @@
   "event": "push",
   "started_at": "2026-11-12T03:10:00Z",
   "conclusion": "failure",
-  "workflow": ".github/workflows/ci.yml"
+  "workflow": ".github/workflows/ci.yml",
+  "workflow_id": 71
  },
  "attempts": [
   {
    "n": 1,
    "started_at": "2026-11-12T03:10:00Z",
+   "triggered_by": null,
+   "jobs_rerun": null,
    "jobs": [
     {
      "id": 5101,
      "name": "unit",
      "conclusion": "failure",
      "url": "https://github.com/example-org/tidewater/actions/runs/109/job/5101",
+     "started_at": "2026-11-12T03:10:00Z",
      "steps": [
       {
        "number": 1,
@@ -60,6 +64,8 @@
       }
      ],
      "log": "logs/5101.txt",
+     "log_status": "fetched",
+     "log_error": null,
      "junit": [
       "junit/1/junit-unit/junit.xml"
      ]
@@ -69,6 +75,7 @@
      "name": "install-check",
      "conclusion": "failure",
      "url": "https://github.com/example-org/tidewater/actions/runs/109/job/5102",
+     "started_at": "2026-11-12T03:10:00Z",
      "steps": [
       {
        "number": 1,
@@ -92,6 +99,8 @@
       }
      ],
      "log": "logs/5102.txt",
+     "log_status": "fetched",
+     "log_error": null,
      "junit": []
     }
    ]
@@ -99,12 +108,18 @@
   {
    "n": 2,
    "started_at": "2026-11-12T03:40:00Z",
+   "triggered_by": null,
+   "jobs_rerun": [
+    "unit",
+    "install-check"
+   ],
    "jobs": [
     {
      "id": 5201,
      "name": "unit",
      "conclusion": "failure",
      "url": "https://github.com/example-org/tidewater/actions/runs/109/job/5201",
+     "started_at": "2026-11-12T03:40:00Z",
      "steps": [
       {
        "number": 1,
@@ -143,6 +158,8 @@
       }
      ],
      "log": "logs/5201.txt",
+     "log_status": "fetched",
+     "log_error": null,
      "junit": [
       "junit/2/junit-unit/junit.xml"
      ]
@@ -152,6 +169,7 @@
      "name": "install-check",
      "conclusion": "failure",
      "url": "https://github.com/example-org/tidewater/actions/runs/109/job/5202",
+     "started_at": "2026-11-12T03:40:00Z",
      "steps": [
       {
        "number": 1,
@@ -175,6 +193,8 @@
       }
      ],
      "log": "logs/5202.txt",
+     "log_status": "fetched",
+     "log_error": null,
      "junit": []
     }
    ]
@@ -182,22 +202,23 @@
  ],
  "history": [
   {
-   "id": 109,
-   "commit": "5a2cbd7d7a4721c95f4f74bb945675fbb3c9b769",
-   "conclusion": "failure",
-   "started_at": "2026-11-12T03:10:00Z"
-  },
-  {
    "id": 101,
    "commit": "1e537ac23f72913514214744dcf1bae69cddab0c",
    "conclusion": "success",
-   "started_at": "2026-11-09T01:20:00Z"
+   "started_at": "2026-11-09T01:20:00Z",
+   "event": "push",
+   "workflow_id": 71,
+   "jobs": null
   }
  ],
+ "history_scope": "same workflow",
  "last_green": {
   "id": 101,
-  "commit": "1e537ac23f72913514214744dcf1bae69cddab0c"
+  "commit": "1e537ac23f72913514214744dcf1bae69cddab0c",
+  "event": "push",
+  "basis": "the newest successful run of the same workflow on the branch started before this run, same event"
  },
+ "fetch_problems": [],
  "source": "recorded",
  "fetched_from": "../recorded/github"
 }

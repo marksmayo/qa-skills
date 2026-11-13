@@ -10,17 +10,21 @@
   "event": "individualCI",
   "started_at": "2026-11-12T03:10:00Z",
   "conclusion": "failure",
-  "workflow": "tidewater-ci"
+  "workflow": "tidewater-ci",
+  "workflow_id": 4
  },
  "attempts": [
   {
    "n": 1,
+   "triggered_by": null,
+   "jobs_rerun": null,
    "jobs": [
     {
      "id": "job-unit",
      "name": "unit",
      "conclusion": "failure",
      "url": "https://dev.azure.com/example-org/tidewater/_build/results?buildId=2207",
+     "started_at": null,
      "steps": [
       {
        "number": 1,
@@ -29,6 +33,8 @@
       }
      ],
      "log": "logs/job-unit.txt",
+     "log_status": "fetched",
+     "log_error": null,
      "junit": [
       "junit/1/junit-unit/junit.xml"
      ]
@@ -38,6 +44,7 @@
      "name": "install-check",
      "conclusion": "failure",
      "url": "https://dev.azure.com/example-org/tidewater/_build/results?buildId=2207",
+     "started_at": null,
      "steps": [
       {
        "number": 1,
@@ -46,6 +53,8 @@
       }
      ],
      "log": "logs/job-install.txt",
+     "log_status": "fetched",
+     "log_error": null,
      "junit": []
     }
    ]
@@ -53,22 +62,23 @@
  ],
  "history": [
   {
-   "id": 2207,
-   "commit": "5a2cbd7d7a4721c95f4f74bb945675fbb3c9b769",
-   "conclusion": "failure",
-   "started_at": "2026-11-12T03:10:00Z"
-  },
-  {
    "id": 2201,
    "commit": "1e537ac23f72913514214744dcf1bae69cddab0c",
    "conclusion": "success",
-   "started_at": "2026-11-09T01:20:00Z"
+   "started_at": "2026-11-09T01:20:00Z",
+   "event": "individualCI",
+   "workflow_id": 4,
+   "jobs": null
   }
  ],
+ "history_scope": "same workflow",
  "last_green": {
   "id": 2201,
-  "commit": "1e537ac23f72913514214744dcf1bae69cddab0c"
+  "commit": "1e537ac23f72913514214744dcf1bae69cddab0c",
+  "event": "individualCI",
+  "basis": "the newest successful run of the same workflow on the branch started before this run, same event"
  },
+ "fetch_problems": [],
  "source": "recorded",
  "fetched_from": "../recorded/azure"
 }

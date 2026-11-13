@@ -1,8 +1,8 @@
 {
- "schema_version": "1.0.0",
+ "schema_version": "1.1.0",
  "skill": {
   "name": "ci-failure-triager",
-  "version": "1.0.0"
+  "version": "1.1.0"
  },
  "generated_at": "2026-11-12T04:05:00Z",
  "run": {
@@ -69,7 +69,8 @@
     "rerun": "failed",
     "rerun_attempt": 2,
     "history_same_commit": [],
-    "step_kind": "test"
+    "step_kind": "test",
+    "consequence_of": []
    },
    "log_excerpt": {
     "path": "logs/5101.txt",
@@ -148,7 +149,8 @@
       ]
      }
     }
-   }
+   },
+   "source": "junit"
   },
   {
    "id": "X02",
@@ -167,7 +169,8 @@
     "rerun": "failed",
     "rerun_attempt": 2,
     "history_same_commit": [],
-    "step_kind": "test"
+    "step_kind": "test",
+    "consequence_of": []
    },
    "log_excerpt": {
     "path": "logs/5101.txt",
@@ -242,7 +245,8 @@
       ]
      }
     }
-   }
+   },
+   "source": "junit"
   },
   {
    "id": "X03",
@@ -261,7 +265,8 @@
     "rerun": "passed",
     "rerun_attempt": 2,
     "history_same_commit": [],
-    "step_kind": "test"
+    "step_kind": "test",
+    "consequence_of": []
    },
    "log_excerpt": {
     "path": "logs/5101.txt",
@@ -289,7 +294,8 @@
     "basis": "no commit in 3 commit(s) since the last green run touches the files of this failure"
    },
    "priority": null,
-   "next_action": "Hand tests.test_slots::test_pick_two_gives_two_different_slots to flaky-test-hunter: it picks two random slots with replacement, so about one run in four picks the same slot."
+   "next_action": "Hand tests.test_slots::test_pick_two_gives_two_different_slots to flaky-test-hunter: it picks two random slots with replacement, so about one run in four picks the same slot.",
+   "source": "junit"
   },
   {
    "id": "X04",
@@ -314,15 +320,12 @@
     "rerun": "failed",
     "rerun_attempt": 2,
     "history_same_commit": [],
-    "step_kind": "setup"
+    "step_kind": "setup",
+    "consequence_of": []
    },
    "log_excerpt": {
     "path": "logs/5102.txt",
     "lines": [
-     {
-      "n": 8,
-      "text": "##[endgroup]"
-     },
      {
       "n": 9,
       "text": "Looking in indexes: http://127.0.0.1:9/simple/"
@@ -338,19 +341,16 @@
      {
       "n": 12,
       "text": "##[error]Process completed with exit code 1."
-     },
-     {
-      "n": 13,
-      "text": ""
      }
     ]
    },
    "owning_change": {
     "status": "not_identified",
-    "basis": "no commit in 3 commit(s) since the last green run touches the files of this failure"
+    "basis": "no file of this failure is known (a step failure with no traceback or test file in its output), so no commit can be tied to it"
    },
    "priority": null,
-   "next_action": "Re-run once the internal package index answers: pip found no versions at http://127.0.0.1:9/simple/ in both attempts (in the sample nothing listens there). Check the index host and the runner network; no code change."
+   "next_action": "Re-run once the internal package index answers: pip found no versions at http://127.0.0.1:9/simple/ in both attempts (in the sample nothing listens there). Check the index host and the runner network; no code change.",
+   "source": "log"
   }
  ],
  "summary": {
@@ -360,6 +360,7 @@
    "flaky": 1,
    "environment": 1,
    "data": 1,
+   "consequence": 0,
    "unclassified": 0
   },
   "defects_drafted": 2,

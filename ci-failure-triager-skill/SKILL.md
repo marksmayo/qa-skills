@@ -1,7 +1,7 @@
 ---
 name: ci-failure-triager
-description: Triage a failed CI run on GitHub Actions or Azure DevOps - classify every failing job and test as real, flaky, environment, data or unclassified from its log lines, JUnit results, a re-run of the failed jobs on the same commit, the run history and known failure signatures; find the owning change (the commit since the last green run that touched what failed); and draft a defect or a test-data issue for each real or data failure in the result log. Flaky needs a pass and a fail on the same commit; real needs a repeatable failure; every log excerpt is quoted with its line numbers and secrets redacted. Re-runs only failed jobs, once, and only with permission. Never files anything and never calls a build green.
-version: 1.0.0
+description: Triage a failed CI run on GitHub Actions or Azure DevOps - classify every failing job and test as real, flaky, environment, data, consequence (an aggregate gate job failing because another job failed) or unclassified from its log lines, JUnit results, a re-run of the failed jobs on the same commit, the run history and known failure signatures; find the owning change (the commit since the last green run that touched what failed); and draft a defect or a test-data issue for each real or data failure in the result log. Flaky needs a pass and a fail on the same commit; real needs a repeatable failure; every log excerpt is quoted with its line numbers and secrets redacted. Re-runs only failed jobs, once, and only with permission. Never files anything and never calls a build green.
+version: 1.1.0
 ---
 
 # CI failure triager
@@ -16,6 +16,7 @@ Take one failed CI run and say, for each failure, what kind it is and what to do
 | `flaky` | it failed and passed on identical code | hand to flaky-test-hunter |
 | `environment` | the runner, network, registry, disk, memory or a needed service failed | re-run when it is back; check the runner |
 | `data` | test data or fixtures are wrong for this run (a date in the past, a duplicate key, a missing seed) | a drafted test-data issue |
+| `consequence` | an aggregate gate job ("require every job to pass") failing only because other jobs in the run failed | triage those; nothing of its own |
 | `unclassified` | the evidence doesn't decide it | say what evidence would |
 
 flaky-test-hunter proves why a test is flaky; this skill only decides, from one run and its re-run.
@@ -23,8 +24,9 @@ bug-reproducer can take a drafted defect. ci-suite-runner triggers runs; this sk
 
 ## Non-negotiable rules
 
-1. **Flaky needs a pass and a fail on the same commit** (the re-run, or a run of that commit in the
-   history). Failing often elsewhere doesn't make a test flaky.
+1. **Flaky needs a pass and a fail on the same commit** (the re-run, or the same job passing in another
+   run of the same workflow on that commit). Failing often elsewhere doesn't make a test flaky, and a
+   run of another workflow, or of the same workflow that ran other jobs, is no evidence.
 2. **Real needs a repeatable failure**: it failed again on re-run. Without a re-run it is at most
    `indicated`; `confirmed` also needs an owning change.
 3. **Environment and data need their evidence**: a signature with its log line, a failed setup step, or a
@@ -35,8 +37,13 @@ bug-reproducer can take a drafted defect. ci-suite-runner triggers runs; this sk
    not the owner).
 5. **Re-runs: only failed jobs, once, with permission.** Starting jobs is an outward action: ask, unless
    the user pre-authorised re-runs; record who authorised it. Never re-run a run that was already re-run.
-6. **Log excerpts are quoted with line numbers** from the downloaded log, and secrets are redacted. A
-   token-like value is never copied.
+   A re-run someone else already started is recorded as `observed` (`rerun.py --observed`), with who
+   started it, not as one this triage authorised.
+6. **Log excerpts are quoted with line numbers** from the downloaded log (ANSI colour codes and
+   timestamps stripped), and secrets are redacted. A token-like value is never copied. A log that could
+   not be downloaded is never a silent gap: `fetch_run.py` records `unavailable` (expired, 404/410) or
+   `fetch_failed` (401/403, network) and exits 2 for the latter; the triage names each such job in its
+   limitations, and its failures stay `unclassified` unless other evidence decides them.
 7. **Every failing job and test is triaged exactly once.** Nothing is dropped as noise.
 8. **Drafts stay in the result log.** Nothing is filed in a tracker or posted on the run.
 9. **Never "the build is fine".** A run whose failures are all flaky or environment is reported as such,
@@ -50,7 +57,7 @@ bug-reproducer can take a drafted defect. ci-suite-runner triggers runs; this sk
 | `run` | required | GitHub: `owner/repo` and the run id (or its URL); Azure DevOps: organisation, project, build id; or a recorded directory |
 | `repo` | the working tree | A checkout with the history, for the owning change |
 | `allow_rerun` | false | `true` with `authorised_by` lets the skill re-run without asking |
-| `history` | 20 runs on the branch | For the last green run and runs of the same commit |
+| `history` | 20 runs of the same workflow on the branch, created before the run, plus every run of that workflow on the same commit (with its jobs) | For the last green run and runs of the same commit |
 
 Credentials: GitHub `GITHUB_TOKEN` / `GH_TOKEN` (or `gh auth login`); Azure DevOps `AZURE_DEVOPS_EXT_PAT`.
 Read scopes are enough except for a re-run (GitHub `actions: write`; Azure DevOps Build read & execute).
@@ -65,12 +72,20 @@ python scripts/owning_change.py --run run/ --repo . --out run/changes.json
 python scripts/classify.py --run run/ --out run/candidates.json
 ```
 
-1. **Fetch** the run, its jobs, logs, JUnit artifacts and the runs on the branch; find the last green run.
-2. **Extract** the failures of the first attempt: one per failing JUnit case, one per failed non-test step.
-3. **Re-run** the failed jobs once if allowed (ask first otherwise), and fetch the new attempt.
+1. **Fetch** the run, its jobs, logs, JUnit artifacts and the runs of the same workflow; find the last
+   green run (the newest successful run of that workflow on the branch before this one, preferring the same
+   event, and skipping a run that did not pass the jobs that failed here). Redirects to log and artifact
+   storage are followed without the API token.
+2. **Extract** the failures of the first attempt: one per failing JUnit case; without JUnit, one per
+   failing test in a Vitest, Jest or node:test console summary; one per other failed step. The failed
+   step's output is found by its log group (GitHub titles groups `Run <script>`, not the step name) and
+   quoted from the error lines before its closing `##[error]`, not from the echoed script.
+3. **Re-run** the failed jobs once if allowed (ask first otherwise), and fetch the new attempt. If the run
+   already has a later attempt someone else started, record it with `rerun.py --observed` instead.
 4. **Owning change**: score the commits since the last green run by the files they share with each failure.
-5. **Classify** into candidates (`data/signatures.json`, the re-run, the history, data markers).
-6. **Triage** each candidate: keep or override (with a specific reason), write the next action, and draft a
+5. **Classify** into candidates (`data/signatures.json`, the re-run, the history, data markers, gates).
+6. **Triage** each candidate: keep or override (with a specific reason; quote the log lines the override
+   rests on, and the validator re-applies the rules to them), write the next action, and draft a
    defect (real) or a test-data issue (data): title, summary, steps, expected, actual, suspect commit,
    evidence (log lines, the re-run, the run URL).
 7. **Validate and render**; write the drafts as Markdown for a person to file.
@@ -83,7 +98,8 @@ python scripts/render_report.py triage.json [--brief | --defects-md drafts.md]
 ## Rating
 
 See `RUBRIC.md`: the rules in order, confidence, priority (real failures: P1 on the default or a release
-branch, P2 elsewhere), and evidence completeness (logs, JUnit, re-run, a last green run, the repository).
+branch, P2 elsewhere), and evidence completeness (logs, test results from JUnit or a console summary, re-run, a last green run,
+the repository).
 
 ## Output (`schemas/triage.schema.json`)
 
@@ -97,6 +113,14 @@ owning change, priority, draft, next action), `summary`, `limitations`, `files_w
   `indicated` at most.
 - **Matrix legs**: each leg is a job; a test failing in one leg only points at the platform or the runner.
 - **Logs expired** (GitHub keeps them 90 days by default): those jobs are `unclassified` with that reason.
-- **Monorepos**: only commits touching the failing package can own it.
+- **Logs not downloadable** (401/403): say so in the limitations; never treat it as "no log".
+- **Monorepos**: only commits touching the failing package (the nearest folder with a package manifest
+  above the test file) can own it; paths a runner prints relative to its package are matched in the tree.
+- **A pull request head not in the clone**: `owning_change.py` writes every owning change
+  `not_identified` with the `git fetch` that would bring it in.
+- **Aggregate gate jobs**: a consequence of the failures they gate, not a failure of their own. A cause in
+  another run (a release waiting on a gate run) is out of reach; say so in the next action.
+- **Toolchain drift** (a nightly "fresh project" build whose tools moved past the pinned versions):
+  `REAL-TOOLCHAIN`, real and indicated; the fix is in the repository.
 - **A test whose failure message is itself a date check** (an expiry feature): data markers are evidence,
   not proof; override to real with a reason when the product, not the fixture, is wrong.

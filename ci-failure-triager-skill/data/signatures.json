@@ -1,9 +1,9 @@
 {
- "note": "Log and failure-message signatures. Each is a case-insensitive regular expression with the classification it indicates and what it names. environment: the runner, network, registry, disk, memory or a service the job needs. data: test data or fixtures wrong for this run. A signature is evidence, not a verdict: classify.py combines it with the step kind, the re-run outcome and the history.",
+ "note": "Log and failure-message signatures. Each is a case-insensitive regular expression with the classification it indicates and what it names. environment: the runner, network, registry, disk, memory or a service the job needs. data: test data or fixtures wrong for this run. real: the repository itself must change (a toolchain below the minimum a tool now needs, a compile error). A signature is evidence, not a verdict: classify.py combines it with the step kind, the re-run outcome and the history.",
  "signatures": [
-  {"id": "ENV-DNS", "class": "environment", "names": "network", "pattern": "(could not resolve host|getaddrinfo (ENOTFOUND|EAI_AGAIN)|Temporary failure in name resolution|Name or service not known)"},
-  {"id": "ENV-CONN", "class": "environment", "names": "network", "pattern": "(ETIMEDOUT|ECONNRESET|ECONNREFUSED|Connection refused|Connection reset by peer|Failed to establish a new connection|Read timed out|NewConnectionError)"},
-  {"id": "ENV-REGISTRY", "class": "environment", "names": "package registry", "pattern": "(Could not find a version that satisfies the requirement|No matching distribution found|npm ERR! (code )?E(TIMEDOUT|AI_AGAIN|CONNRESET|404)|ERR_PNPM_FETCH|Could not GET 'https?://|Could not transfer artifact)"},
+  {"id": "ENV-DNS", "class": "environment", "names": "network", "pattern": "(could not resolve host|getaddrinfo|EAI_AGAIN|ENOTFOUND|Temporary failure in name resolution|Name or service not known)"},
+  {"id": "ENV-CONN", "class": "environment", "names": "network", "pattern": "(ETIMEDOUT|ECONNRESET|ECONNREFUSED|ECONNABORTED|EHOSTUNREACH|ENETUNREACH|Connection refused|Connection reset by peer|Failed to establish a new connection|Read timed out|NewConnectionError|TLS handshake timeout|socket hang up|i/o timeout|SSL_ERROR_SYSCALL)"},
+  {"id": "ENV-REGISTRY", "class": "environment", "names": "package registry", "pattern": "(Could not find a version that satisfies the requirement|No matching distribution found|npm ERR! (code )?E(TIMEDOUT|AI_AGAIN|CONNRESET|404)|npm error (code )?E(TIMEDOUT|AI_AGAIN|CONNRESET|404)|ERR_PNPM_FETCH|ERR_PNPM_\\w+.*\\(status (404|5\\d\\d)\\b|Could not GET 'https?://|Could not transfer artifact)"},
   {"id": "ENV-RATE", "class": "environment", "names": "rate limit", "pattern": "(429 Too Many Requests|toomanyrequests|API rate limit exceeded|You have reached your pull rate limit)"},
   {"id": "ENV-DISK", "class": "environment", "names": "runner disk", "pattern": "(No space left on device|ENOSPC|System.IO.IOException: There is not enough space)"},
   {"id": "ENV-OOM", "class": "environment", "names": "runner memory", "pattern": "(JavaScript heap out of memory|java.lang.OutOfMemoryError|Killed\\s*$|exit code 137|The runner has received a shutdown signal|##\\[error\\]The operation was canceled)"},
@@ -11,8 +11,12 @@
   {"id": "ENV-TIMEOUT", "class": "environment", "names": "job timeout", "pattern": "(The job running on runner .* has exceeded the maximum execution time|##\\[error\\]The job was canceled because|exceeded the timeout of)"},
   {"id": "DATA-DUPLICATE", "class": "data", "names": "duplicate test data", "pattern": "(UNIQUE constraint failed|duplicate key value violates unique constraint|IntegrityError|Duplicate entry .* for key)"},
   {"id": "DATA-MISSING-FIXTURE", "class": "data", "names": "missing fixture or seed", "pattern": "(FileNotFoundError: .*(fixture|seed|testdata|test_data)|fixture '[^']+' not found|no such table|relation \"[^\"]+\" does not exist)"},
-  {"id": "DATA-EXPIRED", "class": "data", "names": "a date in the test data", "pattern": "(\\bexpired\\b|in the past|already (departed|closed|ended)|is before today)"}
+  {"id": "DATA-EXPIRED", "class": "data", "names": "a date in the test data", "pattern": "(\\bexpired\\b|in the past|already (departed|closed|ended)|is before today)"},
+  {"id": "REAL-TOOLCHAIN", "class": "real", "names": "a toolchain version below the minimum a tool now needs", "pattern": "(is lower than .{0,120}minimum supported version|minimum supported version of .{0,80} is|requires a minimum .{0,60}version|Unsupported engine|The engine \"\\w+\" is incompatible|requires (Node(\\.js)?|Python|Java|Gradle|Kotlin|Go) \\S+ or (later|higher|newer))"},
+  {"id": "REAL-COMPILE", "class": "real", "names": "a compile or type error", "pattern": "(error TS\\d{4}:|error\\[E\\d{4}\\]|error CS\\d{4}:|: error: cannot find symbol|Compilation failed; see the compiler error output)"}
  ],
  "date_marker": "Dates (YYYY-MM-DD) in a failure message or a fixture it reads that fall before the run date are a data marker.",
- "test_step": "(pytest|py\\.test|unittest|tox|nox|jest|vitest|mocha|playwright test|cypress run|go test|cargo test|dotnet test|mvn .*test|gradle.* test|npm (run )?test|yarn test|pnpm test)"
+ "test_step": "(pytest|py\\.test|unittest|tox|nox|jest|vitest|mocha|playwright test|cypress run|go test|cargo test|cargo nextest|dotnet test|mvn .*test|gradle.* test|npm (run )?test|yarn test|pnpm test|pnpm run test|node --test|\\btests?\\b)",
+ "setup_step": "(checkout|set ?up|setup-|install|cache|restore|download|log ?in|docker pull|toolchain|dependencies|\\bdeps\\b|bootstrap|provision|prepare|initiali[sz]e)",
+ "aggregate_gate": "(\\bgate\\b|all[- ]checks|required[- ]checks|ci[- ]success|status[- ]check|require every job)"
 }

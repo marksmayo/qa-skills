@@ -6,8 +6,11 @@
    "failure": {
     "job": "unit",
     "job_id": 5101,
+    "log_status": "fetched",
     "step": "Run python -m pytest --junitxml=junit.xml",
     "kind": "test",
+    "source": "junit",
+    "step_kind": "test",
     "test_id": "tests.test_booking::test_sample_booking_is_open",
     "test_file": "tests/test_booking.py",
     "failure_type": "assertion",
@@ -71,7 +74,9 @@
     "history_same_commit": [],
     "history_passed_same_commit": false,
     "step_kind": "test",
-    "failure_type": "assertion"
+    "failure_type": "assertion",
+    "log_status": "fetched",
+    "consequence_of": []
    },
    "owning_change": {
     "status": "identified",
@@ -103,8 +108,11 @@
    "failure": {
     "job": "unit",
     "job_id": 5101,
+    "log_status": "fetched",
     "step": "Run python -m pytest --junitxml=junit.xml",
     "kind": "test",
+    "source": "junit",
+    "step_kind": "test",
     "test_id": "tests.test_fares::test_fare_rounds_half_up",
     "test_file": "tests/test_fares.py",
     "failure_type": "assertion",
@@ -162,7 +170,9 @@
     "history_same_commit": [],
     "history_passed_same_commit": false,
     "step_kind": "test",
-    "failure_type": "assertion"
+    "failure_type": "assertion",
+    "log_status": "fetched",
+    "consequence_of": []
    },
    "owning_change": {
     "status": "identified",
@@ -189,8 +199,11 @@
    "failure": {
     "job": "unit",
     "job_id": 5101,
+    "log_status": "fetched",
     "step": "Run python -m pytest --junitxml=junit.xml",
     "kind": "test",
+    "source": "junit",
+    "step_kind": "test",
     "test_id": "tests.test_slots::test_pick_two_gives_two_different_slots",
     "test_file": "tests/test_slots.py",
     "failure_type": "assertion",
@@ -236,7 +249,9 @@
     "history_same_commit": [],
     "history_passed_same_commit": false,
     "step_kind": "test",
-    "failure_type": "assertion"
+    "failure_type": "assertion",
+    "log_status": "fetched",
+    "consequence_of": []
    },
    "owning_change": {
     "status": "not_identified",
@@ -253,20 +268,23 @@
    "failure": {
     "job": "install-check",
     "job_id": 5102,
+    "log_status": "fetched",
     "step": "Install internal pricing package",
     "kind": "step",
+    "source": "log",
+    "step_kind": "setup",
     "test_id": null,
     "test_file": null,
     "failure_type": "step",
     "message": "ERROR: Could not find a version that satisfies the requirement tidewater-internal-pricing==2.1 (from versions: none)",
     "frames": [],
+    "section": {
+     "title": "pip install --index-url http://127.0.0.1:9/simple/ tidewater-internal-pricing==2.1",
+     "basis": "order of the steps with an error"
+    },
     "log_excerpt": {
      "path": "logs/5102.txt",
      "lines": [
-      {
-       "n": 8,
-       "text": "##[endgroup]"
-      },
       {
        "n": 9,
        "text": "Looking in indexes: http://127.0.0.1:9/simple/"
@@ -282,10 +300,6 @@
       {
        "n": 12,
        "text": "##[error]Process completed with exit code 1."
-      },
-      {
-       "n": 13,
-       "text": ""
       }
      ]
     },
@@ -311,11 +325,13 @@
     "history_same_commit": [],
     "history_passed_same_commit": false,
     "step_kind": "setup",
-    "failure_type": "step"
+    "failure_type": "step",
+    "log_status": "fetched",
+    "consequence_of": []
    },
    "owning_change": {
     "status": "not_identified",
-    "basis": "no commit in 3 commit(s) since the last green run touches the files of this failure",
+    "basis": "no file of this failure is known (a step failure with no traceback or test file in its output), so no commit can be tied to it",
     "files_considered": []
    }
   }

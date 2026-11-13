@@ -5,8 +5,11 @@
   {
    "job": "unit",
    "job_id": "job-unit",
+   "log_status": "fetched",
    "step": "pytest",
    "kind": "test",
+   "source": "junit",
+   "step_kind": "test",
    "test_id": "tests.test_booking::test_sample_booking_is_open",
    "test_file": "tests/test_booking.py",
    "failure_type": "assertion",
@@ -51,8 +54,11 @@
   {
    "job": "unit",
    "job_id": "job-unit",
+   "log_status": "fetched",
    "step": "pytest",
    "kind": "test",
+   "source": "junit",
+   "step_kind": "test",
    "test_id": "tests.test_fares::test_fare_rounds_half_up",
    "test_file": "tests/test_fares.py",
    "failure_type": "assertion",
@@ -101,8 +107,11 @@
   {
    "job": "unit",
    "job_id": "job-unit",
+   "log_status": "fetched",
    "step": "pytest",
    "kind": "test",
+   "source": "junit",
+   "step_kind": "test",
    "test_id": "tests.test_slots::test_pick_two_gives_two_different_slots",
    "test_file": "tests/test_slots.py",
    "failure_type": "assertion",
@@ -139,20 +148,23 @@
   {
    "job": "install-check",
    "job_id": "job-install",
+   "log_status": "fetched",
    "step": "Install internal pricing package",
    "kind": "step",
+   "source": "log",
+   "step_kind": "setup",
    "test_id": null,
    "test_file": null,
    "failure_type": "step",
    "message": "ERROR: Could not find a version that satisfies the requirement tidewater-internal-pricing==2.1 (from versions: none)",
    "frames": [],
+   "section": {
+    "title": "Install internal pricing package",
+    "basis": "title"
+   },
    "log_excerpt": {
     "path": "logs/job-install.txt",
     "lines": [
-     {
-      "n": 2,
-      "text": "pip install --index-url http://127.0.0.1:9/simple/ tidewater-internal-pricing==2.1"
-     },
      {
       "n": 3,
       "text": "Looking in indexes: http://127.0.0.1:9/simple/"
@@ -168,10 +180,6 @@
      {
       "n": 6,
       "text": "##[error]Bash exited with code '1'."
-     },
-     {
-      "n": 7,
-      "text": ""
      }
     ]
    },

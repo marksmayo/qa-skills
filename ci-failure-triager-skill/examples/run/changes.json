@@ -83,7 +83,7 @@
   },
   "X04": {
    "status": "not_identified",
-   "basis": "no commit in 3 commit(s) since the last green run touches the files of this failure",
+   "basis": "no file of this failure is known (a step failure with no traceback or test file in its output), so no commit can be tied to it",
    "files_considered": []
   }
  }

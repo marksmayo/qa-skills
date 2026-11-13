@@ -10,7 +10,7 @@ from __future__ import annotations
 import argparse, json, os, sys
 from pathlib import Path
 
-COL = {'real': '31;1', 'data': '35', 'flaky': '33', 'environment': '36', 'unclassified': '2', 'bold': '1', 'dim': '2'}
+COL = {'real': '31;1', 'data': '35', 'flaky': '33', 'environment': '36', 'consequence': '34', 'unclassified': '2', 'bold': '1', 'dim': '2'}
 
 
 def draft_md(f: dict) -> list[str]:
@@ -36,10 +36,13 @@ def main() -> int:
         sys.stdout.reconfigure(encoding='utf-8')
     d = json.loads(a.triage.read_text(encoding='utf-8'))
     if a.defects_md:
+        drafted = [f for f in d['failures'] if f.get('draft_defect')]
+        if not drafted:
+            print(f'no drafts in this triage (no failure is real or data); {a.defects_md} not written')
+            return 0
         lines = ['# Drafted defects', '', f'From {d["run"]["system"]} run {d["run"]["id"]} on `{d["run"]["commit"][:12]}` ({d["run"]["branch"]}).', '']
-        for f in d['failures']:
-            if f.get('draft_defect'):
-                lines += draft_md(f)
+        for f in drafted:
+            lines += draft_md(f)
         a.defects_md.write_text('\n'.join(lines), encoding='utf-8', newline='\n')
         print(f'wrote {a.defects_md}')
         return 0
@@ -48,7 +51,8 @@ def main() -> int:
     r, s = d['run'], d['summary']
     out = [c('# CI failure triage', 'bold'), '',
            f'{r["system"]} run {r["id"]} (attempt {r["attempt"]}) on {r["branch"]} @ `{r["commit"][:12]}`; last green run '
-           f'{(r.get("last_green") or {}).get("id", "none")}. {r.get("url") or ""}', '', s['headline'], '',
+           f'{(r.get("last_green") or {}).get("id", "none")}. {r.get("url") or ""}'
+           + (f' (requested as {r["repo"]}; the CI names it {r["repo_api"]})' if r.get('repo_api') else ''), '', s['headline'], '',
            'By classification: ' + ', '.join(f'{c(k, k)} {v}' for k, v in s['by_classification'].items() if v)
            + f'. Drafts: {s["defects_drafted"]}. Re-runs: {s["reruns"]}. Evidence completeness {s["evidence_completeness"]}.', '',
            '| ID | Job | Failure | Class | Confidence | Owning change | Next action |', '|---|---|---|---|---|---|---|']
@@ -62,11 +66,17 @@ def main() -> int:
                     f'Rule: {f["rule"]}.' + (f' Override: {f["override_reason"]}' if f.get('override_reason') else '') +
                     f' Re-run: {f["signals"]["rerun"]}. Signatures: {", ".join(x["id"] for x in f["signals"]["signatures"]) or "none"}.'
                     + (f' Dates before the run date: {", ".join(f["signals"]["date_markers"])}.' if f['signals'].get('date_markers') else '')
-                    + (f' Priority {f["priority"]}.' if f.get('priority') else ''), '',
-                    f'`{f["log_excerpt"]["path"]}`:', '```'] + [f'{l["n"]:>4}  {l["text"]}' for l in f['log_excerpt']['lines']] + ['```']
+                    + (f' A consequence of {", ".join(f["signals"]["consequence_of"])}.' if f['signals'].get('consequence_of') else '')
+                    + (f' Priority {f["priority"]}.' if f.get('priority') else ''), '']
+            if f['log_excerpt']['lines']:
+                out += [f'`{f["log_excerpt"]["path"]}`:', '```'] + [f'{l["n"]:>4}  {l["text"]}' for l in f['log_excerpt']['lines']] + ['```']
+            else:
+                out += [f'No log lines: {f["message"]}']
             if f.get('draft_defect'):
                 out += ['', f'Draft {f["draft_defect"]["kind"].replace("_", " ")}: **{f["draft_defect"]["title"]}** (in the result log; not filed)']
-        out += ['', '## Re-runs', ''] + [f'- attempt {x["new_attempt"]} re-ran {", ".join(x["jobs_rerun"])} ({x["mode"]}), authorised by {x["authorised_by"]}: '
+        who = lambda x: (f'started by {x.get("triggered_by") or "unknown"} (observed; not by this triage)' if x['mode'] == 'observed'  # noqa: E731
+                         else f'({x["mode"]}), authorised by {x["authorised_by"]}')
+        out += ['', '## Re-runs', ''] + [f'- attempt {x["new_attempt"]} re-ran {", ".join(x["jobs_rerun"])} {who(x)}: '
                                          + ', '.join(f'{k} {v}' for k, v in x['outcomes'].items()) for x in d['reruns']] or ['None.']
         out += ['', '## Limitations', ''] + [f'- {x}' for x in d['limitations']]
     print('\n'.join(out))
