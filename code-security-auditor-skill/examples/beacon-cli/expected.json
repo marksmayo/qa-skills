@@ -1,0 +1,41 @@
+{
+  "about": "What scripts/self_test.py expects the built-in scanners to report on this Go fixture (all packs). Pattern hits must match exactly; the entry points must be present with these values and the count must match; the vendored header trees must not count as the repository's language.",
+  "patterns": [
+    ["internal/fetch/fetch.go", 20, "GO-HTTP-CLEARTEXT"],
+    ["internal/fetch/fetch.go", 41, "GO-LOG-URL"],
+    ["internal/fetch/fetch.go", 42, "GO-LOG-SECRET"],
+    ["internal/flows/flows.go", 33, "GO-PATH-JOIN"],
+    ["internal/legacy/pairing.go", 11, "GO-WEAK-RANDOM"],
+    ["internal/runner/exec.go", 16, "GO-CMD"],
+    ["internal/runner/exec.go", 21, "GO-CMD"],
+    ["internal/share/debug.go", 19, "GO-FIXED-TMP"],
+    ["internal/share/share.go", 13, "GO-FIXED-TMP"]
+  ],
+  "entry_points": [
+    {"kind": "cli", "framework": "urfave_cli", "method": "ROOT", "path": "beacon", "handler": "cmd/beacon/main.go:16"},
+    {"kind": "cli", "framework": "urfave_cli", "method": "COMMAND", "path": "run", "handler": "cmd/beacon/main.go:25"},
+    {"kind": "cli", "framework": "urfave_cli", "method": "COMMAND", "path": "share", "handler": "cmd/beacon/main.go:30"},
+    {"kind": "cli", "framework": "cobra", "method": "ROOT", "path": "beaconctl", "handler": "cmd/beaconctl/root.go:14"},
+    {"kind": "cli", "framework": "cobra", "method": "COMMAND", "path": "pair", "handler": "cmd/beaconctl/root.go:19"},
+    {"kind": "listener", "framework": "go", "method": "LISTEN", "handler": "internal/share/share.go:18", "bind": "unix"},
+    {"kind": "listener", "framework": "go", "method": "LISTEN", "handler": "internal/share/debug.go:10", "bind": "all"},
+    {"kind": "listener", "framework": "go", "method": "LISTEN", "handler": "internal/share/debug.go:15", "bind": "loopback"},
+    {"kind": "http_route", "framework": "net/http", "method": "ANY", "path": "/tree", "handler": "internal/share/share.go:23", "bind": "unix"},
+    {"kind": "http_route", "framework": "net/http", "method": "GET", "path": "/devices/{id}", "handler": "internal/share/share.go:24", "bind": "unix"},
+    {"kind": "config_input", "framework": "go", "method": "CONFIG", "handler": "internal/flows/flows.go:29"}
+  ],
+  "entry_point_count": 11,
+  "no_entry_points_in": ["internal/script/engine.go", "internal/fetch/fetch.go", "internal/flows/flows_test.go"],
+  "seeded_exposure": {"internal/share/share.go:23": "local", "internal/share/debug.go:10": "internet", "cmd/beacon/main.go:25": "local"},
+  "cli_flags": [
+    ["cmd/beacon/main.go", "server", ["BEACON_SERVER"]],
+    ["cmd/beacon/main.go", "api-key", ["BEACON_API_KEY"]],
+    ["cmd/beacon/main.go", "out-dir", []],
+    ["cmd/beaconctl/root.go", "verbose", []]
+  ],
+  "languages": {"Go": 10},
+  "vendored": ["drivers/ios/AgentKit/PrivateHeaders", "drivers/ios/AgentRunner.app"],
+  "frameworks": ["cobra", "urfave/cli"],
+  "lead_mentions": ["BEACON_API_KEY", "unix socket"],
+  "secrets": []
+}

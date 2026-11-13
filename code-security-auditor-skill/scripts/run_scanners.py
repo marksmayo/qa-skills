@@ -18,7 +18,7 @@ runs longer than 30 seconds prints a progress line every 30 seconds, and every t
 elapsed time when it finishes.
 
 Network: Semgrep fetches registry rules (metrics are turned off); pip-audit, npm audit,
-osv-scanner and Trivy query vulnerability databases with package names and versions, never
+govulncheck, osv-scanner and Trivy query vulnerability databases with package names and versions, never
 source code. --offline skips those tools and records why (and whether they are installed at all).
 With --osv-local-db <dir> (an osv-scanner offline database downloaded beforehand), osv-scanner
 checks advisories without the network, also under --offline.
@@ -38,7 +38,10 @@ otherwise it runs with --offline and the record says which audits were skipped.
 
 Only free, open-source tools whose licences allow scanning closed-source code are used: Semgrep
 OSS with community rules, Bandit, gosec, Brakeman, ESLint security plugins, Psalm, gitleaks,
-osv-scanner, pip-audit, npm audit, zizmor (GitHub Actions), Trivy, Checkov and hadolint. CodeQL is deliberately absent.
+osv-scanner, pip-audit, npm audit, govulncheck (Go, one run per go.mod; its JSON stream keeps the
+call-graph level, which merge_findings.py carries as `reachability`), zizmor (GitHub Actions),
+Trivy, Checkov and hadolint. CodeQL is deliberately absent. Vendored and bundled trees (vendor/,
+Pods/, PrivateHeaders/, *.app, *.framework) are left out of the language inventory.
 SpotBugs + FindSecBugs and MobSF need a build or a server, so they are recorded as not_run with
 instructions; pass their SARIF to merge_findings.py if you run them.
 """
@@ -47,7 +50,11 @@ import argparse, json, os, re, shutil, subprocess, sys, time
 from datetime import datetime, timezone
 from pathlib import Path
 
-SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'out', '.next', '.nuxt', '.turbo', '.cache', 'coverage', '.venv', 'venv',
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import test_paths  # noqa: E402
+
+SKIP_DIRS ={'node_modules', '.git', 'dist', 'build', 'out', '.next', '.nuxt', '.turbo', '.cache', 'coverage', '.venv', 'venv',
              '__pycache__', 'vendor', 'target', '.terraform'}
 HEARTBEAT = 30  # seconds between progress lines for a long-running tool
 ALLOWED_DOT_DIRS = {'.github', '.azuredevops', '.pipelines', '.azure-pipelines', '.ado'}
@@ -59,7 +66,9 @@ def inventory(root: Path) -> dict:
     langs: dict[str, int] = {}
     names: list[str] = []
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and (not d.startswith('.') or d in ALLOWED_DOT_DIRS)]
+        # vendored and bundled trees (vendor/, Pods/, PrivateHeaders/, *.app, *.framework...) are not the repository's code
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and (not d.startswith('.') or d in ALLOWED_DOT_DIRS)
+                       and not test_paths.vendored_dir(d)]
         rel = Path(dirpath).relative_to(root).as_posix()
         for f in filenames:
             names.append(f'{rel}/{f}' if rel != '.' else f)
@@ -73,6 +82,7 @@ def inventory(root: Path) -> dict:
         'pyproject': 'pyproject.toml' in base,
         'package_lock': [n for n in names if n.endswith('package-lock.json')],
         'pnpm_lock': [n for n in names if Path(n).name == 'pnpm-lock.yaml'],
+        'go_mod': [n for n in names if Path(n).name == 'go.mod' and 'testdata' not in n.split('/')],
         'other_js_locks': [n for n in names if n.endswith(('yarn.lock', 'pnpm-lock.yaml'))],
         'gha': [n for n in names if (n.startswith('.github/workflows/') and n.endswith(('.yml', '.yaml'))) or
                 re.search(r'(^|/)action\.ya?ml$', n) and (n.startswith('.github/') or '/' not in n)],
@@ -178,7 +188,7 @@ def covered_lockfiles(records: list[dict], deps: dict) -> set[str]:
         if r.get('covers') is not None:
             out |= set(r['covers']) & files
         else:
-            eco = {'pip-audit': 'PyPI', 'npm-audit': 'npm', 'pnpm-audit': 'npm'}.get(r['name'])
+            eco = {'pip-audit': 'PyPI', 'npm-audit': 'npm', 'pnpm-audit': 'npm', 'govulncheck': 'Go'}.get(r['name'])
             out |= {l['file'] for l in deps['lockfiles'] if l.get('ecosystem') == eco}
     return out
 
@@ -208,12 +218,16 @@ def eslint_security_plugin(root: Path) -> bool:
     deps = {**(pkg.get('dependencies') or {}), **(pkg.get('devDependencies') or {})}
     return any(d in deps for d in ('eslint-plugin-security', 'eslint-plugin-no-unsanitized', 'eslint-plugin-security-node'))
 
-def version_of(exe: str, args=('--version',)) -> str | None:
+def version_of(exe: str, args=('--version',), rx: str | None = None) -> str | None:
     try:
         p = subprocess.run([exe, *args], capture_output=True, text=True, timeout=60, env=tool_env(), encoding='utf-8', errors='replace')
     except (OSError, subprocess.TimeoutExpired):
         return None
-    m = re.search(r'\d+\.\d+(\.\d+)?', (p.stdout or '') + ' ' + (p.stderr or ''))
+    out = (p.stdout or '') + ' ' + (p.stderr or '')
+    m = re.search(rx, out) if rx else None  # govulncheck -version prints the Go version first
+    if m:
+        return m.group(1)
+    m = re.search(r'\d+\.\d+(\.\d+)?', out)
     return m.group(0) if m else None
 
 def tool_env() -> dict:
@@ -227,9 +241,9 @@ def plan(root: Path, out: Path, inv: dict, semgrep_configs: list[str], osv_local
     L = inv['langs']
     src = sum(L.values()) > 0
     tools = []
-    def add(name, area, exe, applies, runs, network=False, not_run=None, note=None, covers=None):
+    def add(name, area, exe, applies, runs, network=False, not_run=None, note=None, covers=None, version_args=None, version_rx=None):
         tools.append({'name': name, 'area': area, 'exe': exe, 'applies': applies, 'runs': runs, 'network': network,
-                      'not_run': not_run, 'note': note, 'covers': covers})
+                      'not_run': not_run, 'note': note, 'covers': covers, 'version_args': version_args, 'version_rx': version_rx})
     cfg = [a for c in semgrep_configs for a in ('--config', c)]
     add('semgrep', 'sast', 'semgrep', True if src else 'no source files',
         [{'cmd': ['semgrep', 'scan', *cfg, '--metrics=off', '--disable-version-check', '--sarif', '--output', str(out / 'semgrep.sarif'), '--quiet', str(root)],
@@ -272,6 +286,15 @@ def plan(root: Path, out: Path, inv: dict, semgrep_configs: list[str], osv_local
     add('osv-scanner', 'dependencies', 'osv-scanner', True if inv['lockfiles'] else 'no lockfile or manifest', osv_runs,
         network=not osv_local_db, note=f'offline, local advisory database {osv_local_db}' if osv_local_db else None,
         covers=list(inv['lockfiles']))
+    # govulncheck: Go's call-graph-aware advisory check, one run per module; its JSON stream keeps whether a
+    # vulnerable symbol is reached (symbol), only its package imported (package) or only its module required (module)
+    gv_runs = [{'cmd': ['govulncheck', '-format', 'json', './...'], 'cwd': str(root / Path(m).parent),
+                'stdout_to': f"govulncheck{'' if i == 0 else '-' + str(i)}.json", 'output': f"govulncheck{'' if i == 0 else '-' + str(i)}.json",
+                'ok_codes': [0, 3]} for i, m in enumerate(inv['go_mod'])]
+    add('govulncheck', 'dependencies', 'govulncheck', True if gv_runs else 'no go.mod', gv_runs, network=True,
+        covers=list(inv['go_mod']), note='queries vuln.go.dev with module paths and versions, never source code; '
+        'needs the Go toolchain and the module cache (it builds the packages to read the call graph)',
+        version_args=('-version',), version_rx=r'govulncheck@v?(\d+\.\d+(?:\.\d+)?)')
     pip_runs = [{'cmd': ['pip-audit', '-r', str(root / r), '-f', 'json', '-o', str(out / f"pip-audit{'' if i == 0 else '-' + str(i)}.json"),
                          '--progress-spinner', 'off'], 'output': f"pip-audit{'' if i == 0 else '-' + str(i)}.json", 'ok_codes': [0, 1]}
                 for i, r in enumerate(inv['requirements'])]
@@ -333,9 +356,24 @@ def run_with_progress(cmd: list[str], cwd: str | None, timeout: int, name: str, 
 def count_results(path: Path) -> int | None:
     """Number of results in a tool output (SARIF, Bandit, pip-audit, npm audit, osv-scanner), or None."""
     try:
-        d = json.loads(path.read_text(encoding='utf-8'))
-    except (OSError, ValueError):
+        text = path.read_text(encoding='utf-8')
+        d = json.loads(text)
+    except OSError:
         return None
+    except ValueError:  # govulncheck -format json: a stream of objects; count the advisories it found
+        try:
+            stream = json.JSONDecoder()
+            objs, i = [], 0
+            while i < len(text):
+                while i < len(text) and text[i].isspace():
+                    i += 1
+                if i >= len(text):
+                    break
+                o, i = stream.raw_decode(text, i)
+                objs.append(o)
+        except ValueError:
+            return None
+        return len({o['finding'].get('osv') for o in objs if isinstance(o, dict) and isinstance(o.get('finding'), dict)})
     if isinstance(d, dict) and 'runs' in d:
         return sum(len(r.get('results') or []) for r in d['runs'])
     if isinstance(d, dict) and isinstance(d.get('results'), list) and 'errors' in d:  # bandit
@@ -362,7 +400,8 @@ def run_tool(t: dict, out: Path, timeout: int, timeouts: dict | None = None) -> 
     if t['exe'] and not exe and not Path(t['exe']).exists():
         rec.update(status='not_run', reason=f"{t['exe']} is not installed", elapsed_s=0.0)
         return rec
-    rec['version'] = version_of(exe or t['exe']) if t['exe'] not in ('npx',) else version_of('npx', ('eslint', '--version'))
+    rec['version'] = (version_of('npx', ('eslint', '--version')) if t['exe'] == 'npx' else
+                      version_of(exe or t['exe'], t.get('version_args') or ('--version',), t.get('version_rx')))
     errors = []
     for r in t['runs']:
         cmds = [r['cmd']] + ([r['fallback']] if r.get('fallback') else [])

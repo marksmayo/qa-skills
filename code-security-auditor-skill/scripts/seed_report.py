@@ -56,8 +56,10 @@ def exposure_of(e: dict) -> str:
         return 'local'
     if e['kind'] == 'mcp_tool' and e.get('transport') == 'stdio':
         return 'local'
+    if e['kind'] in ('listener', 'mcp_tool', 'http_route', 'webhook') and e.get('bind') in ('loopback', 'unix'):
+        return 'local'  # a loopback port or a unix socket (and routes recon saw served only on one)
     if e['kind'] in ('listener', 'mcp_tool'):
-        return 'local' if e.get('bind') == 'loopback' else 'internet'
+        return 'internet'
     return 'internal' if e['kind'] in ('queue_consumer', 'other') else 'internet'
 
 def entry_point(e: dict) -> dict:
@@ -122,6 +124,24 @@ def dependency(x: dict) -> dict:
     if x.get('via'):
         hint += f"; pulled in by {', '.join(x['via'][:5])}"
     out['basis'] = f'{TODO}: {hint}'
+    # govulncheck's call-graph level seeds reachability: a reached vulnerable symbol is a finding to write (or a
+    # reasoned downgrade); an imported package with no reached symbol, or a required module never imported, is not
+    level = x.get('reachability')
+    if x.get('scan_level', 'symbol') != 'symbol' and level != 'symbol':
+        level = None  # a -scan package or module run never looks for calls, so it can't say a symbol is unreached
+    if level == 'symbol':
+        out['reachable'] = 'yes'
+        out['basis'] = (f"{TODO}: govulncheck (symbol level) found a call path {x.get('call_path') or ''}; confirm the "
+                        'path is live, then write the finding and link it (or say why the path cannot run)')
+    elif level == 'package':
+        out['reachable'] = 'no'
+        out['basis'] = (f"govulncheck (symbol level): {x.get('vulnerable_package') or 'the vulnerable package'} is imported, "
+                        'but no vulnerable function is reachable from this code in its static call graph (calls through '
+                        'reflection or unsafe are not seen)')
+    elif level == 'module':
+        out['reachable'] = 'no'
+        out['basis'] = ('govulncheck (symbol level): the module is required, but the vulnerable package is not imported '
+                        'by any package built from this module')
     return out
 
 def advisories(scanners: dict | None, cands: dict) -> dict:
@@ -157,7 +177,7 @@ def seed(recon: dict, cands: dict, scanners: dict | None, repo: Path | None) -> 
     not_ran = [t['name'] for t in tools if t['status'] in ('not_run', 'errored')]
     stores = list(OrderedDict((f"{s['kind']} ({s['file']}:{s['line']})", None) for s in recon.get('data_stores') or []))
     d = {
-        'schema_version': '1.3',
+        'schema_version': '1.4',
         'skill': {'name': 'code-security-auditor', 'version': skill_version()},
         'sensitive': True,
         'notice': NOTICE,

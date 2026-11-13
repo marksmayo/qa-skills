@@ -49,6 +49,9 @@ BANNED_HEADLINE = re.compile(r'(?i)\b(is|are|looks|appears|seems|now|remains?|co
                              r'channel|transport|connection|header|storage|random|hash|compare|comparison|-?coding|defaults?))')
 VAGUE_REASON = re.compile(r'(?i)^\W*(false positive|fp|not exploitable|not an issue|not a problem|n/?a|safe|ok|fine|ignore)\W*$')
 LOC_REF = re.compile(r'[\w./-]+\.\w+:\d+')
+# An unknown reachability must say what would decide it ("govulncheck at symbol level would settle it").
+SETTLE = re.compile(r'(?i)\bsettle|would (?:show|tell|decide|confirm|need)|\bto (?:confirm|decide|tell)\b|needs? (?:a|an|the|to)\b|'
+                    r'\brequires?\b|\bonce\b|\buntil\b|\bby (?:running|reading|checking|tracing)\b')
 # A dismissed secret that only git history holds is still exposed to anyone with a clone: the reason must say it was
 # rotated or revoked, or why rotation isn't needed (a public key by design, a placeholder, a fake test value).
 ROTATION_REASON = re.compile(r'(?i)rotat|revok|invalidat|expired|deactivat|disabled|\bpublic\b[^.;]{0,30}\b(by design|key|identifier|client)\b|'
@@ -224,6 +227,25 @@ def secret_values(findings: list[dict], cand_secrets: dict, triaged: dict, repo:
         add(_line(repo, c.get('file'), c.get('line')), f"{cid} ({c.get('file')}:{c.get('line')})", strong_only=dismissed)
     return [(v, o) for v, o in out.items()]
 
+def test_name_in(text: str, name: str) -> bool:
+    """Is a regression test with this name defined in the file? A Python def, a Go func or Rust fn, a quoted name
+    (a JS it/test title, a Go t.Run subtest), or Go's `go test -run` form Parent/sub_test_name, where the subtest's
+    spaces become underscores."""
+    def defined(n: str) -> bool:
+        return bool(re.search(rf"\b(?:def|func|fn)\s+{re.escape(n)}\s*[(<]|['\"`]{re.escape(n)}['\"`]", text))
+    if defined(name):
+        return True
+    if '/' in name:
+        parent, *subs = name.split('/')
+        if not re.search(rf'\bfunc\s+{re.escape(parent)}\s*\(', text):
+            return False
+        for sub in subs:
+            alts = {sub, sub.replace('_', ' ')}
+            if not any(re.search(rf"\.Run\(\s*['\"`]{re.escape(a)}['\"`]", text) for a in alts):
+                return False
+        return True
+    return False
+
 # ---------------------------------------------------------------- checks
 def advisory_errors(d: dict) -> list[str]:
     """Were dependency advisories checked at all? (schema 1.2 requires the answer.) Not assessed is
@@ -233,7 +255,7 @@ def advisory_errors(d: dict) -> list[str]:
     adv = d.get('dependency_advisories')
     dep_ran = [t['name'] for t in d['tools'] if t['area'] == 'dependencies' and t['status'] == 'ran']
     if adv is None:
-        if d['schema_version'] in ('1.2', '1.3'):
+        if d['schema_version'] in ('1.2', '1.3', '1.4'):
             E('dependency_advisories: required from schema 1.2 (assessed, partial or not_assessed)')
     else:
         if adv['status'] in ('assessed', 'partial') and not dep_ran:
@@ -312,7 +334,11 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None, recon
     if ver['permitted']:
         if not ver.get('permission'):
             E('verification: permitted without recording who allowed it')
-        if not ver.get('target') or ver['target_kind'] == 'none':
+        if ver['target_kind'] == 'local_copy':
+            # command PoCs only (go test, a CLI run in a copy): the copy is the target, there is no URL
+            if not ver.get('local_copy'):
+                E('verification: target_kind local_copy needs verification.local_copy (the copy the command PoCs ran in)')
+        elif not ver.get('target') or ver['target_kind'] == 'none':
             E('verification: permitted without a target')
         if ver['target_kind'] == 'production' and not ver.get('production_written_permission'):
             E('verification: production targets need production_written_permission')
@@ -376,7 +402,7 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None, recon
                     E(f"dependencies[{x['id']}]: {x['finding']} does not list it")
         elif x.get('finding'):
             E(f"dependencies[{x['id']}]: reachable={x['reachable']} but linked to {x['finding']}")
-        if x['reachable'] == 'unknown':
+        if x['reachable'] == 'unknown' and not SETTLE.search(x.get('basis') or ''):
             W(f"dependencies[{x['id']}]: reachability unknown; say what would settle it")
 
     # findings
@@ -525,7 +551,7 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None, recon
                 P('a regression test that ran needs file and name')
             elif not (base / rt['file']).exists():
                 P(f"regression test file {rt['file']} not found")
-            elif not re.search(rf"def {re.escape(rt['name'])}\s*\(|['\"]{re.escape(rt['name'])}['\"]", (base / rt['file']).read_text(encoding='utf-8')):
+            elif not test_name_in((base / rt['file']).read_text(encoding='utf-8'), rt['name']):
                 P(f"test {rt['name']} is not in {rt['file']}")
         elif rt['result'] == 'not_run' and not rt.get('note'):
             P('regression_test not_run needs a note saying why')
@@ -605,7 +631,7 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None, recon
                 E(f"observations[{o['id']}]: {o['file']}:{o['line']} does not exist")
             elif o.get('excerpt') and norm(o['excerpt']) not in norm(got[0]):
                 E(f"observations[{o['id']}]: excerpt is not on {o['file']}:{o['line']} (line reads {got[0].strip()[:80]!r})")
-            elif not o.get('excerpt') and d['schema_version'] in ('1.2', '1.3'):
+            elif not o.get('excerpt') and d['schema_version'] in ('1.2', '1.3', '1.4'):
                 W(f"observations[{o['id']}]: no excerpt, so {o['file']}:{o['line']} can only be checked for existence")
         # recon entry points: the handler line must exist and, in Python, not sit inside a string or docstring
         for e in eps.values():

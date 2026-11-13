@@ -402,10 +402,80 @@ def from_npm_audit(data: dict, lock: dict[str, list[dict]]) -> list[dict]:
                 out.append({**base, 'version': ', '.join(versions), 'installed': cs, 'dev': all(c['dev'] for c in cs), 'via': via})
     return out
 
-def from_deps(path: Path, lock: dict[str, list[dict]] | None = None) -> tuple[list[dict], dict]:
-    data = json.loads(path.read_text(encoding='utf-8'))
+def json_stream(text: str) -> list:
+    """Every JSON value in a stream of concatenated values (govulncheck -format json prints one object per message)."""
+    dec, i, n, out = json.JSONDecoder(), 0, len(text), []
+    while True:
+        while i < n and text[i].isspace():
+            i += 1
+        if i >= n:
+            return out
+        obj, i = dec.raw_decode(text, i)
+        out.append(obj)
+
+def osv_fixed(v: dict, package: str | None) -> list[str]:
+    """Fixed versions from an OSV record's affected entries for this package only: an x/net advisory whose record
+    also lists stdlib must not get stdlib's fixed versions."""
+    affected = v.get('affected') or []
+    own = [a for a in affected if package and ((a.get('package') or {}).get('name') or '').lower() == package.lower()]
+    return sorted({e['fixed'] for a in (own or affected) for rg in a.get('ranges') or [] for e in rg.get('events') or [] if 'fixed' in e},
+                  key=lambda x: _ver(x) or (0,))
+
+REACH_RANK = {'symbol': 3, 'package': 2, 'module': 1}
+
+def from_govulncheck(objs: list) -> list[dict]:
+    """govulncheck -format json: one entry per advisory and module, at the strongest level it was found.
+
+    symbol: the call graph reaches a vulnerable function (call_path names the frames, the caller last);
+    package: a vulnerable package is imported but none of its vulnerable symbols is reached;
+    module: the module is required but the vulnerable package is not imported."""
+    osvs = {o['osv']['id']: o['osv'] for o in objs if isinstance(o, dict) and isinstance(o.get('osv'), dict)}
+    scan = next((o['config'].get('scan_level') for o in objs if isinstance(o, dict) and isinstance(o.get('config'), dict)), None) or 'symbol'
+    best: dict[tuple, dict] = {}
+    for o in objs:
+        f = o.get('finding') if isinstance(o, dict) else None
+        if not f or not f.get('trace'):
+            continue
+        top = f['trace'][0]
+        level = 'symbol' if top.get('function') else 'package' if top.get('package') else 'module'
+        key = (f.get('osv'), top.get('module'), top.get('version'))
+        if key in best and REACH_RANK[best[key]['level']] >= REACH_RANK[level]:
+            continue
+        best[key] = {'level': level, 'finding': f}
     out = []
-    if isinstance(data, dict) and 'dependencies' in data and isinstance(data['dependencies'], list):  # pip-audit
+    for (oid, module, version), b in sorted(best.items(), key=lambda kv: tuple(str(x) for x in kv[0])):
+        v, f = osvs.get(oid) or {}, b['finding']
+        frames = []
+        if b['level'] == 'symbol':
+            for fr in f['trace']:
+                pkg = (fr.get('package') or '').rsplit('/', 1)[-1]
+                name = '.'.join(x for x in (pkg, (fr.get('receiver') or '').lstrip('*'), fr.get('function')) if x)
+                pos = fr.get('position') or {}
+                frames.append(name + (f" ({Path(pos['filename']).as_posix()}:{pos.get('line')})" if pos.get('filename') else ''))
+        out.append({'ecosystem': 'Go', 'package': module or '?', 'version': (version or '').lstrip('v') or None, 'advisory': oid,
+                    'aliases': sorted(v.get('aliases') or []),
+                    'fixed_in': [f['fixed_version'].lstrip('v')] if f.get('fixed_version') else osv_fixed(v, module),
+                    'summary': v.get('summary') or ' '.join((v.get('details') or '').split())[:300],
+                    'reachability': b['level'], 'scan_level': scan, 'vulnerable_package': f['trace'][0].get('package'),
+                    'call_path': ' <- '.join(frames) if frames else None})
+    return out
+
+def from_deps(path: Path, lock: dict[str, list[dict]] | None = None) -> tuple[list[dict], dict]:
+    text = path.read_text(encoding='utf-8')
+    try:
+        data = json.loads(text)
+    except ValueError:
+        stream = json_stream(text)  # raises ValueError when it is not JSON at all
+        if not any(isinstance(o, dict) and ('finding' in o or (o.get('config') or {}).get('scanner_name') == 'govulncheck') for o in stream):
+            raise ValueError('a JSON stream, but not govulncheck -format json')
+        data = {'_govulncheck': stream}
+    out = []
+    if isinstance(data, dict) and isinstance(data.get('config'), dict) and data['config'].get('scanner_name') == 'govulncheck':
+        data = {'_govulncheck': [data]}  # a run with nothing to report can be a single config object
+    if isinstance(data, dict) and '_govulncheck' in data:
+        tool = 'govulncheck'
+        out = from_govulncheck(data['_govulncheck'])
+    elif isinstance(data, dict) and 'dependencies' in data and isinstance(data['dependencies'], list):  # pip-audit
         tool = 'pip-audit'
         for dep in data['dependencies']:
             for v in dep.get('vulns') or []:
@@ -432,14 +502,13 @@ def from_deps(path: Path, lock: dict[str, list[dict]] | None = None) -> tuple[li
             for pkg in res.get('packages') or []:
                 p = pkg.get('package') or {}
                 for v in pkg.get('vulnerabilities') or []:
-                    fixed = sorted({e['fixed'] for a in v.get('affected') or [] for rg in a.get('ranges') or []
-                                    for e in rg.get('events') or [] if 'fixed' in e})
+                    fixed = osv_fixed(v, p.get('name'))
                     out.append({'ecosystem': p.get('ecosystem'), 'package': p.get('name'), 'version': p.get('version'),
                                 'advisory': v['id'], 'aliases': sorted(v.get('aliases') or []), 'fixed_in': fixed,
                                 'summary': v.get('summary') or ' '.join((v.get('details') or '').split())[:300],
                                 'manifest': (res.get('source') or {}).get('path')})
     else:
-        raise ValueError('not pip-audit, npm audit (v7+), pnpm audit or osv-scanner JSON')
+        raise ValueError('not pip-audit, npm audit (v7+), pnpm audit, osv-scanner or govulncheck JSON')
     for d in out:
         d['sources'] = [{'tool': tool, 'advisory': d['advisory']}]
     return out, {'tool': tool, 'input': str(path), 'results': len(out)}
@@ -511,6 +580,9 @@ def merge_deps(items: list[dict]) -> list[dict]:
             have['aliases'] = sorted(({*have['aliases'], *ids}) - {have['advisory']})
             have['fixed_in'] = sorted(set(have['fixed_in']) | set(d['fixed_in']))
             have['sources'] += [s for s in d['sources'] if s not in have['sources']]
+            for k in ('reachability', 'call_path', 'vulnerable_package', 'scan_level'):  # govulncheck's call-graph facts
+                if d.get(k) and (not have.get(k) or (k == 'reachability' and REACH_RANK[d[k]] > REACH_RANK.get(have[k], 0))):
+                    have[k] = d[k]
             if len(d.get('summary') or '') > len(have.get('summary') or ''):
                 have['summary'] = d['summary']
         else:

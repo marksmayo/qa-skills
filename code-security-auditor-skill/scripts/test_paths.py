@@ -25,6 +25,21 @@ OVERRIDABLE_DIRS = {'test', 'tests', 'spec', 'e2e', 'cypress', 'playwright'}
 OTHER_MANIFESTS = ('pyproject.toml', 'setup.py', 'setup.cfg', 'Cargo.toml', 'go.mod', 'pom.xml', 'build.gradle',
                    'build.gradle.kts', 'composer.json')
 
+# Vendored and third-party trees: code the repository carries but did not write (a vendor/ directory,
+# CocoaPods, a bundled iOS app or framework with its headers, an embedded WebDriverAgent). They are left
+# out of language counts, so 400 private XCTest headers do not make C/C++ the "main language" of a Go
+# repository, and out of pattern scans. recon.py lists the ones it skipped under `vendored`.
+VENDORED_DIRS = {'vendor', 'vendors', 'third_party', 'third-party', 'thirdparty', '3rdparty', 'Pods', 'Carthage', 'PrivateHeaders', 'WebDriverAgent', 'node_modules', 'bower_components'}
+VENDORED_SUFFIX = ('.app', '.framework', '.xcframework', '.bundle', '.appex', '.xcassets', '.lproj', '.dSYM')
+
+def vendored_dir(name: str) -> str | None:
+    """Why a directory (by its name) is vendored code, or None."""
+    if name in VENDORED_DIRS:
+        return f'{name}/ holds third-party code'
+    if name.endswith(VENDORED_SUFFIX):
+        return f'a bundled {name.rsplit(".", 1)[-1]} (built or third-party code)'
+    return None
+
 def _package_json_is_product(p: Path) -> bool:
     try:
         d = json.loads(p.read_text(encoding='utf-8'))

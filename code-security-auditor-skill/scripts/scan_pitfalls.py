@@ -27,7 +27,11 @@ Azure DevOps pipelines only when they are ones.
 A pack can limit itself to paths with path_contains (a substring) or path_regex (a regex over the
 relative path): the github_actions pack reads workflows and composite actions (action.yml under
 .github/, or at the root of an action repository).
-Test files, dependencies, build output and minified files are skipped. A directory named e2e,
+Test files, dependencies, build output, minified files and vendored trees (vendor/, third_party/,
+Pods/, PrivateHeaders/, bundled .app/.framework directories, an embedded WebDriverAgent: see
+test_paths.vendored_dir) are skipped, and vendored files never count toward the repository's main
+language. When the main language has no pack, a loud warning says so (and names the languages that
+were scanned, which are a result for those languages only). A directory named e2e,
 test(s), spec, playwright or cypress is skipped only when it is not a package of its own (see
 test_paths.py): a workspace package named e2e is product code and is scanned.
 """
@@ -82,10 +86,17 @@ def dominant_unscanned(ext_counts: Counter, covered_exts: set[str], scanned_file
     if lang_covered.get(lang) or n < 3:
         return None
     exts = '/'.join(sorted(e for e in ext_counts if LANG_NAMES.get(e, e) == lang))
+    scanned_langs = sorted(((m, l) for l, m in lang_counts.items() if lang_covered.get(l)), reverse=True)
+    if scanned_langs:  # other source languages were scanned: say which, they are not incidental
+        what = ', '.join(f'{m} {l}' for m, l in scanned_langs[:4])
+        rest = (f"The {scanned_files} file(s) scanned include {what} source file(s); the candidates below are a result "
+                f"for those languages only, NOT for the {lang} code.")
+    else:
+        rest = (f"The {scanned_files} file(s) that were scanned are incidental (CI workflows, containers, scripts), so the "
+                f"candidates below are NOT a result for the {lang} code.")
     return (f"No pitfall pack scanned {lang} ({exts}): it is the repository's main language "
-            f"({n} file(s)) but none of those files were scanned. The {scanned_files} file(s) that were "
-            f"scanned are incidental (CI workflows, containers, scripts), so the candidates below are NOT a "
-            f"result for the {lang} code. Add a '{lang.lower()}' pack to data/pitfalls.json before trusting this run.")
+            f"({n} file(s), vendored trees excluded) but none of those files were scanned. {rest} "
+            f"Add a '{lang.lower()}' pack to data/pitfalls.json before trusting this run.")
 
 def load_catalogue(path: Path = CATALOGUE) -> dict:
     return json.loads(path.read_text(encoding='utf-8'))
@@ -120,6 +131,8 @@ def walk(root: Path, include_tests: bool = False):
                         continue
                 if p.name.startswith('.') and p.name not in ALLOWED_DOT_DIRS:
                     continue
+                if test_paths.vendored_dir(p.name):
+                    continue  # third-party or bundled code: neither scanned nor counted toward the main language
                 stack.append(p)
             elif p.is_file() and (include_tests or not TEST_FILE.search(p.name)):
                 yield p

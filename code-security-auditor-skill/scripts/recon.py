@@ -52,6 +52,7 @@ from pathlib import Path
 
 sys.dont_write_bytecode = True  # importing a sibling must not write __pycache__ into the skill folder
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import go_entries  # noqa: E402
 import nextjs_auth  # noqa: E402
 import py_routes  # noqa: E402
 import test_paths  # noqa: E402
@@ -82,6 +83,8 @@ FRAMEWORKS = [  # (name, regex over source)
     ('MCP server', r'@modelcontextprotocol/(?:sdk|server)|\bnew\s+McpServer\s*\(|\bFastMCP\s*\('),
     ('commander', r'from ["\']commander["\']|require\(["\']commander["\']\)'),
     ('yargs', r'from ["\']yargs(?:/[\w/]+)?["\']|require\(["\']yargs["\']\)'),
+    ('urfave/cli', r'"github\.com/urfave/cli(?:/v\d+)?"'), ('cobra', r'"github\.com/spf13/cobra"'),
+    ('gorilla/mux', r'"github\.com/gorilla/mux"'), ('Fiber', r'"github\.com/gofiber/fiber(?:/v\d+)?"'),
 ]
 # GraphQL counts as a server framework only with a schema or a server library; otherwise it is a client.
 GRAPHQL_SERVER = re.compile(r'ApolloServer|graphql-yoga|createYoga|\bbuildSchema\s*\(|makeExecutableSchema|new\s+GraphQLSchema|'
@@ -95,7 +98,6 @@ ROUTES = [  # (framework, regex, method group, path group)
     ('django', re.compile(r'\b(re_)?path\(\s*r?["\']([^"\']*)["\']\s*,\s*([\w.]+)()'), None, 2),
     ('express', re.compile(r'(?<!@)(?<!@\s)\b(app|router|\w+Router|server)\.(get|post|put|patch|delete|all)\(\s*["\'`]([^"\'`]+)["\'`]([^\n]*)'), 2, 3),
     ('spring', re.compile(r'@(Get|Post|Put|Patch|Delete|Request)Mapping\(\s*(?:value\s*=\s*|path\s*=\s*)?\{?\s*"([^"]*)"()()'), 1, 2),
-    ('go', re.compile(r'\.(HandleFunc|Handle|GET|POST|PUT|PATCH|DELETE|Get|Post|Put|Patch|Delete)\(\s*"([^"]+)"()()'), 1, 2),
     ('laravel', re.compile(r'Route::(get|post|put|patch|delete|any|match)\(\s*[\'"]([^\'"]+)[\'"]([^\n]*)()'), 1, 2),
     ('rails', re.compile(r'^\s*(get|post|put|patch|delete|resources|resource)\s+[\'":]([\w/:{}.-]+)()()'), 1, 2),
     ('nestjs', re.compile(r'@(Get|Post|Put|Patch|Delete|All)\(\s*[\'"]?([^\'")]*)[\'"]?\s*\)()()'), 1, 2),
@@ -116,12 +118,13 @@ STORES = [('sqlite', r'\bsqlite3\b'), ('postgres', r'\bpsycopg2?\b|\bpg\b\s*=|fr
           ('jdbc', r'\bjdbc:'), ('gorm', r'gorm\.io'), ('activerecord', r'ActiveRecord'), ('s3', r'\bboto3\b.*s3|S3Client|@aws-sdk/client-s3'),
           ('filesystem', r'\bUPLOAD_(DIR|FOLDER)\b|multer\(|MultipartFile|request\.files')]
 OUTBOUND = re.compile(r'\b(requests|httpx|aiohttp\.ClientSession|urllib\.request|urlopen|axios|fetch|got|http\.Get|http\.Post|'
+                      r'http\.Head|http\.PostForm|http\.NewRequest\w*|grpc\.Dial\w*|grpc\.NewClient|websocket\.Dial\w*|'
                       r'RestTemplate|WebClient|HttpClient|Net::HTTP|Faraday|HTTParty|curl_exec|Guzzle)\b[.(]')
 SECRET_CFG = re.compile(r'\b(os\.environ|os\.getenv|process\.env|System\.getenv|ENV\[|ENV\.fetch|getenv\(|Configuration\[)'
                         r'[^\n]{0,40}(SECRET|KEY|TOKEN|PASSWORD|PASSWD|CREDENTIAL|DSN|DATABASE_URL)', re.I)
 QUEUE = re.compile(r'@(app\.task|shared_task|celery\.task)|@KafkaListener|@RabbitListener|@SqsListener|\.subscribe\(|'
                    r'channel\.consume\(|receive_message\(|@JmsListener|\bconsumer\s*=|Sidekiq::Worker|ApplicationJob')
-CLI = re.compile(r'@click\.command|@\w+\.command\(|typer\.Typer\(|argparse\.ArgumentParser\(|cobra\.Command\{|'
+CLI = re.compile(r'@click\.command|@\w+\.command\(|typer\.Typer\(|argparse\.ArgumentParser\(|'
                  r'\bclap::|use\s+clap\b|#\[derive\([^)]*\b(?:Parser|Subcommand)\b|'
                  r'\b(?:std::)?env::args\s*\(|\b(?:std::)?io::stdin\s*\(')
 # Node command-line tools, MCP servers, local listeners and config files (one entry per file unless named).
@@ -378,7 +381,8 @@ def composite_action_info(rel: str, text: str) -> dict | None:
 def is_action_file(rel: str) -> bool:
     return bool(re.search(r'(^|/)action\.ya?ml$', rel)) and ('/' not in rel or '.github/' in '/' + rel)
 
-def walk(root: Path):
+def walk(root: Path, vendored: list[dict] | None = None):
+    """Files under root, pruning dependency, build and vendored trees (each vendored one is appended to `vendored`)."""
     stack = [root]
     while stack:
         d = stack.pop()
@@ -388,6 +392,11 @@ def walk(root: Path):
             continue
         for p in entries:
             if p.is_dir():
+                why = test_paths.vendored_dir(p.name)
+                if why and p.name not in SKIP_DIRS:
+                    if vendored is not None:
+                        vendored.append({'dir': p.relative_to(root).as_posix(), 'reason': why})
+                    continue
                 if p.name not in SKIP_DIRS and (not p.name.startswith('.') or p.name == '.github' or p.name in ADO_DIRS):
                     stack.append(p)
             elif p.is_file():
@@ -633,7 +642,9 @@ def main() -> int:
     js_files: dict[str, str] = {}
     py_files: dict[str, str] = {}
     ado_files: dict[str, str] = {}
-    for p in walk(root):
+    vendored: list[dict] = []
+    cli_flags: list[dict] = []
+    for p in walk(root, vendored):
         rel = p.relative_to(root).as_posix()
         if time.monotonic() - last_progress >= 30:
             last_progress = time.monotonic()
@@ -708,7 +719,12 @@ def main() -> int:
             eps_n, leads_n = node_entries(rel, text, mcp_file)
             entries += eps_n
             node_leads += leads_n
-        entries += routes_in(rel, text, python_parsed=p.suffix == '.py')
+        if p.suffix == '.go':  # routes only from router registrations; CLI commands, flags, listeners, config files
+            eps_go, flags_go = go_entries.entries(rel, text)
+            entries += eps_go
+            cli_flags += flags_go
+        else:
+            entries += routes_in(rel, text, python_parsed=p.suffix == '.py')
         if p.suffix == '.py':
             py_files[rel] = text
         if p.suffix.lower() in CLIENT_EXT:
@@ -775,6 +791,22 @@ def main() -> int:
                      'prompt-injected content) supplies the tool arguments',
             'http': 'HTTP transport: whoever can reach the endpoint calls the tool; check the bind host, a session or token, '
                     'and Origin/Host checks'}.get(e['transport'], 'transport not found; read the server setup')
+    # Go: routes served on a listener in the same file (or, failing that, the same package directory) take its bind,
+    # so a mux served only on a unix socket or a loopback port is not seeded as internet-facing
+    go_binds: dict[str, set] = {}
+    for e in entries:
+        if e['kind'] == 'listener' and e['framework'] == 'go':
+            f = e['handler'].rsplit(':', 1)[0]
+            go_binds.setdefault(f, set()).add(e['bind'])
+            go_binds.setdefault(f.rsplit('/', 1)[0] + '/', set()).add(e['bind'])
+    for e in entries:
+        if e['kind'] in ('http_route', 'webhook') and e['handler'].split(':')[0].endswith('.go'):
+            f = e['handler'].rsplit(':', 1)[0]
+            binds = go_binds.get(f) or go_binds.get(f.rsplit('/', 1)[0] + '/') or set()
+            if len(binds) == 1 and next(iter(binds)) in ('unix', 'loopback'):
+                e['bind'] = next(iter(binds))
+                e['auth_evidence'] = (e['auth_evidence'] + '; ' if e['auth_evidence'] else '') + \
+                    f"served on a {e['bind']} listener in {f if f in go_binds else 'the same package'}"
     # example code: shipped as documentation, not deployed by the project
     for e in entries:
         if EXAMPLE_DIR.search(e['handler'].rsplit(':', 1)[0]):
@@ -808,12 +840,26 @@ def main() -> int:
             leads.append({'area': 'server_side', 'entry_point': e['id'],
                           'why': f"{e['path']}: {e['auth_evidence']}; check who can connect, a random path token or secret, "
                                  "Host/Origin checks and what the handler does with the request"})
-        if e['kind'] == 'config_input':
+        if e['kind'] == 'config_input' and e['framework'] == 'go':
+            leads.append({'area': 'injection', 'entry_point': e['id'],
+                          'why': f"{e['path']} decodes a file it reads from disk (a config, flow or spec file): check who "
+                                 "writes it (a cloned repository, a flow in a pull request), whether it is found by searching "
+                                 "parent or home directories, and which fields reach commands, paths, URLs or scripts"})
+        elif e['kind'] == 'config_input':
             leads.append({'area': 'injection', 'entry_point': e['id'],
                           'why': f"{e['path']} loads a config file: check where it is searched for (parent directories, the "
                                  "home directory), whether it is executed (a .js/.ts config) and which fields reach commands, "
                                  "paths or URLs"})
     leads += node_leads
+    cli_flags.sort(key=lambda f: (f['file'], f['line']))
+    env_flags = [f for f in cli_flags if f['env']]
+    if env_flags:
+        names = sorted({v for f in env_flags for v in f['env']})
+        leads.append({'area': 'injection', 'entry_point': None,
+                      'why': f"{len(env_flags)} CLI flag(s) are also read from environment variables ({', '.join(names[:8])}"
+                             f"{', ...' if len(names) > 8 else ''}): whatever sets the environment (a CI job, a .env loader, a parent "
+                             "process, an agent) sets them; check that credentials passed this way are never logged, and that "
+                             "URLs and paths from them are validated"})
     for kind in sorted({e['method'] for e in client if e['auth'] == 'public'}):
         eps = [e for e in client if e['method'] == kind]
         leads.append({'area': 'web', 'entry_point': eps[0]['id'],
@@ -873,6 +919,10 @@ def main() -> int:
         'dependency_manifests': sorted(manifests),
         'iac': sorted(iac),
         'ci_workflows': workflows,
+        # command-line flags (Go: urfave/cli with the environment variables bound to them, cobra, the flag package)
+        'cli_flags': cli_flags,
+        # third-party and bundled trees left out of the walk and the language counts (not reviewed)
+        'vendored': sorted(vendored, key=lambda v: v['dir']),
         'review_leads': leads,
         'note': "Regex-level first pass. Confirm entry points and auth by reading the code; 'unknown' auth is not 'public'.",
     }

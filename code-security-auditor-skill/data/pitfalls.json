@@ -1,5 +1,5 @@
 {
- "version": "1.3.0",
+ "version": "1.4.0",
  "about": "Security pitfall catalogue for scan_pitfalls.py, organised by CWE. Each entry is a pattern-level lead: a match is a candidate until a source-to-sink path is traced. cvss_hint is a typical CVSS v4.0 base vector for the weakness, to adjust per finding. tools maps rules from other scanners (tool:rule) to the entry. OWASP categories are the 2025 Top 10.",
  "owasp_2025": {
   "A01": "A01:2025 Broken Access Control",
@@ -1206,7 +1206,7 @@
    "owasp": "A05:2025 Injection",
    "category": "injection",
    "title": "Command run through a shell or with variable arguments",
-   "regex": "exec\\.Command(Context)?\\s*\\(\\s*(ctx\\s*,\\s*)?(\"(sh|bash|cmd|cmd\\.exe|powershell)\"|\\w+\\s*[,)])",
+   "regex": "exec\\.Command(?:Context\\s*\\(\\s*[\\w.]+(?:\\(\\))?\\s*,|\\s*\\()\\s*(?:\"(?:sh|bash|zsh|cmd|cmd\\.exe|powershell|pwsh)\"|[A-Za-z_][\\w.]*(?:\\[[^\\]]*\\])?\\s*[,)])",
    "fix": "Run a fixed binary with separate arguments; never through a shell.",
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
    "tools": [
@@ -1269,6 +1269,84 @@
    "cvss_hint": "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
    "tools": [
     "gosec:G404"
+   ],
+   "require_file": "\"math/rand(?:/v2)?\""
+  },
+  {
+   "id": "GO-LOG-SECRET",
+   "pack": "go",
+   "cwe": "CWE-532",
+   "owasp": "A09:2025 Security Logging and Alerting Failures",
+   "category": "data_exposure",
+   "title": "Secret-named value passed to a logger",
+   "regex": "\\b(?:log|logger|slog|logrus|zap|sugar|l)\\.\\w*(?:Print|Info|Debug|Warn|Error|Fatal|Panic|Trace|Log)\\w*\\s*\\(.*[,(]\\s*&?\\w*(?:[Tt]oken|TOKEN|[Pp]assword|PASSWORD|[Pp]asswd|[Ss]ecret|SECRET|[Aa]pi[Kk]ey|API_?KEY|[Cc]redential)\\w*\\s*[,)]",
+   "suppress_line": "(?i)redact|mask|len\\(|hash|fingerprint|\\.(?:Header|Name|Path|Type|Expir\\w*)\\b",
+   "fix": "Log that a credential was used, never its value (or a fingerprint of it).",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:N/PR:L/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "gosec:G101",
+    "semgrep:go.lang.security.audit.logging"
+   ]
+  },
+  {
+   "id": "GO-LOG-URL",
+   "pack": "go",
+   "cwe": "CWE-532",
+   "owasp": "A09:2025 Security Logging and Alerting Failures",
+   "category": "data_exposure",
+   "title": "URL that can carry user info (credentials) passed to a logger",
+   "regex": "\\b(?:log|logger|slog|logrus|zap|sugar|l)\\.\\w*(?:Print|Info|Debug|Warn|Error|Fatal|Panic|Trace|Log)\\w*\\s*\\(.*[,(]\\s*(?:\\w*(?:URL|Url|url|URI|Uri|uri|DSN|Dsn|dsn|Endpoint|endpoint)\\w*|\\w+\\.String\\(\\))\\s*[,)]",
+   "require_file": "url\\.UserPassword\\s*\\(|url\\.User\\s*\\(|\\.User\\s*=|://[^\"\\s/@]*:[^\"\\s/@]*@",
+   "suppress_line": "(?i)\\.Redacted\\(\\)|redact|\\.Host\\b|\\.Hostname\\(\\)",
+   "fix": "Log u.Redacted() (Go 1.15+) or only the host, never a URL that may hold user:password@.",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:N/PR:L/UI:N/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "GO-PATH-JOIN",
+   "pack": "go",
+   "cwe": "CWE-22",
+   "owasp": "A01:2025 Broken Access Control",
+   "category": "server_side",
+   "title": "Path built from a CLI argument, a decoded field or an archive entry name (not checked to stay under the base)",
+   "regex": "\\b(?:filepath|path)\\.Join\\s*\\(\\s*[^,]+,.*?(?:\\b(?:c|ctx|cCtx|cmd)\\.(?:String|Path|Args\\(\\)\\.(?:First|Get|Slice))\\s*\\(|\\bos\\.Args\\s*\\[|\\bflag\\.Arg\\s*\\(|\\bargs\\s*\\[\\s*\\d+\\s*\\]|\\b\\w+\\.(?:Name|Filename|FileName|File|Path|Dir|Dest|Destination|Output|Target|Save)\\b(?!\\s*\\())",
+   "suppress_line": "\\bfilepath\\.Base\\s*\\(|\\.Name\\(\\)|r\\.(?:URL|FormValue|PathValue)",
+   "suppress_near": "filepath\\.IsLocal\\s*\\(|filepath\\.Rel\\s*\\(|strings\\.HasPrefix\\s*\\([^)]*(?:Clean|Abs|base|root|dir)|os\\.OpenRoot|\\.\\.\\s*\"|\"\\.\\.\"",
+   "window": 4,
+   "fix": "Reject names that are not filepath.IsLocal (or check the cleaned path stays under the base); use os.Root (Go 1.24+) for archive extraction.",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:N/PR:N/UI:P/VC:N/VI:H/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "gosec:G304",
+    "gosec:G305"
+   ]
+  },
+  {
+   "id": "GO-HTTP-CLEARTEXT",
+   "pack": "go",
+   "cwe": "CWE-319",
+   "owasp": "A08:2025 Software or Data Integrity Failures",
+   "category": "supply_chain_ci",
+   "title": "Download or request over plain http:// to a remote host",
+   "regex": "\\b(?:http\\.(?:Get|Head|Post|PostForm)|http\\.NewRequest(?:WithContext)?\\s*\\([^,]*,\\s*(?:ctx\\s*,\\s*)?[^,]*,?|\\w*[Cc]lient\\.(?:Get|Head|Post))\\s*\\(?\\s*\"http://(?!(?:localhost|127\\.\\d+\\.\\d+\\.\\d+|\\[::1\\]|0\\.0\\.0\\.0)[:/\"])",
+   "fix": "Use https:// and check a pinned checksum or signature before installing or running what was downloaded.",
+   "cvss_hint": "CVSS:4.0/AV:A/AC:L/AT:P/PR:N/UI:N/VC:L/VI:H/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
+    "semgrep:go.lang.security.audit.net.use-tls"
+   ]
+  },
+  {
+   "id": "GO-FIXED-TMP",
+   "pack": "go",
+   "cwe": "CWE-377",
+   "owasp": "A01:2025 Broken Access Control",
+   "category": "server_side",
+   "title": "Fixed path in a shared temp directory (socket, PID or work file another local user can pre-create)",
+   "regex": "\"/tmp/[\\w.\\-/]+\"|(?:=|:)\\s*\"/tmp/?\"\\s*(?:$|[,;)])|\\bfilepath\\.Join\\s*\\(\\s*os\\.TempDir\\(\\)\\s*,\\s*\"[^\"%]+\"\\s*\\)",
+   "suppress_line": "MkdirTemp|CreateTemp|TempDir\\(\\)\\s*,\\s*\"\"",
+   "fix": "Use os.MkdirTemp / os.CreateTemp, or a per-user directory (os.UserCacheDir, XDG_RUNTIME_DIR) with 0700 permissions.",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:P/PR:L/UI:N/VC:L/VI:L/VA:L/SC:N/SI:N/SA:N",
+   "tools": [
+    "gosec:G303"
    ]
   },
   {

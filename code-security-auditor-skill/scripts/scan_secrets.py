@@ -25,7 +25,8 @@ characters at 4+ bits per character) stay secrets. A test file is judged by test
 workspace package named e2e (with its own package.json) is product code, not a test directory. A
 private-key header with no key body after it (a fixture that joins '-----BEGIN PRIVATE KEY-----'
 with a constant) is not a key. URL paths under a *Path key (tokenPath: '/oauth/token') are routes,
-not credential files. The output records elapsed_s.
+not credential files. HTTP header names under a *Header key or starting X- (const TokenHeader =
+"X-Beacon-Token") are names, not secrets. The output records elapsed_s.
 
 --history scans the lines added in each commit, but only file changes that touch a secret keyword
 or token prefix (git log -G), leaving out binary, lock, vendored and minified files and any
@@ -105,6 +106,9 @@ CRED_EXT = r'(?:json|pem|p12|pfx|key|crt|cer|der|jks|keystore|p8|ppk|asc|gpg|kdb
 PATH_VALUE = re.compile(r'(?:~|\.{1,2}|[A-Za-z]:)?[\\/]?(?:[\w.@ -]+[\\/])*[\w.@-]+')
 CRED_FILE_VALUE = re.compile(r'(?:~|\.{1,2}|[A-Za-z]:)?[\\/]?(?:[\w.@ -]+[\\/])*[\w.@-]+\.' + CRED_EXT, re.I)
 CRED_FILE_NAME = re.compile(r'(?i)^(id_(rsa|dsa|ecdsa|ed25519)|.*\.(pem|p12|pfx|key|jks|keystore|p8|ppk|kdbx))$')
+
+# An HTTP header name: hyphen-joined alphanumeric words (X-Api-Key, X-Beacon-Token).
+HEADER_NAME = re.compile(r'[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)+')
 
 def fingerprint(value: str) -> str:
     return 'sha256:' + hashlib.sha256(value.encode('utf-8')).hexdigest()[:16]
@@ -215,6 +219,8 @@ def find_in_line(line: str, path_name: str = '', refs: list | None = None) -> li
             continue
         if not env_style and re.fullmatch(r'[A-Z_]+|[a-z_.]+\(?\)?', value):
             continue  # an identifier or constant name, not a literal secret
+        if not env_style and HEADER_NAME.fullmatch(value) and (re.search(r'(?i)header', key) or value[:2].lower() == 'x-'):
+            continue  # an HTTP header name (const TokenHeader = "X-Beacon-Token"), not the token itself
         out.append({'type': 'dotenv_secret' if env_style else 'generic_secret', 'key': key, 'value': value,
                     'column': start + 1, 'fallback': fallback})
     return out

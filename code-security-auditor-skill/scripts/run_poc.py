@@ -44,7 +44,10 @@ Local command PoCs (a CLI, a library or an MCP stdio server with no network list
   --workdir copy, which must be outside the repository; `files` are written inside it first (the
   attacker-controlled config, input file or fixture). HOME, USERPROFILE, TMP and XDG folders point
   inside the copy, HTTP(S)_PROXY points at a closed loopback port so stray network calls fail, and
-  each step has a 60 s timeout (at most 10 steps). The same canary rules apply to argv, stdin, env
+  each step has a 60 s timeout (a step's timeout_s may raise it to 600, for a cold `go test`
+  compile; at most 10 steps). Go's build and module caches (GOCACHE, GOMODCACHE, GOPATH) are kept
+  from the real environment, with GOPROXY=off and GOTOOLCHAIN=local, so a Go test PoC builds
+  offline from the module cache instead of failing or downloading. The same canary rules apply to argv, stdin, env
   values and file contents. Proof types: marker_in_output {step, marker} (stdout or stderr),
   exit_code {step, code}, file_created {path} (a canary file the payload creates inside the copy).
   A failing regression test is a command PoC too: run the test runner on the copy and prove the
@@ -93,7 +96,20 @@ def is_loopback(host: str) -> bool:
     except ValueError:
         return False
 
+def url_hosts(text: str) -> list[str]:
+    """The host of every URL in a string. A URL whose user info is built by concatenation
+    ("http://canary-user:" + secret + "@127.0.0.1/") is read by the host after the next @, not the user name."""
+    out = []
+    for um in re.finditer(r'(?i)\b(?:https?|ftp|gopher|file|dict)://([^/\s"\'?#`]+)', text):
+        url = um.group(1)
+        if '@' not in url and url.endswith(':') and text[um.end():um.end() + 1] in ('"', "'", '`'):
+            after = re.match(r'[^\n@]{0,200}@([^/\s"\'?#`:]+)', text[um.end():])
+            url = after.group(1) if after else url
+        out.append(url.rsplit('@', 1)[-1].split(':')[0].strip('[]'))
+    return out
+
 MAX_COMMAND_STEPS = 10
+STEP_TIMEOUT, MAX_STEP_TIMEOUT = 60, 600  # a step may ask for more (a cold `go test` compile), never above 600 s
 SHELLS = re.compile(r'(?i)(^|[\\/])(sh|bash|zsh|dash|ksh|fish|cmd|cmd\.exe|powershell|powershell\.exe|pwsh|pwsh\.exe)$')
 COMMAND_PROOFS = ('marker_in_output', 'exit_code', 'file_created')
 
@@ -115,6 +131,9 @@ def lint_command(poc: dict) -> list[str]:
         cwd = s.get('cwd') or ''
         if Path(cwd).is_absolute() or '..' in Path(cwd).parts:
             issues.append(f"step {s.get('name')!r}: cwd must be a relative path inside the working copy")
+        t = s.get('timeout_s')
+        if t is not None and (not isinstance(t, int) or isinstance(t, bool) or not 1 <= t <= MAX_STEP_TIMEOUT):
+            issues.append(f"step {s.get('name')!r}: timeout_s must be a whole number of seconds from 1 to {MAX_STEP_TIMEOUT}")
     for rel in (poc.get('files') or {}):
         if Path(rel).is_absolute() or '..' in Path(rel).parts:
             issues.append(f'file {rel!r} must be a relative path inside the working copy')
@@ -126,8 +145,7 @@ def lint_command(poc: dict) -> list[str]:
                 continue  # the program under test may itself be a runtime (node, python) given a script path
             if re.search(rx, text):
                 issues.append(f'{label} in {where}: {text[:80]!r}')
-        for url in re.findall(r'(?i)\b(?:https?|ftp|gopher|file|dict)://([^/\s"\'?#]+)', text):
-            host = url.rsplit('@', 1)[-1].split(':')[0].strip('[]')
+        for host in url_hosts(text):
             if host and not SAFE_HOST.match(host) and not is_loopback(host):
                 issues.append(f'URL to a non-test host in {where}: {host}')
     proof = poc.get('proof') or {}
@@ -167,8 +185,7 @@ def lint(poc: dict, target: str | None, allow_hosts: list[str]) -> list[str]:
         for label, rx in BANNED:
             if re.search(rx, text):
                 issues.append(f'{label} in {where}: {text[:80]!r}')
-        for url in re.findall(r'(?i)\b(?:https?|ftp|gopher|file|dict)://([^/\s"\'?#]+)', text):
-            host = url.rsplit('@', 1)[-1].split(':')[0].strip('[]')
+        for host in url_hosts(text):
             if host and host not in ('{target}',) and not SAFE_HOST.match(host) and host != target_host and host not in allow_hosts:
                 issues.append(f'URL to a non-test host in {where}: {host}')
         if re.search(r'(?i)\b(file|gopher|dict)://', text):
@@ -286,6 +303,39 @@ def inside(path: Path, root: Path) -> bool:
     except ValueError:
         return False
 
+def go_env() -> dict:
+    """The Go toolchain's caches, taken from the real environment before HOME is redirected: without them a
+    `go test` PoC in the copy has no module cache (and, with the network closed, cannot build) and recompiles
+    everything. GOPROXY is off, so a PoC never downloads modules; GOTOOLCHAIN stays local."""
+    env = {k: os.environ[k] for k in ('GOROOT', 'GOPATH', 'GOCACHE', 'GOMODCACHE', 'GOTOOLCHAIN', 'GOFLAGS', 'GOEXPERIMENT',
+                                      'GOWORK', 'GONOSUMDB', 'GOPRIVATE') if os.environ.get(k)}
+    home = Path(os.environ.get('USERPROFILE') or os.environ.get('HOME') or Path.home())
+    env.setdefault('GOPATH', str(home / 'go'))
+    env.setdefault('GOMODCACHE', str(Path(env['GOPATH'].split(os.pathsep)[0]) / 'pkg' / 'mod'))
+    if 'GOCACHE' not in env:
+        if os.name == 'nt':
+            base = os.environ.get('LOCALAPPDATA') or str(home / 'AppData' / 'Local')
+        elif sys.platform == 'darwin':
+            base = str(home / 'Library' / 'Caches')
+        else:
+            base = os.environ.get('XDG_CACHE_HOME') or str(home / '.cache')
+        env['GOCACHE'] = str(Path(base) / 'go-build')
+    env.setdefault('GOTOOLCHAIN', 'local')
+    env['GOPROXY'] = 'off'
+    return env
+
+def command_env(home: Path) -> dict:
+    """The environment a command PoC step starts from: PATH and the OS basics, HOME/TMP/XDG folders inside the
+    copy, proxies on a closed loopback port, and the Go caches (go_env). Nothing else is passed through."""
+    env = {k: v for k, v in os.environ.items() if k.upper() in ('PATH', 'SYSTEMROOT', 'COMSPEC', 'PATHEXT', 'WINDIR', 'LANG', 'TERM')}
+    env.update(go_env())
+    env.update({'HOME': str(home), 'USERPROFILE': str(home), 'TMP': str(home / 'tmp'), 'TEMP': str(home / 'tmp'),
+                'TMPDIR': str(home / 'tmp'), 'XDG_CONFIG_HOME': str(home / 'config'), 'XDG_CACHE_HOME': str(home / 'cache'),
+                'XDG_DATA_HOME': str(home / 'data'), 'APPDATA': str(home / 'config'), 'LOCALAPPDATA': str(home / 'data'),
+                'HTTP_PROXY': 'http://127.0.0.1:9', 'HTTPS_PROXY': 'http://127.0.0.1:9', 'http_proxy': 'http://127.0.0.1:9',
+                'https_proxy': 'http://127.0.0.1:9', 'NO_PROXY': '', 'CI': '1', 'NO_COLOR': '1'})
+    return env
+
 def run_command_poc(poc: dict, workdir: Path, permission: str, poc_file: Path) -> dict:
     """Run a linted command PoC in the working copy and return the evidence (secrets and env values scrubbed)."""
     workdir = workdir.resolve()
@@ -298,25 +348,21 @@ def run_command_poc(poc: dict, workdir: Path, permission: str, poc_file: Path) -
         (home / sub).mkdir(parents=True, exist_ok=True)
     used_env: dict = {}
     sub = lambda v: substitute(v.replace('{workdir}', str(workdir)), '', used_env) if isinstance(v, str) else v  # noqa: E731
-    base_env = {k: v for k, v in os.environ.items() if k.upper() in ('PATH', 'SYSTEMROOT', 'COMSPEC', 'PATHEXT', 'WINDIR', 'LANG', 'TERM')}
-    base_env.update({'HOME': str(home), 'USERPROFILE': str(home), 'TMP': str(home / 'tmp'), 'TEMP': str(home / 'tmp'),
-                     'TMPDIR': str(home / 'tmp'), 'XDG_CONFIG_HOME': str(home / 'config'), 'XDG_CACHE_HOME': str(home / 'cache'),
-                     'XDG_DATA_HOME': str(home / 'data'), 'APPDATA': str(home / 'config'), 'LOCALAPPDATA': str(home / 'data'),
-                     'HTTP_PROXY': 'http://127.0.0.1:9', 'HTTPS_PROXY': 'http://127.0.0.1:9', 'http_proxy': 'http://127.0.0.1:9',
-                     'https_proxy': 'http://127.0.0.1:9', 'NO_PROXY': '', 'CI': '1', 'NO_COLOR': '1'})
+    base_env = command_env(home)
     started = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
     records, outputs, error = [], {}, None
     for s in poc['steps']:
         argv = [sub(a) for a in s['argv']]
         env = {**base_env, **{k: sub(v) for k, v in (s.get('env') or {}).items()}}  # {env:NAME} values are scrubbed below
         cwd = workdir / (s.get('cwd') or '.')
+        limit = min(int(s.get('timeout_s') or STEP_TIMEOUT), MAX_STEP_TIMEOUT)
         t0 = time.monotonic()
         try:
             p = subprocess.run(argv, cwd=str(cwd), env=env, input=sub(s.get('stdin')) if s.get('stdin') is not None else None,
-                               capture_output=True, text=True, timeout=60, encoding='utf-8', errors='replace')
+                               capture_output=True, text=True, timeout=limit, encoding='utf-8', errors='replace')
             code, out, err = p.returncode, p.stdout or '', p.stderr or ''
         except subprocess.TimeoutExpired:
-            error = f"step {s.get('name')!r}: timed out after 60s"
+            error = f"step {s.get('name')!r}: timed out after {limit}s"
             break
         except OSError as exc:
             error = f"step {s.get('name')!r}: {exc}"

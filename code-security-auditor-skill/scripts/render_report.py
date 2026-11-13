@@ -49,8 +49,10 @@ def reason_group(reason: str) -> str:
 
     A reason that opens with a file reference is grouped on what follows it, and a colon only ends the clause when
     at least three words come before it ("secure: false is a form-field option" stays whole)."""
-    text = re.sub(r'[\w./-]+\.\w+(:\d+)?', '<file>', reason)
+    text = re.sub(r'`[^`]*`\s*', '', reason)  # a quoted code fragment (`rt.Get("output")`) is not the reason
+    text = re.sub(r'[\w./-]+\.\w+(:\d+)?', '<file>', text)
     text = re.sub(r'^(?:<file>[\s,:;-]*)+', '', text)
+    text = re.sub(r'(?i)^(?:here|there|this|it|that|which)\s+(?:is|uses|calls|reads|has)\s+', '', text)
     head = re.split(r'\.\s|;|\(| - ', text, maxsplit=1)[0]
     before, colon, _ = head.partition(': ')
     if colon and len(before.split()) >= 3:
@@ -188,7 +190,7 @@ def main() -> int:
     adv = d.get('dependency_advisories')
     if adv:
         style = GREEN if adv['status'] == 'assessed' else YELLOW if adv['status'] == 'partial' else RED
-        w(P(f"Advisories {adv['status'].replace('_', ' ')}", style) + (f" by {', '.join(adv['tools'])}" if adv['tools'] else '') +
+        w(P(f"Advisories {adv['status'].replace('_', ' ')}", style) + (f" (tools that ran: {', '.join(adv['tools'])})" if adv['tools'] else '') +
           (f" ({adv['packages']} pinned package(s) in {len(adv.get('lockfiles') or [])} lockfile(s))" if adv.get('packages') is not None else '') +
           (f": {adv['reason']}" if adv.get('reason') else ''))
     by = {}

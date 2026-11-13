@@ -198,6 +198,164 @@ def quill(root: Path) -> None:
           f'dev-only packages from importers devDependencies ({dev})')
     check(pk['vitest'][0]['required_by'] == ['apps/e2e>vitest', 'packages/e2e>vitest'], 'via names importer>direct dependency')
 
+def beacon(root: Path) -> None:
+    """The Go command-line fixture (urfave/cli, cobra, net/http on a unix socket, vendored iOS headers)."""
+    import seed_report  # noqa: E402
+    want = json.loads((root / 'expected.json').read_text(encoding='utf-8'))
+    print('scan_pitfalls (all packs) on beacon-cli')
+    res = scan_pitfalls.scan(root, scan_pitfalls.load_catalogue())
+    got = {(c['file'], c['line'], c['pitfall_id']) for c in res['candidates']}
+    exp = {tuple(x) for x in want['patterns']}
+    for x in sorted(exp - got):
+        check(False, f'missed {x[2]} at {x[0]}:{x[1]}')
+    for x in sorted(got - exp):
+        check(False, f'unexpected {x[2]} at {x[0]}:{x[1]}')
+    check(got == exp, f'{len(exp)} planted Go patterns; nothing for exec.CommandContext(ctx, "xcrun"), crypto/rand, a loopback '
+                      'client.Get, a constant path join, a guarded archive entry or a logged host')
+    go_only = scan_pitfalls.scan(root, scan_pitfalls.load_catalogue(), {'go'})
+    check(not go_only['warnings'], f'vendored iOS headers do not make C/C++ the main language ({go_only["warnings"]})')
+    from collections import Counter
+    w = scan_pitfalls.dominant_unscanned(Counter({'.rs': 40, '.go': 12}), {'.go'}, 12) or ''
+    check('Rust' in w and 'incidental' not in w and '12 Go' in w,
+          f'when another language was scanned, the warning names it instead of calling it incidental ({w[:160]})')
+    check(not res['files_scanned'].get('c'), f"the c pack does not scan vendored headers ({res['files_scanned']})")
+    print('recon on beacon-cli')
+    d = run_recon(root)
+    eps = d['entry_points']
+    for e in want['entry_points']:
+        hit = [x for x in eps if all(x.get(k) == v for k, v in e.items())]
+        check(bool(hit), f"{e['kind']} {e['method']} {e.get('path', '')} at {e['handler']}"
+                         + ''.join(f', {k} {e[k]}' for k in ('bind', 'framework') if k in e)
+                         + ('' if hit else f" (got {[(x['kind'], x['method'], x['path'], x.get('bind')) for x in eps if x['handler'] == e['handler']]})"))
+    check(len(eps) == want['entry_point_count'], f"{want['entry_point_count']} entry points ({len(eps)}: "
+                                                 f"{[(x['kind'], x['path']) for x in eps]})")
+    bad = [x['handler'] for x in eps if x['handler'].split(':')[0] in want['no_entry_points_in']]
+    check(not bad, f'no routes from an interpreter .Get("output"), an options .Get("user-data-dir") or an HTTP client call ({bad})')
+    check(d['languages'] == want['languages'], f"languages count Go only, not vendored headers ({d['languages']})")
+    check(sorted(v['dir'] for v in d.get('vendored') or []) == want['vendored'], f"vendored trees listed ({d.get('vendored')})")
+    check(d['frameworks'] == want['frameworks'], f"frameworks ({d['frameworks']})")
+    flags = [[f['file'], f['name'], f['env']] for f in d.get('cli_flags') or []]
+    check(flags == want['cli_flags'], f'CLI flags with the environment variables bound to them ({flags})')
+    leads = ' '.join(l['why'] for l in d['review_leads'])
+    check(all(m in leads for m in want['lead_mentions']), f'env-bound flags and the unix socket are review leads ({leads[:300]})')
+    by_handler = {x['handler']: x for x in eps}
+    got_exp = {h: seed_report.exposure_of(by_handler[h]) for h in want['seeded_exposure'] if h in by_handler}
+    check(got_exp == want['seeded_exposure'], f'seeded exposure: routes on a unix socket are local, :6060 is internet ({got_exp})')
+    print('scan_secrets on beacon-cli')
+    found, _ = scan_secrets.scan_tree(root)
+    check([(s['file'], s['line']) for s in found] == want['secrets'], f'a header-name constant is not a secret ({[(s["file"], s["line"], s["key"]) for s in found]})')
+    check(scan_secrets.find_in_line('const TokenHeader = "X-Beacon-Token"', 'auth.go') == []
+          and scan_secrets.find_in_line('headerName := "X-Api-Key"', 'client.go') == [], 'header names are not secrets')
+    check(len(scan_secrets.find_in_line('const deviceToken = "q7Lm2Vx9Rt4Kp8Zw"', 'auth.go')) == 1, 'a token literal still is')
+
+GOVULNCHECK_STREAM = '''{"config": {"protocol_version": "v1.0.0", "scanner_name": "govulncheck", "scanner_version": "v1.1.4", "scan_level": "symbol"}}
+{"progress": {"message": "Scanning your code and 40 packages across 4 dependent modules for known vulnerabilities..."}}
+{"osv": {"id": "GO-2099-0001", "aliases": ["CVE-2099-0001"], "summary": "Example tokenizer issue in x/net/html", "affected": [
+  {"package": {"name": "golang.org/x/net", "ecosystem": "Go"}, "ranges": [{"type": "SEMVER", "events": [{"introduced": "0"}, {"fixed": "0.23.0"}]}]},
+  {"package": {"name": "stdlib", "ecosystem": "Go"}, "ranges": [{"type": "SEMVER", "events": [{"introduced": "0"}, {"fixed": "1.22.9"}]}]}]}}
+{"osv": {"id": "GO-2099-0002", "aliases": [], "summary": "Example http2 issue", "affected": [
+  {"package": {"name": "golang.org/x/net", "ecosystem": "Go"}, "ranges": [{"type": "SEMVER", "events": [{"introduced": "0"}, {"fixed": "0.25.0"}]}]}]}}
+{"osv": {"id": "GO-2099-0003", "aliases": ["GHSA-aaaa-bbbb-cccc"], "summary": "Example YAML issue", "affected": [
+  {"package": {"name": "gopkg.in/yaml.v3", "ecosystem": "Go"}, "ranges": [{"type": "SEMVER", "events": [{"introduced": "0"}, {"fixed": "3.0.2"}]}]}]}}
+{"finding": {"osv": "GO-2099-0001", "fixed_version": "v0.23.0", "trace": [{"module": "golang.org/x/net", "version": "v0.20.0", "package": "golang.org/x/net/html"}]}}
+{"finding": {"osv": "GO-2099-0001", "fixed_version": "v0.23.0", "trace": [
+  {"module": "golang.org/x/net", "version": "v0.20.0", "package": "golang.org/x/net/html", "function": "Parse"},
+  {"module": "example.test/beacon", "package": "example.test/beacon/internal/fetch", "function": "Agent", "position": {"filename": "internal/fetch/fetch.go", "line": 20}}]}}
+{"finding": {"osv": "GO-2099-0002", "fixed_version": "v0.25.0", "trace": [{"module": "golang.org/x/net", "version": "v0.20.0", "package": "golang.org/x/net/http2"}]}}
+{"finding": {"osv": "GO-2099-0003", "fixed_version": "v3.0.2", "trace": [{"module": "gopkg.in/yaml.v3", "version": "v3.0.1"}]}}
+'''
+
+def go_rules(beacon_root: Path) -> None:
+    print('Go helpers (govulncheck, OSV fixed versions, run_scanners, validator, run_poc)')
+    import run_poc  # noqa: E402
+    import run_scanners  # noqa: E402
+    import seed_report  # noqa: E402
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp) / 'govulncheck.json'
+        p.write_text(GOVULNCHECK_STREAM, encoding='utf-8')
+        try:
+            items, info = merge_findings.from_deps(p)
+        except ValueError as exc:
+            items, info = [], {'tool': f'error: {exc}'}
+        got = sorted((x['advisory'], x['package'], x['version'], tuple(x['fixed_in']), x.get('reachability')) for x in items)
+        check(info['tool'] == 'govulncheck' and got == [
+            ('GO-2099-0001', 'golang.org/x/net', '0.20.0', ('0.23.0',), 'symbol'),
+            ('GO-2099-0002', 'golang.org/x/net', '0.20.0', ('0.25.0',), 'package'),
+            ('GO-2099-0003', 'gopkg.in/yaml.v3', '3.0.1', ('3.0.2',), 'module')],
+            f'govulncheck JSON stream read with its reachability level, the strongest per advisory ({info["tool"]}: {got})')
+        sym = next((x for x in items if x['advisory'] == 'GO-2099-0001'), {})
+        check('internal/fetch/fetch.go:20' in (sym.get('call_path') or ''), f"the call path names the caller ({sym.get('call_path')})")
+        seeded = {x['advisory']: seed_report.dependency({**x, 'id': 'DEP-1'})['reachable'] for x in items}
+        check(seeded == {'GO-2099-0001': 'yes', 'GO-2099-0002': 'no', 'GO-2099-0003': 'no'},
+              f'seed_report: symbol-level is reachable (a finding to write), package and module level are not ({seeded})')
+        x_net = {'id': 'GO-2099-0001', 'affected': [
+                {'package': {'name': 'golang.org/x/net'}, 'ranges': [{'events': [{'fixed': '0.23.0'}]}]},
+                {'package': {'name': 'stdlib'}, 'ranges': [{'events': [{'fixed': '1.22.9'}]}]}]}
+        osv = {'results': [{'source': {'path': 'go.mod'}, 'packages': [{'package': {'name': 'golang.org/x/net', 'version': '0.20.0', 'ecosystem': 'Go'},
+               'vulnerabilities': [x_net]}]}]}
+        o = Path(tmp) / 'osv.json'
+        o.write_text(json.dumps(osv), encoding='utf-8')
+        items, _ = merge_findings.from_deps(o)
+        check(items and items[0]['fixed_in'] == ['0.23.0'], f"osv-scanner: fixed versions only from the package's own affected entry ({items and items[0]['fixed_in']})")
+    inv = run_scanners.inventory(beacon_root)
+    plan = {t['name']: t for t in run_scanners.plan(beacon_root, Path('out'), inv, [])}
+    gv = plan.get('govulncheck') or {}
+    check(gv.get('applies') is True and gv.get('covers') == ['go.mod'] and gv.get('area') == 'dependencies'
+          and any('-format' in r['cmd'] and 'json' in r['cmd'] for r in gv.get('runs') or []),
+          f'run_scanners plans govulncheck -format json for each go.mod ({gv.get("covers")})')
+    check('c' not in inv['langs'], f"run_scanners: vendored headers are not C source ({inv['langs']})")
+    deps = run_scanners.dependency_inventory(beacon_root, inv)
+    adv = run_scanners.advisory_status([{'name': 'govulncheck', 'area': 'dependencies', 'status': 'ran', 'covers': ['go.mod']}], deps)
+    check(adv['status'] == 'assessed', f'govulncheck covers go.mod ({adv})')
+    # validator: Go and Rust regression tests, command-only verification, reachability notes
+    base = HERE.parent / 'examples'
+    rep = json.loads((base / 'security_audit.example.json').read_text(encoding='utf-8'))
+    f1 = next(f for f in rep['findings'] if f['regression_test']['result'] == 'fails_on_vulnerable_code')
+    name_errs = []
+    for name in ('TestRunKeepsSavedOutputInsideOutDir', 'TestRunKeepsSavedOutputInsideOutDir/save_path_with_parent_segments'):
+        f1['regression_test'].update(framework='go test', file='beacon-cli/internal/flows/flows_test.go', name=name)
+        errs, _ = validator.check(rep, base, None, None)
+        name_errs += [e for e in errs if 'is not in' in e]
+    check(not name_errs, f'a Go test function and a t.Run subtest are found in the test file ({name_errs})')
+    f1['regression_test'].update(name='TestNotThere')
+    errs, _ = validator.check(rep, base, None, None)
+    check(any('TestNotThere is not in' in e for e in errs), 'a missing Go test is still reported')
+    rep = json.loads((base / 'security_audit.example.json').read_text(encoding='utf-8'))
+    rep['verification'].update(target=None, target_kind='local_copy', local_copy=tmp)
+    errs, _ = validator.check(rep, base, None, None)
+    ver_errs = [e for e in errs if e.startswith(('verification', '$.verification'))]
+    check(not ver_errs, f'verification with only command PoCs: target_kind local_copy and no URL ({ver_errs})')
+    check(any("confirmed against target_kind 'local_copy'" in e for e in errs),
+          'a finding confirmed by an HTTP PoC is still rejected when the only target is a local copy')
+    rep['verification'].update(local_copy=None)
+    errs, _ = validator.check(rep, base, None, None)
+    check(any('local_copy' in e for e in errs), 'target_kind local_copy needs verification.local_copy')
+    rep = json.loads((base / 'security_audit.example.json').read_text(encoding='utf-8'))
+    rep['dependencies'][0].update(reachable='unknown', basis='govulncheck at symbol level would settle it; it could not run offline.')
+    _, warns = validator.check(rep, base, None, None)
+    check(not any('reachability unknown' in w for w in warns), 'no "say what would settle it" warning when the basis says it')
+    rep['dependencies'][0].update(basis='Not checked.')
+    _, warns = validator.check(rep, base, None, None)
+    check(any('reachability unknown' in w for w in warns), 'the warning stays when it does not')
+    # run_poc: Go caches pass through the isolated environment, and a URL built by concatenation is read by its host
+    env_of = getattr(run_poc, 'command_env', None)
+    env = env_of(Path(tmp) / 'home') if env_of else {}
+    check(all(env.get(k) for k in ('GOCACHE', 'GOMODCACHE', 'GOPATH')) and env.get('GOPROXY') == 'off'
+          and not str(env.get('GOCACHE', '')).startswith(str(Path(tmp))),
+          f"command PoCs keep the real Go build and module caches, with GOPROXY off ({ {k: env.get(k) for k in ('GOCACHE', 'GOPROXY')} })")
+    go_src = 'u := "http://canary-user:" + secret + "@127.0.0.1:8080/upload"'
+    poc = {'finding': 'F-1', 'kind': 'command', 'files': {'poc_test.go': go_src},
+           'steps': [{'name': 'run', 'argv': ['go', 'test', './...']}], 'proof': {'type': 'exit_code', 'step': 'run', 'code': 1}}
+    issues = [i for i in run_poc.lint(poc, None, []) if 'URL' in i]
+    check(not issues, f'a URL with concatenated user info is checked by its host, not the user name ({issues})')
+    bad = {**poc, 'files': {'poc_test.go': 'u := "http://canary-user:" + secret + "@registry.vendor.io/upload"'}}
+    check(any('registry.vendor.io' in i for i in run_poc.lint(bad, None, [])), 'its real host is still checked')
+    import render_report  # noqa: E402
+    g1 = render_report.reason_group('internal/device/auth.go:15 here is crypto/rand, not math/rand; the safe API')
+    g2 = render_report.reason_group('`rt.Get("output")` reads an interpreter value, not an HTTP route')
+    check(not g1.lower().startswith('here') and 'crypto/rand' in g1 and 'interpreter value' in g2,
+          f'dismissal groups read as reasons, not "here is ..." or a code fragment ({g1!r}, {g2!r})')
+
 def node_and_ci_rules() -> None:
     print('recon, run_scanners and merge helpers (CI, lockfiles, gitleaks)')
     import recon  # noqa: E402
@@ -303,6 +461,7 @@ def main() -> int:
     ap.add_argument('--fixture', type=Path, default=HERE.parent / 'examples' / 'kite-notes')
     ap.add_argument('--azure-fixture', type=Path, default=HERE.parent / 'examples' / 'ferry-ops')
     ap.add_argument('--node-fixture', type=Path, default=HERE.parent / 'examples' / 'quill-cli')
+    ap.add_argument('--go-fixture', type=Path, default=HERE.parent / 'examples' / 'beacon-cli')
     args = ap.parse_args()
     root = args.fixture.resolve()
     want = json.loads((root / 'expected.json').read_text(encoding='utf-8'))
@@ -311,6 +470,8 @@ def main() -> int:
     secrets(root, want)
     ferry(args.azure_fixture.resolve())
     quill(args.node_fixture.resolve())
+    beacon(args.go_fixture.resolve())
+    go_rules(args.go_fixture.resolve())
     node_and_ci_rules()
     poc_and_report_rules()
     python_rules()
