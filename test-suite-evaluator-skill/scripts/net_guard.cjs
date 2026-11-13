@@ -14,7 +14,12 @@
 // The log proves the guard was on: every process writes `net_guard: loaded pid=<pid>` when the guard loads,
 // and every refusal adds `net_guard: refused <host>:<port>`. Before claiming "zero refused connections",
 // check the log holds a `loaded` line: a guard that never loaded (a wrong path, a shell that rewrote
-// NODE_OPTIONS) refuses nothing and logs nothing. Without QA_NET_GUARD_LOG the lines go to stderr only.
+// NODE_OPTIONS) refuses nothing and logs nothing.
+//
+// With QA_NET_GUARD_LOG set the lines go to the log only, never to stderr, so tests that assert a child
+// process's stderr is empty (CLI tests inherit NODE_OPTIONS) are not broken by the guard. Without
+// QA_NET_GUARD_LOG, or when the log cannot be written, they go to stderr. A refusal names the first stack
+// frame outside Node's internals and node_modules (`from <file>:<line>`), so it can be tied to a test.
 'use strict';
 const net = require('node:net');
 const dns = require('node:dns');
@@ -24,8 +29,23 @@ const MARK = Symbol.for('qa-skills.net_guard');
 const LOG = process.env.QA_NET_GUARD_LOG;
 
 function say(line) {
+  if (LOG) {
+    try { fs.appendFileSync(LOG, line + '\n'); return; } catch (e) { /* unwritable log: fall back to stderr */ }
+  }
   try { process.stderr.write(line + '\n'); } catch (e) { /* closed stderr */ }
-  if (LOG) { try { fs.appendFileSync(LOG, line + '\n'); } catch (e) { /* unwritable log */ } }
+}
+
+// The first stack frame outside Node's internals, this file and node_modules, as ` from <file>:<line>`.
+function caller() {
+  const frames = String(new Error().stack || '').split('\n').slice(1);
+  for (const f of frames) {
+    const m = /\(?((?:file:\/\/)?[^()\s]+?):(\d+):\d+\)?\s*$/.exec(f.trim());
+    if (!m) continue;
+    const file = m[1];
+    if (file.startsWith('node:') || file.includes(__filename) || /[\\/]node_modules[\\/]/.test(file)) continue;
+    return ` from ${file}:${m[2]}`;
+  }
+  return '';
 }
 
 function loopback(host) {
@@ -38,7 +58,7 @@ function loopback(host) {
 }
 
 function refused(host, port) {
-  say(`net_guard: refused ${host}:${port}`);
+  say(`net_guard: refused ${host}:${port}${caller()}`);
   const err = new Error(`net_guard: connection to ${host}:${port} refused (only loopback is allowed)`);
   err.code = 'ECONNREFUSED';
   return err;
@@ -103,6 +123,9 @@ async function selfTest() {
     env: { ...process.env, QA_NET_GUARD_LOG: log, NODE_OPTIONS: `--require "${__filename.replace(/\\/g, '/')}"` },   // NODE_OPTIONS reads \ as an escape
     encoding: 'utf8', timeout: 60000,
   });
+  const bareEnv = { ...process.env, NODE_OPTIONS: `--require "${__filename.replace(/\\/g, '/')}"` };
+  delete bareEnv.QA_NET_GUARD_LOG;
+  const bare = spawnSync(process.execPath, ['-e', '1'], { env: bareEnv, encoding: 'utf8', timeout: 60000 });
   let res = {};
   try { res = JSON.parse(r.stdout.trim().split('\n').pop()); } catch (e) { /* reported below */ }
   const text = fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : '';
@@ -114,6 +137,9 @@ async function selfTest() {
     ['a worker thread is guarded too', res.w === 'ECONNREFUSED', String(res.w)],
     ['the log has the loaded line', /net_guard: loaded pid=\d+/.test(text), text],
     ['the log names refused hosts', text.includes('192.0.2.1:80'), text],
+    ['a refusal names the calling script', /refused 192\.0\.2\.1:80 from \S+:\d+/.test(text), text],
+    ['with a log set, stderr stays empty', !/net_guard:/.test(r.stderr || ''), r.stderr],
+    ['without a log, the loaded line goes to stderr', /net_guard: loaded pid=\d+/.test(bare.stderr || ''), bare.stderr],
   ];
   let failed = 0;
   for (const [name, ok, extra] of checks) {

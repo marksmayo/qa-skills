@@ -12,8 +12,12 @@ browsers, databases) are not guarded.
 The log proves the guard was on: its first line for every process is
 `net_guard: loaded pid=<pid>`, and every refusal adds `net_guard: refused <host>:<port>`. Before
 claiming "zero refused connections", check the log holds a `loaded` line: a guard that never
-loaded (a PYTHONPATH that didn't reach it) refuses nothing and logs nothing. Without
-QA_NET_GUARD_LOG the lines go to stderr only.
+loaded (a PYTHONPATH that didn't reach it) refuses nothing and logs nothing.
+
+With QA_NET_GUARD_LOG set the lines go to the log only, never to stderr, so tests that assert on
+captured stderr are not disturbed by the guard. Without QA_NET_GUARD_LOG, or when the log cannot be
+written, they go to stderr. A refusal names the first stack frame outside the standard library and
+site-packages (`from <file>:<line>`), so it can be tied to a test.
 
 On Windows, give Windows Python Windows paths: Git Bash converts a single-entry `PYTHONPATH=/c/...`
 but not a `;`-separated list, and a path after a prefix such as `--cov-report=json:` is never
@@ -32,13 +36,35 @@ REFUSED: list[str] = []
 
 
 def _say(line: str) -> None:
-    sys.stderr.write(line + '\n')
     if _LOG:
         try:
             with open(_LOG, 'a', encoding='utf-8') as fh:
                 fh.write(line + '\n')
+            return
         except OSError:
-            pass
+            pass   # unwritable log: fall back to stderr
+    try:
+        sys.stderr.write(line + '\n')
+    except (OSError, ValueError):
+        pass
+
+
+def _caller() -> str:
+    """The first stack frame outside this file, the standard library and site-packages."""
+    import sysconfig
+    paths = sysconfig.get_paths()
+    skip = tuple(os.path.normcase(os.path.abspath(paths[k])) + os.sep
+                 for k in ('stdlib', 'platstdlib', 'purelib', 'platlib') if paths.get(k))
+    me = os.path.normcase(os.path.abspath(__file__))
+    f = sys._getframe(1)
+    while f is not None:
+        name = f.f_code.co_filename
+        path = os.path.normcase(os.path.abspath(name)) if not name.startswith('<') else name
+        if path != me and not name.startswith('<frozen') and not path.startswith(skip) \
+                and 'site-packages' not in path:
+            return f' from {name}:{f.f_lineno}'
+        f = f.f_back
+    return ''
 
 
 def _loopback(host) -> bool:
@@ -59,7 +85,7 @@ def _check(sock, address) -> None:
     host, port = address[0], address[1] if len(address) > 1 else '?'
     if not _loopback(host):
         REFUSED.append(f'{host}:{port}')
-        _say(f'net_guard: refused {host}:{port}')
+        _say(f'net_guard: refused {host}:{port}{_caller()}')
         raise ConnectionRefusedError(f'net_guard: connection to {host}:{port} refused (only loopback is allowed)')
 
 
@@ -81,7 +107,7 @@ def _create_connection(address, *args, **kwargs):
     host, port = address[0], address[1]
     if not _loopback(host):
         REFUSED.append(f'{host}:{port}')
-        _say(f'net_guard: refused {host}:{port}')
+        _say(f'net_guard: refused {host}:{port}{_caller()}')
         raise ConnectionRefusedError(f'net_guard: connection to {host}:{port} refused (only loopback is allowed)')
     return _real_create_connection(address, *args, **kwargs)
 
@@ -112,10 +138,15 @@ def _self_test() -> int:
         env = {**os.environ, 'QA_NET_GUARD_LOG': log, 'PYTHONPATH': here}
         r = subprocess.run([sys.executable, '-c', code], env=env, capture_output=True, text=True, timeout=60)
         text = open(log, encoding='utf-8').read() if os.path.exists(log) else ''
+        bare_env = {k: v for k, v in env.items() if k != 'QA_NET_GUARD_LOG'}
+        bare = subprocess.run([sys.executable, '-c', 'import net_guard'], env=bare_env, capture_output=True, text=True, timeout=60)
     checks = [('loopback connects, the rest is refused', 'REFUSED' in r.stdout and 'OUT' not in r.stdout, r.stderr[-300:]),
               ('connect_ex reports refused', 'EX ' in r.stdout and 'EX 0' not in r.stdout, r.stdout),
               ('the log has the loaded line', 'net_guard: loaded pid=' in text, text),
-              ('the log names refused hosts', '192.0.2.1:80' in text and '198.51.100.7:443' in text, text)]
+              ('the log names refused hosts', '192.0.2.1:80' in text and '198.51.100.7:443' in text, text),
+              ('a refusal names the calling code', 'refused 192.0.2.1:80 from <string>:5' in text, text),
+              ('with a log set, stderr stays empty', 'net_guard:' not in r.stderr, r.stderr),
+              ('without a log, the loaded line goes to stderr', 'net_guard: loaded pid=' in bare.stderr, bare.stderr)]
     failed = 0
     for name, ok, extra in checks:
         failed += not ok
