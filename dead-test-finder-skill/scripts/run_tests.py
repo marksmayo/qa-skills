@@ -74,6 +74,23 @@ them in the listed order; an id it can't find stops the run with exit 4.
 `--hash-path DIR` (repeatable) adds directories outside --cwd to `code_hash`, for code the tests
 import from a sibling package (a monorepo's shared library); `code_hash_basis.extra_paths` lists
 them. Without it the hash covers --cwd only.
+
+Workspace monorepos: `--repo-root DIR` runs in --cwd (one package) but hashes DIR (the repository),
+and records every test id and file with --cwd's path inside DIR as a prefix
+(`packages/web/tests/unit/cli.test.ts::...`), so runs of different packages share one code_hash and
+two packages' `tests/unit/cli.test.ts` never pool. Ids given back with --tests may carry the prefix;
+it is removed before they reach the runner. `--npm-script` follows `pnpm run x` / `npm run x` chains,
+skipping segments such as `pnpm run build` that don't run the tests, and a script that hands the
+tests to another workspace package (`pnpm --filter web run test`, `npm -w web test`) is refused
+with the package's directory to use as --cwd instead.
+
+node:test: the `node-test` preset runs `node --test` with the JUnit reporter (plus spec on stdout),
+`--test-concurrency` workers and `--test-randomize --test-random-seed` shuffles; ids from
+parse_results (`file::Describe > test`) are passed back as files plus a `--test-name-pattern`.
+TypeScript test files run on Node's own type stripping (Node 23.6+); on older Node, or with a
+loader the repo uses, pass `--runner-args "--experimental-strip-types"` or `--runner-args
+"--import tsx"`, or reuse the repo's script with `--npm-script`. Vitest `-t` patterns accept both
+the " > " separator of Vitest 4+ and the space older versions match against.
 """
 from __future__ import annotations
 import argparse, hashlib, json, os, random, re, shlex, shutil, signal, subprocess, sys, tempfile, time
@@ -135,6 +152,13 @@ PRESETS = {
     # Plain `cargo test` emits no JUnit, so a run parses 0 cases and is flagged `no_tests_parsed`
     # (no per-case data). Install cargo-nextest and use --preset nextest for per-case results.
     'cargo': {'cmd': ['cargo', 'test'], 'tests': 'args'},
+    # node:test (Node 20+). The junit reporter writes {junit}; spec keeps a readable log on stdout.
+    'node-test': {
+        'cmd': ['node', '--test', '--test-reporter=junit', '--test-reporter-destination={junit}',
+                '--test-reporter=spec', '--test-reporter-destination=stdout'],
+        'tests': 'args', 'workers': ['--test-concurrency={n}'],
+        'shuffle': ['--test-randomize', '--test-random-seed={seed}'],
+    },
     'custom': {'cmd': None, 'tests': 'placeholder'},
 }
 
@@ -319,7 +343,7 @@ def runtime_of(preset_name: str, cmd: str | None) -> str:
     """Which runtime reads TZ for this run: python, node, go, rust or unknown."""
     if preset_name == 'pytest':
         return 'python'
-    if preset_name in NODE_RUNNERS:
+    if preset_name in NODE_RUNNERS or preset_name == 'node-test':
         return 'node'
     if preset_name == 'gotestsum':
         return 'go'
@@ -388,7 +412,54 @@ def probe_tz(runtime: str, value: str, env: dict, cwd: Path) -> tuple[bool | Non
 
 # ---------------------------------------------------------------- the repo's own npm script
 SCRIPT_PREFIX_OK = {'cross-env', 'cross-env-shell', 'env', 'npx', 'pnpm', 'yarn', 'exec', '--'}
-DROP_FLAGS = re.compile(r'^--(reporter|reporters|outputFile|output-file|watch|ui|coverage\.reporter)(=|$)')
+DROP_FLAGS = re.compile(r'^--(reporter|reporters|outputFile|output-file|watch|ui|coverage\.reporter|'
+                        r'test-reporter|test-reporter-destination)(=|$)')
+WS_DELEGATE = re.compile(r'^(?:pnpm|yarn|npm|bun)$')
+
+
+def workspace_globs(root: Path) -> list[str]:
+    """Workspace package globs from pnpm-workspace.yaml or package.json workspaces at root."""
+    out = []
+    pw = root / 'pnpm-workspace.yaml'
+    if pw.is_file():
+        m = re.search(r'^packages\s*:\s*\n((?:[ \t]+-.*\n?)+)', pw.read_text(encoding='utf-8', errors='replace'), re.M)
+        if m:
+            out = [x.strip().strip('\'"') for x in re.findall(r'-\s*(.+)', m.group(1))]
+    if not out and (root / 'package.json').is_file():
+        try:
+            w = json.loads((root / 'package.json').read_text(encoding='utf-8')).get('workspaces')
+        except (OSError, ValueError, AttributeError):
+            w = None
+        out = list(w if isinstance(w, list) else (w or {}).get('packages', []) if isinstance(w, dict) else [])
+    return [g for g in out if not g.startswith('!')]
+
+
+def find_workspace_package(root: Path, name: str) -> str | None:
+    """The directory (relative to root) of the workspace package called name, or None."""
+    for g in workspace_globs(root):
+        for d in sorted(root.glob(g.rstrip('/'))):
+            pj = d / 'package.json'
+            if pj.is_file():
+                try:
+                    if json.loads(pj.read_text(encoding='utf-8')).get('name') == name:
+                        return d.relative_to(root).as_posix()
+                except (OSError, ValueError, AttributeError):
+                    continue
+    return None
+
+
+def delegated_package(toks: list[str]) -> str | None:
+    """The workspace package a script segment hands the tests to: pnpm --filter X / -F X, npm -w X /
+    --workspace X, yarn workspace X; None otherwise."""
+    if not toks or not WS_DELEGATE.match(toks[0]):
+        return None
+    for i, t in enumerate(toks[1:], 1):
+        m = re.match(r'^(?:--filter|-F|--workspace|-w)(?:=(.+))?$', t)
+        if m:
+            return m.group(1) or (toks[i + 1] if i + 1 < len(toks) else None)
+        if toks[0] == 'yarn' and t == 'workspace' and i + 1 < len(toks):
+            return toks[i + 1]
+    return None
 
 
 def npm_script(cwd: Path, name: str, runner: str, depth: int = 0) -> tuple[dict, list[str], str]:
@@ -399,21 +470,33 @@ def npm_script(cwd: Path, name: str, runner: str, depth: int = 0) -> tuple[dict,
     if not script:
         raise ValueError(f'package.json has no "{name}" script')
     segments = [s.strip() for s in re.split(r'&&|\|\||;', script) if s.strip()]
+    delegated, inner_errors = [], []
     for seg in segments:
         try:
             toks = shlex.split(seg)
         except ValueError:
             continue
+        target = delegated_package(toks)
+        if target:
+            if re.search(r'\b(test|spec|e2e)', seg):
+                delegated.append((target, seg))
+            continue
         m = None
-        if len(toks) >= 3 and toks[0] in ('npm', 'pnpm', 'yarn') and toks[1] in ('run', 'run-script') and depth < 3:
+        if len(toks) >= 3 and toks[0] in ('npm', 'pnpm', 'yarn', 'bun') and toks[1] in ('run', 'run-script') and depth < 3:
             m = toks[2]
-        elif len(toks) == 2 and toks[0] in ('pnpm', 'yarn') and toks[1] in (pkg.get('scripts') or {}) and depth < 3:
+        elif len(toks) == 2 and toks[0] in ('pnpm', 'yarn', 'bun') and toks[1] in (pkg.get('scripts') or {}) and depth < 3:
             m = toks[1]
         if m:
-            env, args, _ = npm_script(cwd, m, runner, depth + 1)
-            return env, args, script
+            try:   # a chain such as `pnpm run build && vitest run`: a segment that doesn't run the tests is skipped
+                env, args, _ = npm_script(cwd, m, runner, depth + 1)
+                return env, args, script
+            except ValueError as e:
+                inner_errors.append(str(e))
+                continue
         bins = {runner, 'playwright'} if runner == 'playwright' else {runner}
         idx = next((i for i, t in enumerate(toks) if Path(t).name in bins), None)
+        if runner == 'node' and idx is not None and '--test' not in toks[idx + 1:]:
+            idx = None   # `node scripts/build.js`, not a node:test run
         if idx is None:
             continue
         env = {}
@@ -427,17 +510,27 @@ def npm_script(cwd: Path, name: str, runner: str, depth: int = 0) -> tuple[dict,
         rest = toks[idx + 1:]
         if rest and rest[0] in ('run', 'test') and runner in ('vitest', 'playwright'):
             rest = rest[1:]
+        if runner == 'node':
+            rest = [t for t in rest if t != '--test']   # the preset already passes --test
         args, skip_next = [], False
         for i, t in enumerate(rest):
             if skip_next:
                 skip_next = False
                 continue
             if DROP_FLAGS.match(t):
-                skip_next = '=' not in t and t in ('--reporter', '--reporters', '--outputFile', '--output-file')
+                skip_next = '=' not in t and t in ('--reporter', '--reporters', '--outputFile', '--output-file',
+                                                   '--test-reporter', '--test-reporter-destination')
                 continue
             args.append(t)
         return env, args, script
-    raise ValueError(f'script "{name}" ({script!r}) does not call {runner}; use --preset custom --cmd')
+    if delegated:
+        name_, seg = delegated[0]
+        where = find_workspace_package(cwd, name_)
+        raise ValueError(f'script "{name}" hands the tests to the workspace package {name_!r} ({seg!r}); run with '
+                         + (f'--cwd {where} ' if where else '--cwd <that package\'s directory> ')
+                         + '--npm-script test (its own script), and --repo-root . to keep repository-relative ids')
+    raise ValueError(f'script "{name}" ({script!r}) does not call {runner}'
+                     + (f' ({"; ".join(inner_errors[:2])})' if inner_errors else '') + '; use --preset custom --cmd')
 
 
 def node_entry(cwd: Path, pkg: str) -> str | None:
@@ -466,6 +559,27 @@ def vitest_ids(tests: list[str]) -> tuple[list[str], str | None]:
     if len({'::' in t for t in tests}) > 1:
         raise ValueError('vitest: mix of whole files and test ids in one run; -t would filter the whole files too. '
                          'Run them separately, or use --isolate')
+    for t in tests:
+        f, sep, name = t.partition('::')
+        if f not in files:
+            files.append(f)
+        if sep and name:
+            name = re.sub(r'#\d+$', '', name)
+            # Vitest 4+ matches -t against the full name joined with " > ", older versions with a space: accept both
+            names.append('(?: > | )'.join(re.sub(r'[.*+?^${}()|[\]\\/]', lambda m: '\\' + m.group(0), part)
+                                          for part in name.split(' > ')))
+    if not names:
+        return files, None
+    return files, '^(?:' + '|'.join(dict.fromkeys(names)) + ')$'
+
+
+def node_test_ids(tests: list[str]) -> tuple[list[str], str | None]:
+    """parse_results ids for node:test (`file::Describe > test`) -> (files, a --test-name-pattern). Node matches the
+    pattern against the test's name joined with its ancestors' by spaces."""
+    files, names = [], []
+    if len({'::' in t for t in tests}) > 1:
+        raise ValueError('node-test: mix of whole files and test ids in one run; --test-name-pattern would filter the '
+                         'whole files too. Run them separately, or use --isolate')
     for t in tests:
         f, sep, name = t.partition('::')
         if f not in files:
@@ -621,6 +735,31 @@ def build(args, preset: dict, junit: Path, tests: list[str], seed: int | None) -
         cmd = [fill(x) for x in (shlex.split(args.cmd) if args.cmd else preset['cmd'])]
         if args.cmd and '{junit}' not in args.cmd and preset is PRESETS['pytest']:
             cmd += [f'--junitxml={junit}']
+        if args.preset == 'node-test' and not args.cmd:
+            # node reads options only before the first file: flags first, then the script's files or the tests
+            script = list(getattr(args, 'script_args', []))
+            flags, positional, i = [], [], 0
+            while i < len(script):
+                t = script[i]
+                if t.startswith('-'):
+                    flags.append(t)
+                    if '=' not in t and t in ('--import', '--require', '-r', '--loader', '--experimental-loader',
+                                              '--test-name-pattern', '--test-skip-pattern', '--test-concurrency',
+                                              '--conditions', '-C', '--env-file') and i + 1 < len(script):
+                        flags.append(script[i + 1])
+                        i += 1
+                else:
+                    positional.append(t)
+                i += 1
+            cmd += shlex.split(args.runner_args or '') + flags
+            if args.workers:
+                cmd += [fill(x) for x in preset['workers']]
+            if args.order == 'shuffle':
+                cmd += [fill(x) for x in preset['shuffle']]
+            files, pattern = node_test_ids(tests) if tests else (positional, None)
+            cmd += ([f'--test-name-pattern={pattern}'] if pattern else []) + files
+            env = {k: fill(v) for k, v in preset.get('env', {}).items()}
+            return cmd, env
         cmd += getattr(args, 'script_args', [])
         cmd += shlex.split(args.runner_args or '')
         if args.workers:
@@ -754,7 +893,14 @@ def run_one(args, preset, run_id: str, tests: list[str], base_env: dict, junit_d
                               '(configure [profile.ci.junit] in .config/nextest.toml, or install cargo-nextest).')
     if junit.exists():
         junit.write_text(redact_home(junit.read_text(encoding='utf-8', errors='replace')), encoding='utf-8')
-    cases, pnotes = parse_results.parse_junit(junit, run_id) if junit.exists() else ([], [f'{junit.name}: not written'])
+    cases, pnotes = parse_results.parse_junit(junit, run_id, cwd) if junit.exists() else ([], [f'{junit.name}: not written'])
+    prefix = getattr(args, 'id_prefix', '')
+    if prefix:   # --repo-root: ids and files relative to the repository, so packages never pool
+        for c in cases:
+            c['id'] = f"{prefix}/{c['id']}"
+            if c.get('file') and not c['file'].startswith(('~', '/')) and not re.match(r'^[A-Za-z]:', c['file']):
+                c['file'] = f"{prefix}/{c['file']}"
+
     run_notes = list(notes) + pnotes + copy_notes
     if timed_out:
         run_notes.append(f'Timed out after {args.timeout}s; the process tree was killed.')
@@ -776,10 +922,76 @@ def run_one(args, preset, run_id: str, tests: list[str], base_env: dict, junit_d
             'started_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
             'totals': parse_results.totals(cases), 'file_hashes': {}, 'notes': run_notes,
             'duration_s': duration, 'timed_out': timed_out, 'errored': bool(error), 'error': error,
-            'label': args.label, 'preset': args.preset, 'tests_selected': tests}, cases
+            'label': args.label, 'preset': args.preset,
+            'tests_selected': [f'{prefix}/{t}' for t in tests] if prefix else tests,
+            **({'id_prefix': prefix} if prefix else {})}, cases
+
+
+def self_test() -> int:
+    """Check id patterns, npm script chains and workspace delegation, and (with node on PATH) a node-test run with
+    --repo-root on a small synthetic workspace."""
+    checks = []
+    _, pat = vitest_ids(['tests/a.test.ts::cart > totals > adds tax'])
+    rx = re.compile(pat)
+    checks.append(('a vitest -t pattern matches the " > " and the space-joined name',
+                   bool(rx.match('cart > totals > adds tax') and rx.match('cart totals adds tax')), pat))
+    _, pat = node_test_ids(['a.test.mjs::sum > inner > deep # 1'])
+    checks.append(('a node-test pattern matches the space-joined name', bool(re.match(pat, 'sum inner deep # 1')), pat))
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        (root / 'pnpm-workspace.yaml').write_text('packages:\n  - packages/*\n', encoding='utf-8')
+        (root / 'package.json').write_text(json.dumps({'name': 'shop', 'scripts': {
+            'build': 'tsc -b', 'test': 'pnpm run build && pnpm --filter @shop/cart run test',
+            'test:scripts': 'pnpm run build && node --test --test-reporter=spec "scripts/*.test.mjs"',
+            'test:unit': 'pnpm run build && cross-env TZ=UTC vitest run --project unit'}}), encoding='utf-8')
+        pkg = root / 'packages' / 'cart'
+        (pkg / 'tests').mkdir(parents=True)
+        (pkg / 'package.json').write_text(json.dumps({'name': '@shop/cart', 'scripts': {
+            'test': 'node --test "tests/*.test.mjs"'}}), encoding='utf-8')
+        (pkg / 'tests' / 'cart.test.mjs').write_text(
+            "import { describe, it } from 'node:test';\nimport assert from 'node:assert';\n"
+            "describe('cart', () => { it('adds', () => assert.equal(1 + 1, 2)); it('fails', () => assert.equal(1, 2)); });\n",
+            encoding='utf-8')
+        try:
+            npm_script(root, 'test', 'node')
+            checks.append(('a script that hands the tests to a workspace package is refused with its directory', False, 'accepted'))
+        except ValueError as e:
+            checks.append(('a script that hands the tests to a workspace package is refused with its directory',
+                           '--cwd packages/cart' in str(e), str(e)))
+        env, args, _ = npm_script(root, 'test:scripts', 'node')
+        checks.append(('a build step before node --test is skipped, reporters dropped', args == ['scripts/*.test.mjs'], args))
+        env, args, _ = npm_script(root, 'test:unit', 'vitest')
+        checks.append(('a build step before vitest is skipped, env and flags kept',
+                       env == {'TZ': 'UTC'} and args == ['--project', 'unit'], (env, args)))
+        if shutil.which('node'):
+            out = root / 'out' / 'runs.json'
+            code = main(['--preset', 'node-test', '--npm-script', 'test', '--cwd', str(pkg), '--repo-root', str(root),
+                         '--out', str(out)])
+            data = json.loads(out.read_text(encoding='utf-8')) if out.exists() else {'runs': [], 'cases': []}
+            ids = sorted(c['id'] for c in data['cases'])
+            checks.append(('node-test with --repo-root records repository-relative ids',
+                           code == 0 and ids == ['packages/cart/tests/cart.test.mjs::cart > adds',
+                                                 'packages/cart/tests/cart.test.mjs::cart > fails'], (code, ids)))
+            code = main(['--preset', 'node-test', '--npm-script', 'test', '--cwd', str(pkg), '--repo-root', str(root),
+                         '--out', str(out), '--tests', 'packages/cart/tests/cart.test.mjs::cart > fails'])
+            data = json.loads(out.read_text(encoding='utf-8'))
+            last = [c for c in data['cases'] if c['run_id'] == data['runs'][-1]['id']]
+            checks.append(('a repository-relative id is run back by name',
+                           [(c['id'], c['status']) for c in last] == [('packages/cart/tests/cart.test.mjs::cart > fails', 'failed')],
+                           [(c['id'], c['status']) for c in last]))
+        else:
+            print('SKIP node-test runs: node is not on PATH')
+    failed = 0
+    for name, ok, extra in checks:
+        failed += not ok
+        print(f"{'PASS' if ok else 'FAIL'} {name}" + ('' if ok else f'  [{extra}]'))
+    print(f'{failed} failed' if failed else 'ALL PASS')
+    return 1 if failed else 0
 
 
 def main(argv=None) -> int:
+    if '--self-test' in (sys.argv[1:] if argv is None else argv):
+        return self_test()
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('--preset', choices=sorted(PRESETS), default='pytest')
     ap.add_argument('--cmd', help='base command; required for --preset custom ({junit}, {tests}, {seed}, {n} placeholders)')
@@ -807,7 +1019,10 @@ def main(argv=None) -> int:
     ap.add_argument('--hash-path', action='append', default=[], type=Path, metavar='DIR',
                     help='add a directory outside --cwd (a sibling package the tests import) to code_hash; repeatable')
     ap.add_argument('--npm-script', metavar='NAME', help="reuse package.json's script NAME (its env prefix and runner "
-                                                           'flags) with the jest, vitest or playwright preset')
+                                                           'flags) with the jest, vitest, playwright or node-test preset')
+    ap.add_argument('--repo-root', type=Path, metavar='DIR',
+                    help='run in --cwd but hash DIR and record test ids and files relative to it (prefixed with '
+                         "--cwd's path inside DIR), so a monorepo's packages share one code_hash and never pool ids")
     ap.add_argument('--runner-args', help='extra flags appended to the preset command, e.g. "--configLoader native"')
     ap.add_argument('--label', default='run')
     ap.add_argument('--run-prefix', default='R')
@@ -821,6 +1036,13 @@ def main(argv=None) -> int:
     for hp in args.hash_path:
         if not (args.cwd / hp).is_dir():
             ap.error(f'--hash-path {hp}: not a directory (relative paths are taken from --cwd)')
+    args.hash_path = [(args.cwd / hp).resolve() for hp in args.hash_path]
+    args.id_prefix = ''
+    if args.repo_root:
+        rr, cw = args.repo_root.resolve(), args.cwd.resolve()
+        if not rr.is_dir() or (rr != cw and rr not in cw.parents):
+            ap.error(f'--repo-root {args.repo_root}: must be a directory that contains --cwd')
+        args.id_prefix = '' if rr == cw else Path(os.path.relpath(cw, rr)).as_posix()
     bad = [kv for kv in args.env if not ENV_PAIR.match(kv)]
     if bad:
         ap.error(f'--env takes K=V pairs, not {bad[0]!r}')
@@ -833,15 +1055,17 @@ def main(argv=None) -> int:
 
     tests = list(args.tests) + ([l.strip() for l in args.tests_file.read_text(encoding='utf-8').splitlines() if l.strip()]
                                 if args.tests_file else [])
+    if args.id_prefix:   # ids recorded with --repo-root carry the package path; the runner wants them without it
+        tests = [t[len(args.id_prefix) + 1:] if t.startswith(args.id_prefix + '/') else t for t in tests]
     env = dict(os.environ)
     notes, variation = [], {'order': args.order, 'seed': None, 'hash_seed': args.hash_seed, 'workers': args.workers,
                             'tz': args.tz, 'tz_applied': None, 'locale': args.locale, 'cpu_load': args.cpu_load,
                             'isolate': args.isolate, 'env': {}}
     args.script_args = []
-    runner = Path(NODE_RUNNERS.get(args.preset, '')).name
+    runner = 'node' if args.preset == 'node-test' else Path(NODE_RUNNERS.get(args.preset, '')).name
     if args.npm_script:
-        if args.preset not in NODE_RUNNERS or args.cmd:
-            ap.error('--npm-script works with the jest, vitest and playwright presets (without --cmd)')
+        if (args.preset not in NODE_RUNNERS and args.preset != 'node-test') or args.cmd:
+            ap.error('--npm-script works with the jest, vitest, playwright and node-test presets (without --cmd)')
         try:
             s_env, args.script_args, script = npm_script(cwd, args.npm_script, runner)
         except (OSError, ValueError) as e:
@@ -852,7 +1076,13 @@ def main(argv=None) -> int:
         notes.append(f'From npm script "{args.npm_script}" ({scrub(script)}): env '
                      + (', '.join(f'{k}={recorded_env(k, v, keep)}' for k, v in s_env.items()) or 'none') + '; runner flags '
                      + (' '.join(args.script_args) or 'none') + '.')
-    elif args.preset in NODE_RUNNERS and not args.cmd and (cwd / 'package.json').is_file():
+        if re.search(r'&&|\|\||;', script):
+            msg = (f'npm script "{args.npm_script}" chains several commands; only the test runner was reproduced. '
+                   'Run the other steps (a build of workspace packages the tests import from dist/, for example) '
+                   'before these runs if the tests depend on them.')
+            notes.append(msg)
+            print('NOTE: ' + msg)
+    elif (args.preset in NODE_RUNNERS or args.preset == 'node-test') and not args.cmd and (cwd / 'package.json').is_file():
         try:
             s_env, s_args, script = npm_script(cwd, 'test', runner)
             given = {kv.partition('=')[0] for kv in args.env} | ({'TZ'} if args.tz else set())
@@ -916,7 +1146,11 @@ def main(argv=None) -> int:
     existing = {r['id'] for r in data['runs']}
     n0 = sum(1 for r in data['runs'] if r['id'].startswith(args.run_prefix + '-'))
     hash_notes, basis = [], {}
-    chash, digests = hash_trees(cwd, args.hash_path, hash_notes, basis)
+    hash_root = args.repo_root.resolve() if args.repo_root else cwd
+    chash, digests = hash_trees(hash_root, args.hash_path, hash_notes, basis)
+    if args.repo_root:
+        basis['root'] = '.' if hash_root == cwd else 'repo-root'
+        data['id_prefix'] = args.id_prefix
     data['code_hash_basis'] = basis
     for n in hash_notes:
         print('WARN: ' + n)
@@ -964,7 +1198,7 @@ def main(argv=None) -> int:
         print(f'Stopped at the {args.minutes}-minute cap after {done} of {planned} planned run(s).')
         data.setdefault('stops', []).append({'label': args.label, 'completed': done, 'planned': planned,
                                              'minutes': args.minutes})
-    after_hash, after_digests = hash_trees(cwd, args.hash_path)
+    after_hash, after_digests = hash_trees(hash_root, args.hash_path)
     if after_hash != chash:
         moved = sorted(k for k in set(digests) | set(after_digests) if digests.get(k) != after_digests.get(k))
         shown = ', '.join(moved[:10]) + (f' and {len(moved) - 10} more' if len(moved) > 10 else '')
