@@ -274,7 +274,8 @@ def coverage_and_drift() -> None:
                      'shelf_test.go': 'package shelf\n'})
         out = schema_drift.drift(root, inv.build(root, None, {}))
     lc = out.get('language_coverage') or {}
-    check(lc.get('dominant') == 'go' and bool(lc.get('warning')), 'schema_drift: warns when it reads no models of the repo\'s language (Go)')
+    check(lc.get('status') == 'unsupported_dominant' and lc.get('dominant') == 'Go' and bool(lc.get('warning')),
+          'schema_drift: warns (from the shared language census) when it reads no models of the repo\'s language (Go)')
 
 
 def residue_outside_tree() -> None:

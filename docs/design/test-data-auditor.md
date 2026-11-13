@@ -472,8 +472,8 @@ Found on a Go module of about 340 `*_test.go` files, with vendored Swift and Typ
   and cleared under a mutex with nothing restoring it).
 - **Loud about the rest.** `candidates.json` has `language_coverage` (`code_rules`, and `text_only`
   per language) and a note plus a stderr warning for test code in languages with no code rules (the
-  29 Swift test files). `schema_drift.py` reports `language_coverage` and warns when the product
-  code is mostly a language whose models it does not read.
+  29 Swift test files). `schema_drift.py` reports `language_coverage` from the shared `lang_census.py` and warns when the
+  repository is mostly a language whose models it does not read. `net_guard_proxy.py` (shared) is the guard for Go runs.
 - **False positives.** URL user-info (`scheme://user:key@host`) was read as an email address (19 of
   50 personal-data candidates): it is now a `url_credentials` secret, dismissed by rule when the
   password is a placeholder or a variable, or the host is reserved. The card rule matched

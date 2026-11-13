@@ -153,7 +153,7 @@ python scripts/schema_drift.py <repo> --inventory <run>/inventory.json --out <ru
 | `environment_coupling` | A production or staging host, a real bucket, an AWS account id, an absolute path on someone's machine (platform roots such as `/home/site/wwwroot` or a CI runner's home are the same everywhere, so they are not). Tests that reach a live endpoint through product code (an update check, telemetry) are not a literal in test data: report them as a review finding with `host` and `live_endpoint: true`, and a basis that names the host (the calling line, or the proxy log that recorded the tests reaching it) |
 | `shared_mutable` | A session, module, package or class-scoped fixture that returns a mutable value a test mutates; `importlib.reload(module)` in test code, with the module's import-time environment reads (`module_reload`): later tests see the reloaded state, so a test can pass only after it; Go tests that change process state by hand (`go_os_setenv`, `go_os_chdir`) or reassign a package-level variable with nothing putting it back (`go_package_var_reassigned`) |
 | `nondeterministic` | `random` or Faker with no seed in the file; `uuid4()` in test data; Go `math/rand` with no seeded source in the file |
-| `schema_drift` | A fixture field the model no longer has; a missing required field; an enum value the model doesn't allow (dataclasses, pydantic, SQLAlchemy, TypedDict, JSON Schema, OpenAPI JSON). Only models from the fixture's own package root count, and a record matches a model only when half its keys are the model's fields. Models in other languages (Go structs, Java classes) are not read: when the repository's product code is mostly another language, `drift.json` carries `language_coverage.warning` (also printed, and added to the scan's notes), and the report must not read "no drift" from it |
+| `schema_drift` | A fixture field the model no longer has; a missing required field; an enum value the model doesn't allow (dataclasses, pydantic, SQLAlchemy, TypedDict, JSON Schema, OpenAPI JSON). Only models from the fixture's own package root count, and a record matches a model only when half its keys are the model's fields. Models in other languages (Go structs, Java classes) are not read: when the repository is mostly another language (counted by the shared `lang_census.py`, vendored and embedded third-party trees left out), `drift.json` carries `language_coverage` with status `unsupported_dominant` and a `warning` (also printed, and added to the scan's notes), and the report must not read "no drift" from it |
 | `snapshot_rot` | A snapshot with no test file; a snapshot over 500 lines |
 | `unused_or_duplicate` | A data file no test loads; a file at least 90% similar to another one of the same format |
 | `locale_assumption` | A test comparing a literal with a function that formats using the machine locale (`setlocale(..., "")` with `locale.currency`, `format_string` or locale-dependent `strftime`; in JS, `toLocaleString()`, `toLocaleDateString()`, `Intl.NumberFormat()` and the like with no locale argument) |
@@ -358,12 +358,14 @@ python scripts/run_tests.py --preset pytest --cwd <copy> --out <run>/runs.json -
   the tree (downloaded browsers, caches and settings under the home directory): run them with HOME
   (and USERPROFILE on Windows) pointing at an empty folder and pass that folder as `--also home=...`;
   its files are listed as `home:<path>` and under `outside_tree`, never by the folder's own path.
-  Never snapshot a person's real home.
+  Never snapshot a person's real home. `net_guard_proxy.py run --home <dir> --summary s.json -- <cmd>`
+  gives the run an empty home and lists what the tests left there (`home_writes`), as an alternative.
 - **Network isolation for runtimes with no guard:** `net_guard.py` and `net_guard.cjs` cover Python
-  and Node. For Go and other runtimes that honour `HTTP_PROXY`/`HTTPS_PROXY`, point both at a closed
-  loopback port to block outbound calls, or at a small loopback logging proxy to see which tests reach
-  which host (`NO_PROXY` must not cover the host); the proxy log is the evidence for a `live_endpoint`
-  finding. Turn off the product's own update checks and telemetry with its documented variables.
+  and Node. For Go, Rust, JVM and .NET runs, `net_guard_proxy.py run --log <run>/net_guard.log --home
+  <dir> -- <cmd>` points the proxy variables at a loopback proxy that refuses and logs every outbound
+  request (`net_guard: refused <host>:<port>`), which attributes outbound calls to the run; only
+  clients that honour the proxy variables are guarded (its docstring lists the limits, which the
+  report must state). The refused-host log is the evidence for a `live_endpoint` finding. Turn off the product's own update checks and telemetry with its documented variables.
 - **Go runs:** with the `gotestsum` preset pass the packages (`--tests ./...`; with none, `go test`
   runs only the root package), and select tests with `-run` through `--runner-args`. Set HOME and
   USERPROFILE to an empty folder and the proxy variables as above.
