@@ -10,6 +10,7 @@ on 2026-10-01. The example can't ship a `.git` directory. Built anywhere, HEAD i
 |---|---|
 | `run/history.json` | `mine_history.py --days 180 --as-of 2026-11-01`: 41 commits, 7 fix commits, 1 formatting-only commit left out |
 | `run/complexity.json` | `complexity.py` |
+| `run/release.json` | `release_scope.py`: the nearest release tag merged into HEAD is `v1.4`; no pending changesets and no breaking commits in this sample |
 | `run/scope.json` | `diff_scope.py --base v1.4 --committed-only`: gift cards, the payments change, new banners |
 | `run/risk.json` | `score_risk.py` with the trimmed journey map and security audit in `inputs/` |
 | `test_plan.example.json`, `.md` | The 16-session plan |

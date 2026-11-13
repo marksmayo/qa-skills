@@ -8,17 +8,18 @@ Payments (risk 16.6) and auth (High because of open security finding F-1) get mo
 - Effort: 16 sessions of 90 minutes
 - Inputs used: security (security_audit.json), journey-mapper (journey_map.json); missing: usage export, Jira bug search
 - Areas: subdirectories of the main source directory larder/
+- Release: base `v1.4` (3 commits before HEAD); 0 pending changeset(s) for 0 package(s); breaking: none; 0 breaking commit(s)
 
 ## Risk register
 
-| Area | Likelihood | Impact | Risk | Band | Confidence | Flags |
-|---|---|---|---|---|---|---|
-| payments | 3.6 | 4.6 | 16.6 | High | high | - |
-| giftcards | 3.0 | 4.6 | 13.8 | Medium | low | novel |
-| catalog | 2.7 | 3.3 | 8.9 | Medium | high | - |
-| auth | 1.8 | 4.1 | 7.4 | High | high | open_findings |
-| marketing | 2.9 | 2.0 | 5.8 | Low | high | - |
-| reports | 2.2 | 1.6 | 3.5 | Low | high | - |
+| Area | Likelihood | Impact | Risk | Band | Confidence | Flags | Judged |
+|---|---|---|---|---|---|---|---|
+| payments | 3.6 | 4.6 | 16.6 | High | high | - | - |
+| giftcards | 3.0 | 4.6 | 13.8 | Medium | low | novel | - |
+| catalog | 2.7 | 3.3 | 8.9 | Medium | high | - | - |
+| auth | 1.8 | 4.1 | 7.4 | High | high | open_findings | - |
+| marketing | 2.9 | 2.0 | 5.8 | Low | high | - | - |
+| reports | 2.2 | 1.6 | 3.5 | Low | high | - | - |
 
 ### Evidence per area
 **payments** (`larder/payments`)

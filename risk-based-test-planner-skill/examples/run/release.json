@@ -1,0 +1,19 @@
+{
+  "repo": "larder",
+  "head": "d834c7e13dc8",
+  "base": {
+    "tag": "v1.4",
+    "package": null,
+    "version": "1.4",
+    "shape": "semver",
+    "sha": "bac397ec032a",
+    "commits_since": 3,
+    "command": "git for-each-ref --merged HEAD refs/tags; git rev-list --count <tag>..HEAD (nearest release tag)"
+  },
+  "release_tags_found": 1,
+  "last_release_per_package": {},
+  "changesets": [],
+  "packages": {},
+  "unknown_packages": [],
+  "breaking_commits": []
+}

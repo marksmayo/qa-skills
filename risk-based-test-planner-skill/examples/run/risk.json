@@ -18,7 +18,7 @@
   "scope": {
     "kind": "git",
     "value": "v1.4",
-    "command": "git diff -M bac397ec032af0c329eb9547594239162c2300dd...HEAD"
+    "command": "git diff -M --relative bac397ec032af0c329eb9547594239162c2300dd...HEAD"
   },
   "inputs_used": [
     {
@@ -48,6 +48,21 @@
   "warnings": [],
   "excluded": [],
   "flaky_tests_not_counted": [],
+  "tests_not_counted": [],
+  "release": {
+    "base": {
+      "tag": "v1.4",
+      "package": null,
+      "version": "1.4",
+      "shape": "semver",
+      "sha": "bac397ec032a",
+      "commits_since": 3,
+      "command": "git for-each-ref --merged HEAD refs/tags; git rev-list --count <tag>..HEAD (nearest release tag)"
+    },
+    "changesets": 0,
+    "packages": {},
+    "breaking_commits": 0
+  },
   "weights": {
     "likelihood": {
       "churn": 2,
@@ -125,7 +140,7 @@
         "change_in_scope": {
           "score": 2,
           "status": "assessed",
-          "command": "git diff -M bac397ec032af0c329eb9547594239162c2300dd...HEAD",
+          "command": "git diff -M --relative bac397ec032af0c329eb9547594239162c2300dd...HEAD",
           "evidence": [
             "6 lines changed in the scope diff (percentile 3, capped at 2 for a change this size)"
           ]
@@ -208,7 +223,7 @@
         "change_in_scope": {
           "score": 2,
           "status": "assessed",
-          "command": "git diff -M bac397ec032af0c329eb9547594239162c2300dd...HEAD",
+          "command": "git diff -M --relative bac397ec032af0c329eb9547594239162c2300dd...HEAD",
           "evidence": [
             "15 lines changed in the scope diff (percentile 4, capped at 2 for a change this size)"
           ]
@@ -292,7 +307,7 @@
         "change_in_scope": {
           "score": 1,
           "status": "assessed",
-          "command": "git diff -M bac397ec032af0c329eb9547594239162c2300dd...HEAD",
+          "command": "git diff -M --relative bac397ec032af0c329eb9547594239162c2300dd...HEAD",
           "evidence": [
             "0 lines changed in the scope diff"
           ]
@@ -387,7 +402,7 @@
         "change_in_scope": {
           "score": 1,
           "status": "assessed",
-          "command": "git diff -M bac397ec032af0c329eb9547594239162c2300dd...HEAD",
+          "command": "git diff -M --relative bac397ec032af0c329eb9547594239162c2300dd...HEAD",
           "evidence": [
             "0 lines changed in the scope diff"
           ]
@@ -469,7 +484,7 @@
         "change_in_scope": {
           "score": 2,
           "status": "assessed",
-          "command": "git diff -M bac397ec032af0c329eb9547594239162c2300dd...HEAD",
+          "command": "git diff -M --relative bac397ec032af0c329eb9547594239162c2300dd...HEAD",
           "evidence": [
             "20 lines changed in the scope diff (percentile 5, capped at 2 for a change this size)"
           ]
@@ -551,7 +566,7 @@
         "change_in_scope": {
           "score": 1,
           "status": "assessed",
-          "command": "git diff -M bac397ec032af0c329eb9547594239162c2300dd...HEAD",
+          "command": "git diff -M --relative bac397ec032af0c329eb9547594239162c2300dd...HEAD",
           "evidence": [
             "0 lines changed in the scope diff"
           ]
