@@ -1,7 +1,7 @@
 ---
 name: cross-browser-checker
 description: Run the same pages, states and journeys in Playwright's Chromium, Firefox and WebKit, three times each, and report where they behave differently - script errors, failing steps, content that isn't rendered, missing elements, input fallbacks, layout and network differences - keeping only differences that repeat in every run and listing the rest as flaky. With a repository, also scan CSS, JavaScript and HTML for features the project's browserslist targets don't all support (web-features and caniuse data, pinned and hash-checked), and link them to the runtime differences they explain. Never says "compatible", and never treats WebKit as Safari.
-version: 1.2.0
+version: 1.3.0
 ---
 
 # Cross-browser checker
@@ -71,7 +71,7 @@ cross-browser finding, even if it's a bug: note it for the crash hunter.
 
 | Input | Default | Notes |
 |---|---|---|
-| `targets` | required, except static only | `targets.json`: site, pages, states (actions, `critical_path`), viewports. A page or state may list `viewports`, a subset of the top-level list, to run only there (a mobile menu state at the mobile width); a state inherits its page's |
+| `targets` | required, except static only | `targets.json`: site, pages, states (actions, `critical_path`), viewports. A page or state may list `viewports`, a subset of the top-level list, to run only there (a mobile menu state at the mobile width); a state inherits its page's. Actions are the shared harness's steps: `{"click": sel}`, `{"fill": sel, "value": v}` (or `{"fill": [sel, v]}`), `{"select": sel, "value": v}`, `hover`, `press`, `check`, `uncheck`, `wait` (ms), `wait_for`, `goto`; every step is checked before a browser starts |
 | `third_party` | `block` | `block` aborts and records requests to other hosts; `allow` lets them load |
 | `allowed_hosts` | `[]` | Other hosts that are part of the site (its own CDN) |
 | `service_workers` | `allow` | `block` blocks them in every run |
@@ -150,8 +150,14 @@ A Vite project with no browserslist config compiles for its `build.target`: the 
 `baseline-widely-available`, Chrome and Edge 107, Firefox 104, Safari 16; Vite 3-6: `modules`,
 Chrome 87, Edge 88, Firefox 78, Safari 14), with iOS Safari following Safari; `source` says which.
 `esNNNN`/`esnext` name no browser and are reported as not assessed.
-The walk prunes `node_modules`, `.next`, build output, coverage and caches, and skips tests and
-stories (they don't ship).
+The walk prunes `node_modules`, `.next`, build output, coverage and caches, and skips what doesn't
+ship to browsers: test and story files (`*.test.*`, `*.spec.*`, `*.e2e.*`, `*.cy.*`, `*.stories.*`),
+test directories (`e2e`, `test`, `tests`, `spec`, `specs`, unless the directory holds a package
+manifest such as `package.json`, which makes it a product package of that name) and Node-only
+scripts (a node shebang, or an import of a `node:` module, `fs`, `child_process` and other Node
+built-ins: CLIs, build scripts, dev servers). A Node server that renders pages from template
+literals still has its inline `<script>` and `<style>` blocks scanned. `features.json` lists what
+was left out under `skipped`; look at it when a finding you expected is missing.
 
 JavaScript APIs, not syntax: a build transpiles syntax for its targets but doesn't polyfill APIs, so
 the scan looks for APIs that newer targets have and older ones don't (`structuredClone`, `.at(-1)`,
@@ -174,7 +180,8 @@ Tailwind, class strings are matched against the known non-baseline utilities (`t
 `backdrop-blur-*`, `bg-clip-text`, `has-[...]`, `@container`, `field-sizing-*`, `starting:`), and
 `utility_css` says only those were scanned. The CSS the framework generates (colour functions,
 `@property`, layers) is scanned only from built CSS (`--built-css <dir>`, or `.next/static/css`
-when it exists); otherwise `features.json` carries a limitation, which the report must repeat.
+when it exists, in the repo or beside any `next.config.*` up to three levels down, for a Next.js
+project kept in a subfolder and built with `next build <dir>`); otherwise `features.json` carries a limitation, which the report must repeat.
 Minified built CSS has every rule on line 1, so its uses carry a `column` and repeats of one feature on
 one line collapse into one entry with `occurrences`. Tailwind 4 registers its variables with
 `@property` and emits its own fallback for engines without it (`@layer properties { @supports (...)
@@ -192,10 +199,20 @@ python scripts/compare_engines.py <run>/capture/runs.json --features <run>/featu
 Only captured runs are compared; `comparisons` lists every planned engine-versus-reference pair and
 why any wasn't made (an errored or skipped run on either side). Differences: page and console errors, failed steps, failed requests and undecoded images, missing or
 extra elements, input type fallbacks, box differences, overflow, and content not rendered (an element
-with under 40% of the reference's ink). Font metrics, native form controls, consequences of other
-differences (a box that grew because something inside it changed) and cumulative drift (an element
-that moved with the content just above it, by text metrics adding up down a long page) are dismissed
-automatically and counted, with reasons in `candidates.json`. Each screenshot is decoded once, in
+with under 40% of the reference's ink). Font metrics, native form controls (their size change is
+judged apart from a move: a control that also moved is judged as a move), line wraps (a row of items
+under one parent, such as nav links, that keep their order but wrap onto another line in one engine,
+with no item resized beyond font metrics: the whole row and what moved with it is one dismissal),
+consequences of other differences (a box that grew because something inside it changed, an element
+below it that moved), cumulative drift (an element that moved with the content just above it, by text
+metrics adding up down a long page) and ink measured on boxes of different shape (an inline element
+on another number of lines, or a box whose area changed more than twofold) are dismissed
+automatically and counted, with reasons in `candidates.json`. A layout difference of one element (by
+its signature, such as a shared header or footer) on several pages is one candidate: `pages` lists
+them and reach counts them. When comparisons were made and nothing at all came out (no candidate,
+flaky entry or dismissal), `candidates.json` carries a `self_check` line saying how many element
+boxes were compared and how many were identical: open one screenshot pair per engine and confirm the
+pages really rendered alike before reporting no differences. Each screenshot is decoded once, in
 parallel (`--jobs`, default up to 4; the validator takes the same option). Candidates matching a known
 engine-build limitation carry its id in `build_limitations`. Ratings follow `RUBRIC.md`.
 
@@ -203,7 +220,11 @@ engine-build limitation carry its id in `build_limitations`. Ratings follow `RUB
 
 Every candidate is promoted, `needs_review` (for example media that may play in branded browsers with
 proprietary codecs, and every candidate with `build_limitations`), or dismissed with a checkable
-reason. For a build limitation, the needs-review reason names it and what to check in the real
+reason. Each triage entry is `{candidate_id, decision, difference_id, reason}`: `difference_id`
+names the difference a promoted candidate became and is `null` for `needs_review` and `dismissed`.
+The reason says what was compared and what it showed ("the WebKit screenshot shows the label on one
+line, wider by 6 px; nothing is hidden"): a reason under 25 characters, or only "false positive",
+"font metrics", "by design" and the like, fails validation. For a build limitation, the needs-review reason names it and what to check in the real
 browser (its `confirm` text in `data/engine-limitations.json`); in the summary, say that WebKit
 showed it and real Safari wasn't checked, never that Safari has it. For each difference write a title naming the
 engines (never "Safari"), a remediation that addresses the cause (a feature check, a fallback, an
@@ -250,8 +271,12 @@ targets there and compare by hand.
   the capture ran in full; `not_run` is a static-only report.
 - `metadata`: tools, data versions and hashes, runs file (`null` when static only).
 - `headline`: verdict (`differences_found`, `no_differences_detected`, `inconclusive`), summary,
-  severity counts, flaky count, checks planned and run, engine comparisons planned and made,
-  evidence completeness, overall confidence.
+  severity counts, flaky count, checks planned and run (`checks.planned` and `checks.ran` count runs:
+  page or state × viewport × engine × rerun), engine comparisons planned and made (page or state ×
+  viewport × each engine other than the reference), evidence completeness (`complete` or `partial`:
+  partial when an engine or run didn't run, a comparison wasn't made, or anything is flaky, needs
+  review or not assessed), overall confidence. Write the verdict and summary; `--write-summary`
+  computes and fills the other fields, which a draft may leave out.
 - `differences[]`: kind and subkind, engines affected, reference, page and states, element, severity,
   confidence, priority, score, usage share, runs per state and engine, evidence per engine, linked
   feature cause, remediation and verification step.
@@ -274,7 +299,9 @@ candidates file, with every engine `not_run` and no differences, triage or confi
 them or of the runs, was made. `scope.capture`, `scope.requests` and `scope.harness` equal `runs.json`'s; forced
 reduced motion or frozen animations need `out_of_scope` to say motion wasn't compared; the feature
 scan's limitations (utility CSS not scanned) must appear in the report's. Every
-candidate is triaged once, and none with `build_limitations` is promoted. Checks planned come from
+candidate is triaged once, with a reason that says what was checked, and none with
+`build_limitations` is promoted. The schema is checked first: a schema error stops before any
+screenshot is decoded. Checks planned come from
 `runs.json`'s recorded plan, `--targets` (which must agree with it), or for an older capture the
 page and viewport pairs that ran, so the count is the same with and without `--targets`. Blocked
 third-party requests need `scope.third_party` and a limitation saying they weren't compared.

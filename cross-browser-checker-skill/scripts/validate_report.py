@@ -29,13 +29,18 @@ Also fails when:
     scope.capture / scope.requests don't equal them; motion was forced or frozen and out_of_scope doesn't say motion
     wasn't compared; the feature scan listed limitations (utility-class CSS not scanned) the report doesn't carry;
   * a feature finding is confirmed_at_runtime with no linked difference, or possible with one;
-  * a candidate is missing from triage or triaged twice;
+  * a candidate is missing from triage or triaged twice, or its triage reason is vague (under 25 characters, or only
+    "false positive", "font metrics", "by design" and the like): say what was compared and what it showed;
   * a candidate that matches a known Playwright engine-build limitation (data/engine-limitations.json) is promoted:
     it goes to needs_review until a real browser confirms it;
   * the capture recorded its third-party mode and scope.third_party doesn't match it, or third-party requests were
     blocked and no limitation says their behaviour wasn't compared.
 
-Checks planned are the (page or state, viewport) pairs runs.json records as "planned" (capture.py writes them,
+--write-summary fills the computed headline fields (severity_counts, flaky_count, checks, evidence_completeness,
+overall_confidence), so a draft may leave them out: placeholders are set before the schema check and overwritten.
+The schema is checked first and a schema error stops before any screenshot is decoded.
+
+Checks planned (headline.checks.planned) count runs: the (page or state, viewport) pairs runs.json records as "planned" (capture.py writes them,
 honouring per-page and per-state viewports), or the same pairs from --targets (which must then agree), or, for an
 older capture with neither, the pairs that ran; times engines and reruns. Sentences are split at a full stop followed
 by a space, so "Safari 16.4" stays one sentence.
@@ -57,6 +62,15 @@ INCONCLUSIVE_SAYS = re.compile(r'inconclusive|errored|not compared|could not|cou
                                re.I)
 NO_DIFF_CLAIM = re.compile(r'\b(no (\w+ )?differences (were |was )?(found|detected|seen)|no differences detected|'
                            r'all (engines|browsers) (match|agree|behave the same))\b', re.I)
+# --write-summary computes these; a draft may leave them out (verdict and summary are the agent's to write)
+HEADLINE_PLACEHOLDERS = {'severity_counts': {}, 'flaky_count': 0,
+                         'checks': {'planned': 0, 'ran': 0, 'comparisons_planned': 0, 'comparisons_made': 0},
+                         'evidence_completeness': 'partial', 'overall_confidence': 'low'}
+# a triage reason has to say something checkable: what was seen, compared or ruled out
+VAGUE_REASON = re.compile(r'^\W*(false positive|fp|not an? (issue|problem|bug|difference)|n/?a|ok|fine|ignore|noise|'
+                          r'expected|by design|font( metrics)?|rendering( difference)?|minor|cosmetic|flaky|duplicate|dup|'
+                          r'needs? review|to review|check|tbd|todo|real|confirmed|promoted|valid)\W*$', re.I)
+MIN_REASON = 25
 FIELDS = ('kind', 'subkind', 'page', 'states', 'element', 'severity', 'confidence', 'priority', 'score', 'usage_share', 'runs')
 
 
@@ -82,6 +96,10 @@ def main() -> int:
     a = ap.parse_args()
     rep, cands_doc = load(a.report), load(a.candidates)
     errs: list[str] = []
+    if a.write_summary and isinstance(rep.get('headline'), dict):
+        # the computed headline fields are filled below; placeholders let a draft without them pass the schema first
+        for k, v in HEADLINE_PLACEHOLDERS.items():
+            rep['headline'].setdefault(k, json.loads(json.dumps(v)))
     errs += [f'schema: {e}' for e in schema_check.errors(rep, load(HERE.parent / 'schemas' / 'cross_browser_report.schema.json'))]
     if errs:
         print('\n'.join(errs))
@@ -115,6 +133,9 @@ def main() -> int:
         caniuse = None
         print('warning: caniuse data not in the cache; usage shares are not rechecked')
     critical = {r['page'] for r in runs['runs'] if r.get('critical_path')}
+    n_shots = sum(1 for r in runs['runs'] if r.get('screenshot'))
+    if n_shots:
+        print(f'schema valid; recomputing the candidates from {n_shots} screenshot(s)...', file=sys.stderr, flush=True)
     diffs, flaky, dismissed = ce.compare(runs, run_dir, cands_doc['reference'], a.jobs)
     fresh = ce.candidates(diffs, dismissed, runs, caniuse, features, critical)
     if caniuse is not None and json.dumps(fresh, sort_keys=True) != json.dumps(cands_doc['candidates'], sort_keys=True):
@@ -145,6 +166,10 @@ def main() -> int:
         if t['candidate_id'] in seen:
             errs.append(f'triage: {t["candidate_id"]} is triaged twice')
         seen[t['candidate_id']] = t
+        reason = ' '.join(t['reason'].split())
+        if VAGUE_REASON.match(reason) or len(reason) < MIN_REASON:
+            errs.append(f'triage: {t["candidate_id"]} reason "{reason[:60]}" is too vague: say what was checked (the '
+                        'screenshots compared, the cause, what the other engines show)')
     for cid in cands:
         if cid not in seen:
             errs.append(f'triage: candidate {cid} is missing')

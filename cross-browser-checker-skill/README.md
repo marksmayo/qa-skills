@@ -10,8 +10,10 @@ where they behave differently:
   undecoded images, each with screenshots and messages from both sides.
 - **Repetition**: every check runs three times per engine; only differences that hold in every run of
   one engine and none of the reference's count. The rest are listed as flaky.
-- **Noise handled**: font metrics, native controls, knock-on box changes and cumulative drift down
-  a long page are dismissed automatically, with reasons; pages are scrolled before the full-page
+- **Noise handled**: font metrics, native controls (judged apart from a move), line-wrap cascades (a
+  nav row whose last links wrap in one engine), knock-on box changes, cumulative drift down a long
+  page and ink measured on boxes of different shape are dismissed automatically, with reasons; a
+  shared component's difference on several pages is one candidate; pages are scrolled before the full-page
   screenshot so lazy images and `content-visibility` sections aren't mistaken for missing content.
 - **Build limitations**: differences that match a known gap in Playwright's engine builds (no AVIF
   in WebKit on Windows, no H.264 in Playwright's Chromium) are marked and sent for review in the
@@ -23,7 +25,9 @@ where they behave differently:
   or Vite's default) with web-features and caniuse data, and linked to the runtime differences they
   explain. Tailwind class strings are checked for known non-baseline utilities, CSS-in-JS styles
   written in scripts (Emotion, MUI, styled-components) are read, newer JavaScript APIs (`structuredClone`,
-  `Object.groupBy`, `toSorted`, `Set` methods, ...) are matched, and built CSS is scanned when given.
+  `Object.groupBy`, `toSorted`, `Set` methods, ...) are matched, and built CSS is scanned when given
+  (or found beside a `next.config.*`, also in a subfolder). Tests, test folders (unless they hold a
+  package manifest) and Node-only scripts are left out: they don't ship to browsers.
 - **Static only** works without browsers: `compare_engines.py --static-only`, and the report is
   `run_status: "not_run"` with an `inconclusive` verdict.
 - **Honest about failed captures**: pages are captured with the site's CSP bypassed (the capture

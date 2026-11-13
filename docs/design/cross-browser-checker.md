@@ -305,3 +305,43 @@ Where the build differs from the design above, and what the example showed.
   - SKILL.md describes capturing apps behind sign-in with a test-account `storage_state` loaded by the
     shared harness (never committed or recorded). The example's capture and feature scan are
     unchanged: rerunning `feature_scan.py` on `travel-site/` gives the same `features.json`.
+- **v1.3.0** (a pnpm monorepo: a fixture site rendered by a dependency-free Node server from template
+  literals, nine pages with a 23-link inline nav, and a Next.js app kept in a subfolder):
+  - *Line-wrap cascades*: WebKit's wider system font wrapped the last links of the nav row, and each
+    moved link became a candidate on every page (72 of 116, one cause). `compare_engines.py` now finds
+    rows (children of one parent on one line) whose items keep their order but wrap onto another line
+    in the other engine, with no item resized beyond font metrics (native controls excepted), and
+    dismisses the whole row and anything inside its items that moved with them as one line wrap. A
+    layout difference of one element signature on several pages is now one candidate (`pages`, reach
+    1, 2 or 3+, as the rubric always said; reach was fixed at 1).
+  - *Native controls that also moved* stayed candidates. A control's size change is now judged apart
+    from its move: the box is reported as a move only (`native_size`), which the wrap, drift and
+    consequence rules then judge. The "moved because something above it changed" rule had an
+    operator-precedence slip that could pick a cause below the element and then keep it; it now looks
+    only above.
+  - *Ink on reshaped boxes*: an inline label that wrapped onto two lines, and a list box drawn at
+    another size, read as content not rendered. Ink is now compared only between boxes of comparable
+    shape (line boxes from `getClientRects`, recorded by new captures as `lines`, or an area change
+    under twofold); otherwise the candidate is dismissed with that reason. The example's date input
+    (a planted, real ink loss with a comparable box) is still found.
+  - *Feature scan shipped tests and CLIs*: `tests/*.e2e.ts` suites and a Node benchmark script were
+    scanned as shipped code, and the validator then forced their known false positives into the
+    report. The walk now skips `*.e2e.*` and `*.cy.*` files, test directories (`e2e`, `test`,
+    `tests`, `spec`, `specs`) that hold no package manifest (the shared convention: a workspace
+    package named `e2e` is product code), and Node-only scripts (node shebang, `node:` or Node
+    built-in imports), whose inline `<script>`/`<style>` blocks are still scanned when they render
+    pages; `features.json` lists them under `skipped`.
+  - *Nested Next.js*: built CSS is looked for beside every `next.config.*` up to three levels down,
+    not only at `<repo>/.next/static/css`.
+  - *Zero candidates*: a comparison with nothing at all to report writes `self_check` (element boxes
+    compared and how many were identical) for the agent to confirm by eye.
+  - *Validator ergonomics*: `--write-summary` fills placeholders for the computed headline fields
+    before the schema check, so a draft may omit them; triage reasons are checked for vagueness (under
+    25 characters, or only "false positive", "font metrics" and the like); a progress line is printed
+    before screenshots are decoded (a schema error already stopped before that). SKILL.md documents
+    `difference_id: null` for unpromoted entries, `evidence_completeness`, and that `checks.planned`
+    counts runs.
+  - *Action vocabulary*: `capture.py` checks every state step before a browser starts and accepts both
+    `{"fill": sel, "value": v}` (the harness's) and `{"fill": [sel, v]}` (the crash hunter's probe form).
+  - The example's capture is unchanged; `candidates.json` was regenerated from it (each candidate gains
+    `pages`; the candidates, flaky list and 42 automatic dismissals are otherwise the same).
