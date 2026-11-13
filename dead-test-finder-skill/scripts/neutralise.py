@@ -363,7 +363,7 @@ def run_test(defn: dict, work: Path, run_dir: Path, label: str, prefix: str, ext
     if defn['lang'] == 'python':
         args = ['--preset', 'pytest', '--tests', rel + '::' + defn['run_id'].split('::', 1)[1]]
     else:
-        args = ['--preset', 'vitest', '--tests', rel]
+        args = ['--preset', 'node-test' if defn.get('framework') == 'node-test' else 'vitest', '--tests', rel]
     runs_file = run_dir / 'runs.json'
     before = {r['id'] for r in json.loads(runs_file.read_text(encoding='utf-8'))['runs']} if runs_file.exists() else set()
     with (guard.around(f'run_tests.py {" ".join(args)}') if guard else contextlib.nullcontext()):
