@@ -59,11 +59,12 @@ Go (go.mod and *.go, read with comment- and string-aware patterns, never compile
 Only _test.go files are Go tests. A command is also reached when a _test.go file of its package
 names the variable holding it, and a package by its own _test.go files.
 
-vendor/, third_party/ and bundled copies of other projects (a directory with its own licence whose
-manifest names another repository than the root's, such as an embedded driver) are skipped and named
-in notes. `language_coverage` records the dominant source language and whether it is read; when it is
-not (or only in part, as Rust), a WARNING goes to stderr and notes, and the exit status is 3 for a
-language not read at all: the list then covers incidental files only.
+Languages are counted by the shared lang_census.py. Its excluded trees (vendor/, third_party/, header
+trees, bundles, submodules, embedded third-party packages) and bundled copies of other projects (a
+directory with its own licence whose manifest names another repository than the root's) are skipped
+and named in notes. `language_coverage` is the census's coverage block: when the dominant language is
+not read (status unsupported_dominant), a WARNING goes to stderr and notes and the exit status is 3;
+a mostly-Rust repository (read in part) is partial_dominant, with a warning and exit 0.
 
 A CLI command or tool is reached when a test string literal names it (the command word, `prog cmd`,
 or the tool name); a package export when a test imports it by package name, or imports the source
@@ -86,7 +87,7 @@ import argparse, ast, json, os, re, sys
 from pathlib import Path, PurePosixPath
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import py_routes  # noqa: E402  (shared route reader)
+import lang_census, py_routes  # noqa: E402  (shared language census and route reader)
 
 PRUNE = {'.git', '.hg', '.svn', 'node_modules', '.venv', 'venv', 'env', '__pycache__', '.mypy_cache', '.pytest_cache',
          '.tox', '.nox', 'dist', 'build', 'out', '.next', '.nuxt', 'coverage', 'site-packages', '.turbo', '.cache',
@@ -889,13 +890,8 @@ def match_go(interfaces: list[dict], masked_by: dict[str, str]) -> None:
 
 
 # ---------------------------------------------------------------- what the readers cover
-READ_LANGS = {'python': 'read', 'javascript': 'read', 'typescript': 'read', 'go': 'read',
-              'rust': 'partial: Cargo binaries only, not their sub-commands'}
-LANG_OF = {'.py': 'python', '.js': 'javascript', '.jsx': 'javascript', '.mjs': 'javascript', '.cjs': 'javascript',
-           '.ts': 'typescript', '.tsx': 'typescript', '.mts': 'typescript', '.cts': 'typescript', '.go': 'go', '.rs': 'rust',
-           '.java': 'java', '.kt': 'kotlin', '.kts': 'kotlin', '.rb': 'ruby', '.php': 'php', '.cs': 'csharp',
-           '.swift': 'swift', '.m': 'objective-c', '.mm': 'objective-c', '.scala': 'scala', '.ex': 'elixir',
-           '.exs': 'elixir', '.dart': 'dart', '.c': 'c', '.h': 'c', '.cpp': 'cpp', '.cc': 'cpp', '.hpp': 'cpp'}
+READ_CENSUS = {'Python', 'JavaScript', 'TypeScript', 'Go'}     # lang_census names of the languages read
+PARTIAL_CENSUS = {'Rust': 'Cargo binaries only, not their sub-commands'}
 
 
 def repo_slug(url: str) -> tuple[str, str] | None:
@@ -944,28 +940,6 @@ def bundled_trees(root: Path, files: list[str]) -> dict[str, str]:
         if theirs and theirs[0] != own[0] and theirs[1] != own[1]:
             out[d] = f'its manifest names another repository ({"/".join(theirs)}) and it carries its own licence'
     return out
-
-
-def language_coverage(files: list[str]) -> dict:
-    counts: dict[str, int] = {}
-    for rel in files:
-        lang = LANG_OF.get(PurePosixPath(rel).suffix.lower())
-        if lang:
-            counts[lang] = counts.get(lang, 0) + 1
-    if not counts:
-        return {'dominant': None, 'counts': {}, 'status': 'no_source'}
-    dominant = max(counts, key=lambda k: (counts[k], k))
-    status = READ_LANGS.get(dominant, 'not_read')
-    res = {'dominant': dominant, 'counts': dict(sorted(counts.items(), key=lambda kv: -kv[1])),
-           'status': 'read' if status == 'read' else 'partial' if status.startswith('partial') else 'not_read'}
-    if res['status'] != 'read':
-        res['warning'] = (f"this repository is mostly {dominant} ({counts[dominant]} source files), which list_interfaces.py "
-                          + ('reads only in part (' + status.split(': ', 1)[1] + ')' if res['status'] == 'partial' else
-                             'does not read')
-                          + '. The interfaces below come from the other languages only and are NOT the product\'s interface '
-                          'list: map the ' + dominant + ' interfaces by hand (SKILL.md Step 4) or record interface coverage '
-                          'as not assessed.')
-    return res
 
 
 # ---------------------------------------------------------------- tests
@@ -1135,13 +1109,22 @@ def main(argv=None) -> int:
         ap.error('the repository path is required')
     root = args.repo.resolve()
     files = walk(root)
+    cen = lang_census.census(root)
     bundled = bundled_trees(root, files)
+    for e in cen['excluded']:
+        if e['source_files'] and not any(e['path'] == b or e['path'].startswith(b + '/') for b in bundled):
+            bundled[e['path']] = e['reason']
     if bundled:
         files = [f for f in files if not any(f.startswith(b + '/') for b in bundled)]
     py, notes, project = python_interfaces(root, files)
-    for b, why in bundled.items():
-        notes.append(f'{b}/ skipped as a bundled third-party tree: {why}; its interfaces are not the product\'s')
-    coverage = language_coverage(files)
+    for b, why in sorted(bundled.items()):
+        notes.append(f'{b}/ skipped as third-party or generated: {why}; its interfaces are not the product\'s')
+    coverage = lang_census.language_coverage(cen, READ_CENSUS, tool='list_interfaces.py',
+                                             what='list of the product\'s interfaces')
+    if coverage['status'] != 'unsupported_dominant' and coverage.get('dominant') in PARTIAL_CENSUS:
+        coverage['status'] = 'partial_dominant'
+        coverage['warning'] = (f'this repository is mostly {coverage["dominant"]}, which list_interfaces.py reads only '
+                               f'in part ({PARTIAL_CENSUS[coverage["dominant"]]}); map the rest by hand')
     if coverage.get('warning'):
         notes.append('WARNING: ' + coverage['warning'])
     manifests, progs = manifest_interfaces(root, files)
@@ -1200,7 +1183,7 @@ def main(argv=None) -> int:
           + (f' -> {args.out}' if args.out else ''), file=sys.stderr)
     if not args.out:
         sys.stdout.write(text)
-    return 3 if coverage['status'] == 'not_read' else 0
+    return 3 if coverage['status'] == 'unsupported_dominant' else 0
 
 
 SELF_TEST_FILES = {
@@ -1285,6 +1268,7 @@ GO_SELF_TEST_FILES = {
                                       ' "repository": {"type": "git", "url": "https://example.test/otherorg/berthkit.git"}}\n'),
     'drivers/berthkit/LICENSE': 'A permissive licence.\n',
     'drivers/berthkit/index.js': 'module.exports = {};\n',
+    **{f'drivers/ios/BerthAgent/PrivateHeaders/Berth{i}.h': '@interface Berth : NSObject\n@end\n' for i in range(12)},
 }
 
 
@@ -1356,7 +1340,8 @@ def self_test() -> int:
         want(not any(i['file'].startswith(('vendor/', 'drivers/berthkit/')) for i in res['interfaces']),
              'vendored and bundled third-party trees are not product interfaces')
         want(any('berthkit' in n for n in res['notes']), 'a skipped bundled tree is named in notes')
-        want(code == 0 and not res.get('language_coverage', {}).get('warning'), 'a Go repository is read: no language warning')
+        want(code == 0 and not res.get('language_coverage', {}).get('warning'),
+         'a Go repository is read: no language warning (a header-only driver tree is not counted)')
 
         # ---- a dominant language the script does not read: loud, machine-readable, distinct exit
         rb = tmp / 'rb'
@@ -1368,7 +1353,7 @@ def self_test() -> int:
         with contextlib.redirect_stderr(err):
             code = main([str(rb), '--out', str(out)])
         res = json.loads(out.read_text(encoding='utf-8'))
-        want(code == 3 and res.get('language_coverage', {}).get('dominant') == 'ruby'
+        want(code == 3 and (res.get('language_coverage', {}).get('dominant') or '').lower() == 'ruby'
              and 'WARNING' in err.getvalue() and any('ruby' in n.lower() for n in res['notes']),
              'an unread dominant language warns on stderr and in notes, sets language_coverage and exits 3')
     finally:
