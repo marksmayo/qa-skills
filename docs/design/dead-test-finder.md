@@ -195,7 +195,7 @@ Agreed with the user before the build.
 2. **Age at which an unticketed skip is stale?** 180 days.
 3. **May `apply: true` remove a stray `.only`?** Yes.
 
-## As built (v1.0.0 to v1.2.0)
+## As built (v1.0.0 to v1.3.0)
 
 Where the build differs from the design above, and what the example showed.
 
@@ -429,3 +429,44 @@ Where the build differs from the design above, and what the example showed.
     values, 2 lines) and the example validates.
   - Not done: following helpers imported from other modules for `no_assertion`; Vitest file
     filters for `it.each` cases (each run is still the whole file).
+- **v1.3.0, from a run on a pnpm monorepo whose product is itself a test runner** (Vitest in 15
+  packages, node:test scripts, and ~1,000 tests of the product's own DSL in `*.e2e.ts` files):
+  - **The repository was changed.** `collect_check.py --files` ran `vitest list --json <files>`;
+    Vitest's `--json` takes an optional path, so the first test file of each package was
+    overwritten with the listing (in a scratch copy, by luck). Vitest now gets
+    `--json=<file in the run directory>`, and every command the scripts start (list commands,
+    neutralisation runs, traced similarity sessions) runs inside `tree_guard.py`, which keeps the
+    test files it could touch, compares them (and `git status`) afterwards, puts them back and
+    stops the script (exit 3) if one changed.
+  - **Heads by origin.** The scanner took every `test`/`describe` call as a test. The product's
+    own `test()` (imported from its source and called inside Vitest tests to build fixtures) gave
+    five false P0 `.only` candidates and about 330 false definitions; local helpers named `test`
+    added more. A head now has to be a global or come from a test framework (directly or through a
+    fixtures module that extends one); a local declaration hides it in its scope only. A file whose
+    `test` comes from a package and that imports no framework is the repository's own runner:
+    `framework: custom`, scanned when `--test-files` names its files, never listed.
+  - **False positives.** `async_not_awaited` (49 of 49 false): a held expectation awaited later
+    and `Promise.all([...])` elements now count as settled. `no_assertion`: `expect` aliases and
+    assertion helpers (same file, two deep, and imported) count. Typed array literals with arrow
+    types, guarded `if (...) return;`, object keys in duplicate tokens, cleanup catches, and the
+    product's own `expect` in tautologies are handled. On the same repository the candidates went
+    from 432 to 120 (no `.only`, no `async_not_awaited`).
+  - **Collection.** node:test and custom runners are `no_list_command` (their tests not assessed,
+    not "not collected"); the runner is read from dependencies, scripts and the workspace root;
+    `--split-on-error` lists around a file the runner can't list; Vitest's doubly escaped quotes
+    are undone; conditionally skipped tests missing from a list are not assessed. Evidence
+    completeness now counts assessed tests, not packages that ran (one package that listed 29% of
+    the suite had scored 0.875).
+  - **Neutralisation targets.** Names defined in test code (a test file, or a helper, fixture or
+    mock under a test directory) are never targets: neutralising an assertion helper had given a
+    bogus `passed_neutralised`. A class gets a hint. Test directories follow the manifest rule (a
+    directory named `e2e` holding a product's package manifest is product code).
+  - **`check_skips.py`** decoded `git blame` with the console code page and crashed on a
+    non-ASCII author name on Windows; it now decodes UTF-8.
+  - **Tested** with `scripts/self_test.py` (a synthetic testing library with its own `test()`,
+    a dogfood suite, node:test scripts and a Python product package in `e2e/`; collect_check with
+    a stand-in runner that overwrites a test file, and one that cannot list one file) and with a
+    real `vitest list` (5.1) against a copy of the example client. The example's candidates are
+    unchanged and it validates.
+  - Not done: a list command for a repository's own runner (`e2e list --reporter json` and the
+    like have no common format), and a Vitest JSON run report as collection evidence.

@@ -1,7 +1,7 @@
 ---
 name: dead-test-finder
 description: Find tests that give false assurance - tests the framework never collects, tests that pass whatever the code does, tests that only check their own mocks, un-awaited async assertions, swallowed failures, duplicates, and skips whose reason has gone - and prove the important ones with real runs. Never-runs is confirmed by the framework's own collect output; can't-fail by neutralising the code under test in a scratch copy and seeing the test still pass; duplicates by identical coverage and values. Each finding gets a patch, and every strengthening patch is proved to pass on the code and fail when it's neutralised. Never deletes or merges tests, never commits, and never claims a suite has "no dead tests".
-version: 1.2.0
+version: 1.3.0
 ---
 
 # Dead test finder
@@ -68,6 +68,12 @@ Output:
     name.
   - Every patched file is restored afterwards.
   - The tree hash is checked before and after.
+  - Every list or test command the scripts start runs inside a guard (`tree_guard.py`): the test
+    files it could touch are kept byte for byte and compared afterwards (with `git status` of the
+    directory). A command that changed one (an option that took the next argument as its output
+    file, as `vitest list --json <file>` does) has them put back, and the script stops with exit
+    code 3 and records nothing. Never pass a runner an option with an optional value followed by
+    a path: write `--json=<file in the run directory>`.
 - **No "no dead tests" claim.** The report lists what was scanned, collected and neutralised,
   and what couldn't be (no collect command, services needed). The validator rejects "no dead
   tests", "the suite is healthy" and similar.
@@ -87,9 +93,10 @@ Output:
 ## Step 1: Scan and collect
 
 ```bash
-python scripts/scan_tests.py <repo> --out <run>/candidates.json
+python scripts/scan_tests.py <repo> --out <run>/candidates.json [--test-files "*.e2e.ts" ...]
 python scripts/collect_check.py <repo> --candidates <run>/candidates.json --run-dir <run> [--cwd client=<copy with node_modules>] \
-    [--env DATABASE_URL=postgresql://fake:fake@127.0.0.1:5432/fake] [--scope candidates | --files <file> ...] [--reuse]
+    [--env DATABASE_URL=postgresql://fake:fake@127.0.0.1:5432/fake] [--scope candidates | --files <file> ...] [--reuse] \
+    [--split-on-error [MAX_RUNS]]
 ```
 
 `scan_tests.py` supports **Python and JavaScript/TypeScript test suites only**. When a repository's
@@ -109,6 +116,25 @@ run as a real analysis; report that the primary language was not analysed and st
   (`import { test as setup }`). Names keep their quotes and apostrophes. A name from `it.each`,
   `describe.each`, a template literal with `${...}` or a variable is parametrised: the definition
   carries a `name_pattern` that the expanded names the runner lists are matched against.
+- **Where `test` comes from.** `test`/`it`/`describe` is a test head only when it is a global,
+  comes from a test framework (`vitest`, `@jest/globals`, `@playwright/test`, `node:test`, `mocha`,
+  `bun:test` ...), or from a relative fixtures module that extends or re-exports one
+  (`export const test = base.extend(...)`). Imported from the product itself (a testing library's
+  own source exporting `test()` and `describe()`, called inside Vitest tests to build fixtures:
+  `test.only('focused', noop)` there is data, not a focused test), or declared locally (a helper
+  `const test = (id) => ...`, hidden in its own scope only), it is not a test. A file that imports
+  its `test` from a package and no framework at all is a suite of the repository's own runner (a
+  testing framework running its dogfood suite on itself): its tests are `framework: custom` with
+  the `runner_module`, and collect_check has no list command for them. Such suites usually use
+  their own file names: add them with `--test-files "*.e2e.ts"` (repeatable; a name or a
+  repo-relative pattern). Tests importing from `node:test` are `framework: node-test`. A
+  definition skipped conditionally (`it.skipIf(cond)`, or inside such a block) carries
+  `skip_condition`.
+- **Test directories.** A directory named `e2e`, `test`, `tests`, `spec` or `testing` holds tests
+  only when it has no package manifest (`package.json`, `pyproject.toml`, `Cargo.toml` ...) that
+  makes it a product package; a manifest that publishes nothing and depends on a test runner (an
+  `apps/x/e2e/` Playwright package) is still a test layout. So `packages/e2e/src/` of a product
+  named e2e is product code.
 - Playwright: a file that imports `@playwright/test` or sits in the config's `testDir` is marked
   `framework: playwright`, and setup projects (`auth.setup.ts`) are scanned too. A runtime
   `test.skip(condition, reason)` or `test.fixme(condition)` inside a test is a conditional skip of
@@ -123,14 +149,14 @@ It flags these candidates:
 | Candidate | Rule |
 |---|---|
 | `never_runs` | File outside `python_files` (read from the pytest config), class outside `python_classes`, `.only`, a module-level `pytest.skip(..., allow_module_level=True)` that always runs (one candidate listing every test in the module) |
-| `no_assertion` | No `assert`, assertion call, `expect` (also `expect.soft`, `expect.poll`, `expect.assertions`, helpers named `expectX`/`assertX`/`verifyX`) or `pytest.raises`. Python: a call to a function or method of the same file that asserts (`_test_shape(result)`, `self._check_row(row)`, two calls deep) counts as an assertion. When the test only uses Testing Library `getBy*`/`findBy*` queries, the candidate says so: they throw when nothing matches, so the test checks only that elements exist |
-| `tautology` | `assert True`, `x == x`, `expect(v).toBe(v)` (not `expect(f(x)).toBe(f(x))`, a determinism check) |
-| `unreached_assertion` | Assertions inside a loop over a possibly empty iterable, only inside `except` (the test has no other assertion), or after `return`. A Python loop is not flagged when something outside it fails on an empty iterable: an assertion on its length (`assert len(rows) == 3`, also split over several lines), its truthiness or value (`assert rows`), an indexed assertion (`assert rows[0] == ...`), an assertion helper given it (`_verify_shape(rows)`), or a name bound only to a non-empty literal (`expected = ["a", "b"]`). JavaScript: every assertion inside a `for ... of`/`.forEach`/`.map` over something that isn't an array literal (or a `const` holding one), only inside `catch`, or after a top-level `return` |
-| `swallowed_failure` | An `except` that can catch the assertion (bare, `AssertionError`, `Exception` or `BaseException`, alone or in a tuple) around it, and doesn't re-raise, fail (`pytest.fail`, `self.fail`), assert, or keep the error for an assertion after the `try`. JavaScript: a `catch` around an `expect` that neither rethrows nor fails, an empty `catch {}`, and an empty `.catch(() => {})` (not on a best-effort `waitFor...()`). `except FileNotFoundError: pytest.skip(...)` is not one |
-| `async_not_awaited` | `expect(...).resolves/.rejects` neither awaited nor returned; a `done` callback never called |
+| `no_assertion` | No `assert`, assertion call, `expect` (also `expect.soft`, `expect.poll`, `expect.assertions`, helpers named `expectX`/`assertX`/`verifyX`) or `pytest.raises`. Python: a call to a function or method of the same file that asserts (`_test_shape(result)`, `self._check_row(row)`, two calls deep) counts as an assertion. JavaScript: `expect` or `assert` imported under another name (`import { expect as vexpect } from 'vitest'`) is an assertion, and so is a call to a function that asserts, defined in the same file (`function failsWith(p, code) { return expect(p).rejects... }`, two calls deep) or imported from a relative or alias module (`import { expectRow } from './helpers/checks'`). When the test only uses Testing Library `getBy*`/`findBy*` queries, the candidate says so: they throw when nothing matches, so the test checks only that elements exist |
+| `tautology` | `assert True`, `x == x`, `expect(v).toBe(v)` (not `expect(f(x)).toBe(f(x))`, a determinism check, and not an `expect` the product itself exports, whose matchers are the code under test) |
+| `unreached_assertion` | Assertions inside a loop over a possibly empty iterable, only inside `except` (the test has no other assertion), or after `return`. A Python loop is not flagged when something outside it fails on an empty iterable: an assertion on its length (`assert len(rows) == 3`, also split over several lines), its truthiness or value (`assert rows`), an indexed assertion (`assert rows[0] == ...`), an assertion helper given it (`_verify_shape(rows)`), or a name bound only to a non-empty literal (`expected = ["a", "b"]`). JavaScript: every assertion inside a `for ... of`/`.forEach`/`.map` over something that isn't an array literal (or a `const` holding one, also with a type annotation such as `: [() => void, () => void][]`), only inside `catch`, or after a top-level `return` (a guarded `if (x) return;` is not one) |
+| `swallowed_failure` | An `except` that can catch the assertion (bare, `AssertionError`, `Exception` or `BaseException`, alone or in a tuple) around it, and doesn't re-raise, fail (`pytest.fail`, `self.fail`), assert, or keep the error for an assertion after the `try`. JavaScript: a `catch` around an `expect` that neither rethrows nor fails, an empty `catch {}`, and an empty `.catch(() => {})` (not on a best-effort `waitFor...()`). Cleanup may fail quietly: an empty catch inside `finally`, around nothing but cleanup calls (`rm`, `close`, `kill`, `dispose` ...), or in a method of a fake object the test builds is not one. `except FileNotFoundError: pytest.skip(...)` is not one |
+| `async_not_awaited` | `expect(...).resolves/.rejects` neither awaited nor returned; a `done` callback never called. Held in a name that is awaited or returned later (`const assertion = expect(p).rejects...; await vi.advanceTimersByTimeAsync(); await assertion`), an element of an awaited `Promise.all([...])`, or passed to another call, it is settled |
 | `mock_only` | The test patches a function, then asserts on that same function. JavaScript: every product function the test calls comes from a module it mocks (`vi.mock`/`jest.mock`), and every `expect` is on a mock |
 | `skipped` | `skip`, `skipif`, a non-strict `xfail` (on the test or its class), a runtime `pytest.skip()` or `self.skipTest()`, `it.skip`, `describe.skip`, `todo`, `test.fixme`, `it.skipIf(cond)` (conditional), a runtime Playwright `test.skip(cond, reason)` (conditional, on its test or block); at module level `pytestmark = pytest.mark.skip/skipif/xfail`, `pytest.importorskip(...)` and a guarded `pytest.skip(..., allow_module_level=True)` (one candidate listing every test in the module). Each with the reason, any ticket key, and whether it is conditional: a runtime skip inside an `if`, `except`, `try`, loop or short-circuit expression, or after an early return, is conditional, with that guard as its condition |
-| `duplicate` | Pairs within one package only (two services that each keep a copy of the same tests are each testing their own code). Python: normalised AST similarity ≥ 0.9 and the same literal values; same-shape tests with different values are input cases, counted as `summary.near_duplicates` with a note (worth parametrising), not candidates. JavaScript: test bodies identical apart from variable names (calls and literal values kept, at least 40 tokens), because no per-test coverage run can tell a JavaScript duplicate from an overlap later. Pairs are pruned first with bounds that never drop a pair at or above the threshold (length, token counts, longest common subsequence), so the result is the same as comparing every pair, in seconds rather than minutes on a large suite |
+| `duplicate` | Pairs within one package only (two services that each keep a copy of the same tests are each testing their own code). Python: normalised AST similarity ≥ 0.9 and the same literal values; same-shape tests with different values are input cases, counted as `summary.near_duplicates` with a note (worth parametrising), not candidates. JavaScript: test bodies identical apart from variable names (calls, object keys and literal values kept, at least 40 tokens), because no per-test coverage run can tell a JavaScript duplicate from an overlap later. Pairs are pruned first with bounds that never drop a pair at or above the threshold (length, token counts, longest common subsequence), so the result is the same as comparing every pair, in seconds rather than minutes on a large suite |
 
 `collect_check.py` runs each framework's list command and keeps the raw output. Every
 definition that isn't listed is `not_collected` (a parametrised one is matched by its name
@@ -139,6 +165,22 @@ pattern).
 - **Playwright** specs are listed with `npx playwright test --list --reporter=json` (no browser
   starts), never with Vitest or Jest, which exclude `e2e/` and would report every spec as not
   collected.
+- **Vitest** is listed with `npx vitest list --json=<file in the run directory>`: its `--json`
+  takes an optional path, and `--json <test file>` overwrites the test file with the listing.
+  Vitest escapes a double quote in a name a second time in that listing; names are compared with
+  the escapes undone. The runner comes from the package's dependencies, then its scripts, then the
+  nearest workspace root's.
+- **No list command.** `node:test`, a repository's own runner (`framework: custom`) and a package
+  whose `package.json` names no runner are recorded as `no_list_command`; their tests are
+  `not_assessed` with that reason, never `not_collected`. Confirm a never-runs finding there by
+  reading the runner's config, and say so.
+- **One file that can't be listed.** A runner can fail its whole list on one file (a static check
+  of options the config doesn't define) although a run collects it. `--split-on-error` lists such
+  a package again in halves (at most 40 extra commands by default), so the other files are listed:
+  the package is `partial` with `errored_files`, and only the tests in those files are
+  `not_assessed`.
+- **Conditional skips.** A test skipped by `skipIf`/`runIf` that is missing from the list is
+  `not_assessed`: a runner may leave it out on this machine only (a Windows-only skip on Windows).
 - **Environment.** Setup files often read configuration at import (`vitest.setup.ts` reading
   `DATABASE_URL`). Pass fake values with `--env K=V [K=V ...]`, never real credentials. When
   packages need different values (two services that each have a top-level `shared` package and
@@ -168,7 +210,11 @@ python scripts/neutralise.py --repo <repo> --candidates <run>/candidates.json --
 ```
 
 Run this for every `no_assertion`, `tautology`, `unreached_assertion`, `swallowed_failure`,
-`async_not_awaited` and `mock_only` candidate, all in one invocation where you can.
+`async_not_awaited` and `mock_only` candidate, all in one invocation where you can. First read
+the candidates and dismiss the scanner's mistakes (a helper it didn't follow, a name that is not
+the test framework's) with a reason and a basis: neutralising them costs runs and teaches
+nothing. When most candidates of a rule turn out to be the same mistake, sample a few, dismiss the
+rest by the shared reason, and report the scanner gap in the limitations.
 
 - **One copy per invocation.** Each package (the repo root too) is copied once, outside the
   repo, without VCS data, caches, virtualenvs, `node_modules` or the run directory, and every test
@@ -182,7 +228,11 @@ Run this for every `no_assertion`, `tautology`, `unreached_assertion`, `swallowe
 - **JavaScript targets** are the names the test imports from relative or alias paths (`@/lib/x`,
   read from tsconfig `paths` or a vite/vitest `alias`) and calls or renders as JSX. Each is
   followed through default imports and re-exports to its function (`function`, `const` arrow,
-  `export default function`). Mocked modules and test-library helpers are never targets.
+  `export default function`). Mocked modules and test-library helpers are never targets, and
+  neither is anything defined in test code (a test file, or a helper, fixture or mock under a test
+  directory, `__mocks__/` or `test-utils/`): neutralising an assertion helper makes every test that
+  uses it pass. Such a target is reported with that note; a class is reported as a class (name
+  the function under test with `--target`).
   `--env`, `--npm-script test` (the repo's own runner flags and env) and `--runner-args` are
   passed to `run_tests.py`. Each run is the whole test file (Vitest start-up dominates, about
   10 s a run), so a test costs one run plus two per target.

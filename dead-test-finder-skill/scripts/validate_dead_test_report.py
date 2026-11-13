@@ -113,8 +113,11 @@ def fill(rep: dict) -> None:
 
 
 def completeness(rep: dict, ev: dict) -> float:
-    pk = ev['collection']['packages']
-    collected = len([p for p in pk if p['status'] == 'ran']) / len(pk) if pk else 1.0
+    # per test, not per package: a package whose list failed for most of its tests (or a runner with no list command)
+    # leaves those tests not_assessed, and they count against completeness however many packages did list
+    col = ev['collection']
+    defined = col.get('defined') or 0
+    collected = (defined - len(col.get('not_assessed', []))) / defined if defined else 1.0
     neut_cands = [c for c in ev['candidates']['candidates']
                   if c['category'] in ('no_assertion', 'tautology', 'unreached_assertion', 'swallowed_failure', 'async_not_awaited', 'mock_only')]
     done = {def_id(ev, r['test_id']) for r in ev['neutralisations']['results'] if not r.get('patch') and r['outcome'] in NEUTRALISED}

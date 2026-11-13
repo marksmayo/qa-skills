@@ -29,6 +29,63 @@ PY, JS = RULES['python'], RULES['javascript']
 ASSERT_CALL = re.compile(PY['assert_calls'])
 KEY = re.compile(RULES['ticket_key'])
 TEST_DIR_PARTS = {'tests', 'test', '__tests__', 'spec', 'e2e', 'testing'}
+# Directories that hold only test support code wherever they sit (helpers/ and fixtures/ count only under a test dir).
+SUPPORT_DIR_PARTS = {'__mocks__', '__fixtures__', 'test-utils', 'test_utils', 'testutils', 'test-helpers', 'test_helpers'}
+MANIFESTS = ('package.json', 'pyproject.toml', 'setup.py', 'setup.cfg', 'Cargo.toml', 'go.mod', 'pom.xml', 'build.gradle',
+             'build.gradle.kts', 'composer.json', 'Gemfile', 'mix.exs', 'pubspec.yaml')
+TEST_RUNNER_DEPS = ('@playwright/test', 'playwright', 'cypress', 'vitest', 'jest', 'mocha', 'webdriverio', '@wdio/cli',
+                    'detox', 'testcafe', 'pytest')
+_TEST_DIR: dict[str, bool] = {}
+
+
+def test_layout_manifest(d: Path) -> bool:
+    """A directory with a manifest that is still a test layout: a package.json that publishes nothing (no main, module,
+    exports, bin or types) and depends on a test runner (an apps/x/e2e/ Playwright package of spec files)."""
+    try:
+        pj = json.loads((d / 'package.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return False
+    if any(k in pj for k in ('main', 'module', 'exports', 'bin', 'types', 'typings')):
+        return False
+    deps = {**pj.get('dependencies', {}), **pj.get('devDependencies', {})}
+    return any(k in deps for k in TEST_RUNNER_DEPS)
+
+
+def is_test_dir(root: Path, rel_dir: str) -> bool:
+    """A directory named e2e, test, tests, spec, __tests__ or testing is test code only when it holds no package
+    manifest that makes it a product package (packages/e2e/ with a package.json that publishes the product), or when the
+    manifest is a test layout's (see test_layout_manifest). The same rule as the shared diff_scope.py classification."""
+    name = PurePosixPath(rel_dir).name
+    if name not in TEST_DIR_PARTS:
+        return False
+    key = f'{root}|{rel_dir}'
+    if key not in _TEST_DIR:
+        d = root / rel_dir
+        has = [m for m in MANIFESTS if (d / m).is_file()]
+        _TEST_DIR[key] = not has or (has == ['package.json'] and test_layout_manifest(d))
+    return _TEST_DIR[key]
+
+
+def in_test_dir(root: Path, rel: str, parts: frozenset | set = frozenset()) -> bool:
+    """rel (a file, repo-relative) sits under a test directory by the rule above; a directory named in parts
+    (__mocks__, test-utils) counts too."""
+    dirs = PurePosixPath(rel).parts[:-1]
+    for i, part in enumerate(dirs):
+        if part in TEST_DIR_PARTS:
+            if is_test_dir(root, '/'.join(dirs[:i + 1])):
+                return True
+        elif part in parts:
+            return True
+    return False
+
+
+def is_test_support(root: Path, rel: str) -> bool:
+    """A test file or test support module (a helper, fixture or mock): never the code under test."""
+    name = PurePosixPath(rel).name
+    if any(fnmatch.fnmatch(name, pat) for pat in JS['test_files']) or re.search(r'\.(test|spec|e2e)\.[cm]?[jt]sx?$', name) \
+            or re.match(r'(test_.*|.*_test|conftest)\.py$', name):
+        return True
+    return in_test_dir(root, rel, SUPPORT_DIR_PARTS)
 
 # scan_tests can parse only Python and JavaScript/TypeScript test suites. We recognise other common
 # languages purely to warn when the repository's dominant language is one we cannot analyse, so that a
@@ -896,6 +953,333 @@ def is_product(spec: str, aliases: list[tuple[str, list[str]]]) -> bool:
     return bool(PRODUCT_SPEC.match(spec)) or any(spec.startswith(a) for a, _ in aliases if a)
 
 
+JS_EXT = ('.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts')
+GENERIC = r'(?:<(?:[^<>]|<(?:[^<>]|<[^<>]*>)*>)*>)'      # type parameters, nested two deep (<T extends Record<K, V>>)
+# an optional type annotation before '=': it may hold arrow types (`: [() => void, () => void][] =`)
+ANNOT = r'(?::(?:=>|[^=;])+?)?'
+DECL = r'(?:\bexport\s+)?(?:\bdefault\s+)?(?:\basync\s+)?\bfunction\s*\*?\s*{name}\s*' + GENERIC + r'?\s*\('
+ARROW = r'\b(?:const|let|var)\s+{name}\s*' + ANNOT + r'=\s*(?:async\s*)?(?:' + GENERIC + r'\s*)?(?=\(|[A-Za-z_$][\w$]*\s*=>)'
+# Modules whose test/it/describe are a test framework's: a head imported from anywhere else is the product's own API
+# (a testing framework's source that exports test() and describe()), unless the file imports no framework at all.
+FRAMEWORK_MODULES = re.compile(r'^(?:vitest|@vitest/[\w.-]+|jest|@jest/globals|@playwright/test|playwright/test|'
+                               r'@playwright/experimental-ct-[\w-]+|node:test|mocha|bun:test|ava|uvu|tap|cypress)$')
+
+
+def resolve_module(from_file: Path, spec: str, pkg_dir: Path) -> Path | None:
+    """The file a relative or alias import names: tsconfig/jsconfig `paths` and vite/vitest `alias` of the package."""
+    bases = []
+    if spec.startswith('.'):
+        bases.append(from_file.parent / spec)
+    else:
+        for pref, targets in ts_aliases(pkg_dir):
+            if pref and spec.startswith(pref):
+                bases += [pkg_dir / t / spec[len(pref):] for t in targets]
+                break
+    for base in bases:
+        stem = base.with_suffix('') if base.suffix in ('.js', '.jsx', '.mjs', '.cjs') else None  # './x.js' for x.ts
+        for cand in [base] + [Path(str(base) + e) for e in JS_EXT] + [base / f'index{e}' for e in JS_EXT] + \
+                ([Path(str(stem) + e) for e in JS_EXT] if stem is not None else []):
+            if cand.is_file():
+                return cand.resolve()
+    return None
+
+
+def body_after_params(code: str, close: int) -> int | None:
+    """Index of the '{' opening a function body after the parameter list closing at close (skips a return type)."""
+    j = close + 1
+    angle = 0
+    while j < len(code):
+        c = code[j]
+        if c == '<':
+            angle += 1
+        elif c == '>' and angle:
+            angle -= 1
+        elif c == '{' and angle == 0:
+            k = j - 1
+            while k > close and code[k].isspace():
+                k -= 1
+            if code[k] not in ':|&,<(':
+                return j
+            j = match_code(code, j)                       # an object type in the return type
+        elif c in ';=' and angle == 0 and not code.startswith('=>', j):
+            return None
+        j += 1
+    return None
+
+
+def expr_end(code: str, k: int) -> int:
+    """End of an expression starting at k: a ; or , or closing bracket at depth 0, or a line end that doesn't continue it."""
+    depth, e = 0, k
+    while e < len(code):
+        c = code[e]
+        if c in '([{':
+            depth += 1
+        elif c in ')]}':
+            if depth == 0:
+                break
+            depth -= 1
+        elif depth == 0 and c in ';,':
+            break
+        elif depth == 0 and c == '\n':
+            rest = code[e:].lstrip()
+            prev = code[:e].rstrip()
+            if not (rest[:1] in tuple('.?:&|+-*/') or prev[-1:] in tuple('=?:&|+-*/,(')):
+                break
+        e += 1
+    return e
+
+
+def function_spans(code: str) -> dict[str, list[tuple[int, int]]]:
+    """name -> [(start, end)] of the bodies of named functions and arrow functions bound to a name, anywhere in code."""
+    out: dict[str, list[tuple[int, int]]] = {}
+    for m in re.finditer(r'\bfunction\s*\*?\s*([A-Za-z_$][\w$]*)\s*' + GENERIC + r'?\s*\(', code):
+        open_i = body_after_params(code, match_code(code, m.end() - 1))
+        if open_i is not None:
+            out.setdefault(m.group(1), []).append((open_i, match_code(code, open_i)))
+    for m in re.finditer(ARROW.replace('{name}', r'([A-Za-z_$][\w$]*)'), code):
+        j = m.end()
+        if code[j] == '(':
+            j = match_code(code, j) + 1
+        arrow = code.find('=>', j)
+        between = code[j:arrow].strip() if arrow >= 0 else ''
+        if arrow < 0 or (between and not between.startswith(':')) or ';' in between:
+            continue                                       # `const x = (await y())` and a later arrow: not a function
+        k = arrow + 2
+        while k < len(code) and code[k].isspace():
+            k += 1
+        end = match_code(code, k) if k < len(code) and code[k] == '{' else expr_end(code, k)
+        out.setdefault(m.group(1), []).append((k, end))
+    return out
+
+
+def assert_rx_for(names: set[str]) -> re.Pattern:
+    """ASSERT_JS plus calls of the given names: aliases of expect/assert (`expect as vexpect`) and assertion helpers."""
+    if not names:
+        return ASSERT_JS
+    alt = '|'.join(re.escape(n) for n in sorted(names, key=len, reverse=True))
+    return re.compile(JS['assert_pattern'] + r'|(?<![\w$.])(?:' + alt + r')(?:\s*\.\s*(?:soft|poll|not))?\s*[(`<]')
+
+
+def expect_aliases(imports: dict[str, tuple[str, str]]) -> set[str]:
+    """Local names of an imported expect or assert under another name (`import { expect as vexpect } from 'vitest'`)."""
+    return {local for local, (spec, orig) in imports.items() if orig in ('expect', 'assert') and local != orig}
+
+
+def assert_helpers(code: str, names: set[str], spans: dict | None = None) -> set[str]:
+    """Names of the functions defined in code whose bodies assert, directly or through another such function (two calls
+    deep): `function failsWith(p, code) { ... expect(...) }`, `const check = (x) => expect(x)...`. names: the assertion
+    names already known (expect aliases, imported helpers)."""
+    spans = function_spans(code) if spans is None else spans
+    found: set[str] = set()
+    for _ in range(3):
+        cur = assert_rx_for(names | found)
+        new = {n for n, sp in spans.items() if n not in found and any(cur.search(code[a:b]) for a, b in sp)}
+        if not new:
+            break
+        found |= new
+    return found
+
+
+_MODULES: dict[str, dict] = {}
+
+
+def module_info(path: Path) -> dict:
+    """text, masked code, literals, imports and assertion helpers of a module (read once)."""
+    key = str(path)
+    if key not in _MODULES:
+        try:
+            text = path.read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            text = ''
+        code, lits = js_lex(text)
+        imports = js_imports(text, code, lits)
+        info = {'text': text, 'code': code, 'lits': lits, 'imports': imports}
+        info['helpers'] = assert_helpers(code, expect_aliases(imports)) if text else set()
+        _MODULES[key] = info
+    return _MODULES[key]
+
+
+def spec_origin(from_file: Path, spec: str, name: str, pkg_dir: Path, depth: int = 0) -> tuple[str, str]:
+    """Where an imported test head comes from: ('framework', spec) for a test framework (also through a relative fixtures
+    module that extends or re-exports one), ('bare', spec) for another package (a repository's own runner, or the
+    product's package), ('product', spec) for a relative or alias module that defines it itself."""
+    if FRAMEWORK_MODULES.match(spec):
+        return 'framework', spec
+    if not is_product(spec, ts_aliases(pkg_dir)):
+        return 'bare', spec
+    target = resolve_module(from_file, spec, pkg_dir) if depth < 4 else None
+    if target is None:
+        return 'product', spec
+    mi = module_info(target)
+    code, text, lits, imports = mi['code'], mi['text'], mi['lits'], mi['imports']
+    look = name
+    if look in imports:                                            # import { test } from 'x'; export { test }
+        s2, o2 = imports[look]
+        return spec_origin(target, s2, o2 if o2 not in ('default', '*') else look, pkg_dir, depth + 1)
+    for m in re.finditer(r'\bexport\s*\{([^}]*)\}\s*from\s*(["\'])', code):
+        q = m.end() - 1
+        for part in m.group(1).split(','):
+            orig, _, alias = part.strip().partition(' as ')
+            if (alias or orig).strip() == look and q in lits:
+                return spec_origin(target, text[q + 1:lits[q][1] - 1], orig.strip(), pkg_dir, depth + 1)
+    dm = re.search(r'\b(?:const|let|var)\s+' + re.escape(look) + r'\s*' + ANNOT + r'=\s*([A-Za-z_$][\w$]*)\b', code)
+    if dm and dm.group(1) in imports:                              # export const test = base.extend({...})
+        s2, o2 = imports[dm.group(1)]
+        return spec_origin(target, s2, o2 if o2 not in ('default', '*') else dm.group(1), pkg_dir, depth + 1)
+    for m in re.finditer(r'\bexport\s*\*\s*from\s*(["\'])', code):
+        q = m.end() - 1
+        if q in lits:
+            got = spec_origin(target, text[q + 1:lits[q][1] - 1], look, pkg_dir, depth + 1)
+            if got[0] != 'product':
+                return got
+    if re.search(r'\b(?:const|let|var|class|function\s*\*?)\s*' + re.escape(look) + r'(?![\w$])', code):
+        return 'product', spec                                     # the module defines it: the product's own test()
+    fw = next((s2 for s2, _ in imports.values() if FRAMEWORK_MODULES.match(s2)), None)
+    return ('framework', fw) if fw else ('product', spec)
+
+
+def runner_of(spec: str) -> str:
+    if 'playwright' in spec:
+        return 'playwright'
+    if spec == 'node:test':
+        return 'node-test'
+    return 'js'
+
+
+def enclosing_block(code: str, pos: int) -> tuple[int, int]:
+    """(open, close) of the innermost { } block around pos, or the whole text."""
+    depth, k = 0, pos - 1
+    while k >= 0:
+        c = code[k]
+        if c == '}':
+            depth += 1
+        elif c == '{':
+            if depth == 0:
+                return k, match_code(code, k)
+            depth -= 1
+        k -= 1
+    return 0, len(code)
+
+
+def local_head_scopes(code: str, name: str, is_head) -> list[tuple[int, int]]:
+    """Spans where a local declaration of name (a helper called test, a parameter-free const) hides the test head of
+    that name. `const test = base.extend(...)` of a head stays a head."""
+    out = []
+    for m in re.finditer(r'(?:\bfunction\s*\*?\s*|\b(?:const|let|var)\s+)' + re.escape(name) + r'(?![\w$])', code):
+        rhs = re.match(r'\s*' + ANNOT + r'=\s*([A-Za-z_$][\w$]*)\s*(?:\.\s*extend\b|[;\n,)])', code[m.end():])
+        if rhs and is_head(rhs.group(1)):
+            continue
+        loop = re.search(r'\bfor\s*(?:await\s*)?\(\s*$', code[:m.start()])
+        if loop:                                           # for (const it of rows): the loop alone
+            h_close = match_code(code, code.index('(', loop.start()))
+            bm = re.match(r'\s*\{', code[h_close + 1:])
+            out.append((m.start(), match_code(code, h_close + 1 + bm.end() - 1) if bm else expr_end(code, h_close + 1)))
+            continue
+        out.append(enclosing_block(code, m.start()))
+    return out
+
+
+def match_back(code: str, i: int) -> int:
+    """Index of the bracket opening the one closing at code[i]."""
+    close_c = code[i]
+    open_c = {')': '(', ']': '[', '}': '{'}[close_c]
+    depth, j = 0, i
+    while j >= 0:
+        c = code[j]
+        if c == close_c:
+            depth += 1
+        elif c == open_c:
+            depth -= 1
+            if depth == 0:
+                return j
+        j -= 1
+    return 0
+
+
+def stmt_context(code: str, pos: int) -> tuple[str, int]:
+    """(the statement's text before pos, index of the unclosed ( or [ around pos within the statement, or -1)."""
+    depth, k = 0, pos - 1
+    while k >= 0:
+        c = code[k]
+        if c in ')]}':
+            depth += 1
+        elif c in '([':
+            if depth == 0:
+                return code[k + 1:pos], k
+            depth -= 1
+        elif c == '{':
+            if depth == 0:
+                return code[k + 1:pos], -1
+            depth -= 1
+        elif depth == 0 and c == ';':
+            return code[k + 1:pos], -1
+        elif depth == 0 and c == '\n':
+            before = code[:k].rstrip()
+            after = code[k + 1:pos].lstrip()
+            if before and (before[-1].isalnum() or before[-1] in ')]}_$"\'`') and not after.startswith(('.', '?.')) \
+                    and not re.search(r'\b(await|return|typeof|void|new|yield)$', before):
+                return code[k + 1:pos], -1
+        k -= 1
+    return code[:pos], -1
+
+
+def name_settled(code: str, name: str, after: int) -> bool:
+    """A promise held in name is awaited or returned later (`await assertion`, `await Promise.all([a, b])`,
+    `return a`), or handed to a call (`await settle(a)`)."""
+    rest = code[after:]
+    return bool(re.search(r'\b(?:await|return)\b[^;]*?(?<![\w$.])' + re.escape(name) + r'(?![\w$])', rest))
+
+
+def promise_settled(code: str, pos: int) -> bool:
+    """The expectation (a resolves/rejects chain) starting at pos is awaited, returned, the body of an arrow, held in a
+    name settled later, or an element of an awaited or returned Promise.all/allSettled/race/any. An expectation passed
+    to another call counts as handled: what that call does with it is not known."""
+    prefix, opener = stmt_context(code, pos)
+    while opener >= 0 and code[opener] == '[' and not prefix.strip(' \t\r\n,'):
+        prefix, opener = stmt_context(code, opener)            # an element of an array literal: look at the array
+    if opener >= 0:
+        if code[opener] == '(' and not prefix.strip(' \t\r\n,') and \
+                re.search(r'\bPromise\s*\.\s*(?:all|allSettled|race|any)\s*$', code[:opener]):
+            pm = re.search(r'\bPromise\s*\.\s*(?:all|allSettled|race|any)\s*$', code[:opener])
+            return promise_settled(code, pm.start())
+        return True
+    if re.search(r'\b(await|return)\s*$', prefix) or re.search(r'=>\s*$', prefix):
+        return True
+    am = re.match(r'^\s*(?:(?:const|let|var)\s+)?([A-Za-z_$][\w$.]*)\s*' + ANNOT + r'=\s*$', prefix)
+    if am:
+        return name_settled(code, am.group(1), pos)
+    return prefix.strip() not in ('', 'void')
+
+
+CLEANUP_CALL = re.compile(r'\b(?:rm|rmSync|rmdir|rmdirSync|unlink|unlinkSync|close|kill|dispose|destroy|cleanup|cleanUp|'
+                          r'teardown|stop|terminate|restore|remove|removeSync|abort|disconnect|shutdown|release|end|'
+                          r'unmount|reset|clear|delete)\w*\s*\(')
+
+
+def only_cleanup(block: str) -> bool:
+    """Every statement of the block calls something that tidies up (rm, close, kill, dispose, unlink ...)."""
+    stmts = [x.strip() for x in re.split(r'[;\n]', block) if x.strip() and x.strip() not in ('{', '}')]
+    return bool(stmts) and all(CLEANUP_CALL.search(x) for x in stmts)
+
+
+def spans_of(code: str, rx: str) -> list[tuple[int, int]]:
+    """{ } spans of the blocks that rx (ending at the opening brace) introduces."""
+    out = []
+    for m in re.finditer(rx, code):
+        out.append((m.end() - 1, match_code(code, m.end() - 1)))
+    return out
+
+
+def object_member_functions(code: str) -> list[tuple[int, int]]:
+    """Bodies of functions written as object members (`runStep(step) { ... }`, `run: async () => { ... }`): the methods
+    of a fake or stub the test builds, not the test's own code."""
+    out = spans_of(code, r'(?<![\w$.])(?!if\b|for\b|while\b|switch\b|catch\b|function\b)[A-Za-z_$][\w$]*\s*\([^()]*\)\s*'
+                         r'(?::\s*[^{=;]+)?\{')
+    out += spans_of(code, r'[{,]\s*[A-Za-z_$][\w$]*\s*:\s*(?:async\s*)?(?:\([^()]*\)|[A-Za-z_$][\w$]*)\s*'
+                          r'(?::\s*[^{=;]+)?=>\s*\{')
+    return out
+
+
 def js_imports(text: str, code: str, lits: dict) -> dict[str, tuple[str, str]]:
     """local name -> (module specifier, imported name or 'default' or '*') for ES imports and simple requires."""
     out = {}
@@ -959,9 +1343,11 @@ def playwright_dirs(root: Path, pkg: str) -> list[str]:
 
 
 def body_rules(rel, tid, line_of, body_off, bcode, btext, imports, mocked_specs, add, product=lambda s: bool(PRODUCT_SPEC.match(s)),
-               array_names=frozenset()):
-    """The can't-fail rules on one test body (masked code bcode, raw text btext, both starting at body_off)."""
-    asserts = [m.start() for m in ASSERT_JS.finditer(bcode)]
+               array_names=frozenset(), assert_rx=None, expect_names=frozenset(), under_test=frozenset()):
+    """The can't-fail rules on one test body (masked code bcode, raw text btext, both starting at body_off). assert_rx
+    matches assertions, including the file's expect aliases and assertion helpers; expect_names are the aliases."""
+    assert_rx = assert_rx or ASSERT_JS
+    asserts = [m.start() for m in assert_rx.finditer(bcode)]
     if not asserts:
         q = len(IMPLICIT_QUERY.findall(bcode))
         add('no_assertion', 'no_assertion', [tid], None,
@@ -969,19 +1355,21 @@ def body_rules(rel, tid, line_of, body_off, bcode, btext, imports, mocked_specs,
             (f'; it uses {q} getBy/findBy quer{"y" if q == 1 else "ies"}, which throw when nothing matches, so it checks '
              'only that elements exist' if q else ''), {'implicit_queries': q} if q else {})
     # async expectations and tautologies
-    for e in re.finditer(r'\bexpect(?:\s*\.\s*soft)?\s*\(', bcode):
-        stmt_start = bcode.rfind('\n', 0, e.start()) + 1
-        prefix = bcode[stmt_start:e.start()]
+    expect_rx = re.compile(r'(?<![\w$.])(?:' + '|'.join(re.escape(n) for n in sorted({'expect'} | set(expect_names))) +
+                           r')(?:\s*\.\s*soft)?\s*\(')
+    for e in expect_rx.finditer(bcode):
         close_e = match_code(bcode, e.end() - 1)
         rest = bcode[close_e + 1:close_e + 40]
         rm = re.match(r'\s*\.\s*(resolves|rejects)\b', rest)
-        if rm and not re.search(r'\b(await|return)\s*$', prefix) and not re.search(r'=>\s*$', prefix):
+        if rm and not promise_settled(bcode, e.start()):
             add('async_not_awaited', 'resolves_not_awaited', [tid], line_of(body_off + e.start()),
                 'expect(...).resolves/.rejects is neither awaited nor returned, so the assertion can finish after the test',
                 {'matcher': rm.group(1)})
         inner = btext[e.end():close_e].strip()
         tb = re.match(r'\s*\.\s*(toBe|toEqual|toStrictEqual)\s*\(', rest)
-        if tb:
+        if tb and re.match(r'[\w$]+', e.group(0)).group(0) not in under_test:
+            # an expect the product itself exports (a testing library testing its own matchers) is the code under test:
+            # e2eExpect(1).toBe(1) checks toBe, it is no tautology
             arg_open = close_e + 1 + tb.end() - 1
             arg = btext[arg_open + 1:match_code(bcode, arg_open)].strip()
             if (arg == inner and '(' not in inner) or (inner in ('true', '1') and arg in ('true', '1')):
@@ -989,6 +1377,8 @@ def body_rules(rel, tid, line_of, body_off, bcode, btext, imports, mocked_specs,
                     'the expectation compares a value with itself', {})
     # try/catch: a catch that swallows the assertion or the product's error
     catches = []
+    finally_spans = spans_of(bcode, r'\bfinally\s*\{')
+    member_spans = object_member_functions(bcode)
     for t in re.finditer(r'\btry\s*\{', bcode):
         t_open = t.end() - 1
         t_close = match_code(bcode, t_open)
@@ -999,12 +1389,15 @@ def body_rules(rel, tid, line_of, body_off, bcode, btext, imports, mocked_specs,
         c_close = match_code(bcode, c_open)
         catches.append((c_open, c_close))
         cbody = bcode[c_open + 1:c_close]
-        guarded = bool(ASSERT_JS.search(bcode[t_open:t_close]))
-        reports = re.search(r'\bthrow\b|\bfail\s*\(|\bdone\s*\(|' + JS['assert_pattern'], cbody)
+        guarded = bool(assert_rx.search(bcode[t_open:t_close]))
+        reports = re.search(r'\bthrow\b|\bfail\s*\(|\bdone\s*\(', cbody) or assert_rx.search(cbody)
+        # tidying up is allowed to fail quietly: a catch in a finally block, around nothing but cleanup calls, or in a
+        # method of a fake object the test builds (its runStep, not the test's own code)
+        cleanup = any(a < t.start() < b for a, b in finally_spans + member_spans) or only_cleanup(bcode[t_open + 1:t_close])
         if guarded and not reports:
             add('swallowed_failure', 'catch_around_expect', [tid], line_of(body_off + c_open),
                 'the catch block catches the error the expectation in its try block throws, and neither rethrows nor fails', {})
-        elif not cbody.strip():
+        elif not cbody.strip() and not cleanup:
             add('swallowed_failure', 'empty_catch', [tid], line_of(body_off + c_open),
                 'an empty catch swallows any error from the code in its try block, so the test passes when that code throws', {})
     for m in re.finditer(r'\.\s*catch\s*\(\s*(?:\(\s*[\w$]*\s*\)|[\w$]+)\s*=>\s*(?:\{\s*\}|undefined|null|void\s+0)\s*\)'
@@ -1012,6 +1405,8 @@ def body_rules(rel, tid, line_of, body_off, bcode, btext, imports, mocked_specs,
         stmt = bcode[bcode.rfind('\n', 0, m.start()) + 1:m.start()]
         if re.search(r'\.\s*waitFor\w*\s*\(', stmt):
             continue                                        # a best-effort wait (waitForLoadState('networkidle')), not a check
+        if CLEANUP_CALL.search(stmt) or any(a < m.start() < b for a, b in finally_spans + member_spans):
+            continue                                        # cleanup allowed to fail quietly (rm(dir).catch(() => {}))
         add('swallowed_failure', 'empty_catch', [tid], line_of(body_off + m.start()),
             'an empty .catch() swallows the rejection, so the test passes when the promise fails', {})
     # assertions that may never run
@@ -1052,6 +1447,14 @@ def body_rules(rel, tid, line_of, body_off, bcode, btext, imports, mocked_specs,
                     depth -= 1
                 elif depth == 0 and bcode.startswith('return', k) and not (bcode[k - 1].isalnum() or bcode[k - 1] in '_$') \
                         and not (k + 6 < len(bcode) and (bcode[k + 6].isalnum() or bcode[k + 6] in '_$')):
+                    before = bcode[f_open + 1:k].rstrip()
+                    guard = before.endswith('else') and not (before[-5:-4].isalnum() or before[-5:-4] in '_$')
+                    if before.endswith(')'):
+                        word = re.search(r'([A-Za-z_$][\w$]*)\s*$', bcode[f_open + 1:match_back(bcode, f_open + 1 + len(before) - 1)])
+                        guard = bool(word and word.group(1) in ('if', 'while', 'for'))
+                    if guard:
+                        k += 6                              # if (x) return; only ends the test sometimes
+                        continue
                     j, d2 = k + 6, 0
                     while j < f_close:
                         cj = bcode[j]
@@ -1101,7 +1504,8 @@ def js_tokens(bcode: str, text: str, lits: dict, off: int) -> list[str]:
             skip_to, prev = lit[1] - off, 'S'
             continue
         nxt = raw[k + 1][0] if k + 1 < len(raw) else ''
-        if (t[0].isalpha() or t[0] in '_$') and t not in JS_KEYWORDS and prev not in ('.', '<') and nxt != '(':
+        key = nxt == ':' and prev in ('{', ',')               # an object key ({ has: ... } vs { hasNot: ... }) is behaviour
+        if (t[0].isalpha() or t[0] in '_$') and t not in JS_KEYWORDS and prev not in ('.', '<') and nxt != '(' and not key:
             t = 'v'                                         # a variable
         out.append(t)
         prev = raw[k][0]
@@ -1123,17 +1527,67 @@ def js_scan(root: Path, rel: str, pkg: str, add, defs, js_bodies: list, pw_dirs:
                 hi = mid - 1
         return lo + 1
     playwright = bool(re.search(r'["\']@playwright/test["\']', text)) or any(rel == d or rel.startswith(d + '/') for d in pw_dirs)
-    aliases = {m.group(1) for m in re.finditer(r'\btest\s+as\s+([A-Za-z_$][\w$]*)', code)}
-    heads = '|'.join(sorted(set(JS_HEADS) | aliases, key=len, reverse=True))
-    call_rx = re.compile(rf'(?<![\w$.])({heads})((?:\s*\.\s*[A-Za-z_$][\w$]*)*)\s*(?=[(`])')
     imports = js_imports(text, code, lits)
+    pkg_dir = root / pkg if pkg != '.' else root
+    file_path = root / rel
+    file_fw = [spec for spec, _ in imports.values() if FRAMEWORK_MODULES.match(spec)]
+    origins: dict[str, tuple[str, str]] = {}
+
+    def origin(local: str) -> tuple[str, str]:
+        """framework, custom (a repository's own runner: a package import in a file that imports no framework) or
+        product (the product's own test() API, used inside a framework's tests to build fixtures)."""
+        if local not in origins:
+            spec, orig = imports[local]
+            o = spec_origin(file_path, spec, orig if orig not in ('default', '*') else local, pkg_dir)
+            if o[0] == 'bare':
+                o = ('product', o[1]) if file_fw else ('custom', o[1])
+            origins[local] = o
+        return origins[local]
+
+    def is_head_name(nm: str) -> bool:
+        if nm in imports:
+            return origin(nm)[0] in ('framework', 'custom')
+        return nm in JS_HEADS                              # a global (Vitest globals, Jest, Mocha)
+    head_alias = {local: orig for local, (spec, orig) in imports.items() if orig in JS_HEADS and local not in JS_HEADS}
+    active = {nm for nm in set(JS_HEADS) | set(head_alias) if is_head_name(nm)}
+    hidden = {nm: local_head_scopes(code, nm, is_head_name) for nm in active}
+    heads = '|'.join(sorted(active, key=len, reverse=True)) or r'(?!x)x'
+    call_rx = re.compile(rf'(?<![\w$.])({heads})((?:\s*\.\s*[A-Za-z_$][\w$]*)*)\s*(?:{GENERIC}\s*)?(?=[(`])')
+    used_origins = [origin(nm) for nm in active if nm in imports]
+    custom = next((o[1] for o in used_origins if o[0] == 'custom'), None)
+    fw_spec = next((o[1] for o in used_origins if o[0] == 'framework'), None)
+    playwright = playwright or bool(fw_spec and 'playwright' in fw_spec)
     mocked_specs = js_mocked_specs(text, code, lits)
-    aliases = ts_aliases(root / pkg if pkg != '.' else root)
-    array_names = set(re.findall(r'\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=;]+)?=\s*\[', code))
+    aliases = ts_aliases(pkg_dir)
+    array_names = set(re.findall(r'\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*' + ANNOT + r'=\s*\[', code))
     product = lambda spec: is_product(spec, aliases)  # noqa: E731
+
+    def support(spec: str) -> bool:
+        """The import names a test helper, fixture or mock module: never the code under test."""
+        target = resolve_module(file_path, spec, pkg_dir) if product(spec) else None
+        if target is None:
+            return False
+        try:
+            return is_test_support(root, target.relative_to(root.resolve()).as_posix())
+        except ValueError:
+            return False
+    # assertions: expect/assert under another name, and helpers (same file or imported) whose bodies assert
+    expect_names = expect_aliases(imports)
+    product_expects = {local for local, (spec, orig) in imports.items() if orig == 'expect' and product(spec)
+                       and origin(local)[0] == 'product'} if file_fw else set()
+    imported_helpers = set()
+    for local, (spec, orig) in imports.items():
+        if product(spec) and re.search(rf'(?<![\w$.]){re.escape(local)}\s*\(', code):
+            target = resolve_module(file_path, spec, pkg_dir)
+            if target is not None and orig in module_info(target)['helpers']:
+                imported_helpers.add(local)
+    helper_names = assert_helpers(code, expect_names | imported_helpers) | imported_helpers
+    assert_rx = assert_rx_for(expect_names | helper_names)
     blocks, tests, notes = [], [], []                      # blocks: dicts with start, end, name, param, skip, only
     for m in call_rx.finditer(code):
-        head = 'test' if m.group(1) in aliases else m.group(1)
+        if any(a <= m.start() <= b for a, b in hidden.get(m.group(1), [])):
+            continue                                       # a local function or value named test, not the test head
+        head = head_alias.get(m.group(1), m.group(1))
         mods = re.findall(r'[A-Za-z_$][\w$]*', m.group(2))
         pos = m.end()
         pre = None
@@ -1193,7 +1647,9 @@ def js_scan(root: Path, rel: str, pkg: str, add, defs, js_bodies: list, pw_dirs:
                       'body': (body[0], close) if body else None, 'line': line_of(m.start()),
                       'cond': text[pre[0]:pre[1]].strip() if pre and mods[-1] in ('skipIf', 'runIf') else None})
     lang = 'typescript' if rel.endswith(('.ts', '.tsx', '.mts', '.cts')) else 'javascript'
-    framework = 'playwright' if playwright else 'js'
+    # playwright, node-test, custom (the repository's own runner, named by runner_module) or js (Vitest or Jest, decided
+    # per package by collect_check.py)
+    framework = 'playwright' if playwright else 'custom' if custom else runner_of(fw_spec) if fw_spec else 'js'
     by_block: dict[int, list[str]] = {}
     defined = []
     for t in tests:
@@ -1214,11 +1670,16 @@ def js_scan(root: Path, rel: str, pkg: str, add, defs, js_bodies: list, pw_dirs:
         btext = text[t['body'][0]:t['body'][1]] if t['body'] else ''
         # targets for neutralise.py: names imported from the product (relative or alias paths, not mocked) that the body
         # calls or renders as JSX
-        calls = sorted(nm for nm, (spec, _) in imports.items()
-                       if product(spec) and spec not in mocked_specs and
-                       re.search(rf'(?<![\w$.]){re.escape(nm)}\s*(?:\.\s*[\w$]+\s*)?\(|<{re.escape(nm)}\b', bcode))
+        calls = sorted(nm for nm, (spec, orig) in imports.items()
+                       if product(spec) and spec not in mocked_specs and nm not in helper_names and nm not in active and
+                       orig not in ('expect', 'assert') and
+                       re.search(rf'(?<![\w$.]){re.escape(nm)}\s*(?:\.\s*[\w$]+\s*)?\(|<{re.escape(nm)}\b', bcode)
+                       and not support(spec))
+        conds = [b['cond'] for b in parents if b.get('cond')] + ([t['cond']] if t.get('cond') else [])
         defs.append({'id': tid, 'file': rel, 'line': t['line'], 'name': full, 'lang': lang, 'package': pkg, 'framework': framework,
-                     'calls': calls, 'parametrised': param, 'name_pattern': pattern})
+                     'calls': calls, 'parametrised': param, 'name_pattern': pattern,
+                     **({'runner_module': custom} if framework == 'custom' else {}),
+                     **({'skip_condition': ' and '.join(conds)} if conds else {})})
         mods, head = t['mods'], t['head']
         if 'only' in mods or head == 'fit':
             add('never_runs', 'only', [tid], t['line'], f'{head}.only silences every other test in the file', {'marker': f'{head}.only'})
@@ -1237,8 +1698,9 @@ def js_scan(root: Path, rel: str, pkg: str, add, defs, js_bodies: list, pw_dirs:
 
         def add_here(category, rule, ids, line, why, details, _t=t):
             add(category, rule, ids, line or _t['line'], why, details)
-        body_rules(rel, tid, line_of, t['body'][0], bcode, btext, imports, mocked_specs, add_here, product, array_names)
-        if ASSERT_JS.search(bcode):
+        body_rules(rel, tid, line_of, t['body'][0], bcode, btext, imports, mocked_specs, add_here, product, array_names,
+                   assert_rx, expect_names, product_expects)
+        if assert_rx.search(bcode):
             toks = js_tokens(bcode, text, lits, t['body'][0])
             if len(toks) >= RULES['javascript'].get('duplicate_min_tokens', 40):
                 js_bodies.append((tid, rel, t['line'], toks))
@@ -1389,8 +1851,9 @@ def is_playwright_setup(root: Path, rel: str, pkg: str) -> bool:
     return bool(re.search(r'["\']@playwright/test["\']', (root / rel).read_text(encoding='utf-8', errors='replace')))
 
 
-def scan(root: Path) -> dict:
+def scan(root: Path, extra_test_files: list[str] | None = None) -> dict:
     files = walk(root)
+    extra = list(extra_test_files or [])
     det = detect_conventions.Detector(root, 50_000).run(None)
     roots = sorted({a['root'] for a in det['areas']}, key=len, reverse=True)
     pkg_of = lambda rel: next((r for r in roots if r != '.' and (rel == r or rel.startswith(r + '/'))), '.')  # noqa: E731
@@ -1404,10 +1867,9 @@ def scan(root: Path) -> dict:
 
     pyscanners, js_bodies, pw_dirs = [], [], {}
     for rel in files:
-        parts = set(PurePosixPath(rel).parts[:-1])
         name = PurePosixPath(rel).name
         pkg = pkg_of(rel)
-        if rel.endswith('.py') and (parts & TEST_DIR_PARTS or detect_conventions.is_test_file(rel)) and name != 'conftest.py':
+        if rel.endswith('.py') and (in_test_dir(root, rel) or detect_conventions.is_test_file(rel)) and name != 'conftest.py':
             try:
                 s = PyScanner(root, rel, pkg, pytest_config(root, pkg))
             except SyntaxError as exc:
@@ -1419,6 +1881,7 @@ def scan(root: Path) -> dict:
             s.scan(adder(rel), defs)
             package_of[rel] = pkg
         elif any(fnmatch.fnmatch(name, p) for p in JS['test_files']) or (
+                rel.endswith(JS_EXT) and any(fnmatch.fnmatch(name, p) or fnmatch.fnmatch(rel, p) for p in extra)) or (
                 any(fnmatch.fnmatch(name, p) for p in JS['playwright_setup_files']) and is_playwright_setup(root, rel, pkg)):
             if pkg not in pw_dirs:
                 pw_dirs[pkg] = playwright_dirs(root, pkg)
@@ -1431,7 +1894,7 @@ def scan(root: Path) -> dict:
     out = []
     for i, c in enumerate(sorted(cands, key=lambda c: (c['file'], c['line'], c['category'])), 1):
         out.append({'id': f'C{i}', **c})
-    result = {'repo': root.name, 'definitions': defs, 'candidates': out,
+    result = {'repo': root.name, 'definitions': defs, 'candidates': out, **({'extra_test_files': extra} if extra else {}),
               'pytest_config': {r: pytest_config(root, r) for r in roots if (root / r / 'pyproject.toml').exists() or r == '.'},
               'summary': {'tests_defined': len(defs), 'candidates': len(out),
                           'by_category': {k: len([c for c in out if c['category'] == k]) for k in sorted({c['category'] for c in out})},
@@ -1448,8 +1911,11 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('repo', type=Path)
     ap.add_argument('--out', type=Path, required=True)
+    ap.add_argument('--test-files', action='append', default=[], metavar='GLOB',
+                    help='also scan JavaScript/TypeScript files matching GLOB (a file name such as "*.e2e.ts" or a '
+                         'repo-relative path pattern): the suites of a repository\'s own test runner')
     args = ap.parse_args(argv)
-    res = scan(args.repo.resolve())
+    res = scan(args.repo.resolve(), args.test_files)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(res, indent=2) + '\n', encoding='utf-8')
     guard = res.get('language_coverage')

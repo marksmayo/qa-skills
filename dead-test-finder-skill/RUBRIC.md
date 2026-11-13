@@ -116,7 +116,9 @@ Criticality is yours, with a reason:
 ## Evidence completeness (computed)
 
 The mean of three shares:
-- the packages whose collect command ran;
+- the defined tests whose collection was assessed (not `not_assessed`): counted per test, so a
+  package whose list failed for most of its tests, or a runner with no list command, lowers it
+  however many other packages listed;
 - the neutralisable candidates that were neutralised (passed or failed neutralised, never
   errored), or that had nothing to neutralise;
 - the ticket keys whose ticket was read.

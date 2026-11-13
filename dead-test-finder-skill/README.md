@@ -49,14 +49,16 @@ repository's own test runners (pytest, Vitest, Jest or Playwright for listing). 
 > Find the dead tests in this repo and show me which ones matter.
 
 ```bash
-python scripts/scan_tests.py <repo> --out run/candidates.json
-python scripts/collect_check.py <repo> --candidates run/candidates.json --run-dir run [--env DATABASE_URL=<fake> ...] [--package-env api:PYTHONPATH=<dir>] [--scope candidates] [--reuse]
+python scripts/scan_tests.py <repo> --out run/candidates.json [--test-files "*.e2e.ts"]
+python scripts/collect_check.py <repo> --candidates run/candidates.json --run-dir run [--env DATABASE_URL=<fake> ...] [--package-env api:PYTHONPATH=<dir>] [--scope candidates] [--reuse] [--split-on-error]
 python scripts/neutralise.py --repo <repo> --candidates run/candidates.json --run-dir run --test <test id> [--test <id>[case] ...] [--tests-file ids.txt] [--copy-ignore "*.mp4"] [--env K=V ...] [--package-env <package>:K=V]
 python scripts/neutralise.py --repo <repo> --candidates run/candidates.json --run-dir run --patch proposals/fix.diff --test <test id>
 python scripts/similarity.py --repo <repo> --candidates run/candidates.json --run-dir run [--env K=V ...] [--package-env <package>:K=V]
 python scripts/check_skips.py --repo <repo> --candidates run/candidates.json --tickets run/tickets.json --out run/skips.json
 python scripts/validate_dead_test_report.py dead_test_report.json --repo <repo> --write-summary
 python scripts/render_report.py dead_test_report.json [--brief]
+python scripts/self_test.py            # scanner and collect checks on a synthetic repository
+python scripts/tree_guard.py --self-test
 ```
 
 | Priority | Score = weight × criticality |
@@ -85,7 +87,9 @@ python scripts/render_report.py examples/dead_test_report.example.json --brief
 - `data/rules.json`: patterns, collect defaults, skip markers, thresholds
 - `schemas/dead_test_report.schema.json`: output contract
 - `scripts/scan_tests.py`: test definitions and candidates (Python `ast`; JS/TS through a lexer for strings, templates, regex literals and comments, with Playwright idioms)
-- `scripts/collect_check.py`: defined vs collected, from the frameworks' own list commands (pytest, Vitest, Jest, Playwright), optionally scoped and cached
+- `scripts/collect_check.py`: defined vs collected, from the frameworks' own list commands (pytest, Vitest, Jest, Playwright), optionally scoped, cached and split around a file that can't be listed
+- `scripts/tree_guard.py`: keeps the target's test files byte for byte around every command the scripts run, puts them back and stops if one changed
+- `scripts/self_test.py`: the scanner's head, assertion and cleanup rules and collect_check's guard on a synthetic repository
 - `scripts/neutralise.py`: neutral and raising bodies in a scratch copy (JS targets through aliases, default imports and re-exports; byte-exact restores), and patch proofs
 - `scripts/similarity.py`: per-test line coverage, outcome and hashed literal values for duplicate candidates
 - `scripts/check_skips.py`: ticket status and `git blame` age for every skip
