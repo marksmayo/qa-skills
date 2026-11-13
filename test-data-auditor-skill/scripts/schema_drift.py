@@ -190,7 +190,35 @@ def drift(root: Path, inventory: dict) -> dict:
                                               'model': mname, 'model_source': spec['source'], 'lines': []})['lines'].append(r['line'])
     return {'models': {k: {'source': v['source'], 'fields': sorted(v['fields'])} for k, v in sorted(models.items())},
             'findings': list(findings.values()), 'unmatched_records': dict(sorted(unmatched.items())),
-            'unmatched_total': sum(unmatched.values())}
+            'unmatched_total': sum(unmatched.values()), 'language_coverage': coverage(files, models)}
+
+
+# directories of third-party or bundled code: not the repository's own language
+VENDORED = {'vendor', 'third_party', 'third-party', 'thirdparty', 'external', 'extern', 'Pods', 'Carthage', 'node_modules'}
+MODEL_LANGS = {'python'}                   # languages whose model classes are read; JSON Schema and OpenAPI files are language-neutral
+
+
+def coverage(files: list[str], models: dict) -> dict:
+    """Which language the repository's product code is mostly in, and whether its models were read. A repository whose
+    models are Go structs or Java classes gets no drift findings from them, which must not read as "no drift"."""
+    counts: dict[str, int] = {}
+    for f in files:
+        p = PurePosixPath(f)
+        if set(p.parts[:-1]) & VENDORED or any(x.endswith(('.app', '.framework', '.xcframework')) for x in p.parts[:-1]):
+            continue
+        lang = detect_conventions.LANG_EXT.get(p.suffix.lower())
+        if not lang or lang == 'gherkin' or detect_conventions.is_test_file(f) or inv.in_test_area(f):
+            continue
+        counts[lang] = counts.get(lang, 0) + 1
+    dominant = max(counts, key=lambda k: (counts[k], k)) if counts else None
+    read_from = sorted({'python' if v['source'].split(':')[0].endswith('.py') else 'json_schema' for v in models.values()})
+    out = {'source_files_by_language': dict(sorted(counts.items())), 'dominant': dominant, 'models_read_from': read_from,
+           'warning': None}
+    if dominant and dominant not in MODEL_LANGS:
+        out['warning'] = (f'the repository\'s product code is mostly {dominant} ({counts[dominant]} files) and schema_drift.py reads '
+                          'only Python models and JSON Schema or OpenAPI files: its fixtures were not compared with its '
+                          f'{dominant} types, so no drift findings is not evidence that there is no drift')
+    return out
 
 
 def main(argv=None) -> int:
@@ -206,6 +234,8 @@ def main(argv=None) -> int:
         print(f'{len(res["models"])} models, {len(res["findings"])} drift findings, {res["unmatched_total"]} unmatched records in {len(res["unmatched_records"])} files -> {args.out}')
     else:
         sys.stdout.write(text)
+    if res['language_coverage']['warning']:
+        print(f'WARNING: {res["language_coverage"]["warning"]}', file=sys.stderr)
     return 0
 
 

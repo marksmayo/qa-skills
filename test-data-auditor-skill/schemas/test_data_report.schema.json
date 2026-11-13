@@ -111,6 +111,8 @@
             }
           },
           "fails_on_date": {"type": ["string", "null"], "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+          "host": {"type": "string", "minLength": 3, "description": "source: agent only: the host tests reach; a basis item must name it"},
+          "live_endpoint": {"type": "boolean", "description": "environment_coupling, source: agent: the basis shows tests reaching a live endpoint (a proxy or sink log, or the code that calls it); severity Serious"},
           "affected_tests": {"type": "array", "items": {"type": "string"}},
           "fix": {"type": "string", "minLength": 15},
           "verification_step": {"type": "string", "minLength": 15},

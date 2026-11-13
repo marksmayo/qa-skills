@@ -31,10 +31,11 @@
     "hex_key_field": "(?i)[\"']?[a-z0-9_-]*(key|token|secret|signature|sig)[\"']?\\]?\\s*(?:==|[:=,])\\s*[\"'][0-9a-f]{32,64}[\"']",
     "aws_access_key": "\\bAKIA[0-9A-Z]{16}\\b",
     "private_key": "-----BEGIN [A-Z ]*PRIVATE KEY-----",
-    "live_token": "\\b(sk|rk|pk)_live_[A-Za-z0-9]{16,}\\b|\\bghp_[A-Za-z0-9]{36}\\b|\\bxox[abp]-[A-Za-z0-9-]{20,}"
+    "live_token": "\\b(sk|rk|pk)_live_[A-Za-z0-9]{16,}\\b|\\bghp_[A-Za-z0-9]{36}\\b|\\bxox[abp]-[A-Za-z0-9-]{20,}",
+    "url_credentials": "\\b[A-Za-z][A-Za-z0-9+.-]*://[^\\s/@:\"'<>]+:[^\\s/@\"'<>]+@[A-Za-z0-9.-]+"
   },
   "locale_calls_py": ["locale.currency", "locale.format_string", "locale.str", "locale.atof", "locale.atoi", "locale.nl_langinfo"],
-  "placeholder_secret_words": "test|fake|mock|dummy|example|sample|placeholder|changeme|change_me|change-me|redacted|invalid|wrong|incorrect|notreal|not-a-real|not_a_real|your[-_]|xxxx|<[a-z_-]+>|\\$\\{",
+  "placeholder_secret_words": "test|fake|mock|dummy|example|sample|placeholder|hunter2|swordfish|letmein|correct-?horse|changeme|change_me|change-me|redacted|invalid|wrong|incorrect|notreal|not-a-real|not_a_real|your[-_]|xxxx|<[a-z_-]+>|\\$\\{",
   "placeholder_secret_max_entropy": 2.5,
   "locale_calls_js": ["toLocaleString()", "toLocaleDateString()", "toLocaleTimeString()", "Intl.NumberFormat()", "Intl.DateTimeFormat()"],
   "mutating_methods": ["append", "extend", "insert", "update", "pop", "popitem", "remove", "clear", "setdefault", "add", "discard", "sort", "reverse"],

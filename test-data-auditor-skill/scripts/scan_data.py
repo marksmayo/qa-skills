@@ -22,6 +22,7 @@ strings with no phone field are never cards or phones.
 """
 from __future__ import annotations
 import argparse, ast, difflib, hashlib, json, math, re, sys
+from bisect import bisect_right
 from datetime import date, timedelta
 from pathlib import Path, PurePosixPath
 
@@ -276,6 +277,21 @@ def not_card(text: str, start: int, end: int, field: str = '') -> bool:
     return run == digits(run) and epoch(run, field)
 
 
+# how card numbers are written: one unbroken run, or the groups card schemes print (4-4-4-4, Amex 4-6-5, Diners 4-6-4,
+# 19-digit 4-4-4-4-3, 13-digit 4-4-5 / 4-4-4-1), with one separator throughout. Space-separated small numbers (screen
+# coordinates, the columns of a process listing) fall between other digits and are never a card.
+CARD_GROUPS = {(4, 4, 4, 4), (4, 6, 5), (4, 6, 4), (4, 4, 4, 4, 3), (4, 4, 5), (4, 4, 4, 1), (4, 4, 4, 3), (4, 4, 4, 2)}
+
+
+def card_shaped(run: str) -> bool:
+    run = run.strip()
+    if run.isdigit():
+        return 13 <= len(run) <= 19
+    if len(set(re.findall(r'[ -]', run))) != 1:
+        return False
+    return tuple(len(g) for g in re.split(r'[ -]', run)) in CARD_GROUPS
+
+
 def phone_reserved(d: str) -> str | None:
     p = RESERVED['phones']
     local = '0' + d[2:] if d.startswith('61') and len(d) == 11 else '0' + d[2:] if d.startswith('44') and len(d) in (12, 13) else d
@@ -290,14 +306,20 @@ def phone_reserved(d: str) -> str | None:
     return placeholder_digits(d)
 
 
+# the text before an @ that makes it a URL's user-info: a scheme, ://, and a user (with or without :password)
+URL_USERINFO_BEFORE = re.compile(r'\b[A-Za-z][A-Za-z0-9+.-]*://[^\s/@"\'<>]*$')
+URL_CRED_PARTS = re.compile(r'://([^\s/@:"\'<>]+):([^\s/@"\'<>]+)@([A-Za-z0-9.-]+)')
+
 FILE_SUFFIX_TLD = {'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'avif', 'ico', 'js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx', 'css', 'map',
                    'json', 'txt', 'md', 'html', 'yaml', 'yml'}
 
 
 def not_mailbox(value: str, m: re.Match) -> str | None:
     """Why an EMAIL match is not a mailbox, or None. A package spec (`pnpm@10.2.1`, `left-pad@1.3.0-rc.1`) or a host
-    given as an IP address has no alphabetic top-level label; `icon@2x.png` is a file name. URL user-info with a named
-    host (`user:pass@db.example.org`) is still matched: no other rule flags credentials in a URL."""
+    given as an IP address has no alphabetic top-level label; `icon@2x.png` is a file name. URL user-info
+    (`https://user:key@grid.example.org`) is a credential, not a mailbox: the url_credentials secret rule judges it."""
+    if URL_USERINFO_BEFORE.search(value[:m.start()]):
+        return 'the user-info of a URL (scheme://user:password@host): a credential, checked by the url_credentials secret rule'
     labels = m.group(2).split('.')
     tld = labels[-1]
     if not (tld.isalpha() and len(tld) >= 2) or all(x.isdigit() for x in labels[:-1]):
@@ -338,6 +360,19 @@ def placeholder_secret(kind: str, match: str) -> str | None:
     authorization header. Private keys are never placeholders (the header line carries no value to judge)."""
     if kind == 'private_key':
         return None
+    if kind == 'url_credentials':
+        parts = URL_CRED_PARTS.search(match)
+        if not parts:
+            return None
+        user, password, host = parts.groups()
+        if host_reserved(host):
+            return 'placeholder secret: the URL points at a reserved documentation host'
+        if re.fullmatch(r'(\$\{?\w+\}?|%[sv]|\{\w*\}|<[\w-]+>)', password):
+            return 'placeholder secret: the password is filled in from a variable or a format placeholder'
+        why = placeholder_secret('url_password', f'"{password}"')
+        if why:
+            return why + ' (the password part of a URL\'s user-info)'
+        return None
     q = re.findall(r"""["']([^"']+)["']\s*$""", match) or re.findall(r'(?:bearer|basic|token)\s+(\S+)', match, re.I) or [match]
     value = q[-1]
     w = PLACEHOLDER_SECRET.search(value)
@@ -351,6 +386,107 @@ def placeholder_secret(kind: str, match: str) -> str | None:
     if len(set(core)) <= 4 or entropy(core) < RULES['placeholder_secret_max_entropy']:
         return 'placeholder secret: too little entropy to be a real credential'
     return None
+
+
+# ---------------------------------------------------------------- Go source
+GO_MONTHS = {f'time.{m}': i for i, m in enumerate(('January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
+                                                    'September', 'October', 'November', 'December'), 1)}
+GO_TIME_DATE = re.compile(r'\btime\.Date\(\s*(\d{4})\s*,\s*(time\.[A-Z][a-z]+|\d{1,2})\s*,\s*(\d{1,2})\s*[,)]')
+# (rule, call, what the test does, the fix): process-wide state a test changes by hand instead of through testing.T
+GO_PROCESS_STATE = [
+    ('go_os_setenv', re.compile(r'(?<![\w.])os\.(Setenv|Unsetenv|Clearenv)\('), 'changes the process environment with os.Setenv',
+     'A deferred os.Setenv(key, old) also turns an unset variable into an empty one. Use t.Setenv, which restores the previous '
+     'state, unset included.'),
+    ('go_os_chdir', re.compile(r'(?<![\w.])os\.Chdir\('), 'changes the working directory with os.Chdir',
+     'Use t.Chdir (Go 1.24+), which restores the directory when the test ends.'),
+]
+
+
+def go_mask(text: str) -> str:
+    """Go source with comments blanked and string, raw-string and rune contents replaced by spaces (newlines and
+    offsets kept), so patterns match code only."""
+    out, i, n = list(text), 0, len(text)
+    while i < n:
+        c = text[i]
+        if c == '/' and text.startswith('//', i):
+            j = text.find('\n', i)
+            j = n if j < 0 else j
+            out[i:j] = ' ' * (j - i)
+            i = j
+        elif c == '/' and text.startswith('/*', i):
+            j = text.find('*/', i + 2)
+            j = n if j < 0 else j + 2
+            out[i:j] = [x if x == '\n' else ' ' for x in text[i:j]]
+            i = j
+        elif c in '"\'':
+            j = i + 1
+            while j < n and text[j] != c and text[j] != '\n':
+                j += 2 if text[j] == '\\' else 1
+            out[i + 1:min(j, n)] = ' ' * (min(j, n) - i - 1)
+            i = j + 1
+        elif c == '`':
+            j = text.find('`', i + 1)
+            j = n if j < 0 else j
+            out[i + 1:j] = [x if x == '\n' else ' ' for x in text[i + 1:j]]
+            i = j + 1
+        else:
+            i += 1
+    return ''.join(out)
+
+
+def go_functions(masked: str) -> list[tuple[str, int, int]]:
+    """(name, first line, last line) of each top-level func in masked Go source (methods included)."""
+    out = []
+    starts = [0] + [m.end() for m in re.finditer('\n', masked)]
+    for m in re.finditer(r'^func\s+(?:\([^)]*\)\s*)?([A-Za-z_]\w*)\s*(?:\[[^\]]*\])?\(', masked, re.M):
+        brace = re.compile(r'\{\s*$', re.M).search(masked, m.end())
+        if not brace:
+            continue
+        depth, j = 0, brace.start()
+        while j < len(masked):
+            depth += masked[j] == '{'
+            depth -= masked[j] == '}'
+            if depth == 0:
+                break
+            j += 1
+        line_of = lambda off: bisect_right(starts, off)  # noqa: E731
+        out.append((m.group(1), line_of(m.start()), line_of(j)))
+    return out
+
+
+def go_assign_target(var: str) -> str:
+    """An assignment to var as one statement: x = v, x, y = a, b, x += 1, x++."""
+    return rf'(?:[\w.]+\s*,\s*)*{re.escape(var)}\s*(?:,\s*[\w.]+\s*)*(?:=(?!=)|[-+*/|&^]=|\+\+|--)'
+
+
+def go_restores(mlines: list[str], start: int, end: int, var: str) -> tuple[set[int], bool]:
+    """Lines in a function's defer or t.Cleanup closures that assign var back (x = orig; x, y = a, b; on the Cleanup line
+    itself or in its body), and whether it is restored through a pointer taken just before a Cleanup (for _, v := range
+    []*T{&x, ...} { orig := *v; t.Cleanup(func() { *v = orig }) })."""
+    put_back = re.compile(rf'(?:^|[{{;])\s*{go_assign_target(var)}')
+    named = re.compile(rf'(?<![\w.]){re.escape(var)}\b')
+    out, by_pointer = set(), False
+    for k in range(start, end + 1):
+        if not re.search(r'\bdefer\b|\bCleanup\(', mlines[k - 1]):
+            continue
+        depth, j = 0, k
+        for j in range(k, end + 1):            # the closure the line opens, to its closing brace
+            if put_back.search(mlines[j - 1]):
+                out.add(j)
+            depth += mlines[j - 1].count('{') - mlines[j - 1].count('}')
+            if depth <= 0:
+                break
+        by_pointer = by_pointer or any(named.search(mlines[i - 1]) and '&' in mlines[i - 1] for i in range(max(start, k - 3), k + 1))
+    return out, by_pointer
+
+
+# ---------------------------------------------------------------- language coverage
+# test-code rules exist for these; other languages' test files are scanned as text only (strings, secrets, hosts)
+CODE_RULE_LANGS = {'python', 'javascript', 'typescript', 'go'}
+
+
+def language_of(path: str) -> str | None:
+    return detect_conventions.LANG_EXT.get(PurePosixPath(path).suffix.lower())
 
 
 # ---------------------------------------------------------------- scanner
@@ -432,7 +568,7 @@ class Scanner:
                          None if valid else f'check digit invalid, so not {label}')
         if CARD.search(value) and not GEOMETRY_FIELD.match(fname):
             for m in CARD.finditer(value):
-                if not_card(value, m.start(), m.end(), fname):
+                if not card_shaped(m.group(0)) or not_card(value, m.start(), m.end(), fname):
                     continue
                 if any(a < m.end() and b > m.start() for a, b in uuids):
                     continue               # part of a UUID: a UUID is never a card number, Luhn or not
@@ -1086,6 +1222,116 @@ class Scanner:
                              'formatted value', details={'function': f'{info["file"]}:{info["line"]}'},
                              tests=item.get('loaded_by') or [f'{rel}::*'])
 
+    # ---------------- Go
+    def go_package_vars(self, rel: str) -> set[str]:
+        """Names declared by top-level `var` in the Go files of rel's directory (the package and its in-package tests)."""
+        d = PurePosixPath(rel).parent.as_posix()
+        names: set[str] = set()
+        for f in self.files:
+            if not f.endswith('.go') or PurePosixPath(f).parent.as_posix() != d:
+                continue
+            try:
+                masked = go_mask((self.root / f).read_text(encoding='utf-8', errors='replace'))
+            except OSError:
+                continue
+            block = False
+            for ln in masked.split('\n'):
+                if block:
+                    if ln.startswith(')'):
+                        block = False
+                        continue
+                    m = re.match(r'\s+([A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)*)\b', ln)
+                    if m:
+                        names |= {x.strip() for x in m.group(1).split(',')}
+                    continue
+                if re.match(r'var\s*\(\s*$', ln):
+                    block = True
+                    continue
+                m = re.match(r'var\s+([A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)*)\b', ln)
+                if m:
+                    names |= {x.strip() for x in m.group(1).split(',')}
+        return names - {'_'}
+
+    def go_test_rules(self, rel: str, text: str):
+        """Go test code: a fixed future date beside the real clock, process-wide state changed outside t.Setenv and
+        t.Chdir, package-level variables a test reassigns, and math/rand with no seeded source."""
+        masked = go_mask(text)
+        mlines, raw = masked.split('\n'), text.split('\n')
+        funcs = go_functions(masked)
+        pkg_vars = self.go_package_vars(rel) if ' = ' in masked or '=\t' in masked else set()
+        memo: dict[tuple[int, str], bool] = {}
+
+        def helper_restores(hs: int, he: int, var: str) -> bool:
+            if (hs, var) not in memo:
+                r, p = go_restores(mlines, hs, he, var)
+                memo[(hs, var)] = bool(r) or p
+            return memo[(hs, var)]
+        for name, start, end in funcs:
+            if name in ('TestMain', 'init'):
+                continue                   # package setup: runs once before the tests, not between them
+            tid = [f'{rel}::{name}']
+            body = '\n'.join(mlines[start - 1:end])
+            reads_clock = re.search(r'\btime\.(Now|Since|Until)\(', body)
+            # a fixed date: time.Date(2027, time.March, 1, ...) or an ISO date string (time.Parse(layout, "2027-03-01"))
+            for k in range(start, end + 1):
+                ln, rl = mlines[k - 1], raw[k - 1]
+                dates = []
+                for m in GO_TIME_DATE.finditer(ln):
+                    month = GO_MONTHS.get(m.group(2)) or (int(m.group(2)) if m.group(2).isdigit() else None)
+                    try:
+                        dates.append(date(int(m.group(1)), month, int(m.group(3)))) if month else None
+                    except ValueError:
+                        pass
+                for m in re.finditer(r'"(\d{4})-(\d{2})-(\d{2})(?:[T ][^"]*)?"', rl):
+                    try:
+                        dates.append(date(int(m.group(1)), int(m.group(2)), int(m.group(3))))
+                    except ValueError:
+                        pass
+                for lit in dates:
+                    if reads_clock and lit >= self.today:
+                        self.add('time_bomb', 'future_literal_with_now', rel, k,
+                                 f'{name} compares the fixed date {lit.isoformat()} with the real clock (time.Now, time.Since or time.Until)',
+                                 None, 'date', details={'date': lit.isoformat(), 'fails_on_date': None,
+                                                        'days_until': (lit - self.today).days}, tests=tid)
+            for rule, rx, what, fix in GO_PROCESS_STATE:
+                hits = [k for k in range(start, end + 1) if rx.search(mlines[k - 1])]
+                if hits:
+                    self.add('shared_mutable', rule, rel, hits[0],
+                             f'{name} {what} ({len(hits)} call(s), first at line {hits[0]}); the change is process-wide and stays '
+                             f'for every later test in the package. {fix}', None, None,
+                             details={'function': name, 'lines': hits[:20]}, tests=tid)
+            parallel = 't.Parallel()' in body
+            for var in sorted(pkg_vars):
+                if re.search(rf'(?<![\w.]){re.escape(var)}\s*:=|\bvar\s+{re.escape(var)}\b|\bfunc\b[^\n]*\b{re.escape(var)}\s+[\w*\[\]]', body):
+                    continue               # a local variable or parameter with the same name
+                assign = re.compile(rf'^\s*{go_assign_target(var)}')
+                restores, by_pointer = go_restores(mlines, start, end, var)
+                hits = [k for k in range(start, end + 1) if assign.search(mlines[k - 1]) and k not in restores]
+                if not hits:
+                    continue
+                # a helper called first (f.install(t), stubClock(t)) that registers the restore in its own t.Cleanup
+                by_helper = any(re.search(rf'(?<![\w]){re.escape(h)}\(', mlines[k - 1]) for k in range(start, hits[0])
+                                for h, hs, he in funcs if h != name and (hs, he) != (start, end) and helper_restores(hs, he, var))
+                restored = bool(restores) or by_pointer or by_helper
+                if restored and not parallel:
+                    continue
+                self.add('shared_mutable', 'go_package_var_reassigned', rel, hits[0],
+                         f'{name} reassigns the package-level variable {var} (first at line {hits[0]})'
+                         + (' and runs with t.Parallel(), so other tests see the swapped value while it runs' if restored else
+                            ' and nothing puts it back (no defer or t.Cleanup restoring it), so later tests see what this one left'),
+                         var, None, details={'name': var, 'function': name, 'mutated_at': hits[:20], 'restored': restored,
+                                             'parallel': parallel}, tests=tid)
+        # math/rand (v1 or v2) top-level functions are seeded randomly on every run unless the file builds a seeded source
+        if re.search(r'"math/rand(?:/v2)?"', text) and not re.search(r'\brand\.(Seed|NewSource|NewPCG|NewChaCha8)\(', masked):
+            tests = self.by_path.get(rel, {}).get('loaded_by') or [f'{rel}::*']
+            for k, ln in enumerate(mlines, 1):
+                m = re.search(r'(?<![\w.])rand\.(Int\w*|Uint\w*|Float\w*|Perm|Shuffle|N|ExpFloat64|NormFloat64)\(', ln)
+                if m:
+                    fn = next((n for n, s, e in funcs if s <= k <= e), None)
+                    self.add('nondeterministic', 'unseeded_random', rel, k, f'rand.{m.group(1)}() with no seeded source in this file '
+                             '(math/rand picks a new seed every run)', None, None,
+                             tests=[f'{rel}::{fn}'] if fn and fn not in ('TestMain', 'init') else tests)
+
     # ---------------- files
     def snapshots_and_duplicates(self):
         items = [i for i in self.inv['inventory'] if i['status'] == 'scanned']
@@ -1184,6 +1430,8 @@ class Scanner:
                 self.js_test_rules(rel, item, comparisons, seeds, covered)
                 if item['kind'] in ('fixture', 'factory', 'snapshot'):
                     self.js_generated_ids(rel, item)
+            if rel.endswith('.go') and item['kind'] in ('inline', 'support') and size_mb <= RULES['large_file_mb']:
+                self.go_test_rules(rel, text)
             if rel.endswith('.py'):
                 try:
                     tree = ast.parse(text)
@@ -1199,7 +1447,20 @@ class Scanner:
         self.shared_mutable(py)
         self.locale(py)
         self.js_locale()
-        for d in schema_drift.drift(self.root, self.inv)['findings']:
+        # test code in a language with no code rules is read as text only: say so, never imply the rules ran
+        text_only: dict[str, int] = {}
+        for item in self.inv['inventory']:
+            lang = language_of(item['path'])
+            if item['kind'] in ('inline', 'support', 'factory') and lang and lang not in CODE_RULE_LANGS and lang != 'gherkin':
+                text_only[lang] = text_only.get(lang, 0) + 1
+        for lang, n in sorted(text_only.items()):
+            self.notes.append(f'{n} {lang} test file(s) scanned as text only (strings, secrets, hosts): no {lang} code rules for '
+                              'time bombs, shared state, randomness or magic ids, so those were not assessed in them')
+        self.language_coverage = {'code_rules': sorted(CODE_RULE_LANGS), 'text_only': dict(sorted(text_only.items()))}
+        drift = schema_drift.drift(self.root, self.inv)
+        if (drift.get('language_coverage') or {}).get('warning'):
+            self.notes.append('schema drift: ' + drift['language_coverage']['warning'])
+        for d in drift['findings']:
             what = {'extra_field': f'with a field {d["field"]} that {d["model"]} ({d["model_source"]}) no longer has',
                     'missing_required': f'without {d["field"]}, which {d["model"]} requires',
                     'invalid_enum': f'with {d["field"]} values outside {d["model"]}\'s enum'}[d['rule']]
@@ -1216,7 +1477,7 @@ class Scanner:
                 'inventory_status': {i['path']: {'status': i['status'], 'reason': i['reason']} for i in self.inv['inventory']},
                 'summary': {'candidates': len(out), 'auto_dismissed': len([c for c in out if c['auto_dismiss']]),
                             'by_category': {k: len([c for c in out if c['category'] == k]) for k in sorted({c['category'] for c in out})}},
-                'notes': self.notes}
+                'language_coverage': self.language_coverage, 'notes': self.notes}
 
 
 def main(argv=None) -> int:
@@ -1233,6 +1494,9 @@ def main(argv=None) -> int:
     s = res['summary']
     print(f'{s["candidates"]} candidates ({s["auto_dismissed"]} dismissed by a reserved-value rule): '
           + ', '.join(f'{v} {k}' for k, v in s['by_category'].items()) + f' -> {args.out}')
+    for note in res['notes']:
+        if 'text only' in note or note.startswith('schema drift:'):
+            print(f'WARNING: {note}', file=sys.stderr)
     return 0
 
 

@@ -105,8 +105,11 @@ def severity(f: dict, cands: dict, today: date) -> str:
         h = RULES['today_horizon_days']
         return 'critical' if n <= h['critical'] else 'serious' if n <= h['serious'] else 'moderate'
     if cat == 'environment_coupling':
-        hosts = [cands[c]['details'].get('host') or '' for c in f['candidates'] if c in cands]
-        return 'serious' if any(re.search(r'(^|[.-])(prod|production|live)([.-]|$)', h, re.I) for h in hosts) else 'moderate'
+        hosts = [cands[c]['details'].get('host') or '' for c in f['candidates'] if c in cands] + [f.get('host') or '']
+        # a review finding whose basis shows tests reaching a live endpoint (a proxy log, the code that calls it) is as
+        # serious as a production host by name; live_host_errors() checks the basis names the host
+        live = f.get('source') == 'agent' and f.get('live_endpoint') is True
+        return 'serious' if live or any(re.search(r'(^|[.-])(prod|production|live)([.-]|$)', h, re.I) for h in hosts) else 'moderate'
     if cat == 'shared_mutable':
         return 'serious' if f['confidence'] == 'confirmed' else 'moderate'
     if cat in ('snapshot_rot', 'unused_or_duplicate'):
@@ -409,6 +412,38 @@ def basis_errors(f: dict, repo: Path | None, evidence: Path | None) -> list[str]
     return errs
 
 
+def live_host_errors(f: dict, evidence: Path | None, repo: Path | None = None) -> list[str]:
+    """A finding's `host` and `live_endpoint: true` are claims about where tests reach: only a review finding may make
+    them, and one of its basis items (an excerpt, its re-read line, or an evidence file such as a proxy log) must name
+    the host."""
+    w, errs = f['id'], []
+    if not f.get('host') and not f.get('live_endpoint'):
+        return errs
+    if f.get('live_endpoint') and f['category'] != 'environment_coupling':
+        errs.append(f'{w}: live_endpoint is for environment_coupling findings')
+    if f.get('source') != 'agent' or not f.get('basis'):
+        return errs + [f'{w}: host and live_endpoint are for source: agent findings, with a basis that names the host']
+    if f.get('live_endpoint') and not f.get('host'):
+        return errs + [f'{w}: live_endpoint needs the host the tests reach']
+    host = f['host'].lower()
+    texts = []
+    for b in f['basis']:
+        if 'evidence' in b and evidence is not None and (evidence / b['evidence']).is_file():
+            texts.append((evidence / b['evidence']).read_text(encoding='utf-8', errors='replace'))
+        if 'excerpt' in b:
+            texts.append(b['excerpt'])
+        if repo is not None and 'file' in b and isinstance(b.get('line'), int):
+            try:
+                lines = datafiles.text_of(repo / b['file']).split('\n')
+                texts.append(lines[b['line'] - 1] if 0 < b['line'] <= len(lines) else '')
+            except (OSError, datafiles.NotAssessed):
+                pass
+    if not any(host in t.lower() for t in texts):
+        errs.append(f'{w}: no basis item names the host {f["host"]} (quote the line that calls it, or cite the proxy or sink log '
+                    'that recorded the tests reaching it; pass --evidence to check an evidence file)')
+    return errs
+
+
 # ---------------------------------------------------------------- checks
 def run_tests_of(runs: dict, rid: str, cwd: str | None = None) -> dict[str, str]:
     """{test id: status} for one run. Case files are relative to the directory the run started in; with the
@@ -503,6 +538,7 @@ def check(rep: dict, cands: dict | None, runs: dict | None, repo: Path | None, e
                 errs.append(f'{c["id"]}: a secret must be handed to code-security-auditor (location and type only)')
     for f in fs:
         errs += basis_errors(f, repo, evidence)
+        errs += live_host_errors(f, evidence, repo)
     for f in fs:
         w = f['id']
         if f['category'] == 'personal_data':

@@ -1,6 +1,6 @@
 # Design: `test-data-auditor-skill`
 
-Status: Built (v1.3.0), see "As built" at the end. Build order: 11.
+Status: Built (v1.4.0), see "As built" at the end. Build order: 11.
 
 ## Mission
 
@@ -456,3 +456,39 @@ Found on a workspace of about 850 data sources, with a package named `e2e` that 
   secret words, magic ids for opaque UUIDs, near-duplicate device captures, TypeScript models
   for schema drift, an exploratory-experiment slot).
 - **Example.** Unchanged: the rescan gives the same candidates.
+
+## As built (v1.4.0): a Go command-line tool
+
+Found on a Go module of about 340 `*_test.go` files, with vendored Swift and TypeScript driver code:
+
+- **Go rules.** `scan_data.py` reads Go test files with comments and strings masked: a fixed
+  `time.Date` or ISO date on or after the audit date in a test that reads `time.Now`, `Since` or
+  `Until` (`future_literal_with_now`); `os.Setenv`/`Unsetenv`/`Clearenv` and `os.Chdir` in a test
+  function (`go_os_setenv`, `go_os_chdir`, one candidate per function; `TestMain` and `init` are
+  setup); a package-level `var` reassigned with no `defer` or `t.Cleanup` restore, whether direct,
+  through a pointer or in a helper called first (`go_package_var_reassigned`, also when restored
+  but the test calls `t.Parallel()`); `math/rand` with no seeded source (`unseeded_random`). On the
+  repository: 15 environment, 4 working-directory and 2 package-variable candidates (a global set
+  and cleared under a mutex with nothing restoring it).
+- **Loud about the rest.** `candidates.json` has `language_coverage` (`code_rules`, and `text_only`
+  per language) and a note plus a stderr warning for test code in languages with no code rules (the
+  29 Swift test files). `schema_drift.py` reports `language_coverage` and warns when the product
+  code is mostly a language whose models it does not read.
+- **False positives.** URL user-info (`scheme://user:key@host`) was read as an email address (19 of
+  50 personal-data candidates): it is now a `url_credentials` secret, dismissed by rule when the
+  password is a placeholder or a variable, or the host is reserved. The card rule matched
+  space-separated small numbers (swipe coordinates, process-listing columns; 6 candidates, now 0):
+  a card is an unbroken run or the groups card schemes print (4-4-4-4, 4-6-5, ...), and still
+  Luhn-valid. The stock placeholder password and a few like it are placeholder words.
+- **Validator.** A review `environment_coupling` finding may carry `host` and `live_endpoint: true`;
+  its basis must name the host (the calling line, or a proxy log under `--evidence`), and it is then
+  Serious rather than always Moderate.
+- **Residue outside the tree.** `residue.py --also home=<dir>` snapshots an isolated home folder too,
+  listed as `home:<path>`. SKILL.md says to run tests with HOME pointed at an empty folder, gives a
+  proxy-based network-isolation recipe for runtimes with no guard, Go run notes, and says why
+  libfaketime does not move Go binaries.
+- **Self-test.** `scripts/self_test.py` builds synthetic repositories for each of the above.
+- **Not changed:** an assignment in a `describe` body read as a test's change, absolute paths
+  passed to path parsers flagged as `local_path`, a device-identifier data type, Go struct models
+  for schema drift, Go test-data conventions (`testdata/` golden files, `//go:embed`).
+- **Example.** Unchanged: the rescan of `clinic-api` gives the same candidates.

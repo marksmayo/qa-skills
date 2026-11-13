@@ -38,7 +38,7 @@ counts only where `scan_data.py` computed the fail date. A `residue` finding cit
 |---|---|
 | `personal_data` | Critical; Serious with an `anonymised_by` marker |
 | `time_bomb` | Days from the audit date to `fails_on_date` (or the fixed date): ≤ 30 Critical, ≤ 365 Serious, otherwise Moderate |
-| `environment_coupling` | Serious for a production or live host, otherwise Moderate |
+| `environment_coupling` | Serious for a production or live host (by name, or a review finding with `live_endpoint: true` whose basis names the host the tests reach), otherwise Moderate |
 | `shared_mutable` | Serious when confirmed, otherwise Moderate |
 | `residue` | Serious when the files land in a served directory (`public/`, `static/`, `www/`, `wwwroot/`, `htdocs/`, `uploads/`), otherwise Moderate |
 | `magic_id`, `nondeterministic`, `schema_drift`, `locale_assumption` | Moderate |

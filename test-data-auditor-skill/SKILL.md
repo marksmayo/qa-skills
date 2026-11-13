@@ -1,7 +1,7 @@
 ---
 name: test-data-auditor
-description: Audit the data tests depend on (fixtures, factories, seeds, snapshots, HTTP recordings and inline literals, in Python and JavaScript/TypeScript suites) for time bombs, real-looking personal data, magic ids, environment coupling, shared mutable fixtures, unseeded randomness, schema drift, snapshot rot, unused or duplicate files, locale assumptions and files tests leave behind. Every rule runs statically; time bombs, shared state and locale assumptions are then confirmed with real runs under a moved clock, reversed order or another locale. Personal data is never echoed (only file, line, field and data type), secrets are handed to code-security-auditor, and the report never calls test data "clean".
-version: 1.3.0
+description: Audit the data tests depend on (fixtures, factories, seeds, snapshots, HTTP recordings and inline literals, in Python, JavaScript/TypeScript and Go suites) for time bombs, real-looking personal data, magic ids, environment coupling, shared mutable fixtures, unseeded randomness, schema drift, snapshot rot, unused or duplicate files, locale assumptions and files tests leave behind. Every rule runs statically; time bombs, shared state and locale assumptions are then confirmed with real runs under a moved clock, reversed order or another locale. Personal data is never echoed (only file, line, field and data type), secrets are handed to code-security-auditor, and the report never calls test data "clean".
+version: 1.4.0
 ---
 
 # Test data auditor
@@ -147,18 +147,18 @@ python scripts/schema_drift.py <repo> --inventory <run>/inventory.json --out <ru
 
 | Category | Rules |
 |---|---|
-| `personal_data` | A tabular extract (CSV, TSV, HTML or `.xlsx` sheet, JSON list) with 20 or more rows whose column is named for a person or customer (`customer_name`, `client`, `Cust Name`) and holds mostly names: judged by the header and the row count, reported by file, header line and column only (`customer_extract`; extend `person_columns` in `data/rules.json` for a repo's own abbreviations); email at a public or non-reserved domain (a package spec such as `name@1.2.3`, a host given as an IP address and a file name such as `icon@2x.png` are not addresses); phone outside the reserved ranges; Luhn-valid card not on a test list (dates, times, version strings and epoch timestamps are never phones or cards); Medicare, TFN or NHS number with a valid check digit; SSN or National Insurance number in valid format; IBAN with a valid checksum; full name with a street address; date of birth beside a name |
+| `personal_data` | A tabular extract (CSV, TSV, HTML or `.xlsx` sheet, JSON list) with 20 or more rows whose column is named for a person or customer (`customer_name`, `client`, `Cust Name`) and holds mostly names: judged by the header and the row count, reported by file, header line and column only (`customer_extract`; extend `person_columns` in `data/rules.json` for a repo's own abbreviations); email at a public or non-reserved domain (a package spec such as `name@1.2.3`, a host given as an IP address, a file name such as `icon@2x.png` and a URL's user-info `scheme://user:key@host`, which is a `url_credentials` secret, are not addresses); phone outside the reserved ranges; Luhn-valid card not on a test list, written unbroken or in the groups card schemes print (4-4-4-4, 4-6-5, 4-6-4, 4-4-4-4-3; space-separated small numbers such as screen coordinates or process-listing columns are never cards) (dates, times, version strings and epoch timestamps are never phones or cards); Medicare, TFN or NHS number with a valid check digit; SSN or National Insurance number in valid format; IBAN with a valid checksum; full name with a street address; date of birth beside a name |
 | `time_bomb` | A fixed expiry date in the future that the code compares with now, giving the date it fails on; a future literal date in a test that also reads the clock |
 | `magic_id` | A lookup by a literal id where a database or seed is in reach (the test loads a seed, has a database or integration marker, requests a database fixture, or sits in an integration tree), checked against the seed rows; not a large id in a "not found" test, nor an all-nines sentinel; a literal UUID; an equality assertion on an auto-increment id (`x.id == 3`, not `x.id > 0`) |
-| `environment_coupling` | A production or staging host, a real bucket, an AWS account id, an absolute path on someone's machine (platform roots such as `/home/site/wwwroot` or a CI runner's home are the same everywhere, so they are not) |
-| `shared_mutable` | A session, module, package or class-scoped fixture that returns a mutable value a test mutates; `importlib.reload(module)` in test code, with the module's import-time environment reads (`module_reload`): later tests see the reloaded state, so a test can pass only after it |
-| `nondeterministic` | `random` or Faker with no seed in the file; `uuid4()` in test data |
-| `schema_drift` | A fixture field the model no longer has; a missing required field; an enum value the model doesn't allow (dataclasses, pydantic, SQLAlchemy, TypedDict, JSON Schema, OpenAPI JSON). Only models from the fixture's own package root count, and a record matches a model only when half its keys are the model's fields |
+| `environment_coupling` | A production or staging host, a real bucket, an AWS account id, an absolute path on someone's machine (platform roots such as `/home/site/wwwroot` or a CI runner's home are the same everywhere, so they are not). Tests that reach a live endpoint through product code (an update check, telemetry) are not a literal in test data: report them as a review finding with `host` and `live_endpoint: true`, and a basis that names the host (the calling line, or the proxy log that recorded the tests reaching it) |
+| `shared_mutable` | A session, module, package or class-scoped fixture that returns a mutable value a test mutates; `importlib.reload(module)` in test code, with the module's import-time environment reads (`module_reload`): later tests see the reloaded state, so a test can pass only after it; Go tests that change process state by hand (`go_os_setenv`, `go_os_chdir`) or reassign a package-level variable with nothing putting it back (`go_package_var_reassigned`) |
+| `nondeterministic` | `random` or Faker with no seed in the file; `uuid4()` in test data; Go `math/rand` with no seeded source in the file |
+| `schema_drift` | A fixture field the model no longer has; a missing required field; an enum value the model doesn't allow (dataclasses, pydantic, SQLAlchemy, TypedDict, JSON Schema, OpenAPI JSON). Only models from the fixture's own package root count, and a record matches a model only when half its keys are the model's fields. Models in other languages (Go structs, Java classes) are not read: when the repository's product code is mostly another language, `drift.json` carries `language_coverage.warning` (also printed, and added to the scan's notes), and the report must not read "no drift" from it |
 | `snapshot_rot` | A snapshot with no test file; a snapshot over 500 lines |
 | `unused_or_duplicate` | A data file no test loads; a file at least 90% similar to another one of the same format |
 | `locale_assumption` | A test comparing a literal with a function that formats using the machine locale (`setlocale(..., "")` with `locale.currency`, `format_string` or locale-dependent `strftime`; in JS, `toLocaleString()`, `toLocaleDateString()`, `Intl.NumberFormat()` and the like with no locale argument) |
 | `residue` | Files a test run leaves in the working tree (uploads, exports, databases), found with `residue.py` (Step 4) |
-| `secret` | An authorization header; an API key or password field; an API key or subscription-key header (`x-api-key`, `Ocp-Apim-Subscription-Key`, `x-functions-key`); a 32-64 character hex value under a key, token or secret field; an AWS key, a private key, a live token: handed to code-security-auditor with location and type only, unless it is an obvious placeholder |
+| `secret` | An authorization header; an API key or password field; an API key or subscription-key header (`x-api-key`, `Ocp-Apim-Subscription-Key`, `x-functions-key`); a 32-64 character hex value under a key, token or secret field; an AWS key, a private key, a live token; credentials in a URL's user-info (`url_credentials`, `scheme://user:password@host`; a `${VAR}` or `%s` password, a reserved host or a placeholder password is dismissed by rule): handed to code-security-auditor with location and type only, unless it is an obvious placeholder |
 
 Rule settings are in `data/rules.json` and the reserved values in `data/reserved.json`.
 
@@ -187,6 +187,26 @@ beside a name, phone and email fields. The JS/TS rules:
   Assignments in `beforeAll`/`afterAll` and at module level are setup, not a test's change.
 - **`locale_assumption`:** a literal compared with one of these, when it formats with the machine
   locale: a direct call, a product function, or a rendered component.
+
+**Go.** Go test files (`*_test.go`) get these rules, read from the source with comments and string
+contents masked:
+
+- **`time_bomb`:** a `time.Date(2027, time.March, 1, ...)` or an ISO date string on or after the audit
+  date, in a test function that reads the real clock (`time.Now`, `time.Since`, `time.Until`). A test
+  with an injected clock and no `time.Now` is not flagged.
+- **`shared_mutable`:** `os.Setenv`, `os.Unsetenv` or `os.Clearenv` in a test function (one candidate
+  per function; a deferred `os.Setenv(k, old)` also turns an unset variable into an empty one: use
+  `t.Setenv`); `os.Chdir` (use `t.Chdir`, Go 1.24+); a package-level `var` a test reassigns with no
+  `defer` or `t.Cleanup` putting it back (directly, through a pointer, or in a helper the test calls
+  first), or one that is put back while the test calls `t.Parallel()`. `TestMain` and `init` are
+  package setup and are not flagged.
+- **`nondeterministic`:** `math/rand` or `math/rand/v2` functions with no `rand.New(rand.NewSource(n))`,
+  `rand.NewPCG` or `rand.Seed` in the file.
+
+Test files in other languages (Swift, Kotlin, Rust, Java...) are scanned as text only: strings,
+secrets, hosts and personal data, but none of the code rules. `candidates.json` lists them under
+`language_coverage.text_only`, the scan prints a warning, and a note says which rules were not
+assessed; carry that into the limitations.
 
 **Numbers that aren't personal data.**
 
@@ -301,7 +321,10 @@ python scripts/run_tests.py --preset pytest --cwd <copy> --out <run>/runs.json -
     (`TDA_CLOCK_DATE=2028-02-29`).
   - Prefer the repo's own clock: freezegun, time-machine or an injected `Clock`. Fake timers in Jest
     and Vitest are per test, so they can't shift a whole suite. Otherwise use one of these:
-    - libfaketime, for whole processes;
+    - libfaketime, for whole processes (it does not move Go binaries, which read the time through
+      the vDSO and their own syscalls rather than libc, and it doesn't run on Windows: for Go, use
+      the code's injected clock where it has one, and otherwise judge `time.Date`/`time.Now` pairs
+      by reading, as `scan_data.py` does);
     - `clock_shift.py`, which moves Python's `date`, `datetime` and `time`, and must sit in the
       directory pytest starts from. It replaces the `date` and `datetime` classes when it loads,
       and a C-extension library imported after that (pandas with numpy) can crash the
@@ -326,12 +349,24 @@ python scripts/run_tests.py --preset pytest --cwd <copy> --out <run>/runs.json -
 - **Residue:** snapshot the copy before the runs, and diff it after:
 
   ```bash
-  python scripts/residue.py snapshot <copy> --out <run>/tree.before.json
-  python scripts/residue.py diff <copy> --before <run>/tree.before.json --out <run>/residue.json
+  python scripts/residue.py snapshot <copy> --out <run>/tree.before.json --also home=<empty home>
+  python scripts/residue.py diff <copy> --before <run>/tree.before.json --out <run>/residue.json --also home=<empty home>
   ```
 
   Files added or changed outside the ignored build and dependency directories are a `residue`
-  finding, with `source: agent` and basis `{"evidence": "residue.json"}`.
+  finding, with `source: agent` and basis `{"evidence": "residue.json"}`. Tests also write outside
+  the tree (downloaded browsers, caches and settings under the home directory): run them with HOME
+  (and USERPROFILE on Windows) pointing at an empty folder and pass that folder as `--also home=...`;
+  its files are listed as `home:<path>` and under `outside_tree`, never by the folder's own path.
+  Never snapshot a person's real home.
+- **Network isolation for runtimes with no guard:** `net_guard.py` and `net_guard.cjs` cover Python
+  and Node. For Go and other runtimes that honour `HTTP_PROXY`/`HTTPS_PROXY`, point both at a closed
+  loopback port to block outbound calls, or at a small loopback logging proxy to see which tests reach
+  which host (`NO_PROXY` must not cover the host); the proxy log is the evidence for a `live_endpoint`
+  finding. Turn off the product's own update checks and telemetry with its documented variables.
+- **Go runs:** with the `gotestsum` preset pass the packages (`--tests ./...`; with none, `go test`
+  runs only the root package), and select tests with `-run` through `--runner-args`. Set HOME and
+  USERPROFILE to an empty folder and the proxy variables as above.
 - **Locale:** use another locale and time zone. Many runtimes on Windows ignore `LANG`, so run
   it on Linux or macOS when you can, and say when the platform changed too.
 
@@ -345,7 +380,7 @@ both are true:
 | Severity (computed) | When |
 |---|---|
 | **Critical** | Real-looking personal data (Serious with an `anonymised_by` marker); a time bomb failing within 30 days |
-| **Serious** | A time bomb failing within a year; environment coupling to production; shared mutable state confirmed by an order run; residue in a served directory (`public/`, `static/`, `uploads/`) |
+| **Serious** | A time bomb failing within a year; environment coupling to production (a host named prod/live, or a review finding whose basis shows tests reaching a live endpoint); shared mutable state confirmed by an order run; residue in a served directory (`public/`, `static/`, `uploads/`) |
 | **Moderate** | Magic ids, nondeterminism, schema drift, locale assumptions, unconfirmed shared state, time bombs further out, residue outside a served directory |
 | **Minor** | Snapshot rot, unused or duplicate files |
 
@@ -387,7 +422,7 @@ Show the user:
 | `metadata` | Repo, date the audit counts from, clock shift, `apply_fixes`, candidates and runs files, critical tests, platform |
 | `inventory[]` | Every data source: kind, format, the tests that load it, scanned or not assessed, any `anonymised_by` |
 | `tools[]` | Each tool ran, not run, errored or not applicable, and what that leaves unchecked |
-| `findings[]` | Category, candidates (or `source: agent` with a `basis`), location, data type, why flagged, `real_looking`, confidence, experiment, fails-on date, affected tests, fix, verification step; severity, reach, score and priority are computed |
+| `findings[]` | Category, candidates (or `source: agent` with a `basis`), location, data type, why flagged, `real_looking`, confidence, experiment, fails-on date, `host` and `live_endpoint` (a review finding whose basis names the live host tests reach), affected tests, fix, verification step; severity, reach, score and priority are computed |
 | `dismissed[]` | Each candidate set aside, by rule or by review, with the reason |
 | `handoffs[]` | To code-security-auditor (secrets), flaky-test-hunter (shared state) or privacy-flow-auditor |
 | `summary` | Headline, files scanned and not assessed, counts by category, priority and severity, earliest time bomb, evidence completeness |

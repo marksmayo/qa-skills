@@ -109,7 +109,8 @@ python scripts/render_report.py examples/test_data_report.example.json --brief
 - `scripts/clock_shift.py`: pytest plugin that moves the clock for time-bomb runs
 - `scripts/clock_shift.mjs`: the same for Node runners (Vitest, Jest), loaded with `NODE_OPTIONS=--import` or as a setup file
 - `scripts/redact_evidence.py`: removes flagged values from runner output before validation
-- `scripts/residue.py`: snapshot and diff of the working tree, for files a run leaves behind
+- `scripts/residue.py`: snapshot and diff of the working tree (and, with `--also home=<dir>`, an isolated home folder), for files a run leaves behind
+- `scripts/self_test.py`: synthetic checks of the Go rules, URL credentials, card shapes, language coverage, `--also` and the live-endpoint severity
 - `scripts/validate_test_data_report.py`: checks the report against the candidates, the runs and the never-echo rule
 - `scripts/render_report.py`: coloured terminal/Markdown report
 - `scripts/run_tests.py`, `parse_results.py`, `detect_conventions.py`: shared helpers
