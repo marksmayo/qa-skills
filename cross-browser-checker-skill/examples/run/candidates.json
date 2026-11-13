@@ -39,6 +39,9 @@
    "element_type": null,
    "delta": null,
    "page": "home",
+   "pages": [
+    "home"
+   ],
    "viewport": "1280x800",
    "states": [
     "home~recommendations"
@@ -98,6 +101,9 @@
    "element_type": null,
    "delta": null,
    "page": "home",
+   "pages": [
+    "home"
+   ],
    "viewport": "1280x800",
    "states": [
     "home",
@@ -175,6 +181,9 @@
    "element_type": "date",
    "delta": null,
    "page": "home",
+   "pages": [
+    "home"
+   ],
    "viewport": "1280x800",
    "states": [
     "home",
@@ -261,6 +270,9 @@
    "element_type": null,
    "delta": null,
    "page": "home",
+   "pages": [
+    "home"
+   ],
    "viewport": "1280x800",
    "states": [
     "home~recommendations"
@@ -313,6 +325,9 @@
    "element_type": "date",
    "delta": null,
    "page": "home",
+   "pages": [
+    "home"
+   ],
    "viewport": "1280x800",
    "states": [
     "home",
@@ -1186,8 +1201,9 @@
     150,
     35
    ],
-   "size": true,
-   "detail": "#depart box differs by dx -28, dy 0, dw 35, dh -3",
+   "size": false,
+   "detail": "#depart box differs by dx -28, dy 0, dw 35, dh -3 (the size change is native <input> rendering; the move is what differs)",
+   "native_size": true,
    "page": "home",
    "viewport": "1280x800",
    "engine": "webkit",
@@ -1535,8 +1551,9 @@
     150,
     35
    ],
-   "size": true,
-   "detail": "#depart box differs by dx -28, dy 0, dw 35, dh -3",
+   "size": false,
+   "detail": "#depart box differs by dx -28, dy 0, dw 35, dh -3 (the size change is native <input> rendering; the move is what differs)",
+   "native_size": true,
    "page": "home~recommendations",
    "viewport": "1280x800",
    "engine": "webkit",

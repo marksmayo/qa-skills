@@ -45,7 +45,9 @@ ignoring a 2 px border) is under 40% of the reference's in every run, and the re
 - **Usage band:** the global usage share of the affected engines' browser families (caniuse, by
   engine: Blink, Gecko, WebKit): under 5% is 1, 5–20% is 2, over 20% is 3. WebKit's share is used for
   Playwright WebKit as the nearest proxy, not because it is Safari.
-- **Reach:** pages (1 per candidate; states of one page count once).
+- **Reach:** pages: 1, 2, or 3 for three or more (states of one page count once). A layout
+  difference of one element (by its signature, such as a shared header) on several pages is one
+  candidate, and reach counts its pages; other differences are one candidate per page.
 - P0 ≥ 24, P1 ≥ 12, P2 ≥ 6, otherwise P3. A failing step on a critical-path state is at least P1.
 
 ## Feature findings

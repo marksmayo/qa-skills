@@ -14,6 +14,10 @@ targets.json:
      "rate_limit_seconds": 0.5, "max_retries": 2, "max_retry_after_seconds": 60, "stop_on_429": false,
      "request_budget": null}
 
+actions: the shared harness's steps (goto, click, dblclick, hover, press, fill, select, check, uncheck, wait,
+wait_for). A value step is {"fill": "#q", "value": "rome"}; the list form {"fill": ["#q", "rome"]} is accepted too.
+Every step is checked before a browser starts, and a malformed one stops the capture naming its page, state and number.
+
 storage_state: a session file a person captured by signing in by hand (`python browser_harness.py
 capture-session --url <app> --out <file outside the repo>`), the same as "auth": {"storage_state": file}. It is
 loaded into every engine's context (cookies, localStorage and sessionStorage); runs.json records only the
@@ -129,8 +133,11 @@ SNAP = r"""
     const cs = getComputedStyle(el);
     if (cs.visibility === 'hidden' || cs.display === 'none') continue;
     const own = [...el.childNodes].filter(c => c.nodeType === 3).map(c => c.textContent).join(' ').replace(/\s+/g, ' ').trim();
-    els.push({sig: sigOf(el), tag: el.tagName.toLowerCase(), type: el.type || null, text: own.slice(0, 80),
-              box: [Math.round(r.left + scrollX), Math.round(r.top + scrollY), Math.round(r.width), Math.round(r.height)]});
+    const item = {sig: sigOf(el), tag: el.tagName.toLowerCase(), type: el.type || null, text: own.slice(0, 80),
+              box: [Math.round(r.left + scrollX), Math.round(r.top + scrollY), Math.round(r.width), Math.round(r.height)]};
+    // an inline element's line boxes, one per line it spans, so a wrap is told apart from content that isn't drawn
+    if (cs.display === 'inline') { const n = el.getClientRects().length; if (n > 1) item.lines = n; }
+    els.push(item);
     if (els.length >= 2000) break;
   }
   const imgs = [...document.images].map(i => ({sig: sigOf(i), src: i.currentSrc || i.src, complete: i.complete, natural: [i.naturalWidth, i.naturalHeight]}));
@@ -168,6 +175,31 @@ def inject(page, css: str, marker: str, what: str) -> None:
     if not page.evaluate(APPLIED, marker):
         raise RuntimeError(f'the {what} style did not apply (the page\'s Content-Security-Policy may refuse inline styles; '
                            'set "bypass_csp": true)')
+
+
+ACTIONS = ('goto', 'click', 'dblclick', 'hover', 'press', 'fill', 'select', 'check', 'uncheck', 'wait', 'wait_for')
+
+
+def normalise_action(a, where: str) -> dict:
+    """One state step in the shared harness's form, checked before any browser starts. Both spellings of a value step are
+    accepted: {"fill": "#sel", "value": "x"} (the harness's, also used by the WCAG auditor) and {"fill": ["#sel", "x"]}
+    (the crash hunter's probe form), likewise for "select". An unknown or malformed step is an error naming the step."""
+    if not isinstance(a, dict) or not a:
+        raise ValueError(f'{where}: a step must be an object such as {{"click": "#menu"}}, not {a!r}')
+    verbs = [k for k in a if k in ACTIONS]
+    if len(verbs) != 1:
+        raise ValueError(f'{where}: a step needs exactly one of {", ".join(ACTIONS)}; got {sorted(a)}')
+    v = verbs[0]
+    allowed = {v, 'value', 'env'} if v in ('fill', 'select') else {v}
+    if set(a) - allowed:
+        raise ValueError(f'{where}: unexpected key(s) {sorted(set(a) - allowed)} in a "{v}" step')
+    if v in ('fill', 'select') and isinstance(a[v], list):
+        if len(a[v]) != 2 or not all(isinstance(x, str) for x in a[v]) or 'value' in a or 'env' in a:
+            raise ValueError(f'{where}: "{v}" as a list takes [selector, value]; got {a[v]!r}')
+        return {v: a[v][0], 'value': a[v][1]}
+    if isinstance(a[v], bool) or not isinstance(a[v], (str, int)):
+        raise ValueError(f'{where}: "{v}" takes a string, got {a[v]!r}')
+    return dict(a)
 
 
 def run_once(h: Harness, url: str, viewport: str, actions: list, shot: Path, scroll: bool = True, settings: dict | None = None) -> dict:
@@ -277,6 +309,10 @@ def main() -> int:
     try:
         plan = planned_checks(cfg)
         s = settings_from(cfg, urls)
+        for p in cfg['pages']:
+            for st in p.get('states') or []:
+                st['actions'] = [normalise_action(x, f'{p["name"]}~{st["name"]} step {i + 1}')
+                                 for i, x in enumerate(st.get('actions') or [])]
     except ValueError as e:
         print(f'error: {e}', file=sys.stderr)
         return 2

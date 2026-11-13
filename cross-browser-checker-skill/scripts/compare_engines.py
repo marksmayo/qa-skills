@@ -13,10 +13,17 @@ Per page (and state) and viewport, each observation is evaluated in every run of
              overflow; content not rendered (an element whose ink, the share of pixels unlike its
              background, is under 40% of the reference engine's)
 Differences are dismissed automatically, with the reason, when they are font metrics (under 16 px of
-movement, within 4 px or 5% in size), native form controls drawn at another size, a box that changed
-size because something inside it changed, a box resized with its container, an element that moved
-because a box above it grew, an input's box when its type fell back, or an element inside another
-missing element.
+movement, within 4 px or 5% in size), native form controls drawn at another size (judged apart from a
+move: a control that also moved is then judged as a move), a line wrap (a row of items under one
+parent that keep their order but wrap onto another line, with no item resized beyond font metrics:
+every item of the row, and what moved with them, is one dismissal), a box that changed size because
+something inside it changed, a box resized with its container, an element that moved because a box
+above it grew, an input's box when its type fell back, an element inside another missing element, or
+an ink measure between boxes of different shape (a different number of line boxes, or the area
+changed more than twofold: an inline element that wrapped, a list box drawn at another size).
+A layout difference of one element (by its signature) on several pages is one candidate, whose reach
+counts the pages (`pages`). When comparisons were made and nothing at all came out, `self_check`
+says how many element boxes were compared and how many were identical, to be checked by eye.
 Only captured runs are compared: a page, viewport and engine with any run errored or skipped
 (run_status) is left out, and `comparisons` in the output lists every planned engine-versus-reference
 pair, how many were made and why the others weren't. No comparison made means nothing was compared,
@@ -54,6 +61,10 @@ FAMILIES = {'blink': ['chrome', 'edge', 'opera', 'and_chr', 'samsung', 'op_mob',
             'gecko': ['firefox', 'and_ff'], 'webkit': ['safari', 'ios_saf']}
 ENGINE_FAMILY = {'chromium': 'blink', 'firefox': 'gecko', 'webkit': 'webkit'}
 INK_TAGS = {'input', 'img', 'button', 'select', 'textarea', 'h1', 'h2', 'h3', 'p', 'a', 'label', 'li', 'span', 'svg', 'canvas'}
+NATIVE_TAGS = ('input', 'button', 'select', 'textarea')
+# Ink is compared only between boxes of comparable shape: a box whose area changed by more than this factor (an inline
+# element that wrapped onto two lines, a list box drawn at another size) spreads the same ink over a different area.
+INK_AREA_FACTOR = 2.0
 
 
 def ink(img: png_io.Image, box: list[int]) -> float | None:
@@ -135,7 +146,8 @@ def observations(run: dict, inks: list | None) -> dict[tuple, dict]:
             v = inks[n] if inks is not None else None
             n += 1
             if v is not None:
-                obs[('ink', e['sig'])] = {'ink': round(v, 4), 'box': e['box'], 'tag': e['tag'], 'type': e.get('type')}
+                obs[('ink', e['sig'])] = {'ink': round(v, 4), 'box': e['box'], 'tag': e['tag'], 'type': e.get('type'),
+                                          'lines': e.get('lines')}
     return obs
 
 
@@ -208,7 +220,8 @@ def comparisons(doc: dict, ref: str) -> dict:
             'not_made': [r for r in rows if not r['compared']]}
 
 
-def compare(doc: dict, base: Path, ref: str, jobs: int | None = None) -> tuple[list[dict], list[dict], list[dict]]:
+def compare(doc: dict, base: Path, ref: str, jobs: int | None = None,
+            stats: dict | None = None) -> tuple[list[dict], list[dict], list[dict]]:
     """Differences, flaky observations and automatic dismissals, from the captured runs only: a run that errored or was
     skipped has no observations, and comparing it would turn the error into differences."""
     inks = all_inks(doc, base, ref, default_jobs() if jobs is None else jobs)
@@ -230,12 +243,19 @@ def compare(doc: dict, base: Path, ref: str, jobs: int | None = None) -> tuple[l
                 continue
             first = len(diffs)
             moves: list[tuple[str, list, list]] = []   # (sig, ref box, delta) of every element with a stable box in both
+            sizes: dict[str, bool] = {}   # sig -> its size changed beyond font metrics (native controls excepted)
             keys = set().union(*(r['obs'].keys() for r in R + E))
             for k in sorted(keys, key=str):
                 if k[0] == 'present' and all(k in r['obs'] for r in R + E):
                     rb, eb = R[0]['obs'][k]['box'], E[0]['obs'][k]['box']
                     if all(r['obs'][k]['box'] == rb for r in R) and all(e['obs'][k]['box'] == eb for e in E):
-                        moves.append((k[1], rb, [eb[i] - rb[i] for i in range(4)]))
+                        delta = [eb[i] - rb[i] for i in range(4)]
+                        moves.append((k[1], rb, delta))
+                        sizes[k[1]] = R[0]['obs'][k]['tag'] not in NATIVE_TAGS and any(
+                            abs(dd) > 4 and abs(dd) > 0.05 * max(1, rb[2 + i]) for i, dd in enumerate(delta[2:]))
+                        if stats is not None:
+                            stats['boxes'] = stats.get('boxes', 0) + 1
+                            stats['identical'] = stats.get('identical', 0) + (not any(delta))
                 kind = k[0]
                 if kind == 'ink':
                     continue
@@ -300,6 +320,15 @@ def compare(doc: dict, base: Path, ref: str, jobs: int | None = None) -> tuple[l
                 if None in rv or None in ev or min(rv) < 0.02:
                     continue
                 low = [v < 0.4 * min(rv) for v in ev]
+                if any(low):
+                    why = ink_not_comparable(R[0]['obs'][k], E[0]['obs'][k])
+                    if why:
+                        o = E[0]['obs'][k]
+                        dismissed.append({'page': page, 'viewport': vp, 'engine': eng, 'ref': ref, 'kind': 'layout',
+                                          'subkind': 'content_not_rendered', 'key': k[1], 'element': k[1],
+                                          'ref_box': R[0]['obs'][k]['box'], 'ink': {ref: rv, eng: ev},
+                                          'runs': {ref: [False] * len(R), eng: low}, 'reason': why})
+                        continue
                 if all(low):
                     o = E[0]['obs'][k]
                     diffs.append({'page': page, 'viewport': vp, 'engine': eng, 'ref': ref, 'kind': 'layout', 'subkind': 'content_not_rendered',
@@ -310,6 +339,7 @@ def compare(doc: dict, base: Path, ref: str, jobs: int | None = None) -> tuple[l
                 elif any(low):
                     flaky.append({'page': page, 'viewport': vp, 'kind': 'layout', 'subkind': 'content_not_rendered', 'key': k[1],
                                   'runs': {ref: [False] * len(R), eng: low}})
+            wraps(diffs, first, dismissed, moves, sizes)
             drift(diffs, first, dismissed, moves)
     return diffs, flaky, dismissed
 
@@ -321,9 +351,10 @@ def drift(diffs: list[dict], first: int, dismissed: list[dict], moves: list[tupl
     within 16 px, the threshold for a move. A real jump (a step of more than 16 px between neighbours) stays a difference,
     and the elements below it are dismissed as moving with it."""
     keep = diffs[:first]
+    fell_back = {d['element'] for d in diffs[first:] if d['subkind'] == 'input_type_fallback'}
     for d in diffs[first:]:
-        if d['subkind'] != 'box_differs' or d.get('size') or not d.get('delta'):
-            keep.append(d)
+        if d['subkind'] != 'box_differs' or d.get('size') or not d.get('delta') or d['element'] in fell_back:
+            keep.append(d)   # (an input whose type fell back: its box follows from that, said in consequences())
             continue
         top, left, right = d['ref_box'][1], d['ref_box'][0], d['ref_box'][0] + d['ref_box'][2]
         above = [m for m in moves if m[1][1] + m[1][3] <= top and m[1][0] < right and m[1][0] + m[1][2] > left]
@@ -337,6 +368,102 @@ def drift(diffs: list[dict], first: int, dismissed: list[dict], moves: list[tupl
         if max(abs(ddx), abs(ddy)) <= 16 and (near[2][0] or near[2][1]):
             dismissed.append(dict(d, reason=f'cumulative drift: moved with {near[0]} just above it (dx {near[2][0]}, dy {near[2][1]} '
                                             f'there; dx {d["delta"][0]}, dy {d["delta"][1]} here), a step under 16 px'))
+        else:
+            keep.append(d)
+    diffs[first:] = keep[first:]
+
+
+def ink_not_comparable(ro: dict, eo: dict) -> str | None:
+    """Why two ink measures of one element can't be compared, or None. Ink is a share of the box's pixels, so it only
+    compares boxes of the same shape: an inline element that wrapped onto another number of lines (its line boxes, from
+    getClientRects, when the capture recorded them), or a box whose area changed by more than INK_AREA_FACTOR (a label
+    whose bounding box now spans two lines, a list box or other control drawn at another size), spreads the same ink
+    over a different area and would read as content not rendered."""
+    rl, el = ro.get('lines'), eo.get('lines')
+    if rl and el and rl != el:
+        return f'ink not comparable: the element is on {rl} line(s) in the reference and {el} here (it wrapped)'
+    ra, ea = ro['box'][2] * ro['box'][3], eo['box'][2] * eo['box'][3]
+    if ra and ea and max(ra, ea) > INK_AREA_FACTOR * min(ra, ea):
+        return (f'ink not comparable: the box changed shape ({ro["box"][2]}x{ro["box"][3]} -> {eo["box"][2]}x{eo["box"][3]}), '
+                f'so the same content covers a different share of it')
+    return None
+
+
+def parent_sig(sig: str) -> str | None:
+    return sig.rsplit('>', 1)[0] if '>' in sig else None
+
+
+def wraps(diffs: list[dict], first: int, dismissed: list[dict], moves: list[tuple[str, list, list]],
+          sizes: dict[str, bool]) -> None:
+    """Line-wrap cascades: a row of inline items (links in a nav bar, chips, form controls) whose last items no longer fit
+    on the line in one engine (wider text, a wider control) wrap to the next line there. The first item that wrapped
+    moves far left and one line down, and every item after it moves with it, so one cause would otherwise read as one
+    difference per item, on every page that shares the row.
+
+    A row is the children of one parent that share a line in one engine. It wrapped when, in the other engine, the items
+    keep their order (each next item is either further right on the same line, or starts a new line below) and at least
+    one starts a new line; and it wrapped from font metrics or native controls when no item in it changed size beyond
+    that (within 4 px or 5%, or a native control). Then every move in the row, and the moves of anything inside an item
+    of it by the same amount, are dismissed as one wrap. Rows are checked both ways (wrapped in the engine, or in the
+    reference)."""
+    pos = {m[0]: (m[1], [m[1][i] + m[2][i] for i in range(4)]) for m in moves}
+    rows: dict[str, list[str]] = {}
+    for sig in pos:
+        p = parent_sig(sig)
+        if p is not None:
+            rows.setdefault(p, []).append(sig)
+    wrapped: dict[str, str] = {}   # sig -> reason
+    for parent, sigs in rows.items():
+        if len(sigs) < 2:
+            continue
+        for a_side, b_side, where in ((0, 1, 'here'), (1, 0, 'in the reference')):
+            # lines in side a: cluster by top
+            items = sorted(sigs, key=lambda s: (pos[s][a_side][1], pos[s][a_side][0]))
+            lines: list[list[str]] = []
+            for s in items:
+                if lines and abs(pos[s][a_side][1] - pos[lines[-1][0]][a_side][1]) <= 8:
+                    lines[-1].append(s)
+                else:
+                    lines.append([s])
+            for line in lines:
+                if len(line) < 2:
+                    continue
+                line.sort(key=lambda s: pos[s][a_side][0])
+                ok, breaks = True, []
+                for x, y in zip(line, line[1:]):
+                    bx, by = pos[x][b_side], pos[y][b_side]
+                    if abs(by[1] - bx[1]) <= 8 and by[0] > bx[0]:
+                        continue
+                    if by[1] > bx[1] + 8 and by[0] <= bx[0]:
+                        breaks.append(y)
+                        continue
+                    ok = False
+                    break
+                if not ok or not breaks:
+                    continue
+                if any(sizes.get(s) for s in line):
+                    continue   # an item changed size beyond font metrics: not a plain wrap
+                why = (f'line wrap: the row of {len(line)} items in {parent} wraps {where} from {breaks[0]} on '
+                       f'(items keep their order; no item changed size beyond font metrics or native control rendering)')
+                for s in line:
+                    wrapped.setdefault(s, why)
+    if not wrapped:
+        return
+    keep = diffs[:first]
+    for d in diffs[first:]:
+        why = None
+        if d['subkind'] == 'box_differs' and not d.get('size') and d.get('delta'):
+            why = wrapped.get(d['element'])
+            if why is None:
+                # inside a wrapped item, moved with it
+                for s, w in wrapped.items():
+                    if d['element'].startswith(s + '>') and s in pos:
+                        sd = [pos[s][1][i] - pos[s][0][i] for i in range(2)]
+                        if abs(sd[0] - d['delta'][0]) <= 4 and abs(sd[1] - d['delta'][1]) <= 4:
+                            why = f'moved with {s}, inside it; ' + w
+                            break
+        if why:
+            dismissed.append(dict(d, reason=why))
         else:
             keep.append(d)
     diffs[first:] = keep[first:]
@@ -357,13 +484,20 @@ def box_diff(R, E, k):
                                                'reason': 'font metrics: under 16 px of movement and within 4 px or 5% in size'}}
         return None
     tag = R[0]['obs'][k]['tag']
-    if tag in ('input', 'button', 'select', 'textarea') and not pos:
+    native = tag in NATIVE_TAGS
+    if native and not pos:
         return {'report': False, 'entry': {'kind': 'layout', 'subkind': 'box_differs', 'key': k[1], 'element': k[1],
                                            'delta': [dx, dy, dw, dh], 'ref_box': rb,
                                            'reason': f'native control rendering: engines draw <{tag}> at different sizes'}}
-    return {'report': True, 'entry': {'kind': 'layout', 'subkind': 'box_differs', 'key': k[1], 'element': k[1], 'delta': [dx, dy, dw, dh],
-                                      'ref_box': rb, 'size': size,
-                                      'detail': f'{k[1]} box differs by dx {dx}, dy {dy}, dw {dw}, dh {dh}'}}
+    # A native control that also moved: its size change is the engine's control rendering, judged apart from the move,
+    # so what is left is a move, which the wrap, drift and consequence rules then judge like any other element's.
+    entry = {'kind': 'layout', 'subkind': 'box_differs', 'key': k[1], 'element': k[1], 'delta': [dx, dy, dw, dh],
+             'ref_box': rb, 'size': size and not native,
+             'detail': f'{k[1]} box differs by dx {dx}, dy {dy}, dw {dw}, dh {dh}'}
+    if native and size:
+        entry['native_size'] = True
+        entry['detail'] += f' (the size change is native <{tag}> rendering; the move is what differs)'
+    return {'report': True, 'entry': entry}
 
 
 def inside(a: list | None, b: list | None) -> bool:
@@ -400,10 +534,12 @@ def consequences(diffs: list[dict], dismissed: list[dict]) -> list[dict]:
             if inner and d.get('size'):
                 dismissed.append(dict(d, reason=f'follows from {inner["subkind"]} of {inner["element"]} inside it'))
                 continue
-            above = next((c for c in same if c.get('ref_box') and d.get('ref_box') and c['subkind'] != 'box_differs' or
-                          (c['subkind'] == 'box_differs' and c.get('size')) and c.get('ref_box') and d.get('ref_box') and
-                          c['ref_box'][1] + c['ref_box'][3] <= d['ref_box'][1] and not d.get('size')), None)
-            if above and not d.get('size') and above.get('ref_box') and above['ref_box'][1] < d['ref_box'][1]:
+            # a cause above it: anything but a plain move (a missing or extra element, a fallback, a box that changed size)
+            # that ends above this element's top
+            above = next((c for c in same if c.get('ref_box') and d.get('ref_box')
+                          and (c['subkind'] != 'box_differs' or c.get('size'))
+                          and c['ref_box'][1] + c['ref_box'][3] <= d['ref_box'][1]), None)
+            if above and not d.get('size'):
                 dismissed.append(dict(d, reason=f'moved because {above["element"]} above it changed'))
                 continue
         keep.append(d)
@@ -439,11 +575,16 @@ def candidates(diffs: list[dict], dismissed: list[dict], doc: dict, caniuse: dic
     merged: dict[tuple, dict] = {}
     for d in consequences(diffs, dismissed):
         base = d['page'].split('~')[0]
-        k = (base, d['viewport'], d['kind'], d['subkind'], d['key'])
+        # a layout difference of one element (a shared header, nav or footer component, by its signature) is one cause on
+        # every page that shows it: one candidate, whose reach counts the pages
+        shared = d['kind'] == 'layout' and bool(d.get('element'))
+        k = (None if shared else base, d['viewport'], d['kind'], d['subkind'], d['key'])
         c = merged.setdefault(k, {k2: d.get(k2) for k2 in ('kind', 'subkind', 'key', 'element', 'src', 'step', 'detail', 'element_tag',
                                                            'element_type', 'delta')}
-                              | {'page': base, 'viewport': d['viewport'], 'states': [], 'engines': [], 'reference': d['ref'], 'runs': {},
-                                 'messages': {}, 'ink': {}})
+                              | {'page': base, 'pages': [], 'viewport': d['viewport'], 'states': [], 'engines': [], 'reference': d['ref'],
+                                 'runs': {}, 'messages': {}, 'ink': {}})
+        if base not in c['pages']:
+            c['pages'].append(base)
         if d['page'] not in c['states']:
             c['states'].append(d['page'])
         if d['engine'] not in c['engines']:
@@ -477,7 +618,7 @@ def candidates(diffs: list[dict], dismissed: list[dict], doc: dict, caniuse: dic
         conf = 'low' if c['build_limitations'] else 'high' if explained else 'medium'
         sh = share(c['engines'], caniuse)
         band = 1 if sh is None or sh < 5 else 2 if sh <= 20 else 3
-        pages = 1
+        pages = min(3, len(c['pages']))
         score = WEIGHT[sev] * band * pages
         prio = 'P0' if score >= 24 else 'P1' if score >= 12 else 'P2' if score >= 6 else 'P3'
         crit = c['subkind'] == 'step_failed' and bool(set(c['states']) & critical_states)
@@ -554,6 +695,19 @@ def static_only(a) -> int:
     return 0
 
 
+def self_check(cands: list, flaky: list, dismissed: list, cmp: dict, stats: dict) -> str | None:
+    """A line for a comparison that found nothing at all: no candidate, nothing flaky and nothing dismissed automatically
+    although comparisons were made. Three engines rarely draw text identically, so say how many element boxes were
+    compared and how many were identical, for the agent to check a screenshot pair by eye before writing "no
+    differences detected" (fixed-size, inline-styled pages can legitimately match)."""
+    if cands or flaky or dismissed or not cmp['made']:
+        return None
+    boxes, same = stats.get('boxes', 0), stats.get('identical', 0)
+    return (f'0 candidates, 0 flaky and 0 automatic dismissals across {cmp["made"]} comparison(s): {same} of {boxes} element '
+            'box(es) compared were identical to the pixel in both engines' + (' (no element box was compared)' if not boxes else '')
+            + '. Open one screenshot pair per engine and confirm the pages really rendered alike before reporting no differences')
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('runs', type=Path, nargs='?')
@@ -579,7 +733,8 @@ def main() -> int:
         caniuse = None
     features = json.loads(a.features.read_text(encoding='utf-8')) if a.features else None
     critical = {r['page'] for r in doc['runs'] if r.get('critical_path')}
-    diffs, flaky, dismissed = compare(doc, a.runs.parent, a.reference, a.jobs)
+    stats: dict = {}
+    diffs, flaky, dismissed = compare(doc, a.runs.parent, a.reference, a.jobs, stats)
     cands = candidates(diffs, dismissed, doc, caniuse, features, critical)
     if features:
         for f in features['features']:
@@ -588,8 +743,13 @@ def main() -> int:
     out = {'runs_file': a.runs.name, 'reference': a.reference, 'engines': doc['engines'], 'reruns': doc['reruns'],
            'third_party': third_party(doc), 'candidates': cands, 'flaky': flaky, 'dismissed_automatically': dismissed, 'features': features,
            'comparisons': comparisons(doc, a.reference)}
+    check = self_check(cands, flaky, dismissed, out['comparisons'], stats)
+    if check:
+        out['self_check'] = check
     a.out.write_text(json.dumps(out, indent=1) + '\n', encoding='utf-8')
     cmp = out['comparisons']
+    if check:
+        print(f'self-check: {check}', file=sys.stderr)
     print(f'{len(cands)} candidate(s), {len(flaky)} flaky, {len(dismissed)} dismissed automatically; {cmp["made"]} of '
           f'{cmp["planned"]} engine comparison(s) made -> {a.out}', file=sys.stderr)
     if cmp['not_made']:
