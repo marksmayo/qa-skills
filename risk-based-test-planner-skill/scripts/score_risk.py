@@ -218,31 +218,21 @@ CONFIG_NAME = re.compile(r'^\.|.*\.(config|setup)\.\w+$|.*rc\.(js|cjs|mjs|ts|cts
 
 
 # A directory named like test code (e2e/, test/, tests/, spec/) is test code unless it is a product package: it holds a
-# package manifest and either a src/ directory or a package.json that declares main, module, exports or bin (a
-# workspace package named e2e). A Playwright project's e2e/package.json with only specs stays test code. This is the
-# rule diff_scope.py's classification uses (convention shared across the skills), copied here because areas need it.
+# package manifest and ships code (a src/ directory, a package.json declaring main, module, exports or bin, ...): a
+# workspace package named e2e. A Playwright project's e2e/package.json with only specs stays test code. The rule is
+# diff_scope.product_package, shared across the skills.
 TEST_DIR_NAMES = {'e2e', 'test', 'tests', 'spec'}
-MANIFESTS = ('package.json', 'pyproject.toml', 'Cargo.toml', 'setup.py', 'go.mod', 'pom.xml', 'build.gradle', 'build.gradle.kts')
 PRODUCT_DIRS: set[str] = set()     # set by score() from the repository's files
 
 
 def product_dirs(root: Path, files: list[str]) -> set[str]:
-    out = set()
+    dirs = set()
     for f in files:
-        p = PurePosixPath(f)
-        if p.name not in MANIFESTS or p.parent.name not in TEST_DIR_NAMES:
-            continue
-        d = str(p.parent)
-        declares = False
-        if p.name == 'package.json':
-            try:
-                pkg = json.loads((root / f).read_text(encoding='utf-8'))
-                declares = isinstance(pkg, dict) and any(pkg.get(k) for k in ('main', 'module', 'exports', 'bin'))
-            except (OSError, ValueError):
-                pass
-        if declares or any(x.startswith(d + '/src/') for x in files):
-            out.add(d)
-    return out
+        parts = PurePosixPath(f).parts[:-1]
+        for i, x in enumerate(parts):
+            if x in TEST_DIR_NAMES:
+                dirs.add('/'.join(parts[:i + 1]))
+    return {d for d in dirs if diff_scope.product_package(root, d)}
 
 
 def dir_names(path: str) -> set[str]:
@@ -1091,7 +1081,7 @@ def score(args) -> dict:
     warnings = []
     excluded = []
     for f in files:
-        kind, why = diff_scope.classify(f, '', False)
+        kind, why = diff_scope.classify(f, '', False, root)
         if kind in ('generated', 'vendored') and area_of(f, areas):
             excluded.append({'path': f, 'reason': why})
         elif PurePosixPath(f).suffix in CODE_EXT and not is_test(f) and not is_area_code(f) and area_of(f, areas):
@@ -1121,7 +1111,7 @@ def score(args) -> dict:
         if (owner[f] is not None or f in excluded_paths or p.suffix not in CODE_EXT or is_test(f) or f.endswith('.d.ts')
                 or cx.get(f, {}).get('loc', 0) == 0):
             continue
-        kind, why = diff_scope.classify(f, '', False)
+        kind, why = diff_scope.classify(f, '', False, root)
         names = dir_names(f)
         if kind in ('generated', 'vendored'):
             reason = why
@@ -1440,9 +1430,17 @@ def self_test() -> int:
     files = ['packages/e2e/package.json', 'packages/e2e/src/run.ts', 'packages/e2e/tests/run.test.ts',
              'apps/shop/e2e/package.json', 'apps/shop/e2e/checkout.spec.ts', 'apps/shop/e2e/helpers.ts',
              'apps/shop/src/cart.ts']
+    import tempfile
     saved = set(PRODUCT_DIRS)
+    tmp = tempfile.TemporaryDirectory()
+    for f in files:                      # a workspace package named e2e (package.json + src/), an app's e2e/ project
+        p = Path(tmp.name) / f
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text('{"name": "e2e", "exports": {".": "./dist/index.js"}}\n' if f == 'packages/e2e/package.json'
+                     else '{"name": "shop-e2e", "private": true}\n' if f.endswith('package.json') else '\n',
+                     encoding='utf-8')
     PRODUCT_DIRS.clear()
-    PRODUCT_DIRS.update(product_dirs(Path('.'), files))
+    PRODUCT_DIRS.update(product_dirs(Path(tmp.name), files))
     try:
         for f, want_test in (('packages/e2e/src/run.ts', False), ('packages/e2e/tests/run.test.ts', True),
                              ('apps/shop/e2e/checkout.spec.ts', True), ('apps/shop/src/cart.ts', False)):
@@ -1459,6 +1457,7 @@ def self_test() -> int:
     finally:
         PRODUCT_DIRS.clear()
         PRODUCT_DIRS.update(saved)
+        tmp.cleanup()
     for b in bad:
         print('FAIL ' + b)
     print(f'self-test: {len(SELF_TEST_CASES) + 9 - len(bad)} passed, {len(bad)} failed')   # 9 path-rule checks

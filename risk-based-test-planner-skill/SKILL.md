@@ -101,7 +101,8 @@ package's own last release). It also reads the pending changesets (`.changeset/*
 per package, highest wins) and the breaking conventional commits since the base (`feat(x)!:`,
 `BREAKING CHANGE:`). A changeset is breaking when it bumps a package major or its text has a
 `**Breaking:**` note (in 0.x a minor bump can break callers). Pass the base to `diff_scope.py
---base`, `release.json` to `score_risk.py --release`, and name the base tag in the assumptions.
+--base` (or let `diff_scope.py --since-release [--release-tag 'pkg@*']` resolve it the same
+way), `release.json` to `score_risk.py --release`, and name the base tag in the assumptions.
 With `--release`, an area of a package with a breaking changeset that the scope changed (every
 area of the package when the scope changed none of them), or an area a breaking commit touched,
 is flagged `breaking_change`: at least Medium, and its change-in-scope evidence names the
