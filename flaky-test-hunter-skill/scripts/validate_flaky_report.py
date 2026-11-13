@@ -325,6 +325,9 @@ def same_file(flake_file: str | None, flake_id: str, smell_file: str) -> bool:
     smell_file = smell_file.replace('\\', '/')
     cands = [flake_file.replace('\\', '/')] if flake_file else []
     head = flake_id.split('::')[0]
+    if smell_file.endswith('_test.go') and cands and cands[0].endswith('_test.go'):
+        # one Go package: test names are unique across its _test.go files, so any file in the directory matches
+        return cands[0].rpartition('/')[0] == smell_file.rpartition('/')[0]
     if smell_file.endswith('_test.go') and not flake_file and '/' in head and not head.endswith('.go'):
         sdir = smell_file.rpartition('/')[0]
         pdir = go_package_dir(head)
@@ -746,6 +749,19 @@ def self_test() -> int:
             c['id'] = c['id'].replace('::TestTotal', '::TestTotal/with_discount')
         rep['flakes'][0]['test_id'] += '/with_discount'
     run('a smell in a test links to a flake in one of its subtests', go_subtest, True)
+
+    def go_file_set(rep, runs):              # parse_results names the _test.go defining the test; the smell is in a
+        go_smell(rep, runs)                  # helper file of the same package
+        rep['static_smells'][0]['file'] = 'pkg/cart/helpers_test.go'
+        for c in runs['cases']:
+            c['file'] = 'pkg/cart/cart_test.go'
+    run('a Go smell in another _test.go file of the flake\'s package links', go_file_set, True)
+
+    def go_file_other_pkg(rep, runs):
+        go_file_set(rep, runs)
+        rep['static_smells'][0]['file'] = 'pkg/tax/helpers_test.go'
+    run('a Go smell in another package does not link when the flake names its file', go_file_other_pkg, False,
+        'but linked to')
 
     def history(rep, runs):
         for i in (1, 2, 3):

@@ -130,30 +130,33 @@ process-global state and `--test-threads` are first-class `shared_state` / `reso
 levers. If `scan_pitfalls.py` prints a loud warning that the repo's dominant language has no smell
 pack, treat it as "not scanned", not "clean": the tests of that language were skipped.
 
-**Go.** Use `--preset gotestsum` (it writes JUnit) and know its traps:
+**Go.** Use `--preset go-test` (plain `go test -json`, no extra tool) or `--preset gotestsum`
+(JUnit from gotestsum). Both run every package (`./...`) when no `--tests` are given, set
+`-count=1` (results are never cached), and make a run whose package did not build or set up
+`errored` (its `<import path>::(build failed)` case never counts as a failure or a flake: it is a
+build failure on that platform).
 
-- Name the packages: `--tests ./...`. With no `--tests` the preset runs `go test` in the root
-  directory only, which is one package (or none: the run errors with 0 cases).
-- `-count=1` is already set, so results are never cached. `-shuffle=N` is applied only with
-  `--order shuffle --seed N`. Race runs go through `--runner-args "-race"` and are their own
-  variation (`race`, not `parallel`); `-race` needs cgo, so on a host without a C compiler it has
-  to run elsewhere (record which platform).
-- Ids are `<import path>::TestX` and `<import path>::TestX/sub`, with no file. A failing subtest
-  also fails its parent, so one failure counts twice; say so when quoting counts. A package whose
-  test binary does not build shows up as a failed `TestMain` (`[build failed]`): that is a build
-  failure on that platform, not a test failure, and it never counts as a flake.
-- `--tests` and `--isolate` pass ids to `go test` as package patterns, so they can't rerun one
-  test. Rerun a suspect with `--preset custom` and `go test -json -count=1 -run '^TestX$' ./pkg/x`
-  (a gotestsum `--junitfile` wrapper keeps the JUnit), quoting the pattern for the shell that runs
-  it: a wrapper such as `wsl.exe` or `sh -c` re-parses arguments, so `|`, `(` and `\` need quoting
-  again or the run errors.
+- Ids are `<import path>::TestX` and `<import path>::TestX/sub`; each case's `file` is the
+  `_test.go` file that defines the test (found through `go.mod`). A parent test is folded into its
+  `t.Run` subtests, so one failing subtest counts once (a parent that failed on its own is kept).
+- `--tests <id>` reruns one test: the id becomes its package plus `-run '^TestX$/^sub$'`. Ids from
+  several packages in one run are refused; use `--isolate` (one run per id) for those.
+- `-shuffle=N` is applied with `--order shuffle --seed N`. Race runs go through
+  `--runner-args "-race"` and are their own variation (`race`, not `parallel`); `-race` needs cgo,
+  so on a host without a C compiler it has to run elsewhere (record which platform). A wrapper such
+  as `wsl.exe` or `sh -c` (`--preset custom`) re-parses arguments, so `|`, `(` and `\` in a `-run`
+  pattern need quoting again or the run errors.
 - `bisect_polluter.py` refuses Go (`go test -run` runs tests in source order). Use seeded shuffles
   (`-shuffle=N`, 3+ passes one way, 2+ failures the other) as the order experiment.
-- The clock and network plugins don't load into a Go test binary (libfaketime doesn't reach it
-  either). For the network, run with `HTTP_PROXY`/`HTTPS_PROXY` set to a dead loopback port
-  (`http://127.0.0.1:1`): that stops clients using Go's default transport, logs nothing, and
-  misses raw `net.Dial` and clients with their own transport, so record network isolation as
-  partial.
+- The clock plugins don't load into a Go test binary (libfaketime doesn't reach it either), and
+  neither do `net_guard.py`/`net_guard.cjs`. For the network and the home directory use
+  `plugins/net_guard_proxy.py`: `python plugins/net_guard_proxy.py env --port <p> --home <scratch>/home`
+  prints the `--env` pairs for `run_tests.py` (a refusing loopback proxy in `HTTP_PROXY`/`HTTPS_PROXY`,
+  and `HOME`, `USERPROFILE`, `XDG_*`, `APPDATA` pointing into the scratch home), with
+  `python plugins/net_guard_proxy.py serve --port <p> --log <scratch>/net_guard.log` running
+  meanwhile; or wrap one command with its `run` mode. It guards only clients that honour the proxy
+  variables (Go's default transport does; raw `net.Dial` and custom transports do not, and nothing
+  is logged for them), so record network isolation as partial and grep the tests for `net.Dial`.
 - `scan_pitfalls.py` has a Go pack: fixed sleeps, `time.Now` with no injected clock, draws from
   `math/rand`'s global source, fixed ports in `net.Listen`/`ListenAndServe`/`Addr:`/`net.Dial`,
   `os.Setenv`/`os.Chdir` (use `t.Setenv`/`t.Chdir`), `os.TempDir()` and `/tmp/` paths (use

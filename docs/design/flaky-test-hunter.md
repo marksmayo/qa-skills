@@ -400,7 +400,9 @@ Agreed with the user before the build.
     `[build failed]` as `TestMain`, `-run` reruns, shell quoting through wrappers, the proxy
     fallback for the network) and tells the agent to look for home-directory writes and device or
     process control before running, with a scratch `HOME` and `USERPROFILE`.
-  - **Not fixed here (shared `run_tests.py`/`parse_results.py`):** the gotestsum preset's default
-    package (`./...`), translating Go ids to `-run` patterns, a `race` flag, recording `platform`
-    on each run, and reading a `[build failed]` package as an errored run rather than a failed
-    `TestMain`.
+  - **Shared fixes used here:** the `gotestsum` and new `go-test` presets run `./...` by default,
+    rerun ids with `-run`, and make a build failure an errored run; `parse_results.py` gives each
+    Go case its `_test.go` file (a smell in any `_test.go` of that package links) and folds parents
+    into their subtests. `net_guard_proxy.py` (a refusing loopback proxy and an isolated home) is
+    the network and home recipe for Go. Still not fixed: `run_tests.py` does not record `platform`
+    on a run (add it by hand), and there is no `race` flag (use `--runner-args -race`).
