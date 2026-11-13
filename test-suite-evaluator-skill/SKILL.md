@@ -1,7 +1,7 @@
 ---
 name: test-suite-evaluator
 description: Evaluate an automated test suite for effectiveness, trustworthiness, engineering quality, CI readiness, maintainability, coverage evidence, and operational health. Produces evidence-backed 1–10 scores, confidence ratings, critical caps, and prioritised remediation. Works with standalone test repositories and must not invent application-code coverage.
-version: 1.3.0
+version: 1.4.0
 ---
 
 # Test Suite Evaluator
@@ -97,6 +97,32 @@ Examples:
 
 Do not access production systems, rotate secrets, delete data, or run destructive suites without explicit permission. Installing dependencies is fine when it goes into a scratch environment and nowhere else: a scratch virtual environment per Python component (`python -m venv <tmp>/venv` or `uv venv`, then the component's requirements, as CI does), or a scratch `node_modules` in the scratch copy. Never install into the checkout or a shared interpreter. Adding a measurement tool to that scratch environment only (pytest-cov or coverage.py, pytest-randomly) is also fine when the repository has none configured; say so in the run's notes.
 
+### Workspaces, several runners and dogfood suites
+
+- **One run per package.** A pnpm, npm or yarn workspace often has a runner config per package (Vitest
+  `projects` such as `unit` and `integration` with different worker counts) and more than one runner (Vitest in
+  the packages, `node --test` for scripts, the product's own runner for an end-to-end layer). Run each package's
+  own test script from its directory (`pnpm --filter <pkg> test`, or `vitest run --project unit` inside it), keep a
+  machine-readable report per package and runner, and add them up yourself. Count layers across packages: the
+  unit projects of every package are one unit layer. Use `--project unit` for the shuffled and coverage runs, which
+  rarely need the slow layers.
+- **Dogfood suites.** A testing tool usually tests itself with itself: a suite run by the product's own CLI
+  (`node <pkg>/dist/cli/bin.js run` in an app that depends on the workspace package). That suite is the
+  repository's end-to-end layer: build the product first, run it as its package script does, and record it as its
+  own layer with the product's runner as the tool.
+- **Fixed ports.** Before a run, look for hard-coded ports in configs and helpers (`port: 4271`, `localhost:3000`)
+  and check they are free; another process on the port gives `EADDRINUSE` or an "already running" failure that is
+  yours, not the suite's. In a scratch copy, move the port and say so in the run's notes.
+- **Coverage in a workspace.** Add the coverage provider to the scratch copy only, at exactly the runner's version
+  (`@vitest/coverage-v8@<vitest version>`; a mismatch refuses to start), with `--filter` for the packages measured;
+  it rewrites the scratch lockfile, never the checkout's. With projects, pass
+  `--coverage.include='src/**'` so test helpers and configs are not counted.
+- **A host OS that CI does not run.** When CI runs only Linux but you are on Windows or macOS, tests that fail
+  identically in every run on your machine (paths, `os.devNull`, shell quoting, file locking, line endings) are
+  `environment` failures for the assessment, not reliability evidence. Run them again under the CI OS (WSL, a
+  container) when you can; when you cannot, keep them `environment`, mark the layer `partial`, and score what they
+  show under `portability` (and the contributing guide's claims, if it documents that OS for development).
+
 A scoped test command that compiles cleanly and exits zero while running **zero tests** is not a pass: check the reported test count, not just the exit code (for example `cargo test -p <crate>` when that crate's tests live elsewhere, or a path/pattern filter that matches nothing).
 
 ### Python components and unavailable dependencies
@@ -110,7 +136,7 @@ A scoped test command that compiles cleanly and exits zero while running **zero 
 Before running anything, find out what the tests would touch:
 
 1. Read the test setup files (`vitest.setup.ts`, `jest.setup.js`, `conftest.py`, `globalSetup`) and the test environment files (`.env.test`). Look for defaults such as `process.env.DATABASE_URL ??= ...`, real API keys, and base URLs that point at shared or remote services.
-2. Run in a scratch copy, not the checkout: export the tracked files (`git archive HEAD | tar -x -C <scratch>`, or a plain copy without `.git`) and link the existing dependency directory into it rather than installing. Point every output at the scratch copy or a temporary directory (`--outputFile`, `--coverage.reportsDirectory`, `--junitxml`). Test runners write caches (`node_modules/.vite`, `.pytest_cache`), so the original tree must not be the working directory.
+2. Run in a scratch copy, not the checkout: export the tracked files (`git archive HEAD | tar -x -C <scratch>`, or a plain copy without `.git`) and link the existing dependency directory into it rather than installing. Leave `.git` out on purpose: tests of git-aware code call git on the enclosing checkout, and in a clone they find its index (one run left a stale `.git/index.lock` that blocked every later git command there). If the tests need a repository, they create their own. Point every output at the scratch copy or a temporary directory (`--outputFile`, `--coverage.reportsDirectory`, `--junitxml`). Test runners write caches (`node_modules/.vite`, `.pytest_cache`), so the original tree must not be the working directory.
 3. Supply fake configuration for anything the tests read: a loopback database URL, obviously fake keys (`sk_test_fake`), and `NODE_ENV=test`.
 4. Guard the network. Block every non-loopback connection for the run and count the attempts, with the guards this skill ships: for Node, `NODE_OPTIONS="--require <absolute path to this skill>/scripts/net_guard.cjs"` (forward slashes on Windows; it wraps `net.Socket.prototype.connect` and `dns.lookup`, refuses anything other than `127.0.0.1`, `::1` or `localhost`, and also applies inside Vitest and Jest worker threads); for Python, `scripts/net_guard.py` as a pytest plugin (`-p net_guard` with `PYTHONPATH` reaching `scripts/`), which patches `socket.socket.connect` and `socket.create_connection`. Set `QA_NET_GUARD_LOG=<scratch>/net_guard.log`; each guard writes `net_guard: loaded pid=<pid>` for every process it loads in and `net_guard: refused <host>:<port>` for each refusal (`--self-test` on either file checks it works here). Zero refused attempts is verified evidence for the isolation dimension; refused attempts are findings, with the hosts named. Check the log has a `loaded` line before claiming zero refusals: a guard that silently failed to load (a wrong path, a `PYTHONPATH` the shell didn't convert) also refuses nothing, so with no `loaded` line the isolation evidence is `not_assessed`.
 
@@ -173,7 +199,9 @@ When the application's interfaces can be listed, map each one to the tests that 
 - **OpenAPI or GraphQL:** operations from the specification (that makes it `specification_derived`).
 - **CLI and other multi-call binaries:** when a tool dispatches to many sub-commands or utilities (a `git`-style subcommand table, a coreutils-style multi-call binary, a plugin or handler registry), that dispatch table *is* the interface list. Map each sub-command or utility to the tests that invoke it (by name on the command line, or by calling its entry function), and record it with `kind: "commands"` (or `kind: "cli"`). An untested destructive sub-command (delete, overwrite, force) is often the strongest finding here.
 
-`python scripts/list_interfaces.py <repo> --tests <test dir>` lists FastAPI, Flask, Azure Functions, Next.js and Express interfaces from source (it never imports the app) and marks the ones a test's URL literal reaches; read its output before using it, as the method field says.
+- **Libraries, CLIs and tool servers:** a package's public entry points (`package.json` `exports` subpaths, or `main`) are `kind: "package_exports"`; its `bin` commands and their sub-commands (commander, yargs, cac, argparse, click, typer; `pyproject` scripts; Cargo binaries) are `kind: "cli"`; the tools an MCP or agent tool server registers are `kind: "tools"`. For a CLI, SDK or MCP server these are the natural interfaces, not HTTP routes.
+
+`python scripts/list_interfaces.py <repo> --tests <test dir>` lists FastAPI, Flask, Azure Functions, Next.js and Express routes (and a plain Node `http.createServer` as one entry), CLI commands, package exports and MCP tools from source (it never imports the app). Each entry carries its `kind`, the value for `interface_coverage[].kind`. A route is reached when a test's URL literal matches it; a command, tool or export when a test string names it or a test imports the export's source file. Naming a command is weaker than running it: read the hits before counting them. Computed names (tools registered in a loop over specs, a dynamic route prefix) come out as `<dynamic>` with a note; map those by hand. When it finds nothing it says so in `notes` ("no supported interface found"): that is not "no interfaces", so map them by hand or record interface coverage as not assessed.
 
 **Reached is not authorised.** When fixtures replace the authentication or authorisation dependency (FastAPI `app.dependency_overrides[get_current_user] = ...` or a no-op permission check, a mocked `auth()` in Next.js, a test settings flag that disables auth), every route test runs without the real check, and "reached by a test" says nothing about access control. Record a second `interface_coverage` entry for the interfaces tested with the real dependency in place (for example "operations with a 401/403 test against the real permission check"); that is the security-relevant number, and an untested permission path is a finding.
 
@@ -391,6 +419,7 @@ Recommended report order:
 `metadata.skill_version` is required and names the contract an evaluation was written for. The validator warns when it differs from this skill's version. To bring an older evaluation forward:
 
 - **Before 1.1:** rename dimension ids `trustworthiness` → `trust`, `oracles` → `assertions`, `scope` → `coverage`, `data` → `test_data`, `environment` → `portability`, `crosscutting` → `security_a11y`; add `metadata.execution` and a `kind` for every inventory entry.
+- **1.3 → 1.4:** nothing to change; `interface_coverage[].kind` gained `package_exports` and `tools` (entries recorded as `other` for these may move to them).
 - **1.2 → 1.3:** list the `coverage_below_4` cap when coverage is below 4 (and recompute the overall score); lower to `medium` the confidence of reliability, assertions, isolation and performance when coverage is below 4; make each `interface_coverage` entry's `untested` account for exactly `total - tested` (names, or `{"group", "count"}` entries); reliability 7 or more cannot stand beside a test-class failure that some runs show and others do not.
 - **1.1 → 1.2:** add `metadata.skill_version`; add `metadata.execution_result` for `full_run` and `partial_run`; set `provisional` true only for `static_only` and `not_executable`; give every recommendation a `category` (and `evidence_kinds` for evidence needed); set unassessed dimensions' evidence level to `unknown`; split mixed-evidence dimensions into per-item levels (`mixed`).
 

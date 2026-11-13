@@ -58,7 +58,8 @@ _NOT_IN_NAME_AFTER = r'(?![\w/\\-]|\.\w)'
 # specification or acceptance-criteria coverage is not code coverage. Fixed-width lookbehinds, one per word (singular,
 # plural, and hyphenated "API-operation coverage").
 _INTERFACE_WORDS = ['route', 'routes', 'endpoint', 'endpoints', 'interface', 'interfaces', 'operation', 'operations',
-                    'requirement', 'requirements', 'spec', 'specification', 'criteria', 'handler', 'handlers']
+                    'requirement', 'requirements', 'spec', 'specification', 'criteria', 'handler', 'handlers',
+                    'command', 'commands', 'export', 'exports', 'tool', 'tools']
 _NOT_INTERFACE = ''.join(f'(?<!{w}[ -])' for w in _INTERFACE_WORDS)
 COVERAGE_CLAIM = re.compile(
     _NOT_IN_NAME_BEFORE + r'(code|line|branch|statement|condition|function|instrumented|implementation|source)[- ]coverage'

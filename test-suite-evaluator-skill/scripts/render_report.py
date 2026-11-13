@@ -3,6 +3,7 @@
 
     python render_report.py evaluation.json [--color auto|always|never]
     python render_report.py evaluation.json --markdown report.md     (or --markdown - for stdout)
+    python render_report.py evaluation.json --brief                  (a screenful: scores, caps, findings, next steps)
 
 Sections follow SKILL.md Step 10: title and mode, score card, critical findings, dimension scorecard (with each
 dimension's evidence, risks and recommendations), behavioural coverage and interface coverage, execution results,
@@ -331,6 +332,38 @@ def render(data: dict, md: bool, color: bool) -> str:
     return o.text()
 
 
+def brief(data: dict, color: bool) -> str:
+    """The headline only: overall score and band, caps, critical findings, each dimension on one line, the critical
+    risks and top improvements, and how many evidence items are missing or partial."""
+    o = Out(False, color)
+    meta, head = data['metadata'], data['headline']
+    overall = head['overall_score']
+    o.p(f"Test suite evaluation: {meta['repository']} ({meta['assessment_mode'].replace('_', ' ')}, "
+        f"{meta.get('execution', 'unknown').replace('_', ' ')})", BOLD)
+    o.p(f"Overall {overall:.1f}/10 {head['rating_band']} (raw {head['raw_weighted_score']:.1f}), confidence "
+        f"{head['overall_confidence']}, evidence {head['evidence_completeness']:.1f}%"
+        + ('  PROVISIONAL' if meta.get('provisional') else ''), score_style(overall))
+    for cap in head.get('applied_caps', []):
+        o.p(f"! cap {cap['rule']} (max {cap['limit']:g}): {cap['explanation']}", MAGENTA)
+    for f in data.get('critical_findings', []):
+        if f['severity'] in ('critical', 'high'):
+            o.p(f"[{f['severity'].upper()}] {f['title']}", RED)
+    width = max(len(d['name']) for d in data['dimensions'])
+    for d in data['dimensions']:
+        sc = 'not assessed' if d['score'] is None else f"{d['score']}/10"
+        o.p(f"  {d['name']:{width}}  {sc:>12}  {d['confidence']}", score_style(d['score']))
+    recs = sorted(data.get('recommendations', []), key=lambda x: x.get('priority', 999))
+    top = [r for r in recs if r.get('category') in ('critical_risk', 'top_improvement')][:5]
+    if top:
+        o.p('Next:')
+        for r in top:
+            o.li(f"{r['priority']}. {r['title']}")
+    lacking = [x for x in data.get('evidence_inventory', []) if x['status'] in ('missing', 'partial')]
+    if lacking:
+        o.p(f"{len(lacking)} evidence item(s) missing or partial: " + ', '.join(x['name'] for x in lacking), DIM)
+    return o.text()
+
+
 def main(argv=None):
     for stream in (sys.stdout, sys.stderr):  # UTF-8 whatever the locale; never crash on a character
         if hasattr(stream, 'reconfigure'):
@@ -339,6 +372,7 @@ def main(argv=None):
     ap.add_argument('json_file', type=Path)
     ap.add_argument('--color', choices=['auto', 'always', 'never'], default='auto')
     ap.add_argument('--markdown', metavar='FILE', help='write a Markdown report to FILE (- for stdout)')
+    ap.add_argument('--brief', action='store_true', help='print only the headline, caps, findings, dimensions and next steps')
     args = ap.parse_args(argv)
     try:
         data = json.loads(args.json_file.read_text(encoding='utf-8-sig'))
@@ -352,6 +386,9 @@ def main(argv=None):
         else:
             Path(args.markdown).write_text(text, encoding='utf-8')
             print(f'wrote {args.markdown}')
+        return 0
+    if args.brief:
+        sys.stdout.write(brief(data, color=supports_color(args.color)))
         return 0
     sys.stdout.write(render(data, md=False, color=supports_color(args.color)))
     return 0
