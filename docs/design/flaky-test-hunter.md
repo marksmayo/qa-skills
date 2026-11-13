@@ -357,7 +357,7 @@ Agreed with the user before the build.
     tests whose titles hold "# import" pooled into one id: a fake flake, and evidence runs that
     could never match. Only a trailing `#<digits>` is stripped now.
   - **Bisection is pytest-only, and now says so.** Vitest and Jest rerun a file with a `-t`
-    pattern in file order and node:test has no id filter, so "this test, then the victim" can't
+    pattern in file order (node:test likewise, with a name pattern), so "this test, then the victim" can't
     be run. `bisect_polluter.py` writes `outcome: not_supported` for any other preset and runs
     nothing; SKILL.md Step 4 describes confirming order dependence with fixed shuffle seeds.
   - **`module-let-reassigned`**, a new JavaScript/TypeScript smell: a module-level `let` or
@@ -366,10 +366,11 @@ Agreed with the user before the build.
     flake there. `data/pitfalls.json` is 1.4.0; the example's smells are unchanged (Python only).
   - **Validator.** The headline must be a sentence with numbers, not a placeholder.
     `--write-summary` no longer rewrites (or reorders) a report that is INVALID.
-  - **Guidance.** The clock preload moves `Date`, not file times or other processes: lock or
-    cache ages computed from `mtime` look stale under a shifted clock. Workspace packages whose
-    Vitest ids are package-relative get one report each. RUBRIC and README say that a CI-gated
-    flake that guards no critical journey tops out at P2 by design.
-  - **Not fixed here (shared `run_tests.py`):** a hash root separate from `--cwd` for
-    `--npm-script`, repo-relative Vitest/Jest ids, and a node:test preset (shuffle flags, ids
-    with the file). The skill does not ship `net_guard.cjs` (mapped in `tools/check_shared.py`).
+  - **Shared fixes used here.** `run_tests.py --repo-root` hashes the repository while running in
+    one package and records repository-relative ids, so workspace packages share a `code_hash`
+    and never pool; `--preset node-test` runs `node --test` with shuffle seeds and file-qualified
+    ids. `clock_shift.mjs` moves `fs.stat` times with the clock (a lock aged by `mtime` failed
+    under every shift). The skill now ships `plugins/net_guard.cjs` and `net_guard.py`, whose
+    refusals name the calling file and line; SKILL.md tells the agent to run with them.
+  - **Guidance.** RUBRIC and README say that a CI-gated flake that guards no critical journey
+    tops out at P2 by design.

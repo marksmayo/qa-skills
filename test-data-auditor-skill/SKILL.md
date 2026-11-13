@@ -255,7 +255,19 @@ evidence, so set the experiment's result to `errored`, find out why, and rerun. 
 the option you meant reached the runner: the validator compares the experiment's `variation` text
 (reverse, shuffle, locale, time zone, isolation) with what `runs.json` recorded.
 
-**Monorepos and packages.** Run each package from its own directory with its own environment
+**Network guard.** Run every experiment with the network guard, so a test that reaches the
+internet is refused and logged rather than passing or failing on the network:
+`scripts/net_guard.cjs` for Node runners (`--env "NODE_OPTIONS=--require <abs path with forward
+slashes>/net_guard.cjs" QA_NET_GUARD_LOG=<run>/net_guard.log`, which reaches Vitest's and Jest's
+workers; combine it with the clock preload in the same `NODE_OPTIONS`) and `scripts/net_guard.py`
+for pytest (`PYTHONPATH` to a directory holding a copy, `PYTEST_ADDOPTS=-p net_guard`). Check the
+log has a `net_guard: loaded` line per process, or the guard was not on; each refusal names the
+host and the calling file and line (`from <file>:<line>`). Keep the log with the run's evidence
+and say in the limitations which tests were refused. Unset provider credentials as well.
+
+**Monorepos and packages.** In a JavaScript workspace, run a package with `--cwd <package>
+--repo-root <repo>`: the run hashes the repository and records case ids relative to it, so they
+match `affected_tests` without an experiment `cwd`. Run each package from its own directory with its own environment
 (`--env PYTHONPATH=...`, one `run_tests.py` call per package): two services that each define a
 top-level `shared` package collide when installed together. Run case ids are relative to `--cwd`;
 when that is a subdirectory, give the experiment `"cwd": "<repo-relative dir>"` so the validator
@@ -301,7 +313,9 @@ python scripts/run_tests.py --preset pytest --cwd <copy> --out <run>/runs.json -
       `--env NODE_OPTIONS=--import=file:///<abs path>/clock_shift.mjs` (it reaches Vitest's workers),
       or first in `setupFiles` of a scratch config that extends the repo's. Check it with
       `node scripts/clock_shift.mjs --self-test`. It doesn't change the time zone (use `--tz`), and a
-      test that installs fake timers replaces it while they are on.
+      test that installs fake timers replaces it while they are on. It also moves the times
+      `fs.stat` reports, so lock and cache ages stay consistent; `clock_shift.py` does not move
+      `os.stat` times, and databases or child processes without the preload keep the real clock.
   - Bracket the first failing day with dated runs, and report that date as `fails_on_date`.
   - Where the repo's test command sets flags or a time zone (a `package.json` script such as
     `TZ=... vitest --configLoader native`), run it with `--npm-script <name>` so the experiment

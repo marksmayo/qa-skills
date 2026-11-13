@@ -101,11 +101,17 @@ different packages can share one `runs.json` and one report as long as each reco
 path>`) or widen the hash with `--hash-path <sibling package>` so the hash covers the code they
 share. pytest may take its rootdir from an ini file above or below `--cwd`; `run_tests.py` maps the
 collected ids back to `--cwd` and says so in the run's notes. A test directory that two suites run
-(a shared package under two services) is pooled across both: say so. A JavaScript workspace run with
-`--npm-script` needs `--cwd` at the package (its `package.json`), and Vitest and Jest ids are
-relative to that package, so two packages can both have `tests/unit/cli.test.ts`: write one
-report per package (its own `runs.json` and `code_hash`) rather than pooling packages whose ids
-can collide. Files that can't be collected
+(a shared package under two services) is pooled across both: say so. In a JavaScript
+workspace, `--npm-script` needs `--cwd` at the package (its `package.json`); add `--repo-root
+<repo>` so the run still hashes the whole repository (one `code_hash` for every package) and
+records Vitest, Jest and node:test ids and files relative to the repository
+(`packages/web/tests/unit/cli.test.ts::...`), so two packages with the same test path never pool.
+Without `--repo-root`, ids are package-relative: then write one report per package.
+
+**node:test.** `--preset node-test` runs `node --test` with the JUnit reporter, applies
+`--order shuffle --seed N` as `--test-randomize --test-random-seed=N` (recorded as such), and
+records ids with their file. `--npm-script` works with it when the script is a `node --test`
+command. Files that can't be collected
 (a missing private dependency or submodule) are left out of `--tests`, listed in `limitations`,
 and their tests are not counted as run.
 
@@ -183,12 +189,22 @@ classes while they load, so they import safely after it, but their own clocks
 them. `python plugins/clock_shift.py --self-test`, run with the repo's interpreter, checks the
 plugin there first.
 
-Both plugins move only the clock the test process reads. File times (`mtime` from `stat`), child
-processes that don't load the preload or plugin, databases and other services keep the real
-clock, so code that ages a lock file, a cache entry or a row by `now - mtime` sees it as far in
-the past or the future under a shifted clock. A test that fails only under the shift for that
-reason shows skew sensitivity between two clocks, not a date bug: say which clocks disagree in the
+`clock_shift.mjs` also moves the times `fs.stat` and its relatives report, so code that ages a
+lock or cache file by `Date.now() - mtimeMs` stays consistent; `clock_shift.py` does not move
+`os.stat` times. Child processes that don't load the preload or plugin, databases and other
+services keep the real clock, so lock, cache or row ages computed against them look far in the
+past or the future under a shifted clock. A test that fails only under the shift for that reason
+shows skew sensitivity between two clocks, not a date bug: say which clocks disagree in the
 flake's experiment.
+
+**Network guard.** Run every suite with the network guard so a test that reaches the internet is
+refused and logged instead of passing or failing on the network: `plugins/net_guard.cjs` for Node
+(`--env "NODE_OPTIONS=--require <abs path with forward slashes>/net_guard.cjs"
+QA_NET_GUARD_LOG=<scratch>/net_guard.log`, reaching Vitest and Jest workers) and
+`plugins/net_guard.py` for pytest (`PYTHONPATH` to `plugins/`, `PYTEST_ADDOPTS=-p net_guard`).
+Check the log has a `net_guard: loaded` line per process, or the guard was not on. Each refusal
+names the host and the calling file and line (`from <file>:<line>`), so it can be tied to a test:
+a test refused the network is `external_dependency`, never a pass. Loopback is allowed.
 
 Time zones: give IANA names. Node reads them on every platform; Python on Windows can't, so
 `run_tests.py` turns them into fixed offsets for Python runs only, and the run's notes say so.
@@ -246,8 +262,8 @@ check the enabled tests fail consistently (they were relying on it) and fix them
 bisect file to the validator (`--bisect a.json b.json`).
 
 Bisection is pytest-only: it needs a runner that runs explicit test ids in the order given.
-Vitest and Jest rerun a file with a `-t` name pattern in file order, and node:test has no id
-filter, so "this test, then the victim" can't be expressed; `bisect_polluter.py` writes
+Vitest and Jest rerun a file with a `-t` name pattern in file order, and node:test (`--preset node-test`) with a
+`--test-name-pattern` the same way, so "this test, then the victim" can't be expressed; `bisect_polluter.py` writes
 `outcome: not_supported` for those presets and runs nothing. Confirm their order dependence with
 fixed seeds instead: the file in its own order passes 3+ times and fails 2+ times under each of one
 or two `--order shuffle --seed N` runs (`--sequence.seed` for Vitest, `--randomize --seed` for

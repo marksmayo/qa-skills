@@ -53,7 +53,9 @@ reference `SKILL.md` from the project's Gemini instructions.
 
 Exact skill discovery paths can vary by client version. The scripts need Python 3.9+ and the
 repository's own test runner. Clock experiments use the repo's own clock library, libfaketime,
-the included `clock_shift.py` pytest plugin, or `clock_shift.mjs` for Vitest and Jest.
+the included `clock_shift.py` pytest plugin, or `clock_shift.mjs` for Vitest and Jest. Test runs
+use the included network guards (`scripts/net_guard.py` for pytest, `scripts/net_guard.cjs` for
+Node), which refuse and log every connection that is not loopback.
 
 ## Usage
 

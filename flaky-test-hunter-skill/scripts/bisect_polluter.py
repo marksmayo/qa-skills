@@ -24,7 +24,7 @@ The output names the test in both forms: `polluter` is the case id as runs.json 
 form a report uses), `polluter_node_id` the pytest node id that was run.
 
 Only pytest is supported: bisection needs a runner that runs explicit test ids in the order given.
-Vitest and Jest rerun `file -t pattern` in file order, node:test has no id filter, so "the polluter,
+Vitest and Jest rerun `file -t pattern` in file order, node:test filters by a name pattern in file order too, so "the polluter,
 then the victim" cannot be expressed. For any other preset the script runs nothing, writes
 `outcome: not_supported` with the reason (to --out if given) and exits 2. Find order dependence
 there with fixed shuffle seeds instead (SKILL.md Step 4).
