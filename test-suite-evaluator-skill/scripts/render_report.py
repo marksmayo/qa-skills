@@ -345,6 +345,9 @@ def brief(data: dict, color: bool) -> str:
         + ('  PROVISIONAL' if meta.get('provisional') else ''), score_style(overall))
     for cap in head.get('applied_caps', []):
         o.p(f"! cap {cap['rule']} (max {cap['limit']:g}): {cap['explanation']}", MAGENTA)
+    if not head.get('applied_caps'):
+        o.p('No caps applied: no cap condition holds.')
+    o.p(DECIMALS_NOTE, DIM)
     for f in data.get('critical_findings', []):
         if f['severity'] in ('critical', 'high'):
             o.p(f"[{f['severity'].upper()}] {f['title']}", RED)
@@ -364,10 +367,34 @@ def brief(data: dict, color: bool) -> str:
     return o.text()
 
 
+def self_test() -> int:
+    """The brief score card says when no cap applies and carries the decimal warning (SKILL.md Step 7 and 10)."""
+    import copy
+    ex = json.loads((Path(__file__).resolve().parent.parent / 'examples' / 'evaluation.example.json').read_text(encoding='utf-8'))
+    fails = []
+    capped = brief(ex, color=False)
+    if 'No caps applied' in capped or DECIMALS_NOTE not in capped:
+        fails.append('a capped brief lists its caps (not "No caps applied") and the decimal warning')
+    uncapped = copy.deepcopy(ex)
+    uncapped['headline']['applied_caps'] = []
+    text = brief(uncapped, color=False)
+    if 'No caps applied' not in text:
+        fails.append('a brief with no caps says "No caps applied"')
+    if DECIMALS_NOTE not in text:
+        fails.append('a brief carries the decimal-significance warning')
+    if fails:
+        print('render_report self-test FAILED:\n  - ' + '\n  - '.join(fails))
+        return 1
+    print('render_report self-test: ok')
+    return 0
+
+
 def main(argv=None):
     for stream in (sys.stdout, sys.stderr):  # UTF-8 whatever the locale; never crash on a character
         if hasattr(stream, 'reconfigure'):
             stream.reconfigure(encoding='utf-8', errors='replace')
+    if '--self-test' in (sys.argv[1:] if argv is None else argv):
+        return self_test()
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('json_file', type=Path)
     ap.add_argument('--color', choices=['auto', 'always', 'never'], default='auto')

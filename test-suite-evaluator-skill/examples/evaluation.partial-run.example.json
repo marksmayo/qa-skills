@@ -34,8 +34,8 @@
           "layers": [
             "unit"
           ],
-          "passed": 1404,
-          "failed": 19,
+          "passed": 1401,
+          "failed": 22,
           "skipped": 8,
           "errored": 0,
           "duration_seconds": 531
@@ -154,7 +154,7 @@
         {
           "id": "e1",
           "level": "verified",
-          "text": "Run r1: 1,404 of 1,431 tests passed, including src/lib/pricing.test.ts outcome checks on totals and VAT"
+          "text": "Run r1: 1,401 of 1,431 tests passed, including src/lib/pricing.test.ts outcome checks on totals and VAT"
         },
         {
           "id": "e2",
@@ -186,7 +186,7 @@
         {
           "id": "e2",
           "level": "verified",
-          "text": "Runs r1 and r2 both failed: 19 and 16 failures, 13 of them timeouts in src/components/booking-form.test.tsx"
+          "text": "Runs r1 and r2 both failed: 22 and 16 failures, 13 of them timeouts in src/components/booking-form.test.tsx"
         },
         {
           "id": "e3",
@@ -769,7 +769,7 @@
       "duration_seconds": 531,
       "run": "r1",
       "environment": "Node 22, 16 workers, fake DATABASE_URL, network guard on",
-      "summary": "1,404 passed, 19 failed, 8 skipped"
+      "summary": "1,401 passed, 22 failed, 8 skipped"
     },
     {
       "command": "npx vitest run --reporter=json --outputFile=<tmp>/r2.json",

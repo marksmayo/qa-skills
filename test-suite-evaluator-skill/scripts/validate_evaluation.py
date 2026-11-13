@@ -604,6 +604,18 @@ def execution_errors(meta: dict) -> list[str]:
     if failing and classified < failing:
         errs.append(f'a run had {failing} failing or erroring tests but execution_result.failures classifies only '
                     f'{classified}; classify each as product, test, environment or unknown')
+    # per run: the failures classified as failing in it add up to no more than it recorded, and, when every failure
+    # names its runs, to exactly what it recorded (a miscount in either direction is caught, not just a shortfall)
+    every_named = bool(failures) and all(f.get('runs_failed') for f in failures)
+    for r in runs:
+        recorded = r['failed'] + r['errored']
+        attributed = sum(f.get('count', 1) for f in failures if r['id'] in f.get('runs_failed', []))
+        if attributed > recorded:
+            errs.append(f'run {r["id"]} recorded {recorded} failing or erroring tests but execution_result.failures '
+                        f'classifies {attributed} as failing in it; make the counts add up to the run')
+        elif every_named and attributed < recorded:
+            errs.append(f'run {r["id"]} recorded {recorded} failing or erroring tests but the failures naming it add up '
+                        f'to {attributed}; classify the other {recorded - attributed}')
     for f in failures:
         for rid in f.get('runs_failed', []):
             if rid not in run_ids:
@@ -615,10 +627,43 @@ def execution_errors(meta: dict) -> list[str]:
     return errs
 
 
+def self_test() -> int:
+    """Failure counts against run totals, on the partial-run example."""
+    import copy
+    base = json.loads((HERE.parent / 'examples' / 'evaluation.partial-run.example.json').read_text(encoding='utf-8'))
+    fails = []
+
+    def errs_for(mutate) -> list[str]:
+        rep = copy.deepcopy(base)
+        mutate(rep['metadata']['execution_result'])
+        return execution_errors(rep['metadata'])
+
+    if errs_for(lambda er: None):
+        fails.append('the example as shipped: ' + '; '.join(errs_for(lambda er: None)))
+
+    def over(er):                     # two more failures classified in r1 than r1 recorded
+        er['failures'][2]['count'] += 2
+    if not any('r1' in e and 'classif' in e for e in errs_for(over)):
+        fails.append('classifying more failures in a run than the run recorded is an error')
+
+    def under(er):                    # every failure names its runs, and r2's add up to less than r2 recorded
+        er['runs'][1]['failed'] += 1
+        er['runs'][1]['passed'] -= 1
+    if not any('r2' in e for e in errs_for(under)):
+        fails.append('a run whose recorded failures exceed the failures attributed to it is an error')
+    if fails:
+        print('validate_evaluation self-test FAILED:\n  - ' + '\n  - '.join(fails))
+        return 1
+    print('validate_evaluation self-test: ok')
+    return 0
+
+
 def main(argv=None) -> int:
     for stream in (sys.stdout, sys.stderr):  # UTF-8 output whatever the locale; never crash on a character
         if hasattr(stream, 'reconfigure'):
             stream.reconfigure(encoding='utf-8', errors='replace')
+    if '--self-test' in (sys.argv[1:] if argv is None else argv):
+        return self_test()
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('evaluation', type=Path)
     args = ap.parse_args(argv)
