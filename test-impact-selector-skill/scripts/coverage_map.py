@@ -11,6 +11,19 @@
 `generate` runs one instrumented full pytest run in the package (it needs coverage.py and
 pytest-cov in that interpreter; nothing is installed) and normalises the result.
 
+    python coverage_map.py per-file --repo <repo> --package packages/core --tests tests/unit --keep <dir>
+        --out coverage_map.json [--runner vitest|jest] [--jobs 4] [--provider v8] [--extra-args "--project unit"]
+
+`per-file` is for Vitest and Jest, which have no per-test coverage contexts: each test file runs
+alone with the JSON coverage reporter (Istanbul's coverage-final.json; Vitest's V8 provider
+writes the same shape), through the runner copy the package itself resolves. Its covered lines
+belong to the whole file (test id `<file>::(whole file)`). Lines outside every function (module
+level, run when the file is imported) are dropped and counted, as coverage.py's per-test
+contexts drop them, so importing a module is not evidence that a test exercises its constants.
+The coverage provider must already be installed (@vitest/coverage-v8); nothing is installed.
+The manifest (`<keep>/per_file.json`) can be normalised again later with `normalise`. Test
+files that failed or left no coverage are listed in the summary: their lines are missing.
+
 Paths are matched to repository files by their longest common suffix, so coverage collected
 in another checkout or a container still maps. Test ids become repo-relative
 (`api/tests/test_x.py::test_y`). Lines run outside any test (at import) are dropped and
@@ -82,7 +95,133 @@ def read_coverage(data: dict) -> tuple[str, str | None, dict[str, dict[int, set[
                     continue
                 per.setdefault(int(ln), set()).update(tests)
         return 'mutation-tester-coverage', None, lines, outside
-    raise SystemExit('unrecognised coverage format: expected coverage.py JSON with contexts or the mutation tester\'s coverage.json')
+    if data.get('format') == PER_FILE_FORMAT:
+        return read_per_file(data)
+    if data and all(isinstance(v, dict) and 'statementMap' in v for v in data.values()):
+        raise SystemExit('this is one Istanbul/V8 coverage-final.json for a whole run: it cannot say which test ran a '
+                         'line. Run each test file alone (coverage_map.py per-file) or give a per-file manifest.')
+    raise SystemExit('unrecognised coverage format: expected coverage.py JSON with contexts, the mutation tester\'s '
+                     'coverage.json, or a per-test-file Istanbul manifest (coverage_map.py per-file)')
+
+
+PER_FILE_FORMAT = 'istanbul-per-test-file'
+WHOLE_FILE = '(whole file)'
+
+
+def istanbul_lines(cov: dict) -> tuple[dict[str, set[int]], int]:
+    """{file key: covered lines run inside a function} and the count of covered lines run at module level.
+    Istanbul (and Vitest's V8 provider, which writes the same shape) has no per-test contexts; a statement
+    outside every function in fnMap ran when the module was imported, so it says nothing about which test
+    exercises it (an importer runs a constants table too) and is left out, like coverage.py's per-test
+    contexts leave out import-time lines."""
+    out: dict[str, set[int]] = {}
+    outside = 0
+    for key, f in cov.items():
+        if not isinstance(f, dict) or 'statementMap' not in f:
+            continue
+        fns = [(v['loc']['start']['line'], v['loc']['end']['line']) for v in (f.get('fnMap') or {}).values()
+               if isinstance(v, dict) and 'loc' in v]
+        lines = out.setdefault(f.get('path') or key, set())
+        for sid, count in (f.get('s') or {}).items():
+            loc = f['statementMap'].get(sid)
+            if not count or not loc:
+                continue
+            ln = loc['start']['line']
+            if any(a <= ln <= b for a, b in fns):
+                lines.add(ln)
+            else:
+                outside += 1
+    return out, outside
+
+
+def read_per_file(data: dict) -> tuple[str, str | None, dict[str, dict[int, set[str]]], int]:
+    """A per-test-file manifest: {"format": "istanbul-per-test-file", "base": dir, "runs": {test file:
+    {"coverage": coverage-final.json relative to base, "exit_code": n}}}. Each test file ran alone, so its
+    covered lines belong to the whole file (test id "<file>::(whole file)")."""
+    base = Path(data.get('base') or '.')
+    lines: dict[str, dict[int, set[str]]] = {}
+    outside = 0
+    for test, run in sorted(data['runs'].items()):
+        if not run.get('coverage'):
+            continue
+        cov = json.loads((base / run['coverage']).read_text(encoding='utf-8'))
+        per, out = istanbul_lines(cov)
+        outside += out
+        for key, lns in per.items():
+            dst = lines.setdefault(key, {})
+            for ln in lns:
+                dst.setdefault(ln, set()).add(f'{test}::{WHOLE_FILE}')
+    return PER_FILE_FORMAT, data.get('tool_version'), lines, outside
+
+
+ENTRY = {'vitest': ('vitest', 'vitest.mjs'), 'jest': ('jest', 'bin/jest.js')}
+
+
+def runner_entry(cwd: Path, runner: str) -> Path | None:
+    """The runner's entry script as Node resolves it from the package (its own node_modules first): a
+    workspace can hold two copies of a runner, and tests only see the one their package links."""
+    name, script = ENTRY[runner]
+    for d in (cwd, *cwd.parents):
+        p = d / 'node_modules' / name / script
+        if p.is_file():
+            return p
+    return None
+
+
+def per_file(repo: Path, package: str, runner: str, tests: list[str], jobs: int, provider: str, extra: list[str],
+             env_pairs: list[str], keep: Path) -> tuple[dict, str]:
+    """Run each test file alone with JSON coverage and write the per-file manifest."""
+    from concurrent.futures import ThreadPoolExecutor
+    cwd = repo / package if package not in ('.', '') else repo
+    entry = runner_entry(cwd, runner)
+    if entry is None:
+        raise SystemExit(f'{runner} is not installed where {package} resolves it (nothing is installed)')
+    files: list[str] = []
+    for t in tests:
+        p = cwd / t
+        if p.is_dir():
+            files += sorted(q.relative_to(cwd).as_posix() for q in p.rglob('*') if q.is_file() and TEST_FILE.search(q.name)
+                            and 'node_modules' not in q.parts)
+        elif p.is_file():
+            files.append(p.relative_to(cwd).as_posix())
+        else:
+            raise SystemExit(f'--tests {t}: not found under {package}')
+    if not files:
+        raise SystemExit('no test files found under --tests')
+    keep.mkdir(parents=True, exist_ok=True)
+    env = {**os.environ, **dict(kv.split('=', 1) for kv in env_pairs)}
+
+    def one(item):
+        i, t = item
+        d = keep / f'c{i:04d}'
+        if runner == 'vitest':
+            cmd = ['node', str(entry), 'run', t, '--coverage.enabled=true', f'--coverage.provider={provider}',
+                   '--coverage.reporter=json', f'--coverage.reportsDirectory={d}', '--coverage.clean=true', *extra]
+        else:
+            cmd = ['node', str(entry), '--ci', t, '--coverage', '--coverageReporters=json', f'--coverageDirectory={d}',
+                   *extra]
+        res = subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True, encoding='utf-8', errors='replace')
+        f = d / 'coverage-final.json'
+        return t, {'exit_code': res.returncode, 'coverage': f.relative_to(keep).as_posix() if f.is_file() else None}
+
+    with ThreadPoolExecutor(max(1, jobs)) as ex:
+        runs = dict(ex.map(one, enumerate(files)))
+    version = None
+    try:
+        version = json.loads((entry.parent if runner == 'vitest' else entry.parent.parent).joinpath('package.json')
+                             .read_text(encoding='utf-8')).get('version')
+    except (OSError, ValueError):
+        pass
+    manifest = {'format': PER_FILE_FORMAT, 'tool_version': f'{runner} {version}' if version else runner,
+                'base': str(keep), 'runs': runs}
+    (keep / 'per_file.json').write_text(json.dumps(manifest, indent=1) + '\n', encoding='utf-8')
+    shown = (f'npx vitest run <test file> --coverage.enabled=true --coverage.provider={provider} --coverage.reporter=json'
+             if runner == 'vitest' else 'npx jest --ci <test file> --coverage --coverageReporters=json')
+    shown += (' ' + ' '.join(extra) if extra else '') + f' (one run per test file, {len(files)} files)'
+    return manifest, shown
+
+
+TEST_FILE = re.compile(r'\.(test|spec)\.[cm]?[jt]sx?$')
 
 
 def normalise(data: dict, repo: Path, package: str, hashed_at: str, commit: str | None, command: str | None) -> dict:
@@ -111,7 +250,17 @@ def normalise(data: dict, repo: Path, package: str, hashed_at: str, commit: str 
                           'file_hashes': hashes},
             'tests': list(tests), 'files': files,
             'summary': {'tests': len(tests), 'files': len(files), 'lines_outside_tests': outside,
-                        'unmatched_files': unmatched}}
+                        'unmatched_files': unmatched, **per_file_summary(data)}}
+
+
+def per_file_summary(data: dict) -> dict:
+    """For a per-test-file run: which test files failed or left no coverage (their lines are missing)."""
+    if data.get('format') != PER_FILE_FORMAT:
+        return {}
+    runs = data['runs']
+    return {'test_files_run': len(runs),
+            'test_files_failed': sorted(t for t, r in runs.items() if r.get('exit_code')),
+            'test_files_without_coverage': sorted(t for t, r in runs.items() if not r.get('coverage'))}
 
 
 def generate(repo: Path, package: str, python: str, source: str) -> tuple[dict, str]:
@@ -141,10 +290,18 @@ def main(argv=None) -> int:
     sub = ap.add_subparsers(dest='cmd', required=True)
     n = sub.add_parser('normalise', help='read coverage the repo already produced')
     n.add_argument('coverage', type=Path)
+    pf = sub.add_parser('per-file', help='Vitest or Jest: run each test file alone with JSON coverage (Istanbul or V8)')
+    pf.add_argument('--runner', choices=['vitest', 'jest'], default='vitest')
+    pf.add_argument('--tests', nargs='+', required=True, help='test files or directories, relative to the package')
+    pf.add_argument('--jobs', type=int, default=4)
+    pf.add_argument('--provider', default='v8', help='Vitest coverage provider (v8 or istanbul; must be installed)')
+    pf.add_argument('--extra-args', default='', help='extra runner arguments, e.g. "--project unit"')
+    pf.add_argument('--env', nargs='+', action='append', default=[], metavar='K=V')
+    pf.add_argument('--keep', type=Path, required=True, help='directory for the per-file coverage files and manifest')
     g = sub.add_parser('generate', help='run pytest once with per-test contexts (needs coverage.py and pytest-cov)')
     g.add_argument('--python', default=sys.executable)
     g.add_argument('--source', default='.', help='what to measure, relative to the package (--cov=...); default everything')
-    for p in (n, g):
+    for p in (n, g, pf):
         p.add_argument('--repo', type=Path, required=True)
         p.add_argument('--package', default='.', help='package directory the tests ran in, relative to the repo')
         p.add_argument('--commit', help='commit the coverage was collected on, if known')
@@ -154,14 +311,24 @@ def main(argv=None) -> int:
     if args.cmd == 'generate':
         data, command = generate(repo, args.package, args.python, args.source)
         out = normalise(data, repo, args.package, 'collection', args.commit, command)
+    elif args.cmd == 'per-file':
+        import shlex
+        data, command = per_file(repo, args.package, args.runner, args.tests, args.jobs, args.provider,
+                                 shlex.split(args.extra_args), [kv for grp in args.env for kv in grp], args.keep.resolve())
+        out = normalise(data, repo, args.package, 'collection', args.commit, command)
     else:
         data = json.loads(args.coverage.read_text(encoding='utf-8'))
+        if data.get('format') == PER_FILE_FORMAT and not Path(data.get('base') or '.').is_absolute():
+            data['base'] = str(args.coverage.resolve().parent / (data.get('base') or '.'))
         out = normalise(data, repo, args.package, 'normalisation', args.commit, data.get('command'))
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(out, indent=1) + '\n', encoding='utf-8')
     s = out['summary']
     print(f'{s["tests"]} tests over {s["files"]} files ({s["lines_outside_tests"]} lines run outside tests'
           + (f', {len(s["unmatched_files"])} unmatched files' if s['unmatched_files'] else '') + f') -> {args.out}')
+    if s.get('test_files_failed') or s.get('test_files_without_coverage'):
+        print(f'  {len(s["test_files_failed"])} test file(s) failed and {len(s["test_files_without_coverage"])} left no '
+              'coverage: their lines are missing from the map (see summary)')
     return 0
 
 

@@ -9,6 +9,13 @@ Gradle and Maven take test classes, xcodebuild takes `-only-testing:` targets. A
 than --max-chars (the Windows command-line limit is 8191) is split into several. When a package
 runs its whole suite, the command has no test arguments. The CI snippet is printed or written
 where you say, for you to add yourself; this script never edits CI configuration.
+
+A JavaScript package's own `test` script decides the runner when it names one (vitest, jest,
+mocha, playwright test, cypress run, node --test); a package whose script runs something else (a
+repository's own CLI) gets no command, its selected tests are listed in no_runner, and
+no_runner_reasons says why. build_first lists workspace packages to build before the commands,
+when selected tests load a changed package through its build output (package.json main/exports
+pointing at dist/).
 """
 from __future__ import annotations
 import argparse, json, re, sys
@@ -60,6 +67,7 @@ def argv_for(fw: str, tests: list[str], full: bool) -> list[str]:
         'mocha': ['npx', 'mocha'], 'playwright': ['npx', 'playwright', 'test'], 'cypress': ['npx', 'cypress', 'run'],
         'go-testing': ['go', 'test'], 'gradle': ['./gradlew', 'test'], 'maven': ['mvn', 'test'],
         'xctest': ['xcodebuild', 'test'], 'flutter_test': ['flutter', 'test'], 'rspec': ['bundle', 'exec', 'rspec'],
+        'node-test': ['node', '--test'],
     }[fw]
     if full:
         return base + (['./...'] if fw == 'go-testing' else [])
@@ -93,16 +101,44 @@ def split(fw: str, tests: list[str], max_chars: int) -> list[list[str]]:
     return chunks
 
 
+SCRIPT_RUNNERS = (('vitest', re.compile(r'\bvitest\b')), ('jest', re.compile(r'\bjest\b')),
+                  ('playwright', re.compile(r'\bplaywright\s+test\b')), ('cypress', re.compile(r'\bcypress\s+run\b')),
+                  ('mocha', re.compile(r'\bmocha\b')), ('node-test', re.compile(r'\bnode\b[^&|;]*\s--test\b')))
+JS_FWS = {'vitest', 'jest', 'mocha', 'playwright', 'cypress', 'node-test'}
+
+
+def script_runner(fw: str, script: str | None) -> tuple[str | None, str | None]:
+    """Check a JS framework guess against the package's own test script: (framework, why not runnable).
+    A script that runs a tool this script does not know (a repository's own CLI) gets no command."""
+    if script is None or fw not in JS_FWS:
+        return fw, None
+    named = [name for name, rx in SCRIPT_RUNNERS if rx.search(script)]
+    if fw in named:
+        return fw, None
+    if named:
+        return named[0], None
+    return None, f'its test script runs `{script.strip()[:120]}`, not a runner this selector can pass files to'
+
+
 def build(selected: list[dict], packages: list[dict], full_packages: set[str], tests_by_package: dict[str, list[str]],
-          levels: dict[str, str | None], max_chars: int = 8000) -> dict:
-    """selected: [{test_id, file, package}], ordered. full_packages: packages whose whole suite is selected."""
+          levels: dict[str, str | None], max_chars: int = 8000, scripts: dict[str, str] | None = None,
+          builds: list[dict] | None = None) -> dict:
+    """selected: [{test_id, file, package}], ordered. full_packages: packages whose whole suite is selected.
+    scripts: each JS package's own `test` script (package.json), which decides the runner where it names
+    one; a package whose script runs something else gets no command, and its tests go to no_runner.
+    builds: workspace packages to build first (their tests load another package's build output)."""
     by_pkg: dict[tuple[str, str], list[str]] = {}
     unknown = []
+    reasons: dict[str, str] = {}
     fws = {p['root']: p.get('frameworks', []) for p in packages}
     for s in selected:
         pkg = s['package']
         rel = s['file'] if pkg == '.' else s['file'][len(pkg) + 1:]
         fw = framework_for(s['file'], levels.get(s['file']), fws.get(pkg, []))
+        if fw is not None and scripts is not None:
+            fw, why = script_runner(fw, scripts.get(pkg))
+            if why:
+                reasons[pkg] = why
         if fw is None:
             unknown.append(s['file'])
             continue
@@ -115,18 +151,28 @@ def build(selected: list[dict], packages: list[dict], full_packages: set[str], t
         for i, chunk in enumerate(chunks, 1):
             commands.append({'package': pkg, 'cwd': pkg, 'framework': fw, 'full_suite': full,
                              'argv': argv_for(fw, chunk, full), 'tests': len(chunk), 'part': i, 'parts': len(chunks)})
-    return {'commands': commands, 'split_into': len(commands), 'max_chars': max_chars, 'no_runner': unknown}
+    out = {'commands': commands, 'split_into': len(commands), 'max_chars': max_chars, 'no_runner': unknown}
+    if reasons:
+        out['no_runner_reasons'] = dict(sorted(reasons.items()))
+    if builds:
+        out['build_first'] = builds
+    return out
 
 
 def ci_snippet(command: dict, fmt: str) -> str:
     if fmt == 'github':
         lines = ['# Selected tests, from test-impact-selector. Add these steps to a job yourself.', 'steps:']
+        for b in command.get('build_first', []):
+            lines += [f'  - name: Build {b["package"]} first', f'    working-directory: {b["cwd"]}',
+                      f'    run: {" ".join(b["argv"])}']
         for c in command['commands']:
             lines += [f'  - name: Selected {c["framework"]} tests ({c["package"]}, part {c["part"]} of {c["parts"]})',
                       f'    working-directory: {c["cwd"]}',
                       f'    run: {" ".join(c["argv"])}']
         return '\n'.join(lines) + '\n'
     lines = ['# Selected tests, from test-impact-selector. Add this job yourself.', 'selected-tests:', '  script:']
+    for b in command.get('build_first', []):
+        lines.append(f'    - cd "$CI_PROJECT_DIR/{b["cwd"]}" && {" ".join(b["argv"])}')
     for c in command['commands']:
         lines.append(f'    - cd "$CI_PROJECT_DIR/{c["cwd"]}" && {" ".join(c["argv"])}')
     return '\n'.join(lines) + '\n'
@@ -144,8 +190,9 @@ def main(argv=None) -> int:
     if args.max_chars:
         levels = {s['file']: s.get('test_level') for s in sel['selected']}
         full = {p['root'] for p in sel['packages'] if p.get('full_suite')}
-        command = build(sel['selected'], sel['packages'], full, {p['root']: p.get('test_files', []) for p in sel['packages']},
-                        levels, args.max_chars)
+        command = {**build(sel['selected'], sel['packages'], full, {p['root']: p.get('test_files', []) for p in sel['packages']},
+                           levels, args.max_chars),
+                   **{k: v for k, v in command.items() if k in ('no_runner_reasons', 'build_first')}}
     if args.ci:
         text = ci_snippet(command, args.ci)
         if args.ci_out:
@@ -154,8 +201,12 @@ def main(argv=None) -> int:
         else:
             sys.stdout.write(text)
         return 0
+    for b in command.get('build_first', []):
+        print(f'(cd {b["cwd"]} && {" ".join(b["argv"])})    # build first: {b["why"]}')
     for c in command['commands']:
         print(f'(cd {c["cwd"]} && {" ".join(c["argv"])})')
+    for pkg, why in command.get('no_runner_reasons', {}).items():
+        print(f'# {pkg}: no command, {why}; run its selected tests with its own script')
     return 0
 
 

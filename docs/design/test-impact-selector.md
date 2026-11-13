@@ -1,6 +1,6 @@
 # Design: `test-impact-selector-skill`
 
-Status: Built (v1.0.0), see "As built" at the end. Build order: 10.
+Status: Built (v1.1.0), see "As built" at the end. Build order: 10.
 
 ## Mission
 
@@ -296,3 +296,25 @@ Where the build differs from the design above, and what the example showed.
   - The validator catches 42 of 42 seeded violations.
   - The scripts have only been run on Python 3.12 and 3.14. For 3.9, they were parsed with
     `feature_version=(3, 9)` and checked by hand for 3.12-only f-strings.
+- **Found on a TypeScript pnpm monorepo with Vitest 5 (v1.1.0)**:
+  - **A product package named `e2e`.** `*/e2e/*` and the shared `diff_scope.py` made every file of
+    the core package a test, so one source change became a shared-fixture blind spot reaching 501
+    test files with no coverage evidence used. The import graph now judges test-ness and level by
+    the path inside such a package (the shared `detect_conventions.strip_product_dirs`), and
+    `diff_scope.classify` gets the repo root (shared fix). `data/file_kinds.json` is unchanged,
+    so the example's recorded hash still holds. A JSON or manifest in a test directory no test
+    imports is no longer described as a runner setup file.
+  - **Vitest/Jest coverage.** `coverage_map.py per-file` runs each test file alone with JSON
+    coverage and normalises a per-file manifest (`istanbul-per-test-file`); module-level lines
+    are dropped like coverage.py's import-time lines. Failed files are listed in the summary.
+  - **Commands.** A JS package's own `test` script decides the runner; one that runs an unknown
+    tool goes to `no_runner` with `no_runner_reasons`. `build_first` builds a workspace package
+    whose `dist/` output selected tests in other packages load.
+  - **Validator and renderer.** The replay's `mean_selected_share` is an allowed headline figure,
+    and from 0.5 up it must stand beside a recall figure. `--brief` caps the selected list and
+    the test arguments of a command at 20.
+  - Not done: verify/replay against a base run's failures (pre-existing failures still count as
+    misses), per-case flaky handling in replay, import-chain attenuation, a coverage map taken
+    with the change applied (still stale for the changed files), pnpm-workspace.yaml globs for
+    package membership, a Vitest listing-only related-tests recipe, and history building
+    helpers. The examples are unchanged and validate with `--recompute`.

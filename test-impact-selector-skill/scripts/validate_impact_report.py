@@ -321,6 +321,14 @@ def check(rep: dict, selection: dict | None, replay: dict | None, runs: dict | N
         allowed.add(round(100 * len(rep['selected']) / rep['total_tests'], 1))
     if r and r.get('failures_total'):
         allowed |= {round(100 * r['recall'], 1), round(100 * r['wilson_low'], 1), round(100 * r['wilson_high'], 1)}
+    share = (r or {}).get('mean_selected_share')
+    if share is not None:
+        allowed.add(round(100 * share, 1))
+        # a recall measured while the replayed selections took most of the suite says little about the selector
+        if r.get('failures_total') and share >= 0.5 and re.search(r'\brecall\b|\bfailures selected\b', head, re.I) and \
+                not any(abs(float(m.group(1)) - 100 * share) <= 0.5 for m in PCT.finditer(head)):
+            errs.append(f'summary.headline: gives the replay recall, but the replayed selections took {100 * share:.1f}% '
+                        'of the tests on average; say so beside the recall')
     for m in PCT.finditer(re.sub(r'\b95\s?% (CI|confidence)', '', head)):
         if not any(abs(float(m.group(1)) - a) <= 0.05 or abs(float(m.group(1)) - round(a)) < 0.5 and '.' not in m.group(1)
                    for a in allowed):

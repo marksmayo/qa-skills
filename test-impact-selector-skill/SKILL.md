@@ -1,7 +1,7 @@
 ---
 name: test-impact-selector
 description: Given a change (a branch, a commit range or a diff), pick which tests to run, give every selected test its reasons and evidence (coverage of a changed line, an import chain, a journey link, naming, co-failure history), and list every change that no evidence can bound as a blind spot that widens the selection (strict by default). Outputs ready-to-run commands per package and framework, an optional CI snippet for the user to add, and, when past runs are available, measured recall with a Wilson interval from replaying history. Never calls unselected tests "safe to skip".
-version: 1.0.0
+version: 1.1.0
 ---
 
 # Test impact selector
@@ -92,6 +92,13 @@ modules and the like. The import graph parses Python (`ast`), and JavaScript and
 (imports, `require`, `import()`, `import.meta.glob`, `require.context`, workspace names, tsconfig
 `paths`). It also records which conftest fixtures each pytest file uses.
 
+A directory named `e2e`, `test`, `tests` or `spec` is test code unless it is a product package
+(it holds a manifest and ships code: a `src/` directory, a `package.json` with
+`main`/`exports`/`bin`, ...). A workspace package called `e2e` is therefore source, and only its
+own `tests/` are tests, with levels judged inside the package (its `tests/unit/` are unit tests).
+The graph notes such packages; check them, since a misread package turns every change into a
+shared-fixture blind spot.
+
 Languages without a parser (Go, Java, Kotlin, C#, Swift, Dart and others) are listed as
 `no_parser`. Their files rely on the other evidence sources, and on blind spots.
 
@@ -122,8 +129,26 @@ Normalise straight after collecting, because the file hashes are taken then. Onl
 agrees, `coverage_map.py generate` runs one instrumented full run itself (it needs coverage.py
 and pytest-cov).
 
-For Istanbul, JaCoCo or Go per-test data, convert it to the coverage.py JSON shape, or leave
-coverage `not_run` for that package.
+**Vitest and Jest** have no per-test contexts. `coverage_map.py per-file` runs each test file alone
+with JSON coverage (Istanbul's `coverage-final.json`; Vitest's V8 provider writes the same shape)
+and attributes its lines to the whole file (test id `<file>::(whole file)`):
+
+```bash
+python scripts/coverage_map.py per-file --repo <repo> --package packages/core --tests tests/unit \
+    --extra-args "--project unit" --jobs 4 --keep <run>/percov --out <run>/coverage_map.json
+```
+
+It needs the coverage provider already installed (`@vitest/coverage-v8`), runs the runner copy
+the package resolves, and takes one run per test file (minutes for a few hundred files, so ask
+first). Lines outside every function (module level, run at import) are dropped and counted, so
+importing a module is not evidence that a test exercises its constants. Test files that failed or
+left no coverage are listed in the map's summary: their lines are missing, so say so in the
+limitations. A single whole-run `coverage-final.json` is refused: it cannot say which test ran a
+line. Collect coverage on the base side of the change (before it is applied): a map taken with
+the change in place is stale for the changed files.
+
+For JaCoCo or Go per-test data, convert it to the coverage.py JSON shape, or leave coverage
+`not_run` for that package.
 
 **Related-tests tools.** Run the repo's own tool and pass its output to `--related` as
 `{tool, version, command, related: {changed path: [test files]}}`. Examples:
@@ -213,6 +238,15 @@ A command that runs a whole suite has no test arguments, and a long command is s
 python scripts/build_command.py <run>/selection.json --ci github --ci-out <run>/ci_snippet.yml   # optional
 ```
 
+A JavaScript package's own `test` script decides its runner when it names one (vitest, jest,
+mocha, `playwright test`, `cypress run`, `node --test`). A package whose script runs something
+else (the repository's own CLI, a script that needs a device or a model) gets no command: its
+selected tests are in `command.no_runner`, with the script in `command.no_runner_reasons`; tell
+the user to run them with that script. When selected tests in one workspace package import a
+changed package by name and that package publishes a build (`main`/`exports` pointing at
+`dist/`), `command.build_first` builds it first (`pnpm run build` in that package); otherwise the
+tests would run the previous build. A package with no build script gets a note instead.
+
 ## Step 6: Replay (when there is history)
 
 ```bash
@@ -225,6 +259,10 @@ test file that failed in its full run is then checked against the selection. Rec
 per (change, failing test file) and given with a 95% Wilson interval.
 
 Failures of known-flaky tests are listed but not counted.
+
+Recall says little when the selections take most of the suite: if the replay's
+`mean_selected_share` is 0.5 or more, the headline must give it beside the recall (the validator
+checks), for example "26 of 26 failures selected, but replayed selections took 82% of the tests".
 
 For every miss, write `why_missed` and an `explanation`:
 - **`missing_source`**: a source that would have linked the test was unavailable. Name the

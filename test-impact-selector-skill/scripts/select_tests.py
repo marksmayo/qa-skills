@@ -385,6 +385,10 @@ class Selector:
                     if reach:
                         self.blind_spot(entry, 'shared_fixture', f'Test helper imported by {len(reach)} test file(s).',
                                         'fixture_reach', reach)
+                    elif PurePosixPath(path).suffix.lower() in KINDS['data_ext']:
+                        self.blind_spot(entry, 'shared_fixture', 'Data or manifest file in a test directory that no test '
+                                        'imports (a package manifest, a JSON fixture read by path): its reach is the package.',
+                                        'package', self.package_tests(path))
                     else:
                         self.blind_spot(entry, 'shared_fixture', 'Test helper or setup file no test imports: it is probably '
                                         'loaded by runner configuration (setupFiles, globalSetup), so its reach is the package.',
@@ -486,8 +490,15 @@ class Selector:
             packages.append({**p, 'test_files': mine, 'selected': len([t for t in mine if t in sel_files]),
                              'full_suite': bool(mine) and all(t in sel_files for t in mine)})
         full = {p['root'] for p in packages if p['full_suite']}
+        scripts = {}
+        for p in packages:
+            pj = import_graph.read_jsonc(self.new_dir / p['root'] / 'package.json') if p['root'] != '.' else \
+                import_graph.read_jsonc(self.new_dir / 'package.json')
+            if isinstance(pj.get('scripts'), dict) and isinstance(pj['scripts'].get('test'), str):
+                scripts[p['root']] = pj['scripts']['test']
         command = build_command.build(selected, packages, full, {p['root']: p['test_files'] for p in packages},
-                                      {t: self.g_new.files[t]['test_level'] for t in self.tests}, self.max_chars)
+                                      {t: self.g_new.files[t]['test_level'] for t in self.tests}, self.max_chars,
+                                      scripts=scripts, builds=self.builds_first(changes, selected))
         sources = self.sources(changes, cov)
         n_docs = len([c for c in changes if c['kind'] == 'docs'])
         return {
@@ -497,6 +508,32 @@ class Selector:
             'docs_only': bool(changes) and n_docs == len(changes),
             'notes': self.notes,
         }
+
+    def builds_first(self, changes: list[dict], selected: list[dict]) -> list[dict]:
+        """Workspace packages whose changed sources reach selected tests in other packages only through the
+        package's build output (package.json main/exports point at dist/): those tests run the previous
+        build unless the package is built first."""
+        pm = next((name for f, name in (('pnpm-lock.yaml', 'pnpm'), ('yarn.lock', 'yarn'), ('bun.lockb', 'bun'))
+                   if (self.new_dir / f).is_file()), 'npm')
+        out = []
+        for root in sorted({self.g_new.package_of(c['path']) for c in changes if c['kind'] == 'source'} - {'.'}):
+            out_dir = import_graph.build_output(self.new_dir / root)
+            if not out_dir:
+                continue
+            users = sorted({s['package'] for s in selected if s['package'] != root and any(
+                r['source'] == 'import_graph' and self.g_new.package_of(r['changed_path']) == root
+                for r in self.reasons.get(s['file'], []))})
+            if not users:
+                continue
+            pj = import_graph.read_jsonc(self.new_dir / root / 'package.json')
+            has_build = isinstance(pj.get('scripts'), dict) and 'build' in pj['scripts']
+            why = (f'selected tests in {", ".join(users)} import {pj.get("name") or root} by name, which loads its '
+                   f'{out_dir}/ build; the change is in its sources')
+            if has_build:
+                out.append({'package': root, 'cwd': root, 'argv': [pm, 'run', 'build'], 'why': why})
+            else:
+                self.notes.append(f'{root}: {why}, and it has no build script: build it before running those tests.')
+        return out
 
     def sources(self, changes: list[dict], cov: list[dict]) -> list[dict]:
         src_changes = [c for c in changes if c['kind'] in ('source', 'unknown')]
@@ -593,7 +630,7 @@ def prepare_trees(repo: Path, work: Path, diff: Path | None, diff_applied: bool,
         if not committed_only:
             for rel in git(repo, 'ls-files', '--others', '--exclude-standard').splitlines():
                 body = Selector.read(repo, rel)
-                kind, why = diff_scope.classify(rel, '\n'.join((body or '').splitlines()[:5]), body is None)
+                kind, why = diff_scope.classify(rel, '\n'.join((body or '').splitlines()[:5]), body is None, repo)
                 n = len((body or '').splitlines())
                 entry = {'path': rel, 'old_path': None, 'status': 'added', 'kind': kind, 'kind_reason': why + ' (untracked)',
                          'ranges': [[1, n]] if n else [], 'deleted_at': [], 'lines_added': n, 'lines_deleted': 0, 'present': True}

@@ -95,9 +95,37 @@ def strip_js_comments(text: str) -> str:
 def read_jsonc(p: Path) -> dict:
     try:
         text = strip_js_comments(p.read_text(encoding='utf-8', errors='replace'))
-        return json.loads(re.sub(r',(\s*[}\]])', r'\1', text))
+        d = json.loads(re.sub(r',(\s*[}\]])', r'\1', text))
+        return d if isinstance(d, dict) else {}
     except (OSError, ValueError):
         return {}
+
+
+BUILD_DIRS = ('dist', 'build', 'lib', 'out', 'esm', 'cjs')
+
+
+def build_output(pkg_dir: Path) -> str | None:
+    """The build directory a package's published entry points at (package.json main/module/exports), or None.
+    Tests elsewhere that import the package by name load that output, not its sources."""
+    pj = read_jsonc(pkg_dir / 'package.json')
+    targets: list[str] = []
+
+    def collect(v) -> None:
+        if isinstance(v, str):
+            targets.append(v)
+        elif isinstance(v, dict):
+            for x in v.values():
+                collect(x)
+        elif isinstance(v, list):
+            for x in v:
+                collect(x)
+    for k in ('main', 'module', 'exports'):
+        collect(pj.get(k))
+    for t in targets:
+        first = PurePosixPath(t.lstrip('./')).parts[:1]
+        if first and first[0] in BUILD_DIRS:
+            return first[0]
+    return None
 
 
 class Graph:
@@ -107,6 +135,8 @@ class Graph:
         self.languages: dict[str, str] = {}
         self._fixtures: dict[str, tuple[set[str], bool]] = {}
         self.packages: list[dict] = []
+        self.product_roots: set[str] = set()
+        self._stripped: dict[str, str | None] = {}
         self.notes: list[str] = []
 
     # ------------------------------------------------------------ discovery
@@ -134,6 +164,20 @@ class Graph:
         if not any(p['root'] == '.' for p in self.packages):
             self.packages.append({'root': '.', 'name': '.', 'manifests': [], 'frameworks': [], 'languages': []})
         self.packages.sort(key=lambda p: (-len(p['root']), p['root']))
+
+    def test_path(self, path: str) -> str:
+        """The path to judge test-ness by (the shared rule, detect_conventions.strip_product_dirs): inside a
+        product package named like a test directory (a workspace package called e2e with its own manifest and
+        src/), the path relative to that package; otherwise the path itself."""
+        parent = str(PurePosixPath(path).parent)
+        if parent not in self._stripped:
+            rel = detect_conventions.strip_product_dirs(path, self.root)
+            self._stripped[parent] = None if rel == path else path[:len(path) - len(rel) - 1]
+        cut = self._stripped[parent]
+        if cut is None:
+            return path
+        self.product_roots.add(cut)
+        return path[len(cut) + 1:]
 
     def package_of(self, path: str) -> str:
         for p in self.packages:
@@ -165,7 +209,7 @@ class Graph:
         self.all_paths = set(paths)
         for path in paths:
             ext = PurePosixPath(path).suffix.lower()
-            entry = {'package': self.package_of(path), 'lang': None, 'test_level': test_level(path), 'imports': [],
+            entry = {'package': self.package_of(path), 'lang': None, 'test_level': test_level(self.test_path(path)), 'imports': [],
                      'unresolved': [], 'dynamic': []}
             if ext in PY_EXT:
                 entry['lang'] = 'python'
@@ -179,6 +223,10 @@ class Graph:
                 entry['lang'] = NO_PARSER[ext]
                 self.languages.setdefault(NO_PARSER[ext], 'no_parser')
             self.files[path] = entry
+        if self.product_roots:
+            self.notes.append('Product package(s) named like a test directory: ' + ', '.join(sorted(self.product_roots)) +
+                              '. Their files are classified by their path inside the package, so only their own test '
+                              'files are tests.')
         for path, entry in self.files.items():
             if entry['lang'] == 'python' and (entry['test_level'] or PurePosixPath(path).name == 'conftest.py'):
                 self.conftests(path, entry)

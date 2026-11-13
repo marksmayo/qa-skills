@@ -3,7 +3,8 @@
 
     python render_report.py impact_report.json [--color auto|always|never] [--brief]
 
---brief prints the headline, the commands, the blind spots and the recall line, without each
+--brief prints the headline, the commands (more than 20 test files shown as a count), the first 20
+selected files, the blind spots and the recall line, without each
 test's reasons or the evidence sources.
 """
 from __future__ import annotations
@@ -13,6 +14,7 @@ from pathlib import Path
 RESET = "\033[0m"; BOLD = "\033[1m"; DIM = "\033[2m"
 RED = "\033[31m"; GREEN = "\033[32m"; YELLOW = "\033[33m"; MAGENTA = "\033[35m"; CYAN = "\033[36m"
 SOURCE_STYLE = {'ran': GREEN, 'stale': YELLOW, 'not_run': YELLOW, 'errored': RED, 'not_applicable': DIM}
+BRIEF_ITEMS = 20     # --brief lists at most this many selected files and test arguments per command
 KIND_LABEL = {'global_config': 'global config', 'shared_fixture': 'shared fixture', 'dynamic_reference': 'dynamic reference',
               'data_or_schema': 'data or schema', 'unmapped_source': 'unmapped source', 'deleted_or_renamed': 'deleted or renamed',
               'non_code': 'non-code', 'huge_change': 'huge change'}
@@ -74,13 +76,23 @@ def main() -> int:
     out.append(P('## Run', BOLD))
     if not d['command']['commands']:
         out.append('- Nothing to run' + (' (docs-only change).' if d.get('docs_only') else '.'))
+    for b in d['command'].get('build_first', []):
+        out.append(f'    (cd {b["cwd"]} && {" ".join(b["argv"])})    # build first: {b["why"]}')
     for cmd in d['command']['commands']:
         part = f' (part {cmd["part"]} of {cmd["parts"]})' if cmd.get('parts', 1) > 1 else ''
-        out.append(f'    (cd {cmd["cwd"]} && {" ".join(cmd["argv"])}){part}')
+        argv = cmd['argv']
+        if args.brief and cmd.get('tests', 0) > BRIEF_ITEMS:
+            argv = argv[:len(argv) - cmd['tests']] + [f'<{cmd["tests"]} test files>']
+        out.append(f'    (cd {cmd["cwd"]} && {" ".join(argv)}){part}')
+    for pkg, why in d['command'].get('no_runner_reasons', {}).items():
+        out.append(f'    # {pkg}: no command, {why}')
     out.append('')
 
     out.append(P(f'## Selected ({len(d["selected"])})', BOLD))
-    for t in d['selected']:
+    shown = d['selected'][:BRIEF_ITEMS] if args.brief else d['selected']
+    if len(shown) < len(d['selected']):
+        out.append(f'(the first {len(shown)} in run order; the report lists all {len(d["selected"])})')
+    for t in shown:
         tag = P('widened', YELLOW) if t['strength'] == 0 else f'strength {t["strength"]}'
         extra = ''.join([f', journey {t["journey_priority"]}' if t.get('journey_priority') else '',
                          f', failed in {t["past_failures"].replace("/", " of ")} past runs' if t.get('past_failures') and not t['past_failures'].startswith('0/') else ''])
