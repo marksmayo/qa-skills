@@ -63,6 +63,8 @@ or
 python scripts/import_graph.py <repo> --reach src/pricing.py        # who reaches this file, and how
 python scripts/coverage_map.py normalise coverage.json --repo <repo> --package api --out run/coverage_map.json
 #   Vitest/Jest: python scripts/coverage_map.py per-file --repo <repo> --package packages/core --tests tests/unit --keep run/percov --out run/coverage_map.json
+#   Go: python scripts/coverage_map.py go --repo <repo> --keep run/gocov [--skip-dirs /pkg/browser] --out run/coverage_map.json
+#   Go self-test (synthetic module): python scripts/self_test.py
 python scripts/select_tests.py --repo <repo> --base main --coverage run/coverage_map.json \
     --journeys journey_map.json --history history.json --out run/selection.json
 python scripts/replay.py --repo <repo> --history history.json --coverage run/coverage_map.json --out run/replay.json
@@ -119,10 +121,11 @@ python scripts/render_report.py examples/impact_report.example.json --brief
 - `RUBRIC.md`: strengths, blind-spot scopes, modes, completeness, recall, honesty rules
 - `data/file_kinds.json`: the globs that classify lockfiles, CI, config, fixtures, schemas, assets, docs and test levels
 - `schemas/impact_report.schema.json`: output contract
-- `scripts/import_graph.py`: file-level import graph for Python and JS/TS, conftest fixtures, dynamic loading sites
-- `scripts/coverage_map.py`: per-test coverage (coverage.py contexts, the mutation tester's map, Vitest/Jest per-test-file Istanbul runs) to line -> tests
+- `scripts/import_graph.py`: file-level import graph for Python, JS/TS and Go (go.mod module paths, package directories, go:embed), conftest fixtures, dynamic loading sites
+- `scripts/coverage_map.py`: per-test coverage (coverage.py contexts, the mutation tester's map, Vitest/Jest per-test-file Istanbul runs) to line -> tests; Go per-test coverprofiles (`go`)
 - `scripts/select_tests.py`: the selection, blind spots and commands
-- `scripts/replay.py`: recall from past changes
+- `scripts/replay.py`: recall from past changes (a change may name a git `base` or `commit`; diffs that do not apply are skipped; `--baseline-failures`)
+- `scripts/self_test.py`: synthetic Go cases for the graph, widening, naming, history mapping, replay, coverage and the Run line
 - `scripts/build_command.py`: commands per framework, splitting, CI snippets
 - `scripts/validate_impact_report.py`: checks the report against the evidence and the rules
 - `scripts/render_report.py`: coloured terminal/Markdown report

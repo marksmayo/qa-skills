@@ -161,6 +161,7 @@
         "failures_total": {"type": "integer", "minimum": 0},
         "failures_missed": {"type": "integer", "minimum": 0},
         "failures_flaky": {"type": "integer", "minimum": 0},
+        "failures_baseline": {"type": "integer", "minimum": 0, "description": "failures of tests that fail at the base already (--baseline-failures), not counted"},
         "recall": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
         "wilson_low": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
         "wilson_high": {"type": ["number", "null"], "minimum": 0, "maximum": 1},

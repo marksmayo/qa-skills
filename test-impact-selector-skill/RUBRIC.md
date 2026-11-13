@@ -12,7 +12,7 @@ Rules for `impact_report.json`. The validator enforces everything marked (comput
 | `import_graph` | An import chain from the test to the changed file; pytest fixtures from a `conftest.py` count when the test requests them | 2 |
 | `framework_tools` | The repo's related-tests tool lists the test | 2 |
 | `journeys` | A journey's step evidence cites the changed file and the journey links the test | 2 |
-| `naming` | The test file is named after the changed file | 1 |
+| `naming` | The test file is named after the changed file (Go: `x_test.go` in `x.go`'s own directory only) | 1 |
 | `co_failure` | The test failed in at least 2 past changes to the file | 1 |
 | `blind_spot` | A blind spot widened to it | 0 |
 
@@ -32,7 +32,7 @@ A reason must not cite a source recorded `not_run`, `errored` or `not_applicable
 | `shared_fixture` | Every test under a `conftest.py`'s directory; a helper's importers, or the package when nothing imports it | `fixture_reach`, `package` |
 | `dynamic_reference` | The package | `package` |
 | `data_or_schema` | The package's tests plus contract tests | `package_and_contract` |
-| `unmapped_source` | The package | `package` |
+| `unmapped_source` | The package (Go: the package directory's tests and its importers' tests, else the module's Go tests; never another language's) | `package` |
 | `deleted_or_renamed` | Tests that imported it in the base tree | `importers` |
 | `non_code` | E2E and visual tests that reach it, falling back to the package's e2e and visual tests, then the package | `e2e_and_visual` |
 | `huge_change` | Full suite | `full_suite` |

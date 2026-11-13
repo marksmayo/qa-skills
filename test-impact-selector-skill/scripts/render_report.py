@@ -81,8 +81,11 @@ def main() -> int:
     for cmd in d['command']['commands']:
         part = f' (part {cmd["part"]} of {cmd["parts"]})' if cmd.get('parts', 1) > 1 else ''
         argv = cmd['argv']
-        if args.brief and cmd.get('tests', 0) > BRIEF_ITEMS:
-            argv = argv[:len(argv) - cmd['tests']] + [f'<{cmd["tests"]} test files>']
+        # the trailing arguments: test files, or (go test) package directories, counted in `args`
+        n_args = cmd.get('args', 0 if cmd.get('full_suite') else cmd.get('tests', 0))
+        if args.brief and n_args > BRIEF_ITEMS and n_args < len(argv):
+            what = 'packages' if cmd.get('framework') == 'go-testing' else 'test files'
+            argv = argv[:len(argv) - n_args] + [f'<{n_args} {what}>']
         out.append(f'    (cd {cmd["cwd"]} && {" ".join(argv)}){part}')
     for pkg, why in d['command'].get('no_runner_reasons', {}).items():
         out.append(f'    # {pkg}: no command, {why}')

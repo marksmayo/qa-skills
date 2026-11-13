@@ -7,7 +7,10 @@ Each command runs in its package directory with test paths relative to it: pytes
 take files, Playwright takes files, Cypress takes `--spec a,b`, Go takes package directories,
 Gradle and Maven take test classes, xcodebuild takes `-only-testing:` targets. A command longer
 than --max-chars (the Windows command-line limit is 8191) is split into several. When a package
-runs its whole suite, the command has no test arguments. The CI snippet is printed or written
+runs its whole suite, the command has no test arguments (Go: `./...`). A Go command keeps the
+`go test` flags the repository's CI or Makefile uses (-race, -timeout, -tags, -count, -short,
+...; not coverage, -run or -json), or select_tests.py --go-test-flags; `flags_from` says where
+they came from and `args` counts its package arguments. The CI snippet is printed or written
 where you say, for you to add yourself; this script never edits CI configuration.
 
 A JavaScript package's own `test` script decides the runner when it names one (vitest, jest,
@@ -61,7 +64,70 @@ def java_class(rel: str) -> str:
     return '.'.join(parts)
 
 
-def argv_for(fw: str, tests: list[str], full: bool) -> list[str]:
+GO_KEEP_BOOL = {'-race', '-short', '-failfast', '-trimpath', '-msan', '-asan'}
+GO_KEEP_VALUE = {'-timeout', '-count', '-tags', '-p', '-cpu', '-vet', '-mod', '-parallel'}
+GO_CI_FILES = ('.github/workflows/*.yml', '.github/workflows/*.yaml', 'Makefile', 'makefile', 'GNUmakefile',
+               '.gitlab-ci.yml', 'azure-pipelines*.yml', 'Taskfile.yml', 'Taskfile.yaml', 'justfile', 'Justfile',
+               '.circleci/config.yml')
+
+
+def go_flags_of(line: str) -> list[str]:
+    """The flags of one `go test` command line worth keeping for a selected run: -race, -timeout, -tags,
+    -count, -short ... (not coverage, -run/-skip, -json or -v, which belong to that CI job's own purpose)."""
+    m = re.search(r'\bgo\s+test\b(.*)', line)
+    if not m:
+        return []
+    import shlex
+    try:
+        words = shlex.split(m.group(1).split('#')[0], posix=True)
+    except ValueError:
+        words = m.group(1).split()
+    out, i = [], 0
+    while i < len(words):
+        w = words[i]
+        if w in ('&&', '||', '|', ';') or w.startswith(('>', '2>')):
+            break
+        name = '-' + w.lstrip('-').split('=', 1)[0] if w.startswith('-') else None
+        if name in GO_KEEP_BOOL:
+            out.append(name)
+        elif name in GO_KEEP_VALUE:
+            if '=' in w:
+                out.append(f'{name}={w.split("=", 1)[1]}')
+            elif i + 1 < len(words):
+                out += [name, words[i + 1]]
+                i += 1
+        elif name and '=' not in w and i + 1 < len(words) and not words[i + 1].startswith(('-', './', '.')) and \
+                name in ('-run', '-skip', '-coverprofile', '-coverpkg', '-covermode', '-o', '-bench', '-benchtime',
+                         '-exec', '-ldflags', '-gcflags'):
+            i += 1                       # a dropped flag's value
+        i += 1
+    return out
+
+
+def ci_go_flags(root: Path) -> tuple[list[str], str | None]:
+    """go test flags from the repository's CI or Makefile (the first `go test` line that has any), and where."""
+    import fnmatch, os
+    for pat in GO_CI_FILES:
+        d, _, name = pat.rpartition('/')
+        base = root / d if d else root
+        if not base.is_dir():
+            continue
+        for f in sorted(os.listdir(base)):
+            p = base / f
+            if not p.is_file() or not fnmatch.fnmatch(f, name):
+                continue
+            try:
+                lines = p.read_text(encoding='utf-8', errors='replace').splitlines()
+            except OSError:
+                continue
+            for n, line in enumerate(lines, 1):
+                flags = go_flags_of(line)
+                if flags:
+                    return flags, f'{(d + "/") if d else ""}{f}:{n}'
+    return [], None
+
+
+def argv_for(fw: str, tests: list[str], full: bool, go_flags: list[str] | None = None) -> list[str]:
     base = {
         'pytest': ['python', '-m', 'pytest'], 'vitest': ['npx', 'vitest', 'run'], 'jest': ['npx', 'jest'],
         'mocha': ['npx', 'mocha'], 'playwright': ['npx', 'playwright', 'test'], 'cypress': ['npx', 'cypress', 'run'],
@@ -69,6 +135,8 @@ def argv_for(fw: str, tests: list[str], full: bool) -> list[str]:
         'xctest': ['xcodebuild', 'test'], 'flutter_test': ['flutter', 'test'], 'rspec': ['bundle', 'exec', 'rspec'],
         'node-test': ['node', '--test'],
     }[fw]
+    if fw == 'go-testing' and go_flags:
+        base = base + list(go_flags)
     if full:
         return base + (['./...'] if fw == 'go-testing' else [])
     if fw == 'jest':
@@ -87,11 +155,11 @@ def argv_for(fw: str, tests: list[str], full: bool) -> list[str]:
     return base + tests
 
 
-def split(fw: str, tests: list[str], max_chars: int) -> list[list[str]]:
+def split(fw: str, tests: list[str], max_chars: int, go_flags: list[str] | None = None) -> list[list[str]]:
     chunks, cur = [], []
     for t in tests:
         trial = cur + [t]
-        if cur and len(' '.join(argv_for(fw, trial, False))) > max_chars:
+        if cur and len(' '.join(argv_for(fw, trial, False, go_flags))) > max_chars:
             chunks.append(cur)
             cur = [t]
         else:
@@ -122,7 +190,7 @@ def script_runner(fw: str, script: str | None) -> tuple[str | None, str | None]:
 
 def build(selected: list[dict], packages: list[dict], full_packages: set[str], tests_by_package: dict[str, list[str]],
           levels: dict[str, str | None], max_chars: int = 8000, scripts: dict[str, str] | None = None,
-          builds: list[dict] | None = None) -> dict:
+          builds: list[dict] | None = None, go_flags: list[str] | None = None, go_flags_from: str | None = None) -> dict:
     """selected: [{test_id, file, package}], ordered. full_packages: packages whose whole suite is selected.
     scripts: each JS package's own `test` script (package.json), which decides the runner where it names
     one; a package whose script runs something else gets no command, and its tests go to no_runner.
@@ -147,10 +215,18 @@ def build(selected: list[dict], packages: list[dict], full_packages: set[str], t
     for (pkg, fw), tests in by_pkg.items():
         all_fw = [t for t in tests_by_package.get(pkg, []) if framework_for(t, levels.get(t), fws.get(pkg, [])) == fw]
         full = pkg in full_packages and len(tests) >= len(all_fw)
-        chunks = [tests] if full else split(fw, tests, max_chars)
+        flags = go_flags if fw == 'go-testing' else None
+        chunks = [tests] if full else split(fw, tests, max_chars, flags)
         for i, chunk in enumerate(chunks, 1):
-            commands.append({'package': pkg, 'cwd': pkg, 'framework': fw, 'full_suite': full,
-                             'argv': argv_for(fw, chunk, full), 'tests': len(chunk), 'part': i, 'parts': len(chunks)})
+            argv = argv_for(fw, chunk, full, flags)
+            cmd = {'package': pkg, 'cwd': pkg, 'framework': fw, 'full_suite': full,
+                   'argv': argv, 'tests': len(chunk), 'part': i, 'parts': len(chunks)}
+            if fw == 'go-testing':
+                # go test takes package directories, not test files: `args` counts the trailing arguments
+                cmd['args'] = len(argv) - 2 - len(flags or [])
+                if flags:
+                    cmd['flags_from'] = go_flags_from
+            commands.append(cmd)
     out = {'commands': commands, 'split_into': len(commands), 'max_chars': max_chars, 'no_runner': unknown}
     if reasons:
         out['no_runner_reasons'] = dict(sorted(reasons.items()))
@@ -190,8 +266,11 @@ def main(argv=None) -> int:
     if args.max_chars:
         levels = {s['file']: s.get('test_level') for s in sel['selected']}
         full = {p['root'] for p in sel['packages'] if p.get('full_suite')}
+        go = next((c for c in command['commands'] if c['framework'] == 'go-testing'), None)
+        flags = go['argv'][2:len(go['argv']) - go['args']] if go and 'args' in go and not go['full_suite'] else \
+            (go['argv'][2:-1] if go else [])
         command = {**build(sel['selected'], sel['packages'], full, {p['root']: p.get('test_files', []) for p in sel['packages']},
-                           levels, args.max_chars),
+                           levels, args.max_chars, go_flags=flags, go_flags_from=(go or {}).get('flags_from')),
                    **{k: v for k, v in command.items() if k in ('no_runner_reasons', 'build_first')}}
     if args.ci:
         text = ci_snippet(command, args.ci)

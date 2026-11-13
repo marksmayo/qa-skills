@@ -12,9 +12,14 @@ workspace package names and tsconfig `paths`. Imports of CSS and other assets ar
 
 Calls that load code by a computed name (`importlib.import_module(f"pkg.{name}")`, `__import__`,
 `pkgutil.iter_modules`, entry points, `import(variable)`, `require(variable)`) are recorded as
-dynamic sites, with the files they could load when the name has a literal prefix. Files in
-languages with no parser here (Go, Java, Kotlin, C#, Swift, Dart, Rust, Ruby, PHP) are listed
-under `languages` as `no_parser`; nothing is guessed for them.
+dynamic sites, with the files they could load when the name has a literal prefix. Go is read
+from text: each go.mod's module path maps an import path to a package directory, and a file
+depends on every non-test .go file of each package it imports; a `_test.go` file also depends
+on its own package's files, and `//go:embed` patterns are edges to the embedded files. Files in
+languages with no parser here (Java, Kotlin, C#, Swift, Dart, Rust, Ruby, PHP; Go without a
+go.mod) are listed under `languages` as `no_parser`; nothing is guessed for them. graph.json
+carries `language_coverage` (lang_census.py, vendored and embedded third-party trees left out),
+and the console warns when the dominant language has no parser here.
 
 Not followed: a package's `__init__.py` when a submodule is imported (Python runs it, but
 following it makes every module depend on everything the package imports), and test-runner
@@ -38,6 +43,11 @@ NO_PARSER = {'.go': 'go', '.java': 'java', '.kt': 'kotlin', '.kts': 'kotlin', '.
              '.dart': 'dart', '.rs': 'rust', '.rb': 'ruby', '.php': 'php', '.scala': 'scala', '.m': 'objective-c'}
 DYNAMIC_ANY = {'iter_modules', 'walk_packages', 'entry_points', 'load_entry_point', 'iter_entry_points'}
 
+GO_IMPORT_BLOCK = re.compile(r'^[ \t]*import\s*\((.*?)\)', re.M | re.S)
+GO_IMPORT_ONE = re.compile(r'^[ \t]*import\s+(?:[\w.]+\s+)?"([^"\n]+)"', re.M)
+GO_SPEC = re.compile(r'(?:[\w.]+\s+)?"([^"\n]+)"')
+GO_EMBED = re.compile(r'^[ \t]*//go:embed\s+(.+)$', re.M)
+GO_MODULE = re.compile(r'^\s*module\s+"?([^\s"]+)"?', re.M)
 JS_STATIC = re.compile(r'''(?:^|[^\w$.])(?:import|export)\s+(?:type\s+)?(?:[\w$*{}\s,]+?\s+from\s+)?["']([^"'\n]+)["']''', re.M)
 JS_REQUIRE = re.compile(r'''(?:^|[^\w$.])require\s*\(\s*["']([^"'\n]+)["']\s*\)''')
 JS_DYN_IMPORT = re.compile(r'''(?:^|[^\w$.])import\s*\(\s*(?:/\*.*?\*/\s*)?["']([^"'\n]+)["']\s*\)''')
@@ -207,6 +217,17 @@ class Graph:
         self.js_aliases = self.tsconfig_aliases(paths)
         self.workspace_names = {p['name']: p['root'] for p in self.packages if p['name'] != p['root']}
         self.all_paths = set(paths)
+        # Go: module paths from every go.mod (nested modules too), and each package directory's files
+        self.go_mods: dict[str, str] = {}
+        for path in paths:
+            if PurePosixPath(path).name == 'go.mod':
+                m = GO_MODULE.search((self.root / path).read_text(encoding='utf-8', errors='replace'))
+                if m:
+                    self.go_mods[m.group(1)] = str(PurePosixPath(path).parent)
+        self.go_src: dict[str, list[str]] = {}
+        for path in paths:
+            if path.endswith('.go') and not path.endswith('_test.go'):
+                self.go_src.setdefault(str(PurePosixPath(path).parent), []).append(path)
         for path in paths:
             ext = PurePosixPath(path).suffix.lower()
             entry = {'package': self.package_of(path), 'lang': None, 'test_level': test_level(self.test_path(path)), 'imports': [],
@@ -219,6 +240,10 @@ class Graph:
                 entry['lang'] = 'typescript' if ext in ('.ts', '.tsx', '.mts', '.cts') else 'javascript'
                 self.javascript(path, entry)
                 self.languages[entry['lang']] = 'parsed'
+            elif ext == '.go' and self.go_mods:
+                entry['lang'] = 'go'
+                self.go(path, entry)
+                self.languages['go'] = 'parsed'
             elif ext in NO_PARSER:
                 entry['lang'] = NO_PARSER[ext]
                 self.languages.setdefault(NO_PARSER[ext], 'no_parser')
@@ -308,6 +333,54 @@ class Graph:
                                                                                 errors='replace'), node) or name})
                 elif name in DYNAMIC_ANY:
                     entry['dynamic'].append({'line': node.lineno, 'call': name, 'lang': 'python', 'prefix': None, 'text': name + '(...)'})
+
+    def go_package_dir(self, spec: str) -> str | None:
+        """The repo directory of a Go import path in one of the repository's modules (longest module path wins)."""
+        for mod in sorted(self.go_mods, key=len, reverse=True):
+            if spec == mod or spec.startswith(mod + '/'):
+                d = PurePosixPath(self.go_mods[mod]) / spec[len(mod) + 1:] if spec != mod else PurePosixPath(self.go_mods[mod])
+                return os.path.normpath(d.as_posix()).replace(os.sep, '/')
+        return None
+
+    def go(self, path: str, entry: dict) -> None:
+        """Go: a file depends on every non-test file of each package it imports (a package is a directory, found
+        from go.mod's module path); a _test.go file also on its own package's files; //go:embed on what it embeds.
+        Standard-library and third-party imports are not files here."""
+        try:
+            raw = (self.root / path).read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            return
+        text = strip_js_comments(raw)
+        here = str(PurePosixPath(path).parent)
+        line_of = lambda pos: text.count('\n', 0, pos) + 1  # noqa: E731
+
+        def add(target: str, via: str, line: int) -> None:
+            if target != path and not any(i['path'] == target for i in entry['imports']):
+                entry['imports'].append({'path': target, 'via': via, 'line': line})
+
+        specs = [(m.group(1), m.start(1)) for m in GO_IMPORT_ONE.finditer(text)]
+        for blk in GO_IMPORT_BLOCK.finditer(text):
+            specs += [(m.group(1), blk.start(1) + m.start(1)) for m in GO_SPEC.finditer(blk.group(1))]
+        for spec, pos in specs:
+            d = self.go_package_dir(spec)
+            if d is None:
+                continue
+            files = self.go_src.get(d)
+            if not files:
+                entry['unresolved'].append({'spec': spec, 'line': line_of(pos)})
+                continue
+            for f in files:
+                add(f, 'import', line_of(pos))
+        if path.endswith('_test.go'):
+            for f in self.go_src.get(here, []):
+                add(f, 'same package', 0)
+        for m in GO_EMBED.finditer(raw):
+            for pat in m.group(1).split():
+                pat = pat.strip('"`').removeprefix('all:')
+                full = os.path.normpath((PurePosixPath(here) / pat).as_posix()).replace(os.sep, '/')
+                for cand in sorted(self.all_paths):
+                    if fnmatch.fnmatch(cand, full) or cand.startswith(full + '/'):
+                        add(cand, 'go:embed', raw.count('\n', 0, m.start()) + 1)
 
     def top_level_modules(self) -> set[str]:
         if not hasattr(self, '_tops'):
@@ -543,10 +616,28 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     g = build(args.repo.resolve())
     if args.reach:
-        for t, chain in sorted(g.tests_reaching(args.reach).items()):
+        hits = g.tests_reaching(args.reach)
+        for t, chain in sorted(hits.items()):
             print(f'{t}: ' + ' -> '.join(chain))
+        if not hits:
+            node = g.files.get(args.reach)
+            lang = (node or {}).get('lang')
+            why = ('not a file in the graph' if node is None else
+                   f'no import parser for {lang}, so nothing is known' if g.languages.get(lang) == 'no_parser' else
+                   'no test reaches it by import')
+            print(f'{args.reach}: {why}', file=sys.stderr)
+            return 1
         return 0
+    import lang_census
+    cov = lang_census.language_coverage(lang_census.census(g.root), {'Python', 'JavaScript', 'TypeScript', 'Go'},
+                                        tool='import_graph.py', what='import graph')
+    if cov.get('warning'):
+        print('WARNING: ' + cov['warning'], file=sys.stderr)
+    unparsed = sorted(l for l, s in g.languages.items() if s == 'no_parser')
+    if unparsed:
+        print(f'note: no import parser for {", ".join(unparsed)}; those files have no edges', file=sys.stderr)
     data = g.to_json()
+    data['language_coverage'] = cov
     text = json.dumps(data, indent=2) + '\n'
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)

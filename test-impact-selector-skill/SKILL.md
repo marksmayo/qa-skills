@@ -1,7 +1,7 @@
 ---
 name: test-impact-selector
 description: Given a change (a branch, a commit range or a diff), pick which tests to run, give every selected test its reasons and evidence (coverage of a changed line, an import chain, a journey link, naming, co-failure history), and list every change that no evidence can bound as a blind spot that widens the selection (strict by default). Outputs ready-to-run commands per package and framework, an optional CI snippet for the user to add, and, when past runs are available, measured recall with a Wilson interval from replaying history. Never calls unselected tests "safe to skip".
-version: 1.1.0
+version: 1.2.0
 ---
 
 # Test impact selector
@@ -99,11 +99,29 @@ own `tests/` are tests, with levels judged inside the package (its `tests/unit/`
 The graph notes such packages; check them, since a misread package turns every change into a
 shared-fixture blind spot.
 
-Languages without a parser (Go, Java, Kotlin, C#, Swift, Dart and others) are listed as
-`no_parser`. Their files rely on the other evidence sources, and on blind spots.
+Languages without a parser (Java, Kotlin, C#, Swift, Dart and others) are listed as
+`no_parser`. Their files rely on the other evidence sources, and on blind spots. `graph.json`
+carries `language_coverage` (vendored and embedded third-party trees left out), and the console
+warns when the repository's dominant language has no parser.
 
-**Language support / Rust.** The only import parsers are Python (`ast`) and JavaScript/TypeScript
-(regex). Rust (`.rs`) is `no_parser`, so it yields no import edges, and there is no cargo coverage
+**Go.** Go is parsed from text: each `go.mod`'s module path maps an import path to a package
+directory, a file depends on every non-test file of each package it imports, a `_test.go` file
+also on its own package's files, and `//go:embed` patterns are edges to the embedded files. A
+Go package is a directory, not the module: an unmapped Go file widens to its directory's tests
+and the tests that import it, and only when there are none to the module's Go tests, never to
+other languages' tests beside it. Naming matches `x_test.go` only in `x.go`'s own directory.
+Better than imports alone, when `go` is available and the user agrees:
+- `--related` from `go list -deps -test -json ./...` (reverse test dependencies per package, the
+  toolchain's own graph, build tags included) in the shape below;
+- per-test coverage from `coverage_map.py go` (Step 2);
+- the Go command keeps the `go test` flags of the repo's CI or Makefile line (`-race`,
+  `-timeout 25m`, `-tags`, ...; `flags_from` says which line), or `--go-test-flags`.
+History from gotestsum JUnit (classname is the import path) maps to the `_test.go` file through
+`go.mod` when `--repo` is given; a package that failed to build is `<dir>/(package)`, counted as
+selected when any test file of that directory is.
+
+**Language support / Rust.** The import parsers are Python (`ast`), JavaScript/TypeScript
+(regex) and Go (text, with go.mod). Rust (`.rs`) is `no_parser`, so it yields no import edges, and there is no cargo coverage
 ingestion either: `coverage_map.py` reads coverage.py JSON (or the mutation tester's
 `coverage.json`), not cargo-llvm-cov or grcov output. So for a Rust-only change with no other
 source, every evidence source is empty and the selector honestly falls back to running everything
@@ -147,7 +165,16 @@ limitations. A single whole-run `coverage-final.json` is refused: it cannot say 
 line. Collect coverage on the base side of the change (before it is applied): a map taken with
 the change in place is stale for the changed files.
 
-For JaCoCo or Go per-test data, convert it to the coverage.py JSON shape, or leave coverage
+**Go.** `coverage_map.py go` builds one test binary per package with tests
+(`go test -c -cover -covermode=set -coverpkg=<module>/...`, so a test in one package covers code
+in the packages it calls) and runs it once per test file (its top-level tests; `--per test` for
+one run per test), each with its own coverprofile, from the package directory as `go test` does.
+Binaries and profiles go to `--keep`; nothing is written into the repository. `--skip-dirs`
+leaves out packages that need a browser, device or service (name them in the limitations).
+It runs the tests, so ask first. A single whole-run coverprofile is refused. Run it under the
+environment the repo's tests need (and nothing that reaches a real device or network).
+
+For JaCoCo per-test data, convert it to the coverage.py JSON shape, or leave coverage
 `not_run` for that package.
 
 **Related-tests tools.** Run the repo's own tool and pass its output to `--related` as
@@ -160,7 +187,16 @@ For JaCoCo or Go per-test data, convert it to the coverage.py JSON shape, or lea
 
 **History.** List the past changes in `history.json` as
 `{changes: [{id, description, diff, full_run: true, runs: [{package, junit}]}]}`. Each diff
-applies to the repo; each run is that package's full suite after the change, as JUnit.
+applies to the repo, unless the change names a `base` git ref it applies to; or name a `commit`
+instead of a `diff` (the diff is the commit against its parent, replayed on a fresh checkout of
+the parent), which makes real git history usable while the repo is at HEAD. Each run is that
+package's full suite after the change, as JUnit.
+
+**Failures at the base.** Tests that fail before any change (only in this environment, a port
+already in use, a missing SDK) are not evidence. List them in a JSON file
+(`{"failures": [test files or ids]}`; an id marks its whole file) and pass it as
+`--baseline-failures` to `select_tests.py` (they are left out of co-failure) and `replay.py`
+(not counted, listed as `baseline_failures`). Don't put them in `--flaky`: they are not flaky.
 
 **Journeys.** journey-mapper's output. The selector reads, for each journey:
 - its `tests`;
@@ -251,8 +287,11 @@ tests would run the previous build. A package with no build script gets a note i
 
 ```bash
 python scripts/replay.py --repo <repo> --history history.json --coverage <run>/coverage_map.json \
-    --journeys journey_map.json [--flaky flaky.json] --out <run>/replay.json
+    --journeys journey_map.json [--flaky flaky.json] [--baseline-failures base.json] --out <run>/replay.json
 ```
+
+A change whose diff does not apply (to `--repo`, or to its `base`) is skipped with the reason in
+`changes_skipped`; the replay goes on. Say how many were skipped.
 
 Each past change is selected the way it would be now, using only the history before it. Every
 test file that failed in its full run is then checked against the selection. Recall is counted

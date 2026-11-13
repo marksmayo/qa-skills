@@ -260,6 +260,13 @@ def check(rep: dict, selection: dict | None, replay: dict | None, runs: dict | N
             for k in ('changes_replayed', 'failures_total', 'failures_missed', 'recall', 'wilson_low', 'wilson_high'):
                 if r.get(k) != replay.get(k):
                     errs.append(f'replay.{k}: {r.get(k)} but {r["replay_file"]} says {replay.get(k)}')
+            if replay.get('failures_baseline') and r.get('failures_baseline') != replay['failures_baseline']:
+                errs.append(f'replay.failures_baseline: {r.get("failures_baseline")} but {r["replay_file"]} left '
+                            f'{replay["failures_baseline"]} failure(s) of tests failing at the base uncounted; say so')
+            if len(replay.get('changes_skipped') or []) != len(r.get('changes_skipped') or []) and \
+                    'changes_skipped' in r:
+                errs.append(f'replay.changes_skipped: must list the {len(replay["changes_skipped"])} change(s) the '
+                            'replay skipped')
             if r.get('mode', mode) != replay['mode']:
                 errs.append('replay.mode: differs from the replay file')
             if replay['mode'] != mode:

@@ -1,6 +1,6 @@
 # Design: `test-impact-selector-skill`
 
-Status: Built (v1.1.0), see "As built" at the end. Build order: 10.
+Status: Built (v1.2.0), see "As built" at the end. Build order: 10.
 
 ## Mission
 
@@ -318,3 +318,29 @@ Where the build differs from the design above, and what the example showed.
     with the change applied (still stale for the changed files), pnpm-workspace.yaml globs for
     package membership, a Vitest listing-only related-tests recipe, and history building
     helpers. The examples are unchanged and validate with `--recompute`.
+- **v1.2.0: Go.** A review on a Go CLI (Go module at the root, beside a vendored Swift agent and
+  Node tooling) found Go quiet or wrong in every script; fixed with red/green cases in the new
+  `scripts/self_test.py` (a synthetic Go module; the go and git cases skip without them).
+  - `import_graph.py` parses Go: go.mod module paths map imports to package directories, a file
+    depends on every non-test file of an imported package, `_test.go` files on their own
+    package, `//go:embed` on the embedded files. graph.json carries `language_coverage`
+    (lang_census.py) and `--reach` says why nothing reaches a file.
+  - A Go package is a directory: `unmapped_source` and the other package-scoped blind spots for a
+    `.go` file widen to the directory's tests plus its importers', else the module's Go tests,
+    never Swift or Node tests. Go naming requires the same directory.
+  - `coverage_map.py go`: one `-cover -coverpkg=<module>/...` test binary per package, one
+    coverprofile per test file (or test); `normalise` reads its manifest and refuses a single
+    whole-run profile.
+  - History: Go JUnit cases map to their `_test.go` file through the shared parse_results (go.mod
+    under `--repo`); a package build failure is `<dir>/(package)`, selected when any test file of
+    that directory is. A change can name a `base` ref or a `commit` (diff against its parent,
+    replayed on a fresh `git archive` of the parent), and a diff that does not apply is skipped
+    with its reason instead of ending the replay.
+  - `--baseline-failures` (select and replay): tests failing at the base are no co-failure
+    evidence and are not counted in recall (`failures_baseline`).
+  - The Go command keeps the CI or Makefile `go test` flags (`-race`, `-timeout`, `-tags`, ...;
+    `flags_from`), or `--go-test-flags`; it carries `args` (its package arguments), which the
+    renderer's `--brief` now uses, so the Run line shows `go test ./a ./b`, not `<N test files>`.
+  - Not done: a `-run` pattern when only some files of a package are selected (a Go package runs
+    as a unit); verify runs for Go still need `run_tests.py --preset gotestsum` by hand. The
+    examples are unchanged and validate with `--recompute`.

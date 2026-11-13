@@ -75,34 +75,78 @@ def extract(tar_bytes: bytes, dest: Path) -> None:
 
 
 # ---------------------------------------------------------------- inputs
-def load_history(path: Path | None) -> list[dict]:
-    """[{id, changed: [paths], failed: [test files], appearances: {test file: runs}}] from history.json."""
+def load_history(path: Path | None, repo: Path | None = None) -> list[dict]:
+    """[{id, changed: [paths], failed: [test files], appearances: {test file: runs}}] from history.json.
+
+    A change gives its `diff` (a file next to history.json), or names its `commit` in --repo's git history: the
+    diff is then the commit against its parent, and the parent is the change's `base` (replay.py checks it
+    out). A change may also name a `base` ref for its diff. Go results (gotestsum JUnit, whose classname is an
+    import path) are mapped to their _test.go files through go.mod in --repo; a package that failed to build is
+    `<package dir>/(package)`."""
     if not path:
         return []
     data = json.loads(path.read_text(encoding='utf-8'))
     base = path.parent
     out = []
     for ch in data.get('changes', []):
-        diff_text = (base / ch['diff']).read_text(encoding='utf-8', errors='replace')
+        ref = ch.get('base')
+        if ch.get('diff'):
+            diff_text = (base / ch['diff']).read_text(encoding='utf-8', errors='replace')
+        elif ch.get('commit'):
+            if repo is None:
+                raise SystemExit(f'history {ch["id"]}: names a commit, which needs --repo (a git checkout)')
+            diff_text = git(repo, 'diff', '-M', '--no-color', '--no-ext-diff', f'{ch["commit"]}^', ch['commit'])
+            ref = ref or f'{ch["commit"]}^'
+        else:
+            raise SystemExit(f'history {ch["id"]}: needs a diff file or a commit')
         changed = sorted({p for f in diff_scope.parse_diff(diff_text) for p in (f['path'], f.get('old_path')) if p})
         failed, seen, cases_out = set(), set(), []
         for run in ch.get('runs', []):
-            cases, _ = parse_results.parse_junit(base / run['junit'], ch['id'])
+            pkg = run.get('package', '.')
+            root = (repo if pkg in ('.', '') else repo / pkg) if repo is not None else None
+            cases, _ = parse_results.parse_junit(base / run['junit'], ch['id'], root=root)
             for c in cases:
-                file = test_file_of(c, run.get('package', '.'))
+                file = test_file_of(c, pkg, root)
                 seen.add(file)
-                cases_out.append({'id': c['id'], 'file': file, 'status': c['status'], 'package': run.get('package', '.')})
+                cases_out.append({'id': c['id'], 'file': file, 'status': c['status'], 'package': pkg})
                 if c['status'] in ('failed', 'error'):
                     failed.add(file)
-        out.append({'id': ch['id'], 'diff': ch['diff'], 'changed': changed, 'failed': sorted(failed), 'seen': sorted(seen),
+        out.append({'id': ch['id'], 'diff': ch.get('diff'), 'commit': ch.get('commit'), 'base': ref,
+                    'diff_text': diff_text, 'changed': changed, 'failed': sorted(failed), 'seen': sorted(seen),
                     'cases': cases_out, 'full_run': ch.get('full_run', False), 'description': ch.get('description', '')})
     return out
 
 
-def test_file_of(case: dict, package: str) -> str:
+PACKAGE_LEVEL = '(package)'
+
+
+def test_file_of(case: dict, package: str, root: Path | None = None) -> str:
     f = case.get('file') or case.get('classname') or case['id'].split('::')[0]
-    f = f.replace('\\', '/').lstrip('./')
+    f = f.replace('\\', '/')
+    f = f[2:] if f.startswith('./') else ('' if f == '.' else f)
+    # a Go package that failed to build has its directory as file: a package-level result
+    if root is not None and (not f or (not PurePosixPath(f).suffix and (root / f).is_dir())):
+        f = f'{f}/{PACKAGE_LEVEL}' if f else PACKAGE_LEVEL
     return f if package in ('.', '') or f.startswith(package + '/') else f'{package}/{f}'
+
+
+def package_level_selected(failed: str, chosen: set[str]) -> bool:
+    """A package-level failure (`<dir>/(package)`: the package did not build) is selected when any test file of
+    that package directory is."""
+    if not failed.endswith(PACKAGE_LEVEL):
+        return False
+    d = failed[:-len(PACKAGE_LEVEL)].rstrip('/')
+    return any(str(PurePosixPath(c).parent) == (d or '.') for c in chosen)
+
+
+def load_baseline_failures(path: Path | None) -> set[str]:
+    """Tests that already fail at the base, before the change (a JSON list of test files or ids, or
+    {"failures": [...]}): never evidence of a change's impact, and not counted by replay."""
+    if not path:
+        return set()
+    data = json.loads(path.read_text(encoding='utf-8'))
+    items = data.get('failures', []) if isinstance(data, dict) else data
+    return {str(x).replace('\\', '/').split('::')[0] for x in items} | {str(x).replace('\\', '/') for x in items}
 
 
 def load_coverage(paths: list[Path]) -> list[dict]:
@@ -192,6 +236,9 @@ def naming_matches(path: str, tests: list[str], package_of) -> list[str]:
              f'{stem}Test.java', f'{stem}Tests.java', f'{stem}IT.java', f'{stem}Test.kt', f'{stem}Tests.kt',
              f'{stem}Tests.swift', f'{stem}Test.swift', f'{stem}Tests.cs', f'{stem}Test.cs'}
     js = re.compile(r'^' + re.escape(stem) + r'\.(test|spec|e2e|visual|cy)\.[cm]?[jt]sx?$')
+    if p.suffix == '.go':
+        # a Go test sits in its package's directory: x_test.go elsewhere tests another package's x.go
+        return sorted(t for t in tests if PurePosixPath(t).name == f'{stem}_test.go' and PurePosixPath(t).parent == p.parent)
     pkg = package_of(path)
     return sorted(t for t in tests if package_of(t) == pkg and (PurePosixPath(t).name in names or js.match(PurePosixPath(t).name)))
 
@@ -202,6 +249,8 @@ class Selector:
         self.repo, self.base_dir, self.new_dir, self.scope, self.mode = repo, base_dir, new_dir, scope, mode
         self.coverage, self.journeys, self.history, self.related = coverage, journeys, history, related
         self.history_given = history_given
+        self.go_test_flags: str | None = None
+        self.baseline_failures: set[str] = set()
         self.g_new = import_graph.build(new_dir)
         self.g_base = import_graph.build(base_dir)
         self.tests = self.g_new.tests()
@@ -290,7 +339,8 @@ class Selector:
         for h in self.history:
             if path in h['changed'] or (old and old in h['changed']):
                 for t in h['failed']:
-                    counts.setdefault(t, []).append(h['id'])
+                    if t not in self.baseline_failures:     # failing at the base already: not evidence
+                        counts.setdefault(t, []).append(h['id'])
         touching = [h['id'] for h in self.history if path in h['changed'] or (old and old in h['changed'])]
         for t, ids in counts.items():
             if len(ids) >= 2:
@@ -319,8 +369,22 @@ class Selector:
                            'widened_to': tests if widen else [], 'would_widen_to': tests, 'note': note})
 
     def package_tests(self, path: str) -> list[str]:
+        if path.endswith('.go') and self.g_new.go_mods:
+            return self.go_package_tests(path)
         pkg = self.g_new.package_of(path)
         return self.tests if pkg == '.' else [t for t in self.tests if self.g_new.package_of(t) == pkg]
+
+    def go_package_tests(self, path: str) -> list[str]:
+        """A Go package is a directory: its own _test.go files and the tests that import it; when there are none,
+        the Go tests of its module. Never another language's tests (a Swift agent or a Node tool beside it)."""
+        d = PurePosixPath(path).parent
+        same = {t for t in self.tests if t.endswith('_test.go') and PurePosixPath(t).parent == d}
+        reach = {t for g in (self.g_new, self.g_base) for t in g.tests_reaching(path) if t.endswith('_test.go')}
+        if same or reach:
+            return sorted(same | reach)
+        mod_dir = max((m for m in self.g_new.go_mods.values() if m in ('.', '') or path.startswith(m + '/')),
+                      key=len, default='.')
+        return sorted(t for t in self.tests if t.endswith('_test.go') and (mod_dir in ('.', '') or t.startswith(mod_dir + '/')))
 
     def dynamic_sites(self, entry: dict) -> list[str]:
         """Dynamic loading sites that could reach this changed file, as 'file:line text'."""
@@ -459,6 +523,8 @@ class Selector:
         fail_rate = {}
         for h in self.history:
             for t in h['seen']:
+                if t in self.baseline_failures:
+                    continue
                 fail_rate.setdefault(t, [0, 0])
                 fail_rate[t][1] += 1
                 if t in h['failed']:
@@ -496,9 +562,17 @@ class Selector:
                 import_graph.read_jsonc(self.new_dir / 'package.json')
             if isinstance(pj.get('scripts'), dict) and isinstance(pj['scripts'].get('test'), str):
                 scripts[p['root']] = pj['scripts']['test']
+        go_flags, go_from = [], None
+        if any(s['file'].endswith('_test.go') for s in selected):
+            if self.go_test_flags is not None:
+                import shlex
+                go_flags, go_from = shlex.split(self.go_test_flags), '--go-test-flags'
+            else:
+                go_flags, go_from = build_command.ci_go_flags(self.new_dir)
         command = build_command.build(selected, packages, full, {p['root']: p['test_files'] for p in packages},
                                       {t: self.g_new.files[t]['test_level'] for t in self.tests}, self.max_chars,
-                                      scripts=scripts, builds=self.builds_first(changes, selected))
+                                      scripts=scripts, builds=self.builds_first(changes, selected),
+                                      go_flags=go_flags, go_flags_from=go_from)
         sources = self.sources(changes, cov)
         n_docs = len([c for c in changes if c['kind'] == 'docs'])
         return {
@@ -643,11 +717,12 @@ def prepare_trees(repo: Path, work: Path, diff: Path | None, diff_applied: bool,
 def select(repo: Path, diff: Path | None = None, diff_applied: bool = False, base: str = 'main', committed_only: bool = False,
            mode: str = 'strict', coverage: list[Path] | None = None, journeys: Path | None = None,
            history: Path | None = None, related: Path | None = None, max_chars: int = 8000,
-           history_entries: list[dict] | None = None) -> dict:
+           history_entries: list[dict] | None = None, baseline_failures: Path | None = None,
+           go_test_flags: str | None = None) -> dict:
     """Run a selection. history_entries overrides the entries read from --history (replay passes earlier ones only)."""
     repo = repo.resolve()
     cov = load_coverage(coverage or [])
-    hist = history_entries if history_entries is not None else load_history(history)
+    hist = history_entries if history_entries is not None else load_history(history, repo)
     history_given = history is not None
     if mode == 'balanced':
         missing = [x for x, ok in (('a coverage map', bool(cov)), ('history', history_given)) if not ok]
@@ -658,6 +733,11 @@ def select(repo: Path, diff: Path | None = None, diff_applied: bool = False, bas
         sel = Selector(repo, base_dir, new_dir, scope, mode, cov, journey_links(journeys), hist,
                        json.loads(related.read_text(encoding='utf-8')) if related else None, history_given)
         sel.max_chars = max_chars
+        sel.go_test_flags = go_test_flags
+        sel.baseline_failures = load_baseline_failures(baseline_failures)
+        if sel.baseline_failures:
+            sel.notes.append(f'{len(sel.baseline_failures)} test(s) or file(s) fail at the base already '
+                             '(--baseline-failures); their past failures are not co-failure evidence.')
         res = sel.run()
     if mode == 'balanced' and any(s['name'] == 'coverage' and s['status'] == 'stale' for s in res['sources']):
         res['notes'].append('balanced mode with a stale coverage map: refresh the map, or use strict.')
@@ -676,7 +756,9 @@ def select(repo: Path, diff: Path | None = None, diff_applied: bool = False, bas
                        'base': None if diff else base, 'committed_only': committed_only, 'mode': mode,
                        'coverage': [rel_input(p) for p in coverage or []], 'journeys': rel_input(journeys),
                        'history': rel_input(history), 'related': rel_input(related), 'max_chars': max_chars,
-                       'file_kinds_sha256': kinds_sha},
+                       'file_kinds_sha256': kinds_sha,
+                       **({'baseline_failures': rel_input(baseline_failures)} if baseline_failures else {}),
+                       **({'go_test_flags': go_test_flags} if go_test_flags is not None else {})},
             'repo_code_hash': run_tests.code_hash(repo), 'change': change, 'mode': mode, **res}
 
 
@@ -685,7 +767,8 @@ def args_from_inputs(inputs: dict) -> dict:
     return {'repo': Path(inputs['repo']), 'diff': p(inputs.get('diff')), 'diff_applied': inputs.get('diff_applied', False),
             'base': inputs.get('base') or 'main', 'committed_only': inputs.get('committed_only', False), 'mode': inputs['mode'],
             'coverage': [Path(c) for c in inputs.get('coverage', [])], 'journeys': p(inputs.get('journeys')),
-            'history': p(inputs.get('history')), 'related': p(inputs.get('related')), 'max_chars': inputs.get('max_chars', 8000)}
+            'history': p(inputs.get('history')), 'related': p(inputs.get('related')), 'max_chars': inputs.get('max_chars', 8000),
+            'baseline_failures': p(inputs.get('baseline_failures')), 'go_test_flags': inputs.get('go_test_flags')}
 
 
 def main(argv=None) -> int:
@@ -701,10 +784,15 @@ def main(argv=None) -> int:
     ap.add_argument('--history', type=Path)
     ap.add_argument('--related', type=Path, help='related-tests output: {tool, version, command, related: {path: [tests]}}')
     ap.add_argument('--max-chars', type=int, default=8000)
+    ap.add_argument('--baseline-failures', type=Path, help='tests that already fail at the base: JSON list of test '
+                    'files or ids, or {"failures": [...]}; left out of co-failure evidence')
+    ap.add_argument('--go-test-flags', help='go test flags for the Go command (default: those of the repo\'s CI or '
+                    'Makefile `go test` line, e.g. "-race -timeout 25m"); "" for none')
     ap.add_argument('--out', type=Path, required=True)
     args = ap.parse_args(argv)
     res = select(args.repo, args.diff, args.diff_applied, args.base, args.committed_only, args.mode, args.coverage,
-                 args.journeys, args.history, args.related, args.max_chars)
+                 args.journeys, args.history, args.related, args.max_chars, baseline_failures=args.baseline_failures,
+                 go_test_flags=args.go_test_flags)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(res, indent=2) + '\n', encoding='utf-8')
     s = res['summary']

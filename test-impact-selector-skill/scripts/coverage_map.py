@@ -97,6 +97,8 @@ def read_coverage(data: dict) -> tuple[str, str | None, dict[str, dict[int, set[
         return 'mutation-tester-coverage', None, lines, outside
     if data.get('format') == PER_FILE_FORMAT:
         return read_per_file(data)
+    if data.get('format') == GO_FORMAT:
+        return read_go(data)
     if data and all(isinstance(v, dict) and 'statementMap' in v for v in data.values()):
         raise SystemExit('this is one Istanbul/V8 coverage-final.json for a whole run: it cannot say which test ran a '
                          'line. Run each test file alone (coverage_map.py per-file) or give a per-file manifest.')
@@ -152,6 +154,95 @@ def read_per_file(data: dict) -> tuple[str, str | None, dict[str, dict[int, set[
             for ln in lns:
                 dst.setdefault(ln, set()).add(f'{test}::{WHOLE_FILE}')
     return PER_FILE_FORMAT, data.get('tool_version'), lines, outside
+
+
+GO_FORMAT = 'go-coverprofile-per-test'
+GO_ROW = re.compile(r'^(.+):(\d+)\.\d+,(\d+)\.\d+ \d+ (\d+)$')
+
+
+def read_go(data: dict) -> tuple[str, str | None, dict[str, dict[int, set[str]]], int]:
+    """A Go manifest: {"format": "go-coverprofile-per-test", "base": dir, "runs": {test id: {"profile": file
+    relative to base, "exit_code": n}}}. Each profile is a `go test -coverprofile` of one test (or one test
+    file's tests); its blocks are expanded to lines. Keys stay import paths (module/pkg/file.go) and are
+    matched to repository files by their longest common suffix, like every other format."""
+    base = Path(data.get('base') or '.')
+    lines: dict[str, dict[int, set[str]]] = {}
+    for test, run in sorted(data['runs'].items()):
+        if not run.get('profile') or not (base / run['profile']).is_file():
+            continue
+        for row in (base / run['profile']).read_text(encoding='utf-8', errors='replace').splitlines():
+            m = GO_ROW.match(row.strip())
+            if not m or m.group(4) == '0':
+                continue
+            per = lines.setdefault(m.group(1), {})
+            for ln in range(int(m.group(2)), int(m.group(3)) + 1):
+                per.setdefault(ln, set()).add(test)
+    return GO_FORMAT, data.get('tool_version'), lines, 0
+
+
+def go_per_test(repo: Path, package: str, keep: Path, per: str, coverpkg: str | None, skip_dirs: str | None,
+                timeout: float, extra: list[str]) -> tuple[dict, str]:
+    """Per-test Go coverage: one test binary per package with tests (`go test -c -cover -covermode=set
+    -coverpkg=<module>/...`), run once per test file (its top-level tests) or per test, each with its own
+    -test.coverprofile, from the package directory as go test does. Profiles and binaries go to --keep;
+    nothing is written into the repository."""
+    import shutil
+    if shutil.which('go') is None:
+        raise SystemExit('coverage_map.py go needs the go toolchain on PATH (nothing is installed)')
+    cwd = repo / package if package not in ('.', '') else repo
+    env = {**os.environ, 'GOTOOLCHAIN': os.environ.get('GOTOOLCHAIN', 'local')}
+    res = subprocess.run(['go', 'list', '-f', '{{.Dir}}\t{{.ImportPath}}\t{{len .TestGoFiles}}\t{{len .XTestGoFiles}}',
+                          './...'], cwd=cwd, env=env, capture_output=True, text=True, encoding='utf-8', errors='replace')
+    if res.returncode != 0:
+        raise SystemExit(f'go list ./... failed in {package}: {res.stderr.strip()[-400:]}')
+    module = subprocess.run(['go', 'list', '-m'], cwd=cwd, env=env, capture_output=True, text=True).stdout.strip().splitlines()
+    cp = coverpkg or (f'{module[0]}/...' if module else './...')
+    keep.mkdir(parents=True, exist_ok=True)
+    (keep / 'bin').mkdir(exist_ok=True)
+    (keep / 'prof').mkdir(exist_ok=True)
+    runs: dict[str, dict] = {}
+    log = []
+    for line in res.stdout.splitlines():
+        d, ip, nt, nx = line.split('\t')
+        if int(nt) + int(nx) == 0:
+            continue
+        pdir = Path(d).resolve()
+        rel = pdir.relative_to(repo.resolve()).as_posix() if pdir != repo.resolve() else '.'
+        if skip_dirs and re.search(skip_dirs, '/' + rel):
+            log.append(f'skipped {rel} (--skip-dirs)')
+            continue
+        name = re.sub(r'[^\w.-]', '_', rel)
+        exe = keep / 'bin' / (name + '.test' + ('.exe' if os.name == 'nt' else ''))
+        b = subprocess.run(['go', 'test', '-c', '-cover', '-covermode=set', f'-coverpkg={cp}', *extra, '-o', str(exe), '.'],
+                           cwd=pdir, env=env, capture_output=True, text=True, encoding='utf-8', errors='replace')
+        if b.returncode != 0 or not exe.is_file():
+            log.append(f'build failed: {rel}: {(b.stdout + b.stderr).strip()[-200:]}')
+            continue
+        tests_by_file: dict[str, list[str]] = {}
+        for f in sorted(pdir.glob('*_test.go')):
+            for m in re.finditer(r'^func\s+(Test\w*)\s*\(\s*\w+\s+\*testing\.T\s*\)', f.read_text(encoding='utf-8', errors='replace'), re.M):
+                tests_by_file.setdefault(f.name, []).append(m.group(1))
+        prefix = '' if rel == '.' else rel + '/'
+        units = [(f'{prefix}{f}::{WHOLE_FILE}', ts) for f, ts in tests_by_file.items()] if per == 'file' else \
+            [(f'{prefix}{f}::{t}', [t]) for f, ts in tests_by_file.items() for t in ts]
+        for i, (tid, names) in enumerate(units):
+            prof = keep / 'prof' / f'{name}.{i:04d}.out'
+            pattern = '^(' + '|'.join(names) + ')$'
+            try:
+                r = subprocess.run([str(exe), '-test.run', pattern, '-test.count=1', f'-test.coverprofile={prof}'],
+                                   cwd=pdir, env=env, capture_output=True, timeout=timeout)
+                code = r.returncode
+            except subprocess.TimeoutExpired:
+                code = 'timeout'
+            runs[tid] = {'profile': prof.relative_to(keep).as_posix() if prof.is_file() else None, 'exit_code': code}
+        exe.unlink(missing_ok=True)
+    gv = subprocess.run(['go', 'version'], capture_output=True, text=True).stdout.strip()
+    manifest = {'format': GO_FORMAT, 'tool_version': gv, 'base': str(keep), 'runs': runs, 'log': log}
+    (keep / 'per_test.json').write_text(json.dumps(manifest, indent=1) + '\n', encoding='utf-8')
+    shown = (f'per package: go test -c -cover -covermode=set -coverpkg={cp}; per test '
+             f'{"file (its top-level tests)" if per == "file" else ""}: <binary> -test.run ^(...)$ -test.coverprofile '
+             f'({len(runs)} runs)')
+    return manifest, shown
 
 
 ENTRY = {'vitest': ('vitest', 'vitest.mjs'), 'jest': ('jest', 'bin/jest.js')}
@@ -255,12 +346,16 @@ def normalise(data: dict, repo: Path, package: str, hashed_at: str, commit: str 
 
 def per_file_summary(data: dict) -> dict:
     """For a per-test-file run: which test files failed or left no coverage (their lines are missing)."""
-    if data.get('format') != PER_FILE_FORMAT:
+    if data.get('format') not in (PER_FILE_FORMAT, GO_FORMAT):
         return {}
     runs = data['runs']
-    return {'test_files_run': len(runs),
-            'test_files_failed': sorted(t for t, r in runs.items() if r.get('exit_code')),
-            'test_files_without_coverage': sorted(t for t, r in runs.items() if not r.get('coverage'))}
+    key = 'coverage' if data['format'] == PER_FILE_FORMAT else 'profile'
+    out = {'test_files_run': len(runs),
+           'test_files_failed': sorted(t for t, r in runs.items() if r.get('exit_code')),
+           'test_files_without_coverage': sorted(t for t, r in runs.items() if not r.get(key))}
+    if data.get('log'):
+        out['notes'] = data['log']
+    return out
 
 
 def generate(repo: Path, package: str, python: str, source: str) -> tuple[dict, str]:
@@ -298,10 +393,20 @@ def main(argv=None) -> int:
     pf.add_argument('--extra-args', default='', help='extra runner arguments, e.g. "--project unit"')
     pf.add_argument('--env', nargs='+', action='append', default=[], metavar='K=V')
     pf.add_argument('--keep', type=Path, required=True, help='directory for the per-file coverage files and manifest')
+    gp = sub.add_parser('go', help='Go: one -cover test binary per package, run per test file (or per test) with '
+                        'its own coverprofile (needs go)')
+    gp.add_argument('--keep', type=Path, required=True, help='directory for binaries, profiles and the manifest')
+    gp.add_argument('--per', choices=['file', 'test'], default='file')
+    gp.add_argument('--coverpkg', help='packages to measure (default: <module>/..., so tests in one package cover '
+                    'code in others)')
+    gp.add_argument('--skip-dirs', help='regex on "/<package dir>" for packages to leave out (e.g. ones that need '
+                    'a browser or a device)')
+    gp.add_argument('--timeout', type=float, default=600.0, help='seconds per test run')
+    gp.add_argument('--extra-args', default='', help='extra go test -c flags, e.g. "-tags integration"')
     g = sub.add_parser('generate', help='run pytest once with per-test contexts (needs coverage.py and pytest-cov)')
     g.add_argument('--python', default=sys.executable)
     g.add_argument('--source', default='.', help='what to measure, relative to the package (--cov=...); default everything')
-    for p in (n, g, pf):
+    for p in (n, g, pf, gp):
         p.add_argument('--repo', type=Path, required=True)
         p.add_argument('--package', default='.', help='package directory the tests ran in, relative to the repo')
         p.add_argument('--commit', help='commit the coverage was collected on, if known')
@@ -316,9 +421,18 @@ def main(argv=None) -> int:
         data, command = per_file(repo, args.package, args.runner, args.tests, args.jobs, args.provider,
                                  shlex.split(args.extra_args), [kv for grp in args.env for kv in grp], args.keep.resolve())
         out = normalise(data, repo, args.package, 'collection', args.commit, command)
+    elif args.cmd == 'go':
+        import shlex
+        data, command = go_per_test(repo, args.package, args.keep.resolve(), args.per, args.coverpkg, args.skip_dirs,
+                                    args.timeout, shlex.split(args.extra_args))
+        out = normalise(data, repo, args.package, 'collection', args.commit, command)
     else:
-        data = json.loads(args.coverage.read_text(encoding='utf-8'))
-        if data.get('format') == PER_FILE_FORMAT and not Path(data.get('base') or '.').is_absolute():
+        raw = args.coverage.read_text(encoding='utf-8', errors='replace')
+        if raw.lstrip().startswith('mode:'):
+            raise SystemExit('this is one Go coverprofile for a whole run: it cannot say which test ran a line. Run '
+                             'coverage_map.py go (one profile per test file or test), or give its per_test.json.')
+        data = json.loads(raw)
+        if data.get('format') in (PER_FILE_FORMAT, GO_FORMAT) and not Path(data.get('base') or '.').is_absolute():
             data['base'] = str(args.coverage.resolve().parent / (data.get('base') or '.'))
         out = normalise(data, repo, args.package, 'normalisation', args.commit, data.get('command'))
     args.out.parent.mkdir(parents=True, exist_ok=True)
