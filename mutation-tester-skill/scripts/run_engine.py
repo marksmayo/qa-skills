@@ -19,6 +19,7 @@ builtin: runs builtin_mutator.py (stdlib AST mutations, pytest only) in place; s
         [--stryker "npx stryker"] [--test-runner vitest] [--concurrency 4] [--timeout-ms 20000]
         [--sandbox auto|mirror|run-dir|in-package] [--stryker-option key=value ...] [--keep-work]
     python run_engine.py ranges --scope scope.json      # print the scope as Stryker --mutate ranges
+                                                        # (warns about other languages; exit 2 when none)
 
 stryker (StrykerJS, which must already be installed for the package): writes a config to
 <dir>/qa-stryker.config.json that mutates only the scope's changed lines ('file:start-end'
@@ -433,8 +434,23 @@ def main(argv=None) -> int:
     ap.add_argument('--keep-work', action='store_true', help='keep the scratch copy (mutmut) or workspace mirror (stryker)')
     args, rest = ap.parse_known_args(argv)
     if args.engine == 'ranges':
-        for r in mutate_ranges(json.loads(args.scope.read_text(encoding='utf-8'))):
+        scope = json.loads(args.scope.read_text(encoding='utf-8'))
+        ranges = mutate_ranges(scope)
+        for r in ranges:
             print(r)
+        others = [f['path'] for f in scope['files'] if f['kind'] == 'source' and f['status'] != 'deleted'
+                  and f['ranges'] and not f['path'].endswith(JS_SUFFIXES)]
+        if others:
+            import builtin_mutator
+            langs = builtin_mutator.scope_languages({'files': [f for f in scope['files'] if f['path'] in others]})
+            print('WARNING: Stryker ranges cover only JavaScript/TypeScript; left out: ' +
+                  '; '.join(f'{l}: {", ".join(fs[:5])}' + (f' (+{len(fs) - 5} more)' if len(fs) > 5 else '')
+                            for l, fs in sorted(langs.items())) +
+                  ' (Python and Go: builtin_mutator.py; others: the tool table in SKILL.md)', file=sys.stderr)
+        if not ranges:
+            print('ERROR: no JavaScript/TypeScript source lines in scope, so there is nothing for Stryker to mutate',
+                  file=sys.stderr)
+            return 2
         return 0
     if args.repo is None or args.run_dir is None:
         ap.error(f'{args.engine} needs --repo and --run-dir')

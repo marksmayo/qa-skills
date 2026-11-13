@@ -63,7 +63,7 @@ How to tell them apart:
 |---|---|
 | Criticality (yours, with a reason) | 3: money, auth, permissions, data deletion, or a journey-mapper P0/P1 step (`critical_paths`). 2: ordinary logic. 1: formatting, logging, display text |
 | Kind (computed) | The highest over the finding's mutants, from `data/operators.json`: branch or boundary = 3 (comparison, negation, condition, logical, boolean constant, loop control, a string compared in a condition); value = 2 (arithmetic, number, returned value, `None`, arguments, removed call, removed `.upper()`/`.strip()`-style method call, an UPPER_CASE string constant); other string literal = 1 |
-| Proximity (computed with `--repo`) | 2 when a covering test calls the mutated function directly (a unit test ran the line and still passed); 1 when only tests that reach it through other functions ran it, and always 1 for a module-level mutant. Python tests are read with `ast`; JS/TS tests are found by their describe chain and title (`ts_scan.py`) and their body searched for a call |
+| Proximity (computed with `--repo`) | 2 when a covering test calls the mutated function directly (a unit test ran the line and still passed); 1 when only tests that reach it through other functions ran it, and always 1 for a module-level mutant. Python tests are read with `ast`; JS/TS tests are found by their describe chain and title (`ts_scan.py`) and their body searched for a call; Go tests (`<file>_test.go::TestName[/sub]`) by the top-level `func TestName` body, from Go tokens (`go_scan.py`). When every covering test is in another language (Rust, Java, ...), proximity is not computed and the validator says so, rather than guessing 1 |
 
 | Priority | Score |
 |---|---|
@@ -86,8 +86,11 @@ the repo (`--in-place`) need `write_tests: true` and the test file in `files_cha
 
 The mean of: the baseline was green in two runs; per-test coverage was recorded (the builtin
 engine's line coverage, or Stryker's perTest coverage when Stryker ran); the share
-of requested engines that ran; the share of runnable mutants that were run (not sampled out or
-cut by the budget).
+of requested engines that ran, where an engine converted from another tool's output with no run
+record (`run_by: "external"`) counts half; the share of runnable mutants that were run (not
+sampled out or cut by the budget); and, when there are ranked findings, the share of them whose
+suggestion a kill proof backs (`proof_ids`). A run where the skill's own engine or prover did not
+run is therefore never 1.0.
 
 ## Honesty rules
 

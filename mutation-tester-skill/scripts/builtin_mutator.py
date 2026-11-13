@@ -1,9 +1,17 @@
 #!/usr/bin/env python3
-"""Stdlib mutation engine for Python repos tested with pytest (the fallback when no tool is set up).
+"""Stdlib mutation engine for Python (pytest) and Go (go test) (the fallback when no tool is set up).
 
     python builtin_mutator.py --repo <repo> --scope scope.json --run-dir <dir> [--minutes 30]
         [--tests tests/unit [--tests tests/test_x.py ...]] [--pytest-args "-p no:xdist -m 'not slow'"]
         [--timeout-factor 3] [--min-timeout 10] [--max-mutants N] [--coverage-only] [--restore]
+        [--language auto|python|go] [--go-run REGEX] [--go-skip REGEX] [--go-flags "-tags integration"]
+
+The language is the one the scope's changed source lines are in (--language picks one when both
+are). Go is handled by go_mutator.py (text-level operators on Go tokens, `go test -overlay`, so the
+repository is never written; see that file); --go-run / --go-skip narrow the Go tests and
+--go-flags is added to every go command. A scope with changed source in no supported language
+stops with exit 2 and names the files it could not mutate, with the tool to use instead.
+The rest of this text is about Python.
 
 --tests limits every pytest run (coverage, the untraced timing run and each mutant's run) to
 those test files, directories or node ids: the scoped baseline of SKILL.md Step 3. Without it
@@ -43,7 +51,7 @@ sys.path.insert(0, str(HERE))
 import parse_results  # noqa: E402
 import run_tests  # noqa: E402
 
-VERSION = '1.1.0'
+VERSION = '1.2.0'
 
 PLUGIN = r'''
 import json, os, sys, threading
@@ -376,6 +384,55 @@ def restore(run_dir: Path, repo: Path) -> int:
     return n
 
 
+LANG_OF = {'.py': 'python', '.go': 'go', '.rs': 'rust', '.js': 'javascript', '.jsx': 'javascript', '.mjs': 'javascript',
+           '.cjs': 'javascript', '.ts': 'typescript', '.tsx': 'typescript', '.mts': 'typescript', '.cts': 'typescript',
+           '.java': 'java', '.kt': 'kotlin', '.cs': 'csharp', '.swift': 'swift', '.dart': 'dart', '.rb': 'ruby',
+           '.php': 'php', '.scala': 'scala', '.m': 'objective-c', '.c': 'c', '.cpp': 'c++', '.h': 'c'}
+INSTEAD = {'javascript': 'run_engine.py stryker (StrykerJS)', 'typescript': 'run_engine.py stryker (StrykerJS)',
+           'rust': 'cargo-mutants (SKILL.md, Rust)', 'java': 'PIT', 'kotlin': 'PIT', 'csharp': 'Stryker.NET',
+           'swift': 'Muter', 'dart': 'mutation_test'}
+
+
+def scope_languages(scope: dict) -> dict[str, list[str]]:
+    """{language: [files]} for the scope's source files that have changed lines (Go test files left out)."""
+    out: dict[str, list[str]] = {}
+    for f in scope['files']:
+        if f['kind'] != 'source' or f['status'] == 'deleted' or not f['ranges'] or f['path'].endswith('_test.go'):
+            continue
+        ext = Path(f['path']).suffix.lower()
+        out.setdefault(LANG_OF.get(ext, ext.lstrip('.') or 'unknown'), []).append(f['path'])
+    return out
+
+
+def pick_language(scope: dict, wanted: str) -> str:
+    """The language to mutate. A scope with nothing this engine can mutate stops loudly (exit 2), naming the
+    files it leaves out and the tool for their language."""
+    langs = scope_languages(scope)
+    supported = [l for l in ('python', 'go') if l in langs]
+    others = {l: fs for l, fs in langs.items() if l not in ('python', 'go')}
+    if others:
+        print('WARNING: the builtin engine mutates only Python and Go; not mutated: ' +
+              '; '.join(f'{l}: {", ".join(fs[:5])}' + (f' (+{len(fs) - 5} more)' if len(fs) > 5 else '') +
+                        (f' (use {INSTEAD[l]})' if l in INSTEAD else '') for l, fs in sorted(others.items())),
+              file=sys.stderr)
+    if wanted != 'auto':
+        if wanted not in langs:
+            print(f'ERROR: --language {wanted}: the scope has no changed {wanted} source lines', file=sys.stderr)
+            raise SystemExit(2)
+        return wanted
+    if not supported:
+        print('ERROR: no changed Python or Go source lines in scope, so the builtin engine has nothing to mutate'
+              + ('' if others else ' (the scope has no changed source at all)')
+              + '. Record the engine as not_run with this reason, or use the tool for the language (SKILL.md, Step 1).',
+              file=sys.stderr)
+        raise SystemExit(2)
+    if len(supported) > 1:
+        print('ERROR: the scope has changed Python and Go source; run the engine once per language with '
+              '--language python and --language go, into separate run directories', file=sys.stderr)
+        raise SystemExit(2)
+    return supported[0]
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('--repo', type=Path, required=True)
@@ -391,13 +448,22 @@ def main(argv=None) -> int:
     ap.add_argument('--seed', type=int, default=1, help='sampling seed')
     ap.add_argument('--coverage-only', action='store_true')
     ap.add_argument('--restore', action='store_true', help='put backed-up originals back and exit')
+    ap.add_argument('--language', choices=['auto', 'python', 'go'], default='auto',
+                    help='which changed source to mutate (default: the one language the scope has)')
+    ap.add_argument('--go-run', default='', help='Go: only tests whose names match this regex (go test -run)')
+    ap.add_argument('--go-skip', default='', help='Go: leave out tests whose names match this regex (go test -skip)')
+    ap.add_argument('--go-flags', default='', help='Go: extra flags for every go command, as one quoted string')
     args = ap.parse_args(argv)
     repo, run_dir = args.repo.resolve(), args.run_dir.resolve()
     if args.restore:
         print(f'restored {restore(run_dir, repo)} file(s)')
         return 0
-    run_dir.mkdir(parents=True, exist_ok=True)
     scope = json.loads(args.scope.read_text(encoding='utf-8'))
+    language = pick_language(scope, args.language)
+    if language == 'go':
+        import go_mutator
+        return go_mutator.main(args, scope)
+    run_dir.mkdir(parents=True, exist_ok=True)
     skip = {run_dir}
     before = run_tests.tree_snapshot(repo, skip)
     pycache = run_dir / '_pycache'

@@ -19,6 +19,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+import go_scan  # noqa: E402
 import run_tests  # noqa: E402
 import ts_scan  # noqa: E402
 
@@ -102,9 +103,24 @@ def calls_in(func: ast.AST, name: str) -> bool:
     return False
 
 
+PARSED_TESTS = ('.py', '.go')        # plus JavaScript/TypeScript (ts_scan.is_js)
+
+
+def parsed_language(path: str) -> bool:
+    return path.endswith(PARSED_TESTS) or ts_scan.is_js(path)
+
+
 def test_calls(repo: Path, test_id: str, name: str, cache: dict) -> bool | None:
     """Does the test's own body (or its class's) call `name` directly? None if the test can't be found."""
     path, _, rest = test_id.partition('::')
+    if path.endswith('.go'):
+        # Go: `<dir>/<file>_test.go::TestName[/subtest]`; the top-level test's body is read from Go tokens
+        if path not in cache:
+            p = repo / path
+            cache[path] = p.read_text(encoding='utf-8', errors='replace') if p.is_file() else None
+        if cache[path] is None or not rest:
+            return None
+        return go_scan.calls_in_test(cache[path], rest.split('/')[0], name)
     if ts_scan.is_js(path):
         if path not in cache:
             p = repo / path
@@ -132,14 +148,27 @@ def test_calls(repo: Path, test_id: str, name: str, cache: dict) -> bool | None:
     return calls_in(node, name)
 
 
+def unparsed_tests(f: dict, mutants: dict) -> list[str]:
+    """Covering tests in a language the validator cannot read (proximity is then not computed)."""
+    tests = {t for mid in f['mutant_ids'] if mid in mutants for t in mutants[mid]['covering_tests']}
+    return sorted(t for t in tests if not parsed_language(t.partition('::')[0]))
+
+
 def proximity(f: dict, mutants: dict, repo: Path | None, cache: dict) -> int | None:
+    """2 when a covering test calls the function directly, else 1. None when it cannot be known: no
+    repository, or every covering test is in a language this validator does not parse (a guessed 1 would
+    understate a direct test)."""
     if not f['function']:
         return 1
     if repo is None:
         return None
     name = f['function'].split('.')[-1]
     tests = sorted({t for mid in f['mutant_ids'] if mid in mutants for t in mutants[mid]['covering_tests']})
-    return 2 if any(test_calls(repo, t, name, cache) for t in tests) else 1
+    if any(test_calls(repo, t, name, cache) for t in tests if parsed_language(t.partition('::')[0])):
+        return 2
+    if tests and all(not parsed_language(t.partition('::')[0]) for t in tests):
+        return None
+    return 1
 
 
 def engine_summary(engine: str, mutants: list[dict], findings: list[dict], n_files: int, scope: dict) -> dict:
@@ -194,13 +223,28 @@ def coverage_recorded(d: dict) -> bool:
     return True
 
 
+def run_by(e: dict) -> str:
+    """'skill' when the skill's own scripts ran the engine (builtin, mutmut, or a run_engine.py record),
+    'external' when its results were converted from another tool's output with no such record."""
+    if e.get('run_by'):
+        return e['run_by']
+    return 'skill' if e['name'] in ('builtin', 'mutmut') or e.get('code_hash') else 'external'
+
+
 def completeness(d: dict) -> float:
+    """Mean of: green baseline; per-test coverage; engines that ran (an external engine counts half: its
+    results were converted, not run here); mutants run; and, when there are ranked findings, the share
+    of them whose suggestion a kill proof backs."""
     engines = d['metadata']['engines']
     items = [1.0 if d['baseline']['passed'] and len(d['baseline']['run_ids']) >= 2 else 0.0,
              1.0 if coverage_recorded(d) else 0.0]
-    items.append(sum(1 for e in engines if e['status'] == 'ran') / len(engines) if engines else 0.0)
+    items.append(sum((1.0 if run_by(e) == 'skill' else 0.5) for e in engines if e['status'] == 'ran') / len(engines)
+                 if engines else 0.0)
     ran = [m for m in d['mutants'] if m['status'] not in ('no_coverage', 'compile_error')]
     items.append(sum(1 for m in ran if m['status'] != 'not_run') / len(ran) if ran else 0.0)
+    ranked = [f for f in d['findings'] if f.get('triage') in RANKED]
+    if ranked:
+        items.append(sum(1 for f in ranked if f.get('proof_ids')) / len(ranked))
     return round(sum(items) / len(items), 2)
 
 
@@ -279,7 +323,7 @@ def check(d: dict, mutants_file: dict | None, runs: dict | None, proofs: dict | 
             errs.append(f'{m["id"]}: engine {m["engine"]!r} is not in metadata.engines')
         if m['kind'] != OPS['operators'].get(m['operator'], OPS['operators']['other'])['kind']:
             errs.append(f'{m["id"]}: kind {m["kind"]!r} does not match operator {m["operator"]!r} in data/operators.json')
-        if m['status'] == 'killed' and m.get('engine_status') not in (None, 'killed') and m['engine'] != 'stryker':
+        if m['status'] == 'killed' and (m.get('engine_status') or 'killed').lower() != 'killed':
             errs.append(f'{m["id"]}: killed but the engine said {m["engine_status"]!r}')
         if m['status'] == 'no_coverage' and m.get('killed_by'):
             errs.append(f'{m["id"]}: no_coverage mutant with killed_by')
@@ -373,7 +417,13 @@ def check(d: dict, mutants_file: dict | None, runs: dict | None, proofs: dict | 
             if f['kind_factor'] != kf:
                 errs.append(f'{f["id"]}: kind_factor {f["kind_factor"]} should be {kf} (rerun --write-summary)')
             if f['proximity'] not in (1, 2):
-                errs.append(f'{f["id"]}: proximity not computed (run --write-summary with --repo)')
+                unparsed = unparsed_tests(f, mutants)
+                if unparsed and len(unparsed) == len({t for m in fmuts for t in m['covering_tests']}):
+                    errs.append(f'{f["id"]}: proximity cannot be computed: the validator does not parse the covering '
+                                f'tests ({", ".join(unparsed[:3])}; it reads Python, Go, JavaScript and TypeScript), '
+                                'so it cannot tell whether a test calls the function directly')
+                else:
+                    errs.append(f'{f["id"]}: proximity not computed (run --write-summary with --repo)')
             elif not f['function'] and f['proximity'] != 1:
                 errs.append(f'{f["id"]}: a module-level mutant is only reached indirectly; proximity is 1')
             if f['criticality'] in (1, 2, 3) and f['proximity'] in (1, 2):
@@ -459,7 +509,7 @@ def check(d: dict, mutants_file: dict | None, runs: dict | None, proofs: dict | 
                 errs.append(f'engine {e["name"]}: not in the normalised results')
                 continue
             for k in ('version', 'config_source', 'status', 'generated', 'in_scope', 'out_of_scope', 'tree_changed', 'counts',
-                      'code_hash'):
+                      'code_hash', 'run_by', 'duplicates_merged'):
                 if e.get(k) != o.get(k):
                     errs.append(f'engine {e["name"]}: {k} differs from the normalised results')
         if 'coverage' in mutants_file and (md['coverage'] or None) != (mutants_file['coverage'] or None):

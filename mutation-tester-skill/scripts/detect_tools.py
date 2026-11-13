@@ -27,7 +27,7 @@ import js_workspace  # noqa: E402
 LANG_DEFAULT = {'python': 'mutmut', 'javascript': 'stryker', 'typescript': 'stryker', 'csharp': 'stryker-net', 'jvm': 'pit', 'rust': 'cargo-mutants',
                 'go': 'go-mutesting', 'swift': 'muter', 'dart': 'mutation_test'}
 LICENCE = {'mutmut': 'BSD-3-Clause', 'cosmic-ray': 'MIT', 'stryker': 'Apache-2.0', 'stryker-net': 'Apache-2.0',
-           'pit': 'Apache-2.0', 'cargo-mutants': 'MIT', 'go-mutesting': 'MIT', 'muter': 'MIT', 'mutation_test': 'BSD-3-Clause',
+           'pit': 'Apache-2.0', 'cargo-mutants': 'MIT', 'go-mutesting': 'MIT', 'gremlins': 'Apache-2.0', 'muter': 'MIT', 'mutation_test': 'BSD-3-Clause',
            'builtin': 'this skill (stdlib)'}
 
 
@@ -123,6 +123,9 @@ def detect(repo: Path) -> dict:
     cm = next((p for p in ('.cargo/mutants.toml', 'mutants.toml') if (repo / p).exists()), None)
     add('cargo-mutants', cm, bool(version(['cargo', 'mutants', '--version'])) if (repo / 'Cargo.toml').exists() else False)
     add('go-mutesting', None, bool(shutil.which('go-mutesting')))
+    gr = next((p for p in ('.gremlins.yaml', '.gremlins.yml') if (repo / p).exists()), None)
+    add('gremlins', gr, bool(shutil.which('gremlins')),
+        note='no mutation-testing-elements output: convert its JSON and pass it to normalize_results.py --mte' if gr else '')
     mu = 'muter.conf.yml' if (repo / 'muter.conf.yml').exists() else None
     add('muter', mu, bool(shutil.which('muter')))
     mt = 'mutation_test.xml' if (repo / 'mutation_test.xml').exists() else (
@@ -146,6 +149,14 @@ def detect(repo: Path) -> dict:
                          'why': 'mutmut is available; run it from a scratch config' if ok else
                          ('mutmut is not available here' if os.name != 'nt' else 'mutmut 3 does not run on Windows') +
                          '; use the builtin engine (stdlib, pytest only), or mutmut under WSL'})
+        elif lang == 'go':
+            go_ok = bool(shutil.which('go'))
+            recs.append({'language': lang, 'engine': 'builtin' if go_ok else default,
+                         'config_source': 'builtin' if go_ok else 'scratch',
+                         'why': ('the builtin engine mutates Go (builtin_mutator.py: Go tokens, go test -overlay, '
+                                 'per-test coverprofiles); gremlins and go-mutesting are alternatives whose results '
+                                 'are converted (normalize_results.py --mte) and count as external evidence'
+                                 if go_ok else 'go is not on PATH, so no Go engine can run here')})
         else:
             tool = next((t for t in tools if t['name'] == default), None)
             if default == 'stryker' and tool and tool['available']:

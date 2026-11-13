@@ -1,7 +1,7 @@
 ---
 name: mutation-tester
 description: Run mutation testing on the code that changed (or a path you name) and turn the surviving mutants into a short, ranked list of weak assertions and missing cases, each naming the test that should have caught it and the assertion or input that would. Uses the repo's own mutation tool when it is configured, the standard open-source tool otherwise (from a scratch config, never added to the repo), and a stdlib AST engine for Python as a fallback. Every score is shown with its counts and scope; equivalent mutants need a checkable reason; timeouts and errors are never counted as kills; no-coverage mutants are coverage gaps, not weak assertions. Never claims code is "well tested".
-version: 1.3.0
+version: 1.4.0
 ---
 
 # Mutation tester
@@ -96,13 +96,20 @@ or not applicable, with the reason.
 | C# | Stryker.NET (Apache-2.0) | `dotnet stryker --reporter json --mutate <scoped files>` |
 | Java, Kotlin, Android unit tests | PIT (Apache-2.0) + JUnit 5 plugin | `mvn org.pitest:pitest-maven:mutationCoverage -DoutputFormats=XML,HTML` (or Gradle `pitest`) with the mutation-testing-elements report plugin |
 | Rust | cargo-mutants (MIT) | `cargo mutants --in-diff <diff>` |
-| Go | go-mutesting (MIT) | `go-mutesting ./...` |
+| Go | builtin Go engine; gremlins (Apache-2.0), go-mutesting (MIT) | `builtin_mutator.py` (needs `go`); gremlins/go-mutesting by hand, converted to mutation-testing-elements JSON (`normalize_results.py --mte`) |
 | Swift (iOS unit tests) | Muter (MIT) | `muter --files-to-mutate <files>` |
 | Dart, Flutter | mutation_test (BSD-3-Clause) | `dart run mutation_test` |
 
 `normalize_results.py` reads the builtin engine, mutmut and the mutation-testing-elements JSON
-(Stryker, and PIT with its report plugin). For other tools, convert their output to that JSON or
-record the engine as `not_run`; never hand-copy results.
+(Stryker with `--stryker`; PIT with its report plugin, or any other tool's output converted to
+that JSON, with `--mte`). For other tools, convert their output to that JSON or record the engine
+as `not_run`; never hand-copy results. A converted report keeps its own engine's name (from its
+`framework.name`, or `--mte-engine`), never "stryker", and without a run record it is
+`run_by: "external"`, which counts half in evidence completeness.
+
+`builtin_mutator.py`, `run_engine.py ranges` and `prove_kill.py` refuse a language they don't
+cover with a non-zero exit and name the files they left out; record that engine as `not_run`
+with the message as its reason.
 
 `detect_tools.py` lists a language only when the repo has a project marker for it
 (`package.json`, `pyproject.toml`, `go.mod`, ...), so one helper script doesn't make a Python
@@ -128,6 +135,31 @@ read its own output. There is no automated normalisation or kill-proving, so Rus
 findings are agent-driven: they follow the same honesty rules as every other finding (no
 fabricated kills, survivors stay survivors until a real run shows otherwise, mark unproven
 suggestions as unproven, and show every score with its counts and scope).
+
+**Go.** The builtin engine mutates Go: `builtin_mutator.py` picks Go when the scope's changed
+source is Go (`--language go` when Python changed too). It makes text-level mutants from Go
+tokens on the changed lines, never inside comments or string, raw-string and rune literals
+(comparisons one step, `==`/`!=`, `&&`/`||`, binary arithmetic but not string `+`, `+=`/`-=`,
+`++`/`--`, `break`/`continue`, `true`/`false`, `return ..., err` to `nil`, `if cond` to
+`if !(cond)`). Each go command runs from the nearest `go.mod` on one package directory with
+`-count=1 -vet=off`, and each mutant is handed to the compiler with `go test -overlay`, so the
+repository is never written (the tree is still hashed before and after). Coverage is per
+top-level test: the package's test binary is built once with `-cover`, and each test runs alone
+with its own coverprofile; test ids are `<package dir>/<file>_test.go::TestName`. A mutant that
+does not build is `compile_error`, never a kill. `--go-run` and `--go-skip` narrow the tests (for
+example tests that fail only in this environment: name them in the baseline note), and
+`--go-flags "-tags x"` adds build flags. Only the scoped package's own tests run: a line covered
+only by tests in other packages (an `internal/` helper exercised from its callers) is
+`no_coverage` here; say so, and check those callers' tests before calling it a gap. Proximity
+reads Go tests (`func TestX` bodies); `prove_kill.py` proves a Go test with
+`go test -run '^TestX$'` and `-overlay` (nothing copied). gremlins and go-mutesting are
+alternatives: run them yourself, convert the results to mutation-testing-elements JSON (keep
+the tool's mutator name in `mutatorName`; `data/operators.json` maps gremlins' and go-mutesting's
+names) and pass it with `--mte`. Two of their operators can make the same edit (`n-1` to `n+1`);
+`normalize_results.py` merges such duplicates. Check a sample of a converted tool's kills by
+hand: one run of gremlins on Windows reported kills for mutants that survive `go test`, and
+counted mutants that do not compile as killed. For the baseline use `run_tests.py --preset
+gotestsum` (or `go test`) on the scoped packages, e.g. `--cmd "go test -count=1 ./rates/"`.
 
 ## Step 2: Scope
 
@@ -249,8 +281,12 @@ classified. The per-mutant timeout is 3 times one untraced suite run, at least 1
 ```bash
 python scripts/normalize_results.py --scope <run>/scope.json --repo <repo> --builtin <run>/builtin.json \
     --mutmut <run>/mutmut.json [--stryker <run>/stryker-report.json --stryker-run <run>/stryker.run.json] \
-    --coverage <run>/coverage.json --out <run>/mutants.json
+    [--mte <run>/gremlins.mte.json --mte-engine gremlins] --coverage <run>/coverage.json --out <run>/mutants.json
 ```
+
+A mutation-testing-elements report other than Stryker's goes in with `--mte`; its mutants get
+P1.. (PIT) or X1.. ids and its own engine name. Mutants of one engine that make the same edit on
+the same line are merged (the note names the others; `duplicates_merged` counts them).
 
 For Stryker, covering tests and `killed_by` are test names from the report's `testFiles`
 (`src/__tests__/x.test.ts::describe > title`, the same form as Vitest's JUnit ids), never
@@ -305,6 +341,12 @@ inside a workspace is copied into a mirror of the workspace levels, as for Stryk
 test does not run at all (`test_status: "not_run"`), the proof keeps its output
 (`proof-*.log`) and JUnit in the run directory and records the first error line: read them
 before calling the suggestion wrong.
+
+For a Go test file (`*_test.go`) it runs `go test -count=1 -vet=off -run '^TestName$'` on the
+package from the nearest `go.mod`, with the test file and each mutant swapped in by `-overlay`:
+nothing is copied. A mutant that does not build is `not_viable`, never a kill. Any other test
+file (Rust, Java, ...) is refused before anything is copied; prove it by hand and leave the
+finding's `proof_ids` empty.
 
 The new test runs on the original code (must pass) and on each mutant (must fail), in a scratch
 copy. Prove every ranked suggestion you can; cite the proof ids on the finding or gap. With

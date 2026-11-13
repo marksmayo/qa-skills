@@ -1,6 +1,6 @@
 # Design: `mutation-tester-skill`
 
-Status: Built (v1.3.0), see "As built" at the end. Build order: 9.
+Status: Built (v1.4.0), see "As built" at the end. Build order: 9.
 
 ## Mission
 
@@ -362,3 +362,28 @@ Agreed with the user before the build.
   - `path_scope.py` passes the repository root to the shared `diff_scope.classify`, so a product
     package named `e2e` is source (the shared fix). The example is unchanged apart from schema_version 1.1.0 and
     validates.
+- **v1.4.0: Go.** A review on a Go CLI found every Go path quiet or wrong; fixed with red/green
+  cases in the new `scripts/self_test.py` (a synthetic Go module built in a temp dir; the Go
+  cases skip without `go`).
+  - **Builtin Go engine** (`go_mutator.py`, called by `builtin_mutator.py` 1.2.0 when the
+    changed source is Go): text-level mutants from Go tokens (`go_scan.py`; comments, strings,
+    raw strings and runes are never touched): comparisons, `==`/`!=`, `&&`/`||`, binary
+    arithmetic (not string concatenation), assignments, `++`/`--`, `break`/`continue`,
+    `true`/`false`, `return ..., err` to `nil`, `if` negation. Mutants go to the compiler with
+    `go test -overlay`, so the repository is never written; coverage is per top-level test from
+    one `-cover` test binary per package; a mutant that does not build is `compile_error`.
+  - **Loud refusals.** `builtin_mutator.py` exits 2 naming the files of languages it does not
+    mutate and the tool to use; `run_engine.py ranges` warns about non-JS/TS files and exits 2
+    when there is no range; `prove_kill.py` refuses a test file it has no runner for before
+    copying anything, and proves Go tests with `go test -run` and `-overlay`.
+  - **Normalising.** `--mte` (with `--mte-engine`, `--mte-run`) reads any
+    mutation-testing-elements report and names the engine after its framework; `--stryker`
+    given another framework's report no longer labels it "stryker". `data/operators.json` has
+    gremlins and go-mutesting tables (`INVERT_LOOPCTRL` is control_flow). Mutants of one engine
+    that make the same edit on the same line are merged (`duplicates_merged`).
+  - **Validator.** Proximity reads Go tests; when every covering test is in a language it does
+    not parse, proximity is not computed and the error says why (it was silently 1). Engines
+    carry `run_by` (schema 1.2.0, optional): an external engine counts half in evidence
+    completeness, which also averages in the share of ranked findings backed by a proof, so a
+    run where the skill's engine or prover did not run is never 1.0. The example is unchanged
+    (both engines are the skill's, every ranked finding is proved) and validates.

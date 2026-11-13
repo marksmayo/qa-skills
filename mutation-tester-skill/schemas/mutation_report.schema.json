@@ -6,7 +6,7 @@
   "required": ["schema_version", "metadata", "tools", "baseline", "mutants", "findings", "coverage_gaps", "summary", "limitations", "files_changed"],
   "additionalProperties": false,
   "properties": {
-    "schema_version": {"enum": ["1.0.0", "1.1.0"]},
+    "schema_version": {"enum": ["1.0.0", "1.1.0", "1.2.0"]},
     "metadata": {
       "type": "object",
       "required": ["repo", "commit", "code_hash", "scope", "engines", "coverage", "budget_minutes", "write_tests", "platform", "generated_at"],
@@ -135,6 +135,8 @@
         "timeout_s": {"type": ["number", "null"]},
         "tree_changed": {"type": ["array", "null"], "items": {"type": "string"}},
         "code_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "Code hash of the tree the engine ran on, when the engine ran outside the builtin path (run_engine.py stryker); must equal metadata.code_hash."},
+        "run_by": {"enum": ["skill", "external"], "description": "skill: the skill's own scripts ran it (builtin, mutmut, a run_engine.py record); external: converted from another tool's output with no run record (counts half in evidence completeness). Absent: builtin and mutmut are skill, others are skill only with a code_hash."},
+        "duplicates_merged": {"type": "integer", "minimum": 0, "description": "mutants of this engine merged into another that makes the same edit on the same line"},
         "counts": {"type": "object"}
       }
     },

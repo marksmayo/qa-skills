@@ -2,10 +2,11 @@
 """Normalise mutation engines' raw results into one mutant list, limited to the scope (stdlib only).
 
     python normalize_results.py --scope scope.json --repo <repo> --out mutants.json
-        [--builtin builtin.json] [--mutmut mutmut.json] [--stryker mutation-report.json]
-        [--coverage coverage.json]
+        [--builtin builtin.json] [--mutmut mutmut.json] [--stryker mutation-report.json [--stryker-run run.json]]
+        [--mte report.json [--mte-engine gremlins] [--mte-run run.json]] [--coverage coverage.json]
 
-Every mutant gets: id (B1.. builtin, M1.. mutmut, S1.. Stryker/PIT), engine, raw_id, file, line,
+Every mutant gets: id (B1.. builtin, M1.. mutmut, S1.. Stryker, P1.. PIT, X1.. any other engine),
+engine, raw_id, file, line,
 end_line, function, operator (data/operators.json), kind, original and mutated source lines,
 status (killed, survived, no_coverage, timeout, runtime_error, compile_error, not_run),
 engine_status, covering_tests and killed_by.
@@ -27,6 +28,16 @@ engine_status, covering_tests and killed_by.
   comes from `framework`. --stryker-run (written by `run_engine.py stryker`) supplies the command,
   config source and the before/after tree check; without it tree_changed stays null. JS/TS
   mutants get their function from the shared diff_scope.functions() (the scanner scope.json uses).
+- A mutation-testing-elements report keeps its own engine's name: `--mte` (or `--stryker` given a
+  report whose framework is not Stryker) is named after the report's framework.name, or
+  --mte-engine. Operator names come from that engine's table in data/operators.json (gremlins,
+  go-mutesting, PIT), over Stryker's. Without a run record (--stryker-run / --mte-run from
+  run_engine.py) the engine is `run_by: "external"`: its results were converted from another
+  tool's output, which lowers evidence completeness.
+- Two mutants of one engine that make the same edit on the same line (gremlins' ARITHMETIC_BASE
+  and INVERT_NEGATIVES on `n-1`) are merged into one; the note names the others, and says so
+  when the engine gave them different results. The engine record counts them in
+  duplicates_merged.
 - --coverage (builtin_mutator.py --coverage-only) gives per-test line coverage. mutmut only knows
   which tests call a function, so a mutmut mutant that survived on a line no test executed
   becomes no_coverage, marked reclassified_from "survived".
@@ -312,8 +323,62 @@ def refine_method(op: str, span: str, replacement: str) -> str:
     return op
 
 
-def from_stryker(raw: dict) -> tuple[list[dict], list[str]]:
-    names = OPS['engines']['stryker']['names']
+MTE_PREFIX = {'stryker': 'S', 'pit': 'P'}       # every other mutation-testing-elements engine gets X
+
+
+def mte_engine_name(raw: dict, given: str | None, default: str) -> str:
+    """The engine a mutation-testing-elements report came from: --mte-engine, else the report's framework
+    name (StrykerJS, Stryker.NET -> stryker; PIT, pitest -> pit; gremlins -> gremlins), else the default."""
+    if given:
+        return given.strip().lower()
+    fw = ((raw.get('framework') or raw.get('frameworkInfo') or {}).get('name') or '').strip().lower()
+    if not fw:
+        return default
+    if 'stryker' in fw:
+        return 'stryker'
+    if fw in ('pit', 'pitest') or 'pitest' in fw:
+        return 'pit'
+    return re.sub(r'[^a-z0-9.+-]+', '-', fw).strip('-') or default
+
+
+def engine_names(engine: str) -> dict[str, str]:
+    """Operator name map for an engine: its own table in data/operators.json over Stryker's (the shared
+    mutation-testing-elements names)."""
+    own = OPS['engines'].get(engine, {}).get('names', {})
+    return {**OPS['engines']['stryker']['names'], **own}
+
+
+def merge_duplicates(ms: list[dict]) -> tuple[list[dict], int]:
+    """One mutant per distinct edit: two operators that make the same change on the same line (gremlins'
+    ARITHMETIC_BASE and INVERT_NEGATIVES on `n-1`) are one mutant. The first is kept; the note names the
+    others, and says so if the engine gave them different results."""
+    keep: dict[tuple, dict] = {}
+    out, merged = [], 0
+    for m in ms:
+        key = (m['file'], m['line'], m['end_line'], m['mutated'])
+        first = keep.get(key)
+        if first is None or m['mutated'] == m['original']:
+            keep.setdefault(key, m)
+            out.append(m)
+            continue
+        merged += 1
+        first.setdefault('_dups', []).append(m)
+    for m in out:
+        dups = m.pop('_dups', [])
+        if dups:
+            what = ', '.join(f'{d["raw_id"]}' + (f' ({d["engine_operator"]})' if d.get('engine_operator') else '')
+                             for d in dups)
+            note = f'same mutant also generated as {what}; merged'
+            if any(d['status'] != m['status'] for d in dups):
+                note += ' (the engine reported ' + ', '.join(sorted({d['engine_status'] or d['status'] for d in dups} |
+                                                                    {m['engine_status'] or m['status']})) + \
+                        ' for the same edit, so its results for this line are not consistent)'
+            m['note'] = (m['note'] + '; ' if m.get('note') else '') + note
+    return out, merged
+
+
+def from_stryker(raw: dict, engine: str = 'stryker') -> tuple[list[dict], list[str]]:
+    names = engine_names(engine)
     tests = stryker_test_names(raw)
     unknown: set[str] = set()
 
@@ -346,14 +411,14 @@ def from_stryker(raw: dict) -> tuple[list[dict], list[str]]:
                     span = span[loc['start']['column'] - 1:loc['end']['column'] - 1]
                 op = refine_method(op, span, mu.get('replacement') or '')
             op = refine_string(op, original)
-            out.append({'engine': 'stryker', 'raw_id': str(mu['id']), 'file': path, 'line': a, 'end_line': b,
+            out.append({'engine': engine, 'raw_id': str(mu['id']), 'file': path, 'line': a, 'end_line': b,
                         'operator': op, 'engine_operator': mu.get('mutatorName'), 'original': original, 'mutated': mutated,
                         'status': STATUS_STRYKER.get(mu.get('status'), 'runtime_error'), 'engine_status': mu.get('status'),
                         'covering_tests': sorted(test_name(t) for t in mu.get('coveredBy') or []),
                         'killed_by': test_name(mu['killedBy'][0]) if mu.get('killedBy') else None})
     problems = []
     if unknown:
-        problems.append(f'Stryker test id(s) {", ".join(sorted(unknown)[:5])} are not in the report\'s testFiles, so '
+        problems.append(f'{engine} test id(s) {", ".join(sorted(unknown)[:5])} are not in the report\'s testFiles, so '
                         'their test names are unknown (run Stryker with coverageAnalysis "perTest" and a json reporter)')
     return out, problems
 
@@ -368,6 +433,11 @@ def main(argv=None) -> int:
     ap.add_argument('--stryker', type=Path)
     ap.add_argument('--stryker-run', type=Path, help="run_engine.py stryker's record (command, config source, "
                     'tree check); without it the tree is unchecked and the validator says so')
+    ap.add_argument('--mte', type=Path, help='a mutation-testing-elements JSON report from any other engine (PIT, '
+                    'gremlins converted to it, Stryker.NET); the engine is named after its framework or --mte-engine')
+    ap.add_argument('--mte-engine', help='the engine name for --mte (default: the report\'s framework.name)')
+    ap.add_argument('--mte-run', type=Path, help='a run record for --mte in run_engine.py\'s shape (engine, status, '
+                    'tree_changed, code_hash); without it the engine counts as external evidence')
     ap.add_argument('--coverage', type=Path)
     args = ap.parse_args(argv)
     repo = args.repo.resolve()
@@ -380,43 +450,65 @@ def main(argv=None) -> int:
     cov = json.loads(args.coverage.read_text(encoding='utf-8')) if args.coverage else None
     engines, mutants, problems = [], [], []
     stryker_cov = None
-    prefix = {'builtin': 'B', 'mutmut': 'M', 'stryker': 'S'}
-    for name, path in (('builtin', args.builtin), ('mutmut', args.mutmut), ('stryker', args.stryker)):
+    prefix = {'builtin': 'B', 'mutmut': 'M'}
+    inputs = [('builtin', args.builtin, None), ('mutmut', args.mutmut, None), ('stryker', args.stryker, args.stryker_run),
+              ('mte', args.mte, args.mte_run)]
+    for kind, path, run_path in inputs:
         if not path:
             continue
-        if name == 'stryker' and not path.exists() and args.stryker_run:
-            raw = {}          # Stryker crashed before writing a report: the engine is recorded as the run says
+        if kind in ('stryker', 'mte') and not path.exists() and run_path:
+            raw = {}          # the engine crashed before writing a report: it is recorded as the run says
         else:
             raw = json.loads(path.read_text(encoding='utf-8'))
+        name = kind if kind in ('builtin', 'mutmut') else mte_engine_name(raw, args.mte_engine if kind == 'mte' else None,
+                                                                          'stryker' if kind == 'stryker' else 'mte')
+        if kind == 'stryker' and name != 'stryker':
+            print(f'NOTE: {path.name} was written by {name}, not Stryker; its mutants are labelled {name}', file=sys.stderr)
+        if any(e['name'] == name for e in engines):
+            raise SystemExit(f'{path}: a second {name} input; give each engine once')
         rec = {'name': name, 'raw': path.name, 'status': raw.get('status', 'ran'), 'reason': raw.get('reason', '')}
-        if name == 'builtin':
+        if kind == 'builtin':
             rec.update(version=raw['engine']['version'], command=raw['engine']['command'], config_source='builtin',
-                       config=None, timeout_s=raw['timeout_s'], sampled=raw['sampled'], tree_changed=raw['tree']['changed'])
+                       config=None, timeout_s=raw['timeout_s'], sampled=raw['sampled'], tree_changed=raw['tree']['changed'],
+                       run_by='skill')
             ms = from_builtin(raw)
-        elif name == 'mutmut':
+        elif kind == 'mutmut':
             e = raw['engine']
             rec.update(version=e.get('version'), command=e.get('command'), config_source=e.get('config_source'),
-                       config=e.get('config'), timeout_s=None, sampled=None, tree_changed=raw.get('tree_changed'))
+                       config=e.get('config'), timeout_s=None, sampled=None, tree_changed=raw.get('tree_changed'),
+                       run_by='skill')
             ms, probs = from_mutmut(raw, src) if rec['status'] == 'ran' else ([], [])
             problems += probs
         else:
             fw = raw.get('framework') or raw.get('frameworkInfo') or {}
-            run = json.loads(args.stryker_run.read_text(encoding='utf-8')) if args.stryker_run else {}
+            run = json.loads(run_path.read_text(encoding='utf-8')) if run_path else {}
             e = run.get('engine', {})
             rec.update(status=run.get('status', 'ran'), reason=run.get('reason', ''),
                        version=fw.get('version') or e.get('version'),
-                       command=e.get('command') or (fw.get('name') or 'stryker') + ' (command not recorded)',
+                       command=e.get('command') or (fw.get('name') or name) + ' (command not recorded)',
                        config_source=e.get('config_source'), config=e.get('config'),
                        timeout_s=(raw.get('config') or {}).get('timeoutMS', 0) / 1000 or None,
-                       sampled=None, tree_changed=run.get('tree_changed'))
+                       sampled=None, tree_changed=run.get('tree_changed'),
+                       # a run record from run_engine.py makes it the skill's own run; a report converted from
+                       # another tool's output, with no record of how it ran, is external evidence
+                       run_by='skill' if run_path and e.get('name') == name else 'external')
             if run.get('code_hash'):
                 rec['code_hash'] = run['code_hash']
             if not raw and rec['status'] == 'ran':
-                raise SystemExit(f'{path}: no Stryker report, but the run record says it ran')
-            ms, probs = from_stryker(raw) if raw else ([], [])
+                raise SystemExit(f'{path}: no {name} report, but the run record says it ran')
+            ms, probs = from_stryker(raw, name) if raw else ([], [])
             problems += probs
-            if run.get('coverage_analysis') == 'perTest' and rec['status'] == 'ran' and                     any(m['covering_tests'] for m in ms):
+            if name == 'stryker' and run.get('coverage_analysis') == 'perTest' and rec['status'] == 'ran' and \
+                    any(m['covering_tests'] for m in ms):
                 stryker_cov = {'file': path.name, 'method': STRYKER_COVERAGE}
+            if name not in prefix:
+                letter = MTE_PREFIX.get(name, 'X')
+                while letter in prefix.values():          # two engines never share an id prefix
+                    letter = chr(ord(letter) + 1) if letter < 'Z' else 'A'
+                prefix[name] = letter
+        ms, merged = merge_duplicates(ms)
+        if merged:
+            rec['duplicates_merged'] = merged
         # builtin_mutator.py 1.1+ numbers its mutants by position ("ids": "position") and only makes them on
         # scoped lines, so its ids are kept as they are: the console, builtin.json and the report agree
         keep_ids = name == 'builtin' and raw.get('ids') == 'position'
@@ -437,7 +529,7 @@ def main(argv=None) -> int:
             kept.append(m)
         for i, m in enumerate(kept, 1):
             m['id'] = m['raw_id'] if keep_ids else f'{prefix[name]}{i}'
-        rec['generated'] = len(ms)
+        rec['generated'] = len(ms) + merged
         rec['in_scope'] = len(kept)
         rec['out_of_scope'] = len(ms) - len(kept)
         counts: dict[str, int] = {}

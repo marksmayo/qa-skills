@@ -45,8 +45,129 @@ COPY_SKIP = {'.git', 'mutants', '__pycache__', '.pytest_cache', '.mypy_cache', '
 JS_SUFFIXES = ('.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.mts', '.cts')
 
 
-def runner_for(test_file: str) -> str:
-    return 'vitest' if test_file.endswith(JS_SUFFIXES) else 'pytest'
+def runner_for(test_file: str) -> str | None:
+    """The runner for a test file, or None when there is none here (the caller refuses before copying)."""
+    if test_file.endswith(JS_SUFFIXES):
+        return 'vitest'
+    if test_file.endswith('_test.go'):
+        return 'go'
+    if test_file.endswith('.py'):
+        return 'pytest'
+    return None
+
+
+RUNNER_FILES = {'pytest': ('.py',), 'vitest': JS_SUFFIXES, 'jest': JS_SUFFIXES, 'go': ('_test.go',)}
+GO_RESULT = re.compile(r'^\s*--- (PASS|FAIL|SKIP): (\S+)', re.M)
+GO_BUILD_FAILED = re.compile(r'\[(?:build|setup) failed\]|^# \S+', re.M)
+
+
+def go_run_pattern(test_name: str) -> str:
+    """go test -run pattern for one test (TestX, or TestX/sub for a subtest): each level anchored."""
+    return '/'.join('^' + re.escape(p) + '$' for p in test_name.split('/'))
+
+
+def run_go_test(mod_root: Path, pkg_arg: str, test_name: str, overlay: dict[str, str], scratch: Path, label: str,
+                env: dict, timeout: float, extra: list[str]) -> dict:
+    """Run one Go test with `go test -run`, swapping files in at build time with -overlay (the repository
+    is never written). A build failure is build_failed: the mutant (or the new test) does not compile."""
+    cmd = ['go', 'test', '-count=1', '-vet=off', '-v', *extra]
+    if overlay:
+        ov = scratch / f'{label}.overlay.json'
+        ov.write_text(json.dumps({'Replace': overlay}), encoding='utf-8')
+        cmd.append(f'-overlay={ov}')
+    cmd += [f'-timeout={int(timeout) + 30}s', '-run', go_run_pattern(test_name), pkg_arg]
+    shown = 'go test -count=1 -vet=off -v ' + (' '.join(extra) + ' ' if extra else '') + \
+        f"-run '{go_run_pattern(test_name)}' {pkg_arg}" + (' (files swapped in with -overlay)' if overlay else '')
+    kw = {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == 'nt' else {'start_new_session': True}
+    t0 = time.monotonic()
+    proc = subprocess.Popen(cmd, cwd=mod_root, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **kw)
+    timed_out = False
+    try:
+        out, _ = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        run_tests.kill_tree(proc)
+        out, _ = proc.communicate()
+        timed_out = True
+    text = out.decode('utf-8', 'replace')
+    results = {name: res for res, name in GO_RESULT.findall(text)}
+    mine = results.get(test_name)
+    if timed_out:
+        status = 'timeout'
+    elif mine == 'PASS':
+        status = 'passed'
+    elif mine == 'FAIL':
+        status = 'failed'
+    elif mine == 'SKIP':
+        status = 'skipped'
+    elif GO_BUILD_FAILED.search(text) and proc.returncode != 0:
+        status = 'build_failed'
+    else:
+        status = 'not_run'
+    rec = {'command': shown, 'exit_code': proc.returncode, 'test_status': status,
+           'duration_s': round(time.monotonic() - t0, 3)}
+    if status in ('failed', 'build_failed', 'not_run'):
+        first = next((l.strip() for l in text.splitlines() if re.search(r'\.go:\d+(?::\d+)?:', l)), None)
+        if first:
+            rec['first_error' if status != 'failed' else 'message'] = \
+                re.sub(r'\S*proof-go[\\/]\S+?\.go', '<scratch>.go', run_tests.redact_home(first))[:300]
+    if status == 'not_run':
+        rec['output_tail'] = run_tests.redact_home(text[-400:])
+    return rec
+
+
+def prove_go(args, repo: Path, run_dir: Path, by_id: dict, code: str, env: dict, extra: list[str]):
+    """(original run, [mutant results]) for a Go test: nothing is copied and nothing in the repository is
+    written (unless --in-place); the test file with the new test, and each mutant's file, are handed to
+    the compiler with -overlay."""
+    import go_scan
+    test_rel = args.test_file
+    pkg_dir = str(Path(test_rel).parent.as_posix())
+    mod = go_scan.module_of(repo, pkg_dir)
+    if mod is None:
+        raise SystemExit(f'{test_rel}: no go.mod at or above {pkg_dir}, so the test cannot be built')
+    mod_dir, _module = mod
+    mod_root = repo / mod_dir
+    rel_in_mod = os.path.relpath(repo / pkg_dir, mod_root).replace('\\', '/')
+    pkg_arg = './' + rel_in_mod if rel_in_mod != '.' else '.'
+    scratch = run_dir / 'proof-go'
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    test_abs = str((repo / test_rel).resolve())
+    if not (repo / test_rel).exists() and not re.search(r'^\s*package\s+\w+', code, re.M):
+        raise SystemExit(f'{test_rel} does not exist, so the test code needs its own package clause and imports')
+    new_test = scratch / Path(test_rel).name
+    if args.in_place:
+        append_test(repo / test_rel, code)
+        test_overlay = {}
+    else:
+        if (repo / test_rel).exists():
+            shutil.copyfile(repo / test_rel, new_test)
+        append_test(new_test, code)
+        test_overlay = {test_abs: str(new_test)}
+    go = lambda overlay, label: run_go_test(mod_root, pkg_arg, args.test_name, overlay, scratch, label, env,  # noqa: E731
+                                            args.timeout, extra)
+    original = go(test_overlay, 'orig')
+    results = []
+    for mid in args.mutant:
+        m = by_id[mid]
+        src = scratch / f'{mid}.go'
+        shutil.copyfile(repo / m['file'], src)
+        apply_mutant(scratch, {**m, 'file': src.name})
+        res = go({**test_overlay, str((repo / m['file']).resolve()): str(src)}, mid)
+        if original['test_status'] != 'passed':
+            verdict = 'fails_on_original'
+        elif res['test_status'] == 'failed':
+            verdict = 'kills'
+        elif res['test_status'] == 'build_failed':
+            verdict = 'not_viable'          # the mutant does not compile: never a kill
+        elif res['test_status'] == 'timeout':
+            verdict = 'timeout'
+        else:
+            verdict = 'does_not_kill'
+        results.append({'mutant_id': mid, 'engine': m['engine'], 'run': res, 'verdict': verdict})
+        print(f'{mid:>5} {m["file"]}:{m["line"]} {verdict}')
+    shutil.rmtree(scratch, ignore_errors=True)
+    return original, results
 
 
 def name_pattern(test_name: str) -> str:
@@ -181,14 +302,20 @@ def main(argv=None) -> int:
     ap.add_argument('--out', type=Path, required=True)
     ap.add_argument('--in-place', action='store_true', help='write_tests: also add the test to the repository file')
     ap.add_argument('--timeout', type=float, default=60.0)
-    ap.add_argument('--runner', choices=['pytest', 'vitest', 'jest'],
-                    help='default: vitest for a JS/TS test file, else pytest')
+    ap.add_argument('--runner', choices=['pytest', 'vitest', 'jest', 'go'],
+                    help='default: vitest for a JS/TS test file, go for *_test.go, pytest for .py')
     ap.add_argument('--env', nargs='+', action='append', default=[], metavar='K=V',
                     help="environment the repo's test command sets (e.g. TZ=...); several pairs per flag, or repeat the flag")
     ap.add_argument('--extra-args', default='', help="extra runner arguments the repo's test command adds")
     args = ap.parse_args(argv)
     repo, run_dir = args.repo.resolve(), args.run_dir.resolve()
     runner = args.runner or runner_for(args.test_file)
+    if runner is None or not args.test_file.endswith(RUNNER_FILES[runner]):
+        # refuse before anything is copied: a wrong runner would only report "not run" for every mutant
+        print(f'ERROR: prove_kill.py has no runner for {args.test_file} ({Path(args.test_file).suffix or "no suffix"}); '
+              'it proves pytest (.py), Vitest/Jest (JS/TS) and Go (*_test.go) tests. Prove this one by hand with the '
+              'language\'s own runner and leave proof_ids empty (the suggestion stays unproven).', file=sys.stderr)
+        return 2
     extra = shlex.split(args.extra_args)
     data = json.loads(args.mutants.read_text(encoding='utf-8'))
     by_id = {m['id']: m for m in data['mutants']}
@@ -200,6 +327,15 @@ def main(argv=None) -> int:
     pycache = run_dir / '_pycache'
     env = {**os.environ, 'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONPYCACHEPREFIX': str(pycache),
            **dict(kv.split('=', 1) for kv in run_tests.env_pairs(args.env))}
+    if runner == 'go':
+        if shutil.which('go') is None:
+            raise SystemExit('a Go proof needs the go toolchain on PATH')
+        run_dir.mkdir(parents=True, exist_ok=True)
+        before = run_tests.tree_snapshot(repo, {run_dir})
+        original, results = prove_go(args, repo, run_dir, by_id, code, env, extra)
+        after = run_tests.tree_snapshot(repo, {run_dir})
+        changed = sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
+        return store_proof(args, test_id, code, original, results, changed)
     scratch = run_dir / 'proof-work'
     js_workspace.remove_tree(scratch)    # left by an interrupted run: links are unlinked, never followed
     # a JS package inside a workspace is copied to its own depth in a mirror of the workspace levels, so
@@ -244,6 +380,10 @@ def main(argv=None) -> int:
     unlink_dir(link)          # the link first, so removing the copy never reaches the repo's node_modules
     js_workspace.remove_tree(scratch)
     shutil.rmtree(pycache, ignore_errors=True)
+    return store_proof(args, test_id, code, original, results, changed)
+
+
+def store_proof(args, test_id: str, code: str, original: dict, results: list[dict], changed: list[str]) -> int:
     store = json.loads(args.out.read_text(encoding='utf-8')) if args.out.exists() else {'proofs': []}
     pid = f'P{len(store["proofs"]) + 1}'
     store['proofs'].append({

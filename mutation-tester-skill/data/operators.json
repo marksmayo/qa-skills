@@ -30,7 +30,33 @@
   },
   "engines": {
     "builtin": {
-      "note": "builtin_mutator.py emits the common names directly.",
+      "note": "builtin_mutator.py emits the common names directly, for Python (ast) and Go (go_mutator.py, Go tokens: comparison, logical, arithmetic, ++/--, break/continue, true/false, return err -> nil, if negation).",
+      "names": {}
+    },
+    "gremlins": {
+      "note": "gremlins (Go) has no mutation-testing-elements reporter of its own; a converted report keeps gremlins' mutator type in mutatorName, mapped here (over Stryker's names). INVERT_LOOPCTRL swaps break and continue, which changes which iterations run: a branch.",
+      "names": {
+        "ARITHMETIC_BASE": "arithmetic", "CONDITIONALS_BOUNDARY": "comparison_boundary",
+        "CONDITIONALS_NEGATION": "comparison_negate", "INCREMENT_DECREMENT": "arithmetic",
+        "INVERT_ASSIGNMENTS": "arithmetic", "INVERT_BITWISE": "arithmetic", "INVERT_BWASSIGN": "arithmetic",
+        "INVERT_LOGICAL": "logical", "INVERT_LOOPCTRL": "control_flow", "INVERT_NEGATIVES": "arithmetic",
+        "REMOVE_SELF_ASSIGNMENTS": "arithmetic"
+      }
+    },
+    "go-mutesting": {
+      "note": "go-mutesting (Go) names its mutators by path; a converted report keeps that name in mutatorName.",
+      "names": {
+        "branch/case": "remove_block", "branch/else": "remove_block", "branch/if": "remove_block",
+        "expression/comparison": "comparison_boundary", "expression/remove": "logical",
+        "statement/remove": "remove_call", "arithmetic/base": "arithmetic", "arithmetic/bitwise": "arithmetic",
+        "arithmetic/assignment": "arithmetic", "arithmetic/assign_invert": "arithmetic",
+        "loop/break": "control_flow", "loop/condition": "negate_condition", "loop/range_break": "control_flow",
+        "numbers/incrementer": "constant_number", "numbers/decrementer": "constant_number",
+        "conditional/negated": "comparison_negate"
+      }
+    },
+    "pit": {
+      "note": "PIT writes mutation-testing-elements through its report plugin; its mutator names are in the Stryker table below (ConditionalsBoundaryMutator, ...).",
       "names": {}
     },
     "mutmut": {

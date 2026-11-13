@@ -117,6 +117,21 @@ python <skill>/scripts/prove_kill.py --repo . --mutants run/mutants.json --mutan
     --finding F1 --run-dir run/proof --out run/proofs.json
 ```
 
+Go uses the builtin engine (it needs `go` on PATH and never writes into the repository: each
+mutant is swapped in with `go test -overlay`), and `prove_kill.py` proves Go tests the same way.
+The Go paths are covered by `scripts/self_test.py`, which builds a small Go module in a temporary
+directory:
+
+```bash
+python <skill>/scripts/builtin_mutator.py --repo . --scope run/scope.json --run-dir run [--go-skip TestNeedsDevice]
+python <skill>/scripts/normalize_results.py --scope run/scope.json --repo . --builtin run/builtin.json \
+    --coverage run/coverage.json --out run/mutants.json
+python <skill>/scripts/prove_kill.py --repo . --mutants run/mutants.json --mutant B4 \
+    --test-file rates/rates_test.go --test-code new_test.go --test-name TestBandAt20 \
+    --finding F1 --run-dir run/proof --out run/proofs.json
+python scripts/self_test.py
+```
+
 ## Files
 
 - `SKILL.md`: complete agent instructions
@@ -127,7 +142,9 @@ python <skill>/scripts/prove_kill.py --repo . --mutants run/mutants.json --mutan
 - `scripts/diff_scope.py`: changed files, lines and functions from git or a diff (shared)
 - `scripts/run_tests.py`, `scripts/parse_results.py`, `scripts/detect_conventions.py`: test runs and conventions (shared)
 - `scripts/path_scope.py`: a path scope (every line of the files under a path) in `scope.json` form
-- `scripts/builtin_mutator.py`: stdlib AST mutation engine and per-test line coverage for pytest, limited to `--tests`
+- `scripts/builtin_mutator.py`: stdlib AST mutation engine and per-test line coverage for pytest, limited to `--tests`; Go through `go_mutator.py`
+- `scripts/go_mutator.py`, `scripts/go_scan.py`: the builtin engine's Go half (Go tokens, `go test -overlay`, per-test coverprofiles) and the Go helpers the validator and `prove_kill.py` use
+- `scripts/self_test.py`: synthetic cases for the Go engine, loud refusals, engine naming, merged duplicates, proximity and evidence completeness
 - `scripts/run_engine.py`: runs mutmut in a scratch copy, or StrykerJS on the scope's line ranges (with `--sandbox` and `--stryker-option`), and keeps the raw results and the tree check
 - `scripts/js_workspace.py`: workspace root, package manager and module versions, and the workspace mirror Stryker's sandbox and `prove_kill.py` use
 - `scripts/ts_scan.py`: finds JavaScript/TypeScript tests by name and whether they call a function (for proximity)
