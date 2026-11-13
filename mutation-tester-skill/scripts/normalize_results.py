@@ -293,6 +293,25 @@ def from_mutmut(raw: dict, src: Sources) -> tuple[list[dict], list[str]]:
     return out, problems
 
 
+STRYKER_COVERAGE = ('Stryker coverageAnalysis perTest: the tests that ran each mutant (covering_tests); no '
+                    'per-line map')
+METHOD_CALL = re.compile(r'\.\s*(\w+)\s*\(')
+LOGIC_SWAPS = {frozenset(p) for p in (('some', 'every'), ('startsWith', 'endsWith'), ('min', 'max'))}
+
+
+def refine_method(op: str, span: str, replacement: str) -> str:
+    """Stryker's MethodExpression covers different things: some<->every, startsWith<->endsWith and
+    min<->max swap a quantifier or a side (a branch change); dropping filter/sort/trim/slice removes
+    a call (a value change). Judged from the method names before and after."""
+    before, after = set(METHOD_CALL.findall(span)), set(METHOD_CALL.findall(replacement))
+    gone, new = before - after, after - before
+    if any(frozenset((x, y)) in LOGIC_SWAPS for x in gone for y in new):
+        return 'method_swap_logic'
+    if gone and not new:
+        return 'remove_method_call'
+    return op
+
+
 def from_stryker(raw: dict) -> tuple[list[dict], list[str]]:
     names = OPS['engines']['stryker']['names']
     tests = stryker_test_names(raw)
@@ -321,9 +340,14 @@ def from_stryker(raw: dict) -> tuple[list[dict], list[str]]:
             op = names.get(mu.get('mutatorName', ''), 'other')
             if op == 'comparison_boundary' and mu.get('replacement') and re.search(r'[!=]==?', mu['replacement']):
                 op = 'comparison_negate'
+            if mu.get('mutatorName') == 'MethodExpression' and lines:
+                span = '\n'.join(lines[a - 1:b])
+                if a == b:
+                    span = span[loc['start']['column'] - 1:loc['end']['column'] - 1]
+                op = refine_method(op, span, mu.get('replacement') or '')
             op = refine_string(op, original)
             out.append({'engine': 'stryker', 'raw_id': str(mu['id']), 'file': path, 'line': a, 'end_line': b,
-                        'operator': op, 'original': original, 'mutated': mutated,
+                        'operator': op, 'engine_operator': mu.get('mutatorName'), 'original': original, 'mutated': mutated,
                         'status': STATUS_STRYKER.get(mu.get('status'), 'runtime_error'), 'engine_status': mu.get('status'),
                         'covering_tests': sorted(test_name(t) for t in mu.get('coveredBy') or []),
                         'killed_by': test_name(mu['killedBy'][0]) if mu.get('killedBy') else None})
@@ -355,11 +379,15 @@ def main(argv=None) -> int:
                 for f in scope['files'] if f['kind'] != 'source' or f['status'] == 'deleted']
     cov = json.loads(args.coverage.read_text(encoding='utf-8')) if args.coverage else None
     engines, mutants, problems = [], [], []
+    stryker_cov = None
     prefix = {'builtin': 'B', 'mutmut': 'M', 'stryker': 'S'}
     for name, path in (('builtin', args.builtin), ('mutmut', args.mutmut), ('stryker', args.stryker)):
         if not path:
             continue
-        raw = json.loads(path.read_text(encoding='utf-8'))
+        if name == 'stryker' and not path.exists() and args.stryker_run:
+            raw = {}          # Stryker crashed before writing a report: the engine is recorded as the run says
+        else:
+            raw = json.loads(path.read_text(encoding='utf-8'))
         rec = {'name': name, 'raw': path.name, 'status': raw.get('status', 'ran'), 'reason': raw.get('reason', '')}
         if name == 'builtin':
             rec.update(version=raw['engine']['version'], command=raw['engine']['command'], config_source='builtin',
@@ -383,8 +411,12 @@ def main(argv=None) -> int:
                        sampled=None, tree_changed=run.get('tree_changed'))
             if run.get('code_hash'):
                 rec['code_hash'] = run['code_hash']
-            ms, probs = from_stryker(raw)
+            if not raw and rec['status'] == 'ran':
+                raise SystemExit(f'{path}: no Stryker report, but the run record says it ran')
+            ms, probs = from_stryker(raw) if raw else ([], [])
             problems += probs
+            if run.get('coverage_analysis') == 'perTest' and rec['status'] == 'ran' and                     any(m['covering_tests'] for m in ms):
+                stryker_cov = {'file': path.name, 'method': STRYKER_COVERAGE}
         # builtin_mutator.py 1.1+ numbers its mutants by position ("ids": "position") and only makes them on
         # scoped lines, so its ids are kept as they are: the console, builtin.json and the report agree
         keep_ids = name == 'builtin' and raw.get('ids') == 'position'
@@ -414,14 +446,14 @@ def main(argv=None) -> int:
         rec['counts'] = counts
         engines.append(rec)
         mutants += kept
-    order = ['id', 'engine', 'raw_id', 'file', 'line', 'end_line', 'function', 'operator', 'kind', 'original', 'mutated',
+    order = ['id', 'engine', 'raw_id', 'file', 'line', 'end_line', 'function', 'operator', 'engine_operator', 'kind', 'original', 'mutated',
              'status', 'engine_status', 'reclassified_from', 'covering_tests', 'killed_by', 'note']
     mutants = [{k: m[k] for k in order if k in m} for m in mutants]
     out = {'generated_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
            'scope': {'source': scope['source'], 'files': [{'path': p, 'ranges': f['ranges']} for f in scope['files']
                                                           for p in [f['path']] if p in in_scope],
                      'excluded': excluded},
-           'coverage': {'file': args.coverage.name, 'method': cov['method']} if cov else None,
+           'coverage': {'file': args.coverage.name, 'method': cov['method']} if cov else stryker_cov,
            'engines': engines, 'problems': problems, 'mutants': mutants}
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(out, indent=1, ensure_ascii=False) + '\n', encoding='utf-8')

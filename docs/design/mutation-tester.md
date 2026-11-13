@@ -1,6 +1,6 @@
 # Design: `mutation-tester-skill`
 
-Status: Built (v1.2.0), see "As built" at the end. Build order: 9.
+Status: Built (v1.3.0), see "As built" at the end. Build order: 9.
 
 ## Mission
 
@@ -326,3 +326,40 @@ Agreed with the user before the build.
     installs, and running from the package directory.
   - The example's run is unchanged and still validates (its `builtin.json` predates position
     ids, so it is renumbered as before).
+- **Found on a TypeScript pnpm monorepo with TypeScript 7, Vitest 5 and StrykerJS 10 (v1.3.0)**:
+  - **Workspace sandbox.** Stryker's sandbox in the run directory broke a package's
+    `extends: "../../tsconfig.base.json"` and pnpm's relative links (on Windows a relative link
+    reached through a junction resolves against the junction's path). `run_engine.py stryker
+    --sandbox auto` now mirrors the workspace levels above the package in `<run>/ws` (files
+    copied, directories linked, by the skill-local `js_workspace.py`) and puts the sandbox at the
+    package's depth; `run-dir` and `in-package` remain. `prove_kill.py` places its scratch copy
+    the same way. The mirror is removed without following any link.
+  - **TypeScript 7.** Stryker's tsconfig rewrite calls an API TypeScript 7 does not export, and
+    it only suits the default in-package sandbox anyway, so it is disabled (tsconfigFile set to
+    a missing file) for TypeScript >= 7 and for the mirror and run-dir sandboxes; the typescript
+    checker is then removed and the record says so.
+  - **Plugins and options.** The scratch config names the runner and checker plugins (pnpm hid
+    them from Stryker core), is called `qa-stryker.config.json` (it shared a name with the
+    repo's config), and `--stryker-option key=value` sets any other option
+    (`vitest.configFile=...` for a unit-only config). A missing plugin is `not_run` with the
+    package manager's install command (`pnpm add -D --filter <pkg> ...`).
+  - **Engine failure.** A run without a report is `errored` with the first error line and a
+    hint for known integration problems; a stale report from an earlier run is deleted first.
+    `normalize_results.py` records an errored run from `--stryker-run` alone.
+  - **prove_kill `-t`.** Vitest 4+ matches the name pattern against the describe chain joined
+    with " > ", Jest and older Vitest with spaces; the pattern now accepts either (verified on
+    Vitest 5: the space-joined form selected nothing). The runner is started through its entry
+    script under node (cmd.exe rewrites `^` in an unquoted argument via npx.cmd). A test that
+    does not run keeps its output and JUnit and records the first error line.
+  - **Operators and coverage.** Stryker's MethodExpression is refined into `method_swap_logic`
+    (kind branch: some/every, startsWith/endsWith, min/max) and `remove_method_call`; every
+    Stryker mutant keeps its mutator name in `engine_operator` (schema 1.1.0, optional). A
+    Stryker run with perTest coverage records it as the run's coverage, so evidence completeness
+    can reach 1.0 for JS/TS; the validator counts it only when Stryker ran and checks
+    `metadata.coverage` against `mutants.json`.
+  - **Recon.** `detect_tools.py` finds Stryker where Node would resolve it (hoisted or in the
+    package) and reports `node`: package manager, workspace root, runner and TypeScript versions.
+  - Not changed here: the shared `diff_scope.py` still classifies a product package named `e2e`
+    as tests from a workspace root, and the shared `detect_conventions.py` false positives; both
+    belong to the shared files. The example is unchanged apart from schema_version 1.1.0 and
+    validates.

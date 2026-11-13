@@ -183,10 +183,21 @@ def engine_summary(engine: str, mutants: list[dict], findings: list[dict], n_fil
             'score_including_timeouts': {'killed': k_incl, 'of': of_incl, 'value': vi}, 'score_text': text}
 
 
+def coverage_recorded(d: dict) -> bool:
+    """Per-test coverage counts when it was recorded: the builtin engine's coverage.json, or Stryker's
+    perTest coverage analysis (each mutant's covering tests), which only counts if Stryker ran."""
+    cov = d['metadata']['coverage']
+    if not cov:
+        return False
+    if cov['method'].startswith('Stryker'):
+        return any(e['name'] == 'stryker' and e['status'] == 'ran' for e in d['metadata']['engines'])
+    return True
+
+
 def completeness(d: dict) -> float:
-    items = [1.0 if d['baseline']['passed'] and len(d['baseline']['run_ids']) >= 2 else 0.0,
-             1.0 if d['metadata']['coverage'] else 0.0]
     engines = d['metadata']['engines']
+    items = [1.0 if d['baseline']['passed'] and len(d['baseline']['run_ids']) >= 2 else 0.0,
+             1.0 if coverage_recorded(d) else 0.0]
     items.append(sum(1 for e in engines if e['status'] == 'ran') / len(engines) if engines else 0.0)
     ran = [m for m in d['mutants'] if m['status'] not in ('no_coverage', 'compile_error')]
     items.append(sum(1 for m in ran if m['status'] != 'not_run') / len(ran) if ran else 0.0)
@@ -451,6 +462,8 @@ def check(d: dict, mutants_file: dict | None, runs: dict | None, proofs: dict | 
                       'code_hash'):
                 if e.get(k) != o.get(k):
                     errs.append(f'engine {e["name"]}: {k} differs from the normalised results')
+        if 'coverage' in mutants_file and (md['coverage'] or None) != (mutants_file['coverage'] or None):
+            errs.append('metadata.coverage differs from the normalised results\' coverage')
         if mutants_file.get('problems'):
             errs.append('the normalised results list mapping problems: ' + '; '.join(mutants_file['problems'][:3]))
         if [x['path'] for x in mutants_file['scope']['files']] != [x['path'] for x in scope['files']]:

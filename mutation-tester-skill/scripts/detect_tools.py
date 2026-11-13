@@ -21,6 +21,9 @@ from __future__ import annotations
 import argparse, json, os, re, shutil, subprocess, sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import js_workspace  # noqa: E402
+
 LANG_DEFAULT = {'python': 'mutmut', 'javascript': 'stryker', 'typescript': 'stryker', 'csharp': 'stryker-net', 'jvm': 'pit', 'rust': 'cargo-mutants',
                 'go': 'go-mutesting', 'swift': 'muter', 'dart': 'mutation_test'}
 LICENCE = {'mutmut': 'BSD-3-Clause', 'cosmic-ray': 'MIT', 'stryker': 'Apache-2.0', 'stryker-net': 'Apache-2.0',
@@ -106,7 +109,8 @@ def detect(repo: Path) -> dict:
     pkg = read(repo / 'package.json')
     if not sj and '@stryker-mutator' in pkg:
         sj = 'package.json (@stryker-mutator)'
-    add('stryker', sj, (repo / 'node_modules' / '@stryker-mutator' / 'core').exists(),
+    core = js_workspace.find_module(repo, '@stryker-mutator/core')
+    add('stryker', sj, bool(core), js_workspace.module_version(repo, '@stryker-mutator/core') if core else None,
         note='run with npx stryker run --reporters json,clear-text' if sj else '')
     scan = walk(repo)
     sn = scan[2][0] if scan[2] else None
@@ -125,6 +129,7 @@ def detect(repo: Path) -> dict:
         'pubspec.yaml (dev_dependencies)' if re.search(r'^\s+mutation_test:', read(repo / 'pubspec.yaml'), re.M) else None)
     add('mutation_test', mt, bool(mt))
     langs, unmarked = languages(repo, scan)
+    node = node_facts(repo) if (repo / 'package.json').is_file() else None
     recs = []
     for lang in langs:
         default = LANG_DEFAULT[lang]
@@ -143,12 +148,41 @@ def detect(repo: Path) -> dict:
                          '; use the builtin engine (stdlib, pytest only), or mutmut under WSL'})
         else:
             tool = next((t for t in tools if t['name'] == default), None)
-            how = ('installed; run_engine.py stryker runs it from a scratch config' if default == 'stryker' and tool and tool['available']
-                   else 'not configured; run from a scratch config if installed (installing it needs the user\'s agreement)')
+            if default == 'stryker' and tool and tool['available']:
+                how = 'installed; run_engine.py stryker runs it from a scratch config'
+            elif default == 'stryker':
+                runner = (node or {}).get('test_runner') or 'vitest'
+                how = ('not installed for this package; run_engine.py stryker needs @stryker-mutator/core and the runner '
+                       'plugin where the package resolves them. Installing changes package.json and the lockfile and '
+                       'needs the user\'s agreement: ' + js_workspace.install_command(
+                           repo, ['@stryker-mutator/core', f'@stryker-mutator/{runner}-runner']))
+            else:
+                how = 'not configured; run from a scratch config if installed (installing it needs the user\'s agreement)'
             recs.append({'language': lang, 'engine': default, 'config_source': 'scratch',
                          'why': f'standard open-source tool for {lang}; {how}'})
     return {'repo': repo.name, 'platform': sys.platform, 'languages': langs, 'files_by_language': scan[0],
-            'without_project_marker': unmarked, 'tools': tools, 'recommended': recs}
+            'without_project_marker': unmarked, 'tools': tools, 'recommended': recs, 'node': node}
+
+
+def node_facts(repo: Path) -> dict:
+    """What run_engine.py stryker and prove_kill.py will meet in a JS/TS package: the package manager,
+    whether it sits inside a workspace (the sandbox is then mirrored), and the TypeScript and runner versions."""
+    root = js_workspace.workspace_root(repo)
+    pkg = js_workspace.read_json(repo / 'package.json')
+    deps = {**(pkg.get('dependencies') or {}), **(pkg.get('devDependencies') or {})}
+    runner = next((r for r in ('vitest', 'jest', 'mocha', 'karma') if r in deps), None)
+    ts = js_workspace.module_version(repo, 'typescript')
+    out = {'package_manager': js_workspace.package_manager(repo),
+           'workspace_root': os.path.relpath(root, repo).replace('\\', '/') if root else None,
+           'test_runner': runner, 'test_runner_version': js_workspace.module_version(repo, runner) if runner else None,
+           'typescript': ts, 'notes': []}
+    if root:
+        out['notes'].append('a package inside a workspace: run_engine.py stryker and prove_kill.py mirror the workspace '
+                            'levels in the run directory so relative extends and pnpm links resolve')
+    if (js_workspace.major(ts) or 0) >= 7:
+        out['notes'].append(f'TypeScript {ts}: Stryker\'s tsconfig rewrite and the typescript checker cannot run; '
+                            'run_engine.py disables them, so compile errors count as killed or survived')
+    return out
 
 
 def main(argv=None) -> int:

@@ -84,7 +84,8 @@ the repo (`--in-place`) need `write_tests: true` and the test file in `files_cha
 
 ## Evidence completeness (computed)
 
-The mean of: the baseline was green in two runs; per-test line coverage was recorded; the share
+The mean of: the baseline was green in two runs; per-test coverage was recorded (the builtin
+engine's line coverage, or Stryker's perTest coverage when Stryker ran); the share
 of requested engines that ran; the share of runnable mutants that were run (not sampled out or
 cut by the budget).
 

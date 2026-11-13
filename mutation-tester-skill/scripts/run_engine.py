@@ -17,15 +17,33 @@ builtin: runs builtin_mutator.py (stdlib AST mutations, pytest only) in place; s
 
     python run_engine.py stryker --repo <repo> --scope scope.json --run-dir <dir> [--minutes 30]
         [--stryker "npx stryker"] [--test-runner vitest] [--concurrency 4] [--timeout-ms 20000]
+        [--sandbox auto|mirror|run-dir|in-package] [--stryker-option key=value ...] [--keep-work]
     python run_engine.py ranges --scope scope.json      # print the scope as Stryker --mutate ranges
 
-stryker (StrykerJS, which must already be installed in the repo): writes a config to <dir> that
-mutates only the scope's changed lines ('file:start-end' ranges), uses perTest coverage, puts
-Stryker's sandbox (tempDirName) and JSON report in <dir>, and runs `npx stryker run <config>` from
-the repo. A JSON Stryker config in the repo is used with those settings on top (config_source
-"repo"); otherwise the config is a scratch one with the test runner from package.json. Stryker
-mutates only its sandbox; the repository tree is hashed before and after, and its code hash is
-recorded, in <dir>/stryker.run.json, which normalize_results.py --stryker-run reads.
+stryker (StrykerJS, which must already be installed for the package): writes a config to
+<dir>/qa-stryker.config.json that mutates only the scope's changed lines ('file:start-end'
+ranges), uses perTest coverage, names the runner (and checker) plugins so pnpm's isolated
+node_modules cannot hide them, puts the JSON report in <dir>, and runs `npx stryker run <config>`
+from the package. A JSON Stryker config in the repo is used with those settings on top
+(config_source "repo"); otherwise the config is a scratch one with the test runner from
+package.json. --stryker-option sets any other Stryker option (dotted keys nest, values are JSON
+when they parse): `vitest.configFile=vitest.unit.config.ts`, `vitest.related=false`,
+`ignoreStatic=true`. The scope, reporters and sandbox location cannot be overridden.
+
+The sandbox (--sandbox, default auto): a package inside a workspace (pnpm-workspace.yaml, package.json
+"workspaces", ...) gets `mirror`: the workspace's directory levels above the package are recreated
+in <dir>/ws (files copied, directories linked, see js_workspace.py) and Stryker's sandbox sits at the
+package's own depth there, so `extends: "../../tsconfig.base.json"` and pnpm's relative links resolve
+as in the repo. Otherwise `run-dir` (<dir>/stryker-tmp). `in-package` keeps Stryker's default
+.stryker-tmp inside the package (left out of the tree check). Stryker's tsconfig rewrite assumes
+that default, and TypeScript 7 lacks the API it calls, so it is disabled (tsconfigFile set to a
+file that does not exist) for the mirror and run-dir sandboxes and for TypeScript >= 7; the
+typescript checker, which needs it, is then removed and the record says so.
+
+Stryker mutates only its sandbox; the repository tree is hashed before and after, and its code
+hash is recorded, in <dir>/stryker.run.json, which normalize_results.py --stryker-run reads. An
+engine crash (no JSON report) is recorded as `errored` with the first error line from the log and,
+for known integration problems, a hint; it is never a run with zero mutants.
 
 Other engines (Stryker.NET, PIT, cargo-mutants, ...) are run with their own commands (SKILL.md
 lists them); normalize_results.py reads the mutation-testing-elements JSON.
@@ -37,6 +55,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+import js_workspace  # noqa: E402
 import run_tests  # noqa: E402
 
 COPY_SKIP = {'.git', 'mutants', '__pycache__', '.pytest_cache', '.mypy_cache', '.tox', '.nox', '.venv', 'venv',
@@ -199,6 +218,55 @@ def detect_runner(repo: Path) -> str | None:
     return None
 
 
+STRYKER_RUNNERS = ('vitest', 'jest', 'mocha', 'karma', 'jasmine', 'tap', 'cucumber')
+SCRATCH_CFG = 'qa-stryker.config.json'
+TS_DISABLED = 'tsconfig.qa-stryker-disabled.json'     # a file that does not exist: Stryker's tsconfig rewrite is skipped
+RESERVED = {'mutate', 'reporters', 'jsonReporter', 'tempDirName'}
+STRYKER_ERROR = re.compile(r'\b(?:TypeError|ReferenceError|SyntaxError|RangeError|Error)\b:\s*\S.*'
+                           r'|There were failed tests in the initial test run.*|Unknown stryker config option.*'
+                           r'|Cannot find (?:package|module) \S+.*|\[TSCONFIG_ERROR\].*|No tests were (?:found|executed).*')
+STRYKER_HINTS = (
+    ('parseConfigFileTextToJson', 'TypeScript 7 does not export the API that Stryker\'s tsconfig rewrite uses; '
+     'run_engine.py disables that rewrite for TypeScript 7 (tsconfig_preprocessor in the record)'),
+    ('failed tests in the initial test run', 'Stryker\'s own dry run had failing tests (its related test set can be '
+     'wider than the baseline, and its runner uses worker threads): give it a Stryker-only test config with '
+     '--stryker-option vitest.configFile=<file> (or jest.configFile) and name what was left out in the limitations'),
+    ('Unknown stryker config option', 'a Stryker plugin was not loaded: list it in "plugins" (run_engine.py does for '
+     'the runner and checkers of a config without "plugins")'),
+    ('Cannot find package', 'a dependency did not resolve from the sandbox: for a workspace package use --sandbox '
+     'mirror (the default when a workspace root is found)'),
+    ('TSCONFIG_ERROR', 'a tsconfig "extends" or reference did not resolve from the sandbox: use --sandbox mirror'),
+)
+
+
+def set_option(config: dict, kv: str) -> str:
+    """--stryker-option key=value: dotted keys nest (vitest.configFile=...), values are JSON when they parse."""
+    if '=' not in kv:
+        raise SystemExit(f'--stryker-option {kv!r}: expected key=value')
+    key, raw = kv.split('=', 1)
+    if key.split('.')[0] in RESERVED:
+        raise SystemExit(f'--stryker-option {key}: run_engine.py sets {key.split(".")[0]} itself (the scope and the report)')
+    try:
+        value = json.loads(raw)
+    except ValueError:
+        value = raw
+    *path, last = key.split('.')
+    node = config
+    for p in path:
+        node = node.setdefault(p, {})
+        if not isinstance(node, dict):
+            raise SystemExit(f'--stryker-option {key}: {p} is not an object')
+    node[last] = value
+    return key
+
+
+def first_error(log: str) -> tuple[str | None, str | None]:
+    """The first error line in Stryker's log and, where it is a known integration problem, what to do."""
+    line = next((m.group(0).strip() for m in map(STRYKER_ERROR.search, log.splitlines()) if m), None)
+    hint = next((h for k, h in STRYKER_HINTS if k in log), None)
+    return (line[:300] if line else None), hint
+
+
 def do_stryker(args) -> int:
     """StrykerJS in place: Stryker mutates in its own sandbox; its sandbox and reports go to the run
     directory, and the repository tree is hashed before and after to show it was not changed."""
@@ -210,7 +278,7 @@ def do_stryker(args) -> int:
     out_path = run_dir / 'stryker.run.json'
     report = run_dir / 'stryker-report.json'
     record = {'engine': {'name': 'stryker', 'version': None, 'command': None, 'config_source': None, 'config': None},
-              'status': 'ran', 'reason': '', 'report': report.name,
+              'status': 'ran', 'reason': '', 'report': report.name, 'notes': [],
               'started_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}
 
     def finish(status: str, reason: str) -> int:
@@ -222,9 +290,10 @@ def do_stryker(args) -> int:
     mutate = mutate_ranges(scope)
     if not mutate:
         return finish('not_run', 'no JavaScript/TypeScript source lines in scope')
-    if not (repo / 'node_modules' / '@stryker-mutator' / 'core').exists():
-        return finish('not_run', '@stryker-mutator/core is not installed in the repo (and the runner plugin, e.g. '
-                      '@stryker-mutator/vitest-runner); install it only with the user\'s agreement')
+    if not js_workspace.find_module(repo, '@stryker-mutator/core'):
+        return finish('not_run', '@stryker-mutator/core is not installed for this package (nor the runner plugin, e.g. '
+                      '@stryker-mutator/vitest-runner); install it only with the user\'s agreement: ' +
+                      js_workspace.install_command(repo, ['@stryker-mutator/core', '@stryker-mutator/vitest-runner']))
     config: dict = {}
     repo_cfg = next((n for n in STRYKER_CONFIGS if (repo / n).is_file()), None)
     if repo_cfg and repo_cfg.endswith('.json'):
@@ -239,42 +308,103 @@ def do_stryker(args) -> int:
             config['testRunner'] = runner
         if runner == 'vitest':
             config['vitest'] = {'related': True}
-    sandbox = run_dir / 'stryker-tmp'
+    # where the sandbox goes: a package inside a workspace needs the workspace's levels around it
+    root = js_workspace.workspace_root(repo) if args.sandbox in ('auto', 'mirror') else None
+    mode = args.sandbox if args.sandbox != 'auto' else ('mirror' if root else 'run-dir')
+    if mode == 'mirror' and root is None:
+        return finish('not_run', '--sandbox mirror: no workspace root (pnpm-workspace.yaml, package.json "workspaces", '
+                      'lerna/nx/turbo/rush) above the package')
+    skip = {run_dir}
+    mirror = run_dir / 'ws'
+    if mode == 'mirror':
+        sandbox = js_workspace.build_mirror(repo, root, mirror).parent
+        record['sandbox'] = {'mode': 'mirror', 'workspace_root': os.path.relpath(root, repo).replace('\\', '/'),
+                             'note': 'the workspace levels above the package are recreated in <run>/ws (files copied, '
+                                     'directories linked) so relative extends and pnpm links resolve from the sandbox'}
+    elif mode == 'run-dir':
+        sandbox = run_dir / 'stryker-tmp'
+        record['sandbox'] = {'mode': 'run-dir'}
+    else:
+        sandbox = None
+        skip.add(repo / '.stryker-tmp')
+        record['sandbox'] = {'mode': 'in-package', 'note': 'Stryker\'s default .stryker-tmp inside the package '
+                                                           '(left out of the tree check)'}
+    ts = js_workspace.module_version(repo, 'typescript')
+    record['typescript'] = ts
+    ts7 = (js_workspace.major(ts) or 0) >= 7
+    if ts7 or mode != 'in-package':
+        why = (f'TypeScript {ts} does not export the API it uses') if ts7 else \
+            'it assumes the sandbox is .stryker-tmp inside the package'
+        config['tsconfigFile'] = TS_DISABLED
+        record['tsconfig_preprocessor'] = f'disabled: {why}'
+        checkers = [c for c in config.get('checkers') or [] if c != 'typescript']
+        if checkers != list(config.get('checkers') or []):
+            config['checkers'] = checkers
+            record['notes'].append('the typescript checker was removed (it needs the tsconfig rewrite): a mutant that '
+                                   'does not compile counts as killed or survived, never compile_error')
+    else:
+        record['tsconfig_preprocessor'] = 'enabled'
+    if 'plugins' not in config and config.get('testRunner') in STRYKER_RUNNERS:
+        # pnpm's isolated node_modules hide plugins from Stryker core's own lookup; name them
+        config['plugins'] = [f'@stryker-mutator/{config["testRunner"]}-runner'] + \
+            [f'@stryker-mutator/{c}-checker' for c in config.get('checkers') or []]
+    for plugin in config.get('plugins') or []:
+        if isinstance(plugin, str) and plugin.startswith('@stryker-mutator/') and not js_workspace.find_module(repo, plugin):
+            return finish('not_run', f'{plugin} is not installed for this package; install it only with the user\'s '
+                          f'agreement: {js_workspace.install_command(repo, [plugin])}')
     config.update({'mutate': mutate, 'reporters': ['json', 'clear-text'], 'jsonReporter': {'fileName': str(report)},
-                   'coverageAnalysis': 'perTest', 'tempDirName': str(sandbox), 'cleanTempDir': True,
-                   'incremental': False})
+                   'coverageAnalysis': 'perTest', 'cleanTempDir': True, 'incremental': False})
+    if sandbox is not None:
+        config['tempDirName'] = str(sandbox)
     if args.concurrency:
         config['concurrency'] = args.concurrency
     if args.timeout_ms:
         config['timeoutMS'] = args.timeout_ms
-    cfg_path = run_dir / 'stryker.config.json'
+    record['stryker_options'] = [set_option(config, kv) for kv in args.stryker_option]
+    record['coverage_analysis'] = config.get('coverageAnalysis')
+    cfg_path = run_dir / SCRATCH_CFG
     cfg_path.write_text(json.dumps(config, indent=2) + '\n', encoding='utf-8')
     record['engine']['config'] = (f'{repo_cfg} + ' if record['engine']['config_source'] == 'repo' else '') + \
         f'{cfg_path.name} (mutate: {len(mutate)} line ranges from the scope)'
     record['engine']['command'] = f'{args.stryker} run <run>/{cfg_path.name}'
     record['mutate'] = mutate
-    skip = {run_dir}
+    if report.exists():
+        report.unlink()           # never read a report left by an earlier run
     before = run_tests.tree_snapshot(repo, skip)
     record['code_hash'] = run_tests.code_hash(repo)
     t0 = time.monotonic()
-    code, out, timed_out = run(exe + ['run', str(cfg_path)], repo, timeout=args.minutes * 60)
+    try:
+        code, out, timed_out = run(exe + ['run', str(cfg_path)], repo, timeout=args.minutes * 60)
+    finally:
+        if mode == 'mirror' and not args.keep_work:
+            js_workspace.remove_tree(mirror)
     record['duration_s'] = round(time.monotonic() - t0, 1)
     record['exit_code'] = code
-    (run_dir / 'stryker.log').write_text(clean_log(out), encoding='utf-8')
+    log = clean_log(out)
+    (run_dir / 'stryker.log').write_text(log, encoding='utf-8')
     after = run_tests.tree_snapshot(repo, skip)
     record['tree_changed'] = sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
-    try:
-        record['engine']['version'] = json.loads((repo / 'node_modules' / '@stryker-mutator' / 'core' / 'package.json')
-                                                 .read_text(encoding='utf-8')).get('version')
-    except (OSError, ValueError):
-        pass
+    core = js_workspace.find_module(repo, '@stryker-mutator/core')
+    record['engine']['version'] = js_workspace.read_json(core / 'package.json').get('version') if core else None
+    err, hint = first_error(log)
     if timed_out:
         record.update(status='errored', reason=f'stopped at the {args.minutes}-minute budget; see stryker.log')
     elif not report.exists():
-        record.update(status='errored', reason=f'Stryker exited {code} without a JSON report; see stryker.log')
+        # an engine crash is never a run: no report means no mutant results at all
+        record.update(status='errored', reason=f'Stryker exited {code} without a JSON report' +
+                      (f': {err}' if err else '') + '; see stryker.log')
+    elif code != 0:
+        record['notes'].append(f'Stryker exited {code} after writing its report (a score threshold, or a late error'
+                               + (f': {err}' if err else '') + ')')
+    if hint and record['status'] != 'ran':
+        record['hint'] = hint
     out_path.write_text(json.dumps(record, indent=1, ensure_ascii=False) + '\n', encoding='utf-8')
-    print(f'stryker ({record["engine"]["config_source"]} config, {len(mutate)} ranges): {record["status"]} '
-          f'in {record["duration_s"]} s -> {report if report.exists() else "no report"}')
+    print(f'stryker ({record["engine"]["config_source"]} config, {mode} sandbox, {len(mutate)} ranges): '
+          f'{record["status"]} in {record["duration_s"]} s -> {report if report.exists() else "no report"}')
+    for n in record['notes']:
+        print('  note: ' + n)
+    if record['status'] != 'ran':
+        print('  ' + record['reason'] + (f'\n  hint: {hint}' if hint else ''))
     if record['tree_changed']:
         print('ERROR: the repository changed during the run: ' + ', '.join(record['tree_changed'][:10]), file=sys.stderr)
         return 3
@@ -291,11 +421,16 @@ def main(argv=None) -> int:
     ap.add_argument('--test-runner', help='Stryker testRunner for a scratch config (default: from package.json)')
     ap.add_argument('--concurrency', type=int)
     ap.add_argument('--timeout-ms', type=int, help='Stryker timeoutMS')
+    ap.add_argument('--sandbox', choices=['auto', 'mirror', 'run-dir', 'in-package'], default='auto',
+                    help='where Stryker\'s sandbox goes (default auto: mirror inside a workspace, else run-dir)')
+    ap.add_argument('--stryker-option', action='append', default=[], metavar='KEY=VALUE',
+                    help='any other Stryker option, e.g. vitest.configFile=vitest.unit.config.ts (repeatable)')
     ap.add_argument('--minutes', type=float, default=30.0)
     ap.add_argument('--mutmut', default='mutmut', help='command that runs mutmut (default: mutmut)')
-    ap.add_argument('--source-paths', nargs='*', help='scratch config: directories to mutate (default: from the scope)')
-    ap.add_argument('--tests', nargs='*', help='scratch config: test paths (default: tests/)')
-    ap.add_argument('--keep-work', action='store_true', help='keep the scratch copy')
+    ap.add_argument('--source-paths', nargs='*', help='mutmut scratch config only: directories to mutate (default: from the scope)')
+    ap.add_argument('--tests', nargs='*', help='mutmut scratch config only: test paths (default: tests/); for Stryker '
+                    'use --stryker-option vitest.configFile=... (or jest.configFile)')
+    ap.add_argument('--keep-work', action='store_true', help='keep the scratch copy (mutmut) or workspace mirror (stryker)')
     args, rest = ap.parse_known_args(argv)
     if args.engine == 'ranges':
         for r in mutate_ranges(json.loads(args.scope.read_text(encoding='utf-8'))):

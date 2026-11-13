@@ -103,8 +103,19 @@ The example exercises the builtin engine and mutmut. StrykerJS (JavaScript, Type
 through `run_engine.py stryker`, which mutates only the changed line ranges and records the
 tree check; `normalize_results.py --stryker ... --stryker-run ...` turns Stryker's test ids into
 test names and finds each mutant's function with the shared `diff_scope.py` scanner, and `prove_kill.py` proves Vitest
-and Jest tests. These were tested on a real Next.js/Vitest repository; no example in this
-directory uses them.
+and Jest tests. These were tested on a real Next.js/Vitest repository and a pnpm monorepo
+package (TypeScript 7, Vitest 5); no example in this directory uses them.
+
+```bash
+# from the package directory of a JS/TS package (in a workspace, the sandbox mirrors the workspace levels)
+python <skill>/scripts/run_engine.py stryker --repo . --scope run/scope.json --run-dir run \
+    --concurrency 4 --stryker-option vitest.configFile=vitest.mutation.config.ts
+python <skill>/scripts/normalize_results.py --scope run/scope.json --repo . \
+    --stryker run/stryker-report.json --stryker-run run/stryker.run.json --out run/mutants.json
+python <skill>/scripts/prove_kill.py --repo . --mutants run/mutants.json --mutant S3 \
+    --test-file tests/unit/rules.test.ts --test-code new_test.ts --test-name "rules > rejects an empty list" \
+    --finding F1 --run-dir run/proof --out run/proofs.json
+```
 
 ## Files
 
@@ -117,7 +128,8 @@ directory uses them.
 - `scripts/run_tests.py`, `scripts/parse_results.py`, `scripts/detect_conventions.py`: test runs and conventions (shared)
 - `scripts/path_scope.py`: a path scope (every line of the files under a path) in `scope.json` form
 - `scripts/builtin_mutator.py`: stdlib AST mutation engine and per-test line coverage for pytest, limited to `--tests`
-- `scripts/run_engine.py`: runs mutmut in a scratch copy, or StrykerJS on the scope's line ranges, and keeps the raw results and the tree check
+- `scripts/run_engine.py`: runs mutmut in a scratch copy, or StrykerJS on the scope's line ranges (with `--sandbox` and `--stryker-option`), and keeps the raw results and the tree check
+- `scripts/js_workspace.py`: workspace root, package manager and module versions, and the workspace mirror Stryker's sandbox and `prove_kill.py` use
 - `scripts/ts_scan.py`: finds JavaScript/TypeScript tests by name and whether they call a function (for proximity)
 - `scripts/normalize_results.py`: one mutant list across engines, limited to the scope
 - `scripts/prove_kill.py`: proves a suggested test passes on the original and fails on the mutants

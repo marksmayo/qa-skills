@@ -21,6 +21,7 @@
     "default_arg": {"kind": "value", "example": "def f(x=False) -> def f(x=True)"},
     "remove_call": {"kind": "value", "example": "log.info(...) -> pass"},
     "remove_block": {"kind": "value", "example": "{ ... } -> {}"},
+    "method_swap_logic": {"kind": "branch", "example": "xs.some(p) -> xs.every(p); s.startsWith(a) -> s.endsWith(a); Math.min -> Math.max", "note": "Stryker's MethodExpression when it swaps a quantifier or a side: 'any holds' becomes 'all hold', which decides a branch"},
     "remove_method_call": {"kind": "value", "example": "name.upper() == ADMIN -> name == ADMIN; s.strip() -> s", "note": "survives when no test uses an input whose case or whitespace differs"},
     "constant_string_compared": {"kind": "branch", "example": "if role != \"*\": -> if role != \"\":", "note": "a string that is an operand of a comparison (==, !=, in, a literal tuple compared with in) decides a branch, like the comparison itself"},
     "constant_string_named": {"kind": "value", "example": "ADMIN_ROLE = \"admin\" -> ADMIN_ROLE = \"\"", "note": "an UPPER_CASE module or class constant: usually a key, role or code that logic compares against, not display text"},
@@ -37,7 +38,7 @@
       "names": {}
     },
     "stryker": {
-      "note": "Stryker (JS/TS, .NET, Scala) and PIT write the mutation-testing-elements JSON report; mutatorName is mapped here. EqualityOperator is refined from the replacement text (== / != is a negation, < / <= a boundary).",
+      "note": "Stryker (JS/TS, .NET, Scala) and PIT write the mutation-testing-elements JSON report; mutatorName is mapped here. EqualityOperator is refined from the replacement text (== / != is a negation, < / <= a boundary). MethodExpression is refined from the method names: some/every, startsWith/endsWith and min/max swaps are method_swap_logic, a dropped call (filter, sort, trim, slice) is remove_method_call, anything else stays call_args. The engine's own mutator name is kept in each mutant's engine_operator.",
       "names": {
         "ArithmeticOperator": "arithmetic", "AssignmentOperator": "arithmetic", "UpdateOperator": "arithmetic",
         "UnaryOperator": "arithmetic", "EqualityOperator": "comparison_boundary", "ConditionalExpression": "negate_condition",

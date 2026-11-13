@@ -6,7 +6,7 @@
   "required": ["schema_version", "metadata", "tools", "baseline", "mutants", "findings", "coverage_gaps", "summary", "limitations", "files_changed"],
   "additionalProperties": false,
   "properties": {
-    "schema_version": {"const": "1.0.0"},
+    "schema_version": {"enum": ["1.0.0", "1.1.0"]},
     "metadata": {
       "type": "object",
       "required": ["repo", "commit", "code_hash", "scope", "engines", "coverage", "budget_minutes", "write_tests", "platform", "generated_at"],
@@ -151,6 +151,7 @@
         "end_line": {"type": "integer", "minimum": 1},
         "function": {"type": ["string", "null"]},
         "operator": {"type": "string"},
+        "engine_operator": {"type": ["string", "null"], "description": "the engine's own operator name (Stryker's mutatorName), where it has one"},
         "kind": {"enum": ["branch", "value", "display"]},
         "original": {"type": "string"},
         "mutated": {"type": "string"},

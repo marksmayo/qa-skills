@@ -1,7 +1,7 @@
 ---
 name: mutation-tester
 description: Run mutation testing on the code that changed (or a path you name) and turn the surviving mutants into a short, ranked list of weak assertions and missing cases, each naming the test that should have caught it and the assertion or input that would. Uses the repo's own mutation tool when it is configured, the standard open-source tool otherwise (from a scratch config, never added to the repo), and a stdlib AST engine for Python as a fallback. Every score is shown with its counts and scope; equivalent mutants need a checkable reason; timeouts and errors are never counted as kills; no-coverage mutants are coverage gaps, not weak assertions. Never claims code is "well tested".
-version: 1.2.0
+version: 1.3.0
 ---
 
 # Mutation tester
@@ -106,11 +106,18 @@ record the engine as `not_run`; never hand-copy results.
 
 `detect_tools.py` lists a language only when the repo has a project marker for it
 (`package.json`, `pyproject.toml`, `go.mod`, ...), so one helper script doesn't make a Python
-project. StrykerJS is often not installed: installing it (`npm i -D @stryker-mutator/core
-@stryker-mutator/vitest-runner`, plus a fresh `npm ci` if you work in a copy) can take a long
-time on a large repo, so ask first, and say in the report what was installed and where. Without
-`@stryker-mutator/typescript-checker`, a mutant that doesn't compile shows up as killed or as a
-runtime error rather than `compile_error`; say so in the limitations.
+project. StrykerJS is often not installed: `run_engine.py stryker` needs `@stryker-mutator/core`
+and the runner plugin where the package resolves them (its own `node_modules`, or a hoisted
+parent). Installing changes `package.json` and the lockfile and can take a long time on a large
+repo, so ask first, use the package manager's own form (`detect_tools.py` prints it: `npm i -D`,
+`pnpm add -D --filter <package>` in a pnpm workspace, `yarn workspace <package> add -D`), and say
+in the report what was installed and where. Without `@stryker-mutator/typescript-checker`, a
+mutant that doesn't compile shows up as killed or as a runtime error rather than
+`compile_error`; say so in the limitations. `detect_tools.py` also reports, under `node`, the
+package manager, whether the package sits in a workspace, and the TypeScript and runner
+versions: with TypeScript 7 or later, Stryker's tsconfig rewrite and the typescript checker
+cannot run (TypeScript 7 has no JavaScript API they can call), `run_engine.py` disables both,
+and compile errors are never `compile_error`; say so in the limitations.
 
 **Rust / cargo-mutants.** `detect_tools.py` recognises Rust and recommends cargo-mutants, but
 there is no scripted runner, normaliser or kill-prover for it: `run_engine.py`,
@@ -197,12 +204,41 @@ python scripts/run_engine.py ranges --scope <run>/scope.json        # the scope 
 python scripts/run_engine.py stryker --repo <repo> --scope <run>/scope.json --run-dir <run> [--concurrency 4]
 ```
 
-`run_engine.py stryker` writes a config to the run directory that mutates only the changed line
-ranges (`src/x.ts:12-30`), with perTest coverage and Stryker's sandbox and JSON report in the run
-directory; a JSON Stryker config in the repo is used underneath. Stryker mutates only its
-sandbox, but the repository tree is still hashed before and after, and the code hash it ran on is
-recorded in `stryker.run.json`; the validator rejects an engine that ran on other code than the
-baseline. Run it with the same environment as the baseline (`TZ=... python scripts/run_engine.py ...`).
+`run_engine.py stryker` writes a config to the run directory (`qa-stryker.config.json`) that
+mutates only the changed line ranges (`src/x.ts:12-30`), with perTest coverage, the runner and
+checker plugins named (pnpm's isolated `node_modules` hide them from Stryker otherwise) and the
+JSON report in the run directory; a JSON Stryker config in the repo is used underneath. Run it
+from, and with `--repo` set to, the package directory. Stryker mutates only its sandbox, but the
+repository tree is still hashed before and after, and the code hash it ran on is recorded in
+`stryker.run.json`; the validator rejects an engine that ran on other code than the baseline.
+Run it with the same environment as the baseline (`TZ=... python scripts/run_engine.py ...`).
+
+- **Sandbox.** A package inside a workspace (pnpm, npm or Yarn workspaces, Nx, Turborepo, ...)
+  usually reaches outside itself: `"extends": "../../tsconfig.base.json"`, and pnpm's relative
+  links in `node_modules`. `--sandbox auto` (the default) then recreates the workspace levels
+  above the package in `<run>/ws` (files copied, directories linked, nothing written to the
+  repo) and puts Stryker's sandbox at the package's own depth there, so both resolve. Outside a
+  workspace the sandbox is `<run>/stryker-tmp`. `--sandbox in-package` keeps Stryker's default
+  `.stryker-tmp` inside the package. Stryker's tsconfig rewrite only suits that default, so the
+  record says when it was disabled (`tsconfig_preprocessor`).
+- **Options.** `--stryker-option key=value` (repeatable) sets any other Stryker option; dotted
+  keys nest and values are JSON when they parse. The common ones: a Stryker-only test config
+  (`vitest.configFile=vitest.mutation.config.ts`, `jest.configFile=...`) that holds only the unit
+  tests the baseline ran, `vitest.related=false`, `ignoreStatic=true`. Without one, Stryker runs
+  the Vitest config as it is, including projects that need browsers or built packages.
+- **Stryker's own dry run.** Stryker first runs its related test set unmutated, and it is often
+  wider than your baseline. A test that fails there (a flaky timing test under load, a test that
+  fails on this OS at HEAD, a test calling `process.chdir()`, which Stryker's Vitest worker
+  threads refuse) stops the run with "There were failed tests in the initial test run". Leave
+  such tests out with a Stryker-only test config, check they cover none of the scoped lines,
+  and name them in the baseline note and the limitations. The config file is a file in the
+  package, so creating it changes the code hash: write it before the baseline runs, or in a
+  copy.
+- **Engine failure.** When Stryker writes no report, `stryker.run.json` has `status: "errored"`,
+  the first error line from the log and, for known integration problems (TypeScript 7, an
+  unloaded plugin, an unresolved dependency or tsconfig), a `hint`. Record the engine as
+  errored with that reason; never as a run with zero mutants. `normalize_results.py` accepts
+  `--stryker-run` without a report for such a run.
 
 The builtin engine also writes `coverage.json` (per-test line coverage). Run it with
 `--coverage-only` when another engine does the mutating, so mutants on unexecuted lines can be
@@ -260,10 +296,15 @@ python scripts/prove_kill.py --repo <repo> --mutants <run>/mutants.json --mutant
     --finding F1 --run-dir <run>/proof --out <run>/proofs.json
 ```
 
-For a JS/TS test file it runs Vitest (or `--runner jest`) on that file with `-t "<describe> <title>"`;
-give the test's full name as `--test-name`, and the repo's test environment with `--env TZ=...`
-and `--extra-args "--configLoader native"`. The scratch copy links the repo's `node_modules`
-rather than copying it.
+For a JS/TS test file it runs Vitest (or `--runner jest`) on that file with `-t` and the test's
+full name; give it as `--test-name "describe > title"` (the JUnit form). The pattern accepts both
+separators the runners match on (spaces for Jest and Vitest up to 3, " > " for Vitest 4 and
+later). Give the repo's test environment with `--env TZ=...` and `--extra-args "--configLoader
+native"`. The scratch copy links the repo's `node_modules` rather than copying it, and a package
+inside a workspace is copied into a mirror of the workspace levels, as for Stryker. When the new
+test does not run at all (`test_status: "not_run"`), the proof keeps its output
+(`proof-*.log`) and JUnit in the run directory and records the first error line: read them
+before calling the suggestion wrong.
 
 The new test runs on the original code (must pass) and on each mutant (must fail), in a scratch
 copy. Prove every ranked suggestion you can; cite the proof ids on the finding or gap. With
@@ -301,7 +342,21 @@ editing computed fields. Show the user:
   copy of the scoped code. mutmut and Stryker work in a copy and have the same risk; check
   `covering_tests` is not empty for code the tests obviously call.
 - **Monorepo packages.** Run every step with `--repo` (and the baseline's `--cwd`) set to the
-  package directory, so pytest finds the package's own `pyproject.toml` and rootdir.
+  package directory, so pytest finds the package's own `pyproject.toml` and rootdir, and Vitest or
+  Jest the package's own config. From a workspace root, the shared `diff_scope.py` classifies paths
+  by directory names such as `e2e/` or `test/`; check that a product package with such a name
+  is not marked as tests in `scope.json`, and run from the package directory if it is.
+- **Stryker and Vitest projects.** A Vitest config with `projects` (unit, integration) is run as
+  a whole by Stryker's Vitest runner; give it a unit-only config with `--stryker-option
+  vitest.configFile=...` (Step 4).
+- **Stryker's MethodExpression.** Swaps such as `some`/`every`, `startsWith`/`endsWith` and
+  `min`/`max` are normalised as `method_swap_logic` (a branch change); a dropped call (`filter`,
+  `sort`, `trim`) as `remove_method_call`. The engine's own mutator name is kept in
+  `engine_operator`.
+- **Per-test coverage from Stryker.** With `coverageAnalysis: perTest` (what `run_engine.py`
+  sets), each Stryker mutant lists the tests that ran it, and `normalize_results.py` records that
+  as the run's coverage (`Stryker coverageAnalysis perTest`), which counts toward evidence
+  completeness. Copy `coverage` from `mutants.json` into `metadata.coverage`.
 
 ## Report fields
 

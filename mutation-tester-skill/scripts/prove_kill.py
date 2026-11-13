@@ -6,9 +6,16 @@
         --run-dir <dir> --out proofs.json [--finding F2 | --gap G1] [--in-place] [--timeout 60]
 
 Runners: pytest (test_file::test_name), and for a JS/TS test file Vitest (default) or Jest
-(--runner jest): the file plus `-t` with the test's full name ("describe title", or the
-" > "-joined id form). The scratch copy links the repo's node_modules (a symlink, or a junction
-on Windows) instead of copying it, and removes the link before deleting the copy. --env and
+(--runner jest): the file plus `-t` with the test's full name, given in the " > "-joined id form
+("describe > title"). The pattern accepts both separators the runners use (spaces for Jest and
+Vitest up to 3, " > " for Vitest 4 and later), and the JUnit report confirms the test ran. The
+runner is started through its own entry script under node where found (npx is a .cmd on Windows,
+and cmd.exe would rewrite the pattern). The scratch copy links the repo's node_modules (a symlink,
+or a junction on Windows) instead of copying it, and removes the link before deleting the copy.
+A JS package inside a workspace (pnpm-workspace.yaml, package.json "workspaces") is copied to its
+own depth in a mirror of the workspace levels (js_workspace.py), so relative tsconfig `extends`
+and pnpm's relative links resolve. When the test does not run at all, its output (proof-*.log)
+and JUnit are kept in the run directory and the first error line is recorded. --env and
 --extra-args pass what the repo's own test command adds (TZ=..., --configLoader native).
 
 The test code is appended to --test-file (created if missing) in a scratch copy of the repo under
@@ -29,6 +36,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+import js_workspace  # noqa: E402
 import parse_results  # noqa: E402
 import run_tests  # noqa: E402
 
@@ -41,19 +49,37 @@ def runner_for(test_file: str) -> str:
     return 'vitest' if test_file.endswith(JS_SUFFIXES) else 'pytest'
 
 
-def test_command(runner: str, test_file: str, test_name: str, junit: Path, extra: list[str]) -> tuple[list[str], str]:
+def name_pattern(test_name: str) -> str:
+    """The -t pattern for one test. Jest and Vitest up to 3 match it against the describe chain and title
+    joined by spaces; Vitest 4 and later join them with " > ". The pattern accepts either separator, so it
+    selects the test on every version; the JUnit check below still confirms which test ran."""
+    parts = [p for p in re.split(r' > ', test_name) if p]
+    return '^' + '(?: > | )'.join(JS_SPECIAL.sub(r'\\\g<0>', p) for p in parts) + '$'
+
+
+JS_SPECIAL = re.compile(r'[.*+?^${}()|\[\]\\/]')     # only these: other escapes are invalid in a unicode RegExp
+
+
+ENTRY = {'vitest': ('vitest.mjs',), 'jest': ('bin/jest.js',)}
+
+
+def test_command(runner: str, test_file: str, test_name: str, junit: Path, extra: list[str],
+                 cwd: Path | None = None) -> tuple[list[str], str]:
     """The command that runs only the new test, and how it is recorded (no absolute paths)."""
     if runner == 'pytest':
         tid = f'{test_file}::{test_name}'
         return ([sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', f'--junitxml={junit}', tid, *extra],
                 f'python -m pytest -q -p no:cacheprovider {tid}' + (' ' + ' '.join(extra) if extra else ''))
-    # Vitest and Jest select a test by file and a name pattern over "describe title" joined by spaces
-    pattern = '^' + re.escape(test_name.replace(' > ', ' ')) + '$'
-    npx = shutil.which('npx') or 'npx'
+    pattern = name_pattern(test_name)
+    # the runner's own entry script under node where it can be found: npx is a .cmd on Windows, and cmd.exe
+    # would rewrite a pattern's ^ and | characters
+    entry = js_workspace.find_module(cwd, runner) if cwd else None
+    script = entry and next((entry / s for s in ENTRY[runner] if (entry / s).is_file()), None)
+    head = [shutil.which('node') or 'node', str(script)] if script else [shutil.which('npx') or 'npx', runner]
     if runner == 'vitest':
-        cmd = [npx, 'vitest', 'run', test_file, '-t', pattern, '--reporter=junit', f'--outputFile={junit}', *extra]
+        cmd = [*head, 'run', test_file, '-t', pattern, '--reporter=junit', f'--outputFile={junit}', *extra]
     else:
-        cmd = [npx, 'jest', '--ci', test_file, '-t', pattern, '--reporters=default', '--reporters=jest-junit', *extra]
+        cmd = [*head, '--ci', test_file, '-t', pattern, '--reporters=default', '--reporters=jest-junit', *extra]
     return cmd, f'npx {runner} {"run " if runner == "vitest" else ""}{test_file} -t "{pattern}"' + (' ' + ' '.join(extra) if extra else '')
 
 
@@ -62,29 +88,23 @@ def link_node_modules(repo: Path, work: Path) -> Path | None:
     src, dst = repo / 'node_modules', work / 'node_modules'
     if not src.is_dir():
         return None
-    try:
-        os.symlink(src, dst, target_is_directory=True)
-    except OSError:
-        if os.name != 'nt':
-            raise
-        import _winapi
-        _winapi.CreateJunction(str(src), str(dst))
+    js_workspace.link_dir(src, dst)
     return dst
 
 
 def unlink_dir(link: Path | None) -> None:
     """Remove a symlink or junction itself, never what it points at."""
-    if link is None or not os.path.lexists(link):
-        return
-    try:
-        os.unlink(link)
-    except OSError:
-        os.rmdir(link)       # a junction
+    if link is not None and os.path.lexists(link):
+        js_workspace.unlink(link)
+
+
+FIRST_ERROR = re.compile(r'\b(?:TypeError|ReferenceError|SyntaxError|Error)\b:\s*\S.*|Cannot find (?:package|module) .*'
+                         r'|\[TSCONFIG_ERROR\].*|No test files? found.*|No tests? found.*|FAIL\s+\S.*')
 
 
 def run_test(cwd: Path, runner: str, test_file: str, test_name: str, junit: Path, env: dict, timeout: float,
              extra: list[str]) -> dict:
-    cmd, shown = test_command(runner, test_file, test_name, junit, extra)
+    cmd, shown = test_command(runner, test_file, test_name, junit, extra, cwd)
     if runner == 'jest':
         env = {**env, 'JEST_JUNIT_OUTPUT_FILE': str(junit)}
     kw = {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == 'nt' else {'start_new_session': True}
@@ -107,7 +127,22 @@ def run_test(cwd: Path, runner: str, test_file: str, test_name: str, junit: Path
     if status in ('failed', 'error') and mine and mine[0].get('message'):
         rec['message'] = run_tests.redact_home(mine[0]['message'])[:300]
     if status == 'not_run':
-        rec['output_tail'] = run_tests.redact_home(out.decode('utf-8', 'replace')[-400:])
+        # the test never ran: keep the whole output and the JUnit beside it, and name the first error line
+        text = out.decode('utf-8', 'replace')
+        log = junit.with_suffix('.log')
+        log.write_text(run_tests.redact_home(text), encoding='utf-8')
+        rec['output_log'] = log.name
+        if junit.exists():
+            rec['junit_kept'] = junit.name
+        cause = [c.get('message') for c in cases if c['status'] in ('failed', 'error') and c.get('message')]
+        m = next((m for m in map(FIRST_ERROR.search, text.splitlines()) if m), None)
+        first = cause[0] if cause else (m.group(0).strip() if m else None)
+        if first:
+            rec['first_error'] = run_tests.redact_home(first.splitlines()[0])[:300]
+        rec['output_tail'] = run_tests.redact_home(text[-400:])
+        print(f'  {test_name}: not run' + (f' - {rec["first_error"]}' if first else '') + f' (see {log.name})',
+              file=sys.stderr)
+        return rec
     if junit.exists():
         junit.unlink()
     return rec
@@ -165,11 +200,12 @@ def main(argv=None) -> int:
     pycache = run_dir / '_pycache'
     env = {**os.environ, 'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONPYCACHEPREFIX': str(pycache),
            **dict(kv.split('=', 1) for kv in run_tests.env_pairs(args.env))}
-    work = run_dir / 'proof-work'
-    old_link = work / 'node_modules'     # left by an interrupted run: remove the link, never its target
-    if old_link.is_symlink() or getattr(os.path, 'isjunction', lambda p: False)(old_link):
-        unlink_dir(old_link)
-    shutil.rmtree(work, ignore_errors=True)
+    scratch = run_dir / 'proof-work'
+    js_workspace.remove_tree(scratch)    # left by an interrupted run: links are unlinked, never followed
+    # a JS package inside a workspace is copied to its own depth in a mirror of the workspace levels, so
+    # relative tsconfig extends and pnpm's relative links resolve as in the repository
+    root = js_workspace.workspace_root(repo) if runner != 'pytest' else None
+    work = js_workspace.build_mirror(repo, root, scratch) if root else scratch
     shutil.copytree(repo, work, ignore=lambda d, names: [n for n in names if n in COPY_SKIP or n.endswith('.egg-info')])
     link = link_node_modules(repo, work) if runner != 'pytest' else None
     append_test(work / args.test_file, code)
@@ -206,7 +242,7 @@ def main(argv=None) -> int:
     after = run_tests.tree_snapshot(repo, {run_dir})
     changed = sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
     unlink_dir(link)          # the link first, so removing the copy never reaches the repo's node_modules
-    shutil.rmtree(work, ignore_errors=True)
+    js_workspace.remove_tree(scratch)
     shutil.rmtree(pycache, ignore_errors=True)
     store = json.loads(args.out.read_text(encoding='utf-8')) if args.out.exists() else {'proofs': []}
     pid = f'P{len(store["proofs"]) + 1}'
