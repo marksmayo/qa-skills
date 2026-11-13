@@ -10,7 +10,12 @@ build.target or Vite's default, else `defaults`). CSS is read with a small token
 rules split into selectors and declarations, declarations before a nested rule kept with their parent,
 @supports blocks tracked); scripts and markup are matched with the patterns' regexes, ignoring comments
 in scripts. The walk prunes dependency, build and cache folders (node_modules, .next, dist, build, out,
-coverage, ...) before descending.
+coverage, ...) before descending, and leaves out what doesn't ship to browsers: test and story files
+(*.test.*, *.spec.*, *.e2e.*, *.cy.*, *.stories.*), test directories (e2e, test, tests, spec, specs,
+unless the directory holds a package manifest, which makes it a product package of that name), and
+Node-only scripts (a node shebang, or an import of a node: module or of fs, child_process and other
+Node built-ins: CLIs, build scripts, dev servers). `skipped` lists the test directories and Node-only
+files left out.
 
 CSS-in-JS: when package.json depends on Emotion, MUI, styled-components (CSS_IN_JS_DEPS), scripts that use
 it are also read for CSS written literally: object styles (camelCase property with a string value, or a
@@ -25,7 +30,8 @@ Utility-class CSS: when package.json depends on Tailwind CSS, class strings in s
 matched against the `utility-class` patterns (known non-baseline utilities such as text-balance,
 backdrop-blur-*, bg-clip-text, has-[...], @container), and `utility_css` records that only those were
 scanned. The CSS such a framework generates is scanned only when built CSS is given (--built-css, or
-.next/static/css when it exists); otherwise `limitations` says it wasn't, for the report to carry.
+.next/static/css when it exists, in the repo or beside any next.config.* up to three levels down, for a
+Next.js project kept in a subfolder); otherwise `limitations` says it wasn't, for the report to carry.
 
 A target is unsupported when web-features gives no version for its browser, or a later one. Browsers
 web-features doesn't cover (Opera, Samsung Internet, UC, QQ, KaiOS, Opera Mini, Android WebView) are
@@ -47,7 +53,15 @@ WF_BROWSER = {'chrome': 'chrome', 'and_chr': 'chrome_android', 'edge': 'edge', '
 SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'out', 'vendor', '__pycache__', '.next', '.nuxt', 'coverage', '.venv', 'venv',
              '.turbo', '.cache', '.svelte-kit', '.vercel', 'playwright-report', 'test-results', 'storybook-static',
              '__tests__', '__mocks__'}
-TEST_FILE = re.compile(r'\.(test|spec|stories)\.[cm]?[jt]sx?$')   # tests and stories don't ship to browsers
+TEST_FILE = re.compile(r'\.(test|spec|e2e|cy|stories)\.[cm]?[jt]sx?$')   # tests and stories don't ship to browsers
+TEST_DIR_NAMES = {'e2e', 'test', 'tests', 'spec', 'specs'}
+MANIFESTS = ('package.json', 'pyproject.toml', 'setup.py', 'setup.cfg', 'Cargo.toml', 'go.mod', 'pom.xml', 'build.gradle',
+             'build.gradle.kts', 'composer.json', 'Gemfile', 'deno.json')
+INLINE_BLOCK = re.compile(r'<(script|style)\b[^>]*>', re.I)
+SCRIPT_SUFFIXES = ('.js', '.mjs', '.cjs', '.ts', '.mts', '.cts')
+NODE_ONLY = re.compile(r'''\A#!.*\bnode\b|(?:\bfrom\s*|\brequire\(\s*|\bimport\(\s*|^\s*import\s+)['"](?:node:[\w/]+|'''
+                       r'''(?:fs|child_process|worker_threads|readline|net|cluster|dgram|tls|v8|vm|inspector)(?:/promises)?)['"]''',
+                       re.M)
 SUFFIXES = ('.css', '.scss', '.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx', '.html', '.htm', '.vue', '.svelte')
 MARKUP = ('.html', '.htm', '.vue', '.svelte')
 CLASS_SOURCES = ('.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx') + MARKUP
@@ -100,14 +114,68 @@ def decls(block: str) -> list[tuple[str, str]]:
     return out
 
 
-def files(repo: Path):
-    """Source files, walking with excluded directories pruned before descending (a node_modules tree is never listed)."""
+def is_test_dir(d: Path) -> bool:
+    """A directory named e2e, test, tests, spec or specs is test code only when it holds no package manifest: with one
+    (package.json, pyproject.toml, Cargo.toml, ...) it is a product package that happens to have that name (a pnpm
+    workspace package called e2e), and is scanned like any other. The same rule as the shared diff_scope.py."""
+    return d.name.lower() in TEST_DIR_NAMES and not any((d / m).is_file() for m in MANIFESTS)
+
+
+def node_only(text: str) -> bool:
+    """A script that runs under Node, never in a browser: a node shebang, or an import of a node: module or of a Node
+    built-in that has no browser counterpart (fs, child_process, worker_threads, ...)."""
+    return bool(NODE_ONLY.search(text[:20000]))
+
+
+def files(repo: Path, skipped: dict | None = None):
+    """Source files, walking with excluded directories pruned before descending (a node_modules tree is never listed).
+    Test directories (is_test_dir), test and story files, and Node-only scripts (CLIs, build scripts, servers) don't ship
+    to browsers and are left out; with `skipped`, the test directories and Node-only files are listed there."""
     for root, dirs, names in os.walk(repo):
-        dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
+        keep = []
+        for d in sorted(dirs):
+            if d in SKIP_DIRS:
+                continue
+            if is_test_dir(Path(root) / d):
+                if skipped is not None:
+                    skipped.setdefault('test_dirs', []).append(rel_name(Path(root) / d, repo))
+                continue
+            keep.append(d)
+        dirs[:] = keep
         for n in sorted(names):
             p = Path(root) / n
-            if p.suffix in SUFFIXES and not TEST_FILE.search(n):
-                yield p
+            if p.suffix not in SUFFIXES or TEST_FILE.search(n):
+                continue
+            if p.suffix in SCRIPT_SUFFIXES:
+                try:
+                    text = p.read_text(encoding='utf-8', errors='replace')
+                except OSError:
+                    text = ''
+                if node_only(text):
+                    # its own code runs in Node; pages it renders from template literals ship their inline blocks
+                    html = bool(INLINE_BLOCK.search(text))
+                    if skipped is not None:
+                        skipped.setdefault('node_only_files', []).append(rel_name(p, repo) + (' (inline <script>/<style> blocks scanned)' if html else ''))
+                    if html:
+                        yield p, True
+                    continue
+            yield p, None
+
+
+def next_built_css(repo: Path, depth: int = 3) -> list[Path]:
+    """The built CSS of every Next.js project in the repo: <dir>/.next/static/css for the repo itself and for each folder
+    (up to `depth` levels down, the walk pruned) holding a next.config.* file, as in a project kept under app/ and built
+    with `next build app`, or one app of a workspace."""
+    out = []
+    for root, dirs, names in os.walk(repo):
+        here = Path(root)
+        level = len(here.relative_to(repo).parts)
+        dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS) if level < depth else []
+        if here == repo or any(n.startswith('next.config.') for n in names):
+            css = here / '.next' / 'static' / 'css'
+            if css.is_dir():
+                out.append(css)
+    return out
 
 
 def built_css_files(paths: list[Path]):
@@ -155,12 +223,12 @@ def rel_name(f: Path, repo: Path) -> str:
 
 
 def scan(repo: Path, patterns: list[dict], utility: bool = False, built: list[Path] | None = None,
-         css_in_js: bool = False, tailwind_major: int | None = None) -> list[dict]:
+         css_in_js: bool = False, tailwind_major: int | None = None, skipped: dict | None = None) -> list[dict]:
     """Uses of every pattern in the repo's sources; utility-class patterns only when `utility` (Tailwind found); CSS
     written in scripts when `css_in_js` (a CSS-in-JS library found); the built CSS files with the CSS patterns."""
     uses = []
-    for f in files(repo):
-        uses += scan_file(f, rel_name(f, repo), patterns, utility, css_in_js)
+    for f, markup in files(repo, skipped):
+        uses += scan_file(f, rel_name(f, repo), patterns, utility, css_in_js, markup=markup)
     for f in built_css_files(built or []):
         uses += scan_file(f, rel_name(f, repo), patterns, False, tailwind_major=tailwind_major)
     return uses
@@ -257,13 +325,16 @@ def object_style_uses(js: str, rel: str, patterns: list[dict], fb_of) -> list[di
 
 
 def scan_file(f: Path, rel: str, patterns: list[dict], utility: bool, css_in_js: bool = False,
-              tailwind_major: int | None = None) -> list[dict]:
+              tailwind_major: int | None = None, markup: bool | None = None) -> list[dict]:
+    """Uses in one file. `markup` reads a script as markup: only its inline <script> and <style> blocks and the html
+    patterns (a Node server that renders pages from template literals ships those blocks, not its own code)."""
     uses = []
     text = f.read_text(encoding='utf-8', errors='replace')
+    markup = f.suffix in MARKUP if markup is None else markup
     css_parts, js_parts = [], []
     if f.suffix in ('.css', '.scss'):
         css_parts.append((text, 0))
-    elif f.suffix in MARKUP:
+    elif markup:
         for m in re.finditer(r'<style[^>]*>(.*?)</style>', text, re.S | re.I):
             css_parts.append((m.group(1), text[:m.start(1)].count('\n')))
         for m in re.finditer(r'<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>', text, re.S | re.I):
@@ -271,7 +342,7 @@ def scan_file(f: Path, rel: str, patterns: list[dict], utility: bool, css_in_js:
     else:
         js_parts.append((text, 0))
     fb_of = lambda p: bool(p.get('emits_fallback')) or any(re.search(x, text) for x in p.get('fallback') or [])
-    if css_in_js and f.suffix in CLASS_SOURCES and f.suffix not in MARKUP and CSS_IN_JS_FILE.search(text):
+    if css_in_js and f.suffix in CLASS_SOURCES and not markup and CSS_IN_JS_FILE.search(text):
         clean = strip_js_comments(text)
         css_parts += template_css(clean)
         uses += object_style_uses(clean, rel, [p for p in patterns if p['kind'].startswith('css')], fb_of)
@@ -308,7 +379,7 @@ def scan_file(f: Path, rel: str, patterns: list[dict], utility: bool, css_in_js:
                                'selector': sel if not sel.startswith('@') else None, 'fallback': in_supports or fb}
                         if minified:
                             use['column'] = col
-                        if f.suffix not in ('.css', '.scss') and f.suffix not in MARKUP:
+                        if f.suffix not in ('.css', '.scss') and not markup:
                             use['via'] = 'css-in-js'   # CSS from a tagged template literal in a script
                         uses.append(use)
         elif k == 'js-api':
@@ -318,14 +389,14 @@ def scan_file(f: Path, rel: str, patterns: list[dict], utility: bool, css_in_js:
                     ln = clean[:m.start()].count('\n') + 1 + offset
                     uses.append({'feature': p['feature'], 'file': rel, 'line': ln,
                                  'snippet': js.splitlines()[ln - offset - 1].strip()[:160], 'selector': None, 'fallback': fb})
-        elif k == 'html' and f.suffix in MARKUP:
+        elif k == 'html' and markup:
             for m in re.finditer(p['match'], text):
                 ln = text[:m.start()].count('\n') + 1
                 uses.append({'feature': p['feature'], 'file': rel, 'line': ln, 'snippet': text.splitlines()[ln - 1].strip()[:160],
                              'selector': None, 'fallback': fb})
         elif k == 'utility-class' and utility and f.suffix in CLASS_SOURCES:
             # a class token, optionally behind variants ("md:hover:backdrop-blur-xl"), in any string of the file
-            clean = strip_js_comments(text) if f.suffix not in MARKUP else text
+            clean = strip_js_comments(text) if not markup else text
             rx = r'(?<![\w/-])(?:[\w\[\]@&*>=.()-]+:)*!?(?:' + p['match'] + r')'
             for m in re.finditer(rx, clean):
                 ln = clean[:m.start()].count('\n') + 1
@@ -370,9 +441,8 @@ def main() -> int:
     query, source = (a.query, 'argument') if a.query else bl.query_from_repo(a.repo)
     targets = bl.Resolver(caniuse).resolve(query)
     built = list(a.built_css or [])
-    auto_built = a.repo / '.next' / 'static' / 'css'
-    if not built and auto_built.is_dir():
-        built = [auto_built]
+    if not built:
+        built = next_built_css(a.repo)
     built_files = [rel_name(f, a.repo) for f in built_css_files(built)]
     fw = utility_framework(a.repo)
     tw_major = None
@@ -380,7 +450,8 @@ def main() -> int:
         m = re.search(r'(\d+)', str(fw['version']))
         tw_major = int(m.group(1)) if m else None
     cij = css_in_js_libraries(a.repo)
-    uses = scan(a.repo, pats, utility=bool(fw), built=built, css_in_js=bool(cij), tailwind_major=tw_major)
+    skipped: dict = {}
+    uses = scan(a.repo, pats, utility=bool(fw), built=built, css_in_js=bool(cij), tailwind_major=tw_major, skipped=skipped)
     limitations = []
     if fw:
         fw.update(classes='known non-baseline utilities only (utility-class patterns in data/feature-patterns.json)',
@@ -454,6 +525,8 @@ def main() -> int:
         out['utility_css'] = fw
     if css_in_js:
         out['css_in_js'] = css_in_js
+    if skipped:   # test directories and Node-only scripts left out (they don't ship to browsers); only written when any
+        out['skipped'] = skipped
     if limitations:
         out['limitations'] = limitations
     a.out.parent.mkdir(parents=True, exist_ok=True)
