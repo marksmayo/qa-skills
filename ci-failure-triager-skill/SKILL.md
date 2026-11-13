@@ -1,7 +1,7 @@
 ---
 name: ci-failure-triager
 description: Triage a failed CI run on GitHub Actions or Azure DevOps - classify every failing job and test as real, flaky, environment, data, consequence (an aggregate gate job failing because another job failed) or unclassified from its log lines, JUnit results, a re-run of the failed jobs on the same commit, the run history and known failure signatures; find the owning change (the commit since the last green run that touched what failed); and draft a defect or a test-data issue for each real or data failure in the result log. Flaky needs a pass and a fail on the same commit; real needs a repeatable failure; every log excerpt is quoted with its line numbers and secrets redacted. Re-runs only failed jobs, once, and only with permission. Never files anything and never calls a build green.
-version: 1.1.0
+version: 1.2.0
 ---
 
 # CI failure triager
@@ -25,8 +25,10 @@ bug-reproducer can take a drafted defect. ci-suite-runner triggers runs; this sk
 ## Non-negotiable rules
 
 1. **Flaky needs a pass and a fail on the same commit** (the re-run, or the same job passing in another
-   run of the same workflow on that commit). Failing often elsewhere doesn't make a test flaky, and a
-   run of another workflow, or of the same workflow that ran other jobs, is no evidence.
+   run of the same workflow on that commit: `confirmed`; or local repeat runs of the test on that commit,
+   recorded in `local_runs.json`, that both passed and failed: `indicated`). Failing often elsewhere
+   doesn't make a test flaky, and a run of another workflow, or of the same workflow that ran other jobs,
+   is no evidence.
 2. **Real needs a repeatable failure**: it failed again on re-run. Without a re-run it is at most
    `indicated`; `confirmed` also needs an owning change.
 3. **Environment and data need their evidence**: a signature with its log line, a failed setup step, or a
@@ -77,7 +79,10 @@ python scripts/classify.py --run run/ --out run/candidates.json
    event, and skipping a run that did not pass the jobs that failed here). Redirects to log and artifact
    storage are followed without the API token.
 2. **Extract** the failures of the first attempt: one per failing JUnit case; without JUnit, one per
-   failing test in a Vitest, Jest or node:test console summary; one per other failed step. The failed
+   failing test in a Vitest, Jest or node:test console summary or in `go test` output (plain or `-json`:
+   `--- FAIL: TestX/sub`, the tests a `panic: test timed out` names, a `[build failed]` package; ids are
+   `<package> > <TestX/sub>`); one per other failed step (a lint or format step anchors on its first
+   finding: `file.go:12:5: message (linter)`, a `::error file=` annotation, "files are not formatted"). The failed
    step's output is found by its log group (GitHub titles groups `Run <script>`, not the step name) and
    quoted from the error lines before its closing `##[error]`, not from the echoed script.
 3. **Re-run** the failed jobs once if allowed (ask first otherwise), and fetch the new attempt. If the run
@@ -85,7 +90,10 @@ python scripts/classify.py --run run/ --out run/candidates.json
 4. **Owning change**: score the commits since the last green run by the files they share with each failure.
 5. **Classify** into candidates (`data/signatures.json`, the re-run, the history, data markers, gates).
 6. **Triage** each candidate: keep or override (with a specific reason; quote the log lines the override
-   rests on, and the validator re-applies the rules to them), write the next action, and draft a
+   rests on, and the validator re-applies the rules to them). When the extractor read no test for a step
+   failure but the log shows one (an unfamiliar runner's output), name it: `test_id`, `kind: test`,
+   `test_id_source: "agent"`, and quote the line that shows it failing (the validator checks the test's
+   name is in the quoted lines). Write the next action, and draft a
    defect (real) or a test-data issue (data): title, summary, steps, expected, actual, suspect commit,
    evidence (log lines, the re-run, the run URL).
 7. **Validate and render**; write the drafts as Markdown for a person to file.
@@ -101,8 +109,26 @@ See `RUBRIC.md`: the rules in order, confidence, priority (real failures: P1 on 
 branch, P2 elsewhere), and evidence completeness (logs, test results from JUnit or a console summary, re-run, a last green run,
 the repository).
 
+## Local repeat runs (optional)
+
+When no CI re-run is possible, the agent may repeat the failing test locally on the failing commit (in a
+copy, with network and devices isolated as the project needs) and record it in `<run>/local_runs.json`:
+
+```json
+{"local_runs": [{"test_id": "<the failure's test_id>", "commit": "<the failing commit>", "runs": 80, "failed": 1,
+  "command": "go test -count=80 -run '^TestX$' ./pkg/x", "environment": {"os": "linux", "go": "1.26", "isolation": "no network"},
+  "source": "agent", "recorded_at": "2026-11-12T10:00:00Z"}]}
+```
+
+A record that both passed and failed on the failing commit makes the failure `flaky`, `indicated` (never
+`confirmed`: the local machine is not the runner). A record without its command or environment is not
+evidence, and the validator says so. Hand such a flake to flaky-test-hunter.
+
 ## Output (`schemas/triage.schema.json`)
 
+`run_status` (`complete`; `partial` when a failed job's log could not be downloaded; `not_run` when the
+run concluded failure without running any job, a workflow file error or a fork pull request never
+approved: the headline then says there is nothing to triage), `run_status_reason`,
 `run` (system, id, attempt, commit, branch, last green, recorded or live), `reruns` (who authorised,
 what ran, outcomes), `failures` (job, step, test, classification, confidence, rule, signals, log excerpt,
 owning change, priority, draft, next action), `summary`, `limitations`, `files_written`.
@@ -118,6 +144,16 @@ owning change, priority, draft, next action), `summary`, `limitations`, `files_w
   above the test file) can own it; paths a runner prints relative to its package are matched in the tree.
 - **A pull request head not in the clone**: `owning_change.py` writes every owning change
   `not_identified` with the `git fetch` that would bring it in.
+- **No last green run** (a new workflow, a branch that never passed): there is no range, so every owning
+  change is `not_identified` and the history is not walked; `--max-commits N` searches the N commits up
+  to the failing one, a weaker basis to say in the triage.
+- **A run with no job** (concluded failure at startup): `run_status: not_run`, no failures, a headline
+  that says there is nothing to triage; evidence completeness gives no credit for checks over no jobs.
+- **Go**: a hung test (`panic: test timed out`) has failure type `timeout` and stays `unclassified`
+  without a re-run (a hang is not an assertion); a data race (`WARNING: DATA RACE`), a compile error, a
+  golangci-lint finding and a gofmt check are `REAL-*` signatures (deterministic: the code must change).
+  Frames under the Go toolchain or module cache are not the project's; a Go test's owning change can be a
+  commit to its package's own source files.
 - **Aggregate gate jobs**: a consequence of the failures they gate, not a failure of their own. A cause in
   another run (a release waiting on a gate run) is out of reach; say so in the next action.
 - **Toolchain drift** (a nightly "fresh project" build whose tools moved past the pinned versions):

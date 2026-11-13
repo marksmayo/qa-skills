@@ -52,14 +52,18 @@ def main() -> int:
     out = [c('# CI failure triage', 'bold'), '',
            f'{r["system"]} run {r["id"]} (attempt {r["attempt"]}) on {r["branch"]} @ `{r["commit"][:12]}`; last green run '
            f'{(r.get("last_green") or {}).get("id", "none")}. {r.get("url") or ""}'
-           + (f' (requested as {r["repo"]}; the CI names it {r["repo_api"]})' if r.get('repo_api') else ''), '', s['headline'], '',
+           + (f' (requested as {r["repo"]}; the CI names it {r["repo_api"]})' if r.get('repo_api') else ''), '', s['headline'], '']
+    if d.get('run_status') not in (None, 'complete'):
+        out += [c(f'Run status: {d["run_status"]} ({d.get("run_status_reason") or "no reason given"}).', 'bold'), '']
+    out += [
            'By classification: ' + ', '.join(f'{c(k, k)} {v}' for k, v in s['by_classification'].items() if v)
            + f'. Drafts: {s["defects_drafted"]}. Re-runs: {s["reruns"]}. Evidence completeness {s["evidence_completeness"]}.', '',
            '| ID | Job | Failure | Class | Confidence | Owning change | Next action |', '|---|---|---|---|---|---|---|']
     for f in d['failures']:
         oc = f.get('owning_change') or {}
         own = f'`{oc["commit"][:8]}` {oc["subject"]}' if oc.get('status') == 'identified' else 'not identified'
-        out.append(f'| {f["id"]} | {f["job"]} | {f.get("test_id") or f.get("step")} | {c(f["classification"], f["classification"])} | {f["confidence"]} | {own} | {f["next_action"]} |')
+        named = f'{f["test_id"]} (named by the agent from the log)' if f.get('test_id_source') == 'agent' else f.get('test_id') or f.get('step')
+        out.append(f'| {f["id"]} | {f["job"]} | {named} | {c(f["classification"], f["classification"])} | {f["confidence"]} | {own} | {f["next_action"]} |')
     if not a.brief:
         for f in d['failures']:
             out += ['', f'### {f["id"]} {c(f["classification"], f["classification"])}: {f.get("test_id") or f.get("step")}', '',
@@ -67,6 +71,8 @@ def main() -> int:
                     f' Re-run: {f["signals"]["rerun"]}. Signatures: {", ".join(x["id"] for x in f["signals"]["signatures"]) or "none"}.'
                     + (f' Dates before the run date: {", ".join(f["signals"]["date_markers"])}.' if f['signals'].get('date_markers') else '')
                     + (f' A consequence of {", ".join(f["signals"]["consequence_of"])}.' if f['signals'].get('consequence_of') else '')
+                    + (f' Local repeat runs on this commit: {f["signals"]["local_runs"]["failed"]} of {f["signals"]["local_runs"]["runs"]} failed.'
+                       if f['signals'].get('local_runs') else '')
                     + (f' Priority {f["priority"]}.' if f.get('priority') else ''), '']
             if f['log_excerpt']['lines']:
                 out += [f'`{f["log_excerpt"]["path"]}`:', '```'] + [f'{l["n"]:>4}  {l["text"]}' for l in f['log_excerpt']['lines']] + ['```']

@@ -592,6 +592,9 @@ def main() -> int:
           f'{len(run["history"])} history run(s) of the same workflow; last green {run["last_green"]} -> {a.out / "run.json"}')
     if run.get('repo_api'):
         print(f'note: requested {run["repo"]}, the API names it {run["repo_api"]} (renamed or transferred)')
+    if run['attempts'] and not [j for j in run['attempts'][0]['jobs'] if j.get('conclusion') not in ('skipped', None)]:
+        print(f'WARNING: the run concluded {r["conclusion"]} but no job ran (a workflow file error, a startup failure, or a fork '
+              'pull request whose run was never approved): there is nothing to triage; the triage is run_status not_run', file=sys.stderr)
     if run['fetch_problems']:
         print(f'WARNING: {len(run["fetch_problems"])} download(s) failed; the triage must say so:', file=sys.stderr)
         for p in run['fetch_problems']:

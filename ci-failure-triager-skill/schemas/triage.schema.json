@@ -1,52 +1,428 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/qa-skills/ci-failure-triager/triage.schema.json",
-  "title": "CI failure triage",
-  "type": "object",
-  "required": ["schema_version", "skill", "generated_at", "run", "reruns", "failures", "summary", "limitations", "files_written"],
-  "properties": {
-    "schema_version": {"const": "1.1.0"},
-    "skill": {"type": "object", "required": ["name", "version"], "properties": {"name": {"const": "ci-failure-triager"}}},
-    "generated_at": {"type": "string"},
-    "run": {"type": "object", "required": ["system", "id", "attempt", "commit", "branch", "started_at", "last_green", "source"],
-      "properties": {"system": {"enum": ["github", "azure"]}, "source": {"enum": ["live", "recorded"]},
-                     "repo": {"type": "string", "description": "the repository as requested"},
-                     "repo_api": {"type": "string", "description": "the name the CI API gives it, when different (renamed or transferred)"},
-                     "last_green": {"type": ["object", "null"], "required": ["id", "commit"],
-                       "description": "the newest successful run of the same workflow on the branch before this run"},
-                     "fetch_problems": {"type": "array", "items": {"type": "object", "required": ["kind", "status"],
-                       "properties": {"kind": {"enum": ["log", "artifact"]}, "status": {"enum": ["unavailable", "fetch_failed", "skipped", "partial"]}}}}}},
-    "reruns": {"type": "array", "items": {"type": "object",
-      "required": ["run_id", "from_attempt", "new_attempt", "jobs_rerun", "jobs_failed_before", "authorised_by", "mode", "at", "outcomes"],
-      "properties": {"mode": {"enum": ["live", "recorded", "observed"]}, "authorised_by": {"type": ["string", "null"]},
-                     "triggered_by": {"type": "string", "description": "observed: who started the re-run (the run's triggering actor)"}},
-      "if": {"properties": {"mode": {"const": "observed"}}},
-      "then": {"required": ["triggered_by"], "properties": {"authorised_by": {"type": "null"}}},
-      "else": {"properties": {"authorised_by": {"type": "string", "minLength": 3}}}}},
-    "failures": {"type": "array", "items": {"type": "object",
-      "required": ["id", "job", "step", "kind", "test_id", "message", "classification", "confidence", "rule", "signals", "log_excerpt", "owning_change", "priority", "next_action"],
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://github.com/qa-skills/ci-failure-triager/triage.schema.json",
+ "title": "CI failure triage",
+ "type": "object",
+ "required": [
+  "schema_version",
+  "skill",
+  "generated_at",
+  "run",
+  "run_status",
+  "reruns",
+  "failures",
+  "summary",
+  "limitations",
+  "files_written"
+ ],
+ "properties": {
+  "schema_version": {
+   "const": "1.2.0"
+  },
+  "skill": {
+   "type": "object",
+   "required": [
+    "name",
+    "version"
+   ],
+   "properties": {
+    "name": {
+     "const": "ci-failure-triager"
+    }
+   }
+  },
+  "generated_at": {
+   "type": "string"
+  },
+  "run": {
+   "type": "object",
+   "required": [
+    "system",
+    "id",
+    "attempt",
+    "commit",
+    "branch",
+    "started_at",
+    "last_green",
+    "source"
+   ],
+   "properties": {
+    "system": {
+     "enum": [
+      "github",
+      "azure"
+     ]
+    },
+    "source": {
+     "enum": [
+      "live",
+      "recorded"
+     ]
+    },
+    "repo": {
+     "type": "string",
+     "description": "the repository as requested"
+    },
+    "repo_api": {
+     "type": "string",
+     "description": "the name the CI API gives it, when different (renamed or transferred)"
+    },
+    "last_green": {
+     "type": [
+      "object",
+      "null"
+     ],
+     "required": [
+      "id",
+      "commit"
+     ],
+     "description": "the newest successful run of the same workflow on the branch before this run"
+    },
+    "fetch_problems": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "required": [
+       "kind",
+       "status"
+      ],
       "properties": {
-        "kind": {"enum": ["test", "step"]},
-        "source": {"enum": ["junit", "console", "log"]},
-        "classification": {"enum": ["real", "flaky", "environment", "data", "consequence", "unclassified"]},
-        "confidence": {"enum": ["confirmed", "indicated", "low"]},
-        "override_reason": {"type": "string", "minLength": 20},
-        "priority": {"enum": ["P0", "P1", "P2", null]},
-        "signals": {"type": "object", "required": ["signatures", "date_markers", "rerun", "step_kind"],
-          "properties": {"rerun": {"enum": ["passed", "failed", "missing", "not_rerun", "job_not_rerun", "skipped"]},
-                         "step_kind": {"enum": ["test", "setup", "other"]},
-                         "consequence_of": {"type": "array", "items": {"type": "string"}},
-                         "log_status": {"enum": ["fetched", "unavailable", "fetch_failed", "not_requested", "partial", "missing"]}}},
-        "log_excerpt": {"type": "object", "required": ["path", "lines"],
-          "properties": {"lines": {"type": "array", "items": {"type": "object", "required": ["n", "text"]}}}},
-        "owning_change": {"type": "object", "required": ["status"],
-          "properties": {"status": {"enum": ["identified", "not_identified"]}, "commit": {"type": "string"},
-                         "files_shared": {"type": "array", "items": {"type": "object", "required": ["file", "why"]}}}},
-        "draft_defect": {"type": "object", "required": ["kind", "title", "body"],
-          "properties": {"kind": {"enum": ["defect", "test_data_issue"]},
-                         "body": {"type": "object", "required": ["summary", "steps", "expected", "actual", "evidence"]}}}}}},
-    "summary": {"type": "object", "required": ["headline", "by_classification", "defects_drafted", "reruns", "evidence_completeness"]},
-    "limitations": {"type": "array", "items": {"type": "string"}},
-    "files_written": {"type": "array", "items": {"type": "string"}}
+       "kind": {
+        "enum": [
+         "log",
+         "artifact"
+        ]
+       },
+       "status": {
+        "enum": [
+         "unavailable",
+         "fetch_failed",
+         "skipped",
+         "partial"
+        ]
+       }
+      }
+     }
+    }
+   }
+  },
+  "run_status": {
+   "enum": [
+    "complete",
+    "partial",
+    "not_run"
+   ],
+   "description": "not_run: the run concluded without running any job (a workflow file error, a startup failure, a fork pull request never approved), so there is nothing to triage and the headline says so; partial: the log of a failed job could not be downloaded; recomputed by the validator"
+  },
+  "run_status_reason": {
+   "type": "string",
+   "minLength": 10,
+   "description": "required unless run_status is complete"
+  },
+  "reruns": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "required": [
+     "run_id",
+     "from_attempt",
+     "new_attempt",
+     "jobs_rerun",
+     "jobs_failed_before",
+     "authorised_by",
+     "mode",
+     "at",
+     "outcomes"
+    ],
+    "properties": {
+     "mode": {
+      "enum": [
+       "live",
+       "recorded",
+       "observed"
+      ]
+     },
+     "authorised_by": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "triggered_by": {
+      "type": "string",
+      "description": "observed: who started the re-run (the run's triggering actor)"
+     }
+    },
+    "if": {
+     "properties": {
+      "mode": {
+       "const": "observed"
+      }
+     }
+    },
+    "then": {
+     "required": [
+      "triggered_by"
+     ],
+     "properties": {
+      "authorised_by": {
+       "type": "null"
+      }
+     }
+    },
+    "else": {
+     "properties": {
+      "authorised_by": {
+       "type": "string",
+       "minLength": 3
+      }
+     }
+    }
+   }
+  },
+  "failures": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "required": [
+     "id",
+     "job",
+     "step",
+     "kind",
+     "test_id",
+     "message",
+     "classification",
+     "confidence",
+     "rule",
+     "signals",
+     "log_excerpt",
+     "owning_change",
+     "priority",
+     "next_action"
+    ],
+    "properties": {
+     "kind": {
+      "enum": [
+       "test",
+       "step"
+      ]
+     },
+     "source": {
+      "enum": [
+       "junit",
+       "console",
+       "log"
+      ]
+     },
+     "classification": {
+      "enum": [
+       "real",
+       "flaky",
+       "environment",
+       "data",
+       "consequence",
+       "unclassified"
+      ]
+     },
+     "confidence": {
+      "enum": [
+       "confirmed",
+       "indicated",
+       "low"
+      ]
+     },
+     "override_reason": {
+      "type": "string",
+      "minLength": 20
+     },
+     "priority": {
+      "enum": [
+       "P0",
+       "P1",
+       "P2",
+       null
+      ]
+     },
+     "signals": {
+      "type": "object",
+      "required": [
+       "signatures",
+       "date_markers",
+       "rerun",
+       "step_kind"
+      ],
+      "properties": {
+       "rerun": {
+        "enum": [
+         "passed",
+         "failed",
+         "missing",
+         "not_rerun",
+         "job_not_rerun",
+         "skipped"
+        ]
+       },
+       "step_kind": {
+        "enum": [
+         "test",
+         "setup",
+         "other"
+        ]
+       },
+       "consequence_of": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        }
+       },
+       "log_status": {
+        "enum": [
+         "fetched",
+         "unavailable",
+         "fetch_failed",
+         "not_requested",
+         "partial",
+         "missing"
+        ]
+       },
+       "local_runs": {
+        "type": [
+         "object",
+         "null"
+        ],
+        "description": "local repeat runs of this test on the failing commit (local_runs.json, recorded by the agent): records, runs, failed"
+       },
+       "local_flaky": {
+        "type": "boolean",
+        "description": "the local repeat runs on the failing commit both passed and failed"
+       }
+      }
+     },
+     "log_excerpt": {
+      "type": "object",
+      "required": [
+       "path",
+       "lines"
+      ],
+      "properties": {
+       "lines": {
+        "type": "array",
+        "items": {
+         "type": "object",
+         "required": [
+          "n",
+          "text"
+         ]
+        }
+       }
+      }
+     },
+     "owning_change": {
+      "type": "object",
+      "required": [
+       "status"
+      ],
+      "properties": {
+       "status": {
+        "enum": [
+         "identified",
+         "not_identified"
+        ]
+       },
+       "commit": {
+        "type": "string"
+       },
+       "files_shared": {
+        "type": "array",
+        "items": {
+         "type": "object",
+         "required": [
+          "file",
+          "why"
+         ]
+        }
+       }
+      }
+     },
+     "draft_defect": {
+      "type": "object",
+      "required": [
+       "kind",
+       "title",
+       "body"
+      ],
+      "properties": {
+       "kind": {
+        "enum": [
+         "defect",
+         "test_data_issue"
+        ]
+       },
+       "body": {
+        "type": "object",
+        "required": [
+         "summary",
+         "steps",
+         "expected",
+         "actual",
+         "evidence"
+        ]
+       }
+      }
+     },
+     "test_id_source": {
+      "enum": [
+       "extractor",
+       "agent"
+      ],
+      "description": "agent: the extractor read no test for this step failure and the agent names it from the log lines it quotes (the validator checks they show it); kind is then test"
+     }
+    }
+   }
+  },
+  "summary": {
+   "type": "object",
+   "required": [
+    "headline",
+    "by_classification",
+    "defects_drafted",
+    "reruns",
+    "evidence_completeness"
+   ]
+  },
+  "limitations": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  },
+  "files_written": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
   }
+ },
+ "allOf": [
+  {
+   "if": {
+    "properties": {
+     "run_status": {
+      "enum": [
+       "partial",
+       "not_run"
+      ]
+     }
+    },
+    "required": [
+     "run_status"
+    ]
+   },
+   "then": {
+    "required": [
+     "run_status_reason"
+    ]
+   }
+  }
+ ]
 }

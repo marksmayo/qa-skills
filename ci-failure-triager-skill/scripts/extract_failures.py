@@ -6,8 +6,14 @@
 
 A failed job with failing JUnit cases gives one failure per case (kind `test`, source `junit`). A failed
 step whose output holds a test runner's failure summary (Vitest, Jest, node:test) gives one failure per
-failing test (kind `test`, source `console`). Any other failed step gives one failure for the step (kind
-`step`).
+failing test (kind `test`, source `console`). So does `go test` output, plain or `-json`: a failing test or
+subtest (`--- FAIL: TestX/sub`, its parent dropped), the package from its `FAIL\t<pkg>` line, the tests a
+`panic: test timed out after` names as running (failure type `timeout`), and a `[build failed]` or
+`[setup failed]` package (its compile error as the message); test ids are `<package> > <TestX/sub>`. Any
+other failed step gives one failure for the step (kind `step`); in a lint or format step its excerpt and
+message anchor on the first finding (`file.go:12:5: message (linter)`, a `::error file=` annotation, a
+"files are not formatted" verdict). Frames from the Go toolchain and module cache are dropped and the
+runner's checkout prefix stripped, so the project's own frames are the ones kept.
 
 The failed step's output is found in the log by its group: GitHub titles a step's group `Run <first line
 of the script>` or `Run <action>@<ref>`, never by the step's `name:`, so a group is matched by its title
@@ -618,7 +624,8 @@ def self_test() -> int:
         print('extract_failures self-test: FAILED'); [print('  -', f) for f in fails]
         return 1
     print('extract_failures self-test: ok (step groups by title or error order, echoed script skipped, ANSI stripped, '
-          'Vitest/Jest/node:test console failures, aggregate gate, failed log fetch)')
+          'Vitest/Jest/node:test console failures, go test plain and -json with timeouts, build failures and races, '
+          'golangci-lint and gofmt steps, project frames over Go toolchain frames, aggregate gate, failed log fetch)')
     return 0
 
 

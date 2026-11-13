@@ -13,6 +13,8 @@ aggregate gate failing because other jobs failed, and the owning change from cha
   environment   an environment signature                         confirmed if the re-run passed, else indicated
   flaky         failed, then passed on the same commit: the re-run, or the same job in    confirmed
                 another run of the same workflow on that commit
+  flaky         failed and passed in local repeat runs of the test on the failing commit  indicated
+                (local_runs.json, recorded by the agent with the command and environment)
   data          a data signature or a date before the run date   indicated
   real          a real signature (toolchain below a minimum, compile error)                indicated
   real          an assertion or error in a test that failed again on re-run  confirmed with an owning change, else indicated;
@@ -54,6 +56,32 @@ def _console_rerun(f: dict, job: dict, run_dir: Path) -> str:
     return 'passed' if st and st['conclusion'] == 'success' else 'missing'
 
 
+def local_run_problem(r: dict) -> str | None:
+    """Why a local repeat-run record in local_runs.json is not evidence, or None when it is: it must name the test and
+    the commit, give the number of runs and failures, the command and the environment it ran in, and be source agent."""
+    if not isinstance(r, dict):
+        return 'not an object'
+    if not r.get('test_id') or not r.get('commit'):
+        return 'needs test_id and commit'
+    if not isinstance(r.get('runs'), int) or not isinstance(r.get('failed'), int) or r['runs'] < 1 or not 0 <= r['failed'] <= r['runs']:
+        return 'needs runs (at least 1) and failed (0 to runs)'
+    if len(str(r.get('command') or '').strip()) < 3:
+        return 'needs the command that ran the test'
+    if not isinstance(r.get('environment'), dict) or not r['environment']:
+        return 'needs the environment it ran in (os, toolchain, what was isolated)'
+    if r.get('source') != 'agent':
+        return 'needs source "agent"'
+    return None
+
+
+def local_runs(run_dir: Path) -> list[dict]:
+    p = run_dir / 'local_runs.json'
+    if not p.exists():
+        return []
+    data = json.loads(p.read_text(encoding='utf-8'))
+    return data.get('local_runs', []) if isinstance(data, dict) else []
+
+
 def signals(f: dict, run: dict, run_dir: Path, quoted: list[dict] | None = None) -> dict:
     """The evidence for one failure. `quoted` replaces the extracted log lines (the validator passes the
     lines an agent quoted, after checking they equal the log)."""
@@ -91,7 +119,12 @@ def signals(f: dict, run: dict, run_dir: Path, quoted: list[dict] | None = None)
         jc = None if h.get('jobs') is None else next((j['conclusion'] for j in h['jobs'] if j['name'] == f['job']), 'absent')
         hist.append({'id': h['id'], 'conclusion': h['conclusion'], 'event': h.get('event'), 'job': jc})
     kind = f.get('step_kind') or ('test' if f['kind'] == 'test' else 'setup')
-    return {'signatures': hits, 'date_markers': markers, 'run_date': run_date, 'rerun': rerun, 'rerun_attempt': last['n'] if last['n'] > 1 else None,
+    # local repeat runs of this test on the failing commit (valid records only)
+    mine = [r for r in local_runs(run_dir) if not local_run_problem(r) and f.get('test_id') and r['test_id'] == f['test_id']
+            and r['commit'] == run['run']['commit']]
+    local = {'records': len(mine), 'runs': sum(r['runs'] for r in mine), 'failed': sum(r['failed'] for r in mine)} if mine else None
+    return {'local_runs': local, 'local_flaky': bool(local and 0 < local['failed'] < local['runs']),
+            'signatures': hits, 'date_markers': markers, 'run_date': run_date, 'rerun': rerun, 'rerun_attempt': last['n'] if last['n'] > 1 else None,
             'history_same_commit': hist, 'history_passed_same_commit': any(x['job'] == 'success' for x in hist),
             'step_kind': kind, 'failure_type': f.get('failure_type'), 'log_status': f.get('log_status', 'fetched'),
             'consequence_of': f.get('consequence_of') or []}
@@ -107,6 +140,9 @@ def decide(sg: dict, owner: dict | None) -> tuple[str, str, str]:
         return 'environment', 'confirmed' if sg['rerun'] == 'passed' else 'indicated', f'environment signature {env[0]["id"]} ({env[0]["names"]})'
     if sg['rerun'] == 'passed' or sg['history_passed_same_commit']:
         return 'flaky', 'confirmed', 'failed and passed on the same commit' + (' (re-run)' if sg['rerun'] == 'passed' else ' (the same job in another run of the workflow)')
+    if sg.get('local_flaky'):
+        lr = sg['local_runs']
+        return 'flaky', 'indicated', f'failed and passed on the same commit in local repeat runs ({lr["failed"]} of {lr["runs"]} failed; local_runs.json)'
     if data or sg['date_markers']:
         why = f'data signature {data[0]["id"]} ({data[0]["names"]})' if data else ''
         if sg['date_markers']:

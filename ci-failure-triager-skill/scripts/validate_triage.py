@@ -16,7 +16,10 @@ none; every log excerpt equals the log at those lines (ANSI codes and timestamps
 holds a token-like value; a failed log download is named in the limitations; a re-run made by this
 triage has authorised_by and re-ran only failed jobs, and one made by someone else is recorded as
 `observed` with who started it; priorities and the summary are recomputed; no text calls the build green,
-stable or fine.
+stable or fine. run_status is not_run when no job ran (the headline then says there is nothing to triage) and
+partial when a log could not be downloaded; a check over nothing scores 0 in the evidence completeness. An
+agent may name the test of a step failure (`test_id_source: "agent"`) only when the log lines it quotes show
+that test. Local repeat runs (local_runs.json) must each give the command, the environment and the counts.
 """
 from __future__ import annotations
 import argparse, json, re, sys
@@ -25,9 +28,9 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from extract_failures import SECRET, TEST_STEP, extract, redact, strip  # noqa: E402
-from classify import decide, signals  # noqa: E402
+from classify import decide, local_run_problem, local_runs, signals  # noqa: E402
 
-SCHEMA_VERSION = '1.1.0'
+SCHEMA_VERSION = '1.2.0'
 CONF = {'confirmed': 3, 'indicated': 2, 'low': 1}
 CLASSES = ('real', 'flaky', 'environment', 'data', 'consequence', 'unclassified')
 BANNED = re.compile(r'(?i)\b(build is (fine|green|healthy|ok)|all (green|good|clear)|stable build|nothing (is )?wrong|safe to merge|(?<!not )green build|ready to merge)\b')
@@ -51,10 +54,25 @@ def completeness(run: dict, run_dir: Path, changes: dict | None, failures: list[
     with_tests = {f['job_id'] for f in failures if f['kind'] == 'test'}
     test_jobs = [j for j in failed if any(TEST_STEP.search(s['name']) for s in j['steps'])
                  or any(f['job_id'] == j['id'] and f.get('step_kind') == 'test' for f in failures)]
-    checks = [all(j.get('log') and (run_dir / j['log']).exists() for j in failed),
-              all(j.get('junit') or j['id'] in with_tests for j in test_jobs),
+    # a check over nothing earns nothing: a run with no failed job has no log or test result to read
+    checks = [bool(failed) and all(j.get('log') and (run_dir / j['log']).exists() for j in failed),
+              bool(failed) and all(j.get('junit') or j['id'] in with_tests for j in test_jobs),
               len(run['attempts']) > 1, bool(run.get('last_green')), bool(changes and changes.get('commits') is not None)]
     return round(sum(checks) / len(checks), 2)
+
+
+def expected_run_status(run: dict) -> tuple[str, str | None]:
+    """not_run when the first attempt ran no job (a run that concluded failure at startup: a workflow file error, a
+    fork pull request never approved); partial when a failed job's log could not be downloaded; else complete."""
+    jobs = run['attempts'][0]['jobs'] if run.get('attempts') else []
+    if not [j for j in jobs if j.get('conclusion') not in ('skipped', None)]:
+        return 'not_run', f'the run concluded {run["run"].get("conclusion") or "failure"} but no job ran'
+    if any(p.get('kind') == 'log' for p in run.get('fetch_problems', [])):
+        return 'partial', 'the log of a failed job could not be downloaded'
+    return 'complete', None
+
+
+NOTHING = re.compile(r'(?i)\b(nothing to triage|no jobs? (ran|were run|was run|started))\b')
 
 
 def summarise(d: dict, run: dict, run_dir: Path, changes: dict | None, failures: list[dict] | None = None) -> dict:
@@ -114,6 +132,21 @@ def main() -> int:
     if (d['run'].get('last_green') or {}).get('id') != (run.get('last_green') or {}).get('id'):
         e('run.last_green differs from run.json')
 
+    # run status: a run with no job is its own outcome, not an empty triage that looks complete
+    want_status, why_status = expected_run_status(run)
+    if d.get('run_status') != want_status:
+        e(f'run_status {d.get("run_status")!r} should be {want_status!r}' + (f' ({why_status})' if why_status else ''))
+    if want_status != 'complete' and len(d.get('run_status_reason') or '') < 10:
+        e(f'run_status {want_status} needs a run_status_reason')
+    if want_status == 'not_run' and not NOTHING.search(d['summary'].get('headline', '')):
+        e('no job ran: the headline must say there is nothing to triage (no job ran)')
+
+    # local repeat runs recorded by the agent
+    for k, r in enumerate(local_runs(a.run), 1):
+        why = local_run_problem(r)
+        if why:
+            e(f'local_runs.json record {k}: {why}; it is not counted as evidence')
+
     check_reruns(run, reruns, e)
     if d['reruns'] != reruns:
         e('reruns differ from reruns.json')
@@ -137,8 +170,6 @@ def main() -> int:
         f = got.get(w['id'])
         if not f:
             e(f'{w["id"]} ({w["test_id"] or w["step"]}) not triaged'); continue
-        if (f.get('test_id'), f.get('job'), f.get('kind')) != (w['test_id'], w['job'], w['kind']):
-            e(f'{w["id"]}: test, job or kind differ from the run')
         sg = signals(w, run, a.run)
         owner = (changes or {}).get('per_failure', {}).get(w['id'])
         cls, conf, rule = decide(sg, owner)
@@ -161,6 +192,14 @@ def main() -> int:
                     quoted_ok = lx.get('path') == w['log_excerpt']['path']
         elif w['log_excerpt']['lines']:
             e(f'{w["id"]}: no log excerpt')
+        # the test: the extractor's, or one the agent names for a step failure from the log lines it quotes
+        named = f.get('test_id_source') == 'agent' and w['test_id'] is None and f.get('test_id') and f.get('kind') == 'test'
+        if named:
+            leaf = str(f['test_id']).split(' > ')[-1]
+            if f.get('job') != w['job'] or not quoted_ok or not any(leaf in l['text'] for l in lx.get('lines') or []):
+                e(f'{w["id"]}: test {f["test_id"]!r} named by the agent is not in the quoted log lines (quote the line that shows it failing)')
+        elif (f.get('test_id'), f.get('job'), f.get('kind')) != (w['test_id'], w['job'], w['kind']):
+            e(f'{w["id"]}: test, job or kind differ from the run')
         sgq = signals(w, run, a.run, quoted=lx['lines']) if quoted_ok else sg
         clsq, confq, _ = decide(sgq, owner)
         if fc != cls and len(f.get('override_reason') or '') < 20:
@@ -172,8 +211,9 @@ def main() -> int:
         datasig = [h for h in sg['signatures'] + sgq['signatures'] if h['class'] == 'data']
         if fc == 'consequence' and not sg['consequence_of']:
             e(f'{w["id"]}: consequence needs an aggregate gate job with other failures in the run')
-        if fc == 'flaky' and not (sg['rerun'] == 'passed' or sg['history_passed_same_commit']):
-            e(f'{w["id"]}: flaky needs a pass on the same commit (re-run {sg["rerun"]}, and no run of this workflow on this commit where job {w["job"]} passed)')
+        if fc == 'flaky' and not (sg['rerun'] == 'passed' or sg['history_passed_same_commit'] or sg.get('local_flaky')):
+            e(f'{w["id"]}: flaky needs a pass on the same commit (re-run {sg["rerun"]}, no run of this workflow on this commit where job {w["job"]} passed, '
+              'and no local repeat runs on this commit that both passed and failed)')
         if fc == 'real' and sg['rerun'] == 'passed':
             e(f'{w["id"]}: real, but it passed on re-run')
         if fc == 'real' and f['confidence'] == 'confirmed' and (sg['rerun'] != 'failed' or not owner or owner.get('status') != 'identified'):

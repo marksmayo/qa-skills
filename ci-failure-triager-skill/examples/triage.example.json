@@ -1,9 +1,10 @@
 {
- "schema_version": "1.1.0",
+ "schema_version": "1.2.0",
  "skill": {
   "name": "ci-failure-triager",
-  "version": "1.1.0"
+  "version": "1.2.0"
  },
+ "run_status": "complete",
  "generated_at": "2026-11-12T04:05:00Z",
  "run": {
   "system": "github",

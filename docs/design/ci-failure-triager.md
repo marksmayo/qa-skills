@@ -1,6 +1,6 @@
 # Design: `ci-failure-triager-skill`
 
-Status: Built (v1.1.0); see "As built" at the end. Build order: 26.
+Status: Built (v1.2.0); see "As built" at the end. Build order: 26.
 
 ## Mission
 
@@ -240,3 +240,47 @@ could not download a single log and got 0 of 6 excerpts right. Fixed:
 - **Testing**: `scripts/self_test.py` runs the fetch and extraction self-tests and a synthetic run through
   the whole pipeline with 10 seeded violations. The example's recordings gained workflow and definition
   ids (`record_example_run.py` writes them); its classifications are unchanged.
+
+## As built (v1.2.0): Go support, found on a public Go CLI
+
+Run against four failed GitHub Actions runs of a public Go project, the 1.1.0 skill read every Go failure
+as one step failure with no test, often quoting the passing `ok` lines or a passing test's fixture output,
+and the validator stopped the agent from naming the test. Fixed:
+
+- **Go test output** (`extract_failures.go_tests`): `--- FAIL: TestX/sub` (a parent that fails only through
+  its subtests is dropped), the package from the `FAIL\t<pkg>` line that closes its output, the tests a
+  `panic: test timed out after` names as running (failure type `timeout`), `[build failed]` and
+  `[setup failed]` packages with the compile error as the message, and `go test -json` events. Test ids are
+  `<package> > <TestX/sub>`; the test file is `<package>/<file>_test.go`, which `owning_change.py` matches
+  in the tree by dropping the module path. A Go step with a test summary is a `test` step.
+- **Lint and format steps** anchor their excerpt and message on the first finding
+  (`file.go:12:5: message (linter)`, a `::error file=` annotation, a "files are not formatted" verdict).
+- **Frames**: frames under the Go toolchain (hosted tool cache, /usr/local/go, a downloaded toolchain), the
+  module cache and vendored trees are dropped, and the runner's checkout prefix is stripped, so the
+  project's frames come first rather than `testing.go` and `sleep.go`.
+- **Signatures**: `REAL-RACE` (the race detector), `REAL-LINT` (golangci-lint findings by linter name, text
+  or annotation), `REAL-FORMAT` (gofmt and similar checks), Go compile errors in `REAL-COMPILE`, `no such
+  host` in `ENV-DNS` and module proxy failures in `ENV-REGISTRY`. These are deterministic by construction,
+  so a lint or format failure is `real, indicated` by rule rather than by override. A hung test is not an
+  assertion: without other evidence it stays `unclassified`.
+- **Agent-named tests**: for a step failure the extractor read no test for, the agent may set `test_id`,
+  `kind: test` and `test_id_source: "agent"`; the validator accepts it only when the quoted log lines,
+  checked against the log, contain the test's name.
+- **Runs with no job** (a fork pull request never approved, a workflow file error): `run_status: not_run`
+  (new, with `partial` for a missing log and `complete`), a headline that says there is nothing to triage,
+  and evidence completeness that gives no credit for logs or test results over no jobs (it was 0.6).
+  `fetch_run.py` warns. Schema 1.2.0.
+- **Owning change**: returns at once with no failures; with no last green run it no longer walks the whole
+  history (1,036 commits, three and a half minutes): every owning change is `not_identified` unless
+  `--max-commits N` bounds the search (`range.bounded`). Commits are read with one `git log` instead of two
+  `git show` per commit. A Go test's own package source files (same directory) count as shared files.
+- **Local repeat runs** (`<run>/local_runs.json`, written by the agent with command and environment): a
+  test that both passed and failed locally on the failing commit is `flaky, indicated`; records without
+  their command or environment are named by the validator and not counted.
+- **Not built**: gotestsum JUnit is read by the shared JUnit parser as before; a test that fails only on
+  one platform because an executable is missing is still decided by override (it can be environment or a
+  missing platform guard); `go test -json` reports stored as artifacts are not converted (the shared
+  `parse_results.go_json_to_junit` could do it).
+- **Testing**: `self_test.py` adds Go fixtures (eight log shapes), Go signature checks, a run with no job,
+  agent-named tests, local runs and owning-change checks in a scratch git repository, each written to fail
+  first. The example's classifications are unchanged; it gained `run_status` and schema 1.2.0.

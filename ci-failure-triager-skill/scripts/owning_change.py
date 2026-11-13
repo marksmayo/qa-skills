@@ -16,6 +16,12 @@ range (a flaky test, an outage) or lies outside the repository.
 A failing commit or last green commit that is not in the checkout (a pull request head, a shallow clone)
 is not an error to hide: changes.json is still written, with `commits: null`, every failure
 `not_identified`, and the git command that would fetch it.
+
+With no failures it returns at once (`commits: null`, nothing to own). With no last green run there is no
+range: every failure is `not_identified` and the history is not walked, unless `--max-commits N` asks for
+the N commits up to the failing one (recorded as `range.bounded`; a weaker basis, since the change may be
+older). A Go test named by its import path (`example.test/mod/pkg/x/x_test.go`) is matched in the tree by
+dropping the module path.
 """
 from __future__ import annotations
 import argparse, ast, json, posixpath, re, subprocess, sys
@@ -82,7 +88,19 @@ def in_tree(path: str | None, tree: set[str]) -> str | None:
     if p in tree:
         return p
     ends = [t for t in tree if t.endswith('/' + p)]
-    return ends[0] if len(ends) == 1 else None
+    if len(ends) == 1:
+        return ends[0]
+    # a Go test named by its import path (example.test/mod/pkg/x/x_test.go): drop leading components (the module
+    # path) until the rest names one file in the tree, keeping at least a directory and the file name
+    parts = p.split('/')
+    for k in range(1, len(parts) - 1):
+        rest = '/'.join(parts[k:])
+        hits = [t for t in tree if t == rest or t.endswith('/' + rest)]
+        if len(hits) == 1:
+            return hits[0]
+        if hits:
+            return None
+    return None
 
 
 def package_of(path: str, tree: set[str]) -> str | None:
@@ -101,11 +119,29 @@ def main() -> int:
     ap.add_argument('--run', type=Path, required=True)
     ap.add_argument('--repo', type=Path, required=True)
     ap.add_argument('--out', type=Path, required=True)
+    ap.add_argument('--max-commits', type=int, help='with no last green run, search only this many commits up to the failing one')
     a = ap.parse_args()
     run = json.loads((a.run / 'run.json').read_text(encoding='utf-8'))
     fails = json.loads((a.run / 'failures.json').read_text(encoding='utf-8'))['failures']
     head, green = run['run']['commit'], (run.get('last_green') or {}).get('commit')
     rng = f'{green}..{head}' if green else head
+
+    def write(out: dict, msg: str) -> int:
+        a.out.write_text(json.dumps(out, indent=1, ensure_ascii=False) + '\n', encoding='utf-8', newline='\n')
+        print(msg, file=sys.stderr)
+        return 0
+    if not fails:
+        return write({'range': {'from': green, 'to': head, 'spec': rng}, 'commits': None, 'problem': 'no failures in the run: no failure to own',
+                      'per_failure': {}}, f'no failures: nothing to own; wrote {a.out}')
+    bounded = None
+    if not green:
+        if not a.max_commits:
+            basis = ('no last green run of this workflow on the branch, so there is no range of changes to search; '
+                     'owning_change.py --max-commits N searches the N commits up to the failing one (a weaker basis)')
+            return write({'range': {'from': None, 'to': head, 'spec': None}, 'commits': None, 'problem': basis,
+                          'per_failure': {f['id']: {'status': 'not_identified', 'basis': basis, 'files_considered': []} for f in fails}},
+                         f'WARNING: {basis}; wrote {a.out} with every owning change not_identified')
+        bounded = a.max_commits
     absent = [(what, sha) for what, sha in (('failing commit', head), ('last green commit', green)) if sha and not has_commit(a.repo, sha)]
     if absent:
         how = []
@@ -121,10 +157,11 @@ def main() -> int:
         print(f'WARNING: {basis}; wrote {a.out} with every owning change not_identified', file=sys.stderr)
         return 0
     commits = []
-    for sha in git(a.repo, 'rev-list', '--reverse', rng).split():
-        subject = git(a.repo, 'show', '-s', '--format=%s', sha).strip()
-        files = [f for f in git(a.repo, 'show', '--format=', '--name-only', sha).split('\n') if f]
-        commits.append({'commit': sha, 'subject': subject, 'files': files})
+    limit = [f'--max-count={bounded}'] if bounded else []
+    for chunk in git(a.repo, 'log', '--reverse', *limit, '--format=%x1e%H%x1f%s', '--name-only', rng).split('\x1e')[1:]:
+        head_line, _, names = chunk.partition('\n')
+        sha, _, subject = head_line.partition('\x1f')
+        commits.append({'commit': sha.strip(), 'subject': subject.strip(), 'files': [x for x in names.split('\n') if x.strip()]})
     tree = set(git(a.repo, 'ls-tree', '-r', '--name-only', head).split('\n')) - {''}
     per = {}
     for f in fails:
@@ -137,7 +174,11 @@ def main() -> int:
         if tf:
             touch.setdefault(tf, (2, 'test file'))
             src = git(a.repo, 'show', f'{head}:{tf}')
-            for m in (imports(src, tree) if tf.endswith('.py') else js_imports(src, tf, tree)):
+            if tf.endswith('_test.go'):      # a Go test exercises its own package: the other .go files in its directory
+                d = posixpath.dirname(tf)
+                for m in sorted(t for t in tree if posixpath.dirname(t) == d and t.endswith('.go') and not t.endswith('_test.go')):
+                    touch.setdefault(m, (2, 'source file of the test\'s package'))
+            for m in (imports(src, tree) if tf.endswith('.py') else js_imports(src, tf, tree) if not tf.endswith('.go') else set()):
                 touch.setdefault(m, (2, 'module the test imports'))
             for d in data_files(src, tf, tree):
                 touch.setdefault(d, (2, 'data file the test reads'))
@@ -153,7 +194,8 @@ def main() -> int:
                 scored.append((sum(touch[s['file']][0] for s in shared), commits.index(c), c, shared))
         extra = {'package': pkg} if pkg else {}
         if not scored:
-            why = (f'no commit in {len(commits)} commit(s) since the last green run touches the files of this failure' if touch else
+            since = f'in the last {bounded} commit(s) up to the failing one (no last green run)' if bounded else 'since the last green run'
+            why = (f'no commit in {len(commits)} commit(s) {since} touches the files of this failure' if touch else
                    'no file of this failure is known (a step failure with no traceback or test file in its output), so no commit can be tied to it')
             per[f['id']] = {'status': 'not_identified', 'basis': why, 'files_considered': sorted(touch), **extra}
             continue
@@ -162,7 +204,8 @@ def main() -> int:
         per[f['id']] = {'status': 'identified', 'commit': top[2]['commit'], 'subject': top[2]['subject'], 'score': top[0], 'files_shared': top[3],
                         'ties': [s[2]['commit'] for s in scored[1:] if s[0] == top[0]], 'others': [{'commit': s[2]['commit'], 'score': s[0]} for s in scored[1:]],
                         'files_considered': sorted(touch), **extra}
-    out = {'range': {'from': green, 'to': head, 'spec': rng}, 'commits': commits, 'per_failure': per}
+    out = {'range': {'from': green, 'to': head, 'spec': rng if not bounded else f'{head} (last {bounded} commits)',
+                     **({'bounded': bounded} if bounded else {})}, 'commits': commits, 'per_failure': per}
     a.out.write_text(json.dumps(out, indent=1, ensure_ascii=False) + '\n', encoding='utf-8', newline='\n')
     print(f'{len(commits)} commit(s) in {rng[:20]}...; ' + ', '.join(f'{k}: {v.get("commit", "not identified")[:8]}' for k, v in per.items()))
     return 0

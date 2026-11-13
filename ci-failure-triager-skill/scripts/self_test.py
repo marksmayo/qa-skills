@@ -22,6 +22,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import fetch_run, extract_failures  # noqa: E402
 from classify import decide, signals  # noqa: E402
+from validate_triage import expected_run_status  # noqa: E402
 
 T = '2026-03-02T10:00:00.0000000Z '
 SHA, GREEN = 'c' * 40, 'b' * 40
@@ -103,9 +104,11 @@ def triage_from(run: dict, cands: list[dict]) -> dict:
             t['draft_defect'] = {'kind': 'defect', 'title': f'{f["job"]} fails', 'body': {'summary': 's', 'steps': ['x'], 'expected': 'e', 'actual': 'a', 'evidence': ['l']}}
         fails.append(t)
     r = run['run']
-    return {'schema_version': '1.1.0', 'skill': {'name': 'ci-failure-triager', 'version': '1.1.0'}, 'generated_at': '2026-03-02T12:00:00Z',
+    status, why = expected_run_status(run)
+    return {'schema_version': '1.2.0', 'skill': {'name': 'ci-failure-triager', 'version': '1.2.0'}, 'generated_at': '2026-03-02T12:00:00Z',
+            'run_status': status, **({'run_status_reason': why} if why else {}),
             'run': {'system': 'github', 'repo': run['repo'], 'id': r['id'], 'attempt': r['attempt'], 'commit': r['commit'], 'branch': r['branch'],
-                    'started_at': r['started_at'], 'last_green': {'id': run['last_green']['id'], 'commit': run['last_green']['commit']}, 'source': 'recorded'},
+                    'started_at': r['started_at'], 'last_green': {'id': run['last_green']['id'], 'commit': run['last_green']['commit']} if run.get('last_green') else None, 'source': 'recorded'},
             'reruns': json.loads((RUN / 'reruns.json').read_text(encoding='utf-8'))['reruns'], 'failures': fails,
             'summary': {'headline': 'Five failures: one test assertion, a registry outage, a toolchain bump, a job with no log, and the gate.'},
             'limitations': ['The log of job lint could not be downloaded (fetch_failed, HTTP 401), so its failure is unclassified.'],
@@ -153,10 +156,179 @@ def go_signature_checks(fails: list) -> None:
             fails.append(f'go signatures: {text[:60]!r} matched {ids}, expected {sid}')
 
 
+def mini_run(d: Path, jobs: list[tuple[str, str, list[str]]], history=None) -> dict:
+    """A normalised one-attempt run in d: jobs are (name, step name, log output lines)."""
+    rjobs = []
+    for i, (name, step, body) in enumerate(jobs, 40):
+        (d / 'logs').mkdir(parents=True, exist_ok=True)
+        (d / 'logs' / f'{i}.txt').write_text(log([(step, [step], body)]), encoding='utf-8')
+        rjobs.append({'id': i, 'name': name, 'conclusion': 'failure', 'junit': [], 'log': f'logs/{i}.txt', 'log_status': 'fetched', 'started_at': 'T1',
+                      'steps': [{'number': 1, 'name': 'Set up job', 'conclusion': 'success'}, {'number': 2, 'name': step, 'conclusion': 'failure'}]})
+    run = {'system': 'github', 'repo': 'acme/fares', 'run': {'id': 800, 'attempt': 1, 'commit': SHA, 'branch': 'main', 'event': 'push',
+                                                              'started_at': '2026-03-02T10:00:00Z', 'conclusion': 'failure'},
+           'attempts': [{'n': 1, 'started_at': 'T1', 'triggered_by': None, 'jobs_rerun': None, 'jobs': rjobs}],
+           'history': history or [], 'last_green': None, 'source': 'recorded'}
+    fetch_run.save(d / 'run.json', run)
+    fetch_run.save(d / 'reruns.json', {'reruns': []})
+    return run
+
+
+def candidates(run: dict, d: Path) -> list[dict]:
+    out = []
+    for f in extract_failures.extract(d, run, 1):
+        sg = signals(f, run, d)
+        cls, conf, rule = decide(sg, None)
+        out.append({'id': f['id'], 'failure': f, 'classification': cls, 'confidence': conf, 'rule': rule, 'signals': sg})
+    return out
+
+
+def finish(t: dict, where: Path) -> tuple[int, str]:
+    """Validate after letting the validator write the computed summary fields."""
+    p = where / 'triage.json'
+    p.write_text(json.dumps(t, indent=1, ensure_ascii=False), encoding='utf-8')
+    subprocess.run([sys.executable, str(HERE / 'validate_triage.py'), str(p), '--run', str(RUN), '--write-summary'], capture_output=True)
+    return validate(json.loads(p.read_text(encoding='utf-8')), where)
+
+
+def no_jobs_checks(fails: list) -> None:
+    """A run that concluded failure without running a job (a workflow file error, a fork run never approved) is
+    'not_run' with nothing to triage, and its evidence completeness gives no credit for checks over no jobs."""
+    global RUN
+    with tempfile.TemporaryDirectory() as td:
+        RUN = Path(td) / 'run'
+        run = mini_run(RUN, [])
+        t = triage_from(run, [])
+        t['run_status'], t['run_status_reason'] = 'not_run', 'the run concluded failure but no job ran (a startup failure or a workflow file error)'
+        t['summary']['headline'] = 'Nothing to triage: the run concluded failure without running any job.'
+        t['limitations'] = ['No job ran, so there is no log or test result to read.']
+        rc, out = finish(t, Path(td))
+        if rc or json.loads((Path(td) / 'triage.json').read_text(encoding='utf-8'))['summary'].get('evidence_completeness') != 0.0:
+            fails.append(f'no jobs: a not_run triage with completeness 0.0 should validate:\n{out}')
+        bad = json.loads((Path(td) / 'triage.json').read_text(encoding='utf-8'))
+        bad['run_status'] = 'complete'
+        rc, out = validate(bad, Path(td))
+        if rc == 0 or 'run_status' not in out:
+            fails.append(f'no jobs: run_status complete for a run with no jobs not caught:\n{out}')
+        bad = json.loads((Path(td) / 'triage.json').read_text(encoding='utf-8'))
+        bad['summary']['evidence_completeness'] = 0.4
+        rc, out = validate(bad, Path(td))
+        if rc == 0 or 'evidence_completeness' not in out:
+            fails.append(f'no jobs: vacuous completeness credit not caught:\n{out}')
+
+
+IT_LOG = ['running suite parcels (12 cases)', '[fail] parcels/rejects_empty_label: expected status 400, got 200', '11 of 12 passed', DONE]
+
+
+def agent_test_and_local_runs_checks(fails: list) -> None:
+    """The agent may name the test of a step failure when its quoted log lines show it; local repeat runs on the
+    failing commit, recorded with their environment, can make a failure flaky (indicated, never confirmed)."""
+    global RUN
+    with tempfile.TemporaryDirectory() as td:
+        RUN = Path(td) / 'run'
+        go_body = extract_failures.GO_LOGS['go-unit'][2]
+        run = mini_run(RUN, [('it', 'Integration tests', IT_LOG), ('go-unit', 'Unit tests', go_body)])
+        tid = f'{extract_failures.GO_PKG}/quote > TestQuoteRounding/half_fare'
+        fetch_run.save(RUN / 'local_runs.json', {'local_runs': [
+            {'test_id': tid, 'commit': SHA, 'runs': 80, 'failed': 1, 'command': 'go test -count=80 -run TestQuoteRounding ./pkg/quote',
+             'environment': {'os': 'linux', 'go': '1.26', 'note': 'network and devices disabled'}, 'source': 'agent', 'recorded_at': '2026-03-02T13:00:00Z'}]})
+        cands = candidates(run, RUN)
+        got = {c['failure']['job']: (c['classification'], c['confidence']) for c in cands}
+        if got.get('go-unit') != ('flaky', 'indicated'):
+            fails.append(f'local runs: 1 failure in 80 local runs on the failing commit should make it flaky/indicated, got {got.get("go-unit")}')
+        t = triage_from(run, cands)
+        it = next(f for f in t['failures'] if f['job'] == 'it')
+        lines = (RUN / it['log_excerpt']['path']).read_text(encoding='utf-8').split('\n')
+        n = next(i for i, l in enumerate(lines, 1) if '[fail] parcels/rejects_empty_label' in l)
+        it.update(test_id='parcels/rejects_empty_label', test_id_source='agent', kind='test',
+                  log_excerpt={'path': it['log_excerpt']['path'], 'lines': [{'n': n, 'text': extract_failures.strip(lines[n - 1])}]})
+        rc, out = finish(t, Path(td))
+        if rc:
+            fails.append(f'agent-named test / local runs: the triage should validate:\n{out}')
+        base = json.loads((Path(td) / 'triage.json').read_text(encoding='utf-8'))
+
+        def seeded(name, mutate, expect):
+            x = copy.deepcopy(base)
+            mutate(x)
+            rc, out = validate(x, Path(td))
+            if rc == 0 or expect not in out:
+                fails.append(f'seeded "{name}" not caught (expected {expect!r}):\n{out}')
+        byj = lambda x, j: next(f for f in x['failures'] if f['job'] == j)  # noqa: E731
+        seeded('agent names a test the quoted lines do not show', lambda x: byj(x, 'it').update(test_id='parcels/accepts_a_long_label'), 'not in the quoted log lines')
+        seeded('agent names a test without saying so', lambda x: byj(x, 'it').pop('test_id_source'), 'test, job or kind differ')
+        seeded('flaky from local runs raised to confirmed', lambda x: byj(x, 'go-unit').update(confidence='confirmed'), 'higher than the evidence')
+        keep = (RUN / 'local_runs.json').read_text(encoding='utf-8')
+        lr = json.loads(keep)
+        lr['local_runs'][0]['commit'] = GREEN
+        (RUN / 'local_runs.json').write_text(json.dumps(lr), encoding='utf-8')
+        seeded('flaky from local runs on another commit', lambda x: None, 'flaky needs a pass on the same commit')
+        lr['local_runs'][0].update(commit=SHA, environment={})
+        (RUN / 'local_runs.json').write_text(json.dumps(lr), encoding='utf-8')
+        seeded('local run recorded without its environment', lambda x: None, 'environment')
+        (RUN / 'local_runs.json').write_text(keep, encoding='utf-8')
+
+
+def owning_change_checks(fails: list) -> None:
+    """owning_change.py: no last green run means no range (not the whole history); --max-commits bounds a search;
+    no failures returns at once; a Go test file named by its import path is found in the tree."""
+    import os
+    env = {**os.environ, 'GIT_AUTHOR_NAME': 'Sample', 'GIT_AUTHOR_EMAIL': 'sample@example.test',
+           'GIT_COMMITTER_NAME': 'Sample', 'GIT_COMMITTER_EMAIL': 'sample@example.test'}
+    with tempfile.TemporaryDirectory() as td:
+        repo, rd = Path(td) / 'repo', Path(td) / 'run'
+        repo.mkdir()
+        g = lambda *a: subprocess.run(['git', '-C', str(repo), *a], check=True, capture_output=True, text=True, env=env).stdout.strip()  # noqa: E731
+        g('init', '-q', '-b', 'main')
+        shas = []
+        for i, (f, text) in enumerate([('go.mod', 'module example.test/fares\n'), ('pkg/zones/zones.go', 'package zones\n'),
+                                       ('pkg/quote/quote.go', 'package quote\n'), ('pkg/quote/quote_test.go', 'package quote\n')]):
+            p = repo / f
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(text, encoding='utf-8')
+            g('add', f)
+            g('commit', '-q', '-m', f'add {f}')
+            shas.append(g('rev-parse', 'HEAD'))
+        rd.mkdir()
+        f1 = {'id': 'X01', 'job': 'unit', 'kind': 'test', 'test_id': 'example.test/fares/pkg/quote > TestQuoteRounding',
+              'test_file': 'example.test/fares/pkg/quote/quote_test.go', 'frames': []}
+
+        def oc(last_green, failures, *extra):
+            fetch_run.save(rd / 'run.json', {'run': {'id': 1, 'commit': shas[-1], 'event': 'push'},
+                                              'last_green': {'id': 0, 'commit': last_green} if last_green else None})
+            fetch_run.save(rd / 'failures.json', {'failures': failures})
+            r = subprocess.run([sys.executable, str(HERE / 'owning_change.py'), '--run', str(rd), '--repo', str(repo), '--out', str(rd / 'changes.json'), *extra],
+                               capture_output=True, text=True, encoding='utf-8')
+            return json.loads((rd / 'changes.json').read_text(encoding='utf-8')) if r.returncode == 0 else {'error': r.stderr}
+        c = oc(None, [f1])
+        x = (c.get('per_failure') or {}).get('X01') or {}
+        if c.get('commits') is not None or x.get('status') != 'not_identified' or 'last green' not in (x.get('basis') or ''):
+            fails.append(f'owning change without a last green run should not walk the history: commits {c.get("commits")}, X01 {x}')
+        c = oc(None, [f1], '--max-commits', '2')
+        x = (c.get('per_failure') or {}).get('X01') or {}
+        if len(c.get('commits') or []) != 2 or (c.get('range') or {}).get('bounded') != 2 or x.get('commit') != shas[-1]:
+            fails.append(f'owning change --max-commits 2: commits {len(c.get("commits") or [])}, range {c.get("range")}, X01 {x}')
+        c = oc(shas[0], [f1])
+        x = (c.get('per_failure') or {}).get('X01') or {}
+        if x.get('status') != 'identified' or x.get('commit') != shas[-1]:
+            fails.append(f'owning change: a Go test file named by its import path should be found in the tree, got {x}')
+        (repo / 'pkg/quote/quote.go').write_text('package quote\n\nconst half = 0.5\n', encoding='utf-8')
+        g('commit', '-q', '-am', 'change rounding')
+        shas.append(g('rev-parse', 'HEAD'))
+        c = oc(shas[3], [f1])
+        x = (c.get('per_failure') or {}).get('X01') or {}
+        if x.get('commit') != shas[-1] or [s['file'] for s in x.get('files_shared', [])] != ['pkg/quote/quote.go']:
+            fails.append(f'owning change: a Go test exercises the source files of its own package, got {x}')
+        c = oc(shas[0], [])
+        if c.get('per_failure') != {} or c.get('commits') is not None or 'no failure' not in (c.get('problem') or ''):
+            fails.append(f'owning change with no failures should return at once, got {c}')
+
+
 def main() -> int:
     global RUN
     fails = []
     go_signature_checks(fails)
+    no_jobs_checks(fails)
+    agent_test_and_local_runs_checks(fails)
+    owning_change_checks(fails)
     for mod in (fetch_run, extract_failures):
         import io, contextlib
         buf = io.StringIO()

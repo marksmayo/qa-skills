@@ -7,10 +7,11 @@
 | 0 | `consequence` | an aggregate gate job (its name or script checks other jobs' results) that failed while other jobs in the run failed | `indicated` |
 | 1 | `environment` | an environment signature in the message or the log lines (`ENV-*` in `data/signatures.json`) | `confirmed` if the re-run passed, else `indicated` |
 | 2 | `flaky` | it passed on the same commit: the re-run, or the same job passing in another run of the same workflow on that commit | `confirmed` |
+| 2b | `flaky` | local repeat runs of the test on the failing commit (`local_runs.json`, with command and environment) both passed and failed | `indicated` |
 | 3 | `data` | a data signature (`DATA-*`), or a date in the failure before the run date | `indicated` |
-| 3b | `real` | a real signature (`REAL-*`: a toolchain version below a tool's minimum, a compile or type error) | `indicated` |
+| 3b | `real` | a real signature (`REAL-*`: a toolchain version below a tool's minimum, a compile or type error, a data race, a lint finding, a formatting check) | `indicated` |
 | 4 | `real` | an assertion or error in a test that failed again on re-run | `confirmed` with an owning change, else `indicated` |
-| 4b | `real` | an assertion or error, no re-run made | `indicated` |
+| 4b | `real` | an assertion or error, no re-run made (not a `timeout`: a hung test stays unclassified without other evidence) | `indicated` |
 | 5 | `unclassified` | none of the above | `low` |
 
 An override needs a reason of 20 characters or more, still needs the class's evidence (consequence: a gate
@@ -37,7 +38,8 @@ quoted, in a step that passed on re-run, is `confirmed`. Otherwise an override i
 ## Owning change
 
 Commits in `last_green..commit` (the last green run of the same workflow), scored by shared files: traceback frame 3; test file, imported module,
-data file the test reads 2 each. Highest score wins; ties go to the most recent and are listed. Nothing
+data file the test reads, a Go test's own package source files 2 each. No last green run: no range and
+`not_identified`, unless `--max-commits N` bounds a search (recorded as `range.bounded`). Highest score wins; ties go to the most recent and are listed. Nothing
 shared: `not_identified`. In a monorepo only commits touching the failing package count. A failing
 or last green commit missing from the checkout gives `not_identified` with the fetch command, and the
 repository check below scores 0.
@@ -61,8 +63,20 @@ the suspect commit when identified, and evidence (log lines, the re-run, the run
 ## Evidence completeness
 
 Five checks, each 0 or 1, averaged: logs for every failed job; test results for every failed job that runs
-tests (JUnit, or failing tests parsed from a Vitest, Jest or node:test console summary); a re-run; a last
-green run; the repository for the owning change.
+tests (JUnit, or failing tests parsed from a Vitest, Jest, node:test or `go test` summary); a re-run; a last
+green run; the repository for the owning change. A check over nothing scores 0: a run with no failed job
+gets no credit for its logs or test results.
+
+## Run status
+
+`not_run` when the first attempt ran no job (a startup failure, a workflow file error, a fork pull request
+never approved): nothing to triage, and the headline says so. `partial` when a failed job's log could not be
+downloaded. Otherwise `complete`. The validator recomputes it; `partial` and `not_run` need a reason.
+
+## Agent-named tests
+
+A step failure the extractor read no test for may be given a test by the agent (`test_id_source: "agent"`,
+`kind: test`), only when the log lines it quotes (checked against the log) contain the test's name.
 
 ## Downloads that failed
 
