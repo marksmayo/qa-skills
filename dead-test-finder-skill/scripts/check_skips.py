@@ -48,14 +48,17 @@ def load_tickets(paths: list[Path]) -> dict[str, dict]:
 
 def blame_age(repo: Path, file: str, line: int, today: date) -> tuple[int | None, str]:
     try:
-        inside = subprocess.run(['git', '-C', str(repo), 'rev-parse', '--is-inside-work-tree'], capture_output=True, text=True)
+        inside = subprocess.run(['git', '-C', str(repo), 'rev-parse', '--is-inside-work-tree'], capture_output=True, text=True,
+                                encoding='utf-8', errors='replace')
     except OSError:
         return None, 'not_checked: git is not available'
     if inside.returncode or inside.stdout.strip() != 'true':
         return None, 'not_checked: not a git work tree'
+    # git writes author names as UTF-8 whatever the console code page: decoding with the locale's (cp1252 on Windows)
+    # killed the reader thread on a name with a letter such as s-acute and left stdout None
     res = subprocess.run(['git', '-C', str(repo), 'blame', '--porcelain', '-L', f'{line},{line}', '--', file],
-                         capture_output=True, text=True)
-    m = re.search(r'^author-time (\d+)$', res.stdout, re.M)
+                         capture_output=True, text=True, encoding='utf-8', errors='replace')
+    m = re.search(r'^author-time (\d+)$', res.stdout or '', re.M)
     if res.returncode or not m:
         return None, 'not_checked: the line is not committed yet'
     when = datetime.fromtimestamp(int(m.group(1)), tz=timezone.utc).date()

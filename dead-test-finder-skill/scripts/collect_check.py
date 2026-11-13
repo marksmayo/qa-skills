@@ -3,15 +3,30 @@
 
     python collect_check.py <repo> --candidates candidates.json --run-dir run [--cwd client=/path/with/node_modules]
         [--env DATABASE_URL=postgresql://fake:fake@localhost:5432/fake ...] [--package-env api:PYTHONPATH=/x ...]
-        [--scope all|candidates] [--files F ...] [--reuse]
+        [--scope all|candidates] [--files F ...] [--reuse] [--split-on-error [MAX_RUNS]]
 
 For every package and framework with tests, runs the framework's own list command and keeps its
 raw output in the run directory:
 
     pytest      python -m pytest --collect-only -q -p no:cacheprovider
-    vitest      npx vitest list --json [files]
+    vitest      npx vitest list --json=<file in the run directory> [files]
     jest        npx jest --listTests --json            (file level only)
     playwright  npx playwright test --list --reporter=json [files]
+
+Vitest's --json takes an optional value, so `--json <file>` would write the listing over the
+first test file; the output path is always joined with '='. Every list command runs inside a
+guard (tree_guard.py) that keeps the bytes of the package's test files and compares them (and
+`git status` of the directory) afterwards: when a command changed any, they are put back and the
+script stops with exit code 3, recording nothing.
+
+node:test (no list command), a repository's own test runner (definitions with framework
+`custom`, see scan_tests.py --test-files) and a package whose package.json names no runner are
+recorded as `no_list_command`, and their tests are not_assessed with that reason, never
+not_collected. --split-on-error lists a package whose whole list failed again in halves, so one
+file the runner can't list (a static check of options it doesn't know) leaves the other files
+listed (status `partial`, `errored_files`); tests in the failing files are not_assessed. A test
+skipped conditionally (skipIf/runIf) that is missing from the list is not_assessed too: the
+runner may leave it out on this machine only.
 
 A JavaScript test file that imports @playwright/test, or sits in a Playwright testDir, is listed
 with Playwright, never with Vitest or Jest (which exclude e2e/ and would report it as not
@@ -40,29 +55,66 @@ literal, describe.each) is matched by its name pattern. A list command that fail
 errored, and its tests stay not_assessed.
 """
 from __future__ import annotations
-import argparse, hashlib, json, os, re, shutil, subprocess, sys
+import argparse, contextlib, hashlib, json, os, re, shutil, subprocess, sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import run_tests  # noqa: E402
+import run_tests, tree_guard  # noqa: E402
 
 
-def framework_of(d: dict, pkg_dir: Path) -> str:
+NO_LIST = {
+    'node-test': 'node:test has no list command that names tests without running them',
+    'custom': "the tests use the repository's own test runner (a custom test DSL); there is no list command for it here",
+    'unknown': 'no test runner found in package.json (dependencies or scripts) for this package',
+}
+
+
+def framework_of(d: dict, pkg_dir: Path, root: Path | None = None) -> str:
     if d['lang'] == 'python':
         return 'pytest'
-    if d.get('framework') == 'playwright':
-        return 'playwright'
-    return js_runner(pkg_dir)
+    if d.get('framework') in ('playwright', 'node-test', 'custom'):
+        return d['framework']
+    if d.get('framework') in ('vitest', 'jest'):
+        return d['framework']
+    return js_runner(pkg_dir, root)
 
 
-def js_runner(pkg_dir: Path) -> str:
-    try:
-        pj = json.loads((pkg_dir / 'package.json').read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        return 'vitest'
-    deps = {**pj.get('dependencies', {}), **pj.get('devDependencies', {})}
-    return 'jest' if 'jest' in deps and 'vitest' not in deps else 'vitest'
+def js_runner(pkg_dir: Path, root: Path | None = None) -> str:
+    """vitest, jest or node-test from the package's dependencies, then its scripts; a package without one of its own
+    inherits the nearest workspace root's (a pnpm or npm workspace keeps Vitest at the root). 'unknown' when a
+    package.json exists but names no runner anywhere; vitest when there is no package.json at all."""
+    seen_manifest = False
+    d = pkg_dir
+    while True:
+        try:
+            pj = json.loads((d / 'package.json').read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            pj = None
+        if pj is not None:
+            seen_manifest = True
+            deps = {**pj.get('dependencies', {}), **pj.get('devDependencies', {})}
+            scripts = ' '.join(str(v) for v in (pj.get('scripts') or {}).values())
+            if 'vitest' in deps:
+                return 'vitest'
+            if 'jest' in deps:
+                return 'jest'
+            if re.search(r'(?<![\w-])vitest\b', scripts):
+                return 'vitest'
+            if re.search(r'(?<![\w-])jest\b', scripts):
+                return 'jest'
+            if re.search(r'\bnode\b[^&|;]*\s--test\b', scripts):
+                return 'node-test'
+        if root is None or d.resolve() == root.resolve() or d.parent == d:
+            break
+        d = d.parent
+    return 'unknown' if seen_manifest else 'vitest'
+
+
+def norm_name(test_id: str) -> str:
+    """A test id with backslash-escaped quotes and backslashes undone: Vitest's JSON list escapes a double quote in a
+    test name a second time (`a target=\\"_blank\\" link`), so a name with quotes never matched its definition."""
+    return re.sub(r'\\(["\'`\\])', r'\1', test_id)
 
 
 def parse_env(pairs: list, per_package: list[str]) -> tuple[dict, dict[str, dict]]:
@@ -131,29 +183,42 @@ def playwright_ids(data: dict, cwd: Path, prefix: str) -> list[str]:
 
 
 def collect(pkg: str, fw: str, cwd: Path, run_dir: Path, files: list[str] | None, env: dict, reuse: dict | None,
-            n_defined: int = 0, known: set[str] | None = None, ignore: list[str] | None = None) -> dict:
+            n_defined: int = 0, known: set[str] | None = None, ignore: list[str] | None = None,
+            guard: tree_guard.TreeGuard | None = None, part: str = '') -> dict:
     prefix = '' if pkg == '.' else pkg + '/'
-    tag = (pkg.replace('/', '_') if pkg != '.' else 'root') + ('' if fw in ('pytest', 'vitest', 'jest') else f'-{fw}')
+    tag = (pkg.replace('/', '_') if pkg != '.' else 'root') + ('' if fw in ('pytest', 'vitest', 'jest') else f'-{fw}') + part
     local = [f[len(prefix):] for f in files] if files is not None else []
+    if fw in NO_LIST:
+        return {'package': pkg, 'framework': fw, 'command': None, 'exit_code': None, 'status': 'no_list_command',
+                'raw_output': None, 'scope': 'all' if files is None else f'{len(local)} files', 'note': NO_LIST[fw],
+                'collected': []}
+    listing = None                                   # a file the list command writes its JSON to, in the run directory
     if fw == 'pytest':
         ign = [f'--ignore={d}' for d in (ignore or [])] if files is None else []
         cmd = [sys.executable, '-m', 'pytest', '--collect-only', '-q', '-p', 'no:cacheprovider', *ign, *local]
         shown = 'python -m pytest --collect-only -q -p no:cacheprovider' + ''.join(f' {x}' for x in ign) + \
             (f' <{len(local)} files>' if local else '')
         raw = run_dir / f'collect-{tag}.txt'
+        hashed = cmd[1:]
     elif fw == 'playwright':
         cmd = ['npx', 'playwright', 'test', '--list', '--reporter=json', *local]
         shown = 'npx playwright test --list --reporter=json' + (f' <{len(local)} files>' if local else '')
         raw = run_dir / f'collect-{tag}.json'
+        hashed = cmd
     elif fw == 'vitest':
-        cmd = ['npx', 'vitest', 'list', '--json', *local]
-        shown = 'npx vitest list --json' + (f' <{len(local)} files>' if local else '')
+        # Vitest's --json takes an optional value: `--json <file>` writes the listing OVER <file>. The output path is
+        # always given with '=' and points into the run directory, never at a file of the target.
+        listing = (run_dir / f'.collect-{tag}.vitest.json').resolve()
+        cmd = ['npx', 'vitest', 'list', f'--json={listing}', *local]
+        shown = 'npx vitest list --json=<run-dir file>' + (f' <{len(local)} files>' if local else '')
         raw = run_dir / f'collect-{tag}.json'
+        hashed = ['npx', 'vitest', 'list', '--json=<run-dir file>', *local]
     else:
-        cmd = ['npx', 'jest', '--listTests', '--json', *local]
+        cmd = ['npx', 'jest', '--listTests', '--json', *local]       # jest's --json is a plain switch
         shown = 'npx jest --listTests --json' + (f' <{len(local)} files>' if local else '')
         raw = run_dir / f'collect-{tag}.json'
-    h = hashlib.sha256(' '.join(cmd[1:] if fw == 'pytest' else cmd).encode('utf-8'))
+        hashed = cmd
+    h = hashlib.sha256(' '.join(hashed).encode('utf-8'))
     for k in sorted(env):
         h.update(f'\0{k}'.encode('utf-8'))
     for f in sorted(local):
@@ -164,7 +229,18 @@ def collect(pkg: str, fw: str, cwd: Path, run_dir: Path, files: list[str] | None
     input_hash = h.hexdigest()
     if reuse and reuse.get('input_hash') == input_hash and reuse.get('status') == 'ran' and raw.is_file():
         return {**reuse, 'reused': True}
-    code, out = run(cmd, cwd, env)
+    if listing is not None:
+        listing.unlink(missing_ok=True)
+    with (guard.around(shown) if guard else contextlib.nullcontext()):
+        code, out = run(cmd, cwd, env)
+    if listing is not None:
+        try:
+            text = listing.read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            text = None
+        listing.unlink(missing_ok=True)
+        if text is not None:
+            out = text + ('\n' + out if out.strip() and code else '')
     ids = []
     if fw == 'pytest':
         for line in out.splitlines():
@@ -191,7 +267,7 @@ def collect(pkg: str, fw: str, cwd: Path, run_dir: Path, files: list[str] | None
                 if isinstance(it, str):                                # jest: file paths only
                     ids.append(f'{prefix}{Path(os.path.relpath(it, cwd)).as_posix()}::*')
                 else:
-                    ids.append(f'{prefix}{Path(os.path.relpath(it["file"], cwd)).as_posix()}::{it["name"]}')
+                    ids.append(norm_name(f'{prefix}{Path(os.path.relpath(it["file"], cwd)).as_posix()}::{it["name"]}'))
         ok = code == 0
     note = None
     if ok and not ids and n_defined:
@@ -203,6 +279,37 @@ def collect(pkg: str, fw: str, cwd: Path, run_dir: Path, files: list[str] | None
     return {'package': pkg, 'framework': fw, 'command': shown, 'exit_code': code, 'status': 'ran' if ok else 'errored',
             'raw_output': raw.name, 'scope': 'all' if files is None else f'{len(local)} files', 'input_hash': input_hash,
             **({'env': sorted(env)} if env else {}), 'collected': sorted(set(ids)), **({'note': note} if note else {})}
+
+
+def split_collect(rec: dict, pkg: str, fw: str, cwd: Path, run_dir: Path, files: list[str], env: dict,
+                  guard: tree_guard.TreeGuard | None, budget: int, known: set[str]) -> dict:
+    """A package whose list command failed, listed again in halves until each failing file stands alone: one file
+    the runner cannot list (a config it reads statically, a syntax it rejects) no longer costs every other file of the
+    package. At most `budget` extra list commands; files not settled within it stay errored."""
+    ok_ids: list[str] = []
+    bad: list[str] = []
+    parts: list[dict] = []
+    todo = [files]
+    while todo:
+        group = todo.pop(0)
+        if len(parts) >= budget:
+            bad += group
+            continue
+        r = collect(pkg, fw, cwd, run_dir, group, env, None, 1, known, None, guard, part=f'-part{len(parts) + 1}')
+        parts.append({k: r[k] for k in ('command', 'exit_code', 'status', 'raw_output', 'scope')})
+        if r['status'] == 'ran':
+            ok_ids += r['collected']
+        elif len(group) == 1:
+            bad += group
+        else:
+            half = len(group) // 2
+            todo += [group[:half], group[half:]]
+    listed_ok = sorted(set(files) - set(bad))
+    out = {**rec, 'status': 'partial' if listed_ok else 'errored', 'collected': sorted(set(ok_ids)),
+           'errored_files': sorted(bad), 'split': parts,
+           'note': (f'the list of the whole package failed; listed again in parts: {len(listed_ok)} of {len(files)} files '
+                    f'listed, {len(bad)} failed on their own')}
+    return out
 
 
 def main(argv=None) -> int:
@@ -219,6 +326,9 @@ def main(argv=None) -> int:
                     help='candidates: list only the files that hold a candidate (the other tests are not_assessed)')
     ap.add_argument('--files', nargs='+', help='list only these repo-relative test files (the other tests are not_assessed)')
     ap.add_argument('--reuse', action='store_true', help='keep an earlier list when its command and files are unchanged')
+    ap.add_argument('--split-on-error', type=int, nargs='?', const=40, default=0, metavar='MAX_RUNS',
+                    help='when a package\'s list fails, list it again in halves so one file the runner cannot list does '
+                         'not cost the others (at most MAX_RUNS extra list commands, 40 by default)')
     ap.add_argument('--out', type=Path)
     args = ap.parse_args(argv)
     root = args.repo.resolve()
@@ -235,24 +345,36 @@ def main(argv=None) -> int:
     groups: dict[tuple[str, str], list[dict]] = {}
     for d in defs:
         pdir = root / d['package'] if d['package'] != '.' else root
-        groups.setdefault((d['package'], framework_of(d, pdir)), []).append(d)
+        groups.setdefault((d['package'], framework_of(d, pdir, root)), []).append(d)
     unknown = sorted(set(pkg_env) - {p for p, _ in groups})
     if unknown:
         print(f'--package-env names no package with tests: {", ".join(unknown)}', file=sys.stderr)
         return 2
     pkgs = []
-    for (pkg, fw), ds in sorted(groups.items()):
-        cwd = Path(overrides[pkg]).resolve() if pkg in overrides else (root / pkg if pkg != '.' else root)
-        files = sorted({d['file'] for d in ds if d['file'] in scope}) if scope is not None else None
-        if files == []:
-            continue
-        prefix = '' if pkg == '.' else pkg + '/'
-        # a package holding another package of the same framework leaves the inner one to its own list command
-        inner = sorted({p[len(prefix):] for p, f in groups if f == fw and p != pkg and (pkg == '.' or p.startswith(prefix))})
-        pkgs.append(collect(pkg, fw, cwd, args.run_dir, files, {**env, **pkg_env.get(pkg, {})}, previous.get((pkg, fw)),
-                            len([d for d in ds if files is None or d['file'] in files]),
-                            {d['file'][len(prefix):] for d in ds}, inner))
-    ran = {(p['package'], p['framework']): p for p in pkgs if p['status'] == 'ran'}
+    try:
+        for (pkg, fw), ds in sorted(groups.items()):
+            cwd = Path(overrides[pkg]).resolve() if pkg in overrides else (root / pkg if pkg != '.' else root)
+            files = sorted({d['file'] for d in ds if d['file'] in scope}) if scope is not None else None
+            if files == []:
+                continue
+            prefix = '' if pkg == '.' else pkg + '/'
+            # every test file of the package, where the command runs: a list command must never change one
+            guard = tree_guard.TreeGuard.of_files(sorted({cwd / d['file'][len(prefix):] for d in ds}), [cwd])
+            # a package holding another package of the same framework leaves the inner one to its own list command
+            inner = sorted({p[len(prefix):] for p, f in groups if f == fw and p != pkg and (pkg == '.' or p.startswith(prefix))})
+            penv = {**env, **pkg_env.get(pkg, {})}
+            known = {d['file'][len(prefix):] for d in ds}
+            rec = collect(pkg, fw, cwd, args.run_dir, files, penv, previous.get((pkg, fw)),
+                          len([d for d in ds if files is None or d['file'] in files]), known, inner, guard)
+            all_files = files if files is not None else sorted({d['file'] for d in ds})
+            if rec['status'] == 'errored' and args.split_on_error and len(all_files) > 1 and fw != 'pytest':
+                rec = split_collect(rec, pkg, fw, cwd, args.run_dir, all_files, penv, guard, args.split_on_error, known)
+            pkgs.append(rec)
+    except tree_guard.GuardError as exc:
+        tree_guard.report(exc)
+        return 3
+    ran = {(p['package'], p['framework']): p for p in pkgs if p['status'] in ('ran', 'partial')}
+    errored_files = {f for p in pkgs for f in p.get('errored_files', [])}
     collected = {i for p in ran.values() for i in p['collected']}
     files_listed = {i.split('::')[0] for i in collected if i.endswith('::*')}
     by_file: dict[str, list[str]] = {}
@@ -264,6 +386,9 @@ def main(argv=None) -> int:
         if d['id'] in collected or d['file'] in files_listed:
             matched.add(d['id'])
             return True
+        if norm_name(d['id']) in collected:
+            matched.add(norm_name(d['id']))
+            return True
         if d.get('name_pattern'):
             rx = re.compile(re.escape(d['file'] + '::') + d['name_pattern'] + '$', re.S)
             hits = [i for i in by_file.get(d['file'], []) if rx.match(i)]
@@ -273,15 +398,26 @@ def main(argv=None) -> int:
     not_collected, not_assessed, n_collected, reasons = [], [], 0, {}
     for d in defs:
         pdir = root / d['package'] if d['package'] != '.' else root
-        key = (d['package'], framework_of(d, pdir))
+        key = (d['package'], framework_of(d, pdir, root))
         if scope is not None and d['file'] not in scope:
             not_assessed.append(d['id'])
             reasons[d['id']] = 'outside the collect scope'
+        elif key[1] in NO_LIST:
+            not_assessed.append(d['id'])
+            reasons[d['id']] = NO_LIST[key[1]] + (f' ({d["runner_module"]})' if d.get('runner_module') else '')
         elif key not in ran:
             not_assessed.append(d['id'])
             reasons[d['id']] = f'{key[1]} list command did not run or errored'
+        elif d['file'] in errored_files:
+            not_assessed.append(d['id'])
+            reasons[d['id']] = f'{key[1]} could not list this file on its own (see the package\'s split list outputs)'
         elif is_collected(d):
             n_collected += 1
+        elif d.get('skip_condition'):
+            # skipIf/runIf: a runner may leave a conditionally skipped test out of its list on this machine (a
+            # win32-only skip on Windows); that is not evidence that it never runs where the condition is false
+            not_assessed.append(d['id'])
+            reasons[d['id']] = f'not listed, but it is skipped conditionally ({d["skip_condition"]}) and may run elsewhere'
         else:
             not_collected.append(d['id'])
     res = {'packages': pkgs, 'defined': len(defs), 'collected': n_collected, 'not_collected': not_collected,
@@ -292,8 +428,10 @@ def main(argv=None) -> int:
     print(f'{res["collected"]} of {res["defined"]} defined tests collected; not collected: {len(not_collected)}'
           + (f'; {len(not_assessed)} not assessed' if not_assessed else '') + f' -> {out_path}')
     for p in pkgs:
-        if p['status'] != 'ran':
-            print(f'  {p["package"]} {p["framework"]}: errored (exit {p["exit_code"]}), see {p["raw_output"]}'
+        if p['status'] == 'no_list_command':
+            print(f'  {p["package"]} {p["framework"]}: not listed: {p["note"]}', file=sys.stderr)
+        elif p['status'] != 'ran':
+            print(f'  {p["package"]} {p["framework"]}: {p["status"]} (exit {p["exit_code"]}), see {p["raw_output"]}'
                   + (f'; {p["note"]}' if p.get('note') else ''), file=sys.stderr)
     for t in not_collected:
         print(f'  not collected: {t}')

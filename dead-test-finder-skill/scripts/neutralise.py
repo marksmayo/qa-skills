@@ -52,12 +52,12 @@ A JavaScript `it.each` / `test.each` / template-name test works the same way: it
 JUnit output, and an expanded name (`src/x.test.ts::rows > rye keeps its fields`) runs that case.
 """
 from __future__ import annotations
-import argparse, ast, fnmatch, hashlib, json, os, re, shutil, subprocess, sys, tempfile
+import argparse, ast, contextlib, fnmatch, hashlib, json, os, re, shutil, subprocess, sys, tempfile
 from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import collect_check, run_tests, scan_tests, unified_diff  # noqa: E402
+import collect_check, run_tests, scan_tests, tree_guard, unified_diff  # noqa: E402
 
 MARK = 'neutralised by dead-test-finder'
 # Never copied into the scratch copy: VCS data, caches and installed dependencies. --copy-ignore adds more.
@@ -156,26 +156,9 @@ def py_patch(text: str, func: str, variant: str) -> str | None:
 
 
 # ---------------------------------------------------------------- JavaScript / TypeScript targets
-def resolve_module(from_file: Path, spec: str, pkg_dir: Path) -> Path | None:
-    """The file a relative or alias import names: tsconfig/jsconfig `paths` and vite/vitest `alias` of the package."""
-    bases = []
-    if spec.startswith('.'):
-        bases.append(from_file.parent / spec)
-    else:
-        for pref, targets in scan_tests.ts_aliases(pkg_dir):
-            if pref and spec.startswith(pref):
-                bases += [pkg_dir / t / spec[len(pref):] for t in targets]
-                break
-    for base in bases:
-        for cand in [base] + [Path(str(base) + e) for e in JS_EXT] + [base / f'index{e}' for e in JS_EXT]:
-            if cand.is_file():
-                return cand.resolve()
-    return None
-
-
-GENERIC = r'(?:<(?:[^<>]|<(?:[^<>]|<[^<>]*>)*>)*>)'      # type parameters, nested two deep (<T extends Record<K, V>>)
-DECL = r'(?:\bexport\s+)?(?:\bdefault\s+)?(?:\basync\s+)?\bfunction\s*\*?\s*{name}\s*' + GENERIC + r'?\s*\('
-ARROW = r'\b(?:const|let|var)\s+{name}\s*(?::[^=;]+)?=\s*(?:async\s*)?(?:' + GENERIC + r'\s*)?(?=\(|[A-Za-z_$][\w$]*\s*=>)'
+resolve_module = scan_tests.resolve_module
+GENERIC, DECL, ARROW = scan_tests.GENERIC, scan_tests.DECL, scan_tests.ARROW
+body_after_params = scan_tests.body_after_params
 
 
 def find_definition(file: Path, name: str, pkg_dir: Path, depth: int = 0) -> tuple[Path, str] | None:
@@ -221,7 +204,9 @@ def find_definition(file: Path, name: str, pkg_dir: Path, depth: int = 0) -> tup
 
 
 def js_target(test_file: Path, name: str, pkg_dir: Path) -> tuple[Path, str] | None:
-    """The definition of a name the test file imports (named, default or namespace member a.b)."""
+    """The definition of a name the test file imports (named, default or namespace member a.b). A name from a test file
+    or test support module (tests/, helpers/, fixtures/, __mocks__/, *.test.*) is never a target: neutralising an
+    assertion helper makes every test that uses it pass, which would read as a confirmed can't-fail test."""
     text = test_file.read_text(encoding='utf-8', errors='replace')
     code, lits = scan_tests.js_lex(text)
     imports = scan_tests.js_imports(text, code, lits)
@@ -232,32 +217,36 @@ def js_target(test_file: Path, name: str, pkg_dir: Path) -> tuple[Path, str] | N
     target = resolve_module(test_file, spec, pkg_dir)
     if not target:
         return None
-    if orig == '*':
-        return find_definition(target, member, pkg_dir) if member else None
-    return find_definition(target, orig, pkg_dir)
+    found = (find_definition(target, member, pkg_dir) if member else None) if orig == '*' else \
+        find_definition(target, orig, pkg_dir)
+    if found and is_support(found[0], pkg_dir):
+        raise SupportTarget(found[0])
+    return found
 
 
-def body_after_params(code: str, close: int) -> int | None:
-    """Index of the '{' opening a function body after the parameter list closing at close (skips a return type)."""
-    j = close + 1
-    angle = 0
-    while j < len(code):
-        c = code[j]
-        if c == '<':
-            angle += 1
-        elif c == '>' and angle:
-            angle -= 1
-        elif c == '{' and angle == 0:
-            k = j - 1
-            while k > close and code[k].isspace():
-                k -= 1
-            if code[k] not in ':|&,<(':
-                return j
-            j = scan_tests.match_code(code, j)           # an object type in the return type
-        elif c in ';=' and angle == 0 and not code.startswith('=>', j):
-            return None
-        j += 1
-    return None
+class SupportTarget(Exception):
+    """The definition sits in a test file or a test support module."""
+
+
+def is_support(path: Path, pkg_dir: Path) -> bool:
+    try:
+        rel = path.resolve().relative_to(pkg_dir.resolve()).as_posix()
+    except ValueError:
+        return False
+    return scan_tests.is_test_support(pkg_dir.resolve(), rel)
+
+
+def class_named(test_file: Path, name: str, pkg_dir: Path) -> bool:
+    """The imported name is a class in its module (StepRecorder): a method has to be named instead."""
+    text = test_file.read_text(encoding='utf-8', errors='replace')
+    code, lits = scan_tests.js_lex(text)
+    imports = scan_tests.js_imports(text, code, lits)
+    local = name.partition('.')[0]
+    if local not in imports:
+        return False
+    target = resolve_module(test_file, imports[local][0], pkg_dir)
+    return bool(target and re.search(r'\bclass\s+' + re.escape(imports[local][1]) + r'\b', scan_tests.js_mask(
+        target.read_text(encoding='utf-8', errors='replace'))))
 
 
 def js_patch(text: str, func: str, variant: str) -> str | None:
@@ -362,18 +351,25 @@ def pattern_definition(defs: dict, tid: str) -> dict | None:
     return None
 
 
+GUARDS: dict[str, tree_guard.TreeGuard] = {}
+
+
 def run_test(defn: dict, work: Path, run_dir: Path, label: str, prefix: str, extra: list[str]) -> tuple[str, str, str | None]:
-    """(run id, test status, error text when run_tests.py recorded no run)."""
+    """(run id, test status, error text when run_tests.py recorded no run). The run is guarded: the package's test
+    files in the work directory are compared before and after (see tree_guard.py), and a run that changed one stops the
+    script."""
     rel = defn['file'][len(defn['package']) + 1:] if defn['package'] != '.' else defn['file']
+    guard = GUARDS.get(str(work))
     if defn['lang'] == 'python':
         args = ['--preset', 'pytest', '--tests', rel + '::' + defn['run_id'].split('::', 1)[1]]
     else:
         args = ['--preset', 'vitest', '--tests', rel]
     runs_file = run_dir / 'runs.json'
     before = {r['id'] for r in json.loads(runs_file.read_text(encoding='utf-8'))['runs']} if runs_file.exists() else set()
-    res = subprocess.run([sys.executable, str(HERE / 'run_tests.py'), *args, '--cwd', str(work), '--out', str(runs_file),
-                          '--label', label, '--run-prefix', prefix, *extra], capture_output=True, text=True,
-                         encoding='utf-8', errors='replace', env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'})
+    with (guard.around(f'run_tests.py {" ".join(args)}') if guard else contextlib.nullcontext()):
+        res = subprocess.run([sys.executable, str(HERE / 'run_tests.py'), *args, '--cwd', str(work), '--out', str(runs_file),
+                              '--label', label, '--run-prefix', prefix, *extra], capture_output=True, text=True,
+                             encoding='utf-8', errors='replace', env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'})
     data = json.loads(runs_file.read_text(encoding='utf-8')) if runs_file.exists() else {'runs': [], 'cases': []}
     new = [r for r in data['runs'] if r['id'] not in before]
     if not new:
@@ -521,6 +517,9 @@ def main(argv=None) -> int:
                                 restore.setdefault(p, p.read_bytes() if p.is_file() else None)
                     unified_diff.apply_patch(localise(text, prefix), work)
                 works[d['package']] = work
+                GUARDS[str(work)] = tree_guard.TreeGuard.of_files(
+                    sorted({work / x['file'][len(prefix):] for x in defs.values() if x['package'] == d['package']
+                            and (work / x['file'][len(prefix):]).is_file()}))
             extra = extra_for(d['package'])
             n += 1
             rid, status, err = run_test(d, work, args.run_dir, 'original' + (' (patched)' if args.patch else ''), f'N{n}', extra)
@@ -538,8 +537,24 @@ def main(argv=None) -> int:
             for tgt in targets:
                 if d['lang'] == 'python':
                     loc, patcher = py_target_file(work, tgt), py_patch
+                    if loc and is_support(loc[0], work):
+                        entry['targets'].append({'target': tgt, 'file': None, 'variants': [], 'note': (
+                            f'{tgt} is defined in test code ({Path(os.path.relpath(loc[0], work)).as_posix()}): a test '
+                            'helper or fixture is never the code under test; name the product function with --target')})
+                        continue
                 else:
-                    loc, patcher = js_target(work / d['file'][len(prefix):], tgt, work), js_patch
+                    try:
+                        loc, patcher = js_target(work / d['file'][len(prefix):], tgt, work), js_patch
+                    except SupportTarget as exc:
+                        entry['targets'].append({'target': tgt, 'file': None, 'variants': [], 'note': (
+                            f'{tgt} is defined in test code ({Path(os.path.relpath(exc.args[0], work)).as_posix()}): a test '
+                            'helper or fixture is never the code under test; name the product function with --target')})
+                        continue
+                    if not loc and class_named(work / d['file'][len(prefix):], tgt, work):
+                        entry['targets'].append({'target': tgt, 'file': None, 'variants': [], 'note': (
+                            f'{tgt} is a class; neutralise.py patches functions, so name the product function under test '
+                            f'with --target')})
+                        continue
                 if not loc:
                     entry['targets'].append({'target': tgt, 'file': None, 'variants': [], 'note': (
                         'definition not found in this package (another package or an installed library); name the function '
@@ -582,6 +597,9 @@ def main(argv=None) -> int:
     except RestoreError as exc:
         print(f'stopped: {exc}', file=sys.stderr)
         return 4
+    except tree_guard.GuardError as exc:
+        tree_guard.report(exc)
+        return 3
     finally:
         for p, data in restore.items():
             write_back(p, data)

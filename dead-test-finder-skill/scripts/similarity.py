@@ -35,7 +35,7 @@ from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import collect_check, run_tests, scan_tests  # noqa: E402
+import collect_check, run_tests, scan_tests, tree_guard  # noqa: E402
 
 PLUGIN = r'''
 import json, os, sys
@@ -253,8 +253,12 @@ def main(argv=None) -> int:
                 lines_file = work / '_lines.json'
                 lines_file.unlink(missing_ok=True)
                 cmd = [sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', '-p', 'dtf_lines', *batch]
-                res = subprocess.run(cmd, cwd=work, capture_output=True, text=True, encoding='utf-8', errors='replace',
-                                     env={**os.environ, **penv, 'DTF_LINES_OUT': str(lines_file), 'PYTHONDONTWRITEBYTECODE': '1'})
+                # the copy's test files never change during a traced run (tree_guard.py); one that does stops the script
+                guard = tree_guard.TreeGuard.of_files(sorted({work / n.split('::')[0] for n in batch}))
+                with guard.around(f'python -m pytest -q -p dtf_lines <{len(batch)} test ids>'):
+                    res = subprocess.run(cmd, cwd=work, capture_output=True, text=True, encoding='utf-8', errors='replace',
+                                         env={**os.environ, **penv, 'DTF_LINES_OUT': str(lines_file),
+                                              'PYTHONDONTWRITEBYTECODE': '1'})
                 session = {'package': pkg, 'tests': len(batch), 'exit_code': res.returncode,
                            'command': f'python -m pytest -q -p no:cacheprovider -p dtf_lines <{len(batch)} test ids>',
                            **({'env': sorted(penv)} if penv else {}), **({'config_above': above} if above else {})}
@@ -318,4 +322,8 @@ def main(argv=None) -> int:
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except tree_guard.GuardError as exc:
+        tree_guard.report(exc)
+        sys.exit(3)
