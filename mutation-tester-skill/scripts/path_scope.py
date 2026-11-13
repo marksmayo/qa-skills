@@ -45,7 +45,7 @@ def entry_for(repo: Path, p: Path, span: tuple[int, int] | None) -> dict:
     except (UnicodeDecodeError, OSError):
         body, binary = None, True
     n = len(body.splitlines()) if body is not None else 0
-    kind, why = diff_scope.classify(rel, '\n'.join((body or '').splitlines()[:5]), binary)
+    kind, why = diff_scope.classify(rel, '\n'.join((body or '').splitlines()[:5]), binary, repo)
     if span:
         a, b = max(1, span[0]), min(n, span[1])
         rng = [[a, b]] if n and a <= b else []
