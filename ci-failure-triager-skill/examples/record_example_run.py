@@ -16,6 +16,7 @@ from pathlib import Path
 
 OWNER_REPO = 'example-org/tidewater'
 RUN_ID, GREEN_RUN = 109, 101
+WORKFLOW_ID = 71  # the id GitHub gives .github/workflows/ci.yml; history is matched to the run by it
 JOBS = {1: {'unit': 5101, 'install-check': 5102}, 2: {'unit': 5201, 'install-check': 5202}}
 T = {1: '2026-11-12T03:10', 2: '2026-11-12T03:40'}
 PIP = [sys.executable, '-m', 'pip', 'install', '--index-url', 'http://127.0.0.1:9/simple/', '--retries', '0', '--timeout', '2',
@@ -110,11 +111,13 @@ def main() -> int:
              'archive_download_url': f'https://api.github.com/repos/{OWNER_REPO}/actions/artifacts/{9000 + attempt}/zip'}]}, indent=1) + '\n', encoding='utf-8', newline='\n')
     run = {'id': RUN_ID, 'name': 'ci', 'head_branch': 'main', 'head_sha': head, 'event': 'push', 'status': 'completed', 'conclusion': 'failure',
            'run_attempt': 2, 'run_number': 37, 'run_started_at': f'{T[1]}:00Z', 'html_url': f'https://github.com/{OWNER_REPO}/actions/runs/{RUN_ID}',
-           'repository': {'full_name': OWNER_REPO}, 'path': '.github/workflows/ci.yml'}
+           'repository': {'full_name': OWNER_REPO}, 'path': '.github/workflows/ci.yml', 'workflow_id': WORKFLOW_ID}
     (gh / 'run.json').write_text(json.dumps(run, indent=1) + '\n', encoding='utf-8', newline='\n')
     hist = {'total_count': 2, 'workflow_runs': [
-        {'id': RUN_ID, 'head_sha': head, 'head_branch': 'main', 'conclusion': 'failure', 'run_attempt': 1, 'run_started_at': f'{T[1]}:00Z', 'event': 'push'},
-        {'id': GREEN_RUN, 'head_sha': green, 'head_branch': 'main', 'conclusion': 'success', 'run_attempt': 1, 'run_started_at': '2026-11-09T01:20:00Z', 'event': 'push'}]}
+        {'id': RUN_ID, 'head_sha': head, 'head_branch': 'main', 'conclusion': 'failure', 'run_attempt': 1, 'run_started_at': f'{T[1]}:00Z', 'event': 'push',
+         'workflow_id': WORKFLOW_ID, 'path': '.github/workflows/ci.yml'},
+        {'id': GREEN_RUN, 'head_sha': green, 'head_branch': 'main', 'conclusion': 'success', 'run_attempt': 1, 'run_started_at': '2026-11-09T01:20:00Z', 'event': 'push',
+         'workflow_id': WORKFLOW_ID, 'path': '.github/workflows/ci.yml'}]}
     (gh / 'history.json').write_text(json.dumps(hist, indent=1) + '\n', encoding='utf-8', newline='\n')
 
     # Azure DevOps: build 2207 of the same commit (attempt 1 output), and the earlier green build
@@ -137,8 +140,10 @@ def main() -> int:
     (az / 'artifacts.json').write_text(json.dumps({'count': 1, 'value': [{'id': 31, 'name': 'junit-unit', 'resource': {'type': 'Container',
         'downloadUrl': 'https://dev.azure.com/example-org/tidewater/_apis/build/builds/2207/artifacts?artifactName=junit-unit&$format=zip'}}]}, indent=1) + '\n', encoding='utf-8', newline='\n')
     (az / 'history.json').write_text(json.dumps({'count': 2, 'value': [
-        {'id': 2207, 'sourceVersion': head, 'sourceBranch': 'refs/heads/main', 'result': 'failed', 'startTime': f'{T[1]}:00Z'},
-        {'id': 2201, 'sourceVersion': green, 'sourceBranch': 'refs/heads/main', 'result': 'succeeded', 'startTime': '2026-11-09T01:20:00Z'}]}, indent=1) + '\n', encoding='utf-8', newline='\n')
+        {'id': 2207, 'sourceVersion': head, 'sourceBranch': 'refs/heads/main', 'result': 'failed', 'startTime': f'{T[1]}:00Z', 'reason': 'individualCI', 'definition': {'id': 4}},
+        {'id': 2201, 'sourceVersion': green, 'sourceBranch': 'refs/heads/main', 'result': 'succeeded', 'startTime': '2026-11-09T01:20:00Z', 'reason': 'individualCI',
+         'definition': {'id': 4}}]},
+        indent=1) + '\n', encoding='utf-8', newline='\n')
     print(f'recorded run {RUN_ID} (attempts 1 and 2) and build 2207 for {head[:12]} -> {a.out}')
     return 0
 

@@ -6,14 +6,22 @@
    "sourceVersion": "5a2cbd7d7a4721c95f4f74bb945675fbb3c9b769",
    "sourceBranch": "refs/heads/main",
    "result": "failed",
-   "startTime": "2026-11-12T03:10:00Z"
+   "startTime": "2026-11-12T03:10:00Z",
+   "reason": "individualCI",
+   "definition": {
+    "id": 4
+   }
   },
   {
    "id": 2201,
    "sourceVersion": "1e537ac23f72913514214744dcf1bae69cddab0c",
    "sourceBranch": "refs/heads/main",
    "result": "succeeded",
-   "startTime": "2026-11-09T01:20:00Z"
+   "startTime": "2026-11-09T01:20:00Z",
+   "reason": "individualCI",
+   "definition": {
+    "id": 4
+   }
   }
  ]
 }

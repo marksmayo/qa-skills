@@ -8,7 +8,9 @@
    "conclusion": "failure",
    "run_attempt": 1,
    "run_started_at": "2026-11-12T03:10:00Z",
-   "event": "push"
+   "event": "push",
+   "workflow_id": 71,
+   "path": ".github/workflows/ci.yml"
   },
   {
    "id": 101,
@@ -17,7 +19,9 @@
    "conclusion": "success",
    "run_attempt": 1,
    "run_started_at": "2026-11-09T01:20:00Z",
-   "event": "push"
+   "event": "push",
+   "workflow_id": 71,
+   "path": ".github/workflows/ci.yml"
   }
  ]
 }

@@ -13,5 +13,6 @@
  "repository": {
   "full_name": "example-org/tidewater"
  },
- "path": ".github/workflows/ci.yml"
+ "path": ".github/workflows/ci.yml",
+ "workflow_id": 71
 }
