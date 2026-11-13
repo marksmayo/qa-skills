@@ -42,6 +42,8 @@ SHARED = {
                              'test-data-auditor-skill', 'dead-test-finder-skill'],
     'scripts/net_guard.cjs': ['test-suite-evaluator-skill', 'flaky-test-hunter-skill:plugins/net_guard.cjs',
                               'test-data-auditor-skill', 'dead-test-finder-skill'],
+    'scripts/net_guard_proxy.py': ['test-suite-evaluator-skill', 'flaky-test-hunter-skill:plugins/net_guard_proxy.py',
+                                   'test-data-auditor-skill', 'dead-test-finder-skill'],
     'scripts/py_routes.py': ['journey-mapper-skill', 'api-contract-tester-skill', 'code-security-auditor-skill',
                              'test-suite-evaluator-skill'],
     'scripts/lang_census.py': ['code-security-auditor-skill', 'dead-test-finder-skill', 'flaky-test-hunter-skill',

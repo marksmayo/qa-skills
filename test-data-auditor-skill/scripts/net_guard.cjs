@@ -20,6 +20,10 @@
 // process's stderr is empty (CLI tests inherit NODE_OPTIONS) are not broken by the guard. Without
 // QA_NET_GUARD_LOG, or when the log cannot be written, they go to stderr. A refusal names the first stack
 // frame outside Node's internals and node_modules (`from <file>:<line>`), so it can be tied to a test.
+//
+// Go, Rust, JVM and .NET test binaries can't load this guard: use net_guard_proxy.py (a refusing loopback
+// proxy with the same `loaded`/`refused` log lines, plus an isolated HOME/USERPROFILE). It guards only clients
+// that honour HTTP(S)_PROXY, so its limits must be stated with the result.
 'use strict';
 const net = require('node:net');
 const dns = require('node:dns');

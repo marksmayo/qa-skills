@@ -19,6 +19,18 @@ captured stderr are not disturbed by the guard. Without QA_NET_GUARD_LOG, or whe
 written, they go to stderr. A refusal names the first stack frame outside the standard library and
 site-packages (`from <file>:<line>`), so it can be tied to a test.
 
+Go, Rust, JVM and .NET tests can't load this plugin (nor net_guard.cjs). For them use net_guard_proxy.py:
+
+    python net_guard_proxy.py run --log <scratch>/net_guard.log --home <scratch>/home -- go test ./...
+
+It runs the command behind a refusing loopback proxy (HTTP_PROXY, HTTPS_PROXY, ALL_PROXY; NO_PROXY=loopback)
+that logs the same `net_guard: loaded ...` and `net_guard: refused <host>:<port>` lines, and with --home gives the
+tests an empty HOME/USERPROFILE (and XDG/APPDATA dirs), keeping Go's GOCACHE/GOMODCACHE where they were and
+setting GOTOOLCHAIN=local and GOPROXY=off; its summary lists the files tests left in that home. It guards only
+clients that honour the proxy variables (Go's default net/http transport does; net.Dial and custom transports do
+not), so say so with the result. With run_tests.py: start `net_guard_proxy.py serve --port N --log L` and pass
+the pairs `net_guard_proxy.py env --port N --home H` prints to --env.
+
 On Windows, give Windows Python Windows paths: Git Bash converts a single-entry `PYTHONPATH=/c/...`
 but not a `;`-separated list, and a path after a prefix such as `--cov-report=json:` is never
 converted, so the guard silently doesn't load or output lands in `C:\\c\\...`.
