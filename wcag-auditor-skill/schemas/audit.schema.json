@@ -8,7 +8,7 @@
   "required": ["schema_version", "skill", "generated_at", "scope", "metadata", "headline", "sc_results", "findings",
                "advisories", "needs_review", "triage", "manual_test_plan", "assisted_review", "limitations", "files_written"],
   "properties": {
-    "schema_version": {"const": "1.0"},
+    "schema_version": {"enum": ["1.0", "1.1"]},
     "skill": {"type": "object", "additionalProperties": false, "required": ["name", "version"],
       "properties": {"name": {"const": "wcag-auditor"}, "version": {"type": "string"}}},
     "generated_at": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T"},
@@ -131,7 +131,7 @@
         "en301549": {"type": "array", "items": {"type": "string"}}
       }},
     "advisory": {"type": "object", "additionalProperties": false, "required": ["id", "kind", "title", "sc", "candidate_ids", "sources", "pages", "note", "remediation"],
-      "properties": {"id": {"type": "string", "pattern": "^A-\\d+$"}, "kind": {"enum": ["best_practice", "above_target_level", "outside_version"]},
+      "properties": {"id": {"type": "string", "pattern": "^A-\\d+$"}, "kind": {"enum": ["best_practice", "above_target_level", "outside_version", "obsolete"]},
                      "title": {"type": "string", "minLength": 10}, "sc": {"type": "array", "items": {"$ref": "#/$defs/sc_id"}},
                      "candidate_ids": {"type": "array", "items": {"type": "string"}}, "sources": {"type": "array", "items": {"$ref": "#/$defs/source"}},
                      "pages": {"type": "array", "items": {"type": "string"}}, "note": {"type": "string", "minLength": 10},

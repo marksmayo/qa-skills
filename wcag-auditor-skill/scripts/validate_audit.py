@@ -167,6 +167,22 @@ def compute_summary(d: dict) -> dict:
             'blocked_critical_paths': sorted({f['critical_path']['name'] for f in d['findings'] if f.get('blocks_critical_path') and f.get('critical_path')})}
 
 
+# candidate kind (normalize.py) -> advisory kind (schema)
+ADVISORY_KIND = {'best_practice': 'best_practice', 'experimental': 'best_practice', 'above_level': 'above_target_level',
+                 'outside_version': 'outside_version', 'obsolete': 'obsolete'}
+ECHO_PREFIX =re.compile(r'(?i)^\W*(needs (a )?(human|manual) (check|review)|needs review|manual check|to check|check)\W*')
+
+
+def _flat(s: str) -> str:
+    return re.sub(r'\W+', ' ', ECHO_PREFIX.sub('', s or '').lower()).strip()
+
+
+def echoes(reason: str, texts: list[str]) -> bool:
+    """The reason adds nothing: after a "needs a human check:" style prefix it is (a cut of) one of the texts."""
+    r = _flat(reason)
+    return len(r) < 25 or any(r and r in _flat(t) for t in texts if t)
+
+
 def sources_key(s: dict) -> tuple:
     return (s['tool'], s['rule_id'])
 
@@ -249,6 +265,13 @@ def check(d: dict, run_dir: Path | None, cands: dict | None) -> list[str]:
             for i in ids:
                 if i not in nrs or r['sc'] not in nrs[i]['sc']:
                     e.append(f'{where}: needs-review item {i} missing or does not list {r["sc"]}')
+        if r['outcome'] in ('passed', 'failed') and 'agent_review' in r['basis'] and r['sc'] not in d['assisted_review']['scs_reviewed']:
+            e.append(f'{where}: basis agent_review, but assisted_review.scs_reviewed does not list {r["sc"]}')
+        if r['outcome'] == 'failed' and cited:
+            best = min((CONF_ORDER[f['confidence']] for f in cited), default=CONF_ORDER['low'])
+            if CONF_ORDER[r['confidence']] < best:
+                e.append(f'{where}.confidence: {r["confidence"]} is above every finding that fails it '
+                         f'(best is {[k for k, v in CONF_ORDER.items() if v == best][0]})')
         if r['outcome'] == 'untested' and r['sc'] not in plan:
             e.append(f'{where}: untested SCs must be in the manual_test_plan')
         if scope['standards_map'] == 'en301549' and r.get('en301549_clause') != en_map.get(r['sc']):
@@ -376,6 +399,13 @@ def check(d: dict, run_dir: Path | None, cands: dict | None) -> list[str]:
     for a in d['advisories']:
         if a['kind'] == 'above_target_level' and a['sc'] and all(sc in targets for sc in a['sc']):
             e.append(f'advisories[{a["id"]}]: above_target_level but its SCs are in the target')
+        if a['kind'] == 'obsolete' and a['sc'] and not all(scs.get(sc, {}).get('obsolete_in') and
+                                                          VERSION_ORDER[version] >= VERSION_ORDER[scs[sc]['obsolete_in']] for sc in a['sc']):
+            e.append(f'advisories[{a["id"]}]: obsolete, but not every SC it lists is obsolete in WCAG {version}')
+        for cid in a['candidate_ids']:
+            c = cand_by_id.get(cid)
+            if c and c['kind'] in ADVISORY_KIND and a['kind'] != ADVISORY_KIND[c['kind']] and c['kind'] in ('obsolete', 'outside_version'):
+                e.append(f'advisories[{a["id"]}]: candidate {cid} is {c["kind"]}, so the advisory kind is {ADVISORY_KIND[c["kind"]]}')
     for m in d['manual_test_plan']:
         if m['sc'] not in targets:
             e.append(f'manual_test_plan[{m["sc"]}]: outside the target')
@@ -406,6 +436,10 @@ def check(d: dict, run_dir: Path | None, cands: dict | None) -> list[str]:
                 e.append(f'{w}: not a candidate in the candidates file')
             elif c['kind'] != 'wcag' and t['decision'] in ('finding', 'needs_review'):
                 e.append(f'{w}: {c["kind"]} candidates are advisories or dismissed, never WCAG findings')
+            elif t['decision'] == 'needs_review' and c['outcome'] == 'failed' and t['ref'] in nrs and \
+                    echoes(t['reason'], [nrs[t['ref']]['what_to_check']] + [s.get('message') or '' for s in c['sources']]):
+                e.append(f'{w}: a failed candidate kept as needs review needs a reason saying why the failure is not '
+                         'confirmed (what was looked at); this one only repeats the needs-review text or the tool message')
             elif t['decision'] == 'dismissed' and c['kind'] == 'wcag' and c['outcome'] == 'cantTell':
                 est = c.get('contrast_estimate')
                 if est and (est.get('min_ratio') is None or est.get('below')):

@@ -1,7 +1,7 @@
 ---
 name: wcag-auditor
 description: Audit live web pages against WCAG (2.2 AA by default) without needing the source code. Runs three open-source engines inside a real browser (axe-core, IBM Equal Access, HTML_CodeSniffer), adds keyboard, focus, reflow, text-spacing, zoom, target-size, hover, motion, language and media probes, merges and de-duplicates the results by component, maps every issue to a success criterion, rates severity with a published rubric, and gives every SC at the target level an EARL outcome. Untested criteria become a manual test plan. The report never says the site conforms.
-version: 1.1.0
+version: 1.2.0
 ---
 
 # WCAG Auditor
@@ -72,6 +72,8 @@ What sets this apart from running one checker:
 | `auth` | optional | `{"storage_state": file}`: a session a person captured by signing in by hand (`python scripts/browser_harness.py capture-session --url <app> --out <file outside the repo>`; its sessionStorage is restored too), or a login recipe whose fields read credentials from environment variables; `run.json` records only which kind was used |
 | `viewports` | `1280x800`, `320x640` | 320 px also covers 1.4.10 Reflow |
 | `max_pages` | 25 | Sampling cap for crawled and sitemap pages; listed targets are always audited |
+| `crawl.max_loads` | 4 x `max_pages` | Most pages the crawl loads; it stops sooner once `max_pages` templates are found or `max_pages` loads in a row add no new template |
+| `settle_seconds` | 10 | Most time spent waiting for each load to settle (network quiet for 500 ms, then a quiet DOM). Event streams, websockets, long-poll and hot-reload requests, and any request open longer than `long_lived_seconds` (4), don't hold it open; `events` names them |
 | `random_sample` | 0.1 | Share of the remaining crawled pages added at random (seeded); `0` adds none |
 | `third_party` | `block` | Every request to a host that isn't loopback, a target's host or in `allowed_hosts` is aborted and logged. Third-party content (embeds, fonts, widgets from other hosts) is then absent: say so in `limitations`, or let a host through |
 | `allowed_hosts` | none | Further hosts to let through, such as a CDN the site needs (`"*.cdn.example"` allowed) |
@@ -112,13 +114,17 @@ named in `limitations`. If installs aren't allowed, say what can't be done; don'
 python scripts/run_audit.py --config audit_config.json --out <run-dir> --plan-only
 ```
 
-The runner crawls (or reads the sitemap), groups pages into templates by URL pattern and landmark
-structure, and samples every critical-path page and every listed target (never dropped for
+The runner crawls (or reads the sitemap), printing each page it loads, groups pages into templates by
+URL pattern, page-level landmarks and the kinds of element in `main` (content landmarks such as
+regions, labelled sections, forms and dialogs, and repeat counts, are left out, so a docs page with
+four code-block regions shares a template with one that has none), and samples every critical-path page and every listed target (never dropped for
 sharing a template), one page per template not yet covered, and about 10% more of the rest at
 random (seeded). Each page records how it entered the sample (`critical_path`, `listed`,
 `structured`, `random`, or `unreachable`). Check the sample makes sense before the full run; add
 targets for templates the crawl missed. A plan-only run records every engine as `not_run` with the
-reason "plan only": that is expected, not a failure.
+reason "plan only": that is expected, not a failure. Responses that aren't HTML (a linked `.txt`,
+XML or JSON file) are skipped, not sampled; `run.json` lists them under `crawl.skipped_non_html`
+with why the crawl stopped.
 
 ### 4. Run engines and probes
 
@@ -136,13 +142,13 @@ so the audited page is never reloaded under later probes.
 
 | Probe | SCs | What it measures |
 |---|---|---|
-| `keyboard` | 2.1.1, 2.1.2, 2.4.3 | Tab order from the top of the document (an invisible starting point focused at the start of the body; nothing is clicked, so the first Tab reaches a skip link even under a fixed header); traps (no new element for 15 presses, then Shift+Tab and Escape tried); clickable elements that aren't focusable, with their click listeners; menu links that only `:hover` reveals and no key opens (focus, ArrowDown, and Enter and Space unless the control follows a link or submits a form) |
-| `focus_visible` | 2.4.7, 2.4.11, 2.4.12 | Pixels changed around each element when focused; whether fixed or sticky content covers it |
+| `keyboard` | 2.1.1, 2.1.2, 2.4.3 | Tab order from the top of the document (an invisible starting point focused at the start of the body; nothing is clicked, so the first Tab reaches a skip link even under a fixed header); traps (no new element for 15 presses, then Shift+Tab and Escape tried); clickable elements that aren't focusable, with their click listeners; menu links that only `:hover` reveals and no key opens (focus, ArrowDown, and Enter and Space unless the control follows a link or submits a form). Clickable heading text whose heading holds a focusable `#` anchor link is not reported; a clickable element with a focusable sibling link or button is needs review, not failed. In a named state with a modal open and focus inside it, Tab starts from the focused element and only the modal's controls are expected (`start: active_element`) |
+| `focus_visible` | 2.4.7, 2.4.11, 2.4.12 | Pixels changed around each element when focused; whether fixed or sticky content covers it (a fixed header that contains the focused control doesn't count); focus guards (`data-*focus-guard`, 0 x 0 `aria-hidden` sentinels) are not measured |
 | `reflow` | 1.4.10 | Horizontal scrolling at 320 px and the element causing it (tables, video and other two-dimensional content flagged as possibly exempt); content past the viewport on a page that can't scroll sideways (cut off: `reflow.clipped`, failed), or cut off by an ancestor with overflow hidden (needs review) |
 | `text_spacing` | 1.4.12 | Text clipped once the WCAG spacing overrides are applied (visually hidden `.sr-only` text excluded); the overrides are read back, and a refused stylesheet makes the probe `errored` |
 | `resize_text` | 1.4.4 | Text clipped at 200% zoom (half the viewport at device scale 2; visually hidden text excluded); viewport meta that blocks zoom |
 | `target_size` | 2.5.8 | Pointer targets (links, buttons, controls, ARIA widgets; never a `tabindex` container or a visually hidden link) under 24 x 24 px whose 24 px circle overlaps another target, measured at the top of the page; fixed or sticky targets are compared only with each other; inline links exempt |
-| `hover_focus` | 1.4.13 | Content shown on hover: dismissible with Escape, hoverable, persistent |
+| `hover_focus` | 1.4.13 | Content shown on hover: dismissible with Escape, hoverable, persistent. Anything that appears inside the hovered element's own box (an icon, a tint) is not additional content and is only counted (`own_box_changes`) |
 | `motion` | 2.2.2 | Content still changing 5 to 7.5 s after load with no pause control; again with reduced motion |
 | `a11y_tree` | 1.3.1, 2.4.6, 4.1.2 | Accessibility-tree snapshot, headings and landmarks for the assisted review |
 | `language` | 3.1.1 | `lang` present, valid, and matching the language of the text |
@@ -191,8 +197,11 @@ Every candidate gets exactly one triage entry:
 
 - **finding**: a WCAG A/AA failure you are confident of. One root cause is one finding, even when
   it spans several candidates and SCs (an unnamed logo link reported as both 1.1.1 and 2.4.4).
-- **needs_review**: a `cantTell` that a person must check, with `what_to_check`.
-- **advisory**: best practice, above the target level, or outside the target version.
+- **needs_review**: a `cantTell` that a person must check, with `what_to_check`. A `failed`
+  candidate kept as needs review needs a reason saying why the failure is not confirmed (what you
+  looked at); repeating the needs-review text or the tool message is rejected.
+- **advisory**: best practice, above the target level, outside the target version, or `obsolete`
+  (4.1.1 in WCAG 2.2): the advisory kind follows the candidate's kind.
 - **dismissed**: with a reason someone can check, such as the computed contrast ratio and the
   colours it came from, the probe measurement that contradicts the hint, or the exemption that
   applies. "False positive" alone is rejected.
@@ -215,7 +224,8 @@ Using the screenshots, the accessibility-tree snapshots and the page itself, rev
 need judgment: 1.1.1 alt-text quality, 1.3.1 visual structure against markup, 1.3.5
 autocomplete, 1.4.1 colour-only meaning, 2.4.2 and 2.4.6 descriptive titles, headings and labels,
 2.4.4 link purpose, 3.2.3/3.2.4/3.2.6 consistency across pages, and 3.3.1/3.3.2 errors and
-labels (use the form-error state). List what you reviewed in `assisted_review.scs_reviewed`.
+labels (use the form-error state). List what you reviewed in `assisted_review.scs_reviewed`; every
+SC passed or failed with `agent_review` in its basis must be listed there.
 Findings from this step are `agent_judgment`.
 
 ### 8. Rate
@@ -227,7 +237,8 @@ Follow `RUBRIC.md`:
   and it is always Critical for the non-interference SCs (1.4.2, 2.1.2, 2.2.2, 2.3.1). To deviate
   from the default, give `severity_override_reason`. Tool impact labels are inputs only.
 - **Confidence**: `high` needs two agreeing failing sources or a failing rule that implements an
-  ACT rule; one heuristic engine or one probe is `medium`; agent judgment is `medium` at most.
+  ACT rule; one heuristic engine or one probe is `medium`; agent judgment is `medium` at most. A
+  failed SC's confidence is never above the most confident finding that fails it.
 - **Priority** = severity weight x reach x leverage, with floors; see `RUBRIC.md`. Set
   `blocks_critical_path` when a user group can't complete the step at all; that makes it P0.
 
@@ -240,7 +251,7 @@ the `manual_test_plan` with concrete steps and pages.
 
 ### 10. Report, validate and render
 
-Write `audit.json` (described by `schemas/audit.schema.json`; its `schema_version` is `"1.0"`) next
+Write `audit.json` (described by `schemas/audit.schema.json`; its `schema_version` is `"1.1"`; `"1.0"` reports still validate) next
 to the run directory, then:
 
 ```bash
@@ -283,6 +294,8 @@ reason, the P0 and P1 findings, blocked critical paths, what was untested and th
   probes to be `errored` on pages whose CSP refuses injected scripts or styles.
 - **CAPTCHAs:** stop, record the page as blocked, report affected SCs as `untested`.
 - **SPAs:** the runner waits for network idle and a quiet DOM; add `wait_for` actions for slow views.
+- **Dev servers** (hot reload, socket.io long-poll, event streams) never go network-idle: those
+  connections are ignored and each load's settle is capped (`settle_seconds`); `events` records it.
 - **Infinite scroll:** capped by `max_pages`; don't scroll endlessly.
 - **WAF or rate limits:** the runner backs off; if it keeps failing, record it in `events` and limitations.
 - **Login:** use a captured session (`capture-session`) or a login recipe with `env` fields. Never put credentials in the config, and keep the session file outside the repository.

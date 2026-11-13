@@ -353,3 +353,45 @@ Differences from the draft above, and decisions made while building:
     ones. `schema_version` (`"1.0"`, unchanged) is documented.
   - The example run predates these probe changes; its items and candidates regenerate unchanged
     with the new `normalize.py` and `merge_findings.py`, and the report validates as before.
+- **Found on a docs site served by a dev server, fixed (v1.2.0):**
+  - *Every load waited the full network-idle timeout*: the dev server held a long-poll open, so
+    Playwright's `networkidle` never came and a 12-page plan took 21 minutes. `settle()` now counts
+    the page's requests itself and ignores event streams, websockets, long-poll and hot-reload
+    endpoints and any request open longer than `long_lived_seconds` (4); the whole settle (network,
+    then a quiet DOM) is capped by `settle_seconds` (10). `events` names the long-lived connections
+    and any cap reached, so the report can say what was not waited for.
+  - *The crawl loaded `max_pages x 4` pages* with no output, in plan-only mode too. It prints each
+    load, takes `crawl.max_loads`, and stops once `max_pages` templates are found or `max_pages`
+    loads in a row add no new template (listed targets and critical-path steps are always loaded
+    first). `run.json` gains `crawl` (loads, limit, templates, why it stopped) and `settle`.
+  - *Every docs page was its own template*: code blocks are `region` landmarks and the key took the
+    first six children of `main` literally. The key now drops content landmarks (region, labelled
+    section, form, dialog) and repeat counts.
+  - *A linked text file was sampled as unreachable*: non-HTML responses are skipped and listed
+    (`crawl.skipped_non_html`); links to text, data, media and asset files are not queued.
+  - *Probe false positives*: hovering a sidebar item changed only its own box, and since `:hover`
+    still held after Escape it was "not dismissible" (31 candidates). Elements that appear inside
+    the hovered element's own box are no longer content on hover (counted in `own_box_changes`;
+    `normalize.py` applies the same rule to older runs from the recorded rectangles). Clickable
+    heading text whose heading holds a focusable `#` anchor link is not reported as unreachable,
+    and one with a focusable sibling control is needs review. A fixed header that contains the
+    focused control no longer "obscures" it (also applied to older runs from the recorded covering
+    element). Focus guards (`data-*focus-guard`, 0 x 0 `aria-hidden` spans) are not measured for a
+    focus indicator. In a named state with a modal open and focus inside (a search dialog opened
+    with a shortcut), the keyboard probe starts from the focused element and expects only the
+    modal's controls (`start: active_element`), instead of tabbing through the page behind it.
+  - *Repeated components split into one candidate per instance* because their ids were generated
+    (React `_R_1p5x_`, Base UI) or per-page paths. Component signatures drop such instance ids
+    (probes.js for new runs, `merge_findings.py` for any run). Re-merging the reported run with the
+    new `normalize.py` and `merge_findings.py` (no re-capture) gave 124 candidates instead of 215.
+  - *Validator leniency*: an SC passed or failed with `agent_review` in its basis must be in
+    `assisted_review.scs_reviewed`; a failed SC is never more confident than its most confident
+    finding; a `failed` candidate kept as needs review needs a reason beyond the needs-review text
+    or the tool message. 4.1.1 (obsolete in 2.2) candidates are advisories of the new kind
+    `obsolete` (schema 1.1; 1.0 reports still validate), and an advisory's kind must match an
+    obsolete or outside-version candidate's kind.
+  - Not done: grouped triage (one entry for many candidates by rule and match). The id and
+    own-box fixes remove most of the repetition that made it necessary; the schema still takes
+    one triage entry per candidate. The example run predates these changes and was not re-captured
+    (the release gate and orchestrator examples hash the report); its items and candidates
+    regenerate unchanged and the report (schema 1.0) validates as before.

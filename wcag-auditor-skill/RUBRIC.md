@@ -50,7 +50,8 @@ states; only 3.1.1), `partial` (automation finds some failures but never proves 
 | `medium` | One heuristic engine rule, or one probe on its own; or agent judgment corroborated by a tool's needs-review result | The keyboard probe finds a trap |
 | `low` | Agent judgment alone | Three "Read more" links with no programmatic context |
 
-`agent_judgment` is never `high`.
+`agent_judgment` is never `high`. An SC result marked `failed` is never more confident than the
+most confident finding that fails it.
 
 ## Priority
 
@@ -98,9 +99,11 @@ assisted review was done; `medium` when completeness >= 0.6; otherwise `low`.
 or probe data confirms what the tool says. Merge candidates with one root cause into one finding.
 
 **Needs review** when a person has to look or listen (captions, a control the probes couldn't
-reach). Say exactly what to check.
+reach). Say exactly what to check. A `failed` candidate kept as needs review also needs a reason
+saying why the failure is not confirmed; repeating the tool message or `what_to_check` is rejected.
 
-**Advisory** for best practice, AAA when the target is AA, or SCs outside the target version.
+**Advisory** for best practice, AAA when the target is AA, SCs outside the target version, or
+an SC obsolete in it (4.1.1 in 2.2, kind `obsolete`).
 
 **Dismiss** with a reason someone can check:
 
