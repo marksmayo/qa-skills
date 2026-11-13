@@ -16,7 +16,11 @@ module binds `datetime.datetime` as a C type at import and crashes the interpret
 violation or stack overflow, no traceback) when it finds a Python subclass there. The cost is
 that their own clocks are not moved: `pandas.Timestamp.now()`, `numpy.datetime64('now')` and
 other C code keep the real time. Code that imported the names before the plugin loaded, other
-processes and databases keep the real clock too: prefer the repo's own freezegun, time-machine,
+processes and databases keep the real clock too. File times are not moved either (unlike
+clock_shift.mjs, which moves what fs.stat reports): `os.stat(f).st_mtime` stays real, so code that
+ages a file against `time.time()` (lock expiry, cache freshness) sees a file written a moment ago
+as hundreds of days old under +400d; read such a failure as skew between the two clocks, not as a
+time bomb, unless the code under test really compares the two. Prefer the repo's own freezegun, time-machine,
 Jest fake timers or injected clock when it has one, and libfaketime for whole processes.
 """
 from __future__ import annotations
