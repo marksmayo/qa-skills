@@ -13,7 +13,8 @@
     "keyboard.trap":                {"sc": "2.1.2", "pattern": "2.1.2-keyboard-trap", "kind": "failure", "probe": "keyboard", "what": "Tab does not move focus and Escape or Back does not leave"},
     "keyboard.unreachable":         {"sc": "2.1.1", "pattern": "2.1.1-control-not-keyboard", "kind": "failure", "probe": "keyboard", "what": "A clickable control never receives focus with Tab"},
     "motion.auto-advance":          {"sc": "2.2.2", "pattern": "2.2.2-moving-content-no-pause", "kind": "failure", "probe": "motion", "what": "Content changes by itself between screenshots 5 s and 7.5 s apart, with no pause, stop or hide control on the screen"},
-    "heading.not-exposed":          {"sc": "1.3.1", "pattern": null, "kind": "review", "probe": "a11y_tree", "what": "uiautomator does not expose headings; check heading semantics with TalkBack or source"}
+    "heading.not-exposed":          {"sc": "1.3.1", "pattern": null, "kind": "review", "probe": "a11y_tree", "what": "uiautomator does not expose headings; check heading semantics with TalkBack or source"},
+    "glyph.icon-font":              {"sc": "1.1.1", "pattern": null, "kind": "review", "probe": "a11y_tree", "what": "Text made only of private-use code points (an icon font glyph): look at the screenshot - a box or blank means the icon font is not loaded - and check the control has a name; never measured as text contrast"}
   },
   "engines": {
     "android": [{"name": "mobile-checks", "role": "the skill's own checks on the hierarchy and screenshot"}, {"name": "accessibility-test-framework", "role": "Google ATF checks (instrumentation APK)"}],

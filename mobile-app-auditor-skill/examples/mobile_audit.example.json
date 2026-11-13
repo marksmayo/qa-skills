@@ -1,5 +1,5 @@
 {
- "schema_version": "1.0.0",
+ "schema_version": "1.1.0",
  "skill": "mobile-app-auditor",
  "generated_at": "2026-11-12T00:30:00Z",
  "scope": {
@@ -369,6 +369,8 @@
     "status": "ran"
    }
   ],
+  "run_status": "complete",
+  "run_status_reason": null,
   "settings_changed": [
    {
     "kind": "setting",

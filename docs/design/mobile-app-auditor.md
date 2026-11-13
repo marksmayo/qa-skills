@@ -277,3 +277,55 @@ Where the build differs from the design above, and what the example showed.
   24.4 dp and 48 dp touch areas, leaving a 48 dp advisory. Both decoys raised no candidate.
 - **Testing:** 38 of 38 seeded violations are caught, including unrestored settings, a crash log that mixes
   processes, and a replay that didn't reproduce.
+
+## As built (v1.1.0)
+
+Gaps found by running v1.0.0 against a React Native benchmark app (24 screens, Android 16), and what changed.
+
+- **ANR records are this run's and this app's.** v1.0.0 took the first `Subject:` and the first `"main"`
+  block of the whole dropbox, so a device holding older ANRs of another app gave the new ANR that app's
+  reason and frames. Exploration now notes the dropbox entries present when it starts and takes the newest
+  new entry whose `Process:` is the audited package, and the main thread of that process's own pid section
+  (an entry can hold several processes' dumps). The reason comes from the system's ANR line, read as
+  `Reason:\s*` because Android 16 prints `Reason:Input ...` with no space; the short reason drops everything
+  from the first parenthesis (the old regex failed when the subject ended in a full stop).
+- **Recovered or killed is decided by the process,** not by log lines: the log still held the ANR line, so
+  every ANR was "killed" (B1). The record keeps `pid_before`, `pid_after` and whether the dialog was shown.
+  Log reads are limited to lines written since the action (`logcat -t <device time>`), one call per poll.
+- **ANRs caused by the probe's own input are labelled.** The record names the input that timed out
+  (`input_event`, `probe_input: true` for the explorer's SHIFT) and the device's CPU pressure from the dropbox
+  entry. `--input-delay` (default 2 s) waits before the key press, so a WebView still being built isn't hit.
+  Host load is not recorded (no portable stdlib reading on Windows); the device's pressure is.
+- **A launch with no app node is an error,** not a `StopIteration`: a system dialog (`aerr_wait`) is waited
+  out up to three times, then exploration stops with `run_status: "not_run"` and says what was on screen.
+- **Device changes are journaled before they are made** (`<run>/device_changes.json`, one session per script),
+  with the first "before" value, and `adb_device.py restore` puts back what a killed run left; a script will not
+  start while the journal holds unrestored changes (its "before" values would be the leftovers). An existing
+  density override is restored as it was, not reset. Rotation changes nothing when already in place.
+- **run.json is written after every screen** (atomically), `run_status: "partial"` until the last; `--resume`
+  carries on (same package and APK) and `--budget-min` stops early. The audit copies `run_status` into
+  `metadata` (schema 1.1.0); the validator requires it to match and a partial run or exploration to be named
+  in the limitations, and checks the journal when the run has one.
+- **The destructive filter reads the visible name** (own text, else descendants' text, else the description's
+  first sentence), so a navigation row whose description mentions "delete" is explored; skipped controls are
+  listed in `screen_graph.json`.
+- **Speed.** Exploration reaches the next control's screen with Back when the signature confirms it, waits
+  `--settle` 6 s after the key press instead of 7 s after two, and launch and step waits are options. The
+  audit reuses the screen already on the device for motion, orientation and keyboard (no relaunch when the
+  controls match), and the keyboard probe stops once focus goes round once or is stuck. Not measured on a
+  device in this version (no emulator was available while fixing); per-screen probes that change a setting
+  still relaunch.
+- **Text scaling:** React Native reports a clipped text's visible bounds, and every row on the screen was
+  clipped alike, so "grew less than the median" never fired. Clipping now compares the room left in a
+  container that kept its height with the expected growth (1.8x body text, 1.5x larger, more when unheld
+  texts grew more), and also catches centred text that now fills its row.
+- **Icon fonts:** text made only of private-use code points is kept out of contrast and raised as a
+  `glyph.icon-font` review candidate (1.1.1): a missing icon font shows as a box only in the screenshot.
+- **Not changed:** React Native merged containers still yield label results for inner views (SKILL.md says to
+  dismiss them and report the merge); the WebView edge case still needs a debuggable WebView; `activity` is
+  the single host activity for React Navigation screens; the validator still checks required keys rather than
+  the full JSON schema. The example run predates these changes and was not regenerated (no emulator); its
+  records lack `run_status` and the journal, which the validator reads as a complete run.
+- **Testing:** `scripts/self_test.py` drives the scripts against a fake adb (synthetic dropbox, logcat,
+  settings and hierarchy output): 52 checks, including a run killed mid-screen and resumed.
+

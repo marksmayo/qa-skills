@@ -3,7 +3,7 @@
 
     python merge_findings.py --run run --out run/candidates.json
 
-Accessibility candidates (M###): every failed or advisory result is mapped through data/rule-map.json to its
+Accessibility candidates (M###): every failed, advisory or review result is mapped through data/rule-map.json to its
 SC and failure pattern, then merged per component: the same check on the same resource id (or class and
 label, when there is no id) across screens is one candidate with one instance per screen. Crash
 candidates (K##): crashes and ANRs from crashes.json merged by signature (exception and top app frame, or ANR
@@ -27,7 +27,7 @@ def main() -> int:
     groups: dict = {}
     for r in run['results']:
         rule = RULES.get(r['check'])
-        if not rule or r['status'] not in ('failed', 'advisory'):
+        if not rule or r['status'] not in ('failed', 'advisory', 'review'):
             continue
         el = r['element']
         comp = el['resource_id'] or f'{el["class"]}:{el["label"]}'

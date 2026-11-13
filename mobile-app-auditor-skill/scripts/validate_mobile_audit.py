@@ -12,7 +12,8 @@ caps; agent judgment never high confidence; the verdict only does_not_conform or
 text claims conformance.
 Mobile rules: every instance names the screen, the element (id or class, bounds, label) and a screenshot in
 the run that matches its SHA-256; checks equal run.json; an iOS tool never "ran" off macOS; every changed
-device setting was restored; every candidate (accessibility and crash) is triaged once; a crash has steps,
+device setting was restored (in the records and in the run's device_changes.json journal); metadata.run_status
+equals run.json's, and a partial run or exploration is named in the limitations; every candidate (accessibility and crash) is triaged once; a crash has steps,
 a screenshot, and a log excerpt from one process only; a reproduced crash has a replay record that
 reproduced it; a crash from random input has a seed; crash scores, bands and the not-reproduced cap (P1)
 are recomputed.
@@ -120,6 +121,8 @@ def main() -> int:
     sc_scope = d['scope']
     tset = target(M, sc_scope['wcag_version'], sc_scope['level'])
     sampled = [s['id'] for s in run['sample'] if s['reason'] != 'unreachable']
+    if d['schema_version'] != '1.1.0':
+        e(f'schema_version {d["schema_version"]!r} should be 1.1.0')
 
     # metadata -------------------------------------------------------------------
     host = tools_file['host']['os']
@@ -140,6 +143,20 @@ def main() -> int:
                 e(f'device setting {c.get("ns", "")} {c.get("key", c["kind"])} was changed and not restored')
     if d['metadata'].get('settings_changed') is None:
         e('metadata.settings_changed missing')
+    journal = a.run / 'device_changes.json'
+    if journal.exists():
+        for c in (c for s in json.loads(journal.read_text(encoding='utf-8')).get('sessions', []) for c in s.get('changes', [])):
+            if not c.get('restored'):
+                e(f'device_changes.json: {c.get("ns", "")} {c.get("key", c["kind"])} was changed and not restored (adb_device.py restore)')
+    # run status: a run.json from before run_status was recorded is a finished run
+    run_status = run.get('run_status', 'complete')
+    if d['metadata'].get('run_status') != run_status:
+        e(f'metadata.run_status {d["metadata"].get("run_status")!r} should be {run_status!r} (run.json)')
+    lims = ' '.join(d['limitations']).lower()
+    if run_status != 'complete' and 'partial' not in lims:
+        e(f'run.json is {run_status} ({run.get("run_status_reason")}), but the limitations do not say the audit is partial')
+    if graph.get('run_status', 'complete') != 'complete' and not ('exploration' in lims and ('partial' in lims or 'not run' in lims)):
+        e(f'exploration is {graph["run_status"]} ({graph.get("run_status_reason")}), but the limitations do not say so')
     if sorted(s['id'] for s in d['scope']['sample']) != sorted(s['id'] for s in run['sample']):
         e('scope.sample differs from run.json')
 

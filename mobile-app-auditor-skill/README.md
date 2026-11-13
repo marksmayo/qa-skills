@@ -40,12 +40,19 @@ version; reported as `not_run`).
 python scripts/check_tools.py --out run/tools.json
 adb install -r app-debug.apk
 python scripts/explore.py --package com.example.app --activity .MainActivity --out run
-python scripts/run_mobile_audit.py --run run --apk app-debug.apk
+python scripts/run_mobile_audit.py --run run --apk app-debug.apk   # killed? restore, then add --resume
 python scripts/crash_explore.py --run run --replay
 python scripts/merge_findings.py --run run --out run/candidates.json
 python scripts/validate_mobile_audit.py run/mobile_audit.json --run run
 python scripts/render_report.py run/mobile_audit.json [--brief]
 ```
+
+Every device change is journaled in `run/device_changes.json` before it is made. If a run or the emulator
+dies mid-probe, put the device back first (`python scripts/adb_device.py restore --journal
+run/device_changes.json`; `status` lists what is left), then rerun `run_mobile_audit.py` with `--resume`.
+`--offline` runs exploration and probes in airplane mode (restored afterwards); `--budget-min` stops the
+audit after that long with a partial run. From Git Bash on Windows, adb commands typed by hand with
+device paths (`/sdcard/...`) need `MSYS_NO_PATHCONV=1`.
 
 ## Example
 
@@ -56,6 +63,7 @@ Android 16 emulator (listed in `examples/run/commands.sh`), with the APK it test
 
 ```bash
 python scripts/validate_mobile_audit.py examples/mobile_audit.example.json --run examples/run
+python scripts/self_test.py
 python scripts/render_report.py examples/mobile_audit.example.json
 ```
 
@@ -66,13 +74,15 @@ python scripts/render_report.py examples/mobile_audit.example.json
 - `schemas/mobile_audit.schema.json`: output contract
 - `data/rule-map.json`: check and probe codes to SCs and failure patterns
 - `data/wcag-sc.json`, `data/en301549-map.json`: shared with the WCAG auditor (edit them in `shared/`)
-- `scripts/adb_device.py`: adb input, hierarchy, screenshots, settings with restore, logs
+- `scripts/adb_device.py`: adb input, hierarchy, screenshots, settings with a journal and restore, logs, ANR
+  record parsing; `restore` and `status` commands for a run that died
 - `scripts/check_tools.py`: host, tools and devices
 - `scripts/explore.py`: guided exploration, screen graph, crashes and ANRs
 - `scripts/run_mobile_audit.py`: checks and probes per screen
 - `scripts/crash_explore.py`: crash replay and the seeded monkey
 - `scripts/merge_findings.py`: candidates per component and crash signature
 - `scripts/validate_mobile_audit.py`, `scripts/render_report.py`
+- `scripts/self_test.py`: the device logic against a fake adb (no emulator needed)
 - `scripts/png_io.py`: shared copy (edit it in `shared/`)
 - `examples/`: the app, the run and the audit
 

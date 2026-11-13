@@ -36,6 +36,8 @@ def main() -> int:
            f'Severity: ' + ', '.join(f'{k} {v}' for k, v in h['severity_counts'].items()) + '. Crashes: ' + ', '.join(f'{c(k, k)} {v}' for k, v in h['crash_counts'].items()) + '.',
            f'SCs: {cov["total"]} - failed {cov["failed"]}, passed {cov["passed"]}, cannot tell {cov["cantTell"]}, inapplicable {cov["inapplicable"]}, untested {cov["untested"]}. '
            f'Evidence completeness {h["evidence_completeness"]}, overall confidence {h["overall_confidence"]}.', '']
+    if d['metadata'].get('run_status', 'complete') != 'complete':
+        out += [c(f'PARTIAL RUN: {d["metadata"].get("run_status_reason") or "not every sampled screen was audited"}', 'P1'), '']
     if h['blocked_critical_paths']:
         out += [f'Blocked critical paths: {", ".join(h["blocked_critical_paths"])}', '']
     out += ['## Accessibility findings', '', '| ID | Priority | SC | Severity | Component | Screens | Confidence |', '|---|---|---|---|---|---|---|']
