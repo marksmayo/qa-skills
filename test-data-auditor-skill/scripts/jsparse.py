@@ -28,6 +28,12 @@ DATE_FUNCS = {'dayjs', 'moment', 'parseISO', 'fromISO', 'DateTime.fromISO', 'Tem
               'moment.utc', 'new Date', 'Date.parse', 'parseJSON'}
 ID = re.compile(r'[A-Za-z_$][\w$]*')
 NUM = re.compile(r'0[xXbBoO][\da-fA-F_]+n?|(?:\d[\d_]*\.?\d*|\.\d+)(?:[eE][+-]?\d+)?n?')
+WS = re.compile('[ \t\r\n﻿]+')
+# a string body up to (not including) its closing quote or the end of the line; an escape takes the next character
+SQ = re.compile(r"(?:[^'\\\n]|\\[\s\S])*")
+DQ = re.compile(r'(?:[^"\\\n]|\\[\s\S])*')
+NOT_NL = re.compile(r'[^\n]')
+OPS = re.compile(r'===|!==|>>>|\.\.\.|=>|==|!=|<=|>=|&&|\|\||\?\?|\?\.|\+\+|--|\+=|-=|\*\*')
 JS_EXT = ('.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.mts', '.cts')
 
 
@@ -61,7 +67,7 @@ def tokenize(text: str) -> list[Tok]:
     while i < n:
         c = text[i]
         if c in ' \t\r\n﻿':
-            i += 1
+            i = WS.match(text, i).end()
             continue
         if text.startswith('//', i):
             j = text.find('\n', i)
@@ -72,15 +78,10 @@ def tokenize(text: str) -> list[Tok]:
             i = n if j < 0 else j + 2
             continue
         if c in '\'"':
-            j, buf = i + 1, []
-            while j < n and text[j] != c and text[j] != '\n':
-                if text[j] == '\\' and j + 1 < n:
-                    buf.append(text[j:j + 2])
-                    j += 2
-                    continue
-                buf.append(text[j])
-                j += 1
-            out.append(Tok('str', text[i:j + 1], _unescape(''.join(buf)), i, j + 1, line_of(i)))
+            m = (SQ if c == "'" else DQ).match(text, i + 1)   # body up to the closing quote or the line end
+            j = m.end()
+            body = m.group(0)
+            out.append(Tok('str', text[i:j + 1], _unescape(body) if '\\' in body else body, i, j + 1, line_of(i)))
             i = j + 1
             continue
         if c == '`':
@@ -148,14 +149,10 @@ def tokenize(text: str) -> list[Tok]:
             out.append(Tok('num', m.group(0), val, i, m.end(), line_of(i)))
             i = m.end()
             continue
-        for op in ('===', '!==', '>>>', '...', '=>', '==', '!=', '<=', '>=', '&&', '||', '??', '?.', '++', '--', '+=', '-=', '**'):
-            if text.startswith(op, i):
-                out.append(Tok('punct', op, None, i, i + len(op), line_of(i)))
-                i += len(op)
-                break
-        else:
-            out.append(Tok('punct', c, None, i, i + 1, line_of(i)))
-            i += 1
+        m = OPS.match(text, i)
+        op = m.group(0) if m else c
+        out.append(Tok('punct', op, None, i, i + len(op), line_of(i)))
+        i += len(op)
     return out
 
 
@@ -163,7 +160,7 @@ def _mask_template(src: str) -> str:
     """A template literal with its text blanked and its ${...} expressions kept (string literals inside them blanked):
     `k-${Math.random()}` is code that runs, and must stay visible to the call patterns."""
     out, i, n = ['`'], 1, len(src)
-    blank = lambda s: re.sub(r'[^\n]', ' ', s)  # noqa: E731
+    blank = lambda s: NOT_NL.sub(' ', s)  # noqa: E731
     while i < n - 1:
         if src[i] == '\\' and i + 1 < n - 1:
             out.append(blank(src[i:i + 2]))
@@ -199,16 +196,17 @@ def masked(text: str, toks: list[Tok] | None = None) -> str:
     toks = toks if toks is not None else tokenize(text)
     out, last = [], 0
     for t in toks:
-        gap = text[last:t.pos]
-        out.append(re.sub(r'[^\n]', ' ', gap))             # whitespace and comments
+        if t.pos > last:
+            gap = text[last:t.pos]
+            out.append(' ' if gap == ' ' else NOT_NL.sub(' ', gap))   # whitespace and comments
         if t.kind == 'tpl':
             out.append(_mask_template(t.text))
         elif t.kind in ('str', 'regex'):
-            out.append(t.text[0] + re.sub(r'[^\n]', ' ', t.text[1:-1]) + t.text[-1] if len(t.text) >= 2 else t.text)
+            out.append(t.text[0] + NOT_NL.sub(' ', t.text[1:-1]) + t.text[-1] if len(t.text) >= 2 else t.text)
         else:
             out.append(t.text)
         last = t.end
-    out.append(re.sub(r'[^\n]', ' ', text[last:]))
+    out.append(NOT_NL.sub(' ', text[last:]))
     return ''.join(out)
 
 

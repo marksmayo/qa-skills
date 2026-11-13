@@ -1,6 +1,6 @@
 # Design: `test-data-auditor-skill`
 
-Status: Built (v1.1.0), see "As built" at the end. Build order: 11.
+Status: Built (v1.3.0), see "As built" at the end. Build order: 11.
 
 ## Mission
 
@@ -429,3 +429,30 @@ cards and phones, and those false positives then made every path in the report "
 - **Example.** `clinic-api` gains a customer extract with dated batch ids, a module-reload pair of
   tests (confirmed by a reverse-order run), an HTML table saved as `.xls`, and a placeholder
   `x-api-key` header.
+
+## As built (v1.3.0): a TypeScript pnpm monorepo
+
+Found on a workspace of about 850 data sources, with a package named `e2e` that ships code:
+
+- **Speed.** `inventory.py` re-read every JavaScript test once per data file (about 140,000
+  reads); it now reads each once and counts lines in chunks. Whole repository: 2 min 10 s to
+  34 s. `scan_data.py` tokenized every JS/TS product file to look for comparisons with now; it
+  now tokenizes a product file only when its raw text mentions the clock or a locale call,
+  deduplicates candidates with a set, and the tokenizer uses compiled patterns for whitespace,
+  strings and operators (identical tokens on 1,039 files). Whole repository: 22 min to 16 min,
+  still slow; the remaining time was not profiled to the end (the run was cut short), so it is a
+  known gap.
+- **Product packages named like test areas.** A directory named `e2e`, `tests`, `spec`... is a
+  test area only when it is not a product package (a manifest that ships code), the rule
+  `diff_scope.is_test_path` uses; `inventory.json` lists them under `product_dirs`.
+- **False positives.** The email rule no longer matches package specs (`name@1.2.3`), IP hosts
+  or file names such as `icon@2x.png`.
+- **False negatives.** A module-level `let`/`var` reassigned in a test body is
+  `shared_mutable` (`reassigned_module_let`); template literal expressions are code, so
+  `Math.random()` inside `${...}` is seen.
+- **Guidance.** SKILL.md covers the shipped network guards, `run_tests.py --repo-root` for
+  workspace packages, and `clock_shift.mjs` moving `fs.stat` times.
+- **Not changed:** the other review gaps (unused-file rule and computed names, placeholder
+  secret words, magic ids for opaque UUIDs, near-duplicate device captures, TypeScript models
+  for schema drift, an exploratory-experiment slot).
+- **Example.** Unchanged: the rescan gives the same candidates.
