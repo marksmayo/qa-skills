@@ -411,3 +411,29 @@ Where the build differs from the design above, and what the example showed.
 - **Validator:** in a not_run audit a clause that says where data goes ("sent only to", "never leaves")
   must say it is what the code does; `--fix-ratings` rewrites wrong computed rating fields and lists each
   change, and the rating error shows the arithmetic.
+
+## As built (v1.3.0): fixes from a run on a TypeScript monorepo whose core package is named e2e
+
+- **Test-named directories:** a directory named like tests (`e2e`, `test`, `tests`, `spec`) is skipped as
+  test code only when it holds no package manifest (`package.json`, `pyproject.toml`, `Cargo.toml` and the
+  like): a workspace package named `e2e` is the product. A directory named after a test tool (`playwright`,
+  `cypress`) is skipped only when it holds a test file or runner config within three levels; a folder of
+  pages served at `/playwright` is scanned. The rule is the one the shared `diff_scope.py` applies, copied
+  because this skill does not carry that script. Directories kept this way are listed under
+  `test_named_dirs_scanned` and printed.
+- **Node code is server-side:** a file that reads Node built-ins (`node:` imports, `process.argv`,
+  `os.homedir()`), or any file of a package whose `package.json` declares a `bin` and no UI framework, is
+  `side: server` unless it touches the DOM, so a command-line tool's telemetry `fetch` to a vendor host is a
+  `server_side_send` candidate.
+- **The scan redacts what the validator rejects:** every string in the collection points, sinks, SDKs,
+  wrappers and candidates passes the canary matcher's redaction (labels taken from a placeholder such as
+  `you@example.com` were written verbatim before).
+- **Validator:** a finding found by review may name a vendor when a host on its basis excerpts or code-path
+  lines is listed for that vendor in `data/vendors.json` (with its aliases and parent company); a
+  `declared_unexpected` finding needs declared processors; the file-upload follow-up must speak of uploads
+  rather than any "file", and name each file holding an upload point when there are several.
+- **Merge:** a first-party write whose canary appears only in the Referer header no longer counts that field
+  as sent; it records `referer_fields` with a note that the page URL holds the value (a URL-borne shape).
+- **Not changed:** the static-scan item for public analytics ingestion keys (a write-only key in a telemetry
+  module is neither reported nor noted), and a dedicated class for dev-server traffic (long-poll writes from a
+  local preview are still blocked first-party writes the report must explain).

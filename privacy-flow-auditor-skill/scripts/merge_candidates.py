@@ -304,21 +304,28 @@ def main() -> int:
             if r['method'] in SAFE or dom_of(r['host']) not in first or r.get('resource_type') == 'document':
                 continue  # a form submission navigates (a document request); beacons are fetch, XHR, sendBeacon or ping
             if r.get('blocked') == 'write' or r['phase'] == 'initial' or (r['phase'] or '').startswith('after_'):
-                e = beacons.setdefault(r['path'], {'states': set(), 'phases': set(), 'methods': set(), 'requests': [], 'blocked': 0, 'fields': set()})
+                e = beacons.setdefault(r['path'], {'states': set(), 'phases': set(), 'methods': set(), 'requests': [], 'blocked': 0, 'fields': set(),
+                                                   'referer_fields': set()})
                 e['states'].add(st_name)
                 e['phases'].add(r['phase'])
                 e['methods'].add(r['method'])
                 e['blocked'] += 1 if r.get('blocked') else 0
-                e['fields'] |= {m['field'] for m in r['matches']}
+                # a canary only in the Referer came from the page URL, not from what the write sends
+                e['fields'] |= {m['field'] for m in r['matches'] if m['where'] != 'referer'}
+                e['referer_fields'] |= {m['field'] for m in r['matches'] if m['where'] == 'referer'}
                 e['requests'].append({'state': st_name, 'n': r['n'], 'phase': r['phase'], 'method': r['method'], 'url': r['url'][:300],
                                       'body_read': r.get('body_read')})
     blocked_fp_writes = []
     for path, e in sorted(beacons.items()):
         blocked_fp_writes.append({'path': path, 'requests': len(e['requests']), 'blocked': e['blocked'], 'states': sorted(e['states'])})
-        cand(type='first_party_beacon', domain=sorted(first)[0], path=path, recipient='first_party', states=sorted(e['states']),
-             phases=sorted(e['phases']), methods=sorted(e['methods']), requests=len(e['requests']), blocked_requests=e['blocked'],
-             fields=sorted(e['fields']), categories=[], before_choice=bool({'before', 'no_banner'} & e['states']) or 'initial' in e['phases'],
-             example_requests=e['requests'][:3])
+        c = cand(type='first_party_beacon', domain=sorted(first)[0], path=path, recipient='first_party', states=sorted(e['states']),
+                 phases=sorted(e['phases']), methods=sorted(e['methods']), requests=len(e['requests']), blocked_requests=e['blocked'],
+                 fields=sorted(e['fields']), categories=[], before_choice=bool({'before', 'no_banner'} & e['states']) or 'initial' in e['phases'],
+                 example_requests=e['requests'][:3])
+        if e['referer_fields'] - e['fields']:
+            c['referer_fields'] = sorted(e['referer_fields'] - e['fields'])
+            c['note'] = ('the canary rode only in the Referer header: the page URL holds it (a personal_data_in_url shape, such as a '
+                         'search query written into the address), not what this write sends')
     # ---- canaries in requests
     to_third: dict = {}
     in_url: dict = {}

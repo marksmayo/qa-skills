@@ -68,6 +68,18 @@ LANG = {'.py': 'py', '.js': 'js', '.mjs': 'js', '.cjs': 'js', '.jsx': 'js', '.ts
 SKIP = {'node_modules', '.git', 'dist', 'build', 'out', 'venv', '.venv', '__pycache__', 'Pods', '.next', '.nuxt', 'coverage',
         'bower_components', '.svelte-kit', '.parcel-cache', '.turbo', '.cache', '.tox', '.mypy_cache', '.pytest_cache'}
 TEST_DIRS = {'__tests__', '__mocks__', '__snapshots__', 'test', 'tests', 'spec', 'specs', 'e2e', 'cypress', 'playwright'}
+# A directory named like tests is a product package when it holds a package manifest (a workspace package named
+# e2e), and one named after a test tool (playwright, cypress) is test code only when it holds tests: the rule the
+# shared diff_scope.py uses for test layouts, copied here because this skill does not carry diff_scope.py.
+PACKAGE_MANIFESTS = ('package.json', 'pyproject.toml', 'setup.py', 'setup.cfg', 'Cargo.toml', 'go.mod', 'pom.xml',
+                     'build.gradle', 'build.gradle.kts', 'Gemfile', 'composer.json', 'pubspec.yaml')
+TOOL_NAMED_DIRS = {'playwright', 'cypress'}
+TEST_EVIDENCE = re.compile(r'[._-](test|spec|e2e|cy)\.[cm]?[jt]sx?$|^(playwright|cypress)\.config\.[cm]?[jt]s$|^test_.*\.py$|_test\.py$', re.I)
+# Node processes: a package with a "bin" (a CLI) or a file that reads Node built-ins; their sends never pass through
+# a browser either
+NODE_FILE = re.compile(r'''^#!.*\bnode\b|\bfrom\s+["']node:|\brequire\(\s*["']node:|\bprocess\.argv\b|\bos\.homedir\(\)''', re.M)
+UI_FRAMEWORKS = {'react', 'react-dom', 'vue', 'svelte', 'next', '@angular/core', 'preact', 'solid-js', 'astro', 'nuxt', 'lit'}
+BROWSER_FILE = re.compile(r'\bdocument\.|\bwindow\.|\blocalStorage\b|["\']use client["\']')
 TEST_FILE = re.compile(r'[._-](test|spec|e2e)\.(js|jsx|ts|tsx|mjs|cjs|mts|cts|py|rb)$|^test_.*\.py$|_test\.py$', re.I)
 REDACT = Matcher({'id': 'none', 'fields': {}})
 GENERIC = set(CATS.get('generic_property_names', {}).get('names', []))
@@ -120,8 +132,17 @@ def sdk_like(host: str, path: str) -> bool:
     return True
 
 
-def is_server_file(rel: str, text: str) -> bool:
-    return bool(SERVER_PATH.search(rel)) or bool(re.match(r'''\s*["']use server["']''', text))
+def is_server_file(rel: str, text: str, cli_packages: set[str] = frozenset()) -> bool:
+    """Server or Node-process code: route handlers, middleware and server configs, "use server" modules, and Node
+    code that no browser runs (a file reading Node built-ins, or any file of a package that declares a "bin")
+    unless the file itself touches the DOM."""
+    if SERVER_PATH.search(rel) or re.match(r'''\s*["']use server["']''', text):
+        return True
+    if BROWSER_FILE.search(text):
+        return False
+    if NODE_FILE.search(text):
+        return True
+    return any(p == '' or rel.startswith(p + '/') for p in cli_packages)
 
 
 def consent_nearby(T, n: int, back: int = 15) -> bool:
@@ -207,13 +228,77 @@ def classify(*names: str) -> str | None:
     return best
 
 
-def files(repo: Path, pruned: list, skip: set):
-    """Every file under repo, pruning skipped directories while walking (each pruned directory is added to pruned)."""
+def redact_strings(v, key: str = ''):
+    """v with REDACT applied to every string value except file paths."""
+    if isinstance(v, str):
+        return v if key in ('file', 'dir') else REDACT.redact(v)
+    if isinstance(v, list):
+        return [redact_strings(x, key) for x in v]
+    if isinstance(v, dict):
+        return {k: redact_strings(x, k) for k, x in v.items()}
+    return v
+
+
+def holds_tests(d: Path, depth: int = 3) -> bool:
+    """A test file or test-runner config within a few levels of d (dependency and build directories skipped)."""
+    try:
+        entries = list(os.scandir(d))
+    except OSError:
+        return False
+    for e in entries:
+        if e.is_file() and TEST_EVIDENCE.search(e.name):
+            return True
+    if depth > 1:
+        return any(holds_tests(Path(e.path), depth - 1) for e in entries
+                   if e.is_dir(follow_symlinks=False) and e.name not in SKIP and not e.name.startswith('.'))
+    return False
+
+
+def test_dir(d: Path) -> bool:
+    """Whether a directory with a test-like name holds test code: not when it holds a package manifest (a product
+    package that happens to be called e2e or test), and for directories named after a test tool only when they hold
+    test files (a folder of pages served at /playwright is product code)."""
+    if any((d / m).is_file() for m in PACKAGE_MANIFESTS):
+        return False
+    if d.name in TOOL_NAMED_DIRS:
+        return holds_tests(d)
+    return True
+
+
+def files(repo: Path, pruned: list, skip: set, tests: set = frozenset(), kept: list | None = None):
+    """Every file under repo, pruning skipped directories while walking (each pruned directory is added to pruned).
+    Directories named in tests are pruned only when test_dir() says they hold test code; the others go to kept."""
     for root, dirs, names in os.walk(repo):
-        pruned += [(Path(root) / d).relative_to(repo).as_posix() for d in sorted(dirs) if d in skip and d not in QUIET]
-        dirs[:] = sorted(d for d in dirs if d not in skip)
+        drop = set()
+        for d in sorted(dirs):
+            if d in skip:
+                drop.add(d)
+            elif d in tests:
+                if test_dir(Path(root) / d):
+                    drop.add(d)
+                elif kept is not None:
+                    kept.append((Path(root) / d).relative_to(repo).as_posix())
+        pruned += [(Path(root) / d).relative_to(repo).as_posix() for d in sorted(drop) if d not in QUIET]
+        dirs[:] = sorted(d for d in dirs if d not in drop)
         for n in sorted(names):
             yield Path(root) / n
+
+
+def node_packages(repo: Path) -> set[str]:
+    """Package directories (relative, '' for the root) whose package.json declares a "bin": command-line tools."""
+    out = set()
+    for root, dirs, names in os.walk(repo):
+        dirs[:] = [d for d in dirs if d not in SKIP and not d.startswith('.')]
+        if 'package.json' in names:
+            try:
+                pj = json.loads((Path(root) / 'package.json').read_text(encoding='utf-8'))
+            except (OSError, ValueError):
+                continue
+            deps = {**(pj.get('dependencies') or {}), **(pj.get('peerDependencies') or {})} if isinstance(pj, dict) else {}
+            if isinstance(pj, dict) and pj.get('bin') and not set(deps) & UI_FRAMEWORKS:
+                rel = Path(root).relative_to(repo).as_posix()
+                out.add('' if rel == '.' else rel)
+    return out
 
 
 def attr(tag: str, name: str) -> str | None:
@@ -427,7 +512,6 @@ def main() -> int:
     ap.add_argument('--analytics-sinks', default='', help='comma-separated function names that send analytics (app tracking wrappers)')
     a = ap.parse_args()
     repo = a.repo
-    skip = SKIP | set(a.exclude) | (set() if a.include_tests else TEST_DIRS)
     t0 = time.time()
     collection, sinks, sdks, permissions, scripts, rum_inits, imports, skipped = [], [], [], [], [], [], [], []
     replay_inits, server_sends, wrappers, texts_meta = [], [], {}, {}
@@ -447,7 +531,10 @@ def main() -> int:
     n_files = 0
     pruned: list[str] = []
     tests_skipped = 0
-    for p in files(repo, pruned, skip):
+    test_names = set() if a.include_tests else TEST_DIRS - set(a.exclude)
+    kept_dirs: list[str] = []
+    cli_packages = node_packages(repo)
+    for p in files(repo, pruned, SKIP | set(a.exclude), test_names, kept_dirs):
         rel = p.relative_to(repo).as_posix()
         lang = LANG.get(p.suffix.lower())
         if not (lang or p.name in MANIFESTS or p.name in PLATFORM or p.name == 'package.json'):
@@ -506,7 +593,7 @@ def main() -> int:
             found_hosts.add(host)
             scripts.append({'file': rel, 'line': n, 'host': host, 'source': source, 'vendor': VENDOR_DOMAINS.get(registrable(host))})
         low = text.lower()
-        server_file = lang in ('js', 'ts', 'py', 'rb') and is_server_file(rel, text)
+        server_file = lang in ('js', 'ts', 'py', 'rb') and is_server_file(rel, text, cli_packages)
         if lang == 'html' and '<script' in low:
             for m in SCRIPT_TAG.finditer(text):
                 script(m.group(1), m.start(), 'script_tag')
@@ -547,7 +634,7 @@ def main() -> int:
                     continue
                 cat = classify(nm, i, ac, state, ty, *re.findall(r'\w+', label.lower()))
                 collection.append({'file': rel, 'line': T.line_of(off), 'kind': 'form_field', 'field': nm or i or state or ac, 'id': i,
-                                   'type': ty, 'autocomplete': ac, 'label': label[:80], 'category': cat,
+                                   'type': ty, 'autocomplete': ac, 'label': REDACT.redact(label)[:80], 'category': cat,
                                    **({'state': state} if state and not (nm or i) else {})})
         for m in (IMPORT.finditer(text) if ('from' in text or 'require(' in text or 'import' in text) else ()):
             pkg = next((k for k in SINKS['sdk_packages'] if m.group(1) == k or m.group(1).startswith(k + '/')), None)
@@ -579,7 +666,7 @@ def main() -> int:
                 label = labels.get(i or '', '')
                 cat = classify(nm, i, ac, ty, *re.findall(r'\w+', label.lower()))
                 collection.append({'file': rel, 'line': T.line_of(m.start()), 'kind': 'form_field', 'field': nm or i, 'id': i, 'type': ty,
-                                   'autocomplete': ac, 'label': label[:80], 'category': cat})
+                                   'autocomplete': ac, 'label': REDACT.redact(label)[:80], 'category': cat})
         # simple aliases: var x = document.getElementById('field'); var y = x.value...  -> x and y stand for field
         alias = {}
         for m in (ALIAS_ELEMENT.finditer(text) if 'getElementById(' in text or 'querySelector(' in text else ()):
@@ -792,7 +879,8 @@ def main() -> int:
         seen_sends.add((x['file'], x['vendor']))
         cand(type='personal_data_to_third_party', subtype='server_side_send', file=x['file'], line=x['line'], vendor=x['vendor'], host=x['host'],
              excerpt=REDACT.redact(texts_meta[x['file']][1].line(x['line']).strip())[:160], fields=[], categories=[], confidence='pattern',
-             side='server', note='a vendor endpoint called from server code: a browser capture never sees these requests, and the browser '
+             side='server', note='a vendor endpoint called from server or Node code (a route handler, a server module, or a command-line '
+             'tool such as a package with a "bin" sending telemetry): a browser capture never sees these requests, and the browser '
              'consent choice does not stop them unless the server checks it; trace what the payload carries')
     for r in rum_inits:
         if r['replay'] and r['privacy_level'] in (None, 'allow'):
@@ -842,7 +930,7 @@ def main() -> int:
         x.pop('_consent', None)
         x.pop('_auth', None)
     skipped += [{'file': d + '/', 'bytes': None, 'reason': 'test directory skipped (--include-tests scans it)'
-                 if d.rsplit('/', 1)[-1] in TEST_DIRS else 'directory skipped (dependencies, build output or --exclude)'} for d in pruned]
+                 if d.rsplit('/', 1)[-1] in test_names else 'directory skipped (dependencies, build output or --exclude)'} for d in pruned]
     if tests_skipped:
         skipped.append({'file': '*.test.* / *.spec.* / test_*.py', 'bytes': None, 'reason': f'{tests_skipped} test file(s) skipped (--include-tests scans them)'})
     # in an internal business app most collection points are business parameters with no personal-data category
@@ -852,7 +940,13 @@ def main() -> int:
     by_cat = dict(sorted(by_cat.items()))
     out = {'repo': repo.as_posix(), 'files_scanned': n_files, 'seconds': round(time.time() - t0, 1), 'skipped': skipped,
            'collection': collection, 'collection_by_category': by_cat, 'sinks': sinks, 'sdks': sdks, 'permissions': permissions,
+           'test_named_dirs_scanned': [{'dir': d + '/', 'reason': 'holds a package manifest (a product package)' if any(
+               (repo / d / m).is_file() for m in PACKAGE_MANIFESTS) else 'named after a test tool but holds no test files'} for d in kept_dirs],
            'wrappers': sorted(wrappers.values(), key=lambda w: (w['file'] or '', w['line'] or 0, w['name'])), 'candidates': candidates}
+    # the validator rejects any email, phone or card-like value in the evidence: redact every remaining string
+    # (labels, placeholders, notes) the same way, whatever pattern put it there; paths are left alone
+    for k in ('collection', 'sinks', 'sdks', 'permissions', 'wrappers', 'candidates'):
+        out[k] = redact_strings(out[k])
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(json.dumps(out, indent=1) + '\n', encoding='utf-8', newline='\n')
     print(f'{n_files} file(s) in {out["seconds"]}s: {len(collection)} collection point(s), {len(sinks)} sink(s), {len(sdks)} SDK reference(s), '
@@ -865,6 +959,9 @@ def main() -> int:
     if skipped:
         print(f'  skipped {len(skipped)} file(s) (listed under "skipped"): ' + ', '.join(f'{x["file"]} ({x["reason"].split(" (")[0]})' for x in skipped[:5])
               + (' ...' if len(skipped) > 5 else ''))
+    if kept_dirs:
+        print(f'  scanned {len(kept_dirs)} test-named directorie(s) as product code (a package manifest, or no test files): '
+              + ', '.join(kept_dirs[:5]) + (' ...' if len(kept_dirs) > 5 else ''))
     hosts = sorted({(x['host'], x.get('vendor') or '-', x['source']) for x in sdks if x.get('host')})
     for h, v, src in hosts:
         print(f'  script host {h} ({v}, {src})')

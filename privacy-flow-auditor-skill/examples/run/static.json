@@ -288,6 +288,7 @@
   }
  ],
  "permissions": [],
+ "test_named_dirs_scanned": [],
  "wrappers": [],
  "candidates": [
   {

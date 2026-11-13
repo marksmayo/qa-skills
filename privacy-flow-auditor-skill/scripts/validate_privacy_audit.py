@@ -47,10 +47,28 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from match_canaries import EMAIL, PHONE_RX, CARD, card_like, encodings  # noqa: E402
+from domains import registrable  # noqa: E402
 
 DATA = HERE.parent / 'data'
 CATS = json.loads((DATA / 'categories.json').read_text(encoding='utf-8'))
 PROV = json.loads((DATA / 'provisions.json').read_text(encoding='utf-8'))
+VENDORS = json.loads((DATA / 'vendors.json').read_text(encoding='utf-8'))
+HOST_RX = re.compile(r'(?<![\w.-])((?:[a-z0-9-]+\.)+[a-z]{2,})(?![\w-])', re.I)
+
+
+def vendors_named_in(texts) -> set[str]:
+    """Vendors data/vendors.json lists for a host that appears in texts (a basis excerpt or a code path line),
+    with their aliases and parent company: an agent finding traced to a known vendor's endpoint may name it."""
+    out = set()
+    for t in texts:
+        for m in HOST_RX.finditer(t or ''):
+            host = m.group(1).lower()
+            entry = VENDORS['domains'].get(host) or VENDORS['domains'].get(registrable(host))
+            if entry:
+                v = entry['vendor']
+                info = VENDORS.get('vendors', {}).get(v, {})
+                out |= {v, *info.get('aliases', []), *([info['company']] if info.get('company') else [])}
+    return out
 ORDER = ['P0', 'P1', 'P2', 'P3']
 FLOW = {'undeclared_third_party': 3, 'before_consent': 3, 'after_reject': 3, 'declared_unexpected': 2, 'logs': 2,
         'insecure_storage': 2, 'url': 2, 'no_use': 1}
@@ -372,8 +390,22 @@ def main() -> int:
             e(f'{fid}: categories {f["categories"]} leave out {sorted(set(cand_cats) - set(f["categories"]))} from its candidates')
         if f.get('fields') is not None and cand_fields and sorted(f['fields']) != cand_fields:
             e(f'{fid}: fields {f.get("fields")} differ from its candidates ({cand_fields})')
-        if f.get('vendor') and f['vendor'] not in lists_vendors | static_vendors:
-            e(f'{fid}: vendor {f["vendor"]!r} is not named by the domain list or a code import')
+        traced_vendors = set()
+        if agent and f.get('vendor'):
+            texts = [b.get('excerpt') for b in f.get('basis') or [] if isinstance(b, dict)]
+            if a.repo:  # the code path lines themselves, re-read, so a host named on them counts too
+                for cp in f['evidence'].get('code_path', []) or []:
+                    p_ = a.repo / str(cp.get('file', ''))
+                    ls = p_.read_text(encoding='utf-8', errors='replace').splitlines() if p_.is_file() else []
+                    if isinstance(cp.get('line'), int) and 1 <= cp['line'] <= len(ls):
+                        texts.append(ls[cp['line'] - 1])
+            traced_vendors = vendors_named_in(texts)
+        if f.get('vendor') and f['vendor'] not in lists_vendors | static_vendors | traced_vendors:
+            e(f'{fid}: vendor {f["vendor"]!r} is not named by the domain list, a code import, or (for a finding found by review) '
+              'a data/vendors.json host on its basis or code path')
+        if f['flow_basis'] == 'declared_unexpected' and not (cfile.get('declared') or (rep.get('metadata') or {}).get('declared_processors')):
+            e(f'{fid}: flow_basis declared_unexpected, but no declared processors were given (metadata.declared_processors '
+              'is null and the candidates were merged without --declared)')
         if f.get('recipient_kind'):
             kinds = {c.get('recipient') for c in live if c.get('recipient')}
             if kinds and f['recipient_kind'] not in kinds:
@@ -475,9 +507,16 @@ def main() -> int:
         st_ = json.loads(static_path.read_text(encoding='utf-8'))
         ups = [c for c in st_.get('collection', []) if c.get('kind') in FILE_KINDS]
         said = json.dumps([rep['inventory'], rep['limitations'], rep['scope'].get('not_covered'), rep['scope'].get('covered')], ensure_ascii=False)
-        if ups and not re.search(r'\b(upload|file|spreadsheet|attachment)s?\b', said, re.I):
+        # a bare "file" ("417 files scanned") does not count: the follow-up must speak of uploads (or attachments,
+        # spreadsheets, a dropzone or file input), and name each file that holds an upload point when there are several
+        if ups and not re.search(r'\b(upload(s|ed|ing)?|spreadsheets?|attachments?|dropzones?|file (inputs?|pickers?|parsing))\b', said, re.I):
             e(f'the static scan found {len(ups)} file upload or parsing point(s) ({ups[0]["file"]}:{ups[0]["line"]}), but the inventory, scope '
-              'and limitations say nothing about what the files hold')
+              'and limitations say nothing about uploads and what the files hold')
+        elif ups:
+            unnamed = sorted({c['file'] for c in ups if c['file'] not in said and c['file'].rsplit('/', 1)[-1] not in said})
+            if len({c['file'] for c in ups}) > 1 and unnamed:
+                e(f'the static scan found file upload or parsing points in {len({c["file"] for c in ups})} files, but the inventory, scope and '
+                  f'limitations do not name {unnamed[:4]}: say what each upload point takes')
 
     # --- inventory
     for item in rep['inventory']:

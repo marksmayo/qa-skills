@@ -1,7 +1,7 @@
 ---
 name: privacy-flow-auditor
 description: Map where personal data goes in a web app - what it collects, where it stores it, what it logs, and which third parties receive it, and whether that happens before the user consents or after they reject. Combines a static scan of the code (collection points, logging, analytics, session replay, storage, SDKs, mobile permissions) with a live browser capture in three consent states (before a choice, after "Reject all", after "Accept all"), typing synthetic canary values and searching every request, cookie and storage entry for them raw, URL-encoded, Base64 and hashed. Produces a data inventory, recipients, a consent matrix and ranked findings with GDPR, UK GDPR and Australian Privacy Principles references for a privacy professional. Never types or stores real personal data, and never says an app is compliant.
-version: 1.2.0
+version: 1.3.0
 ---
 
 # Privacy flow auditor
@@ -100,7 +100,9 @@ consent state, request or canary was tested.
 **Findings found by review.** Code reading finds flows no pattern catches. Such a finding sets
 `"source": "agent"`, may have no candidates, and carries `"basis"`: `{file, line, excerpt}` items (the
 validator re-reads each line with `--repo`) or `{evidence: path}` for runtime evidence. It is at most
-`traced`, never `observed` without runtime evidence, and the renderer labels it "found by review".
+`traced`, never `observed` without runtime evidence, and the renderer labels it "found by review". It may
+name its `vendor` when a basis excerpt or a code-path line names a host `data/vendors.json` lists for that
+vendor (a telemetry module's `https://<region>.i.posthog.com` names PostHog), even when no candidate does.
 
 1. **Recon.** Stack, logging libraries, analytics and SDK packages, consent platform, data stores.
 2. **Static scan.** Collection points (form fields by name, label, `autocomplete` and type, in HTML and in
@@ -125,15 +127,22 @@ validator re-reads each line with `--repo`) or `{evidence: path}` for runtime ev
      `aria-label`, a `label` prop or the `<label>` just before it (the placeholder only last);
    - notes `consent_check_nearby` on analytics, identify, replay and HTTP candidates (a heuristic, not a
      verdict); marks sinks in server code (route handlers, middleware, `*.server.*`, Sentry server and
-     edge configs) `side: server`, and raises a vendor endpoint called from server code as a
-     `server_side_send` candidate: a browser capture never sees it and the browser's consent choice
-     doesn't stop it (a library shared by server and client code isn't recognised as server code);
+     edge configs) and in Node code no browser runs (a file that reads Node built-ins such as `node:os` or
+     `process.argv`, or any file of a package whose `package.json` declares a `bin`, unless the file touches
+     the DOM) `side: server`, and raises a vendor endpoint called from such code (a command-line tool's
+     telemetry included) as a `server_side_send` candidate: a browser capture never sees it and the
+     browser's consent choice doesn't stop it (a library shared by server and client code isn't recognised
+     as server code);
    - raises Sentry Session Replay with no masking options (`sdk_default_masking`, `masked_by_default`:
      dismissable as `pii_disabled` once the installed version's default is checked) and with no consent
      check nearby (`replay_before_consent`);
    - skips test directories and files (`__tests__`, `e2e`, `*.test.*`, `test_*.py`; `--include-tests`
-     scans them), doesn't count social profile or documentation links as SDKs, and drops query strings
-     from script hosts;
+     scans them), except a test-named directory that holds a package manifest (a workspace package named
+     `e2e` is product code) and a directory named after a test tool (`playwright`, `cypress`) that holds no
+     test file or runner config (pages served at `/playwright`); both are listed under
+     `test_named_dirs_scanned`. It doesn't count social profile or documentation links as SDKs, drops query
+     strings from script hosts, and redacts email, phone and card-like values in every string it writes
+     (a `you@example.com` placeholder used as a label included), as the validator requires;
    - treats an identity SDK's token cache as storage of identity data: MSAL `cacheLocation`
      (`localStorage`, `sessionStorage`, or nothing set: the SDK default, sessionStorage),
      `storeAuthStateInCookie`, oidc-client-ts `userStore`, Auth0 `cacheLocation: 'localstorage'`. The
@@ -262,6 +271,9 @@ leaves") must say it is what the code does ("by the code", "the static scan"). A
 are re-read. Limitations must also cover blocked first-party writes, a blocked consent record, a bypassed
 CSP, screenshots in the evidence, and a signed-in session (with `metadata.session`); a storage-state file in
 the evidence fails. File upload points from the scan must be followed up in the inventory, scope or
-limitations. With no consent banner, the statement says so. `--write-summary` fills missing ratings and the
+limitations: the text must speak of uploads (or attachments, spreadsheets, a dropzone or file input; a bare
+"files" does not count) and, when several files hold upload points, name each of them. A finding with
+`flow_basis: declared_unexpected` needs declared processors (`--declared` at merge, or
+`metadata.declared_processors`). With no consent banner, the statement says so. `--write-summary` fills missing ratings and the
 headline instead of failing on them; `--fix-ratings` rewrites computed rating fields that are wrong and
 lists each change (the rating error shows the arithmetic).
