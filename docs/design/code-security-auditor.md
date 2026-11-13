@@ -1,6 +1,6 @@
 # Design: `code-security-auditor-skill`
 
-Status: Built (v1.3.0), see the "As built" sections at the end. Build order: 5.
+Status: Built (v1.4.0), see the "As built" sections at the end. Build order: 5.
 
 ## Mission
 
@@ -399,3 +399,51 @@ surface map built for web apps.
   prints progress every 30 seconds); Semgrep registry noise (non-literal RegExp, Django CSRF on
   static HTML) is left to triage; high-entropy fake keys in a project's own secret-scanner tests
   remain candidates by design; ACP-specific permission semantics are a review lead, not a model.
+
+## As built (v1.4.0): fixes from a run on a Go command-line tool with vendored iOS driver code
+
+A run on a Go CLI (urfave/cli, no HTTP server, a unix-socket share, flow files it runs, and
+vendored Swift/Objective-C driver trees with hundreds of private headers) found Go modelled as a
+web framework and the language census thrown off by vendored code.
+
+- **No fake routes.** recon read any Go `.Get("x")` as an HTTP route (an interpreter value, an
+  options object, an HTTP client call), and seed_report then seeded them `internet`. Go entry
+  points now come from `scripts/go_entries.py`: a route needs a router import (net/http, chi, gin,
+  echo, gorilla/mux, fiber), one of that router's registration methods, a path argument and a
+  handler argument; group prefixes are joined in. urfave/cli v2/v3 command tables and cobra
+  commands are `cli` entries (ROOT or COMMAND), flags are listed in `cli_flags` with the environment
+  variables bound to them (a review lead), `net.Listen`/`http.ListenAndServe` are listeners with a
+  `unix`, `loopback`, `all` or `unknown` bind, routes served only on a unix or loopback listener
+  carry its bind (seeded `local`), and a file that decodes what it has just read from disk is a
+  `config_input`. On the target, recon went from 26 s to 6 s and from 8 false routes to 13 real
+  commands, 5 listeners and 9 config inputs.
+- **Vendored trees.** 392 vendored XCTest headers made C/C++ the "main language" and the
+  loud-fail guard misfired both ways. recon, the pattern scan and run_scanners' inventory now
+  prune vendored, bundled and embedded third-party trees (`test_paths.vendored_dir` and the shared
+  `lang_census.py`); recon lists them under `vendored`, and the pattern scan's guard is
+  `lang_census.language_coverage`, recorded as `language_coverage`.
+- **Go pack.** GO-CMD consumed `ctx,` as a "variable program" (25 of 30 hits false); the context
+  argument is now consumed first. GO-WEAK-RANDOM needs a `math/rand` import. New: GO-LOG-SECRET,
+  GO-LOG-URL (a URL that can carry user info, in files that build one), GO-PATH-JOIN (CLI
+  arguments, decoded fields or archive entry names joined into paths without a containment check),
+  GO-HTTP-CLEARTEXT (remote `http://` requests) and GO-FIXED-TMP (fixed `/tmp` paths and dirs).
+- **govulncheck.** run_scanners runs `govulncheck -format json ./...` per go.mod (covering it);
+  merge_findings reads the JSON stream and keeps the strongest call-graph level per advisory as
+  `reachability` (with `call_path` at symbol level), and seed_report seeds symbol level as
+  reachable and package/module level as not, with govulncheck's basis (nothing is seeded from a
+  `-scan package`/`module` run). OSV `fixed_in` now comes only from the package's own `affected`
+  entry (x/net rows had stdlib versions).
+- **Validator.** Regression tests are found as a Go `func`, a Rust `fn`, or a Go subtest in
+  `go test -run` form; schema 1.4 adds `target_kind: local_copy` for runs with only command PoCs;
+  an unknown reachability whose basis says what would settle it no longer warns.
+- **Secrets, PoCs, rendering.** Header-name constants (`TokenHeader = "X-..."`) are not secrets,
+  so naming the header no longer trips the value check. Command PoC steps keep the real Go caches
+  with `GOPROXY=off` and may set `timeout_s` up to 600; a URL whose user info is concatenated is
+  linted by its real host. Dismissal groups drop code fragments and "here is".
+- **Fixture.** `examples/beacon-cli/` (a synthetic Go CLI with vendored header trees) is checked by
+  `self_test.py`.
+- **Not done:** dataflow-shaped findings from the run (a flag value reaching a logger through a
+  map, an unvalidated digest flag joined into a cache path, a download URL from a flag) are not
+  pattern-shaped and stay agent work; no pattern for `http.Get` without a timeout or unbounded
+  `io.ReadAll`; nothing models how release binaries are built (SKILL.md tells the agent to check
+  GoReleaser provenance by hand).

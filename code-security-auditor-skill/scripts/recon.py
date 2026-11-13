@@ -53,6 +53,7 @@ from pathlib import Path
 sys.dont_write_bytecode = True  # importing a sibling must not write __pycache__ into the skill folder
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import go_entries  # noqa: E402
+import lang_census  # noqa: E402
 import nextjs_auth  # noqa: E402
 import py_routes  # noqa: E402
 import test_paths  # noqa: E402
@@ -381,8 +382,10 @@ def composite_action_info(rel: str, text: str) -> dict | None:
 def is_action_file(rel: str) -> bool:
     return bool(re.search(r'(^|/)action\.ya?ml$', rel)) and ('/' not in rel or '.github/' in '/' + rel)
 
-def walk(root: Path, vendored: list[dict] | None = None):
-    """Files under root, pruning dependency, build and vendored trees (each vendored one is appended to `vendored`)."""
+def walk(root: Path, vendored: list[dict] | None = None, census: dict | None = None):
+    """Files under root, pruning dependency, build and vendored trees (each vendored one is appended to `vendored`):
+    the trees lang_census excludes (bundles, header trees, embedded third-party packages, submodules) and
+    test_paths.vendored_dir names."""
     stack = [root]
     while stack:
         d = stack.pop()
@@ -392,7 +395,8 @@ def walk(root: Path, vendored: list[dict] | None = None):
             continue
         for p in entries:
             if p.is_dir():
-                why = test_paths.vendored_dir(p.name)
+                rel_dir = p.relative_to(root).as_posix()
+                why = (lang_census.excluded_path(census, rel_dir) if census else None) or test_paths.vendored_dir(p.name)
                 if why and p.name not in SKIP_DIRS:
                     if vendored is not None:
                         vendored.append({'dir': p.relative_to(root).as_posix(), 'reason': why})
@@ -644,7 +648,7 @@ def main() -> int:
     ado_files: dict[str, str] = {}
     vendored: list[dict] = []
     cli_flags: list[dict] = []
-    for p in walk(root, vendored):
+    for p in walk(root, vendored, lang_census.census(root)):
         rel = p.relative_to(root).as_posix()
         if time.monotonic() - last_progress >= 30:
             last_progress = time.monotonic()

@@ -214,10 +214,26 @@ def beacon(root: Path) -> None:
                       'client.Get, a constant path join, a guarded archive entry or a logged host')
     go_only = scan_pitfalls.scan(root, scan_pitfalls.load_catalogue(), {'go'})
     check(not go_only['warnings'], f'vendored iOS headers do not make C/C++ the main language ({go_only["warnings"]})')
-    from collections import Counter
-    w = scan_pitfalls.dominant_unscanned(Counter({'.rs': 40, '.go': 12}), {'.go'}, 12) or ''
-    check('Rust' in w and 'incidental' not in w and '12 Go' in w,
-          f'when another language was scanned, the warning names it instead of calling it incidental ({w[:160]})')
+    with tempfile.TemporaryDirectory() as tmp:  # an embedded third-party driver package (own manifest and licence)
+        t = Path(tmp)
+        for n in range(4):
+            (t / 'cmd' / f'c{n}').mkdir(parents=True)
+            (t / 'cmd' / f'c{n}' / 'main.go').write_text('package main\n\nfunc main() {}\n', encoding='utf-8')
+        agent = t / 'drivers' / 'web' / 'agent'
+        agent.mkdir(parents=True)
+        (agent / 'package.json').write_text('{"name": "agent", "version": "1.0.0"}', encoding='utf-8')
+        (agent / 'LICENSE').write_text('MIT', encoding='utf-8')
+        for n in range(6):
+            (agent / f'm{n}.ts').write_text('export const x = eval(process.argv[2]);\n', encoding='utf-8')
+        r = scan_pitfalls.scan(t, scan_pitfalls.load_catalogue(), {'go'})
+        cov = r.get('language_coverage') or {}
+        check(not r['warnings'] and cov.get('status') == 'ok' and any(e['path'] == 'drivers/web/agent' for e in cov.get('excluded') or []),
+              f"lang_census: an embedded driver package is not the main language, and the exclusion is listed ({r['warnings']}, {cov.get('status')})")
+        r = scan_pitfalls.scan(t, scan_pitfalls.load_catalogue())
+        check(not r['files_scanned'].get('javascript'), f"nor is it pattern-scanned ({r['files_scanned']})")
+        rc = run_recon(t)
+        check(rc['languages'] == {'Go': 4} and any(v['dir'] == 'drivers/web/agent' for v in rc['vendored']),
+              f"recon counts languages with the census ({rc['languages']}, {[v['dir'] for v in rc['vendored']]})")
     check(not res['files_scanned'].get('c'), f"the c pack does not scan vendored headers ({res['files_scanned']})")
     print('recon on beacon-cli')
     d = run_recon(root)

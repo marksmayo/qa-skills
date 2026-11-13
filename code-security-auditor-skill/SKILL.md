@@ -1,7 +1,7 @@
 ---
 name: code-security-auditor
 description: Audit a codebase for security weaknesses with open-source scanners (Semgrep OSS, Bandit, gosec, Brakeman, gitleaks, osv-scanner, pip-audit, npm audit, zizmor, Trivy, Checkov and more) plus a deep manual review, trace each finding from attacker-controlled input to the dangerous operation, rate it with CVSS v4.0, and write safe reproduction steps, a fix and a regression test. Optionally confirms findings with canary-only proofs of concept against localhost or a test environment the user names. Every candidate is triaged, every tool's status is recorded, and the report never calls the code secure.
-version: 1.3.0
+version: 1.4.0
 ---
 
 # Code Security Auditor
@@ -114,6 +114,37 @@ or secret, CORS); `spawn`/`execFile` with a program taken from config or a flag,
 `shell:` option (Windows re-parses arguments through `cmd.exe`); and what an agent permission
 handler approves without asking.
 
+**Go CLIs and services.** recon reads Go entry points from the code's imports
+(`scripts/go_entries.py`). A `.Get("x")` is an HTTP route only in a file that imports a router
+(net/http, chi, gin, echo, gorilla/mux, fiber), only for that router's registration methods, and
+only when the first argument is a path (`"/x"`, or Go 1.22's `"GET /x"`) followed by a handler:
+an interpreter's `rt.Get("output")`, an options object's `o.Get("user-data-dir")` and an HTTP
+client's `client.Get("http://...")` are not routes. urfave/cli (v2 `cli.App` and v3 `cli.Command`
+tables, including `Commands: []*cli.Command{ {Name: ...} }`) and cobra commands are `cli` entries
+(`ROOT` or `COMMAND`); flags are listed in `cli_flags` with the environment variables bound to them
+(`EnvVars`, `cli.EnvVars(...)`), and env-bound flags are a review lead. `net.Listen`,
+`tls.Listen` and `http.ListenAndServe` are `listener` entries with their bind read from the
+address: `unix` (a socket file), `loopback`, `all` (`":8080"`) or `unknown`; routes served only on
+a unix or loopback listener in the same file or package carry that `bind`, and `seed_report.py`
+seeds them `local`. A file that reads a file from disk and decodes YAML, JSON, TOML or a viper
+config is a `config_input`. For tools that run flow, test or config files, treat those files as
+code: whoever writes them (a cloned repository, a pull request) controls every command, path, URL
+and script they name, so trace their fields to `exec.Command`, `filepath.Join`, downloads and
+logs. In the deep review also check: unix sockets and PID files at fixed `/tmp` paths (another
+local user can pre-create them), credentials in URLs (`user:pass@`) or flags reaching a logger or
+a file written with 0644, `http.Get` downloads that are installed or executed without a checksum,
+archive extraction (zip slip: `filepath.Join(dir, f.Name)` without `filepath.IsLocal` or a prefix
+check), `InsecureSkipVerify`, and how release binaries are built (a GoReleaser `main` that does not
+exist in the repository means the published binaries come from elsewhere: say provenance is not
+verifiable).
+
+Vendored and embedded third-party trees are not the repository's code: `vendor/`, `Pods/`,
+`third_party/`, `PrivateHeaders/` and `Headers/` trees, bundled `.app`/`.framework` directories and
+embedded packages with their own manifest and licence under `drivers/`, `sdk/` or `external/`
+(`scripts/lang_census.py`) are left out of the language counts, the walk and the pattern scan, and
+listed in recon's `vendored` with the reason. Check that list once: nothing in it should be product
+code.
+
 **Next.js.** recon models the App Router and `pages/api`: every exported handler (`export async
 function GET`, `export const POST = ...`, `export { handler as GET, handler as POST }`) is an entry
 point at the line of its export, and its auth is read from the handler body (and the same-file
@@ -176,7 +207,14 @@ installed; when it isn't (corepack not enabled), the row is `not_run` with how t
 osv-scanner covers that lockfile. Copy the status into the report's `dependency_advisories`; "not
 assessed" is never "no vulnerable dependencies", and the limitations must say it. With
 `--osv-local-db` (an osv-scanner offline database downloaded beforehand), osv-scanner checks
-advisories without the network. Without any advisory tool, packages you can see are risky by
+advisories without the network. For Go modules, govulncheck runs next to each `go.mod`
+(`govulncheck -format json ./...`, which needs the Go toolchain and the module cache) and covers
+it; `merge_findings.py --deps <out>/govulncheck.json` reads its JSON stream and keeps the
+call-graph level as `reachability`: `symbol` (a vulnerable function is reached; `call_path` names
+the frames), `package` (imported, no vulnerable symbol reached) or `module` (required, package not
+imported). `seed_report.py` seeds `symbol` as `reachable: yes` (write the finding, or say why the
+path cannot run) and `package`/`module` as `no` with govulncheck's basis; a `-scan package` or
+`-scan module` run proves nothing about symbols and seeds nothing. Without any advisory tool, packages you can see are risky by
 reading (an abandoned release line, a known-vulnerable pin) are agent findings with confidence
 `possible`.
 
@@ -198,7 +236,7 @@ anything; a missing tool is recorded, not silently skipped.
 | Multi-language SAST | Semgrep OSS with `p/default` and `p/owasp-top-ten` |
 | Language-specific | Bandit (Python), gosec (Go), Brakeman (Rails), ESLint security plugins (JS/TS, only if the repo has them), Psalm taint analysis (PHP, only if installed in the repo), SpotBugs + FindSecBugs (Java/Kotlin: needs a build, run it there), MobSF (needs a package and a server) |
 | Secrets | gitleaks (including history), plus `scan_secrets.py` |
-| Dependencies | osv-scanner, pip-audit, npm audit, pnpm audit |
+| Dependencies | osv-scanner, pip-audit, npm audit, pnpm audit, govulncheck (Go, call-graph aware) |
 | CI | zizmor (GitHub Actions workflows and composite actions), Checkov (GitHub Actions and Azure Pipelines), plus the pattern packs |
 | IaC and containers | Trivy, Checkov (Terraform, Bicep, ARM, CloudFormation, Kubernetes, Helm, Dockerfiles, Compose), hadolint |
 
@@ -368,7 +406,17 @@ python scripts/run_poc.py poc.json --workdir <copy outside the repo> --repo <rep
 It runs in the copy with HOME, temp and XDG folders inside it and HTTP(S)_PROXY pointed at a closed
 loopback port, refuses a working copy inside the repository, and records argv, exit codes and
 output excerpts. Record the copy in `verification.local_copy`; the validator then accepts the
-evidence for `confirmed`.
+evidence for `confirmed`. When only command PoCs ran (no app was started), set
+`verification.target_kind: "local_copy"` with `target: null`; an HTTP PoC can't be confirmed
+against it.
+
+Go test PoCs: the step environment keeps the real Go build and module caches (`GOCACHE`,
+`GOMODCACHE`, `GOPATH`) with `GOPROXY=off` and `GOTOOLCHAIN=local`, so `go test` builds offline from
+the module cache (warm it first with `go mod download` in the copy if the cache is empty). A cold
+compile of a large package can pass 60 seconds: give that step `"timeout_s"` (up to 600). Run only
+the regression tests (`go test ./pkg/x -run 'TestSecurityRegression'`), never the whole suite of a
+tool that drives devices, browsers or the network, and set the tool's own opt-outs (update checks,
+telemetry) in the step `env`.
 
 ### 8. Rate
 
@@ -419,9 +467,15 @@ it. `scan_pitfalls.py` has a `rust` pack (`.rs`) for the usual low-level leads: 
 functions (CWE-119), `from_raw_parts`/`set_len`/`transmute` (CWE-125/787/704), narrowing integer
 casts near size arithmetic (CWE-190/197), `Command::new` (CWE-78), symlink-following filesystem
 calls (CWE-59/22 TOCTOU), and `unwrap()`/`expect()` on parsed input (a panic is a denial of
-service). If the repository's dominant language has no pack, `scan_pitfalls.py` prints a loud
-warning rather than a clean-looking candidate list drawn only from incidental files (CI workflows, a
-Dockerfile); add a pack before trusting the run.
+service). The `go` pack covers SQL built with Sprintf, shells and variable programs in
+`exec.Command` (the context argument of `CommandContext` is not the program), `InsecureSkipVerify`,
+request input in file paths, paths joined from CLI arguments, decoded fields or archive entry names
+without a containment check, `math/rand` for security values (files that import `crypto/rand` are
+not flagged), secret-named values and userinfo URLs passed to a logger, `http://` downloads from
+remote hosts and fixed `/tmp` paths. If the repository's dominant language (vendored trees
+excluded) has no pack, `scan_pitfalls.py` prints a loud warning and records `language_coverage`
+(`unsupported_dominant`) rather than a clean-looking candidate list drawn from the minority it did
+scan; add a pack before trusting the run.
 
 ### 9. Repro steps, fix and regression test
 
@@ -448,6 +502,11 @@ For every finding:
   function directly with a `Request`. If the brief rules out installing or running the toolchain,
   write the test as a sketch with `result: not_run` and a note that says so; never claim a result
   you didn't run.
+
+  For Go, write `func TestSecurityRegression_X(t *testing.T)` in a `_test.go` file of the package
+  (subtests with `t.Run("name", ...)` are fine). `regression_test.name` is the function name, or the
+  `go test -run` form `TestParent/sub_name`; the validator finds either (and a Rust `fn name()`).
+  Run it as a command PoC in the copy (see step 7 for the Go caches).
 
 ### 10. Report, validate and render
 
