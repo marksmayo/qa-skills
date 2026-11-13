@@ -1,6 +1,6 @@
 # Design: `risk-based-test-planner-skill`
 
-Status: Built (v1.2.0), see "As built" at the end. Build order: 13.
+Status: Built (v1.3.0), see "As built" at the end. Build order: 13.
 
 ## Mission
 
@@ -353,3 +353,61 @@ Where the build differs from the design above, and what the example showed.
   Nth-newest squash merge on the first-parent line).
 - The example was re-scored: the scores, bands and areas are unchanged; carried findings gained
   `source`.
+
+### v1.3.0: found planning a TypeScript pnpm monorepo (an SDK and CLI released with changesets), and fixed
+
+- **Surface patterns misfired on SDK and UI-automation idioms**, and without a journey map they
+  decided the bands: `settle<Something>(` helpers that wait until the UI is stable,
+  `capture<Something>(` helpers and `capture({...})` that take screenshots (money), a
+  `truncate<Encoding>(` string helper and a stream's `.destroy()` (destroys data), `seen?.delete(k)`, a `ledger`
+  field, `requireSession()`, a `matcher:` type annotation, a React `consent` toggle, and
+  interface members (`delete(id: string): Promise<boolean>;`). Bare capture/settle/transfer now
+  need a money noun or a money argument; truncate needs a table or data noun; stream, socket and
+  client `.destroy()`, optional-chained and call-result map deletes, the `delete (x)[k]` operator
+  and terminal `erase()` are excluded; ledger needs a posting call; `matcher:` must be a literal
+  (`config = { matcher: [...] }`); compliance needs a call or a named policy, not a mention; and a
+  TypeScript member signature with no body matches nothing. `score_risk.py --self-test` holds the
+  idioms, with the real surfaces next to them.
+- **No surface class for a library's public API or its secret handling.** A `secrets` class (5)
+  covers defining a redactor, resolving or storing a secret, setting an Authorization header and
+  basic auth (calls to a redactor don't count: a reporter calls it everywhere). A `public_api`
+  class (3) scores the files package.json `main`/`module`/`exports`/`bin` name (a `dist/` target
+  mapped back to `src/`) and pyproject `[project.scripts]`, and CLI command definitions. On the
+  review repository, of the four Highs that rested on false positives, the CLI dropped to Medium
+  (public API, 3), two now rest on real secret handling (download redaction, masking secure
+  fields), and one on a cache store's own `delete` method, which is left for a person to judge.
+- **Root tooling was dropped silently.** In the default layout, code outside the workspace
+  packages (43 files there, including the release tooling) was in neither `excluded` nor
+  `unassigned`. Every code file outside the areas is now in `excluded` with its reason, and root
+  tooling gets a warning with its count. (The report's other claim, that files untouched in the
+  window are in no list, was not the case: `mine_history.py` adds every tracked file.)
+- **Changesets were not a release signal.** `release_scope.py` resolves the release base (the
+  nearest `name@x.y.z` or `vX.Y.Z` tag merged into HEAD, `--package` for one package's own),
+  reads the pending `.changeset/*.md` bumps per package and the breaking conventional commits.
+  `score_risk.py --release` names them in the change-in-scope evidence and flags
+  `breaking_change` areas (at least Medium; the plan needs regression or contract testing for
+  them). A minor bump with a `**Breaking:**` note counts as breaking, as 0.x releases use it.
+  Changing a shared `diff_scope.py` (`--since-release`) was left to the shared files.
+- **A workspace package named `e2e`** was not source to `is_source()` (an `e2e/` directory meant
+  test code). Directories named `e2e`, `test`, `tests` or `spec` are test code unless they are a
+  product package (a manifest plus `src/`, or a package.json with `main`/`module`/`exports`/`bin`),
+  the rule the skills share.
+- **Test weakness didn't discriminate.** Live tests (`live/`, credential-gated) and helpers or
+  fixtures in a test tree counted as tests; they no longer do and are listed in
+  `tests_not_counted`.
+- **Two-file areas** from file-name prefixes (`read*`, `cdp*`) in a large flat package directory:
+  prefix grouping is now for the Next.js `lib/` layout only; elsewhere the flat files are one
+  `(top level)` area.
+- **Ranking by surface alone was easy to miss.** When no area has journey criticality or reach
+  assessed, `risk.json` warns and the validator wants the headline to say the ranking rests on
+  surface patterns; SKILL.md says to give `--usage` (downloads per package, calls per entry point)
+  for a library or CLI, where journey-mapper does not fit.
+- **Judged factors were invisible in `--brief`.** The register has a Judged column (computed →
+  judged score). Judging a factor to its computed score with a new reason stays allowed, to
+  record a review.
+- **Speed.** Profiling showed 7 million regex searches (one per pattern per line). Each class's
+  patterns and excludes are now one alternation, searched once per line: the review repository
+  scores in 18 s (default areas) and 14 s (`--areas`); the review measured 23 s and 51 s, and
+  the unmerged patterns took 48 s on the same loaded machine, with identical output. Windows antivirus time in `complexity.py` is documented in the README, not changed.
+- The example was re-scored with `release_scope.py` added to `commands.sh` (base `v1.4`, no
+  changesets): scores, bands and areas are unchanged.
