@@ -44,6 +44,27 @@ Besides HTTP routes (kind `routes`), it lists the interfaces of a library, a CLI
     routes           also a plain Node server (http.createServer) as one ANY / entry: its routing is in
                      the handler, so read it by hand
 
+Go (go.mod and *.go, read with comment- and string-aware patterns, never compiled):
+
+    cli              urfave/cli tables (cli.App / cli.Command literals, Commands and Subcommands lists,
+                     elided {Name: ...} elements, commands held in variables or returned by functions),
+                     cobra (Use: and parent.AddCommand(child)), and a main package using the standard
+                     flag package (its flag.NewFlagSet names as sub-commands)
+    routes           net/http ServeMux HandleFunc/Handle (Go 1.22 "GET /x/{id}" patterns, gorilla
+                     .Methods), gin/echo/chi/fiber/httprouter calls with a literal path (a group or
+                     mount prefix is marked prefix_unresolved), and a listener in a file that
+                     registers no route (go-listener: never counted as reached)
+    package_exports  every importable package with an exported identifier (not main, not internal/)
+
+Only _test.go files are Go tests. A command is also reached when a _test.go file of its package
+names the variable holding it, and a package by its own _test.go files.
+
+vendor/, third_party/ and bundled copies of other projects (a directory with its own licence whose
+manifest names another repository than the root's, such as an embedded driver) are skipped and named
+in notes. `language_coverage` records the dominant source language and whether it is read; when it is
+not (or only in part, as Rust), a WARNING goes to stderr and notes, and the exit status is 3 for a
+language not read at all: the list then covers incidental files only.
+
 A CLI command or tool is reached when a test string literal names it (the command word, `prog cmd`,
 or the tool name); a package export when a test imports it by package name, or imports the source
 file its built target comes from (dist/x.js -> src/x.ts). That is weaker than a URL match: it says a
@@ -68,10 +89,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import py_routes  # noqa: E402  (shared route reader)
 
 PRUNE = {'.git', '.hg', '.svn', 'node_modules', '.venv', 'venv', 'env', '__pycache__', '.mypy_cache', '.pytest_cache',
-         '.tox', '.nox', 'dist', 'build', 'out', '.next', '.nuxt', 'coverage', 'site-packages', '.turbo', '.cache'}
+         '.tox', '.nox', 'dist', 'build', 'out', '.next', '.nuxt', 'coverage', 'site-packages', '.turbo', '.cache',
+         'vendor', 'third_party', 'third-party', 'Pods', 'Carthage'}
 HTTP = ['get', 'post', 'put', 'patch', 'delete', 'head', 'options']
 JS_EXT = ('.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts')
-TEST_NAME = re.compile(r'(^test_.*\.py$|_test\.py$|^conftest\.py$|\.(test|spec)\.[cm]?[jt]sx?$)')
+TEST_NAME = re.compile(r'(^test_.*\.py$|_test\.py$|^conftest\.py$|\.(test|spec)\.[cm]?[jt]sx?$|_test\.go$)')
 TEST_DIRS = {'tests', 'test', '__tests__', 'spec', 'e2e', 'testing'}
 
 
@@ -460,6 +482,492 @@ def py_commands_and_tools(root: Path, files: list[str], project) -> list[dict]:
     return out
 
 
+# ---------------------------------------------------------------- Go
+def go_mask(text: str) -> str:
+    """Comments and the insides of string and rune literals blanked (same length, newlines kept), so braces and
+    words inside them are never read as code. Quotes stay, so a literal's position still finds its value."""
+    out, i, n = list(text), 0, len(text)
+
+    def blank(a: int, b: int) -> None:
+        for k in range(a, b):
+            if out[k] != '\n':
+                out[k] = ' '
+    while i < n:
+        c = text[i]
+        if text.startswith('//', i):
+            j = text.find('\n', i)
+            j = n if j < 0 else j
+            blank(i, j)
+            i = j
+        elif text.startswith('/*', i):
+            j = text.find('*/', i + 2)
+            j = n if j < 0 else j + 2
+            blank(i, j)
+            i = j
+        elif c in '"\'':
+            j = i + 1
+            while j < n and text[j] != c and text[j] != '\n':
+                j += 2 if text[j] == '\\' else 1
+            blank(i + 1, min(j, n))
+            i = j + 1
+        elif c == '`':
+            j = text.find('`', i + 1)
+            j = n if j < 0 else j
+            blank(i + 1, j)
+            i = j + 1
+        else:
+            i += 1
+    return ''.join(out)
+
+
+def go_close(masked: str, open_pos: int) -> int:
+    """The index of the brace closing the one at open_pos (in masked text)."""
+    depth = 0
+    for k in range(open_pos, len(masked)):
+        if masked[k] in '{([':
+            depth += 1
+        elif masked[k] in '})]':
+            depth -= 1
+            if depth == 0:
+                return k
+    return len(masked) - 1
+
+
+def go_top_level(masked: str, a: int, b: int) -> list[int]:
+    """Positions between a and b at nesting depth 0 (inside a composite literal's own braces)."""
+    out, depth = [], 0
+    for k in range(a, b):
+        ch = masked[k]
+        if ch in '{([':
+            if depth == 0:
+                out.append(k)
+            depth += 1
+        elif ch in '})]':
+            depth -= 1
+        elif depth == 0:
+            out.append(k)
+    return out
+
+
+GO_STR = re.compile(r'"((?:\\.|[^"\\\n])*)"|`([^`]*)`')
+GO_FIELD = r'(?<![\w.])({field})\s*:\s*'
+GO_TEST = re.compile(r'_test\.go$')
+
+
+def go_files(root: Path, files: list[str], tests: bool = False) -> dict[str, tuple[str, str]]:
+    """{rel: (text, masked)} for the repo's Go files: product files, or with tests=True the _test.go files."""
+    out = {}
+    for rel in files:
+        if not rel.endswith('.go') or bool(GO_TEST.search(rel)) != tests or '/testdata/' in f'/{rel}':
+            continue
+        text = (root / rel).read_text(encoding='utf-8', errors='replace')
+        out[rel] = (text, go_mask(text))
+    return out
+
+
+def go_modules(root: Path, files: list[str]) -> list[tuple[str, str]]:
+    """(module path, module directory) for every go.mod, the deepest directory first."""
+    mods = []
+    for rel in files:
+        if PurePosixPath(rel).name == 'go.mod':
+            m = re.search(r'(?m)^\s*module\s+"?([^\s"]+)', (root / rel).read_text(encoding='utf-8', errors='replace'))
+            if m:
+                d = PurePosixPath(rel).parent.as_posix()
+                mods.append((m.group(1), '' if d == '.' else d))
+    return sorted(mods, key=lambda x: -len(x[1]))
+
+
+def go_import_path(mods: list[tuple[str, str]], rel_dir: str) -> str | None:
+    for mod, d in mods:
+        if not d or rel_dir == d or rel_dir.startswith(d + '/'):
+            rest = rel_dir[len(d):].strip('/') if d else ('' if rel_dir == '.' else rel_dir)
+            return mod + ('/' + rest if rest else '')
+    return None
+
+
+def go_prog(rel: str, mods: list[tuple[str, str]]) -> str:
+    """A Go program's name: its main package's directory (cmd/harbour -> harbour), or the module's last segment."""
+    d = PurePosixPath(rel).parent
+    if d.as_posix() not in ('.', ''):
+        return d.name
+    return (mods[0][0].rsplit('/', 1)[-1] if mods else 'cli')
+
+
+def go_command_tables(root: Path, gofiles: dict, mods: list) -> list[dict]:
+    """urfave/cli (cli.App / cli.Command literals, Commands/Subcommands lists, elided {Name: ...} elements, commands
+    held in variables or returned by functions) and cobra (cobra.Command{Use: ...} with parent.AddCommand(child)),
+    read across every product file at once. Each command's path is its program and the chain of names."""
+    nodes = []          # {fw, name, file, line, ident, children: [node idx or ident], app}
+    by_ident: dict[str, list[int]] = {}
+    for rel, (text, masked) in gofiles.items():
+        has_urfave = 'github.com/urfave/cli' in text
+        has_cobra = 'github.com/spf13/cobra' in text
+        if not has_urfave and not has_cobra:
+            continue
+        lits = []       # (open, close, node index)
+        rx = re.compile(r'&?\b(cli)\.(Command|App)\s*\{' if has_urfave else r'(?!)')
+        found = [(m, 'urfave-cli') for m in rx.finditer(masked)]
+        if has_cobra:
+            found += [(m, 'cobra') for m in re.finditer(r'&?\bcobra\.(Command)\s*\{', masked)]
+        for m, fw in sorted(found, key=lambda x: x[0].start()):
+            if re.search(r'\]\s*\*?\s*$', masked[max(0, m.start() - 4):m.start()]):
+                continue                                  # []*cli.Command{...} is a list, not a command
+            op = masked.index('{', m.start())
+            lits.append((op, go_close(masked, op), fw, m.start(), m.group(0).endswith('App{') or 'App' in m.group(0)))
+        # elided elements of a Commands/Subcommands list: []*cli.Command{ {Name: ...}, ... }
+        for m in re.finditer(r'\b(?:Subcommands|Commands)\s*:\s*\[\]\*?cli\.Command\s*\{', masked):
+            op = m.end() - 1
+            cl = go_close(masked, op)
+            for k in go_top_level(masked, op + 1, cl):
+                if masked[k] == '{':
+                    lits.append((k, go_close(masked, k), 'urfave-cli', k, False))
+        lits.sort()
+        idx_of = {}
+        for op, cl, fw, start, is_app in lits:
+            if op in idx_of:
+                continue
+            tops = go_top_level(masked, op + 1, cl)
+            field = 'Use' if fw == 'cobra' else 'Name'
+            name = None
+            for k in tops:
+                mm = re.compile(GO_FIELD.format(field=field)).match(masked, k)
+                if mm and (k == 0 or not (masked[k - 1].isalnum() or masked[k - 1] == '_')):
+                    sm = GO_STR.match(text, mm.end())
+                    if sm:
+                        name = (sm.group(1) if sm.group(1) is not None else sm.group(2)).split()
+                        name = name[0] if name else None
+                    break
+            before = masked[max(0, start - 200):start]
+            ident = None
+            bm = re.search(r'(?:\bvar\s+)?\b(\w+)\s*(?::=|=)\s*$', before)
+            fm = re.search(r'\bfunc\s+(?:\([^)]*\)\s*)?(\w+)\s*\([^)]*\)\s*\*?(?:cli|cobra)\.Command\s*\{\s*return\s*$', before)
+            if fm:
+                ident = fm.group(1)
+            elif bm:
+                ident = bm.group(1)
+            node = {'fw': fw, 'name': name, 'file': rel, 'line': line_at(text, start), 'ident': ident,
+                    'children': [], 'app': is_app, 'span': (op, cl), 'parent': None}
+            idx_of[op] = len(nodes)
+            if ident:
+                by_ident.setdefault(ident, []).append(len(nodes))
+            nodes.append(node)
+        # nesting and list references, within this file
+        for op, cl, fw, start, is_app in lits:
+            me = idx_of[op]
+            for m in re.finditer(r'\b(?:Subcommands|Commands)\s*:\s*\[\]\*?cli\.Command\s*\{', masked[op + 1:cl]):
+                lop = op + 1 + m.end() - 1
+                lcl = go_close(masked, lop)
+                if go_top_level(masked, op + 1, cl).count(op + 1 + m.start()) == 0:
+                    continue                            # a list inside a nested literal belongs to that literal
+                depth, k, elem_start = 0, lop + 1, lop + 1
+                elems = []
+                while k <= lcl:
+                    ch = masked[k] if k < lcl else ','
+                    if ch in '{([':
+                        depth += 1
+                    elif ch in '})]':
+                        depth -= 1
+                    if (ch == ',' and depth == 0) or k == lcl:
+                        elems.append((elem_start, k))
+                        elem_start = k + 1
+                    k += 1
+                for a, b in elems:
+                    seg = masked[a:b]
+                    if not seg.strip():
+                        continue
+                    child = next((idx_of[o] for o in idx_of if a <= o < b), None)
+                    if child is not None:
+                        nodes[me]['children'].append(child)
+                        nodes[child]['parent'] = me
+                        continue
+                    im = re.match(r'\s*&?\s*(?:\w+\.)?(\w+)\s*(?:\(\s*\))?\s*$', seg)
+                    if im:
+                        nodes[me]['children'].append(im.group(1))
+        for m in re.finditer(r'\b(\w+)\.AddCommand\(([^)]*(?:\([^)]*\)[^)]*)*)\)', masked):
+            parents = by_ident.get(m.group(1)) or []
+            for p in parents[:1]:
+                for arg in m.group(2).split(','):
+                    am = re.match(r'\s*(?:\w+\.)?(\w+)\s*(?:\(\s*\))?\s*$', arg)
+                    if am:
+                        nodes[p]['children'].append(am.group(1))
+    # resolve identifier children
+    for i, nd in enumerate(nodes):
+        kids = []
+        for c in nd['children']:
+            if isinstance(c, str):
+                for j in by_ident.get(c, [])[:1]:
+                    kids.append(j)
+                    nodes[j]['parent'] = i if nodes[j]['parent'] is None else nodes[j]['parent']
+            else:
+                kids.append(c)
+        nd['children'] = kids
+    out = []
+
+    def emit(i: int, prefix: list[str], seen: set) -> None:
+        if i in seen:
+            return
+        nd = nodes[i]
+        path = prefix + ([nd['name']] if nd['name'] else [])
+        if path:
+            out.append({'kind': 'cli', 'framework': nd['fw'], 'method': 'CLI', 'path': ' '.join(path), 'file': nd['file'],
+                        'line': nd['line'], 'included': True,
+                        **({'go_ident': nd['ident'], 'go_dir': PurePosixPath(nd['file']).parent.as_posix()} if nd['ident'] else {})})
+        for c in nd['children']:
+            emit(c, path, seen | {i})
+    roots = [i for i, nd in enumerate(nodes) if nd['parent'] is None]
+    for i in roots:
+        nd = nodes[i]
+        attached = nd['app'] or nd['children']
+        if attached:
+            prefix = [] if nd['name'] else [go_prog(nd['file'], mods)]
+            emit(i, prefix, set())
+        elif nd['name']:
+            out.append({'kind': 'cli', 'framework': nd['fw'], 'method': 'CLI', 'path': nd['name'], 'file': nd['file'],
+                        'line': nd['line'], 'included': False,
+                        'note': 'a command not found in any command table: check whether it is wired up',
+                        **({'go_ident': nd['ident'], 'go_dir': PurePosixPath(nd['file']).parent.as_posix()} if nd['ident'] else {})})
+    return out
+
+
+def go_flag_programs(gofiles: dict, mods: list) -> list[dict]:
+    """A main package parsing the standard flag package: the program, and each flag.NewFlagSet("name") as a
+    sub-command. Flags are listed in the note."""
+    out = []
+    for rel, (text, masked) in gofiles.items():
+        if not re.search(r'(?m)^package\s+main\b', text) or not re.search(r'"flag"', text) \
+                or 'github.com/urfave/cli' in text or 'github.com/spf13/cobra' in text:
+            continue
+        flags = []
+        for m in re.finditer(r'\bflag\.(?:String|Bool|Int|Int64|Uint|Uint64|Float64|Duration|Func|Var)(?:Var)?\(', masked):
+            sm = GO_STR.search(text, m.end(), m.end() + 80)
+            if sm and sm.group(1):
+                flags.append('-' + sm.group(1))
+        sets = [(GO_STR.match(text, m.end()), m) for m in re.finditer(r'\bflag\.NewFlagSet\(\s*', masked)]
+        if not flags and not sets and 'flag.Parse()' not in masked:
+            continue
+        prog = go_prog(rel, mods)
+        out.append({'kind': 'cli', 'framework': 'go-flag', 'method': 'CLI', 'path': prog, 'file': rel, 'line': 1,
+                    'included': True, **({'note': 'flags: ' + ', '.join(sorted(set(flags)))} if flags else {})})
+        for sm, m in sets:
+            if sm and sm.group(1) and sm.group(1) != prog:      # NewFlagSet(os.Args[0]-style name) is the program itself
+                out.append({'kind': 'cli', 'framework': 'go-flag', 'method': 'CLI', 'path': f'{prog} {sm.group(1)}',
+                            'file': rel, 'line': line_at(text, m.start()), 'included': True})
+    return out
+
+
+GO_ROUTERS = re.compile(r'"github\.com/(?:gin-gonic/gin|labstack/echo[^"]*|go-chi/chi[^"]*|gofiber/fiber[^"]*|'
+                        r'julienschmidt/httprouter|gorilla/mux)"')
+
+
+def go_routes(gofiles: dict) -> list[dict]:
+    """net/http ServeMux registrations (Go 1.22 "METHOD /path" patterns, gorilla .Methods(...)), gin / echo / chi /
+    fiber / httprouter method calls with a literal path, and a listener in a file that registers no route."""
+    out = []
+    for rel, (text, masked) in gofiles.items():
+        found = []
+        for m in re.finditer(r'\.(HandleFunc|Handle)\(\s*', masked):
+            sm = GO_STR.match(text, m.end())
+            if not sm or sm.group(1) is None:
+                continue
+            pat = sm.group(1).strip()
+            meth = 'ANY'
+            pm = re.match(r'([A-Z]+)\s+(.*)$', pat)
+            if pm:
+                meth, pat = pm.group(1), pm.group(2)
+            else:
+                eol = masked.find('\n', m.end())
+                mm = re.search(r'\.Methods\(\s*"([A-Z]+)"', text[m.end():eol if eol > 0 else None])
+                if mm:
+                    meth = mm.group(1)
+            if not pat.startswith('/'):
+                pat = pat[pat.find('/'):] if '/' in pat else '/' + pat    # a host-qualified pattern
+            pat = re.sub(r'\{(\w+)\.\.\.\}', r'{\1*}', pat)
+            found.append({'kind': 'routes', 'framework': 'go-net-http', 'method': meth, 'path': pat, 'file': rel,
+                          'line': line_at(text, m.start()), 'included': True})
+        if GO_ROUTERS.search(text):
+            fw = GO_ROUTERS.search(text).group(0).strip('"').split('/')[2]
+            for m in re.finditer(r'\b\w+\.(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|Get|Post|Put|Patch|Delete|Head|Options|Any|'
+                                 r'All)\(\s*', masked):
+                sm = GO_STR.match(text, m.end())
+                if not sm or not (sm.group(1) or '').startswith('/'):
+                    continue
+                meth = m.group(1).upper()
+                found.append({'kind': 'routes', 'framework': f'go-{fw}', 'method': 'ANY' if meth in ('ANY', 'ALL') else meth,
+                              'path': re.sub(r':(\w+)', r'{\1}', sm.group(1)), 'file': rel, 'line': line_at(text, m.start()),
+                              'included': True,
+                              **({'prefix_unresolved': True} if re.search(r'\.(?:Group|Route|Mount)\(', masked) else {})})
+        out += found
+        if not found:
+            lm = re.search(r'\bhttp\.ListenAndServe(?:TLS)?\(|\bnet\.Listen(?:TCP|Unix)?\(|\bhttp\.Server\s*\{', masked)
+            if lm:
+                out.append({'kind': 'routes', 'framework': 'go-listener', 'method': 'ANY', 'path': '/', 'file': rel,
+                            'line': line_at(text, lm.start()), 'included': True,
+                            'note': 'a listener with no route registered in this file: what it serves is decided by its '
+                                    'handler or protocol; read it to list the interface'})
+    return out
+
+
+def go_packages(gofiles: dict, mods: list) -> list[dict]:
+    """Every importable Go package with an exported identifier (not main, not under internal/): kind package_exports,
+    path its import path."""
+    dirs: dict[str, list[str]] = {}
+    for rel in gofiles:
+        dirs.setdefault(PurePosixPath(rel).parent.as_posix(), []).append(rel)
+    out = []
+    for d, rels in sorted(dirs.items()):
+        if 'internal' in PurePosixPath(d).parts:
+            continue
+        texts = [gofiles[r][1] for r in rels]
+        if any(re.search(r'(?m)^package\s+main\b', t) for t in texts):
+            continue
+        exported = [(r, m) for r in rels for m in [re.search(r'(?m)^(?:func(?:\s*\([^)]*\))?|type|var|const)\s+[A-Z]\w*',
+                                                               gofiles[r][1])] if m]
+        path = go_import_path(mods, d)
+        if not exported or not path:
+            continue
+        r, m = exported[0]
+        out.append({'kind': 'package_exports', 'framework': 'go-package', 'method': 'IMPORT', 'path': path, 'file': r,
+                    'line': line_at(gofiles[r][0], m.start()), 'included': True, 'go_dir': d})
+    return out
+
+
+def go_interfaces(root: Path, files: list[str]) -> list[dict]:
+    gofiles = go_files(root, files)
+    if not gofiles:
+        return []
+    mods = go_modules(root, files)
+    return go_command_tables(root, gofiles, mods) + go_flag_programs(gofiles, mods) + go_routes(gofiles) + \
+        go_packages(gofiles, mods)
+
+
+def go_test_literals(base: Path, names: list[str], rel_base: str) -> tuple[list[dict], list[dict], dict[str, str]]:
+    """From _test.go files: URL literals (with the method from http.MethodX or "X" just before), every short string,
+    and {file: masked text} for identifier matching."""
+    lits, strings, masked_by = [], [], {}
+    for rel in names:
+        if not GO_TEST.search(rel):
+            continue
+        text = (base / rel).read_text(encoding='utf-8', errors='replace')
+        frel = f'{rel_base}/{rel}' if rel_base not in ('.', '') else rel
+        masked_by[frel] = go_mask(text)
+        for m in GO_STR.finditer(text):
+            if masked_by[frel][m.start()] not in '"`':
+                continue                                  # inside a comment
+            v = m.group(1) if m.group(1) is not None else m.group(2)
+            if not v or len(v) >= 300 or '\n' in v:
+                continue
+            line = text.count('\n', 0, m.start()) + 1
+            strings.append({'file': frel, 'line': line, 'value': v})
+            if '/' in v:
+                before = text[max(0, m.start() - 60):m.start()]
+                mm = re.search(r'(?:http\.Method(Get|Post|Put|Patch|Delete|Head|Options)|"(GET|POST|PUT|PATCH|DELETE|HEAD|'
+                               r'OPTIONS)")\s*,\s*$', before)
+                meth = (mm.group(1) or mm.group(2)).upper() if mm else None
+                lits.append({'file': frel, 'line': line, 'url': v, 'method': meth})
+    return lits, strings, masked_by
+
+
+def match_go(interfaces: list[dict], masked_by: dict[str, str]) -> None:
+    """Go reach beyond string literals: a command held in a variable is reached when a _test.go file of its package
+    names the variable; a package is reached by a _test.go file in its directory (its own tests) as well as by an
+    import of its path (matched as a string). Both are test_derived and weak: naming is not running."""
+    for itf in interfaces:
+        hits = list(itf.get('reached_by', []))
+        if itf.get('go_ident') and itf['kind'] == 'cli':
+            rx = re.compile(r'(?<![\w.])' + re.escape(itf['go_ident']) + r'\b')
+            for f, masked in masked_by.items():
+                if PurePosixPath(f).parent.as_posix() == itf['go_dir']:
+                    m = rx.search(masked)
+                    if m:
+                        hits.append({'file': f, 'line': masked.count('\n', 0, m.start()) + 1})
+        if itf.get('framework') == 'go-package':
+            hits += [{'file': f, 'line': 1} for f in masked_by if PurePosixPath(f).parent.as_posix() == itf['go_dir']][:5]
+        if hits:
+            uniq = {(h['file'], h['line']): h for h in hits}
+            itf['reached_by'] = [uniq[k] for k in sorted(uniq)][:20]
+            itf['reached'] = True
+
+
+# ---------------------------------------------------------------- what the readers cover
+READ_LANGS = {'python': 'read', 'javascript': 'read', 'typescript': 'read', 'go': 'read',
+              'rust': 'partial: Cargo binaries only, not their sub-commands'}
+LANG_OF = {'.py': 'python', '.js': 'javascript', '.jsx': 'javascript', '.mjs': 'javascript', '.cjs': 'javascript',
+           '.ts': 'typescript', '.tsx': 'typescript', '.mts': 'typescript', '.cts': 'typescript', '.go': 'go', '.rs': 'rust',
+           '.java': 'java', '.kt': 'kotlin', '.kts': 'kotlin', '.rb': 'ruby', '.php': 'php', '.cs': 'csharp',
+           '.swift': 'swift', '.m': 'objective-c', '.mm': 'objective-c', '.scala': 'scala', '.ex': 'elixir',
+           '.exs': 'elixir', '.dart': 'dart', '.c': 'c', '.h': 'c', '.cpp': 'cpp', '.cc': 'cpp', '.hpp': 'cpp'}
+
+
+def repo_slug(url: str) -> tuple[str, str] | None:
+    """('owner', 'name') from a repository URL or a Go module path."""
+    parts = [p for p in re.sub(r'\.git$', '', re.sub(r'^[a-z+]+://|^git@|^git\+', '', url.strip())).replace(':', '/').split('/') if p]
+    return (parts[-2].lower(), parts[-1].lower()) if len(parts) >= 2 else None
+
+
+def manifest_repo(d: Path) -> tuple[str, str] | None:
+    for name in ('package.json', 'Cargo.toml', 'pyproject.toml', 'go.mod'):
+        p = d / name
+        if not p.is_file():
+            continue
+        text = p.read_text(encoding='utf-8', errors='replace')
+        if name == 'package.json':
+            try:
+                rep = json.loads(text).get('repository')
+            except (ValueError, AttributeError):
+                rep = None
+            url = rep.get('url') if isinstance(rep, dict) else rep
+        elif name == 'go.mod':
+            m = re.search(r'(?m)^\s*module\s+"?([^\s"]+)', text)
+            url = m.group(1) if m else None
+        else:
+            m = re.search(r'(?m)^\s*(?:repository|Repository|Source)\s*=\s*"([^"]+)"', text)
+            url = m.group(1) if m else None
+        if isinstance(url, str) and url:
+            return repo_slug(url)
+    return None
+
+
+def bundled_trees(root: Path, files: list[str]) -> dict[str, str]:
+    """Directories that hold a bundled copy of another project (an embedded driver, an SDK): a non-root directory with
+    its own licence file and a manifest whose repository names a different owner and project than the repository's own
+    (root go.mod module, package.json repository, Cargo or pyproject repository). {dir: why}."""
+    own = manifest_repo(root)
+    if not own:
+        return {}
+    out = {}
+    licensed = {PurePosixPath(f).parent.as_posix() for f in files if re.match(r'(?i)(?:licen[cs]e|copying)(?:\.\w+)?$',
+                                                                               PurePosixPath(f).name)}
+    for d in sorted(licensed, key=len):
+        if d in ('.', '') or any(d.startswith(b + '/') for b in out):
+            continue
+        theirs = manifest_repo(root / d)
+        if theirs and theirs[0] != own[0] and theirs[1] != own[1]:
+            out[d] = f'its manifest names another repository ({"/".join(theirs)}) and it carries its own licence'
+    return out
+
+
+def language_coverage(files: list[str]) -> dict:
+    counts: dict[str, int] = {}
+    for rel in files:
+        lang = LANG_OF.get(PurePosixPath(rel).suffix.lower())
+        if lang:
+            counts[lang] = counts.get(lang, 0) + 1
+    if not counts:
+        return {'dominant': None, 'counts': {}, 'status': 'no_source'}
+    dominant = max(counts, key=lambda k: (counts[k], k))
+    status = READ_LANGS.get(dominant, 'not_read')
+    res = {'dominant': dominant, 'counts': dict(sorted(counts.items(), key=lambda kv: -kv[1])),
+           'status': 'read' if status == 'read' else 'partial' if status.startswith('partial') else 'not_read'}
+    if res['status'] != 'read':
+        res['warning'] = (f"this repository is mostly {dominant} ({counts[dominant]} source files), which list_interfaces.py "
+                          + ('reads only in part (' + status.split(': ', 1)[1] + ')' if res['status'] == 'partial' else
+                             'does not read')
+                          + '. The interfaces below come from the other languages only and are NOT the product\'s interface '
+                          'list: map the ' + dominant + ' interfaces by hand (SKILL.md Step 4) or record interface coverage '
+                          'as not assessed.')
+    return res
+
+
 # ---------------------------------------------------------------- tests
 PY_CLIENT = set(HTTP) | {'request', 'websocket_connect'}
 JS_STRING = re.compile(r'(?:\.(get|post|put|patch|delete|head|options)\s*\(\s*)?([\'"`])((?:\\.|(?!\2).)*)\2', re.S)
@@ -597,6 +1105,9 @@ def match(interfaces: list[dict], lits: list[dict]) -> None:
     for itf in interfaces:
         if itf.get('kind', 'routes') != 'routes':
             continue
+        if itf.get('framework') == 'go-listener':     # what it serves is unknown, so no URL can be said to reach it
+            itf['reached_by'], itf['reached'] = [], False
+            continue
         rx = template_regex(itf['path'])
         hits = []
         for lit in lits:
@@ -624,11 +1135,22 @@ def main(argv=None) -> int:
         ap.error('the repository path is required')
     root = args.repo.resolve()
     files = walk(root)
+    bundled = bundled_trees(root, files)
+    if bundled:
+        files = [f for f in files if not any(f.startswith(b + '/') for b in bundled)]
     py, notes, project = python_interfaces(root, files)
+    for b, why in bundled.items():
+        notes.append(f'{b}/ skipped as a bundled third-party tree: {why}; its interfaces are not the product\'s')
+    coverage = language_coverage(files)
+    if coverage.get('warning'):
+        notes.append('WARNING: ' + coverage['warning'])
     manifests, progs = manifest_interfaces(root, files)
-    others = manifests + js_commands_and_tools(root, files, progs) + py_commands_and_tools(root, files, project)
-    interfaces = sorted(py + js_interfaces(root, files) + others, key=lambda x: (x['kind'], x['path'], x['method'], x['file']))
-    res = {'repo': root.name, 'interfaces': interfaces, 'notes': notes,
+    gos = go_interfaces(root, files)
+    others = manifests + js_commands_and_tools(root, files, progs) + py_commands_and_tools(root, files, project) + \
+        [g for g in gos if g['kind'] != 'routes']
+    interfaces = sorted(py + js_interfaces(root, files) + [g for g in gos if g['kind'] == 'routes'] + others,
+                        key=lambda x: (x['kind'], x['path'], x['method'], x['file']))
+    res = {'repo': root.name, 'interfaces': interfaces, 'notes': notes, 'language_coverage': coverage,
            'summary': {'total': len(interfaces), 'by_kind': {}, 'by_framework': {}}}
     for i in interfaces:
         res['summary']['by_framework'][i['framework']] = res['summary']['by_framework'].get(i['framework'], 0) + 1
@@ -639,18 +1161,26 @@ def main(argv=None) -> int:
                      'typer, pyproject scripts, Cargo binaries), package exports and MCP tools. An empty list is not '
                      '"no interfaces": map them by hand (SKILL.md Step 4) or record interface coverage as not assessed')
     if args.tests:
-        lits, strings = [], []
+        lits, strings, go_masked = [], [], {}
         for t in args.tests:
             t = t.resolve()
             base = t if t.is_dir() else t.parent
             names = walk(t) if t.is_dir() else [t.name]
             rel_base = base.relative_to(root).as_posix() if base.is_relative_to(root) else str(base)
-            for lit in test_literals(base, names, every_file=True):     # everything under --tests is test code
+            if bundled and base.is_relative_to(root):
+                names = [n for n in names if not any(f'{rel_base}/{n}'.lstrip('./').startswith(b + '/') for b in bundled)]
+            # everything under --tests is test code, except Go: Go tests sit beside the code, so only _test.go is read
+            for lit in test_literals(base, [n for n in names if not n.endswith('.go')], every_file=True):
                 lits.append({**lit, 'file': f'{rel_base}/{lit["file"]}' if rel_base != '.' else lit['file']})
             if others:
                 strings += test_strings(base, names, rel_base)
+            glits, gstrings, gmasked = go_test_literals(base, names, rel_base)
+            lits += glits
+            strings += gstrings
+            go_masked.update(gmasked)
         match(interfaces, lits)
         match_names(interfaces, strings)
+        match_go(interfaces, go_masked)
         res['summary']['reached'] = sum(1 for i in interfaces if i['reached'])
         res['summary']['method'] = ('test string literals matched against path templates ({id} and :id match one segment), '
                                     'with the client method when the literal is its first argument; commands, tools and '
@@ -662,12 +1192,15 @@ def main(argv=None) -> int:
     s = res['summary']
     if not interfaces:
         print('WARNING: ' + notes[-1], file=sys.stderr)
+    if coverage.get('warning'):
+        bar = '!' * 78
+        print(f'{bar}\nWARNING: {coverage["warning"]}\n{bar}', file=sys.stderr)
     print(f'{s["total"]} interfaces ' + ', '.join(f'{v} {k}' for k, v in s['by_framework'].items())
           + (f'; {s["reached"]} reached by a test literal' if 'reached' in s else '')
           + (f' -> {args.out}' if args.out else ''), file=sys.stderr)
     if not args.out:
         sys.stdout.write(text)
-    return 0
+    return 3 if coverage['status'] == 'not_read' else 0
 
 
 SELF_TEST_FILES = {
@@ -702,6 +1235,56 @@ SELF_TEST_FILES = {
     'tools/e2e/crawler/__init__.py': '',
     'tools/e2e/crawler/cli.py': ('import argparse\n\ndef main():\n    p = argparse.ArgumentParser(prog="crawl")\n'
                              '    sub = p.add_subparsers()\n    sub.add_parser("fetch")\n'),
+}
+
+
+GO_SELF_TEST_FILES = {
+    'go.mod': 'module example.test/harbour\n\ngo 1.26\n\nrequire github.com/urfave/cli/v2 v2.27.0\n',
+    'cmd/harbour/main.go': ('package main\n\nimport (\n\t"os"\n\n\t"example.test/harbour/internal/app"\n)\n\n'
+                            'func main() { _ = app.Run(os.Args) }\n'),
+    'internal/app/app.go': ('package app\n\nimport "github.com/urfave/cli/v2"\n\n// Run builds the { "Name": "fake" } app.\n'
+                            'func Run(args []string) error {\n\ta := &cli.App{\n\t\tName:  "harbour",\n'
+                            '\t\tUsage: "manage berths {braces in a string}",\n'
+                            '\t\tFlags: []cli.Flag{&cli.StringFlag{Name: "config"}},\n'
+                            '\t\tCommands: []*cli.Command{\n\t\t\tsyncCommand,\n\t\t\t{\n\t\t\t\tName:   "serve",\n'
+                            '\t\t\t\tAction: serve,\n\t\t\t},\n\t\t},\n\t}\n\treturn a.Run(args)\n}\n\n'
+                            'func serve(c *cli.Context) error { return nil }\n'),
+    'internal/app/sync.go': ('package app\n\nimport "github.com/urfave/cli/v2"\n\nvar syncCommand = &cli.Command{\n'
+                             '\tName:  "sync",\n\tUsage: "sync berths",\n\tSubcommands: []*cli.Command{\n'
+                             '\t\t{Name: "push", Action: push},\n\t\tpullCommand(),\n\t},\n}\n\n'
+                             'func pullCommand() *cli.Command {\n\treturn &cli.Command{Name: "pull", Action: pull}\n}\n\n'
+                             'func push(c *cli.Context) error { return nil }\nfunc pull(c *cli.Context) error { return nil }\n'),
+    'internal/app/sync_test.go': ('package app\n\nimport (\n\t"testing"\n\n\t"github.com/urfave/cli/v2"\n)\n\n'
+                                  'func TestSync(t *testing.T) {\n\ta := &cli.App{Commands: []*cli.Command{syncCommand}}\n'
+                                  '\tif err := a.Run([]string{"x", "sync"}); err != nil {\n\t\tt.Fatal(err)\n\t}\n}\n'),
+    'tools/ferryctl/main.go': ('package main\n\nimport "github.com/spf13/cobra"\n\n'
+                               'var rootCmd = &cobra.Command{Use: "ferryctl", Short: "ferry control"}\n'
+                               'var dockCmd = &cobra.Command{Use: "dock [berth]", Run: func(cmd *cobra.Command, args []string) {}}\n\n'
+                               'func main() {\n\trootCmd.AddCommand(dockCmd)\n\t_ = rootCmd.Execute()\n}\n'),
+    'tools/tidecheck/main.go': ('package main\n\nimport (\n\t"flag"\n\t"fmt"\n\t"os"\n)\n\nfunc main() {\n'
+                                '\tdry := flag.Bool("dry-run", false, "plan only")\n'
+                                '\tverify := flag.NewFlagSet("verify", flag.ExitOnError)\n\tflag.Parse()\n'
+                                '\tfmt.Println(*dry, verify.Parse(os.Args[1:]))\n}\n'),
+    'internal/api/server.go': ('package api\n\nimport "net/http"\n\nfunc Routes() *http.ServeMux {\n'
+                               '\tmux := http.NewServeMux()\n\tmux.HandleFunc("GET /berths/{id}", getBerth)\n'
+                               '\tmux.HandleFunc("POST /berths", createBerth)\n'
+                               '\tmux.Handle("/healthz", http.HandlerFunc(health))\n\treturn mux\n}\n\n'
+                               'func Serve() error { return http.ListenAndServe(":8080", Routes()) }\n\n'
+                               'func getBerth(w http.ResponseWriter, r *http.Request)    {}\n'
+                               'func createBerth(w http.ResponseWriter, r *http.Request) {}\n'
+                               'func health(w http.ResponseWriter, r *http.Request)      {}\n'),
+    'internal/api/server_test.go': ('package api\n\nimport (\n\t"net/http"\n\t"net/http/httptest"\n\t"testing"\n)\n\n'
+                                    'func TestGetBerth(t *testing.T) {\n'
+                                    '\treq := httptest.NewRequest(http.MethodGet, "/berths/7", nil)\n'
+                                    '\tRoutes().ServeHTTP(httptest.NewRecorder(), req)\n}\n'),
+    'internal/metrics/metrics.go': ('package metrics\n\nimport "net"\n\nfunc Listen(addr string) (net.Listener, error) {\n'
+                                    '\treturn net.Listen("tcp", addr)\n}\n'),
+    'pkg/tides/tides.go': 'package tides\n\n// Height is exported.\nfunc Height(hour int) float64 { return 1.5 }\n',
+    'vendor/example.test/rope/rope.go': 'package rope\n\nimport "net/http"\n\nfunc init() { http.HandleFunc("/rope", nil) }\n',
+    'drivers/berthkit/package.json': ('{"name": "berthkit", "exports": "./index.js",\n'
+                                      ' "repository": {"type": "git", "url": "https://example.test/otherorg/berthkit.git"}}\n'),
+    'drivers/berthkit/LICENSE': 'A permissive licence.\n',
+    'drivers/berthkit/index.js': 'module.exports = {};\n',
 }
 
 
@@ -745,6 +1328,49 @@ def self_test() -> int:
         res = json.loads(out.read_text(encoding='utf-8'))
         want(not res['interfaces'] and any('no supported interface found' in n for n in res['notes']),
              'an empty result says nothing supported was found')
+
+        # ---- Go: urfave/cli and cobra command tables, flag, net/http routes and listeners, packages, _test.go reach
+        go = tmp / 'go'
+        for rel, text in GO_SELF_TEST_FILES.items():
+            (go / rel).parent.mkdir(parents=True, exist_ok=True)
+            (go / rel).write_text(text, encoding='utf-8')
+        with contextlib.redirect_stderr(io.StringIO()):
+            code = main([str(go), '--tests', str(go), '--out', str(out)])
+        res = json.loads(out.read_text(encoding='utf-8'))
+        got = {(i['kind'], i['path'], i['method']): i for i in res['interfaces']}
+        paths = {(i['kind'], i['path']) for i in res['interfaces']}
+        for p in ('harbour', 'harbour sync', 'harbour sync push', 'harbour sync pull', 'harbour serve'):
+            want(('cli', p) in paths, f'the urfave/cli command {p!r} is listed')
+        want(('cli', 'ferryctl') in paths and ('cli', 'ferryctl dock') in paths, 'cobra commands are listed with their parent')
+        want(('cli', 'tidecheck') in paths and ('cli', 'tidecheck verify') in paths, 'a flag program and its flag set are listed')
+        want(('routes', '/berths/{id}', 'GET') in got and ('routes', '/berths', 'POST') in got
+             and ('routes', '/healthz', 'ANY') in got, 'net/http ServeMux routes are listed with their methods')
+        want(any(i['framework'] == 'go-listener' for i in res['interfaces']), 'a bare listener is listed')
+        want(('package_exports', 'example.test/harbour/pkg/tides') in paths
+             and not any('internal' in p for k, p in paths if k == 'package_exports'),
+             'an exported Go package is listed and internal packages are not')
+        want(got.get(('cli', 'harbour sync', 'CLI'), {}).get('reached'), 'a command a _test.go names by its variable is reached')
+        want(not got.get(('cli', 'harbour serve', 'CLI'), {}).get('reached', True), 'an untested command is not reached')
+        want(got.get(('routes', '/berths/{id}', 'GET'), {}).get('reached'), 'a route a _test.go requests is reached')
+        want(not got.get(('routes', '/berths', 'POST'), {}).get('reached', True), 'an unrequested route is not reached')
+        want(not any(i['file'].startswith(('vendor/', 'drivers/berthkit/')) for i in res['interfaces']),
+             'vendored and bundled third-party trees are not product interfaces')
+        want(any('berthkit' in n for n in res['notes']), 'a skipped bundled tree is named in notes')
+        want(code == 0 and not res.get('language_coverage', {}).get('warning'), 'a Go repository is read: no language warning')
+
+        # ---- a dominant language the script does not read: loud, machine-readable, distinct exit
+        rb = tmp / 'rb'
+        (rb / 'lib').mkdir(parents=True)
+        for i in range(4):
+            (rb / 'lib' / f'berth{i}.rb').write_text('class Berth; end\n', encoding='utf-8')
+        (rb / 'package.json').write_text('{"name": "berth-assets", "bin": {"berth-assets": "bin/x.js"}}\n', encoding='utf-8')
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code = main([str(rb), '--out', str(out)])
+        res = json.loads(out.read_text(encoding='utf-8'))
+        want(code == 3 and res.get('language_coverage', {}).get('dominant') == 'ruby'
+             and 'WARNING' in err.getvalue() and any('ruby' in n.lower() for n in res['notes']),
+             'an unread dominant language warns on stderr and in notes, sets language_coverage and exits 3')
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     if fails:
