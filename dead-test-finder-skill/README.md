@@ -88,6 +88,7 @@ python scripts/render_report.py examples/dead_test_report.example.json --brief
 - `schemas/dead_test_report.schema.json`: output contract
 - `scripts/scan_tests.py`: test definitions and candidates (Python `ast`; JS/TS through a lexer for strings, templates, regex literals and comments, with Playwright idioms)
 - `scripts/collect_check.py`: defined vs collected, from the frameworks' own list commands (pytest, Vitest, Jest, Playwright), optionally scoped, cached and split around a file that can't be listed
+- `scripts/net_guard.cjs`, `scripts/net_guard.py`: network guards for the runs (Node via `NODE_OPTIONS=--require`, pytest via `-p net_guard`); with `QA_NET_GUARD_LOG` set they write `loaded`/`refused` lines to that log only
 - `scripts/tree_guard.py`: keeps the target's test files byte for byte around every command the scripts run, puts them back and stops if one changed
 - `scripts/self_test.py`: the scanner's head, assertion and cleanup rules and collect_check's guard on a synthetic repository
 - `scripts/neutralise.py`: neutral and raising bodies in a scratch copy (JS targets through aliases, default imports and re-exports; byte-exact restores), and patch proofs

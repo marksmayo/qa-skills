@@ -22,7 +22,7 @@ from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import detect_conventions  # noqa: E402
+import detect_conventions, diff_scope  # noqa: E402
 
 RULES = json.loads((HERE.parent / 'data' / 'rules.json').read_text(encoding='utf-8'))
 PY, JS = RULES['python'], RULES['javascript']
@@ -31,39 +31,16 @@ KEY = re.compile(RULES['ticket_key'])
 TEST_DIR_PARTS = {'tests', 'test', '__tests__', 'spec', 'e2e', 'testing'}
 # Directories that hold only test support code wherever they sit (helpers/ and fixtures/ count only under a test dir).
 SUPPORT_DIR_PARTS = {'__mocks__', '__fixtures__', 'test-utils', 'test_utils', 'testutils', 'test-helpers', 'test_helpers'}
-MANIFESTS = ('package.json', 'pyproject.toml', 'setup.py', 'setup.cfg', 'Cargo.toml', 'go.mod', 'pom.xml', 'build.gradle',
-             'build.gradle.kts', 'composer.json', 'Gemfile', 'mix.exs', 'pubspec.yaml')
-TEST_RUNNER_DEPS = ('@playwright/test', 'playwright', 'cypress', 'vitest', 'jest', 'mocha', 'webdriverio', '@wdio/cli',
-                    'detox', 'testcafe', 'pytest')
-_TEST_DIR: dict[str, bool] = {}
-
-
-def test_layout_manifest(d: Path) -> bool:
-    """A directory with a manifest that is still a test layout: a package.json that publishes nothing (no main, module,
-    exports, bin or types) and depends on a test runner (an apps/x/e2e/ Playwright package of spec files)."""
-    try:
-        pj = json.loads((d / 'package.json').read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        return False
-    if any(k in pj for k in ('main', 'module', 'exports', 'bin', 'types', 'typings')):
-        return False
-    deps = {**pj.get('dependencies', {}), **pj.get('devDependencies', {})}
-    return any(k in deps for k in TEST_RUNNER_DEPS)
 
 
 def is_test_dir(root: Path, rel_dir: str) -> bool:
-    """A directory named e2e, test, tests, spec, __tests__ or testing is test code only when it holds no package
-    manifest that makes it a product package (packages/e2e/ with a package.json that publishes the product), or when the
-    manifest is a test layout's (see test_layout_manifest). The same rule as the shared diff_scope.py classification."""
-    name = PurePosixPath(rel_dir).name
-    if name not in TEST_DIR_PARTS:
+    """A directory named e2e, test, tests, spec, __tests__ or testing is test code unless it is a product package: the
+    shared rule of diff_scope.product_package (a manifest that ships code, such as packages/e2e/ with a package.json
+    declaring exports and a src/ directory). A workspace package of spec files and a runner config stays a test
+    directory."""
+    if PurePosixPath(rel_dir).name not in TEST_DIR_PARTS:
         return False
-    key = f'{root}|{rel_dir}'
-    if key not in _TEST_DIR:
-        d = root / rel_dir
-        has = [m for m in MANIFESTS if (d / m).is_file()]
-        _TEST_DIR[key] = not has or (has == ['package.json'] and test_layout_manifest(d))
-    return _TEST_DIR[key]
+    return diff_scope.product_package(root, rel_dir) is None
 
 
 def in_test_dir(root: Path, rel: str, parts: frozenset | set = frozenset()) -> bool:

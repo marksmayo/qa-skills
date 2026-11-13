@@ -131,10 +131,12 @@ run as a real analysis; report that the primary language was not analysed and st
   definition skipped conditionally (`it.skipIf(cond)`, or inside such a block) carries
   `skip_condition`.
 - **Test directories.** A directory named `e2e`, `test`, `tests`, `spec` or `testing` holds tests
-  only when it has no package manifest (`package.json`, `pyproject.toml`, `Cargo.toml` ...) that
-  makes it a product package; a manifest that publishes nothing and depends on a test runner (an
-  `apps/x/e2e/` Playwright package) is still a test layout. So `packages/e2e/src/` of a product
-  named e2e is product code.
+  only when it is not a product package: a manifest (`package.json`, `pyproject.toml`,
+  `Cargo.toml` ...) that ships code (a `src/` directory, `main`/`exports`/`bin`, a `[lib]`, the
+  Python package it names) makes it product code, the rule of the shared `diff_scope.py`. A
+  workspace package of spec files and a runner config (an `apps/x/e2e/` Playwright package) is
+  still a test layout. So `packages/e2e/src/` of a product named e2e is product code, while
+  `packages/e2e/tests/` holds tests.
 - Playwright: a file that imports `@playwright/test` or sits in the config's `testDir` is marked
   `framework: playwright`, and setup projects (`auth.setup.ts`) are scanned too. A runtime
   `test.skip(condition, reason)` or `test.fixme(condition)` inside a test is a conditional skip of
@@ -216,6 +218,18 @@ the test framework's) with a reason and a basis: neutralising them costs runs an
 nothing. When most candidates of a rule turn out to be the same mistake, sample a few, dismiss the
 rest by the shared reason, and report the scanner gap in the limitations.
 
+- **Network guard.** Run the list commands, neutralisations and similarity sessions with the
+  network blocked, using the guards this skill ships: for Node,
+  `NODE_OPTIONS="--require <absolute path to this skill>/scripts/net_guard.cjs"` (forward slashes
+  on Windows; it reaches child processes and Vitest's and Jest's workers); for Python,
+  `scripts/net_guard.py` as a pytest plugin (`-p net_guard` with `PYTHONPATH` reaching
+  `scripts/`). Set `QA_NET_GUARD_LOG=<run>/net_guard.log`: with it set the guards write only to
+  the log, never to stderr, so tests of a CLI that assert on a child's stderr are not broken by
+  the guard. Each process writes `net_guard: loaded pid=<pid>` and each refusal
+  `net_guard: refused <host>:<port>`. Check the log has a `loaded` line before relying on the
+  results: a guard that never loaded (a wrong path) refuses nothing. A test that fails because a
+  connection was refused needs a service; record it as errored, never as a neutralisation result.
+  `--self-test` on either file checks it works here.
 - **One copy per invocation.** Each package (the repo root too) is copied once, outside the
   repo, without VCS data, caches, virtualenvs, `node_modules` or the run directory, and every test
   in the invocation shares it; each neutralised file is written back straight after its run. Add

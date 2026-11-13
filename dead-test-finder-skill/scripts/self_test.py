@@ -159,6 +159,7 @@ describe.each<string>(['fast', 'slow'])('mode %s', (mode) => {
         "import { test } from 'node:test';\nimport assert from 'node:assert/strict';\n"
         "test('splits a line', () => {\n  assert.equal('a b'.split(' ').length, 2);\n});\n"),
     'python/e2e/pyproject.toml': '[project]\nname = "harbour-e2e"\n',
+    'python/e2e/harbour_e2e/__init__.py': '',
     'python/e2e/harbour_e2e/runner.py': 'def test_mode(flag):\n    return flag\n',
     'python/tests/e2e/test_flow.py': 'def test_flow():\n    assert 1 + 1 == 2\n',
 }
