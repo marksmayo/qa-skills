@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """Replay every recorded crash and ANR on a fresh app state, and optionally run a seeded monkey.
 
-    python crash_explore.py --run run --replay [--attempts 2]
+    python crash_explore.py --run run --replay [--attempts 2] [--offline]
     python crash_explore.py --run run --monkey --seed 4242 --events 500 [--throttle 300]
 
 --replay: for each crash in <run>/crashes.json, clear the app's data (pm clear), launch, replay its steps
-and watch for the same crash (same exception or ANR reason). Writes <run>/replays.json; a crash replayed
+and watch for the same crash (same exception, or the same kind of ANR timeout). Writes <run>/replays.json; a crash replayed
 at least once has confidence "reproduced".
 --monkey (off by default: it taps unpredictably): Android monkey restricted to the package, seeded, system
 keys off, throttled. Its seed and event log go to <run>/monkey/; crashes it finds are appended to
 crashes.json with the seed and the event log as their steps (likelihood "random input only").
+Device changes are journaled in <run>/device_changes.json before they are made (see adb_device.py restore).
 """
 from __future__ import annotations
 import argparse, json, re, sys, time
@@ -17,12 +18,24 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from adb_device import Device  # noqa: E402
+from adb_device import Device, PendingRestore, short_reason  # noqa: E402
 from explore import Explorer, now  # noqa: E402
 
 
 class Args:
-    settle = 7.0
+    settle = 6.0
+    input_delay = 2.0
+    anr_trace_wait = 30.0
+    launch_wait = 2.0
+    step_wait = 1.5
+    no_back = True
+
+
+def what(c: dict | None) -> str | None:
+    """What a crash is, for comparing a replay with the recording: the exception, or the ANR's kind of timeout."""
+    if not c:
+        return None
+    return c.get('exception') or short_reason(c.get('reason'))
 
 
 def replay(d: Device, run: Path, graph: dict, attempts: int) -> list[dict]:
@@ -38,12 +51,13 @@ def replay(d: Device, run: Path, graph: dict, attempts: int) -> list[dict]:
             d.shell(f'pm clear {graph["package"]}', check=False)
             d.logcat_clear()
             ok = ex.replay(c['steps'][:-1])
+            since = d.device_time()
             if ok:
                 ok = ex.do(c['steps'][-1])
-            got = ex.health(c['steps'], c['screen']) if ok else None
-            same = bool(got) and got['kind'] == c['kind'] and (got.get('exception') or got.get('reason')) == (c.get('exception') or c.get('reason'))
-            tries.append({'attempt': i + 1, 'at': now(), 'steps_replayed': ok, 'reproduced': same,
-                          'got': (got.get('exception') or got.get('reason')) if got else None})
+            got = ex.health(c['steps'], c['screen'], since) if ok else None
+            same = bool(got) and got['kind'] == c['kind'] and what(got) == what(c)
+            tries.append({'attempt': i + 1, 'at': now(), 'steps_replayed': ok, 'reproduced': same, 'got': what(got),
+                          **({'input_event': got.get('input_event')} if got and got.get('input_event') else {})})
             d.rotate(False)
         out.append({'crash': c['id'], 'status': 'reproduced' if any(t['reproduced'] for t in tries) else 'not_reproduced',
                     'attempts': tries, 'fresh_state': 'pm clear before each attempt'})
@@ -73,11 +87,17 @@ def main() -> int:
     ap.add_argument('--seed', type=int, default=4242)
     ap.add_argument('--events', type=int, default=500)
     ap.add_argument('--throttle', type=int, default=300)
+    ap.add_argument('--offline', action='store_true', help='airplane mode while replaying (restored afterwards)')
     a = ap.parse_args()
     graph = json.loads((a.run / 'screen_graph.json').read_text(encoding='utf-8'))
-    d = Device(a.serial)
+    try:
+        d = Device(a.serial, journal=a.run / 'device_changes.json', script='crash_explore')
+    except PendingRestore as e:
+        print(e, file=sys.stderr); return 2
     res = m = None
     with d.settings_guard() as changed:
+        if a.offline:
+            d.airplane_mode(True)
         if a.replay:
             res = replay(d, a.run, graph, a.attempts)
         if a.monkey:
