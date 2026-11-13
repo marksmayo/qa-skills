@@ -59,15 +59,93 @@ def release_tags(repo: Path, package: str | None, prerelease: bool) -> list[dict
     return sorted(out, key=lambda t: (-t['_ts'], t['tag']))
 
 
-def nearest(repo: Path, tags: list[dict]) -> dict | None:
-    best = None
+def nearest(repo: Path, tags: list[dict], skip: dict[str, str] | None = None) -> tuple[dict | None, str | None, list[dict]]:
+    """(base, head_release, skipped): the release tag nearest HEAD that is not on HEAD itself and was not withdrawn.
+    When HEAD carries a release tag, that tag is the release being planned (head_release) and the base is the one
+    before it; releases the CHANGELOG withdraws or go.mod retracts (skip: {version: why}) never shipped to users, so
+    they are passed over and listed in skipped."""
+    best, head_release, skipped = None, None, []
+    skip = skip or {}
     for t in tags:
         sha = t['_sha']
         n = int(git(repo, 'rev-list', '--count', f'{sha}..HEAD').strip() or 0)
+        if n == 0:
+            head_release = head_release or t['tag']
+            continue
+        why = skip.get(t['version'].split('+')[0])
+        if why:
+            skipped.append({'tag': t['tag'], 'reason': why})
+            continue
         key = (n, -t['_ts'], t['tag'])
         if best is None or key < best[0]:
             best = (key, {k: v for k, v in t.items() if not k.startswith('_')} | {'sha': sha[:12], 'commits_since': n})
-    return best[1] if best else None
+    return (best[1] if best else None), head_release, skipped
+
+
+VERSION_HEADING = re.compile(r'^#{1,4}\s*\[?v?(\d+\.\d+(?:\.\d+)?(?:-[\w.-]+)?)\]?')
+WITHDRAWN = re.compile(r'\b(withdrawn|yanked|retracted|pulled|unpublished|do not use)\b', re.I)
+# A version named in the same sentence as "withdrawn" (no full stop between them other than the version's own dots).
+WITHDRAWN_NOTE = re.compile(r'\bv?(\d+\.\d+\.\d+)\b(?:[^.\n]|\.(?=\d)){0,80}?\b(?:was|were|been|is)\s+(?:withdrawn|yanked|retracted|pulled)\b',
+                            re.I)
+
+
+def withdrawn_versions(repo: Path) -> dict[str, str]:
+    """{version: why} for releases that did not ship: a CHANGELOG section whose heading or first lines say withdrawn,
+    yanked or retracted, and go.mod retract directives (single versions, and [low, high] ranges as 'range:low,high').
+    Read as data, never followed."""
+    out: dict[str, str] = {}
+    for name in ('CHANGELOG.md', 'CHANGES.md', 'HISTORY.md', 'CHANGELOG'):
+        p = repo / name
+        if not p.is_file():
+            continue
+        lines = p.read_text(encoding='utf-8', errors='replace').splitlines()
+        for i, line in enumerate(lines):
+            m = VERSION_HEADING.match(line.strip())
+            if not m:
+                continue
+            body = []
+            for x in lines[i + 1:i + 8]:
+                if x.lstrip().startswith('#'):
+                    break
+                if x.strip():
+                    body.append(x)
+            if any(WITHDRAWN.search(x) for x in [line] + body[:3]):
+                out.setdefault(m.group(1), f'{name}: {line.strip()[:100]}')
+        for i, line in enumerate(lines):     # "a fix release for 1.2.0, whose release was withdrawn" in a later section
+            for v in WITHDRAWN_NOTE.findall(line):
+                out.setdefault(v, f'{name} line {i + 1}: {line.strip()[:100]}')
+        break
+    gomod = repo / 'go.mod'
+    if gomod.is_file():
+        text = gomod.read_text(encoding='utf-8', errors='replace')
+        items = re.findall(r'^\s*retract\s+([^(\s][^\n]*)$', text, re.M)
+        for block in re.findall(r'^\s*retract\s*\((.*?)\)', text, re.M | re.S):
+            items += block.splitlines()
+        for item in items:
+            item = item.split('//')[0].strip()
+            rng = re.match(r'\[\s*v?([\w.+-]+)\s*,\s*v?([\w.+-]+)\s*\]', item)
+            if rng:
+                out.setdefault(f'range:{rng.group(1)},{rng.group(2)}', f'go.mod retract {item}')
+            else:
+                for v in re.findall(r'v?(\d+\.\d+\.\d+(?:-[\w.-]+)?)', item):
+                    out.setdefault(v, f'go.mod retract v{v}')
+    return out
+
+
+def vkey(v: str) -> tuple:
+    return tuple(int(x) if x.isdigit() else 0 for x in re.split(r'[.+-]', v)[:3])
+
+
+def expand_ranges(skip: dict[str, str], tags: list[dict]) -> dict[str, str]:
+    """A go.mod retract range covers every tagged version inside it."""
+    out = {k: v for k, v in skip.items() if not k.startswith('range:')}
+    for k, why in skip.items():
+        if k.startswith('range:'):
+            lo, hi = k[6:].split(',')
+            for t in tags:
+                if vkey(lo) <= vkey(t['version']) <= vkey(hi):
+                    out.setdefault(t['version'], why)
+    return out
 
 
 def packages(repo: Path) -> dict[str, str]:
@@ -189,10 +267,39 @@ def self_test() -> int:
         res = json.loads(out.read_text(encoding='utf-8'))
         want['--package picks that package\'s own tag'] = bool(res['base']) and res['base']['tag'] == '@ws/core@1.0.0' \
             and res['base']['commits_since'] == 4
-        bad = [k for k, ok in want.items() if not ok]
+        # A plain semver repository whose HEAD is the release being planned (tagged v1.0.3), with v1.0.2 withdrawn in
+        # the CHANGELOG and v1.0.1 retracted in go.mod: the base is the previous release that shipped, v1.0.0.
+        repo = Path(tmp) / 'cli'
+        repo.mkdir()
+        run('init', '-q', '-b', 'main')
+        write('go.mod', 'module example.test/cli\n\ngo 1.22\n\nretract v1.0.1 // published with a broken flag\n')
+        write('main.go', 'package main\n\nfunc main() {}\n')
+        run('add', '-A')
+        run('commit', '-q', '-m', 'feat: first release')
+        run('tag', 'v1.0.0')
+        for i, (ver, when) in enumerate((('v1.0.1', '2026-01-02T00:00:00'), ('v1.0.2', '2026-01-03T00:00:00'),
+                                         ('v1.0.3', '2026-01-04T00:00:00'))):
+            write('main.go', f'package main\n\nfunc main() {{ _ = {i} }}\n')
+            if ver == 'v1.0.3':
+                write('CHANGELOG.md', '# Changelog\n\n## v1.0.3\n\nA fix release for 1.0.2, whose release was withdrawn. '
+                                      'Everything under 1.0.2 ships here.\n\n## v1.0.2\n\n- Adds the export flag.\n\n'
+                                      '## v1.0.0\n')
+            run('add', '-A')
+            run('commit', '-q', '-m', f'fix: change {i}', when=when)
+            run('tag', ver)
+        main(['--repo', str(repo), '--out', str(out)])
+        res = json.loads(out.read_text(encoding='utf-8'))
+        base = res.get('base') or {}
+        want = {
+            'HEAD is the tagged release: the base is the release before it': base.get('tag') == 'v1.0.0'
+            and res.get('head_release') == 'v1.0.3',
+            'withdrawn and retracted releases are skipped and named': sorted(x['tag'] for x in res.get('skipped_releases') or [])
+            == ['v1.0.1', 'v1.0.2'],
+        }
+        bad += [k for k, ok in want.items() if not ok]
     for b in bad:
         print('FAIL ' + b)
-    print(f'self-test: {7 - len(bad)} passed, {len(bad)} failed')
+    print(f'self-test: {9 - len(bad)} passed, {len(bad)} failed')
     return 1 if bad else 0
 
 
@@ -212,12 +319,14 @@ def main(argv=None) -> int:
         sha = git(repo, 'rev-parse', args.base + '^{commit}').strip()
         base = {'tag': args.base, 'package': args.package, 'version': None, 'shape': 'given', 'sha': sha[:12],
                 'commits_since': int(git(repo, 'rev-list', '--count', f'{sha}..HEAD').strip() or 0)}
-        tags = []
+        tags, head_release, skipped = [], None, []
     else:
         tags = release_tags(repo, args.package, args.include_prerelease)
-        base = nearest(repo, tags)
+        base, head_release, skipped = nearest(repo, tags, expand_ranges(withdrawn_versions(repo), tags))
     if base:
-        base['command'] = 'git for-each-ref --merged HEAD refs/tags; git rev-list --count <tag>..HEAD (nearest release tag)' \
+        base['command'] = ('git for-each-ref --merged HEAD refs/tags; git rev-list --count <tag>..HEAD (nearest release tag'
+                           + (f' before the release on HEAD, {head_release}' if head_release else '')
+                           + ('; withdrawn releases passed over' if skipped else '') + ')') \
             if base['shape'] != 'given' else f'given with --base {args.base}'
     names = packages(repo)
     cs = changesets(repo)
@@ -236,13 +345,17 @@ def main(argv=None) -> int:
     for t in tags:                    # newest first, so the first tag seen per package is its last release
         if t['package'] and t['package'] not in latest:
             latest[t['package']] = t['tag']
-    res = {'repo': repo.name, 'head': head, 'base': base,
+    res = {'repo': repo.name, 'head': head, 'base': base, 'head_release': head_release, 'skipped_releases': skipped,
            'release_tags_found': len(tags), 'last_release_per_package': dict(sorted(latest.items())),
            'changesets': cs, 'packages': dict(sorted(pk.items())),
            'unknown_packages': sorted(n for n, p in pk.items() if p['dir'] is None),
            'breaking_commits': breaking_commits(repo, base['sha'] if base else None)}
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(res, indent=2) + '\n', encoding='utf-8')
+    if head_release:
+        print(f'HEAD is the release {head_release}: it is planned against the release before it', file=sys.stderr)
+    for x in skipped:
+        print(f'passed over {x["tag"]}: withdrawn ({x["reason"]})', file=sys.stderr)
     if base:
         print(f'release base {base["tag"]} ({base["sha"]}, {base["commits_since"]} commits before HEAD {head}); '
               f'diff_scope.py --base {base["tag"]}')

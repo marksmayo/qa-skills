@@ -10,6 +10,8 @@
     "commits_since": 3,
     "command": "git for-each-ref --merged HEAD refs/tags; git rev-list --count <tag>..HEAD (nearest release tag)"
   },
+  "head_release": null,
+  "skipped_releases": [],
   "release_tags_found": 1,
   "last_release_per_package": {},
   "changesets": [],
