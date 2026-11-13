@@ -114,6 +114,9 @@ def candidates(text: str):
             cond = line_toks[start:last]
             if not cond:
                 continue
+            ops = [x.text for x in cond if x.kind == 'op']
+            if ops.count('==') + ops.count('!=') == 1 and not {'&&', '||', '!', '<', '>', '<=', '>='} & set(ops):
+                continue        # `if a != b` negated is `if a == b`: comparison_negate already makes that mutant
             a, b = cond[0].start, cond[-1].end
             yield t.line, a, b, '!(' + text[a:b] + ')', 'negate_condition'
 
