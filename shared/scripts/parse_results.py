@@ -28,6 +28,14 @@ its ids become `file::Describe > Inner > test`, like Vitest's, so two files with
 names never pool. `--root` (or parse_junit's `root`) makes absolute `file` attributes relative to
 the directory the tests ran in.
 
+Go (gotestsum JUnit, or `go test -json` output turned into the same shape by go_json_to_junit or `--go-json`):
+ids stay `<import path>::TestX/sub` (run_tests.py turns them back into `-run '^TestX$/^sub$'`). A parent test is
+folded into its t.Run subtests, so one failing subtest counts once; a parent that failed while every subtest
+passed is kept. `file` is the *_test.go file that defines the top-level test, found under the package directory
+that go.mod's module path gives (nested modules included), else the package directory. A package that failed to
+build or set up (gotestsum's TestMain case with an empty classname) becomes `<import path>::(build failed)`, an
+error case with the `build_failed` signal, never a failed test named TestMain.
+
     python parse_results.py --self-test
 """
 from __future__ import annotations
@@ -192,9 +200,20 @@ def parse_junit(path: Path, run_id: str, root=None) -> tuple[list[dict], list[st
             # (or "test" at the top level); make the id file::Describe > Inner > name, as for Vitest
             if el.get('file') and (classname == '.'.join(path_names) or (classname == 'test' and not path_names)):
                 node_path = ' > '.join([*path_names, name])
-            add({'name': name, 'classname': classname,
+            go_pkg = None
+            # gotestsum / go test: the classname is the package's import path, which is also the suite's name
+            if not el.get('file') and suite_name and classname == suite_name and GO_PKG_RX.fullmatch(classname) \
+                    and not FILE_RX.search(classname):
+                build = GO_BUILD_RX.search(message or '')
+                if name == 'TestMain' and build:   # the package did not compile: none of its tests ran
+                    go_pkg = build.group(1)
+                    name, status, ftype = f'({build.group(2)} failed)', 'error', 'error'
+                elif GO_TEST_RX.match(name):
+                    go_pkg = classname
+            add({'name': name, 'classname': go_pkg or classname,
                  'file': file, 'status': status, 'failure_type': ftype, 'message': message,
-                 'time': el.get('time')}, f'{file}::{node_path}' if node_path else None)
+                 'time': el.get('time'), **({'_go': go_pkg} if go_pkg else {})},
+                f'{file}::{node_path}' if node_path else (f'{go_pkg}::{name}' if go_pkg else None))
             return
         for child in el:
             walk(child, suite_file, suite_name, path_names)
@@ -209,11 +228,194 @@ def parse_junit(path: Path, run_id: str, root=None) -> tuple[list[dict], list[st
             t = float(raw_time) if raw_time not in (None, '') else None
         except ValueError:
             t = None
-        cases.append({'run_id': run_id, 'id': cid, **c, 'signals': [n for n, rx in SIGNALS if msg and rx.search(msg)],
-                      'message_excerpt': excerpt(msg), 'time': t})
+        signals = [n for n, rx in SIGNALS if msg and rx.search(msg)]
+        if c.get('_go') and c['name'].endswith(' failed)'):
+            signals.append('build_failed')
+        cases.append({'run_id': run_id, 'id': cid, **c, 'signals': signals, 'message_excerpt': excerpt(msg), 'time': t})
 
     walk(xml_root, None, None)
+    if any('_go' in c for c in cases):
+        cases = go_fixups(cases, root, notes)
     return cases, notes
+
+
+# ------------------------------------------------------------------------------------------------ Go
+GO_PKG_RX = re.compile(r'[A-Za-z0-9_.~-]+(?:/[A-Za-z0-9_.~+-]+)*')
+GO_TEST_RX = re.compile(r'(?:Test|Example|Benchmark|Fuzz)(?:[^a-z/][^/]*)?(?:/.*)?$')
+GO_BUILD_RX = re.compile(r'FAIL\s+(\S+)\s+\[(build|setup) failed\]')
+_GO_MODULES: dict[str, list[tuple[str, Path]]] = {}
+_GO_FUNCS: dict[str, dict[str, str]] = {}
+
+
+def go_modules(root: Path) -> list[tuple[str, Path]]:
+    """(module path, module directory) for every go.mod under root and the nearest one above it, longest path first.
+    vendor/, node_modules/, testdata/ and dot-directories are pruned before they are walked."""
+    key = str(root)
+    if key not in _GO_MODULES:
+        found = []
+
+        def read(gm: Path):
+            try:
+                m = re.search(r'^\s*module\s+(\S+)', gm.read_text(encoding='utf-8', errors='replace'), re.M)
+            except OSError:
+                return
+            if m:
+                found.append((m.group(1).strip('"'), gm.parent))
+        for up in [root, *root.parents]:
+            if (up / 'go.mod').is_file():
+                read(up / 'go.mod')
+                break
+        for dp, dns, fns in os.walk(root):
+            dns[:] = [d for d in dns if not d.startswith('.') and d not in ('vendor', 'node_modules', 'testdata')
+                      and not d.endswith(('.app', '.framework', '.xcframework'))]
+            if 'go.mod' in fns and Path(dp) != root:
+                read(Path(dp) / 'go.mod')
+        _GO_MODULES[key] = sorted(set(found), key=lambda m: -len(m[0]))
+    return _GO_MODULES[key]
+
+
+def go_package_dir(import_path: str, root: Path) -> str | None:
+    """The package's directory relative to root ('.' for root itself), from the go.mod module paths; None when no
+    module under or above root holds it."""
+    for mod, d in go_modules(root):
+        if import_path == mod or import_path.startswith(mod + '/'):
+            try:
+                return Path(os.path.relpath(d / import_path[len(mod):].lstrip('/'), root)).as_posix()
+            except ValueError:
+                return None
+    return None
+
+
+def go_test_file(pkg_dir: str, test: str, root: Path) -> str | None:
+    """The *_test.go file in pkg_dir that defines `func <top-level test>(`, or None."""
+    key = str(root / pkg_dir)
+    if key not in _GO_FUNCS:
+        funcs = {}
+        try:
+            names = sorted(os.listdir(root / pkg_dir))
+        except OSError:
+            names = []
+        for n in names:
+            if n.endswith('_test.go'):
+                try:
+                    text = (root / pkg_dir / n).read_text(encoding='utf-8', errors='replace')
+                except OSError:
+                    continue
+                for m in re.finditer(r'^func\s+((?:Test|Example|Benchmark|Fuzz)\w*)\s*\(', text, re.M):
+                    funcs.setdefault(m.group(1), n)
+        _GO_FUNCS[key] = funcs
+    f = _GO_FUNCS[key].get(test.split('/')[0])
+    return (f if pkg_dir == '.' else f'{pkg_dir}/{f}') if f else None
+
+
+def go_fixups(cases: list[dict], root, notes: list[str]) -> list[dict]:
+    """Go cases from gotestsum JUnit: fold a parent test into its t.Run subtests (gotestsum lists both, so one failing
+    subtest would count as two failures), keep a parent that failed on its own, and set `file` to the *_test.go
+    file that defines the test (or the package directory) using go.mod's module path."""
+    by_pkg: dict[str, list[dict]] = {}
+    for c in cases:
+        if c.get('_go'):
+            by_pkg.setdefault(c['_go'], []).append(c)
+    out, folded, kept_own = [], 0, 0
+    for c in cases:
+        pkg = c.get('_go')
+        if pkg and not c['name'].startswith('('):
+            kids = [k for k in by_pkg[pkg] if k['name'].startswith(c['name'] + '/')]
+            if kids:
+                if c['status'] in ('failed', 'error') and not any(k['status'] in ('failed', 'error') for k in kids):
+                    kept_own += 1
+                else:
+                    folded += 1
+                    continue
+        out.append(c)
+    unmapped = set()
+    rootp = Path(root).resolve() if root is not None else None
+    for c in out:
+        pkg = c.pop('_go', None)
+        if not pkg or rootp is None:
+            continue
+        pkg_dir = go_package_dir(pkg, rootp)
+        if pkg_dir is None:
+            unmapped.add(pkg)
+            continue
+        c['file'] = (None if c['name'].startswith('(') else go_test_file(pkg_dir, c['name'], rootp)) or pkg_dir
+    if folded:
+        notes.append(f'Go: {folded} parent test case(s) were folded into their t.Run subtests (gotestsum lists a parent '
+                     'and each subtest; counting both would count one failure twice)')
+    if kept_own:
+        notes.append(f'Go: {kept_own} parent test(s) failed with every subtest passing; each is kept as a failure of its own')
+    builds = sorted({c['classname'] for c in out if 'build_failed' in c.get('signals', [])})
+    if builds:
+        notes.append(f'Go: {len(builds)} package(s) failed to build or set up, so none of their tests ran: '
+                     + ', '.join(builds[:10]))
+    if unmapped:
+        notes.append(f'Go: no go.mod under or above {rootp.name} holds {", ".join(sorted(unmapped)[:5])}; '
+                     'those cases keep no file')
+    return out
+
+
+def go_json_to_junit(text: str) -> str:
+    """`go test -json` events (one JSON object per line; other lines are ignored) as gotestsum-shaped JUnit XML:
+    a suite per package, a case per test and subtest, and a package that failed to build as a TestMain case with
+    an empty classname whose failure reads `FAIL <pkg> [build failed]`."""
+    from xml.sax.saxutils import escape, quoteattr
+    pkgs: dict[str, dict] = {}
+    build_out: dict[str, list[str]] = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line.startswith('{'):
+            continue
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        act = e.get('Action')
+        if act in ('build-output', 'build-fail'):
+            if act == 'build-output':
+                build_out.setdefault((e.get('ImportPath') or '').split(' ')[0], []).append(e.get('Output') or '')
+            continue
+        pkg = e.get('Package')
+        if not pkg:
+            continue
+        p = pkgs.setdefault(pkg, {'tests': {}, 'out': [], 'status': None, 'failed_build': False, 'elapsed': 0})
+        test = e.get('Test')
+        if test:
+            t = p['tests'].setdefault(test, {'status': None, 'out': [], 'elapsed': 0})
+            if act == 'output':
+                t['out'].append(e.get('Output') or '')
+            elif act in ('pass', 'fail', 'skip'):
+                t['status'], t['elapsed'] = act, e.get('Elapsed') or 0
+        elif act == 'output':
+            p['out'].append(e.get('Output') or '')
+        elif act in ('pass', 'fail', 'skip'):
+            p['status'], p['elapsed'] = act, e.get('Elapsed') or 0
+            p['failed_build'] = bool(e.get('FailedBuild') or GO_BUILD_RX.search(''.join(p['out'])))
+    xml = ['<?xml version="1.0" encoding="UTF-8"?>', '<testsuites>']
+    for pkg, p in pkgs.items():
+        xml.append(f'<testsuite name={quoteattr(pkg)} time="{p["elapsed"]}">')
+        if p['failed_build']:
+            msg = ''.join(build_out.get(pkg, [])) + ''.join(p['out'])
+            if not GO_BUILD_RX.search(msg):
+                msg += f'FAIL\t{pkg} [build failed]\n'
+            xml.append(f'<testcase classname="" name="TestMain" time="0"><failure message="Failed" type="">'
+                       f'{escape(msg)}</failure></testcase>')
+        for name, t in p['tests'].items():
+            # a test still running when the package failed (a panic, a timeout) failed with it
+            status = t['status'] or ('fail' if p['status'] == 'fail' else None)
+            if status is None:
+                continue
+            out = ''.join(t['out'])
+            inner = (f'<failure message="Failed" type="">{escape(out)}</failure>' if status == 'fail' else
+                     f'<skipped message={quoteattr(out[-300:])}></skipped>' if status == 'skip' else '')
+            xml.append(f'<testcase classname={quoteattr(pkg)} name={quoteattr(name)} time="{t["elapsed"]}">{inner}'
+                       '</testcase>')
+        if p['status'] == 'fail' and not p['failed_build'] and not any(
+                (t['status'] or 'fail') == 'fail' for t in p['tests'].values()):
+            xml.append(f'<testcase classname={quoteattr(pkg)} name="TestMain" time="0"><failure message="Failed" '
+                       f'type="">{escape("".join(p["out"]))}</failure></testcase>')
+        xml.append('</testsuite>')
+    xml.append('</testsuites>')
+    return '\n'.join(xml) + '\n'
 
 def totals(cases: list[dict]) -> dict:
     t = {'tests': len(cases), 'passed': 0, 'failed': 0, 'error': 0, 'skipped': 0}
@@ -265,6 +467,7 @@ def self_test() -> int:
         ('ANSI codes are stripped', strip_ansi('\x1b[31mred\x1b[39m \x1b]8;;http://x\x07link\x1b]8;;\x07') == 'red link',
          strip_ansi('\x1b[31mred\x1b[39m')),
     ]
+    checks += go_self_checks()
     for name, ok, extra in checks:
         failed += not ok
         print(f"{'PASS' if ok else 'FAIL'} {name}" + ('' if ok else f'  [{extra}]'))
@@ -272,10 +475,103 @@ def self_test() -> int:
     return 1 if failed else 0
 
 
+GO_JUNIT = """<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="7" failures="3" errors="0" time="1.0">
+  <testsuite tests="0" failures="0" time="0" name="example.test/shop"></testsuite>
+  <testsuite tests="5" failures="2" time="0.5" name="example.test/shop/pkg/cart">
+    <properties><property name="go.version" value="go1.26 linux/amd64"></property></properties>
+    <testcase classname="example.test/shop/pkg/cart" name="TestTotal" time="0.01"><failure message="Failed" type="">=== RUN   TestTotal&#xA;--- FAIL: TestTotal (0.00s)</failure></testcase>
+    <testcase classname="example.test/shop/pkg/cart" name="TestTotal/empty" time="0.00"></testcase>
+    <testcase classname="example.test/shop/pkg/cart" name="TestTotal/negative_qty" time="0.00"><failure message="Failed" type="">    cart_test.go:14: got 3, want 0&#xA;--- FAIL: TestTotal/negative_qty (0.00s)</failure></testcase>
+    <testcase classname="example.test/shop/pkg/cart" name="TestPlain" time="0.00"></testcase>
+    <testcase classname="example.test/shop/pkg/cart" name="TestCleanup" time="0.00"><failure message="Failed" type="">    other_test.go:20: cleanup left files</failure></testcase>
+    <testcase classname="example.test/shop/pkg/cart" name="TestCleanup/inner" time="0.00"></testcase>
+  </testsuite>
+  <testsuite tests="1" failures="1" errors="0" time="0" name="example.test/shop/pkg/broken">
+    <testcase classname="" name="TestMain" time="0.000000"><failure message="Failed" type="">FAIL&#x9;example.test/shop/pkg/broken [build failed]&#xA;</failure></testcase>
+  </testsuite>
+  <testsuite tests="1" failures="0" time="0.1" name="example.test/shop/tools/lint">
+    <testcase classname="example.test/shop/tools/lint" name="TestRules" time="0.00"></testcase>
+  </testsuite>
+</testsuites>"""
+
+GO_JSON_EVENTS = [
+    {'Action': 'start', 'Package': 'example.test/shop/pkg/cart'},
+    {'Action': 'run', 'Package': 'example.test/shop/pkg/cart', 'Test': 'TestTotal'},
+    {'Action': 'run', 'Package': 'example.test/shop/pkg/cart', 'Test': 'TestTotal/empty'},
+    {'Action': 'pass', 'Package': 'example.test/shop/pkg/cart', 'Test': 'TestTotal/empty', 'Elapsed': 0},
+    {'Action': 'run', 'Package': 'example.test/shop/pkg/cart', 'Test': 'TestTotal/negative_qty'},
+    {'Action': 'output', 'Package': 'example.test/shop/pkg/cart', 'Test': 'TestTotal/negative_qty',
+     'Output': '    cart_test.go:14: got 3, want 0\n'},
+    {'Action': 'fail', 'Package': 'example.test/shop/pkg/cart', 'Test': 'TestTotal/negative_qty', 'Elapsed': 0},
+    {'Action': 'fail', 'Package': 'example.test/shop/pkg/cart', 'Test': 'TestTotal', 'Elapsed': 0.01},
+    {'Action': 'run', 'Package': 'example.test/shop/pkg/cart', 'Test': 'TestPlain'},
+    {'Action': 'skip', 'Package': 'example.test/shop/pkg/cart', 'Test': 'TestPlain', 'Elapsed': 0},
+    {'Action': 'fail', 'Package': 'example.test/shop/pkg/cart', 'Elapsed': 0.2},
+    {'ImportPath': 'example.test/shop/pkg/broken [example.test/shop/pkg/broken.test]', 'Action': 'build-output',
+     'Output': 'pkg/broken/broken.go:3:1: syntax error\n'},
+    {'ImportPath': 'example.test/shop/pkg/broken [example.test/shop/pkg/broken.test]', 'Action': 'build-fail'},
+    {'Action': 'start', 'Package': 'example.test/shop/pkg/broken'},
+    {'Action': 'output', 'Package': 'example.test/shop/pkg/broken', 'Output': 'FAIL\texample.test/shop/pkg/broken [build failed]\n'},
+    {'Action': 'fail', 'Package': 'example.test/shop/pkg/broken', 'Elapsed': 0,
+     'FailedBuild': 'example.test/shop/pkg/broken [example.test/shop/pkg/broken.test]'},
+]
+
+
+def go_self_checks() -> list:
+    """gotestsum JUnit and go test -json on a synthetic module: subtests, file mapping, build failures."""
+    import tempfile
+    out = []
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        files = {'go.mod': 'module example.test/shop\n\ngo 1.26\n',
+                 'pkg/cart/cart.go': 'package cart\n',
+                 'pkg/cart/cart_test.go': 'package cart\n\nfunc TestTotal(t *testing.T) {\n}\n',
+                 'pkg/cart/other_test.go': 'package cart\n\nfunc TestPlain(t *testing.T) {}\n\nfunc TestCleanup(t *testing.T) {}\n',
+                 'pkg/broken/broken.go': 'package broken\n',
+                 'tools/lint/go.mod': 'module example.test/shop/tools/lint\n',
+                 'tools/lint/rules_test.go': 'package lint\n\nfunc TestRules(t *testing.T) {}\n'}
+        for rel, body in files.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(body, encoding='utf-8')
+        (root / 'go.xml').write_text(GO_JUNIT, encoding='utf-8')
+        cases, notes = parse_junit(root / 'go.xml', 'G', root)
+        by = {c['id']: c for c in cases}
+        P = 'example.test/shop/pkg/cart::'
+        out.append(('Go: a parent whose failure comes from a t.Run subtest is folded into its subtests',
+                    P + 'TestTotal' not in by and by.get(P + 'TestTotal/negative_qty', {}).get('status') == 'failed'
+                    and totals(cases)['failed'] == 2, sorted(by)))
+        out.append(('Go: a parent that failed on its own (every subtest passed) is kept',
+                    by.get(P + 'TestCleanup', {}).get('status') == 'failed', sorted(by)))
+        out.append(('Go: a case\'s file is the _test.go file that defines the top-level test',
+                    by.get(P + 'TestTotal/empty', {}).get('file') == 'pkg/cart/cart_test.go'
+                    and by.get(P + 'TestPlain', {}).get('file') == 'pkg/cart/other_test.go',
+                    {k: v.get('file') for k, v in by.items()}))
+        out.append(('Go: an import path in a nested module maps to its directory',
+                    by.get('example.test/shop/tools/lint::TestRules', {}).get('file') == 'tools/lint/rules_test.go',
+                    {k: v.get('file') for k, v in by.items()}))
+        b = by.get('example.test/shop/pkg/broken::(build failed)', {})
+        out.append(('Go: a package build failure is an error case for the package, not a failed TestMain',
+                    b.get('status') == 'error' and b.get('file') == 'pkg/broken' and 'build_failed' in b.get('signals', [])
+                    and not any(c['name'] == 'TestMain' for c in cases), b or sorted(by)))
+        (root / 'go.json').write_text('\n'.join(json.dumps(e) for e in GO_JSON_EVENTS) + '\n', encoding='utf-8')
+        (root / 'from-json.xml').write_text(go_json_to_junit((root / 'go.json').read_text(encoding='utf-8')),
+                                            encoding='utf-8')
+        jcases, _ = parse_junit(root / 'from-json.xml', 'J', root)
+        got = sorted((c['id'], c['status']) for c in jcases)
+        out.append(('Go: go test -json events give the same cases as gotestsum JUnit', got == [
+            ('example.test/shop/pkg/broken::(build failed)', 'error'),
+            (P + 'TestPlain', 'skipped'), (P + 'TestTotal/empty', 'passed'), (P + 'TestTotal/negative_qty', 'failed')], got))
+    return out
+
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description='Append a JUnit XML run to a normalised results file.')
     ap.add_argument('results', help='results JSON to create or append to')
-    ap.add_argument('--junit', nargs='+', required=True, help='JUnit XML file(s) produced by this run')
+    ap.add_argument('--junit', nargs='+', default=[], help='JUnit XML file(s) produced by this run')
+    ap.add_argument('--go-json', nargs='+', default=[], metavar='FILE',
+                    help='`go test -json` output file(s) of this run (converted to gotestsum-shaped JUnit next to each)')
     ap.add_argument('--run-id', required=True)
     ap.add_argument('--command', required=True, help='the exact command that was run')
     ap.add_argument('--exit-code', type=int, required=True)
@@ -286,6 +582,16 @@ def main(argv=None) -> int:
     if '--self-test' in (sys.argv[1:] if argv is None else argv):
         return self_test()
     args = ap.parse_args(argv)
+    if not args.junit and not args.go_json:
+        ap.error('give --junit or --go-json')
+    for g in args.go_json:
+        gp = Path(g)
+        if gp.exists():
+            xp = gp.with_suffix('.junit.xml')
+            xp.write_text(go_json_to_junit(gp.read_text(encoding='utf-8', errors='replace')), encoding='utf-8')
+            args.junit.append(str(xp))
+        else:
+            args.junit.append(g)   # reported below as not found
 
     out = Path(args.results)
     data = {'runs': [], 'cases': []}

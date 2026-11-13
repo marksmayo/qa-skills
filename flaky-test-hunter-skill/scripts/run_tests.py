@@ -91,6 +91,15 @@ TypeScript test files run on Node's own type stripping (Node 23.6+); on older No
 loader the repo uses, pass `--runner-args "--experimental-strip-types"` or `--runner-args
 "--import tsx"`, or reuse the repo's script with `--npm-script`. Vitest `-t` patterns accept both
 the " > " separator of Vitest 4+ and the space older versions match against.
+
+Go: the `gotestsum` preset (JUnit from gotestsum) and the `go-test` preset (plain `go test -json`, whose events
+are written to the run's JUnit path in gotestsum's shape) run every package (`./...`) when no --tests are given.
+--tests takes package patterns (./pkg/..., an import path) or parse_results ids (`<import path>::TestX/sub`),
+which are passed back as the package plus `-run '^TestX$/^sub$'`; ids from several packages, or a mix of
+packages and ids, are refused (one -run applies to every package): use --isolate. `-count=1` is always set;
+`--order shuffle` adds `-shuffle=<seed>`, `--workers` sets `-p`, and `-race` or `-timeout` go in --runner-args.
+A package that fails to build or set up makes the run errored (its tests did not run), with the package named.
+Go has no in-process network guard: see net_guard.py for the proxy and HOME isolation recipe.
 """
 from __future__ import annotations
 import argparse, hashlib, json, os, random, re, shlex, shutil, signal, subprocess, sys, tempfile, time
@@ -137,9 +146,15 @@ PRESETS = {
         'cmd': ['npx', 'playwright', 'test', '--reporter=junit'], 'env': {'PLAYWRIGHT_JUNIT_OUTPUT_NAME': '{junit}'},
         'tests': 'args', 'workers': ['--workers={n}'],
     },
+    # Go: with no --tests every package runs (./...); ids (`<import path>::TestX/sub`) become -run patterns per package
     'gotestsum': {
-        'cmd': ['gotestsum', '--junitfile', '{junit}', '--', '-count=1'], 'tests': 'args', 'workers': ['-p', '{n}'],
+        'cmd': ['gotestsum', '--junitfile', '{junit}', '--', '-count=1'], 'tests': 'go', 'workers': ['-p', '{n}'],
         'shuffle': ['-shuffle={seed}'],
+    },
+    # plain `go test -json` (no gotestsum needed): the JSON events on stdout are written to {junit} as gotestsum-shaped JUnit
+    'go-test': {
+        'cmd': ['go', 'test', '-json', '-count=1'], 'tests': 'go', 'workers': ['-p', '{n}'],
+        'shuffle': ['-shuffle={seed}'], 'go_json': True,
     },
     # cargo-nextest writes JUnit to target/nextest/<profile>/junit.xml when the profile configures
     # [profile.<profile>.junit] (e.g. .config/nextest.toml). run_one copies that file to the per-run
@@ -345,7 +360,7 @@ def runtime_of(preset_name: str, cmd: str | None) -> str:
         return 'python'
     if preset_name in NODE_RUNNERS or preset_name == 'node-test':
         return 'node'
-    if preset_name == 'gotestsum':
+    if preset_name in ('gotestsum', 'go-test'):
         return 'go'
     if preset_name in ('cargo', 'nextest'):
         return 'rust'
@@ -595,6 +610,47 @@ def node_test_ids(tests: list[str]) -> tuple[list[str], str | None]:
     return files, '^(?:' + '|'.join(dict.fromkeys(names)) + ')$'
 
 
+GO_META = re.compile(r'[\\.+*?()|\[\]{}^$]')
+
+
+def go_ids(tests: list[str]) -> tuple[list[str], str | None, str | None]:
+    """Go ids from parse_results (`<import path>::TestX/sub`, or `<import path>::(build failed)`) or package patterns
+    (./pkg/..., an import path) -> (packages, a -run pattern or None, a note or None). `go test` takes package
+    arguments, never test names, and applies one -run to every package, so ids from several packages, or of
+    different depths, are refused: run them separately or with --isolate."""
+    if not tests:
+        return ['./...'], None, None
+    pkgs, names = [], []
+    for t in tests:
+        pkg, sep, name = t.partition('::')
+        name = re.sub(r'#\d+$', '', name)
+        if pkg not in pkgs:
+            pkgs.append(pkg)
+        if sep and name and not name.startswith('('):
+            names.append(name)
+    if not names:
+        return pkgs, None, None
+    if len(names) != len(tests):
+        raise ValueError('go: a mix of whole packages and test ids in one run; -run would filter the whole packages '
+                         'too. Run them separately, or use --isolate')
+    if len(pkgs) > 1:
+        raise ValueError(f'go: test ids from {len(pkgs)} packages in one run; go test applies one -run pattern to every '
+                         'package. Run each package separately, or use --isolate')
+    depths = {n.count('/') for n in names}
+    if len(depths) > 1:
+        raise ValueError('go: test ids at different subtest depths in one run cannot share one -run pattern; '
+                         'run them separately, or use --isolate')
+    levels = [list(dict.fromkeys(GO_META.sub(lambda m: '\\' + m.group(0), n.split('/')[i]) for n in names))
+              for i in range(depths.pop() + 1)]
+    pattern = '/'.join(f'^{lv[0]}$' if len(lv) == 1 else '^(?:' + '|'.join(lv) + ')$' for lv in levels)
+    combos = 1
+    for lv in levels:
+        combos *= len(lv)
+    note = (f'-run {pattern} can also match {combos - len(set(names))} subtest combination(s) that were not asked for; '
+            'use --isolate for exactly the listed subtests') if combos > len(set(names)) else None
+    return pkgs, pattern, note
+
+
 ARGS_BUDGET = 6000   # characters of test ids on one command line before they go through a file instead
 
 
@@ -772,6 +828,9 @@ def build(args, preset: dict, junit: Path, tests: list[str], seed: int | None) -
         if args.preset == 'vitest' and not args.cmd:
             files, pattern = vitest_ids(tests)
             cmd += files + (['-t', pattern] if pattern else [])
+        elif preset.get('tests') == 'go':
+            pkgs, pattern, _ = go_ids(tests)
+            cmd += (['-run', pattern] if pattern else []) + pkgs
         else:
             cmd += tests
     env = {k: fill(v) for k, v in preset.get('env', {}).items()}
@@ -828,6 +887,10 @@ def run_error(code: int | None, timed_out: bool, cases: list, is_pytest: bool, o
         return f'the process was killed by {name}; no clean result'
     if is_pytest and code in PYTEST_EXIT:
         return PYTEST_EXIT[code]
+    broken = sorted({c.get('classname') or c['id'].split('::')[0] for c in cases if 'build_failed' in (c.get('signals') or [])})
+    if broken:
+        return (f'{len(broken)} Go package(s) failed to build or set up, so their tests did not run: '
+                + ', '.join(broken[:5]) + (' ...' if len(broken) > 5 else ''))
     if not cases:
         if code in (132, 134, 135, 136, 137, 139):   # a shell reporting 128 + signal
             return f'the process was killed by signal {code - 128} (exit {code}) and wrote no test results'
@@ -894,6 +957,8 @@ def run_one(args, preset, run_id: str, tests: list[str], base_env: dict, junit_d
         else:
             copy_notes.append(f'cargo-nextest wrote no JUnit at {junit_from}; this run has no per-case data '
                               '(configure [profile.ci.junit] in .config/nextest.toml, or install cargo-nextest).')
+    if preset.get('go_json'):   # go test -json: the events on stdout become gotestsum-shaped JUnit
+        junit.write_text(parse_results.go_json_to_junit((out or b'').decode('utf-8', 'replace')), encoding='utf-8')
     if junit.exists():
         junit.write_text(redact_home(junit.read_text(encoding='utf-8', errors='replace')), encoding='utf-8')
     cases, pnotes = parse_results.parse_junit(junit, run_id, cwd) if junit.exists() else ([], [f'{junit.name}: not written'])
@@ -930,6 +995,79 @@ def run_one(args, preset, run_id: str, tests: list[str], base_env: dict, junit_d
             **({'id_prefix': prefix} if prefix else {})}, cases
 
 
+def go_self_checks() -> list:
+    """The gotestsum and go-test presets: default packages, -run patterns from ids, build failures as errored runs,
+    and (with go on PATH) a real go-test run on a small synthetic module."""
+    import types
+    checks = []
+    a = types.SimpleNamespace(cmd=None, preset='gotestsum', workers=None, order='given', runner_args=None, script_args=[])
+    try:
+        cmd, _ = build(a, PRESETS['gotestsum'], Path('j.xml'), [], None)
+    except Exception as e:   # noqa: BLE001
+        cmd = repr(e)
+    checks.append(('gotestsum with no --tests runs every package (./...), not just the root one',
+                   isinstance(cmd, list) and cmd[-1] == './...', cmd))
+    ids = ['example.test/shop/pkg/cart::TestTotal/negative_qty']
+    try:
+        cmd, _ = build(a, PRESETS['gotestsum'], Path('j.xml'), ids, None)
+    except Exception as e:   # noqa: BLE001
+        cmd = repr(e)
+    checks.append(('a Go test id is re-run as its package plus -run ^Test$/^sub$', isinstance(cmd, list) and
+                   cmd[-3:] == ['-run', '^TestTotal$/^negative_qty$', 'example.test/shop/pkg/cart'], cmd))
+    try:
+        cmd, _ = build(a, PRESETS['gotestsum'], Path('j.xml'), ['example.test/shop/pkg/cart::TestA',
+                                                              'example.test/shop/pkg/cart::TestB.v2#2'], None)
+    except Exception as e:   # noqa: BLE001
+        cmd = repr(e)
+    checks.append(('several top-level tests of one package make one alternation, metacharacters escaped',
+                   isinstance(cmd, list) and cmd[-2] == r'^(?:TestA|TestB\.v2)$', cmd))
+    try:
+        build(a, PRESETS['gotestsum'], Path('j.xml'), ['example.test/a::TestA', 'example.test/b::TestB'], None)
+        checks.append(('ids from two packages in one run are refused (-run applies to every package)', False, 'accepted'))
+    except ValueError as e:
+        checks.append(('ids from two packages in one run are refused (-run applies to every package)',
+                       '--isolate' in str(e), str(e)))
+    except Exception as e:   # noqa: BLE001
+        checks.append(('ids from two packages in one run are refused (-run applies to every package)', False, repr(e)))
+    built = [{'id': 'example.test/shop/pkg/broken::(build failed)', 'status': 'error', 'signals': ['build_failed'],
+              'classname': 'example.test/shop/pkg/broken'}, {'id': 'x::TestA', 'status': 'passed', 'signals': []}]
+    err = run_error(1, False, built, False)
+    checks.append(('a package build failure makes the run errored', bool(err) and 'build' in err, err))
+    go = shutil.which('go')
+    if go and 'go-test' in PRESETS:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / 'go.mod').write_text('module example.test/shop\n\ngo 1.21\n', encoding='utf-8')
+            (root / 'cart').mkdir()
+            (root / 'cart' / 'cart_test.go').write_text(
+                'package cart\n\nimport "testing"\n\nfunc TestTotal(t *testing.T) {\n'
+                '\tt.Run("empty", func(t *testing.T) {})\n\tt.Run("neg", func(t *testing.T) { t.Fatal("want 0") })\n}\n',
+                encoding='utf-8')
+            (root / 'broken').mkdir()
+            (root / 'broken' / 'b.go').write_text('package broken\n\nfunc F() { undefined() }\n', encoding='utf-8')
+            (root / 'broken' / 'b_test.go').write_text('package broken\n\nimport "testing"\n\nfunc TestF(t *testing.T) {}\n',
+                                                     encoding='utf-8')
+            out = root / 'out' / 'runs.json'
+            main(['--preset', 'go-test', '--cwd', str(root), '--out', str(out), '--env', 'GOFLAGS=-mod=mod',
+                  'GOTOOLCHAIN=local'])
+            data = json.loads(out.read_text(encoding='utf-8')) if out.exists() else {'runs': [{}], 'cases': []}
+            got = sorted((c['id'], c['status'], c['file']) for c in data['cases'])
+            checks.append(('go-test runs ./..., folds the parent, maps files and errors the broken package', got == [
+                ('example.test/shop/broken::(build failed)', 'error', 'broken'),
+                ('example.test/shop/cart::TestTotal/empty', 'passed', 'cart/cart_test.go'),
+                ('example.test/shop/cart::TestTotal/neg', 'failed', 'cart/cart_test.go')]
+                and data['runs'][-1].get('errored') is True, (got, data['runs'][-1].get('error'))))
+            main(['--preset', 'go-test', '--cwd', str(root), '--out', str(out), '--env', 'GOTOOLCHAIN=local',
+                  '--tests', 'example.test/shop/cart::TestTotal/neg'])
+            data = json.loads(out.read_text(encoding='utf-8'))
+            last = sorted((c['id'], c['status']) for c in data['cases'] if c['run_id'] == data['runs'][-1]['id'])
+            checks.append(('a Go subtest id is run back by itself', last == [('example.test/shop/cart::TestTotal/neg', 'failed')],
+                           last))
+    else:
+        print('SKIP go-test runs: go is not on PATH')
+    return checks
+
+
 def self_test() -> int:
     """Check id patterns, npm script chains and workspace delegation, and (with node on PATH) a node-test run with
     --repo-root on a small synthetic workspace."""
@@ -940,6 +1078,7 @@ def self_test() -> int:
                    bool(rx.match('cart > totals > adds tax') and rx.match('cart totals adds tax')), pat))
     _, pat = node_test_ids(['a.test.mjs::sum > inner > deep # 1'])
     checks.append(('a node-test pattern matches the space-joined name', bool(re.match(pat, 'sum inner deep # 1')), pat))
+    checks += go_self_checks()
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
         (root / 'pnpm-workspace.yaml').write_text('packages:\n  - packages/*\n', encoding='utf-8')
@@ -1146,6 +1285,18 @@ def main(argv=None) -> int:
         if id_note:
             notes.append(id_note)
             print('NOTE: ' + id_note)
+
+    if preset.get('tests') == 'go' and not args.cmd:
+        try:   # refuse ids one -run pattern cannot select before any run starts
+            for batch in ([[t] for t in tests] if args.isolate else [tests]):
+                _, _, go_note = go_ids(batch)
+                if go_note and go_note not in notes:
+                    notes.append(go_note)
+                    print('NOTE: ' + go_note)
+        except ValueError as e:
+            ap.error(str(e))
+        if not tests:
+            notes.append('No --tests: every package of the module ran (./...).')
 
     data = {'runs': [], 'cases': []}
     if args.out.exists():
