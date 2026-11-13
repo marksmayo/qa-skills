@@ -1,7 +1,7 @@
 ---
 name: ui-crash-hunter
 description: Hunt for code paths in web and mobile UI code that are likely to crash the app (B1, app-fatal) or a whole screen (B2, screen-fatal), rank them by real-world severity, and write reproduction steps for each. Uses static analysis, an API-contract diff and the error-boundary map, then confirms crashes in the running app where possible. Every finding has a file and line, a concrete trigger and a confidence level (reproduced, traced or pattern); degradations are listed separately and never ranked as crashes.
-version: 1.3.0
+version: 1.4.0
 ---
 
 # UI Crash Hunter
@@ -92,6 +92,16 @@ Read the output, then confirm and complete it by reading the code:
   scripts when there are many), the scripts each loads, scripts that inject others, pages with
   inline scripts (read those yourself; the pattern scan skips HTML), and error pages such as
   `404.html` whose relative asset URLs break when served at a nested path.
+  A site that a Node server renders itself (`node:http` `createServer`, Express, Fastify or Koa, with
+  pages built from HTML template literals) is `multi_page` / `per_script` too, with
+  `site.served_by: "node_server"`: recon follows the server's relative imports and lists the routes
+  from pathname comparisons, `case '/x':`, `app.get('/x')` and `'/path': handler` tables, keeping
+  `/api/*`, JSON and non-GET handlers apart in `site.server.api_endpoints`. The browser code is then
+  inline `<script>` blocks inside template strings (`site.server.templates`), which no static tool
+  reads: read them, and probe the pages. The server modules and Node command-line scripts are server
+  code (a throw is an HTTP 500 or a failed command), and `scan_pitfalls.py` excludes them.
+  A directory named like a test folder (`e2e/`, `tests/`) that holds its own package manifest is a
+  product package and is analysed.
 - **Platforms and frameworks**, and the supported targets (`browserslist`, `minSdkVersion`, iOS
   deployment target). Targets decide whether an API is "missing in a supported browser or OS".
 - **Routes and screens.** Add the app shell (header, navigation, layout) as an item: it renders on
@@ -107,7 +117,11 @@ Read the output, then confirm and complete it by reading the code:
   triggers are server data (a seeded test database), not browser mocks.
   The Next.js file conventions apply only when the project's `package.json` depends on `next`, and only
   to `app/` and `pages/` at its root or under `src/`: a `pages/` folder inside a plain React app is
-  just a folder, not routes.
+  just a folder, not routes. A directory holding `next.config.*` is the project root even without a
+  `package.json` of its own (`next build app`, with `next` in the package above), and its own
+  tsconfig `paths` resolve the app's imports.
+- **Module-scope configuration** entries for a module no UI entry point imports carry
+  `reachable_from_ui: false`: they cannot blank the app unless loaded some way the graph can't follow.
 - **Code-built contracts.** Recon lists OpenAPI documents built in code (`openapi-in-code`) and
   Prisma schemas. To use a code-built OpenAPI document, run its own builder or export endpoint into
   the output directory and pass that file to `contract_diff.py --contract`. A FastAPI app builds its
@@ -152,7 +166,7 @@ python scripts/scan_pitfalls.py <repo> --sarif <semgrep/detekt/swiftlint .sarif 
 
 | Stack | Tools (only if already installed, or the user agrees to install) |
 |---|---|
-| TypeScript / JavaScript | `strict_overlay.py tsc` (strictNullChecks, noUncheckedIndexedAccess; plain JavaScript without a tsconfig is checked with `checkJs` through a config generated in the scratch directory, using the repo's or the PATH's `tsc`, and is `not_applicable` only when there is no `tsc`) and `eslint` (react-hooks/exhaustive-deps, no-floating-promises, no-non-null-assertion, no-unnecessary-condition) using the repo's own installs. Both compile or lint only what the UI entry points reach (`--scope ui`, the default; `--scope all` for everything), and the baseline and strict compiles run side by side through scratch configs, so nothing (not even `tsconfig.tsbuildinfo`) is written into the repo. The ESLint step asks ESLint which plugins the config really loads (`--print-config`), so plugins that come in through `eslint-config-next` count (it asks about a source file under `src/`, never `eslint.config.js`, which a flat config for `**/*.{ts,tsx}` does not cover); type-aware rules run only when the config has type information. A solution-style `tsconfig.json` (`"files": []` plus `references`, the create-vite layout) compiles nothing, so the overlay compiles the referenced project whose `include` covers `src/` (`tsconfig.app.json`) and says so, or is `errored` when none does. A compile that covered no source file is `errored`, never "0 new errors"; a baseline with more than 50 errors carries a `warning` that the tsconfig is probably not the one the build uses (pass `--tsconfig`) |
+| TypeScript / JavaScript | `strict_overlay.py tsc` (strictNullChecks, noUncheckedIndexedAccess; plain JavaScript without a tsconfig is checked with `checkJs` through a config generated in the scratch directory, using the repo's or the PATH's `tsc`, and is `not_applicable` only when there is no `tsc`) and `eslint` (react-hooks/exhaustive-deps, no-floating-promises, no-non-null-assertion, no-unnecessary-condition) using the repo's own installs. Both compile or lint only what the UI entry points reach (`--scope ui`, the default; `--scope all` for everything), and the baseline and strict compiles run side by side through scratch configs, so nothing (not even `tsconfig.tsbuildinfo`) is written into the repo. The ESLint step asks ESLint which plugins the config really loads (`--print-config`), so plugins that come in through `eslint-config-next` count (it asks about a source file under `src/`, never `eslint.config.js`, which a flat config for `**/*.{ts,tsx}` does not cover); type-aware rules run only when the config has type information. A solution-style `tsconfig.json` (`"files": []` plus `references`, the create-vite layout) compiles nothing, so the overlay compiles the referenced project whose `include` covers `src/` (`tsconfig.app.json`) and says so, or is `errored` when none does. A compile that covered no source file is `errored`, never "0 new errors"; a baseline with more than 50 errors carries a `warning` that the tsconfig is probably not the one the build uses (pass `--tsconfig`). The output always names the `tsconfig` it compiled, its `compiled_files` and `ui_files_compiled`, and lists `warnings` when it covers under half of the UI's files, when the baseline has errors of its own, when `workspace:*` dependencies have no built output (build the workspace first) and when the pages' browser code is inline scripts in template literals that no type checker sees: read them before trusting "0 new errors". Without `--tsconfig`, a Next.js or Vite app nested in a subdirectory is compiled with its own tsconfig (the one nearest most UI entry points). oxlint (`.oxlintrc.json`) is not run: the ESLint overlay is then `not_run` |
 | Android | Android Lint (`./gradlew lint`, SARIF via `lint { sarifReport = true }`), detekt (`--report sarif:...`) |
 | iOS | SwiftLint (`swiftlint lint --reporter sarif`) with force_unwrapping, force_cast, force_try enabled in a scratch config |
 | Flutter | `dart analyze` / `flutter analyze` (null-check and `use_build_context_synchronously` diagnostics) |
@@ -227,7 +241,28 @@ python scripts/probe_web.py <out_dir>/probes/C-1.json --out-dir <out_dir>/eviden
 A scenario mocks API responses, seeds storage once (so reloads see what the app itself wrote), sets
 locale, time zone and viewport, and runs steps (`goto`, `click`, `fill`, `type` (key by key),
 `press`, `reload`, `back`, `offline`, `unroute` (stop a mock, so the next request reaches the real
-server), `expect`, `wait_for`, `wait_ms`). The evidence file records uncaught page errors with
+server), `expect`, `wait_for`, `wait_ms`). Each step is an object with one action:
+
+```json
+"steps": [
+  {"goto": "/checkout"},
+  {"fill": ["#email", "test@example.test"]},
+  {"fill": "#card", "value": "4111"},
+  {"type": ["#search", "lamp"]},
+  {"click": "button[type=submit]"},
+  {"press": "Enter"},
+  {"expect": [{"text_visible": "Order placed"}]},
+  {"wait_ms": 500}
+]
+```
+
+`fill` and `type` take a selector and a text, as a pair or with `"value"` (the form the WCAG and
+cross-browser skills use). `probe_web.py` validates every step and assertion before a browser starts
+and exits 2 naming the bad one; `--check` validates only. If a step still fails at run time, the
+evidence has `step_error` and `expectations_skipped: true`: the final assertions were never evaluated,
+which is neither a reproduction nor a clean baseline. The evidence also records each step's `ms` and a
+`timing` block (launch, steps, total), so a slow probe can be explained. `--emit-spec` writes nothing
+for a baseline probe (a baseline never reproduces). The evidence file records uncaught page errors with
 stacks, console errors (a boundary that catches an error usually logs it), every request with its
 status, failed requests, whether the root is empty (white screen) and which fallback texts are
 visible, plus a screenshot. Console errors keep their arguments: an Error that a boundary logs with

@@ -13,8 +13,11 @@ every source. Test files, dependencies, build output and minified files are skip
 
 Scope is UI code: files are followed from the UI entry points through their imports (tsconfig and
 jsconfig "paths" aliases such as "@/*" are resolved; see ui_graph.py). Route handlers (a throw there
-is an HTTP 500, not a UI crash), tests and modules no entry point imports are excluded, from this
-scan and from --sarif/--extra candidates alike, and counted with examples in "scope.excluded".
+is an HTTP 500, not a UI crash), Node HTTP server modules (node:http createServer, Express, Fastify,
+Koa) and Node command-line scripts (a node shebang, or process.argv with no DOM use), tests and
+modules no entry point imports are excluded, from this scan and from --sarif/--extra candidates
+alike, and counted with examples in "scope.excluded". A test-named directory (tests/, e2e/) that
+holds its own package manifest is a product package and is scanned.
 --all-files keeps route handlers and unreachable modules (tests and tool configs such as
 vite.config.ts or eslint.config.js stay out). An --extra candidate without a snippet gets its source line.
 Promise chains (matcher "promise_chain") are parsed whole across lines; --self-test runs a built-in
@@ -29,7 +32,7 @@ HERE = Path(__file__).resolve().parent
 sys.dont_write_bytecode = True  # importing a sibling must not write __pycache__ into the skill folder
 sys.path.insert(0, str(HERE))
 import sarif  # noqa: E402
-from ui_graph import graph as ui_graph, classify, SRC_EXT  # noqa: E402
+from ui_graph import graph as ui_graph, classify, SRC_EXT, MANIFESTS, TEST_DIR_NAME, node_role, note_packages, walk as walk_repo  # noqa: E402
 
 CATALOGUE = HERE.parent / 'data' / 'pitfalls.json'
 SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'out', '.next', '.nuxt', '.svelte-kit', 'coverage', 'vendor',
@@ -73,7 +76,8 @@ def source_files(root: Path, extensions: set[str]):
             continue
         for p in entries:
             if p.is_dir():
-                if p.name not in SKIP_DIRS and not p.name.startswith('.'):
+                # a test-named directory with a package manifest (packages/e2e/package.json) is a product package
+                if (p.name not in SKIP_DIRS or (TEST_DIR_NAME.match(p.name) and any((p / m).is_file() for m in MANIFESTS)))                         and not p.name.startswith('.'):
                     stack.append(p)
             elif p.suffix in extensions and not TEST_FILE.search(p.name) and not is_bundle(p):
                 yield p
@@ -358,12 +362,91 @@ const ratio = a / b; const half = (x) / 2; client.get(u).then(cb);
 # unhandled chains; the chains split across lines that end in .catch (10-15, 27-30) are handled
 SELF_TEST_EXPECT = [8, 17, 19, 31]
 
+# A synthetic workspace for the scope and recon checks: a Next.js app nested in web/ (next.config.ts and its
+# tsconfig "@/*" alias there, next in the package above), a Node server rendering pages from template literals,
+# a command-line script, and a test-named package directory (e2e/ with its own package.json).
+SELF_TEST_TREE = {
+    'package.json': '{"name": "shelf", "dependencies": {"next": "16.0.0", "react": "19.0.0"}}',
+    'tsconfig.json': '{"include": ["checks/**/*.ts"]}',
+    'web/next.config.ts': 'export default {};\n',
+    'web/tsconfig.json': '{"compilerOptions": {"jsx": "react-jsx", "paths": {"@/*": ["./src/*"]}}}',
+    'web/src/app/layout.tsx': 'export default function Root({ children }) { return children; }\n',
+    'web/src/app/page.tsx': 'import { Price } from "@/parts/Price";\nexport default function Home() { return <Price />; }\n',
+    'web/src/parts/Price.tsx': ('const FEE = 2;\n'
+                                'export function Price({ amount }) {\n'
+                                '  return <p>{FEE.toFixed(2)} {amount === null ? "0.00" : amount.toFixed(2)} {amount?.toFixed(1)}</p>;\n'
+                                '}\n'),
+    'site/server.mjs': ("import { createServer } from 'node:http';\nimport { pages } from './pages.mjs';\n"
+                        "createServer((req, res) => {\n  const url = new URL(req.url, 'http://x');\n"
+                        "  if (url.pathname === '/api/items') { res.end(JSON.stringify([])); return; }\n"
+                        "  const body = JSON.parse('{}');\n  res.end(pages[url.pathname]());\n}).listen(8000);\n"),
+    'site/pages.mjs': ("// the shelf list is kept in localStorage\nexport const pages = {\n"
+                       "  '/': () => `<main><h1>Shelf</h1><script>const s = localStorage.getItem('shelf');</script></main>`,\n"
+                       "  '/about': () => `<main><h1>About</h1></main>`,\n};\n"),
+    'tools/report.mjs': '#!/usr/bin/env node\nconst n = Number(process.argv[2]);\nconsole.log(n.toFixed(2));\n',
+    'e2e/package.json': '{"name": "e2e-kit"}',
+    'e2e/src/index.ts': 'export const total = (x: number | null) => x.toFixed(2);\n',
+}
+
+
+def self_test_scope() -> list[str]:
+    """Scope checks on SELF_TEST_TREE; returns the failures."""
+    import subprocess, tempfile
+    fails = []
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp) / 'shelf'
+        for rel, text in SELF_TEST_TREE.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(text, encoding='utf-8')
+        g = ui_graph(root)
+        if 'web/src/parts/Price.tsx' not in (g['reachable'] or []):
+            fails.append('the nested project\'s "@/*" alias (web/tsconfig.json) was not followed')
+        recon = subprocess.run([sys.executable, '-B', str(HERE / 'recon.py'), str(root)], capture_output=True, text=True,
+                               encoding='utf-8')
+        try:
+            r = json.loads(recon.stdout)
+        except ValueError:
+            return fails + [f'recon.py failed: {recon.stderr[-300:]}']
+        paths = {x['path'] for x in r['routes_screens']}
+        if not {'/', '(root layout)'} <= paths:
+            fails.append(f'nested Next.js routes not found as / and (root layout): {sorted(paths)}')
+        server = (r['site'].get('server') or {})
+        if sorted(x['path'] for x in server.get('routes', [])) != ['/', '/about']:
+            fails.append(f"Node server page routes: {sorted(x['path'] for x in server.get('routes', []))}, expected / and /about")
+        if [x['path'] for x in server.get('api_endpoints', [])] != ['/api/items']:
+            fails.append('the Node server API endpoint /api/items was not kept apart from the pages')
+        if [(p['file'], p['line']) for p in r['persisted_state']] != [('site/pages.mjs', 3)]:
+            fails.append(f"persisted_state: {[(p['file'], p['line']) for p in r['persisted_state']]}, expected the "
+                         'inline script only, not the comment')
+        scan = subprocess.run([sys.executable, '-B', str(HERE / 'scan_pitfalls.py'), str(root), '--all-files'],
+                              capture_output=True, text=True, encoding='utf-8')
+        try:
+            s = json.loads(scan.stdout)
+        except ValueError:
+            return fails + [f'scan_pitfalls.py failed: {scan.stderr[-300:]}']
+        files = {c['file'] for c in s['candidates']}
+        excl = s['scope']['excluded']
+        if 'site/server.mjs' in files or 'server_code' not in excl:
+            fails.append('the Node server module was scanned as UI code')
+        if 'tools/report.mjs' in files or 'cli_scripts' not in excl:
+            fails.append('the command-line script was scanned as UI code')
+        if 'e2e/src/index.ts' not in files:
+            fails.append('e2e/ with its own package.json was skipped as a test directory')
+        if any(c['file'] == 'web/src/parts/Price.tsx' and c['pitfall_id'] == 'WEB-NUMBER-FORMAT-ON-NULL'
+               for c in s['candidates']):
+            fails.append('toFixed on a capitalised constant, a same-line null guard or ?. was flagged')
+    return fails
+
+
 def self_test() -> int:
     p = next(q for q in load_catalogue()['pitfalls'] if q.get('matcher') == 'promise_chain')
     got = [h['line'] for h in promise_chain_hits(SELF_TEST_JS, 'app.js', p)]
     ok = got == SELF_TEST_EXPECT
     print(f"self-test {'passed' if ok else 'FAILED'}: promise chains flagged at lines {got}, expected {SELF_TEST_EXPECT}")
-    return 0 if ok else 1
+    fails = self_test_scope()
+    print(f"self-test {'passed' if not fails else 'FAILED'}: scope and recon on a synthetic workspace (nested Next.js "
+          'project, Node server pages, CLI script, test-named package)' + ''.join(f'\n  - {f}' for f in fails))
+    return 0 if ok and not fails else 1
 
 def main() -> int:
     if hasattr(sys.stdout, 'reconfigure'):  # JSON on stdout may hold any character; a cp1252 console can't print it
@@ -409,6 +492,17 @@ def main() -> int:
     # Scope: UI code only. Tests, route handlers (a throw is an HTTP 500, not a UI crash) and modules
     # no UI entry point imports are excluded and counted, unless --all-files.
     g = None if args.all_files else ui_graph(root)
+    if g is None:
+        note_packages(root, list(walk_repo(root)))
+    roles: dict[str, str | None] = {}
+    def role_of(rel: str) -> str | None:
+        if rel not in roles:
+            p = root / rel
+            try:
+                roles[rel] = node_role(p.read_text(encoding='utf-8', errors='replace'), p.name)                     if p.suffix in ('.js', '.mjs', '.cjs', '.ts', '.mts') and p.is_file() else None
+            except OSError:
+                roles[rel] = None
+        return roles[rel]
     reach = set(g['reachable']) if g and g['reachable'] is not None else None
     excluded: dict[str, dict] = {}
     def why_excluded(rel: str) -> str | None:
@@ -417,6 +511,11 @@ def main() -> int:
             return 'tests'
         if kind == 'config':  # vite.config.ts, eslint.config.js: build tooling, never run by the UI
             return 'tool_configs'
+        role = role_of(rel) if rel else None
+        if role == 'server':  # node:http createServer, Express: a throw there is an HTTP 500, not a UI crash
+            return 'server_code'
+        if role == 'cli':  # a Node command-line script never runs in the browser
+            return 'cli_scripts'
         if args.all_files:
             return None
         if kind == 'route_handler':
@@ -487,7 +586,9 @@ def main() -> int:
                       'UI code only: tests, route handlers and modules no UI entry point imports are excluded and counted '
                       'here; read the examples, and rerun with --all-files if a module is reached in a way the import '
                       'graph cannot follow (a computed import)' if reach is not None else
-                      'no UI entry point recognised, so every non-test source file was scanned (route handlers excluded)')}
+                      'no UI entry point recognised, so every non-test source file was scanned (route handlers, Node '
+                      'server modules and command-line scripts excluded). Browser code inside HTML template literals '
+                      '(pages a Node server renders) is not scanned: read it, or see recon site.server')}
     out = {
         'generated_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
         'repository': root.name,

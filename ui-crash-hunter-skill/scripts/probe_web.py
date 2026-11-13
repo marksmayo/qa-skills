@@ -314,9 +314,71 @@ def check_expectations(page, assertions, ctx: dict) -> list:
         out.append({**a, 'actual': actual, 'passed': bool(ok)})
     return out
 
+STEP_ACTIONS = {'goto': 'str', 'click': 'str', 'fill': 'pair', 'type': 'pair', 'press': 'str', 'reload': 'any',
+                'back': 'any', 'offline': 'any', 'unroute': 'str', 'expect': 'assert', 'wait_for': 'str', 'wait_ms': 'int'}
+EXPECT_KEYS = ('visible', 'hidden', 'text_visible', 'text_absent', 'count', 'style', 'request', 'page_error', 'console_error')
+
+
+def normalise_step(step) -> tuple:
+    """(action, arg) from a step. One action key per step; fill and type take a selector and a text, written
+    either {"fill": ["#email", "a@b.test"]} or {"fill": "#email", "value": "a@b.test"} ("text" works too)."""
+    if not isinstance(step, dict) or not step:
+        raise ValueError(f'a step must be an object with one action, e.g. {{"click": "#save"}}; got {step!r}')
+    keys = [k for k in step if k in STEP_ACTIONS]
+    rest = sorted(set(step) - set(keys) - {'value', 'text'})
+    if len(keys) != 1 or rest:
+        raise ValueError(f'step {json.dumps(step)[:120]}: one action key from {", ".join(STEP_ACTIONS)} '
+                         f'(plus "value" for fill/type) expected' + (f'; unknown key(s) {", ".join(rest)}' if rest else ''))
+    action = keys[0]
+    arg = step[action]
+    if STEP_ACTIONS[action] == 'pair':
+        companion = step.get('value', step.get('text'))
+        if isinstance(arg, str) and companion is not None:
+            arg = [arg, str(companion)]
+        if not (isinstance(arg, list) and len(arg) == 2 and all(isinstance(x, str) for x in arg)):
+            raise ValueError(f'step {json.dumps(step)[:120]}: {action} takes a selector and a text, written '
+                             f'{{"{action}": ["#sel", "text"]}} or {{"{action}": "#sel", "value": "text"}}')
+    elif 'value' in step or 'text' in step:
+        raise ValueError(f'step {json.dumps(step)[:120]}: "value" belongs only with fill or type')
+    elif STEP_ACTIONS[action] == 'str' and not isinstance(arg, str):
+        raise ValueError(f'step {json.dumps(step)[:120]}: {action} takes a string (a selector, URL path, key or glob)')
+    elif STEP_ACTIONS[action] == 'int' and (isinstance(arg, bool) or not isinstance(arg, (int, float))):
+        raise ValueError(f'step {json.dumps(step)[:120]}: wait_ms takes a number of milliseconds')
+    return action, arg
+
+
+def validate_scenario(scenario: dict) -> list:
+    """Problems with a scenario's steps and assertions, found before any browser starts."""
+    problems = []
+    if not isinstance(scenario, dict):
+        return ['the scenario must be a JSON object']
+    for n, step in enumerate(scenario.get('steps') or [], 1):
+        try:
+            action, arg = normalise_step(step)
+        except ValueError as exc:
+            problems.append(f'step {n}: {exc}')
+            continue
+        if action == 'expect':
+            problems += [f'step {n}: {p}' for p in validate_assertions(arg)]
+    problems += [f'expect: {p}' for p in validate_assertions(scenario.get('expect'))]
+    if scenario.get('kind') not in (None, 'baseline', 'defect'):
+        problems.append(f'kind must be "baseline" or "defect", not {scenario.get("kind")!r}')
+    return problems
+
+
+def validate_assertions(assertions) -> list:
+    out = []
+    for a in ([assertions] if isinstance(assertions, dict) else assertions or []):
+        if not isinstance(a, dict) or not any(k in a for k in EXPECT_KEYS):
+            out.append(f'unknown assertion {json.dumps(a)[:120]}: use one of {", ".join(EXPECT_KEYS)}')
+        elif 'style' in a and 'property' not in a:
+            out.append(f'style assertion {json.dumps(a)[:120]} needs "property"')
+    return out
+
+
 def run_steps(page, context, steps: list, base_url: str, log: list, checks=None) -> None:
     for n, step in enumerate(steps or [], 1):
-        (action, arg), = step.items()
+        action, arg = normalise_step(step)
         log.append({'step': n, 'action': action, 'arg': arg, 'at': round(time.time(), 3)})
         if action == 'goto':
             page.goto(arg if '://' in arg else base_url.rstrip('/') + '/' + arg.lstrip('/'), wait_until='load')
@@ -361,9 +423,12 @@ def probe(scenario: dict, base_url: str, out_dir: Path, headed: bool = False, st
     out_dir.mkdir(parents=True, exist_ok=True)
     errors, console, failed, steps_log = [], [], [], []
     current = lambda: steps_log[-1]['step'] if steps_log else 0
+    t0 = time.monotonic()
+    timing: dict = {}
     with sync_playwright() as pw:
         bt = getattr(pw, scenario.get('browser', 'chromium'))
         browser = bt.launch(**launch_options(scenario, headed))
+        timing['launch_s'] = round(time.monotonic() - t0, 2)
         context = browser.new_context(**context_options(scenario, base_url, storage_state))
         blocked: list = []
         writes: list = []
@@ -385,13 +450,23 @@ def probe(scenario: dict, base_url: str, out_dir: Path, headed: bool = False, st
             ctx = {'requests': requests, 'page_errors': errors, 'console_errors': own_errors()}
             expectations.extend({**r, 'after_step': step_no} for r in check_expectations(page, assertions, ctx))
         step_error = None
+        final_checked = False
+        t_steps = time.time()
         try:
             run_steps(page, context, scenario.get('steps'), base_url, steps_log, checks)
+            t_end = time.time()
             page.wait_for_timeout(int(scenario.get('settle_ms', 800)))
             if scenario.get('expect'):
                 checks('final', scenario['expect'])
+                final_checked = True
         except (PwError, ValueError) as exc:
+            t_end = time.time()
             step_error = str(exc).splitlines()[0]
+        # how long each step took (to the next step's start, the last to the end of the steps): slow loads show here
+        for i, st in enumerate(steps_log):
+            nxt = steps_log[i + 1]['at'] if i + 1 < len(steps_log) else t_end
+            st['ms'] = int(round((nxt - st['at']) * 1000))
+        timing['steps_s'] = round(t_end - t_steps, 2)
         state = observe(page, scenario.get('observe') or {})
         shot = out_dir / 'screenshot.png'
         page.screenshot(path=str(shot), full_page=True)
@@ -411,6 +486,8 @@ def probe(scenario: dict, base_url: str, out_dir: Path, headed: bool = False, st
             'locale': scenario.get('locale'), 'timezone': scenario.get('timezone'),
             'captured_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
             'steps': [{k: v for k, v in s.items() if k != 'at'} for s in steps_log], 'step_error': step_error,
+            # a step error stops the scenario: its final expectations were never evaluated (not "held" or "failed")
+            'expectations_skipped': bool(scenario.get('expect')) and not final_checked,
             'page_errors': errors, 'console_errors': own,
             'blocked_console_errors': [c for c in console if c['type'] == 'error' and 'ERR_BLOCKED_BY_CLIENT' in c['text']],
             'blocked_requests': sorted(set(blocked)), 'failed_requests': failed, **state, 'screenshot': shot.name,
@@ -431,6 +508,8 @@ def probe(scenario: dict, base_url: str, out_dir: Path, headed: bool = False, st
             evidence['baseline_ok'] = not away and not errors and not own and step_error is None and \
                 all(e['passed'] for e in expectations)
         browser.close()
+    timing['total_s'] = round(time.monotonic() - t0, 2)
+    evidence['timing'] = timing
     (out_dir / 'evidence.json').write_text(json.dumps(evidence, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
     return evidence
 
@@ -498,10 +577,10 @@ if __name__ == '__main__':
 
 def emit_spec(scenario: dict, base_url: str, path: Path, title: str) -> None:
     funcs = '\n\n'.join(inspect.getsource(f) for f in (
-        seed_script, is_loopback, read_only, blocked_storage_script, init_scripts, launch_options, context_options,
+        normalise_step, seed_script, is_loopback, read_only, blocked_storage_script, init_scripts, launch_options, context_options,
         install_guards, console_entry, console_haystack, guard_third_party, apply_routes, glob_rx, log_requests,
         check_expectations, run_steps, observe, left_app))
-    funcs = f'CONSOLE_ARG_JS = """{CONSOLE_ARG_JS}"""\n\n{funcs}'
+    funcs = f'CONSOLE_ARG_JS = """{CONSOLE_ARG_JS}"""\n\nSTEP_ACTIONS = {STEP_ACTIONS!r}\n\n{funcs}'
     sc = dict(scenario, base_url=scenario.get('base_url') or base_url)
     body = (f'#!/usr/bin/env python3\n"""Repro spec: {title}\n\nReplays the crash trigger with Playwright. Exits 1 while the crash '
             f'reproduces, 0 once it is fixed and 2 when the page left the app (inconclusive).\n'
@@ -514,7 +593,8 @@ def emit_spec(scenario: dict, base_url: str, path: Path, title: str) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('scenario', type=Path)
-    ap.add_argument('--out-dir', type=Path, required=True)
+    ap.add_argument('--out-dir', type=Path)
+    ap.add_argument('--check', action='store_true', help='validate the scenario (steps and assertions) and exit')
     ap.add_argument('--base-url', help='overrides scenario.base_url')
     ap.add_argument('--emit-spec', type=Path, help='write a standalone repro script here')
     ap.add_argument('--headed', action='store_true')
@@ -531,6 +611,15 @@ def main() -> int:
     except (OSError, ValueError) as exc:
         print(f'Unable to read scenario: {exc}', file=sys.stderr)
         return 2
+    if not args.check and args.out_dir is None:
+        ap.error('--out-dir is required (except with --check)')
+    problems = validate_scenario(scenario)
+    if problems:  # before any browser starts: a malformed step would otherwise fail mid-run and skip the assertions
+        print(f'Invalid scenario {args.scenario}:\n  ' + '\n  '.join(problems), file=sys.stderr)
+        return 2
+    if args.check:
+        print(f'{args.scenario}: valid ({len(scenario.get("steps") or [])} step(s))')
+        return 0
     base_url = args.base_url or scenario.get('base_url')
     if not base_url:
         print('No base URL: set scenario.base_url or pass --base-url', file=sys.stderr)
@@ -557,7 +646,10 @@ def main() -> int:
               'pip install -r requirements.txt && python -m playwright install chromium', file=sys.stderr)
         return 3
     ev = probe(scenario, base_url, args.out_dir, args.headed, args.storage_state)
-    if args.emit_spec:
+    if args.emit_spec and ev['kind'] == 'baseline':
+        print(f'--emit-spec skipped: a baseline probe describes healthy behaviour and never reproduces, so it has no '
+              f'repro spec ({args.emit_spec} not written)')
+    elif args.emit_spec:
         emit_spec(scenario, base_url, args.emit_spec, scenario.get('name', 'crash repro'))
     verdict = f"INCONCLUSIVE ({ev['inconclusive_reason']})" if ev['inconclusive'] else \
         ('baseline ' + ('ok' if ev['baseline_ok'] else 'NOT CLEAN')) if ev['kind'] == 'baseline' else \
@@ -565,6 +657,12 @@ def main() -> int:
     if ev['writes_blocked']:
         print(f"read-only: {len(ev['writes_blocked'])} write request(s) answered in the browser and never sent")
     held = sum(1 for e in ev['expectations'] if e['passed'])
+    if ev.get('expectations_skipped'):
+        print('  the final expectations were not evaluated: a step failed first (see step error)')
+    slow = sorted(ev['steps'], key=lambda st: -st.get('ms', 0))[:1]
+    print(f"  timing: launch {ev['timing'].get('launch_s')}s, steps {ev['timing'].get('steps_s')}s, total "
+          f"{ev['timing'].get('total_s')}s" + (f"; slowest step {slow[0]['step']} ({slow[0]['action']}) {slow[0]['ms']} ms"
+                                                if slow and 'ms' in slow[0] else ''))
     print(f"{verdict}: {len(ev['page_errors'])} page error(s), root empty: {ev['root_empty']}, "
           f"fallback: {', '.join(ev['fallback_visible']) or 'none'}, expectations held: {held}/{len(ev['expectations'])}"
           f"{', step error: ' + ev['step_error'] if ev['step_error'] else ''} -> {args.out_dir / 'evidence.json'}")

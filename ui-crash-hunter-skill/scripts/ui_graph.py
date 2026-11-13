@@ -7,7 +7,11 @@ scan_pitfalls.py and strict_overlay.py, and runnable on its own:
 
 Aliases: tsconfig/jsconfig `paths` (`@/*`) with their `extends` chain, the projects a solution-style
 tsconfig lists in `references` (create-vite's tsconfig.app.json), and Vite's `resolve.alias` when
-vite.config.* writes it literally. A specifier only an alias can mean (`@/x`, `~/x`) that resolves
+vite.config.* writes it literally, and the tsconfig/jsconfig of nested projects (beside a
+next.config.* or vite.config.*, or in a package that depends on a UI framework); a pattern several
+projects define resolves to the target nearest the importing file. A directory holding next.config.*
+is a Next.js project root. A test-named directory (e2e/, tests/) holding a package manifest is product
+code, not tests. node_role() tells Node server and command-line modules apart from UI code. A specifier only an alias can mean (`@/x`, `~/x`) that resolves
 nowhere counts as unresolved, and the output warns when imports did not resolve or when under 30% of
 the UI source files are reachable.
 
@@ -109,9 +113,55 @@ def walk(root: Path, extra_prune: set[str] = frozenset()):
                 yield p
 
 
+# A directory named like a test folder (tests/, e2e/, ...) is test code only when it is not a package of its
+# own: packages/e2e/ with a package.json and src/ is a product package that happens to be called e2e.
+MANIFESTS = ('package.json', 'pyproject.toml', 'setup.py', 'setup.cfg', 'Cargo.toml', 'go.mod', 'pom.xml',
+             'build.gradle', 'build.gradle.kts', 'composer.json', 'Gemfile', 'pubspec.yaml')
+TEST_DIR_NAME = re.compile(r'^(tests?|__tests__|__mocks__|e2e|cypress|playwright|test-shims|androidTest|integration_test|'
+                           r'\w*UITests?)$')
+PACKAGE_DIRS: set[str] = set()  # test-named directories (relative) that hold a manifest; filled by note_packages()
+
+
+def note_packages(root: Path, files: list[Path]) -> set[str]:
+    """Record the test-named directories that hold a package manifest, so classify() treats them as product code.
+    Returns them (relative paths)."""
+    found = set()
+    for f in files:
+        if f.name in MANIFESTS and TEST_DIR_NAME.match(f.parent.name) and f.parent != root:
+            found.add(f.parent.relative_to(root).as_posix())
+    PACKAGE_DIRS.clear()
+    PACKAGE_DIRS.update(found)
+    return found
+
+
+def in_test_dir(rel: str, packages: set[str] | None = None) -> bool:
+    """True when a directory on the path is named like a test folder and is not a package (see MANIFESTS)."""
+    packages = PACKAGE_DIRS if packages is None else packages
+    parts = rel.split('/')[:-1]
+    return any(TEST_DIR_NAME.match(p) and '/'.join(parts[:i + 1]) not in packages for i, p in enumerate(parts))
+
+
+# Node code that never runs in a browser: an HTTP server (node:http createServer, Express, Fastify, Koa) or a
+# command-line script (a node shebang, or process.argv with no DOM use)
+HTTP_SERVER_IMPORT = re.compile(r'''(?:\bfrom\s+|\brequire\(\s*|\bimport\(\s*)["'](?:node:)?(?:http|https|http2|express|fastify|koa|@hapi/hapi)["']''')
+SERVER_CALL = re.compile(r'\bcreateServer\s*\(|\.listen\s*\(|\bexpress\s*\(\s*\)|\bfastify\s*\(|\bnew\s+Koa\s*\(')
+DOM_USE = re.compile(r'\b(?:document|window|localStorage|sessionStorage|navigator)\s*\.')
+
+
+def node_role(text: str, name: str = '') -> str | None:
+    """'server' for a Node HTTP server module, 'cli' for a Node command-line script, else None."""
+    if HTTP_SERVER_IMPORT.search(text) and SERVER_CALL.search(text):
+        return 'server'
+    if name.endswith(('.mjs', '.cjs', '.js', '.ts', '.mts')) and (
+            text.startswith('#!') and 'node' in text.split('\n', 1)[0] or
+            ('process.argv' in text and not DOM_USE.search(text))):
+        return 'cli'
+    return None
+
+
 def classify(rel: str) -> str:
     """'test', 'route_handler' or 'ui' (anything else that is source)."""
-    if TEST_PART.search(rel) or TEST_NAME.search(rel.rsplit('/', 1)[-1]):
+    if in_test_dir(rel) or TEST_NAME.search(rel.rsplit('/', 1)[-1]):
         return 'test'
     if is_tool_config(rel):
         return 'config'
@@ -319,10 +369,38 @@ def vite_aliases(root: Path) -> list[tuple[str, list[Path]]]:
     return out
 
 
-def aliases(root: Path) -> list[tuple[str, list[Path]]]:
+def nested_config_dirs(root: Path, files: list[Path]) -> list[Path]:
+    """Project directories below the root with their own tsconfig/jsconfig: beside a next.config.* or
+    vite.config.*, or in a package whose package.json depends on a UI framework (apps/web/tsconfig.json in a
+    monorepo, app/tsconfig.json next to app/next.config.ts)."""
+    dirs: set[Path] = set()
+    for f in files:
+        d = f.parent
+        if d == root:
+            continue
+        if NEXT_CONFIG.match(f.name) or f.name in VITE_CONFIGS or \
+                (f.name == 'package.json' and UI_DEPS & set(_deps(f))):
+            if _root_config(d) is not None:
+                dirs.add(d)
+    return sorted(dirs)
+
+
+def aliases(root: Path, files: list[Path] | None = None) -> list[tuple[str, list[Path]]]:
     """compilerOptions.paths as (pattern, [target patterns as absolute paths]); later configs in a chain
     win. A solution tsconfig's referenced projects (tsconfig.app.json) are read too, and Vite's literal
-    resolve.alias entries come after them; baseUrl fallbacks ('*') come last."""
+    resolve.alias entries come after them; baseUrl fallbacks ('*') come last. With `files`, the configs of
+    nested projects (nested_config_dirs) are read as well; when two projects map the same pattern, resolve()
+    prefers the target nearest the importing file."""
+    out = _aliases_of(root)
+    if files:
+        for d in nested_config_dirs(root, files):
+            for k, v in _aliases_of(d):
+                if k != '*':
+                    out.insert(len([a for a in out if a[0] != '*']), (k, v))
+    return out
+
+
+def _aliases_of(root: Path) -> list[tuple[str, list[Path]]]:
     out: list[tuple[str, list[Path]]] = []
     bases: list[Path] = []
     for chain in _config_chains(root):
@@ -373,6 +451,7 @@ def resolve(spec: str, frm: Path, root: Path, alias: list[tuple[str, list[Path]]
         return _with_ext((frm.parent / spec).resolve())
     if spec.startswith('/'):
         return _with_ext((root / spec.lstrip('/')).resolve())
+    found: list[Path] = []
     for pat, targets in alias:
         if pat.endswith('*'):
             if not spec.startswith(pat[:-1]):
@@ -381,13 +460,34 @@ def resolve(spec: str, frm: Path, root: Path, alias: list[tuple[str, list[Path]]
             for t in targets:
                 r = _with_ext(Path(str(t).replace('*', rest)).resolve())
                 if r:
-                    return r
+                    found.append(r)
+                    break
         elif spec == pat:
             for t in targets:
                 r = _with_ext(t.resolve())
                 if r:
-                    return r
-    return None
+                    found.append(r)
+                    break
+        if found and not _shared_pattern(pat, alias):
+            break
+    if not found:
+        return None
+    if len(found) == 1:
+        return found[0]
+    # the same pattern in several projects ("@/*" in a monorepo's apps): the target nearest the importing file
+    here = frm.resolve().parent.parts
+    def near(p: Path) -> int:
+        n = 0
+        for a, b in zip(here, p.parts):
+            if a != b:
+                break
+            n += 1
+        return n
+    return max(found, key=near)
+
+
+def _shared_pattern(pat: str, alias: list[tuple[str, list[Path]]]) -> bool:
+    return sum(1 for a, _ in alias if a == pat) > 1
 
 
 def html_entries(root: Path, files: list[Path]) -> list[Path]:
@@ -414,14 +514,43 @@ def _deps(pkg: Path) -> dict:
             **(data.get('peerDependencies') or {})} if isinstance(data, dict) else {}
 
 
+NEXT_CONFIG = re.compile(r'^next\.config\.(js|mjs|cjs|ts|mts|cts)$')
+
+
 def projects(root: Path, files: list[Path]) -> dict[str, dict]:
-    """Every package.json directory under root (relative, '' for the root) -> its dependencies."""
+    """Every package.json directory under root (relative, '' for the root) -> its dependencies.
+
+    A directory holding next.config.* is a Next.js project root too, even without a package.json of its own:
+    `next build app` keeps next.config.ts, tsconfig.json and src/app/ in app/ while next is a dependency of the
+    package above. Such a directory inherits the dependencies of the nearest package.json above it, plus next."""
     out = {}
     for f in files:
         if f.name == 'package.json':
             d = f.parent.relative_to(root).as_posix()
             out['' if d == '.' else d] = _deps(f)
+    configs = set()
+    for f in files:
+        if NEXT_CONFIG.match(f.name):
+            d = f.parent.relative_to(root).as_posix()
+            configs.add('' if d == '.' else d)
+    packages = dict(out)
+    for d in sorted(configs):
+        if 'next' in out.get(d, {}):
+            continue
+        parent, _ = project_of(d + '/x' if d else 'x', {k: v for k, v in packages.items() if k != d})
+        out[d] = {**packages.get(parent, {}), **out.get(d, {}), 'next': packages.get(parent, {}).get('next', '*')}
+    # a package that depends on next but keeps its next.config.* in a subdirectory is not itself the Next.js root
+    for d in list(out):
+        if 'next' in out[d] and d not in configs and \
+                any(c != d and (d == '' or c.startswith(d + '/')) for c in configs):
+            out[d] = {k: v for k, v in out[d].items() if k != 'next'}
     return out
+
+
+def next_roots(root: Path, files: list[Path]) -> list[str]:
+    """Directories (relative) that are Next.js project roots: a next.config.* file, or a package.json that
+    depends on next."""
+    return sorted(d for d, deps in projects(root, files).items() if 'next' in deps)
 
 
 def project_of(rel: str, projs: dict[str, dict]) -> tuple[str, str]:
@@ -462,11 +591,12 @@ def graph(root: Path, files: list[Path] | None = None) -> dict:
     and per-file imports. 'reachable' is None when no entry point was recognised."""
     root = root.resolve()
     files = files if files is not None else list(walk(root))
-    alias = aliases(root)
+    packages = note_packages(root, files)
+    alias = aliases(root, files)
     ents = entries(root, files)
     if not ents:
         return {'entries': [], 'reachable': None, 'aliases': [a for a, _ in alias], 'unresolved': 0,
-                'unresolved_examples': [], 'warnings': []}
+                'unresolved_examples': [], 'warnings': [], 'test_named_packages': sorted(packages)}
     seen: set[Path] = set()
     todo = [e.resolve() for e in ents]
     edges: dict[str, list[str]] = {}
@@ -511,7 +641,8 @@ def graph(root: Path, files: list[Path] | None = None) -> dict:
     if unresolved:
         warnings.append(f'{unresolved} import(s) did not resolve (e.g. {unresolved_examples[0]}): modules behind them '
                         'count as unreachable. Check the path aliases (tsconfig paths, including referenced projects '
-                        'such as tsconfig.app.json, and vite.config resolve.alias)')
+                        'such as tsconfig.app.json, the tsconfig beside a nested next.config.* or vite.config.*, and '
+                        'vite.config resolve.alias)')
     share = len([r for r in reach if not r.endswith('.d.ts')]) / len(ui_files) if ui_files else 1.0
     if len(ui_files) >= 20 and share < 0.3:
         warnings.append(f'only {round(share * 100)}% of the {len(ui_files)} UI source files are reachable from the '
@@ -520,7 +651,8 @@ def graph(root: Path, files: list[Path] | None = None) -> dict:
                         'and use --all-files / --scope all if they are in fact UI code')
     return {'entries': sorted(e.relative_to(root).as_posix() for e in ents), 'reachable': reach,
             'aliases': [a for a, _ in alias], 'unresolved': unresolved, 'unresolved_examples': unresolved_examples,
-            'ui_files': len(ui_files), 'reachable_share': round(share, 2), 'warnings': warnings, 'edges': edges}
+            'ui_files': len(ui_files), 'reachable_share': round(share, 2), 'warnings': warnings,
+            'test_named_packages': sorted(packages), 'edges': edges}
 
 
 def main() -> int:

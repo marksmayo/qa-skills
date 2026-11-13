@@ -69,10 +69,10 @@
       "category": "data",
       "title": "Number or string method called on a value that can be null",
       "regex": "\\.(toFixed|toPrecision)\\(",
-      "suppress_line": "!==?\\s*(?:null|undefined)\\s*(?:\\?|&&)|typeof\\s+[\\w.]+\\s*===?\\s*['\"]number['\"]|\\?\\?\\s*[\\d.]+\\s*\\)\\s*\\.(?:toFixed|toPrecision)|Number\\([^)]*\\)\\s*\\.(?:toFixed|toPrecision)|Number\\.isFinite\\(|Math\\.\\w+\\(.*\\)\\s*\\.(?:toFixed|toPrecision)|(?:parseFloat|parseInt)\\([^)]*\\)\\s*\\.(?:toFixed|toPrecision)|\\(\\s*-?\\d[\\d.]*\\s*\\)\\s*\\.(?:toFixed|toPrecision)|\\([^()]*[*/%][^()]*\\)\\s*\\.(?:toFixed|toPrecision)",
+      "suppress_line": "!==?\\s*(?:null|undefined)\\s*(?:\\?|&&)|===?\\s*(?:null|undefined)\\s*\\?[^:]*:\\s*[\\w.$]+\\.(?:toFixed|toPrecision)|\\?\\.\\s*(?:toFixed|toPrecision)\\(|(?<![\\w.$])[A-Z][A-Z0-9_]+\\s*\\.\\s*(?:toFixed|toPrecision)\\(|typeof\\s+[\\w.]+\\s*===?\\s*['\"]number['\"]|\\?\\?\\s*[\\d.]+\\s*\\)\\s*\\.(?:toFixed|toPrecision)|Number\\([^)]*\\)\\s*\\.(?:toFixed|toPrecision)|Number\\.isFinite\\(|Math\\.\\w+\\(.*\\)\\s*\\.(?:toFixed|toPrecision)|(?:parseFloat|parseInt)\\([^)]*\\)\\s*\\.(?:toFixed|toPrecision)|\\(\\s*-?\\d[\\d.]*\\s*\\)\\s*\\.(?:toFixed|toPrecision)|\\([^()]*[*/%][^()]*\\)\\s*\\.(?:toFixed|toPrecision)",
       "suppress_before": "\\b(?:isNaN|Number\\.isNaN|Number\\.isFinite|isFinite)\\s*\\(",
       "window": 2,
-      "note": "Not matched when the same line guards the value (x != null ? x.toFixed(...), typeof x === 'number', (x ?? 0).toFixed, Number(x).toFixed) or the receiver is always a number (Math.max(...).toFixed, parseFloat(s).toFixed, (a / b).toFixed: arithmetic on null gives 0 or NaN, and NaN.toFixed does not throw), nor when one of the two lines before checks isNaN / Number.isFinite.",
+      "note": "Not matched when the same line guards the value (x != null ? x.toFixed(...), x === null ? '0' : x.toFixed(...), x?.toFixed(...), typeof x === 'number', (x ?? 0).toFixed, Number(x).toFixed) or the receiver is always a number (a module constant in capitals such as SHIPPING.toFixed, Math.max(...).toFixed, parseFloat(s).toFixed, (a / b).toFixed: arithmetic on null gives 0 or NaN, and NaN.toFixed does not throw), nor when one of the two lines before checks isNaN / Number.isFinite.",
       "trigger_hint": "The number is null or undefined (no rating yet, price not loaded) and toFixed throws TypeError.",
       "fix": "Format through a helper that handles null, and show a placeholder.",
       "tools": ["tsc:TS18047", "tsc:TS18048", "contract_diff:nullable-access"]

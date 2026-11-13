@@ -324,6 +324,48 @@ Status: **built** (v1.2.0). The implementation differs from the original plan as
     `agent_judgment`).
   - The example is unchanged: rerunning `scan_pitfalls.py` and `contract_diff.py` on `pantry/` gives the
     same candidates.
+- 1.4.0, after a run on a TypeScript monorepo with a dependency-free Node fixture site and a Next.js app
+  nested in a subdirectory:
+  - Recon saw nothing on a site that a `node:http` server renders from HTML template literals (`site:
+    unknown, 0 routes`). `recon.py` now recognises Node HTTP servers (`node:http` `createServer`,
+    Express, Fastify, Koa), follows their relative imports, and lists the routes from pathname
+    comparisons, `case '/x':`, `app.get('/x')` and `'/path': handler` tables, keeping `/api/*`, JSON
+    and non-GET handlers apart as `api_endpoints`. Such a site is `multi_page` / `per_script` with
+    `site.served_by: "node_server"` and `site.server` (servers, templates, inline script count); beside
+    a framework app it is listed in `site.server` without changing the site model. No schema change.
+  - A Next.js project kept in `app/` (`next build app`, with `next` in the package above) gave routes
+    `/src/app` and a root layout that was not `root`. A directory holding `next.config.*` is now a
+    Next.js project root (it inherits the dependencies of the package above, which stops counting as
+    the Next root), recon matches the file conventions inside it, and `ui_graph.py` reads the tsconfig
+    or jsconfig of nested projects (beside `next.config.*` or `vite.config.*`, or in a UI package) and
+    resolves a pattern several projects define to the target nearest the importing file.
+  - `strict_overlay.py tsc` compiled the root `tsconfig.json` (the test suites') with 23 baseline errors
+    and said only "0 new errors". Without `--tsconfig` it now compiles the tsconfig nearest most UI
+    entry points when that is a nested project, and always records and prints the `tsconfig` it
+    compiled, its source file count and `ui_files_compiled`, with `warnings` when it covers under half
+    of the UI's files, when the baseline has errors of its own, when `workspace:*` dependencies have no
+    built output (build the workspace first), and when the browser code is inline scripts in template
+    literals that no type checker sees.
+  - With no UI entry point, `scan_pitfalls.py` scanned server request handlers and a CLI benchmark. Node
+    server modules and Node command-line scripts (a node shebang, or `process.argv` without DOM use)
+    are now excluded and counted (`server_code`, `cli_scripts`), also with `--all-files`.
+  - A directory named like a test folder (`e2e/`, `tests/`) that holds its own package manifest is a
+    product package, not tests, in recon, `ui_graph.py` and the scan's directory walk.
+  - `persisted_state` counted a comment line; `module_scope_config` flagged a CLI script as "blanks the
+    app". Comment lines are skipped; Node server and CLI modules are left out of `module_scope_config`,
+    and a module no UI entry point imports carries `reachable_from_ui: false` and no B1 note.
+  - `WEB-NUMBER-FORMAT-ON-NULL` no longer fires on `x === null ? "0" : x.toFixed(2)`, `x?.toFixed(2)` or
+    a capitalised module constant (`SHIPPING.toFixed(2)`).
+  - `probe_web.py` crashed a step written `{"fill": "#sel", "value": "x"}` with "too many values to
+    unpack" and silently skipped the expectations. Both forms are accepted now, every scenario is
+    validated before a browser starts (`--check` validates only), the evidence records
+    `expectations_skipped` when a failed step stopped the final assertions, and per-step `ms` plus
+    `timing` (launch, steps, total) so a slow probe can be explained. `--emit-spec` writes no spec for a
+    baseline probe; the example's `repro/repro_baseline.py` predates this and is kept.
+  - `scan_pitfalls.py --self-test` also builds a synthetic workspace (nested Next.js project, Node
+    server pages, a CLI script, a test-named package) and checks recon and the scan scope on it.
+  - Not done: oxlint (`.oxlintrc.json`) is still not run by the ESLint overlay; it reports `not_run: no
+    ESLint configuration`.
 
 ```text
 ui-crash-hunter-skill/

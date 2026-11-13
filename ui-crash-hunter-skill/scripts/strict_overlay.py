@@ -17,7 +17,13 @@ carries none of the app's compiler options, so the referenced project whose incl
 (tsconfig.app.json) is compiled instead; if none does, the result is errored with the reason. The
 baseline lists the files it compiled (--listFiles): a compile that covered none of the repository's
 source files is errored, never "ran with 0 new errors", and a baseline with more than 50 errors
-carries a warning that the tsconfig is probably not the one the build uses.
+carries a warning that the tsconfig is probably not the one the build uses. The output always names the
+tsconfig it compiled and how many source files (and how many of the UI's files) it covered, and warns
+when that tsconfig compiles under half of the files the UI entry points reach, when the baseline has
+errors of its own, when workspace dependencies ("workspace:*") have no built output (build the
+workspace first), and when the pages' browser code is inline scripts in HTML template literals that
+no type checker sees. Without --tsconfig, the tsconfig nearest most UI entry points is compiled when
+that is a nested project (app/tsconfig.json beside app/next.config.ts), not the root's.
 --scope ui (default) compiles only the UI entry points (Next.js page/layout/error files, src/main.*,
 the scripts index.html loads; see ui_graph.py) and what they import, plus declaration files: tests,
 scripts and modules no page imports are left out. --scope all compiles the whole project.
@@ -46,6 +52,7 @@ sys.dont_write_bytecode = True  # importing a sibling must not write __pycache__
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ui_graph import (load_jsonc, graph as ui_graph, walk as walk_repo, is_solution, ui_project, references,  # noqa: E402
                       is_tool_config)
+from recon import node_server_model  # noqa: E402
 
 TSC_LINE = re.compile(r'^(?P<file>.+?)\((?P<line>\d+),(?P<col>\d+)\):\s+error\s+(?P<code>TS\d+):\s+(?P<msg>.*)$')
 NULL_CODES = {'TS2531', 'TS2532', 'TS2533', 'TS18047', 'TS18048', 'TS18049', 'TS2722', 'TS2721'}
@@ -128,7 +135,11 @@ def parse_tsc(output: str, root: Path) -> list[dict]:
 
 def compiled_files(output: str, root: Path) -> int:
     """How many of the repository's own source files a `tsc --listFiles` run compiled (not node_modules or lib files)."""
-    n = 0
+    return len(compiled_list(output, root))
+
+def compiled_list(output: str, root: Path) -> list[str]:
+    """The repository's own source files (relative paths) a `tsc --listFiles` run compiled."""
+    out = []
     for line in output.splitlines():
         s = line.strip()
         if not s or TSC_LINE.match(s) or not re.search(r'\.(tsx?|jsx?|mts|cts|mjs|cjs|vue|svelte)$', s):
@@ -139,8 +150,8 @@ def compiled_files(output: str, root: Path) -> int:
         except (ValueError, OSError):
             continue
         if 'node_modules' not in rel.parts and not s.endswith('.d.ts'):
-            n += 1
-    return n
+            out.append(rel.as_posix())
+    return out
 
 DEFAULT_TSC = 'npx --no-install tsc'
 SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'out', '.next', '.nuxt', 'coverage', 'vendor', '__pycache__',
@@ -196,9 +207,73 @@ def checkjs_config(args, root: Path) -> tuple[Path | None, dict | None, str | No
     return path, {'mode': 'checkJs', 'generated_config': path.as_posix(), 'js_files': len(files),
                   'extends_jsconfig': jsconfig.exists()}, None
 
+def nearest_config(root: Path, entries: list[str]) -> Path | None:
+    """The tsconfig.json nearest most UI entry points (walking up from each to the root), when that is not the
+    root's own: a Next.js app nested in app/ keeps its tsconfig (with its jsx and "@/*" paths) beside
+    app/next.config.ts, while the root tsconfig.json may compile only the test suites."""
+    votes: dict[Path, int] = {}
+    for e in entries:
+        d = (root / e).parent
+        while True:
+            if (d / 'tsconfig.json').is_file():
+                votes[d / 'tsconfig.json'] = votes.get(d / 'tsconfig.json', 0) + 1
+                break
+            if d == root or root not in d.parents:
+                break
+            d = d.parent
+    if not votes:
+        return None
+    best, n = max(votes.items(), key=lambda kv: kv[1])
+    return best if best.parent != root and n * 2 > len(entries) else None
+
+
+def unbuilt_workspace_packages(root: Path) -> list[str]:
+    """Workspace dependencies ("workspace:*") whose installed package points its types/main/exports at files
+    that do not exist (an unbuilt dist/): the compile then reports every import of them as an error."""
+    out = []
+    deps = {}
+    for d in (root, *root.parents):
+        pkg = _pkg(d)
+        deps.update({k: v for k, v in {**(pkg.get('dependencies') or {}), **(pkg.get('devDependencies') or {})}.items()
+                     if isinstance(v, str) and v.startswith('workspace:') and k not in deps})
+        if (d / 'pnpm-workspace.yaml').exists() or pkg.get('workspaces'):
+            break
+    for name in sorted(deps):
+        pdir = root / 'node_modules' / name
+        try:
+            meta = json.loads((pdir / 'package.json').read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        targets = [meta.get(k) for k in ('types', 'typings', 'main', 'module') if isinstance(meta.get(k), str)]
+        exp = meta.get('exports')
+        stack = [exp]
+        while stack and len(targets) < 40:
+            x = stack.pop()
+            if isinstance(x, str):
+                targets.append(x)
+            elif isinstance(x, dict):
+                stack.extend(x.values())
+            elif isinstance(x, list):
+                stack.extend(x)
+        targets = [t for t in targets if t.startswith('.') and '*' not in t]
+        if targets and not any((pdir / t).exists() for t in targets):
+            out.append(name)
+    return out
+
+
 def cmd_tsc(args, root: Path) -> dict:
-    tsconfig = (root / args.tsconfig).resolve()
     extra: dict = {}
+    if args.tsconfig:
+        tsconfig = (root / args.tsconfig).resolve()
+    else:
+        tsconfig = (root / 'tsconfig.json').resolve()
+        g0 = ui_graph(root)
+        nested = nearest_config(root, g0['entries'])
+        if nested is not None:
+            extra['project_note'] = (f"compiled {nested.relative_to(root).as_posix()}, the tsconfig nearest the UI entry "
+                                     f"points (not the root's {tsconfig.name}); pass --tsconfig to choose another")
+            tsconfig = nested
+    args.tsconfig = args.tsconfig or 'tsconfig.json'
     if tsconfig.exists() and is_solution(tsconfig):
         # a solution tsconfig ("files": [] + "references") compiles nothing itself, and extending it gives
         # none of the app's compiler options (jsx, paths, target): use the referenced project for the app
@@ -282,7 +357,31 @@ def cmd_tsc(args, root: Path) -> dict:
         return result('tsc-strict', 'errored', note='tsc failed without diagnostics', output=strict_out[-2000:])
     if base_rc not in (0, 1, 2) or (base_rc and not base):
         return result('tsc-strict', 'errored', note='the baseline tsc run failed without diagnostics', output=base_out[-2000:])
-    covered = compiled_files(base_out, root)
+    compiled = compiled_list(base_out, root)
+    covered = len(compiled)
+    extra['tsconfig'] = tsconfig.relative_to(root).as_posix() if tsconfig.is_relative_to(root) else tsconfig.as_posix()
+    warnings = []
+    g = ui_graph(root) if extra.get('mode') != 'checkJs' else None
+    ui = set(g['reachable'] or []) if g else set()
+    if ui:
+        hit = sum(1 for f in compiled if f in ui)
+        extra['ui_files_compiled'] = hit
+        if hit * 2 < len([f for f in ui if not f.endswith('.d.ts')]):
+            warnings.append(f"{extra['tsconfig']} compiled {hit} of the {len(ui)} file(s) the UI entry points reach "
+                            f"({covered} source file(s) in all): it is probably not the tsconfig that builds the UI. "
+                            'Pass the UI project with --tsconfig')
+    unbuilt = unbuilt_workspace_packages(root)
+    if unbuilt:
+        extra['unbuilt_workspace_packages'] = unbuilt
+    if unbuilt and base:  # only worth a warning when the baseline has errors they may explain
+        warnings.append(f"workspace package(s) {', '.join(unbuilt[:5])} have no built output (their types/main/exports "
+                        'files are missing): every import of them is a baseline error. Build the workspace first, '
+                        'then rerun')
+    server = node_server_model(root, [f for f in walk_repo(root) if f.suffix in ('.js', '.mjs', '.cjs', '.ts', '.mts')])
+    if server and server['inline_scripts']:
+        warnings.append(f"the pages' browser code is {server['inline_scripts']} inline <script> block(s) inside HTML "
+                        f"template literals ({', '.join([t['file'] for t in server['templates'] if t['inline_scripts']][:3])}), which no type "
+                        'checker sees: this compile covers the server and test code, not that browser code')
     if not covered:
         # zero errors from a compile of zero files is not a result
         return result('tsc-strict', 'errored', **extra, baseline_config=base_cfg_path.as_posix(), compiled_files=0,
@@ -290,9 +389,15 @@ def cmd_tsc(args, root: Path) -> dict:
                            'scope); 0 new errors would mean nothing. Pass the project that compiles the app with --tsconfig')
     extra['compiled_files'] = covered
     if len(base) > 50:
-        extra['warning'] = (f'the baseline compile already has {len(base)} errors: if the repository\'s own type check is '
-                            'clean, this is not the tsconfig its build uses (wrong compiler options or paths), and the '
-                            'new errors are unreliable; pass the right project with --tsconfig')
+        warnings.insert(0, f'the baseline compile already has {len(base)} errors: if the repository\'s own type check is '
+                           'clean, this is not the tsconfig its build uses (wrong compiler options or paths), and the '
+                           'new errors are unreliable; pass the right project with --tsconfig')
+    elif base:
+        warnings.append(f'the baseline compile of {extra["tsconfig"]} has {len(base)} error(s) of its own; new errors are '
+                        'counted against it, so check that it is the tsconfig the build uses')
+    if warnings:
+        extra['warning'] = warnings[0]
+        extra['warnings'] = warnings
     seen = {(e['file'], e['line'], e['column'], e['code']) for e in base}
     new = [e for e in strict if (e['file'], e['line'], e['column'], e['code']) not in seen]
     version = run(tsc + ['--version'], root, 60)[1].strip()
@@ -466,7 +571,9 @@ def main() -> int:
         s.add_argument('--out', type=Path)
         s.add_argument('--scope', choices=['ui', 'all'], default='ui',
                        help='ui (default): only files reachable from UI entry points; all: the whole project')
-    sub.choices['tsc'].add_argument('--tsconfig', default='tsconfig.json')
+    sub.choices['tsc'].add_argument('--tsconfig', default=None,
+                                    help='the project to compile (default: tsconfig.json, or the tsconfig nearest the UI '
+                                         'entry points when that is a nested project such as app/tsconfig.json)')
     sub.choices['tsc'].add_argument('--tsc', default=DEFAULT_TSC)
     sub.choices['eslint'].add_argument('--paths', nargs='*')
     sub.choices['eslint'].add_argument('--eslint', default='npx --no-install eslint')
@@ -482,6 +589,12 @@ def main() -> int:
         args.out.write_text(text + '\n', encoding='utf-8')
         extra = f", {out.get('new_errors', len(out['candidates']))} new error(s)" if out['status'] == 'ran' else f": {out.get('note', '')}"
         print(f"{out['tool']}: {out['status']}{extra} -> {args.out}")
+        if out.get('tsconfig'):  # always say what was compiled, so a wrong project is visible
+            print(f"  compiled {out['tsconfig']}: {out.get('compiled_files', 0)} source file(s)"
+                  + (f", {out['ui_files_compiled']} of them reachable from the UI" if 'ui_files_compiled' in out else '')
+                  + (f", baseline errors {out['baseline_errors']}" if 'baseline_errors' in out else ''))
+        for w in out.get('warnings') or ([out['warning']] if out.get('warning') else []):
+            print(f'  WARN: {w}')
     else:
         print(text)
     return 0

@@ -30,8 +30,17 @@ to app/ and pages/ at its root or under src/.
 Router boundaries count: a route's errorElement / ErrorBoundary (React Router 6.4+ and 7, Remix), a
 route module's exported ErrorBoundary, TanStack Router's errorComponent and react-error-boundary's
 withErrorBoundary. Modules that read import.meta.env / process.env and throw at module scope are
-listed in module_scope_config: they fail on import, before any boundary renders. A FastAPI service
-with no UI is site.kind "api".
+listed in module_scope_config: they fail on import, before any boundary renders (Node server and CLI
+modules are left out, and a module no UI entry point imports has reachable_from_ui false). A FastAPI
+service with no UI is site.kind "api".
+
+A Node HTTP server that renders pages itself (node:http createServer, Express, Fastify, Koa) from HTML
+template literals is a multi_page / per_script site with site.served_by "node_server" and site.server:
+its routes come from pathname comparisons, case '/x':, app.get('/x') and '/path': handler tables in the
+server and the modules it imports; /api/*, JSON and non-GET handlers are api_endpoints. A directory
+holding next.config.* is a Next.js project root even without its own package.json. A test-named
+directory (e2e/, tests/) with its own package manifest is a package, not tests. Comment lines never
+count as persisted-state uses.
 """
 from __future__ import annotations
 import argparse, json, re, sys
@@ -40,13 +49,13 @@ from pathlib import Path
 
 sys.dont_write_bytecode = True  # importing a sibling must not write __pycache__ into the skill folder
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from ui_graph import projects, next_path_in_project  # noqa: E402
+from ui_graph import (projects, next_path_in_project, project_of, note_packages, in_test_dir, node_role,  # noqa: E402
+                      graph as ui_graph, resolve as resolve_import, IMPORT, NEXT_CONFIG)
 from scan_pitfalls import mask_code  # noqa: E402
 
 SKIP_DIRS = {'.git', 'node_modules', 'dist', 'build', 'out', '.next', '.nuxt', '.svelte-kit', '.output', 'coverage',
              'vendor', 'Pods', 'Carthage', 'DerivedData', '.gradle', '.dart_tool', '.idea', '.vscode', '__pycache__',
              'storybook-static', '.expo', 'venv', '.venv', 'target', '.turbo', '.cache'}
-TEST_PART = re.compile(r'(^|/)(tests?|__tests__|__mocks__|e2e|cypress|playwright|androidTest|integration_test|\w*UITests?)(/|$)')
 TEST_NAME = re.compile(r'(\.|_)(test|spec|stories)\.\w+$|Tests?\.(swift|kt|java)$|_test\.dart$|\.d\.ts$', re.I)
 CODE_EXT = {'.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.vue', '.svelte', '.kt', '.java', '.swift', '.dart'}
 Q = r'["\'`]'
@@ -57,6 +66,7 @@ FASTAPI_APP = re.compile(r'^(\w+)\s*(?::\s*[\w.]+\s*)?=\s*(?:fastapi\.)?FastAPI\
 # configuration read from import.meta.env (Vite) or process.env at module scope, next to a top-level throw:
 # it runs on import, before any boundary renders, so a missing or bad value blanks the app (B1)
 ENV_READ = re.compile(r'\bimport\.meta\.env\b|\bprocess\.env\b')
+COMMENT_LINE = re.compile(r'^\s*(//|/\*|\*|#|<!--)')
 CONTROL_BLOCK = re.compile(r'(?:\b(?:if|else|try|catch|finally)\b\s*(?:\([^{};]*\))?|\}\s*)\s*$')
 
 
@@ -201,6 +211,8 @@ def detect_platforms(root: Path, files: list[Path]) -> tuple[list[str], dict]:
             plats.add('android')
             if m:
                 targets['android_min_sdk'] = {'value': int(m.group(1)), 'file': rel}
+        elif NEXT_CONFIG.match(f.name):  # a Next.js project, possibly nested below the package that depends on next
+            plats.add('nextjs')
         elif f.name == 'AndroidManifest.xml':
             plats.add('android')
         elif f.name == 'project.pbxproj':
@@ -293,12 +305,102 @@ def html_page(root: Path, f: Path) -> dict:
             page['error_page_relative_urls'] = rels
     return page
 
-def site_model(root: Path, files: list[Path], platforms: list[str]) -> dict:
+# A Node server that renders HTML itself (node:http createServer, Express, Fastify, Koa): routes are
+# pathname comparisons, Express-style app.get('/x') calls, `case '/x':` branches, or an object of
+# '/path': handler entries in the server or a module it imports; pages are HTML template literals.
+PATH_CHECK = re.compile(r'''\b(?:pathname|url|path)\s*===?\s*["'`](/[^"'`\s]*)["'`]''')
+CASE_PATH = re.compile(r'''\bcase\s+["'`](/[^"'`\s]*)["'`]\s*:''')
+EXPRESS_ROUTE = re.compile(r'''\b(?:app|router|server|fastify)\.(get|post|put|patch|delete|all|route)\s*\(\s*["'`](/[^"'`]*)["'`]''')
+TABLE_KEY = re.compile(r'''^[ \t]*["'](/[^"'\s]*)["']\s*:''', re.M)
+METHOD_ON_LINE = re.compile(r'''\bmethod\s*===?\s*["'](GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)["']''')
+HTML_IN_TEMPLATE = re.compile(r'`[^`]*?<(?:!doctype|html|body|main|h1|form|div|section|nav)\b', re.I | re.S)
+INLINE_SCRIPT_TAG = re.compile(r'<script\b(?![^>]*\bsrc\s*=)[^>]*>', re.I)
+SRC_SCRIPT_TAG = re.compile(r'<script\b[^>]*\bsrc\s*=', re.I)
+JSON_RESPONSE = re.compile(r'application/json|JSON\.stringify|\.json\s*\(')
+SERVER_IMPORT_DEPTH = 4
+
+
+def node_server_model(root: Path, code: list[Path]) -> dict | None:
+    """Pages served by a Node HTTP server from HTML template literals (no framework, no .html files): the
+    server modules, the modules they import (followed through relative imports), the routes they serve
+    and the inline scripts in their templates. None when there is no such server."""
+    servers = [f for f in code if f.suffix in ('.js', '.mjs', '.cjs', '.ts', '.mts') and node_role(read(f), f.name) == 'server']
+    if not servers:
+        return None
+    modules: dict[Path, Path] = {}  # module -> the server that reaches it
+    for s in servers:
+        todo = [(s.resolve(), 0)]
+        while todo:
+            f, depth = todo.pop()
+            if f in modules or not f.is_relative_to(root) or 'node_modules' in f.parts:
+                continue
+            modules[f] = s
+            if depth >= SERVER_IMPORT_DEPTH:
+                continue
+            for m in IMPORT.finditer(read(f)):
+                if m.group(1).startswith('.'):
+                    t = resolve_import(m.group(1), f, root, [])
+                    if t is not None:
+                        todo.append((t.resolve(), depth + 1))
+    routes, api, templates, seen = [], [], [], set()
+    inline_total = 0
+    for f, server in sorted(modules.items(), key=lambda kv: str(kv[0])):
+        rel = f.relative_to(root).as_posix()
+        text = read(f)
+        if in_test_dir(rel):
+            continue
+        lines = text.splitlines()
+        hits = []
+        for rx, det in ((PATH_CHECK, 'node-path-check'), (CASE_PATH, 'node-path-check'), (EXPRESS_ROUTE, 'node-route-call'),
+                        (TABLE_KEY, 'node-route-table')):
+            for m in rx.finditer(text):
+                path = m.group(m.lastindex)
+                ln = line_of(text, m.start())
+                if COMMENT_LINE.match(lines[ln - 1] if lines else ''):
+                    continue
+                hits.append((path, ln, det, m))
+        for path, ln, det, m in hits:
+            if (path, rel) in seen:
+                continue
+            seen.add((path, rel))
+            near = '\n'.join(lines[ln - 1:ln + 4])
+            method = METHOD_ON_LINE.search(lines[ln - 1]) if lines else None
+            method = method.group(1) if method else (m.group(1).upper() if det == 'node-route-call' and
+                                                     m.group(1) not in ('all', 'route') else None)
+            entry = {'kind': 'route', 'path': path, 'file': rel, 'line': ln, 'detector': det,
+                     'server': server.relative_to(root).as_posix()}
+            if method:
+                entry['method'] = method
+            if path.startswith('/api/') or (det != 'node-route-table' and JSON_RESPONSE.search(near)
+                                             and not HTML_IN_TEMPLATE.search(near)):
+                api.append(entry)
+            elif method in (None, 'GET', 'HEAD'):
+                routes.append(entry)
+            else:
+                api.append(entry)  # a form POST handler: server code, not a page
+        if HTML_IN_TEMPLATE.search(text):
+            inline = len(INLINE_SCRIPT_TAG.findall(text))
+            inline_total += inline
+            templates.append({'file': rel, 'inline_scripts': inline, 'script_src': len(SRC_SCRIPT_TAG.findall(text))})
+    if not templates and not routes:
+        return None
+    return {'servers': sorted(s.relative_to(root).as_posix() for s in servers),
+            'modules': len(modules), 'routes': routes, 'api_endpoints': api,
+            'templates': templates, 'inline_scripts': inline_total}
+
+
+def site_model(root: Path, files: list[Path], platforms: list[str], code: list[Path] | None = None) -> dict:
     """Single-page app, server-rendered framework, or a static multi-page site where each page loads its own scripts."""
-    html = [f for f in files if f.suffix.lower() in ('.html', '.htm') and not TEST_PART.search(f.relative_to(root).as_posix())]
+    html = [f for f in files if f.suffix.lower() in ('.html', '.htm') and not in_test_dir(f.relative_to(root).as_posix())]
     fw = sorted(set(platforms) & (SPA_PLATFORMS | SSR_PLATFORMS))
     if fw:
-        return {'kind': 'ssr' if set(fw) & SSR_PLATFORMS else 'spa', 'frameworks': fw, 'html_pages': len(html)}
+        out = {'kind': 'ssr' if set(fw) & SSR_PLATFORMS else 'spa', 'frameworks': fw, 'html_pages': len(html)}
+        projs = projects(root, files)
+        server = node_server_model(root, [c for c in code or [] if next_path_in_project(
+            c.relative_to(root).as_posix(), projs) is None])
+        if server:  # a Node server beside the framework app (a monorepo's fixture site): listed, not the site model
+            out['server'] = server
+        return out
     if set(platforms) & {'android', 'ios', 'flutter'}:
         return {'kind': 'native', 'frameworks': [], 'html_pages': len(html)}
     if 'fastapi' in platforms and len(html) <= 3:
@@ -306,6 +408,15 @@ def site_model(root: Path, files: list[Path], platforms: list[str]) -> dict:
         return {'kind': 'api', 'frameworks': ['fastapi'], 'html_pages': len(html),
                 'note': 'An API service, not a UI: a throw in a handler is an HTTP 500, not a UI crash. Hunt crashes in '
                         'the UI that calls it, and use its OpenAPI document (contracts) as that UI\'s contract.'}
+    server = node_server_model(root, code or [])
+    if server:
+        # server-rendered pages without a framework: each response is a document whose inline scripts run on
+        # their own, like a static multi-page site
+        return {'kind': 'multi_page', 'frameworks': [], 'served_by': 'node_server', 'server': server,
+                'html_pages': len(html), 'page_groups': [], 'scripts': [], 'pages': [], 'pages_listed': 0,
+                'content_rendered_by_js': [],
+                'inline_script_pages': sum(1 for t in server['templates'] if t['inline_scripts']),
+                'error_pages': []}
     if not html:
         return {'kind': 'unknown', 'frameworks': [], 'html_pages': 0}
     pages = [html_page(root, f) for f in html]
@@ -351,19 +462,28 @@ def next_path(seg: str) -> str:
         parts.append(re.sub(r'^\((\.{1,3}|\.\.\)\(\.\.)\)', '', p))
     return '/' + '/'.join(x for x in parts if x)
 
-def nextjs_model(root: Path, code: list[Path]) -> dict:
+def nextjs_model(root: Path, code: list[Path], projs: dict[str, dict]) -> dict:
     """Next.js structure that decides blast radius: layouts (the root layout renders around every page
     and sits outside every error.tsx; only global-error catches it), templates, not-found and loading
-    files, middleware/proxy, next/dynamic imports, and route handlers (API code, not UI)."""
+    files, middleware/proxy, next/dynamic imports, and route handlers (API code, not UI). File conventions
+    are matched on the path inside the Next.js project (the directory of next.config.*, or the package.json
+    that depends on next), so a project nested in app/ (`next build app`) is read like one at the root."""
     layouts, special, handlers, dynamic, middleware = [], [], [], [], []
     for f in code:
-        rel = f.relative_to(root).as_posix()
-        m = NEXT_SPECIAL.match(rel)
+        full = f.relative_to(root).as_posix()
+        rel = next_path_in_project(full, projs)
         text = read(f)
+        if rel is None:
+            for x in DYNAMIC.finditer(text):
+                tail = text[x.end():x.end() + 200]
+                ssr = re.match(r'\s*,\s*\{[^}]*\bssr\s*:\s*false', tail)
+                dynamic.append({'file': full, 'line': line_of(text, x.start()), 'import': x.group(1), 'ssr': not bool(ssr)})
+            continue
+        m = NEXT_SPECIAL.match(rel)
         if m:
             seg = re.sub(r'^(src/)?app', '', m['dir'])
             d = DEFAULT_EXPORT.search(text)
-            entry = {'kind': m['kind'], 'file': rel, 'line': line_of(text, d.start()) if d else 1, 'path': next_path(seg),
+            entry = {'kind': m['kind'], 'file': full, 'line': line_of(text, d.start()) if d else 1, 'path': next_path(seg),
                      'client': bool(re.match(r'\s*["\']use client["\']', text))}
             if m['kind'] == 'layout':
                 entry['root'] = seg.strip('/') == '' or all(p.startswith('(') for p in seg.strip('/').split('/'))
@@ -379,17 +499,17 @@ def nextjs_model(root: Path, code: list[Path]) -> dict:
                 else:  # export { handler as GET, POST }
                     methods += re.findall(r'(?:\bas\s+|^|,\s*)(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b', x.group(2).strip())
             path = next_path(h['seg']) if h['seg'] is not None else '/' + re.sub(r'/index$', '', h['api'])
-            handlers.append({'path': path, 'file': rel, 'methods': sorted(set(methods)), 'line': 1})
+            handlers.append({'path': path, 'file': full, 'methods': sorted(set(methods)), 'line': 1})
         if re.match(r'^(src/)?(middleware|proxy)\.(ts|js|mts|mjs)$', rel):
             mm = re.search(r'\bmatcher\s*:\s*(\[[^\]]*\]|["\'][^"\']*["\'])', text, re.S)
-            middleware.append({'file': rel, 'line': line_of(text, mm.start()) if mm else 1,
+            middleware.append({'file': full, 'line': line_of(text, mm.start()) if mm else 1,
                                'matcher': ' '.join(mm.group(1).split())[:300] if mm else None,
                                'note': 'Runs before every matched request (pages and API): redirects, auth and rate limits '
                                        'here change what a probe sees, and a throw here fails every matched page.'})
         for x in DYNAMIC.finditer(text):
             tail = text[x.end():x.end() + 200]
             ssr = re.match(r'\s*,\s*\{[^}]*\bssr\s*:\s*false', tail)
-            dynamic.append({'file': rel, 'line': line_of(text, x.start()), 'import': x.group(1), 'ssr': not bool(ssr)})
+            dynamic.append({'file': full, 'line': line_of(text, x.start()), 'import': x.group(1), 'ssr': not bool(ssr)})
     return {'layouts': sorted(layouts, key=lambda l: l['file']), 'special_files': sorted(special, key=lambda s: s['file']),
             'middleware': middleware, 'dynamic_imports': dynamic,
             'route_handlers': sorted(handlers, key=lambda h: h['path']),
@@ -414,12 +534,15 @@ def main() -> int:
         return 2
     files = list(walk(root))
     platforms, targets = detect_platforms(root, files)
+    note_packages(root, files)  # a test-named directory with its own package manifest is a package, not tests
     code = [f for f in files if f.suffix in CODE_EXT and not TEST_NAME.search(f.name) and not is_bundle(f)
-            and not TEST_PART.search(f.relative_to(root).as_posix())]
+            and not in_test_dir(f.relative_to(root).as_posix())]
 
     routes, boundaries, data_layer, persisted, contracts, env_config = [], [], {}, [], [], []
     code_set = set(code)
     projs = projects(root, files)
+    g = ui_graph(root, files)  # which modules a UI entry point imports, for module_scope_config
+    reach = set(g['reachable']) if g['reachable'] is not None else None
     data_rx = {k: re.compile(v) for k, v in DATA_LAYER.items()}
     pers_rx = {k: re.compile(v) for k, v in PERSISTED.items()}
     for f in code:
@@ -438,7 +561,7 @@ def main() -> int:
             elif re.search(r'(^|/)page\.\w+$|^(src/)?pages/', sub):
                 routes.append({'kind': 'route', 'path': next_path(re.sub(r'^(src/)?(app|pages)/?|/?page\.\w+$|\.\w+$', '', sub)),
                                'file': rel, 'line': 1, 'detector': 'nextjs-file'})
-        handler = bool(NEXT_HANDLER.match(rel))
+        handler = bool(NEXT_HANDLER.match(sub if sub is not None else rel))
         router_file = bool(ROUTER_FILE.search(text)) and not NOT_ROUTER_FILE.search(text) and not handler
         for det, rx in ROUTE_RX:
             if det == 'route-object' and not router_file:
@@ -473,22 +596,32 @@ def main() -> int:
                                    'covers': [ROUTE_BOUNDARY_COVERS[kind]]})
         if f.suffix in ('.js', '.jsx', '.mjs', '.ts', '.tsx') and ENV_READ.search(text) and 'throw' in text:
             throws = module_scope_throws(mask_code(text))
-            if throws:
+            role = node_role(text, f.name)  # a Node server or CLI script fails its own process, never the UI
+            if throws and not role:
+                ui_reached = reach is None or rel in reach
                 env_config.append({'file': rel, 'line': line_of(text, throws[0]),
                                    'reads': sorted(set(re.findall(r'(?:import\.meta|process)\.env\.(\w+)', text)))[:20],
-                                   'note': 'reads environment configuration and throws at module scope: this runs when the '
-                                           'module is imported, before any error boundary renders, so a missing or invalid '
-                                           'value blanks the app (B1) wherever the module is imported'})
+                                   'reachable_from_ui': ui_reached if reach is not None else None,
+                                   'note': ('reads environment configuration and throws at module scope: this runs when the '
+                                            'module is imported, before any error boundary renders, so a missing or invalid '
+                                            'value blanks the app (B1) wherever the module is imported') if ui_reached else
+                                           ('reads environment configuration and throws at module scope, but no UI entry point '
+                                            'imports it: it cannot blank the app unless it is loaded in a way the import graph '
+                                            'does not follow (a computed import)')})
         for k, rx in data_rx.items():
             n = len(rx.findall(text))
             if n:
                 d = data_layer.setdefault(k, {'uses': 0, 'files': []})
                 d['uses'] += n
                 d['files'].append(rel)
+        lines = text.splitlines()
         for k, rx in pers_rx.items():
             for m in rx.finditer(text):
+                line = lines[line_of(text, m.start()) - 1] if lines else ''
+                if COMMENT_LINE.match(line):  # "a todo list kept in localStorage" in a comment is not a use
+                    continue
                 persisted.append({'store': k, 'file': rel, 'line': line_of(text, m.start()),
-                                  'snippet': text.splitlines()[line_of(text, m.start()) - 1].strip()[:160]})
+                                  'snippet': line.strip()[:160]})
     for f in files:
         rel = f.relative_to(root).as_posix()
         if f.suffix in ('.graphql', '.gql') or f.name in ('schema.graphql',):
@@ -499,7 +632,7 @@ def main() -> int:
                 contracts.append({'kind': 'openapi', 'file': rel})
         elif f.suffix == '.prisma':
             contracts.append({'kind': 'prisma', 'file': rel})
-        elif f.suffix == '.py' and not TEST_PART.search(rel) and not TEST_NAME.search(f.name) and \
+        elif f.suffix == '.py' and not in_test_dir(rel) and not TEST_NAME.search(f.name) and \
                 not re.search(r'(^|/)test_\w+\.py$', rel):
             text = read(f)
             m = FASTAPI_APP.search(text) if 'FastAPI' in text else None
@@ -532,6 +665,13 @@ def main() -> int:
         if key not in seen:
             seen.add(key)
             uniq_routes.append(r)
+    site = site_model(root, files, platforms, code)
+    if site.get('server'):  # pages a Node server renders from template literals
+        listed = {r['path'] for r in uniq_routes}
+        for r in site['server']['routes']:
+            if r['path'] not in listed:
+                listed.add(r['path'])
+                uniq_routes.append(dict(r))
     if args.journey_map and args.journey_map.exists():
         jm = json.loads(args.journey_map.read_text(encoding='utf-8'))
         prio: dict[str, str] = {}
@@ -542,10 +682,9 @@ def main() -> int:
         for r in uniq_routes:
             if r['path'] in prio:
                 r['journey_priority'] = prio[r['path']]
-    site = site_model(root, files, platforms)
     nextjs = None
     if 'nextjs' in platforms:
-        nextjs = nextjs_model(root, code)
+        nextjs = nextjs_model(root, code, projs)
         handler_files = {h['file'] for h in nextjs['route_handlers']}
         uniq_routes = [r for r in uniq_routes if r['file'] not in handler_files]
         for lay in nextjs['layouts']:
@@ -556,7 +695,7 @@ def main() -> int:
                                             'client components (and their next/dynamic imports) run on every page.'})
         for b in boundaries:
             if b.get('framework') == 'nextjs' and b['kind'] == 'route_file':
-                seg = re.sub(r'^(src/)?app|/(global-)?error\.\w+$', '', b['file'])
+                seg = re.sub(r'^(src/)?app|/(global-)?error\.\w+$', '', next_path_in_project(b['file'], projs) or b['file'])
                 b['covers'] = (['every page and the root layout (replaces the whole document)'] if b['scope'] == 'app' else
                                [f"pages under {next_path(seg)} and nested segments (not the layout in its own folder)"])
     static = site['kind'] in ('multi_page', 'single_page_static')
@@ -590,7 +729,17 @@ def main() -> int:
         for e in site['error_pages']:
             notes.append(f"{e['file']} is served for any missing URL but loads {len(e['relative_urls'])} asset(s) by relative URL "
                          f"({', '.join(e['relative_urls'][:3])}): at a nested path they resolve under that path and fail.")
-        if site['inline_script_pages']:
+        if site.get('served_by') == 'node_server':
+            sv = site['server']
+            notes.append(f"Pages are rendered by a Node HTTP server ({', '.join(sv['servers'][:3])}) from HTML template "
+                         f"literals in {len(sv['templates'])} module(s), with {sv['inline_scripts']} inline <script> "
+                         f"block(s) inside the templates: {len({r['path'] for r in sv['routes']})} page route(s) and "
+                         f"{len({(r['path'], r.get('method')) for r in sv['api_endpoints']})} "
+                         'API or form endpoint(s) listed from pathname checks and route tables. The browser code lives '
+                         'inside template strings, which scan_pitfalls.py, strict_overlay.py and ESLint do not read: '
+                         'read those scripts yourself, or probe the pages. The server modules themselves are server '
+                         'code (a throw there is an HTTP 500), not UI.')
+        elif site['inline_script_pages']:
             notes.append(f"{site['inline_script_pages']} page(s) have inline scripts, which scan_pitfalls.py does not read.")
     else:
         native = set(platforms) & {'android', 'ios', 'flutter', 'react-native', 'expo'}
@@ -602,12 +751,20 @@ def main() -> int:
                  {'model': 'unknown', 'note': 'No framework, app platform or HTML pages recognised; decide by reading the code.'})
         notes = ['No error boundary or global handler found: any uncaught render error is app-fatal (B1).'] \
             if not boundaries and site['kind'] != 'api' else []
+        if site.get('server'):
+            sv = site['server']
+            notes.append(f"A Node HTTP server ({', '.join(sv['servers'][:3])}) also renders pages from HTML template "
+                         f"literals ({len({r['path'] for r in sv['routes']})} route(s), {sv['inline_scripts']} inline "
+                         '<script> block(s)): those pages are per_script (an uncaught error stops only its own script), '
+                         'and their browser code is inside template strings that the static tools do not read.')
         if any(b['kind'] in ('route_prop', 'route_module') for b in boundaries):
             notes.append('Router error boundaries (errorElement / ErrorBoundary / errorComponent on routes) catch render, '
                          'loader and lazy-import errors in their route and its children: a throw under one is B2 '
                          '(screen_replaced), not B1. Code above the router (providers, the root render, module-scope '
                          'code) is outside them.')
     for e in env_config:
+        if e.get('reachable_from_ui') is False:
+            continue
         notes.append(f"{e['file']}:{e['line']} reads environment configuration and throws at module scope: a missing "
                      'or invalid value blanks the app on import, before any boundary renders (B1).')
     out = {
@@ -630,7 +787,9 @@ def main() -> int:
     text = json.dumps(out, indent=2, ensure_ascii=False)
     if args.out:
         args.out.write_text(text + '\n', encoding='utf-8')
-        print(f"platforms: {', '.join(platforms) or 'unknown'} | site: {site['kind']} ({site['html_pages']} HTML page(s)) | "
+        served = (f", plus pages a Node server renders from {len(site['server']['templates'])} template module(s)"
+                  if site.get('server') else '')
+        print(f"platforms: {', '.join(platforms) or 'unknown'} | site: {site['kind']} ({site['html_pages']} HTML page(s){served}) | "
               f"blast radius: {blast['model']} | routes/screens: {len(uniq_routes)} | boundaries: {len(boundaries)} | "
               f"contracts: {len(contracts)} | persisted-state uses: {len(persisted)} -> {args.out}")
     else:
