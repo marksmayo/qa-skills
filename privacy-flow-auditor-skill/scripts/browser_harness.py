@@ -46,6 +46,9 @@ Config (dict):
     allowed_hosts         further hosts to let through: ["cdn.example.com", "*.example-cdn.net"]
     service_workers       allow (default) or block, for every page unless new_page() says otherwise
     rate_limit_seconds    0.5 between page loads; 429/503 back off (Retry-After) up to max_retries times
+    settle_seconds        8 (default): the longest goto() waits for the network to go quiet after load. Event
+                          streams, WebSockets and requests open over 2 s (long polls, a dev server's reload
+                          channel) don't hold it up; h.events names those once
     auth                  {"storage_state": file} or {"login": {"url", "steps": [...], "wait_for"}};
                           login steps use {"fill": sel, "env": NAME}, so credentials never appear in output;
                           an identity provider the login redirects to must be listed in allowed_hosts.
@@ -287,6 +290,9 @@ class Harness:
         self._logs: dict[int, dict] = {}
         self._contexts: dict[int, object] = {}
         self._cdp: dict[int, object] = {}
+        self._inflight: dict[int, dict] = {}       # page -> {request: start time} for settle()
+        self._long_lived_noted: set[str] = set()
+        self.settle_cap_s = float(cfg.get('settle_seconds', 8))
 
     def __enter__(self):
         from playwright.sync_api import sync_playwright
@@ -422,6 +428,12 @@ class Harness:
         page.on('pageerror', lambda e: log['page_errors'].append({'name': getattr(e, 'name', 'Error'), 'message': str(e)}))
         page.on('requestfailed', lambda r: log['failed_requests'].append({'method': r.method, 'url': r.url.split('?')[0],
                                                                           'failure': r.failure}))
+        inflight: dict = {}
+        self._inflight[id(page)] = inflight
+        page.on('request', lambda r: inflight.__setitem__(r, time.monotonic())
+                if r.resource_type not in ('eventsource', 'websocket') else None)
+        page.on('requestfinished', lambda r: inflight.pop(r, None))
+        page.on('requestfailed', lambda r: inflight.pop(r, None))
         if clock:
             page.clock.install(time=clock)
         if cpu_throttle or network:
@@ -468,6 +480,7 @@ class Harness:
     def close_page(self, page, trace_path: Path | None = None) -> None:
         ctx = self._contexts.pop(id(page))
         self._cdp.pop(id(page), None)
+        self._inflight.pop(id(page), None)
         if self._logs[id(page)]['trace']:
             if trace_path:
                 ctx.tracing.stop(path=str(trace_path))
@@ -514,11 +527,44 @@ class Harness:
             self.settle(page)
             return {'ok': status is None or status < 400, 'status': status, 'final_url': page.url}
 
-    def settle(self, page, idle_ms: int = 300, max_ms: int = 5000):
-        try:
-            page.wait_for_load_state('networkidle', timeout=8000)
-        except Exception:
-            self.events.append({'url': page.url, 'event': 'network did not go idle within 8s', 'at': now()})
+    def settle(self, page, idle_ms: int = 300, max_ms: int = 5000, quiet_ms: int = 500, long_ms: int = 2000):
+        """Wait for the network to go quiet, then for the DOM to stop changing (idle_ms without a mutation, at most
+        max_ms). Quiet means no request in flight for quiet_ms, not counting event streams and WebSockets, nor a
+        request open longer than long_ms (a long poll, such as a dev server's reload channel): Playwright's
+        networkidle never arrives on such pages. A request ignored as long-lived is named once in h.events; the
+        whole wait is capped at settle_seconds (config, default 8), which is also logged."""
+        inflight = self._inflight.get(id(page))
+        if inflight is None:   # a page this harness did not open
+            try:
+                page.wait_for_load_state('networkidle', timeout=int(self.settle_cap_s * 1000))
+            except Exception:
+                self.events.append({'url': page.url, 'event': f'network did not go idle within {self.settle_cap_s:g}s',
+                                    'at': now()})
+        else:
+            t0 = last_busy = time.monotonic()
+            long_lived: set[str] = set()
+            while True:
+                t = time.monotonic()
+                busy = False
+                for req, started in list(inflight.items()):
+                    if t - started < long_ms / 1000:
+                        busy = True
+                    else:
+                        long_lived.add(req.url.split('?')[0])
+                if busy:
+                    last_busy = t
+                if t - last_busy >= quiet_ms / 1000:
+                    break
+                if t - t0 >= self.settle_cap_s:
+                    self.events.append({'url': page.url, 'event': f'network did not go quiet within {self.settle_cap_s:g}s',
+                                        'at': now()})
+                    break
+                page.wait_for_timeout(100)
+            new = sorted(long_lived - self._long_lived_noted)
+            if new:
+                self._long_lived_noted.update(new)
+                self.events.append({'url': page.url, 'event': 'settled without waiting for long-lived request(s) open '
+                                    f'over {long_ms / 1000:g}s (long polls): ' + ', '.join(new[:5]), 'at': now()})
         page.evaluate("""([idle, max]) => new Promise(res => { let t = setTimeout(res, idle); const stop = setTimeout(res, max);
             new MutationObserver(() => { clearTimeout(t); t = setTimeout(() => { clearTimeout(stop); res(); }, idle); })
               .observe(document, {subtree: true, childList: true, attributes: true}); })""", [idle_ms, max_ms])
