@@ -14,31 +14,31 @@ Status: **stopped**. State: `qa-orchestrator-skill/examples/state`.
 
 ## G1 Ready (approved)
 
-- ticket-readiness-reviewer: `ticket-readiness-reviewer-skill/examples/batch.example.json` (SHA-256 33738c161950..., validator exit 0: VALID)
+- ticket-readiness-reviewer: `ticket-readiness-reviewer-skill/examples/batch.example.json` (SHA-256 07f3417353b9..., validator exit 0: VALID)
 - criterion readiness-valid: **pass** (validator exited 0 and the report is unchanged)
 - criterion ticket-ready: **pass** (reviews[ticket.key=SHOP-201].verdict.value = 'ready' (allowed ['ready', 'ready_with_questions']))
-- decision: approved by QA lead (in chat, after reading the SHOP-201 review) at 2026-11-11T14:23:22Z
+- decision: approved by QA lead (in chat, after reading the SHOP-201 review) at 2026-11-13T11:19:24Z
 
 ## G2 Designed (approved)
 
 - test-case-designer: `test-case-designer-skill/examples/test_cases.example.json` (SHA-256 50edec126467..., validator exit 0: test-case-designer-skill\examples\test_cases.example.json: valid. 42 case(s) for 5 of 5 criteria; rows 52/52 covered, 0 infeasible; 2 question(s))
 - criterion cases-valid: **pass** (validator exited 0 and the report is unchanged)
 - criterion all-rows-covered: **pass** (summary.rows_covered = 52, summary.rows_total = 52)
-- decision: approved by QA lead (in chat; Q-1 and Q-2 go to the product owner before G3) at 2026-11-11T14:23:23Z
+- decision: approved by QA lead (in chat; Q-1 and Q-2 go to the product owner before G3) at 2026-11-13T11:19:26Z
 
 ## G3 Verified in CI (approved)
 
 - ci-suite-runner: `ci-suite-runner-skill/examples/runs/checkout-staging/suite_run.json` (SHA-256 f2a78e49af10..., validator exit 0: examples\runs\checkout-staging\suite_run.json: valid. checkout-regression on staging: triggered (preauth), completed failure; 2 of 3 passed)
-- ci-failure-triager: `ci-failure-triager-skill/examples/triage.example.json` (SHA-256 331846f24999..., validator exit 0: ci-failure-triager-skill\examples\triage.example.json: valid. 4 failure(s): real 1, flaky 1, environment 1, data 1; 2 draft(s), 1 re-run(s), evidence completeness 1.0)
+- ci-failure-triager: `ci-failure-triager-skill/examples/triage.example.json` (SHA-256 077cd3185eda..., validator exit 0: ci-failure-triager-skill\examples\triage.example.json: valid. 4 failure(s): real 1, flaky 1, environment 1, data 1; 2 draft(s), 1 re-run(s), evidence completeness 1.0)
 - criterion suite-valid: **pass** (validator exited 0 and the report is unchanged)
 - criterion triage-valid: **pass** (validator exited 0 and the report is unchanged)
 - criterion no-failed-tests: **fail** (results.totals.failed = 1, needs == 0)
 - criterion no-real-failures: **fail** (summary.by_classification.real = 1, needs == 0)
-- decision: approved with override by QA lead (in chat, 2026-11-12) at 2026-11-11T14:23:24Z; override: The failing test and the real failure are drafted as defects in the triage report; the QA lead accepts them into G4, where the release gate decides
+- decision: approved with override by QA lead (in chat, 2026-11-12) at 2026-11-13T11:19:29Z; override: The failing test and the real failure are drafted as defects in the triage report; the QA lead accepts them into G4, where the release gate decides
 
 ## G4 Release ready (rejected)
 
-- release-readiness-gate: `release-readiness-gate-skill/examples/rc-2026.11.2/gate_report.json` (SHA-256 6a24b94656de..., validator exit 0: release-readiness-gate-skill\examples\rc-2026.11.2\gate_report.json: valid. verdict no_go; 7 blocker(s), 1 waived, 2 missing, 1 warning(s); completeness 0.71, confidence medium)
+- release-readiness-gate: `release-readiness-gate-skill/examples/rc-2026.11.2/gate_report.json` (SHA-256 84c9ea3cf685..., validator exit 0: release-readiness-gate-skill\examples\rc-2026.11.2\gate_report.json: valid. verdict no_go; 7 blocker(s), 1 waived, 2 missing, 1 warning(s); completeness 0.71, confidence medium)
 - criterion gate-valid: **pass** (validator exited 0 and the report is unchanged)
 - criterion gate-go: **fail** (headline.verdict = 'no_go' (allowed ['go']))
-- decision: rejected by Release manager (release meeting, 2026-11-12) at 2026-11-11T14:23:24Z; reason: Seven blockers, including three security P0s and the stale crash report; no release until a fresh gate report shows them fixed
+- decision: rejected by Release manager (release meeting, 2026-11-12) at 2026-11-13T11:19:30Z; reason: Seven blockers, including three security P0s and the stale crash report; no release until a fresh gate report shows them fixed
