@@ -10,6 +10,10 @@
 Git mode diffs the merge base of --base and HEAD against the working tree (uncommitted and
 untracked files included) with rename detection; --committed-only diffs <merge base>...HEAD.
 --diff reads a unified diff (git or plain) whose new side is the current state of --repo.
+--last-merges N takes only the last N merges' own changes (each merge's diff against its first parent;
+in a squash-merge history, the last N first-parent commits): direct commits between or after them are
+left out, and line numbers are HEAD's. If a later commit edited the same lines, the files the merges
+changed are diffed whole instead, with a warning.
 --repo may be a subdirectory of the git repository (one package of a monorepo): git mode uses
 `git diff --relative`, and a --diff whose paths start from the git top level is re-rooted at
 --repo, so paths resolve against it and changes outside it are left out (with a warning). A
@@ -96,6 +100,57 @@ def git(repo: Path, *args: str) -> str:
     if res.returncode:
         raise SystemExit(f'git {" ".join(args)} failed: {res.stderr.strip()}')
     return res.stdout
+
+
+def changes_of_commits(repo: Path, commits: list[str]) -> tuple[str, str, str | None]:
+    """The diff of just these commits' own changes (each one's first-parent diff, `C^1..C`), in HEAD's line numbers:
+    a scratch index starts from HEAD, each commit's change is reverse-applied to it, and the resulting tree is
+    diffed against HEAD. Commits outside the list (direct commits before or after a merge) are left out. When a
+    later commit touched the same lines of a file so the reversal does not apply, that file alone falls back to
+    the oldest commit's parent...HEAD, with a warning naming it. (diff text, command, warning or None)"""
+    import os, tempfile
+    top = Path(git(repo, 'rev-parse', '--show-toplevel').strip())
+    objects = Path(git(repo, 'rev-parse', '--git-common-dir').strip())
+    objects = (objects if objects.is_absolute() else (repo / objects)).resolve() / 'objects'
+    base = commits[-1] + '^1'
+    failed: list[str] = []
+    with tempfile.TemporaryDirectory(prefix='diff-scope-') as d:
+        # a scratch index and object store (the repository's objects as an alternate): nothing is written to the repo
+        (Path(d) / 'objects').mkdir()
+        env = {**os.environ, 'GIT_INDEX_FILE': str(Path(d) / 'index'), 'GIT_OBJECT_DIRECTORY': str(Path(d) / 'objects'),
+               'GIT_ALTERNATE_OBJECT_DIRECTORIES': str(objects)}
+
+        def g(where, *args, stdin=None):
+            res = subprocess.run(['git', '-C', str(where), *args], input=stdin, capture_output=True, env=env)
+            if res.returncode and args[0] not in ('apply',):
+                raise SystemExit(f'git {" ".join(args)} failed: {res.stderr.decode("utf-8", "replace").strip()}')
+            return res
+        g(top, 'read-tree', 'HEAD')
+        for c in commits:
+            patch = g(top, 'diff', '--binary', '--full-index', '--no-color', '--no-ext-diff', '--no-renames', f'{c}^1', c).stdout
+            for chunk in re.split(rb'(?m)^(?=diff --git )', patch):
+                m = re.match(rb'diff --git a/(.+?) b/(.+)\r?\n', chunk)
+                if not m:
+                    continue
+                path = m.group(2).decode('utf-8', 'replace').strip('"')
+                if path in failed:
+                    continue
+                if g(top, 'apply', '--cached', '-R', '--whitespace=nowarn', stdin=chunk).returncode:
+                    failed.append(path)
+                    g(top, 'reset', '-q', 'HEAD', '--', f':(top){path}')   # this file falls back to base...HEAD
+        # the scratch index (HEAD without the commits' changes) against HEAD, reversed: HEAD's line numbers
+        text = g(repo, 'diff', '-R', '--cached', '-M', '--relative', '--no-color', '--no-ext-diff', 'HEAD').stdout.decode(
+            'utf-8', 'replace')
+    command = (f'git diff -M --relative <HEAD without the changes of {len(commits)} commit(s)> HEAD '
+               f'(commits {", ".join(c[:9] for c in commits)})')
+    if not failed:
+        return text, command, None
+    text += git(repo, 'diff', '-M', '--relative', '--no-color', '--no-ext-diff', f'{base}...HEAD', '--',
+                *[f':(top){p}' for p in failed])
+    return text, command + f', plus {base}...HEAD for {len(failed)} file(s)', (
+        f'later commits changed the same lines as the selected commit(s) in {len(failed)} file(s) '
+        f'({", ".join(failed[:5])}{", ..." if len(failed) > 5 else ""}), so their changes could not be separated '
+        f'there: those files are diffed from {base} to HEAD, which also includes other commits\' edits to them')
 
 
 def strip_prefix(p: str) -> str | None:
@@ -368,9 +423,14 @@ def heuristic_functions(text: str) -> list[dict]:
                         break
                 if not opened:
                     continue
-            out.append({'name': m.group(1), 'qualname': m.group(1), 'start': start, 'end': end})
+            recv = GO_METHOD.match(line)   # Go: (w *IndexWriter) EndCancelled -> IndexWriter.EndCancelled
+            qual = f'{recv.group(1)}.{m.group(1)}' if recv and recv.group(2) == m.group(1) else m.group(1)
+            out.append({'name': m.group(1), 'qualname': qual, 'start': start, 'end': end})
             break
     return out
+
+
+GO_METHOD = re.compile(r'^\s*func\s+\(\s*(?:\w+\s+)?\*?\s*([A-Za-z_]\w*)(?:\[[^\]]*\])?\s*\)\s*([A-Za-z_]\w*)')
 
 
 def js_blank(text: str) -> str:
@@ -725,6 +785,44 @@ def self_test() -> int:
             ok = got == want
             failed += not ok
             print(f"{'PASS' if ok else 'FAIL'} --since-release {glob or ''}: {got}" + ('' if ok else f'  [expected {want}]'))
+    go_src = ('package report\n\nfunc (w *IndexWriter) EndCancelled(seq int) error {\n\treturn nil\n}\n\n'
+              'func (r Reader[T]) EndCancelled() {\n}\n\nfunc helper() {\n}\n')
+    got = [f['qualname'] for f in functions('report/index.go', go_src)[0]]
+    ok = got == ['IndexWriter.EndCancelled', 'Reader.EndCancelled', 'helper']
+    failed += not ok
+    print(f"{'PASS' if ok else 'FAIL'} Go methods are qualified by their receiver type: {got}")
+    with tempfile.TemporaryDirectory() as d:   # --last-merges takes the merges' changes, not later direct commits
+        repo = Path(d)
+        env_git = ['-c', 'user.name=t', '-c', 'user.email=t@example.test', '-c', 'commit.gpgsign=false',
+                   '-c', 'init.defaultBranch=main', '-c', 'core.autocrlf=false']
+        run = lambda *a: subprocess.run(['git', '-C', d, *env_git, *a], capture_output=True, text=True)  # noqa: E731
+        run('init', '-q')
+        lines = [f'line {i}' for i in range(1, 11)]
+        (repo / 'fares.txt').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+        (repo / 'notes.txt').write_text('notes\n', encoding='utf-8')
+        run('add', '.'); run('commit', '-q', '-m', 'base')
+        run('checkout', '-q', '-b', 'feature')
+        lines[4] = 'line 5 changed by the feature'
+        (repo / 'fares.txt').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+        run('commit', '-q', '-am', 'feature change')
+        run('checkout', '-q', 'main')
+        (repo / 'notes.txt').write_text('notes\nbefore the merge\n', encoding='utf-8')
+        run('commit', '-q', '-am', 'direct commit before the merge')
+        run('merge', '-q', '--no-ff', '-m', 'merge feature', 'feature')
+        (repo / 'notes.txt').write_text('notes\nbefore the merge\nafter the merge\n', encoding='utf-8')
+        (repo / 'fares.txt').write_text('head 1\nhead 2\nhead 3\n' + '\n'.join(lines) + '\n', encoding='utf-8')
+        run('commit', '-q', '-am', 'direct commit after the merge')
+        out = repo / 'scope.json'
+        try:
+            main(['--repo', d, '--last-merges', '1', '--out', str(out)])
+            res = json.loads(out.read_text(encoding='utf-8'))
+            got = [(f['path'], f['ranges']) for f in res['files']]
+        except (SystemExit, Exception) as e:   # noqa: BLE001
+            got = repr(e)
+        ok = got == [('fares.txt', [[8, 8]])]
+        failed += not ok
+        print(f"{'PASS' if ok else 'FAIL'} --last-merges 1 is the merge's own change, in HEAD's line numbers: {got}"
+              + ('' if ok else "  [expected [('fares.txt', [[8, 8]])]]"))
     print(f'{failed} failed' if failed else 'ALL PASS')
     return 1 if failed else 0
 
@@ -738,8 +836,10 @@ def main(argv=None) -> int:
     ap.add_argument('--diff', type=Path, help='read this unified diff instead of running git')
     ap.add_argument('--committed-only', action='store_true', help='git mode: <merge base>...HEAD, no working-tree changes')
     ap.add_argument('--last-merges', type=int, metavar='N',
-                    help='git mode: the changes of the last N merges into HEAD (first-parent history), committed only. '
-                         'In a squash-merge history (no merge commits) the last N first-parent commits are used')
+                    help='git mode: the changes of the last N merges into HEAD (first-parent history), committed only: '
+                         "each merge's first-parent diff, in HEAD's line numbers, without direct commits made between "
+                         'or after them. In a squash-merge history (no merge commits) the last N first-parent commits '
+                         'are used')
     ap.add_argument('--since-release', action='store_true',
                     help='git mode: diff from the newest release tag that HEAD contains (v1.2.3, 1.2.3, name@1.2.3, '
                          '@scope/name@1.2.3, name-v1.2.3; the shapes changesets, semantic-release and lerna write), '
@@ -771,12 +871,14 @@ def main(argv=None) -> int:
             ap.error('--last-merges takes a positive number')
         merges = git(repo, 'rev-list', '--first-parent', '--merges', '-n', str(args.last_merges), 'HEAD').split()
         if len(merges) == args.last_merges:
+            selected = merges
             args.base = merges[-1] + '^1'
             how = f'the last {args.last_merges} merge(s) on the first-parent history'
         else:
             commits = git(repo, 'rev-list', '--first-parent', '-n', str(args.last_merges + 1), 'HEAD').split()
             if len(commits) <= args.last_merges:
                 raise SystemExit(f'--last-merges {args.last_merges}: the history has only {len(commits)} commit(s)')
+            selected = commits[:-1]
             args.base = commits[-1]
             how = (f'the last {args.last_merges} first-parent commit(s): only {len(merges)} merge commit(s) were found, '
                    'so the history is read as squash merges')
@@ -799,10 +901,16 @@ def main(argv=None) -> int:
         # --relative: when --repo is a subdirectory of the git repository, paths come relative to it (and changes
         # outside it are left out), so they resolve against --repo
         text = git(repo, 'diff', '-M', '--relative', '--no-color', '--no-ext-diff', *rng)
+        command = 'git diff -M --relative ' + ' '.join(rng)
+        if args.last_merges is not None:   # only the merges' own changes, not direct commits between or after them
+            text, command, why = changes_of_commits(repo, selected)
+            if why:
+                warnings.append(f'--last-merges {args.last_merges}: {why}')
         source = {'kind': 'git', 'diff_file': None, 'base_ref': args.base, 'merge_base': merge_base, 'head': head,
-                  'command': 'git diff -M --relative ' + ' '.join(rng), 'working_tree': not args.committed_only}
+                  'command': command, 'working_tree': not args.committed_only}
         if args.last_merges is not None:
             source['last_merges'] = args.last_merges
+            source['commits'] = selected
         if release_tag:
             source['since_release'] = release_tag
         untracked = [] if args.committed_only else git(repo, 'ls-files', '--others', '--exclude-standard').splitlines()
