@@ -119,9 +119,44 @@ def validate(t: dict, where: Path) -> tuple[int, str]:
     return r.returncode, r.stdout + r.stderr
 
 
+def go_signature_checks(fails: list) -> None:
+    """Go and lint failures, extracted from synthetic logs, must reach the class their evidence gives."""
+    import io, contextlib
+    run = {'run': {'id': 1, 'commit': SHA, 'started_at': '2026-03-02T10:00:00Z'}, 'attempts': [{'n': 1, 'jobs': []}], 'history': []}
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        (d / 'logs').mkdir()
+        rjobs = []
+        for i, (name, (script, step, body)) in enumerate(extract_failures.GO_LOGS.items(), 30):
+            (d / 'logs' / f'{i}.txt').write_text(extract_failures._gh_log([(script, [script], body)]), encoding='utf-8')
+            rjobs.append({'id': i, 'name': name, 'conclusion': 'failure', 'junit': [], 'log': f'logs/{i}.txt', 'log_status': 'fetched',
+                          'steps': [{'number': 1, 'name': 'Set up job', 'conclusion': 'success'}, {'number': 2, 'name': step, 'conclusion': 'failure'}]})
+        run['attempts'][0]['jobs'] = rjobs
+        got = {}
+        with contextlib.redirect_stderr(io.StringIO()):
+            for f in extract_failures.extract(d, run, 1):
+                sg = signals(f, run, d)
+                got[f['job']] = decide(sg, None)[:2] + (sorted(h['id'] for h in sg['signatures']),)
+    want = {'go-unit': ('real', 'indicated', []), 'go-timeout': ('unclassified', 'low', []), 'go-build': ('real', 'indicated', ['REAL-COMPILE']),
+            'go-json': ('real', 'indicated', []), 'go-race': ('real', 'indicated', ['REAL-RACE']), 'go-lint': ('real', 'indicated', ['REAL-LINT']),
+            'go-lint-annotation': ('real', 'indicated', ['REAL-LINT']), 'go-fmt': ('real', 'indicated', ['REAL-FORMAT'])}
+    for k, w in want.items():
+        if got.get(k) != w:
+            fails.append(f'go signatures: {k} gave {got.get(k)}, expected {w}')
+    for text, sid in (('go: downloading example.test/units v1.2.0', None),
+                      ('go: example.test/units@v1.2.0: Get "https://proxy.golang.org/example.test/units/@v/v1.2.0.zip": dial tcp: lookup proxy.golang.org on 127.0.0.53:53: no such host', 'ENV-DNS'),
+                      ('go: example.test/units@v1.2.0: reading https://proxy.golang.org/example.test/units/@v/v1.2.0.mod: 502 Bad Gateway', 'ENV-REGISTRY'),
+                      ('FAIL\texample.test/fares/pkg/zones [setup failed]', None)):
+        f = {'message': text, 'log_excerpt': {'lines': []}, 'job': 'x', 'kind': 'step', 'step_kind': 'setup'}
+        ids = [h['id'] for h in signals(f, run, Path('.'))['signatures']]
+        if (ids[:1] or [None])[0] != sid:
+            fails.append(f'go signatures: {text[:60]!r} matched {ids}, expected {sid}')
+
+
 def main() -> int:
     global RUN
     fails = []
+    go_signature_checks(fails)
     for mod in (fetch_run, extract_failures):
         import io, contextlib
         buf = io.StringIO()
