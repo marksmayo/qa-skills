@@ -1118,6 +1118,9 @@ def self_test() -> int:
             checks.append(('node-test with --repo-root records repository-relative ids',
                            code == 0 and ids == ['packages/cart/tests/cart.test.mjs::cart > adds',
                                                  'packages/cart/tests/cart.test.mjs::cart > fails'], (code, ids)))
+            plats = [r.get('platform') for r in data['runs']]
+            checks.append(('each run records the platform it ran on, so platform-only failures are not read as flaky',
+                           bool(plats) and all(p == sys.platform for p in plats), plats))
             code = main(['--preset', 'node-test', '--npm-script', 'test', '--cwd', str(pkg), '--repo-root', str(root),
                          '--out', str(out), '--tests', 'packages/cart/tests/cart.test.mjs::cart > fails'])
             data = json.loads(out.read_text(encoding='utf-8'))
@@ -1337,6 +1340,7 @@ def main(argv=None) -> int:
                                  seed if args.order == 'shuffle' else None, notes)
             run['variation'] = {**variation, 'seed': seed if args.order == 'shuffle' else None}
             run['code_hash'] = chash
+            run['platform'] = sys.platform
             data['runs'].append(run)
             data['cases'] += cases
             existing.add(run_id)
