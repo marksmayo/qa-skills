@@ -23,11 +23,29 @@ parameters), Flask blueprints, and Azure Functions HTTP routes and triggers (blo
 Bus, Event Hub, timer). Azure DevOps pipelines are listed in ci_workflows next to GitHub Actions,
 with their triggers, runtime parameters, service connections and environments.
 
+GitHub Actions triggers are read only from the workflow's `on:` block, so `issues: write` under
+`permissions:` and a job named `release:` are not triggers. Composite actions (`action.yml` /
+`action.yaml` under .github/ or at the root) are listed in ci_workflows too, with the inputs their
+`run:` steps expand directly.
+
+Node command-line tools, MCP servers and local listeners are entry points with a local tier:
+package.json `bin` entries and commander/yargs/parseArgs/process.argv dispatch (`cli`), MCP tools
+registered with `registerTool`/`server.tool` (`mcp_tool`, with the transport: stdio or HTTP),
+`http.createServer`/`net.createServer`/`WebSocketServer` listeners with their bind host
+(`listener`: loopback, all interfaces or unknown), and config files a tool loads from the working
+directory (`config_input`: cosmiconfig, lilconfig, a JSON/YAML config read from disk, or a config
+module loaded with import()). Agent permission handlers (ACP `requestPermission`) are review leads.
+
+A directory named e2e, test(s), spec, playwright or cypress is test code unless it is a package of
+its own (see test_paths.py): a pnpm workspace package named e2e is product code. Entry points under
+examples/, samples/ or demos/ carry `example: true`, and frameworks seen only there, or used only as
+a client (a GraphQL client calling someone else's API), are labelled so in `frameworks`.
+
 Everything here is a regex-level first pass. The agent confirms entry points and auth by reading
 the code; an 'unknown' auth value means the script could not tell, not that the route is public.
 """
 from __future__ import annotations
-import argparse, json, re, sys
+import argparse, json, re, sys, time
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -36,17 +54,17 @@ sys.dont_write_bytecode = True  # importing a sibling must not write __pycache__
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import nextjs_auth  # noqa: E402
 import py_routes  # noqa: E402
+import test_paths  # noqa: E402
 
 SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'out', '.next', '.nuxt', '.svelte-kit', '.turbo', '.cache', 'coverage',
              'vendor', 'Pods', '.gradle', '__pycache__', '.venv', 'venv', '.tox', 'site-packages', 'target', 'bin', 'obj',
              '.terraform', '.idea'}
 LANG = {'.py': 'Python', '.js': 'JavaScript', '.jsx': 'JavaScript', '.mjs': 'JavaScript', '.cjs': 'JavaScript',
-        '.ts': 'TypeScript', '.tsx': 'TypeScript', '.java': 'Java', '.kt': 'Kotlin', '.go': 'Go', '.rb': 'Ruby',
+        '.ts': 'TypeScript', '.tsx': 'TypeScript', '.mts': 'TypeScript', '.cts': 'TypeScript', '.java': 'Java', '.kt': 'Kotlin', '.go': 'Go', '.rb': 'Ruby',
         '.php': 'PHP', '.cs': 'C#', '.swift': 'Swift', '.m': 'Objective-C', '.c': 'C', '.h': 'C/C++', '.cc': 'C++',
         '.cpp': 'C++', '.rs': 'Rust', '.scala': 'Scala', '.dart': 'Dart', '.vue': 'Vue', '.svelte': 'Svelte',
         '.tf': 'Terraform', '.sql': 'SQL'}
-TEST_PATH = re.compile(r'(^|/)(tests?|spec|__tests__|__mocks__|e2e|cypress|playwright|fixtures|testdata)(/|$)|(^|/)test_[^/]*$|'
-                       r'_test\.\w+$|\.(test|spec)\.\w+$|(^|/)(vitest|jest|playwright)\.(setup|config)\.\w+$|(^|/)setupTests\.\w+$', re.I)
+# Test code: test_paths.Classifier (a directory named e2e or tests that is a package of its own is product code).
 CONFIG_FILE = re.compile(r'(^|/)[\w-]+\.config\.\w+$')
 MANIFESTS = {'requirements.txt', 'requirements-dev.txt', 'pyproject.toml', 'Pipfile', 'Pipfile.lock', 'poetry.lock',
              'setup.py', 'setup.cfg', 'package.json', 'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'go.mod',
@@ -61,7 +79,16 @@ FRAMEWORKS = [  # (name, regex over source)
     ('chi', r'github\.com/go-chi/chi'), ('Rails', r'Rails\.application|ActionController'), ('Laravel', r'Illuminate\\'),
     ('ASP.NET Core', r'Microsoft\.AspNetCore'), ('GraphQL', r'\btype\s+(Query|Mutation)\s*\{|graphql'),
     ('SQLAlchemy', r'\bsqlalchemy\b'), ('Prisma', r'@prisma/client'), ('Celery', r'\bcelery\b'),
+    ('MCP server', r'@modelcontextprotocol/(?:sdk|server)|\bnew\s+McpServer\s*\(|\bFastMCP\s*\('),
+    ('commander', r'from ["\']commander["\']|require\(["\']commander["\']\)'),
+    ('yargs', r'from ["\']yargs(?:/[\w/]+)?["\']|require\(["\']yargs["\']\)'),
 ]
+# GraphQL counts as a server framework only with a schema or a server library; otherwise it is a client.
+GRAPHQL_SERVER = re.compile(r'ApolloServer|graphql-yoga|createYoga|\bbuildSchema\s*\(|makeExecutableSchema|new\s+GraphQLSchema|'
+                            r'\btypeDefs\b|\btype\s+(Query|Mutation)\s*\{|@nestjs/graphql|mercurius|\bgraphene\b|\bstrawberry\b|'
+                            r'\bariadne\b|graphql-http|express-graphql')
+# Example and fixture code: examples/, samples/, demos/, or a directory such as apps/web-benchmark or apps/testbed.
+EXAMPLE_DIR = re.compile(r'(^|/)((?:[\w.-]*[-_])?(?:examples?|samples?|demos?|playground|testbed|benchmarks?|sandbox)(?:[-_][\w.-]*)?)(/|$)', re.I)
 ROUTES = [  # (framework, regex, method group, path group)
     ('flask', re.compile(r'@\s*(\w+)\.(route|get|post|put|patch|delete)\(\s*["\']([^"\']*)["\']([^)]*)'), 2, 3),
     ('fastapi', re.compile(r'@\s*(\w+)\.(api_route|get|post|put|patch|delete)\(\s*["\']([^"\']*)["\']()'), 2, 3),
@@ -94,9 +121,27 @@ SECRET_CFG = re.compile(r'\b(os\.environ|os\.getenv|process\.env|System\.getenv|
                         r'[^\n]{0,40}(SECRET|KEY|TOKEN|PASSWORD|PASSWD|CREDENTIAL|DSN|DATABASE_URL)', re.I)
 QUEUE = re.compile(r'@(app\.task|shared_task|celery\.task)|@KafkaListener|@RabbitListener|@SqsListener|\.subscribe\(|'
                    r'channel\.consume\(|receive_message\(|@JmsListener|\bconsumer\s*=|Sidekiq::Worker|ApplicationJob')
-CLI = re.compile(r'@click\.command|@\w+\.command\(|typer\.Typer\(|argparse\.ArgumentParser\(|cobra\.Command\{|commander|'
+CLI = re.compile(r'@click\.command|@\w+\.command\(|typer\.Typer\(|argparse\.ArgumentParser\(|cobra\.Command\{|'
                  r'\bclap::|use\s+clap\b|#\[derive\([^)]*\b(?:Parser|Subcommand)\b|'
                  r'\b(?:std::)?env::args\s*\(|\b(?:std::)?io::stdin\s*\(')
+# Node command-line tools, MCP servers, local listeners and config files (one entry per file unless named).
+JS_EXT = {'.js', '.mjs', '.cjs', '.ts', '.mts', '.cts', '.jsx', '.tsx'}
+NODE_CLI_NAMED = re.compile(r'\.command\s*\(\s*["\'`]([\w:.-]+)')  # program.command('run'), yargs .command('init', ...)
+NODE_CLI_FILE = re.compile(r'\bnew\s+Command\s*\(|\byargs\s*\(|\bparseArgs\s*\(\s*\{|\bprocess\.argv\b|\bmeow\s*\(|\bcac\s*\(|'
+                           r'\bdefineCommand\s*\(')
+MCP_TOOL = re.compile(r'\.(registerTool|tool)\s*\(\s*(?:["\'`]([\w./:-]+)["\'`]|([\w.]+)\s*,)')
+MCP_CALL_HANDLER = re.compile(r'setRequestHandler\s*\(\s*CallToolRequestSchema')
+MCP_STDIO = re.compile(r'\bStdioServerTransport\b|\bstdio_server\b|transport\s*=\s*["\']stdio["\']')
+MCP_HTTP = re.compile(r'StreamableHTTPServerTransport|SSEServerTransport|createMcpHandler|\bmcp-handler\b|transport\s*=\s*["\'](sse|streamable-http)["\']')
+LISTENER = re.compile(r'\b(?:(?:https?|http2|net|tls)\.)?create(?:Secure)?Server\s*\(|\bnew\s+WebSocketServer\s*\(|\bnew\s+WebSocket\.Server\s*\(')
+LISTEN_CALL = re.compile(r'\.listen\s*\(([^\n]*)')
+LOOPBACK_HOST = re.compile(r'''["'`](127\.0\.0\.1|localhost|::1|\[::1\])["'`]|\b(?:host|hostname)\s*:\s*["'`](127\.0\.0\.1|localhost|::1)["'`]''')
+ANY_HOST = re.compile(r'''["'`](0\.0\.0\.0|::|\*)["'`]|\b(?:host|hostname)\s*:\s*["'`](0\.0\.0\.0|::)["'`]''')
+CONFIG_LOAD = re.compile(r'\b(cosmiconfig|lilconfig|loadConfig|c12|rc9?)\s*\(|'
+                         r'\bJSON\.parse\s*\(\s*(?:await\s+)?(?:fs\.|fsp\.|promises\.)?readFile(?:Sync)?\s*\([^\n]*conf|'
+                         r'\b(?:yaml|YAML)\.(?:load|parse)\s*\(\s*(?:await\s+)?(?:fs\.)?readFile(?:Sync)?\s*\([^\n]*conf|'
+                         r'\bimport\s*\(\s*pathToFileURL\s*\(|\bjiti\s*\(|\bcreateJiti\s*\(')
+AGENT_PERMISSION = re.compile(r'\brequestPermission\b|session/request_permission|\bonPermissionRequest\b|\bcanUseTool\b')
 UPLOAD = re.compile(r'request\.files\b|\bUploadFile\b|multer\(|MultipartFile|IFormFile|\$_FILES|upload\.(single|array|fields)\(')
 GLOBAL_AUTH = re.compile(r'before_request|before_app_request|app\.use\([^)]*(auth|session|jwt|passport)|dependencies\s*=\s*\[\s*Depends|'
                          r'MIDDLEWARE\s*=|SecurityFilterChain|authorizeHttpRequests')
@@ -108,7 +153,10 @@ CLIENT_SOURCES = [
      'public', 'query string: a crafted link sets it'),
     ('location.hash', re.compile(r'\blocation\.hash\b'), 'public', 'URL fragment: a crafted link sets it, and it never reaches the server'),
     ('location.href', re.compile(r'\b(?:document\.URL|document\.documentURI|location\.href|location\.pathname)\b(?!\s*=[^=])'), 'public', 'the page URL: a crafted link sets it'),
-    ('postMessage', re.compile(r'addEventListener\(\s*["\']message["\']|\bonmessage\s*='), 'public', 'message events: any window can post one unless event.origin is checked'),
+    # window/self message events only: ws.addEventListener('message') on a WebSocket or a worker port is not a cross-window source
+    ('postMessage', re.compile(r'(?:(?<![\w$.\])])|(?<=\bwindow\.)|(?<=\bself\.)|(?<=\bglobalThis\.))addEventListener\(\s*["\']message["\']|'
+                               r'(?:(?<![\w$.\])])|(?<=\bwindow\.)|(?<=\bself\.))onmessage\s*='), 'public',
+     'message events: any window can post one unless event.origin is checked'),
     ('document.referrer', re.compile(r'\bdocument\.referrer\b'), 'public', 'referrer: the linking page sets it'),
     ('window.name', re.compile(r'\bwindow\.name\b(?!\s*=[^=])'), 'public', 'window.name: survives navigation from another site'),
     ('web storage', re.compile(r'\b(?:localStorage|sessionStorage)\.getItem\s*\(|\b(?:localStorage|sessionStorage)\[\s*["\']'), 'unknown', 'stored values: controlled by any script on the origin, so they carry stored XSS'),
@@ -262,16 +310,73 @@ def html_client_sources(rel: str, text: str) -> list[dict]:
                 out.append(e)
     return out
 
-def ci_trigger_entries(rel: str, text: str, triggers: list[str]) -> list[dict]:
+def ci_trigger_entries(rel: str, text: str, triggers: list[str], lines_of: dict[str, int] | None = None) -> list[dict]:
     out = []
-    lines = text.splitlines()
     for t in triggers:
-        rx = re.compile(r'^\s*' + re.escape(t) + r'\s*:|^on\s*:.*\b' + re.escape(t) + r'\b')
-        line = next((i for i, l in enumerate(lines, 1) if rx.search(l)), 1)
+        line = (lines_of or {}).get(t, 1)
         auth, why = CI_TRIGGER_AUTH.get(t, ('unknown', None))
         out.append({'kind': 'ci_workflow', 'framework': 'github_actions', 'method': t, 'path': rel,
                     'handler': f'{rel}:{line}', 'function': None, 'auth': auth, 'auth_evidence': why})
     return out
+
+def gha_triggers(text: str) -> list[tuple[str, int]]:
+    """(event, line) for each event under the workflow's top-level `on:` key, and nothing else.
+
+    `on: push`, `on: [push, pull_request]` and the block form are read; keys elsewhere in the file
+    (`issues: write` under permissions, a job named `release`) are not events."""
+    lines = text.splitlines()
+    for i, l in enumerate(lines):
+        m = re.match(r'''^(?:on|"on"|'on')\s*:\s*(.*?)\s*(?:#.*)?$''', l)
+        if not m:
+            continue
+        inline = m.group(1)
+        if inline:
+            names = inline.strip('[]').split(',') if inline.startswith('[') else [inline]
+            return [(n.strip().strip('"\''), i + 1) for n in names if n.strip()]
+        out, indent = [], None
+        for j in range(i + 1, len(lines)):
+            x = lines[j]
+            if not x.strip() or x.lstrip().startswith('#'):
+                continue
+            if not x[0].isspace() and not x.startswith('-'):
+                break  # the next top-level key
+            ind = len(x) - len(x.lstrip(' -'))
+            if indent is None:
+                indent = ind
+            if ind == indent:
+                mm = re.match(r'^\s*-?\s*["\']?([\w-]+)["\']?\s*(?::|$)', x)
+                if mm:
+                    out.append((mm.group(1), j + 1))
+        return out
+    return []
+
+def composite_action_info(rel: str, text: str) -> dict | None:
+    """A composite (or JavaScript/Docker) action: its inputs, and the ones a run: step expands directly."""
+    using = re.search(r'^\s+using\s*:\s*["\']?([\w.-]+)', text, re.M)
+    if not re.search(r'^runs\s*:', text, re.M) or not using:
+        return None
+    inputs = []
+    blk = re.search(r'^inputs\s*:\s*\n((?:[ \t]+.*\n|\s*\n)*)', text + '\n', re.M)
+    if blk:
+        ind = min((len(l) - len(l.lstrip()) for l in blk.group(1).splitlines() if l.strip()), default=2)
+        inputs = [m.group(1) for m in re.finditer(rf'^ {{{ind}}}([\w-]+)\s*:', blk.group(1), re.M)]
+    in_run, lines = set(), text.splitlines()
+    for i, l in enumerate(lines):
+        if not re.match(r'^\s*-?\s*run\s*:', l):
+            continue
+        ind = len(l) - len(l.lstrip(' -'))
+        body = [l]
+        for x in lines[i + 1:]:
+            if x.strip() and len(x) - len(x.lstrip()) <= ind:
+                break
+            body.append(x)
+        in_run |= set(re.findall(r'\$\{\{\s*inputs\.([\w-]+)', '\n'.join(body)))
+    return {'file': rel, 'system': 'github_actions_composite', 'using': using.group(1), 'triggers': [], 'inputs': inputs,
+            'inputs_in_run': sorted(in_run), 'untrusted_input_triggers': [], 'write_permissions': [],
+            'uses_secrets': bool(re.search(r'\$\{\{\s*secrets\.', text))}
+
+def is_action_file(rel: str) -> bool:
+    return bool(re.search(r'(^|/)action\.ya?ml$', rel)) and ('/' not in rel or '.github/' in '/' + rel)
 
 def walk(root: Path):
     stack = [root]
@@ -408,17 +513,98 @@ def ios_entries(rel: str, text: str) -> list[dict]:
              'function': None, 'auth': 'public', 'auth_evidence': None} for s in re.findall(r'<string>([^<]+)</string>', m.group(1))]
 
 def workflow_info(rel: str, text: str) -> dict:
-    triggers = re.findall(r'^\s{0,4}(push|pull_request_target|pull_request|issue_comment|issues|workflow_run|workflow_dispatch|'
-                          r'schedule|release|discussion|discussion_comment|pull_request_review|pull_request_review_comment)\s*:', text, re.M)
-    on_inline = re.search(r'^on\s*:\s*\[?([\w, ]+)\]?\s*$', text, re.M)
-    if on_inline:
-        triggers += [t.strip() for t in on_inline.group(1).split(',')]
+    found = gha_triggers(text)
+    triggers = [t for t, _ in found]
     risky = sorted({t for t in triggers if t in ('pull_request_target', 'issue_comment', 'workflow_run', 'issues',
                                                   'discussion', 'discussion_comment', 'pull_request_review_comment')})
     perms = re.findall(r'^\s*(contents|pull-requests|issues|packages|id-token|actions|deployments)\s*:\s*write', text, re.M)
     return {'file': rel, 'triggers': sorted(set(triggers)), 'untrusted_input_triggers': risky,
             'write_permissions': sorted(set(perms)) + (['write-all'] if 'write-all' in text else []),
-            'uses_secrets': bool(re.search(r'\$\{\{\s*secrets\.', text))}
+            'uses_secrets': bool(re.search(r'\$\{\{\s*secrets\.', text)),
+            '_lines': {t: n for t, n in reversed(found)}}
+
+def framework_labels(frameworks: dict[str, list[str]], *texts: dict[str, str]) -> list[str]:
+    """Framework names, labelled when seen only in example code or (GraphQL) only as a client."""
+    out = []
+    for name, files in sorted(frameworks.items()):
+        label = name
+        if name == 'GraphQL' and not any(GRAPHQL_SERVER.search(t.get(f, '')) for f in files for t in texts):
+            label += ' (client only)'
+        if all(EXAMPLE_DIR.search(f) for f in files):
+            dirs = sorted({f[:EXAMPLE_DIR.search(f).end(2)] for f in files})
+            label += ' (examples only: ' + ', '.join(dirs[:3]) + ')'
+        out.append(label)
+    return out
+
+def bin_entries(rel: str, text: str) -> list[dict]:
+    """package.json `bin`: each command the package installs on the user's PATH."""
+    try:
+        pkg = json.loads(text)
+    except ValueError:
+        return []
+    b = pkg.get('bin') if isinstance(pkg, dict) else None
+    if not b:
+        return []
+    names = {pkg.get('name', '').split('/')[-1] or 'bin': b} if isinstance(b, str) else b if isinstance(b, dict) else {}
+    line = next((i for i, l in enumerate(text.splitlines(), 1) if re.match(r'\s*"bin"\s*:', l)), 1)
+    return [{'kind': 'cli', 'framework': 'node', 'method': 'BIN', 'path': f'{name} -> {target}', 'handler': f'{rel}:{line}',
+             'function': None, 'auth': 'unknown', 'auth_evidence': 'local invocation: the user (or a script, CI job or agent) '
+             'supplies the arguments, environment and working directory'} for name, target in names.items() if isinstance(target, str)]
+
+def node_entries(rel: str, text: str, mcp_file: bool) -> tuple[list[dict], list[dict]]:
+    """(entries, leads) for a Node or Python file: CLI dispatch, MCP tools, listeners, config loading, agent permissions."""
+    out, leads, lines = [], [], text.splitlines()
+    seen_cli = seen_cfg = False
+    for i, line in enumerate(lines, 1):
+        s = line.strip()
+        if s.startswith(('//', '*', '/*', '#')) or len(line) > 3000:
+            continue
+        js = Path(rel).suffix in JS_EXT
+        if js:
+            m = NODE_CLI_NAMED.search(line)
+            if m and (seen_cli or NODE_CLI_FILE.search(text)):
+                out.append({'kind': 'cli', 'framework': 'node', 'method': 'COMMAND', 'path': m.group(1), 'handler': f'{rel}:{i}',
+                            'function': None, 'auth': 'unknown', 'auth_evidence': 'local invocation: subcommand arguments come from the caller'})
+            elif not seen_cli and NODE_CLI_FILE.search(line) and not re.search(r'process\.argv\s*\[\s*[01]\s*\]', line):
+                seen_cli = True
+                out.append({'kind': 'cli', 'framework': 'node', 'method': 'ARGV', 'path': rel, 'handler': f'{rel}:{i}',
+                            'function': None, 'auth': 'unknown', 'auth_evidence': 'local invocation: command-line arguments'})
+            if LISTENER.search(line) and not s.startswith(('import ', 'export type', 'type ')):
+                # the bind host decides who can connect: the listen() call that follows, or the options object
+                window = '\n'.join(lines[i - 1:i + 80])
+                lc = LISTEN_CALL.search(window)
+                args = (lc.group(1) if lc else '') + ' ' + line
+                host_var = re.search(r'^\s*[\w.]+\s*,\s*(?:\w+\.)?(host|hostname|bindHost|address)\b', lc.group(1)) if lc else None
+                if host_var and re.search(rf'\b{host_var.group(1)}\s*[:=][^;\n]*["\'`](127\.0\.0\.1|localhost|::1)["\'`]', text):
+                    args += ' "127.0.0.1"'  # const host = '127.0.0.1' (or a default) earlier in the file
+                if LOOPBACK_HOST.search(args):
+                    bind, why = 'loopback', 'binds a loopback address: reachable from this machine only (check Host and Origin for DNS rebinding)'
+                elif ANY_HOST.search(args):
+                    bind, why = 'all', 'binds every interface: reachable from the network'
+                elif lc and re.match(r'\s*[\w.]*\s*(\)|,\s*(\([\w\s,:]*\)\s*=>|\w+\s*=>|function\b))', lc.group(1)):
+                    bind, why = 'all', 'listen(port) with no host: Node binds every interface by default'
+                else:
+                    bind, why = 'unknown', 'bind host not read (a variable or an options object); read the code'
+                out.append({'kind': 'listener', 'framework': 'node', 'method': 'LISTEN', 'path': f'{rel} ({bind})', 'handler': f'{rel}:{i}',
+                            'function': None, 'auth': 'unknown', 'auth_evidence': why, 'bind': bind})
+            if not seen_cfg and CONFIG_LOAD.search(line) and not s.startswith(('import ', 'export ')):
+                seen_cfg = True
+                out.append({'kind': 'config_input', 'framework': 'node', 'method': 'CONFIG', 'path': rel, 'handler': f'{rel}:{i}',
+                            'function': None, 'auth': 'unknown', 'auth_evidence': 'loads a config file from the working directory or '
+                            'a path the caller gives: whoever controls the checkout (a cloned repository, a pull request) controls it'})
+        if mcp_file:
+            m = MCP_TOOL.search(line + ' ' + (lines[i].strip() if i < len(lines) and re.search(r'\.(registerTool|tool)\s*\(\s*$', line) else ''))
+            if m:
+                out.append({'kind': 'mcp_tool', 'framework': 'mcp', 'method': 'TOOL', 'path': m.group(2) or m.group(3), 'handler': f'{rel}:{i}',
+                            'function': None, 'auth': 'unknown', 'auth_evidence': None})
+            elif MCP_CALL_HANDLER.search(line) or (not js and re.match(r'\s*@\w+\.tool\s*\(', line)):
+                out.append({'kind': 'mcp_tool', 'framework': 'mcp', 'method': 'TOOL', 'path': handler_after(lines, i) or 'tools/call',
+                            'handler': f'{rel}:{i}', 'function': handler_after(lines, i), 'auth': 'unknown', 'auth_evidence': None})
+        if AGENT_PERMISSION.search(line) and not s.startswith(('import ', 'export type', 'type ')):
+            leads.append({'area': 'access_control', 'entry_point': None,
+                          'why': f'{rel}:{i} answers an agent permission request: check what is approved without asking the user '
+                                 '(tool kinds, paths outside the workspace, shell commands) and that the default is deny'})
+    return out, leads
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -432,7 +618,12 @@ def main() -> int:
         print(f'Not a directory: {root}', file=sys.stderr)
         return 2
     langs: Counter = Counter()
-    frameworks: set[str] = set()
+    frameworks: dict[str, list[str]] = {}
+    tests = test_paths.Classifier(root)
+    node_leads: list[dict] = []
+    mcp_transport = {'stdio': [], 'http': []}
+    started = last_progress = time.monotonic()
+    files_read = 0
     entries, stores, outbound, secret_cfg, queues, clis, uploads = [], [], [], [], [], [], []
     manifests, iac, workflows, env_files = [], [], [], []
     files_total = 0
@@ -444,8 +635,14 @@ def main() -> int:
     ado_files: dict[str, str] = {}
     for p in walk(root):
         rel = p.relative_to(root).as_posix()
+        if time.monotonic() - last_progress >= 30:
+            last_progress = time.monotonic()
+            print(f'  recon: {files_read} source file(s) read in {last_progress - started:.0f}s, now in {rel.rsplit("/", 1)[0]}',
+                  file=sys.stderr, flush=True)
         if p.name in MANIFESTS:
             manifests.append(rel)
+        if p.name == 'package.json' and not tests.is_test(rel):
+            entries += bin_entries(rel, read(p))
         if p.name.startswith('.env'):
             env_files.append(rel)
         if p.name in ('Dockerfile', 'Containerfile') or p.name.startswith('Dockerfile.') or \
@@ -456,14 +653,19 @@ def main() -> int:
         if '.github/workflows/' in '/' + rel and p.suffix in ('.yml', '.yaml'):
             wtext = read(p)
             workflows.append(workflow_info(rel, wtext))
-            ci_entries += ci_trigger_entries(rel, wtext, workflows[-1]['triggers'])
+            ci_entries += ci_trigger_entries(rel, wtext, workflows[-1]['triggers'], workflows[-1].pop('_lines'))
+            continue
+        if is_action_file(rel):
+            info = composite_action_info(rel, read(p))
+            if info:
+                workflows.append(info)
             continue
         if p.suffix in ('.yml', '.yaml'):
             ytext = read(p)
             if is_ado_pipeline(rel, ytext):
                 ado_files[rel] = ytext
             continue
-        if p.suffix.lower() in HTML_EXT and not TEST_PATH.search(rel):
+        if p.suffix.lower() in HTML_EXT and not tests.is_test(rel):
             for e in html_client_sources(rel, read(p)):
                 key = (e['method'], e['snippet'])
                 if key in html_seen:  # the same inline script repeated across generated pages
@@ -485,16 +687,27 @@ def main() -> int:
         if not lang:
             continue
         files_total += 1
-        if TEST_PATH.search(rel):
+        if tests.is_test(rel):
             continue
         langs[lang] += 1
         text = read(p)
+        files_read += 1
         for i, line in enumerate(text.splitlines(), 1):
             if GLOBAL_AUTH.search(line):
                 global_hooks.append(f'{rel}:{i}')
         for name, rx in FRAMEWORKS:
             if re.search(rx, text):
-                frameworks.add(name)
+                frameworks.setdefault(name, []).append(rel)
+        mcp_file = bool(re.search(r'@modelcontextprotocol/|McpServer|FastMCP', text))
+        if mcp_file:
+            if MCP_STDIO.search(text):
+                mcp_transport['stdio'].append(rel)
+            if MCP_HTTP.search(text):
+                mcp_transport['http'].append(rel)
+        if p.suffix.lower() in JS_EXT or (p.suffix == '.py' and mcp_file):
+            eps_n, leads_n = node_entries(rel, text, mcp_file)
+            entries += eps_n
+            node_leads += leads_n
         entries += routes_in(rel, text, python_parsed=p.suffix == '.py')
         if p.suffix == '.py':
             py_files[rel] = text
@@ -546,6 +759,26 @@ def main() -> int:
         if mw['auth_check']:
             global_hooks.append(f"{mw['file']}:{mw['line']}")
     entries += queues + clis + client + ci_entries
+    # MCP tools: the transport decides who supplies the arguments (the launching client over stdio, or HTTP callers)
+    for e in entries:
+        if e['kind'] != 'mcp_tool':
+            continue
+        file = e['handler'].rsplit(':', 1)[0]
+        here = [k for k in ('stdio', 'http') if file in mcp_transport[k]]
+        transport = here or [k for k in ('stdio', 'http') if mcp_transport[k]]
+        e['transport'] = '+'.join(transport) or 'unknown'
+        if 'http' in transport:  # the listener in the same file says who can reach the HTTP endpoint
+            binds = {x['bind'] for x in entries if x['kind'] == 'listener' and x['handler'].rsplit(':', 1)[0] == file}
+            e['bind'] = 'all' if 'all' in binds else 'unknown' if not binds or 'unknown' in binds else 'loopback'
+        e['auth_evidence'] = {
+            'stdio': 'stdio transport: the client that launched the server (and any model driving it, including '
+                     'prompt-injected content) supplies the tool arguments',
+            'http': 'HTTP transport: whoever can reach the endpoint calls the tool; check the bind host, a session or token, '
+                    'and Origin/Host checks'}.get(e['transport'], 'transport not found; read the server setup')
+    # example code: shipped as documentation, not deployed by the project
+    for e in entries:
+        if EXAMPLE_DIR.search(e['handler'].rsplit(':', 1)[0]):
+            e['example'] = True
     for e in entries:  # Flask: no decorator and no app-wide hook means no auth check (FastAPI's is decided in py_routes)
         if e['framework'] == 'flask' and e['auth'] == 'unknown' and not global_hooks:
             e['auth'], e['auth_evidence'] = 'public', 'no auth decorator on the route and no app-wide auth hook found'
@@ -567,12 +800,33 @@ def main() -> int:
                           'why': f"{e['method']} {e['path']} changes state with no auth call in the handler: confirm it is meant to be public"})
         if e['kind'] in ('deep_link', 'exported_component'):
             leads.append({'area': 'mobile', 'entry_point': e['id'], 'why': f"{e['path']} is reachable by other apps: validate every intent/URL parameter"})
+        if e['kind'] == 'mcp_tool':
+            leads.append({'area': 'injection', 'entry_point': e['id'],
+                          'why': f"MCP tool {e['path']} ({e['transport']}): its arguments come from a model that untrusted content "
+                                 "can steer; check the input schema, paths and commands built from arguments, and what it can reach"})
+        if e['kind'] == 'listener':
+            leads.append({'area': 'server_side', 'entry_point': e['id'],
+                          'why': f"{e['path']}: {e['auth_evidence']}; check who can connect, a random path token or secret, "
+                                 "Host/Origin checks and what the handler does with the request"})
+        if e['kind'] == 'config_input':
+            leads.append({'area': 'injection', 'entry_point': e['id'],
+                          'why': f"{e['path']} loads a config file: check where it is searched for (parent directories, the "
+                                 "home directory), whether it is executed (a .js/.ts config) and which fields reach commands, "
+                                 "paths or URLs"})
+    leads += node_leads
     for kind in sorted({e['method'] for e in client if e['auth'] == 'public'}):
         eps = [e for e in client if e['method'] == kind]
         leads.append({'area': 'web', 'entry_point': eps[0]['id'],
                       'why': f"{kind} read in {len(eps)} file(s) ({', '.join(e['path'] for e in eps[:3])}): trace it to DOM "
                              "sinks (innerHTML, document.write, eval, location assignment) for DOM XSS and open redirects"})
     for w in workflows:
+        if w.get('system') == 'github_actions_composite':
+            if w['inputs_in_run']:
+                leads.append({'area': 'supply_chain_ci', 'entry_point': None,
+                              'why': f"{w['file']} expands input(s) {', '.join(w['inputs_in_run'][:6])} directly in run: steps; "
+                                     "a caller that passes an attacker-controlled value (a PR title, a branch name) gets shell "
+                                     "injection: pass them through env: instead"})
+            continue
         if w['untrusted_input_triggers']:
             leads.append({'area': 'supply_chain_ci', 'entry_point': None,
                           'why': f"{w['file']} runs on {', '.join(w['untrusted_input_triggers'])}: check for untrusted checkout and expression injection"})
@@ -601,7 +855,7 @@ def main() -> int:
         'generated_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
         'repository': root.name,
         'languages': dict(langs.most_common()),
-        'frameworks': sorted(frameworks),
+        'frameworks': framework_labels(frameworks, py_files, js_files),
         'source_files': files_total,
         # what a reviewer may read: source plus infrastructure and CI definitions (seed_report.py uses it)
         'files_in_scope': files_total + len({f for f in set(iac) | {w['file'] for w in workflows} if Path(f).suffix not in LANG}),

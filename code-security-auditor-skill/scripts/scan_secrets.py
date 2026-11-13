@@ -21,7 +21,11 @@ words joined by hyphens in documentation, user:password@ in a documented connect
 values in .env.example/.sample/.template unless they look like real keys, and lists of field
 names. A hard-coded fallback (getenv('KEY', 'dev-key')) always is. Low-entropy literals in test
 files go to test_fixtures (counted, not triaged); real-looking ones (a provider format, or 20+
-characters at 4+ bits per character) stay secrets. The output records elapsed_s.
+characters at 4+ bits per character) stay secrets. A test file is judged by test_paths.py: a
+workspace package named e2e (with its own package.json) is product code, not a test directory. A
+private-key header with no key body after it (a fixture that joins '-----BEGIN PRIVATE KEY-----'
+with a constant) is not a key. URL paths under a *Path key (tokenPath: '/oauth/token') are routes,
+not credential files. The output records elapsed_s.
 
 --history scans the lines added in each commit, but only file changes that touch a secret keyword
 or token prefix (git log -G), leaving out binary, lock, vendored and minified files and any
@@ -37,6 +41,10 @@ import argparse, hashlib, json, math, re, subprocess, sys, time
 from datetime import datetime, timezone
 from pathlib import Path
 
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import test_paths  # noqa: E402
+
 SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'out', '.next', '.nuxt', '.svelte-kit', '.turbo', '.cache',
              'coverage', 'vendor', 'Pods', '.gradle', '__pycache__', '.venv', 'venv', '.tox', '.mypy_cache',
              '.pytest_cache', 'site-packages', 'target', '.terraform', '.idea', '.vscode'}
@@ -46,8 +54,7 @@ SKIP_FILES = {'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'poetry.lock',
 # also left out of the history scan: more media and bundled output
 HISTORY_SKIP_EXT = SKIP_EXT | {'.avif', '.svg', '.bmp', '.tif', '.tiff', '.psd', '.webm', '.mov', '.wav', '.ogg',
                                '.otf', '.bin', '.7z', '.rar', '.bz2', '.xz', '.min.js', '.min.css'}
-TEST_PATH = re.compile(r'(^|/)(tests?|spec|__tests__|__mocks__|fixtures|testdata|e2e|cypress|playwright)(/|$)|(^|/)test_[^/]*$|'
-                       r'_test\.\w+$|\.(test|spec)\.\w+$|(^|/)(vitest|jest|playwright)\.(setup|config)\.\w+$|(^|/)setupTests\.\w+$', re.I)
+# Test files are told apart by test_paths.Classifier (a directory named e2e that is a package of its own is product code).
 # Values in .env.example / .env.sample / .env.template are documentation unless they look like real keys.
 TEMPLATE_ENV = ('.example', '.sample', '.template', '.dist')
 # Words that mark a value as an instruction or stand-in rather than a credential.
@@ -121,6 +128,14 @@ def is_public_field(key: str | None, value: str) -> bool:
         return not any(len(s) >= 20 and entropy(s) >= 3.5 for s in segments)  # a token in the path is still a secret
     return False
 
+# Absolute filesystem roots: '/run/secrets/db' is a file path, '/oauth/token' under tokenPath is a URL route.
+FS_ROOT = re.compile(r'^/(etc|var|run|home|usr|opt|tmp|srv|root|mnt|secrets|Users|private|data|config|certs?|keys?)(/|$)', re.I)
+
+def url_route(key: str | None, value: str) -> bool:
+    """A URL path under a camelCase *Path key (tokenPath: '/oauth/token', callbackPath): a route, not a file."""
+    return bool(key and re.search(r'[a-z]Path$|_path$|^path$', key.strip('"\'')) and value.startswith('/')
+                and not re.search(r'\.\w{1,8}$', value) and not FS_ROOT.match(value))
+
 def credential_path(key: str | None, value: str) -> bool:
     """True when the value is a path to a credential file (not a secret)."""
     if '://' in value:
@@ -190,6 +205,8 @@ def find_in_line(line: str, path_name: str = '', refs: list | None = None) -> li
             continue
         if template and (entropy(value) < 4.0 or len(value) < 20):
             continue  # documentation in a template env file; only a real-looking key is reported
+        if url_route(key, value):
+            continue  # a URL route such as tokenPath: '/oauth/token': neither a secret nor a credential file
         if credential_path(key, value):
             if refs is not None:
                 refs.append({'key': key, 'path': value})
@@ -221,9 +238,17 @@ def files(root: Path):
                 except OSError:
                     pass
 
+KEY_BODY = re.compile(r'[A-Za-z0-9+/=]{40,}')
+
+def header_only(lines: list[str], i: int, column: int) -> bool:
+    """A private-key header with no key body on its line or the next two (a fixture joining the header with a constant)."""
+    rest = lines[i][column:] + '\n' + '\n'.join(lines[i + 1:i + 3])
+    return not KEY_BODY.search(rest)
+
 def scan_tree(root: Path) -> tuple[list[dict], list[dict]]:
     """(secrets, credential files and references to them) in the working tree."""
     found, creds = [], []
+    tests = test_paths.Classifier(root)
     for p in files(root):
         rel = p.relative_to(root).as_posix()
         try:
@@ -236,15 +261,18 @@ def scan_tree(root: Path) -> tuple[list[dict], list[dict]]:
             creds.append({'kind': 'credential_file', 'path': rel, 'referenced_from': None, 'key': None})
         elif p.suffix.lower() == '.json' and re.search(r'"type"\s*:\s*"service_account"', text) and '"private_key"' in text:
             creds.append({'kind': 'service_account_json', 'path': rel, 'referenced_from': None, 'key': None})
-        for i, line in enumerate(text.splitlines(), 1):
+        lines = text.splitlines()
+        for i, line in enumerate(lines, 1):
             if len(line) > 3000:
                 continue
             refs: list[dict] = []
             for s in find_in_line(line, p.name, refs):
+                if s['type'] == 'private_key' and header_only(lines, i - 1, s['column'] - 1 + len(s['value'])):
+                    continue
                 found.append({'type': s['type'], 'file': rel, 'line': i, 'column': s['column'], 'key': s['key'],
                               'length': len(s['value']), 'entropy': entropy(s['value']),
                               'fingerprint': fingerprint(s['value']), 'hardcoded_fallback': s['fallback'],
-                              'in_test_path': bool(TEST_PATH.search(rel))})
+                              'in_test_path': tests.is_test(rel)})
             for r in refs:
                 target = Path(r['path'].replace('\\', '/')).expanduser()
                 resolved = target if target.is_absolute() else root / target
@@ -430,6 +458,7 @@ def main() -> int:
         print(f'Not a directory: {root}', file=sys.stderr)
         return 2
     t0 = time.monotonic()
+    tests = test_paths.Classifier(root)
     found, creds = scan_tree(root)
     t_tree = time.monotonic()
     # Low-entropy literals in test files are fixtures: counted and listed apart, not triaged one by one.
@@ -462,7 +491,7 @@ def main() -> int:
         for fp, h in sorted(hist.items()):
             if fp in at_head:
                 continue
-            h = {'fingerprint': fp, **h, 'in_test_path': all(TEST_PATH.search(f) for f in h['files']) if h['files'] else False}
+            h = {'fingerprint': fp, **h, 'in_test_path': all(tests.is_test(f) for f in h['files']) if h['files'] else False}
             (removed if not h['in_test_path'] or real_looking(h) else removed_fixtures).append(h)
 
     for s in head:

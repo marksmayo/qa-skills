@@ -24,7 +24,12 @@ A pitfall can narrow its matches with:
 A pack can also require_content / exclude_content: a file joins the pack only when its text
 matches (or doesn't match) the regex, so .json and .yml files are claimed by ARM templates and
 Azure DevOps pipelines only when they are ones.
-Test files, dependencies, build output and minified files are skipped.
+A pack can limit itself to paths with path_contains (a substring) or path_regex (a regex over the
+relative path): the github_actions pack reads workflows and composite actions (action.yml under
+.github/, or at the root of an action repository).
+Test files, dependencies, build output and minified files are skipped. A directory named e2e,
+test(s), spec, playwright or cypress is skipped only when it is not a package of its own (see
+test_paths.py): a workspace package named e2e is product code and is scanned.
 """
 from __future__ import annotations
 import argparse, json, re, sys
@@ -33,6 +38,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(HERE))
+import test_paths  # noqa: E402
+
 CATALOGUE = HERE.parent / 'data' / 'pitfalls.json'
 SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'out', '.next', '.nuxt', '.svelte-kit', '.turbo', '.cache', 'coverage', 'vendor',
              'Pods', 'DerivedData', '.gradle', '.dart_tool', '.idea', '.vscode', '__pycache__', '.venv', 'venv',
@@ -40,7 +49,7 @@ SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'out', '.next', '.nuxt', '
              'test', 'tests', '__tests__', '__mocks__', 'spec', 'e2e', 'cypress', 'testdata', 'fixtures',
              'androidTest', 'UITests', 'Tests'}
 ALLOWED_DOT_DIRS = {'.github', '.azuredevops', '.pipelines', '.azure-pipelines', '.ado'}
-TEST_FILE = re.compile(r'(^test_.*\.py$|_test\.(py|go)$|(\.|_)(test|spec)\.\w+$|Tests?\.(java|kt|swift|cs)$|\.min\.js$|'
+TEST_FILE = re.compile(r'(^test_.*\.py$|_test\.(py|go)$|(\.|_)(test|spec|e2e)\.\w+$|Tests?\.(java|kt|swift|cs)$|\.min\.js$|'
                        r'^(vitest|jest|playwright)\.(setup|config)\.\w+$|^setupTests\.\w+$)', re.I)
 COMMENT = re.compile(r'^\s*(//|/\*|\*\s|#(?!!)|<!--|--\s)')
 # Source-code extensions, to spot a repository whose dominant language has no pack scanning it.
@@ -86,12 +95,15 @@ def pack_of(path: Path, rel: str, packs: dict) -> list[str]:
     for name, pk in packs.items():
         if pk.get('path_contains') and pk['path_contains'] not in '/' + rel:
             continue
+        if pk.get('path_regex') and not re.search(pk['path_regex'], rel):
+            continue
         if (path.suffix in pk.get('extensions', []) or path.name in pk.get('filenames', [])
                 or (pk.get('filename_prefix') and path.name.startswith(pk['filename_prefix']))):
             out.append(name)
     return out
 
 def walk(root: Path, include_tests: bool = False):
+    tests = test_paths.Classifier(root)
     stack = [root]
     while stack:
         d = stack.pop()
@@ -102,7 +114,10 @@ def walk(root: Path, include_tests: bool = False):
         for p in entries:
             if p.is_dir():
                 if p.name in SKIP_DIRS and not (include_tests and p.name in ('test', 'tests', 'spec')):
-                    continue
+                    # a directory named e2e or tests that is a package of its own is product code
+                    if not (p.name.lower() in test_paths.OVERRIDABLE_DIRS
+                            and tests.product_dir(p.relative_to(root).as_posix())):
+                        continue
                 if p.name.startswith('.') and p.name not in ALLOWED_DOT_DIRS:
                     continue
                 stack.append(p)

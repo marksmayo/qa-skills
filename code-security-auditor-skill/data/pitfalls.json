@@ -1,5 +1,5 @@
 {
- "version": "1.2.0",
+ "version": "1.3.0",
  "about": "Security pitfall catalogue for scan_pitfalls.py, organised by CWE. Each entry is a pattern-level lead: a match is a candidate until a source-to-sink path is traced. cvss_hint is a typical CVSS v4.0 base vector for the weakness, to adjust per finding. tools maps rules from other scanners (tool:rule) to the entry. OWASP categories are the 2025 Top 10.",
  "owasp_2025": {
   "A01": "A01:2025 Broken Access Control",
@@ -95,7 +95,7 @@
     ".yml",
     ".yaml"
    ],
-   "path_contains": ".github/workflows/"
+   "path_regex": "(^|/)\\.github/workflows/[^/]+\\.ya?ml$|(^|/)\\.github/(.+/)?action\\.ya?ml$|^action\\.ya?ml$"
   },
   "docker": {
    "extensions": [
@@ -518,10 +518,42 @@
    "cwe": "CWE-78",
    "owasp": "A05:2025 Injection",
    "category": "injection",
-   "title": "Shell command built from runtime values",
-   "regex": "\\b(exec|execSync)\\s*\\(\\s*(`[^`]*\\$\\{|[^,)]*\\+)|\\bspawn(Sync)?\\s*\\(.*shell\\s*:\\s*true",
+   "title": "Shell command built from runtime values (exec/execSync with a template or concatenation)",
+   "regex": "(?<![\\w.$])(?:\\w*(?:process|cp|childProcess)\\.)?(exec|execSync)\\s*\\(\\s*(`[^`]*\\$\\{|[^,)]*\\+)",
    "fix": "Use execFile/spawn with an argument array and no shell.",
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "semgrep:detect-child-process",
+    "eslint:security/detect-child-process"
+   ]
+  },
+  {
+   "id": "JS-CMD-SHELL-OPTION",
+   "pack": "javascript",
+   "cwe": "CWE-78",
+   "owasp": "A05:2025 Injection",
+   "category": "injection",
+   "title": "spawn/execFile with a shell option that is not false (shell: true, or a runtime value such as process.platform === 'win32')",
+   "regex": "\\bshell\\s*:\\s*(?!false\\b|undefined\\b|null\\b)[^\\s,}]",
+   "require_near": "\\b(spawn|spawnSync|execFile|execFileSync|execa|execaSync|crossSpawn)\\s*\\(",
+   "window": 6,
+   "fix": "Drop the shell option and pass an argument array; on Windows resolve the .cmd shim (or use cross-spawn) instead of going through cmd.exe, which re-parses every argument.",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+   "tools": [
+    "semgrep:spawn-shell-true",
+    "semgrep:detect-child-process"
+   ]
+  },
+  {
+   "id": "JS-CMD-VAR",
+   "pack": "javascript",
+   "cwe": "CWE-78",
+   "owasp": "A05:2025 Injection",
+   "category": "injection",
+   "title": "spawn/execFile/fork with a command taken from a variable (which program runs is decided at runtime)",
+   "regex": "(?<![\\w.$])(?:child_process\\.|cp\\.)?(spawn|spawnSync|execFile|execFileSync|fork|execa|execaSync)\\s*\\(\\s*(?![\\\"'`\\[])(?!process\\.execPath\\b)[A-Za-z_$][\\w$]*(?:\\.[\\w$]+|\\[[^\\]]+\\])*\\s*[,)]",
+   "fix": "Run a fixed program (a literal path or an allow-listed name) and pass input only as separate arguments; when the program comes from config or a flag, resolve it against an allow-list and reject paths outside the project.",
+   "cvss_hint": "CVSS:4.0/AV:L/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
    "tools": [
     "semgrep:detect-child-process",
     "eslint:security/detect-child-process"
@@ -552,7 +584,7 @@
    "category": "web",
    "title": "HTML sink that bypasses escaping",
    "regex": "\\.(innerHTML|outerHTML)\\s*=|\\bdocument\\.write(ln)?\\s*\\(|insertAdjacentHTML\\s*\\(|dangerouslySetInnerHTML|\\bv-html\\s*=|\\{@html\\s|bypassSecurityTrust\\w+\\s*\\(",
-   "suppress_line": "DOMPurify\\.sanitize|sanitizeHtml\\(|sanitize\\(|__html\\s*:\\s*[\\\"'][^\\\"'$]*[\\\"']\\s*\\}",
+   "suppress_line": "DOMPurify\\.sanitize|sanitizeHtml\\(|sanitize\\(|__html\\s*:\\s*[\\\"'][^\\\"'$]*[\\\"']\\s*\\}|\\.(innerHTML|outerHTML)\\s*=\\s*(\"[^\"]*\"|'[^']*'|`[^`$]*`)\\s*;?\\s*(//.*)?$",
    "fix": "Render text with textContent / framework binding; sanitise unavoidable HTML with DOMPurify.",
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
    "tools": [
@@ -588,7 +620,8 @@
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:L/VI:N/VA:N/SC:H/SI:L/SA:N",
    "tools": [
     "semgrep:express-ssrf"
-   ]
+   ],
+   "require_file": "[(,]\\s*(req|request)\\s*[,:)]|\\b(req|request)\\.(query|body|params|url|headers)\\b|\\bNextRequest\\b|\\bNextApiRequest\\b|\\bexpress\\s*\\(|\\bRouter\\s*\\(|searchParams|\\bctx\\.(request|query|params)\\b|APIGatewayProxyEvent|IncomingMessage|createServer\\s*\\(|\\bc\\.req\\b"
   },
   {
    "id": "JS-PATH",
@@ -706,7 +739,8 @@
     "semgrep:express-cookie-session-no-secure"
    ],
    "suppress_near": "\\bchangeOrigin\\b|\\btarget\\s*:\\s*[\"\\'`]https?:|\\bproxy\\s*:|\\bws\\s*:\\s*(true|false)",
-   "window": 6
+   "window": 6,
+   "require_near": "(?i)cookie|set-cookie|\\bsession\\b|express-session|cookieOptions"
   },
   {
    "id": "JS-POSTMESSAGE",
@@ -714,8 +748,8 @@
    "cwe": "CWE-346",
    "owasp": "A01:2025 Broken Access Control",
    "category": "web",
-   "title": "message handler without an origin check",
-   "regex": "addEventListener\\s*\\(\\s*[\"\\']message[\"\\']",
+   "title": "window message handler without an origin check",
+   "regex": "(?:(?<![\\w$.\\])])|(?<=\\bwindow\\.)|(?<=\\bself\\.)|(?<=\\bglobalThis\\.))addEventListener\\s*\\(\\s*[\"']message[\"']",
    "suppress_near": "\\.origin\\b",
    "window": 6,
    "fix": "Check event.origin against an allow-list before using event.data.",
@@ -1676,7 +1710,8 @@
    "tools": [
     "semgrep:run-shell-injection",
     "zizmor:template-injection"
-   ]
+   ],
+   "suppress_line": "^\\s*-?\\s*(?!run\\s*:)[\\w-]+\\s*:\\s"
   },
   {
    "id": "GHA-UNPINNED-ACTION",
@@ -1707,6 +1742,22 @@
    "tools": [
     "zizmor:excessive-permissions"
    ]
+  },
+  {
+   "id": "GHA-ACTION-INPUT-IN-RUN",
+   "pack": "github_actions",
+   "cwe": "CWE-78",
+   "owasp": "A05:2025 Injection",
+   "category": "supply_chain_ci",
+   "title": "Composite action expands an input directly in a run: script (shell injection if any caller passes untrusted text)",
+   "regex": "\\$\\{\\{\\s*inputs\\.[\\w-]+\\s*\\}\\}",
+   "require_near": "\\brun\\s*:",
+   "window": 12,
+   "require_path": "(^|/)action\\.ya?ml$",
+   "fix": "Map the input to an environment variable (env: NAME: ${{ inputs.name }}) and use \"$NAME\" in the script; validate it when it names a path or ref.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N",
+   "tools": [],
+   "suppress_line": "^\\s*-?\\s*(?!run\\s*:)[\\w-]+\\s*:\\s"
   },
   {
    "id": "DOCKER-PIPE-SHELL",
