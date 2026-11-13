@@ -5,6 +5,16 @@ Returns one fingerprint per area of the repository (each directory with its own 
 monorepos and mixed stacks get the conventions that apply where a new test will be written.
 
     python detect_conventions.py <repo> [--target path/to/feature] [--out conventions.json]
+    python detect_conventions.py --self-test
+
+A directory named e2e, tests or spec that is a product package (a manifest plus shipped code such as
+src/, the rule of diff_scope.product_package) is not a test directory, so a workspace package named
+`e2e` keeps unit, integration and e2e levels for its own tests. CI commands limited to a workspace
+package (pnpm/turbo --filter, npm --workspace, yarn workspace, lerna --scope) go to that package's
+area only. Signals whose call shapes other tools share (WebdriverIO's `browser.url(`, the word
+appium) count only when the framework is declared or imported. `tooling` records the package
+manager (used in the package.json run commands), workspaces, changesets, linters and the
+TypeScript compiler; `node --test` suites are recognised as `node-test`.
 
 Detection is heuristic: every conclusion carries the files it came from, and anything it can't
 see is listed under `limitations`. CI configuration is treated as the source of truth for run
@@ -70,6 +80,62 @@ NAMING = [
 TEST_DIR_PARTS = {'test', 'tests', '__tests__', 'spec', 'specs', 'e2e', 'cypress', 'integration_test',
                   'androidTest', 'acceptance', '.maestro', 'maestro', 'uitests'}
 
+# A directory named like a test directory (e2e, tests, ...) is a product package, not test code, when it holds a
+# manifest and ships code. The same rule as diff_scope.product_package (canonical there; copied because not every
+# skill carrying this file carries diff_scope.py): a manifest plus src/, a package.json with main/module/exports/bin,
+# a Cargo.toml with [lib]/[[bin]], go.mod beside non-test .go files, or the Python package a pyproject/setup names.
+# A manifest alone (a spec-only Playwright workspace package) stays a test directory.
+PRODUCT_MANIFESTS = ('package.json', 'pyproject.toml', 'setup.py', 'setup.cfg', 'Cargo.toml', 'go.mod', 'pom.xml',
+                     'build.gradle', 'build.gradle.kts', 'composer.json', 'pubspec.yaml', 'deno.json', 'deno.jsonc')
+_PRODUCT_CACHE: dict = {}
+
+
+def product_package(root, rel_dir: str) -> str | None:
+    """Why rel_dir (relative to root) is a product package rather than a test directory, or None."""
+    if root is None:
+        return None
+    key = (str(root), rel_dir)
+    if key in _PRODUCT_CACHE:
+        return _PRODUCT_CACHE[key]
+    d = Path(root) / rel_dir
+    why = None
+    try:
+        found = [m for m in PRODUCT_MANIFESTS if (d / m).is_file()] if d.is_dir() else []
+        if d.is_dir() and not found:
+            found = [p.name for g in ('*.csproj', '*.fsproj', '*.gemspec') for p in d.glob(g)][:1]
+        if found:
+            m = found[0]
+            if (d / 'src').is_dir():
+                why = f'{m} and a src/ directory'
+            elif m == 'package.json':
+                try:
+                    pkg = json.loads((d / m).read_text(encoding='utf-8', errors='replace'))
+                except (ValueError, OSError):
+                    pkg = {}
+                fields = [k for k in ('main', 'module', 'exports', 'bin') if isinstance(pkg, dict) and pkg.get(k)]
+                if fields:
+                    why = f'package.json declaring {"/".join(fields)}'
+            elif m == 'Cargo.toml':
+                if re.search(r'^\s*\[(lib|\[bin\])\]', (d / m).read_text(encoding='utf-8', errors='replace'), re.M):
+                    why = 'Cargo.toml with a [lib] or [[bin]] target'
+            elif m == 'go.mod':
+                if any(not p.name.endswith('_test.go') for p in d.glob('*.go')):
+                    why = 'go.mod and non-test .go files'
+            elif m in ('pyproject.toml', 'setup.py', 'setup.cfg'):
+                text = (d / m).read_text(encoding='utf-8', errors='replace')
+                names = {re.sub(r'[-.]', '_', n).lower()
+                         for n in re.findall(r'''(?m)^\s*name\s*[=:]\s*["']?([\w.-]+)''', text)}
+                pkgs = [p.name for p in d.iterdir() if p.is_dir() and p.name.lower() in names
+                        and (p / '__init__.py').is_file()]
+                if pkgs:
+                    why = f'{m} and its Python package {pkgs[0]}/'
+    except OSError:
+        why = None
+    if why:
+        why = f'{rel_dir}/ is a product package ({why})'
+    _PRODUCT_CACHE[key] = why
+    return why
+
 # dependency name (lowercase, substring-free exact match unless noted) -> (category, framework)
 JS_DEPS = {
     'jest': ('unit', 'jest'), 'vitest': ('unit', 'vitest'), 'mocha': ('unit', 'mocha'), 'jasmine': ('unit', 'jasmine'),
@@ -128,10 +194,12 @@ CONTENT_SIGNALS = [
     (re.compile(r'^\s*import unittest|unittest\.TestCase'), 'unit', 'unittest'),
     (re.compile(r'from playwright|@playwright/test|playwright\.sync_api'), 'e2e', 'playwright'),
     (re.compile(r'\bcy\.(visit|get|request)\('), 'e2e', 'cypress'),
-    (re.compile(r'\bbrowser\.url\(|\$\(\s*[\'"]~'), 'e2e', 'webdriverio'),
+    (re.compile(r'\bbrowser\.url\(|\$\(\s*[\'"]~|[\'"]@wdio/|[\'"]webdriverio[\'"]'), 'e2e', 'webdriverio'),
     (re.compile(r'from selenium|selenium-webdriver|org\.openqa\.selenium'), 'e2e', 'selenium'),
     (re.compile(r'\bdevice\.launchApp\(|\bby\.id\(|from [\'"]detox[\'"]'), 'mobile', 'detox'),
-    (re.compile(r'appium|AppiumBy|MobileBy'), 'mobile', 'appium'),
+    (re.compile(r'[\'"][^\'"\n]*appium[^\'"\n]*[\'"]\s*\)?\s*;?\s*$|from appium|io\.appium|AppiumBy|MobileBy|'
+                r'appium\.webdriver', re.M | re.I), 'mobile', 'appium'),
+    (re.compile(r'[\'"]node:test[\'"]'), 'unit', 'node-test'),
     (re.compile(r'^appId:\s*\S+', re.M), 'mobile', 'maestro'),
     (re.compile(r'XCUIApplication\(\)'), 'mobile', 'xcuitest'),
     (re.compile(r'^\s*import XCTest'), 'unit', 'xctest'),
@@ -144,6 +212,10 @@ CONTENT_SIGNALS = [
     (re.compile(r'from pytest_bdd|pytest_bdd'), 'bdd', 'pytest-bdd'),
     (re.compile(r'^\s*from behave'), 'bdd', 'behave'),
 ]
+# a content signal for these frameworks counts only when the area (or the repository root) declares the framework
+# in a manifest or config, or the file imports it: their call shapes are shared by other tools' fixtures
+GATED = {'webdriverio': re.compile(r'[\'"]@wdio/|[\'"]webdriverio[\'"]'),
+         'appium': re.compile(r'from appium|io\.appium|appium\.webdriver|(?:from|require\()\s*[\'"][^\'"]*appium')}
 STYLE_SIGNALS = {
     'assertions': [('expect(', 'expect'), ('assert ', 'assert'), ('self.assert', 'unittest-asserts'),
                    ('assertThat(', 'assertThat'), ('.should(', 'should'), ('XCTAssert', 'XCTAssert'),
@@ -178,7 +250,8 @@ E2E_BLOCKS = {
     'seeding': re.compile(r'(?:^|/)(seeds?|factories|fixtures|testdata|test[-_]data)/|seed\.\w+$|factories\.py$'),
 }
 RUN_HINTS = re.compile(r'\b(pytest|python -m pytest|tox|nox|npm (run )?test\S*|npm run \S*(test|e2e)\S*|yarn (run )?\S*(test|e2e)\S*|'
-                       r'pnpm (run )?\S*(test|e2e)\S*|npx (jest|vitest|playwright test|cypress run|wdio|detox test)|'
+                       r'pnpm (run )?\S*(test|e2e)\S*|(pnpm|yarn|npm|bun|turbo)( +(--filter|-F|--workspace|-w|--scope)[ =]\S+)+'
+                       r' +(run +)?\S*test\S*|node +(--[\w-]+(=\S+)? +)*--test|npx(jest|vitest|playwright test|cypress run|wdio|detox test)|'
                        r'(jest|vitest|mocha)\b|playwright test|cypress run|go test|mvn (-\S+ )*(verify|test)|'
                        r'(\./)?gradlew? \S*(test|check|connected\w*AndroidTest)|bundle exec (rspec|rake|cucumber)|rspec|'
                        r'dotnet test|cargo (nextest run|test)|flutter test|phpunit|xcodebuild (\S+ )*test|maestro test|detox test|behave)\b')
@@ -220,10 +293,26 @@ def is_test_file(path: str) -> bool:
         return True
     return False
 
-def level_of(path: str, frameworks: set[str], root: str = '.') -> str:
-    """unit | integration | e2e, from directory names and suffixes relative to the area root."""
+def strip_product_dirs(path: str, repo) -> str:
+    """path with everything up to the deepest test-named directory that is a product package removed
+    (packages/e2e/tests/integration/x.test.ts -> tests/integration/x.test.ts when packages/e2e is a product package),
+    so a package named e2e does not make its unit tests e2e. Without repo, path is returned unchanged."""
+    if repo is None:
+        return path
+    parts = PurePosixPath(path).parts
+    cut = 0
+    for i, seg in enumerate(parts[:-1]):
+        if seg.lower() in {x.lower() for x in TEST_DIR_PARTS} and product_package(repo, '/'.join(parts[:i + 1])):
+            cut = i + 1
+    return '/'.join(parts[cut:]) if cut else path
+
+
+def level_of(path: str, frameworks: set[str], root: str = '.', repo=None) -> str:
+    """unit | integration | e2e, from directory names and suffixes relative to the area root. Give repo (the
+    repository directory path is relative to) so a product package named e2e does not count as an e2e directory."""
     if root != '.' and path.startswith(root + '/'):
         path = path[len(root) + 1:]
+    path = strip_product_dirs(path, repo if root == '.' else (Path(repo) / root if repo is not None else None))
     parts = [x.lower() for x in PurePosixPath(path).parts]
     joined = '/'.join(parts)
     if 'unit' in parts[:-1]:
@@ -253,12 +342,40 @@ def py_dep_names(text: str) -> set[str]:
         names.add(m.group(1).lower().replace('_', '-'))
     return names
 
+WS_FILTER = re.compile(r'(?:--filter|-F|--workspace|--scope)(?:=|\s+)[\'"]?([^\s\'"]+)|'
+                       r'\byarn\s+workspace\s+[\'"]?([^\s\'"]+)|\bnpm\s+(?:\S+\s+)*?-w\s+[\'"]?([^\s\'"]+)')
+
+
+def workspace_filters(command: str) -> list[str]:
+    """The workspace packages a command is limited to (pnpm/turbo --filter, -F, npm --workspace/-w, yarn workspace,
+    lerna --scope), as written."""
+    return [next(g for g in m.groups() if g) for m in WS_FILTER.finditer(command)]
+
+
+def filter_matches(target: str, root: str, pkg_name: str | None) -> bool:
+    """Whether a workspace filter selects the area at root (whose package.json name is pkg_name). Handles names,
+    name globs (@scope/*), directory filters (./packages/x, {packages/x}) and pnpm's dependency suffixes (x..., ...x)."""
+    import fnmatch
+    t = target.strip()
+    t = re.sub(r'^\.\.\.\^?|\^?\.\.\.$', '', t)          # pnpm: x... (with dependencies), ...x (dependents)
+    if t.startswith('!'):
+        return False
+    if t.startswith('{') and t.endswith('}'):
+        t = t[1:-1]
+    if t.startswith('./') or (t.startswith('.') is False and '/' in t and not t.startswith('@')):
+        t = t[2:] if t.startswith('./') else t
+        t = t.rstrip('/')
+        return fnmatch.fnmatch(root, t) or root == t
+    return bool(pkg_name) and fnmatch.fnmatchcase(pkg_name, t)
+
+
 class Detector:
     def __init__(self, root: Path, max_files: int):
         self.root = root.resolve()
         self.max_files = max_files
         self.files: list[str] = []
         self.limitations: list[str] = []
+        self.tooling: dict = {}
 
     def walk(self):
         for dirpath, dirnames, filenames in os.walk(self.root):
@@ -268,6 +385,75 @@ class Detector:
                 if len(self.files) >= self.max_files:
                     self.limitations.append(f'Stopped after {self.max_files} files; raise --max-files for a complete scan.')
                     return
+
+    def repo_tooling(self) -> dict:
+        """Repository-level tooling read from the root: the JavaScript package manager (packageManager field or
+        lockfile), workspace globs (pnpm-workspace.yaml or package.json workspaces), changesets (and how many are
+        pending), linters and the TypeScript compiler (tsc, or tsgo from @typescript/native-preview)."""
+        out: dict = {}
+        files = set(self.files)
+        pj = {}
+        if 'package.json' in files:
+            try:
+                pj = json.loads(read(self.root / 'package.json'))
+            except ValueError:
+                pj = {}
+        if not isinstance(pj, dict):
+            pj = {}
+        pm_field = pj.get('packageManager') if isinstance(pj.get('packageManager'), str) else ''
+        locks = [('pnpm-lock.yaml', 'pnpm'), ('yarn.lock', 'yarn'), ('bun.lock', 'bun'), ('bun.lockb', 'bun'),
+                 ('package-lock.json', 'npm'), ('npm-shrinkwrap.json', 'npm')]
+        pm = pm_field.split('@')[0] if pm_field else next((m for lf, m in locks if lf in files), None)
+        if pm:
+            out['package_manager'] = pm
+            out['package_manager_source'] = 'package.json packageManager' if pm_field else \
+                next(lf for lf, m in locks if lf in files and m == pm)
+        ws = []
+        if 'pnpm-workspace.yaml' in files:
+            text = read(self.root / 'pnpm-workspace.yaml')
+            m = re.search(r'^packages\s*:\s*\n((?:\s+-\s*.*\n?)+)', text, re.M)
+            if m:
+                ws = [x.strip().strip('\'"') for x in re.findall(r'-\s*(.+)', m.group(1))]
+            out['workspaces_source'] = 'pnpm-workspace.yaml'
+        elif isinstance(pj.get('workspaces'), (list, dict)):
+            w = pj['workspaces']
+            ws = list(w if isinstance(w, list) else w.get('packages', []))
+            out['workspaces_source'] = 'package.json workspaces'
+        if ws:
+            out['workspaces'] = ws
+        if '.changeset/config.json' in files:
+            pending = [f for f in files if f.startswith('.changeset/') and f.endswith('.md') and f != '.changeset/README.md']
+            out['changesets'] = {'config': '.changeset/config.json', 'pending': len(pending)}
+        deps = {}
+        for key in ('dependencies', 'devDependencies'):
+            if isinstance(pj.get(key), dict):
+                deps.update(pj[key])
+        scripts = ' '.join(str(v) for v in (pj.get('scripts') or {}).values()) if isinstance(pj.get('scripts'), dict) else ''
+        linters = {}
+        for name, signs in (('eslint', ('eslint',)), ('oxlint', ('oxlint',)), ('biome', ('@biomejs/biome',)),
+                            ('ruff', ()), ('prettier', ('prettier',))):
+            src = next((f'package.json {d}' for d in signs if d in deps), None)
+            if not src and re.search(rf'(^|[\s&;|]){name}\b', scripts):
+                src = 'package.json scripts'
+            if not src:
+                conf = {'eslint': ('eslint.config.js', 'eslint.config.mjs', 'eslint.config.ts', '.eslintrc.json', '.eslintrc.js', '.eslintrc.cjs', '.eslintrc'),
+                        'oxlint': ('.oxlintrc.json', 'oxlint.json', 'oxlintrc.json'), 'biome': ('biome.json', 'biome.jsonc'),
+                        'ruff': ('ruff.toml', '.ruff.toml'), 'prettier': ('.prettierrc', '.prettierrc.json', 'prettier.config.js')}[name]
+                src = next((c for c in conf if c in files), None)
+            if src:
+                linters[name] = src
+        if linters:
+            out['linters'] = linters
+        ts = {}
+        if '@typescript/native-preview' in deps or re.search(r'(^|[\s&;|])tsgo\b', scripts):
+            ts['tsgo'] = deps.get('@typescript/native-preview', 'package.json scripts')
+        if 'typescript' in deps:
+            ts['tsc'] = deps['typescript']
+            if re.match(r'^[\^~>=]*\s*7\.', str(deps['typescript'])):
+                ts['note'] = 'TypeScript 7 (the native compiler): tools that load the TypeScript API in-process may not support it'
+        if ts:
+            out['typescript'] = ts
+        return out
 
     def area_roots(self) -> list[str]:
         roots = {'.'}
@@ -316,6 +502,17 @@ class Detector:
     def run(self, target: str | None) -> dict:
         self.walk()
         roots = self.area_roots()
+        self.tooling = self.repo_tooling()
+        pkg_names = {}
+        for r in roots:
+            pj = self.root / r / 'package.json'
+            if r != '.' and pj.is_file():
+                try:
+                    name = json.loads(read(pj)).get('name')
+                except (ValueError, AttributeError):
+                    name = None
+                if isinstance(name, str):
+                    pkg_names[r] = name
         ci_files, ci_cmds = self.ci()
         areas = {r: {'root': r, 'manifests': [], 'languages': {}, 'frameworks': {}, 'style': {}, 'test_files': [],
                      'run_commands': [], 'e2e_blocks': {k: [] for k in E2E_BLOCKS}, 'selectors': {},
@@ -345,10 +542,14 @@ class Detector:
                     for d in deps:
                         if d in JS_DEPS: add_fw(a, *JS_DEPS[d], f)
                         if d in JS_STYLE_DEPS: add_style(a, *JS_STYLE_DEPS[d], f)
+                    pm = self.tooling.get('package_manager') or 'npm'
                     for k, v in scripts.items():
                         if re.search(r'test|e2e|spec|cy:|cypress|playwright|detox', k + ' ' + str(v), re.I):
-                            a['run_commands'].append({'command': f'npm run {k}' if k != 'test' else 'npm test',
-                                                      'resolves_to': v, 'source': f, 'origin': 'package.json'})
+                            cmd = f'{pm} test' if k == 'test' and pm != 'bun' else f'{pm} run {k}'
+                            a['run_commands'].append({'command': cmd, 'resolves_to': v, 'source': f,
+                                                      'origin': 'package.json'})
+                        if re.search(r'(^|[\s&;|])node\s+(--[\w-]+(=\S+)?\s+)*--test\b', str(v)):
+                            add_fw(a, 'unit', 'node-test', f)
                 elif name in ('pyproject.toml', 'setup.py', 'setup.cfg') or name.startswith('requirements'):
                     names = py_dep_names(text)
                     for d, v in PY_DEPS.items():
@@ -396,6 +597,8 @@ class Detector:
             if is_test_file(f):
                 a['test_files'].append(f)
 
+        declared_at = {r: {n for cat in areas[r]['frameworks'].values() for n in cat} for r in areas}
+        declared = lambda a: declared_at[a['root']] | declared_at.get('.', set())  # noqa: E731
         for a in areas.values():
             scanned = a['test_files'][:400]
             if len(a['test_files']) > 400:
@@ -405,6 +608,8 @@ class Detector:
                 text = read(self.root / f, 120_000)
                 for rx, cat, fw in CONTENT_SIGNALS:
                     if rx.search(text):
+                        if fw in GATED and fw not in declared(a) and not GATED[fw].search(text):
+                            continue
                         add_fw(a, cat, fw, f); fws.add(fw)
                 for cat, sigs in STYLE_SIGNALS.items():
                     for needle, label in sigs:
@@ -420,7 +625,7 @@ class Detector:
                     add_style(a, 'markers', 'framework tags', f)
                 if 'storageState' in text or 'storage_state' in text:
                     if f not in a['e2e_blocks']['login_helpers']: a['e2e_blocks']['login_helpers'].append(f)
-                if level_of(f, fws) == 'e2e' or any(x in fws for x in ('playwright', 'cypress', 'detox', 'appium', 'maestro', 'xcuitest', 'espresso')):
+                if level_of(f, fws, repo=self.root) == 'e2e' or any(x in fws for x in ('playwright', 'cypress', 'detox', 'appium', 'maestro', 'xcuitest', 'espresso')):
                     for k, rx in SELECTOR_SIGNALS.items():
                         n = len(rx.findall(text))
                         if n:
@@ -433,20 +638,19 @@ class Detector:
                 continue
             levels = {}
             for f in a['test_files']:
-                lv = level_of(f, a['_fws'], r)
+                lv = level_of(f, a['_fws'], r, repo=self.root)
                 levels[lv] = levels.get(lv, 0) + 1
             naming = {}
             for f in a['test_files']:
                 lab = naming_of(PurePosixPath(f).name)
                 if lab: naming[lab] = naming.get(lab, 0) + 1
-            in_dirs = [f for f in a['test_files'] if set(PurePosixPath(f).parts[:-1]) & TEST_DIR_PARTS
-                       or any(x.endswith('Tests') or x.endswith('UITests') for x in PurePosixPath(f).parts[:-1])
-                       or ('src' in PurePosixPath(f).parts and 'test' in PurePosixPath(f).parts)]
+            in_dirs = [f for f in a['test_files'] if self._test_dir(f, True)]
             layout = ('none' if not a['test_files'] else 'test_dirs' if len(in_dirs) >= 0.8 * len(a['test_files'])
                       else 'colocated' if len(in_dirs) <= 0.2 * len(a['test_files']) else 'mixed')
             test_dirs = sorted({self._test_dir(f) for f in in_dirs})[:15]
             fw_names = {n for cat in a['frameworks'].values() for n in cat}
-            cmds = [c for c in ci_cmds if self._ci_applies(c, r, fw_names, [x for x in roots if x != '.'])] + a['run_commands']
+            cmds = [c for c in ci_cmds if self._ci_applies(c, r, fw_names, [x for x in roots if x != '.'],
+                                                           pkg_names.get(r))] + a['run_commands']
             sel = a['selectors']
             stable = {k: v for k, v in sel.items() if k in ('data-testid', 'role', 'label', 'accessibility-id', 'text')}
             prefer = ['role', 'label', 'data-testid', 'accessibility-id', 'text']
@@ -476,6 +680,7 @@ class Detector:
             'repository': self.root.name,
             'generated_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
             'ci_files': ci_files,
+            'tooling': self.tooling,
             'areas': result_areas,
             'has_tests': any(x['has_tests'] for x in result_areas),
             'limitations': self.limitations + [
@@ -489,22 +694,28 @@ class Detector:
             out['exemplars'] = self.exemplars(target, [a for a in areas.values() if a['test_files']])
         return out
 
-    @staticmethod
-    def _test_dir(f: str) -> str:
+    def _test_dir(self, f: str, strict: bool = False) -> str | None:
+        """The test directory f sits in. A test-named directory that is a product package (a workspace package
+        named e2e with its own manifest and src/) does not count. strict: None when f is in no test directory."""
         parts = PurePosixPath(f).parts
+        skip = len(parts) - len(PurePosixPath(strip_product_dirs(f, self.root)).parts)
         for i, x in enumerate(parts[:-1]):
+            if i < skip:
+                continue
             if x in TEST_DIR_PARTS or x.endswith('Tests') or (x == 'test' and i and parts[i - 1] == 'src'):
                 return '/'.join(parts[:i + 1])
-        return str(PurePosixPath(f).parent)
+        return None if strict else str(PurePosixPath(f).parent)
 
     def _mirrors(self, tests: list[str]):
         """True when most tests under a test directory have a same-named source file under a parallel path."""
         if len(tests) < 3:
             return None
-        sources = {}
-        for f in self.files:
-            if not is_test_file(f):
-                sources.setdefault(PurePosixPath(f).stem.lower(), []).append(f)
+        sources = getattr(self, '_sources', None)
+        if sources is None:
+            sources = self._sources = {}
+            for f in self.files:
+                if not is_test_file(f):
+                    sources.setdefault(PurePosixPath(f).stem.lower(), []).append(f)
         hits = considered = 0
         for t in tests:
             p = PurePosixPath(t)
@@ -533,14 +744,18 @@ class Detector:
         return lines[start:end]
 
     @staticmethod
-    def _ci_applies(cmd: dict, root: str, frameworks: set[str], roots: list[str]) -> bool:
-        """A CI command belongs to an area if it runs there, names it, or (unscoped) uses its framework."""
+    def _ci_applies(cmd: dict, root: str, frameworks: set[str], roots: list[str], pkg_name: str | None = None) -> bool:
+        """A CI command belongs to an area if it runs there, filters to its workspace package (pnpm/turbo --filter,
+        npm --workspace, yarn workspace, lerna --scope), names it, or (unscoped) uses its framework."""
         if root == '.':
             return True
         wd = cmd.get('working_directory')
         if wd:
             return wd == root or wd.startswith(root + '/')
         text = cmd['command']
+        targets = workspace_filters(text)
+        if targets:
+            return any(filter_matches(t, root, pkg_name) for t in targets)
         names = lambda r: re.search(r'(^|[\s/=])' + re.escape(r) + r'(/|\s|$)', text)
         if names(root):
             return True
@@ -548,6 +763,7 @@ class Detector:
             return False  # names a different area
         tool_fw = {'pytest': 'pytest', 'playwright': 'playwright', 'cypress': 'cypress', 'jest': 'jest', 'vitest': 'vitest',
                    'go test': 'go-testing', 'cargo test': 'cargo-test', 'cargo nextest': 'cargo-nextest',
+                   'node --test': 'node-test',
                    'flutter test': 'flutter_test', 'rspec': 'rspec',
                    'dotnet test': 'xunit', 'detox': 'detox', 'maestro': 'maestro', 'phpunit': 'phpunit', 'behave': 'behave',
                    'gradle': 'junit5', 'mvn': 'junit5'}
@@ -579,7 +795,7 @@ class Detector:
         t = PurePosixPath(target.replace('\\', '/').strip('/'))
         tparts = [x.lower() for x in t.parts]
         tstem = re.sub(r'\W', '', t.stem.lower().split('.')[0])
-        tlevel = level_of(t.as_posix(), set(), self.owner(t.as_posix(), [a['root'] for a in areas]))
+        tlevel = level_of(t.as_posix(), set(), self.owner(t.as_posix(), [a['root'] for a in areas]), repo=self.root)
         scored = []
         for a in areas:
             for f in a['test_files']:
@@ -594,14 +810,75 @@ class Detector:
                 same_area = 2 if t.as_posix().startswith(a['root'] + '/') or a['root'] == '.' else 0
                 size = (self.root / f).stat().st_size if (self.root / f).exists() else 0
                 size_ok = 1 if 300 <= size <= 20_000 else 0
-                same_level = 3 if level_of(f, set(), a['root']) == tlevel else 0
+                same_level = 3 if level_of(f, set(), a['root'], repo=self.root) == tlevel else 0
                 score = common * 2 + shared + name_bonus + same_area + size_ok + same_level
                 if score >= 3:
                     scored.append((score, f, a['root']))
         scored.sort(key=lambda x: (-x[0], x[1]))
         return [{'path': f, 'area': r, 'score': s} for s, f, r in scored[:3]]
 
+def self_test() -> int:
+    """Check product packages named e2e, gated framework signals, node:test, workspace filters and tooling."""
+    import tempfile
+    files = {
+        'package.json': json.dumps({'name': 'shop-monorepo', 'private': True, 'packageManager': 'pnpm@10.2.1',
+                                    'scripts': {'test': 'pnpm -r run test', 'test:scripts': 'node --test "scripts/**/*.test.ts"',
+                                                'lint': 'oxlint'},
+                                    'devDependencies': {'oxlint': '1.0.0', 'typescript': '7.0.0'}}),
+        'pnpm-workspace.yaml': 'packages:\n  - packages/*\n  - apps/*\n',
+        '.changeset/config.json': '{}', '.changeset/brave-cats.md': '---\n"e2e": minor\n---\nA change.\n',
+        'scripts/release.test.ts': "import { test } from 'node:test';\ntest('x', () => {});\n",
+        'packages/e2e/package.json': json.dumps({'name': 'e2e', 'exports': './dist/index.js',
+                                                 'devDependencies': {'vitest': '5.0.0'}}),
+        'packages/e2e/src/browser.ts': 'export const browser = {}\n',
+        'packages/e2e/tests/unit/browser.test.ts': "import { test } from 'vitest';\ntest('opens', async () => { await browser.url('/'); });\n",
+        'packages/e2e/tests/integration/session.test.ts': "import { test } from 'vitest';\ntest('session', () => {});\n",
+        'packages/basket/package.json': json.dumps({'name': '@shop/basket', 'main': 'index.js',
+                                                    'devDependencies': {'vitest': '5.0.0'}}),
+        'packages/basket/index.js': 'module.exports = {}\n',
+        'packages/basket/tests/basket.test.ts': "import { test } from 'vitest';\ntest('adds', () => {});\n",
+        'apps/site/package.json': json.dumps({'name': '@shop/site', 'devDependencies': {'@wdio/cli': '9.0.0'}}),
+        'apps/site/e2e/home.e2e.ts': "describe('home', () => { it('loads', async () => { await browser.url('/'); }); });\n",
+        '.github/workflows/ci.yml': 'jobs:\n  t:\n    steps:\n      - run: pnpm --filter @shop/basket exec vitest run\n'
+                                    '      - run: pnpm --filter e2e run test\n',
+    }
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        for rel_path, body in files.items():
+            (root / rel_path).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel_path).write_text(body, encoding='utf-8')
+        res = Detector(root, 10_000).run(None)
+    areas = {a['root']: a for a in res['areas']}
+    fws = lambda r: {n for cat in areas[r]['frameworks'].values() for n in cat}  # noqa: E731
+    cmds = lambda r: [c['command'] for c in areas[r]['run_commands']]  # noqa: E731
+    checks = [
+        ('a product package named e2e is not a test directory', areas['packages/e2e']['layout']['test_dirs'] == ['packages/e2e/tests'],
+         areas['packages/e2e']['layout']),
+        ('its integration tests are integration, not e2e', areas['packages/e2e']['levels'] == {'unit': 1, 'integration': 1},
+         areas['packages/e2e']['levels']),
+        ('browser.url( without WebdriverIO declared is not WebdriverIO', 'webdriverio' not in fws('packages/e2e'), fws('packages/e2e')),
+        ('browser.url( with WebdriverIO declared is WebdriverIO', 'webdriverio' in fws('apps/site'), fws('apps/site')),
+        ('node --test is recognised', 'node-test' in fws('.'), fws('.')),
+        ('a --filter command goes to the filtered package only',
+         'pnpm --filter @shop/basket exec vitest run' in cmds('packages/basket')
+         and 'pnpm --filter @shop/basket exec vitest run' not in cmds('packages/e2e')
+         and 'pnpm --filter e2e run test' in cmds('packages/e2e'), (cmds('packages/basket'), cmds('packages/e2e'))),
+        ('package.json scripts use the package manager', 'pnpm run test:scripts' in cmds('.'), cmds('.')),
+        ('tooling', res['tooling'].get('package_manager') == 'pnpm' and res['tooling'].get('changesets', {}).get('pending') == 1
+         and 'oxlint' in res['tooling'].get('linters', {}) and res['tooling'].get('workspaces') == ['packages/*', 'apps/*']
+         and 'note' in res['tooling'].get('typescript', {}), res['tooling']),
+    ]
+    failed = 0
+    for name, ok, extra in checks:
+        failed += not ok
+        print(f"{'PASS' if ok else 'FAIL'} {name}" + ('' if ok else f'  [{extra}]'))
+    print(f'{failed} failed' if failed else 'ALL PASS')
+    return 1 if failed else 0
+
+
 def main(argv=None) -> int:
+    if '--self-test' in (sys.argv[1:] if argv is None else argv):
+        return self_test()
     ap = argparse.ArgumentParser(description='Fingerprint the testing conventions of a repository.')
     ap.add_argument('repo', nargs='?', default='.')
     ap.add_argument('--target', help='path (file or directory) where new tests or code will go; selects exemplars')
