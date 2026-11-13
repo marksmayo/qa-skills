@@ -57,7 +57,7 @@ from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import collect_check, run_tests, scan_tests, tree_guard, unified_diff  # noqa: E402
+import collect_check, go_tests, run_tests, scan_tests, tree_guard, unified_diff  # noqa: E402
 
 MARK = 'neutralised by dead-test-finder'
 # Never copied into the scratch copy: VCS data, caches and installed dependencies. --copy-ignore adds more.
@@ -360,6 +360,19 @@ def run_test(defn: dict, work: Path, run_dir: Path, label: str, prefix: str, ext
     script."""
     rel = defn['file'][len(defn['package']) + 1:] if defn['package'] != '.' else defn['file']
     guard = GUARDS.get(str(work))
+    if defn['lang'] == 'go':
+        # go test -json for the test's package, the test selected with -run '^Name$'; a package that does not build
+        # (the neutralised code did not compile) is an errored run, never a failure
+        pkg_dir = PurePosixPath(rel).parent.as_posix()
+        name = defn['run_id'].split('::', 1)[1]
+        env = dict(kv.split('=', 1) for kv in extra[extra.index('--env') + 1:] if '=' in kv) if '--env' in extra else {}
+        with (guard.around(f'go test -run ^{name}$') if guard else contextlib.nullcontext()):
+            run = go_tests.run_go(work, './' + pkg_dir if pkg_dir != '.' else '.', f'^{re.escape(name)}$',
+                                  run_dir / 'runs.json', label, prefix, env)
+        if run.get('errored'):
+            return run['id'], 'errored', None
+        data = json.loads((run_dir / 'runs.json').read_text(encoding='utf-8'))
+        return run['id'], case_status(data['cases'], run['id'], name, False), None
     if defn['lang'] == 'python':
         args = ['--preset', 'pytest', '--tests', rel + '::' + defn['run_id'].split('::', 1)[1]]
     else:
@@ -488,7 +501,7 @@ def main(argv=None) -> int:
                     return 2
                 file = tid.split('::')[0]
                 pkg = next((p for p in packages if p == '.' or file.startswith(p + '/')), '.')
-                d = {'id': tid, 'file': file, 'package': pkg, 'lang': 'python' if file.endswith('.py') else 'typescript', 'calls': []}
+                d = {'id': tid, 'file': file, 'package': pkg, 'lang': 'python' if file.endswith('.py') else 'go' if file.endswith('_test.go') else 'typescript', 'calls': []}
             d = {**d, 'run_id': tid}                         # run the id as given: a [case] runs that case only
             prefix = d['package'] + '/' if d['package'] != '.' else ''
             entry = {'test_id': tid, 'patch': patch_name, 'targets': [], 'note': None}
@@ -535,7 +548,13 @@ def main(argv=None) -> int:
             if not targets:
                 entry['note'] = 'no product function to neutralise (the test calls nothing it imports)'
             for tgt in targets:
-                if d['lang'] == 'python':
+                if d['lang'] == 'go':
+                    gdir, _, gfn = tgt.partition(':')
+                    if not gfn:
+                        gdir, gfn = PurePosixPath(d['file']).parent.as_posix(), tgt
+                    local = gdir[len(prefix):] if prefix and gdir.startswith(prefix) else gdir
+                    loc, patcher = go_tests.find_target(work, f'{local}:{gfn}'), go_tests.patch
+                elif d['lang'] == 'python':
                     loc, patcher = py_target_file(work, tgt), py_patch
                     if loc and is_support(loc[0], work):
                         entry['targets'].append({'target': tgt, 'file': None, 'variants': [], 'note': (
@@ -584,6 +603,9 @@ def main(argv=None) -> int:
                     if err:
                         entry.setdefault('errors', []).append(err)
                     tres['variants'].append({'variant': variant, 'run_id': rid, 'test_status': st})
+                    if d['lang'] == 'go' and st == 'errored' and status == 'passed' and 'note' not in tres:
+                        tres['note'] = (f'not_viable: the package did not build with {func} neutralised ({variant}); see run '
+                                        f'{rid}. Name another target with --target, or neutralise by hand')
                 entry['targets'].append(tres)
             entry.update(outcome_of(status, entry['targets']))
             ran = [t for t in entry['targets'] if t['variants']]

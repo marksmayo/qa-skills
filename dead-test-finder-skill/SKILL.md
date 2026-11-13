@@ -1,7 +1,7 @@
 ---
 name: dead-test-finder
 description: Find tests that give false assurance - tests the framework never collects, tests that pass whatever the code does, tests that only check their own mocks, un-awaited async assertions, swallowed failures, duplicates, and skips whose reason has gone - and prove the important ones with real runs. Never-runs is confirmed by the framework's own collect output; can't-fail by neutralising the code under test in a scratch copy and seeing the test still pass; duplicates by identical coverage and values. Each finding gets a patch, and every strengthening patch is proved to pass on the code and fail when it's neutralised. Never deletes or merges tests, never commits, and never claims a suite has "no dead tests".
-version: 1.3.0
+version: 1.4.0
 ---
 
 # Dead test finder
@@ -53,7 +53,11 @@ Output:
     product lines run, and the same values.
   - **Otherwise:** similar code that runs the same lines with different values is an `overlap`.
 - **A stale skip needs evidence.** Either its ticket is done (Jira status category, read-only),
-  or it has no ticket and `git blame` says it is older than `skip_age_days`. A conditional skip
+  or it has no ticket and `git blame` says it is older than `skip_age_days`. A skip you found by
+  review with no `skips.json` verdict (`source: agent`) carries the same evidence itself: a basis
+  citing the skip line, and `evidence.skip` with `verdict: stale` and either a checked done ticket or
+  `age_days` over the threshold with `age_source` (`git blame (<date>)` or the commit that added it);
+  the validator checks both. A conditional skip
   with a stated reason is legitimate and is dismissed with that reason. A guard skip (a
   `pytest.skip()` inside an `if` or `except`, or after an early return) is conditional, and age
   alone never makes it stale.
@@ -99,12 +103,54 @@ python scripts/collect_check.py <repo> --candidates <run>/candidates.json --run-
     [--split-on-error [MAX_RUNS]]
 ```
 
-`scan_tests.py` supports **Python and JavaScript/TypeScript test suites only**. When a repository's
-dominant language is one it cannot parse (for example Rust, Go, Java or Ruby) — specifically, when the
-largest unsupported language has more source files than all Python/JS/TS files combined — it adds a
-`language_coverage` warning to the output and prints a loud warning: the few supported files it did scan
-are a minority and the result is **not** a dead-test analysis of that repository. Do not present such a
-run as a real analysis; report that the primary language was not analysed and stop.
+`scan_tests.py` supports **Python, JavaScript/TypeScript and Go test suites**. Languages are counted by
+the shared `lang_census.py`, which leaves out vendored, submodule and embedded third-party trees (an
+embedded driver with its own manifest and licence, header directories, built bundles); those trees are
+also never scanned for tests, and `excluded_trees` in the output names each with its reason. When the
+dominant language is one it cannot parse (for example Rust, Java or Ruby): the largest unsupported
+language has more source files than all supported files combined, it adds a `language_coverage` block and
+`summary.language_warning`, prints a loud warning and **exits 3** (`--allow-minority` exits 0 with the
+warning kept). The few supported files it did scan are a minority and the result is **not** a dead-test
+analysis of that repository. Do not present it as one. Either stop with a report whose headline and
+`limitations` say the primary language was not analysed, or review that language by hand: findings you
+find are `source: agent` with a `basis` (file, line, excerpt), and their runs are recorded in the
+skill's shapes (Go: `go_tests.py`, below).
+
+**Go.** `_test.go` files are read with comment- and string-aware patterns (nothing is compiled). Each
+`func TestX(t *testing.T)` is a definition (`<file>::TestX`, framework `go-test`; subtests are part of
+their test), with these rules:
+
+- `no_assertion`: no failure path. Only the test's own `t` counts (`t.Error*`, `t.Fatal*`, `t.Fail*`, and
+  the `t` of a `t.Run` closure), plus `require.`/`assert.`/`is.` calls, `panic` and `log.Fatal`.
+  `fmt.Errorf` is never one. A same-package helper given `t` is read (a helper that only logs is no
+  failure path); a helper in another package, or a method given `t`, is assumed to fail.
+- `log_only` (category `no_assertion`): the test logs with `t.Log`/`t.Logf` where a failure was meant.
+- `skip`: the body starts with an unconditional `t.Skip`/`t.Skipf`/`t.SkipNow`; `check_skips.py` gives it
+  a ticket and age verdict like any other skip. A `testing.Short()` or `runtime.GOOS` guard is not flagged.
+- `empty_table` (category `unreached_assertion`): a table declared empty in the test and ranged over.
+- `compare_to_self` (category `tautology`): `if x != x`, `assert.Equal(t, x, x)`, `assert.True(t, true)`.
+- `name_pattern` (category `never_runs`): `func Testlower(t *testing.T)`. go test's vet check rejects
+  the malformed name and the whole package fails to build; with `-vet=off` it is silently not a test.
+
+`collect_check.py` lists Go tests with `go test -list . ./...` from the module directory (it builds the
+test binaries, vet included, and runs nothing). A package that does not build on this machine
+(`[build failed]`, a `syscall` that exists only on another OS) leaves its tests `not_assessed`, never
+`not_collected`. Set `GOFLAGS=-mod=readonly` and `GOPROXY=off` with `--env` when modules must not be
+downloaded. `neutralise.py` takes Go ids: a target is `<package dir>:<Func>` or `<package dir>:<Type>.<Method>`
+(from the definition's `calls`, or `--target`); the body becomes zero values (`return *new(T)` per
+result, a bare return for named results) or a `panic`, and imports the file no longer uses become blank
+imports so it still builds. Runs are `go test -json -count=1 -run '^TestX$' ./<package>`, recorded in
+`runs.json` by `go_tests.py`; a neutralised package that does not build is an `errored` run with a
+`not_viable` note on the target, never a failure. To record a Go run you made yourself (another
+wrapper, a CI log), save the `go test -json` output and run
+`python scripts/go_tests.py record --json <file> --out <run>/runs.json --label original --run-prefix N1
+--command "<what you ran>"`: the run is then tool output the validator can read.
+
+**Host safety.** Before any list or neutralisation run, grep the tests for commands that control
+devices or processes (`adb`, `emulator`, `xcrun simctl`, `pgrep`/`pkill`/`kill`, `taskkill`, `docker`) and
+for writes under the home directory. Run with those tools off `PATH`, with the network refused (the
+skill's `net_guard_proxy.py` for Go and other compiled runners) and with a scratch `HOME` **and**
+`USERPROFILE`. A test that kills "every matching emulator" is left `not_run` with that reason.
 
 `scan_tests.py` lists every test definition, whether or not it would be collected:
 - Python is parsed with `ast`;

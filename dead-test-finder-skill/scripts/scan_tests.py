@@ -22,7 +22,7 @@ from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import detect_conventions, diff_scope  # noqa: E402
+import detect_conventions, diff_scope, go_tests, lang_census  # noqa: E402
 
 RULES = json.loads((HERE.parent / 'data' / 'rules.json').read_text(encoding='utf-8'))
 PY, JS = RULES['python'], RULES['javascript']
@@ -1828,8 +1828,13 @@ def is_playwright_setup(root: Path, rel: str, pkg: str) -> bool:
     return bool(re.search(r'["\']@playwright/test["\']', (root / rel).read_text(encoding='utf-8', errors='replace')))
 
 
+SCANNED_LANGS = {'Python', 'JavaScript', 'TypeScript', 'Go'}
+
+
 def scan(root: Path, extra_test_files: list[str] | None = None) -> dict:
-    files = walk(root)
+    cen = lang_census.census(root)
+    # vendored, embedded third-party and submodule trees are never the repository's tests
+    files = [f for f in walk(root) if not lang_census.excluded_path(cen, f)]
     extra = list(extra_test_files or [])
     det = detect_conventions.Detector(root, 50_000).run(None)
     roots = sorted({a['root'] for a in det['areas']}, key=len, reverse=True)
@@ -1842,10 +1847,18 @@ def scan(root: Path, extra_test_files: list[str] | None = None) -> dict:
                           'details': details})
         return add
 
-    pyscanners, js_bodies, pw_dirs = [], [], {}
+    pyscanners, js_bodies, pw_dirs, go_pkgs = [], [], {}, {}
     for rel in files:
         name = PurePosixPath(rel).name
         pkg = pkg_of(rel)
+        if rel.endswith('_test.go') and '/testdata/' not in f'/{rel}':
+            gpkg = go_tests.module_dir(root, rel)
+            package_of[rel] = gpkg
+            try:
+                go_tests.scan_file(root, rel, gpkg, adder(rel), defs, go_pkgs)
+            except (OSError, ValueError, IndexError, RecursionError) as exc:
+                notes.append(f'{rel}: not parsed ({exc!r}); its tests are missing from definitions')
+            continue
         if rel.endswith('.py') and (in_test_dir(root, rel) or detect_conventions.is_test_file(rel)) and name != 'conftest.py':
             try:
                 s = PyScanner(root, rel, pkg, pytest_config(root, pkg))
@@ -1878,9 +1891,12 @@ def scan(root: Path, extra_test_files: list[str] | None = None) -> dict:
                           **({'near_duplicates': near} if near else {})},
               'notes': notes + ([f'{near} pairs of same-shape tests in one package differ only in their literal values (input '
                                  'cases, worth parametrising); they are not duplicate candidates'] if near else [])}
-    guard = unsupported_dominant(language_breakdown(files))
-    if guard:
-        result['language_coverage'] = guard
+    cov = lang_census.language_coverage(cen, SCANNED_LANGS, tool='scan_tests.py', what='dead-test analysis')
+    if cen.get('excluded'):
+        result['excluded_trees'] = [{'path': e['path'], 'reason': e['reason']} for e in cen['excluded']]
+    if cov['status'] == 'unsupported_dominant':
+        result['language_coverage'] = cov
+        result['summary']['language_warning'] = cov['warning']
     return result
 
 
@@ -1891,6 +1907,9 @@ def main(argv=None) -> int:
     ap.add_argument('--test-files', action='append', default=[], metavar='GLOB',
                     help='also scan JavaScript/TypeScript files matching GLOB (a file name such as "*.e2e.ts" or a '
                          'repo-relative path pattern): the suites of a repository\'s own test runner')
+    ap.add_argument('--allow-minority', action='store_true',
+                    help='exit 0 even when the dominant language is one the scanner does not read (the warning stays '
+                         'in the output); without it that case exits 3')
     args = ap.parse_args(argv)
     res = scan(args.repo.resolve(), args.test_files)
     args.out.parent.mkdir(parents=True, exist_ok=True)
@@ -1905,7 +1924,7 @@ def main(argv=None) -> int:
     scope = ' (minority supported files only; see WARNING above)' if guard else ''
     print(f'{s["tests_defined"]} tests defined{scope}, {s["candidates"]} candidates: '
           + ', '.join(f'{v} {k}' for k, v in s['by_category'].items()) + f' -> {args.out}')
-    return 0
+    return 3 if guard and not args.allow_minority else 0
 
 
 if __name__ == '__main__':

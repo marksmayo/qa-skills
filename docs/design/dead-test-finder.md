@@ -1,6 +1,6 @@
 # Design: `dead-test-finder-skill`
 
-Status: Built (v1.1.0), see "As built" at the end. Build order: 12.
+Status: Built (v1.4.0), see "As built" at the end. Build order: 12.
 
 ## Mission
 
@@ -470,3 +470,28 @@ Where the build differs from the design above, and what the example showed.
     unchanged and it validates.
   - Not done: a list command for a repository's own runner (`e2e list --reporter json` and the
     like have no common format), and a Vitest JSON run report as collection evidence.
+- **Found on a Go CLI (v1.4.0)** (a Go module with about 3,900 tests, a vendored iOS driver with its own
+  TypeScript tests):
+  - **Go is scanned.** `go_tests.py` reads `_test.go` files (comment- and string-aware patterns):
+    definitions for every `TestX(t *testing.T)` with the product functions they call
+    (`<dir>:<Func>`, `<dir>:<Type>.<Method>`), and the rules `no_assertion` (only the test's own `t`,
+    assertion libraries, `panic`/`log.Fatal`; same-package helpers read, others assumed to fail),
+    `log_only`, a whole-body `t.Skip` (through `check_skips.py`), `empty_table`, `compare_to_self` and
+    a malformed `Testlower` name (which fails the package's vet step). On the review target it found
+    all 3,879 tests `go test -list` lists.
+  - **The language guard exits 3** and puts the warning in `summary.language_warning`
+    (`--allow-minority` exits 0). Language counts come from the shared `lang_census.py`, and its
+    excluded trees (vendored, embedded third-party packages, header trees, bundles) are never scanned
+    for tests (`excluded_trees`).
+  - **`collect_check.py` lists Go** with `go test -list . ./...`; a package that does not build here
+    leaves its tests `not_assessed`.
+  - **`neutralise.py` takes Go ids**: zero-value or `panic` bodies, unused imports turned into blank
+    imports (an emptied body had left `"net" imported and not used`), runs through
+    `go test -json -run '^TestX$'`; a package that does not build is `errored` with a `not_viable`
+    note. `go_tests.py record` turns saved `go test -json` output into a `runs.json` run.
+  - **Agent stale skips validate** without a `skips.json` verdict when `evidence.skip` carries the
+    stale verdict and a done ticket or an over-threshold age with its source, and the basis cites the
+    skip line.
+  - **Not fixed:** the JavaScript `unreached_assertion` false positive for `fail()` from `node:assert`
+    inside a `try` (seen only in the vendored tree, which is now excluded); agent-supplied definitions
+    for other unsupported languages (`--definitions`).

@@ -49,7 +49,7 @@ run evidence as any other finding. The renderer labels it "found by review". A f
 | `cant_fail`, `mock_only`, and `async_not_awaited`, `swallowed_failure` or `unreached_assertion` when confirmed | A neutralisation of the test: it passed unchanged and passed with every target's neutral body, in runs recorded in `runs.json`. If the raise variant failed, `evidence.note` must say the test checks that nothing raises |
 | `never_runs` | The collect output leaves the test out (`collection.json` and its raw output file), or a `.only` marker |
 | `duplicate` | `similarity.json` says duplicate: similarity ≥ 0.9, identical coverage and identical values. Otherwise the finding is an `overlap`. A JavaScript pair is `not_assessed` there (no per-test coverage): it can be a `static` `duplicate` only when the bodies are identical apart from variable names (similarity 1.0, the scanner's JavaScript threshold), otherwise an `overlap`, and never `confirmed` |
-| `stale_skip` | `skips.json` says stale: a done ticket, or no ticket and older than `skip_age_days` |
+| `stale_skip` | `skips.json` says stale: a done ticket, or no ticket and older than `skip_age_days`; for an agent finding with no skips verdict, `evidence.skip` holds the same (verdict stale, a checked done ticket or `age_days` over the threshold with its `age_source`) and the basis cites the skip line |
 
 **Neutralisation outcomes (checked for every result, proofs included).** `passed_neutralised` or
 `failed_neutralised` needs the unchanged run to show the test passed and at least one neutral-body

@@ -56,7 +56,7 @@ errored, and its tests stay not_assessed.
 """
 from __future__ import annotations
 import argparse, contextlib, hashlib, json, os, re, shutil, subprocess, sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -73,6 +73,8 @@ NO_LIST = {
 def framework_of(d: dict, pkg_dir: Path, root: Path | None = None) -> str:
     if d['lang'] == 'python':
         return 'pytest'
+    if d['lang'] == 'go':
+        return 'go-test'
     if d.get('framework') in ('playwright', 'node-test', 'custom'):
         return d['framework']
     if d.get('framework') in ('vitest', 'jest'):
@@ -182,6 +184,48 @@ def playwright_ids(data: dict, cwd: Path, prefix: str) -> list[str]:
     return out
 
 
+def go_list_ids(out: str, cwd: Path, prefix: str, known: set[str]) -> tuple[list[str], list[str], bool]:
+    """(ids, errored files, ok) from `go test -list .` output: test names, then `ok <import path>`, `? <path> [no test
+    files]` or `FAIL <path> [build failed]` per package. An import path maps to its directory through cwd's go.mod; a
+    name is given the id of the known test file in that directory that defines it."""
+    m = re.search(r'(?m)^\s*module\s+"?([^\s"]+)', (cwd / 'go.mod').read_text(encoding='utf-8', errors='replace')) \
+        if (cwd / 'go.mod').is_file() else None
+    mod = m.group(1) if m else ''
+    by_dir: dict[str, list[str]] = {}
+    for f in known:
+        by_dir.setdefault(PurePosixPath(f).parent.as_posix(), []).append(f)
+
+    def dir_of(path: str) -> str:
+        return (path[len(mod):].strip('/') or '.') if mod and (path == mod or path.startswith(mod + '/')) else path
+    ids, errored, pending, any_pkg = [], [], [], False
+    texts: dict[str, str] = {}
+    for line in out.splitlines():
+        s = line.strip()
+        if re.fullmatch(r'(?:Test|Benchmark|Fuzz|Example)\w*', s):
+            pending.append(s)
+            continue
+        pm = re.match(r'^(ok|FAIL|\?)\s+(\S+)(.*)$', s)
+        if not pm:
+            continue
+        any_pkg = True
+        d = dir_of(pm.group(2))
+        if pm.group(1) == 'FAIL' and re.search(r'\[(?:build|setup) failed\]', pm.group(3)):
+            errored += [prefix + f for f in sorted(by_dir.get(d, []))]
+        elif pm.group(1) == 'ok':
+            for name in pending:
+                for f in sorted(by_dir.get(d, [])):
+                    if f not in texts:
+                        try:
+                            texts[f] = (cwd / f).read_text(encoding='utf-8', errors='replace')
+                        except OSError:
+                            texts[f] = ''
+                    if re.search(r'(?m)^func\s+' + re.escape(name) + r'\s*\(', texts[f]):
+                        ids.append(f'{prefix}{f}::{name}')
+                        break
+        pending = []
+    return ids, errored, any_pkg
+
+
 def collect(pkg: str, fw: str, cwd: Path, run_dir: Path, files: list[str] | None, env: dict, reuse: dict | None,
             n_defined: int = 0, known: set[str] | None = None, ignore: list[str] | None = None,
             guard: tree_guard.TreeGuard | None = None, part: str = '') -> dict:
@@ -200,6 +244,15 @@ def collect(pkg: str, fw: str, cwd: Path, run_dir: Path, files: list[str] | None
             (f' <{len(local)} files>' if local else '')
         raw = run_dir / f'collect-{tag}.txt'
         hashed = cmd[1:]
+    elif fw == 'go-test':
+        # go test -list builds each test binary (vet included) and prints the test names, then one ok/FAIL line per
+        # package; nothing runs
+        pkgs = sorted({'./' + PurePosixPath(f).parent.as_posix() if PurePosixPath(f).parent.as_posix() != '.' else '.'
+                       for f in local}) if files is not None else ['./...']
+        cmd = ['go', 'test', '-list', '.', *pkgs]
+        shown = 'go test -list . ' + (' '.join(pkgs) if len(pkgs) <= 5 else f'<{len(pkgs)} packages>')
+        raw = run_dir / f'collect-{tag}.txt'
+        hashed = cmd
     elif fw == 'playwright':
         cmd = ['npx', 'playwright', 'test', '--list', '--reporter=json', *local]
         shown = 'npx playwright test --list --reporter=json' + (f' <{len(local)} files>' if local else '')
@@ -242,7 +295,11 @@ def collect(pkg: str, fw: str, cwd: Path, run_dir: Path, files: list[str] | None
         if text is not None:
             out = text + ('\n' + out if out.strip() and code else '')
     ids = []
-    if fw == 'pytest':
+    errored_files: list[str] = []
+    if fw == 'go-test':
+        ids, errored_files, ok = go_list_ids(out, cwd, prefix, known or set())
+        code = code if ok else (code or 1)
+    elif fw == 'pytest':
         for line in out.splitlines():
             line = line.strip()
             if '::' in line and not line.startswith(('=', '<')):
@@ -276,6 +333,14 @@ def collect(pkg: str, fw: str, cwd: Path, run_dir: Path, files: list[str] | None
         ok, note = False, f'listed no tests although the listed files define {n_defined}; treated as errored'
     raw.write_text(run_tests.redact_home(out.replace(str(cwd), f'<{pkg}>').replace(str(cwd).replace('\\', '/'), f'<{pkg}>')),
                    encoding='utf-8')
+    if fw == 'go-test' and errored_files:
+        # packages that did not build: their tests are not_assessed, the others were listed
+        status = 'partial' if ids else 'errored'
+        return {'package': pkg, 'framework': fw, 'command': shown, 'exit_code': code, 'status': status,
+                'raw_output': raw.name, 'scope': 'all' if files is None else f'{len(local)} files', 'input_hash': input_hash,
+                **({'env': sorted(env)} if env else {}), 'collected': sorted(set(ids)), 'errored_files': errored_files,
+                'note': f'{len(errored_files)} test file(s) in packages that did not build here ([build failed]); '
+                        'their tests are not assessed'}
     return {'package': pkg, 'framework': fw, 'command': shown, 'exit_code': code, 'status': 'ran' if ok else 'errored',
             'raw_output': raw.name, 'scope': 'all' if files is None else f'{len(local)} files', 'input_hash': input_hash,
             **({'env': sorted(env)} if env else {}), 'collected': sorted(set(ids)), **({'note': note} if note else {})}

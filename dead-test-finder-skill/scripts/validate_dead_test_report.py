@@ -337,7 +337,9 @@ def check(rep: dict, ev: dict, repo: Path | None, base: Path) -> list[str]:
                 errs.append(f'{w}: coverage_identical differs from the similarity file')
         if f['category'] == 'stale_skip':
             s = next((skips[c] for c in f['candidates'] if c in skips), None)
-            if not s or s['verdict'] != 'stale':
+            if f.get('source') == 'agent' and not s:
+                errs += agent_skip_errors(w, f, rep)
+            elif not s or s['verdict'] != 'stale':
                 errs.append(f'{w}: stale needs a done ticket or an age over the threshold in the skips file')
         p = f['proposal']
         if f['applied'] and p['action'] in ('delete', 'merge'):
@@ -414,6 +416,34 @@ def check(rep: dict, ev: dict, repo: Path | None, base: Path) -> list[str]:
             errs.append(f'summary.{k}: {rep["summary"].get(k)!r} but computed {v!r} (run --write-summary)')
     if any(f['priority'] == 'P0' for f in rep['findings']) and 'P0' not in rep['summary'].get('headline', ''):
         errs.append('summary.headline: name the P0 findings')
+    return errs
+
+
+SKIP_WORD = re.compile(r'\bskip|\bSkip|\bxit\b|\bxfail|\bignore|\bIgnore|\bdisabled?\b|\bDisabled', re.I)
+DONE = re.compile(r'done|closed|resolved|fixed', re.I)
+
+
+def agent_skip_errors(w: str, f: dict, rep: dict) -> list[str]:
+    """A stale skip found by review, with no skips.json verdict (a language check_skips.py has no candidate for, such
+    as a whole-body t.Skip found by hand): its basis must cite the skip line, and evidence.skip must hold the verdict
+    stale with either a checked done ticket, or an age over the threshold and where the age came from (git blame or
+    git log with the commit date)."""
+    errs = []
+    sk = (f['evidence'] or {}).get('skip') or {}
+    threshold = rep['metadata'].get('skip_age_days') or json.loads(
+        (HERE.parent / 'data' / 'rules.json').read_text(encoding='utf-8'))['skip_age_days']
+    if sk.get('verdict') != 'stale':
+        return [f'{w}: an agent stale_skip needs evidence.skip.verdict stale']
+    if not any(SKIP_WORD.search(b.get('excerpt') or '') for b in f.get('basis') or []):
+        errs.append(f'{w}: the basis must cite the line that skips the test')
+    t = sk.get('ticket') or {}
+    done_ticket = bool(t.get('checked')) and bool(DONE.search(f'{t.get("status") or ""} {t.get("status_category") or ""}'))
+    if not done_ticket:
+        age = sk.get('age_days')
+        if not isinstance(age, int) or age <= threshold:
+            errs.append(f'{w}: stale needs a done ticket or an age over the {threshold}-day threshold (age {age})')
+        if not (sk.get('age_source') or '').strip() or (sk.get('age_source') or '').startswith('not_checked'):
+            errs.append(f'{w}: say where the skip\'s age came from (age_source: git blame or git log with its date)')
     return errs
 
 

@@ -86,7 +86,8 @@ python scripts/render_report.py examples/dead_test_report.example.json --brief
 - `RUBRIC.md`: triage, confidence, ranking, proposals, honesty rules
 - `data/rules.json`: patterns, collect defaults, skip markers, thresholds
 - `schemas/dead_test_report.schema.json`: output contract
-- `scripts/scan_tests.py`: test definitions and candidates (Python `ast`; JS/TS through a lexer for strings, templates, regex literals and comments, with Playwright idioms)
+- `scripts/scan_tests.py`: test definitions and candidates (Python `ast`; JS/TS through a lexer for strings, templates, regex literals and comments, with Playwright idioms; Go through `go_tests.py`). Vendored and embedded third-party trees are left out (`lang_census.py`); when the dominant language is not read it warns and exits 3 (`--allow-minority` exits 0)
+- `scripts/go_tests.py`: the Go scanner rules, Go neutralisation (zero values, unused imports blanked) and `go test -json` runs recorded in `runs.json` (`record` for output you saved, `run` for one package)
 - `scripts/collect_check.py`: defined vs collected, from the frameworks' own list commands (pytest, Vitest, Jest, Playwright), optionally scoped, cached and split around a file that can't be listed
 - `scripts/net_guard.cjs`, `scripts/net_guard.py`: network guards for the runs (Node via `NODE_OPTIONS=--require`, pytest via `-p net_guard`); with `QA_NET_GUARD_LOG` set they write `loaded`/`refused` lines to that log only
 - `scripts/tree_guard.py`: keeps the target's test files byte for byte around every command the scripts run, puts them back and stops if one changed
