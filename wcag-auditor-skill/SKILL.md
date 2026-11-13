@@ -1,7 +1,7 @@
 ---
 name: wcag-auditor
 description: Audit live web pages against WCAG (2.2 AA by default) without needing the source code. Runs three open-source engines inside a real browser (axe-core, IBM Equal Access, HTML_CodeSniffer), adds keyboard, focus, reflow, text-spacing, zoom, target-size, hover, motion, language and media probes, merges and de-duplicates the results by component, maps every issue to a success criterion, rates severity with a published rubric, and gives every SC at the target level an EARL outcome. Untested criteria become a manual test plan. The report never says the site conforms.
-version: 1.2.0
+version: 1.3.0
 ---
 
 # WCAG Auditor
@@ -157,6 +157,16 @@ so the audited page is never reloaded under later probes.
 States from the config run the engines again, plus any probes listed for them. CAPTCHAs stop the
 page (`blocked`); cross-origin frames the engines can't reach are `untested`.
 
+Full-page screenshots show only the first box of a panel that scrolls its own content (an app shell
+of height `100vh` with a scrolling list and detail panel). The runner records such panels per page
+(`inner_scroll`) and writes the limitation into `run.json` `limitations` (also printed as a warning):
+copy it into the report's `limitations`, scroll the panels and check what they hide by hand, and
+don't cite a full-page screenshot as showing content below a panel's first box.
+
+Pages without page-level landmarks are grouped into templates by file name and DOM shape, not by
+folder, so one generated page copied into many folders (a `report.html` per CI run) is one template.
+
+
 ### 5. Normalise and merge
 
 ```bash
@@ -218,6 +228,13 @@ is never dismissed (the validator rejects it).
 A finding built only from `cantTell` candidates is agent judgment and needs a `resolution` saying
 what you looked at.
 
+A `pointer_only` keyboard candidate can be dismissed when a keyboard alternative elsewhere on the
+page does the same thing (a page-level shortcut that selects the item): name the key and what it did
+when you pressed it, so the reason can be checked.
+
+Generated ids that differ only in numbers (`flow-3-cmd-12-d2`, `row-7`) are left out of the
+component signature, so one pattern repeated per row is one candidate.
+
 ### 7. Assisted review
 
 Using the screenshots, the accessibility-tree snapshots and the page itself, review the SCs that
@@ -226,7 +243,11 @@ autocomplete, 1.4.1 colour-only meaning, 2.4.2 and 2.4.6 descriptive titles, hea
 2.4.4 link purpose, 3.2.3/3.2.4/3.2.6 consistency across pages, and 3.3.1/3.3.2 errors and
 labels (use the form-error state). List what you reviewed in `assisted_review.scs_reviewed`; every
 SC passed or failed with `agent_review` in its basis must be listed there.
-Findings from this step are `agent_judgment`.
+Findings from this step are `agent_judgment`. When the site's source is available and a finding
+rests on reading it (a `keydown` handler, a template), give it a `basis`:
+`[{"file", "line", "excerpt"}]`, paths relative to the source root, and validate with `--repo <source>`
+so each excerpt is re-read on its line. An `agent_judgment` finding whose text cites `file:line`
+without a basis for it is rejected.
 
 ### 8. Rate
 
@@ -251,11 +272,13 @@ the `manual_test_plan` with concrete steps and pages.
 
 ### 10. Report, validate and render
 
-Write `audit.json` (described by `schemas/audit.schema.json`; its `schema_version` is `"1.1"`; `"1.0"` reports still validate) next
+Write `audit.json` (described by `schemas/audit.schema.json`; its `schema_version` is `"1.2"`; `"1.0"` and `"1.1"` reports still validate). Copy
+`metadata.blocked_requests` from `run.json` as it is recorded there (a list of URLs) or as its count;
+`--run` checks it either way next
 to the run directory, then:
 
 ```bash
-python scripts/validate_audit.py audit.json --run <run-dir> --candidates <run-dir>/candidates.json --write-summary
+python scripts/validate_audit.py audit.json --run <run-dir> --candidates <run-dir>/candidates.json --write-summary [--repo <site source>]
 python scripts/render_report.py audit.json [--brief]
 ```
 

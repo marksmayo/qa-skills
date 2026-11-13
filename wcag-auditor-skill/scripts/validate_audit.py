@@ -188,7 +188,43 @@ def sources_key(s: dict) -> tuple:
 
 
 # ---------------------------------------------------------------- checks
-def check(d: dict, run_dir: Path | None, cands: dict | None) -> list[str]:
+SOURCE_CITE = re.compile(r'(?<![\w/.-])([\w./-]*[A-Za-z_][\w-]*\.[A-Za-z]{1,6}):(\d+)\b')
+
+
+def _norm_ws(s: str) -> str:
+    return ' '.join(str(s).split())
+
+
+def check_basis(f: dict, w: str, repo: Path | None) -> list[str]:
+    """An agent finding that names source lines carries them as a basis ({file, line, excerpt}); with --repo every
+    excerpt must be on its line, so the claim can be re-read."""
+    e = []
+    basis = f.get('basis') or []
+    prose = ' '.join(str(f.get(k) or '') for k in ('resolution', 'remediation', 'severity_rationale'))
+    cited = {(m.group(1).rsplit('/', 1)[-1], int(m.group(2))) for m in SOURCE_CITE.finditer(prose)}
+    have = {(str(b.get('file', '')).rsplit('/', 1)[-1], b.get('line')) for b in basis}
+    if f['evidence_type'] == 'agent_judgment' and cited - have:
+        miss = sorted(cited - have)[0]
+        e.append(f'{w}: cites {miss[0]}:{miss[1]} but has no basis for it: add basis [{{file, line, excerpt}}] so the '
+                 'claim can be re-read (validate with --repo)')
+    if repo is None:
+        return e
+    for b in basis:
+        p = (repo / b['file']).resolve()
+        if repo.resolve() not in p.parents:
+            e.append(f'{w}.basis: {b["file"]} is outside --repo')
+            continue
+        try:
+            lines = p.read_text(encoding='utf-8', errors='replace').splitlines()
+        except OSError:
+            e.append(f'{w}.basis: {b["file"]} not found in --repo')
+            continue
+        if b['line'] > len(lines) or _norm_ws(b['excerpt']) not in _norm_ws(lines[b['line'] - 1]):
+            e.append(f'{w}.basis: the excerpt is not on {b["file"]}:{b["line"]} (re-read with --repo)')
+    return e
+
+
+def check(d: dict, run_dir: Path | None, cands: dict | None, repo: Path | None = None) -> list[str]:
     e: list[str] = []
     scs = load_scs()
     scope, meta, head = d['scope'], d['metadata'], d['headline']
@@ -303,6 +339,7 @@ def check(d: dict, run_dir: Path | None, cands: dict | None) -> list[str]:
         if f['severity'] != expected_severity(f):
             e.append(f'{w}.severity: expected {expected_severity(f)} (base {f["base_severity"]}'
                      f'{", +1 for a critical path" if f.get("critical_path") else ""}{", Critical for non-interference" if f["non_interference"] else ""})')
+        e.extend(check_basis(f, w, repo))
         if f['evidence_type'] == 'agent_judgment':
             if f['confidence'] == 'high':
                 e.append(f'{w}: agent_judgment findings can never have high confidence')
@@ -473,6 +510,13 @@ def check(d: dict, run_dir: Path | None, cands: dict | None) -> list[str]:
                 e.append(f'metadata.tools[{t["name"]}]: version differs from run.json')
         if meta['checks'] != run['checks']:
             e.append('metadata.checks: must be copied unchanged from run.json')
+        # blocked_requests: the list run.json records, or its length
+        rb = run.get('blocked_requests') or []
+        n_run = len(rb) if isinstance(rb, list) else int(rb)
+        mb = meta['blocked_requests']
+        n_meta = len(mb) if isinstance(mb, list) else mb
+        if n_meta != n_run:
+            e.append(f'metadata.blocked_requests: {n_meta} but run.json blocked {n_run} request(s); copy the list or its count')
         run_pages = {s['id']: s['url'] for s in run['sample']}
         if {p['id']: p['url'] for p in meta['sample']} != run_pages:
             e.append('metadata.sample: ids and URLs must match run.json')
@@ -503,6 +547,7 @@ def main() -> int:
     ap.add_argument('--run', type=Path, help='run_audit.py output directory')
     ap.add_argument('--candidates', type=Path, help='merge_findings.py output')
     ap.add_argument('--write-summary', action='store_true', help='recompute headline numbers in place')
+    ap.add_argument('--repo', type=Path, help='the site source, to re-read every finding basis {file, line, excerpt}')
     args = ap.parse_args()
     try:
         d = json.loads(args.audit.read_text(encoding='utf-8'))
@@ -530,7 +575,7 @@ def main() -> int:
             print(f'  - {x}')
         return 1
     cands = json.loads(args.candidates.read_text(encoding='utf-8')) if args.candidates else None
-    errs = check(d, args.run, cands)
+    errs = check(d, args.run, cands, args.repo)
     if errs:
         print(f'INVALID: {len(errs)} problem(s)')
         for x in errs:

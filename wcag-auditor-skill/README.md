@@ -83,7 +83,8 @@ python scripts/fetch_engines.py [--include-optional] [--check]
 python scripts/run_audit.py --config audit_config.json --out <run> [--plan-only]
 python scripts/normalize.py <run> --out <run>/items.json
 python scripts/merge_findings.py <run>/items.json --run <run> --out <run>/candidates.json
-python scripts/validate_audit.py audit.json --run <run> --candidates <run>/candidates.json --write-summary
+python scripts/validate_audit.py audit.json --run <run> --candidates <run>/candidates.json --write-summary  # --repo <site source> re-reads agent findings' basis
+python scripts/self_test.py   # merge self-test, template grouping, inner scroll panels (Playwright), validator cases
 python scripts/render_report.py audit.json [--brief]
 ```
 

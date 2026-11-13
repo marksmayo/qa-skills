@@ -130,9 +130,57 @@ def template_key(f: dict) -> str:
     Landmarks that come with the content (regions, labelled sections, forms, dialogs) and repeat counts are left
     out, so a docs page with four code-block regions and one with none still share a template."""
     sig = f.get('template_sig') or {}
-    lms = [x for x in (sig.get('landmarks') or '').split('+') if x not in CONTENT_LANDMARKS]
+    lms = [x for x in (sig.get('landmarks') or '').split('+') if x and x not in CONTENT_LANDMARKS]
     shape = (sig.get('main_shape') or '').split(',')
-    return f"{url_pattern(f['url']).rsplit('/', 1)[0] or '/'}|{_distinct(lms)}|{_distinct(shape)}"
+    folder, name = (url_pattern(f['url']).rsplit('/', 1) + [''])[:2]
+    if not lms and name:
+        # no page-level landmarks: the folder says nothing about the template (one generated report.html per CI
+        # run folder), so key on the file name (digits as {n}) and the DOM shape instead
+        return f"*/{re.sub(r'[0-9]+', '{n}', name)}||{_distinct(shape)}"
+    return f"{folder or '/'}|{_distinct(lms)}|{_distinct(shape)}"
+
+
+INNER_SCROLL_JS = """() => {
+  const out = [];
+  const path = (el) => { const p = []; for (let e = el; e && e.nodeType === 1 && e !== document.body; e = e.parentElement) {
+      let i = 1; for (let s = e.previousElementSibling; s; s = s.previousElementSibling) if (s.localName === e.localName) i++;
+      p.unshift(e.localName + '[' + i + ']'); } return '/html/body/' + p.join('/'); };
+  for (const el of document.querySelectorAll('body *')) {
+    const cs = getComputedStyle(el);
+    if (!/(auto|scroll)/.test(cs.overflowY + ' ' + cs.overflowX)) continue;
+    const hiddenY = el.scrollHeight - el.clientHeight, hiddenX = el.scrollWidth - el.clientWidth;
+    if (el.clientHeight < 80 || (hiddenY < 50 && hiddenX < 50)) continue;
+    const share = Math.round(100 * hiddenY / Math.max(1, el.scrollHeight));
+    out.push({xpath: path(el), selector: el.localName + (el.id ? '#' + el.id : '') +
+              [...el.classList].slice(0, 3).map(c => '.' + c).join(''),
+              box_height: el.clientHeight, content_height: el.scrollHeight, hidden_px: Math.max(0, hiddenY),
+              hidden_x_px: Math.max(0, hiddenX), hidden_share: share});
+    if (out.length >= 10) break;
+  }
+  return out;
+}"""
+
+
+def inner_scroll_containers(page) -> list[dict]:
+    """Elements that scroll their own content (overflow auto/scroll, at least 50 px hidden): a full-page screenshot
+    shows only their first box, so content further down never appears in any screenshot."""
+    try:
+        return page.evaluate(INNER_SCROLL_JS)
+    except Exception:
+        return []
+
+
+def scroll_limitation(pages: list[dict]) -> str | None:
+    """The limitation to report when sampled pages scroll inside panels (an app shell of height 100vh)."""
+    hit = [p for p in pages if p.get('inner_scroll')]
+    if not hit:
+        return None
+    ex = '; '.join(f"{p['id']}: {', '.join(c['selector'] + ' (' + str(c['hidden_px']) + ' px hidden)' for c in p['inner_scroll'][:3])}"
+                   for p in hit[:5])
+    return (f'{len(hit)} sampled page(s) scroll inside panels ({ex}). Full-page screenshots show only the first box '
+            'of each panel: findings on content further down have screenshots that do not show it, and the visual '
+            'checks (contrast estimates, focus indicators, reflow) saw only what was in view. Scroll the panel and '
+            'check that content by hand, or capture the element.')
 
 
 # ---------------------------------------------------------------- PNG diff (stdlib)
@@ -1017,6 +1065,10 @@ class Runner:
                 ctx.close(); continue
             tag = f'{pid}__{vp}'
             page.screenshot(path=str(shots / f'{tag}.png'), full_page=True)
+            scrollers = inner_scroll_containers(page)
+            if scrollers:  # the full-page screenshot shows only the first box of each panel
+                vc['inner_scroll'] = scrollers
+                checks.setdefault('inner_scroll', scrollers)
             info = self.page_info(page)
             consent = self.consent_cfg()
             record = {'page': pid, 'url': url, 'final_url': page.url, 'viewport': vp, 'state': 'initial', 'page_info': {k: v for k, v in info.items() if k != 'links'},
@@ -1187,6 +1239,11 @@ def main() -> int:
            'auth_used': bool(auth_used), 'mode': 'plan_only' if args.plan_only else 'audit',
            'bypass_csp': r.bypass_csp, 'consent': r.consent_cfg(), 'requests': r.requests, 'crawl': r.crawl_info,
            'settle': {'cap_seconds': r.settle_seconds, 'long_lived_seconds': r.long_lived_seconds}}
+    scroll_note = scroll_limitation([{'id': p.get('page'), 'url': p.get('url'), 'inner_scroll': p.get('inner_scroll')}
+                                     for p in pages])
+    run['limitations'] = [scroll_note] if scroll_note else []
+    if scroll_note:
+        print(f'WARN: {scroll_note}', file=sys.stderr)
     (out / 'run.json').write_text(json.dumps(run, indent=1, ensure_ascii=False), encoding='utf-8')
     print(json.dumps({'mode': run['mode'], 'pages': len(sample),
                       'reachable': sum(1 for s in sample if s['reason'] != 'unreachable'),

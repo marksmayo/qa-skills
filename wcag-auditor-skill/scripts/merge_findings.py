@@ -35,9 +35,19 @@ SEVERITY_ORDER = ['minor', 'moderate', 'serious', 'critical']
 INSTANCE_ID = re.compile(r'#(?::r[0-9a-z]*:|«r[0-9a-z]*»|_r_[0-9a-z]+_|(?:base-ui-|radix-|headlessui-|react-aria|mui-\d)\S*|\S*/\S*)$', re.I)
 
 
+TRAILING_ID = re.compile(r'#([^\s>#]+)$')
+# an id with a numeric segment (flow-3-cmd-12-d2, row-7, item_12) is generated per row by a script
+NUMERIC_SEGMENT = re.compile(r'(?:^|[-_:.])[a-z]{0,2}\d+(?=$|[-_:.])', re.I)
+
+
 def component_sig(sig: str) -> str:
-    """The signature without an instance id, so repeated components group into one candidate."""
-    return INSTANCE_ID.sub('', sig or '') or sig
+    """The signature without an instance id, so repeated components group into one candidate: framework ids
+    (React useId, Radix, MUI), path-like ids, and ids with a numeric segment that a script generates per row."""
+    s = INSTANCE_ID.sub('', sig or '')
+    m = TRAILING_ID.search(s)
+    if m and NUMERIC_SEGMENT.search(m.group(1)):
+        s = s[:m.start()]
+    return s or sig
 
 
 def scs_overlap(a, b):
@@ -467,6 +477,18 @@ def self_test() -> int:
     ok = est and est['min_ratio'] is None and est['unknown_background']
     bad += not ok
     print(f'{"ok  " if ok else "FAIL"} text over a video has an unknown background ({est})')
+    # ids a script generates per row (flow-3-cmd-12-d2, row-7, item_12) name an instance, not the component
+    sigs = {s: component_sig(s) for s in ('main div.cmd-list > div.cmd-row#flow-3-cmd-12-d2',
+                                          'main div.cmd-list > div.cmd-row#flow-14-cmd-1-d1', 'main ul > li#row-7',
+                                          'form div.row > input#name', 'main main > div.h2#fees', 'main ul > li#item_12')}
+    want = {'main div.cmd-list > div.cmd-row#flow-3-cmd-12-d2': 'main div.cmd-list > div.cmd-row',
+            'main div.cmd-list > div.cmd-row#flow-14-cmd-1-d1': 'main div.cmd-list > div.cmd-row',
+            'main ul > li#row-7': 'main ul > li', 'form div.row > input#name': 'form div.row > input#name',
+            'main main > div.h2#fees': 'main main > div.h2#fees', 'main ul > li#item_12': 'main ul > li'}
+    ok = sigs == want
+    bad += not ok
+    print(f'{"ok  " if ok else "FAIL"} generated ids with numeric segments are stripped from component signatures '
+          f'({ {k: v for k, v in sigs.items() if v != want[k]} or "all as expected"})')
     print('self-test passed' if not bad else f'self-test FAILED: {bad} check(s)')
     return 1 if bad else 0
 

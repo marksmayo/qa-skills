@@ -395,3 +395,22 @@ Differences from the draft above, and decisions made while building:
     one triage entry per candidate. The example run predates these changes and was not re-captured
     (the release gate and orchestrator examples hash the report); its items and candidates
     regenerate unchanged and the report (schema 1.0) validates as before.
+- **Found on a generated HTML report of a Go CLI, fixed (v1.3.0)** (one `report.html` per run folder,
+  a `100vh` app shell with scrolling panels, step rows with script-generated ids):
+  - One click-only row pattern became 18 candidates, one per step, because the rows carry ids like
+    `flow-3-cmd-12-d2`. `merge_findings.py` now drops ids with a numeric segment from the component
+    signature (`--self-test` checks it).
+  - `run.json` records `blocked_requests` as a list but the schema wanted a count. Schema 1.2 takes
+    either, and `--run` checks the number against `run.json`.
+  - Full-page screenshots of a `100vh` shell show only the first box of each scrolling panel, and
+    nothing said so. The runner records `inner_scroll` per page and a `limitations` entry in `run.json`
+    (also printed as a warning) for the report to carry.
+  - Five copies of one generated page in five folders, with no landmarks, made five templates. Pages
+    without page-level landmarks are keyed by file name and DOM shape, not folder.
+  - An agent finding that rested on reading the page's script had no checkable basis. Findings may
+    carry `basis: [{file, line, excerpt}]`, re-read with `--repo`; an `agent_judgment` finding that
+    cites `file:line` without a basis is rejected.
+  - `scripts/self_test.py` runs these checks (the scroll check needs Playwright). The example run was
+    not re-captured: its candidates regenerate unchanged and the report validates as before.
+  - Not done: a probe for single-key shortcuts (2.1.4), pressing Enter/Space on the selected item, and
+    an event for short-interval polling; those still need the agent to read the script.
