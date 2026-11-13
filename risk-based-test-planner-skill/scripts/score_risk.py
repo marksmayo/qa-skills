@@ -62,7 +62,7 @@ from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import detect_conventions, diff_scope  # noqa: E402
+import detect_conventions, diff_scope, lang_census  # noqa: E402
 
 SURFACES = json.loads((HERE.parent / 'data' / 'surfaces.json').read_text(encoding='utf-8'))
 LIKELIHOOD = {'churn': 2, 'defects': 3, 'complexity': 1, 'change_in_scope': 2, 'test_weakness': 2}
@@ -73,9 +73,6 @@ UI_EXT = {'.tsx', '.jsx', '.vue', '.svelte'}
 STDLIB = set(getattr(sys, 'stdlib_module_names', ())) | {'__future__'}
 CODE_EXT = {'.py', '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.java', '.kt', '.go', '.cs', '.swift', '.dart', '.rb', '.php',
             '.scala', '.rs', '.vue', '.svelte', '.sql', '.m', '.mm', '.h', '.c', '.cc', '.cpp', '.hpp'}
-# Code in a language no script here measures: counted per area and warned about, never silently dropped.
-UNMEASURED_EXT = {'.lua', '.pl', '.pm', '.ex', '.exs', '.erl', '.hs', '.ml', '.fs', '.zig', '.nim', '.clj', '.cljs', '.jl',
-                  '.r', '.R', '.groovy', '.cr', '.v', '.d', '.f90', '.asm', '.s', '.S'}
 
 
 # ---------------------------------------------------------------- shared arithmetic (the validator imports these)
@@ -1274,6 +1271,25 @@ def surface_scan(root: Path, files: list[str], entries: dict[str, str] | None = 
 
 
 # ---------------------------------------------------------------- scoring
+# The languages the scripts measure (complexity, surfaces, churn): the census names everything else.
+MEASURED_LANGUAGES = {'Python', 'JavaScript', 'TypeScript', 'Vue', 'Svelte', 'Go', 'Rust', 'Java', 'Kotlin', 'Scala', 'C#',
+                      'Swift', 'Dart', 'Ruby', 'PHP', 'Objective-C', 'C', 'C++', 'C/C++ header'}
+
+
+def language_note(root: Path) -> tuple[dict, str | None]:
+    """(language_coverage, warning): lang_census over the repository (vendored and embedded third-party trees left
+    out) against MEASURED_LANGUAGES. Code in another language gets no complexity, churn area or surface score, so it is
+    named, loudly when it is most of the repository."""
+    cov = lang_census.language_coverage(lang_census.census(root), MEASURED_LANGUAGES, tool='score_risk.py',
+                                        what='risk ranking')
+    if cov['status'] == 'unsupported_dominant':
+        return cov, cov['warning']
+    if cov['unsupported']:
+        return cov, ('code in languages these scripts do not measure is not scored (no complexity or surface): '
+                     + ', '.join(f'{n} {k}' for k, n in cov['unsupported'].items()) + '; judge the areas holding it by hand')
+    return cov, None
+
+
 def uncovered_language(files: list[str], owner: dict, cx: dict, root: Path, area_basis: str) -> str | None:
     """A warning when most code files of the dominant language (vendored and generated left out) are outside every
     area: the plan would rank incidental files and miss the product, so it must not look complete."""
@@ -1364,14 +1380,9 @@ def score(args) -> dict:
     lost = uncovered_language(files, owner, cx, root, area_basis)
     if lost:
         warnings.append(lost)
-    unmeasured: dict[str, int] = {}
-    for f in hist['files']:
-        sfx = PurePosixPath(f).suffix
-        if sfx in UNMEASURED_EXT and not is_test(f) and diff_scope.classify(f, '', False, root)[0] not in ('generated', 'vendored'):
-            unmeasured[sfx] = unmeasured.get(sfx, 0) + 1
-    if unmeasured:
-        warnings.append('code in languages these scripts do not measure is not scored (no complexity, churn or surface): '
-                        + ', '.join(f'{n} {k}' for k, n in sorted(unmeasured.items())) + '; judge those areas by hand')
+    lang_cov, note = language_note(root)
+    if note:
+        warnings.append(note)
     inputs = [load_input(k, Path(p)) for k, p in (x.split('=', 1) for x in args.input)]
     names = [(i['skill'], i['path']) for i in inputs]
     if len(set(names)) != len(names):
@@ -1623,7 +1634,7 @@ def score(args) -> dict:
                                    'out_of_scope_files': len(jscope['out_of_scope_files'])} if have_map else None),
             'area_basis': area_basis, 'unassigned': unassigned, 'warnings': warnings + list(hist.get('notes') or []),
             'excluded': excluded, 'flaky_tests_not_counted': flaky_skipped, 'tests_not_counted': tests_not_counted,
-            'release': rel_meta,
+            'release': rel_meta, 'language_coverage': lang_cov,
             'weights': {'likelihood': LIKELIHOOD, 'impact': IMPACT}, 'areas': out_areas}
 
 
@@ -1824,6 +1835,11 @@ def go_layout_checks() -> list[tuple[str, bool]]:
             w = uncovered_language(gofiles + ['npm/w/index.js'], {f: None for f in gofiles} | {'npm/w/index.js': 'npm/w'},
                                    {f: {'loc': 3} for f in gofiles + ['npm/w/index.js']}, root, 'workspace packages')
             out.append((f'loud warning when the dominant language is outside every area (got {w!r})', bool(w) and '.go' in w))
+            (root / 'tools').mkdir(exist_ok=True)
+            (root / 'tools' / 'gen.lua').write_text('print(1)\n', encoding='utf-8')
+            cov, note = language_note(root)
+            out.append((f'the language census names code no script measures (got {note!r})',
+                        cov.get('unsupported', {}).get('Lua') == 1 and bool(note) and 'Lua' in note))
             prof = root / 'coverage.out'
             prof.write_text('mode: set\nexample.test/sample/pkg/alpha/alpha.go:3.20,4.11 1 1\n'
                             'example.test/sample/pkg/alpha/alpha.go:4.11,6.3 1 0\n'

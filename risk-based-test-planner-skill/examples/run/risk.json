@@ -63,6 +63,40 @@
     "packages": {},
     "breaking_commits": 0
   },
+  "language_coverage": {
+    "tool": "score_risk.py",
+    "supported_languages": [
+      "C",
+      "C#",
+      "C++",
+      "C/C++ header",
+      "Dart",
+      "Go",
+      "Java",
+      "JavaScript",
+      "Kotlin",
+      "Objective-C",
+      "PHP",
+      "Python",
+      "Ruby",
+      "Rust",
+      "Scala",
+      "Svelte",
+      "Swift",
+      "TypeScript",
+      "Vue"
+    ],
+    "supported": {
+      "Python": 19
+    },
+    "unsupported": {},
+    "supported_files": 19,
+    "unsupported_files": 0,
+    "dominant": "Python",
+    "excluded_source_files": 0,
+    "status": "ok",
+    "warning": null
+  },
   "weights": {
     "likelihood": {
       "churn": 2,
