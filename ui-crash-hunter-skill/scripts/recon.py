@@ -52,6 +52,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ui_graph import (projects, next_path_in_project, project_of, note_packages, in_test_dir, node_role,  # noqa: E402
                       graph as ui_graph, resolve as resolve_import, IMPORT, NEXT_CONFIG)
 from scan_pitfalls import mask_code  # noqa: E402
+from langs import (vendored_roots, language_census, language_warning, incidental, embedded_documents,  # noqa: E402
+                   HOST_EXT, TEMPLATE_FILE, under)
 
 SKIP_DIRS = {'.git', 'node_modules', 'dist', 'build', 'out', '.next', '.nuxt', '.svelte-kit', '.output', 'coverage',
              'vendor', 'Pods', 'Carthage', 'DerivedData', '.gradle', '.dart_tool', '.idea', '.vscode', '__pycache__',
@@ -533,8 +535,15 @@ def main() -> int:
         print(f'Not a directory: {root}', file=sys.stderr)
         return 2
     files = list(walk(root))
-    platforms, targets = detect_platforms(root, files)
+    # vendored and bundled third-party trees (a driver with its own LICENSE and package.json inside a Go module)
+    # are not the app: they never decide the platforms, the site model or the screens
+    vendored = vendored_roots(root, files)
+    files = [f for f in files if not under(f.relative_to(root).as_posix(), vendored)]
     note_packages(root, files)  # a test-named directory with its own package manifest is a package, not tests
+    lang = language_census(root, files, [], is_test=lambda r: in_test_dir(r) or bool(TEST_NAME.search(r.rsplit('/', 1)[-1])))
+    lang['vendored'] = vendored
+    lang_warning = language_warning(lang, 'this skill')
+    platforms, targets = detect_platforms(root, [f for f in files if not in_test_dir(f.relative_to(root).as_posix())])
     code = [f for f in files if f.suffix in CODE_EXT and not TEST_NAME.search(f.name) and not is_bundle(f)
             and not in_test_dir(f.relative_to(root).as_posix())]
 
@@ -666,6 +675,21 @@ def main() -> int:
             seen.add(key)
             uniq_routes.append(r)
     site = site_model(root, files, platforms, code)
+    embedded = []
+    for f in files:
+        rel = f.relative_to(root).as_posix()
+        if (f.suffix in HOST_EXT and f.suffix not in CODE_EXT or TEMPLATE_FILE.search(f.name)) and not in_test_dir(rel) \
+                and not TEST_NAME.search(f.name) and not f.name.endswith('_test.go'):
+            for d in embedded_documents(read(f), f.suffix, f.name):
+                d.pop('_scripts', None)
+                embedded.append({'file': rel, **d})
+    if incidental(lang):
+        # most of the code is in a language no pack reads: a site model from the few analysed files (a bundled
+        # driver's test fixture, a build script) would describe incidental code, not the product's UI
+        site = {'kind': 'unknown', 'frameworks': [], 'html_pages': site.get('html_pages', 0),
+                'note': f"not modelled: {lang_warning}"}
+    if embedded:
+        site['embedded_templates'] = embedded
     if site.get('server'):  # pages a Node server renders from template literals
         listed = {r['path'] for r in uniq_routes}
         for r in site['server']['routes']:
@@ -746,11 +770,11 @@ def main() -> int:
         blast = ({'model': 'per_root', 'note': 'Single render tree: an uncaught render error above every boundary blanks the app (B1).'}
                  if site['kind'] in ('spa', 'ssr') else
                  {'model': 'per_process', 'note': 'An uncaught exception terminates the app (B1) unless code or a handler catches it.'}
-                 if native else
-                 {'model': 'unknown', 'note': site['note']} if site['kind'] == 'api' else
+                 if native and not incidental(lang) else
+                 {'model': 'unknown', 'note': site['note']} if site['kind'] == 'api' or incidental(lang) else
                  {'model': 'unknown', 'note': 'No framework, app platform or HTML pages recognised; decide by reading the code.'})
         notes = ['No error boundary or global handler found: any uncaught render error is app-fatal (B1).'] \
-            if not boundaries and site['kind'] != 'api' else []
+            if not boundaries and site['kind'] != 'api' and code and not incidental(lang) else []
         if site.get('server'):
             sv = site['server']
             notes.append(f"A Node HTTP server ({', '.join(sv['servers'][:3])}) also renders pages from HTML template "
@@ -762,6 +786,16 @@ def main() -> int:
                          'loader and lazy-import errors in their route and its children: a throw under one is B2 '
                          '(screen_replaced), not B1. Code above the router (providers, the root render, module-scope '
                          'code) is outside them.')
+    if embedded:
+        n_scripts = sum(e['inline_scripts'] for e in embedded)
+        notes.append(f"{len(embedded)} HTML document(s) are held in string constants or template files "
+                     f"({', '.join(sorted({e['file'] for e in embedded})[:3])}), with {n_scripts} inline <script> "
+                     'block(s): browser code the framework detectors do not see. scan_pitfalls.py scans those inline '
+                     'scripts at their real file and line (candidates marked "embedded"); read the rest of the '
+                     'template by hand, and probe a rendered page (a generated file can be probed as file://). A page '
+                     'whose list is rendered by the server but whose detail is rendered by its script is per_script: a '
+                     'throw before the script renders the detail leaves that panel empty (B3 for the panel, the '
+                     'server-rendered list stays).')
     for e in env_config:
         if e.get('reachable_from_ui') is False:
             continue
@@ -770,6 +804,8 @@ def main() -> int:
     out = {
         'generated_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
         'repository': root.name,
+        'warnings': [lang_warning] if lang_warning else [],
+        'language_coverage': lang,
         'platforms': platforms,
         'targets': targets,
         'routes_screens': uniq_routes,
@@ -794,6 +830,8 @@ def main() -> int:
               f"contracts: {len(contracts)} | persisted-state uses: {len(persisted)} -> {args.out}")
     else:
         print(text)
+    for w in out['warnings']:
+        print(f'WARN: {w}', file=sys.stderr)
     return 0
 
 if __name__ == '__main__':

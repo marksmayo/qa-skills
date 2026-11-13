@@ -38,7 +38,7 @@ PRUNE = {'node_modules', '.git', '.next', '.nuxt', 'dist', 'build', 'out', 'cove
          '.idea', '.vscode', 'storybook-static', '.expo', 'target', 'Carthage'}
 SRC_EXT = ('.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts', '.vue', '.svelte')
 TEST_PART = re.compile(r'(^|/)(tests?|__tests__|__mocks__|e2e|cypress|playwright|test-shims|androidTest|integration_test|'
-                       r'\w*UITests?)(/|$)')
+                       r'\w*UITests?|\w*Tests(?:_\w+)?)(/|$)')
 TEST_NAME = re.compile(r'(\.|_)(test|spec|stories|story)\.\w+$|Tests?\.(swift|kt|java)$|_test\.dart$|'
                        r'^(vitest|jest|playwright|cypress)\.(config|setup)\.\w+$|\.setup\.\w+$', re.I)
 ROUTE_HANDLER = re.compile(r'(^|/)(src/)?app/(.*/)?route\.(ts|js|mts|mjs|tsx|jsx)$|(^|/)(src/)?pages/api/')
@@ -118,7 +118,7 @@ def walk(root: Path, extra_prune: set[str] = frozenset()):
 MANIFESTS = ('package.json', 'pyproject.toml', 'setup.py', 'setup.cfg', 'Cargo.toml', 'go.mod', 'pom.xml',
              'build.gradle', 'build.gradle.kts', 'composer.json', 'Gemfile', 'pubspec.yaml')
 TEST_DIR_NAME = re.compile(r'^(tests?|__tests__|__mocks__|e2e|cypress|playwright|test-shims|androidTest|integration_test|'
-                           r'\w*UITests?)$')
+                           r'\w*UITests?|\w*Tests(?:_\w+)?)$')
 PACKAGE_DIRS: set[str] = set()  # test-named directories (relative) that hold a manifest; filled by note_packages()
 
 

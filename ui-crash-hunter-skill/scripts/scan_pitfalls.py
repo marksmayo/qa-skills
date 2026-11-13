@@ -32,6 +32,8 @@ HERE = Path(__file__).resolve().parent
 sys.dont_write_bytecode = True  # importing a sibling must not write __pycache__ into the skill folder
 sys.path.insert(0, str(HERE))
 import sarif  # noqa: E402
+from langs import (vendored_roots, language_census, language_warning, embedded_documents, script_text,  # noqa: E402
+                   HOST_EXT, TEMPLATE_FILE, under)
 from ui_graph import graph as ui_graph, classify, SRC_EXT, MANIFESTS, TEST_DIR_NAME, node_role, note_packages, walk as walk_repo  # noqa: E402
 
 CATALOGUE = HERE.parent / 'data' / 'pitfalls.json'
@@ -66,7 +68,10 @@ def ssr_frameworks(root: Path) -> set[str]:
         found |= {name for dep, name in SSR_DEPS.items() if dep in deps}
     return found
 
-def source_files(root: Path, extensions: set[str]):
+def source_files(root: Path, extensions: set[str], vendored: list[str] = ()):
+    """Source files with the given extensions: dependency, build and test directories (an Xcode `<Name>Tests`
+    target included) and vendored trees are pruned before descending."""
+    vendored = {root / v for v in vendored}
     stack = [root]
     while stack:
         d = stack.pop()
@@ -77,7 +82,10 @@ def source_files(root: Path, extensions: set[str]):
         for p in entries:
             if p.is_dir():
                 # a test-named directory with a package manifest (packages/e2e/package.json) is a product package
-                if (p.name not in SKIP_DIRS or (TEST_DIR_NAME.match(p.name) and any((p / m).is_file() for m in MANIFESTS)))                         and not p.name.startswith('.'):
+                if p in vendored:
+                    continue
+                if ((p.name not in SKIP_DIRS and not TEST_DIR_NAME.match(p.name))
+                        or (TEST_DIR_NAME.match(p.name) and any((p / m).is_file() for m in MANIFESTS)))                         and not p.name.startswith('.'):
                     stack.append(p)
             elif p.suffix in extensions and not TEST_FILE.search(p.name) and not is_bundle(p):
                 yield p
@@ -251,19 +259,42 @@ def scan_file(path: Path, rel: str, pitfalls: list[dict]) -> list[dict]:
         text = path.read_text(encoding='utf-8', errors='replace')
     except OSError:
         return []
+    return scan_text(text, rel, pitfalls, path.suffix)
+
+
+def scan_embedded(path: Path, rel: str, pitfalls: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Inline scripts of HTML documents held in string constants (a Go raw string for html/template, a Python
+    triple-quoted string) or template files, scanned with the web pitfalls at their real file and line.
+    Returns (hits, documents)."""
+    try:
+        text = path.read_text(encoding='utf-8', errors='replace')
+    except OSError:
+        return [], []
+    docs = embedded_documents(text, path.suffix, path.name)
+    hits = []
+    for d in docs:
+        for s in d.pop('_scripts'):
+            for h in scan_text(script_text(text, s), rel, pitfalls, '.js'):
+                h['embedded'] = d['kind']
+                h['snippet'] = text.splitlines()[h['line'] - 1].strip()[:200]
+                hits.append(h)
+    return hits, [{'file': rel, **d} for d in docs]
+
+
+def scan_text(text: str, rel: str, pitfalls: list[dict], suffix: str) -> list[dict]:
     lines = text.splitlines()
     if lines and max(len(l) for l in lines) > 2000:  # minified or generated
         return []
     hits = []
     for p in pitfalls:
-        if p.get('matcher') == 'promise_chain' and (not p.get('extensions') or path.suffix in p['extensions']):
+        if p.get('matcher') == 'promise_chain' and (not p.get('extensions') or suffix in p['extensions']):
             hits.extend(promise_chain_hits(text, rel, p))
     pitfalls = [p for p in pitfalls if not p.get('matcher')]
     for i, line in enumerate(lines):
         if COMMENT.match(line):
             continue
         for p in pitfalls:
-            if p.get('extensions') and path.suffix not in p['extensions']:
+            if p.get('extensions') and suffix not in p['extensions']:
                 continue
             m = p['_rx'].search(line)
             if not m:
@@ -438,6 +469,109 @@ def self_test_scope() -> list[str]:
     return fails
 
 
+# A Go command-line tool whose only browser code is an HTML page held in a Go string constant (rendered with
+# html/template), beside a bundled third-party driver tree (its own LICENSE and package.json, an Xcode project,
+# a TypeScript types file, a build script and an Xcode test target holding a SwiftUI fixture view).
+SELF_TEST_GO_PAGE = ('package summary\n\nimport "html/template"\n\n'
+                     '// page renders the run summary.\n'
+                     'var page = template.Must(template.New("summary").Parse(pageHTML))\n\n'
+                     'const pageHTML = `<!DOCTYPE html>\n<html>\n<head><style>body { font-family: sans-serif; }</style></head>\n'
+                     '<body>\n<div id="list">{{range .Entries}}<div class="row">{{.Name}}</div>{{end}}</div>\n<script>\n'
+                     "const saved = JSON.parse(sessionStorage.getItem('filters'));\n"
+                     'document.title = saved.label;\n</script>\n</body>\n</html>`\n')
+SELF_TEST_GO_TREE = {
+    'go.mod': 'module example.test/harbourlog\n\ngo 1.22\n',
+    'main.go': 'package main\n\nimport "example.test/harbourlog/cmd"\n\nfunc main() { cmd.Run() }\n',
+    'cmd/run.go': 'package cmd\n\n// Run parses flags and runs the tool.\nfunc Run() {}\n',
+    'internal/store/store.go': 'package store\n\n// Entry is one logged line.\ntype Entry struct{ Name string }\n',
+    'internal/store/store_test.go': 'package store\n\nimport "testing"\n\nfunc TestEntry(t *testing.T) {}\n',
+    'internal/flow/parse.go': 'package flow\n\n// Parse reads a flow file.\nfunc Parse() {}\n',
+    'internal/flow/run.go': 'package flow\n\n// Run runs a flow.\nfunc Run() {}\n',
+    'internal/driver/client.go': 'package driver\n\n// Client talks to a device driver.\ntype Client struct{}\n',
+    'internal/driver/retry.go': 'package driver\n\n// Retry retries a call.\nfunc Retry() {}\n',
+    'internal/summary/types.go': 'package summary\n\n// Summary is the page model.\ntype Summary struct{ Entries []string }\n',
+    'internal/summary/page.go': SELF_TEST_GO_PAGE,
+    'drivers/agent/LICENSE': 'Synthetic licence text for a bundled third-party tree.\n',
+    'drivers/agent/package.json': '{"name": "agent-kit", "dependencies": {"axios": "1.0.0"}}',
+    'drivers/agent/Agent.xcodeproj/project.pbxproj': '// IPHONEOS_DEPLOYMENT_TARGET = 15.0;\n',
+    'drivers/agent/AgentTests/WatchApp/ContentView.swift': 'import SwiftUI\nstruct ContentView: View { var body: some View { Text("x") } }\n',
+    'drivers/agent/lib/types.ts': 'export interface Caps {\n  environment?: Record<string, string>;\n}\n',
+    'drivers/agent/lib/host.ts': 'export const home = (caps) => caps.environment.HOME;\n',
+    'drivers/agent/Scripts/fetch.mjs': "import axios from 'axios';\nawait axios.get('/x');\n",
+    'web/types/caps.ts': 'export interface Caps {\n  environment?: Record<string, string>;\n}\n',
+    'macos/Sources/Env.swift': 'let home = ProcessInfo.processInfo.environment["HOME"]\n',
+    'tools/probe/ProbeTests/Helpers.swift': 'func pick(x: [String]?) -> String { return x!.first! }\n',
+    'tools/probe/IntegrationTests_watchOS/Driver.swift': 'func run(y: String?) { print(y!.count) }\n',
+}
+
+
+def self_test_go() -> list[str]:
+    """Language guard, vendored trees, Xcode test targets and HTML held in Go string constants; returns failures."""
+    import subprocess, tempfile
+    fails = []
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp) / 'harbourlog'
+        for rel, text in SELF_TEST_GO_TREE.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(text, encoding='utf-8')
+        for rel in ('tools/probe/ProbeTests/Helpers.swift', 'x/IntegrationTests_watchOS/Driver.swift',
+                    'drivers/agent/WebDriverAgentTests/IntegrationApp/ContentView.swift'):
+            if classify(rel) != 'test':
+                fails.append(f'{rel}: an Xcode test target directory is not classified as test code ({classify(rel)})')
+        run = lambda script, *a: subprocess.run([sys.executable, '-B', str(HERE / script), str(root), *a],
+                                                capture_output=True, text=True, encoding='utf-8')
+        recon = run('recon.py')
+        try:
+            r = json.loads(recon.stdout)
+        except ValueError:
+            return fails + [f'recon.py failed: {recon.stderr[-300:]}']
+        lc = r.get('language_coverage') or {}
+        if lc.get('dominant') != 'go' or lc.get('analysed') is not False:
+            fails.append(f'recon language_coverage does not say Go is dominant and not analysed: {lc or "missing"}')
+        if not any('Go' in w for w in r.get('warnings') or []):
+            fails.append('recon has no top-level warning that the dominant language (Go) is not analysed')
+        if r['site']['kind'] != 'unknown' or 'ios_deployment_target' in r['targets'] or \
+                r['blast_radius']['model'] != 'unknown':
+            fails.append(f"recon modelled the repo from incidental files: site {r['site']['kind']}, targets {r['targets']}")
+        if any('ContentView' in str(x.get('path')) for x in r['routes_screens']):
+            fails.append('recon listed a SwiftUI view inside a vendored tree / Xcode test target as a screen')
+        if any(d['library'] == 'axios' for d in r['data_layer']):
+            fails.append("recon took the vendored tree's build script as the app's data layer (axios)")
+        emb = r['site'].get('embedded_templates') or []
+        if [(e['file'], e['inline_scripts']) for e in emb] != [('internal/summary/page.go', 1)]:
+            fails.append(f"recon site.embedded_templates: {[(e['file'], e['inline_scripts']) for e in emb]}, expected "
+                         'the Go string constant in internal/summary/page.go with 1 inline script')
+        if any('No error boundary' in n for n in r['notes']):
+            fails.append('recon claims "no error boundary ... B1" with no analysed UI code')
+        if 'drivers/agent' not in (lc.get('vendored') or []):
+            fails.append(f"recon language_coverage.vendored does not list drivers/agent: {lc.get('vendored')}")
+        scan = run('scan_pitfalls.py')
+        try:
+            s = json.loads(scan.stdout)
+        except ValueError:
+            return fails + [f'scan_pitfalls.py failed: {scan.stderr[-300:]}']
+        want = SELF_TEST_GO_PAGE.splitlines().index("const saved = JSON.parse(sessionStorage.getItem('filters'));") + 1
+        got = {(c['file'], c['line'], c['pitfall_id']) for c in s['candidates']}
+        if ('internal/summary/page.go', want, 'WEB-JSON-PARSE') not in got:
+            fails.append(f'the inline script in the Go string constant was not scanned (want JSON.parse at '
+                         f'internal/summary/page.go:{want}; got {sorted(got)[:5]})')
+        if any(c['file'].startswith(('drivers/', 'tools/probe/')) for c in s['candidates']):
+            fails.append('scan_pitfalls scanned a vendored tree or an Xcode test target')
+        if not any('Go' in w for w in s['scope'].get('warnings') or []) or (s.get('language_coverage') or {}).get('dominant') != 'go':
+            fails.append('scan_pitfalls does not warn that the dominant language (Go) is not analysed')
+        cd = run('contract_diff.py')
+        try:
+            c = json.loads(cd.stdout)
+        except ValueError:
+            return fails + [f'contract_diff.py failed: {cd.stderr[-300:]}']
+        if any(x['file'].startswith('drivers/') for x in c['contracts']) or c['candidates']:
+            fails.append(f"contract_diff used a vendored tree or matched a TypeScript type in Swift: contracts "
+                         f"{[x['file'] for x in c['contracts']]}, candidates {[x['file'] for x in c['candidates']]}")
+        if not c.get('warnings'):
+            fails.append('contract_diff does not warn that no UI entry point was recognised (UI scope not applied)')
+    return fails
+
+
 def self_test() -> int:
     p = next(q for q in load_catalogue()['pitfalls'] if q.get('matcher') == 'promise_chain')
     got = [h['line'] for h in promise_chain_hits(SELF_TEST_JS, 'app.js', p)]
@@ -446,7 +580,10 @@ def self_test() -> int:
     fails = self_test_scope()
     print(f"self-test {'passed' if not fails else 'FAILED'}: scope and recon on a synthetic workspace (nested Next.js "
           'project, Node server pages, CLI script, test-named package)' + ''.join(f'\n  - {f}' for f in fails))
-    return 0 if ok and not fails else 1
+    go_fails = self_test_go()
+    print(f"self-test {'passed' if not go_fails else 'FAILED'}: a Go tool with an HTML page in a string constant, a "
+          'vendored driver tree and Xcode test targets' + ''.join(f'\n  - {f}' for f in go_fails))
+    return 0 if ok and not fails and not go_fails else 1
 
 def main() -> int:
     if hasattr(sys.stdout, 'reconfigure'):  # JSON on stdout may hold any character; a cp1252 console can't print it
@@ -491,9 +628,15 @@ def main() -> int:
     files_by_pack: dict[str, int] = {}
     # Scope: UI code only. Tests, route handlers (a throw is an HTTP 500, not a UI crash) and modules
     # no UI entry point imports are excluded and counted, unless --all-files.
-    g = None if args.all_files else ui_graph(root)
+    repo_files = list(walk_repo(root))
+    g = None if args.all_files else ui_graph(root, repo_files)
     if g is None:
-        note_packages(root, list(walk_repo(root)))
+        note_packages(root, repo_files)
+    # vendored and bundled third-party trees are not the app's code; the language census decides whether the
+    # repository is mostly in a language no pack reads (a Go tool), which must be said loudly
+    vendored = vendored_roots(root, repo_files)
+    lang = language_census(root, repo_files, vendored, is_test=lambda r: classify(r) == 'test')
+    lang_warning = language_warning(lang, 'scan_pitfalls.py')
     roles: dict[str, str | None] = {}
     def role_of(rel: str) -> str | None:
         if rel not in roles:
@@ -506,6 +649,8 @@ def main() -> int:
     reach = set(g['reachable']) if g and g['reachable'] is not None else None
     excluded: dict[str, dict] = {}
     def why_excluded(rel: str) -> str | None:
+        if under(rel, vendored):
+            return 'vendored'
         kind = classify(rel)
         if kind == 'test':
             return 'tests'
@@ -529,7 +674,29 @@ def main() -> int:
         e['candidates'] += n_cands
         if rel not in e['examples'] and len(e['examples']) < 10:
             e['examples'].append(rel)
-    for path in source_files(root, exts):
+    embedded_docs: list[dict] = []
+    web_pitfalls = [p for p in active if p['pack'] == 'web' and (not p.get('extensions') or '.js' in p['extensions'])]
+    if 'web' in packs and 'web' in wanted:
+        hosts = sorted({*HOST_EXT} - exts)
+        for path in source_files(root, set(hosts)) if hosts else []:
+            rel = path.relative_to(root).as_posix()
+            if why_excluded(rel):
+                continue
+            found, docs = scan_embedded(path, rel, web_pitfalls)
+            if docs:
+                embedded_docs.extend(docs)
+                files_by_pack['web (embedded HTML)'] = files_by_pack.get('web (embedded HTML)', 0) + 1
+                cands.extend(found)
+        for path in (f for f in repo_files if TEMPLATE_FILE.search(f.name)):
+            rel = path.relative_to(root).as_posix()
+            if why_excluded(rel):
+                continue
+            found, docs = scan_embedded(path, rel, web_pitfalls)
+            if docs:
+                embedded_docs.extend(docs)
+                files_by_pack['web (embedded HTML)'] = files_by_pack.get('web (embedded HTML)', 0) + 1
+                cands.extend(found)
+    for path in source_files(root, exts, vendored):
         rel = path.relative_to(root).as_posix()
         reason = why_excluded(rel)
         if reason:
@@ -580,7 +747,8 @@ def main() -> int:
              'reachable_files': len(reach) if reach is not None else None,
              'path_aliases': g['aliases'] if g else [],
              'unresolved_imports': g.get('unresolved', 0) if g else None,
-             'warnings': (g.get('warnings') or []) if g else [],
+             'warnings': ([lang_warning] if lang_warning else []) + ((g.get('warnings') or []) if g else []),
+             'embedded_html': [{k: v for k, v in d.items() if k != 'script_spans'} for d in embedded_docs],
              'excluded': excluded,
              'note': ('every source file scanned (--all-files); tests and tool configs are still skipped' if args.all_files else
                       'UI code only: tests, route handlers and modules no UI entry point imports are excluded and counted '
@@ -593,6 +761,7 @@ def main() -> int:
         'generated_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
         'repository': root.name,
         'files_scanned': files_by_pack,
+        'language_coverage': lang,
         'scope': scope,
         'ssr_frameworks': sorted(ssr),
         'tools': tools,
@@ -614,6 +783,8 @@ def main() -> int:
             print(f'  {v:4}  {k}')
     else:
         print(text)
+        for w in scope['warnings'][:1] if lang_warning else []:
+            print(f'WARN: {w}', file=sys.stderr)
     return 0
 
 if __name__ == '__main__':

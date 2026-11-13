@@ -33,6 +33,7 @@ from pathlib import Path
 sys.dont_write_bytecode = True  # importing a sibling must not write __pycache__ into the skill folder
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ui_graph import graph as ui_graph, is_tool_config, SRC_EXT  # noqa: E402
+from langs import vendored_roots, under  # noqa: E402
 
 SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'out', '.next', '.nuxt', 'coverage', 'vendor', 'Pods',
              'DerivedData', '.gradle', '.dart_tool', '__pycache__', '.expo', 'storybook-static', 'target', '.turbo',
@@ -40,7 +41,7 @@ SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'out', '.next', '.nuxt', '
 ROUTE_HANDLER = re.compile(r'(^|/)(src/)?app/(.*/)?route\.(ts|js|mts|mjs|tsx|jsx)$|(^|/)(src/)?pages/api/')
 AUTHORITATIVE = {'openapi', 'graphql', 'prisma'}
 DB_CLIENT = re.compile(r'(prisma|db|tx|client|orm)$', re.I)
-TEST_PART = re.compile(r'(^|/)(tests?|__tests__|__mocks__|e2e|cypress|playwright|androidTest|integration_test|\w*UITests?)(/|$)')
+TEST_PART = re.compile(r'(^|/)(tests?|__tests__|__mocks__|e2e|cypress|playwright|androidTest|integration_test|\w*UITests?|\w*Tests(?:_\w+)?)(/|$)')
 TEST_NAME = re.compile(r'(\.|_)(test|spec|stories)\.\w+$|Tests?\.(swift|kt|java)$|_test\.dart$|\.d\.ts$', re.I)
 UI_EXT = {'.js', '.jsx', '.mjs', '.ts', '.tsx', '.vue', '.svelte', '.kt', '.java', '.swift', '.dart'}
 PITFALL_BY_EXT = {'.kt': 'AND-NOT-NULL-ASSERTION', '.java': 'AND-NOT-NULL-ASSERTION', '.swift': 'IOS-FORCE-UNWRAP',
@@ -336,7 +337,11 @@ def model_fields(text: str, ref: str, ext: str) -> list[dict]:
 
 # ---------------------------------------------------------------- repo walk
 
+VENDORED: list[str] = []  # vendored trees of the repository being read (set in main)
+
+
 def walk(root: Path):
+    """Every file under root, pruning dependency and build directories and vendored trees before descending."""
     stack = [root]
     while stack:
         d = stack.pop()
@@ -346,7 +351,8 @@ def walk(root: Path):
             continue
         for p in entries:
             if p.is_dir():
-                if p.name not in SKIP_DIRS and not p.name.startswith('.'):
+                if p.name not in SKIP_DIRS and not p.name.startswith('.') and \
+                        not under(p.relative_to(root).as_posix(), VENDORED):
                     stack.append(p)
             else:
                 yield p
@@ -396,6 +402,17 @@ def read_contract(kind: str, path: Path, root: Path, defaults_present: bool = Fa
         return typescript_fields(text, rel)
     return model_fields(text, rel, path.suffix)
 
+def same_language(field: dict, suffix: str) -> bool:
+    """Whether a contract field can describe code in a file with this suffix."""
+    kind = field.get('contract_kind')
+    if kind in AUTHORITATIVE:
+        return True
+    ref_ext = '.' + str(field.get('ref', '')).split('#')[0].rsplit('.', 1)[-1] if '.' in str(field.get('ref', '')) else ''
+    if kind == 'typescript':
+        return suffix in SRC_EXT
+    return ref_ext == suffix or (ref_ext in ('.kt', '.java') and suffix in ('.kt', '.java'))
+
+
 def guard_nearby(lines: list[str], i: int, field: str, col: int) -> bool:
     same = lines[i][:col + len(field) + 40]
     window = '\n'.join(lines[max(0, i - 4):i]) + '\n' + same
@@ -426,6 +443,7 @@ def main() -> int:
     if not root.is_dir():
         print(f'Not a directory: {root}', file=sys.stderr)
         return 2
+    VENDORED[:] = vendored_roots(root, list(walk(root)))
     contracts = []
     for c in args.contract:
         p = c if c.is_absolute() else (Path.cwd() / c)
@@ -436,9 +454,14 @@ def main() -> int:
         listed = {p for _, p in contracts}
         contracts += [(k, p) for k, p in find_contracts(root) if p.resolve() not in listed]
     reach = None
+    warnings = []
     if args.scope == 'ui':
         g = ui_graph(root)
         reach = set(g['reachable']) if g['reachable'] is not None else None
+        if reach is None:
+            warnings.append('no UI entry point was recognised, so the UI scope could not be applied: every non-test '
+                            'source file was matched (out_of_scope_files is 0 because nothing could be ruled out). '
+                            'Check that the candidates are in UI code, or pass --contract with the UI\'s own contract.')
     fields, read_errors = [], []
     for kind, path in contracts:
         try:
@@ -453,7 +476,8 @@ def main() -> int:
     contract_files = {str(p.resolve()) for _, p in contracts}
     # Prisma client delegates: prisma.appointment.findMany() is a model accessor, not a field read
     delegates = {f['type'][:1].lower() + f['type'][1:] for f in fields if f.get('contract_kind') == 'prisma'}
-    cands, skipped = [], {'name_collision': {}, 'db_client_delegate': 0, 'method_call': 0, 'out_of_scope_files': 0}
+    cands, skipped = [], {'name_collision': {}, 'db_client_delegate': 0, 'method_call': 0, 'out_of_scope_files': 0,
+                          'other_language': 0}
     if nullable:
         names = '|'.join(sorted((re.escape(n) for n in nullable), key=len, reverse=True))
         access = re.compile(rf'(?:\?\.|\.)({names})\b(?:\s*(?:\.(?![.?])|\[|\()|(!!|!)(?!=))')
@@ -474,7 +498,12 @@ def main() -> int:
                     continue
                 for m in access.finditer(line):
                     field = m.group(1)
-                    src = nullable[field]
+                    # a TypeScript type describes JavaScript/TypeScript code, a Kotlin, Swift or Dart model its own
+                    # language; OpenAPI, GraphQL and Prisma contracts describe data any client reads
+                    src = [x for x in nullable[field] if same_language(x, p.suffix)]
+                    if not src:
+                        skipped['other_language'] += 1
+                        continue
                     recv = re.search(r'([\w$]+)\??$', line[:m.start()])
                     if field in delegates and recv and DB_CLIENT.search(recv.group(1)):
                         skipped['db_client_delegate'] += 1
@@ -503,17 +532,21 @@ def main() -> int:
         'generated_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
         'contracts': [{'kind': k, 'file': p.relative_to(root).as_posix() if p.is_relative_to(root) else str(p)} for k, p in contracts],
         'read_errors': read_errors,
+        'warnings': warnings,
+        'vendored_excluded': VENDORED,
         'nullable_fields': [f for fs in nullable.values() for f in fs],
         'skipped': {'name_collision': sum(skipped['name_collision'].values()),
                     'name_collision_fields': dict(sorted(skipped['name_collision'].items(), key=lambda kv: -kv[1])[:30]),
                     'db_client_delegate': skipped['db_client_delegate'],
                     'method_call': skipped['method_call'],
                     'out_of_scope_files': skipped['out_of_scope_files'],
+                    'other_language': skipped['other_language'],
                     'note': 'Access sites not listed as candidates: the field name is non-null in another contract type '
                             '(rerun with --include-collisions to list them), the access is a database client delegate '
                             '(prisma.model.findMany()), or a method call (.filter(...)) on a name no contract field '
-                            'declares as a function. Files the UI entry points do not reach are not scanned (--scope all '
-                            'scans them).'},
+                            'declares as a function, or a contract in another language (a TypeScript type matched against Swift). '
+                            'Files the UI entry points do not reach are not scanned (--scope all scans them), and '
+                            'vendored trees (vendored_excluded) are never read.'},
         'candidates': cands,
     }
     text = json.dumps(out, indent=2, ensure_ascii=False)
@@ -523,6 +556,8 @@ def main() -> int:
               f"({sum(1 for c in cands if c['guard_nearby'])} with a guard nearby) -> {args.out}")
     else:
         print(text)
+    for w in warnings:
+        print(f'WARN: {w}', file=sys.stderr)
     return 0
 
 if __name__ == '__main__':
