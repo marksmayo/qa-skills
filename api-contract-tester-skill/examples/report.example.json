@@ -653,7 +653,7 @@
       },
       "remediation": "Send the 400 with Content-Type application/json, like every other error response.",
       "verification_step": "Rerun with seed 1611: getAppointment-004 and -005 pass content_type.",
-      "regression_test_sketch": "def test_getappointment_content_type(api):\n    \"\"\"content_type: status 400: Content-Type text/html\"\"\"\n    resp = api.request('GET', '/appointments/abc')\n    assert resp.headers['Content-Type'].split(';')[0] == 'application/json'",
+      "regression_test_sketch": "def test_getappointment_content_type(api):\n    \"\"\"content_type: status 400: Content-Type text/html\"\"\"\n    resp = api.request('GET', '/appointments/abc')\n    assert resp.headers['Content-Type'].split(';')[0].strip() in ['application/json']",
       "security_relevant": false
     },
     {
