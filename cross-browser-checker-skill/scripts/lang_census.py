@@ -412,6 +412,23 @@ class BuildEvidence:
             return f'{built} of its {n} script and style file(s) are minified or bundled'
         return None
 
+    def _root_gitignore_lists(self, rel: str) -> bool:
+        """Outside a git checkout: does the root .gitignore name rel (as rel, /rel, rel/ or /rel/, or its last
+        part alone when the pattern has no slash)? Negations and wildcards are not interpreted."""
+        try:
+            lines = (self.root / '.gitignore').read_text(encoding='utf-8', errors='replace').splitlines()
+        except OSError:
+            return False
+        name = rel.rsplit('/', 1)[-1]
+        for line in lines:
+            pat = line.strip()
+            if not pat or pat.startswith(('#', '!')):
+                continue
+            core = pat.strip('/')
+            if core == rel or ('/' not in core and core == name):
+                return True
+        return False
+
     def decide(self, rel: str) -> tuple[bool, str]:
         """(is_build_output, reason) for the folder rel (repo-relative)."""
         rel = rel.replace('\\', '/').strip('/')
@@ -432,6 +449,8 @@ class BuildEvidence:
                 code, _ = self._run_git('check-ignore', '-q', '--', rel + '/')
                 if code == 0:
                     return True, f'{name}/ is gitignored build output'
+        elif self._root_gitignore_lists(rel):
+            return True, f'{name}/ is build output: the root .gitignore lists it (not a git checkout)'
         why = self.build_config(rel)
         if why:
             return True, f'{name}/ is build output: {why}'
@@ -858,6 +877,13 @@ def _build_output_checks(tree) -> list:
     checks.append(('the unsupported_dominant warning names the left-out folder that holds the supported language',
                    cov.get('status') == 'unsupported_dominant' and 'dist/' in (cov.get('warning') or '')
                    and '--include dist' in (cov.get('warning') or ''), cov.get('warning')))
+
+    # not a git checkout, but a root .gitignore lists dist/: build output even though the app serves it
+    ignored = {'.gitignore': 'node_modules/\ndist/\n', 'server.py': 'app.mount("/", StaticFiles(directory="dist"))\n',
+               'dist/index.html': '<html></html>\n', 'dist/app.js': 'function a() {\n  return 1;\n}\n'}
+    got = call('is_build_output', tree(ignored), 'dist')
+    checks.append(('outside a git checkout, a dist/ folder the root .gitignore lists is build output, even when served',
+                   isinstance(got, tuple) and got[0] is True and '.gitignore' in got[1], got))
 
     # git: a committed, hand-written dist/ (no build config) is source; a gitignored one is build output
     tracked = {'app.py': 'print(1)\n', 'site/dist/index.html': '<html></html>\n',
