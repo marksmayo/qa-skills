@@ -69,6 +69,23 @@ def probe_checks() -> list[str]:
                                        {'requests': requests})
     if not all(r['passed'] for r in res):
         fails.append(f'request globs with and without a query did not match the recorded request: {res}')
+    # a page error raised by a fetch the probe itself blocked (a third-party key check) is not the app's error
+    errs = [{'after_step': 1, 'name': 'TypeError', 'message': 'Failed to fetch', 'stack': 'TypeError: Failed to fetch\n    at check (app.js:4)'},
+            {'after_step': 1, 'name': 'TypeError', 'message': "Cannot read properties of null (reading 'x')", 'stack': ''}]
+    split = getattr(probe_web, 'split_blocked_errors', None)
+    if split is None:
+        fails.append('probe_web has no split_blocked_errors: page errors caused by blocked third-party requests count as the app\'s')
+    else:
+        own, caused = split(errs, ['https://keys.example.invalid/check'], [])
+        if [e['message'] for e in caused] != ['Failed to fetch'] or len(own) != 1:
+            fails.append(f'blocked-request page errors not set apart: own {own}, blocked {caused}')
+        own, caused = split(errs, [], [])
+        if caused:
+            fails.append('a network page error with nothing blocked was attributed to the block')
+        own, caused = split(errs, ['https://keys.example.invalid/check'],
+                            [{'after_step': 1, 'url': 'http://127.0.0.1:9/api', 'failure': 'net::ERR_CONNECTION_REFUSED'}])
+        if caused:
+            fails.append('a network page error was attributed to the block although an own request failed too')
     return fails
 
 
@@ -84,6 +101,7 @@ def live_probe_check() -> tuple[list[str], str]:
         (t / 'report.html').write_text(
             '<!doctype html><html><body><div id="app"><p>Runs</p></div>'
             '<script>fetch("https://telemetry.example.invalid/hit?id=1").catch(() => {});'
+            'fetch("https://keys.example.invalid/check").then(r => r.json());'
             'document.getElementById("app").dataset.ready = location.protocol;</script></body></html>', encoding='utf-8')
         (t / 'scenario.json').write_text(json.dumps({
             'name': 'file report baseline', 'kind': 'baseline', 'steps': [{'goto': '#flow-1'}],
@@ -95,6 +113,9 @@ def live_probe_check() -> tuple[list[str], str]:
             ev = json.loads((t / 'ev' / 'evidence.json').read_text(encoding='utf-8'))
         except (OSError, ValueError):
             return [f'probe_web.py on a file:// report failed: {(r.stderr or r.stdout)[-400:]}'], 'ran'
+        if not ev.get('blocked_page_errors') or ev.get('page_errors'):
+            fails.append(f"file:// probe: the unhandled rejection from the blocked key check counts as the app's page error: "
+                         f"page_errors {ev.get('page_errors')}, blocked_page_errors {ev.get('blocked_page_errors')}")
         if not ev.get('read_only') or not ev.get('baseline_ok') or ev.get('inconclusive'):
             fails.append(f"file:// probe: read_only {ev.get('read_only')}, baseline_ok {ev.get('baseline_ok')}, "
                          f"inconclusive {ev.get('inconclusive_reason')}")
@@ -151,6 +172,27 @@ def validator_checks() -> list[str]:
     if not any('manual' in w for w in warnings):
         fails.append('validator --recon: 0 tool candidates on a repository whose UI the tools did not read is not flagged '
                      'as entirely manual coverage')
+    # --write-summary fills the ranks it already computes
+    d = json.loads(json.dumps(base))
+    for f in d['crashes']:
+        f['rank'] = 0
+    d['crashes'].reverse()
+    fill = getattr(vcr, 'apply_ranks', None)
+    if fill is None:
+        fails.append('validator: --write-summary does not fill crash ranks (no apply_ranks)')
+    else:
+        fill(d)
+        errors, _ = vcr.check(d, EXAMPLES, None, None)
+        if any('rank' in e for e in errors):
+            fails.append(f'validator: ranks still wrong after apply_ranks: {[e for e in errors if "rank" in e]}')
+    # a page blanked by hiding its content (no visible text, no image) counts as blank, though body has children
+    blank = getattr(probe_web, 'page_blank', None)
+    if blank is None or not blank({'root_empty': False, 'visible_text_len': 0, 'visible_media': False}) or \
+            blank({'root_empty': False, 'visible_text_len': 0, 'visible_media': True}):
+        fails.append('probe_web: a page with no visible text and no visible image is not reported as blank (page_blank)')
+    blanked = getattr(vcr, 'probe_blanked', None)
+    if blanked is None or not blanked({'page_blank': True}, 'B1', {}):
+        fails.append('validator: page_blank evidence is not accepted as the app blanking')
     flask = {'site': {'kind': 'multi_page'}, 'blast_radius': {'model': 'per_script'},
              'language_coverage': {'status': 'server_rendered', 'dominant_unsupported_language': 'Python'}}
     d = json.loads(json.dumps(base))

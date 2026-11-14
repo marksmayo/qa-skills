@@ -60,7 +60,7 @@ importing it; a wrapper that must import it should run with `python -B` (or set
 sys.dont_write_bytecode before the import), so no __pycache__ is written into the skill folder.
 """
 from __future__ import annotations
-import argparse, inspect, json, sys, time
+import argparse, inspect, json, re, sys, time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -438,15 +438,49 @@ def run_steps(page, context, steps: list, base_url: str, log: list, checks=None)
         else:
             raise ValueError(f'unknown step action: {action}')
 
+NETWORK_ERROR = re.compile(r'Failed to fetch|NetworkError when attempting to fetch|Load failed|ERR_BLOCKED_BY_CLIENT|'
+                           r'net::ERR_FAILED|network error', re.I)
+
+
+def split_blocked_errors(errors: list[dict], blocked: list, failed: list[dict]) -> tuple[list[dict], list[dict]]:
+    """(the app's own page errors, page errors caused by the probe's own blocking). A network page error (an unhandled
+    "Failed to fetch") is the block's when the probe blocked a request and none of the app's own requests failed at
+    that step: the third-party call failed only because the harness aborted it, which SKILL.md says never counts
+    against a baseline or towards a reproduction."""
+    own_failed_steps = {f.get('after_step') for f in failed or []}
+    own, caused = [], []
+    for e in errors:
+        text = f"{e.get('name', '')}: {e.get('message', '')}"
+        if blocked and NETWORK_ERROR.search(text) and e.get('after_step') not in own_failed_steps:
+            caused.append(e)
+        else:
+            own.append(e)
+    return own, caused
+
+
 def observe(page, obs: dict) -> dict:
     root = obs.get('root_selector', 'body')
     js = """([root, texts]) => {
         const el = document.querySelector(root);
         const text = (document.body && document.body.innerText) || '';
+        const vis = e => { const b = e.getBoundingClientRect(); const cs = getComputedStyle(e);
+          return b.width >= 50 && b.height >= 50 && cs.visibility !== 'hidden' && cs.display !== 'none' && Number(cs.opacity) > 0.05; };
         return {root_found: !!el, root_empty: !!el && el.children.length === 0 && !el.textContent.trim(),
-                fallback_visible: texts.filter(t => text.includes(t)), body_text: text.slice(0, 400)};
+                fallback_visible: texts.filter(t => text.includes(t)), body_text: text.slice(0, 400),
+                visible_text_len: text.trim().length,
+                visible_media: [...document.querySelectorAll('img, video, svg, picture, iframe')].some(vis),
+                visible_canvas: [...document.querySelectorAll('canvas')].some(vis)};
     }"""
-    return page.evaluate(js, [root, obs.get('fallback_text') or []])
+    state = page.evaluate(js, [root, obs.get('fallback_text') or []])
+    state['page_blank'] = page_blank(state)
+    return state
+
+
+def page_blank(state: dict) -> bool:
+    """The page shows nothing a user can read or see: no visible text and no visible image or video. A page blanked
+    by hiding its content (display: none on the containers) counts, although body still has children; a canvas is
+    recorded apart (visible_canvas) because a drawn canvas and a black one look the same to the DOM."""
+    return bool(state.get('root_empty')) or (state.get('visible_text_len') == 0 and not state.get('visible_media'))
 
 def probe(scenario: dict, base_url: str, out_dir: Path, headed: bool = False, storage_state=None) -> dict:
     from playwright.sync_api import sync_playwright, Error as PwError
@@ -477,7 +511,8 @@ def probe(scenario: dict, base_url: str, out_dir: Path, headed: bool = False, st
         own_errors = lambda: [c for c in console if c['type'] == 'error' and 'ERR_BLOCKED_BY_CLIENT' not in c['text']]
         expectations: list = []
         def checks(step_no, assertions):
-            ctx = {'requests': requests, 'page_errors': errors, 'console_errors': own_errors()}
+            ctx = {'requests': requests, 'page_errors': split_blocked_errors(errors, blocked, failed)[0],
+                   'console_errors': own_errors()}
             expectations.extend({**r, 'after_step': step_no} for r in check_expectations(page, assertions, ctx))
         step_error = None
         final_checked = False
@@ -503,13 +538,16 @@ def probe(scenario: dict, base_url: str, out_dir: Path, headed: bool = False, st
         page.screenshot(path=str(shot), full_page=True)
         timing['screenshot_s'] = round(time.monotonic() - t_shot, 2)
         own = own_errors()
+        # page errors the probe's own third-party block caused (an unhandled "Failed to fetch") are kept apart
+        all_errors = errors
+        errors, blocked_errors = split_blocked_errors(all_errors, blocked, failed)
         baseline = scenario.get('kind') == 'baseline'
         # a probe that ended off the app (the browser's error page, a sign-in redirect), or without the app's root
         # when the scenario names one, checked nothing about the app: inconclusive, never clean or reproduced
         away = left_app(page.url, base_url)
         if not away and (scenario.get('observe') or {}).get('root_selector') and not state['root_found']:
             away = f"the app root ({scenario['observe']['root_selector']}) was not on the page"
-        crash = not away and bool(errors or own) and (state['root_empty'] or bool(state['fallback_visible']))
+        crash = not away and bool(errors or own) and (state['root_empty'] or state['page_blank'] or bool(state['fallback_visible']))
         effect = not away and bool(expectations) and all(e['passed'] for e in expectations) and step_error is None
         evidence = {
             'scenario': scenario.get('name'), 'base_url': base_url, 'final_url': page.url,
@@ -520,7 +558,7 @@ def probe(scenario: dict, base_url: str, out_dir: Path, headed: bool = False, st
             'steps': [{k: v for k, v in s.items() if k != 'at'} for s in steps_log], 'step_error': step_error,
             # a step error stops the scenario: its final expectations were never evaluated (not "held" or "failed")
             'expectations_skipped': bool(scenario.get('expect')) and not final_checked,
-            'page_errors': errors, 'console_errors': own,
+            'page_errors': errors, 'blocked_page_errors': blocked_errors, 'console_errors': own,
             'blocked_console_errors': [c for c in console if c['type'] == 'error' and 'ERR_BLOCKED_BY_CLIENT' in c['text']],
             'blocked_requests': sorted(set(blocked)), 'failed_requests': failed, **state, 'screenshot': shot.name,
             'kind': 'baseline' if baseline else 'defect', 'requests': requests, 'expectations': expectations,

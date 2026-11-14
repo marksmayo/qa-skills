@@ -65,6 +65,23 @@ def priority(s: int, confidence: str) -> tuple[str, str | None]:
         return 'P1', 'pattern-confidence findings are capped at P1'
     return p, None
 
+def probe_blanked(pev: dict, tier: str, f: dict) -> bool:
+    """The probe's evidence shows the app (or, for B2, the screen) gone: an empty root, a page with no visible text
+    and no visible image (page_blank: content hidden by the script before it threw), a screen fallback for B2, or the
+    app-wide fallback for app_fallback."""
+    return bool(pev.get('root_empty')) or bool(pev.get('page_blank')) or \
+        (tier == 'B2' and bool(pev.get('fallback_visible'))) or \
+        ((f.get('boundary') or {}).get('effect') == 'app_fallback' and bool(pev.get('fallback_visible')))
+
+
+def apply_ranks(d: dict) -> None:
+    """Order the crashes by score (then confidence) and number their rank fields: what --write-summary fills."""
+    ordered = sorted(d.get('crashes') or [], key=rank_key)
+    for n, f in enumerate(ordered, 1):
+        f['rank'] = n
+    d['crashes'] = ordered
+
+
 def rank_key(f: dict):
     r = f.get('ranking') or {}
     conf = CONFIDENCE.index(f['confidence']) if f.get('confidence') in CONFIDENCE else 9
@@ -479,15 +496,14 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None,
                 # degradation, but for a crash only an effect showing the app or screen gone (or, for
                 # app_fallback, the app-wide fallback that replaced every page)
                 effect = bool(pev.get('effect_observed')) and bool(pev.get('expectations'))
-                blanked = bool(pev.get('root_empty')) or (tier == 'B2' and bool(pev.get('fallback_visible'))) or \
-                    ((f.get('boundary') or {}).get('effect') == 'app_fallback' and bool(pev.get('fallback_visible')))
+                blanked = probe_blanked(pev, tier, f)
                 effect_only.setdefault(rp.get('probe_id'), []).append(fid)
                 if not effect:
                     E(f'{fid}: marked reproduced without a stack trace, and its probe has no observed effect '
                       '(evidence effect_observed with expectations that all held)')
                 elif tier in ('B1', 'B2') and not blanked:
                     E(f'{fid}: a {tier} crash reproduced without a stack trace needs evidence that the app blanked '
-                      '(root_empty, a screen fallback for B2, or the app-wide fallback for app_fallback); otherwise give '
+                      '(root_empty or page_blank, a screen fallback for B2, or the app-wide fallback for app_fallback); otherwise give '
                       'the stack trace or keep it traced')
                 if not norm(rp.get('observed_effect')):
                     E(f'{fid}: reproduced by its effect: repro.observed_effect must say what the probe saw')
@@ -514,7 +530,8 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None,
         if not norm(f.get('remediation')) or not norm(f.get('verification_step')):
             E(f'{fid}: remediation and verification_step are required')
         if section == 'crashes' and (recon.get('blast_radius') or {}).get('model') == 'per_script' and \
-                not ((f.get('repro') or {}).get('probe_id') and (evidence.get(f['repro']['probe_id']) or {}).get('root_empty')):
+                not ((f.get('repro') or {}).get('probe_id') and
+                     probe_blanked(evidence.get(f['repro']['probe_id']) or {}, 'B1', f)):
             W(f'{fid}: {tier} on a per_script site (static pages): an uncaught error stops only its own script, so this is '
               'a crash only if the page content is rendered by script or the script blanks it; otherwise it is B3/B4')
         if section == 'crashes':
@@ -680,6 +697,7 @@ def main() -> int:
         print(f'Unable to read input: {exc}', file=sys.stderr)
         return 2
     if args.write_summary and isinstance(d.get('summary'), dict):
+        apply_ranks(d)
         d['summary'] = {**compute_summary(d), 'headline': d['summary'].get('headline', '')}
         args.report.write_text(json.dumps(d, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
     errors, warnings = check(d, args.report.resolve().parent, args.repo.resolve() if args.repo else None, cands,
