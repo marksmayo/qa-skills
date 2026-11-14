@@ -1,0 +1,1013 @@
+#!/usr/bin/env python3
+"""Count a repository's source files per language, leaving out vendored and third-party trees (stdlib only).
+
+    python lang_census.py <repo> [--supported Go,Python] [--tool scan_x.py] [--include DIR] [--out census.json]
+    python lang_census.py --self-test
+
+Skills that analyse only some languages call this before they report, so that a handful of incidental
+files in a supported language is never presented as an analysis of a repository written in another one.
+
+What is left out, before any file is counted (directories are pruned before they are walked):
+  * dependency, VCS and cache directories: vendor/, node_modules/, third_party/, Pods/, Carthage/,
+    bower_components/, .git, target/, DerivedData/, __pycache__, ...;
+  * folders named like build output (dist/, build/, out/, obj/) only when the evidence says so
+    (BuildEvidence, also exposed as build_output_dirs(root) -> {dir: {build_output, reason}} and
+    is_build_output(root, dir) -> (bool, reason)): gitignored and untracked, produced by a build config in
+    the repository (a package.json build tool, script or entry point, a bundler config, a tsconfig outDir,
+    Python packaging, a .NET project), or holding source maps or nearly all minified bundles. A folder the
+    app serves (FastAPI/Starlette StaticFiles, Flask static_folder, express.static, http.Dir, a PHP or
+    .htaccess docroot) or that is git-tracked and hand-written is SOURCE and counted. With no evidence either
+    way it stays build output. Every decision is listed under `build_output` with its reason, and
+    --include DIR (census(include=[...])) counts a folder any rule would leave out (listed under `included`);
+  * bundles and header trees: *.app, *.framework, *.xcframework, *.bundle, *.xcassets, Headers/,
+    PrivateHeaders/;
+  * git submodules (the paths in .gitmodules);
+  * embedded third-party packages: a nested directory with its own package manifest (package.json, go.mod,
+    Cargo.toml, pyproject.toml, setup.py, *.podspec, Package.swift, pom.xml, build.gradle) AND its own
+    LICENSE/COPYING file, under a directory that holds drivers, SDKs or external code (drivers/, driver/,
+    sdk/, sdks/, external/, extern/, deps/, contrib/, third-party/, vendored/). A workspace package
+    (packages/web with a LICENSE) is product code and stays counted;
+  * a header-only tree (10+ .h files, no .c/.m/.cpp next to them) under such a directory.
+
+Every exclusion is listed with its reason and file count, so a reader can check none of it is product code.
+
+Generated JavaScript and TypeScript (generated_reason(path, text): a .min name or minified body, a generated
+header, a bundler's runtime, Emscripten loader glue, an Emscripten file-packager manifest) is counted under
+`generated` and listed in `generated_files`, not as hand-written code; the folder holding it is still walked.
+
+language_coverage() carries `notes` for a reader: every unsupported language present with its file count and
+example paths (one PHP front controller next to a Python app is named, never silent), folders named like build
+output that were counted as source and why, generated files counted apart, and build-output folders left out
+that hold a supported language (the unsupported_dominant warning names them too, with the --include to use).
+
+Data files (JSON, CSV, YAML, XML, images ...) are never a language. A directory holding at least 200 of them, no
+source file and little else is a data tree: it is not walked and is listed under `data_trees` with its file count.
+`prune_data_dirs(dirpath, dirnames, skipped)` applies the same rule inside any os.walk loop, so walkers looking for
+code never open thousands of data records (`data_dir_reason(files)` is the test on one directory's file names).
+
+Markup is counted apart, under `markup` (HTML, CSS, Templates; an .html file under templates/, views/, layouts/ or
+partials/ is a template). `server_rendered` names a Python web app that renders templates (Flask, Django, Jinja2,
+Starlette/FastAPI templating, Bottle, Pyramid ...: an import or a render call) with its template count and
+directories. language_coverage(..., reads_templates=True), or 'HTML' among the supported languages, tells the guard
+the tool reads those templates: a Python-dominant server-rendered site is then 'partial' with a `note` (the Python is
+the server, outside the tool's scope), never 'unsupported_dominant'. A tool that does not read templates still gets
+the warning.
+
+Library use:
+    import lang_census
+    c = lang_census.census(repo)                     # {'languages': {'Go': 225, ...}, 'dominant': 'Go', ...}
+    cov = lang_census.language_coverage(c, {'Python', 'JavaScript', 'TypeScript'}, tool='scan_x.py')
+    if cov['status'] == 'unsupported_dominant':
+        print(cov['warning'], file=sys.stderr)       # and put cov in the output as `language_coverage`
+    lang_census.excluded_path(c, 'drivers/ios/Agent/x.ts')   # the exclusion reason, or None
+"""
+from __future__ import annotations
+import argparse, json, os, re, sys, tempfile
+from collections import Counter
+from pathlib import Path, PurePosixPath
+
+LANG_BY_EXT = {
+    '.py': 'Python', '.pyi': 'Python',
+    '.js': 'JavaScript', '.jsx': 'JavaScript', '.mjs': 'JavaScript', '.cjs': 'JavaScript',
+    '.ts': 'TypeScript', '.tsx': 'TypeScript', '.mts': 'TypeScript', '.cts': 'TypeScript',
+    '.vue': 'Vue', '.svelte': 'Svelte',
+    '.go': 'Go', '.rs': 'Rust',
+    '.java': 'Java', '.kt': 'Kotlin', '.kts': 'Kotlin', '.scala': 'Scala', '.groovy': 'Groovy',
+    '.cs': 'C#', '.fs': 'F#', '.vb': 'Visual Basic',
+    '.swift': 'Swift', '.m': 'Objective-C', '.mm': 'Objective-C',
+    '.c': 'C', '.h': 'C/C++ header', '.cc': 'C++', '.cpp': 'C++', '.cxx': 'C++', '.hpp': 'C++', '.hh': 'C++',
+    '.rb': 'Ruby', '.php': 'PHP', '.dart': 'Dart',
+    '.ex': 'Elixir', '.exs': 'Elixir', '.erl': 'Erlang', '.clj': 'Clojure', '.cljs': 'Clojure',
+    '.hs': 'Haskell', '.ml': 'OCaml', '.mli': 'OCaml', '.lua': 'Lua', '.pl': 'Perl', '.pm': 'Perl',
+    '.r': 'R', '.R': 'R', '.jl': 'Julia', '.zig': 'Zig', '.nim': 'Nim', '.cr': 'Crystal', '.elm': 'Elm',
+}
+
+PRUNE_DIRS = {'.git', '.hg', '.svn', 'node_modules', 'vendor', 'vendored', 'third_party', 'third-party', 'thirdparty',
+              'bower_components', 'jspm_packages', 'Pods', 'Carthage', '.venv', 'venv', '.tox', '.nox',
+              '__pycache__', '.mypy_cache', '.pytest_cache', '.ruff_cache', 'site-packages',
+              'target', 'DerivedData', '.gradle', '.next', '.nuxt', '.svelte-kit', '.turbo', '.cache',
+              'coverage', 'htmlcov', '.idea', '.vscode', 'Headers', 'PrivateHeaders'}
+# Folders named like build output. Each is decided by evidence (build_output_reason): build output when gitignored,
+# produced by a build config in the repository, or full of minified bundles and source maps; source when the app
+# serves it (StaticFiles, static_folder, express.static, a PHP or .htaccess docroot ...) or it is git-tracked and
+# hand-written. With no evidence either way it stays build output, as before. build/, out/ and obj/ holding .go files
+# are Go packages. public/ and www/ are never left out.
+BUILD_NAMES = {'dist', 'build', 'out', 'obj'}
+BUILD_OUTPUT = {'build', 'out', 'obj'}   # also plausible Go package names: kept when they hold .go files themselves
+BUNDLE_SUFFIXES = ('.app', '.framework', '.xcframework', '.bundle', '.xcassets', '.appex', '.dSYM', '.egg-info')
+# directories under which a nested package with its own licence is someone else's code
+EXTERNAL_PARENTS = {'drivers', 'driver', 'sdk', 'sdks', 'external', 'externals', 'extern', 'deps', 'contrib',
+                    'third-party', 'third_party', 'thirdparty', 'vendored', 'lib-external'}
+MANIFESTS = ('package.json', 'go.mod', 'Cargo.toml', 'pyproject.toml', 'setup.py', 'Package.swift', 'pom.xml',
+             'build.gradle', 'build.gradle.kts', 'composer.json', 'Gemfile', 'mix.exs', 'pubspec.yaml')
+LICENSE_RX = re.compile(r'^(LICEN[CS]E|COPYING|COPYRIGHT)([.-].*)?$', re.I)
+HEADER_ONLY_MIN = 10
+
+# Data files: never a language, never counted towards the dominant one. A directory holding at least DATA_DIR_MIN of
+# them, no source file and little else is a data tree: walkers looking for code prune it (prune_data_dirs).
+DATA_EXT = {'.json', '.jsonl', '.ndjson', '.geojson', '.csv', '.tsv', '.yaml', '.yml', '.xml', '.parquet', '.avro',
+            '.txt', '.dat', '.xlsx', '.xls', '.ods', '.sqlite', '.db', '.gz', '.zip', '.npy', '.npz', '.pkl',
+            '.arrow', '.feather', '.toml', '.ini', '.kml', '.gpx', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.gif'}
+DATA_DIR_MIN = 200
+DATA_SHARE = 0.9
+# Markup is counted apart from the languages: browser-facing, but never the dominant language.
+MARKUP_BY_EXT = {'.html': 'HTML', '.htm': 'HTML', '.xhtml': 'HTML', '.css': 'CSS', '.scss': 'CSS', '.sass': 'CSS',
+                 '.less': 'CSS', '.styl': 'CSS',
+                 '.jinja': 'Templates', '.jinja2': 'Templates', '.j2': 'Templates', '.njk': 'Templates',
+                 '.hbs': 'Templates', '.handlebars': 'Templates', '.mustache': 'Templates', '.erb': 'Templates',
+                 '.ejs': 'Templates', '.twig': 'Templates', '.liquid': 'Templates', '.tmpl': 'Templates',
+                 '.gohtml': 'Templates', '.pug': 'Templates', '.jade': 'Templates', '.haml': 'Templates',
+                 '.slim': 'Templates', '.cshtml': 'Templates', '.razor': 'Templates', '.blade.php': 'Templates'}
+TEMPLATE_DIRS = {'templates', 'template', 'views', 'layouts', 'partials', 'includes', '_includes', '_layouts'}
+# a Python module that serves pages from templates: the web framework it imports, or a template render call
+PY_WEB = re.compile(r'^\s*(?:from|import)\s+(flask|django|jinja2|bottle|pyramid|quart|sanic|starlette\.templating|'
+                    r'fastapi\.templating|tornado\.web|aiohttp_jinja2|cherrypy|falcon)\b'
+                    r'|\b(render_template|render_to_response|TemplateResponse|Jinja2Templates|aiohttp_jinja2\.template)\s*\(',
+                    re.M)
+PY_WEB_FILES_MAX = 400
+
+
+def markup_kind(rel: str) -> str | None:
+    """'Templates', 'HTML' or 'CSS' for a markup file (an .html file under a templates/ or views/ directory is a
+    template), or None."""
+    low = rel.lower()
+    if low.endswith('.blade.php'):
+        return 'Templates'
+    kind = MARKUP_BY_EXT.get(PurePosixPath(low).suffix)
+    if kind == 'HTML' and any(p in TEMPLATE_DIRS for p in low.split('/')[:-1]):
+        return 'Templates'
+    return kind
+
+
+def data_dir_reason(files: list[str], min_files: int = DATA_DIR_MIN) -> str | None:
+    """Why a directory holding `files` (its file names) is a data tree, or None: at least min_files data files (JSON,
+    CSV, YAML, XML, images ...), no source file, and data files at least 90% of what it holds."""
+    if len(files) < min_files:
+        return None
+    n_data = 0
+    for f in files:
+        suf = PurePosixPath(f).suffix.lower()
+        if suf in LANG_BY_EXT or f.endswith('.R'):
+            return None
+        n_data += suf in DATA_EXT
+    if n_data >= min_files and n_data >= DATA_SHARE * len(files):
+        exts = Counter(PurePosixPath(f).suffix.lower() for f in files if PurePosixPath(f).suffix.lower() in DATA_EXT)
+        top = ', '.join(f'{n} {e}' for e, n in exts.most_common(3))
+        return f'a data tree ({n_data} data files: {top}; no source files)'
+    return None
+
+
+def prune_data_dirs(dirpath: str, dirnames: list[str], skipped: list | None = None, root: str | None = None,
+                    min_files: int = DATA_DIR_MIN) -> list[str]:
+    """For an os.walk loop: remove data-tree subdirectories of dirpath from dirnames (in place, so the walk never
+    descends into them) and append {'path', 'files', 'reason'} for each to skipped. Paths are relative to root (or
+    dirpath). Returns the names removed. Reuse it in any walker that looks for code, so thousands of data files are
+    not opened."""
+    removed = []
+    for d in list(dirnames):
+        full = os.path.join(dirpath, d)
+        try:
+            files = [e.name for e in os.scandir(full) if e.is_file()]
+        except OSError:
+            continue
+        why = data_dir_reason(files, min_files)
+        if why:
+            dirnames.remove(d)
+            removed.append(d)
+            if skipped is not None:
+                rel = os.path.relpath(full, root or dirpath).replace(os.sep, '/')
+                skipped.append({'path': rel, 'files': len(files), 'reason': why})
+    return removed
+
+
+def server_rendered(root: Path, py_files: list[str], template_files: list[str]) -> dict | None:
+    """{'framework', 'server_language', 'templates', 'template_dirs', 'evidence'} when Python modules import a web
+    framework or render templates and the repository holds template files; None otherwise."""
+    if not py_files or not template_files:
+        return None
+    for rel in py_files[:PY_WEB_FILES_MAX]:
+        try:
+            with open(root / rel, encoding='utf-8', errors='replace') as fh:
+                text = fh.read(65536)
+        except OSError:
+            continue
+        m = PY_WEB.search(text)
+        if m:
+            fw = (m.group(1) or '').split('.')[0] or ('jinja2' if 'Jinja2' in (m.group(2) or '') else 'templates')
+            dirs = sorted({next((('/'.join(t.split('/')[:i + 1])) for i, p in enumerate(t.split('/')[:-1])
+                                 if p.lower() in TEMPLATE_DIRS), PurePosixPath(t).parent.as_posix())
+                           for t in template_files})
+            return {'framework': fw, 'server_language': 'Python', 'templates': len(template_files),
+                    'template_dirs': dirs[:20], 'evidence': f'{rel}: {m.group(0).strip()[:80]}'}
+    return None
+
+
+def submodules(root: Path) -> set[str]:
+    try:
+        text = (root / '.gitmodules').read_text(encoding='utf-8', errors='replace')
+    except OSError:
+        return set()
+    return {m.group(1).strip().strip('/') for m in re.finditer(r'^\s*path\s*=\s*(.+)$', text, re.M)}
+
+
+JS_FAMILY = {'JavaScript', 'TypeScript'}
+GENERATED_READ = 262144
+GENERATED_HEAD = re.compile(r'@generated|\bgenerated by\b|\bdo not edit\b|auto-?generated|\bcode generated\b', re.I)
+BUNDLE_MARK = re.compile(r'__webpack_require__|webpackBootstrap|__webpack_modules__|parcelRequire|'
+                         r'System\.register\(|__vite__mapDeps|\bdefine\.amd\b.{0,200}\bwebpackJsonp')
+EMSCRIPTEN_MARK = re.compile(r'\b(HEAPU?(?:8|16|32|64)|HEAPF(?:32|64)|wasmMemory|wasmExports|wasmTable|addRunDependency|'
+                             r'removeRunDependency|UTF8ToString|stringToUTF8|lengthBytesUTF8|ENVIRONMENT_IS_(?:WEB|NODE|'
+                             r'WORKER|SHELL)|FS_createPath|FS_createDataFile|FS_createPreloadedFile|ASM_CONSTS|'
+                             r'_emscripten_\w+|__syscall_\w+|createWasm|GLctx|stackSave|stackRestore|dynCall_\w+)\b')
+EMSCRIPTEN_WORD = re.compile(r'\bemscripten\b', re.I)
+FILE_PACKAGER = re.compile(r'\bfiles\s*:\s*\[\s*\{\s*["\']?filename["\']?\s*:')
+
+
+def generated_reason(rel: str, text: str) -> str | None:
+    """Why a JavaScript/TypeScript file looks generated rather than hand-written, or None: a minified name or body
+    (average line over 250 characters, or a line over 5000), a generated-file header, a bundler's runtime (webpack,
+    Parcel, SystemJS, Vite), Emscripten loader glue (three or more distinct runtime names such as HEAP32,
+    UTF8ToString, addRunDependency, wasmExports) or an Emscripten file-packager manifest (a files list of
+    {filename, start, end} records: data, not code). Pass at least the first 256 KB of the file."""
+    low = rel.lower()
+    if re.search(r'[.-]min\.[cm]?[jt]s$', low):
+        return 'minified (a .min file name)'
+    if GENERATED_HEAD.search(text[:1024]):
+        return 'generated (its header says so)'
+    lines = text.splitlines() or ['']
+    longest = max(len(x) for x in lines)
+    avg = len(text) / len(lines)
+    if len(text) >= 2000 and (avg > 250 or longest > 5000):
+        return f'minified (average line {int(avg)} characters, longest {longest})'
+    m = BUNDLE_MARK.search(text)
+    if m:
+        return f'a bundler\'s output ({m.group(0)[:30]})'
+    if FILE_PACKAGER.search(text) and re.search(r'\bstart\s*:', text) and re.search(r'\bend\s*:', text):
+        return 'an Emscripten file-packager manifest (a files list of {filename, start, end}: data, not code)'
+    marks = sorted({re.sub(r'^(_emscripten_|__syscall_|dynCall_).*', r'\1*', x) for x in EMSCRIPTEN_MARK.findall(text)})
+    if len(marks) >= 3 or (marks and EMSCRIPTEN_WORD.search(text)):
+        return f'Emscripten loader glue ({", ".join(marks[:5])})'
+    return None
+
+
+def _read_head(path: Path, n: int = GENERATED_READ) -> str:
+    try:
+        with open(path, encoding='utf-8', errors='replace') as fh:
+            return fh.read(n)
+    except OSError:
+        return ''
+
+
+# ---- build output: decided by evidence ----
+BUILDER = re.compile(r'\b(vite|webpack|rollup|parcel|tsup|esbuild|ncc|tsc|ng|vue-cli-service|react-scripts|next|astro|'
+                     r'svelte-kit|gatsby|babel|microbundle|unbuild|snowpack|swc|rspack|rsbuild|eleventy|ember|nuxt|'
+                     r'remix|gulp|grunt|electron-builder|electron-forge|vsce|bun build|tsdown|farm|turbopack)\b')
+BUILD_CONFIG = re.compile(r'^(vite|webpack|rollup|tsup|esbuild|svelte|astro|next|nuxt|vue|rspack|rsbuild|farm|tsdown|'
+                          r'gatsby-config|gulpfile|gruntfile)(\.config)?\.[cm]?[jt]s$|^(angular\.json|\.parcelrc|'
+                          r'ember-cli-build\.js)$', re.I)
+PY_PACKAGING = ('setup.py', 'pyproject.toml', 'setup.cfg')
+# lines that serve a folder over HTTP: Python (Starlette/FastAPI, Flask, Django, http.server), Node (Express, Koa,
+# Fastify, sirv), Go (http.Dir/FileServer), PHP readfile/include, Apache, nginx and Caddy docroots
+SERVE_LINE = re.compile(r'StaticFiles\s*\(|static_folder\s*=|send_from_directory\s*\(|SimpleHTTPRequestHandler|'
+                        r'STATICFILES_DIRS|express\.static\s*\(|serveStatic\s*\(|serve-static|\bsirv\s*\(|koa-static|'
+                        r'fastify-static|@fastify/static|http\.Dir\s*\(|http\.FileServer|readfile\s*\(|'
+                        r'file_get_contents\s*\(|DocumentRoot|RewriteRule|^\s*(?:root|alias)\s+\S|file_server|'
+                        r'\bstatic_dir\b|StaticFileHandler', re.M)
+SERVE_FILES = ('.py', '.js', '.mjs', '.cjs', '.ts', '.php', '.go', '.rb', '.conf', '.htaccess')
+SERVE_NAMES = {'.htaccess', 'Caddyfile', 'nginx.conf', 'httpd.conf', 'Procfile', 'Dockerfile'}
+SERVE_FILES_MAX = 3000
+
+
+class BuildEvidence:
+    """Evidence about folders named like build output in one repository (git state, build configs, what the app
+    serves), gathered lazily and cached. decide(rel) -> (is_build_output, reason)."""
+
+    def __init__(self, root: Path | str, include=()):
+        self.root = Path(root).resolve()
+        self.include = {i.replace('\\', '/').strip('/') for i in include or ()}
+        self._git = None
+        self._serve_lines = None
+        self._cache: dict[str, tuple[bool, str]] = {}
+
+    def _run_git(self, *args) -> tuple[int, str]:
+        import subprocess
+        try:
+            res = subprocess.run(['git', '-C', str(self.root), *args], capture_output=True, text=True,
+                                 encoding='utf-8', errors='replace', timeout=60)
+        except (OSError, subprocess.SubprocessError):
+            return 128, ''
+        return res.returncode, res.stdout
+
+    def in_git(self) -> bool:
+        if self._git is None:
+            code, out = self._run_git('rev-parse', '--is-inside-work-tree')
+            self._git = code == 0 and out.strip() == 'true'
+        return self._git
+
+    def serve_lines(self) -> list[tuple[str, int, str]]:
+        """(file, line, text of that line and the next three) for every line that serves a folder."""
+        if self._serve_lines is not None:
+            return self._serve_lines
+        out: list[tuple[str, int, str]] = []
+        seen = 0
+        for dp, dns, fns in os.walk(self.root):
+            dns[:] = [d for d in dns if d not in PRUNE_DIRS and d not in BUILD_NAMES and not d.startswith('.')]
+            for f in fns:
+                if not (f.endswith(SERVE_FILES) or f in SERVE_NAMES):
+                    continue
+                seen += 1
+                if seen > SERVE_FILES_MAX:
+                    break
+                p = Path(dp) / f
+                text = _read_head(p, 131072)
+                if not SERVE_LINE.search(text):
+                    continue
+                rel = p.relative_to(self.root).as_posix()
+                lines = text.splitlines()
+                for i, line in enumerate(lines):
+                    if SERVE_LINE.search(line):
+                        out.append((rel, i + 1, '\n'.join(lines[i:i + 4])))
+        self._serve_lines = out
+        return out
+
+    def served_by(self, rel: str) -> str | None:
+        """'server.py:12 (StaticFiles(directory="dist"))' when a serving line names this folder, else None."""
+        name = rel.rsplit('/', 1)[-1]
+        seg = re.compile(r'(?<![\w.-])(?:\./)?' + re.escape(name) + r'(?![\w-])')
+        for frel, line, window in self.serve_lines():
+            first = window.splitlines()[0] if window else ''
+            # the serving call's own line, or (for a call split over lines) the lines right after it
+            if seg.search(first) or (first.rstrip().endswith(('(', ',')) and seg.search(window)):
+                return f'{frel}:{line} ({first.strip()[:80]})'
+        return None
+
+    def build_config(self, rel: str) -> str | None:
+        """The build config that produces this folder, or None: a package.json build tool or a script or entry point
+        naming it, a bundler config file, a tsconfig outDir, Python packaging (dist/ or build/ holding wheels or
+        build trees), or a .NET project next to obj/."""
+        name = rel.rsplit('/', 1)[-1]
+        parent = rel.rsplit('/', 1)[0] if '/' in rel else ''
+        here = self.root / rel
+        bases = [parent] + ([''] if parent else [])
+        seg = re.compile(r'(?<![\w.-])(?:\./)?' + re.escape(name) + r'(?:/|\b)')
+        for base in bases:
+            d = self.root / base if base else self.root
+            shown = (base + '/') if base else ''
+            pj = d / 'package.json'
+            if pj.is_file():
+                try:
+                    data = json.loads(pj.read_text(encoding='utf-8', errors='replace') or '{}')
+                except ValueError:
+                    data = {}
+                scripts = data.get('scripts') if isinstance(data, dict) else None
+                for sname, cmd in (scripts or {}).items() if isinstance(scripts, dict) else ():
+                    if not isinstance(cmd, str):
+                        continue
+                    m = BUILDER.search(cmd)
+                    if m and (name in ('dist', 'build', 'out') or seg.search(cmd)):
+                        return f'{shown}package.json script "{sname}" runs {m.group(1)} ({cmd[:60]}), which writes {name}/'
+                    if seg.search(cmd) and re.search(r'(--?out(-?dir|put)?|-o|-d|--dist-dir)[ =]+["\']?(\./)?'
+                                                     + re.escape(name), cmd):
+                        return f'{shown}package.json script "{sname}" writes {name}/ ({cmd[:60]})'
+                for key in ('main', 'module', 'browser', 'types', 'exports', 'bin'):
+                    v = json.dumps(data.get(key)) if isinstance(data, dict) and key in data else ''
+                    if v and seg.search(v):
+                        return f'{shown}package.json "{key}" points into {name}/ (a published build)'
+            try:
+                names = [e.name for e in os.scandir(d) if e.is_file()]
+            except OSError:
+                names = []
+            for f in names:
+                if BUILD_CONFIG.match(f):
+                    return f'{shown}{f} is a bundler or framework build config (its output is {name}/)'
+            for f in names:
+                if re.match(r'^tsconfig(\.[\w-]+)?\.json$', f):
+                    t = _read_head(d / f, 65536)
+                    if re.search(r'"outDir"\s*:\s*"(\./)?' + re.escape(name) + r'/?"', t):
+                        return f'{shown}{f} compiles into {name}/ (outDir)'
+            if name in ('dist', 'build') and any(p in names for p in PY_PACKAGING) and here.is_dir():
+                inside = [e.name for e in os.scandir(here)]
+                if any(x.endswith(('.whl', '.tar.gz', '.egg')) or x in ('lib', 'wheel') or x.startswith('bdist')
+                       for x in inside):
+                    return f'{shown}{next(p for p in PY_PACKAGING if p in names)}: Python packaging writes {name}/'
+            if name in ('obj', 'bin') and any(f.endswith(('.csproj', '.fsproj', '.vbproj')) for f in names):
+                return f'{shown}a .NET project builds into {name}/'
+        return None
+
+    def looks_built(self, rel: str) -> str | None:
+        """Source maps, or JavaScript and CSS that is (nearly) all minified or bundled."""
+        here = self.root / rel
+        n = built = 0
+        for dp, dns, fns in os.walk(here):
+            dns[:] = [d for d in dns if d not in PRUNE_DIRS]
+            for f in fns:
+                if f.endswith(('.js.map', '.css.map', '.mjs.map')):
+                    return f'it holds source maps ({Path(dp, f).relative_to(self.root).as_posix()})'
+                if f.endswith(('.js', '.mjs', '.cjs', '.css')) and n < 200:
+                    n += 1
+                    frel = Path(dp, f).relative_to(self.root).as_posix()
+                    why = generated_reason(frel, _read_head(Path(dp, f), 65536))
+                    built += bool(why and (why.startswith('minified') or why.startswith('a bundler')))
+        if n and built >= max(1, 0.8 * n):
+            return f'{built} of its {n} script and style file(s) are minified or bundled'
+        return None
+
+    def decide(self, rel: str) -> tuple[bool, str]:
+        """(is_build_output, reason) for the folder rel (repo-relative)."""
+        rel = rel.replace('\\', '/').strip('/')
+        if rel in self._cache:
+            return self._cache[rel]
+        self._cache[rel] = res = self._decide(rel)
+        return res
+
+    def _decide(self, rel: str) -> tuple[bool, str]:
+        name = rel.rsplit('/', 1)[-1]
+        if rel in self.include:
+            return False, f'{rel}/ included by the caller (--include)'
+        tracked = None
+        if self.in_git():
+            code, out = self._run_git('ls-files', '-z', '--', rel)
+            tracked = bool(out.strip('\0')) if code == 0 else None
+            if tracked is False:
+                code, _ = self._run_git('check-ignore', '-q', '--', rel + '/')
+                if code == 0:
+                    return True, f'{name}/ is gitignored build output'
+        why = self.build_config(rel)
+        if why:
+            return True, f'{name}/ is build output: {why}'
+        why = self.looks_built(rel)
+        if why:
+            return True, f'{name}/ looks built: {why}'
+        served = self.served_by(rel)
+        state = 'git-tracked, ' if tracked else ''
+        if served:
+            return False, f'{name}/ is source: served by {served}; {state}no build config in the repository produces it'
+        if tracked:
+            return False, (f'{name}/ is source: git-tracked and hand-written; no build config in the repository '
+                           f'produces it')
+        if tracked is False:
+            return True, (f'{name}/ is named like build output and is not tracked by git; no evidence it is source '
+                          f'(no build config, not served by the app)')
+        return True, (f'{name}/ is named like build output; no evidence it is source (not a git checkout, no build '
+                      f'config, not served by the app)')
+
+
+def build_output_dirs(root: Path | str, include=()) -> dict[str, dict]:
+    """{rel_dir: {'build_output': bool, 'reason': str}} for every folder named dist/, build/, out/ or obj/ under root
+    (dependency and VCS trees pruned, Go packages named build/ or out/ left alone). The decision is the one census()
+    applies; pass include to force folders in."""
+    ev = BuildEvidence(root, include)
+    out: dict[str, dict] = {}
+    for dp, dns, _ in os.walk(ev.root):
+        rel = Path(dp).relative_to(ev.root).as_posix()
+        rel = '' if rel == '.' else rel
+        keep = []
+        for d in dns:
+            if d in PRUNE_DIRS or d.endswith(BUNDLE_SUFFIXES):
+                continue
+            sub = f'{rel}/{d}' if rel else d
+            if d in BUILD_NAMES and not _go_package(Path(dp) / d, d):
+                is_b, why = ev.decide(sub)
+                out[sub] = {'build_output': is_b, 'reason': why}
+                if is_b:
+                    continue
+            keep.append(d)
+        dns[:] = keep
+    return out
+
+
+def is_build_output(root: Path | str, rel_dir: str, include=(), evidence: BuildEvidence | None = None
+                    ) -> tuple[bool, str]:
+    """(is_build_output, reason) for one folder (repo-relative) named like build output. Reuse one BuildEvidence
+    (evidence=) for many calls on the same repository."""
+    return (evidence or BuildEvidence(root, include)).decide(rel_dir)
+
+
+def _go_package(path: Path, name: str) -> bool:
+    if name not in BUILD_OUTPUT:
+        return False
+    try:
+        return any(f.endswith('.go') for f in os.listdir(path))
+    except OSError:
+        return False
+
+
+def exclusion_reason(rel_dir: str, name: str, files: list[str], subs: set[str]) -> str | None:
+    """Why the directory rel_dir (its last part is name; files are its file names) is not product code, or None.
+    Folders named like build output (BUILD_NAMES) are decided by census() with BuildEvidence instead."""
+    if name in PRUNE_DIRS:
+        return f'{name}/ is a dependency, VCS, cache, build-output or header directory'
+    if name.endswith(BUNDLE_SUFFIXES):
+        return f'{name} is a built bundle'
+    if rel_dir in subs:
+        return 'a git submodule (.gitmodules)'
+    parts = rel_dir.split('/')
+    under_external = any(p.lower() in EXTERNAL_PARENTS for p in parts[:-1])
+    if under_external:
+        manifest = [m for m in MANIFESTS if m in files] + sorted(f for f in files if f.endswith('.podspec'))
+        licence = sorted(f for f in files if LICENSE_RX.match(f))
+        if manifest and licence:
+            return (f'an embedded third-party package (its own {manifest[0]} and {licence[0]}) under '
+                    f'{"/".join(p for p in parts[:-1] if p.lower() in EXTERNAL_PARENTS)}/')
+        exts = Counter(PurePosixPath(f).suffix for f in files)
+        if exts['.h'] >= HEADER_ONLY_MIN and not (exts['.c'] or exts['.m'] or exts['.mm'] or exts['.cpp'] or exts['.cc']):
+            return f'a header-only tree ({exts[".h"]} .h files, no implementation) under a driver/SDK directory'
+    return None
+
+
+def census(root: Path | str, extra_exclude: list[str] | None = None, include: list[str] | None = None) -> dict:
+    """Source files per language under root, with vendored and third-party trees left out (see the module doc).
+    extra_exclude: repo-relative directories the caller also knows are not product code. include: repo-relative
+    directories to count even though a rule would leave them out (recorded under `included`).
+
+    Folders named like build output (dist/, build/, out/, obj/) are decided by evidence (BuildEvidence) and every
+    decision is listed under `build_output` ({path, decision: source|build_output, reason}). JavaScript and
+    TypeScript files that look generated (minified, bundled, Emscripten glue or file-packager manifests) are counted
+    under `generated` and listed in `generated_files`, not as hand-written code; their folder is still walked."""
+    root = Path(root).resolve()
+    subs = submodules(root)
+    extra = {e.replace('\\', '/').strip('/') for e in (extra_exclude or [])}
+    inc = {e.replace('\\', '/').strip('/') for e in (include or [])}
+    evidence = BuildEvidence(root, inc)
+    langs: Counter = Counter()
+    markup: Counter = Counter()
+    generated: Counter = Counter()
+    generated_files: list[dict] = []
+    examples: dict[str, list[str]] = {}
+    by_lang_dirs: dict[str, Counter] = {}
+    excluded: list[dict] = []
+    build_output: list[dict] = []
+    included: list[str] = []
+    data_trees: list[dict] = []
+    py_files: list[str] = []
+    template_files: list[str] = []
+    for dp, dns, fns in os.walk(root):
+        rel = Path(dp).relative_to(root).as_posix()
+        rel = '' if rel == '.' else rel
+        keep = []
+        for d in sorted(dns):
+            sub = f'{rel}/{d}' if rel else d
+            try:
+                files = [f for f in os.listdir(os.path.join(dp, d))]
+            except OSError:
+                files = []
+            if sub in inc:
+                included.append(sub)
+                keep.append(d)
+                continue
+            why = 'excluded by the caller' if sub in extra else exclusion_reason(sub, d, files, subs)
+            kind = None
+            if not why and d in BUILD_NAMES and not _go_package(Path(dp) / d, d):
+                is_b, reason = evidence.decide(sub)
+                build_output.append({'path': sub, 'decision': 'build_output' if is_b else 'source', 'reason': reason})
+                why, kind = (reason, 'build_output') if is_b else (None, None)
+            if why:
+                if d not in ('.git', '.hg', '.svn', '__pycache__'):   # noise nobody needs listed
+                    entry = {'path': sub, 'reason': why, 'source_files': count_sources(Path(dp) / d)}
+                    if kind:
+                        entry['kind'] = kind
+                        entry['languages'] = count_sources_by_language(Path(dp) / d)
+                    excluded.append(entry)
+                continue
+            data_why = data_dir_reason([f for f in files if os.path.isfile(os.path.join(dp, d, f))])
+            if data_why:   # never walked: data files are not a language, and a data tree holds no product code
+                data_trees.append({'path': sub, 'files': len(files), 'reason': data_why})
+                continue
+            keep.append(d)
+        dns[:] = keep
+        for f in fns:
+            frel = f'{rel}/{f}' if rel else f
+            lang = LANG_BY_EXT.get(PurePosixPath(f).suffix)
+            if lang:
+                if lang in JS_FAMILY:
+                    gen = generated_reason(frel, _read_head(Path(dp) / f))
+                    if gen:
+                        generated[lang] += 1
+                        if len(generated_files) < 200:
+                            generated_files.append({'path': frel, 'language': lang, 'reason': gen})
+                        continue
+                langs[lang] += 1
+                if len(examples.setdefault(lang, [])) < 3:
+                    examples[lang].append(frel)
+                top = rel.split('/')[0] if rel else '.'
+                by_lang_dirs.setdefault(lang, Counter())[top] += 1
+                if lang == 'Python':
+                    py_files.append(frel)
+                continue
+            mk = markup_kind(frel)
+            if mk:
+                markup[mk] += 1
+                if mk == 'Templates':
+                    template_files.append(frel)
+    ordered = dict(sorted(langs.items(), key=lambda kv: (-kv[1], kv[0])))
+    dominant = next(iter(ordered), None)
+    # app modules first (shallow paths, app/main/server names), so the framework import is found early
+    py_files.sort(key=lambda r: (r.count('/'), not re.search(r'(^|/)(app|main|server|wsgi|asgi|views|urls|routes)\.py$', r), r))
+    return {'root': root.name, 'languages': ordered, 'total_source_files': sum(langs.values()),
+            'dominant': dominant, 'dominant_files': ordered.get(dominant, 0) if dominant else 0,
+            'top_dirs': {k: dict(v.most_common(5)) for k, v in by_lang_dirs.items()},
+            'examples': examples,
+            'excluded': excluded,
+            'excluded_source_files': sum(e['source_files'] for e in excluded),
+            'build_output': build_output,
+            'included': included,
+            'generated': dict(sorted(generated.items())),
+            'generated_source_files': sum(generated.values()),
+            'generated_files': generated_files,
+            'markup': dict(sorted(markup.items())),
+            'data_trees': data_trees,
+            'server_rendered': server_rendered(root, py_files, template_files)}
+
+
+def count_sources_by_language(d: Path, cap: int = 200000) -> dict[str, int]:
+    out: Counter = Counter()
+    for _, dns, fns in os.walk(d):
+        dns[:] = [x for x in dns if x not in ('.git', 'node_modules')]
+        for f in fns:
+            lang = LANG_BY_EXT.get(PurePosixPath(f).suffix)
+            if lang:
+                out[lang] += 1
+        if sum(out.values()) > cap:
+            break
+    return dict(out.most_common())
+
+
+def count_sources(d: Path, cap: int = 200000) -> int:
+    n = 0
+    for _, dns, fns in os.walk(d):
+        dns[:] = [x for x in dns if x not in ('.git', 'node_modules')]
+        n += sum(1 for f in fns if PurePosixPath(f).suffix in LANG_BY_EXT)
+        if n > cap:
+            break
+    return n
+
+
+def excluded_path(c: dict, rel: str) -> str | None:
+    """The reason rel (a repo-relative path) lies in an excluded tree of census c, or None."""
+    rel = rel.replace('\\', '/').strip('/')
+    for e in c.get('excluded', []):
+        if rel == e['path'] or rel.startswith(e['path'] + '/'):
+            return e['reason']
+    return None
+
+
+def language_coverage(c: dict, supported, tool: str = 'this script', what: str = 'full analysis',
+                      min_files: int = 3, reads_templates: bool = False) -> dict:
+    """Supported against unsupported source-file counts for a tool that analyses only `supported` languages.
+
+    status 'unsupported_dominant' (with a loud `warning`) when the largest unsupported language has more files than
+    all supported languages together (and at least min_files); 'partial' when some unsupported languages are present
+    but do not dominate; 'ok' when everything counted is supported; 'no_source' when nothing was counted.
+
+    A tool that reads server-side templates (reads_templates=True, or 'HTML' among `supported`) is not warned about a
+    server-rendered web app (census `server_rendered`: a Flask, Django or other Python framework rendering template
+    files): the templates are the browser-facing code it reads, and the server language is outside its scope rather
+    than unanalysed product UI. That case is status 'partial' with `server_rendered` and a `note` to carry into the
+    report instead of a warning."""
+    supported = set(supported)
+    reads_templates = reads_templates or 'HTML' in supported
+    supported.discard('HTML')
+    langs = c.get('languages', {})
+    sup = {k: v for k, v in langs.items() if k in supported}
+    uns = {k: v for k, v in langs.items() if k not in supported}
+    n_sup, n_uns = sum(sup.values()), sum(uns.values())
+    out = {'tool': tool, 'supported_languages': sorted(supported), 'supported': sup, 'unsupported': uns,
+           'supported_files': n_sup, 'unsupported_files': n_uns, 'dominant': c.get('dominant'),
+           'excluded_source_files': c.get('excluded_source_files', 0), 'status': 'ok', 'warning': None}
+    notes: list[str] = []
+    examples = c.get('examples') or {}
+    for lang, n in sorted(uns.items(), key=lambda kv: (-kv[1], kv[0])):
+        shown = ', '.join(examples.get(lang, [])[:3])
+        notes.append(f'{n} {lang} source file(s){" (" + shown + ("" if n <= 3 else ", ...") + ")" if shown else ""} '
+                     f'not analysed by {tool}: record {lang} as not assessed, never as clean.')
+    # folders named like build output that were left out but hold a supported language: say so, with the override
+    pruned = [e for e in c.get('excluded', []) if e.get('kind') == 'build_output'
+              and sum(v for k, v in (e.get('languages') or {}).items() if k in supported)]
+    hint = ''
+    if pruned:
+        parts = []
+        for e in pruned[:3]:
+            sup_n = {k: v for k, v in e['languages'].items() if k in supported}
+            what = ', '.join(f'{v} {k}' for k, v in sup_n.items())
+            parts.append(f'{e["path"]}/ ({what} file(s); {e["reason"]})')
+        hint = (f' Left out as build output: {"; ".join(parts)}. If that folder is hand-written source, rerun with '
+                f'--include {pruned[0]["path"]}.')
+        notes.append(hint.strip())
+    for b in c.get('build_output') or []:
+        if b.get('decision') == 'source':
+            notes.append(f'{b["path"]}/ is counted as source although named like build output: {b["reason"]}.')
+    gen = c.get('generated') or {}
+    if gen:
+        out['generated'] = gen
+        notes.append(f'{sum(gen.values())} generated file(s) ({", ".join(f"{v} {k}" for k, v in gen.items())}: '
+                     f'minified bundles, Emscripten glue, file-packager manifests) are counted apart, not as '
+                     f'hand-written code (census generated_files lists them).')
+    if notes:
+        out['notes'] = notes
+    if not langs:
+        out['status'] = 'no_source'
+        if hint:
+            out['warning'] = f'No source file was counted.{hint}'
+        return out
+    if uns:
+        lang, n = max(uns.items(), key=lambda kv: (kv[1], kv[0]))
+        sr = c.get('server_rendered') or {}
+        if n > n_sup and n >= min_files and reads_templates and sr.get('server_language') == lang:
+            out['status'] = 'partial'
+            out['server_rendered'] = sr
+            out['note'] = (f'This repository is a server-rendered {sr["framework"]} web app: its {sr["templates"]} '
+                           f'template file(s) ({", ".join(sr["template_dirs"][:3])}) are the browser-facing code, which '
+                           f'{tool} reads. Its {n} {lang} file(s) are the server that renders them, not browser code; '
+                           f'record that server code as outside this {what}, not as the UI left unread.')
+        elif n > n_sup and n >= min_files:
+            out['status'] = 'unsupported_dominant'
+            out['dominant_unsupported_language'], out['dominant_unsupported_files'] = lang, n
+            out['warning'] = (f'This repository is predominantly {lang} ({n} source files, vendored and third-party '
+                              f'trees excluded), which {tool} does not analyse: it covers '
+                              f'{", ".join(sorted(supported)) or "no language"} only. {n_sup} supported source '
+                              f'file(s) were found, so its output covers that minority and is NOT a {what} of this '
+                              f'repository\'s {lang} code. Do not present it as one; record {lang} as not assessed.'
+                              + hint)
+        else:
+            out['status'] = 'partial'
+    return out
+
+
+EMSCRIPTEN_GLUE_SAMPLE = ('var Module = typeof Module != "undefined" ? Module : {};\n'
+                          'var ENVIRONMENT_IS_WEB = typeof window == "object";\n'
+                          'var wasmMemory, HEAP8, HEAPU8, HEAP32;\n'
+                          'function addRunDependency(id) {}\n'
+                          'function UTF8ToString(ptr) { return ""; }\n')
+
+
+def _git_commit_all(d: Path) -> bool:
+    """git init + commit everything in d (self-test helper); False when git is not available."""
+    import subprocess
+    cmd = ['git', '-C', str(d), '-c', 'user.name=t', '-c', 'user.email=t@example.test', '-c', 'commit.gpgsign=false']
+    try:
+        for args in (['init', '-q'], ['add', '-A'], ['commit', '-q', '-m', 'init']):
+            if subprocess.run(cmd + args, capture_output=True, timeout=60).returncode:
+                return False
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return True
+
+
+def _build_output_checks(tree) -> list:
+    """Self-test cases for the build-output decision (dist/, build/, out/), generated JavaScript and the notes
+    language_coverage carries about unanalysed languages and pruned trees."""
+    checks = []
+
+    def call(fn_name, *a, **k):
+        fn = globals().get(fn_name)
+        if fn is None:
+            return {'error': f'{fn_name} is missing'}
+        try:
+            return fn(*a, **k)
+        except Exception as e:   # noqa: BLE001
+            return {'error': repr(e)}
+
+    def safe_census(root, **k):
+        try:
+            return census(root, **k)
+        except Exception as e:   # noqa: BLE001
+            return {'error': repr(e), 'languages': {}, 'excluded': []}
+
+    # a FastAPI server mounting StaticFiles on a committed, hand-written dist/ folder (no package.json, no bundler),
+    # which also holds Emscripten loader glue, a file-packager manifest and a minified chart library
+    spa = {'server.py': ('from fastapi import FastAPI\nfrom fastapi.staticfiles import StaticFiles\n\napp = FastAPI()\n'
+                         'app.mount("/", StaticFiles(directory="dist"), name="root")\n'),
+           'tools/pack.py': 'def pack():\n    return 1\n',
+           'dist/index.html': '<html><script src="app.js"></script></html>\n',
+           'dist/app.js': 'function start() {\n  return 1;\n}\n',
+           'dist/ui.js': 'export const panel = 1;\n',
+           'dist/modules/menu.js': 'function menu() {\n  return [];\n}\n',
+           'dist/modules/runtime.js': EMSCRIPTEN_GLUE_SAMPLE,
+           'dist/modules/packages/en.js': ('var PACKAGE_DATA = {\n  files: [{\n    filename: "/assets/a.dat",\n'
+                                           '    start: 0,\n    end: 10\n  }]\n};\n'),
+           'dist/lib/chart.js': 'var a=' + ','.join(f'f{i}=function(x){{return x+{i}}}' for i in range(600)) + ';\n'}
+    root = tree(spa)
+    c = safe_census(root)
+    bo = {b.get('path'): b for b in c.get('build_output') or []}
+    checks.append(('a dist/ folder that the app serves with StaticFiles is counted as source, with the reason',
+                   (bo.get('dist') or {}).get('decision') == 'source'
+                   and 'server.py:5' in (bo.get('dist') or {}).get('reason', '')
+                   and 'dist' not in {e['path'] for e in c.get('excluded', [])}, (bo, c.get('excluded'))))
+    checks.append(('hand-written JavaScript in the served dist/ counts as JavaScript',
+                   c.get('languages', {}).get('JavaScript') == 3, c.get('languages')))
+    gen = {g['path']: g['reason'] for g in c.get('generated_files') or []}
+    checks.append(('Emscripten glue, a file-packager manifest and a minified bundle are counted apart as generated',
+                   (c.get('generated') or {}).get('JavaScript') == 3
+                   and 'Emscripten' in gen.get('dist/modules/runtime.js', '')
+                   and 'file-packager' in gen.get('dist/modules/packages/en.js', '')
+                   and 'minified' in gen.get('dist/lib/chart.js', ''), (c.get('generated'), gen)))
+    got = call('build_output_dirs', root)
+    checks.append(('build_output_dirs() gives each build-named folder a decision and a reason',
+                   isinstance(got, dict) and (got.get('dist') or {}).get('build_output') is False
+                   and 'StaticFiles' in (got.get('dist') or {}).get('reason', ''), got))
+    got = call('is_build_output', root, 'dist')
+    checks.append(('is_build_output() says a served dist/ is not build output',
+                   isinstance(got, tuple) and got[0] is False and 'served' in got[1], got))
+
+    # a Vite app: package.json builds into dist/, which holds the bundle (not served by any server in the repo)
+    vite = {'package.json': '{"scripts": {"build": "vite build", "dev": "vite"}}',
+            'src/main.js': 'import "./app.js";\n', 'src/app.js': 'export const a = 1;\n',
+            'dist/assets/index.js': 'export const a = 1;\n', 'dist/index.html': '<html></html>\n'}
+    root = tree(vite)
+    c = safe_census(root)
+    reasons = {e['path']: e['reason'] for e in c.get('excluded', [])}
+    checks.append(('dist/ produced by a package.json build script is excluded as build output, naming the script',
+                   'vite' in reasons.get('dist', '') and c.get('languages', {}).get('JavaScript') == 2, reasons))
+    c = safe_census(root, include=['dist'])
+    checks.append(('--include dist counts a folder the rules would leave out, and records the override',
+                   c.get('languages', {}).get('JavaScript') == 3 and c.get('included') == ['dist']
+                   and 'dist' not in {e['path'] for e in c.get('excluded', [])}, (c.get('languages'), c.get('included'))))
+
+    # no git, no build config, not served: still left out (named like build output), and the guard names it
+    plain = {f'server/m{i}.py': 'def f():\n    return 1\n' for i in range(5)}
+    plain.update({f'dist/js/p{i}.js': 'function p() {\n  return 1;\n}\n' for i in range(4)})
+    root = tree(plain)
+    c = safe_census(root)
+    reasons = {e['path']: e['reason'] for e in c.get('excluded', [])}
+    checks.append(('with no evidence either way, a dist/ folder stays build output and says why',
+                   'no evidence' in reasons.get('dist', ''), reasons))
+    cov = language_coverage(c, {'JavaScript', 'TypeScript'}, tool='scan_ui.py') if 'error' not in c else {}
+    checks.append(('the unsupported_dominant warning names the left-out folder that holds the supported language',
+                   cov.get('status') == 'unsupported_dominant' and 'dist/' in (cov.get('warning') or '')
+                   and '--include dist' in (cov.get('warning') or ''), cov.get('warning')))
+
+    # git: a committed, hand-written dist/ (no build config) is source; a gitignored one is build output
+    tracked = {'app.py': 'print(1)\n', 'site/dist/index.html': '<html></html>\n',
+               'site/dist/main.js': 'function main() {\n  return 1;\n}\n'}
+    root = tree(tracked)
+    if _git_commit_all(root):
+        got = call('is_build_output', root, 'site/dist')
+        checks.append(('a git-tracked, hand-written dist/ with no build config is source',
+                       isinstance(got, tuple) and got[0] is False and 'git-tracked' in got[1], got))
+        (root / '.gitignore').write_text('out/\n', encoding='utf-8')
+        (root / 'out').mkdir()
+        (root / 'out' / 'bundle.js').write_text('var x = 1;\n', encoding='utf-8')
+        got = call('is_build_output', root, 'out')
+        checks.append(('a gitignored out/ folder is build output', isinstance(got, tuple) and got[0] is True
+                       and 'gitignored' in got[1], got))
+    else:
+        print('SKIP git-tracked build-output cases: git is not available')
+
+    # PHP next to a Python app: a tool that reads Python only must still say PHP was not analysed
+    php = {f'app/m{i}.py': 'def f():\n    return 1\n' for i in range(4)}
+    php.update({'index.php': '<?php echo 1;\n', '.htaccess': 'RewriteRule ^.*$ index.php [L]\n'})
+    c = safe_census(tree(php))
+    cov = language_coverage(c, {'Python'}, tool='list_x.py') if 'error' not in c else {}
+    notes = ' '.join(cov.get('notes') or [])
+    checks.append(('PHP present but not analysed is named in language_coverage notes, with its file',
+                   cov.get('status') == 'partial' and 'PHP' in notes and 'index.php' in notes, cov))
+    return checks
+
+
+def self_test() -> int:
+    checks = []
+
+    def tree(files: dict[str, str]) -> Path:
+        d = Path(tempfile.mkdtemp(prefix='lang-census-'))
+        for rel, body in files.items():
+            (d / rel).parent.mkdir(parents=True, exist_ok=True)
+            (d / rel).write_text(body, encoding='utf-8')
+        return d
+
+    # a Go CLI that embeds a third-party iOS driver (TypeScript tooling, Objective-C, a header tree), a vendored Go
+    # module, a built app bundle and node_modules
+    files = {'go.mod': 'module example.test/kiosk\n', 'main.go': 'package main\n'}
+    files.update({f'pkg/runner/f{i}.go': 'package runner\n' for i in range(12)})
+    files.update({f'pkg/runner/f{i}_test.go': 'package runner\n' for i in range(6)})
+    files.update({'drivers/ios/AgentKit/package.json': '{"name": "agent-kit"}', 'drivers/ios/AgentKit/LICENSE': 'BSD'})
+    files.update({f'drivers/ios/AgentKit/lib/m{i}.ts': '' for i in range(30)})
+    files.update({f'drivers/ios/AgentKit/Agent/Lib/c{i}.m': '' for i in range(25)})
+    files.update({f'drivers/ios/AgentKit/PrivateHeaders/XCTest/XC{i}.h': '' for i in range(60)})
+    files.update({f'drivers/ios/prebuilt/Runner.app/Frameworks/XCTest.framework/Headers/H{i}.h': '' for i in range(50)})
+    files.update({f'drivers/ios/headers-only/XCT{i}.h': '' for i in range(40)})
+    files.update({f'vendor/example.test/dep/d{i}.go': 'package dep\n' for i in range(40)})
+    files.update({f'npm/wrapper/node_modules/x/i{i}.js': '' for i in range(40)})
+    files.update({'npm/wrapper/package.json': '{"name": "kiosk"}', 'npm/wrapper/install.js': ''})
+    root = tree(files)
+    c = census(root)
+    checks.append(('a Go repo with a big vendored driver tree is Go-dominant', c['dominant'] == 'Go'
+                   and c['languages'].get('Go') == 19, (c['dominant'], c['languages'])))
+    reasons = {e['path']: e['reason'] for e in c['excluded']}
+    checks.append(('the embedded third-party package is excluded with its manifest and licence named',
+                   'embedded third-party package' in reasons.get('drivers/ios/AgentKit', ''), reasons))
+    checks.append(('a built .app bundle, vendor/ and node_modules/ are excluded',
+                   all(p in reasons for p in ('drivers/ios/prebuilt/Runner.app', 'vendor', 'npm/wrapper/node_modules')),
+                   sorted(reasons)))
+    checks.append(('a header-only tree under drivers/ is excluded', 'header-only' in reasons.get('drivers/ios/headers-only', ''),
+                   reasons))
+    checks.append(('excluded_path finds a file inside an excluded tree',
+                   bool(excluded_path(c, 'drivers/ios/AgentKit/lib/m1.ts')) and not excluded_path(c, 'pkg/runner/f1.go'),
+                   None))
+    cov = language_coverage(c, {'Python', 'JavaScript', 'TypeScript'}, tool='scan_x.py')
+    checks.append(('a JS/Python-only tool on the Go repo is flagged unsupported_dominant',
+                   cov['status'] == 'unsupported_dominant' and cov['dominant_unsupported_language'] == 'Go'
+                   and 'NOT a full analysis' in cov['warning'], cov))
+    cov = language_coverage(c, {'Go'}, tool='scan_go.py')
+    checks.append(('a Go tool on the Go repo is ok or partial, never unsupported_dominant',
+                   cov['status'] in ('ok', 'partial'), cov['status']))
+    # a JavaScript workspace whose packages carry their own LICENSE: product code, kept
+    ws = {'package.json': '{"workspaces": ["packages/*"]}'}
+    for p in ('web', 'api', 'ui'):
+        ws.update({f'packages/{p}/package.json': '{}', f'packages/{p}/LICENSE': 'MIT'})
+        ws.update({f'packages/{p}/src/f{i}.ts': '' for i in range(5)})
+    ws.update({f'scripts/s{i}.py': '' for i in range(4)})
+    c2 = census(tree(ws))
+    checks.append(('workspace packages with their own LICENSE stay counted', c2['languages'].get('TypeScript') == 15
+                   and not c2['excluded'], (c2['languages'], c2['excluded'])))
+    # a git submodule is excluded
+    sm = {'.gitmodules': '[submodule "ext"]\n\tpath = libs/ext\n\turl = https://example.test/ext.git\n',
+          'app.py': '', 'core.py': ''}
+    sm.update({f'libs/ext/e{i}.c': '' for i in range(9)})
+    c3 = census(tree(sm))
+    checks.append(('a git submodule is excluded', c3['dominant'] == 'Python' and 'libs/ext' in
+                   {e['path'] for e in c3['excluded']}, (c3['languages'], c3['excluded'])))
+    # a server-rendered Python web app (a recipe site): a Flask module, Jinja templates, a stylesheet, one script, and
+    # a data directory of 300 JSON records the app loads at run time
+    web = {'app.py': 'from flask import Flask, render_template\napp = Flask(__name__)\n',
+           'api/__init__.py': '', 'static/site.css': 'body{}', 'static/menu.js': '',
+           'templates/base.html': '<html>{% block body %}{% endblock %}</html>'}
+    web.update({f'api/m{i}.py': 'def f():\n    return 1\n' for i in range(4)})
+    web.update({f'templates/pages/p{i}.html': '{% extends "base.html" %}' for i in range(9)})
+    web.update({f'recipes/r{i:03d}.json': '{"name": "soup"}' for i in range(300)})
+    root4 = tree(web)
+    c4 = census(root4)
+    checks.append(('JSON data files never decide the dominant language', c4['dominant'] == 'Python', c4['languages']))
+    checks.append(('a data directory of 300 JSON files is listed as a data tree and not walked',
+                   [d['path'] for d in c4.get('data_trees', [])] == ['recipes']
+                   and c4['data_trees'][0]['files'] == 300, c4.get('data_trees')))
+    checks.append(('templates and stylesheets are counted as markup, apart from the languages',
+                   c4.get('markup', {}).get('Templates') == 10 and c4.get('markup', {}).get('CSS') == 1
+                   and 'HTML' not in c4['languages'], c4.get('markup')))
+    sr = c4.get('server_rendered') or {}
+    checks.append(('a Flask app with Jinja templates is recognised as server-rendered',
+                   sr.get('framework') == 'flask' and sr.get('server_language') == 'Python' and sr.get('templates') == 10
+                   and sr.get('template_dirs') == ['templates'], sr))
+    browser = {'JavaScript', 'TypeScript'}
+    cov = language_coverage(c4, browser, tool='scan_ui.py', reads_templates=True)
+    checks.append(('a tool that reads templates is not told the Flask site is unsupported',
+                   cov['status'] == 'partial' and not cov['warning'] and cov.get('server_rendered', {}).get('templates') == 10
+                   and 'templates' in (cov.get('note') or ''), cov))
+    cov = language_coverage(c4, browser, tool='scan_ui.py')
+    checks.append(('a tool that does not read templates still gets the loud warning',
+                   cov['status'] == 'unsupported_dominant' and cov['warning'], cov['status']))
+    cov = language_coverage(c4, browser | {'HTML'}, tool='scan_ui.py')
+    checks.append(('"HTML" among the supported languages means the tool reads templates',
+                   cov['status'] == 'partial' and not cov['warning'], cov['status']))
+    pruned: list = []
+    dns = sorted(os.listdir(root4))
+    prune_data_dirs(str(root4), dns, pruned, root=str(root4))
+    checks.append(('prune_data_dirs drops the data directory from a walk and says why',
+                   'recipes' not in dns and 'templates' in dns and pruned and pruned[0]['path'] == 'recipes'
+                   and 'data' in pruned[0]['reason'], (dns, pruned)))
+    checks += _build_output_checks(tree)
+    failed = 0
+    for name, ok, extra in checks:
+        failed += not ok
+        print(f"{'PASS' if ok else 'FAIL'} {name}" + ('' if ok else f'  [{extra}]'))
+    print(f'{failed} failed' if failed else 'ALL PASS')
+    return 1 if failed else 0
+
+
+def main(argv=None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if '--self-test' in argv:
+        return self_test()
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument('repo', type=Path)
+    ap.add_argument('--supported', help='comma-separated languages the calling tool analyses, e.g. "Go,Python"')
+    ap.add_argument('--tool', default='this tool')
+    ap.add_argument('--exclude', action='append', default=[], metavar='DIR', help='also leave out this directory')
+    ap.add_argument('--include', action='append', default=[], metavar='DIR',
+                    help='count this directory even if a rule would leave it out (e.g. a hand-written dist/)')
+    ap.add_argument('--out', type=Path)
+    args = ap.parse_args(argv)
+    c = census(args.repo, args.exclude, args.include)
+    if args.supported is not None:
+        c['language_coverage'] = language_coverage(c, [s.strip() for s in args.supported.split(',') if s.strip()],
+                                                   tool=args.tool)
+    text = json.dumps(c, indent=2) + '\n'
+    if args.out:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(text, encoding='utf-8')
+    else:
+        sys.stdout.write(text)
+    langs = ', '.join(f'{k} {v}' for k, v in list(c['languages'].items())[:6]) or 'none'
+    print(f'dominant: {c["dominant"]}; {langs}; {len(c["excluded"])} tree(s) excluded '
+          f'({c["excluded_source_files"]} source files); {c["generated_source_files"]} generated file(s) counted apart',
+          file=sys.stderr)
+    for b in c['build_output']:
+        print(f'{b["decision"]}: {b["reason"]}', file=sys.stderr)
+    cov = c.get('language_coverage')
+    if cov and cov['warning']:
+        print('WARNING: ' + cov['warning'], file=sys.stderr)
+        return 3
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
