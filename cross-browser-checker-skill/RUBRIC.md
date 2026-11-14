@@ -19,7 +19,10 @@ Dismissed automatically, with the reason recorded:
 | Cumulative drift | An element that only moved (no size change) when the nearest element above it, overlapping it horizontally, moved by nearly the same amount (within 16 px both ways): small text-metric differences add up down a long page. A step of more than 16 px between neighbours stays a difference, and what's below it moves with it |
 
 Content not rendered: the element's ink (pixels more than 60 levels from its most common colour,
-ignoring a 2 px border) is under 40% of the reference's in every run, and the reference shows at least 2%.
+ignoring a 2 px border) is under 40% of the reference's in every run, and the reference shows at least 2%. When the reference shows
+under 2%, the other engines are compared with each other the same way (the one that shows ink is the
+reference for that candidate). Runs laid out at different effective viewports (fullscreen) are not
+compared for layout at all.
 
 ## Severity
 
