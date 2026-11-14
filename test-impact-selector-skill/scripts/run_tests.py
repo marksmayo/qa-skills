@@ -71,6 +71,32 @@ the run passes only their files and a small generated plugin (`-p qa_skills_test
 temporary directory on PYTHONPATH) reads the ids from a file, keeps exactly those tests and puts
 them in the listed order; an id it can't find stops the run with exit 4.
 
+Hashing a big tree: the hash is cached in `<runs.json dir>/.qa-code-hash-cache.json` with every
+file's size and mtime; when the listing, sizes and mtimes all match (and no file changed within
+seconds of the cache being written), the stored hash is reused without reading a file
+(`code_hash_basis.cache`: hit or miss). The value is the same either way. Data trees in the hashed
+tree (50+ data files, no source) are listed in `code_hash_basis.data_trees` with a `hint`;
+`--hash-exclude DIR` (repeatable) leaves one out, recorded in `code_hash_basis.excluded`.
+
+The repository's pytest addopts: ids for reordered and isolated runs are collected by a generated
+`-p qa_skills_collect` plugin that writes the collected items to a file, so `addopts = -v` (which
+turns `--collect-only -q` into a tree) cannot hide them; addopts that select tests (-m, -k) apply
+to collection as to the runs. A collection that lists nothing is recorded as an errored run, never
+an exit with no record. Every run checks the requested ids and test files against its JUnit, and
+lists any that did not run in `tests_not_run` with a note.
+
+`--timebox-min M` (pytest only) stops each run cleanly after M minutes through a generated
+`-p qa_skills_timebox` plugin: the running test finishes and pytest writes JUnit and coverage
+(under pytest-xdist, tests started after the deadline are skipped with a fixed reason and dropped
+from the cases). The run gets `run_status: partial`, `run_status_reason` and `timebox`
+{minutes, reached, collected, ran, not_run}; it is not errored. --timeout is raised to leave room.
+
+Coverage: when the command, PYTEST_ADDOPTS or the repository's addopts use --cov (or `coverage
+run`) on Python 3.12+, COVERAGE_CORE=ctrace is set (and recorded) unless the caller set it,
+because coverage.py's default sysmon core records no per-test contexts; a COVERAGE_CORE other than
+ctrace is kept with a warning note. `coverage_core(cmd, env, cwd)` is the helper.
+`--record-env NAME` also records a value inherited from the calling environment.
+
 `--hash-path DIR` (repeatable) adds directories outside --cwd to `code_hash`, for code the tests
 import from a sibling package (a monorepo's shared library); `code_hash_basis.extra_paths` lists
 them. Without it the hash covers --cwd only.
@@ -184,7 +210,7 @@ RECORDED_ENV = {'TDA_CLOCK_SHIFT', 'TDA_CLOCK_DATE', 'TDA_CLOCK_ANNOUNCED', 'FAK
                 'PYTHONPATH', 'PYTEST_ADDOPTS', 'NODE_OPTIONS', 'PYTHONHASHSEED', 'PYTHONDONTWRITEBYTECODE',
                 'PYTHONUNBUFFERED', 'PYTHONIOENCODING', 'PYTHONUTF8', 'CI', 'NODE_ENV', 'FORCE_COLOR', 'NO_COLOR',
                 'JEST_JUNIT_OUTPUT_FILE', 'MOCHA_FILE', 'PLAYWRIGHT_JUNIT_OUTPUT_NAME', 'VITEST_SEED', 'JEST_SEED',
-                'GOFLAGS', 'GOMAXPROCS'}
+                'GOFLAGS', 'GOMAXPROCS', 'COVERAGE_CORE'}
 SECRET_NAME = re.compile(r'PASS|PWD|SECRET|KEY|TOKEN|CRED|AUTH|COOKIE|SESSION|CONN|DSN|PRIVATE|CERT|SIGNATURE|SAS\b',
                          re.I)
 URL_CREDENTIALS = re.compile(r'(\b[a-z][a-z0-9+.-]*://)[^/@\s]+@', re.I)
@@ -254,19 +280,68 @@ def git_files(root: Path) -> list[str] | None:
     return rels or None
 
 
-def hash_tree(root: Path, notes: list[str] | None = None, basis: dict | None = None) -> tuple[str, dict[str, str]]:
-    """(code hash, {relative POSIX path: SHA-256 of the file}) in one pass over the source files."""
+HASH_CACHE_NAME = '.qa-code-hash-cache.json'   # never hashed itself
+HASH_READS = 0   # files read for hashing in this process (the self-test checks a cache hit reads none)
+RACY_NS = 3 * 10**9   # a file modified this close to the cache's writing may have changed without a new mtime
+DATA_EXT = {'.json', '.jsonl', '.ndjson', '.geojson', '.csv', '.tsv', '.yaml', '.yml', '.xml', '.txt', '.parquet',
+            '.avro', '.xlsx', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg'}
+SOURCE_HINT_EXT = {'.py', '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.go', '.rs', '.java', '.kt', '.cs', '.rb',
+                   '.php', '.swift', '.c', '.cc', '.cpp', '.h'}
+DATA_TREE_MIN = 50
+
+
+def data_trees(rels) -> list[dict]:
+    """Directories (relative paths) holding at least DATA_TREE_MIN data files, no source file and data for 90%+ of
+    their files: candidates for --hash-exclude when hashing them dominates a run."""
+    by_dir: dict[str, list[str]] = {}
+    for r in rels:
+        d, _, name = r.rpartition('/')
+        by_dir.setdefault(d, []).append(Path(name).suffix.lower())
+    out = []
+    for d, sfx in sorted(by_dir.items()):
+        n_data = sum(s in DATA_EXT for s in sfx)
+        if d and n_data >= DATA_TREE_MIN and n_data >= 0.9 * len(sfx) and not any(s in SOURCE_HINT_EXT for s in sfx):
+            out.append({'path': d, 'files': len(sfx)})
+    return out
+
+
+def _excluded(rel: str, exclude) -> bool:
+    return any(rel == e or rel.startswith(e + '/') for e in exclude)
+
+
+def _load_cache(path: Path | None) -> dict:
+    if path is None:
+        return {}
+    try:
+        data = json.loads(Path(path).read_text(encoding='utf-8'))
+        return data if isinstance(data, dict) and data.get('version') == 1 else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def hash_tree(root: Path, notes: list[str] | None = None, basis: dict | None = None, exclude=(),
+              cache_path: Path | None = None) -> tuple[str, dict[str, str]]:
+    """(code hash, {relative POSIX path: SHA-256 of the file}) in one pass over the source files.
+
+    exclude: directories relative to root left out (recorded in basis['excluded']). cache_path: a JSON file (one per
+    run directory) remembering the last result with every file's size and mtime; when the listing and every size and
+    mtime match, and no file was modified within seconds of the cache being written (a change git would also call
+    racy), the stored hash is reused without reading a file (basis['cache'] 'hit', else 'miss'). The hash value is
+    the same either way."""
+    global HASH_READS
     root = Path(root)
+    exclude = sorted({str(e).replace('\\', '/').strip('/') for e in exclude if str(e).strip('/')})
     rels = git_files(root)
     method = 'git ls-files -co --exclude-standard' if rels is not None else 'walk'
     found: dict[str, Path] = {}
     if rels is None:
-        for p in iter_files(root, errors=notes):
+        skip_dirs = {root / e for e in exclude}
+        for p in iter_files(root, extra_skip=skip_dirs, errors=notes):
             found[p.relative_to(root).as_posix()] = p
     else:
         for rel in rels:
             parts = rel.rstrip('/').split('/')
-            if skipped(parts[:-1]) or (rel.endswith('/') and skipped(parts)):
+            if skipped(parts[:-1]) or (rel.endswith('/') and skipped(parts)) or _excluded(rel.rstrip('/'), exclude):
                 continue
             p = root / rel
             if rel.endswith('/') or os.path.isdir(long_path(p)):   # a nested repository git lists as a directory
@@ -274,9 +349,33 @@ def hash_tree(root: Path, notes: list[str] | None = None, basis: dict | None = N
                     found[q.relative_to(root).as_posix()] = q
             elif Path(parts[-1]).suffix not in SKIP_SUFFIXES and os.path.isfile(long_path(p)):
                 found[rel] = p
-    h, per_file = hashlib.sha256(), {}
-    for rel in sorted(found):   # POSIX path string order: the same on every platform
+    found = {k: v for k, v in found.items() if Path(k).name != HASH_CACHE_NAME}
+    order = sorted(found)   # POSIX path string order: the same on every platform
+    stamp, newest = hashlib.sha256(), 0
+    for rel in order:
         try:
+            st = os.stat(long_path(found[rel]))
+            size, mtime = st.st_size, st.st_mtime_ns
+        except OSError:
+            size, mtime = -1, -1
+        newest = max(newest, mtime)
+        stamp.update(f'{rel}\0{size}\0{mtime}\0'.encode('utf-8'))
+    key = os.path.normcase(str(root.resolve())) + '\0' + '\0'.join(exclude)
+    cache = _load_cache(cache_path)
+    hit = (cache.get('entries') or {}).get(key)
+    if hit and hit.get('stamp') == stamp.hexdigest() and newest < hit.get('written_ns', 0) - RACY_NS:
+        if basis is not None:
+            basis.update({'method': method, 'files': len(hit['per_file']), 'cache': 'hit'})
+            if exclude:
+                basis['excluded'] = exclude
+            if hit.get('data_trees'):
+                basis['data_trees'] = hit['data_trees']
+        return hit['hash'], dict(hit['per_file'])
+    trees = data_trees(order)[:20]
+    h, per_file = hashlib.sha256(), {}
+    for rel in order:
+        try:
+            HASH_READS += 1
             data = read_bytes(found[rel]).replace(b'\r\n', b'\n')
         except OSError as e:
             data = b'\0unreadable\0'
@@ -288,13 +387,29 @@ def hash_tree(root: Path, notes: list[str] | None = None, basis: dict | None = N
         per_file[rel] = hashlib.sha256(data).hexdigest()
     if basis is not None:
         basis.update({'method': method, 'files': len(per_file)})
+        if cache_path is not None:
+            basis['cache'] = 'miss'
+        if exclude:
+            basis['excluded'] = exclude
+        if trees:
+            basis['data_trees'] = trees
+    if cache_path is not None:
+        cache.setdefault('entries', {})[key] = {'stamp': stamp.hexdigest(), 'written_ns': time.time_ns(),
+                                                'hash': h.hexdigest(), 'per_file': per_file, 'data_trees': trees}
+        cache['version'] = 1
+        try:
+            Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
+            Path(cache_path).write_text(json.dumps(cache), encoding='utf-8')
+        except OSError:
+            pass
     return h.hexdigest(), per_file
 
 
-def hash_trees(root: Path, extra=(), notes: list[str] | None = None, basis: dict | None = None) -> tuple[str, dict[str, str]]:
+def hash_trees(root: Path, extra=(), notes: list[str] | None = None, basis: dict | None = None, exclude=(),
+               cache_path: Path | None = None) -> tuple[str, dict[str, str]]:
     """hash_tree(root), widened by extra directories (sibling packages the tests import). Without extras it is
     exactly hash_tree(root); with them, the per-file keys of each extra are prefixed by its path relative to root."""
-    chash, digests = hash_tree(root, notes, basis)
+    chash, digests = hash_tree(root, notes, basis, exclude, cache_path)
     if not extra:
         return chash, digests
     root = Path(root).resolve()
@@ -303,23 +418,27 @@ def hash_trees(root: Path, extra=(), notes: list[str] | None = None, basis: dict
     for e in sorted({Path(root, x).resolve() for x in extra}, key=lambda p: p.as_posix()):
         rel = Path(os.path.relpath(e, root)).as_posix()
         sub_basis: dict = {}
-        sub, sub_digests = hash_tree(e, notes, sub_basis)
+        sub, sub_digests = hash_tree(e, notes, sub_basis, (), cache_path)
         h.update(rel.encode('utf-8') + b'\0' + sub.encode() + b'\0')
         digests.update({f'{rel}/{k}': v for k, v in sub_digests.items()})
         shown.append(rel)
         if basis is not None:
             basis['files'] = basis.get('files', 0) + sub_basis.get('files', 0)
+            if basis.get('cache') == 'hit' and sub_basis.get('cache') != 'hit':
+                basis['cache'] = 'miss'
     if basis is not None:
         basis['extra_paths'] = shown
     return h.hexdigest(), digests
 
 
-def code_hash(root: Path, notes: list[str] | None = None, basis: dict | None = None, extra=()) -> str:
+def code_hash(root: Path, notes: list[str] | None = None, basis: dict | None = None, extra=(), exclude=(),
+              cache_path: Path | None = None) -> str:
     """SHA-256 of every source file's relative path and content (line endings normalised), sorted by POSIX path
     string so the order is the same on every platform (Path ordering is case-insensitive on Windows). Inside git,
     only files git would track count; otherwise a pruned walk. Never raises for an unreadable file. `extra`
-    directories (relative to root or absolute) widen the hash; see hash_trees."""
-    return hash_trees(root, extra, notes, basis)[0]
+    directories (relative to root or absolute) widen the hash; see hash_trees. `exclude` and `cache_path`: see
+    hash_tree."""
+    return hash_trees(root, extra, notes, basis, exclude, cache_path)[0]
 
 
 def iter_files(root: Path, extra_skip: set[Path] | None = None, errors: list[str] | None = None):
@@ -696,16 +815,130 @@ def map_ids_to_cwd(ids: list[str], cwd: Path, given: list[str]) -> tuple[list[st
                  f'{Path(os.path.relpath(used, cwd)).as_posix()}; they were mapped to paths relative to --cwd.')
 
 
-def collect_pytest(cwd: Path, tests: list[str], env: dict) -> tuple[list[str], str | None]:
+class CollectError(Exception):
+    """pytest listed no test ids; main records an errored run with this message instead of exiting."""
+
+
+def collect_pytest(cwd: Path, tests: list[str], env: dict, args=None) -> tuple[list[str], str | None]:
+    """Node ids pytest would run for these --tests, in order. The generated -p qa_skills_collect plugin writes the
+    collected items' ids to a file, so the repository's own addopts (-v, -vv, -rA, which turn `--collect-only -q`
+    into a <Module>/<Function> tree) cannot hide them; addopts that select tests (-m, -k) still apply, as they do to
+    the runs. The printed ids are the fallback when the plugin did not load."""
     ids, outs = [], []
-    for part in (chunks(tests) or [[]]):   # long --tests lists are collected in pieces, keeping their order
-        res = subprocess.run(PRESETS['pytest']['collect'] + part, cwd=cwd, env=env, capture_output=True, text=True,
-                             encoding='utf-8', errors='replace')
-        ids += [l.strip() for l in res.stdout.splitlines() if '::' in l and not l.startswith(' ')]
+    d = plugin_dir(args) if args is not None else tempfile.mkdtemp(prefix='qa-ids-')
+    if args is None:
+        Path(d, COLLECT_PLUGIN + '.py').write_text(COLLECT_PLUGIN_SOURCE, encoding='utf-8')
+    for n, part in enumerate(chunks(tests) or [[]]):   # long --tests lists are collected in pieces, keeping their order
+        listing = Path(d, f'collect-{n}.txt')
+        listing.unlink(missing_ok=True)
+        cenv = {**env, 'QA_SKILLS_COLLECT_OUT': str(listing), 'QA_SKILLS_IDS_CWD': str(cwd),
+                'PYTHONPATH': d + (os.pathsep + env['PYTHONPATH'] if env.get('PYTHONPATH') else '')}
+        res = subprocess.run(PRESETS['pytest']['collect'] + ['-p', COLLECT_PLUGIN] + part, cwd=cwd, env=cenv,
+                             capture_output=True, text=True, encoding='utf-8', errors='replace')
+        listed = [l for l in listing.read_text(encoding='utf-8').splitlines() if l.strip()] if listing.exists() else []
+        ids += listed or [l.strip() for l in res.stdout.splitlines() if '::' in l and not l.startswith(' ')]
         outs.append(res.stdout[-800:] + res.stderr[-800:])
     if not ids:
-        raise SystemExit('pytest collected no tests:\n' + '\n'.join(outs)[-1600:])
+        raise CollectError('pytest collected no tests for ' + (' '.join(tests[:5]) or 'the default paths')
+                           + ':\n' + '\n'.join(outs)[-1600:])
     return map_ids_to_cwd(list(dict.fromkeys(ids)), cwd, tests)
+
+
+COLLECT_PLUGIN = 'qa_skills_collect'
+COLLECT_PLUGIN_SOURCE = r'''"""Generated by run_tests.py: write the collected test ids to $QA_SKILLS_COLLECT_OUT, one per line."""
+import os
+
+
+def pytest_collection_finish(session):
+    out = os.environ.get("QA_SKILLS_COLLECT_OUT")
+    if not out or hasattr(session.config, "workerinput"):
+        return
+    cwd = os.environ.get("QA_SKILLS_IDS_CWD") or os.getcwd()
+    with open(out, "a", encoding="utf-8") as fh:
+        for item in session.items:
+            path = getattr(item, "path", None) or getattr(item, "fspath", None)
+            _, sep, rest = item.nodeid.partition("::")
+            fh.write(os.path.relpath(str(path), cwd).replace(os.sep, "/") + sep + rest + "\n")
+'''
+
+TIMEBOX_PLUGIN = 'qa_skills_timebox'
+TIMEBOX_REASON = 'qa_skills_timebox: not run, the time box was reached'
+TIMEBOX_PLUGIN_SOURCE = r'''"""Generated by run_tests.py: stop the run cleanly at $QA_SKILLS_DEADLINE (epoch seconds).
+
+The first test to finish after the deadline stops the session (pytest then writes JUnit and coverage as usual);
+under pytest-xdist every test a worker starts after the deadline is skipped with a fixed reason instead. The file
+$QA_SKILLS_TIMEBOX_MARK records how many tests were collected and whether the deadline was reached."""
+import os
+import time
+
+import pytest
+
+_DEADLINE = float(os.environ.get("QA_SKILLS_DEADLINE") or 0)
+_MARK = os.environ.get("QA_SKILLS_TIMEBOX_MARK")
+REASON = "qa_skills_timebox: not run, the time box was reached"
+_state = {"session": None}
+
+
+def _note(line):
+    if _MARK:
+        try:
+            with open(_MARK, "a", encoding="utf-8") as fh:
+                fh.write(line + "\n")
+        except OSError:
+            pass
+
+
+def pytest_sessionstart(session):
+    _state["session"] = session
+
+
+def pytest_collection_finish(session):
+    _note(f"collected {len(session.items)}")
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_runtest_setup(item):
+    if _DEADLINE and time.time() > _DEADLINE:
+        _note("reached")
+        pytest.skip(REASON)
+
+
+def pytest_runtest_logfinish(nodeid, location):
+    session = _state["session"]
+    if _DEADLINE and time.time() > _DEADLINE and session is not None and not hasattr(session.config, "workerinput") \
+            and not getattr(session.config.option, "numprocesses", None):
+        _note("reached")
+        session.shouldstop = "qa_skills_timebox: the time box was reached"
+'''
+
+
+def coverage_core(cmd: list[str], env: dict, cwd: Path, version=None) -> tuple[dict, str | None]:
+    """(environment to add, note) for a run that measures coverage. On Python 3.12+ coverage.py defaults to the
+    sys.monitoring core, which does not record dynamic contexts, so per-test contexts (--cov-context=test,
+    dynamic_context = test_function) come out nearly empty; COVERAGE_CORE=ctrace keeps them. A COVERAGE_CORE the
+    caller set is kept, with a warning when it is not ctrace. Coverage is recognised by --cov in the command,
+    PYTEST_ADDOPTS or the repository's pytest configuration, or `coverage run` in the command."""
+    version = tuple(version or sys.version_info[:2])
+    text = ' '.join(cmd) + ' ' + env.get('PYTEST_ADDOPTS', '')
+    for cfg in ('pytest.ini', 'pyproject.toml', 'setup.cfg', 'tox.ini'):
+        try:
+            body = (Path(cwd) / cfg).read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            continue
+        m = re.search(r'^\s*addopts\s*=\s*(.+)$', body, re.M)
+        if m:
+            text += ' ' + m.group(1)
+    if not re.search(r'(^|\s)--cov\b|\bcoverage(\.exe)?\s+run\b|-m\s+coverage\b', text) or version < (3, 12):
+        return {}, None
+    given = env.get('COVERAGE_CORE')
+    if given:
+        if given != 'ctrace':
+            return {}, (f'COVERAGE_CORE={given} was kept as given; with the sysmon core coverage.py records no dynamic '
+                        '(per-test) contexts on Python 3.12+, so per-test context data may be incomplete')
+        return {}, None
+    return {'COVERAGE_CORE': 'ctrace'}, (f'Python {version[0]}.{version[1]}: coverage.py\'s default sysmon core '
+                                         'records no dynamic (per-test) contexts, so COVERAGE_CORE=ctrace was set for '
+                                         'these runs (slower, but per-test contexts are complete)')
 
 
 IDS_PLUGIN = 'qa_skills_test_ids'
@@ -899,10 +1132,12 @@ def run_error(code: int | None, timed_out: bool, cases: list, is_pytest: bool, o
 
 
 def plugin_dir(args) -> str:
-    """A temporary directory holding the generated ids plugin, made once per invocation."""
+    """A temporary directory holding the generated plugins (ids, collect, time box), made once per invocation."""
     if not getattr(args, 'ids_dir', None):
         args.ids_dir = tempfile.mkdtemp(prefix='qa-ids-')
-        Path(args.ids_dir, IDS_PLUGIN + '.py').write_text(IDS_PLUGIN_SOURCE, encoding='utf-8')
+        for name, src in ((IDS_PLUGIN, IDS_PLUGIN_SOURCE), (COLLECT_PLUGIN, COLLECT_PLUGIN_SOURCE),
+                          (TIMEBOX_PLUGIN, TIMEBOX_PLUGIN_SOURCE)):
+            Path(args.ids_dir, name + '.py').write_text(src, encoding='utf-8')
     return args.ids_dir
 
 
@@ -921,11 +1156,21 @@ def run_one(args, preset, run_id: str, tests: list[str], base_env: dict, junit_d
         notes.append(f'{len(tests)} test ids ({sum(len(t) + 1 for t in tests)} characters) were passed through a file '
                      f'to the generated -p {IDS_PLUGIN} plugin, which kept exactly those tests in the listed order; '
                      'the command names only their files.')
+    timebox = getattr(args, 'timebox_min', None)
+    mark = None
+    if timebox:
+        mark = Path(plugin_dir(args), f'{run_id}.timebox.txt')
+        mark.unlink(missing_ok=True)
+        argv_tests = ['-p', TIMEBOX_PLUGIN, *argv_tests]
     cmd, extra_env = build(args, preset, junit, argv_tests, seed)
     env = {**base_env, **extra_env}
     if via_file:
         env['QA_SKILLS_TEST_IDS'], env['QA_SKILLS_IDS_CWD'] = str(via_file), str(cwd)
-        env['PYTHONPATH'] = str(via_file.parent) + (os.pathsep + env['PYTHONPATH'] if env.get('PYTHONPATH') else '')
+    if via_file or timebox:
+        env['PYTHONPATH'] = plugin_dir(args) + (os.pathsep + env['PYTHONPATH'] if env.get('PYTHONPATH') else '')
+    if timebox:
+        env['QA_SKILLS_DEADLINE'] = str(time.time() + timebox * 60)
+        env['QA_SKILLS_TIMEBOX_MARK'] = str(mark)
     if os.name == 'nt' and len(subprocess.list2cmdline(cmd)) > 32000:
         raise SystemExit(f'the command for {run_id} is {len(subprocess.list2cmdline(cmd))} characters, over the Windows '
                          'limit of 32,767; select fewer tests per run, or use --isolate')
@@ -974,7 +1219,23 @@ def run_one(args, preset, run_id: str, tests: list[str], base_env: dict, junit_d
         run_notes.append(f'Timed out after {args.timeout}s; the process tree was killed.')
     is_pytest = args.preset == 'pytest' or bool(args.cmd and re.search(r'\bpytest\b', args.cmd))
     text = (out or b'').decode('utf-8', 'replace')
+    box = None
+    if timebox:
+        lines = mark.read_text(encoding='utf-8').splitlines() if mark.exists() else []
+        collected = max([int(l.split()[1]) for l in lines if l.startswith('collected ')] or [0])
+        reached = 'reached' in lines
+        skipped_by_box = [c for c in cases if c['status'] == 'skipped' and 'qa_skills_timebox' in (c.get('message_excerpt') or '')]
+        cases = [c for c in cases if c not in skipped_by_box]
+        box = {'minutes': timebox, 'reached': reached, 'collected': collected or None,
+               'ran': len(cases), 'not_run': max(collected - len(cases), len(skipped_by_box)) if reached else 0}
+        if reached:
+            run_notes.append(f'Time box of {timebox} min reached: {len(cases)} of {collected or "?"} collected test(s) ran '
+                             f'and {box["not_run"]} did not; the run stopped cleanly (JUnit and coverage were written), '
+                             'so its results are partial, not a full run.')
     error = run_error(code, timed_out, cases, is_pytest, text)
+    if box and box['reached'] and not timed_out and code in (0, 1, 2) and cases and \
+            (error is None or error == PYTEST_EXIT.get(2)):
+        error = None   # exit 2 here is the time box's own clean stop, not a collection error
     if error:
         tail = scrub(text[-600:])
         run_notes.append(f'Errored: {error}. Treat this run as not having run the tests'
@@ -986,13 +1247,44 @@ def run_one(args, preset, run_id: str, tests: list[str], base_env: dict, junit_d
     rel = os.path.relpath(junit, args.out.resolve().parent).replace(os.sep, '/')
     shown = shown.replace(str(junit), rel)
     shown = scrub(shown)
+    missing = [] if error or (box and box['reached']) else tests_not_run(tests, cases, cwd, prefix)
+    if missing:
+        run_notes.append(f'{len(missing)} requested test(s) were not run (no result for them in the JUnit; deselected by '
+                         'the repository\'s addopts, skipped by collection, or renamed): '
+                         + ', '.join(missing[:5]) + (' ...' if len(missing) > 5 else ''))
     return {'id': run_id, 'command': shown, 'exit_code': code, 'junit_paths': [rel],
             'started_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
             'totals': parse_results.totals(cases), 'file_hashes': {}, 'notes': run_notes,
             'duration_s': duration, 'timed_out': timed_out, 'errored': bool(error), 'error': error,
             'label': args.label, 'preset': args.preset,
             'tests_selected': [f'{prefix}/{t}' for t in tests] if prefix else tests,
+            **({'tests_not_run': missing} if missing else {}),
+            **({'run_status': 'partial', 'run_status_reason': 'time box reached', 'timebox': box}
+               if box and box['reached'] else {}),
             **({'id_prefix': prefix} if prefix else {})}, cases
+
+
+def tests_not_run(tests: list[str], cases: list[dict], cwd: Path, prefix: str = '') -> list[str]:
+    """Requested test ids (`file::name`) and test files with no result among the run's cases. A parametrised or
+    nested id counts as run when any of its cases ran (`id[param]`, `id::inner`, Go `id/sub`). Package patterns and
+    directories are not checked."""
+    ids = [c['id'] for c in cases]
+    files = {c.get('file') for c in cases} | {i.split('::')[0] for i in ids}
+    out = []
+    for t in tests:
+        want = f'{prefix}/{t}' if prefix else t
+        if '::' in t:
+            base = re.sub(r'#\d+$', '', want)
+            if any(i == base or i.startswith((base + '[', base + '::', base + '/', base + '#')) for i in ids):
+                continue
+            f, _, tail = base.partition('::')   # pytest JUnit ids are module-dotted: match on file, classes and name
+            parts = tail.split('::')
+            if not any(c.get('file') == f and (c.get('name') == parts[-1] or str(c.get('name', '')).startswith(parts[-1] + '['))
+                       and all(p in str(c.get('classname', '')).split('.') for p in parts[:-1]) for c in cases):
+                out.append(want)
+        elif os.path.isfile(long_path(cwd / t)) and want not in files:
+            out.append(want)
+    return out
 
 
 def go_self_checks() -> list:
@@ -1068,10 +1360,114 @@ def go_self_checks() -> list:
     return checks
 
 
+def pytest_self_checks() -> list:
+    """pytest runs on a synthetic package whose pytest.ini sets addopts (-v and a marker filter): reordered and isolated
+    runs still find every test, a requested test pytest did not run is recorded, a failed collection is recorded as an
+    errored run, the code hash is cached between invocations and can leave a data tree out, a time box stops a slow
+    run cleanly with partial results, and coverage on Python 3.12+ gets the ctrace core."""
+    checks = []
+    if not has_module('pytest', Path('.'), dict(os.environ)):
+        print('SKIP pytest runs: pytest is not installed')
+        return checks
+    global HASH_READS
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'pkg'
+        (root / 'tests').mkdir(parents=True)
+        (root / 'pytest.ini').write_text('[pytest]\naddopts = -v -m "not slow"\ntestpaths = tests\n'
+                                         'markers =\n    slow: slow tests\n', encoding='utf-8')
+        (root / 'tests' / 'test_menu.py').write_text(
+            'import pytest\n\n\ndef test_one():\n    assert 1\n\n\ndef test_two():\n    assert 2\n\n\n'
+            '@pytest.mark.parametrize("n", [1, 2, 3])\ndef test_portions(n):\n    assert n\n\n\n'
+            '@pytest.mark.slow\ndef test_slow():\n    assert 1\n', encoding='utf-8')
+        (root / 'recipes').mkdir()
+        for i in range(60):
+            (root / 'recipes' / f'r{i:02d}.json').write_text('{"name": "soup"}', encoding='utf-8')
+        old = time.time() - 60   # files written a minute ago, so the cache's racy-mtime guard does not apply
+        for p in root.rglob('*'):
+            os.utime(p, (old, old))
+        out = Path(d) / 'out' / 'runs.json'
+        base = ['--preset', 'pytest', '--cwd', str(root), '--out', str(out)]
+
+        def last_run():
+            data = json.loads(out.read_text(encoding='utf-8')) if out.exists() else {'runs': [{}], 'cases': []}
+            run = data['runs'][-1] if data['runs'] else {}
+            return data, run, [c for c in data['cases'] if c.get('run_id') == run.get('id')]
+
+        def call(argv):
+            try:
+                return main(argv)
+            except SystemExit as e:   # an exit that writes no run is exactly what must not happen
+                return f'SystemExit: {str(e)[:200]}'
+        code = call(base + ['--order', 'reverse'])
+        data, run, cases = last_run()
+        checks.append(('addopts = -v in pytest.ini does not empty a reordered run (ids are collected robustly)',
+                       code == 0 and len(cases) == 5 and not run.get('errored'), (code, len(cases), run.get('error'))))
+        code = call(base + ['--isolate', '--tests', 'tests/test_menu.py::test_one'])
+        data, run, cases = last_run()
+        checks.append(('an isolated run under addopts = -v runs the requested test',
+                       code == 0 and [(c['file'], c['name']) for c in cases] == [('tests/test_menu.py', 'test_one')]
+                       and not run.get('tests_not_run'), (code, run.get('error'), [c['id'] for c in cases])))
+        code = call(base + ['--tests', 'tests/test_menu.py::test_two', 'tests/test_menu.py::test_slow'])
+        data, run, cases = last_run()
+        checks.append(('a requested test the run did not run (deselected by addopts) is recorded, never lost silently',
+                       run.get('tests_not_run') == ['tests/test_menu.py::test_slow'] and
+                       any('not run' in n for n in run.get('notes', [])), (code, run.get('tests_not_run'))))
+        n_runs = len(data['runs'])
+        code = call(base + ['--order', 'shuffle', '--tests', 'tests/test_absent.py'])
+        data, run, cases = last_run()
+        checks.append(('a collection that finds nothing is recorded as an errored run',
+                       len(data['runs']) == n_runs + 1 and run.get('errored') is True and 'collect' in (run.get('error') or ''),
+                       (code, len(data['runs']), run.get('error'))))
+        HASH_READS = 0
+        call(base + ['--tests', 'tests/test_menu.py::test_one'])
+        data, run, _ = last_run()
+        checks.append(('an unchanged tree is not re-read: the code hash comes from the cache by size and mtime',
+                       HASH_READS == 0 and data.get('code_hash_basis', {}).get('cache') == 'hit'
+                       and run.get('code_hash') == data['runs'][0].get('code_hash'),
+                       (HASH_READS, data.get('code_hash_basis'))))
+        call(base + ['--hash-exclude', 'recipes', '--tests', 'tests/test_menu.py::test_one', '--out', str(out.parent / 'ex.json')])
+        ex = json.loads((out.parent / 'ex.json').read_text(encoding='utf-8')) if (out.parent / 'ex.json').exists() \
+            else {'code_hash_basis': {'files': 0}, 'runs': [{'code_hash': None}]}
+        checks.append(('--hash-exclude leaves a data tree out of the code hash and records the rule',
+                       ex['code_hash_basis'].get('excluded') == ['recipes'] and 0 < ex['code_hash_basis']['files'] < data['code_hash_basis']['files']
+                       and ex['runs'][-1]['code_hash'] != data['runs'][-1]['code_hash'], ex['code_hash_basis']))
+        checks.append(('a data tree in the hashed tree is named with a hint to leave it out',
+                       'recipes' in data['code_hash_basis'].get('hint', '') and '--hash-exclude' in data['code_hash_basis'].get('hint', ''),
+                       data['code_hash_basis']))
+        os.environ['QA_SKILLS_SAMPLE_FLAG'] = 'on'
+        call(base + ['--record-env', 'QA_SKILLS_SAMPLE_FLAG', '--tests', 'tests/test_menu.py::test_one'])
+        os.environ.pop('QA_SKILLS_SAMPLE_FLAG', None)
+        _, run, _ = last_run()
+        checks.append(('--record-env records a value inherited from the calling environment',
+                       (run.get('variation') or {}).get('env', {}).get('QA_SKILLS_SAMPLE_FLAG') == 'on', run.get('variation')))
+        (root / 'tests' / 'test_slow_suite.py').write_text(
+            'import time\nimport pytest\n\n\n@pytest.mark.parametrize("n", range(40))\ndef test_wait(n):\n'
+            '    time.sleep(0.1)\n', encoding='utf-8')
+        code = call(base + ['--tests', 'tests/test_slow_suite.py', '--timebox-min', '0.08', '--out', str(out.parent / 'tb.json')])
+        tb = json.loads((out.parent / 'tb.json').read_text(encoding='utf-8')) if (out.parent / 'tb.json').exists() else {'runs': [{}], 'cases': []}
+        run = tb['runs'][-1] if tb['runs'] else {}
+        box = run.get('timebox') or {}
+        checks.append(('a time-boxed run stops cleanly: partial, with the tests that ran and the count that did not',
+                       code == 0 and run.get('run_status') == 'partial' and not run.get('errored')
+                       and 0 < len(tb['cases']) < 40 and box.get('not_run', 0) > 0
+                       and len(tb['cases']) + box['not_run'] == 40, (code, run.get('run_status'), box, len(tb['cases']))))
+    coverage_core = globals().get('coverage_core') or (lambda *a: ({}, 'no coverage_core'))
+    env, note = coverage_core(['python', '-m', 'pytest', '--cov=shop', '--cov-context=test'], {}, Path('.'), (3, 14))
+    checks.append(('pytest-cov on Python 3.12+ runs with COVERAGE_CORE=ctrace, and the run says why',
+                   env.get('COVERAGE_CORE') == 'ctrace' and 'sysmon' in (note or ''), (env, note)))
+    env, note = coverage_core(['python', '-m', 'pytest', '--cov=shop'], {'COVERAGE_CORE': 'sysmon'}, Path('.'), (3, 14))
+    checks.append(('a COVERAGE_CORE the caller set is kept, with a warning about per-test contexts',
+                   'COVERAGE_CORE' not in env and 'context' in (note or ''), (env, note)))
+    env, note = coverage_core(['python', '-m', 'pytest'], {}, Path('.'), (3, 14))
+    checks.append(('a run without coverage is left alone', 'COVERAGE_CORE' not in env and note is None, (env, note)))
+    return checks
+
+
 def self_test() -> int:
     """Check id patterns, npm script chains and workspace delegation, and (with node on PATH) a node-test run with
     --repo-root on a small synthetic workspace."""
     checks = []
+    checks += pytest_self_checks()
     _, pat = vitest_ids(['tests/a.test.ts::cart > totals > adds tax'])
     rx = re.compile(pat)
     checks.append(('a vitest -t pattern matches the " > " and the space-joined name',
@@ -1167,6 +1563,12 @@ def main(argv=None) -> int:
                     help='also record the value of these variables in runs.json (only for values that are not secret)')
     ap.add_argument('--hash-path', action='append', default=[], type=Path, metavar='DIR',
                     help='add a directory outside --cwd (a sibling package the tests import) to code_hash; repeatable')
+    ap.add_argument('--hash-exclude', action='append', default=[], metavar='DIR',
+                    help='leave this directory (relative to the hashed root, e.g. a data tree of thousands of records) out '
+                         'of code_hash; recorded in code_hash_basis.excluded; repeatable')
+    ap.add_argument('--timebox-min', type=float, metavar='M',
+                    help='pytest only: stop each run cleanly after M minutes (the running test finishes, JUnit and coverage '
+                         'are written) and record it as run_status partial with the counts that ran and did not')
     ap.add_argument('--npm-script', metavar='NAME', help="reuse package.json's script NAME (its env prefix and runner "
                                                            'flags) with the jest, vitest, playwright or node-test preset')
     ap.add_argument('--repo-root', type=Path, metavar='DIR',
@@ -1250,6 +1652,28 @@ def main(argv=None) -> int:
         k, _, v = kv.partition('=')
         env[k] = v
         variation['env'][k] = recorded_env(k, v, keep)
+    for k in sorted(keep):   # --record-env also records a value the runs inherit from the calling environment
+        if k not in variation['env'] and k in os.environ:
+            variation['env'][k] = recorded_env(k, os.environ[k], keep)
+    if args.timebox_min:
+        is_py = args.preset == 'pytest' or bool(args.cmd and re.search(r'\bpytest\b', args.cmd))
+        if not is_py or args.timebox_min <= 0:
+            ap.error('--timebox-min works with pytest runs only (a positive number of minutes); for other runners use '
+                     '--timeout, which kills the run and records it as errored')
+        hard = int(args.timebox_min * 60) + 300
+        if args.timeout < hard:
+            notes.append(f'--timeout raised from {args.timeout}s to {hard}s so the {args.timebox_min}-minute time box '
+                         'stops the run cleanly before the hard timeout would kill it.')
+            args.timeout = hard
+    cov_tokens = (shlex.split(args.cmd) if args.cmd else [str(x) for x in (preset['cmd'] or [])]) \
+        + shlex.split(args.runner_args or '') + list(args.script_args)
+    cov_env, cov_note = coverage_core(cov_tokens, env, cwd)
+    for k, v in cov_env.items():
+        env[k] = v
+        variation['env'][k] = recorded_env(k, v, keep)
+    if cov_note:
+        notes.append(cov_note)
+        print('NOTE: ' + cov_note)
     if args.tz:
         rt = runtime_of(args.preset, args.cmd)
         try:
@@ -1281,10 +1705,14 @@ def main(argv=None) -> int:
     if args.order == 'reverse' and preset.get('order') != 'explicit_ids':
         ap.error(f'{args.preset} supports shuffle, not reverse (the runner orders files itself); use --order shuffle '
                  'with several seeds, or record the reverse-order variation as not_run')
+    collect_error = None
     if preset.get('order') == 'explicit_ids' and (args.order != 'given' or args.isolate):
         if args.preset == 'pytest' and has_module('pytest_randomly', cwd, env):
             preset = {**preset, 'cmd': preset['cmd'] + ['-p', 'no:randomly']}
-        tests, id_note = collect_pytest(cwd, tests, env)
+        try:
+            tests, id_note = collect_pytest(cwd, tests, env, args)
+        except CollectError as e:
+            collect_error, id_note = str(e), None
         if id_note:
             notes.append(id_note)
             print('NOTE: ' + id_note)
@@ -1308,10 +1736,21 @@ def main(argv=None) -> int:
     n0 = sum(1 for r in data['runs'] if r['id'].startswith(args.run_prefix + '-'))
     hash_notes, basis = [], {}
     hash_root = args.repo_root.resolve() if args.repo_root else cwd
-    chash, digests = hash_trees(hash_root, args.hash_path, hash_notes, basis)
+    cache_path = args.out.resolve().parent / HASH_CACHE_NAME
+    t_hash = time.monotonic()
+    chash, digests = hash_trees(hash_root, args.hash_path, hash_notes, basis, args.hash_exclude, cache_path)
+    hash_s = round(time.monotonic() - t_hash, 1)
     if args.repo_root:
         basis['root'] = '.' if hash_root == cwd else 'repo-root'
         data['id_prefix'] = args.id_prefix
+    if basis.get('data_trees'):
+        trees = basis['data_trees']
+        basis['hint'] = (f'{len(trees)} data tree(s) are hashed with the code ('
+                         + ', '.join(f'{t["path"]} ({t["files"]} files)' for t in trees[:3])
+                         + f'; hashing took {hash_s}s). If the tests only read them and hashing dominates, pass '
+                         '--hash-exclude <dir> (the exclusion is recorded); repeated runs reuse a cached hash anyway.')
+        if hash_s > 10:
+            print('NOTE: ' + basis['hint'])
     data['code_hash_basis'] = basis
     for n in hash_notes:
         print('WARN: ' + n)
@@ -1321,7 +1760,23 @@ def main(argv=None) -> int:
     deadline = time.monotonic() + args.minutes * 60
     batches = [[t] for t in tests] if args.isolate else [tests]
     done, planned, stopped = 0, args.repeat * len(batches), False
-    for i in range(args.repeat):
+    if collect_error:   # record the failed collection as an errored run, so a scripted campaign never loses it
+        run_id = f'{args.run_prefix}-{n0 + 1}'
+        while run_id in existing:
+            n0 += 1
+            run_id = f'{args.run_prefix}-{n0 + 1}'
+        data['runs'].append({
+            'id': run_id, 'command': scrub(' '.join(['python' if c == sys.executable else c
+                                                     for c in PRESETS['pytest']['collect']] + tests)),
+            'exit_code': None, 'junit_paths': [], 'started_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+            'totals': parse_results.totals([]), 'file_hashes': {}, 'notes': notes + [f'Errored: {scrub(collect_error)[-900:]}'],
+            'duration_s': 0.0, 'timed_out': False, 'errored': True,
+            'error': 'pytest collected no tests to reorder or isolate (collection failed or selected nothing)',
+            'label': args.label, 'preset': args.preset, 'tests_selected': tests,
+            'variation': variation, 'code_hash': chash, 'platform': sys.platform})
+        print(f'{run_id} [{args.label}] ERRORED: pytest collected no tests to reorder or isolate')
+        batches, planned = [], 0
+    for i in range(args.repeat if batches else 0):
         for batch in batches:
             if time.monotonic() > deadline:
                 stopped = True
@@ -1360,7 +1815,7 @@ def main(argv=None) -> int:
         print(f'Stopped at the {args.minutes}-minute cap after {done} of {planned} planned run(s).')
         data.setdefault('stops', []).append({'label': args.label, 'completed': done, 'planned': planned,
                                              'minutes': args.minutes})
-    after_hash, after_digests = hash_trees(hash_root, args.hash_path)
+    after_hash, after_digests = hash_trees(hash_root, args.hash_path, exclude=args.hash_exclude, cache_path=cache_path)
     if after_hash != chash:
         moved = sorted(k for k in set(digests) | set(after_digests) if digests.get(k) != after_digests.get(k))
         shown = ', '.join(moved[:10]) + (f' and {len(moved) - 10} more' if len(moved) > 10 else '')
