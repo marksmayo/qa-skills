@@ -16,7 +16,9 @@ under <out>/raw/ in the same layout a recorded directory uses, then normalised:
   github: run.json, attempts/<n>/run.json, attempts/<n>/jobs.json, attempts/<n>/artifacts.json,
           attempts/<n>/artifacts/<name>/*.xml, logs/<job id>.txt (or logs/<job id>.error.json),
           history.json (runs of the same workflow on the branch, started before this run, and runs of the
-          same commit), history_jobs/<run id>.json (the jobs of every other run of the same commit)
+          same commit), history_jobs/<run id>.json (the jobs of every other run of the same commit),
+          annotations/<job id>.json (the check-run annotations of every failed job: the CI's only
+          explanation of a job that never started on a runner, such as a billing or spending-limit stop)
   azure:  build.json, timeline.json, logs/<log id>.txt, artifacts.json, artifacts/<name>/*.xml,
           history.json (builds of the same definition on the branch), history_jobs/<build id>.json
 
@@ -26,7 +28,8 @@ network error), printed as a warning, and listed in run.json `fetch_problems`.
 
 <out>/run.json: {system, repo, repo_api, source, run{id, url, attempt, commit, branch, event, started_at,
 conclusion, workflow, workflow_id}, attempts[{n, triggered_by, jobs_rerun, jobs[{id, name, conclusion, url,
-started_at, steps[{number, name, conclusion}], log, log_status, log_error, junit[]}]}], history[{id, commit,
+started_at, steps[{number, name, conclusion}], log, log_status, log_error, junit[], never_started (no steps and no
+runner: log_status never_started, no log exists), annotations[{level, title, message}]}]}], history[{id, commit,
 conclusion, started_at, event, workflow_id, jobs}], history_scope, last_green{id, commit, event, basis},
 fetch_problems[]}. Logs and JUnit are copied into <out>/logs and <out>/junit, so the run directory is
 self-contained.
@@ -96,7 +99,8 @@ def describe_error(e: BaseException) -> dict:
     """A fetch failure as {status, http_status, error}; never includes a URL (signed URLs carry keys)."""
     if isinstance(e, urllib.error.HTTPError):
         st = 'unavailable' if e.code in (404, 410) else 'fetch_failed'
-        why = {404: 'not found: expired, deleted or not visible to this token', 410: 'gone: expired'}.get(e.code, e.reason)
+        why = {404: 'not found: expired, deleted, never written (a job that never started) or not visible to this token',
+               410: 'gone: expired'}.get(e.code, e.reason)
         return {'status': st, 'http_status': e.code, 'error': f'HTTP {e.code}: {why}'}
     if isinstance(e, urllib.error.URLError):
         return {'status': 'fetch_failed', 'http_status': None, 'error': f'network error: {e.reason}'}
@@ -142,6 +146,35 @@ def fetch_log(url: str, h: dict, raw: Path, key) -> None:
         warn(f'log {key} not downloaded ({d["status"]}): {d["error"]}')
 
 
+def fetch_annotations(api: str, repo: str, job_id, h: dict, raw: Path) -> None:
+    """The check-run annotations of one GitHub job: the only explanation for a job that failed before a runner picked
+    it up (a billing or spending-limit stop, no runner with the labels), which has no log at all."""
+    try:
+        save(raw / 'annotations' / f'{job_id}.json', _get(f'{api}/repos/{repo}/check-runs/{job_id}/annotations?per_page=50', h))
+    except Exception as e:  # noqa: BLE001 - recorded, never swallowed
+        d = describe_error(e)
+        save(raw / 'annotations' / f'{job_id}.error.json', d)
+        warn(f'annotations of job {job_id} not downloaded ({d["status"]}): {d["error"]}')
+
+
+def never_started(j: dict) -> bool:
+    """A GitHub job that concluded without a runner ever picking it up: no steps, and a runner name the API gives as
+    empty or null (a recording without the field says nothing either way)."""
+    return (j.get('conclusion') not in ('success', 'skipped', None) and not j.get('steps')
+            and 'runner_name' in j and not j['runner_name'])
+
+
+def annotations_of(raw: Path, job_id) -> tuple[list[dict], dict | None]:
+    """(annotations, error record) saved for one job; each annotation as {level, title, message}, untrusted text."""
+    p = raw / 'annotations' / f'{job_id}.json'
+    if p.exists():
+        data = json.loads(p.read_text(encoding='utf-8'))
+        return [{'level': a.get('annotation_level'), 'title': a.get('title') or '', 'message': (a.get('message') or '')[:2000]}
+                for a in (data if isinstance(data, list) else [])], None
+    err = raw / 'annotations' / f'{job_id}.error.json'
+    return [], (json.loads(err.read_text(encoding='utf-8')) if err.exists() else None)
+
+
 def fetch_artifact(url: str, h: dict, dest: Path, raw: Path, name: str, size: int | None, max_mb: int) -> None:
     if size and size > max_mb * 1024 * 1024:
         d = {'status': 'skipped', 'http_status': None, 'error': f'{size // (1024 * 1024)} MB, over --max-artifact-mb {max_mb}'}
@@ -172,6 +205,7 @@ def fetch_github(repo: str, run_id: int, raw: Path, history: int, max_mb: int):
         for j in jobs['jobs']:
             if j.get('conclusion') not in ('success', 'skipped'):
                 fetch_log(f'{GH_API}/repos/{repo}/actions/jobs/{j["id"]}/logs', h, raw, j['id'])
+                fetch_annotations(GH_API, repo, j['id'], h, raw)
     arts = _get(f'{GH_API}/repos/{repo}/actions/runs/{run_id}/artifacts?per_page=100', h)
     save(raw / 'attempts' / str(last) / 'artifacts.json', arts)
     for a in arts.get('artifacts', []):
@@ -292,8 +326,16 @@ def normalise_github(raw: Path, out: Path, repo: str | None) -> dict:
             log = raw / 'logs' / f'{j["id"]}.txt'
             dest_log = out / 'logs' / f'{j["id"]}.txt'
             status, err = log_state(raw, j['id'])
+            unstarted = never_started(j)
+            notes, ann_err = annotations_of(raw, j['id'])
+            if ann_err:
+                problems.append({'kind': 'annotations', 'attempt': n, 'job': j['name'], 'job_id': j['id'], 'status': ann_err.get('status'),
+                                 'error': ann_err.get('error')})
             if status == 'fetched':
                 save(dest_log, log.read_text(encoding='utf-8'))
+            elif unstarted:
+                # no runner ever picked the job up, so no log was ever written: not a failed download
+                status, err = 'never_started', 'the job never started on a runner (no steps, no runner), so no log exists'
             elif j.get('conclusion') not in ('success', 'skipped', None):
                 problems.append({'kind': 'log', 'attempt': n, 'job': j['name'], 'job_id': j['id'], 'status': status, 'error': err})
             junit = []
@@ -304,7 +346,7 @@ def normalise_github(raw: Path, out: Path, repo: str | None) -> dict:
             jobs.append({'id': j['id'], 'name': j['name'], 'conclusion': j.get('conclusion'), 'url': j.get('html_url'), 'started_at': j.get('started_at'),
                          'steps': [{'number': s['number'], 'name': s['name'], 'conclusion': s.get('conclusion')} for s in j.get('steps', [])],
                          'log': dest_log.relative_to(out).as_posix() if status == 'fetched' else None, 'log_status': status, 'log_error': err,
-                         'junit': junit})
+                         'junit': junit, **({'never_started': True} if unstarted else {}), **({'annotations': notes} if notes else {})})
         starts = sorted(j.get('started_at') for j in raw_jobs if j.get('started_at'))
         meta = json.loads((ad / 'run.json').read_text(encoding='utf-8')) if (ad / 'run.json').exists() else (run if n == int(run.get('run_attempt') or 1) else {})
         actor = (meta.get('triggering_actor') or {}).get('login')
@@ -453,6 +495,9 @@ def self_test() -> int:
             if self.path == '/moved/2/logs':
                 ok = self.headers.get('Authorization') == FAKE
                 self.send_response(200 if ok else 401); self.end_headers(); self.wfile.write(b'same-host log' if ok else b''); return
+            if self.path == '/repos/acme/x/check-runs/7/annotations?per_page=50':
+                body = json.dumps([{'annotation_level': 'failure', 'title': '', 'message': 'The job was not started because of a billing stop.'}])
+                self.send_response(200); self.end_headers(); self.wfile.write(body.encode()); return
             if self.path == '/jobs/3/logs':
                 self.send_response(410); self.end_headers(); return
             if self.path == '/jobs/4/logs':
@@ -498,6 +543,13 @@ def self_test() -> int:
                 globals()['OPENER'] = saved
             check(log_state(raw, 11)[0] == 'fetch_failed' and '401' in (log_state(raw, 11)[1] or ''), 'a 401 should be recorded as fetch_failed')
             check('sig=' not in (raw / 'logs' / '11.error.json').read_text(encoding='utf-8'), 'error record must not hold the signed URL')
+            fetch_annotations(base, 'acme/x', 7, h, raw)
+            fetch_annotations(base, 'acme/x', 8, h, raw)
+            got, err = annotations_of(raw, 7)
+            check([a['message'] for a in got] == ['The job was not started because of a billing stop.'] and err is None,
+                  f'check-run annotations of a job should be saved and read back, got {got}')
+            got, err = annotations_of(raw, 8)
+            check(got == [] and err and err['status'] == 'unavailable', 'a failed annotations download should be recorded')
             fetch_artifact(f'{base}/artifacts/404/zip', h, raw / 'attempts' / '1' / 'artifacts' / 'gone', raw, 'gone', None, 50)
             check(any((raw / 'artifact_errors').glob('*.json')), 'a failed artifact download should be recorded, not crash')
             fetch_artifact(f'{base}/artifacts/1/zip', h, raw / 'attempts' / '1' / 'artifacts' / 'junit-a', raw, 'junit-a', 10, 50)
@@ -592,9 +644,11 @@ def main() -> int:
           f'{len(run["history"])} history run(s) of the same workflow; last green {run["last_green"]} -> {a.out / "run.json"}')
     if run.get('repo_api'):
         print(f'note: requested {run["repo"]}, the API names it {run["repo_api"]} (renamed or transferred)')
-    if run['attempts'] and not [j for j in run['attempts'][0]['jobs'] if j.get('conclusion') not in ('skipped', None)]:
-        print(f'WARNING: the run concluded {r["conclusion"]} but no job ran (a workflow file error, a startup failure, or a fork '
-              'pull request whose run was never approved): there is nothing to triage; the triage is run_status not_run', file=sys.stderr)
+    if run['attempts'] and not [j for j in run['attempts'][0]['jobs'] if j.get('conclusion') not in ('skipped', None) and not j.get('never_started')]:
+        said = [a['message'] for j in run['attempts'][0]['jobs'] for a in j.get('annotations', [])]
+        print(f'WARNING: the run concluded {r["conclusion"]} but no job ran on a runner (a workflow file error, a startup failure, a '
+              'billing or runner stop, or a fork pull request whose run was never approved): there is nothing to triage; the triage '
+              'is run_status not_run' + (f'. The CI says: {said[0][:300]}' if said else ''), file=sys.stderr)
     if run['fetch_problems']:
         print(f'WARNING: {len(run["fetch_problems"])} download(s) failed; the triage must say so:', file=sys.stderr)
         for p in run['fetch_problems']:

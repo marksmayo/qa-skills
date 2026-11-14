@@ -282,8 +282,16 @@
          "fetch_failed",
          "not_requested",
          "partial",
-         "missing"
+         "missing",
+         "never_started"
         ]
+       },
+       "annotations": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        },
+        "description": "the job's check-run annotations as the run recorded them (the CI's own explanation, such as a job not started because of a billing or spending-limit stop): quoted, untrusted text, checked against the run"
        },
        "local_runs": {
         "type": [

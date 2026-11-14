@@ -54,18 +54,32 @@ def completeness(run: dict, run_dir: Path, changes: dict | None, failures: list[
     with_tests = {f['job_id'] for f in failures if f['kind'] == 'test'}
     test_jobs = [j for j in failed if any(TEST_STEP.search(s['name']) for s in j['steps'])
                  or any(f['job_id'] == j['id'] and f.get('step_kind') == 'test' for f in failures)]
-    # a check over nothing earns nothing: a run with no failed job has no log or test result to read
+    # a check over nothing earns nothing: a run with no failed job has no log to read, and one with no test job (a job
+    # that never started, a lint-only failure) no test result
     checks = [bool(failed) and all(j.get('log') and (run_dir / j['log']).exists() for j in failed),
-              bool(failed) and all(j.get('junit') or j['id'] in with_tests for j in test_jobs),
+              bool(test_jobs) and all(j.get('junit') or j['id'] in with_tests for j in test_jobs),
               len(run['attempts']) > 1, bool(run.get('last_green')), bool(changes and changes.get('commits') is not None)]
     return round(sum(checks) / len(checks), 2)
+
+
+def annotation_texts(run: dict) -> list[str]:
+    """The annotation messages of the first attempt's jobs that never started on a runner."""
+    jobs = run['attempts'][0]['jobs'] if run.get('attempts') else []
+    return [a['message'] for j in jobs if j.get('never_started') for a in j.get('annotations', []) if a.get('message')]
+
+
+def squash(t: str) -> str:
+    return ' '.join((t or '').split()).lower()
 
 
 def expected_run_status(run: dict) -> tuple[str, str | None]:
     """not_run when the first attempt ran no job (a run that concluded failure at startup: a workflow file error, a
     fork pull request never approved); partial when a failed job's log could not be downloaded; else complete."""
     jobs = run['attempts'][0]['jobs'] if run.get('attempts') else []
-    if not [j for j in jobs if j.get('conclusion') not in ('skipped', None)]:
+    if not [j for j in jobs if j.get('conclusion') not in ('skipped', None) and not j.get('never_started')]:
+        said = annotation_texts(run)
+        if said:
+            return 'not_run', f'no job started on a runner; the CI says: "{said[0]}"'
         return 'not_run', f'the run concluded {run["run"].get("conclusion") or "failure"} but no job ran'
     if any(p.get('kind') == 'log' for p in run.get('fetch_problems', [])):
         return 'partial', 'the log of a failed job could not be downloaded'
@@ -140,6 +154,10 @@ def main() -> int:
         e(f'run_status {want_status} needs a run_status_reason')
     if want_status == 'not_run' and not NOTHING.search(d['summary'].get('headline', '')):
         e('no job ran: the headline must say there is nothing to triage (no job ran)')
+    said = annotation_texts(run)
+    if want_status == 'not_run' and said and not any(squash(s)[:40] in squash(d.get('run_status_reason')) for s in said):
+        e(f'no job started on a runner and the CI explains why in a job annotation; run_status_reason must quote it '
+          f'(at least its first 40 characters): "{said[0][:120]}"')
 
     # local repeat runs recorded by the agent
     for k, r in enumerate(local_runs(a.run), 1):
@@ -222,6 +240,8 @@ def main() -> int:
             e(f'{w["id"]}: environment needs a signature in the log or a failed setup step (this is a {sg["step_kind"]} step)')
         if fc == 'data' and not (datasig or sg['date_markers'] or sgq['date_markers']):
             e(f'{w["id"]}: data needs a data signature or a date before the run date')
+        if 'annotations' in f['signals'] and f['signals']['annotations'] != sg.get('annotations', []):
+            e(f'{w["id"]}: signals.annotations differ from the job\'s annotations in the run (quote them as recorded)')
         fs_ids = [s['id'] for s in f['signals'].get('signatures', [])]
         if fs_ids not in ([h['id'] for h in sg['signatures']], [h['id'] for h in sgq['signatures']]) or f['signals'].get('rerun') != sg['rerun']:
             e(f'{w["id"]}: signals differ from the run (signatures {[h["id"] for h in sg["signatures"]]}, re-run {sg["rerun"]})')

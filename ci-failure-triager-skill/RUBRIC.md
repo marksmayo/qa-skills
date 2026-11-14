@@ -65,12 +65,14 @@ the suspect commit when identified, and evidence (log lines, the re-run, the run
 Five checks, each 0 or 1, averaged: logs for every failed job; test results for every failed job that runs
 tests (JUnit, or failing tests parsed from a Vitest, Jest, node:test or `go test` summary); a re-run; a last
 green run; the repository for the owning change. A check over nothing scores 0: a run with no failed job
-gets no credit for its logs or test results.
+gets no credit for its logs or test results, and one with no failed job that runs tests (a job that never
+started, a lint-only failure) no credit for test results.
 
 ## Run status
 
-`not_run` when the first attempt ran no job (a startup failure, a workflow file error, a fork pull request
-never approved): nothing to triage, and the headline says so. `partial` when a failed job's log could not be
+`not_run` when the first attempt ran no job on a runner (a startup failure, a workflow file error, a fork pull
+request never approved, jobs that never started because of a billing or runner stop): nothing to triage, and
+the headline says so; when a never-started job carries a check-run annotation, the reason quotes it. `partial` when a failed job's log could not be
 downloaded. Otherwise `complete`. The validator recomputes it; `partial` and `not_run` need a reason.
 
 ## Agent-named tests

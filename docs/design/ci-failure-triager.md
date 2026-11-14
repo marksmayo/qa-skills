@@ -284,3 +284,23 @@ and the validator stopped the agent from naming the test. Fixed:
 - **Testing**: `self_test.py` adds Go fixtures (eight log shapes), Go signature checks, a run with no job,
   agent-named tests, local runs and owning-change checks in a scratch git repository, each written to fail
   first. The example's classifications are unchanged; it gained `run_status` and schema 1.2.0.
+- **Found on a scheduled workflow that stopped running (v1.3.0)** (two runs whose only job concluded failure in two
+  seconds with no steps and no runner; the check-run annotation said the job was not started because of the
+  account's spending limit):
+  - **Annotations are fetched.** `fetch_run.py` reads `check-runs/<job id>/annotations` for every failed GitHub
+    job into `raw/annotations/`, and the normalised job carries `annotations` (level, title, message); a failed
+    download is a `fetch_problems` entry of kind `annotations`.
+  - **A job that never started is not a missing log.** No steps and an empty runner name give `never_started`
+    and `log_status: never_started`, with no fetch problem; the 404 message no longer says "expired".
+  - **`not_run`, with the reason quoted.** `run_status` counts only jobs that ran on a runner; when none did and
+    an annotation explains it, `run_status_reason` must quote it. The failure is `environment, indicated` through
+    the new `ENV-NOT-STARTED` signature, read from the annotation (`signals.annotations`, checked against the run).
+  - **Evidence completeness** gives the test-result check no credit when no failed job runs tests (it had scored
+    0.6 for a run with no log, no test and no re-run); the renderer prints the failure message where a failure
+    has neither test nor step (it printed `None`).
+  - **Tested** by `self_test.py` (a never-started job with a spending-limit annotation, written to fail first)
+    and a loopback annotations fetch in `fetch_run.py --self-test`. The examples' run normalises to the same
+    `run.json` and the example triage is unchanged (schema 1.2.0 kept: the new fields are optional).
+  - **Not built**: Azure DevOps timeline `issues` are not yet read as annotations; later runs of the workflow
+    (after the failing one) are still not fetched.
+

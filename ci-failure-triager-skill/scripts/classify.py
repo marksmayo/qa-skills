@@ -3,7 +3,9 @@
 
     python classify.py --run run/ --out run/candidates.json
 
-Signals per failure: signatures in its message and log lines (data/signatures.json, with the line), the
+Signals per failure: signatures in its message, its job's check-run annotations (the CI's own explanation of a
+job that never started on a runner, such as a billing or spending-limit stop) and its log lines
+(data/signatures.json, with the line), the
 step kind (test, setup or other), the re-run outcome on the same commit (the latest attempt; a job the
 attempt did not actually re-run is `job_not_rerun`), earlier outcomes of the same job on the same commit in
 runs of the same workflow, dates before the run date in the message (a data marker), whether it is an
@@ -86,7 +88,8 @@ def signals(f: dict, run: dict, run_dir: Path, quoted: list[dict] | None = None)
     """The evidence for one failure. `quoted` replaces the extracted log lines (the validator passes the
     lines an agent quoted, after checking they equal the log)."""
     hits = []
-    texts = [(None, f['message'])] + [(l['n'], l['text']) for l in (quoted if quoted is not None else f['log_excerpt']['lines'])]
+    texts = [(None, f['message'])] + [(None, a) for a in f.get('annotations', [])] + \
+        [(l['n'], l['text']) for l in (quoted if quoted is not None else f['log_excerpt']['lines'])]
     for s, rx in COMPILED:
         for n, t in texts:
             if rx.search(t or ''):
@@ -127,7 +130,7 @@ def signals(f: dict, run: dict, run_dir: Path, quoted: list[dict] | None = None)
             'signatures': hits, 'date_markers': markers, 'run_date': run_date, 'rerun': rerun, 'rerun_attempt': last['n'] if last['n'] > 1 else None,
             'history_same_commit': hist, 'history_passed_same_commit': any(x['job'] == 'success' for x in hist),
             'step_kind': kind, 'failure_type': f.get('failure_type'), 'log_status': f.get('log_status', 'fetched'),
-            'consequence_of': f.get('consequence_of') or []}
+            'consequence_of': f.get('consequence_of') or [], **({'annotations': f['annotations']} if f.get('annotations') else {})}
 
 
 def decide(sg: dict, owner: dict | None) -> tuple[str, str, str]:

@@ -67,7 +67,9 @@ python scripts/render_report.py examples/triage.example.json
   errors, data races, golangci-lint and gofmt)
 - `scripts/fetch_run.py`: GitHub and Azure DevOps fetch and normalisation (or a recorded directory). The
   API token is never sent to the storage host a log or artifact download redirects to; a download that
-  fails is recorded (`fetch_problems`) and makes the script exit 2.
+  fails is recorded (`fetch_problems`) and makes the script exit 2. Each failed GitHub job's check-run
+  annotations are saved (`raw/annotations/`); a job that never started on a runner (a billing or runner
+  stop) is `never_started`, not a failed log download, and a run of only such jobs is `not_run`.
 - `scripts/extract_failures.py`, `scripts/rerun.py`, `scripts/owning_change.py`, `scripts/classify.py`
 - `scripts/validate_triage.py`, `scripts/render_report.py`
 - `scripts/self_test.py`: loopback redirect and download-failure checks, log extraction (including Go

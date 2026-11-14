@@ -405,7 +405,9 @@ def extract(run_dir: Path, run: dict, attempt: int) -> list[dict]:
             continue
         lines = (run_dir / j['log']).read_text(encoding='utf-8').split('\n') if j.get('log') and (run_dir / j['log']).exists() else []
         log_status = j.get('log_status') or ('fetched' if lines else 'missing')
-        base = {'job': j['name'], 'job_id': j['id'], 'log_status': log_status}
+        base = {'job': j['name'], 'job_id': j['id'], 'log_status': log_status,
+                # the CI's own explanation of the job (check-run annotations): quoted, untrusted text
+                **({'annotations': [redact(a['message'])[:500] for a in j['annotations']]} if j.get('annotations') else {})}
         cases = []
         for x in j.get('junit', []):
             cs, _ = parse_junit(run_dir / x, f'A{attempt}')
@@ -443,7 +445,8 @@ def extract(run_dir: Path, run: dict, attempt: int) -> list[dict]:
             out.append(f)
         if not cases and not failed_steps:
             out.append({**base, 'step': None, 'kind': 'step', 'source': 'log', 'step_kind': 'other', 'test_id': None, 'test_file': None, 'failure_type': 'job',
-                        'message': f'job concluded {j["conclusion"]} with no failed step', 'frames': [],
+                        'message': (f'job concluded {j["conclusion"]} and never started on a runner (no steps, no log)' if j.get('never_started')
+                                    else f'job concluded {j["conclusion"]} with no failed step'), 'frames': [],
                         'log_excerpt': {'path': j.get('log'), 'lines': excerpt(lines, max(1, len(lines) - 7), len(lines), 8) if lines else []}})
     for i, f in enumerate(out, 1):
         f['id'] = f'X{i:02d}'

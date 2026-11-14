@@ -216,6 +216,77 @@ def no_jobs_checks(fails: list) -> None:
             fails.append(f'no jobs: vacuous completeness credit not caught:\n{out}')
 
 
+NOT_STARTED = ("The job was not started because the account's spending limit for Actions has been reached. "
+               "Check the billing settings of the account.")
+
+
+def never_started_checks(fails: list) -> None:
+    """A job that failed before a runner picked it up (no steps, no runner, no log; GitHub explains it only in a check-run
+    annotation, such as a billing or spending-limit stop): the annotation is kept, the missing log is not a failed
+    download, the run is not_run with the annotation as its reason, and the failure is an environment one."""
+    global RUN
+    import io, contextlib
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        raw, RUN = td / 'raw', td / 'run'
+        s = fetch_run.save
+        s(raw / 'run.json', {'id': 900, 'head_sha': SHA, 'head_branch': 'main', 'event': 'schedule', 'run_attempt': 1, 'workflow_id': 9,
+                             'path': '.github/workflows/weekly.yml', 'created_at': '2026-03-02T10:00:00Z', 'run_started_at': '2026-03-02T10:00:00Z',
+                             'conclusion': 'failure', 'html_url': 'https://ci.example.test/run/900', 'repository': {'full_name': 'acme/fares'}})
+        s(raw / 'attempts' / '1' / 'jobs.json', {'jobs': [{'id': 91, 'name': 'refresh', 'conclusion': 'failure', 'started_at': '2026-03-02T10:00:01Z',
+                                                          'completed_at': '2026-03-02T10:00:03Z', 'steps': [], 'runner_name': '', 'runner_id': 0,
+                                                          'html_url': 'https://ci.example.test/job/91'}]})
+        s(raw / 'logs' / '91.error.json', {'status': 'unavailable', 'http_status': 404, 'error': 'HTTP 404: not found'})
+        s(raw / 'annotations' / '91.json', [{'path': '.github', 'start_line': 1, 'annotation_level': 'failure', 'title': '', 'message': NOT_STARTED}])
+        s(raw / 'history.json', {'workflow_runs': []})
+        with contextlib.redirect_stderr(io.StringIO()):
+            run = fetch_run.normalise_github(raw, RUN, 'acme/fares')
+        run['source'] = 'recorded'
+        s(RUN / 'run.json', run)
+        s(RUN / 'reruns.json', {'reruns': []})
+        job = run['attempts'][0]['jobs'][0]
+        if not (job.get('never_started') and job.get('log_status') == 'never_started'
+                and [a.get('message') for a in job.get('annotations') or []] == [NOT_STARTED]):
+            fails.append(f'never started: the job keeps its annotation and is marked never_started (got never_started '
+                         f'{job.get("never_started")}, log_status {job.get("log_status")}, annotations {job.get("annotations")})')
+        if 'never started' not in (job.get('log_error') or '') or run['fetch_problems']:
+            fails.append(f'never started: the missing log is explained as a job that never started, not a failed download '
+                         f'(log_error {job.get("log_error")!r}, fetch_problems {run["fetch_problems"]})')
+        status, why = expected_run_status(run)
+        if status != 'not_run' or NOT_STARTED[:40] not in (why or ''):
+            fails.append(f'never started: run_status should be not_run with the annotation as the reason (got {status}, {why!r})')
+        cands = candidates(run, RUN)
+        got = [(c['classification'], c['confidence'], [h['id'] for h in c['signals']['signatures']]) for c in cands]
+        if got != [('environment', 'indicated', ['ENV-NOT-STARTED'])]:
+            fails.append(f'never started: the failure is environment, indicated, by ENV-NOT-STARTED (got {got})')
+        t = triage_from(run, cands)
+        t['run_status'], t['run_status_reason'] = 'not_run', f'No job started on a runner: "{NOT_STARTED}"'
+        t['summary']['headline'] = 'Nothing to triage: no job started on a runner (the account hit its spending limit).'
+        t['limitations'] = ['No job started, so there is no log or test result; the only evidence is the job annotation.']
+        for f in t['failures']:
+            f['next_action'] = 'Check the billing settings and spending limit of the CI account, then re-run the workflow.'
+        rc, out = finish(t, td)
+        done = json.loads((td / 'triage.json').read_text(encoding='utf-8'))
+        if rc or done['summary'].get('evidence_completeness') != 0.0:
+            fails.append(f'never started: a not_run triage quoting the annotation, with completeness 0.0 (no check over '
+                         f'nothing scores), should validate (completeness {done["summary"].get("evidence_completeness")}):\n{out}')
+        bad = copy.deepcopy(done)
+        bad['run_status'] = 'partial'
+        rc, out = validate(bad, td)
+        if rc == 0 or 'run_status' not in out:
+            fails.append(f'never started: run_status partial for a run whose jobs never started not caught:\n{out}')
+        bad = copy.deepcopy(done)
+        bad['run_status_reason'] = 'The jobs failed early for some reason.'
+        rc, out = validate(bad, td)
+        if rc == 0 or 'annotation' not in out:
+            fails.append(f'never started: a run_status_reason that does not quote the annotation not caught:\n{out}')
+        r = subprocess.run([sys.executable, str(HERE / 'render_report.py'), str(td / 'triage.json'), '--brief', '--color', 'never'],
+                           capture_output=True, text=True, encoding='utf-8')
+        row = next((l for l in r.stdout.splitlines() if l.startswith('| X01')), '')
+        if '| None |' in row or 'never started' not in row:
+            fails.append(f'never started: the table names the failure, never "None" (got {row!r})')
+
+
 IT_LOG = ['running suite parcels (12 cases)', '[fail] parcels/rejects_empty_label: expected status 400, got 200', '11 of 12 passed', DONE]
 
 
@@ -327,6 +398,7 @@ def main() -> int:
     fails = []
     go_signature_checks(fails)
     no_jobs_checks(fails)
+    never_started_checks(fails)
     agent_test_and_local_runs_checks(fails)
     owning_change_checks(fails)
     for mod in (fetch_run, extract_failures):

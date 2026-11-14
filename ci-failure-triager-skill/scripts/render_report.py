@@ -62,11 +62,11 @@ def main() -> int:
     for f in d['failures']:
         oc = f.get('owning_change') or {}
         own = f'`{oc["commit"][:8]}` {oc["subject"]}' if oc.get('status') == 'identified' else 'not identified'
-        named = f'{f["test_id"]} (named by the agent from the log)' if f.get('test_id_source') == 'agent' else f.get('test_id') or f.get('step')
+        named = f'{f["test_id"]} (named by the agent from the log)' if f.get('test_id_source') == 'agent' else f.get('test_id') or f.get('step') or f.get('message')
         out.append(f'| {f["id"]} | {f["job"]} | {named} | {c(f["classification"], f["classification"])} | {f["confidence"]} | {own} | {f["next_action"]} |')
     if not a.brief:
         for f in d['failures']:
-            out += ['', f'### {f["id"]} {c(f["classification"], f["classification"])}: {f.get("test_id") or f.get("step")}', '',
+            out += ['', f'### {f["id"]} {c(f["classification"], f["classification"])}: {f.get("test_id") or f.get("step") or f.get("message")}', '',
                     f'Rule: {f["rule"]}.' + (f' Override: {f["override_reason"]}' if f.get('override_reason') else '') +
                     f' Re-run: {f["signals"]["rerun"]}. Signatures: {", ".join(x["id"] for x in f["signals"]["signatures"]) or "none"}.'
                     + (f' Dates before the run date: {", ".join(f["signals"]["date_markers"])}.' if f['signals'].get('date_markers') else '')
