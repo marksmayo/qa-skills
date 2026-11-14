@@ -9,6 +9,8 @@
  "blocked_first_party": [],
  "cdn_cache": [],
  "request_summary": [],
+ "warm_cache": [],
+ "delivery": [],
  "measurements": [
   {
    "url": "http://127.0.0.1:8142/",

@@ -28,7 +28,12 @@ Also fails when:
     doesn't list them or no limitation names them; cdn_cache or request_summary don't follow from the runs;
   * a target is not on loopback and no limitation says the cold runs had a warm CDN (the warm-up warms it);
   * an unstable measurement reached the run cap and its note doesn't say so; a finding is site_wide with
-    one template.
+    one template;
+  * warm_cache or delivery don't follow from the runs, or warm runs did not use the HTTP cache (a cold load
+    measured twice) and no limitation says so.
+
+--write-summary fills the computed headline fields (over_budget_counts, unstable_metrics, evidence_completeness,
+overall_confidence), so a draft may leave them out: placeholders are set before the schema check and overwritten.
 
 Without --budget, the budget file recorded in candidates.json (budget.path, relative to it) is used,
 so the check reads the same budget attribute.py did.
@@ -53,6 +58,11 @@ CSP = re.compile(r'\bCSP\b|Content-Security-Policy', re.I)
 BUDGET_SPENT = re.compile(r'request budget', re.I)
 FIRST_PARTY = re.compile(r'first[- ]party', re.I)
 BLOCKED = re.compile(r'\bblock', re.I)
+WARM = re.compile(r'\bwarm\b', re.I)
+CACHE_WORD = re.compile(r'\bcache', re.I)
+# --write-summary computes these; a draft may leave them out (verdict and summary are the agent's to write)
+HEADLINE_PLACEHOLDERS = {'over_budget_counts': {}, 'unstable_metrics': 0, 'evidence_completeness': 'partial',
+                         'overall_confidence': 'low'}
 FINDING_FIELDS = ('metric', 'template', 'templates', 'site_wide', 'pages', 'cause', 'severity', 'confidence', 'reach', 'leverage', 'score', 'priority',
                   'critical_path', 'worst', 'measurements', 'attribution', 'evidence')
 
@@ -98,6 +108,10 @@ def main() -> int:
     a = ap.parse_args()
     rep, doc, cands_doc = load(a.report), load(a.measurements), load(a.candidates)
     errs: list[str] = []
+    if a.write_summary and isinstance(rep.get('headline'), dict):
+        # the computed headline fields are filled below; placeholders let a draft without them pass the schema first
+        for k, v in HEADLINE_PLACEHOLDERS.items():
+            rep['headline'].setdefault(k, json.loads(json.dumps(v)))
     schema = load(HERE.parent / 'schemas' / 'perf_report.schema.json')
     errs += [f'schema: {e}' for e in schema_check.errors(rep, schema)]
     if errs:
@@ -195,10 +209,15 @@ def main() -> int:
     if bfp and not any(FIRST_PARTY.search(x) and BLOCKED.search(x) for x in rep['limitations']):
         errs.append(f'limitations: {sum(b["requests"] for b in bfp)} first-party request(s) were blocked (beacons, reports, '
                     'telemetry); say so and that their cost and the handling of the failures are not measured')
-    for key, fn in (('cdn_cache', at.cdn_cache), ('request_summary', at.request_summary)):
+    for key, fn in (('cdn_cache', at.cdn_cache), ('request_summary', at.request_summary), ('warm_cache', at.warm_cache),
+                    ('delivery', at.delivery)):
         want = fn(doc)
         if rep.get(key, []) != want:
             errs.append(f'{key} does not follow from the runs (attribute.{key})')
+    cold_twice = [w for w in at.warm_cache(doc) if not w['effective']]
+    if cold_twice and not any(WARM.search(x) and CACHE_WORD.search(x) for x in rep['limitations']):
+        errs.append(f'limitations: the warm runs of {", ".join(sorted({w["url"] for w in cold_twice}))} did not use the HTTP '
+                    f'cache ({cold_twice[0]["reason"]}); say the warm numbers are a cold load measured again')
     if cands_doc['measurements'] != meas:
         errs.append('candidates.json is stale; rerun attribute.py')
     if rep['server_timing'] != at.server_timing(doc):

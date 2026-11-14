@@ -311,3 +311,25 @@ a loopback-tuned design breaks:
   - Not done: a `tap` action for mobile profiles (SKILL.md now says a click hovers first), surfacing
     the page's own failed fetch/XHR calls, and a host-resolver guard for `preconnect`/`dns-prefetch`
     (a shared harness change).
+- **v1.3.0** (a Python server serving a committed static front end, a "click to play" that fetches an 8 MB
+  video and the app's modules, no compression or Cache-Control, cold and warm runs, a busy shared machine):
+  - *Warm runs were not warm*: the shared harness routes every request, which disables Chromium's HTTP
+    cache, so the second load transferred everything again. measure.py now records `cache_check` per warm
+    run (disk or memory cache hits, 304s; a harness metadata `http_cache: disabled` makes it ineffective),
+    attribute.py writes `warm_cache`, and the validator requires a limitation when the warm loads never
+    used the cache. Keeping the cache under the guard is the shared harness's change.
+  - *Compression and caching*: each resource records its response headers; attribute.py writes
+    `delivery` (text resources sent uncompressed, first-party resources with no cache lifetime) and a
+    transfer cause says when its largest resource was uncompressed.
+  - *Interaction downloads*: what an interaction fetches is counted apart from the load
+    (`transfer_interaction`, budgetable, with `interaction_resources`); older measurements get no entry.
+  - *Calibration*: the first idle reference is stored only with `--record-reference`; later calm runs
+    only lower it (`reference_update`). An `--append` pass calibrates again and is kept under `passes`.
+  - *Unstable under budget*: a needs-review candidate (`unstable:<metric>`) names the runs furthest from
+    the median and the calibration state.
+  - *Validator and renderer*: `--write-summary` sets placeholders before the schema check; SKILL.md names
+    `metadata.harness`, `warm_cache` and `delivery`; `--brief` prints needs-review items and limitations.
+  - The example's candidates gained empty `warm_cache` and `delivery` (its runs predate both).
+  - Not done: `source: "agent"` findings with a `basis` (hand-checked header findings), checking prose
+    limitations against data, and a media/document target type that keeps a video's pseudo-page CLS out
+    of page budgets.
