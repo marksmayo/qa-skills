@@ -6,7 +6,10 @@
 Loaded as a pytest plugin (`-p net_guard`, or `PYTEST_ADDOPTS="-p net_guard"`), it patches
 `socket.socket.connect`, `connect_ex` and `socket.create_connection` before any test runs, so
 connections to anything other than 127.0.0.0/8, ::1 and localhost raise ConnectionRefusedError.
-pytest-xdist workers get the same `-p` option. Other processes the tests start (subprocesses,
+DNS is guarded too: `socket.getaddrinfo`, `gethostbyname` and `gethostbyname_ex` refuse any name that
+is not loopback (localhost, *.localhost) or an IP literal with socket.gaierror before the lookup
+reaches the resolver, and log `net_guard: refused lookup <name>:<port>`, so the log names the host
+the client asked for rather than an address. pytest-xdist workers get the same `-p` option. Other processes the tests start (subprocesses,
 browsers, databases) are not guarded.
 
 The log proves the guard was on: its first line for every process is
@@ -17,7 +20,8 @@ loaded (a PYTHONPATH that didn't reach it) refuses nothing and logs nothing.
 With QA_NET_GUARD_LOG set the lines go to the log only, never to stderr, so tests that assert on
 captured stderr are not disturbed by the guard. Without QA_NET_GUARD_LOG, or when the log cannot be
 written, they go to stderr. A refusal names the first stack frame outside the standard library and
-site-packages (`from <file>:<line>`), so it can be tied to a test.
+site-packages (`from <file>:<line>`) and, inside pytest, the running test (`test=<node id>`, from
+PYTEST_CURRENT_TEST), so it can be tied to a test even when a shared helper made the call.
 
 Go, Rust, JVM and .NET tests can't load this plugin (nor net_guard.cjs). For them use net_guard_proxy.py:
 
@@ -44,6 +48,8 @@ import sys
 _LOG = os.environ.get('QA_NET_GUARD_LOG')
 _real_connect, _real_connect_ex = socket.socket.connect, socket.socket.connect_ex
 _real_create_connection = socket.create_connection
+_real_getaddrinfo, _real_gethostbyname = socket.getaddrinfo, socket.gethostbyname
+_real_gethostbyname_ex = socket.gethostbyname_ex
 REFUSED: list[str] = []
 
 
@@ -79,6 +85,13 @@ def _caller() -> str:
     return ''
 
 
+def _test_id() -> str:
+    """The running pytest test (PYTEST_CURRENT_TEST, set by pytest for each phase), so a refusal from a helper shared
+    by many parametrised tests can still be tied to one."""
+    cur = os.environ.get('PYTEST_CURRENT_TEST', '')
+    return f' test={cur.rsplit(" (", 1)[0]}' if cur else ''
+
+
 def _loopback(host) -> bool:
     if host is None:
         return False
@@ -97,8 +110,43 @@ def _check(sock, address) -> None:
     host, port = address[0], address[1] if len(address) > 1 else '?'
     if not _loopback(host):
         REFUSED.append(f'{host}:{port}')
-        _say(f'net_guard: refused {host}:{port}{_caller()}')
+        _say(f'net_guard: refused {host}:{port}{_caller()}{_test_id()}')
         raise ConnectionRefusedError(f'net_guard: connection to {host}:{port} refused (only loopback is allowed)')
+
+
+def _is_ip(host) -> bool:
+    try:
+        ipaddress.ip_address(str(host).strip('[]').split('%')[0])
+        return True
+    except ValueError:
+        return False
+
+
+def _check_name(host, port='?') -> None:
+    """Refuse a DNS lookup of a name that is neither loopback nor an IP literal, before it reaches the resolver."""
+    if isinstance(host, (bytes, bytearray)):
+        host = bytes(host).decode('ascii', 'replace')
+    if host is None or _loopback(host) or _is_ip(host):
+        return
+    REFUSED.append(f'{host}:{port}')
+    _say(f'net_guard: refused lookup {host}:{port}{_caller()}{_test_id()}')
+    raise socket.gaierror(getattr(socket, 'EAI_NONAME', -2),
+                          f'net_guard: lookup of {host} refused (only loopback is allowed)')
+
+
+def _getaddrinfo(host, port, *args, **kwargs):
+    _check_name(host, port)
+    return _real_getaddrinfo(host, port, *args, **kwargs)
+
+
+def _gethostbyname(host):
+    _check_name(host)
+    return _real_gethostbyname(host)
+
+
+def _gethostbyname_ex(host):
+    _check_name(host)
+    return _real_gethostbyname_ex(host)
 
 
 def _connect(self, address):
@@ -119,7 +167,7 @@ def _create_connection(address, *args, **kwargs):
     host, port = address[0], address[1]
     if not _loopback(host):
         REFUSED.append(f'{host}:{port}')
-        _say(f'net_guard: refused {host}:{port}{_caller()}')
+        _say(f'net_guard: refused {host}:{port}{_caller()}{_test_id()}')
         raise ConnectionRefusedError(f'net_guard: connection to {host}:{port} refused (only loopback is allowed)')
     return _real_create_connection(address, *args, **kwargs)
 
@@ -127,6 +175,9 @@ def _create_connection(address, *args, **kwargs):
 socket.socket.connect = _connect
 socket.socket.connect_ex = _connect_ex
 socket.create_connection = _create_connection
+socket.getaddrinfo = _getaddrinfo
+socket.gethostbyname = _gethostbyname
+socket.gethostbyname_ex = _gethostbyname_ex
 _say(f'net_guard: loaded pid={os.getpid()}')
 
 
@@ -144,7 +195,15 @@ def _self_test() -> int:
             'try:\n    socket.create_connection(("192.0.2.1", 80), timeout=1)\n    print("OUT")\n'
             'except ConnectionRefusedError:\n    print("REFUSED")\n'
             's = socket.socket()\n'
-            'print("EX", s.connect_ex(("198.51.100.7", 443)))\n')
+            'print("EX", s.connect_ex(("198.51.100.7", 443)))\n'
+            'try:\n    socket.getaddrinfo("cdn.example.com", 443)\n    print("DNS-OUT")\n'
+            'except OSError:\n    print("DNS-REFUSED")\n'
+            'try:\n    socket.gethostbyname("tiles.example.org")\n    print("DNS2-OUT")\n'
+            'except OSError:\n    print("DNS2-REFUSED")\n'
+            'print("LOCAL", bool(socket.getaddrinfo("localhost", 80)), bool(socket.getaddrinfo("127.0.0.1", 80)))\n'
+            'import os; os.environ["PYTEST_CURRENT_TEST"] = "tests/test_links.py::test_head[a] (call)"\n'
+            'try:\n    socket.create_connection(("203.0.113.9", 80), timeout=1)\n'
+            'except ConnectionRefusedError:\n    pass\n')
     with tempfile.TemporaryDirectory() as d:
         log = os.path.join(d, 'guard.log')
         env = {**os.environ, 'QA_NET_GUARD_LOG': log, 'PYTHONPATH': here}
@@ -157,6 +216,13 @@ def _self_test() -> int:
               ('the log has the loaded line', 'net_guard: loaded pid=' in text, text),
               ('the log names refused hosts', '192.0.2.1:80' in text and '198.51.100.7:443' in text, text),
               ('a refusal names the calling code', 'refused 192.0.2.1:80 from <string>:5' in text, text),
+              ('a DNS lookup of a non-loopback name is refused before it reaches the resolver',
+               'DNS-REFUSED' in r.stdout and 'DNS2-REFUSED' in r.stdout, r.stdout + r.stderr[-300:]),
+              ('the log names the host name the client asked for',
+               'refused lookup cdn.example.com:443' in text and 'refused lookup tiles.example.org' in text, text),
+              ('loopback names and IP literals still resolve', 'LOCAL True True' in r.stdout, r.stdout),
+              ('a refusal during a pytest test names the test id',
+               'refused 203.0.113.9:80' in text and 'test=tests/test_links.py::test_head[a]' in text, text),
               ('with a log set, stderr stays empty', 'net_guard:' not in r.stderr, r.stderr),
               ('without a log, the loaded line goes to stderr', 'net_guard: loaded pid=' in bare.stderr, bare.stderr)]
     failed = 0
