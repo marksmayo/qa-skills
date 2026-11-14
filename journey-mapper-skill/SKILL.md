@@ -1,7 +1,7 @@
 ---
 name: journey-mapper
 description: Map the user journeys of an application by reading its codebase (web, mobile and API), and write them as prioritised, evidence-linked Journey Markdown files ready to be turned into automated tests. Accounts for every route, screen, endpoint, entry point and goal event it finds, reports coverage honestly, and never presents behaviour inferred from code as intended behaviour.
-version: 1.3.0
+version: 1.4.0
 ---
 
 # Journey Mapper
@@ -149,7 +149,30 @@ repository. Details worth knowing:
   it, its links (`href="/..."` and `url_for('view')`, resolved to paths), forms (action, method),
   `fetch()` calls and the templates it extends or includes, each by line: these are the
   navigation and API-call edges for Step 3. Django views and computed template names are not
-  followed; trace them by hand.
+  followed; trace them by hand. A FastAPI handler that returns an HTML page (`HTMLResponse`, a
+  `text/html` media type, an `.html` file) is a web route too (detector `fastapi-view`).
+- **Plain static front ends** (no framework): every `.html` page outside `templates/` is a route
+  (detector `static-html`), at the path it is served from (under a `StaticFiles` mount of its
+  directory, or relative to the topmost folder holding an `index.html`). `context.static_pages`
+  lists each page's buttons, inputs, forms, links, scripts and the `fetch()` calls of its scripts,
+  by line; URL parameters its scripts read (`new URLSearchParams(location.search).get('lang')`)
+  are entry points (`query: ?lang`), and `localStorage.setItem('key', ...)` writes are
+  low-confidence goals (detector `local-storage`). Click handlers are not traced: follow them from
+  the button ids into the scripts by hand.
+- **Static mounts, conditions and middleware**: `app.mount("/", StaticFiles(directory="dist"))` is a
+  route (`/{path:path}`, detector `starlette-static`, with the `directory` it serves). A route
+  whose router is included, or a mount added, under an `if` (`if args.uploads:
+  app.include_router(...)`) carries the test as `condition`: it exists in one serving mode only,
+  which a journey must say. `app.add_middleware(...)` and `@app.middleware("http")` are listed in
+  `context.guards` (kind `middleware`, with any `condition`).
+- **PHP** front controllers are read by pattern only (`preg_match` and comparisons on
+  `REQUEST_URI`) as low-confidence endpoints, and a limitation names the PHP files; other PHP
+  routing is not read, so map it by hand.
+- **Build-output folders**: `dist/`, `build/` and `out/` are skipped only when something in the
+  repository produces them (a package.json build script, a bundler config, a `.gitignore` entry);
+  they are listed in `stats.skipped_build_dirs` with their file count and named on stderr, and
+  `--include DIR` reads one. A committed folder nothing produces is a hand-written front end and is
+  read (`stats.source_build_dirs`).
 - **Client-side routes** (React Router, Vue Router, Angular) are joined to their parents:
   `children` arrays, nested `<Route>` elements, and a component's own `<Routes>` mounted by a
   splat route in another file (`/shop/*` rendering `<ShopModule/>` makes its `cakes` route
@@ -157,11 +180,15 @@ repository. Details worth knowing:
   resolved. Index routes carry `index: true` and render at the parent's path; lazy routes and
   redirects say so in a note. A path that could not be resolved keeps its expression in braces.
 - **Entry points** include command-line commands (`cli: <program> <command>` from argparse
-  sub-commands, click and typer commands, `[project.scripts]` and `package.json` `bin`) and
+  sub-commands, click and typer commands, `[project.scripts]` and `package.json` `bin`; a
+  flags-only argparse program is one `cli: <program>` with its `options`, and a hand-written
+  `command = sys.argv[1]; if command == "pack":` dispatch gives `cli: <program> pack`) and
   Azure Functions triggers (`blob trigger: <path>`, `timer trigger: <schedule>`). A trigger is
   not user-facing by itself: find the user action that causes it (an upload that writes the
   blob), cover it from that journey, or orphan it as `not_user_facing`. Operator command lines
-  are journeys for an operator persona when they change what users see.
+  are journeys for an operator persona when they change what users see; when a server's flags
+  select serving modes, "start the server in mode X" is such a journey, and the routes and
+  middleware whose `condition` names that flag belong to it.
 - **Domains** on routes and endpoints are proposals from the first path segment (`/api/orders/:id`
   becomes `orders`), prefixed with the service in multi-service repositories. In an app that serves
   pages and a JSON API under `/api/`, the API's endpoints share the domain `api`; files served at
@@ -296,6 +323,15 @@ Every surface item must end up in exactly one bucket:
 | Bucket | When |
 |---|---|
 | Covered | Listed in at least one journey's `covers` |
+
+A journey whose subject is a cross-cutting guard (an authentication middleware in
+`context.guards`) rather than a route may have empty `covers` with a `covers_reason` saying so; do
+not pad it with routes it does not reach.
+
+**Observed is not inferred.** `expect` is what the code implies. When you ran the app (a loopback
+probe, a browser capture), record what it showed on the step as `observed: {"result", "run", "at"}`
+(the run's evidence file and when it ran), so a reader can tell observation from inference; the
+validator checks all three are there.
 | Orphan `no_user_path_found` | User-facing, but you couldn't trace a path to it |
 | Orphan `not_user_facing` | Health checks, webhooks, internal or machine-to-machine endpoints |
 | Orphan `out_of_scope` | Belongs to a domain excluded from this run. The item's `domain` (or the orphan's own `domain`, when the item's proposed one is wrong) must be outside `run_scope.domains` |

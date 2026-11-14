@@ -215,7 +215,9 @@ def check(d: dict, repo: Repo | None = None) -> list[str]:
         if j.get('automation') in ('partial', 'automated') and not j.get('tests'):
             e(f'{w}: automation is {j["automation"]} but no tests are listed')
         covers = j.get('covers') or []
-        if not covers: e(f'{w}: covers must list at least one surface item')
+        if not covers and not str(j.get('covers_reason') or '').strip():
+            e(f'{w}: covers must list at least one surface item, or covers_reason must say why none fits (a journey '
+              f'about a cross-cutting guard such as an authentication middleware)')
         for c in covers:
             if c not in surface_ids: e(f'{w}: covers unknown surface item {c}')
             else: covered.add(c)
@@ -227,6 +229,13 @@ def check(d: dict, repo: Repo | None = None) -> list[str]:
             if not s.get('action'): e(f'{w} step {n}: action missing')
             if not s.get('expect'): e(f'{w} step {n}: expect missing (every step needs an observable outcome)')
             if not s.get('evidence'): e(f'{w} step {n}: no code evidence')
+            obs = s.get('observed')
+            if obs is not None:
+                # what a run showed is kept apart from what the code implies (expect): it names the run and when
+                if not isinstance(obs, dict) or not all(str(obs.get(k) or '').strip() for k in ('result', 'run', 'at')):
+                    e(f'{w} step {n}: observed needs result, run (the evidence file of the run) and at (when it ran)')
+                elif not re.match(r'^\d{4}-\d{2}-\d{2}', str(obs['at'])):
+                    e(f'{w} step {n}: observed.at must be an ISO date or time')
             for ev in s.get('evidence') or []: evidence_ok(ev, f'{w} step {n}')
         vids: set[str] = set()
         for v in j.get('variants') or []:
@@ -351,6 +360,27 @@ def self_test() -> int:
     warns = warnings_for(d)
     checks.append(('covering a handler of a cited file whose own lines no evidence cites is padded coverage',
                    any('E-902' in w for w in warns) and not any('E-901' in w for w in warns), warns))
+    # a journey whose subject is a cross-cutting guard (an auth middleware) covers no route: allowed with a reason
+    d = copy.deepcopy(base)
+    d['journeys'][0]['covers'] = []
+    d['journeys'][0]['covers_reason'] = 'the sign-in middleware guards every request; it is not a surface item'
+    errs, crash = run(d)
+    checks.append(('a journey with no covers and a covers_reason is not refused for its covers',
+                   crash is None and not any('covers must list' in x for x in errs or []), crash or errs))
+    d['journeys'][0]['covers_reason'] = ''
+    errs, crash = run(d)
+    checks.append(('a journey with no covers and no reason is refused', crash is None and any('covers' in x for x in errs or []),
+                   crash or errs))
+    # observed behaviour is kept apart from what the code implies: a step may record what a run showed
+    d = copy.deepcopy(base)
+    d['journeys'][0]['steps'][0]['observed'] = {'result': 'the page answered 200 with the upload form',
+                                               'run': 'probes/run1.json', 'at': '2026-11-15T10:00:00Z'}
+    errs, crash = run(d)
+    checks.append(('a step with an observed result, run and time is valid', crash is None and not errs, crash or errs))
+    d['journeys'][0]['steps'][0]['observed'] = {'result': 'the page answered 200'}
+    errs, crash = run(d)
+    checks.append(('an observed result without its run and time is refused',
+                   crash is None and any('observed' in x for x in errs or []), crash or errs))
     failed = 0
     for name, ok, extra in checks:
         failed += not ok
