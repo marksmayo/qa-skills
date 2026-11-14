@@ -24,6 +24,7 @@ CELLS = [('happy_path', 'Happy'), ('negative', 'Negative'), ('boundary', 'Bounda
          ('concurrency', 'Concurrency'), ('dependency_failure', 'Dep. failure'), ('recovery', 'Recovery')]
 CELL_MARK = {'covered': '✓ covered', 'partial': '◐ partial', 'not_covered': '✗ none', 'not_applicable': '– n/a',
              'unknown': '? unknown'}
+NO_TESTS_NOTE = 'NO TESTS: discovery ran and found no tests; the scores record verified absence, not a provisional guess.'
 DECIMALS_NOTE = 'Weighted scores use one decimal; differences of a few tenths are not materially significant.'
 
 
@@ -147,6 +148,8 @@ def render(data: dict, md: bool, color: bool) -> str:
     o.p(f"Skill version {meta.get('skill_version', 'not recorded')}, generated {meta.get('generated_at', '')}")
     if meta.get('provisional'):
         o.p('PROVISIONAL: no execution evidence supports these scores.', MAGENTA)
+    if meta.get('execution') == 'no_tests':
+        o.p(NO_TESTS_NOTE, MAGENTA)
 
     # score card
     o.h2('Score card')
@@ -345,6 +348,8 @@ def brief(data: dict, color: bool) -> str:
     o.p(f"Overall {overall:.1f}/10 {head['rating_band']} (raw {head['raw_weighted_score']:.1f}), confidence "
         f"{head['overall_confidence']}, evidence {head['evidence_completeness']:.1f}%"
         + ('  PROVISIONAL' if meta.get('provisional') else ''), score_style(overall))
+    if meta.get('execution') == 'no_tests':
+        o.p(NO_TESTS_NOTE, MAGENTA)
     for cap in head.get('applied_caps', []):
         o.p(f"! cap {cap['rule']} (max {cap['limit']:g}): {cap['explanation']}", MAGENTA)
     if not head.get('applied_caps'):
@@ -384,6 +389,11 @@ def self_test() -> int:
         fails.append('a brief with no caps says "No caps applied"')
     if DECIMALS_NOTE not in text:
         fails.append('a brief carries the decimal-significance warning')
+    none = json.loads((Path(__file__).resolve().parent.parent / 'examples' / 'evaluation.no-tests.example.json')
+                      .read_text(encoding='utf-8'))
+    for name, text in (('brief', brief(none, color=False)), ('report', render(none, md=False, color=False))):
+        if NO_TESTS_NOTE not in text or 'PROVISIONAL' in text:
+            fails.append(f'a no-tests {name} says the absence of tests is verified, and is not provisional')
     if fails:
         print('render_report self-test FAILED:\n  - ' + '\n  - '.join(fails))
         return 1

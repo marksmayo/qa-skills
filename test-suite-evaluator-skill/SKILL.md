@@ -1,7 +1,7 @@
 ---
 name: test-suite-evaluator
 description: Evaluate an automated test suite for effectiveness, trustworthiness, engineering quality, CI readiness, maintainability, coverage evidence, and operational health. Produces evidence-backed 1–10 scores, confidence ratings, critical caps, and prioritised remediation. Works with standalone test repositories and must not invent application-code coverage.
-version: 1.6.0
+version: 1.7.0
 ---
 
 # Test Suite Evaluator
@@ -176,8 +176,9 @@ Record the strongest execution evidence as `metadata.execution`:
 - `reports_only`: you did not run it, but credible recent reports or CI results exist
 - `static_only`: nothing was run and no reports exist
 - `not_executable`: discovery or execution was attempted and failed, and no credible reports exist
+- `no_tests`: discovery ran and found no tests at all (`pytest --collect-only` collected 0 items, `vitest list` listed nothing, no test files exist). The absence is verified, so the evaluation is **not** provisional. Record the discovery run in `metadata.execution_result` (an assessor run, every count zero, its layer named after the discovery, such as `pytest discovery`) and in the inventory as `recent_execution`; `test_source` is `missing` with details saying the absence was verified. Score the dimensions as in "No suite" in Step 5
 
-The first three need recent execution results in the inventory; the last two must not claim them, and mark the evaluation `provisional` (`metadata.provisional: true`). `provisional` means exactly that: no execution evidence supports the scores. It is false for every other execution value.
+The first three and `no_tests` need recent execution results in the inventory; `static_only` and `not_executable` must not claim them, and mark the evaluation `provisional` (`metadata.provisional: true`). `provisional` means exactly that: no execution evidence supports the scores. It is false for every other execution value.
 
 For `full_run` and `partial_run`, record `metadata.execution_result`:
 
@@ -266,6 +267,14 @@ A scored dimension must carry at least one piece of evidence and cannot have evi
 
 `confidence: high` needs at least two consistent evidence items and direct evidence (not `test_derived` alone).
 
+**No suite.** When discovery proved there are no tests (`execution: no_tests`), score the dimensions that describe the absence and leave the ones that grade existing tests unassessed:
+
+- `effectiveness`, `trust`, `assertions` and `coverage` are 1 (absent), from the discovery run and the file search; their confidence may be `high`, because the absence is directly verified (the validator checks they are 1).
+- `reliability`, `isolation`, `maintainability`, `debuggability`, `performance`, `test_data` and `portability` are not assessed (score null, "Not assessed: no tests exist"): there is nothing to grade, and unknown is not zero (the validator checks).
+- `design`, `ci`, `security_a11y` and `ownership` are scored from their evidence: usually 1 (no test level, no pipeline running tests, no security check, no owner), higher only when something real exists (a CI pipeline that lints and builds, a CODEOWNERS entry for the future `tests/`).
+
+The overall is then 1.0 Dysfunctional with the effectiveness, trust, assertions and coverage caps listed (none binds). Write the first tests as the `critical_risk` recommendation.
+
 Map file names and identifiers into evidence freely, including names that contain "coverage" (`service-form-branch-coverage.test.tsx`); write them in backticks when quoting. The coverage-language check ignores file names, identifiers and backticked text.
 
 ## Step 6: Apply score caps and critical findings
@@ -288,7 +297,7 @@ List every cap whose condition holds, with its limit and an explanation, even wh
 
 The reliability anchors in `RUBRIC.md` decide whether the reliability cap applies: a suite that was red in every assessed run for reasons in the suite itself scores 3 or lower, not 4. Failures caused by the assessment's own limits (a private dependency you could not fetch, a service you chose not to provide) do not count towards "red in every run"; judge reliability on the tests that could run. A few identified order-dependent tests, found by a shuffled run, with the rest of the suite agreeing across runs, are a 4 (or higher when they are tracked and the rest is controlled), not a 3.
 
-**Thin suites.** Reliability, assertions, isolation and performance grade the tests that exist. When the suite reaches little of the product (coverage below 4), those scores describe a small sample: their confidence is `medium` at most (the validator checks), their findings say how few tests they rest on, and the `coverage_below_4` cap keeps the overall score from being carried by them.
+**Thin suites.** Reliability, assertions, isolation and performance grade the tests that exist. When the suite reaches little of the product (coverage below 4), those scores describe a small sample: their confidence is `medium` at most (the validator checks), their findings say how few tests they rest on, and the `coverage_below_4` cap keeps the overall score from being carried by them. This does not apply to `execution: no_tests`: there is no sample, and a score of 1 for "no assertion exists" is directly verified.
 
 `critical_findings` holds findings at `critical`, `high`, or `medium` severity; the report separates the findings of severity `critical` from the rest. Only the categories above cap the score. An untested security- or money-critical path (sign-in, two-factor, payments, data deletion, permissions) is at least a `high` finding with `category: other`, and lowers `effectiveness` and `coverage` through their anchors; it does not cap the score on its own unless the evidence shows systematic false passes. Give each finding the `dimensions` it affects.
 
@@ -384,7 +393,7 @@ Do not produce an unranked dump.
 
 Return these groups, each recommendation carrying its group as `category`, and rank `priority` through the groups in this order:
 
-1. **Critical confidence risks** (`critical_risk`): required when a finding of severity `critical`, a finding in a capping category (`secret_exposure`, `production_data_exposure`, `systematic_false_pass`), or a cap other than the static-only caps applies. A `high` or `medium` finding of category `other` does not require one on its own
+1. **Critical confidence risks** (`critical_risk`): required when a finding of severity `critical`, a finding in a capping category (`secret_exposure`, `production_data_exposure`, `systematic_false_pass`), or a cap other than the static-only caps applies. A `high` or `medium` finding of category `other` does not require one on its own. With no tests at all (`no_tests`) the score caps apply, so the first `critical_risk` is writing the first tests for the riskiest paths: the absence of tests is itself the critical confidence risk
 2. **Three highest-leverage improvements** (`top_improvement`): one to three
 3. **Quick wins** (`quick_win`): small effort only
 4. **Structural improvements** (`structural`)
@@ -436,6 +445,7 @@ Recommended report order:
 `metadata.skill_version` is required and names the contract an evaluation was written for. The validator warns when it differs from this skill's version. To bring an older evaluation forward:
 
 - **Before 1.1:** rename dimension ids `trustworthiness` → `trust`, `oracles` → `assertions`, `scope` → `coverage`, `data` → `test_data`, `environment` → `portability`, `crosscutting` → `security_a11y`; add `metadata.execution` and a `kind` for every inventory entry.
+- **1.6 → 1.7:** nothing to change. `metadata.execution` gained `no_tests` for a repository whose discovery found no tests (re-record a verified empty discovery that was written as `static_only` with `provisional: true` as `no_tests`, not provisional). The white-box warning about reading source is answered by a `metadata.notes` entry saying implementation-linked claims rest on reading source, not instrumentation.
 - **1.3 → 1.4:** nothing to change; `interface_coverage[].kind` gained `package_exports` and `tools` (entries recorded as `other` for these may move to them).
 - **1.2 → 1.3:** list the `coverage_below_4` cap when coverage is below 4 (and recompute the overall score); lower to `medium` the confidence of reliability, assertions, isolation and performance when coverage is below 4; make each `interface_coverage` entry's `untested` account for exactly `total - tested` (names, or `{"group", "count"}` entries); reliability 7 or more cannot stand beside a test-class failure that some runs show and others do not.
 - **1.1 → 1.2:** add `metadata.skill_version`; add `metadata.execution_result` for `full_run` and `partial_run`; set `provisional` true only for `static_only` and `not_executable`; give every recommendation a `category` (and `evidence_kinds` for evidence needed); set unassessed dimensions' evidence level to `unknown`; split mixed-evidence dimensions into per-item levels (`mixed`).
