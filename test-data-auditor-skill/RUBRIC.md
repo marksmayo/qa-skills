@@ -102,6 +102,11 @@ The mean of three shares:
 With no confirmable findings, the second share is left out and the mean is of the other two:
 nothing to confirm is not evidence that experiments ran.
 
+With nothing inventoried (a repository with no tests, or no test data), completeness is 0: the
+tools that ran do not make up for having nothing to assess, and the renderer says "no test data
+found". When the repository has no tests (`tests_found: 0` in the candidates, or no test file in
+the inventory), the headline or a limitation must say so.
+
 ## Honesty rules
 
 - **The headline:** it names the P0 findings when there are any. A finding count in it must

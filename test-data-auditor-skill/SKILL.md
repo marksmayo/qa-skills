@@ -1,7 +1,7 @@
 ---
 name: test-data-auditor
 description: Audit the data tests depend on (fixtures, factories, seeds, snapshots, HTTP recordings and inline literals, in Python, JavaScript/TypeScript and Go suites) for time bombs, real-looking personal data, magic ids, environment coupling, shared mutable fixtures, unseeded randomness, schema drift, snapshot rot, unused or duplicate files, locale assumptions and files tests leave behind. Every rule runs statically; time bombs, shared state and locale assumptions are then confirmed with real runs under a moved clock, reversed order or another locale. Personal data is never echoed (only file, line, field and data type), secrets are handed to code-security-auditor, and the report never calls test data "clean".
-version: 1.5.0
+version: 1.6.0
 ---
 
 # Test data auditor
@@ -23,6 +23,10 @@ How this differs from the other skills:
   location and type only, and isn't rated here.
 - **privacy-flow-auditor** traces personal data through product code. This skill covers the
   test side: fixtures, dumps and recordings.
+
+Product code and configuration (application modules, compose and `.env` files, notebooks, a
+canned profile in server code) are read only for clock and locale calls. `scan_data.py` says so
+in a note on every run; carry it into the limitations, naming the two skills that cover them.
 
 Output:
 
@@ -99,7 +103,9 @@ found). When the tree is too big to scan in the time you have, add `--max-files-
 evenly spaced sample of N files per directory is scanned, the rest stay listed as `not_assessed`
 ("not sampled"), `sampled_dirs` records it, and the report must say personal data in the rest is
 not ruled out (they lower `files_scanned` and the evidence completeness). Never leave such a tree
-out of the report: inventory it, sample it, or name it in `limitations` as not scanned. Both
+out of the report: inventory it, sample it, or name it in `limitations` as not scanned. Every
+file under a `--data-dir` tree is listed: a format the inventory does not know (a save file, a
+custom binary) is `not_assessed` ("unknown format"), never dropped. Both
 scripts print progress to stderr every few seconds. Templated data files are near-duplicates by
 design: a directory with more than 200 files of one format is checked for exact copies only, and
 the notes say the pairwise check did not run there.
@@ -438,6 +444,11 @@ no findings, say what was read rather than what wasn't found, for example: "No f
 rules or the runs: 16 inline test files scanned, no fixture files; no experiment was needed."
 Evidence completeness then leaves out the experiment share (there was nothing to confirm) rather
 than counting it as complete.
+
+A repository with no tests at all is not an audit with no findings. `inventory.py` sets
+`no_tests` and prints a WARNING, `scan_data.py` records `tests_found: 0` and repeats it in its
+notes, evidence completeness is 0 when nothing was inventoried, and the validator requires the
+headline or a limitation to say the repository has no tests.
 
 Show the user:
 1. the headline and the earliest time-bomb date;

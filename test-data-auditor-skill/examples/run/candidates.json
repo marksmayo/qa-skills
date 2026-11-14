@@ -1,6 +1,7 @@
 {
   "repo": "clinic-api",
   "today": "2026-11-11",
+  "tests_found": 15,
   "candidates": [
     {
       "id": "C1",
@@ -475,5 +476,7 @@
       "unused_or_duplicate": 1
     }
   },
-  "notes": []
+  "notes": [
+    "out of scope: product code and configuration (application modules, docker-compose and .env files, notebooks, canned profiles in server code) are read here only for clock and locale calls; secrets and personal data in them belong to code-security-auditor and privacy-flow-auditor, so say in the report that they were not assessed here"
+  ]
 }

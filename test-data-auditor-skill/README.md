@@ -32,6 +32,9 @@ It is strict about what it shows:
   names but the inventory does not cover is listed as `unlisted_data_dirs` and warned about;
   `--data-dir` inventories it quickly, and `--max-files-per-dir N` samples it, recording the rest
   as not assessed.
+- A repository with no tests is reported as such: the tools warn, evidence completeness is 0
+  with nothing inventoried, and the validator wants the headline or a limitation to say so.
+  Files of an unknown format under `--data-dir` are listed as not assessed, never dropped.
 - Real-looking personal data is treated as real, and is always P0.
 - A time bomb is confirmed only by a failing run with a moved clock, or by exact date
   arithmetic.

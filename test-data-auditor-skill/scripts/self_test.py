@@ -432,9 +432,53 @@ def agent_personal_data_leak() -> None:
               'validator: an agent personal_data finding that pastes the address into why_flagged leaks it')
 
 
+# a repository with no tests at all: a small web service (a FastAPI-style app serving a committed static front end) whose
+# product code holds a canned profile; nothing in it is test data
+NO_TESTS_REPO = {'server.py': 'from pathlib import Path\n\nPROFILE = {"name": "Sample Person", "plan": "free"}\n\n\ndef home():\n'
+                              '    return Path("static/index.html").read_text()\n',
+                 'static/index.html': '<!doctype html><title>Sample</title><script src="app.js"></script>\n',
+                 'static/app.js': 'console.log("ready");\n'}
+
+
+def empty_repository() -> None:
+    """A repository with no tests: the tools say so, the evidence share for the inventory is 0, and the report must say so."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'repo'
+        write(root, NO_TESTS_REPO)
+        invd = inv.build(root, None, {})
+        res = scan_data.Scanner(root, invd, date(2026, 11, 11)).run()
+    check(invd.get('no_tests') is True and any('no test files' in w for w in invd.get('warnings', [])),
+          'inventory: a repository with no test files says so (no_tests, a warning)')
+    check(any('no test files' in n for n in res.get('notes', [])), 'scan: the notes repeat that the repository has no test files')
+    check(res.get('tests_found') == 0, 'scan: candidates record tests_found 0')
+    check(any('code-security-auditor' in n and 'privacy-flow-auditor' in n for n in res.get('notes', [])),
+          'scan: the notes say secrets and personal data in product code are out of scope, and which skills cover them')
+    rep = {'inventory': [], 'findings': [], 'tools': [{'name': 'scan_data', 'status': 'ran'}]}
+    check(vtd.completeness(rep) == 0, f'validator: an empty inventory is not complete evidence (got {vtd.completeness(rep)})')
+    ex = json.loads((HERE.parent / 'examples' / 'test_data_report.example.json').read_text(encoding='utf-8'))
+    ex['inventory'], ex['findings'], ex['dismissed'], ex['handoffs'] = [], [], [], []
+    ex['limitations'] = ['Static rules only.']
+    ex['summary']['headline'] = 'Nothing was flagged.'
+    errs = vtd.check(ex, None, None, None, None, json.dumps(ex), None, None, cand_doc={'tests_found': 0, 'candidates': []})
+    check(any('no tests' in e for e in errs), 'validator: a report on a repository with no tests must say so in the headline or a limitation')
+    ex['limitations'].append('The repository has no tests: no test files, runner configuration or test directories were found.')
+    errs = vtd.check(ex, None, None, None, None, json.dumps(ex), None, None, cand_doc={'tests_found': 0, 'candidates': []})
+    check(not any('no tests' in e for e in errs), 'validator: a limitation that says the repository has no tests satisfies it')
+
+
+def data_dir_unknown_format() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'repo'
+        write(root, {'saves/slot1.sav': 'x\n', 'saves/notes.json': '{"a": 1}\n', 'tests/test_x.py': 'def test_x():\n    assert True\n'})
+        invd = inv.build(root, None, {}, ['saves'])
+    item = next((i for i in invd['inventory'] if i['path'] == 'saves/slot1.sav'), None)
+    check(item is not None and item['status'] == 'not_assessed' and 'unknown format' in (item.get('reason') or ''),
+          'inventory: a file of an unknown format under --data-dir is listed as not_assessed (unknown format), never dropped')
+
+
 def main() -> int:
     for t in (go_rules, url_credentials_and_cards, placeholders, coverage_and_drift, residue_outside_tree, live_endpoint_severity,
-              big_data_tree, cwd_relative_paths, agent_personal_data_leak):
+              big_data_tree, cwd_relative_paths, agent_personal_data_leak, empty_repository, data_dir_unknown_format):
         try:
             t()
         except Exception as exc:  # a crash in one group is a failure, not the end of the run
