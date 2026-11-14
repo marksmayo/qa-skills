@@ -1,7 +1,7 @@
 ---
 name: cross-browser-checker
 description: Run the same pages, states and journeys in Playwright's Chromium, Firefox and WebKit, three times each, and report where they behave differently - script errors, failing steps, content that isn't rendered, missing elements, input fallbacks, layout and network differences - keeping only differences that repeat in every run and listing the rest as flaky. With a repository, also scan CSS, JavaScript and HTML for features the project's browserslist targets don't all support (web-features and caniuse data, pinned and hash-checked), and link them to the runtime differences they explain. Never says "compatible", and never treats WebKit as Safari.
-version: 1.5.0
+version: 1.6.0
 ---
 
 # Cross-browser checker
@@ -155,12 +155,22 @@ A Vite project with no browserslist config compiles for its `build.target`: the 
 `baseline-widely-available`, Chrome and Edge 107, Firefox 104, Safari 16; Vite 3-6: `modules`,
 Chrome 87, Edge 88, Firefox 78, Safari 14), with iOS Safari following Safari; `source` says which.
 `esNNNN`/`esnext` name no browser and are reported as not assessed.
-The walk prunes `node_modules`, `.next`, build output, coverage and caches, and skips what doesn't
+The walk prunes `node_modules`, `.next`, coverage and caches, and skips what doesn't
 ship to browsers: test and story files (`*.test.*`, `*.spec.*`, `*.e2e.*`, `*.cy.*`, `*.stories.*`),
 test directories (`e2e`, `test`, `tests`, `spec`, `specs`, unless the directory holds a package
 manifest such as `package.json`, which makes it a product package of that name) and Node-only
 scripts (a node shebang, or an import of a `node:` module, `fs`, `child_process` and other Node
-built-ins: CLIs, build scripts, dev servers). A Node server that renders pages from template
+built-ins: CLIs, build scripts, dev servers). A script written for both Node and the browser (an
+environment check such as `ENVIRONMENT_IS_NODE` or `typeof window`, plus use of `document`, `window`,
+`navigator` or `WebAssembly`: Emscripten glue, a UMD bundle) is browser code and is scanned. Build
+output (`dist/`, `build/`, `out/`) is not pruned by name here: the shared census decides whether such a
+folder is generated or a committed front end served as written, and every folder left out is listed in
+`skipped.pruned` with its reason. `--include DIR` (repeatable) scans a folder a rule would leave out,
+such as a hand-written `dist/` that a FastAPI `StaticFiles(directory="dist")` mount, `express.static`
+or `send_from_directory` serves; excluded folders that hold code are listed in
+`skipped.excluded_with_code` with the file that serves them (`served_by`), and the warning names them
+with the `--include` to use. A Python, Go or other server whose served folder was scanned gets
+`language_coverage.status: static_served` (the server language is not browser code). A Node server that renders pages from template
 literals still has its inline `<script>` and `<style>` blocks scanned, and so does an HTML page held
 in a string constant of server-side code (a Go raw string for `html/template`, a Python or Java/Kotlin
 triple-quoted string) or a template file (`.tmpl`, `.gohtml`, `.jinja`, `.erb`). Vendored and
@@ -192,8 +202,13 @@ JavaScript APIs, not syntax: a build transpiles syntax for its targets but doesn
 the scan looks for APIs that newer targets have and older ones don't (`structuredClone`, `.at(-1)`,
 `findLast`, `toSorted`, `Object.hasOwn`, `Object.groupBy`, the new `Set` methods,
 `Promise.withResolvers`, `Array.fromAsync`, iterator helpers, `AbortSignal.any`, the async Clipboard
-API, which also needs a secure context, `replaceAll`, `Intl.Segmenter`, `WeakRef`, error `cause`), with
-support from web-features. A polyfill the project loads (core-js) is not detected: say so when a
+API, which also needs a secure context, `replaceAll`, `Intl.Segmenter`, `WeakRef`, error `cause`), and
+the APIs an app or game wrapper depends on (WebAssembly, `SharedArrayBuffer`, the Fullscreen API, which
+iPhone Safari lacks on elements, Pointer Lock and its Chromium-only `unadjustedMovement` option, Keyboard
+Lock, Gamepad, the Cache API, IndexedDB, Web Audio, touch events), with support from web-features. A
+pattern found in the code that every target supports is listed in `supported_features` (no finding,
+but checked), so an API absent from both lists is outside the pattern set: say so in the report rather
+than reading the scan as complete. A polyfill the project loads (core-js) is not detected: say so when a
 finding depends on it.
 
 CSS-in-JS (Emotion, MUI's `sx` and `styled`, styled-components) generates its CSS at runtime, so
@@ -237,8 +252,20 @@ below it that moved), cumulative drift (an element that moved with the content j
 metrics adding up down a long page) and ink measured on boxes of different shape (an inline element
 on another number of lines, or a box whose area changed more than twofold), boxes of an element
 another element covers (`occluded`: an overlay or sticky panel lies over it) and boxes inside a panel
-the automation scrolled by a different amount in each engine (moved by exactly that offset) are
-dismissed automatically and counted, with reasons in `candidates.json`. A layout difference of one element (by
+the automation scrolled by a different amount in each engine (moved by exactly that offset), inline
+elements that moved inside a parent block that kept its size (inline reflow: a link in a paragraph whose
+text breaks at another word), and every layout difference of a run laid out at another effective
+viewport (capture records `inner` and `fullscreen` after the steps: a "click to play" that enters
+fullscreen resizes some engines to the screen) are dismissed automatically and counted, with reasons in
+`candidates.json`. Request failures that are an engine's normal behaviour (a media request cancelled
+with `net::ERR_ABORTED` once it has the metadata, Firefox's `NS_ERROR_PARSED_DATA_CACHED`) are not
+compared; `benign_requests` lists them. One failed request on several pages is one candidate. When the
+reference shows almost no ink on an element (under 2%: a video on a near-uniform frame), the other
+engines are compared with each other, so a video blank in one engine only is still caught (its
+`reference` is then the engine that drew it). A step that fails, or a page error thrown, in every run of
+every engine is no difference, but the state was not exercised: `same_everywhere` lists it (and a
+warning), and the report must name that page or state in a limitation (the validator checks) and hand
+the bug to a crash hunt. A layout difference of one element (by
 its signature, such as a shared header or footer) on several pages is one candidate: `pages` lists
 them and reach counts them. Repeated siblings are one component: `:nth-of-type(N)` and `:nth-child(N)`
 are taken out of the grouping key, so 40 cards with the same undecoded image are one candidate, whose
@@ -259,7 +286,10 @@ pages really rendered alike before reporting no differences. Each screenshot is 
 parallel (`--jobs`, default up to 4; the validator takes the same option). Candidates matching a known
 engine-build limitation carry its id in `build_limitations`, and so do the candidates that follow from an
 undecoded image with a known limitation on the same page and engine (the `<img>` an error handler hides, the
-fallback it shows beside it, a box resized around it): their detail says which image. Flag emoji are drawn
+fallback it shows beside it, a box resized around it): their detail says which image. A box or ink
+difference of an element listed in a `font_family_differs` candidate with a build limitation (a key input
+narrower because Windows WebKit draws it in MS Shell Dlg) inherits that limitation too. The Chromium
+codec limitation is not matched by an `.mp4` URL with `ERR_ABORTED` alone (`not_if`). Flag emoji are drawn
 as letters by Chromium and WebKit on Windows and as colour flags by Firefox (`windows-flag-emoji`), and
 Windows WebKit may draw default-face controls in MS Shell Dlg rather than a serif
 (`webkit-windows-serif-controls`). Ratings follow `RUBRIC.md`.
@@ -356,4 +386,7 @@ candidate is triaged once, with a reason that says what was checked, and none wi
 screenshot is decoded. Checks planned come from
 `runs.json`'s recorded plan, `--targets` (which must agree with it), or for an older capture the
 page and viewport pairs that ran, so the count is the same with and without `--targets`. Blocked
-third-party requests need `scope.third_party` and a limitation saying they weren't compared.
+third-party requests need `scope.third_party` and a limitation saying they weren't compared. Counts the summary states ("3 need review", "5 differences", "2 flaky")
+must equal the report's own lists. A step or page error that failed alike in every engine
+(`same_everywhere` in `candidates.json`) must be named, by its page or state, in a limitation or a
+needs-review reason.

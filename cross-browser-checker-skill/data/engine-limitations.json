@@ -1,5 +1,5 @@
 {
-  "note": "Known ways Playwright's engine builds differ from the browsers people use. compare_engines.py marks a candidate with an entry's id when one of its engines is the entry's engine, the capture platform is one of the entry's platforms (or wasn't recorded), its subkind is listed, and the regex matches its image source, element, detail or messages. A marked candidate has low confidence and goes to needs_review until a real browser confirms it. platforms are Python sys.platform values (win32, linux, darwin); null means every platform.",
+  "note": "Known ways Playwright's engine builds differ from the browsers people use. compare_engines.py marks a candidate with an entry's id when one of its engines is the entry's engine, the capture platform is one of the entry's platforms (or wasn't recorded), its subkind is listed, and the regex matches its image source, element, detail or messages. A marked candidate has low confidence and goes to needs_review until a real browser confirms it. platforms are Python sys.platform values (win32, linux, darwin); null means every platform. not_if, when given, is a regex that clears the match: a candidate whose text matches it is not marked (a media request cancelled with ERR_ABORTED is not a codec failure).",
   "limitations": [
     {
       "id": "webkit-windows-avif",
@@ -40,6 +40,8 @@
       "platforms": null,
       "subkinds": ["request_failed", "console_error", "page_error", "element_missing", "content_not_rendered", "box_differs"],
       "match": "\\.(mp4|m4v|m4a|aac|mov)\\b|video/mp4|audio/mp4|avc1|mp4a|[Hh]\\.?264|HEVC|hvc1",
+      "not_if": "ERR_ABORTED|NS_BINDING_ABORTED",
+      "not_if_why": "A media request cancelled with ERR_ABORTED is the engine stopping a download once it has the metadata or a range, which happens when the codec IS decoded; it is not evidence of a missing codec (compare_engines.py also leaves such aborts out of the comparison).",
       "what": "Playwright's Chromium is an open-source build without proprietary codecs (H.264, AAC, HEVC), so MP4 video and AAC audio may not play in it.",
       "real_browser": "Google Chrome and Microsoft Edge include these codecs.",
       "source": "Playwright documentation, Browsers: Google Chrome and Microsoft Edge (media codecs).",

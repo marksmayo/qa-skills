@@ -34,7 +34,10 @@ Also fails when:
   * a candidate that matches a known Playwright engine-build limitation (data/engine-limitations.json) is promoted:
     it goes to needs_review until a real browser confirms it;
   * the capture recorded its third-party mode and scope.third_party doesn't match it, or third-party requests were
-    blocked and no limitation says their behaviour wasn't compared.
+    blocked and no limitation says their behaviour wasn't compared;
+  * the summary states a count ("3 need review", "5 differences", "2 flaky") other than the report's own;
+  * a step or page error failed alike in every engine (compare_engines.same_everywhere) and no limitation or
+    needs-review reason names that page or state.
 
 --write-summary fills the computed headline fields (severity_counts, flaky_count, checks, evidence_completeness,
 overall_confidence), so a draft may leave them out: placeholders are set before the schema check and overwritten.
@@ -73,6 +76,15 @@ VAGUE_REASON = re.compile(r'^\W*(false positive|fp|not an? (issue|problem|bug|di
                           r'expected|by design|font( metrics)?|rendering( difference)?|minor|cosmetic|flaky|duplicate|dup|'
                           r'needs? review|to review|check|tbd|todo|real|confirmed|promoted|valid)\W*$', re.I)
 MIN_REASON = 25
+NUM = r'(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)'
+SAYS_REVIEW = re.compile(NUM + r' (?:\w+ )?(?:need|needs) (?:a )?review', re.I)
+SAYS_DIFFS = re.compile(NUM + r' (?:promoted |confirmed |engine )?differences?\b', re.I)
+SAYS_FLAKY = re.compile(NUM + r' (?:\w+ )?(?:flaky|are flaky|is flaky)\b', re.I)
+WORDS = {w: i for i, w in enumerate('zero one two three four five six seven eight nine ten eleven twelve'.split())}
+
+
+def number(s: str) -> int | None:
+    return int(s) if s.isdigit() else WORDS.get(s.lower())
 FIELDS = ('kind', 'subkind', 'page', 'states', 'element', 'severity', 'confidence', 'priority', 'score', 'usage_share', 'runs')
 
 
@@ -327,6 +339,25 @@ def main() -> int:
             errs.append(f'limitations: the feature scan says "{lim[:80]}..."; carry it into the report')
     if COMPAT.search(hl['summary']):
         errs.append('headline.summary claims compatibility; the best verdict is "no differences detected" for these pages and engines')
+    # counts the summary states must be the report's own
+    for rx, n, what in ((SAYS_REVIEW, len(rep['needs_review']), 'needs_review'), (SAYS_DIFFS, len(rep['differences']), 'differences'),
+                        (SAYS_FLAKY, len(rep['flaky']), 'flaky')):
+        for m in rx.finditer(hl['summary']):
+            said = number(m.group(1))
+            if said is not None and said != n:
+                errs.append(f'headline.summary says "{m.group(0)}", but the report lists {n} in {what}')
+    # a step or page error that failed alike in every engine is no engine difference, but the state is broken: say so
+    if not static:
+        same = ce.same_everywhere(runs)
+        if 'same_everywhere' in cands_doc and cands_doc['same_everywhere'] != same:
+            errs.append('candidates.json same_everywhere does not follow from runs.json; rerun compare_engines.py')
+        same = cands_doc.get('same_everywhere', same)
+        said = ' '.join(rep['limitations'] + [n.get('reason', '') for n in rep['needs_review']])
+        for s in same:
+            if s['page'] not in said:
+                what = (f'step {s["step"] + 1} failed' if s['kind'] == 'step_failed' else 'a page error was thrown')
+                errs.append(f'limitations: in {s["page"]} {what} in every run of every engine ({", ".join(s["viewports"])}); '
+                            f'name {s["page"]} in a limitation (the state was not exercised) and hand the bug on')
     for sentence in sentences(hl['summary']):
         if re.search(r'\bsafari\b', sentence, re.I) and not re.search(r'\bnot\b|\bisn.t\b|\bwasn.t\b|untested', sentence, re.I):
             errs.append(f'headline.summary mentions Safari as if it was tested: "{sentence[:120]}"')

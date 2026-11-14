@@ -403,3 +403,32 @@ Where the build differs from the design above, and what the example showed.
     request interception, so the shared harness's third-party block does not stop them; that needs the
     shared `browser_harness.py` to launch engines with a resolver rule or a dead proxy with a loopback
     bypass when third parties are blocked.
+- **v1.6.0** (a Python API server mounting StaticFiles on a committed, hand-written `dist/` front end with
+  Emscripten/WebAssembly glue, a "click to play" state that enters fullscreen, an intro video, Windows):
+  - *The front end was invisible*: `dist/` was pruned by name, so the scan read 0 files and only said
+    "scan a rendered page instead". `feature_scan.py` no longer prunes `dist/`, `build/` or `out/` by name
+    (the shared census decides), records every pruned folder in `skipped.pruned` with its reason, lists
+    excluded folders holding code in `skipped.excluded_with_code` with the server file that serves them,
+    names them in the warning with the `--include` to use, and takes `--include DIR`. A server language
+    whose served folder was scanned is `language_coverage.status: static_served`. `skipped` is always
+    written.
+  - *App APIs outside the pattern set*: patterns for WebAssembly, SharedArrayBuffer, Fullscreen, Pointer
+    Lock (and Chromium's `unadjustedMovement`), Keyboard Lock, Gamepad, the Cache API (web-features
+    `service-workers`, via the new `web_feature` alias), IndexedDB, Web Audio and touch events; patterns
+    found that every target supports are listed in `supported_features`.
+  - *Emscripten glue called Node-only*: a guarded `require("fs")` in a file with an environment check and
+    browser globals no longer makes it Node-only.
+  - *Fullscreen*: capture records `inner` and `fullscreen` after the steps; layout differences between
+    runs at different effective viewports are dismissed with the sizes.
+  - *Media and requests*: media requests cancelled with ERR_ABORTED and Firefox's
+    NS_ERROR_PARSED_DATA_CACHED are not compared (`benign_requests`); the codec limitation has `not_if`;
+    one failed request on several pages is one candidate.
+  - *A video blank in WebKit only*: when the reference shows under 2% ink, the other engines are compared
+    with each other.
+  - *Inherited limitations*: boxes of elements in a `font_family_differs` candidate with a build
+    limitation inherit it. Inline reflow (a link moving inside an unchanged paragraph) is dismissed.
+  - *Silent broken states*: `same_everywhere` lists steps and page errors that failed in every engine; the
+    validator requires a limitation naming the state, and checks the summary's counts of differences,
+    needs-review items and flaky entries.
+  - The example's candidates and features gained the new keys (same five candidates, same triage).
+  - Not done: `capture.py --only` to recapture one state (every change still reruns the whole plan).

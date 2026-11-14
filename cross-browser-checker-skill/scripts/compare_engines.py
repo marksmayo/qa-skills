@@ -29,6 +29,14 @@ differences a candidate stands for. Candidates that follow from an undecoded ima
 limitation on the same page and engine inherit it, and a console message about an HTTP error response logged
 by one engine only is dismissed when every run recorded that status (`http_errors`). When comparisons were made and nothing at all came out, `self_check`
 says how many element boxes were compared and how many were identical, to be checked by eye.
+Also dismissed: an inline element that moved inside a parent block that kept its size (inline reflow), and
+every layout difference of a pair of runs laid out at different effective viewports (`inner`, `fullscreen`
+from capture.py). Media requests cancelled with ERR_ABORTED and Firefox's NS_ERROR_PARSED_DATA_CACHED are
+not compared (`benign_requests` lists them); one failed request on several pages is one candidate. When the
+reference shows under 2% ink on an element, the other engines are compared with each other (the candidate's
+`reference` is then the engine that drew it). A box or ink difference of an element whose font family
+differs with a known build limitation inherits it. `same_everywhere` lists steps that failed, and page
+errors thrown, in every run of every engine: no difference, but a state that was not exercised.
 Only captured runs are compared: a page, viewport and engine with any run errored or skipped
 (run_status) is left out, and `comparisons` in the output lists every planned engine-versus-reference
 pair, how many were made and why the others weren't. No comparison made means nothing was compared,
@@ -65,8 +73,18 @@ WEIGHT = {'Critical': 4, 'High': 3, 'Medium': 2, 'Low': 1}
 FAMILIES = {'blink': ['chrome', 'edge', 'opera', 'and_chr', 'samsung', 'op_mob', 'android', 'and_uc', 'and_qq', 'baidu'],
             'gecko': ['firefox', 'and_ff'], 'webkit': ['safari', 'ios_saf']}
 ENGINE_FAMILY = {'chromium': 'blink', 'firefox': 'gecko', 'webkit': 'webkit'}
-INK_TAGS = {'input', 'img', 'button', 'select', 'textarea', 'h1', 'h2', 'h3', 'p', 'a', 'label', 'li', 'span', 'svg', 'canvas'}
+INK_TAGS = {'input', 'img', 'button', 'select', 'textarea', 'h1', 'h2', 'h3', 'p', 'a', 'label', 'li', 'span', 'svg', 'canvas',
+            'video'}
 NATIVE_TAGS = ('input', 'button', 'select', 'textarea')
+# elements that flow inside a line of text: one that moves along (or to another line of) its unchanged parent block moved
+# because the text before it broke at another word
+INLINE_TAGS = {'a', 'span', 'em', 'strong', 'b', 'i', 'u', 'code', 'small', 'abbr', 'label', 'kbd', 'sup', 'sub', 'mark',
+               'time', 'cite', 'q', 'img', 'button', 'br', 'wbr', 's', 'var', 'samp', 'bdi', 'bdo'}
+# request failures that are not failures: a media request the engine cancels once it has the metadata (or a range it
+# no longer needs), and Firefox's notice that a response was served from its parsed-data cache
+MEDIA_URL = re.compile(r'\.(mp4|m4v|webm|ogv|ogg|oga|mp3|m4a|aac|wav|flac|opus|mov|m3u8|mpd|ts)(\?|#|\s|$)', re.I)
+MEDIA_ABORT = re.compile(r'net::ERR_ABORTED|NS_BINDING_ABORTED|\bcancell?ed\b', re.I)
+ALWAYS_BENIGN = re.compile(r'NS_ERROR_PARSED_DATA_CACHED')
 # Ink is compared only between boxes of comparable shape: a box whose area changed by more than this factor (an inline
 # element that wrapped onto two lines, a list box drawn at another size) spreads the same ink over a different area.
 INK_AREA_FACTOR = 2.0
@@ -139,6 +157,8 @@ def observations(run: dict, inks: list | None) -> dict[tuple, dict]:
         if s['outcome'] == 'failed':
             obs[('behaviour', 'step_failed', s['index'])] = {'step': s['action'], 'messages': [s['error']]}
     for r in run.get('failed_requests') or []:
+        if benign_failure(r):
+            continue   # listed by benign_requests(), never compared
         obs[('network', 'request_failed', r.split(' (')[0])] = {'messages': [r]}
     for i in run.get('images') or []:
         if i['complete'] and i['natural'] == [0, 0]:
@@ -157,6 +177,76 @@ def observations(run: dict, inks: list | None) -> dict[tuple, dict]:
                 obs[('ink', e['sig'])] = {'ink': round(v, 4), 'box': e['box'], 'tag': e['tag'], 'type': e.get('type'),
                                           'lines': e.get('lines')}
     return obs
+
+
+def benign_failure(entry: str) -> bool:
+    """A recorded failed request ("GET <url> (<failure>)") that is the engine's normal behaviour, not a failure: a media
+    request cancelled once the metadata or a range arrived (net::ERR_ABORTED, NS_BINDING_ABORTED), or Firefox's
+    NS_ERROR_PARSED_DATA_CACHED notice. A codec or network problem shows as another error (a media error event, a
+    connection failure), which stays compared."""
+    url, _, failure = entry.partition(' (')
+    return bool(ALWAYS_BENIGN.search(failure) or (MEDIA_ABORT.search(failure) and MEDIA_URL.search(url.split(' ', 1)[-1])))
+
+
+def benign_requests(doc: dict) -> list[dict]:
+    """Every benign request failure (benign_failure) the runs recorded, grouped by request and failure, with the engines
+    and the number of runs: left out of the comparison, and listed so a reader can see what was."""
+    out: dict[tuple, dict] = {}
+    for r in doc.get('runs') or []:
+        for f in r.get('failed_requests') or []:
+            if benign_failure(f):
+                req, _, failure = f.partition(' (')
+                e = out.setdefault((req, failure.rstrip(')')), {'request': req, 'failure': failure.rstrip(')'), 'engines': [],
+                                                                'pages': [], 'runs': 0})
+                e['runs'] += 1
+                for k, v in (('engines', r['engine']), ('pages', r['page'])):
+                    if v not in e[k]:
+                        e[k].append(v)
+    return sorted(out.values(), key=lambda e: (e['request'], e['failure']))
+
+
+def same_everywhere(doc: dict) -> list[dict]:
+    """Scripted steps that failed, and page errors thrown, in every captured run of every engine (two engines or more):
+    the comparison sees no difference, yet the state did not do what the targets asked (a step timing out on a covered
+    element, a script error every engine throws). One entry per page or state, kind and step or message, with the
+    viewports it held at; the report has to say so (a limitation or needs_review), and the bug goes to a crash hunt."""
+    by: dict[tuple, dict[str, list]] = {}
+    for r in doc.get('runs') or []:
+        if captured(r):
+            by.setdefault((r['page'], r['viewport']), {}).setdefault(r['engine'], []).append(r)
+    out: dict[tuple, dict] = {}
+    for (page, vp), engs in sorted(by.items()):
+        if len(engs) < 2:
+            continue
+        runs = [r for rs in engs.values() for r in rs]
+        failed = [{s['index']: s for s in r.get('steps') or [] if s.get('outcome') == 'failed'} for r in runs]
+        for i in sorted(set.intersection(*(set(f) for f in failed))):
+            k = (page, 'step_failed', str(i))
+            e = out.setdefault(k, {'page': page, 'viewports': [], 'kind': 'step_failed', 'step': i,
+                                   'action': failed[0][i].get('action'), 'engines': sorted(engs),
+                                   'messages': sorted({f[i].get('error') or '' for f in failed})[:3]})
+            e['viewports'].append(vp)
+        errs = [{console_key(m) for m in r.get('page_errors') or []} for r in runs]
+        for m in sorted(set.intersection(*errs)):
+            k = (page, 'page_error', m)
+            e = out.setdefault(k, {'page': page, 'viewports': [], 'kind': 'page_error', 'message': m, 'engines': sorted(engs)})
+            e['viewports'].append(vp)
+    return list(out.values())
+
+
+def viewport_mismatch(R: list[dict], E: list[dict], vp: str, eng: str, ref: str) -> str | None:
+    """Why the two engines' runs were not laid out at the same viewport, or None: a step that entered fullscreen (click to
+    play) resizes the viewport to the screen in some engines, so boxes, presence and overflow can't be compared."""
+    sizes = {tuple(r['inner']) for r in R + E if r.get('inner')}
+    fs = {bool(r.get('fullscreen')) for r in R + E if 'fullscreen' in r}
+    if len(sizes) <= 1 and len(fs) <= 1:
+        return None
+    def desc(runs):
+        s = sorted({'x'.join(map(str, r['inner'])) for r in runs if r.get('inner')})
+        f = any(r.get('fullscreen') for r in runs)
+        return (', '.join(s) or 'unrecorded') + (' (fullscreen)' if f else '')
+    return (f'effective viewport differs: {eng} ran at {desc(E)} and {ref} at {desc(R)} (planned {vp}), so boxes and '
+            'layout are not comparable; compare this state by its screenshots, or keep the page out of fullscreen')
 
 
 def console_key(message: str) -> str:
@@ -385,11 +475,58 @@ def compare(doc: dict, base: Path, ref: str, jobs: int | None = None,
                                   'runs': {ref: [False] * len(R), eng: low}})
             http_logged(diffs, first, dismissed, R, E)
             wraps(diffs, first, dismissed, moves, sizes)
+            inline_reflow(diffs, first, dismissed, moves, sizes, R)
             drift(diffs, first, dismissed, moves)
             scrolled(diffs, first, dismissed, R, E, eng)
             covered(diffs, first, dismissed, R, E)
             font_families(diffs, R, E, page, vp, eng, ref)
+            why = viewport_mismatch(R, E, vp, eng, ref)
+            if why:   # nothing about layout compares across two viewports
+                dismissed.extend(dict(d, reason=why) for d in diffs[first:] if d['kind'] == 'layout')
+                diffs[first:] = [d for d in diffs[first:] if d['kind'] != 'layout']
+        second_ink_pass(by, ref, page, vp, diffs, dismissed)
     return diffs, flaky, dismissed
+
+
+def second_ink_pass(by: dict[str, list], ref: str, page: str, vp: str, diffs: list[dict], dismissed: list[dict]) -> None:
+    """Content not rendered, judged against another engine when the reference shows almost no ink (under 2%: a video
+    still on a near-uniform frame, an empty canvas), so the reference comparison makes no judgement: an engine whose ink
+    is under 40% of a third engine's in every run, while that engine shows ink in every run, is content_not_rendered
+    with that engine as its reference. Runs at another viewport, or boxes of another shape, are not compared."""
+    if ref not in by or len(by) < 3:
+        return
+    R = by[ref]
+    for k in sorted({k for r in R for k in r['obs'] if k[0] == 'ink'}, key=str):
+        rv = [r['obs'][k]['ink'] if k in r['obs'] else None for r in R]
+        if None in rv or max(rv) >= 0.02:
+            continue
+        others = sorted(e for e in by if e != ref)
+        vals = {e: [r['obs'][k]['ink'] if k in r['obs'] else None for r in by[e]] for e in others}
+        for b in others:
+            if None in vals[b] or any(d['subkind'] == 'content_not_rendered' and d['engine'] == b and d['page'] == page and
+                                      d['viewport'] == vp and d['key'] == k[1] for d in diffs):
+                continue
+            for a_eng in others:
+                av = vals[a_eng]
+                if a_eng == b or None in av or min(av) < 0.02 or not all(v < 0.4 * min(av) for v in vals[b]):
+                    continue
+                A, B = by[a_eng], by[b]
+                if viewport_mismatch(A, B, vp, b, a_eng):
+                    continue
+                why = ink_not_comparable(A[0]['obs'][k], B[0]['obs'][k])
+                entry = {'page': page, 'viewport': vp, 'engine': b, 'ref': a_eng, 'kind': 'layout',
+                         'subkind': 'content_not_rendered', 'key': k[1], 'element': k[1],
+                         'element_tag': B[0]['obs'][k]['tag'], 'element_type': B[0]['obs'][k].get('type'),
+                         'ref_box': A[0]['obs'][k]['box'], 'ink': {ref: rv, a_eng: av, b: vals[b]},
+                         'runs': {a_eng: [False] * len(A), b: [True] * len(B)},
+                         'detail': f'{k[1]} shows {round(100 * max(vals[b]), 1)}% ink in {b} against '
+                                   f'{round(100 * min(av), 1)}% in {a_eng} ({ref}, the reference, shows almost none: '
+                                   f'{round(100 * max(rv), 1)}%, so {b} was compared with {a_eng})'}
+                if why:
+                    dismissed.append(dict(entry, reason=why))
+                else:
+                    diffs.append(entry)
+                break
 
 
 def _family(f: str | None) -> str:
@@ -588,6 +725,31 @@ def wraps(diffs: list[dict], first: int, dismissed: list[dict], moves: list[tupl
     diffs[first:] = keep[first:]
 
 
+def inline_reflow(diffs: list[dict], first: int, dismissed: list[dict], moves: list[tuple[str, list, list]],
+                  sizes: dict[str, bool], R: list[dict]) -> None:
+    """An inline element (a link, a span) that moved inside its parent block, which itself kept its size (within font
+    metrics): the text before it broke at another word, so it moved along its line or onto the next one. Its own size
+    is unchanged (within font metrics) and it stays inside the parent in both engines. The row rule (wraps) covers rows
+    of separate items; this covers text runs, where the words between the items are not elements."""
+    pos = {m[0]: (m[1], [m[1][i] + m[2][i] for i in range(4)]) for m in moves}
+    def within(a, b, tol=2):
+        return a[0] >= b[0] - tol and a[1] >= b[1] - tol and a[0] + a[2] <= b[0] + b[2] + tol and a[1] + a[3] <= b[1] + b[3] + tol
+    keep = diffs[:first]
+    for d in diffs[first:]:
+        el = d.get('element') or ''
+        parent = parent_sig(el)
+        tag = ((R[0]['obs'].get(('present', el)) or {}).get('tag') if R else None) or ''
+        if d['subkind'] == 'box_differs' and not d.get('size') and d.get('delta') and tag in INLINE_TAGS and \
+                parent in pos and el in pos and not sizes.get(parent) and \
+                within(pos[el][0], pos[parent][0]) and within(pos[el][1], pos[parent][1]):
+            dismissed.append(dict(d, reason=f'inline reflow: <{tag}> moved within {parent} (dx {d["delta"][0]}, dy '
+                                            f'{d["delta"][1]}), which kept its size: the text before it breaks at another '
+                                            'word; its own size is unchanged'))
+        else:
+            keep.append(d)
+    diffs[first:] = keep[first:]
+
+
 def box_diff(R, E, k):
     rb = R[0]['obs'][k]['box']
     eb = E[0]['obs'][k]['box']
@@ -698,16 +860,18 @@ def candidates(diffs: list[dict], dismissed: list[dict], doc: dict, caniuse: dic
         # every page that shows it: one candidate, whose reach counts the pages
         # an undecoded image of one component, and one console message, likewise; a repeated sibling (a card at
         # :nth-of-type(7)) is the same component as the others, and the viewports a cause shows at are one candidate
+        # a failed request (one URL) likewise: the same asset failing on every page that loads it is one cause
         shared = (d['kind'] == 'layout' and bool(d.get('element'))) or d['subkind'] == 'image_not_decoded' or \
-            (d['subkind'] == 'console_error' and bool(d['key']))
+            (d['subkind'] in ('console_error', 'request_failed') and bool(d['key']))
         gk = group_key(d['key'])
         k = (None if shared else base, d['kind'], d['subkind'], gk)
         c = merged.setdefault(k, {k2: d.get(k2) for k2 in ('kind', 'subkind', 'key', 'element', 'src', 'step', 'detail', 'element_tag',
                                                            'element_type', 'delta')}
                               | {'key': gk, 'page': base, 'pages': [], 'viewport': d['viewport'], 'viewports': [], 'occurrences': 0,
                                  'states': [], 'engines': [], 'reference': d['ref'], 'runs': {}, 'messages': {}, 'ink': {},
-                                 '_elements': [], '_text': d.get('_text')})
+                                 '_elements': [], '_text': d.get('_text'), '_members': []})
         c['occurrences'] += 1
+        c['_members'] += [e for e in d.get('elements') or [] if e not in c['_members']]
         if d['viewport'] not in c['viewports']:
             c['viewports'].append(d['viewport'])
         if d.get('element') and d['element'] not in c['_elements']:
@@ -772,10 +936,23 @@ def inherit_limitations(cands: list[dict]) -> None:
     an error handler then hides (element_missing), the fallback it shows beside it (element_extra) and boxes resized
     around it. Those candidates carry the image's limitation (and say so), instead of reading as real differences."""
     imgs = [c for c in cands if c['subkind'] == 'image_not_decoded' and c['build_limitations']]
+    # a font-family difference with a build limitation (a control drawn in the Windows WebKit default face) reaches the
+    # boxes of the elements drawn in that face, and of what is inside them: a narrower input follows from its font
+    fonts = [c for c in cands if c['subkind'] == 'font_family_differs' and c['build_limitations']]
     for c in cands:
         if c['build_limitations'] or c['subkind'] not in ('element_missing', 'element_extra', 'box_differs', 'content_not_rendered'):
             continue
         key = c['key'] or ''
+        els = c.get('_elements') or ([c['element']] if c.get('element') else [])
+        if c['subkind'] in ('box_differs', 'content_not_rendered'):
+            src = next((f for f in fonts if set(f['engines']) & set(c['engines']) and set(f['pages']) & set(c['pages'])
+                        and any(e == m or e.startswith(m + '>') for e in els for m in f.get('_members') or [])), None)
+            if src:
+                c['build_limitations'] = list(src['build_limitations'])
+                c['detail'] = (c.get('detail') or '') + (f' (follows from its font family, drawn in another face in '
+                                                         f'{", ".join(src["engines"])} ({src["key"]}), a known build '
+                                                         'limitation)')
+                continue
         for i in imgs:
             ik = i['key'] or ''
             related = key == ik or (parent_sig(key) is not None and parent_sig(key) == parent_sig(ik)) or ik.startswith(key + '>')
@@ -797,7 +974,8 @@ def build_limitations(c: dict, platform: str | None) -> list[str]:
     text += ' ' + (c.get('_text') or '')
     return [L['id'] for L in load_limitations()
             if set(L['engine'] if isinstance(L['engine'], list) else [L['engine']]) & set(c['engines']) and c['subkind'] in L['subkinds']
-            and (platform is None or L['platforms'] is None or platform in L['platforms']) and re.search(L['match'], text)]
+            and (platform is None or L['platforms'] is None or platform in L['platforms']) and re.search(L['match'], text)
+            and not (L.get('not_if') and re.search(L['not_if'], text))]
 
 
 def selector_matches(selector: str | None, c: dict) -> bool:
@@ -895,7 +1073,13 @@ def main() -> int:
             f['status'] = 'confirmed_at_runtime' if f['linked_differences'] else f['status']
     out = {'runs_file': a.runs.name, 'reference': a.reference, 'engines': doc['engines'], 'reruns': doc['reruns'],
            'third_party': third_party(doc), 'candidates': cands, 'flaky': flaky, 'dismissed_automatically': dismissed, 'features': features,
-           'comparisons': comparisons(doc, a.reference)}
+           'comparisons': comparisons(doc, a.reference), 'benign_requests': benign_requests(doc),
+           'same_everywhere': same_everywhere(doc)}
+    for s in out['same_everywhere']:
+        print(f'warning: {s["page"]} ({", ".join(s["viewports"])}): ' +
+              (f'step {s["step"] + 1} failed in every run of every engine ({(s["messages"] or [""])[0][:120]})'
+               if s['kind'] == 'step_failed' else f'page error in every run of every engine: {s["message"][:120]}') +
+              ': no engine difference, but the state is broken; say so in the report', file=sys.stderr)
     check = self_check(cands, flaky, dismissed, out['comparisons'], stats)
     if check:
         out['self_check'] = check
