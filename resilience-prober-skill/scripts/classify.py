@@ -15,14 +15,25 @@ for the flow, so a product's own wording set in flows.json is what classifies it
 Candidates merge scenarios with one root cause: the same effect at the same flow step and endpoint across
 faults (one missing error handler behind a 500 and a truncated body), no_recovery across the endpoints of
 one step (the screen has no way to retry), and retry_storm per endpoint. A retry storm counts requests per
-distinct URL (query ignored), so a wildcard pattern matching many different files is not a storm.
+distinct URL and query, with cache-busting parameters (`_`, `t`, `ts`, `cb`, a long number) dropped: a
+wildcard pattern matching many different files, or type-ahead queries for different terms, is not a storm,
+while the same request repeated (cache-busted or not) is. Requests the page aborted itself (an
+AbortController cancelling a superseded query) are not counted.
+
+A fault that answered the page's own HTML document (a navigation request, or a scenario narrowed to
+`resource_type: document`) runs no app code: the page shows the fault catalogue's injected body, and in
+production it would show the server's or edge's error page. Such a run yields a `document_fault` note
+(the request and what was shown), never an effect rated on the app. A run whose recovery repeated a step
+that had nothing left to repeat (its only actions typed input, which recovery doesn't re-type, from an
+older runner) yields a `recovery_not_tried` note instead of no_recovery.
 
 The output also carries `baselines`: per flow, the status and, for a failed or unstable flow, the step that
 failed, what the page showed and the screenshot (validate_resilience.py compares the report with it).
 """
 from __future__ import annotations
-import argparse, json, sys
+import argparse, json, re, sys
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlsplit
 
 SKILL = Path(__file__).resolve().parent.parent
 IMPACT = {'crash_b1': ('Fatal', 4), 'crash_b2': ('Fatal', 4), 'blank_screen': ('Fatal', 4), 'endless_loading': ('Stuck', 3),
@@ -59,10 +70,34 @@ def derive_baselines(run: dict) -> dict:
     return out
 
 
+CACHE_BUSTERS = {'_', 't', 'ts', 'cb', 'nocache', 'cachebust', 'cache_bust', 'rand', 'r', '_t', 'timestamp', 'v'}
+LONG_NUMBER = re.compile(r'^\d{8,}$')
+
+
+def storm_key(url: str) -> str:
+    """The URL a retry would repeat: path and query, without cache-busting parameters (so a query with other terms is another request)."""
+    p = urlsplit(url)
+    q = [(k, v) for k, v in parse_qsl(p.query, keep_blank_values=True) if k.lower() not in CACHE_BUSTERS and not LONG_NUMBER.match(v)]
+    return p._replace(query=urlencode(sorted(q)), fragment='').geturl()
+
+
+def recovery_actions(step: dict) -> list[dict]:
+    """What recovery repeats: the step's actions without re-typing input; a step that only types gets its input re-sent as typed."""
+    rest = [a for a in step.get('actions', []) if 'fill' not in a]
+    return rest or [{'refill': a['fill']} for a in step.get('actions', []) if 'fill' in a]
+
+
+def self_aborted(q: dict) -> bool:
+    return not q.get('injected') and 'ABORTED' in str(q.get('failure') or '').upper()
+
+
 def storm(reqs: list[dict], budgets: dict) -> dict | None:
     by_url: dict[str, list[dict]] = {}
     for q in reqs:
-        by_url.setdefault(q['url'].split('?')[0], []).append(q)
+        if not self_aborted(q):
+            by_url.setdefault(storm_key(q['url']), []).append(q)
+    if not by_url:
+        return None
     url, same = max(by_url.items(), key=lambda kv: len(kv[1]))
     span = max(1, same[-1]['t_ms'] - same[0]['t_ms'])
     early = [(a, b) for a, b in zip(same, same[1:]) if a.get('retry_after') and (b['t_ms'] - a['t_ms']) < float(a['retry_after']) * 1000]
@@ -74,10 +109,18 @@ def storm(reqs: list[dict], budgets: dict) -> dict | None:
     return None
 
 
-def effects(scen: dict, run: dict, base_step: dict, ind: dict, budgets: dict) -> tuple[list[dict], list[dict]]:
+def effects(scen: dict, run: dict, base_step: dict, ind: dict, budgets: dict, step_def: dict | None = None) -> tuple[list[dict], list[dict]]:
     st = run['steps'][-1]
     ob = st['observed']
     out, notes = [], []
+    docs = [q for q in run['requests'] if q.get('injected') and (q.get('navigation') or q.get('resource_type') == 'document')]
+    if docs or scen.get('resource_type') == 'document':
+        where = docs[0]['url'] if docs else scen['endpoint']
+        notes.append({'kind': 'document_fault',
+                      'detail': [f'the fault answered the page\'s own document ({where}), so no app code ran: the page showed the injected '
+                                 f'{scen["fault"]} body ({ob["body_len"]} visible characters); users would see the server\'s or edge\'s error '
+                                 f'page, which this run does not test']})
+        return out, notes
     new_errors = [e for e in run['page_errors']]
     boundary = bool(ob.get('boundary_element')) and not base_step['observed'].get('boundary_element')
     crash = bool(ob['fallback_words']) or boundary or (bool(new_errors) and ob['root_len'] == 0)
@@ -111,7 +154,11 @@ def effects(scen: dict, run: dict, base_step: dict, ind: dict, budgets: dict) ->
         after = (st['inputs'].get('after_fault') or {}).get(field) or {}
         if before.get('length') and (after.get('length') == 0 or after.get('sha256') != before.get('sha256')):
             out.append({'effect': 'lost_input', 'measure': {'field': field, 'before': before, 'after': after}})
-    if not st['recovered'] and scen['group'] != 'latency':
+    if not st['recovered'] and scen['group'] != 'latency' and st.get('recovery') == 'repeat_step' and step_def is not None \
+            and not [a for a in step_def.get('actions', []) if 'fill' not in a]:
+        notes.append({'kind': 'recovery_not_tried', 'detail': ['the step only types input, and recovery repeated it without re-typing, '
+                                                                'so nothing was sent again: whether the screen recovers is unknown']})
+    elif not st['recovered'] and scen['group'] != 'latency':
         out.append({'effect': 'no_recovery', 'measure': {'recovery': st['recovery'], 'retry_controls': st['retry_controls']}})
     if run['requests']:
         m = storm(run['requests'], budgets)
@@ -148,8 +195,9 @@ def main() -> int:
         seen: dict[str, list] = {}
         live = [r for r in entry['runs'] if r.get('fault_triggered', True)]
         for r in live:
-            effs, ns = effects(s, r, base_step, ind, budgets)
-            notes += [dict(n, scenario=s['id']) for n in ns]
+            effs, ns = effects(s, r, base_step, ind, budgets, flows[s['flow']]['steps'][idx])
+            notes += [dict(n, scenario=s['id']) for n in ns
+                      if n['kind'] == 'console_only' or not any(m['kind'] == n['kind'] and m.get('scenario') == s['id'] for m in notes)]
             for e in effs:
                 seen.setdefault(e['effect'], []).append({'run': r['tag'], 'measure': e['measure'], 'screenshots': r['steps'][-1]['screenshots'],
                                                          'requests': len(r['requests']), 'faulted_requests': r.get('faulted_requests')})

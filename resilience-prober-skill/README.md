@@ -64,6 +64,7 @@ the report. `examples/README.md` has the answer key.
 ```bash
 python scripts/validate_resilience.py examples/resilience_report.example.json --run examples/run/run.json --scenarios examples/run/scenarios.json --candidates examples/run/candidates.json
 python scripts/render_report.py examples/resilience_report.example.json
+python scripts/self_test.py     # offline checks of classify, build_report and the runner's helpers (no browser)
 ```
 
 ## Files

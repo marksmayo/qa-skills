@@ -12,7 +12,8 @@ run, and the page is watched for the scenario's whole window: until an error app
 message, extended to 30 s while a spinner shows. A slow-but-successful (latency) fault may end early once
 the step is done and nothing is pending. Then the fault is removed and recovery is tried: the app's own
 retry control if it shows one (an accessible name matching retry, try again, reload), otherwise the step's
-actions again (without re-typing input, and without reloading). Faults on a flow's first step, or with
+actions again (without re-typing input, and without reloading; a step that only types, such as
+type-ahead, gets the field's value re-sent instead: `refill_input`). Faults on a flow's first step, or with
 `"from": "load"`, are in place before the page loads (frameworks such as Next.js prefetch route payloads at
 page load, so a fault installed later never sees them). Each scenario runs --runs times (default 2).
 
@@ -20,6 +21,7 @@ A fault that matched no request in a run is recorded as `fault_triggered: false`
 runs triggered its fault is `not_triggered` (it tested nothing) rather than `ran`.
 
 Recorded per run: requests matching the endpoint (method, URL with sensitive query values redacted, time,
+resource type, whether it was a navigation (a fault on the page's own document),
 status, response time, whether the injector answered or held it), page errors, console errors (minus the
 harness's own blocked-by-client noise), the visible text and the app root's text, spinners and loading
 words, error indicators, boundary fallback text and boundary selectors, visible control names, input field
@@ -54,6 +56,7 @@ HERE = Path(__file__).resolve().parent
 SKILL = HERE.parent
 sys.path.insert(0, str(HERE))
 from browser_harness import Harness, check_authorised, NotAuthorised, now, is_loopback  # noqa: E402
+from classify import recovery_actions  # noqa: E402
 
 TEXT = """(root) => { const r = root ? document.querySelector(root) : null;
   return {body: document.body ? document.body.innerText : '', root: r ? r.innerText : null, root_exists: !!r}; }"""
@@ -61,9 +64,13 @@ VISIBLE_ANY = """(sels) => sels.some(s => { try { return [...document.querySelec
   const cs = getComputedStyle(e); return b.width > 0 && b.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none'; }); } catch (x) { return false; } })"""
 VISIBLE_TEXT = """(sels) => sels.some(s => { try { return [...document.querySelectorAll(s)].some(e => e.getBoundingClientRect().width > 0 && e.innerText.trim()); }
   catch (x) { return false; } })"""
-CONTROLS = """() => [...new Set([...document.querySelectorAll('a[href], button, [role=button], input[type=submit]')]
+# cut by code point (Array.from), never by UTF-16 unit: String.slice can split an emoji (a flag in a link's text)
+# into a lone surrogate, which no UTF-8 writer accepts
+CLIP_JS = "(s) => Array.from(s).slice(0, 40).join('')"
+CONTROLS = """() => { const clip = """ + CLIP_JS + """;
+  return [...new Set([...document.querySelectorAll('a[href], button, [role=button], input[type=submit]')]
   .filter(e => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; })
-  .map(e => (e.innerText || e.getAttribute('aria-label') || e.value || '').trim().replace(/\\s+/g, ' ').slice(0, 40)).filter(Boolean))].slice(0, 60)"""
+  .map(e => clip((e.innerText || e.getAttribute('aria-label') || e.value || '').trim().replace(/\\s+/g, ' '))).filter(Boolean))].slice(0, 60); }"""
 SENSITIVE = re.compile(r'(?i)token|key|secret|pass|auth|session|code|sig|email|phone|user|name|addr')
 LIST_KEYS = ('spinner_selectors', 'loading_words', 'error_selectors', 'error_words', 'empty_state_words', 'boundary_fallback_words',
              'boundary_selectors', 'retry_control_names')
@@ -278,7 +285,11 @@ def run_flow(c: Ctx, flow, upto: int | None, scen: dict | None, ind: dict, tag: 
     def on_req(r):
         started[id(r)] = time.monotonic()
         if rx and rx.match(r.url):
-            e = {'method': r.method, 't_ms': round((time.monotonic() - t0) * 1000), 'url': redact(r.url)}
+            e = {'method': r.method, 't_ms': round((time.monotonic() - t0) * 1000), 'url': redact(r.url), 'resource_type': r.resource_type}
+            try:
+                e['navigation'] = bool(r.is_navigation_request())     # a fault here answers the page itself, not the app
+            except Exception:  # noqa: BLE001
+                e['navigation'] = False
             entries[id(r)] = e
             reqs.append(e)
 
@@ -421,12 +432,17 @@ def run_flow(c: Ctx, flow, upto: int | None, scen: dict | None, ind: dict, tag: 
             controls = page.evaluate("""(names) => [...document.querySelectorAll('button, a, [role=button]')]
                 .map(e => (e.innerText || e.getAttribute('aria-label') || '').trim()).filter(n => names.some(w => n.toLowerCase().includes(w)))""",
                                      ind['retry_control_names'])
-            recovery = 'retry_control' if controls else 'repeat_step'
+            again = recovery_actions(step)
+            recovery = 'retry_control' if controls else 'refill_input' if any('refill' in x for x in again) else 'repeat_step'
             try:
                 if controls:
                     page.get_by_role('button', name=re.compile('|'.join(ind['retry_control_names']), re.I)).first.click(timeout=3000)
+                elif recovery == 'refill_input':
+                    # a step that only types (type-ahead): re-send what is in the field, as the user would by typing again
+                    for x in again:
+                        page.fill(x['refill'], page.input_value(x['refill'], timeout=2000), timeout=3000)
                 else:
-                    act(h, page, site, [a for a in step['actions'] if 'fill' not in a])   # typed input is not re-entered
+                    act(h, page, site, again)   # typed input is not re-entered
             except Exception:  # noqa: BLE001
                 pass
             recovered = done(page, step['done'], 5000)

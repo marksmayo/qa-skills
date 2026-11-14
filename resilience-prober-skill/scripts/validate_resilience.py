@@ -35,7 +35,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import schema_check  # noqa: E402
 from classify import derive_baselines  # noqa: E402
-from build_report import confidence, faults_split  # noqa: E402
+from build_report import confidence, faults_split, scrub  # noqa: E402
 
 CLAIMS = re.compile(r'\b(is resilient|fully resilient|resilient to|handles all (failures|errors|faults)|handles (every|any) (failure|error|fault)|'
                     r'robust against|fault[- ]tolerant|never breaks|recovers gracefully from (every|all|any)|(every|all) (failure|fault)s? (we )?injected|'
@@ -223,7 +223,7 @@ def main() -> int:
         if m:
             errs.append(f'{where} claims {m.group(0)!r}; say which faults and flows were tried, and what was not')
     if a.write_summary and not errs:
-        a.report.write_text(json.dumps(rep, indent=1, ensure_ascii=False) + '\n', encoding='utf-8')
+        a.report.write_text(json.dumps(scrub(rep), indent=1, ensure_ascii=False) + '\n', encoding='utf-8')
         print(f'headline written to {a.report}')
     if errs:
         print('\n'.join(errs))

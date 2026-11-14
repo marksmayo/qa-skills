@@ -22,7 +22,7 @@ target (unless flows.json allows form submission), so a repro run against a shar
 analytics, telemetry or writes.
 """
 from __future__ import annotations
-import argparse, json, sys, time
+import argparse, json, re, sys, time
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -30,12 +30,26 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from classify import derive_baselines  # noqa: E402
 
-SKILL_VERSION = '1.1.0'
+SKILL_VERSION = '1.2.0'
 TODO = 'TODO: '
 
 
 def load(p: Path):
     return json.loads(p.read_text(encoding='utf-8'))
+
+
+LONE = re.compile('[\ud800-\udfff]')
+
+
+def scrub(x):
+    """Replace lone UTF-16 surrogates (text a page cut in the middle of an emoji) with U+FFFD, so the report can be written as UTF-8."""
+    if isinstance(x, str):
+        return LONE.sub('�', x)
+    if isinstance(x, dict):
+        return {k: scrub(v) for k, v in x.items()}
+    if isinstance(x, list):
+        return [scrub(v) for v in x]
+    return x
 
 
 def coverage(plan: dict, statuses: dict) -> dict:
@@ -287,7 +301,7 @@ def main() -> int:
     hl['scenarios_planned'] = len(scenarios)
     hl['overall_confidence'] = confidence(run, plan, statuses, findings, needs_review)
     a.out.parent.mkdir(parents=True, exist_ok=True)
-    a.out.write_text(json.dumps(rep, indent=1, ensure_ascii=False) + '\n', encoding='utf-8')
+    a.out.write_text(json.dumps(scrub(rep), indent=1, ensure_ascii=False) + '\n', encoding='utf-8')
     print(f'{a.out}: {len(findings)} finding(s), {len(needs_review)} candidate(s) to triage; fill every TODO, then validate', file=sys.stderr)
     return 0
 

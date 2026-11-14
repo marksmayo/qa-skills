@@ -13,9 +13,10 @@
 | `silent_failure` | A failing fault (not a static asset: a kept screen is its expected outcome), no error element or new error words within 10 s, and either the step didn't complete, controls the baseline showed are gone (`controls_gone`), or it is a write; on a write it is rated Misleading |
 | `misleading_state` | Empty-state wording that wasn't in the baseline and no error ("You have no parcels yet" after a 500), or a failed write shown as done |
 | `lost_input` | A field's length or SHA-256 after the fault differs from what was typed (taken after the last fill, before the action that sends it; recorded as length and hash only) |
-| `no_recovery` | After the fault is removed, the app's retry control or the step's actions (no reload) don't complete the step |
-| `retry_storm` | More than 10 requests to one URL (query ignored) in the window, or requests to it sooner than `Retry-After` without growing gaps; a wildcard endpoint matching many different files once each is not a storm |
+| `no_recovery` | After the fault is removed, the app's retry control or the step's actions (no reload) don't complete the step. A step that only types input (type-ahead) is recovered by re-sending the field's value (`refill_input`); a run that repeated such a step with nothing left to do is a `recovery_not_tried` note, never no_recovery |
+| `retry_storm` | More than 10 requests to one URL (path and query, cache-busting parameters such as `_`, `t`, `cb` or a long number dropped) in the window, or requests to it sooner than `Retry-After` without growing gaps. A wildcard endpoint matching many different files once each, or type-ahead queries for different terms, is not a storm; requests the page aborted itself (a superseded query) don't count |
 | `console_only` | New console errors and nothing visible: a note, never a finding |
+| `document_fault` | The fault answered the page's own HTML document (a navigation request, or `resource_type: document`): no app code ran and the page shows the fault catalogue's injected body, so the run is a note, never an effect (the edge's or server's real error page is not tested) |
 
 Only runs whose fault matched at least one request (`fault_triggered`) are classified. A scenario with
 no such run is `not_triggered`: no effects, not counted as run, listed under faults not run.

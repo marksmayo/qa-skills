@@ -1,7 +1,7 @@
 ---
 name: resilience-prober
 description: Check how a running web app behaves when what it depends on goes wrong - slow or failing APIs, rate limits, expired sessions, hung requests, dropped connections, going offline, malformed payloads, one dependency down, flapping endpoints and failed script chunks. Each fault is injected in the browser only (Playwright routing), on a chosen step of a real user flow, after a clean baseline, with the expected outcome written before the run. Records what the user sees and loses - crashes, blank screens, endless spinners, silent failures, misleading empty states, lost input, no way to recover, retry storms - with screenshots, request logs and a standalone repro script. Never calls an app resilient.
-version: 1.1.0
+version: 1.2.0
 ---
 
 # Resilience prober
@@ -83,7 +83,8 @@ the baselines before spending the scenarios: a flow whose baseline fails makes i
    every critical step's first API call, and partial and static-asset faults once per flow.
 3. **Run.** Baselines twice, then each scenario twice (reproduced or only observed). Faults on a flow's
    first step are in place before the page loads. Recovery uses the app's own retry control (an
-   accessible name matching retry, try again, reload) or the step's actions again, never a reload.
+   accessible name matching retry, try again, reload) or the step's actions again, never a reload; a
+   step that only types (type-ahead) is recovered by re-sending the field's value (`refill_input`).
 4. **Classify.** Effects per run, merged by root cause (one effect at one step and endpoint across
    faults; no recovery across a step's endpoints; retry storms per endpoint), rated by `RUBRIC.md`.
 5. **Triage.** `build_report.py` fills everything the run decides (scope, metadata, baseline, scenarios,
@@ -102,7 +103,11 @@ python scripts/render_report.py <run>/resilience_report.json [--brief]
 
 Edge cases: service workers are blocked in scenarios (they would answer before routing); GraphQL needs
 faults matched on the operation name; WebSockets can be closed but not faked; third-party scripts are
-a natural partial failure; optimistic UI is only misleading if it doesn't roll back or warn.
+a natural partial failure; optimistic UI is only misleading if it doesn't roll back or warn. A fault on
+the page's own HTML document (a navigation, a server-rendered page) shows the catalogue's injected body,
+not the app: it becomes a `document_fault` note, never a blank screen or crash; aim faults at the
+requests the page makes instead. Type-ahead queries for different terms are not retries (a storm counts
+one URL and query, cache-busters dropped).
 
 Next.js and other server-rendering frameworks:
 
@@ -130,7 +135,7 @@ writes were allowed, blocked requests, runs per scenario), `baseline` (per flow:
 broken flow the failed step, what it showed and screenshots), `scenarios[]` (with expected outcome,
 status `ran | untested | errored | not_triggered`, reason, effects, screenshots), `findings[]` (effect,
 impact, likelihood, reach, score, priority, confidence, floors, endpoints, faults, scenarios, expected,
-actual, user impact, evidence, repro, fix, verification), `notes[]` (console-only), `coverage` (per
+actual, user impact, evidence, repro, fix, verification), `notes[]` (`console_only`, `document_fault`, `recovery_not_tried`), `coverage` (per
 fault group: ran, untested, errored, not_triggered), `unreachable[]`, `headline`, `needs_review[]`,
 `triage[]`, `limitations[]`. `run.json` keeps each matching request with its query (sensitive values
 redacted), whether the injector answered or held it, and its response time.

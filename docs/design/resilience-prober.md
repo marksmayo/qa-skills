@@ -317,3 +317,23 @@ A read-only run against a Next.js App Router site on Vercel showed these gaps; v
   every failure"), and allows `low` confidence.
 - **Not done**: client-side versus full navigation is still not recorded, and visible controls are
   compared with the baseline only for the silent-failure rule.
+
+### v1.2.0: after a run on a server-rendered Flask and Jinja site
+
+- **The report builder crashed on emoji**: control names were cut with `String.slice` (UTF-16 units),
+  splitting a flag emoji into a lone surrogate that no UTF-8 writer accepts. Names are cut by code point
+  (`Array.from`), and `build_report.py` and the validator replace any lone surrogate with U+FFFD.
+- **A fault on the page's own document was rated a P0 blank screen**: the 15 characters measured were the
+  fault catalogue's injected 502 body, not the app. Requests record `resource_type` and `navigation`; a
+  run whose fault answered the document is a `document_fault` note.
+- **Type-ahead queries were a retry storm**: requests were grouped by path with the query dropped, so
+  different search terms (and the page's own aborted, superseded query) counted as retries ignoring
+  Retry-After. Storms now group by path and query with cache-busting parameters dropped, and skip requests
+  the page aborted itself.
+- **A type-ahead step never recovered**: recovery removed every `fill`, so a step that only types did
+  nothing. Such a step re-sends the field's value (`refill_input`); a run from the older runner is a
+  `recovery_not_tried` note, not no_recovery.
+- **Testing:** `scripts/self_test.py` covers these with synthetic runs (no browser).
+- **Not done** (from the same run): offline during a form-submit navigation still errors, `flapping` is
+  not a failing group, a widget lost to a missing static asset raises nothing, redirect targets can't be
+  faulted, a failed baseline can't be promoted, and recovery of a plain-navigation step is a reload.
