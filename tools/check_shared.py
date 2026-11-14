@@ -50,7 +50,9 @@ SHARED = {
                                'test-data-auditor-skill', 'privacy-flow-auditor-skill', 'ui-crash-hunter-skill',
                                'cross-browser-checker-skill', 'risk-based-test-planner-skill', 'test-impact-selector-skill',
                                'mutation-tester-skill', 'ci-failure-triager-skill', 'test-suite-evaluator-skill',
-                               'db-migration-reviewer-skill'],
+                               'db-migration-reviewer-skill', 'api-contract-tester-skill',
+                               # detect_conventions.py decides dist/ and build/ with it
+                               'journey-to-tests-skill', 'ticket-to-tdd-skill', 'bug-reproducer-skill'],
     'scripts/png_io.py': ['visual-regression-reviewer-skill', 'cross-browser-checker-skill', 'mobile-app-auditor-skill'],
     'data/wcag-sc.json': ['wcag-auditor-skill', 'mobile-app-auditor-skill'],
     'data/en301549-map.json': ['wcag-auditor-skill', 'mobile-app-auditor-skill'],

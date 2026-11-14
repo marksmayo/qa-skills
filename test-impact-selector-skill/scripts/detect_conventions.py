@@ -33,6 +33,16 @@ SKIP_DIRS = {'.git', 'node_modules', 'vendor', 'dist', 'build', 'out', 'target',
              'Pods', 'DerivedData', 'coverage', '.dart_tool', 'bin', 'obj', '.terraform', '.cache',
              'playwright-report', 'test-results', 'site-packages', '.mypy_cache', '.pytest_cache', '.turbo',
              '.ruff_cache', '.hg', '.svn'}
+# Folders named like build output are decided by evidence (lang_census.BuildEvidence: gitignored, a build config or
+# minified bundles -> build output; served by the app or git-tracked and hand-written -> source), never by name alone.
+BUILD_NAMES = {'dist', 'build', 'out', 'obj'}
+try:   # shipped next to this script in every skill that carries detect_conventions.py
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import lang_census as _lc   # noqa: E402
+except ImportError:   # pragma: no cover
+    _lc = None
+finally:
+    sys.path.pop(0)
 MANIFESTS = {'package.json', 'pyproject.toml', 'setup.py', 'setup.cfg', 'requirements.txt',
              'requirements-dev.txt', 'pom.xml', 'build.gradle', 'build.gradle.kts', 'go.mod',
              'Gemfile', 'composer.json', 'Cargo.toml', 'pubspec.yaml', 'Package.swift'}
@@ -400,16 +410,33 @@ def filter_matches(target: str, root: str, pkg_name: str | None) -> bool:
 
 
 class Detector:
-    def __init__(self, root: Path, max_files: int):
+    def __init__(self, root: Path, max_files: int, include=()):
         self.root = root.resolve()
         self.max_files = max_files
         self.files: list[str] = []
         self.limitations: list[str] = []
         self.tooling: dict = {}
+        self.include = [i.replace("\\", "/").strip("/") for i in include or ()]
+        self.build_output: list[dict] = []
+
+    def keep_dir(self, dirpath: str, d: str) -> bool:
+        if d.endswith('.egg-info'):
+            return False
+        if d in BUILD_NAMES:
+            sub = rel(Path(dirpath) / d, self.root)
+            if _lc is None:
+                is_b, why = True, f'{d}/ is named like build output (lang_census.py is not available to check)'
+            else:
+                is_b, why = self.evidence.decide(sub)
+            self.build_output.append({'path': sub, 'decision': 'build_output' if is_b else 'source', 'reason': why})
+            return not is_b
+        return d not in SKIP_DIRS
 
     def walk(self):
+        self.build_output = []
+        self.evidence = _lc.BuildEvidence(self.root, self.include) if _lc else None
         for dirpath, dirnames, filenames in os.walk(self.root):
-            dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not d.endswith('.egg-info'))
+            dirnames[:] = sorted(d for d in dirnames if self.keep_dir(dirpath, d))
             for fn in sorted(filenames):
                 self.files.append(rel(Path(dirpath) / fn, self.root))
                 if len(self.files) >= self.max_files:
@@ -736,7 +763,10 @@ class Detector:
             'tooling': self.tooling,
             'areas': result_areas,
             'has_tests': any(x['has_tests'] for x in result_areas),
+            'build_output': self.build_output,
             'limitations': self.limitations + [
+                f"{b['path']}/ was not scanned: {b['reason']} (pass --include {b['path']} if it is source)"
+                for b in self.build_output if b['decision'] == 'build_output'] + [
                 'Static detection only: conventions inferred from manifests, config and test file contents.',
                 'Run commands from CI are listed first; verify them before relying on them.',
             ] + ([] if ci_files else ['No CI configuration found; run commands come from manifests and Makefiles only.']),
@@ -900,13 +930,19 @@ def self_test() -> int:
         'svc/timetable/__init__.py': '', 'svc/tests/test_routes.py': 'def test_a():\n    assert 1\n',
         'svc/tests/check_data.py': 'def test_b():\n    assert 1\n',
         'svc/tools/tests/test_sync.py': 'def test_c():\n    assert 1\n',
+        # a FastAPI app serving a committed, hand-written dist/ folder, and a Vite app whose dist/ is built
+        'web/server.py': 'from fastapi.staticfiles import StaticFiles\napp.mount("/", StaticFiles(directory="dist"))\n',
+        'web/dist/app.js': 'function start() {}\n',
+        'spa/package.json': json.dumps({'name': 'spa', 'scripts': {'build': 'vite build'}}),
+        'spa/dist/index.js': 'export const a = 1\n',
     }
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
         for rel_path, body in files.items():
             (root / rel_path).parent.mkdir(parents=True, exist_ok=True)
             (root / rel_path).write_text(body, encoding='utf-8')
-        res = Detector(root, 10_000).run(None)
+        det = Detector(root, 10_000)
+        res = det.run(None)
     areas = {a['root']: a for a in res['areas']}
     fws = lambda r: {n for cat in areas[r]['frameworks'].values() for n in cat}  # noqa: E731
     cmds = lambda r: [c['command'] for c in areas[r]['run_commands']]  # noqa: E731
@@ -931,6 +967,11 @@ def self_test() -> int:
         ('tooling', res['tooling'].get('package_manager') == 'pnpm' and res['tooling'].get('changesets', {}).get('pending') == 1
          and 'oxlint' in res['tooling'].get('linters', {}) and res['tooling'].get('workspaces') == ['packages/*', 'apps/*']
          and 'note' in res['tooling'].get('typescript', {}), res['tooling']),
+        ('a served dist/ is walked as source and a built one is not, each recorded with its reason',
+         'web/dist/app.js' in det.files and 'spa/dist/index.js' not in det.files
+         and {b['path']: b['decision'] for b in res.get('build_output') or []} == {'web/dist': 'source',
+                                                                                   'spa/dist': 'build_output'},
+         res.get('build_output')),
     ]
     failed = 0
     for name, ok, extra in checks:
@@ -948,11 +989,15 @@ def main(argv=None) -> int:
     ap.add_argument('--target', help='path (file or directory) where new tests or code will go; selects exemplars')
     ap.add_argument('--out', help='write JSON here instead of stdout')
     ap.add_argument('--max-files', type=int, default=50_000)
+    ap.add_argument('--include', action='append', default=[], metavar='DIR',
+                    help='scan this folder even if it is named like build output (e.g. a hand-written dist/)')
     args = ap.parse_args(argv)
     root = Path(args.repo)
     if not root.is_dir():
         print(f'Not a directory: {root}', file=sys.stderr); return 2
-    res = Detector(root, args.max_files).run(args.target)
+    res = Detector(root, args.max_files, args.include).run(args.target)
+    for b in res.get('build_output') or []:
+        print(f"{b['decision']}: {b['reason']}", file=sys.stderr)
     text = json.dumps(res, indent=2, ensure_ascii=False)
     if args.out:
         Path(args.out).write_text(text + '\n', encoding='utf-8')

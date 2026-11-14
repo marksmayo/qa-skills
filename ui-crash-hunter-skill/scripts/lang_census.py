@@ -483,6 +483,21 @@ def is_build_output(root: Path | str, rel_dir: str, include=(), evidence: BuildE
     return (evidence or BuildEvidence(root, include)).decide(rel_dir)
 
 
+def build_output_decision(root: Path | str, rel_dir: str, include=(), exclude=(),
+                          evidence: BuildEvidence | None = None) -> dict:
+    """{dir, decision: 'source'|'build_output', reason, source_files} for one folder (repo-relative), in the shape a
+    skill records for its own walk. exclude forces build_output, include forces source (include wins)."""
+    rel_dir = rel_dir.replace('\\', '/').strip('/')
+    inc = {i.replace('\\', '/').strip('/') for i in include or ()}
+    exc = {e.replace('\\', '/').strip('/') for e in exclude or ()}
+    if rel_dir in exc and rel_dir not in inc:
+        is_b, why = True, f'{rel_dir}/ excluded by the caller (--exclude)'
+    else:
+        is_b, why = (evidence or BuildEvidence(root, inc)).decide(rel_dir)
+    return {'dir': rel_dir, 'decision': 'build_output' if is_b else 'source', 'reason': why,
+            'source_files': count_sources(Path(root) / rel_dir)}
+
+
 def _go_package(path: Path, name: str) -> bool:
     if name not in BUILD_OUTPUT:
         return False
@@ -808,6 +823,14 @@ def _build_output_checks(tree) -> list:
     got = call('is_build_output', root, 'dist')
     checks.append(('is_build_output() says a served dist/ is not build output',
                    isinstance(got, tuple) and got[0] is False and 'served' in got[1], got))
+
+    got = call('build_output_decision', root, 'dist')
+    checks.append(('build_output_decision() gives {dir, decision, reason, source_files} for a skill\'s own walk',
+                   isinstance(got, dict) and got.get('dir') == 'dist' and got.get('decision') == 'source'
+                   and got.get('source_files') == 6 and 'StaticFiles' in got.get('reason', ''), got))
+    got = call('build_output_decision', root, 'dist', exclude=['dist'])
+    checks.append(('build_output_decision() honours an exclude list', isinstance(got, dict)
+                   and got.get('decision') == 'build_output' and 'excluded by the caller' in got.get('reason', ''), got))
 
     # a Vite app: package.json builds into dist/, which holds the bundle (not served by any server in the repo)
     vite = {'package.json': '{"scripts": {"build": "vite build", "dev": "vite"}}',
