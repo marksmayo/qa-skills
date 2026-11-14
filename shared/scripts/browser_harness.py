@@ -42,6 +42,15 @@ Config (dict):
                           host in allowed_hosts is aborted and logged in h.blocked with reason third_party,
                           GETs included, so a run never sends analytics hits or ad requests from a test page.
                           The page still attempts the request, so it shows in request logs. allow lets them out.
+    dns_guard             true (default): with third_party block, speculative connections can't leak either.
+                          Preconnect and dns-prefetch hints are resolved outside request interception, so
+                          Chromium launches with --host-resolver-rules "MAP * ~NOTFOUND" excluding loopback,
+                          *.test, targets and allowed_hosts (host_map entries mapped first), and Firefox with
+                          DNS prefetch, the predictor and speculative connections off; WebKit has no switch
+                          (recorded). metadata()['dns_guard'] records what was applied. Under Chromium, goto()
+                          to a host the rules leave unresolvable is refused before sending: list every
+                          non-loopback site host in targets. A remote run (authorised_by) with no targets
+                          is not guarded in Chromium, and dns_guard.note says so. false turns it off.
     targets               URLs whose hosts are part of the site under test (goto() adds each host it visits)
     allowed_hosts         further hosts to let through: ["cdn.example.com", "*.example-cdn.net"]
     service_workers       allow (default) or block, for every page unless new_page() says otherwise
@@ -89,7 +98,7 @@ that send requests themselves (page.goto, fetch): it returns ("retry", seconds),
 or ("ok", None), honouring Retry-After in seconds or as an HTTP date.
 """
 from __future__ import annotations
-import ipaddress, json, os, struct, time, zlib
+import ipaddress, json, os, struct, sys, time, zlib
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
@@ -276,6 +285,8 @@ class Harness:
         self.init_scripts = [self._script_source(s) for s in cfg.get('init_scripts') or []]
         self.launch_args = [str(a) for a in cfg.get('launch_args') or []]
         self.firefox_user_prefs = dict(cfg.get('firefox_user_prefs') or {})
+        self.dns_guard_wanted = bool(cfg.get('dns_guard', True))
+        self.dns_guard: dict = {'applied': False, 'method': None, 'resolvable': None}
         if self.firefox_user_prefs and self.browser_name != 'firefox':
             raise ValueError('firefox_user_prefs is for browser firefox only')
         self.version = None
@@ -298,18 +309,70 @@ class Harness:
         from playwright.sync_api import sync_playwright
         self._pw = sync_playwright().start()
         launcher = getattr(self._pw, self.browser_name)
-        args = list(self.launch_args)
-        if self.cfg.get('host_map'):
-            if self.browser_name != 'chromium':
-                raise RuntimeError('host_map is Chromium only')
-            args.append('--host-resolver-rules=' + ', '.join(f'MAP {h} {ip}' for h, ip in self.cfg['host_map'].items()))
-        kw = {'headless': self.cfg.get('headless', True), 'args': args}
-        if self.firefox_user_prefs:
-            kw['firefox_user_prefs'] = self.firefox_user_prefs
-        self._browser = launcher.launch(**kw)
+        self._browser = launcher.launch(**self.launch_options())
         self.version = self._browser.version
         self.login()
         return self
+
+    def guard_dns(self) -> bool:
+        return self.third_party == 'block' and self.dns_guard_wanted
+
+    def launch_options(self) -> dict:
+        """Keyword arguments for launch(). With third parties blocked, speculative connections are kept from leaking:
+        preconnect and dns-prefetch hints are resolved by the browser outside request interception, so Chromium gets
+        --host-resolver-rules that leave every name unresolvable (~NOTFOUND) except loopback, *.test, the targets
+        and allowed_hosts (host_map entries are mapped first), and Firefox gets DNS prefetch, the predictor and
+        speculative connections switched off. WebKit has no such switch; the run records that."""
+        args = list(self.launch_args)
+        rules = [f'MAP {h} {ip}' for h, ip in (self.cfg.get('host_map') or {}).items()]
+        if rules and self.browser_name != 'chromium':
+            raise RuntimeError('host_map is Chromium only')
+        prefs = dict(self.firefox_user_prefs)
+        self.dns_guard = {'applied': False, 'method': None, 'resolvable': None}
+        remote_targets = [h for h in self.targets if h and not is_loopback(f'http://{h}/')]
+        if self.guard_dns():
+            if self.browser_name == 'chromium' and not remote_targets and (self.cfg.get('authorised_by') or '').strip():
+                self.dns_guard = {'applied': False, 'method': None, 'resolvable': None,
+                                  'note': 'a remote run with no targets: the site\'s hosts are not known at launch, so '
+                                          'names stay resolvable and preconnect or dns-prefetch hints to third parties '
+                                          'may still resolve; pass targets to apply the DNS guard'}
+            elif self.browser_name == 'chromium':
+                keep = sorted({h for h in self.targets if h} | set(self.allowed_hosts))
+                excl = ['localhost', '*.localhost', '*.test', '127.0.0.1', '[::1]'] + keep
+                rules += ['MAP * ~NOTFOUND'] + [f'EXCLUDE {h}' for h in excl]
+                self.dns_guard = {'applied': True, 'method': 'chromium --host-resolver-rules (MAP * ~NOTFOUND)',
+                                  'resolvable': excl}
+            elif self.browser_name == 'firefox':
+                for k, v in (('network.dns.disablePrefetch', True), ('network.dns.disablePrefetchFromHTTPS', True),
+                             ('network.predictor.enabled', False), ('network.prefetch-next', False),
+                             ('network.http.speculative-parallel-limit', 0)):
+                    prefs.setdefault(k, v)
+                self.dns_guard = {'applied': True, 'method': 'firefox prefs: DNS prefetch, predictor and speculative '
+                                  'connections off', 'resolvable': None}
+            else:
+                self.dns_guard = {'applied': False, 'method': None, 'resolvable': None,
+                                  'note': f'{self.browser_name} has no switch for DNS prefetch or preconnect; resource '
+                                          'hints to third parties may still resolve their names'}
+        if rules:
+            args.append('--host-resolver-rules=' + ', '.join(rules))
+        kw = {'headless': self.cfg.get('headless', True), 'args': args}
+        if prefs:
+            kw['firefox_user_prefs'] = prefs
+        return kw
+
+    def dns_blocked(self, host: str) -> bool:
+        """True when Chromium's resolver rules leave this host unresolvable (not loopback, a target or allowed)."""
+        if not (self.dns_guard or {}).get('applied') or self.browser_name != 'chromium' or not host:
+            return False
+        if is_loopback(f'http://{host}/') or host in (self.cfg.get('host_map') or {}):
+            return False
+        try:
+            ipaddress.ip_address(host.strip('[]'))
+            return False
+        except ValueError:
+            pass
+        return not any(host == p or (p.startswith('*.') and host.endswith(p[1:]))
+                       for p in self.dns_guard.get('resolvable') or [])
 
     @staticmethod
     def _script_source(s) -> str:
@@ -329,7 +392,8 @@ class Harness:
                           'stop_on_429': self.stop_on_429},
                 'stopped': self.stopped, 'requests': {**self.requests, 'blocked': dict(self.requests['blocked']),
                                                       'by_method': dict(self.requests['by_method'])},
-                'auth': dict(self.auth_info) if self.auth_info else None, 'trace_with_auth': self.trace_with_auth}
+                'auth': dict(self.auth_info) if self.auth_info else None, 'trace_with_auth': self.trace_with_auth,
+                'dns_guard': dict(self.dns_guard)}
 
     def __exit__(self, *exc):
         try:
@@ -500,6 +564,9 @@ class Harness:
                     'stopped': True}
         status = None
         host = (urlparse(url).hostname or '').lower()
+        if self.dns_blocked(host):
+            return {'ok': False, 'status': None, 'error': f'not sent: {host} is not resolvable under the DNS guard '
+                    '(third_party block); list it in targets or allowed_hosts before the browser starts'}
         if host and not is_loopback(url):
             self.targets.add(host)  # a page the run navigates to is a target, not a third party
         if host:
@@ -702,8 +769,69 @@ def capture_session(url: str, out: Path, browser: str = 'chromium', wait_for: st
     return load_session(out)[2]
 
 
+def self_test() -> int:
+    """Launch options with third parties blocked (no browser is started): the DNS guard's resolver rules, the
+    Firefox prefs, metadata, and a goto() to a host the guard would leave unresolvable."""
+    checks = []
+
+    def opts(cfg):
+        try:
+            return Harness(cfg).launch_options()
+        except Exception as e:   # noqa: BLE001
+            return {'args': [repr(e)]}
+    o = opts({'targets': ['https://shop.example.com/'], 'allowed_hosts': ['*.cdn.example.net'],
+              'host_map': {'shop.example.test': '127.0.0.1'}})
+    rules = [a for a in o.get('args', []) if a.startswith('--host-resolver-rules=')]
+    r = rules[0] if len(rules) == 1 else ''
+    checks.append(('with third parties blocked, Chromium resolves only the site, allowed hosts and loopback',
+                   'MAP * ~NOTFOUND' in r and 'EXCLUDE shop.example.com' in r and 'EXCLUDE *.cdn.example.net' in r
+                   and 'EXCLUDE localhost' in r and r.index('MAP shop.example.test 127.0.0.1') < r.index('MAP * ~NOTFOUND'),
+                   o.get('args')))
+    o = opts({'authorised_by': 'QA lead', 'auth': None})
+    h0 = Harness({'authorised_by': 'QA lead'})
+    h0.launch_options()
+    checks.append(('a remote run with no targets keeps resolving names, and the run says how to turn the guard on',
+                   not any(a.startswith('--host-resolver-rules=') for a in o.get('args', []))
+                   and h0.dns_guard.get('applied') is False and 'targets' in (h0.dns_guard.get('note') or ''), h0.dns_guard))
+    o = opts({'third_party': 'allow'})
+    checks.append(('third_party allow adds no resolver rules',
+                   not any(a.startswith('--host-resolver-rules=') for a in o.get('args', [])), o.get('args')))
+    o = opts({'browser': 'firefox'})
+    prefs = o.get('firefox_user_prefs') or {}
+    checks.append(('Firefox gets DNS prefetch and speculative connections switched off',
+                   prefs.get('network.dns.disablePrefetch') is True and prefs.get('network.http.speculative-parallel-limit') == 0,
+                   prefs))
+    h = Harness({'targets': ['https://shop.example.com/']})
+    try:
+        h.launch_options()
+        meta = h.metadata().get('dns_guard') or {}
+    except Exception as e:   # noqa: BLE001
+        meta = {'error': repr(e)}
+    checks.append(('the run records the DNS guard', meta.get('applied') is True and 'host-resolver-rules' in
+                   (meta.get('method') or ''), meta))
+
+    class FakePage:
+        def goto(self, *a, **k):
+            raise AssertionError('sent')
+    try:
+        res = h.goto(FakePage(), 'https://other.example.org/')
+    except Exception as e:   # noqa: BLE001
+        res = {'error': repr(e)}
+    checks.append(('goto() to a host the DNS guard would not resolve is refused with how to allow it',
+                   res.get('ok') is False and 'targets' in (res.get('error') or '') and 'AssertionError' not in res.get('error', ''),
+                   res))
+    failed = 0
+    for name, ok, extra in checks:
+        failed += not ok
+        print(f"{'PASS' if ok else 'FAIL'} {name}" + ('' if ok else f'  [{extra}]'))
+    print(f'{failed} failed' if failed else 'ALL PASS')
+    return 1 if failed else 0
+
+
 def _main(argv=None) -> int:
     import argparse
+    if '--self-test' in (sys.argv[1:] if argv is None else argv):
+        return self_test()
     ap = argparse.ArgumentParser(description='Browser harness tools. capture-session: sign in by hand once and save '
                                              'the session for read-only runs (auth: {"storage_state": file}).')
     sub = ap.add_subparsers(dest='cmd', required=True)
