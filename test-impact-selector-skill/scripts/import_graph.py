@@ -21,6 +21,14 @@ go.mod) are listed under `languages` as `no_parser`; nothing is guessed for them
 carries `language_coverage` (lang_census.py, vendored and embedded third-party trees left out),
 and the console warns when the dominant language has no parser here.
 
+Server-rendered templates: a Python call that renders a template by a literal name
+(`render_template("x.html")`, `TemplateResponse`, `get_template`, Django's `render(request,
+"x.html")`, `render_to_string`, a `template_name = "x.html"` attribute) is an edge from the module
+to that file under a `templates/` directory, recorded with its line under `renders`. Jinja and
+Django templates are read for `{% extends|include|import|from "x" %}` (edges to other templates)
+and for static files they link (`url_for('static', filename='x')`, `{% static 'x' %}`, a literal
+`/static/x`), so a partial or a stylesheet reaches the tests that import the views rendering it.
+
 Not followed: a package's `__init__.py` when a submodule is imported (Python runs it, but
 following it makes every module depend on everything the package imports), and test-runner
 setup files named only in configuration (Vitest/Jest `setupFiles`, `globalSetup`).
@@ -54,6 +62,15 @@ JS_DYN_IMPORT = re.compile(r'''(?:^|[^\w$.])import\s*\(\s*(?:/\*.*?\*/\s*)?["'](
 JS_DYN_ANY = re.compile(r'''(?:^|[^\w$.])(import|require)\s*\(\s*(?:/\*.*?\*/\s*)?(?!["'\s)])([^)\n]{0,120})''')
 JS_GLOB = re.compile(r'''import\.meta\.glob(?:Eager)?\s*\(\s*(\[[^\]]*\]|["'][^"']+["'])''')
 JS_CONTEXT = re.compile(r'''require\.context\s*\(\s*["']([^"']+)["']\s*(?:,\s*(true|false))?''')
+# server-rendered templates
+TEMPLATE_CALLS = {'render_template', 'render_template_string', 'get_template', 'select_template', 'TemplateResponse',
+                  'render', 'render_to_string', 'render_to_response', 'stream_template'}
+TEMPLATE_EXT = {'.html', '.htm', '.jinja', '.jinja2', '.j2', '.njk', '.xml', '.txt', '.tmpl', '.tpl'}
+TEMPLATE_DIRS = {'templates', 'template'}
+STATIC_DIRS = {'static', 'public', 'assets'}
+TPL_REF = re.compile(r'''\{%-?\s*(extends|include|import|from|embed)\s+["']([^"']+)["']''')
+TPL_STATIC = re.compile(r'''url_for\(\s*["']static["']\s*,\s*filename\s*=\s*["']([^"']+)["']|'''
+                        r'''\{%-?\s*static\s+["']([^"']+)["']|["'(=]\s*/static/([^"')?#\s{}]+)''')
 
 
 def match(path: str, patterns: list[str]) -> bool:
@@ -217,6 +234,16 @@ class Graph:
         self.js_aliases = self.tsconfig_aliases(paths)
         self.workspace_names = {p['name']: p['root'] for p in self.packages if p['name'] != p['root']}
         self.all_paths = set(paths)
+        # templates and static files by the name views and templates use for them (relative to their directory)
+        self.template_index: dict[str, list[str]] = {}
+        self.static_index: dict[str, list[str]] = {}
+        for path in paths:
+            parts = PurePosixPath(path).parts
+            for i, part in enumerate(parts[:-1]):
+                if part in TEMPLATE_DIRS:
+                    self.template_index.setdefault('/'.join(parts[i + 1:]), []).append(path)
+                elif part in STATIC_DIRS:
+                    self.static_index.setdefault('/'.join(parts[i + 1:]), []).append(path)
         # Go: module paths from every go.mod (nested modules too), and each package directory's files
         self.go_mods: dict[str, str] = {}
         for path in paths:
@@ -247,6 +274,8 @@ class Graph:
             elif ext in NO_PARSER:
                 entry['lang'] = NO_PARSER[ext]
                 self.languages.setdefault(NO_PARSER[ext], 'no_parser')
+            elif ext in TEMPLATE_EXT and self.is_template(path):
+                self.template(path, entry)
             self.files[path] = entry
         if self.product_roots:
             self.notes.append('Product package(s) named like a test directory: ' + ', '.join(sorted(self.product_roots)) +
@@ -263,6 +292,35 @@ class Graph:
             for imp in entry['imports']:
                 self.reverse.setdefault(imp['path'], []).append((path, imp['via']))
         return self
+
+    def is_template(self, path: str) -> bool:
+        return any(part in TEMPLATE_DIRS for part in PurePosixPath(path).parts[:-1])
+
+    def resolve_named(self, name: str, near: str, index: dict[str, list[str]]) -> list[str]:
+        """Files a template or static name refers to (relative to a templates/ or static/ directory): the ones in
+        the referring file's package when there are any, else every match."""
+        found = index.get(name.lstrip('/'), [])
+        pkg = self.package_of(near)
+        return [f for f in found if self.package_of(f) == pkg] or found
+
+    def template(self, path: str, entry: dict) -> None:
+        """A Jinja or Django template's edges: the templates it extends, includes or imports, and the static files
+        it links."""
+        try:
+            text = (self.root / path).read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            return
+        line_of = lambda pos: text.count('\n', 0, pos) + 1  # noqa: E731
+
+        def add(targets: list[str], via: str, pos: int) -> None:
+            for t in targets:
+                if t != path and not any(i['path'] == t for i in entry['imports']):
+                    entry['imports'].append({'path': t, 'via': via, 'line': line_of(pos)})
+        for m in TPL_REF.finditer(text):
+            add(self.resolve_named(m.group(2), path, self.template_index), m.group(1), m.start())
+        for m in TPL_STATIC.finditer(text):
+            name = m.group(1) or m.group(2) or m.group(3)
+            add(self.resolve_named(name, path, self.static_index), 'static', m.start())
 
     def module_of(self, path: str) -> str | None:
         for mod, files in self.py_index.items():
@@ -294,6 +352,34 @@ class Graph:
                     entry['imports'].append({'path': target, 'via': via, 'line': line})
             elif not target and spec.split('.')[0] in self.top_level_modules():
                 entry['unresolved'].append({'spec': spec, 'line': line})
+
+        def renders(name: str, line: int, via: str) -> None:
+            if PurePosixPath(name).suffix.lower() not in TEMPLATE_EXT:
+                return
+            for t in self.resolve_named(name, path, self.template_index):
+                if not any(i['path'] == t for i in entry['imports']):
+                    entry['imports'].append({'path': t, 'via': via, 'line': line})
+                entry.setdefault('renders', []).append({'template': t, 'line': line})
+
+        if self.template_index:
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call):
+                    f = node.func
+                    name = f.attr if isinstance(f, ast.Attribute) else f.id if isinstance(f, ast.Name) else None
+                    if name in TEMPLATE_CALLS:
+                        args = list(node.args) + [k.value for k in node.keywords
+                                                  if k.arg in ('template_name', 'name', 'template_name_or_list')]
+                        for a in args[:3]:
+                            if isinstance(a, ast.Constant) and isinstance(a.value, str):
+                                renders(a.value, node.lineno, name)
+                            elif isinstance(a, (ast.List, ast.Tuple)):
+                                for e in a.elts:
+                                    if isinstance(e, ast.Constant) and isinstance(e.value, str):
+                                        renders(e.value, node.lineno, name)
+                elif isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant) and \
+                        isinstance(node.value.value, str) and \
+                        any(isinstance(t, ast.Name) and t.id == 'template_name' for t in node.targets):
+                    renders(node.value.value, node.lineno, 'template_name')
 
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):

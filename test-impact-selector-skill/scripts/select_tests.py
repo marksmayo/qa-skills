@@ -16,6 +16,14 @@ the import graph [2], framework related-tests output [2], journey links [2], nam
 co-failure history (failed in at least two past changes to the file) [1]. A changed test file is
 always selected [3]. A test is selected at strength 2 or more, or at 1 when two sources agree.
 Changes no evidence can bound are blind spots, widened according to --mode (see RUBRIC.md).
+
+A template rendered by name from Python views (import_graph.py `renders`) gets import-graph evidence
+through the views, and coverage evidence from the tests that ran a rendering view's function; a
+template or static file is still a non_code blind spot (only a rendering test can notice), widened
+to e2e and visual tests, else to the tests that reach it through the views that render it, else
+the package. A data file in a directory is data_or_schema even in a single-package repository;
+only one at the repository root is repository-level configuration. In --committed-only mode,
+repo_code_hash is the hash of the HEAD tree that was analysed, not of the working tree.
 """
 from __future__ import annotations
 import argparse, difflib, hashlib, json, os, re, shutil, subprocess, sys, tarfile, tempfile, io
@@ -199,7 +207,9 @@ def classify(entry: dict, g_new, g_base) -> str:
     if entry['kind'] in ('source', 'generated', 'vendored', 'types') or node.get('lang'):
         return 'source'
     if PurePosixPath(path).suffix.lower() in KINDS['data_ext']:
-        return 'data_or_schema' if pkg != '.' else 'global_config'
+        # a data file in a directory (records the app or tests read) is data, whatever the package depth; only one at
+        # the root of a single-package repository is repository-level configuration
+        return 'data_or_schema' if pkg != '.' or '/' in path else 'global_config'
     if entry['kind'] == 'config':
         return 'package_config' if pkg != '.' else 'global_config'
     if entry['kind'] == 'binary':
@@ -346,6 +356,43 @@ class Selector:
             if len(ids) >= 2:
                 self.add(t, 'co_failure', f'failed in {len(ids)} of {len(touching)} past changes to this file ({", ".join(ids)})', path)
 
+    def render_evidence(self, entry: dict) -> list[str]:
+        """Coverage evidence for a template: the tests that ran a view function rendering it (or a template that
+        extends or includes it). Returns the rendering sites as 'file:line'."""
+        path = entry['path']
+        on_base = entry['status'] != 'added'
+        graph, root = (self.g_base, self.base_dir) if on_base else (self.g_new, self.new_dir)
+        target = entry.get('old_path') or path if on_base else path
+        tpls, todo = {target}, [target]
+        while todo:
+            cur = todo.pop()
+            for src, _via in graph.reverse.get(cur, []):
+                if graph.is_template(src) and src not in tpls:
+                    tpls.add(src)
+                    todo.append(src)
+        sites = [(src, r['line'], r['template']) for src, e in graph.files.items() for r in e.get('renders', [])
+                 if r['template'] in tpls]
+        for m in self.coverage:
+            for src, line, tpl in sites:
+                per = m['files'].get(src)
+                text = self.read(root, src) if per is not None else None
+                if text is None:
+                    continue
+                tag = ' (coverage map is stale for this file)' if src in m['_stale'] else ''
+                for fn in functions_of(src, text):
+                    if fn['start'] <= line <= fn['end']:
+                        seen = set()
+                        for ln in range(fn['start'], fn['end'] + 1):
+                            for idx in per.get(str(ln), []):
+                                tid = m['tests'][idx]
+                                f = tid.split('::')[0]
+                                if f not in seen:
+                                    seen.add(f)
+                                    self.add(f, 'coverage', f'{tid.split("::", 1)[-1]} ran {fn["qualname"]}(), which '
+                                             f'renders {tpl} ({src}:{line}){tag}', path)
+                        break
+        return [f'{src}:{line}' for src, line, _ in sites]
+
     @staticmethod
     def read(root: Path, rel: str | None) -> str | None:
         if not rel:
@@ -473,11 +520,23 @@ class Selector:
                                 'package_and_contract', self.package_tests(path) + contract)
             elif kind == 'non_code':
                 reach = sorted(set(self.g_new.tests_reaching(path)) | set(self.g_base.tests_reaching(path)))
+                rendered = []
+                if reach and (self.g_new.is_template(path) or self.g_base.is_template(entry.get('old_path') or path)):
+                    # a server-rendered template: the tests reaching the views that render it are evidence
+                    self.evidence(entry)
+                    rendered = self.render_evidence(entry)
                 ui = [t for t in reach if self.g_new.files[t]['test_level'] in ('e2e', 'visual')]
                 note = 'Template, style, translation or image: only tests that render it can notice a change.'
+                if rendered:
+                    note += f' Rendered by name at {", ".join(rendered[:3])}' + (' and more' if len(rendered) > 3 else '') + '.'
                 if not ui:
                     ui = [t for t in self.package_tests(path) if self.g_new.files[t]['test_level'] in ('e2e', 'visual')]
                     note += ' No e2e or visual test reaches it by import, so every e2e and visual test in the package.'
+                if not ui and reach:
+                    ui = reach
+                    note += (' The package has no e2e or visual tests, so the tests that reach it through the views '
+                             'and templates that render or link it (they can notice a missing file or a broken '
+                             'render, not a visual change).')
                 if not ui:
                     ui = self.package_tests(path)
                     note += ' The package has no e2e or visual tests, so its whole suite.'
@@ -739,6 +798,8 @@ def select(repo: Path, diff: Path | None = None, diff_applied: bool = False, bas
             sel.notes.append(f'{len(sel.baseline_failures)} test(s) or file(s) fail at the base already '
                              '(--baseline-failures); their past failures are not co-failure evidence.')
         res = sel.run()
+        # committed-only analyses the HEAD tree (git archive): record its hash, not the working tree's
+        code_hash = run_tests.code_hash(new_dir if committed_only and not diff else repo)
     if mode == 'balanced' and any(s['name'] == 'coverage' and s['status'] == 'stale' for s in res['sources']):
         res['notes'].append('balanced mode with a stale coverage map: refresh the map, or use strict.')
     widened = sorted({t for b in res['blind_spots'] for t in b['widened_to']})
@@ -759,7 +820,7 @@ def select(repo: Path, diff: Path | None = None, diff_applied: bool = False, bas
                        'file_kinds_sha256': kinds_sha,
                        **({'baseline_failures': rel_input(baseline_failures)} if baseline_failures else {}),
                        **({'go_test_flags': go_test_flags} if go_test_flags is not None else {})},
-            'repo_code_hash': run_tests.code_hash(repo), 'change': change, 'mode': mode, **res}
+            'repo_code_hash': code_hash, 'change': change, 'mode': mode, **res}
 
 
 def args_from_inputs(inputs: dict) -> dict:

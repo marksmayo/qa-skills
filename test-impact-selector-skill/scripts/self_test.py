@@ -252,9 +252,122 @@ def case_render_go_run_line(tmp: Path) -> None:
     assert '(cd . && go test -race ./pkg/api ./pkg/fares)' in r.stdout, r.stdout + r.stderr
 
 
+# A server-rendered Python web app ("ferry timetable"): views render Jinja templates by name, templates
+# extend and include each other and link a stylesheet; one test file never touches the app.
+WEB = {
+    'app.py': ('from flask import Flask, render_template\n\napp = Flask(__name__)\n\n\n@app.route("/")\n'
+               'def timetable():\n    rows = [1, 2]\n    return render_template("timetable.html", rows=rows)\n\n\n'
+               '@app.route("/about")\ndef about():\n    return render_template("about.html")\n'),
+    'templates/base.html': ('<link rel="stylesheet" href="{{ url_for(\'static\', filename=\'site.css\') }}">\n'
+                            '{% block body %}{% endblock %}\n'),
+    'templates/timetable.html': '{% extends "base.html" %}\n{% block body %}{% include "partials/row.html" %}{% endblock %}\n',
+    'templates/partials/row.html': '<tr><td>{{ row }}</td></tr>\n',
+    'templates/about.html': '<p>About the ferries</p>\n',
+    'static/site.css': 'body { margin: 0; }\n',
+    'sailings/route-1.json': '{"from": "A", "to": "B"}\n',
+    'sailings/route-2.json': '{"from": "B", "to": "C"}\n',
+    'tests/test_timetable.py': 'from app import app\n\n\ndef test_timetable():\n    assert app.test_client().get("/").status_code == 200\n',
+    'tests/test_about.py': 'from app import app\n\n\ndef test_about():\n    assert app.test_client().get("/about").status_code == 200\n',
+    'tests/test_maths.py': 'def test_add():\n    assert 1 + 1 == 2\n',
+}
+
+
+def web_select(tmp: Path, rel: str, new: str, **kw) -> dict:
+    import select_tests
+    repo = make_repo(tmp / 'repo', WEB)
+    d = write(tmp / f'{rel.replace("/", "_")}.diff', diff_of(rel, WEB[rel], new))
+    return select_tests.select(repo, d, **kw)
+
+
+def case_template_render_links_views(tmp: Path) -> None:
+    """A Jinja template is linked to the view module that renders it by name (render_template("x.html")), and a
+    partial to the pages that include or extend it: a template edit selects the tests that reach those views,
+    not the whole suite; with a coverage map, the test that ran the rendering view is coverage evidence."""
+    import import_graph
+    repo = make_repo(tmp / 'g', WEB)
+    g = import_graph.build(repo)
+    reach = sorted(g.tests_reaching('templates/partials/row.html'))
+    assert reach == ['tests/test_about.py', 'tests/test_timetable.py'], reach
+    sel = web_select(tmp, 'templates/partials/row.html', '<tr><td>{{ row }}!</td></tr>\n')
+    files = sorted(s['file'] for s in sel['selected'])
+    assert 'tests/test_maths.py' not in files, f'a template change widened to tests that never render it: {files}'
+    assert files == ['tests/test_about.py', 'tests/test_timetable.py'], files
+    line = WEB['app.py'].splitlines().index('    rows = [1, 2]') + 1
+    cov = write(tmp / 'cov.json', json.dumps({
+        'format': 'coverage.py-json', 'package': '.', 'tests': ['tests/test_timetable.py::test_timetable'],
+        'files': {'app.py': {str(line): [0], str(line + 1): [0]}},
+        'collected': {'file_hashes': {}}, 'summary': {}}))
+    sel = web_select(tmp / 'c', 'templates/partials/row.html', '<tr><td>{{ row }}!</td></tr>\n', coverage=[cov])
+    tt = next(s for s in sel['selected'] if s['file'] == 'tests/test_timetable.py')
+    assert tt['strength'] == 3 and any(r['source'] == 'coverage' and 'timetable' in r['evidence'] for r in tt['reasons']), tt
+
+
+def case_static_reaches_rendering_tests(tmp: Path) -> None:
+    """A stylesheet linked from a template (url_for('static', filename=...)) widens to the tests that render a page
+    linking it when the package has no e2e or visual tests, not to the whole suite."""
+    sel = web_select(tmp, 'static/site.css', 'body { margin: 1px; }\n')
+    spots = [b for b in sel['blind_spots'] if b['path'] == 'static/site.css']
+    assert spots, sel['blind_spots']
+    widened = spots[0]['widened_to']
+    assert 'tests/test_maths.py' not in widened, f'a stylesheet change widened to the whole suite: {widened}'
+    assert widened == ['tests/test_about.py', 'tests/test_timetable.py'], widened
+
+
+def case_data_file_in_root_package(tmp: Path) -> None:
+    """A data file in a directory of a single-package repository is data_or_schema, not repository-level
+    global_config, so balanced mode labels it instead of running the whole suite."""
+    sel = web_select(tmp, 'sailings/route-1.json', '{"from": "A", "to": "D"}\n')
+    kinds = {c['path']: c['kind'] for c in sel['changes']}
+    assert kinds['sailings/route-1.json'] == 'data_or_schema', kinds
+
+
+def case_coverage_core_ctrace(tmp: Path) -> None:
+    """coverage_map.py generate runs pytest with COVERAGE_CORE=ctrace (sys.monitoring drops per-test contexts on
+    Python 3.12+), keeping a core the caller set, and says so in the recorded command."""
+    import coverage_map
+    env = coverage_map.coverage_env({'PATH': 'x'}, Path(tmp / '.coverage'))
+    assert env.get('COVERAGE_CORE') == 'ctrace', env
+    assert coverage_map.coverage_env({'COVERAGE_CORE': 'pytrace'}, Path(tmp / '.coverage'))['COVERAGE_CORE'] == 'pytrace'
+
+
+def case_normalise_refuses_lost_contexts(tmp: Path) -> None:
+    """normalise --junit refuses a coverage.py map whose per-test contexts name far fewer tests than the run
+    executed (contexts lost to the sys.monitoring core), instead of accepting it as complete."""
+    repo = make_repo(tmp / 'repo', WEB)
+    data = {'meta': {'version': '7.17.3', 'show_contexts': True},
+            'files': {'app.py': {'contexts': {'8': ['tests/test_timetable.py::test_timetable|run']}}}}
+    cov = write(tmp / 'coverage.json', json.dumps(data))
+    cases = ''.join(f'<testcase classname="tests.test_t" name="test_{i}" file="tests/test_t.py"/>' for i in range(10))
+    junit = write(tmp / 'junit.xml', f'<testsuites><testsuite name="pytest" tests="10">{cases}</testsuite></testsuites>')
+    r = subprocess.run([sys.executable, str(HERE / 'coverage_map.py'), 'normalise', str(cov), '--repo', str(repo),
+                        '--junit', str(junit), '--out', str(tmp / 'map.json')], capture_output=True, text=True)
+    assert r.returncode != 0 and 'COVERAGE_CORE' in r.stderr + r.stdout, r.stdout[-600:] + r.stderr[-600:]
+
+
+def case_committed_only_hashes_head(tmp: Path) -> None:
+    """--committed-only records the hash of the HEAD tree it analysed, so an uncommitted edit in the checkout
+    (another tool's scratch change) does not change repo_code_hash."""
+    if shutil.which('git') is None:
+        raise Skip('git is not on PATH')
+    import select_tests
+    repo = make_repo(tmp / 'repo', WEB)
+    git(repo, 'init', '-q', '-b', 'main')
+    git(repo, 'add', '-A')
+    git(repo, 'commit', '-q', '-m', 'base')
+    git(repo, 'checkout', '-q', '-b', 'work')
+    write(repo / 'templates/about.html', '<p>About the ferry company</p>\n')
+    git(repo, 'commit', '-q', '-am', 'change')
+    a = select_tests.select(repo, base='main', committed_only=True)
+    write(repo / 'app.py', WEB['app.py'] + '\n# scratch edit\n')
+    b = select_tests.select(repo, base='main', committed_only=True)
+    assert a['repo_code_hash'] == b['repo_code_hash'], 'repo_code_hash follows the working tree in committed-only mode'
+
+
 CASES = [case_import_graph_go, case_select_go_change, case_unmapped_go_widens_within_go, case_naming_same_package,
          case_history_gotestsum_files, case_replay_skips_and_counts_packages, case_replay_from_git_commits,
-         case_baseline_failures, case_coverage_map_go_profiles, case_coverage_map_go_run, case_render_go_run_line]
+         case_baseline_failures, case_coverage_map_go_profiles, case_coverage_map_go_run, case_render_go_run_line,
+         case_template_render_links_views, case_static_reaches_rendering_tests, case_data_file_in_root_package,
+         case_coverage_core_ctrace, case_normalise_refuses_lost_contexts, case_committed_only_hashes_head]
 
 
 def main(argv=None) -> int:

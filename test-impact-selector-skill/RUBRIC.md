@@ -34,7 +34,7 @@ A reason must not cite a source recorded `not_run`, `errored` or `not_applicable
 | `data_or_schema` | The package's tests plus contract tests | `package_and_contract` |
 | `unmapped_source` | The package (Go: the package directory's tests and its importers' tests, else the module's Go tests; never another language's) | `package` |
 | `deleted_or_renamed` | Tests that imported it in the base tree | `importers` |
-| `non_code` | E2E and visual tests that reach it, falling back to the package's e2e and visual tests, then the package | `e2e_and_visual` |
+| `non_code` | E2E and visual tests that reach it, falling back to the package's e2e and visual tests, then the tests that reach it through rendering views and templates (a server-rendered app with no browser tests), then the package | `e2e_and_visual` |
 | `huge_change` | Full suite | `full_suite` |
 
 | Mode | What widens |

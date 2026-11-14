@@ -2,6 +2,7 @@
 """Turn per-test coverage into a map of source line -> tests (stdlib only).
 
     python coverage_map.py normalise coverage.json --repo <repo> --package api --out coverage_map.json [--commit SHA]
+        [--junit junit.xml]
     python coverage_map.py generate --repo <repo> --package api --out coverage_map.json [--python python] [--source pkg]
 
 `normalise` reads coverage the repo already produces:
@@ -10,6 +11,14 @@
   - the mutation tester's `coverage.json` (per-test lines from its sys.settrace plugin).
 `generate` runs one instrumented full pytest run in the package (it needs coverage.py and
 pytest-cov in that interpreter; nothing is installed) and normalises the result.
+
+Per-test contexts and the core: on Python 3.12+ coverage.py may use its sys.monitoring core
+("sysmon"), which does not support dynamic contexts: it warns "Dynamic contexts aren't supported
+with core=sysmon" and keeps contexts for only a few tests, so the map silently loses most of
+them. `generate` sets COVERAGE_CORE=ctrace (unless COVERAGE_CORE is already set), records it in
+the command, and refuses a run whose contexts name fewer than half the tests pytest ran.
+Collect by hand the same way: `COVERAGE_CORE=ctrace pytest --cov=<pkg> --cov-context=test
+--junitxml=junit.xml`, and give `normalise --junit junit.xml` so the same check is made.
 
     python coverage_map.py per-file --repo <repo> --package packages/core --tests tests/unit --keep <dir>
         --out coverage_map.json [--runner vitest|jest] [--jobs 4] [--provider v8] [--extra-args "--project unit"]
@@ -42,6 +51,37 @@ sys.path.insert(0, str(HERE))
 import run_tests  # noqa: E402
 
 CTX_SUFFIX = re.compile(r'\|(run|setup|teardown)$')
+MIN_CONTEXT_SHARE = 0.5
+SYSMON_WARNING = "Dynamic contexts aren't supported with core=sysmon"
+
+
+def coverage_env(base: dict, data_file: Path) -> dict:
+    """The environment for a pytest-cov run with per-test contexts: COVERAGE_CORE=ctrace unless the caller chose a
+    core (the sys.monitoring core drops dynamic contexts), and a data file outside the repository."""
+    return {**base, 'COVERAGE_FILE': str(data_file), 'PYTHONDONTWRITEBYTECODE': '1',
+            'COVERAGE_CORE': base.get('COVERAGE_CORE') or 'ctrace'}
+
+
+def junit_test_count(path: Path) -> int:
+    """Test cases that ran (not skipped) in a JUnit XML file."""
+    import xml.etree.ElementTree as ET
+    n = 0
+    for tc in ET.parse(path).getroot().iter('testcase'):
+        if tc.find('skipped') is None:
+            n += 1
+    return n
+
+
+def check_contexts(data: dict, ran: int, where: str) -> None:
+    """Refuse coverage.py data whose per-test contexts name far fewer tests than the run executed."""
+    if not ('meta' in data and isinstance(data.get('files'), dict)) or ran <= 0:
+        return
+    ctx = {CTX_SUFFIX.sub('', c) for f in data['files'].values() for cs in (f.get('contexts') or {}).values()
+           for c in cs if c}
+    if len(ctx) < MIN_CONTEXT_SHARE * ran:
+        raise SystemExit(f'coverage contexts name {len(ctx)} test(s) but {where} ran {ran}: per-test contexts were '
+                         'lost (coverage.py\'s sys.monitoring core on Python 3.12+ does not support dynamic contexts). '
+                         'Collect again with COVERAGE_CORE=ctrace in the environment; this map would miss most tests.')
 
 
 def file_sha(p: Path) -> str:
@@ -367,15 +407,22 @@ def generate(repo: Path, package: str, python: str, source: str) -> tuple[dict, 
     with tempfile.TemporaryDirectory(prefix='impact-cov-') as tmp:
         data_file = Path(tmp) / '.coverage'
         out_json = Path(tmp) / 'coverage.json'
-        env = {**os.environ, 'COVERAGE_FILE': str(data_file), 'PYTHONDONTWRITEBYTECODE': '1'}
+        env = coverage_env(dict(os.environ), data_file)
+        junit = Path(tmp) / 'junit.xml'
         cmd = [python, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', f'--cov={source}', '--cov-context=test', '--cov-report=']
-        res = subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True)
+        res = subprocess.run(cmd + [f'--junitxml={junit}'], cwd=cwd, env=env, capture_output=True, text=True)
         if res.returncode not in (0, 1):
             raise SystemExit(f'pytest exited {res.returncode}: {res.stdout[-400:]}')
         subprocess.run([python, '-m', 'coverage', 'json', '--show-contexts', '-o', str(out_json)], cwd=cwd, env=env,
                        check=True, capture_output=True)
         data = json.loads(out_json.read_text(encoding='utf-8'))
-    shown = ' '.join(['python' if c == python else c for c in cmd]) + ' && python -m coverage json --show-contexts'
+        if SYSMON_WARNING in res.stdout + res.stderr:
+            raise SystemExit(f'coverage.py warned "{SYSMON_WARNING}": per-test contexts are incomplete. COVERAGE_CORE '
+                             f'was {env["COVERAGE_CORE"]!r}; unset it or set it to ctrace.')
+        if junit.exists():
+            check_contexts(data, junit_test_count(junit), 'pytest')
+    shown = (f'COVERAGE_CORE={env["COVERAGE_CORE"]} ' + ' '.join(['python' if c == python else c for c in cmd])
+             + ' && python -m coverage json --show-contexts')
     note = '' if res.returncode == 0 else ' (some tests failed; their coverage is still recorded)'
     return data, shown + note
 
@@ -385,6 +432,8 @@ def main(argv=None) -> int:
     sub = ap.add_subparsers(dest='cmd', required=True)
     n = sub.add_parser('normalise', help='read coverage the repo already produced')
     n.add_argument('coverage', type=Path)
+    n.add_argument('--junit', type=Path, help='JUnit XML of the same pytest run: refuse the map when its contexts name '
+                   'fewer than half the tests that ran (contexts lost to the sys.monitoring core)')
     pf = sub.add_parser('per-file', help='Vitest or Jest: run each test file alone with JSON coverage (Istanbul or V8)')
     pf.add_argument('--runner', choices=['vitest', 'jest'], default='vitest')
     pf.add_argument('--tests', nargs='+', required=True, help='test files or directories, relative to the package')
@@ -432,6 +481,8 @@ def main(argv=None) -> int:
             raise SystemExit('this is one Go coverprofile for a whole run: it cannot say which test ran a line. Run '
                              'coverage_map.py go (one profile per test file or test), or give its per_test.json.')
         data = json.loads(raw)
+        if args.junit:
+            check_contexts(data, junit_test_count(args.junit), f'{args.junit.name}')
         if data.get('format') in (PER_FILE_FORMAT, GO_FORMAT) and not Path(data.get('base') or '.').is_absolute():
             data['base'] = str(args.coverage.resolve().parent / (data.get('base') or '.'))
         out = normalise(data, repo, args.package, 'normalisation', args.commit, data.get('command'))

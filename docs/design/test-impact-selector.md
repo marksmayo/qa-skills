@@ -1,6 +1,6 @@
 # Design: `test-impact-selector-skill`
 
-Status: Built (v1.2.0), see "As built" at the end. Build order: 10.
+Status: Built (v1.3.0), see "As built" at the end. Build order: 10.
 
 ## Mission
 
@@ -344,3 +344,28 @@ Where the build differs from the design above, and what the example showed.
   - Not done: a `-run` pattern when only some files of a package are selected (a Go package runs
     as a unit); verify runs for Go still need `run_tests.py --preset gotestsum` by hand. The
     examples are unchanged and validate with `--recompute`.
+- **v1.3.0: a Flask and Jinja site with a large data tree.** Red/green cases in
+  `scripts/self_test.py` on a synthetic "ferry timetable" app (views rendering Jinja templates, a
+  partial, a stylesheet, a directory of JSON records, a test that never touches the app).
+  - **Templates** (`template_render_links_views`): `import_graph.py` links a Python module to each
+    template it renders by a literal name (`render_template`, `TemplateResponse`, `get_template`,
+    Django `render`/`render_to_string`, `template_name =`), recorded under `renders`, and reads
+    Jinja/Django templates for `extends`/`include`/`import`/`from` and linked static files. A
+    template change gets import-graph evidence through its views and coverage evidence from the
+    tests that ran a rendering view; it was a `non_code` blind spot widened to the whole suite.
+  - **Static files** (`static_reaches_rendering_tests`): a `non_code` blind spot in a package with
+    no e2e or visual tests now widens to the tests that reach the file through the views and
+    templates that render or link it, before falling back to the package.
+  - **Data files** (`data_file_in_root_package`): a data file in a directory is `data_or_schema`
+    even when the package is the repository root (was `global_config`, so balanced mode ran the
+    whole suite for one record); only a data file at the root itself stays `global_config`.
+  - **Coverage contexts** (`coverage_core_ctrace`, `normalise_refuses_lost_contexts`): coverage.py
+    on Python 3.12+ may use the sys.monitoring core, which drops per-test contexts. `generate`
+    sets `COVERAGE_CORE=ctrace`, records it, refuses the sysmon warning and a run whose contexts
+    name fewer than half the tests pytest ran; `normalise --junit` makes the same check.
+  - **Hash** (`committed_only_hashes_head`): `--committed-only` records the hash of the HEAD tree
+    it analysed, so an uncommitted edit in the checkout no longer fails `--recompute`.
+  - Not done: data-path evidence (tests that glob or open a data directory, parametrised ids per
+    record), the conftest-autouse strength (G4), pytest `testpaths`/`python_files` in test lists,
+    per-id baseline failures, and grouping blind spots by directory in `--brief`. The examples
+    are unchanged and validate with `--recompute`.

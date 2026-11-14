@@ -1,7 +1,7 @@
 ---
 name: test-impact-selector
 description: Given a change (a branch, a commit range or a diff), pick which tests to run, give every selected test its reasons and evidence (coverage of a changed line, an import chain, a journey link, naming, co-failure history), and list every change that no evidence can bound as a blind spot that widens the selection (strict by default). Outputs ready-to-run commands per package and framework, an optional CI snippet for the user to add, and, when past runs are available, measured recall with a Wilson interval from replaying history. Never calls unselected tests "safe to skip".
-version: 1.2.0
+version: 1.3.0
 ---
 
 # Test impact selector
@@ -139,13 +139,22 @@ python scripts/coverage_map.py normalise coverage.json --repo <repo> --package a
 ```
 
 It reads either of these:
-- coverage.py JSON with contexts, from `pytest --cov=<pkg> --cov-context=test` then
-  `coverage json --show-contexts`;
+- coverage.py JSON with contexts, from `COVERAGE_CORE=ctrace pytest --cov=<pkg> --cov-context=test
+  --junitxml=junit.xml` then `coverage json --show-contexts`;
 - the mutation tester's `coverage.json`.
+
+On Python 3.12+ coverage.py may pick its sys.monitoring core, which does not support per-test
+contexts: it warns "Dynamic contexts aren't supported with core=sysmon" and keeps contexts for a
+handful of tests, and the map silently misses the rest. Always collect with `COVERAGE_CORE=ctrace`,
+and give `normalise --junit junit.xml` (the same run's JUnit): it refuses a map whose contexts
+name fewer than half the tests that ran. Narrow `--cov` to the product packages (`--cov=app
+--cov=api`): a JSON with contexts grows with tests times lines, and a large app can reach hundreds
+of megabytes.
 
 Normalise straight after collecting, because the file hashes are taken then. Only when the user
 agrees, `coverage_map.py generate` runs one instrumented full run itself (it needs coverage.py
-and pytest-cov).
+and pytest-cov); it sets `COVERAGE_CORE=ctrace` (unless set), records it in the command, and
+makes the same check.
 
 **Vitest and Jest** have no per-test contexts. `coverage_map.py per-file` runs each test file alone
 with JSON coverage (Istanbul's `coverage-final.json`; Vitest's V8 provider writes the same shape)
@@ -236,6 +245,14 @@ Evidence is collected for source files:
 | `naming` | `pricing.py` matches `test_pricing.py`, `x.ts` matches `x.test.ts`, `Foo.kt` matches `FooTest.kt` | 1 |
 | `co_failure` | The test failed in at least 2 past changes to the file | 1 |
 
+**Server-rendered templates** (Flask, FastAPI and Django with Jinja or Django templates) are part
+of the web surface. The import graph links a view module to each template it renders by a
+literal name (`render_template("x.html")`, `TemplateResponse`, `render(request, "x.html")`,
+`template_name = "x.html"`), a template to the ones it extends, includes or imports, and a
+template to the static files it links (`url_for('static', filename=...)`, `{% static %}`,
+`/static/...`). A changed template therefore gets import-graph evidence through the views that
+render it, and coverage evidence from tests that ran a rendering view function. It stays a
+`non_code` blind spot (only a rendering test notices), widened as below.
 A changed test file, or a test whose snapshot changed, is always selected at strength 3. A test
 is selected at strength 2 or more, or at strength 1 when two different sources agree. Tests that
 had only one weak reason are listed under `considered_not_selected`.
@@ -247,10 +264,10 @@ had only one weak reason are listed under `considered_not_selected`.
 | `global_config` | A lockfile, CI or repo-level build file; a package's own manifest or test config | Full suite; the package for a package's own file |
 | `shared_fixture` | `conftest.py`; a helper or setup file | Every test under the conftest's directory; a helper's importers, or the package if nothing imports it (it's loaded by runner config) |
 | `dynamic_reference` | The file contains a computed import, is a target of one (by literal prefix), or has no static importer in a package with an unbounded one | The package |
-| `data_or_schema` | A migration, schema, or data file inside a package | The package's tests plus any contract tests |
+| `data_or_schema` | A migration, schema, or data file in a directory (also in a single-package repo; only a data file at the repository root is `global_config`) | The package's tests plus any contract tests |
 | `unmapped_source` | No test is selected for the file by its own evidence | The package, and say no tests were found (hand it to ticket-to-tdd or journey-to-tests) |
 | `deleted_or_renamed` | A removed or renamed module | Tests that imported it in the base tree |
-| `non_code` | A style, template, translation or image | E2E and visual tests that reach it; otherwise every e2e and visual test in the package; otherwise the package |
+| `non_code` | A style, template, translation or image | E2E and visual tests that reach it; otherwise every e2e and visual test in the package; otherwise the tests that reach it through the views and templates that render or link it; otherwise the package |
 | `huge_change` | More than 30% of source files changed | The full suite: selection would save little |
 
 How the other modes handle blind spots:
