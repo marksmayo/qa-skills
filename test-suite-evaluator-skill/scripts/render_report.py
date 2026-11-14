@@ -264,7 +264,9 @@ def render(data: dict, md: bool, color: bool) -> str:
                     [(r['id'], r['origin'].replace('_', ' '), ', '.join(r['layers']), r['passed'], r['failed'],
                       r['skipped'], r['errored'],
                       '' if r.get('duration_seconds') is None else f"{r['duration_seconds']:g} s"
-                      + (' (coverage)' if r.get('coverage') else '')) for r in er['runs']])
+                      + (' (coverage)' if r.get('coverage') else '')
+                      + (f" (stopped; {r.get('not_reached', '?')} not reached)" if r.get('stopped') else ''))
+                     for r in er['runs']])
         fails = er.get('failures', [])
         if fails:
             o.p('Failures by class:')

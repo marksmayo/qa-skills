@@ -595,6 +595,17 @@ def execution_errors(meta: dict) -> list[str]:
     run_ids = [r['id'] for r in runs]
     if len(run_ids) != len(set(run_ids)):
         errs.append('execution_result run ids repeat')
+    # a run stopped before it finished: the tests it never reached are counted, and a layer that no complete run covered
+    # was not fully run
+    for r in runs:
+        if r.get('stopped') and not isinstance(r.get('not_reached'), int):
+            errs.append(f'run {r["id"]} was stopped before it finished; record not_reached (the tests it never reached, '
+                        f'from the collected count minus those reported)')
+    for name, l in layers.items():
+        covering = [r for r in runs if name in r['layers']]
+        if l['status'] == 'run' and covering and all(r.get('stopped') for r in covering):
+            errs.append(f'layer {name} is recorded as run but every run of it was stopped before it finished; '
+                        f'it is partial, and the execution partial_run')
     assessor = [r for r in runs if r['origin'] == 'assessor']
     if execution in ('full_run', 'partial_run') and not assessor:
         errs.append(f'execution {execution} means the assessor ran the suite; record at least one run with origin assessor')
@@ -665,6 +676,24 @@ def self_test() -> int:
         er['runs'][1]['passed'] -= 1
     if not any('r2' in e for e in errs_for(under)):
         fails.append('a run whose recorded failures exceed the failures attributed to it is an error')
+    # a run stopped before it finished (a killed xdist run writes no JUnit): its unreached tests are counted, and a layer
+    # that only stopped runs covered is partial, never run
+    def stop_first(er):
+        er['runs'][0]['stopped'] = True
+    if not any('r1' in e and 'not_reached' in e for e in errs_for(stop_first)):
+        fails.append('a stopped run without not_reached is an error')
+
+    def stop_all(er):
+        for r in er['runs']:
+            r.update(stopped=True, not_reached=120)
+    if not any('unit' in e and 'stopped' in e for e in errs_for(stop_all)):
+        fails.append('a layer recorded as run when every run of it was stopped is an error')
+
+    def stop_one(er):
+        er['runs'][0].update(stopped=True, not_reached=120)
+    if errs_for(stop_one):
+        fails.append('a stopped run beside complete runs of the same layer is fine: ' + '; '.join(errs_for(stop_one)))
+
     # a finding is a placeholder when it is one, not when a sentence uses the word as the suite's own vocabulary
     for text, want in (('TODO', True), ('TBD: fill in after the runs', True), ('placeholder', True), ('n/a', True),
                        ('...', True), ('FIXME - write this up once the second run finishes', True),

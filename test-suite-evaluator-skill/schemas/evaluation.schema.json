@@ -163,6 +163,15 @@
                     "type": "boolean",
                     "description": "true when the run was instrumented for coverage."
                   },
+                  "stopped": {
+                    "type": "boolean",
+                    "description": "true when the run was stopped before it finished (killed, timed out); its counts are those it reported before it stopped. A layer only stopped runs covered is partial."
+                  },
+                  "not_reached": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Tests a stopped run never reached (collected minus reported). Required when stopped."
+                  },
                   "notes": {
                     "type": "string"
                   }

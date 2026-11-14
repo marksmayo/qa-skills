@@ -4,7 +4,7 @@
     "assessment_mode": "white_box",
     "execution": "partial_run",
     "generated_at": "2026-11-12T00:00:00Z",
-    "skill_version": "1.5.0",
+    "skill_version": "1.6.0",
     "provisional": false,
     "notes": [
       "A synthetic example: a Next.js App Router application with Vitest unit and component tests and a Playwright layer.",
