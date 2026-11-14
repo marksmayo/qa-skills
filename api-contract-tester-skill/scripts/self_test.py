@@ -246,6 +246,11 @@ SHOW_ADMIN = False
 
 if SHOW_ADMIN:
     app.include_router(lockers_admin.router)
+    app.mount("/exports", StaticFiles(directory="exports"), name="exports")
+
+    @app.get("/debug/echo")
+    def echo():
+        return {}
 
 
 @app.get("/lockers/{locker_id}")
@@ -343,9 +348,15 @@ def handler_map_fastapi_site(tmp: Path) -> None:
     check(rest.get('x-path-allows-slash') is True, f'skeleton_catch_all: {{rest:path}} is marked x-path-allows-slash ({rest})')
     rel = [x for x in h['handlers'] if x['path'].startswith('/relay')]
     check(rel and all(x.get('catch_all') == 'rest' for x in rel), f'handlers_catch_all: the handler records its catch-all parameter ({rel})')
-    mounts = [x for x in h['handlers'] if x.get('kind') == 'mount']
+    mounts = [x for x in h['handlers'] if x.get('kind') == 'mount' and x['path'] == '/{file}']
     check(len(mounts) == 1 and mounts[0].get('mount_app') == 'StaticFiles' and mounts[0]['line'] > 1,
           f'handlers_static_mount: app.mount("/", StaticFiles(...)) is a mount handler ({mounts})')
+    exports = [x for x in h['handlers'] if x.get('kind') == 'mount' and x['path'].startswith('/exports')]
+    check(exports and all(x.get('conditional') for x in exports),
+          f'handlers_conditional_mount: a mount under `if` is conditional ({exports})')
+    echo = [x for x in h['handlers'] if x['path'] == '/debug/echo']
+    check(echo and all(x.get('conditional') for x in echo),
+          f'handlers_conditional_route: a route registered directly under `if` is conditional ({echo})')
     admin = [x for x in h['handlers'] if x['path'] == '/admin/stats']
     check(admin and all(x.get('conditional') for x in admin), f'handlers_conditional_router: an include_router under `if` is '
                                                                f'conditional ({admin})')

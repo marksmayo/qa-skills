@@ -191,7 +191,7 @@ def python_handlers(py_files: dict[str, str], host_files: dict[str, str], wanted
              'framework': fw, 'mount': r['mount'], '_raw_path': r['path'], '_function': r.get('function')}
         if catch:
             h['catch_all'] = catch[-1]          # a {name:path} parameter matches several segments
-        cond = r.get('conditional') or cond_by_file.get(r['file'])
+        cond = r.get('condition') or r.get('conditional') or cond_by_file.get(r['file'])   # shared py_routes: condition
         if cond:
             h['conditional'] = cond if isinstance(cond, str) else 'under a condition'
         if r.get('response_classes'):
@@ -210,8 +210,8 @@ def python_handlers(py_files: dict[str, str], host_files: dict[str, str], wanted
                 h['catch_all'] = 'path'
             if m.get('directory'):
                 h['directory'] = m['directory']
-            if m.get('conditional'):
-                h['conditional'] = m['conditional']
+            if m.get('condition') or m.get('conditional'):
+                h['conditional'] = m.get('condition') or m['conditional']
             out.append(h)
     out_extras = {'middleware': extras['middleware']}
     return out, out_extras
