@@ -25,6 +25,19 @@ included router is computed, e.g. a loop over routers). A router included twice 
 `response_classes` lists the response classes a handler declares (`response_class=`) or builds
 (`StreamingResponse(...)`, Flask `send_file`), so a caller can compare them with the documented media type.
 WebSocket routes are left out unless scan_python(..., websockets=True).
+A route registered inside an `if` (or included by an include_router call inside one) carries `condition`
+('if args.debug (server.py:28)'; nested ones joined with ' and '); a route with typed parameters carries `params` ([{name, converter,
+multi_segment}]) and, for `{x:path}` or Flask `<path:x>`, `catch_all: true` (it matches several segments).
+
+Static and mounted apps (result['static_mounts'], result['app_mounts']): `X.mount('/', StaticFiles(directory=
+'dist', html=True))`, Starlette `Mount('/static', app=StaticFiles(...))` and a Flask app's explicit
+`static_folder` (served at static_url_path) are static mounts {path, directory, html, name, file, line,
+framework, condition?}; any other application mounted with X.mount(path, app) is an app mount.
+result['mounts'] lists both in one shape: {path, file, line, app ('StaticFiles' or the mounted app's name),
+static, directory, condition (None when unconditional)}.
+Middleware (result['middleware']): add_middleware(Cls) / Middleware(Cls) classes and @X.middleware,
+before_request and after_request functions, each with its `condition` when registered under an `if`.
+`python py_routes.py --self-test` checks these idioms.
 
 Triggers (result['triggers']): Azure Functions non-HTTP triggers (`@app.blob_trigger(path=...)`,
 `timer_trigger(schedule=...)`, `queue_trigger(queue_name=...)`, Service Bus, Event Hub, Event Grid, Cosmos DB, Kafka).
@@ -164,16 +177,63 @@ def dep_list(node, rel: str) -> list[dict]:
     return out
 
 
+def conditions(tree: ast.AST, rel: str = '') -> dict[int, str]:
+    """id(node) -> the `if` statements it sits under, as 'if args.debug (server.py:28)' ('if not (DEV) (...)' in an
+    else branch; nested ones joined with ' and '), for every node inside an if or else branch. Nodes outside any
+    `if` are absent."""
+    out: dict[int, str] = {}
+    stack = [(tree, (), None)]          # (node, the if tests above it, those tests joined once per branch)
+    while stack:
+        node, conds, joined = stack.pop()
+        if joined:
+            out[id(node)] = joined
+        if isinstance(node, ast.If):
+            test = _unparse(node.test) or '?'
+            at = f' ({rel}:{node.lineno})' if rel else f' (line {node.lineno})'
+            stack.append((node.test, conds, joined))
+            for body, c in ((node.body, conds + (f'if {test}{at}',)), (node.orelse, conds + (f'if not ({test}){at}',))):
+                j = ' and '.join(c)
+                stack.extend((child, c, j) for child in body)
+            continue
+        if not conds:
+            stack.extend((child, conds, None) for child in ast.iter_child_nodes(node))
+        else:
+            stack.extend((child, conds, joined) for child in ast.iter_child_nodes(node))
+    return out
+
+
+PARAM = re.compile(r'\{(\w+)(?::(\w+))?\}|<(?:(\w+):)?(\w+)>')
+MULTI_SEGMENT = {'path'}
+
+
+def path_params(path: str) -> list[dict]:
+    """[{name, converter, multi_segment}] for FastAPI/Starlette `{name:conv}` and Flask `<conv:name>` parameters."""
+    out = []
+    for m in PARAM.finditer(path or ''):
+        name, conv = (m.group(1), m.group(2)) if m.group(1) else (m.group(4), m.group(3))
+        out.append({'name': name, 'converter': conv or 'str', 'multi_segment': (conv or '') in MULTI_SEGMENT})
+    return out
+
+
+def _last_literal(node) -> str | None:
+    """The last string literal inside an expression (StaticFiles(directory=BASE / "dist") -> 'dist')."""
+    lits = [n.value for n in ast.walk(node) if isinstance(n, ast.Constant) and isinstance(n.value, str)] \
+        if node is not None else []
+    return lits[-1] if lits else None
+
+
 class Module:
     def __init__(self, rel: str, tree: ast.AST):
         self.rel = rel
         self.tree = tree
+        self.nodes: list[ast.AST] = list(ast.walk(tree))        # walked once; every pass iterates this (same order)
         self.imports: dict[str, tuple[str, str | None]] = {}   # local name -> (dotted module, attribute or None)
         self.routers: dict[str, dict] = {}                      # var -> {framework, prefix, literal, line, ctor, app, deps}
         self.consts: dict[str, str] = {}
         self.classes: dict[str, list[str]] = {}                 # class name -> base names
         self.text_imports: set[str] = set()                     # top-level packages imported (absolute imports)
         self.libs: set[str] = set()                             # dotted modules imported (absolute imports)
+        self.cond: dict[int, str] = conditions(tree, rel)         # id(node) -> the `if` tests it is registered under
 
     def uses(self, lib: str) -> bool:
         return any(x == lib or x.startswith(lib + '.') for x in self.libs)
@@ -207,7 +267,7 @@ class Project:
         return list(PurePosixPath(rel).parts[:-1])
 
     def _index(self, m: Module):
-        for node in ast.walk(m.tree):
+        for node in m.nodes:
             if isinstance(node, ast.Import):
                 for a in node.names:
                     m.imports[a.asname or a.name.split('.')[0]] = (a.name if a.asname else a.name.split('.')[0], None)
@@ -273,7 +333,7 @@ class Project:
 
     def collect_routers(self):
         for m in self.modules.values():
-            for node in ast.walk(m.tree):
+            for node in m.nodes:
                 if isinstance(node, (ast.Assign, ast.AnnAssign)) and isinstance(node.value, ast.Call):
                     targets = node.targets if isinstance(node, ast.Assign) else [node.target]
                     fw = self.ctor_framework(node.value, m)
@@ -351,7 +411,7 @@ class Project:
         self.mounts: dict[tuple, list[dict]] = {}
         self.dynamic_includes: list[dict] = []
         for m in self.modules.values():
-            for node in ast.walk(m.tree):
+            for node in m.nodes:
                 if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
                         and node.func.attr in ('include_router', 'register_blueprint') and node.args):
                     continue
@@ -365,7 +425,8 @@ class Project:
                     continue
                 self.mounts.setdefault(child, []).append({'parent': parent, 'prefix': prefix, 'literal': lit,
                                                           'kind': node.func.attr, 'file': m.rel, 'line': node.lineno,
-                                                          'deps': dep_list(_kw(node, 'dependencies'), m.rel)})
+                                                          'deps': dep_list(_kw(node, 'dependencies'), m.rel),
+                                                          'cond': m.cond.get(id(node))})
 
     def mount_chains(self, key, seen=()) -> list[dict]:
         """Every chain of include calls from a router up to an app:
@@ -379,9 +440,10 @@ class Project:
         edges = self.mounts.get(key) or []
         if not edges:
             if r['app']:
-                return [{'prefix': own, 'status': status_own, 'deps': [], 'reached': True, 'via': None, 'chain': [key]}]
+                return [{'prefix': own, 'status': status_own, 'deps': [], 'reached': True, 'via': None, 'chain': [key],
+                         'conds': []}]
             return [{'prefix': own, 'status': 'unmounted' if status_own == 'resolved' else 'dynamic', 'deps': [],
-                     'reached': False, 'via': None, 'chain': [key]}]
+                     'reached': False, 'via': None, 'chain': [key], 'conds': []}]
         out = []
         for e in edges:
             if r['framework'] == 'flask' and e['prefix'] is not None:
@@ -390,9 +452,10 @@ class Project:
                 local = join(e['prefix'] or '', own) if (e['prefix'] or own) else ''
             status = status_own if e['literal'] else 'dynamic'
             via = f"{e['file']}:{e['line']}"
+            own_cond = [e['cond']] if e.get('cond') else []
             if e['parent'] is None or e['parent'] in seen or e['parent'] == key:
                 out.append({'prefix': local, 'status': 'dynamic' if e['parent'] is None else status, 'deps': list(e['deps']),
-                            'reached': False, 'via': via, 'chain': [key]})
+                            'reached': False, 'via': via, 'chain': [key], 'conds': own_cond})
                 continue
             parent = self.router(e['parent'])
             for up in self.mount_chains(e['parent'], seen + (key,)):
@@ -400,7 +463,7 @@ class Project:
                     'unmounted' if 'unmounted' in (up['status'], status) else 'resolved'
                 out.append({'prefix': join(up['prefix'], local) if (up['prefix'] or local) else '', 'status': worst,
                             'deps': up['deps'] + parent['deps'] + e['deps'], 'reached': up['reached'], 'via': via,
-                            'chain': up['chain'] + [key]})
+                            'chain': up['chain'] + [key], 'conds': up['conds'] + own_cond})
         return out
 
     def prefixes(self, key, seen=()) -> list[tuple[str, str]]:
@@ -422,7 +485,7 @@ class Project:
         """Yield one dict per `@obj.attr(...)` decorator on a function and per `obj.add_api_route/add_url_rule(...)`:
         {module, fn, call, attr, key (router key or None), azure_name}."""
         for m in self.modules.values():
-            for node in ast.walk(m.tree):
+            for node in m.nodes:
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     azure_name = None
                     for dec in node.decorator_list:
@@ -484,9 +547,13 @@ class Project:
                     meths = ['WEBSOCKET']
                 else:
                     meths = _methods(_kw(dec, 'methods')) or ['GET']
-                mounts = self.prefixes(key) if key else [('', 'unmounted')]
+                mounts = [(c['prefix'], c['status'], c['conds']) for c in self.mount_chains(key)] if key else \
+                    [('', 'unmounted', [])]
                 responses = response_classes(node, dec)
-                for prefix, status in mounts:
+                own_cond = m.cond.get(id(dec))
+                params = path_params(path)
+                for prefix, status, conds in mounts:
+                    cond = ' and '.join(conds + ([own_cond] if own_cond else []))
                     full = join(prefix, path) if (prefix or path.strip('/')) else '/'
                     if path.endswith('/') and len(path) > 1:
                         full += '/'
@@ -495,6 +562,9 @@ class Project:
                                        'framework': fw, 'function': fn_name,
                                        'mount': status if lit else 'dynamic',
                                        **({'router_prefix': prefix} if prefix else {}),
+                                       **({'condition': cond} if cond else {}),
+                                       **({'params': params} if any(p['converter'] != 'str' for p in params) else {}),
+                                       **({'catch_all': True} if any(p['multi_segment'] for p in params) else {}),
                                        **({'response_classes': responses} if responses else {})})
         for m in self.modules.values():
             clis += self.command_lines(m)
@@ -503,25 +573,90 @@ class Project:
             uniq.setdefault((r['method'], r['path'], r['file'], r['line']), r)
         return {'routes': sorted(uniq.values(), key=lambda r: (r['file'], r['line'], r['path'], r['method'])),
                 'triggers': sorted(triggers, key=lambda t: (t['file'], t['line'])),
-                'clis': clis, 'dynamic_includes': self.dynamic_includes, 'unparsed': sorted(self.unparsed)}
+                'clis': clis, 'dynamic_includes': self.dynamic_includes, 'unparsed': sorted(self.unparsed),
+                **self.mounts_and_middleware()}
+
+    def mounts_and_middleware(self) -> dict:
+        """{static_mounts, app_mounts, middleware}. static_mounts: a StaticFiles app mounted with `X.mount(path,
+        StaticFiles(directory=...))` or `Mount(path, app=StaticFiles(...))`, and a Flask app's explicit
+        static_folder (served at static_url_path, default /<folder>): {path, directory, literal, html, name, file,
+        line, framework, condition?}. app_mounts: any other application mounted with X.mount(path, app).
+        middleware: add_middleware(Cls) / Middleware(Cls) classes and @X.middleware / before_request functions."""
+        static, apps, mw = [], [], []
+        for m in self.modules.values():
+            for node in m.nodes:
+                cond = m.cond.get(id(node))
+                extra = {'condition': cond} if cond else {}
+                if isinstance(node, ast.Call):
+                    fname = _name(node.func)
+                    is_mount = (isinstance(node.func, ast.Attribute) and fname == 'mount') or fname == 'Mount'
+                    if is_mount:
+                        pnode = node.args[0] if node.args else _kw(node, 'path')
+                        anode = node.args[1] if len(node.args) > 1 else _kw(node, 'app')
+                        path, plit = _str(pnode, m.consts) if pnode is not None else (None, False)
+                        if path is None or anode is None:
+                            continue
+                        nnode = _kw(node, 'name')
+                        name, _ = _str(nnode, m.consts) if nnode is not None else (None, False)
+                        if isinstance(anode, ast.Call) and _name(anode.func) == 'StaticFiles':
+                            dnode = _kw(anode, 'directory') or (anode.args[0] if anode.args else None)
+                            dval, dlit = _str(dnode, m.consts) if dnode is not None else (None, False)
+                            html = _kw(anode, 'html')
+                            static.append({'path': path, 'directory': dval if dval is not None else _last_literal(dnode),
+                                           'literal': bool(plit and dlit and dval is not None),
+                                           'html': bool(isinstance(html, ast.Constant) and html.value is True),
+                                           'name': name, 'file': m.rel, 'line': node.lineno, 'framework': 'fastapi',
+                                           **extra})
+                        elif fname == 'mount':
+                            apps.append({'path': path, 'app': _unparse(anode)[:80], 'name': name, 'file': m.rel,
+                                         'line': node.lineno, **extra})
+                    elif fname == 'Flask' and _kw(node, 'static_folder') is not None:
+                        fnode = _kw(node, 'static_folder')
+                        folder, flit = _str(fnode, m.consts)
+                        unode = _kw(node, 'static_url_path')
+                        url, ulit = _str(unode, m.consts) if unode is not None else (None, True)
+                        folder = folder if folder is not None else _last_literal(fnode)
+                        if folder is None:
+                            continue
+                        path = (url if url is not None else '/' + folder.rstrip('/').rsplit('/', 1)[-1]) or '/'
+                        static.append({'path': path if path.startswith('/') else '/' + path, 'directory': folder,
+                                       'literal': bool(flit and ulit), 'html': False, 'name': 'static',
+                                       'file': m.rel, 'line': node.lineno, 'framework': 'flask', **extra})
+                    elif fname in ('add_middleware', 'Middleware') and node.args:
+                        mw.append({'name': _unparse(node.args[0])[:80], 'kind': 'class', 'file': m.rel,
+                                   'line': node.lineno, **extra})
+                elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    for d in node.decorator_list:
+                        f = d.func if isinstance(d, ast.Call) else d
+                        if isinstance(f, ast.Attribute) and f.attr in ('middleware', 'before_request', 'after_request',
+                                                                       'before_app_request'):
+                            mw.append({'name': node.name, 'kind': 'function', 'hook': f.attr, 'file': m.rel,
+                                       'line': d.lineno, **extra})
+        key = lambda x: (x['file'], x['line'])   # noqa: E731
+        mounts = [{'path': x['path'], 'file': x['file'], 'line': x['line'], 'app': 'StaticFiles', 'static': True,
+                   'directory': x['directory'], 'condition': x.get('condition')} for x in static] + \
+                 [{'path': x['path'], 'file': x['file'], 'line': x['line'], 'app': x['app'], 'static': False,
+                   'directory': None, 'condition': x.get('condition')} for x in apps]
+        return {'static_mounts': sorted(static, key=key), 'app_mounts': sorted(apps, key=key),
+                'mounts': sorted(mounts, key=key), 'middleware': sorted(mw, key=key)}
 
     def command_lines(self, m: Module) -> list[dict]:
         out = []
         stem = PurePosixPath(m.rel).stem
         prog = PurePosixPath(m.rel).parent.name if stem in ('__main__', '__init__') else stem
-        for node in ast.walk(m.tree):
+        for node in m.nodes:
             if isinstance(node, ast.Call) and _name(node.func) == 'ArgumentParser':
                 v = _kw(node, 'prog')
                 s, _ = _str(v, m.consts) if v is not None else (None, False)
                 if s:
                     prog = s
-        for node in ast.walk(m.tree):
+        for node in m.nodes:
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == 'add_parser' and node.args:
                 name, lit = _str(node.args[0], m.consts)
                 if name:
                     out.append({'command': f'{prog} {name}', 'file': m.rel, 'line': node.lineno, 'framework': 'argparse'})
         if {'click', 'typer'} & m.text_imports:
-            for node in ast.walk(m.tree):
+            for node in m.nodes:
                 if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     continue
                 for dec in node.decorator_list:
@@ -677,7 +812,7 @@ def entries(files: dict[str, str], root: Path | None = None, classify_decorators
     classify_decorators(text) -> (auth, evidence) labels a Flask view's stacked decorators."""
     project = Project(files, _host_prefixes_on_disk(root, files))
     aliases = annotated_aliases(project)
-    mw_auth = [f"{m.rel}:{n.lineno}" for m in project.modules.values() for n in ast.walk(m.tree)
+    mw_auth = [f"{m.rel}:{n.lineno}" for m in project.modules.values() for n in m.nodes
                if (isinstance(n, ast.Call) and _name(n.func) == 'add_middleware' and n.args
                    and MIDDLEWARE_AUTH.search(_unparse(n.args[0])))
                or (isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and any(
@@ -819,7 +954,111 @@ def _azure(project, m, fn, dec, verb, obj) -> dict:
             'handler': f'{m.rel}:{dec.lineno}', 'function': fn.name, 'auth': auth, 'auth_evidence': evidence}
 
 
+SELF_TEST_SERVER = '''import argparse
+from fastapi import FastAPI, Request
+from fastapi.staticfiles import StaticFiles
+from starlette.routing import Mount
+from tiles import tiles_app
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--login")
+parser.add_argument("--debug", action="store_true")
+args = parser.parse_args()
+app = FastAPI()
+
+if args.login:
+    app.add_middleware(BasicAuthMiddleware, username=args.login)
+
+@app.middleware("http")
+async def add_cache_headers(request: Request, call_next):
+    return await call_next(request)
+
+@app.api_route("/assets/{path:path}", methods=["GET", "HEAD"])
+async def proxy_assets(path: str):
+    return path
+
+@app.get("/items/{item_id:int}")
+def item(item_id: int):
+    return item_id
+
+if args.debug:
+    @app.get("/debug/state")
+    def state():
+        return {}
+
+app.mount("/tiles", tiles_app)
+app.mount("/", StaticFiles(directory="dist", html=True), name="root")
+routes = [Mount("/static", app=StaticFiles(directory="public"), name="static")]
+'''
+SELF_TEST_FLASK = '''from flask import Flask
+site = Flask(__name__, static_folder="www", static_url_path="")
+
+@site.route("/files/<path:name>")
+def files(name):
+    return name
+'''
+
+
+def self_test() -> int:
+    """FastAPI and Flask idioms: StaticFiles and sub-application mounts, a Flask static folder, {path:path} and
+    <path:x> catch-alls, routes registered under `if`, and middleware."""
+    checks = []
+    try:
+        res = scan_python({'server.py': SELF_TEST_SERVER, 'site.py': SELF_TEST_FLASK})
+    except Exception as e:   # noqa: BLE001
+        res = {'error': repr(e)}
+    routes = {(r['method'], r['path']): r for r in res.get('routes', [])}
+    static = {m.get('path'): m for m in res.get('static_mounts') or [] if m.get('framework') == 'fastapi'}
+    root = static.get('/') or {}
+    checks.append(('app.mount("/", StaticFiles(directory="dist")) is read as a static mount of dist/',
+                   root.get('directory') == 'dist' and root.get('file') == 'server.py' and root.get('line') == 34
+                   and root.get('html') is True and root.get('framework') == 'fastapi', static))
+    checks.append(('a Starlette Mount(..., app=StaticFiles(directory=...)) is a static mount too',
+                   (static.get('/static') or {}).get('directory') == 'public', static))
+    checks.append(('a Flask static_folder with static_url_path is a static mount',
+                   [(m.get('path'), m.get('directory')) for m in res.get('static_mounts') or []
+                    if m.get('framework') == 'flask'] == [('/', 'www')], res.get('static_mounts')))
+    apps = res.get('app_mounts') or []
+    checks.append(('app.mount("/tiles", tiles_app) is recorded as a mounted sub-application',
+                   any(a.get('path') == '/tiles' and a.get('app') == 'tiles_app' for a in apps), apps))
+    r = routes.get(('GET', '/assets/{path:path}')) or {}
+    checks.append(('{path:path} stays in the path and is marked multi-segment',
+                   r.get('catch_all') is True and (r.get('params') or [{}])[0].get('multi_segment') is True
+                   and (r.get('params') or [{}])[0].get('name') == 'path', r))
+    r = routes.get(('GET', '/items/{item_id:int}')) or {}
+    checks.append(('{item_id:int} is a typed, single-segment parameter',
+                   (r.get('params') or [{}])[0].get('converter') == 'int' and not r.get('catch_all'), r))
+    r = routes.get(('GET', '/files/<path:name>')) or {}
+    checks.append(('Flask <path:name> is a multi-segment catch-all', r.get('catch_all') is True, r))
+    r = routes.get(('GET', '/debug/state')) or {}
+    checks.append(('a route registered inside `if args.debug:` is conditional on it',
+                   r.get('condition') == 'if args.debug (server.py:28)', r))
+    checks.append(('an unconditional route has no condition',
+                   'condition' not in (routes.get(('GET', '/items/{item_id:int}')) or {'condition': 1}), None))
+    mw = {m.get('name'): m for m in res.get('middleware') or []}
+    checks.append(('middleware is listed: add_middleware under its condition, and @app.middleware functions',
+                   (mw.get('BasicAuthMiddleware') or {}).get('condition') == 'if args.login (server.py:13)'
+                   and (mw.get('add_cache_headers') or {}).get('kind') == 'function', mw))
+    mounts = {(x.get('file'), x.get('path')): x for x in res.get('mounts') or []}
+    want = {('server.py', '/'): {'app': 'StaticFiles', 'static': True, 'directory': 'dist'},
+            ('server.py', '/tiles'): {'app': 'tiles_app', 'static': False, 'directory': None},
+            ('server.py', '/static'): {'app': 'StaticFiles', 'static': True, 'directory': 'public'},
+            ('site.py', '/'): {'app': 'StaticFiles', 'static': True, 'directory': 'www'}}
+    checks.append(('mounts lists every mount as {path, file, line, app, static, directory, condition}',
+                   set(mounts) == set(want) and all(all(mounts[k].get(f) == v for f, v in w.items())
+                                                    and 'line' in mounts[k] and 'condition' in mounts[k]
+                                                    for k, w in want.items()), mounts))
+    failed = 0
+    for name, ok, extra in checks:
+        failed += not ok
+        print(f"{'PASS' if ok else 'FAIL'} {name}" + ('' if ok else f'  [{extra}]'))
+    print(f'{failed} failed' if failed else 'ALL PASS')
+    return 1 if failed else 0
+
+
 def main() -> int:
+    if '--self-test' in sys.argv[1:]:
+        return self_test()
     args = [a for a in sys.argv[1:] if a != '--entries']
     if len(args) != 1 or not Path(args[0]).is_dir():
         print(__doc__)

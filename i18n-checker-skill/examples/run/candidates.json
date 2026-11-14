@@ -962,5 +962,12 @@
    ]
   },
   "applied": false
+ },
+ "inputs": {
+  "resource_sets": 2,
+  "resource_files_not_parsed": 0,
+  "code_files_scanned": 7,
+  "runtime_runs": 10,
+  "skipped_dirs": []
  }
 }

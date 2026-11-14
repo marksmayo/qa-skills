@@ -33,7 +33,7 @@ from pathlib import Path
 sys.dont_write_bytecode = True  # importing a sibling must not write __pycache__ into the skill folder
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ui_graph import graph as ui_graph, is_tool_config, SRC_EXT  # noqa: E402
-from langs import vendored_roots, under, prune_dir, skipped_data_dirs, EXCLUDE  # noqa: E402
+from langs import vendored_roots, under, prune_dir, skipped_data_dirs, EXCLUDE, INCLUDE, keep_build_dir, build_dirs  # noqa: E402
 
 SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'out', '.next', '.nuxt', 'coverage', 'vendor', 'Pods',
              'DerivedData', '.gradle', '.dart_tool', '__pycache__', '.expo', 'storybook-static', 'target', '.turbo',
@@ -351,7 +351,7 @@ def walk(root: Path):
             continue
         for p in entries:
             if p.is_dir():
-                if p.name not in SKIP_DIRS and not p.name.startswith('.') and \
+                if (p.name not in SKIP_DIRS or keep_build_dir(root, p)) and not p.name.startswith('.') and \
                         not under(p.relative_to(root).as_posix(), VENDORED) and not prune_dir(root, p):
                     stack.append(p)
             else:
@@ -440,6 +440,9 @@ def main() -> int:
     ap.add_argument('--exclude', action='append', default=[], metavar='DIR',
                     help='repository-relative directory not to walk (repeatable); directories of hundreds of data files '
                          'with no code are skipped without it (skipped_data_dirs)')
+    ap.add_argument('--include', action='append', default=[], metavar='DIR',
+                    help='repository-relative directory to walk although its name marks it as build output (dist, build, '
+                         'out); served or committed hand-written ones are walked without it (skipped_build_dirs)')
     ap.add_argument('--out', type=Path)
     args = ap.parse_args()
     root = args.repo.resolve()
@@ -447,6 +450,7 @@ def main() -> int:
         print(f'Not a directory: {root}', file=sys.stderr)
         return 2
     EXCLUDE.update(e.replace('\\', '/').strip('/') for e in args.exclude)
+    INCLUDE.update(e.replace('\\', '/').strip('/') for e in args.include)
     VENDORED[:] = vendored_roots(root)
     contracts = []
     for c in args.contract:
@@ -539,6 +543,7 @@ def main() -> int:
         'warnings': warnings,
         'vendored_excluded': VENDORED,
         'skipped_data_dirs': skipped_data_dirs(),
+        'skipped_build_dirs': build_dirs()[0],
         'nullable_fields': [f for fs in nullable.values() for f in fs],
         'skipped': {'name_collision': sum(skipped['name_collision'].values()),
                     'name_collision_fields': dict(sorted(skipped['name_collision'].items(), key=lambda kv: -kv[1])[:30]),

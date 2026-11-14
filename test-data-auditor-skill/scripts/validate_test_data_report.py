@@ -148,7 +148,11 @@ def fill(rep: dict, cands: dict) -> None:
 
 def completeness(rep: dict) -> float:
     inv = rep['inventory']
-    scanned = len([i for i in inv if i['status'] == 'scanned']) / len(inv) if inv else 1.0
+    if not inv:
+        # nothing inventoried (a repository with no tests, or no test data): nothing was assessed, so the evidence is
+        # empty, never complete; the tools that ran do not make up for it
+        return 0.0
+    scanned = len([i for i in inv if i['status'] == 'scanned']) / len(inv)
     conf = [f for f in rep['findings'] if f['category'] in CONFIRMABLE]
     tools = [t for t in rep['tools'] if t['status'] != 'not_applicable']
     ran = len([t for t in tools if t['status'] == 'ran']) / len(tools) if tools else 1.0
@@ -508,10 +512,25 @@ VARIATION_CHECKS = [
 ]
 
 
+NO_TESTS_SAID = re.compile(r'\bno (?:test|tests|test files|automated tests)\b|\bhas no tests?\b|\bwithout (?:any )?tests\b'
+                           r'|\bzero test', re.I)
+
+
+def no_tests(rep: dict, cand_doc: dict | None) -> bool:
+    """True when the audited repository has no tests: scan_data.py recorded tests_found 0, or (without the candidates) no
+    inventoried source is test code."""
+    if cand_doc is not None and 'tests_found' in cand_doc:
+        return cand_doc['tests_found'] == 0
+    return not any(i.get('kind') in ('inline', 'support') for i in rep['inventory'])
+
+
 def check(rep: dict, cands: dict | None, runs: dict | None, repo: Path | None, evidence: Path | None, report_text: str,
-          paths: list[str] | None = None, candidates_path: Path | None = None) -> list[str]:
+          paths: list[str] | None = None, candidates_path: Path | None = None, cand_doc: dict | None = None) -> list[str]:
     errs = []
     fs = rep['findings']
+    if no_tests(rep, cand_doc) and not NO_TESTS_SAID.search(' '.join([rep['summary'].get('headline', '')] + rep['limitations'])):
+        errs.append('the repository has no tests (no test files were inventoried): the headline or a limitation must say there '
+                    'are no tests, so an empty audit is not read as clean test data')
     ids = [f['id'] for f in fs]
     if len(set(ids)) != len(ids):
         errs.append('findings: duplicate ids')
@@ -698,7 +717,7 @@ def main(argv=None) -> int:
         return 1
     runs = json.loads(args.runs.read_text(encoding='utf-8')) if args.runs else None
     errs = check(rep, cands, runs, args.repo.resolve() if args.repo else None, args.evidence, args.report.read_text(encoding='utf-8'),
-                 repo_paths(cand_doc), args.candidates)
+                 repo_paths(cand_doc), args.candidates, cand_doc=cand_doc)
     if errs:
         print('INVALID')
         for e in errs:

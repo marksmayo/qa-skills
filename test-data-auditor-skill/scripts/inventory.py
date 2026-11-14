@@ -71,7 +71,14 @@ SUPPORT_NAME = re.compile(r'^((vitest|jest|mocha|ava|karma|setup[-_.]?tests?|tes
 SUPPORT_DIRS = {'helpers', 'helper', 'test-helpers', 'test_helpers', 'support', 'test-support', 'test_support', 'test-utils',
                 'test_utils', 'testutils', 'testing-library', '__helpers__', 'utils'}
 GLOBAL_SETUP = re.compile(r'^(vitest|jest|setup[-_.]?tests?|test[-_.]?setup|setupTests)[-_.]', re.I)
+# source code under a --data-dir tree is code, not data: everything else there is listed (unknown formats as not_assessed)
+CODE_EXT = {'.py', '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.mts', '.cts', '.go', '.rb', '.java', '.kt', '.cs', '.php', '.rs',
+            '.swift', '.dart', '.c', '.h', '.cpp', '.sh'}
 MOBILE_ASSETS = re.compile(r'(^|/)(androidTest|test)/assets/|\.xctest|TestResources?/|(^|/)Fixtures/')
+
+
+NO_TESTS = ('no test files found (no pytest or JavaScript test files, no test functions in a test directory): the repository has '
+            'no tests, so there is no test data to audit; say so in the report instead of calling the audit complete')
 
 
 def walk(root: Path) -> list[str]:
@@ -155,6 +162,10 @@ def test_dirs_of(path: str) -> set[str]:
     return {seg for i, seg in enumerate(parts) if seg in TEST_DIRS and '/'.join(parts[:i + 1]) not in PRODUCT_DIRS}
 
 
+def in_data_dir(path: str) -> bool:
+    return any(path.startswith(d.rstrip('/') + '/') for d in DATA_DIRS)
+
+
 def in_test_area(path: str) -> bool:
     return bool(test_dirs_of(path)) or detect_conventions.is_test_file(path) or PurePosixPath(path).name == 'conftest.py' or \
         any(path.startswith(d.rstrip('/') + '/') for d in DATA_DIRS)
@@ -214,6 +225,8 @@ def kind_of(path: str) -> str | None:
         return None
     if (in_test_area(path) or MOBILE_ASSETS.search(path)) and (ext in DATA_EXT or ext in BINARY_EXT or ext in MEDIA_EXT):
         return 'fixture'
+    if in_data_dir(path) and ext not in CODE_EXT:
+        return 'fixture'          # a tree named with --data-dir: every file is listed, an unknown format as not_assessed
     return None
 
 
@@ -643,6 +656,10 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
         elif ext in MEDIA_EXT:
             entry.update(status='not_assessed', reason='image, font or media file: its contents (metadata included) are not read',
                          format=ext[1:])
+        elif k == 'fixture' and ext not in DATA_EXT and ext not in ('.xls',):
+            # a file under --data-dir in a format the inventory does not know (a save file, a custom binary): listed so the
+            # report cannot imply it was read
+            entry.update(status='not_assessed', reason=f'unknown format ({ext or "no extension"}): not read', format=ext[1:] or 'unknown')
         else:
             try:
                 entry['lines'] = count_lines(p)
@@ -694,6 +711,10 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
         extra['unlisted_data_dirs'] = unlisted
     if sampled:
         extra['sampled_dirs'] = sampled
+    if not tests:
+        # loud, like language_coverage: an empty inventory is not a clean one
+        extra['no_tests'] = True
+        extra['warnings'] = [NO_TESTS]
     return {'repo': root.name, 'data_dirs': sorted(DATA_DIRS), 'product_dirs': dict(sorted(PRODUCT_DIRS.items())),
             **extra, 'inventory': items, 'tests': tests,
             'summary': {'sources': len(items), 'by_kind': {k: len([i for i in items if i['kind'] == k])
@@ -720,6 +741,8 @@ def main(argv=None) -> int:
         print(f"WARNING: {u['dir']}/ holds {u['files']} data files ({u['bytes'] / 1e6:.1f} MB) that test code names "
               f"({', '.join(u['named_in'][:3])}{', ...' if len(u['named_in']) > 3 else ''}) but the inventory does not cover: "
               f"its personal data, time bombs and duplicates were NOT scanned. {u['hint']}.", file=sys.stderr)
+    for w in res.get('warnings', []):
+        print(f'WARNING: {w}', file=sys.stderr)
     for d, sm in res.get('sampled_dirs', {}).items():
         print(f"NOTE: {d}/ sampled: {sm['scanned']} of {sm['files']} data files scanned (the rest are not_assessed)",
               file=sys.stderr)

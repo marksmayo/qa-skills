@@ -36,7 +36,8 @@ from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
 SKILL = Path(__file__).resolve().parent.parent
-IMPACT = {'crash_b1': ('Fatal', 4), 'crash_b2': ('Fatal', 4), 'blank_screen': ('Fatal', 4), 'endless_loading': ('Stuck', 3),
+IMPACT = {'crash_b1': ('Fatal', 4), 'crash_b2': ('Fatal', 4), 'blank_screen': ('Fatal', 4), 'persisted_failure': ('Fatal', 4),
+          'endless_loading': ('Stuck', 3),
           'lost_input': ('Stuck', 3), 'no_recovery': ('Stuck', 3), 'chunk_failure': ('Stuck', 3), 'misleading_state': ('Misleading', 3),
           'silent_failure_write': ('Misleading', 3), 'silent_failure': ('Friction', 2), 'retry_storm': ('Friction', 2)}
 # fault groups where the request fails, so the user should be told; static assets have their own rule (chunk_failure,
@@ -87,6 +88,41 @@ def recovery_actions(step: dict) -> list[dict]:
     return rest or [{'refill': a['fill']} for a in step.get('actions', []) if 'fill' in a]
 
 
+def recovery_kind(step: dict) -> str:
+    """How recovery can repeat a step: `reload` when every action left to repeat is a page navigation (repeating a goto
+    reloads the page, and a reload is not recovery), otherwise `repeat_step`."""
+    acts = recovery_actions(step)
+    if acts and all('goto' in a and not str(a['goto']).startswith('#') for a in acts):
+        return 'reload'
+    return 'repeat_step'
+
+
+def glob_match(pattern: str, endpoint: str) -> bool:
+    return pattern == endpoint or bool(re.match('^' + re.escape(pattern).replace(r'\*\*', '.*').replace(r'\*', '[^/]*') + '$', endpoint))
+
+
+def optional_endpoint(scen: dict, step_def: dict | None) -> bool:
+    """The agent marked the endpoint optional for this step (a background widget the step does not need): the step's
+    `optional_endpoints` in flows.json, or `optional: true` on the scenario."""
+    if scen.get('optional'):
+        return True
+    return any(glob_match(p, scen['endpoint']) for p in (step_def or {}).get('optional_endpoints') or [])
+
+
+def persisted(scen: dict, st: dict, run: dict) -> dict | None:
+    """The failure outlived the fault: after the fault was removed and the page reloaded, the step made no request to
+    the endpoint, and the server never gave the endpoint a good answer in this run (a fresh browser context), so what
+    the app used came from the failure it stored (Cache Storage, IndexedDB, localStorage)."""
+    rl = st.get('reload')
+    if not rl or scen['group'] not in FAILING | {'static_asset'}:
+        return None
+    good = [q for q in run['requests'] if not q.get('injected') and isinstance(q.get('status'), int) and 200 <= q['status'] < 300]
+    if rl.get('endpoint_requests', 0) == 0 and not good and not rl.get('ok_responses'):
+        return {'reload_completed': bool(rl.get('completed')), 'endpoint_requests_after_reload': 0, 'good_responses_in_run': 0,
+                'cache_storage': (rl.get('cache_storage') or [])[:5]}
+    return None
+
+
 def self_aborted(q: dict) -> bool:
     return not q.get('injected') and 'ABORTED' in str(q.get('failure') or '').upper()
 
@@ -121,32 +157,49 @@ def effects(scen: dict, run: dict, base_step: dict, ind: dict, budgets: dict, st
                                  f'{scen["fault"]} body ({ob["body_len"]} visible characters); users would see the server\'s or edge\'s error '
                                  f'page, which this run does not test']})
         return out, notes
-    new_errors = [e for e in run['page_errors']]
-    boundary = bool(ob.get('boundary_element')) and not base_step['observed'].get('boundary_element')
-    crash = bool(ob['fallback_words']) or boundary or (bool(new_errors) and ob['root_len'] == 0)
+    bob = base_step['observed']
+    base_errors = set(base_step.get('page_errors') or [])
+    new_errors = [e for e in run['page_errors'] if e not in base_errors]
+    # a step whose baseline already showed under 20 characters (a canvas, a video, an image-only screen) cannot be
+    # judged blank by its text; neither can a screen showing a visible video, canvas or large image
+    base_blank = bob.get('body_len', 100) < 20
+    looks_blank = ob['body_len'] < 20 and not ob.get('media_visible') and not base_blank
+    root_gone = ob['root_len'] == 0 and bob.get('root_len', 1) > 0     # an app root that was empty in the baseline says nothing
+    boundary = bool(ob.get('boundary_element')) and not bob.get('boundary_element')
+    crash = bool(ob['fallback_words']) or boundary or (bool(new_errors) and root_gone)
+    if base_blank and ob['body_len'] < 20 and not crash:
+        notes.append({'kind': 'baseline_blank',
+                      'detail': [f'the baseline of this step already showed {bob.get("body_len")} visible characters, so a blank screen '
+                                 f'or crash cannot be told from success by text ({ob["body_len"]} now'
+                                 + (f'; new page errors: {"; ".join(new_errors[:2])}' if new_errors else '') + '): compare the screenshots']})
     if crash:
-        tier = 'crash_b1' if ob['body_len'] < 20 else 'crash_b2'
+        tier = 'crash_b1' if looks_blank else 'crash_b2'
         out.append({'effect': tier, 'measure': {'fallback_words': ob['fallback_words'], 'boundary_element': bool(ob.get('boundary_element')),
                                                 'page_errors': new_errors[:3], 'root_len': ob['root_len']}})
-    elif ob['body_len'] < 20:
-        out.append({'effect': 'blank_screen', 'measure': {'visible_chars': ob['body_len']}})
-    elif scen['group'] == 'static_asset' and ob['root_len'] < 20:
-        out.append({'effect': 'chunk_failure', 'measure': {'app_root_chars': ob['root_len'], 'request': (run['requests'] or [{}])[0]}})
-    has_error = bool(st['first_error_ms'] is not None or ob['error_element'] or set(ob['error_words']) - set(base_step['observed']['error_words']))
+    elif looks_blank:
+        out.append({'effect': 'blank_screen', 'measure': {'visible_chars': ob['body_len'], 'baseline_visible_chars': bob.get('body_len')}})
+    elif scen['group'] == 'static_asset' and ((ob['root_len'] < 20 and bob.get('root_len', 100) >= 20) or not st['completed_under_fault']):
+        # the app root emptied, or the step never completed although the static HTML stayed (the script that drives it is gone)
+        out.append({'effect': 'chunk_failure', 'measure': {'app_root_chars': ob['root_len'], 'step_completed': bool(st['completed_under_fault']),
+                                                           'request': (run['requests'] or [{}])[0]}})
+    has_error = bool(st['first_error_ms'] is not None or ob['error_element'] or set(ob['error_words']) - set(bob['error_words']))
     if ob['spinner'] and st['watched_ms'] >= budgets['spinner_ms'] and not has_error:
         out.append({'effect': 'endless_loading', 'measure': {'spinner_visible_after_ms': st['watched_ms'], 'loading_words': ob.get('loading_words', [])}})
-    base_text = base_step['observed']['text']
+    base_text = bob['text']
     new_empty = [w for w in ob['empty_words'] if w not in base_text.lower()]
     if not crash and scen['group'] in FAILING and not has_error:
-        gone = [x for x in base_step['observed'].get('controls', []) if x not in ob.get('controls', [])]
+        gone = [x for x in bob.get('controls', []) if x not in ob.get('controls', [])]
         if new_empty:
             out.append({'effect': 'misleading_state', 'measure': {'empty_state_words': new_empty, 'baseline_excerpt': base_text[:120],
                                                                  'shown_excerpt': ob['text'][:120]}})
-        elif scen['write'] and st['completed_under_fault']:
-            out.append({'effect': 'misleading_state', 'measure': {'shown_as_done': True}})
+        elif st['completed_under_fault'] and (scen['write'] or not optional_endpoint(scen, step_def)):
+            # the request failed, nothing said so, and the step's `done` showed: the failure was presented as success.
+            # On a read too, unless flows.json marks the endpoint optional for the step (a background widget)
+            out.append({'effect': 'misleading_state', 'measure': {'shown_as_done': True, 'on_read': not scen['write'],
+                                                                 'done': (step_def or {}).get('done')}})
         elif (not any(e['effect'] in ('endless_loading', 'blank_screen', 'chunk_failure') for e in out)
               and (scen['write'] or not st['completed_under_fault'] or gone)):
-            # a read whose step still completed, with every control the baseline showed, reached the user: no silent failure
+            # an optional endpoint's read whose step still completed, with every control the baseline showed: no silent failure
             out.append({'effect': 'silent_failure_write' if scen['write'] else 'silent_failure',
                         'measure': {'message_budget_ms': budgets['message_ms'], 'watched_ms': st['watched_ms'], 'error_shown': False,
                                     'controls_gone': gone[:10]}})
@@ -154,11 +207,22 @@ def effects(scen: dict, run: dict, base_step: dict, ind: dict, budgets: dict, st
         after = (st['inputs'].get('after_fault') or {}).get(field) or {}
         if before.get('length') and (after.get('length') == 0 or after.get('sha256') != before.get('sha256')):
             out.append({'effect': 'lost_input', 'measure': {'field': field, 'before': before, 'after': after}})
-    if not st['recovered'] and scen['group'] != 'latency' and st.get('recovery') == 'repeat_step' and step_def is not None \
+    pm = persisted(scen, st, run)
+    if pm:
+        out.append({'effect': 'persisted_failure', 'measure': pm})
+    # repeating a step whose only action is a navigation reloads the page (older runs recorded it as repeat_step)
+    reload_only = st.get('recovery') == 'reload' or (step_def is not None and st.get('recovery') == 'repeat_step'
+                                                      and recovery_kind(step_def) == 'reload')
+    if scen['group'] == 'latency':
+        pass
+    elif reload_only:
+        notes.append({'kind': 'recovery_not_tried', 'detail': ['the step\'s only action is a navigation, so repeating it reloads the page; '
+                                                                'a reload is not recovery, and whether the screen recovers without one is unknown']})
+    elif not st['recovered'] and st.get('recovery') == 'repeat_step' and step_def is not None \
             and not [a for a in step_def.get('actions', []) if 'fill' not in a]:
         notes.append({'kind': 'recovery_not_tried', 'detail': ['the step only types input, and recovery repeated it without re-typing, '
                                                                 'so nothing was sent again: whether the screen recovers is unknown']})
-    elif not st['recovered'] and scen['group'] != 'latency':
+    elif not st['recovered']:
         out.append({'effect': 'no_recovery', 'measure': {'recovery': st['recovery'], 'retry_controls': st['retry_controls']}})
     if run['requests']:
         m = storm(run['requests'], budgets)
@@ -191,7 +255,7 @@ def main() -> int:
         ind = (run.get('indicators') or {}).get(s['flow']) or fallback
         idx = next(i for i, st in enumerate(flows[s['flow']]['steps']) if st['name'] == s['step'])
         base_run = run['baselines'][s['flow']]['runs'][0]
-        base_step = dict(base_run['steps'][idx], console_errors=base_run['console_errors'])
+        base_step = dict(base_run['steps'][idx], console_errors=base_run['console_errors'], page_errors=base_run.get('page_errors') or [])
         seen: dict[str, list] = {}
         live = [r for r in entry['runs'] if r.get('fault_triggered', True)]
         for r in live:

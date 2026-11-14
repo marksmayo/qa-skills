@@ -51,7 +51,8 @@ def main() -> int:
     md, s = d['metadata'], d['summary']
     out = [P(f'# Test data audit: {md["repo"]}', BOLD),
            f'{s["files_scanned"]} files scanned, {s["not_assessed"]} not assessed | {len(d["findings"])} findings | '
-           f'audit date {md["today"]} | evidence completeness {100 * s["evidence_completeness"]:.0f}%', '',
+           f'audit date {md["today"]} | ' + (f'evidence completeness {100 * s["evidence_completeness"]:.0f}%' if d['inventory']
+                                              else 'no test data found: nothing was inventoried, so evidence completeness is 0%'), '',
            P(s['headline'], BOLD), '']
     if s.get('earliest_time_bomb_date'):
         out += [f'Earliest time bomb: {P(s["earliest_time_bomb_date"], RED)}', '']

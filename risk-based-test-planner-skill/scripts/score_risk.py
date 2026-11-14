@@ -77,6 +77,17 @@ SURFACES = json.loads((HERE.parent / 'data' / 'surfaces.json').read_text(encodin
 LIKELIHOOD = {'churn': 2, 'defects': 3, 'complexity': 1, 'change_in_scope': 2, 'test_weakness': 2}
 IMPACT = {'journey_criticality': 3, 'surface': 3, 'reach': 1}
 PRIORITY_SCORE = {'P0': 5, 'P1': 4, 'P2': 3, 'P3': 2}
+# journey-mapper's scale has no P0: its P1 is critical (the top), P2 important, P3 nice to have. A map whose journeys use
+# only P1-P3 is read on that scale, so its critical journeys score 5 like a P0 elsewhere.
+JOURNEY_MAPPER_SCORE = {'P1': 5, 'P2': 4, 'P3': 2}
+
+
+def priority_scale(journeys: list[dict]) -> tuple[dict, str]:
+    """(priority -> journey criticality, the scale's name) for the priorities a journey map uses."""
+    used = {j.get('priority') for j in journeys}
+    if journeys and 'P0' not in used and used <= set(JOURNEY_MAPPER_SCORE):
+        return JOURNEY_MAPPER_SCORE, 'journey-mapper scale: P1 critical = 5, P2 = 4, P3 = 2'
+    return PRIORITY_SCORE, 'P0 = 5, P1 = 4, P2 = 3, P3 = 2'
 SEVERE = {'critical', 'high'}
 UI_EXT = {'.tsx', '.jsx', '.vue', '.svelte'}
 STDLIB = set(getattr(sys, 'stdlib_module_names', ())) | {'__future__'}
@@ -550,7 +561,8 @@ def define_areas(root: Path, files: list[str], explicit: Path | None) -> tuple[l
 
 def default_areas(root: Path, files: list[str]) -> tuple[list[dict], str]:
     det = detect_conventions.Detector(root, 50_000).run(None)
-    all_source = [f for f in files if is_area_code(f)]
+    # generated and vendored files are excluded from scoring, so they never choose the main source directory
+    all_source = [f for f in files if is_area_code(f) and diff_scope.classify(f, '', False, root)[0] not in ('generated', 'vendored')]
     pkgs = sorted({a['root'] for a in det['areas'] if a['root'] != '.'})
     pkgs = [p for p in pkgs if any(f.startswith(p + '/') for f in all_source)]   # not an empty or unchecked-out package
     in_pkg = lambda f: any(f.startswith(p + '/') for p in pkgs)  # noqa: E731
@@ -1107,7 +1119,7 @@ def resolve_call(path: str, routes: list[tuple[list[str], str]]) -> str | None:
     return best[1] if best else None
 
 
-def journey_links(path: Path | None, files: list[str], imports) -> tuple[list[dict], dict]:
+def journey_links(path: Path | None, files: list[str], imports, hubs: set | None = None) -> tuple[list[dict], dict]:
     """Journeys and the repository files each one reaches, with how: the files its steps cite as evidence, the files of
     the surface items it covers (endpoints resolve to their route handlers), the route handler behind every
     "POST /api/x" note in its evidence, and one hop of imports from those files (a page or route handler reaches the
@@ -1151,6 +1163,8 @@ def journey_links(path: Path | None, files: list[str], imports) -> tuple[list[di
             if it and it.get('file'):
                 how.setdefault(it['file'], f'covers {iid}')
         for f in [f for f in how if f in fileset]:
+            if hubs and f in hubs:          # a module that creates the app or imports most areas links nothing by import
+                continue
             for g in imports(f):
                 how.setdefault(g, f'imported by {f}')
         out.append({'id': j['id'], 'title': j.get('title'), 'priority': j.get('priority'), 'files': sorted(how), 'how': how})
@@ -1411,14 +1425,23 @@ def score(args) -> dict:
     areas, area_basis = define_areas(root, files, args.areas)
     warnings = []
     excluded = []
+    kept_generated: dict[str, list[tuple[str, str]]] = {}
     for f in files:
         kind, why = diff_scope.classify(f, '', False, root)
-        if kind in ('generated', 'vendored') and area_of(f, areas):
+        if kind == 'generated' and args.areas and area_of(f, areas):
+            # an explicit area is the user's decision: its files are scored even when their name or directory looks
+            # generated (a committed, hand-written dist/), and a warning says so
+            kept_generated.setdefault(area_of(f, areas), []).append((f, why))
+        elif kind in ('generated', 'vendored') and area_of(f, areas):
             excluded.append({'path': f, 'reason': why})
         elif PurePosixPath(f).suffix in CODE_EXT and not is_test(f) and not is_area_code(f) and area_of(f, areas):
             excluded.append({'path': f, 'reason': 'tool configuration file' if CONFIG_NAME.match(PurePosixPath(f).name)
                              else 'documentation or examples directory'})
     excluded_paths = {e['path'] for e in excluded}
+    for aid, kept in sorted(kept_generated.items()):
+        warnings.append(f'area {aid}: {len(kept)} file(s) classified generated ({kept[0][1]}) are scored because --areas '
+                        f'names them ({", ".join(f for f, _ in kept[:4])}{" ..." if len(kept) > 4 else ""}); check they are '
+                        'hand-written source, or take the area out of --areas')
     owner = {f: area_of(f, areas) for f in files}
     # Source files no area covers are never dropped silently: they form the 'unassigned' area, and a warning names them.
     # Empty files (an empty __init__.py) and files outside the main source tree in the default layout are not counted.
@@ -1456,17 +1479,30 @@ def score(args) -> dict:
             reason = OUTSIDE_REASON
         outside.append({'path': f, 'reason': reason})
     excluded += outside
-    # Templates, styles and data records the scope changed that no area holds count nowhere: name them, by directory.
-    loose: dict[str, int] = {}
+    # Changed files the scope holds that no scored area counts (in no area, or excluded as generated, vendored, docs or
+    # root tooling) count nowhere: name them by directory and reason, with their changed lines, so a release whose
+    # content is all outside the areas never reads as "nothing in scope changed".
+    why_excluded = {e['path']: e['reason'] for e in excluded}
+    loose: dict[tuple[str, str], list[int]] = {}
     for sf in (scope or {}).get('files', []):
         sp = sf['path']
-        if is_area_asset(sp) and area_of(sp, areas) is None:
-            top = sp.split('/')[0] + '/' if '/' in sp else sp
-            loose[top] = loose.get(top, 0) + 1
-    if loose:
-        warnings.append(f'{sum(loose.values())} template, style or data file(s) changed in the scope are in no area and '
-                        'count nowhere: ' + ', '.join(f'{d} ({n})' for d, n in sorted(loose.items(), key=lambda x: -x[1])[:8])
-                        + '; add them to --areas to score their churn and change')
+        if is_test(sp) or PurePosixPath(sp).suffix not in CODE_EXT | ASSET_EXT:
+            continue
+        if area_of(sp, areas) is not None and sp not in why_excluded:
+            continue
+        top = sp.split('/')[0] + '/' if '/' in sp else sp
+        reason = why_excluded.get(sp) or ('a template, style or data file in no area' if is_area_asset(sp) else 'in no area')
+        acc = loose.setdefault((top, reason), [0, 0])
+        acc[0] += 1
+        acc[1] += (sf.get('lines_added') or 0) + (sf.get('lines_deleted') or 0)
+    scope_outside = [{'path': d, 'reason': r, 'files': n, 'lines': ln}
+                     for (d, r), (n, ln) in sorted(loose.items(), key=lambda x: (-x[1][1], x[0]))]
+    if scope_outside:
+        warnings.append(f'{sum(x["lines"] for x in scope_outside)} changed line(s) in {sum(x["files"] for x in scope_outside)} '
+                        'file(s) of the scope are in no scored area and count nowhere: '
+                        + ', '.join(f'{x["path"]} ({x["files"]} file(s), {x["lines"]} lines; {x["reason"]})' for x in scope_outside[:6])
+                        + '; no area\'s change in scope reflects them, so add them to --areas (or say in the plan why they '
+                        'need no testing) and lower the plan\'s confidence until they are scored')
     tooling = [e['path'] for e in outside if e['reason'] == OUTSIDE_REASON]
     if tooling:
         warnings.append(f'{len(tooling)} code file(s) outside the workspace packages and the main source tree are not scored '
@@ -1506,7 +1542,27 @@ def score(args) -> dict:
                                 f'the High floor')
     flaky_files = {i['test_file'] for inp in inputs if inp['skill'] == 'flaky' for i in inp['items']}
     imports = Imports(root, files)
-    journeys, jscope = journey_links(args.journeys, files, imports)
+    # Hub modules: a root module that creates the web app imports every module it wires up (some lazily, inside a
+    # function), and so does any module whose imports span most areas. Following one hop of imports out of a hub would
+    # hand every journey that cites it to every area, so journeys reach a hub's imports only by citing them.
+    hubs = {}
+    for f, why in root_app_modules(root, files).items():
+        hubs[f] = why
+    if len(areas) >= 3:
+        for f in files:
+            if f in hubs or PurePosixPath(f).suffix not in CODE_EXT or is_test(f):
+                continue
+            reached = {area_of(g, areas) for g in imports(f)} - {None, area_of(f, areas)}
+            if len(reached) > max(2, len(areas) // 2):
+                hubs[f] = f'imports {len(reached)} of {len(areas)} areas'
+    journeys, jscope = journey_links(args.journeys, files, imports, set(hubs))
+    if journeys and hubs:
+        skipped = sorted(h for h in hubs if any(h in j['files'] for j in journeys))
+        if skipped:
+            warnings.append('journey links do not follow imports out of hub module(s) '
+                            + ', '.join(f'{h} ({hubs[h]})' for h in skipped[:4])
+                            + ': a module a hub imports is linked to a journey only when the journey cites it')
+    scale, scale_name = priority_scale(journeys)
     have_map = jscope['present']
     usage = json.loads(args.usage.read_text(encoding='utf-8')) if args.usage else None
     bugs = []
@@ -1586,10 +1642,16 @@ def score(args) -> dict:
     coded = [k for k in live if raw[k]['code_files']]
     vals = lambda key, only=None, among=None: [raw[k][key] for k in (among or live) if (only is None or only(k))]  # noqa: E731
     hist_ok = not hist['shallow']
-    out_areas = []
+    out_areas, unscored = [], []
     for a in areas:
         r = raw[a['id']]
         if not r['files'] and not r['assets']:
+            under = [f for f in files if area_of(f, [a]) == a['id']]
+            gone = [f for f in under if f in excluded_paths]
+            reason = (f'all {len(gone)} file(s) under its paths are excluded ({why_excluded.get(gone[0], "excluded")})' if gone
+                      else f'{len(under)} file(s) under its paths, none of them code, templates, styles or data' if under
+                      else 'its paths match no file in the repository')
+            unscored.append({'id': a['id'], 'paths': a['paths'], 'reason': reason})
             continue
         no_code = not r['code_files']
         NO_CODE = (f'no code files: {len(r["assets"])} template, style or data file(s) only' if r['assets']
@@ -1675,9 +1737,10 @@ def score(args) -> dict:
         partial_note = (f'journey map is partial (domains: {", ".join(jscope["domains"]) if isinstance(jscope["domains"], list) else jscope["domains"]}'
                         f'; {len(jscope["out_of_scope_files"])} file(s) out of scope or not mapped this run) and does not map this area')
         if have_map and not unmapped:
-            best = max([PRIORITY_SCORE.get(j['priority'], 1) for j in linked], default=1)
+            best = max([scale.get(j['priority'], 1) for j in linked], default=1)
             f['journey_criticality'] = {'score': best, 'status': 'assessed',
-                                        'evidence': [f'{j["id"]} ({j["priority"]}) {j["title"]} - {j["areas"][a["id"]]}' for j in linked] or
+                                        'evidence': ([f'{j["id"]} ({j["priority"]}) {j["title"]} - {j["areas"][a["id"]]}' for j in linked]
+                                                     + ([f'priority scale: {scale_name}'] if scale is JOURNEY_MAPPER_SCORE else [])) if linked else
                                                     ['journey map present; no journey cites this area']}
         elif unmapped:
             f['journey_criticality'] = {'score': None, 'status': 'not_assessed', 'evidence': [partial_note]}
@@ -1733,6 +1796,10 @@ def score(args) -> dict:
         warnings.append(f'{len(blind)} area(s) hold only templates, styles or data and have no impact evidence (surface '
                         f'patterns read code): {", ".join(blind[:6])}; their band is Low only for want of evidence, so give '
                         'a journey map or --usage, or judge their impact in the plan')
+    for u in unscored:
+        if args.areas or u['id'] != 'unassigned':
+            warnings.append(f'area {u["id"]} is not scored: {u["reason"]}; it is listed in unscored_areas (no file to score '
+                            'is not low risk: fix its paths or say in the plan why it is out of scope)')
     if out_areas and all(a['factors'][k]['status'] == 'not_assessed' for a in out_areas for k in ('journey_criticality', 'reach')):
         warnings.append(SURFACE_ONLY_WARNING)
     rel_meta = None
@@ -1753,7 +1820,8 @@ def score(args) -> dict:
                                                ('Jira bug search', bool(args.defects))) if not ok],
             'journey_map_scope': ({'domains': jscope['domains'], 'partial': jscope['partial'],
                                    'out_of_scope_files': len(jscope['out_of_scope_files'])} if have_map else None),
-            'area_basis': area_basis, 'unassigned': unassigned, 'warnings': warnings + list(hist.get('notes') or []),
+            'area_basis': area_basis, 'unassigned': unassigned, 'unscored_areas': unscored, 'scope_outside_areas': scope_outside,
+            'warnings': warnings + list(hist.get('notes') or []),
             'excluded': excluded, 'flaky_tests_not_counted': flaky_skipped, 'tests_not_counted': tests_not_counted,
             'release': rel_meta, 'language_coverage': lang_cov,
             'weights': {'likelihood': LIKELIHOOD, 'impact': IMPACT}, 'areas': out_areas}
@@ -1849,6 +1917,20 @@ SELF_TEST_CASES = [
     ('.py', "slim = df.drop(columns=['notes'])", []),
     ('.py', 'df.drop(labels, axis=1, inplace=True)', []),
     ('.py', 'drop_table(conn, "sessions")', ['destructive']),
+    # PHP front controllers and integrations; files written from request data (Python, JavaScript, PHP)
+    ('.php', "$uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);", ['entry']),
+    ('.php', "if (isset($_POST['note'])) {", ['entry']),
+    ('.php', '$ch = curl_init($target);', ['external']),
+    ('.php', "$body = file_get_contents('https://assets.example.test/x');", ['external']),
+    ('.php', "file_put_contents($dir . '/' . $name, $data);", ['file_write']),
+    ('.php', "move_uploaded_file($_FILES['f']['tmp_name'], $dest);", ['entry', 'file_write']),
+    ('.py', 'with open(save_path, "wb") as fh:', ['file_write']),
+    ('.py', "with open(path, 'a', encoding='utf-8') as log:", ['file_write']),
+    ('.py', 'with open(path) as fh:', []),
+    ('.py', "with open(path, 'rb') as fh:", []),
+    ('.py', 'target.write_bytes(payload)', ['file_write']),
+    ('.js', 'fs.writeFileSync(target, body);', ['file_write']),
+    ('.ts', 'await fs.promises.appendFile(logPath, line);', ['file_write']),
 ]
 
 
@@ -1890,7 +1972,7 @@ def self_test() -> int:
         PRODUCT_DIRS.clear()
         PRODUCT_DIRS.update(saved)
         tmp.cleanup()
-    checks = go_layout_checks() + web_app_checks()
+    checks = go_layout_checks() + web_app_checks() + static_front_end_checks()
     bad += [name for name, ok in checks if not ok]
     for b in bad:
         print('FAIL ' + b)
@@ -1978,6 +2060,131 @@ def go_layout_checks() -> list[tuple[str, bool]]:
             out.append(('coverage 75% scores test weakness 2, 30% scores 4', coverage_score(0.75) == 2 and coverage_score(0.30) == 4))
         except Exception as e:                       # a missing function is a failed check, not a crash
             out.append((f'Go layout checks raised {type(e).__name__}: {e}', False))
+        finally:
+            PRODUCT_DIRS.clear()
+            PRODUCT_DIRS.update(saved[0])
+            if 'RUNNER_DIRS' in globals():
+                RUNNER_DIRS.clear()
+                RUNNER_DIRS.update(saved[1])
+    return out
+
+
+def static_front_end_checks() -> list[tuple[str, bool]]:
+    """A synthetic FastAPI server at the root that imports every helper module (one lazily inside a function), serving
+    a committed front end from dist/ (no package.json, no bundler) whose files carry the scope's changes, a PHP front
+    controller beside it, an upload module writing files from the request, and a journey map on journey-mapper's
+    P1-P3 scale. Explicit areas under dist/ must be kept, not dropped; changed lines no area counts must be named;
+    the root app module must not hand every journey to every module it imports; journey-mapper's P1 is critical."""
+    import tempfile
+    out: list[tuple[str, bool]] = []
+    saved = (set(PRODUCT_DIRS), set(RUNNER_DIRS) if 'RUNNER_DIRS' in globals() else set())
+    layout = {
+        'server.py': ('import argparse\nfrom fastapi import FastAPI\nfrom fastapi.staticfiles import StaticFiles\n'
+                      'from extras import uploads, cache\n\napp = FastAPI()\napp.include_router(uploads.router)\n\n\n'
+                      '@app.get("/assets/{path:path}")\nasync def assets(path: str):\n    return cache.fetch(path)\n\n\n'
+                      'def unpack(url):\n    from tools.packer import unpack_all\n    return unpack_all(url)\n\n\n'
+                      'app.mount("/", StaticFiles(directory="dist"), name="dist")\n'),
+        'extras/__init__.py': '',
+        'extras/uploads.py': ('from fastapi import APIRouter, UploadFile\n\nrouter = APIRouter()\n\n\n'
+                              '@router.post("/upload")\nasync def upload(token: str, file: UploadFile):\n'
+                              '    save_path = "saves/" + token\n    with open(save_path, "wb") as fh:\n'
+                              '        fh.write(await file.read())\n    return {}\n'),
+        'extras/cache.py': 'def fetch(path):\n    if not path:\n        return None\n    return path\n',
+        'tools/__init__.py': '',
+        'tools/packer.py': 'def unpack_all(url):\n    for part in url.split("/"):\n        print(part)\n',
+        'dist/index.html': '<!doctype html><button id="go">Go</button><script src="app.js"></script>\n' * 3,
+        'dist/app.js': ''.join(f'function step{i}() {{ if (window.x) {{ return {i}; }} return 0; }}\n' for i in range(30)),
+        'dist/modules/loader.js': 'export const load = () => fetch("/assets/a.bin");\n',
+        **{f'dist/modules/part{i}.js': f'export const part{i} = (x) => x + {i};\n' for i in range(4)},
+        'index.php': ("<?php\n$uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);\n"
+                      "if (preg_match('#^/assets/(.*)#', $uri, $m)) {\n    $ch = curl_init('https://assets.example.test/' . $m[1]);\n}\n"),
+        '.htaccess': 'RewriteEngine On\nRewriteRule ^.*$ index.php [L]\n',
+        'requirements.txt': 'fastapi\n',
+        'web/lib/chart.min.js': 'var c=function(a){return a+1};' * 40 + '\n',
+    }
+    changed = {'dist/app.js': 200, 'dist/index.html': 20, 'extras/cache.py': 3}
+    journey_map = {'journeys': [
+        {'id': 'JRN-PLAY-001', 'title': 'Open the app and start', 'priority': 'P1', 'covers': [],
+         'steps': [{'evidence': [{'file': 'server.py', 'line': 9}]}]},
+        {'id': 'JRN-OPS-001', 'title': 'Operator unpacks an archive', 'priority': 'P3', 'covers': [],
+         'steps': [{'evidence': [{'file': 'tools/packer.py', 'line': 1}]}]}]}
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        for rel, text in layout.items():
+            p = root / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(text, encoding='utf-8')
+        files = sorted(layout)
+        hist = {'repo': 'kiosk', 'head': 'abc123', 'shallow': False, 'notes': [], 'command': 'git log',
+                'window': {'days': 180, 'from': '2026-05-01', 'to': '2026-11-01', 'head_date': '2026-11-01'},
+                'excluded_formatting': [], 'summary': {'commits': 1, 'fix_commits': 0, 'formatting_commits': 0},
+                'commits': [{'sha': 'c1', 'date': '2026-10-01', 'author': 'A', 'subject': 'Add touch controls', 'fix': False,
+                             'keys': [], 'formatting': False,
+                             'files': [{'path': p, 'added': n, 'deleted': 0} for p, n in changed.items()]}],
+                'files': {f: {'commits': 0, 'lines_added': 0, 'lines_deleted': 0, 'authors': [], 'fix_commits': [],
+                              'formatting_commits': [], 'first_commit': '2026-01-01'} for f in files}}
+        for p, n in changed.items():
+            hist['files'][p].update(commits=1, lines_added=n, authors=['A'])
+        cx = {'files': {f: {'loc': len(layout[f].splitlines()), 'branches': layout[f].count('if '), 'method': 'regex'}
+                        for f in files if f.endswith(('.py', '.js', '.php'))}}
+        scope = {'source': {'kind': 'git', 'base_ref': 'v1', 'command': 'git diff'},
+                 'files': [{'path': p, 'status': 'modified', 'kind': 'source', 'lines_added': n, 'lines_deleted': 0}
+                           for p, n in changed.items()]}
+        (root / '_in').mkdir()
+        for name, data in (('history.json', hist), ('complexity.json', cx), ('scope.json', scope),
+                           ('journeys.json', journey_map)):
+            (root / '_in' / name).write_text(json.dumps(data), encoding='utf-8')
+        (root / '_in' / 'areas.json').write_text(json.dumps({'areas': [
+            {'id': 'server', 'paths': ['server.py']}, {'id': 'uploads', 'paths': ['extras/uploads.py']},
+            {'id': 'cache', 'paths': ['extras/cache.py']}, {'id': 'packer', 'paths': ['tools']},
+            {'id': 'front end', 'paths': ['dist']}, {'id': 'php', 'paths': ['index.php']},
+            {'id': 'docker', 'paths': ['deploy/docker']}, {'id': 'vendor bundle', 'paths': ['web/lib']}]}), encoding='utf-8')
+
+        def run(areas: bool) -> dict:
+            ns = argparse.Namespace(repo=root, history=root / '_in' / 'history.json', complexity=root / '_in' / 'complexity.json',
+                                    scope=root / '_in' / 'scope.json', journeys=root / '_in' / 'journeys.json', input=[],
+                                    usage=None, areas=(root / '_in' / 'areas.json') if areas else None, defects=None,
+                                    finding_area=[], release=None, coverage=[])
+            return score(ns)
+        try:
+            PRODUCT_DIRS.clear()
+            set_runner_dirs(root, files)
+            res = run(True)
+            got = {a['id']: a for a in res['areas']}
+            out.append((f'an explicit area under dist/ is scored, not dropped (got {sorted(got)})', 'front end' in got))
+            unscored = {u['id']: u for u in res.get('unscored_areas', [])}
+            out.append((f'an explicit area matching no file is listed in unscored_areas and warned about (got '
+                        f'{res.get("unscored_areas")})', 'docker' in unscored
+                        and any('docker' in w and 'no file' in w for w in res['warnings'])))
+            out.append((f'an explicit area whose files are classified generated says so in a warning (got {res["warnings"]})',
+                        any('vendor bundle' in w and 'generated' in w for w in res['warnings'])))
+            srv = got.get('server', {}).get('factors', {}).get('journey_criticality', {})
+            out.append((f'journey-mapper\'s P1 (critical, the top of its P1-P3 scale) scores 5 (got {srv})',
+                        srv.get('score') == 5))
+            pk = got.get('packer', {}).get('factors', {}).get('journey_criticality', {})
+            out.append((f'a module the root app module imports does not inherit every journey that cites the app '
+                        f'(got {pk})', pk.get('score') == 2 and not any('server.py' in e for e in pk.get('evidence', []))))
+            php = got.get('php', {})
+            out.append((f'a PHP front controller is a public entry point with an external integration (got '
+                        f'{php.get("surfaces")})', {'entry', 'external'} <= set(php.get('surfaces') or [])))
+            up = got.get('uploads', {})
+            out.append((f'a file written from request data is a file_write surface (got {up.get("surfaces")})',
+                        'file_write' in (up.get('surfaces') or [])))
+            res = run(False)
+            outside = res.get('scope_outside_areas') or []
+            # the served dist/ is source under the shared build-output rule, so its changed lines are counted in an
+            # area; what is left outside (a stray module tree) must still be listed with its reason and warned about
+            out.append((f'changed lines no area counts are listed with their reason and warned about (got {outside}, '
+                        f'{res["warnings"]})', bool(outside) and all(x.get('reason') and x.get('lines') for x in outside)
+                        and any('changed line' in w and outside[0]['path'] in w for w in res['warnings'])))
+            out.append((f'changed lines in a served dist/ are counted in an area, not left outside (got {outside})',
+                        not any(x['path'].startswith('dist') for x in outside)))
+            basis = res['area_basis']
+            counted = {f for a in res['areas'] for f in [a['id']]}
+            out.append((f'the default areas never pick a main source directory whose files are all excluded (basis '
+                        f'{basis!r}, areas {sorted(counted)})', not ('main source directory dist/' in basis
+                                                                       and all(e['path'].startswith('dist/') for e in res['excluded'] if e['path'].startswith('dist/'))
+                                                                       and not any(a['id'].startswith('dist') or a['id'] in ('modules', 'dist (top level)') for a in res['areas']))))
         finally:
             PRODUCT_DIRS.clear()
             PRODUCT_DIRS.update(saved[0])

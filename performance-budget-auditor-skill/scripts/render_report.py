@@ -127,6 +127,11 @@ def main() -> int:
         for f in d['findings']:
             out.append(f'{P(f["id"], BOLD)} {P(f["priority"] + " " + f["severity"], SEV[f["severity"]])} {f["metric"]} '
                        f'{tpl(f)}: {f["title"]}')
+        if d['needs_review']:
+            out += ['', P('Needs review:', BOLD)] + [f'- {n["candidate_id"]}: {n["reason"]}' for n in d['needs_review']]
+        # the brief keeps what the numbers do not cover (warm runs that were not warm, a game that never loaded)
+        if d['limitations']:
+            out += ['', P('Limitations:', BOLD)] + [f'- {x}' for x in d['limitations']]
         print('\n'.join(out))
         return 0
     rows: dict[tuple, dict] = {}
@@ -196,6 +201,15 @@ def main() -> int:
                 (', '.join(f'{k} {v["requests_median"]} ({fmt(v["bytes_median"], "bytes")})' for k, v in r['classes'].items()) or 'none') +
                 ('; repeated: ' + ', '.join(f'{x["path"]} in {x["runs"]} run(s)' for x in r['repeated_fetches']) if r['repeated_fetches'] else '')
                 for r in d['request_summary']]
+    if d.get('warm_cache'):
+        out += ['', P('## Warm cache', BOLD), ''] + [
+            f'- {path_of(w["url"])} {w["profile"]}: ' + ('the warm loads used the HTTP cache' if w['effective'] else
+                                                          P(f'NOT WARM: {w["reason"]}', RED)) for w in d['warm_cache']]
+    if d.get('delivery'):
+        out += ['', P('## Compression and cache lifetime', BOLD), ''] + [
+            f'- {path_of(x["url"])} {x["profile"]} {x["cache"]}: {len(x["uncompressed"])} text resource(s) sent uncompressed '
+            f'({fmt(x["uncompressed_bytes"], "bytes")}), {len(x["no_cache_lifetime"])} of {x["checked"]} with no cache lifetime'
+            for x in d['delivery']]
     if d['regressions']:
         out += ['', P('## Against the baseline', BOLD), '']
         for r in d['regressions']:

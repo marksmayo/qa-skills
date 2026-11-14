@@ -29,6 +29,20 @@ def contrast_data(ctx, check=None):
     return {'contrast': ctx, **({'axe_check': check} if check else {})}
 
 
+VIEWPORT_META = {'xpath': '/html/head/meta[@name="viewport"]', 'sig': 'head > meta[name=viewport]',
+                 'selector': 'meta[name="viewport"]'}
+VIEWPORT_META_RULES = {('axe-core', 'meta-viewport'), ('ibm-equal-access', 'meta_viewport_zoomable'),
+                       ('probe', 'resize_text.zoom_disabled')}
+VIEWPORT_META_HTML = re.compile(r'''<meta\b[^>]*\bname\s*=\s*["']?viewport''', re.I)
+
+
+def is_viewport_meta(kw: dict, el: dict) -> bool:
+    """A result about the viewport meta element (zoom disabled), whichever engine or probe reported it."""
+    if (kw.get('tool'), kw.get('rule_id')) in VIEWPORT_META_RULES:
+        return True
+    return bool(VIEWPORT_META_HTML.search(el.get('html') or kw.get('html') or ''))
+
+
 SENTINEL_HTML = re.compile(r'data-(?:[a-z-]*-)?focus-?guard|data-focus-trap-sentinel', re.I)
 
 
@@ -91,8 +105,15 @@ class Norm:
         return self.evidence.setdefault(sc, {'tool_rule_passes': {}, 'htmlcs_notices': 0, 'probe_checks': 0, 'probe_failures': 0, 'probe_cant_tell': 0})
 
     def add(self, rec: dict, **kw):
-        scs, kind, related = self.classify(kw.pop('sc'), kw.pop('kind', 'wcag'))
         el = kw.pop('el', None) or {}
+        if is_viewport_meta(kw, el) and kw.get('kind', 'wcag') == 'wcag':
+            # axe meta-viewport, IBM meta_viewport_zoomable, an HTMLCS message on the viewport meta and the
+            # resize_text probe all report one root cause, zoom disabled (1.4.4): one component, one pattern
+            kw['sc'] = sorted(set(kw['sc']) | {'1.4.4'})
+            kw['pattern'] = '1.4.4-zoom-disabled'
+            el = {**el, 'xpath': VIEWPORT_META['xpath'], 'sig': VIEWPORT_META['sig'],
+                  'selector': el.get('selector') or VIEWPORT_META['selector']}
+        scs, kind, related = self.classify(kw.pop('sc'), kw.pop('kind', 'wcag'))
         item = {
             'id': f'N-{len(self.items) + 1:04d}', 'tool': kw['tool'], 'tool_version': self.versions.get(kw['tool']),
             'rule_id': kw['rule_id'], 'act_rules': kw.get('act_rules', []), 'sc': scs, 'related_sc': related,
@@ -369,6 +390,12 @@ class Norm:
                 self.probe(rec, 'language.mismatch', 'failed', html=f"<html lang=\"{lg['lang']}\">",
                            message=f"lang=\"{lg['lang']}\" but the page text reads as '{lg['detected']}' ({lg['words']} words)",
                            data={'counts': lg.get('counts')})
+            elif (lg.get('script') or {}).get('mismatch'):
+                sc_ = lg['script']
+                self.probe(rec, 'language.mismatch', 'failed', html=f"<html lang=\"{lg['lang']}\">",
+                           message=(f"lang=\"{lg['lang']}\" (written in {sc_['expected']} script) but {round(100 * sc_['share'])}% "
+                                    f"of the page's {sc_['letters']} letters are {sc_['dominant']}"),
+                           data={'script': sc_})
 
     def run_dir(self, d: Path):
         for f in sorted((d / 'raw').glob('*.json')):

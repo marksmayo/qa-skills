@@ -502,5 +502,8 @@
   }
  },
  "duplicates": [],
- "not_parsed": []
+ "not_parsed": [],
+ "skipped_dirs": [],
+ "files_seen": 12,
+ "include": []
 }

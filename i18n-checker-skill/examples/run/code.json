@@ -119,5 +119,7 @@
   "STOREFRONT",
   "URL",
   "Wander"
- ]
+ ],
+ "files_scanned": 7,
+ "skipped_dirs": []
 }

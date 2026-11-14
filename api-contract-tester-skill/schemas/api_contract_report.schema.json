@@ -139,7 +139,7 @@
         {"type": "object", "additionalProperties": false,
          "required": ["source", "frameworks", "contract_prefix", "handlers_found", "counts", "issues"],
          "properties": {
-           "source": {"type": "string"},
+           "source": {"type": "string", "description": "handlers.json's `tool` value (\"handler_map.py\"), not a file path"},
            "frameworks": {"type": "array", "items": {"type": "string"}},
            "contract_prefix": {"type": "string"},
            "handler_prefix": {"type": "string"},

@@ -37,9 +37,10 @@
             "partial_run",
             "reports_only",
             "static_only",
-            "not_executable"
+            "not_executable",
+            "no_tests"
           ],
-          "description": "Strongest execution evidence: every test layer was run during the assessment (full_run); some layers or tests were run and at least one layer was not (partial_run); credible existing reports were read instead (reports_only); nothing was run and no reports exist (static_only); or discovery or execution was attempted and failed with no credible reports (not_executable)."
+          "description": "Strongest execution evidence: every test layer was run during the assessment (full_run); some layers or tests were run and at least one layer was not (partial_run); credible existing reports were read instead (reports_only); nothing was run and no reports exist (static_only); or discovery or execution was attempted and failed with no credible reports (not_executable); or discovery ran and found no tests at all, so the absence is verified (no_tests: record the discovery run in execution_result with zero counts; not provisional)."
         },
         "generated_at": {
           "type": "string"

@@ -183,3 +183,28 @@ journey-mapper-skill/
           validate_journey_map.py  render_report.py
   examples/journeys/…                    # complete sample output incl. journey_map.json
 ```
+
+### v1.4.0: a FastAPI server with a hand-written static front end in dist/
+
+Found on a FastAPI server serving a committed, framework-less front end from `dist/` through
+`StaticFiles`, with a PHP front controller beside it and no tests. Red/green checks in
+`extract_surface.py --self-test` (`self_test_static_site`, a synthetic kiosk app) and
+`validate_journey_map.py --self-test`.
+
+- The static front end gave 0 routes, screens and goals: plain `.html` pages are now routes,
+  `context.static_pages` lists their controls, links, scripts and `fetch()` calls, URL parameters
+  read with `URLSearchParams` are entry points and `localStorage.setItem` writes weak goals.
+- `dist/` was skipped silently: build-output folders are skipped only when something produces them
+  (`stats.skipped_build_dirs`, stderr, `--include DIR`); a committed one nothing produces is read
+  (`stats.source_build_dirs`). The shared census rule for `dist/` is a separate change.
+- `GET /` returning `HTMLResponse` was an API endpoint: it is a web route (`fastapi-view`).
+- `StaticFiles` mounts are routes; routes, includes and mounts under an `if` carry `condition`;
+  FastAPI middleware is listed in `context.guards`; flags-only argparse programs and `sys.argv[1]`
+  dispatch are command-line entry points; PHP front controllers are read by pattern and named in
+  the limitations. The readers live in `scripts/py_extras.py`, an identical copy of the test suite
+  evaluator's (a candidate for `shared/`).
+- The validator refused a journey about a guard with no `covers`: `covers` may be empty with a
+  `covers_reason`. Steps may record `observed` (result, run, at) apart from `expect`.
+- Not done: the Markdown journey format (shared) does not render `observed`; click handlers are not
+  traced; an `unintended_exposure` orphan reason.
+

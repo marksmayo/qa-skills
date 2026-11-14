@@ -256,6 +256,44 @@ app behind an OIDC sign-in.
   its origin. Metadata records counts only. Pages in a signed-in session aren't
   Playwright-traced unless `trace_with_auth` is set, because traces hold cookies and tokens.
 
+### Committed front ends, generated code and FastAPI idioms (2026-11-15)
+
+Found by running the skills on a FastAPI server that serves a committed, hand-written front end from
+`dist/` with `StaticFiles`, holds Emscripten loader glue next to it and has a PHP front controller.
+
+- **`lang_census.py`** no longer drops `dist/` (or `build/`, `out/`, `obj/`) by name. `BuildEvidence`
+  decides each such folder: build output when it is gitignored and untracked, produced by a build
+  config in the repository (a package.json build tool, script or entry point, a bundler config, a
+  tsconfig `outDir`, Python packaging, a .NET project), or full of source maps and minified bundles;
+  source when the app serves it (StaticFiles, Flask `static_folder`, `express.static`, `http.Dir`, a
+  PHP or `.htaccess` docroot) or it is git-tracked and hand-written. With no evidence either way it
+  stays build output. `census()` lists every decision under `build_output`, takes `include=` (CLI
+  `--include DIR`) and records it under `included`; `build_output_dirs(root)` and
+  `is_build_output(root, dir)` give skills the same answer for their own walks, and
+  `build_output_decision(root, dir, include, exclude)` returns `{dir, decision, reason, source_files}`
+  for a skill to record. `detect_conventions.py` walks with the same rule (`build_output` in its
+  output, a limitation per folder left out, `--include DIR`), so it now ships with `lang_census.py`
+  in every skill that carries it. Generated JavaScript
+  (minified, a bundler's runtime, Emscripten glue, file-packager manifests) is counted under
+  `generated`, not as hand-written code, without hiding its folder. `language_coverage()` adds
+  `notes`: each unsupported language with example files (a lone PHP file is named), folders counted
+  as source and why, generated files, and build-output folders left out that hold a supported
+  language (also named in the warning, with the `--include` to use).
+- **`diff_scope.py`** classifies files under `dist/` and `build/` with the same rule (it now ships
+  with `lang_census.py`), so a served front end is `source`/`markup` with the evidence in the
+  reason, and generated JavaScript anywhere is `generated`.
+- **`py_routes.py`** returns `static_mounts` (`app.mount(path, StaticFiles(directory=...))`,
+  Starlette `Mount`, a Flask `static_folder`), `app_mounts`, both again in one `mounts` list
+  (`{path, file, line, app, static, directory, condition}`), and `middleware`; routes registered
+  under `if` carry `condition` (`if args.debug (server.py:28)`), and `{path:path}` / `<path:x>` routes carry `params` and
+  `catch_all`. `python py_routes.py --self-test` checks them.
+- **`browser_harness.py`**: Playwright routing turns the HTTP cache off, so `metadata()['http_cache']`
+  says `disabled`; `http_cache: 'keep'` (Chromium) guards each page through its own CDP `Fetch`
+  session instead, with the same third-party, write and budget rule (`decide()`), and the cache stays
+  on (worker requests are not intercepted then; the DNS guard still applies). Every `screenshot()`
+  records the effective viewport against the planned one (`viewports`, `matches_planned`), so a page
+  that went fullscreen is visible to layout comparisons.
+
 ---
 
 # Journey Markdown format (`JOURNEY_FORMAT.md`)

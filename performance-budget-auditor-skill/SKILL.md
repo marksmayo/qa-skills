@@ -1,7 +1,7 @@
 ---
 name: performance-budget-auditor
 description: Measure web pages in a real browser against a performance budget, as lab data. Core Web Vitals (LCP, CLS, INP) with web-vitals' attribution, TBT, FCP, TTFB and bytes per resource type, each page run several times under fixed network and CPU profiles, with median, range and coefficient of variation. Each over-budget metric is pointed at its cause (the LCP element and its resource, the layout shift's target, the scripts in long tasks, the slow interaction handler, the largest downloads and unused JavaScript, Server-Timing for slow responses), rated, and compared with a baseline when one is given. Never calls a site fast: the best verdict is "within budget in the lab, under the tested profiles; field performance not established".
-version: 1.2.0
+version: 1.3.0
 ---
 
 # Performance budget auditor
@@ -126,7 +126,12 @@ It records the machine and a CPU calibration, timed again at the end of the run.
 reference for this machine (the fastest calibration stored in the asset cache, or
 `--calibration-reference MS`), or when the start and end calibrations are 1.5x or more apart. A
 steady load (another process using the CPU throughout) gives a low CV, so without a reference the
-calibration's `note` says a steady load would not show: never call that machine idle. A busy
+calibration's `note` says a steady load would not show: never call that machine idle. A steady load
+also looks calm to the calibration, so the first idle reference is stored only with
+`--record-reference` (run it on a machine you know is idle); after that a calm run (not busy, CV
+within 0.03, start and end within 1.1x) only ever lowers it, and `calibration.reference_update` says
+what happened. An `--append` pass calibrates again and is kept beside the earlier ones under
+`calibration.passes`; the file is busy when any pass was. A busy
 machine inflates every CPU-bound number (LCP, TBT, INP under CPU throttling). Then per page, variant, profile and cache mode: a warm-up, N measured runs in fresh
 contexts, extra runs while a budgeted metric is unstable (up to `max_runs`), and one diagnostic run
 with the trace, filmstrip (until the later of load and the final LCP, plus 500 ms) and JavaScript
@@ -136,7 +141,15 @@ summary (framework prefetches such as Next.js `?_rsc=`, fetch/XHR counts, fetch 
 within a load), which the 12 largest resources kept per run would hide. Cold runs block service workers (`"service_workers": "block"`
 blocks them for warm runs too). Requests to third-party hosts are blocked and listed in
 `blocked_requests` unless the plan says `"third_party": "allow"`. Interactions run after the page
-settles, for INP.
+settles, for INP. In Chromium, the requests an interaction starts (a video, the modules a "play"
+button loads) are counted apart, until the network has been quiet for 0.5 s (at most 10 s):
+`transfer_interaction` (a metric a budget can set, in bytes) and `interaction_resources`; the load's
+`transfer_total` no longer includes them. Each resource also records its response headers
+(`headers`: content-encoding, cache-control, whether a validator exists, expires). A warm run checks
+that its second load used the HTTP cache (`cache_check`: resources from the disk or memory cache or
+revalidated with a 304); a harness that routes every request can disable the cache (Playwright
+turns it off under request interception, and the harness metadata then says `http_cache: disabled`),
+and a warm mode that never hit the cache measured a cold load twice.
 
 ### 4. Attribute and rate
 
@@ -152,7 +165,15 @@ Statistics and statuses per metric, Server-Timing per route, and one candidate p
 cause), rated by `RUBRIC.md`. A cause shared by several templates (the same script, stylesheet,
 image, server step or element with an id or class, such as a banner in the root layout) is one
 site-wide candidate listing every page, so its reach counts them all. It also writes
-`blocked_first_party`, `cdn_cache` and `request_summary`, which go into the report unchanged.
+`blocked_first_party`, `cdn_cache`, `request_summary`, `warm_cache` (per page measured warm: whether
+the warm loads used the HTTP cache) and `delivery` (per page whose runs recorded headers: text
+resources of 1 KB or more sent without compression, and first-party resources with no cache
+lifetime), which go into the report unchanged. A transfer cause says when its largest resource was
+sent uncompressed. A metric unstable with its median under the budget is a candidate too (key
+`unstable:<metric>`, low confidence, so needs_review): its cause gives the range, the runs furthest
+from the median and the calibration state, for the triage to say whether the page or the machine
+varied. Uncompressed text and missing cache lifetimes are remediations for a weight budget even
+when the budget passes: name them in the limitations or next steps.
 
 An LCP element inside a `position: fixed` overlay, or a text LCP painted more than 500 ms after
 load with no resource, is named as such in the cause: usually a consent banner, a modal or a
@@ -212,10 +233,12 @@ Fix every validator error; never edit the runs.
   budget source and note (as in `candidates.json`), runs, `min_runs`, `max_runs`, cache modes,
   browsers, `authorised_by`, `third_party` (as in `candidates.json`; required when the run
   recorded it) and `blocked_first_party` (required when any were blocked).
-- `cdn_cache[]` and `request_summary[]` (as in `candidates.json`; required when the runs recorded
-  them).
+- `cdn_cache[]`, `request_summary[]`, `warm_cache[]` and `delivery[]` (as in `candidates.json`;
+  required when the runs recorded them).
 - `metadata`: machine, calibration, tools (web-vitals with SHA-256, Playwright browsers,
-  Lighthouse), and the measurements file.
+  Lighthouse), the measurements file, and `metadata.harness`: the measurements' `harness` record
+  copied unchanged (the shared browser harness's metadata: CSP bypass, read-only mode, third-party
+  mode, request budget and totals), required when the measurements carry it.
 - `headline`: verdict, `data_kind: "lab"`, a summary, over-budget counts per metric, unstable count,
   evidence completeness and overall confidence.
 - `measurements[]` (exactly as `attribute.py` computes them), `server_timing[]`, `findings[]`,
@@ -230,6 +253,8 @@ an interaction; Chromium-only metrics are `not_supported` elsewhere. Evidence fi
 `scope.third_party` matches the run, and blocked third-party requests are named as not measured in
 the limitations; blocked first-party requests are listed and named in the limitations; a remote
 target has a limitation about the warm CDN; the run cap and variants match the config; a metric
-unstable at the cap says so. Field
+unstable at the cap says so; `warm_cache` and `delivery` follow from the runs, and warm runs that
+did not use the HTTP cache need a limitation saying so (warm and cache). `--write-summary` fills
+the computed headline fields, so a draft may leave them out. Field
 data stays out of the measurements. web-vitals is the pinned build. The check is structural:
 timings depend on the machine, so a rerun gives different numbers.

@@ -56,7 +56,7 @@ HERE = Path(__file__).resolve().parent
 SKILL = HERE.parent
 sys.path.insert(0, str(HERE))
 from browser_harness import Harness, check_authorised, NotAuthorised, now, is_loopback  # noqa: E402
-from classify import recovery_actions  # noqa: E402
+from classify import recovery_actions, recovery_kind  # noqa: E402
 
 TEXT = """(root) => { const r = root ? document.querySelector(root) : null;
   return {body: document.body ? document.body.innerText : '', root: r ? r.innerText : null, root_exists: !!r}; }"""
@@ -64,6 +64,10 @@ VISIBLE_ANY = """(sels) => sels.some(s => { try { return [...document.querySelec
   const cs = getComputedStyle(e); return b.width > 0 && b.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none'; }); } catch (x) { return false; } })"""
 VISIBLE_TEXT = """(sels) => sels.some(s => { try { return [...document.querySelectorAll(s)].some(e => e.getBoundingClientRect().width > 0 && e.innerText.trim()); }
   catch (x) { return false; } })"""
+# a visible video, canvas or image of at least 200x200 px: a screen that shows media is not blank for want of text
+MEDIA = """() => [...document.querySelectorAll('video, canvas, img, svg, picture, iframe')].some(e => { const b = e.getBoundingClientRect();
+  const cs = getComputedStyle(e); return b.width >= 200 && b.height >= 200 && cs.visibility !== 'hidden' && cs.display !== 'none'
+  && Number(cs.opacity) > 0.05; })"""
 # cut by code point (Array.from), never by UTF-16 unit: String.slice can split an emoji (a flag in a link's text)
 # into a lone surrogate, which no UTF-8 writer accepts
 CLIP_JS = "(s) => Array.from(s).slice(0, 40).join('')"
@@ -223,6 +227,31 @@ def done(page, selector: str, timeout_ms: int = 0) -> bool:
         return False
 
 
+def step_done(page, step: dict, timeout_ms: int = 0) -> bool:
+    """The step's `done` selector is visible and none of its `done_not` selectors is: a step can say "done only if the
+    data really arrived" (no error text, no fallback) when the app shows its `done` on failure too."""
+    if not done(page, step['done'], timeout_ms):
+        return False
+    nots = step.get('done_not') or []
+    return not any(done(page, s, 1) for s in ([nots] if isinstance(nots, str) else nots))
+
+
+def reload_check(cfg: dict, scen: dict) -> bool:
+    """Whether to reload after recovery and run the flow to the step again (a failure the app stored, in Cache Storage,
+    IndexedDB or localStorage, outlives the fault): on by default for reads under a failing fault or a static-asset
+    fault (a write is never sent again); `reload_after_recovery: false` in flows.json turns it off."""
+    return cfg.get('reload_after_recovery', True) is not False and scen.get('group') != 'latency' and not scen.get('write')
+
+
+CACHE_STORAGE = """async () => { if (!self.caches) return null; const out = [];
+  try { for (const name of (await caches.keys()).slice(0, 10)) { const c = await caches.open(name); const reqs = await c.keys();
+    const urls = [], statuses = [], sizes = [];
+    for (const r of reqs.slice(0, 10)) { const m = await c.match(r); urls.push(r.url); statuses.push(m ? m.status : null);
+      sizes.push(m ? Number(m.headers.get('content-length')) || null : null); }
+    out.push({cache: name, entries: reqs.length, urls, statuses, sizes}); } } catch (e) { return [{error: String(e).slice(0, 120)}]; }
+  return out; }"""
+
+
 def observe(page, ind: dict, root: str | None) -> dict:
     t = page.evaluate(TEXT, root)
     lower = t['body'].lower()
@@ -234,12 +263,16 @@ def observe(page, ind: dict, root: str | None) -> dict:
         controls = page.evaluate(CONTROLS)
     except Exception:  # noqa: BLE001
         controls = []
+    try:
+        media = bool(page.evaluate(MEDIA))
+    except Exception:  # noqa: BLE001
+        media = False
     return {'body_len': len(t['body'].strip()), 'root_text': (t['root'] or '')[:400], 'root_len': len((t['root'] or '').strip()),
             'spinner': bool(spin_el or loading), 'loading_words': loading, 'error_element': err_el,
             'error_words': sorted({w for w in ind['error_words'] if w in lower}),
             'empty_words': sorted({w for w in ind['empty_state_words'] if w in lower}),
             'fallback_words': sorted({w for w in ind['boundary_fallback_words'] if w in lower}), 'boundary_element': boundary_el,
-            'controls': controls, 'text': t['body'][:600]}
+            'controls': controls, 'media_visible': media, 'text': t['body'][:600]}
 
 
 def inputs(page, fields: list[str]) -> dict:
@@ -281,11 +314,13 @@ def run_flow(c: Ctx, flow, upto: int | None, scen: dict | None, ind: dict, tag: 
     inj: Injector | None = None
     prefetch_ids: set[int] = set()
     offline = {'on': False, 'failed': 0}
+    phase = {"now": "before"}    # before the fault, fault, recovery, reload: which part of the run a request belongs to
 
     def on_req(r):
         started[id(r)] = time.monotonic()
         if rx and rx.match(r.url):
-            e = {'method': r.method, 't_ms': round((time.monotonic() - t0) * 1000), 'url': redact(r.url), 'resource_type': r.resource_type}
+            e = {'method': r.method, 't_ms': round((time.monotonic() - t0) * 1000), 'url': redact(r.url), 'resource_type': r.resource_type,
+                 'phase': phase["now"]}
             try:
                 e['navigation'] = bool(r.is_navigation_request())     # a fault here answers the page itself, not the app
             except Exception:  # noqa: BLE001
@@ -338,6 +373,7 @@ def run_flow(c: Ctx, flow, upto: int | None, scen: dict | None, ind: dict, tag: 
     try:
         if early:   # requests that start with the page (the first step's, or prefetches) need the fault in place first
             t_fault = time.monotonic()
+            phase["now"] = "fault"
             inj = Injector(fault, scen, t0)
             page.route(pattern, inj.handler)
         if early:
@@ -372,6 +408,7 @@ def run_flow(c: Ctx, flow, upto: int | None, scen: dict | None, ind: dict, tag: 
                     inj = Injector(fault, scen, t0)
                     page.route(pattern, inj.handler)
                     t_fault = time.monotonic()
+                phase['now'] = 'fault'
             before = {}
             try:
                 for ai, action in enumerate(step['actions']):
@@ -382,7 +419,7 @@ def run_flow(c: Ctx, flow, upto: int | None, scen: dict | None, ind: dict, tag: 
             except Exception as e:  # noqa: BLE001
                 step_error = f'{type(e).__name__}: {str(e).splitlines()[0][:160]}'
             if not target:
-                ok = done(page, step['done'], 10000)
+                ok = step_done(page, step, 10000)
                 entry = {'name': step['name'], 'completed': ok, 'error': step_error, 'observed': observe(page, ind, cfg.get('app_root'))}
                 if not ok:
                     shot = shots / f'{(scen or {}).get("id") or "baseline-" + re.sub(r"[^A-Za-z0-9]+", "-", flow["name"])}.{tag}.failed-step.png'
@@ -417,7 +454,7 @@ def run_flow(c: Ctx, flow, upto: int | None, scen: dict | None, ind: dict, tag: 
             if inj:
                 inj.pump()
             after = observe(page, ind, cfg.get('app_root'))
-            completed_under_fault = done(page, step['done'], 1)
+            completed_under_fault = step_done(page, step, 1)
             shot1 = shots / f'{scen["id"]}.{tag}.fault.png'
             h.screenshot(page, shot1, full_page=False)
             mid_inputs = inputs(page, fields) if fields else {}
@@ -429,13 +466,18 @@ def run_flow(c: Ctx, flow, upto: int | None, scen: dict | None, ind: dict, tag: 
             if fault['action'] == 'offline':
                 page.context.set_offline(False)
                 offline['on'] = False
+            phase['now'] = 'recovery'
             controls = page.evaluate("""(names) => [...document.querySelectorAll('button, a, [role=button]')]
                 .map(e => (e.innerText || e.getAttribute('aria-label') || '').trim()).filter(n => names.some(w => n.toLowerCase().includes(w)))""",
                                      ind['retry_control_names'])
             again = recovery_actions(step)
-            recovery = 'retry_control' if controls else 'refill_input' if any('refill' in x for x in again) else 'repeat_step'
+            # repeating a step whose only action is a navigation reloads the page: that is not recovery, so it is not tried
+            recovery = ('retry_control' if controls else 'refill_input' if any('refill' in x for x in again)
+                        else 'reload' if recovery_kind(step) == 'reload' else 'repeat_step')
             try:
-                if controls:
+                if recovery == 'reload':
+                    pass
+                elif controls:
                     page.get_by_role('button', name=re.compile('|'.join(ind['retry_control_names']), re.I)).first.click(timeout=3000)
                 elif recovery == 'refill_input':
                     # a step that only types (type-ahead): re-send what is in the field, as the user would by typing again
@@ -445,15 +487,51 @@ def run_flow(c: Ctx, flow, upto: int | None, scen: dict | None, ind: dict, tag: 
                     act(h, page, site, again)   # typed input is not re-entered
             except Exception:  # noqa: BLE001
                 pass
-            recovered = done(page, step['done'], 5000)
+            recovered = False if recovery == 'reload' else step_done(page, step, 5000)
             shot2 = shots / f'{scen["id"]}.{tag}.recovery.png'
             h.screenshot(page, shot2, full_page=False)
             rec['fault_triggered'] = faulted > 0
             rec['faulted_requests'] = faulted
-            rec['steps'].append({'name': step['name'], 'target': True, 'error': step_error, 'completed_under_fault': completed_under_fault,
-                                 'first_error_ms': first_error_ms, 'spinner_seen': spinner_seen, 'watched_ms': elapsed, 'observed': after,
-                                 'inputs': {'before': before, 'after_fault': mid_inputs}, 'retry_controls': controls, 'recovery': recovery,
-                                 'recovered': recovered, 'screenshots': [shot1.name, shot2.name]})
+            target_rec = {'name': step['name'], 'target': True, 'error': step_error, 'completed_under_fault': completed_under_fault,
+                          'first_error_ms': first_error_ms, 'spinner_seen': spinner_seen, 'watched_ms': elapsed, 'observed': after,
+                          'inputs': {'before': before, 'after_fault': mid_inputs}, 'retry_controls': controls, 'recovery': recovery,
+                          'recovered': recovered, 'screenshots': [shot1.name, shot2.name]}
+            rec['steps'].append(target_rec)
+            if reload_check(cfg, scen):
+                # the fault is gone: reload and run the flow to the step again. A failure the app stored (Cache Storage,
+                # IndexedDB, localStorage) shows again with no request to the endpoint
+                phase['now'] = 'reload'
+                rl: dict = {}
+                try:
+                    h.throttle()
+                    page.goto(site, wait_until='load', timeout=30000)
+                    page.wait_for_timeout(500)
+                    if setup:
+                        try:
+                            act(h, page, site, setup)
+                        except Exception:  # noqa: BLE001
+                            pass
+                    for j, st2 in enumerate(flow['steps'][:upto + 1]):
+                        act(h, page, site, st2['actions'])
+                        if j < upto and not step_done(page, st2, 10000):
+                            rl['stopped_at'] = st2['name']
+                            break
+                    rl['completed'] = 'stopped_at' not in rl and step_done(page, step, 10000)
+                except Exception as e:  # noqa: BLE001
+                    rl['error'] = f'{type(e).__name__}: {str(e).splitlines()[0][:160]}'
+                    rl['completed'] = False
+                after_reload = [q for q in reqs if q.get('phase') == 'reload']
+                rl['endpoint_requests'] = len(after_reload)
+                rl['ok_responses'] = sum(1 for q in after_reload if isinstance(q.get('status'), int) and 200 <= q['status'] < 300)
+                try:
+                    rl['cache_storage'] = [dict(c, urls=[redact(u) for u in c.get('urls', [])]) for c in (page.evaluate(CACHE_STORAGE) or [])]
+                except Exception:  # noqa: BLE001
+                    rl['cache_storage'] = None
+                shot3 = shots / f'{scen["id"]}.{tag}.reload.png'
+                h.screenshot(page, shot3, full_page=False)
+                target_rec['screenshots'].append(shot3.name)
+                rl['screenshot'] = shot3.name
+                target_rec['reload'] = rl
     except Exception as e:  # noqa: BLE001
         rec['ok'] = False
         rec['error'] = f'{type(e).__name__}: {str(e).splitlines()[0][:200]}'

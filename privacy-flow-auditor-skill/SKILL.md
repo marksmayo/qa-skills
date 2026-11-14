@@ -1,7 +1,7 @@
 ---
 name: privacy-flow-auditor
 description: Map where personal data goes in a web app - what it collects, where it stores it, what it logs, and which third parties receive it, and whether that happens before the user consents or after they reject. Combines a static scan of the code (collection points, logging, analytics, session replay, storage, SDKs, mobile permissions) with a live browser capture in three consent states (before a choice, after "Reject all", after "Accept all"), typing synthetic canary values and searching every request, cookie and storage entry for them raw, URL-encoded, Base64 and hashed. Produces a data inventory, recipients, a consent matrix and ranked findings with GDPR, UK GDPR and Australian Privacy Principles references for a privacy professional. Never types or stores real personal data, and never says an app is compliant.
-version: 1.5.0
+version: 1.6.0
 ---
 
 # Privacy flow auditor
@@ -63,7 +63,7 @@ breach; this is not legal advice.
 
 | Input | Default | Notes |
 |---|---|---|
-| `repo` | optional | Source for the static scan; `--exclude` third-party or generated directories |
+| `repo` | optional | Source for the static scan; `--exclude` third-party or generated directories, `--include` a build-output-named directory that is the app's own code |
 | `flows` | required for the live part | `flows.json`: `site`, `consent` selectors for accept and reject, flows with steps; `{"fill": sel, "canary": field}` types a canary; each flow has a `reach` (3 every user, 2 common, 1 rare) with its reason |
 | `authorised_by`, `allow_form_submission`, `host_map` | as in `browser_harness.py` | |
 | `regions` | `AU,EU` | Which provision sets to reference (`UK` adds UK GDPR and PECR) |
@@ -82,8 +82,8 @@ The capture needs Playwright with Chromium (`pip install -r requirements.txt`; a
 ```bash
 python scripts/fetch_lists.py                       # download the lists at their pinned commits, verify -> ~/.cache/qa-skills/privacy-lists/domains.json
 python scripts/fetch_lists.py --update --write-lock <run>/lists.lock.json   # newer lists: pin the latest commits in a scratch lock
-python scripts/match_canaries.py new --out <run>/canaries.json
-python scripts/scan_privacy.py <repo> --out <run>/static.json [--exclude vendor] [--semgrep semgrep.sarif]
+python scripts/match_canaries.py new --out <run>/canaries.json [--key-length 5]
+python scripts/scan_privacy.py <repo> --out <run>/static.json [--exclude vendor] [--include dist] [--semgrep semgrep.sarif]
 python scripts/capture_flows.py flows.json --canaries <run>/canaries.json --out <run>/capture.json [--server-log app.log] --screenshots <run>/screenshots
 python scripts/merge_candidates.py --capture <run>/capture.json --static <run>/static.json --flows flows.json --lists domains.json --declared declared.json --regions AU,EU --out <run>/candidates.json
 python scripts/merge_candidates.py --static <run>/static.json --run-status-reason "why the capture couldn't run" --out <run>/candidates.json   # static only
@@ -131,6 +131,18 @@ vendor (a telemetry module's `https://<region>.i.posthog.com` names PostHog), ev
    - reads a sink call's whole argument span, so an object spread over several lines (`Sentry.setUser({`,
      `mixpanel.people.set({` with `$email` on the next line) links its keys; identify, `setUser` and
      `people.set` calls count identity keys (email, name, username, phone) even when no form collects them;
+     an HTTP or log call counts an email, phone or IP address read from any object (`profile.email` in a
+     fetch URL), and a log call a whole user or profile object (`console.log(profile)`), each with
+     `read_from_object` on the candidate;
+   - classifies an input with no name or id from its class and placeholder (field from its first class),
+     credential words (key, token) making it an online identifier; a field typed in hex (`0x...`) or in a
+     memory or debug panel is never contact data, whatever "address" it mentions;
+   - lists every host that browser or server code sends to with a literal URL (`fetch`, XMLHttpRequest,
+     `requests`/`httpx`, an httpx `AsyncClient`'s `build_request`/`send`/`stream`, or a variable assigned a
+     URL literal in the same file) under `outbound_hosts` with its `side` (client or server), vendor or not;
+     each is a recipient to account for in the inventory. A proxy that copies the visitor's request headers
+     into an outbound call (`dict(request.headers)`, `request.headers.items()`, `{...req.headers}`) is a
+     `header_passthrough` candidate (`side: server`): cookies, Authorization and Referer reach the upstream;
    - treats small app functions that pass a parameter to a logging, analytics or error-tracker call
      (`logSecurityEvent(event, data)`, `trackEvent(name, props)`) as sinks, one level deep (listed under
      `wrappers`); name others with `--log-sinks` / `--analytics-sinks`; `logger.*`, pino and winston calls
@@ -155,6 +167,14 @@ vendor (a telemetry module's `https://<region>.i.posthog.com` names PostHog), ev
      package, or reads what identifies the machine (`os.Hostname`, `user.Current`, MAC addresses, a
      machine id) is a `telemetry` candidate (`call_home`, `side: client`) with those facts and whether a
      hash is applied; other hosts it sends to are listed under `outbound_hosts` for review;
+   - decides each directory named like build output (`dist/`, `build/`, `out/`) on its own: it is skipped
+     as build output when git ignores it, when most of its files are generated (source maps, bundler
+     runtimes, hashed names), or when a bundler configuration beside it builds it from source kept
+     elsewhere; otherwise it is a committed, hand-written front end (a FastAPI or Express app serving it as
+     static files) and is scanned. Each decision is printed and recorded under `build_output_dirs` with its
+     reason; `--include DIR` forces a scan. A skipped one holding more source than the scan read is named
+     in `language_coverage.needs_limitation_dirs` with a warning, and the validator then requires a
+     limitation naming it;
    - counts the repository's source files per language with `lang_census.py` (vendored, bundled and
      embedded third-party trees left out) and records `language_coverage` in `static.json`; when most of
      the code is in a language the scan doesn't read, it prints a warning and the validator requires a
@@ -187,7 +207,11 @@ vendor (a telemetry module's `https://<region>.i.posthog.com` names PostHog), ev
      the code shows they hold personal data.
 3. **Live capture.** For each consent state, a fresh context records requests, cookies and storage
    before any interaction, then after the banner choice, then through each flow typing canaries. With
-   `--server-log` on a local run, log lines carrying a canary are recorded too. Requests to third parties
+   `--server-log` on a local run, log lines carrying a canary are recorded too, and browser console
+   messages carrying one are recorded per state under `console` (the merge makes them a
+   `personal_data_in_logs` candidate, sink `browser_console`). For an access key or token field, type the
+   `key` canary (`--key-length N` when the field takes a fixed length); a literal value a flow types is
+   redacted as `<typed:literal>` everywhere, never stored. Requests to third parties
    are recorded and blocked (rule 10). Bodies are read as bytes and decompressed (gzip, deflate; brotli
    when the `brotli` module is installed) or Base64-decoded before searching; each request records
    `body_read`, and a binary body is `binary_not_searched` (say so when a vendor's bodies were binary).
@@ -239,7 +263,8 @@ python scripts/render_report.py <run>/privacy_audit.json [--brief]
   `source: injected_script` or `vendor_url`, so a site with no `<script src>` to a vendor still shows them.
 - **Large repositories:** the scan reads each file once; files over `--max-bytes` (2 MB) and minified or
   generated files are listed under `skipped` (generated files are still searched for SDK hosts), as are
-  dependency and build directories. Say in the limitations what was skipped if it could hold app code.
+  dependency directories and build output (see `build_output_dirs` for why each `dist/` was scanned or
+  skipped). Say in the limitations what was skipped if it could hold app code.
 - **Server-side tagging** (a first-party path that forwards to vendors) looks first party; known proxy
   and tunnel paths are matched (`path_rules`, EasyPrivacy path rules), others go in the limitations.
 - **Shared hosting** (`*.vercel.app`, `*.netlify.app`): the suffix subset keeps each app its own domain;

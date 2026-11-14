@@ -3,6 +3,7 @@
   "seed": 1611,
   "run_status": "complete",
   "environment_outage": false,
+  "vacuous_passes": [],
   "operations": [
     {
       "operation_id": "healthCheck",
@@ -661,7 +662,7 @@
       "reach": 1,
       "score": 3,
       "priority": "P3",
-      "regression_test_sketch": "def test_getappointment_content_type(api):\n    \"\"\"content_type: status 400: Content-Type text/html\"\"\"\n    resp = api.request('GET', '/appointments/abc')\n    assert resp.headers['Content-Type'].split(';')[0] == 'application/json'"
+      "regression_test_sketch": "def test_getappointment_content_type(api):\n    \"\"\"content_type: status 400: Content-Type text/html\"\"\"\n    resp = api.request('GET', '/appointments/abc')\n    assert resp.headers['Content-Type'].split(';')[0].strip() in ['application/json']"
     },
     {
       "id": "K10",

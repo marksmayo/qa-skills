@@ -1,7 +1,7 @@
 ---
 name: risk-based-test-planner
 description: Write a test plan for a release, sprint or change with effort spread by risk = likelihood x impact. Likelihood comes from git history (churn, fix commits, Jira bugs), complexity, the change in scope and test weakness; impact from journey criticality, money, access, personal-data, credential, destructive and public-API surfaces, and reach. Reads a changesets monorepo's release base and pending changesets, and flags breaking changes. Every factor cites its evidence and missing evidence is not_assessed, never low risk. It reads other skills' reports (journey maps, security, crash, WCAG and flaky reports) as far as their own confidence goes, allocates 90-minute sessions against a budget, names the skill or test type for each risk, and lists every area it does not test with the reason and residual risk. Never claims a release is safe.
-version: 1.5.0
+version: 1.6.0
 ---
 
 # Risk-based test planner
@@ -142,8 +142,19 @@ says how many changed lines were in them), but not for complexity, surfaces or t
 which read code. An area holding only such files (an explicit `--areas` entry for `templates/` or
 a data directory) is kept, with those three factors `not_assessed`; with no journey map or usage
 it has no impact evidence, so its risk is null and a warning names it: judge its impact in the
-plan. Changed templates, styles or data that no area holds are named in a warning by directory
-(a 5,000-file data tree is one line): add them to `--areas`.
+plan. Every changed file of the scope that no scored area counts (in no area, or excluded as generated,
+vendored, documentation or root tooling) is listed in `scope_outside_areas` by directory and
+reason, with its changed lines, and named in a warning (a 5,000-file data tree is one line): a
+release whose changes all sit outside the areas must never read as "nothing in scope changed".
+Add them to `--areas`, or say in the plan why they need no testing, and lower the plan's
+confidence until they are scored.
+
+**Explicit areas are never dropped.** Files under an explicit `--areas` entry are scored even when
+their name or directory looks generated (a committed, hand-written `dist/`), with a warning to check
+they are source. An area with nothing to score (its paths match no file, or everything under them is
+excluded) is listed in `unscored_areas` with the reason and warned about; carry it into the plan's
+assumptions or fix its paths. In the default layout, generated and vendored files never choose the
+main source directory.
 
 **Languages.** `risk.json` records `language_coverage` from the shared language census
 (vendored, submodule and embedded third-party trees left out). Go, Rust, Python, JS/TS, Java,
@@ -222,8 +233,16 @@ as `diff_scope.py`'s classification across the skills.)
 - the route handler behind every `METHOD /path` note in their evidence (`POST /api/orders` →
   `app/api/orders/route.ts`, dynamic segments matched);
 - one hop of imports from those files, so the lib module a route handler calls is on the journey.
+  Imports are not followed out of a **hub**: a root module that creates the web app (it imports
+  everything it wires up, some lazily inside functions) or a module whose imports span more than
+  half the areas. Following them would hand every journey that cites the app to every module; a
+  warning names the hubs, and a module behind a hub is on a journey only when the journey cites it.
 
 The evidence names the link (`calls POST /api/x (...)`, `covers E-012`, `... imported by ...`).
+
+**Priority scales.** A journey map on journey-mapper's own scale (only P1 to P3: P1 critical, P2
+important, P3 nice to have) scores P1 = 5, P2 = 4, P3 = 2, and the evidence names the scale; a map
+that uses P0 scores P0 = 5, P1 = 4, P2 = 3, P3 = 2.
 
 **A partial journey map** (its `run_scope.domains` is not `all`, or it has `out_of_scope` or
 `not_mapped_this_run` orphans) says nothing about the areas it didn't map. An area that no
@@ -248,6 +267,10 @@ Formatting-only commits are left out of churn and listed. A commit counts as for
 when its subject says style, format or reformat and every file's added and deleted counts are
 within 2 of each other. When `--as-of` ends the window well after HEAD's date, a note says how
 much history it leaves out; prefer a window ending at HEAD unless the plan is for a fixed date.
+The default window (no `--as-of`) is bounded by HEAD's ancestry, not by a date: an ancestor dated
+after HEAD (clock skew, a rewritten date) is kept and a note lists it. An explicit `--as-of` cuts
+by date and a note counts the ancestors it leaves out. A fix commit that touches only
+documentation (`fix typo in README`) is not counted as a fix (`fix_ignored`).
 
 **Scope when the base isn't a local ref.** If the release base (say `master`) isn't a local
 branch, fetch it and use `origin/master`; without a remote, find the base's tip from the merge
@@ -357,7 +380,7 @@ doesn't rank as the top risk: under 25 lines at most 2, under 100 at most 3, und
 
 | Likelihood factor | Weight | | Impact factor | Weight |
 |---|---|---|---|---|
-| Churn | 2 | | Journey criticality (P0 = 5, P1 = 4, P2 = 3, P3 = 2, none = 1) | 3 |
+| Churn | 2 | | Journey criticality (P0 = 5, P1 = 4, P2 = 3, P3 = 2, none = 1; journey-mapper's P1-P3 scale: P1 = 5, P2 = 4, P3 = 2) | 3 |
 | Defect history | 3 | | Surface | 3 |
 | Complexity (branches per file) | 1 | | Reach (usage share, or journeys citing the area) | 1 |
 | Change in scope | 2 | | | |

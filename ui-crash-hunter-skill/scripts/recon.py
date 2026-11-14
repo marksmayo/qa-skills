@@ -61,7 +61,7 @@ from ui_graph import (projects, next_path_in_project, project_of, note_packages,
 from scan_pitfalls import mask_code  # noqa: E402
 from langs import (vendored_roots, language_census, language_warning, incidental, embedded_documents,  # noqa: E402
                    HOST_EXT, TEMPLATE_FILE, under, prune_dir, is_template_path, server_rendered,
-                   skipped_data_dirs, EXCLUDE)
+                   skipped_data_dirs, EXCLUDE, INCLUDE, keep_build_dir, build_dirs, report_build_skips, served_dirs)
 
 SKIP_DIRS = {'.git', 'node_modules', 'dist', 'build', 'out', '.next', '.nuxt', '.svelte-kit', '.output', 'coverage',
              'vendor', 'Pods', 'Carthage', 'DerivedData', '.gradle', '.dart_tool', '.idea', '.vscode', '__pycache__',
@@ -179,7 +179,8 @@ def walk(root: Path):
             continue
         for p in entries:
             if p.is_dir():
-                if p.name not in SKIP_DIRS and not (p.name.startswith('.') and p.name not in {'.github', '.maestro'}) \
+                if (p.name not in SKIP_DIRS or keep_build_dir(root, p)) \
+                        and not (p.name.startswith('.') and p.name not in {'.github', '.maestro'}) \
                         and not prune_dir(root, p):
                     stack.append(p)
             else:
@@ -289,20 +290,35 @@ def html_page(root: Path, f: Path) -> dict:
         src = attr(SRC, tag_attrs)
         if not src:
             inline += 1 if body.strip() else 0
+            # scripts an inline script writes into the page while it loads: document.write('<script src=...>')
+            for w in DOCWRITE_SRC.finditer(body):
+                scripts.append(script_entry(root, f, w.group(1), line_of(text, m.start(2) + w.start()), False,
+                                            written_by='document.write'))
             continue
-        entry: dict = {'src': src, 'line': line_of(text, m.start()), 'module': kind.lower() == 'module'}
-        if re.match(r'^([a-z][\w+.-]*:)?//', src, re.I):
-            entry['external'] = True
-        else:
-            path = src.split('?')[0].split('#')[0]
-            target = (root / path.lstrip('/')) if path.startswith('/') else (f.parent / path)
-            try:
-                entry['file'] = target.resolve().relative_to(root).as_posix()
-            except ValueError:
-                entry['file'] = path
-            entry['exists'] = target.exists()
-        scripts.append(entry)
+        scripts.append(script_entry(root, f, src, line_of(text, m.start()), kind.lower() == 'module'))
     styles = [attr(HREF, t) for t in LINK_TAG.findall(text) if 'stylesheet' in (attr(REL, t) or '').lower()]
+    return _html_page_rest(root, f, rel, text, scripts, inline, styles)
+
+
+DOCWRITE_SRC = re.compile(r'''document\.write(?:ln)?\(\s*['"`][^'"`]*?<script\b[^>]*?\bsrc\s*=\s*\\?["']?([^"'\s>\\]+)''', re.I)
+
+
+def script_entry(root: Path, f: Path, src: str, line: int, module: bool, **extra) -> dict:
+    entry: dict = {'src': src, 'line': line, 'module': module, **extra}
+    if re.match(r'^([a-z][\w+.-]*:)?//', src, re.I):
+        entry['external'] = True
+    else:
+        path = src.split('?')[0].split('#')[0]
+        target = (root / path.lstrip('/')) if path.startswith('/') else (f.parent / path)
+        try:
+            entry['file'] = target.resolve().relative_to(root).as_posix()
+        except ValueError:
+            entry['file'] = path
+        entry['exists'] = target.exists()
+    return entry
+
+
+def _html_page_rest(root: Path, f: Path, rel: str, text: str, scripts: list, inline: int, styles: list) -> dict:
     body = re.search(r'<body\b[^>]*>(.*)</body\s*>', text, re.I | re.S)
     visible = re.sub(r'<(script|style|template|noscript)\b.*?</\1\s*>', ' ', body.group(1) if body else text, flags=re.I | re.S)
     visible = re.sub(r'<[^>]+>', ' ', visible)
@@ -578,7 +594,12 @@ def site_model(root: Path, files: list[Path], platforms: list[str], code: list[P
                 **({'other_html': other[:30],
                     'other_html_note': 'HTML files outside the template directories: no view renders them. Check '
                                        'whether they are served at all (stale artefacts are not pages).'} if other else {})}
-    if 'fastapi' in platforms and len(html) <= 3:
+    # directories a server in the repository serves as static files (FastAPI StaticFiles, Flask static_folder,
+    # express.static): HTML in them is the UI, so the app is a static site served by that server, not an API alone
+    static_dirs = [{'path': d, 'reason': why, 'html_pages': sum(1 for f in html if under(f.relative_to(root).as_posix(), [d]))}
+                   for d, why in sorted(served_dirs(root).items())]
+    static_dirs = [s for s in static_dirs if s['html_pages']]
+    if 'fastapi' in platforms and len(html) <= 3 and not static_dirs:
         # an API service with an HTML file or two (a docs page, a template) is not a static site
         return {'kind': 'api', 'frameworks': ['fastapi'], 'html_pages': len(html),
                 'note': 'An API service, not a UI: a throw in a handler is an HTTP 500, not a UI crash. Hunt crashes in '
@@ -625,6 +646,13 @@ def site_model(root: Path, files: list[Path], platforms: list[str], code: list[P
         'inline_script_pages': sum(1 for p in pages if p['inline_scripts']),
         'error_pages': [{'file': p['file'], 'relative_urls': p['error_page_relative_urls']} for p in pages
                         if p.get('error_page_relative_urls')],
+        **({'static_dirs': static_dirs,
+            'served_by': 'static_files',
+            'static_server': next((f for f in ('fastapi', 'flask', 'express') if f in platforms), 'server'),
+            'static_dirs_note': 'The pages are static files a server in this repository serves (static_dirs): read the '
+                                'server routes beside the mount (proxies, rewrites of the HTML, catch-all routes) for '
+                                'failures the pages inherit, such as an upstream error passed through as a 200 or 500.'}
+           if static_dirs else {}),
     }
 
 def next_path(seg: str) -> str:
@@ -704,6 +732,10 @@ def main() -> int:
     ap.add_argument('--exclude', action='append', default=[], metavar='DIR',
                     help='repository-relative directory not to walk (repeatable); directories of hundreds of data files '
                          'with no code are skipped without it (skipped_data_dirs)')
+    ap.add_argument('--include', action='append', default=[], metavar='DIR',
+                    help='repository-relative directory to walk although its name marks it as build output (dist, build, '
+                         'out); a directory a server in the repository serves, or a committed one holding index.html that '
+                         'nothing builds, is walked without it. Every skipped one is listed (skipped_build_dirs)')
     ap.add_argument('--out', type=Path)
     args = ap.parse_args()
     root = args.repo.resolve()
@@ -711,6 +743,7 @@ def main() -> int:
         print(f'Not a directory: {root}', file=sys.stderr)
         return 2
     EXCLUDE.update(e.replace('\\', '/').strip('/') for e in args.exclude)
+    INCLUDE.update(e.replace('\\', '/').strip('/') for e in args.include)
     files = list(walk(root))
     # vendored and bundled third-party trees (a driver with its own LICENSE and package.json inside a Go module)
     # are not the app: they never decide the platforms, the site model or the screens
@@ -958,7 +991,8 @@ def main() -> int:
                              f"({', '.join(site['other_html'][:3])}) are rendered by no view: check whether they are "
                              'served before treating a finding in them as live.')
         elif site['inline_script_pages']:
-            notes.append(f"{site['inline_script_pages']} page(s) have inline scripts, which scan_pitfalls.py does not read.")
+            notes.append(f"{site['inline_script_pages']} page(s) have inline scripts: scan_pitfalls.py scans them at their "
+                         'HTML lines (scope.embedded_html); strict_overlay.py and ESLint do not read them.')
     else:
         native = set(platforms) & {'android', 'ios', 'flutter', 'react-native', 'expo'}
         blast = ({'model': 'per_root', 'note': 'Single render tree: an uncaught render error above every boundary blanks the app (B1).'}
@@ -1001,6 +1035,8 @@ def main() -> int:
         'warnings': [lang_warning] if lang_warning else [],
         'language_coverage': lang,
         'skipped_data_dirs': skipped_data_dirs(),
+        'skipped_build_dirs': build_dirs()[0],
+        'kept_build_dirs': build_dirs()[1],
         'platforms': platforms,
         'targets': targets,
         'routes_screens': uniq_routes,
@@ -1032,6 +1068,7 @@ def main() -> int:
         print(text)
     for w in out['warnings']:
         print(f'WARN: {w}', file=sys.stderr)
+    report_build_skips('recon.py')
     return 0
 
 if __name__ == '__main__':

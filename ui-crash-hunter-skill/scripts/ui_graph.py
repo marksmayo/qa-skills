@@ -33,7 +33,7 @@ import argparse, json, re, sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from langs import prune_dir  # noqa: E402  (data directories and --exclude)
+from langs import prune_dir, keep_build_dir, INCLUDE, build_dirs, report_build_skips  # noqa: E402  (data dirs, build output)
 
 # directories never descended into (pruned before descending)
 PRUNE = {'node_modules', '.git', '.next', '.nuxt', 'dist', 'build', 'out', 'coverage', '.venv', 'venv', '__pycache__',
@@ -109,7 +109,8 @@ def walk(root: Path, extra_prune: set[str] = frozenset()):
             continue
         for p in entries:
             if p.is_dir():
-                if p.name in PRUNE or p.name in extra_prune or (p.name.startswith('.') and p.name not in {'.github', '.maestro'}):
+                if (p.name in PRUNE and not keep_build_dir(root, p)) or p.name in extra_prune or \
+                        (p.name.startswith('.') and p.name not in {'.github', '.maestro'}):
                     continue
                 if prune_dir(root, p):   # a data directory (hundreds of JSON records) or --exclude
                     continue
@@ -574,6 +575,35 @@ def next_path_in_project(rel: str, projs: dict[str, dict]) -> str | None:
     return sub if 'next' in projs.get(d, {}) else None
 
 
+# Scripts a script loads at run time: string literals naming .js files in a file that creates a <script> element and sets
+# its src (a loader with a literal module array), importScripts(...) in a worker, new Worker('x.js'). Relative URLs
+# resolve against the page, so the HTML pages' directories are tried before the loading file's own.
+INJECT_SCRIPT = re.compile(r'''createElement\(\s*['"]script['"]\s*\)''')
+SRC_ASSIGN = re.compile(r'''\.src\s*=|setAttribute\(\s*['"]src['"]''')
+SCRIPT_LIT = re.compile(r'''['"`]([\w@./-]+\.(?:m?js|cjs))(?:\?[^'"`\n]*)?['"`]''')
+IMPORT_SCRIPTS = re.compile(r'\bimportScripts\s*\(([^)]*)\)')
+NEW_WORKER = re.compile(r'''new\s+(?:Shared)?Worker\(\s*['"]([^'"]+)['"]''')
+
+
+def injected_scripts(text: str, f: Path, root: Path, page_dirs: list[Path]) -> list[Path]:
+    lits: list[tuple[str, list[Path]]] = []
+    if INJECT_SCRIPT.search(text) and SRC_ASSIGN.search(text):
+        lits += [(s, page_dirs + [f.parent]) for s in SCRIPT_LIT.findall(text)]
+    for m in IMPORT_SCRIPTS.finditer(text):
+        lits += [(s, [f.parent] + page_dirs) for s in SCRIPT_LIT.findall(m.group(1))]
+    lits += [(s, page_dirs + [f.parent]) for s in NEW_WORKER.findall(text)]
+    out = []
+    for spec, bases in lits:
+        if re.match(r'^([a-z]+:)?//', spec, re.I):
+            continue
+        for b in ([root.resolve()] if spec.startswith('/') else bases):
+            t = (b / spec.lstrip('/')).resolve()
+            if t.is_file() and t.suffix in SRC_EXT and t.is_relative_to(root.resolve()) and t != f.resolve():
+                out.append(t)
+                break
+    return out
+
+
 def entries(root: Path, files: list[Path]) -> list[Path]:
     out = []
     projs = projects(root, files)
@@ -608,6 +638,8 @@ def graph(root: Path, files: list[Path] | None = None) -> dict:
     unresolved = 0
     unresolved_examples: list[str] = []
     alias_prefixes = [a[:-1] for a, _ in alias if a != '*' and a.endswith('*')]
+    page_dirs = sorted({f.parent.resolve() for f in files if f.suffix.lower() in ('.html', '.htm')}, key=lambda p: len(p.parts))
+    injected: set[str] = set()
     while todo:
         f = todo.pop()
         if f in seen:
@@ -638,6 +670,11 @@ def graph(root: Path, files: list[Path] | None = None) -> dict:
                 outs.append(t.relative_to(root).as_posix())
                 if t not in seen:
                     todo.append(t)
+        for t in injected_scripts(text, f, root, page_dirs):
+            outs.append(t.relative_to(root).as_posix())
+            injected.add(t.relative_to(root).as_posix())
+            if t not in seen:
+                todo.append(t)
         edges[rel] = sorted(set(outs))
     reach = sorted(p.relative_to(root).as_posix() for p in seen if p.is_relative_to(root))
     ui_files = [f for f in files if f.suffix in SRC_EXT and not f.name.endswith('.d.ts')
@@ -649,7 +686,7 @@ def graph(root: Path, files: list[Path] | None = None) -> dict:
                         'such as tsconfig.app.json, the tsconfig beside a nested next.config.* or vite.config.*, and '
                         'vite.config resolve.alias)')
     share = len([r for r in reach if not r.endswith('.d.ts')]) / len(ui_files) if ui_files else 1.0
-    if len(ui_files) >= 20 and share < 0.3:
+    if len(ui_files) >= 20 and share <= 0.3:
         warnings.append(f'only {round(share * 100)}% of the {len(ui_files)} UI source files are reachable from the '
                         f'{len(ents)} entry point(s): imports the graph cannot follow (an alias it does not know, a '
                         'computed import) would make most of the app look unreachable. Read the unreachable files, '
@@ -657,7 +694,7 @@ def graph(root: Path, files: list[Path] | None = None) -> dict:
     return {'entries': sorted(e.relative_to(root).as_posix() for e in ents), 'reachable': reach,
             'aliases': [a for a, _ in alias], 'unresolved': unresolved, 'unresolved_examples': unresolved_examples,
             'ui_files': len(ui_files), 'reachable_share': round(share, 2), 'warnings': warnings,
-            'test_named_packages': sorted(packages), 'edges': edges}
+            'test_named_packages': sorted(packages), 'edges': edges, 'injected_scripts': sorted(injected)}
 
 
 def main() -> int:
@@ -665,9 +702,14 @@ def main() -> int:
         sys.stdout.reconfigure(encoding='utf-8', errors='replace')
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('repo', type=Path)
+    ap.add_argument('--include', action='append', default=[], metavar='DIR',
+                    help='repository-relative directory to walk although its name marks it as build output (dist, build, out)')
     ap.add_argument('--out', type=Path)
     args = ap.parse_args()
+    INCLUDE.update(e.replace('\\', '/').strip('/') for e in args.include)
     g = graph(args.repo)
+    g['skipped_build_dirs'], g['kept_build_dirs'] = build_dirs()
+    report_build_skips('ui_graph.py')
     text = json.dumps(g, indent=2)
     if args.out:
         args.out.write_text(text + '\n', encoding='utf-8')

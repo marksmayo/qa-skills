@@ -11,6 +11,10 @@ Patterns are in data/hardcoded-patterns.json:
   fixed_width       CSS that fixes a width and hides overflow (no text-overflow: ellipsis), maxLines without ellipsize
   rtl_physical      physical direction properties (margin-left, text-align: left) that won't mirror in RTL
 Every finding is `possible`: the rendered UI confirms or dismisses it (render_locales.py).
+
+Text in any script counts (Cyrillic, Arabic, CJK ...), not only Latin. dist/, build/ and out/ are scanned unless the
+repository builds them (see repo_walk.py); skipped directories are in `skipped_dirs` and on stderr, and --include DIR
+scans one anyway. code.json records `files_scanned` (0 means the scan read nothing: report it, never as clean).
 """
 from __future__ import annotations
 import argparse, json, re, sys
@@ -19,7 +23,9 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SKILL = HERE.parent
-SKIP = {'node_modules', '.git', 'dist', 'build', 'vendor', '__pycache__'}
+sys.path.insert(0, str(HERE))
+import repo_walk  # noqa: E402
+LETTERS = re.compile(r'[^\W\d_]{2}')     # two letters in any script
 
 
 class TextFinder(HTMLParser):
@@ -44,7 +50,7 @@ class TextFinder(HTMLParser):
 
     def handle_data(self, data):
         text = ' '.join(data.split())
-        if not text or not re.search(r'[A-Za-z]{2}', text):
+        if not text or not LETTERS.search(text):
             return
         if any(t[0] in ('script', 'style', 'title', 'head', 'code', 'pre') for t in self.stack):
             return
@@ -55,10 +61,14 @@ class TextFinder(HTMLParser):
                            'has_id': bool(ident)})
 
 
+WALK: dict = {}
+
+
 def files(repo: Path, exts):
-    for p in sorted(repo.rglob('*')):
-        if p.is_file() and p.suffix in exts and not (set(p.relative_to(repo).parts) & SKIP):
+    for p in WALK['files']:
+        if p.suffix in exts:
             rel = p.relative_to(repo).as_posix()
+            WALK['scanned'].add(rel)
             if p.suffix == '.xml' and re.search(r'(^|/)values[^/]*/', rel):
                 continue
             yield p, rel
@@ -79,7 +89,12 @@ def main() -> int:
     ap.add_argument('--repo', type=Path, required=True)
     ap.add_argument('--out', type=Path, required=True)
     ap.add_argument('--allow', default='')
+    ap.add_argument('--include', action='append', default=[], metavar='DIR',
+                    help='scan a directory that would be skipped as build output (repeatable)')
     a = ap.parse_args()
+    WALK['files'], WALK['skipped'] = repo_walk.walk(a.repo, a.include)
+    WALK['scanned'] = set()
+    repo_walk.report_skipped(WALK['skipped'], 'scan_code.py')
     pats = json.loads((SKILL / 'data' / 'hardcoded-patterns.json').read_text(encoding='utf-8'))
     allow = set(pats['allow_list']) | {x.strip() for x in a.allow.split(',') if x.strip()}
     out = []
@@ -122,9 +137,14 @@ def main() -> int:
                 for m in re.finditer(spec['match'], text):
                     add('fixed_width', rel, text[:m.start()].count('\n') + 1, spec['what'], snippet=m.group(0))
     a.out.parent.mkdir(parents=True, exist_ok=True)
-    a.out.write_text(json.dumps({'findings': out, 'allow_list': sorted(allow)}, indent=1, ensure_ascii=False) + '\n', encoding='utf-8')
+    a.out.write_text(json.dumps({'findings': out, 'allow_list': sorted(allow), 'files_scanned': len(WALK['scanned']),
+                                 'skipped_dirs': WALK['skipped']}, indent=1, ensure_ascii=False) + '\n', encoding='utf-8')
     from collections import Counter
-    print(f'{len(out)} code finding(s) {dict(Counter(f["kind"] for f in out))} -> {a.out}', file=sys.stderr)
+    print(f'{len(out)} code finding(s) {dict(Counter(f["kind"] for f in out))} in {len(WALK["scanned"])} file(s) -> {a.out}',
+          file=sys.stderr)
+    if not WALK['scanned']:
+        print('scan_code.py: WARNING no source file was scanned (no HTML, JS/TS, CSS, Android or Swift file outside the '
+              'skipped directories): hard-coded text and concatenation were not assessed', file=sys.stderr)
     return 0
 
 

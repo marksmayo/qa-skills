@@ -15,6 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from py_routes import scan_python, blank_strings          # noqa: E402
+import py_routes, py_extras                                 # noqa: E402  (mounts, conditions, CLIs, PHP, dist/)
 from js_routes import scan_js_routes, Constants           # noqa: E402
 
 SKIP_DIRS = {'.git', '.hg', '.svn', 'node_modules', 'bower_components', 'dist', 'build', 'out',
@@ -54,6 +55,19 @@ RENDER_CALLS = {'render_template', 'render_template_string', 'stream_template'} 
 FILE_CALLS = {'send_from_directory', 'send_file', 'send_static_file'}
 PY_BROWSER = re.compile(r'\b(sync_playwright|async_playwright|from\s+playwright\b|import\s+playwright\b|selenium\b|'
                         r'webdriver\.(?:Chrome|Firefox|Edge|Safari|Remote)\b|splinter\b)')
+# plain static pages (no framework): controls, scripts, links; URL parameters and storage writes in their scripts
+HTML_BUTTON = re.compile(r'<button\b([^>]*)>(.*?)</button>', re.I | re.S)
+HTML_INPUT = re.compile(r'<(input|select|textarea)\b([^>]*)>', re.I)
+HTML_ATTR = lambda name: re.compile(r'\b' + name + r'\s*=\s*["\']([^"\']*)["\']', re.I)  # noqa: E731
+ATTR_ID, ATTR_TYPE, ATTR_NAME, ATTR_HREF = HTML_ATTR('id'), HTML_ATTR('type'), HTML_ATTR('name'), HTML_ATTR('href')
+HTML_SCRIPT_SRC = re.compile(r'<script\b[^>]*\bsrc\s*=\s*["\']([^"\']+)["\']', re.I)
+HTML_INLINE_SCRIPT = re.compile(r'<script\b(?![^>]*\bsrc\s*=)[^>]*>(.*?)</script>', re.I | re.S)
+HTML_LINK = re.compile(r'<a\b[^>]*?\bhref\s*=\s*["\']([^"\'#][^"\']*)["\']', re.I)
+URL_PARAMS_VAR = re.compile(r'\b(\w+)\s*=\s*new\s+URLSearchParams\s*\(')
+URL_PARAM_GET = re.compile(r'\b(\w+)\s*\.\s*(?:get|has|getAll)\s*\(\s*["\'`]([\w.-]+)["\'`]')
+URL_PARAM_INLINE = re.compile(r'new\s+URLSearchParams\s*\([^)]*\)\s*\.\s*(?:get|has|getAll)\s*\(\s*["\'`]([\w.-]+)["\'`]')
+LOCAL_STORAGE_SET = re.compile(r'\b(?:localStorage|sessionStorage)\s*\.\s*setItem\s*\(\s*["\'`]([\w.:-]+)["\'`]')
+FASTAPI_HTML = re.compile(r'media_type\s*=\s*["\']text/html|\.html["\']')
 HTTP_CLIENT_CALL = re.compile(r'''\b(?:client|test_client\(\)|request\(\s*app\s*\)|api_client|self\.client)\s*\.\s*'''
                               r'''(get|post|put|patch|delete|head|options)\(\s*f?["'`](/[^"'`]*)''')
 
@@ -209,10 +223,17 @@ def domain_hint(name: str) -> str | None:
 
 
 class Extractor:
-    def __init__(self, root: Path, max_files: int, goal_wrappers=(), exclude=()):
+    def __init__(self, root: Path, max_files: int, goal_wrappers=(), exclude=(), include=()):
         self.root = root
         self.max_files = max_files
         self.exclude = {e.replace('\\', '/').strip('/') for e in exclude if e.strip('/')}
+        self.include = {e.replace('\\', '/').strip('/') for e in include if e.strip('/')}
+        self.skipped_build_dirs: list[dict] = []     # dist/, build/, out/ that something in the repository produces
+        self.source_build_dirs: list[dict] = []      # ... that nothing produces (hand-written, served as they are)
+        self.static_files: dict[str, str] = {}       # plain .html pages outside templates/ (read after the walk)
+        self.php_files: list[str] = []
+        self.extra_limitations: list[str] = []
+        self.static_pages: list[dict] = []
         self.skipped_data_dirs: list[dict] = []
         self.skipped_data_files = 0              # .json files not opened: only manifests and configs matter by name
         self.template_files: dict[str, str] = {}  # server-side templates (Jinja/Django), read after the walk
@@ -312,6 +333,21 @@ class Extractor:
             except OSError:
                 continue
             for p in entries:
+                if p.is_dir() and p.name in py_extras.BUILD_DIRS:
+                    # a build-output folder is skipped only when something produces it; a committed one nothing
+                    # produces is hand-written source (a static front end served as it is). Either way it is listed.
+                    rel = self.rel(p)
+                    producer = None if (rel in self.include or p.name in self.include) else py_extras.build_producer(self.root, rel)
+                    if producer is None:
+                        self.source_build_dirs.append({'path': rel, 'reason': 'named by --include' if rel in self.include
+                                                       or p.name in self.include else 'no build step found (no package.json '
+                                                       'build script, bundler config or .gitignore entry produces it): '
+                                                       'read as hand-written source'})
+                        stack.append(p)
+                    else:
+                        self.skipped_build_dirs.append({'path': rel, 'reason': f'build output: {producer}',
+                                                        'files': sum(len(f) for _, _, f in os.walk(p))})
+                    continue
                 if p.is_dir():
                     if p.name not in SKIP_DIRS and not p.name.endswith(('.xcassets', '.framework')):
                         rel = self.rel(p)
@@ -322,7 +358,7 @@ class Extractor:
                             stack.append(p)
                 elif p.suffix.lower() == '.json' and not JSON_NAME.match(p.name):
                     self.skipped_data_files += 1
-                elif p.suffix.lower() in SOURCE_EXT or self.is_template(p) \
+                elif p.suffix.lower() in SOURCE_EXT or p.suffix.lower() in ('.html', '.htm') or self.is_template(p) \
                         or p.name in ('routes.rb', 'Gemfile', 'go.mod', 'pubspec.yaml') \
                         or p.name.startswith(('build.gradle', 'requirements')) or p.suffix in ('.csproj', '.toml'):
                     if self.files_scanned >= self.max_files:
@@ -770,6 +806,32 @@ class Extractor:
         """Flask, FastAPI and Azure Functions routes (with router and blueprint prefixes), function triggers
         and command lines, read with ast so decorators inside docstrings never count."""
         res = scan_python(self.py_files, self.host_files)
+        try:
+            project = py_routes.Project(self.py_files, py_routes.host_route_prefixes(self.host_files))
+            conds = py_extras.route_conditions(project)
+        except Exception:  # noqa: BLE001  (a reader failure leaves the routes as they were)
+            project, conds = None, {}
+        self.mounts = []
+        if project is not None:
+            for st in py_extras.static_mounts(project):          # StaticFiles mounts (Flask's static/ is not a page)
+                self.mounts.append(st)
+                note = (f"serves the files of {st['directory']}/ as they are" if st.get('directory') else 'serves static files')
+                self.add('route', st['path'], self.root / st['file'], st['line'], st['framework'], 'high',
+                         'fastapi' if st['framework'] == 'starlette-static' else 'flask', 'web',
+                         directory=st.get('directory'), note=note + ' (a static mount)',
+                         **({'condition': st['condition']} if st.get('condition') else {}))
+            for mw in py_extras.middleware(project):
+                self.guards.append({'file': mw['file'], 'line': mw['line'], 'kind': 'middleware', 'framework': 'python',
+                                    'class': mw['class'], 'owner': mw['owner'],
+                                    **({'condition': mw['condition']} if mw.get('condition') else {}),
+                                    'note': 'Runs on every request of the app it is added to; read it to see what it '
+                                            'guards' + (' (added only when the condition holds)' if mw.get('condition') else '')})
+            known = {c['command'] for c in res['clis']}
+            for c in py_extras.command_lines(project):
+                if c['command'] not in known:
+                    self.add('entry_point', f"cli: {c['command']}", self.root / c['file'], c['line'],
+                             f"{c['framework']}-command", 'high' if c['framework'] == 'argparse' else 'medium', None, 'cli',
+                             **({'options': c['options']} if c.get('options') else {}))
         pages: dict[tuple, dict] = {}   # (path, file, line) -> the page a view renders, with its methods
         self.view_paths: dict[str, list[str]] = {}   # view function name -> paths (for url_for links in templates)
         for r in res['routes']:
@@ -783,22 +845,23 @@ class Extractor:
             self.frameworks.add(r['framework'])
             if r.get('function'):
                 self.view_paths.setdefault(r['function'], []).append(r['path'])
-            view = self.view_output(r) if r['framework'] == 'flask' else None
+            view = self.view_output(r) if r['framework'] in ('flask', 'fastapi') else None
+            cond = conds.get((r['file'], r['line'], r.get('router_prefix') or ''))
             if view and view[0] == 'page':
                 # a view that renders an HTML template is a page a person visits, not an API endpoint
                 key = (r['path'], r['file'], r['line'])
                 if key not in pages:
                     pages[key] = {'path': r['path'], 'file': path, 'line': r['line'], 'methods': [], 'template': view[1],
                                   'framework': r['framework'], 'confidence': 'high' if r['mount'] == 'resolved' else 'medium',
-                                  'note': note, 'function': r.get('function')}
+                                  'note': note, 'function': r.get('function'), 'condition': cond}
                 pages[key]['methods'].append(r['method'])
                 continue
             self.add('endpoint', f"{r['method']} {r['path']}", path, r['line'], f"{r['framework']}-route",
                      'high' if r['mount'] == 'resolved' else 'medium', r['framework'], 'api',
-                     **({'note': note} if note else {}))
+                     **({'note': note} if note else {}), **({'condition': cond} if cond else {}))
         for p in pages.values():
             tpl = self.template_path(p['template'], self.rel(p['file'])) if p['template'] else None
-            extra = {'methods': p['methods'], 'view': p['function']}
+            extra = {'methods': p['methods'], 'view': p['function'], **({'condition': p['condition']} if p['condition'] else {})}
             if p['template']:
                 extra['template'] = tpl or p['template']
             if p['template'] and not tpl:
@@ -833,6 +896,94 @@ class Extractor:
                          'fastapi-route-text', 'low', 'fastapi', 'api',
                          note='file did not parse; read as text, so router prefixes are not applied')
 
+    def served_path(self, rel: str) -> str:
+        """The URL path a plain page is served at: under a StaticFiles mount of its directory when there is one,
+        else relative to the topmost directory above it holding an index.html (index.html is the directory)."""
+        parts = rel.split('/')
+        base = None
+        for st in getattr(self, 'mounts', []):
+            d = (st.get('directory') or '').strip('./').strip('/')
+            if d and rel.startswith(d + '/'):
+                prefix = st['path'].replace('/{path:path}', '').rstrip('/')
+                base = (prefix, len(d.split('/')))
+                break
+        if base is None:
+            depth = len(parts) - 1
+            for i in range(len(parts) - 1):
+                if '/'.join(parts[:i] + ['index.html']) in self.static_files:
+                    depth = i
+                    break
+            base = ('', depth)
+        tail = parts[base[1]:]
+        if tail and tail[-1].lower() in ('index.html', 'index.htm'):
+            tail = tail[:-1]
+        return (base[0] + '/' + '/'.join(tail)) if tail else (base[0] or '/')
+
+    def scan_static_site(self):
+        """Plain HTML pages with no framework: each page is a route; its buttons, inputs, forms, links and the fetch()
+        calls of its scripts are listed in context.static_pages; URL parameters its scripts read
+        (URLSearchParams(...).get('x')) are entry points, and storage writes (localStorage.setItem) weak goals."""
+        for rel, text in sorted(self.static_files.items()):
+            offsets = [i for i, c in enumerate(text) if c == '\n']
+            L = lambda pos: self.line_of(offsets, pos)  # noqa: E731
+            route = self.served_path(rel)
+            self.add('route', route, self.root / rel, 1, 'static-html', 'medium', 'static-html', 'web',
+                     note='a plain HTML page (no router): trace its handlers in its scripts')
+            buttons = []
+            for m in HTML_BUTTON.finditer(text):
+                bid = ATTR_ID.search(m.group(1))
+                buttons.append({'id': bid.group(1) if bid else None, 'text': re.sub(r'<[^>]+>|\s+', ' ', m.group(2)).strip()[:60],
+                                'line': L(m.start())})
+            inputs = []
+            for m in HTML_INPUT.finditer(text):
+                iid, ityp, inm = ATTR_ID.search(m.group(2)), ATTR_TYPE.search(m.group(2)), ATTR_NAME.search(m.group(2))
+                inputs.append({'tag': m.group(1).lower(), 'type': ityp.group(1) if ityp else None,
+                               'id': iid.group(1) if iid else None, 'name': inm.group(1) if inm else None, 'line': L(m.start())})
+            forms = []
+            for m in TPL_FORM.finditer(text):
+                act, meth = TPL_ACTION.search(m.group(1)), TPL_METHOD.search(m.group(1))
+                forms.append({'action': act.group(1) if act else '', 'method': (meth.group(1) if meth else 'get').lower(),
+                              'line': L(m.start())})
+            links = [{'url': m.group(1), 'line': L(m.start())} for m in HTML_LINK.finditer(text)]
+            scripts, sources = [], [(rel, text, offsets, True)]
+            for m in HTML_SCRIPT_SRC.finditer(text):
+                src = m.group(1)
+                if re.match(r'^[a-z]+:|^//', src, re.I):
+                    scripts.append({'src': src, 'line': L(m.start()), 'external': True})
+                    continue
+                target = (Path(rel).parent / src.lstrip('/')).as_posix() if not src.startswith('/') else src.lstrip('/')
+                target = os.path.normpath(target).replace('\\', '/')
+                scripts.append({'src': src, 'line': L(m.start()), 'file': target if target in self.js_texts else None})
+                if target in self.js_texts:
+                    js = self.js_texts[target]
+                    sources.append((target, js, [i for i, c in enumerate(js) if c == '\n'], False))
+            fetches = []
+            for src_rel, src_text, src_off, inline in sources:
+                chunks = [(m.start(1), m.group(1)) for m in HTML_INLINE_SCRIPT.finditer(src_text)] if inline else [(0, src_text)]
+                for base, chunk in chunks:
+                    line = lambda pos: self.line_of(src_off, base + pos)  # noqa: E731
+                    for m in TPL_FETCH.finditer(chunk):
+                        fetches.append({'url': m.group(1), 'file': src_rel, 'line': line(m.start())})
+                    names = set(URL_PARAMS_VAR.findall(chunk)) | {'searchParams'}
+                    keys = [(m.group(2), m.start()) for m in URL_PARAM_GET.finditer(chunk) if m.group(1) in names]
+                    keys += [(m.group(1), m.start()) for m in URL_PARAM_INLINE.finditer(chunk)]
+                    for key, pos in keys:
+                        self.add('entry_point', f'query: ?{key}', self.root / src_rel, line(pos), 'url-param', 'medium',
+                                 'static-html', 'web', note=f'{route} reads this URL parameter')
+                    for m in LOCAL_STORAGE_SET.finditer(chunk):
+                        self.add('goal', m.group(1), self.root / src_rel, line(m.start()), 'local-storage', 'low',
+                                 'static-html', 'web', note='a storage write: a weak goal candidate; confirm what it records')
+            self.static_pages.append({'file': rel, 'route': route, 'buttons': buttons, 'inputs': inputs, 'forms': forms,
+                                      'links': links, 'scripts': scripts, 'fetches': fetches})
+
+    def scan_php(self):
+        routes, notes = py_extras.php_routes(self.root, self.php_files)
+        for r in routes:
+            self.add('endpoint', f"{r['method']} {r['path']}", self.root / r['file'], r['line'], 'php-front-controller',
+                     'low', 'php', 'api', **({'note': r['note']} if r.get('note') else {}))
+            self.frameworks.add('php')
+        self.extra_limitations += notes
+
     def view_output(self, r: dict) -> tuple[str, str | None] | None:
         """('page', template) when the view function behind a route renders an HTML template (render_template,
         stream_template, render_template_string), ('file', None) when it sends a file; None otherwise (JSON, redirects,
@@ -850,6 +1001,14 @@ class Extractor:
                and n.name == r.get('function')]
         fn = next((n for n in fns if any(d.lineno == r['line'] for d in n.decorator_list)), fns[0] if len(fns) == 1 else None)
         if fn is None:
+            return None
+        if r['framework'] == 'fastapi':
+            # a FastAPI handler returning an HTML page: HTMLResponse (built or as response_class), a text/html media
+            # type, or the contents or path of an .html file; anything else stays an endpoint
+            classes = set(r.get('response_classes') or [])
+            body = ast.unparse(fn) if hasattr(ast, 'unparse') else ''
+            if 'HTMLResponse' in classes or FASTAPI_HTML.search(body):
+                return 'page', None
             return None
         sends_file = False
         for node in ast.walk(fn):
@@ -1040,6 +1199,12 @@ class Extractor:
             if self.is_template(path):
                 self.template_files[self.rel(path)] = text   # read after the walk, with the views that render them
                 continue
+            if path.suffix.lower() in ('.html', '.htm'):
+                if not self.is_test(rel_parts, path.name) and not (self.deps_for(path) & WEB_FW):
+                    self.static_files[self.rel(path)] = text  # a plain page: read after the walk with its scripts
+                continue
+            if path.suffix.lower() == '.php' and not self.is_test(rel_parts, path.name):
+                self.php_files.append(self.rel(path))
             self.detect_project(path, text)
             if self.is_test(rel_parts, path.name):
                 self.scan_test(path, text)
@@ -1053,6 +1218,8 @@ class Extractor:
             self.file_route(path, list(rel_parts), deps, text)
             self.scan_content(path, text, deps)
         self.scan_python_project()
+        self.scan_static_site()
+        self.scan_php()
         self.templates = self.scan_templates()
         self.scan_client_routes()
         self.wrappers = self.resolve_wrappers()
@@ -1113,10 +1280,13 @@ class Extractor:
                                                '(context.tests).'},
                         'services': sorted({it['service'] for it in unique if it.get('service')}),
                         'python_mounts': self.py_notes,
+                        'static_pages': self.static_pages,
                         'templates': getattr(self, 'templates', [])},
             'stats': {'files_scanned': self.files_scanned, 'truncated': self.truncated,
                       'counts': {k: len(v) for k, v in surface.items()},
                       'skipped_data_dirs': self.skipped_data_dirs,
+                      'skipped_build_dirs': self.skipped_build_dirs,
+                      'source_build_dirs': self.source_build_dirs,
                       'skipped_data_files': self.skipped_data_files},
             'limitations': [
                 'Heuristic extraction: verify every item. Client routes are joined through nested route objects, '
@@ -1150,7 +1320,18 @@ class Extractor:
                 'openapi*/swagger*); directories of hundreds of data files with no code are not walked '
                 '(stats.skipped_data_dirs).',
                 'Import aliases are reported (context.path_aliases) but imports are not resolved.',
-            ],
+                'Plain HTML pages outside templates/ with no framework are routes (detector static-html); '
+                'context.static_pages lists each page\'s buttons, inputs, forms, links, scripts and fetch() calls. '
+                'URL parameters its scripts read (URLSearchParams) are entry points, storage writes weak goals; click '
+                'handlers are not traced: map them by hand.',
+                'FastAPI handlers returning HTML (HTMLResponse, text/html, an .html file) are web routes; StaticFiles '
+                'mounts are routes with the directory they serve; routes, includes and middleware under an if carry '
+                'their condition; middleware is listed in context.guards; flags-only argparse programs and sys.argv[1] '
+                'dispatch are command-line entry points.',
+                'dist/, build/ and out/ are skipped only when something in the repository produces them '
+                '(stats.skipped_build_dirs, with --include DIR to read one); a committed one nothing produces is read '
+                'as source (stats.source_build_dirs).',
+            ] + self.extra_limitations,
         }
 
 
@@ -1298,6 +1479,94 @@ def self_test_flask(problems: list[str]) -> None:
         problems.append(f"data tree: skipped {skipped}, files scanned {st['files_scanned']}")
 
 
+# A FastAPI server with no framework front end: it serves a committed, hand-written dist/ (no package.json, no bundler)
+# through StaticFiles, returns the HTML shell from GET /, picks serving modes with flags-only argparse, includes a router
+# and adds a middleware only under flags; a PHP front controller sits beside it, and a helper dispatches on sys.argv[1].
+SELF_TEST_KIOSK = {
+    'requirements.txt': 'fastapi\n',
+    'server.py': (
+        'import argparse\nfrom fastapi import FastAPI\nfrom fastapi.responses import HTMLResponse\n'
+        'from fastapi.staticfiles import StaticFiles\nfrom extras import uploads\nfrom extras.guard import SimpleAuthMiddleware\n\n'
+        'parser = argparse.ArgumentParser(description="Serve the kiosk")\nparser.add_argument("--port", type=int, default=8000)\n'
+        'parser.add_argument("--uploads", action="store_true")\nparser.add_argument("--user")\nargs = parser.parse_args()\n\n'
+        'app = FastAPI()\nif args.user:\n    app.add_middleware(SimpleAuthMiddleware, user=args.user)\n'
+        'if args.uploads:\n    app.include_router(uploads.router)\n\n\n'
+        '@app.get("/")\nasync def index():\n    return HTMLResponse(open("dist/index.html").read())\n\n\n'
+        '@app.get("/health")\nasync def health():\n    return {"ok": True}\n\n\n'
+        'app.mount("/", StaticFiles(directory="dist", html=True), name="dist")\n'),
+    'extras/__init__.py': '',
+    'extras/uploads.py': ('from fastapi import APIRouter\n\nrouter = APIRouter(prefix="/uploads")\n\n\n'
+                          '@router.post("/put")\nasync def put():\n    return {}\n'),
+    'extras/guard.py': 'class SimpleAuthMiddleware:\n    def __init__(self, app, user=None):\n        self.app = app\n',
+    'tools/packer.py': ('import sys\n\n\ndef main():\n    command = sys.argv[1]\n    if command == "pack":\n        return 1\n'
+                        '    elif command == "unpack":\n        return 2\n'),
+    'dist/index.html': ('<!doctype html>\n<html><body>\n<select id="lang"><option>en</option></select>\n'
+                        '<input type="file" id="restore">\n<button id="start">Start</button>\n'
+                        '<form action="/uploads/put" method="post"><input name="note"></form>\n'
+                        '<script src="app.js"></script>\n</body></html>\n'),
+    'dist/app.js': ('const params = new URLSearchParams(window.location.search);\nconst lang = params.get("lang") || "en";\n'
+                    'if (params.has("mode")) { document.body.classList.add("kiosk"); }\n'
+                    'document.getElementById("start").addEventListener("click", async () => {\n'
+                    '  await fetch("/uploads/put", {method: "POST"});\n  localStorage.setItem("settings", lang);\n});\n'),
+    'index.php': ("<?php\n$uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);\n"
+                  "if (preg_match('#^/assets/(.*)#', $uri, $m)) {\n    echo 'asset';\n}\n"),
+    '.htaccess': 'RewriteEngine On\nRewriteRule ^.*$ index.php [L]\n',
+}
+
+
+def self_test_static_site(problems: list[str]) -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'kiosk'
+        for rel, text in SELF_TEST_KIOSK.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(text, encoding='utf-8')
+        data = Extractor(root.resolve(), 1000).run()
+        (root / 'package.json').write_text('{"name": "kiosk", "scripts": {"build": "vite build"}}\n', encoding='utf-8')
+        built = Extractor(root.resolve(), 1000).run()
+        forced = Extractor(root.resolve(), 1000, include=['dist']).run()
+    s, ctx, st = data['surface'], data['context'], data['stats']
+    routes = {(i['name'], i.get('detector')): i for i in s['routes']}
+    eps = {i['name']: i for i in s['endpoints']}
+    if not any(n == '/' and det == 'static-html' for n, det in routes):
+        problems.append(f'static site: dist/index.html is a route "/" (static-html), got {sorted(routes)}')
+    if not any(det == 'fastapi-view' and n == '/' for n, det in routes) or 'GET /' in eps:
+        problems.append(f'static site: GET / returning HTMLResponse is a web route, not an endpoint (routes {sorted(routes)}, '
+                        f'endpoints {sorted(eps)})')
+    if not any(det == 'starlette-static' and i.get('directory') == 'dist' for (n, det), i in routes.items()):
+        problems.append(f'static site: the StaticFiles mount is a route, got {sorted(routes)}')
+    if (eps.get('POST /uploads/put') or {}).get('condition') != 'args.uploads':
+        problems.append(f"static site: a router included under an if records its condition, got {eps.get('POST /uploads/put')}")
+    entries = {i['name']: i for i in s['entry_points']}
+    for want in ('query: ?lang', 'query: ?mode', 'cli: server', 'cli: packer pack', 'cli: packer unpack'):
+        if want not in entries:
+            problems.append(f'static site: entry point {want!r} missing, got {sorted(entries)}')
+    if not {'--port', '--uploads', '--user'} <= set((entries.get('cli: server') or {}).get('options') or []):
+        problems.append(f"static site: the flags-only command line lists its options, got {entries.get('cli: server')}")
+    if not any(g['name'] == 'settings' and g.get('detector') == 'local-storage' for g in s['goals']):
+        problems.append(f"static site: localStorage.setItem is a weak goal candidate, got {[g['name'] for g in s['goals']]}")
+    pages = {p['file']: p for p in ctx.get('static_pages') or []}
+    page = pages.get('dist/index.html') or {}
+    if [b.get('id') for b in page.get('buttons') or []] != ['start'] or \
+            {i.get('id') for i in page.get('inputs') or []} < {'lang', 'restore'} or \
+            [f['action'] for f in page.get('forms') or []] != ['/uploads/put'] or \
+            '/uploads/put' not in [f['url'] for f in page.get('fetches') or []]:
+        problems.append(f'static site: the page lists its buttons, inputs, forms and fetch() calls, got {page}')
+    if not any(g.get('kind') == 'middleware' and g.get('condition') == 'args.user' for g in ctx['guards']):
+        problems.append(f"static site: add_middleware under an if is a guard with its condition, got {ctx['guards']}")
+    if not any(i.get('framework') == 'php' for i in s['endpoints']) or \
+            not any('PHP' in x and 'index.php' in x for x in data['limitations']):
+        problems.append('static site: the PHP front controller is read by pattern and named in limitations')
+    if 'web' not in data['platforms']:
+        problems.append(f"static site: platforms {data['platforms']}")
+    if not any(x['path'] == 'dist' for x in st.get('source_build_dirs') or []):
+        problems.append(f"static site: a dist/ nothing builds is read as source and listed, got {st.get('source_build_dirs')}")
+    if not any(x['path'] == 'dist' and x.get('files') for x in built['stats'].get('skipped_build_dirs') or []):
+        problems.append(f"static site: a built dist/ is skipped and listed with its file count, got "
+                        f"{built['stats'].get('skipped_build_dirs')}")
+    if not any(i.get('detector') == 'static-html' for i in forced['surface']['routes']):
+        problems.append('static site: --include dist reads a built dist/')
+
+
 def self_test() -> int:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d) / 'bakery'
@@ -1325,6 +1594,10 @@ def self_test() -> int:
     if 'cli' not in data['platforms'] or data['context']['services'] != ['orders', 'stock', 'stock-functions-watcher']:
         problems.append(f"platforms {data['platforms']}, services {data['context']['services']}")
     self_test_flask(problems)
+    try:
+        self_test_static_site(problems)
+    except Exception as exc:  # noqa: BLE001
+        problems.append(f"static site: crashed: {type(exc).__name__}: {exc}")
     for p in problems:
         print('FAIL', p)
     if problems:
@@ -1345,6 +1618,9 @@ def main() -> int:
     ap.add_argument('--exclude', action='append', default=[], metavar='DIR',
                     help='repository-relative directory not to walk (repeatable); directories of hundreds of data files '
                          '(JSON, CSV, ...) with no code are skipped without it and listed in stats.skipped_data_dirs')
+    ap.add_argument('--include', action='append', default=[], metavar='DIR',
+                    help='read a dist/, build/ or out/ directory that is skipped because something in the repository '
+                         'builds it (repeatable); one that nothing builds is read without it')
     ap.add_argument('--goal-wrapper', action='append', default=[], metavar='NAME',
                     help='name of a function that sends analytics events (its first argument is the event name); '
                          'repeatable, comma-separated lists allowed. Wrappers that forward their first parameter to a '
@@ -1354,7 +1630,12 @@ def main() -> int:
     if not root.is_dir():
         print(f'Not a directory: {root}', file=sys.stderr); return 2
     wrappers = [w for arg in args.goal_wrapper for w in arg.split(',')]
-    data = Extractor(root, args.max_files, wrappers, args.exclude).run()
+    data = Extractor(root, args.max_files, wrappers, args.exclude, args.include).run()
+    for s in data['stats']['skipped_build_dirs']:
+        print(f"note: {s['path']}/ skipped ({s['files']} files): {s['reason']}; --include {s['path']} reads it",
+              file=sys.stderr)
+    for s in data['stats']['source_build_dirs']:
+        print(f"note: {s['path']}/ read as source: {s['reason']}", file=sys.stderr)
     text = json.dumps(data, indent=2, ensure_ascii=False)
     if args.out:
         args.out.write_text(text + '\n', encoding='utf-8')

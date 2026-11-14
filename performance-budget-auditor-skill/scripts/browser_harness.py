@@ -75,6 +75,14 @@ Config (dict):
     headless              true (default)
     host_map              {"*.shop.test": "127.0.0.1"}: resolve these hosts to loopback (Chromium only), so a
                           sample app can use made-up hostnames for itself and its stub vendors
+    http_cache            route (default): requests are guarded with Playwright routing (context.route), which
+                          turns the browser's HTTP cache off, so a second load in the same context is NOT a
+                          warm-cache load; metadata()['http_cache'] says so (mode disabled). keep (Chromium
+                          only): each page is guarded through its own CDP session (Fetch.requestPaused) instead,
+                          which leaves the HTTP cache on, with the same third-party, write and budget rules;
+                          requests from dedicated and service workers are not intercepted then (the DNS guard
+                          still leaves third-party names unresolvable), and metadata records that (mode kept).
+                          On Firefox or WebKit keep falls back to routing, recorded with a note.
 
 Actions (act): {"click": sel} {"dblclick": sel} {"hover": sel} {"press": key} {"fill": sel, "value"|"env"}
 {"select": sel, "value"} {"check": sel} {"uncheck": sel} {"wait": ms} {"wait_for": sel} {"goto": url}
@@ -85,6 +93,11 @@ offline, or a dict {download_kbps, upload_kbps, rtt_ms}. new_page(service_worker
 a cold run cold; mobile=True sets is_mobile and has_touch (Chromium). h.cdp(page) returns the
 page's CDP session, and h.start_trace(page) / h.stop_trace() record a DevTools performance trace. The clock uses Playwright's page.clock (1.45+): the page sees that fixed time, and
 time runs on from it.
+
+Effective viewport: every screenshot() records the page's real inner size next to the planned viewport in
+h.log(page)['viewports'] ({at, planned, effective, screen, fullscreen, matches_planned}); h.viewport_now(page)
+reads it on demand. A page that went fullscreen (requestFullscreen) or resized itself is no longer the planned
+size, so box and layout comparisons across runs must check matches_planned first.
 
 Request accounting: h.requests counts every request the browser routed through the harness
 ({seen, sent, blocked: {write, third_party, budget}, by_method, budget, budget_exhausted}).
@@ -301,9 +314,15 @@ class Harness:
         self._logs: dict[int, dict] = {}
         self._contexts: dict[int, object] = {}
         self._cdp: dict[int, object] = {}
+        self._fetch_guarded: set[int] = set()   # CDP sessions carrying the Fetch guard (http_cache keep)
         self._inflight: dict[int, dict] = {}       # page -> {request: start time} for settle()
         self._long_lived_noted: set[str] = set()
         self.settle_cap_s = float(cfg.get('settle_seconds', 8))
+        cache = cfg.get('http_cache', 'route')
+        if cache not in ('route', 'keep'):
+            raise ValueError("http_cache must be 'route' or 'keep'")
+        self.http_cache_wanted = cache
+        self.keep_cache = cache == 'keep' and self.browser_name == 'chromium'
 
     def __enter__(self):
         from playwright.sync_api import sync_playwright
@@ -393,7 +412,21 @@ class Harness:
                 'stopped': self.stopped, 'requests': {**self.requests, 'blocked': dict(self.requests['blocked']),
                                                       'by_method': dict(self.requests['by_method'])},
                 'auth': dict(self.auth_info) if self.auth_info else None, 'trace_with_auth': self.trace_with_auth,
-                'dns_guard': dict(self.dns_guard)}
+                'dns_guard': dict(self.dns_guard), 'http_cache': self.http_cache_info()}
+
+    def http_cache_info(self) -> dict:
+        """Whether the browser's HTTP cache worked in this run (a warm-cache measurement needs mode kept)."""
+        if self.keep_cache:
+            return {'mode': 'kept', 'interception': 'CDP Fetch.requestPaused on each page (no Playwright routing)',
+                    'note': 'requests from dedicated and service workers are not intercepted by the per-page guard; '
+                            'third-party names stay unresolvable through the DNS guard'}
+        info = {'mode': 'disabled', 'interception': 'Playwright context.route',
+                'reason': 'requests are guarded with Playwright routing (context.route), which disables the HTTP cache: '
+                          'a repeat load in the same context fetches everything again, so it is not a warm-cache load; '
+                          "set http_cache: 'keep' (Chromium) to keep the cache"}
+        if self.http_cache_wanted == 'keep':
+            info['note'] = f"http_cache keep is Chromium only; {self.browser_name} ran with routing, so the cache was off"
+        return info
 
     def __exit__(self, *exc):
         try:
@@ -422,30 +455,67 @@ class Harness:
         s = site_of(host)
         return 'same_site' if any(site_of(v) == s for v in self.visited if v) else 'third_party'
 
-    def _block(self, request, reason: str):
+    def _block(self, method: str, url: str, reason: str):
         self.requests['blocked'][reason] = self.requests['blocked'].get(reason, 0) + 1
-        self.blocked.append({'method': request.method, 'url': request.url.split('?')[0], 'reason': reason,
-                             'site': self.site(request.url), 'at': now()})
+        self.blocked.append({'method': method, 'url': url.split('?')[0], 'reason': reason,
+                             'site': self.site(url), 'at': now()})
 
-    def guard(self, route, request):
+    def decide(self, method: str, url: str) -> str | None:
+        """Count one request and return why it must be aborted (third_party, write, budget), or None to send it.
+        The single rule behind both guards (Playwright routing and the CDP Fetch guard)."""
         r = self.requests
         r['seen'] += 1
-        r['by_method'][request.method] = r['by_method'].get(request.method, 0) + 1
-        if self.third_party == 'block' and not self.host_allowed(request.url):
-            self._block(request, 'third_party')
-            return route.abort('blockedbyclient')
-        if request.method not in SAFE_METHODS and not self.allow_post:
-            self._block(request, 'write')
-            return route.abort()
-        if r['budget'] is not None and r['sent'] >= r['budget']:
+        r['by_method'][method] = r['by_method'].get(method, 0) + 1
+        reason = None
+        if self.third_party == 'block' and not self.host_allowed(url):
+            reason = 'third_party'
+        elif method not in SAFE_METHODS and not self.allow_post:
+            reason = 'write'
+        elif r['budget'] is not None and r['sent'] >= r['budget']:
             if not r['budget_exhausted']:
                 r['budget_exhausted'] = True
-                self.events.append({'url': request.url.split('?')[0], 'event': f'request budget of {r["budget"]} used up; '
+                self.events.append({'url': url.split('?')[0], 'event': f'request budget of {r["budget"]} used up; '
                                     'every further request is aborted', 'at': now()})
-            self._block(request, 'budget')
-            return route.abort('blockedbyclient')
+            reason = 'budget'
+        if reason:
+            self._block(method, url, reason)
+            return reason
         r['sent'] += 1
+        return None
+
+    def guard(self, route, request):
+        reason = self.decide(request.method, request.url)
+        if reason == 'write':
+            return route.abort()
+        if reason:
+            return route.abort('blockedbyclient')
         return route.continue_()
+
+    def _fetch_paused(self, cdp, ev: dict):
+        """The CDP Fetch guard (http_cache keep): the same rule as guard(), without Playwright routing, so the
+        HTTP cache stays on (cache hits never reach it)."""
+        req = ev.get('request') or {}
+        reason = self.decide(req.get('method', 'GET'), req.get('url', ''))
+        try:
+            if reason:
+                cdp.send('Fetch.failRequest', {'requestId': ev['requestId'], 'errorReason': 'BlockedByClient'})
+            else:
+                cdp.send('Fetch.continueRequest', {'requestId': ev['requestId']})
+        except Exception as e:   # noqa: BLE001  (the page or target closed meanwhile)
+            self.events.append({'url': req.get('url', '').split('?')[0], 'event': f'CDP guard: {e}', 'at': now()})
+
+    def _attach_fetch_guard(self, ctx, page):
+        """Guard one page (and, through the context's page event, every popup it opens) over its own CDP session.
+        A popup's first requests can precede its guard; the DNS guard still keeps third-party names unresolvable."""
+        cdp = self._cdp.get(id(page))
+        if cdp is None:
+            cdp = self._cdp[id(page)] = ctx.new_cdp_session(page)
+        if id(cdp) in self._fetch_guarded:
+            return cdp
+        self._fetch_guarded.add(id(cdp))
+        cdp.on('Fetch.requestPaused', lambda ev: self._fetch_paused(cdp, ev))
+        cdp.send('Fetch.enable', {'patterns': [{'urlPattern': '*', 'requestStage': 'Request'}]})
+        return cdp
 
     def new_page(self, viewport: str = '1280x800', timezone: str | None = None, locale: str | None = None,
                  clock: str | None = None, cpu_throttle: float | None = None, network: str | None = None,
@@ -464,7 +534,12 @@ class Harness:
         if user_agent:
             kw['user_agent'] = user_agent
         ctx = self._browser.new_context(**kw)
-        ctx.route('**/*', self.guard)
+        if self.keep_cache:   # guard each page over CDP, so the HTTP cache stays on
+            # popups (window.open) get their own guard; the page made below is guarded directly (its page event
+            # can arrive after new_page() returns, and a second session would intercept every request twice)
+            ctx.on('page', lambda p: self._attach_fetch_guard(ctx, p) if p.opener() else None)
+        else:
+            ctx.route('**/*', self.guard)   # Playwright routing disables the HTTP cache (metadata says so)
         if self._session_script:
             ctx.add_init_script(script=self._session_script)
         page_scripts = self.init_scripts + [self._script_source(s) for s in init_scripts or []]
@@ -476,7 +551,11 @@ class Harness:
         if trace:
             ctx.tracing.start(screenshots=True, snapshots=True)
         page = ctx.new_page()
-        log = {'console': [], 'page_errors': [], 'failed_requests': [], 'applied': {'viewport': viewport, 'timezone': timezone,
+        if self.keep_cache:
+            self._attach_fetch_guard(ctx, page)
+        log = {'console': [], 'page_errors': [], 'failed_requests': [], 'viewports': [],
+               'http_cache': 'kept' if self.keep_cache else 'disabled',
+               'applied': {'viewport': viewport, 'timezone': timezone,
                                                                                     'locale': locale, 'clock': clock,
                                                                                     'service_workers': service_workers,
                                                                                     'bypass_csp': self.bypass_csp,
@@ -504,7 +583,7 @@ class Harness:
             if self.browser_name != 'chromium':
                 log['not_applied'].append('cpu_throttle/network: CDP throttling is Chromium only')
             else:
-                cdp = ctx.new_cdp_session(page)
+                cdp = self._cdp.get(id(page)) or ctx.new_cdp_session(page)
                 self._cdp[id(page)] = cdp
                 if cpu_throttle:
                     cdp.send('Emulation.setCPUThrottlingRate', {'rate': float(cpu_throttle)})
@@ -667,7 +746,29 @@ class Harness:
     def screenshot(self, page, path: Path, full_page: bool = True) -> Path:
         path.parent.mkdir(parents=True, exist_ok=True)
         page.screenshot(path=str(path), full_page=full_page)
+        self.viewport_now(page, at=Path(path).name)
         return path
+
+    def viewport_now(self, page, at: str | None = None) -> dict | None:
+        """The page's effective viewport now ({at, planned, effective, screen, fullscreen, matches_planned}),
+        appended to h.log(page)['viewports'] when at is given. None if the page can't be read."""
+        try:
+            v = page.evaluate('() => ({w: window.innerWidth, h: window.innerHeight, sw: screen.width, '
+                              'sh: screen.height, fs: !!document.fullscreenElement})')
+        except Exception:   # noqa: BLE001
+            return None
+        log = self._logs.get(id(page)) or {}
+        planned = (log.get('applied') or {}).get('viewport')
+        try:
+            pw, ph = parse_vp(planned) if planned else (None, None)
+        except Exception:   # noqa: BLE001
+            pw = ph = None
+        rec = {'at': at, 'planned': planned, 'effective': f"{v.get('w')}x{v.get('h')}",
+               'screen': f"{v.get('sw')}x{v.get('sh')}" if v.get('sw') else None, 'fullscreen': bool(v.get('fs')),
+               'matches_planned': (v.get('w'), v.get('h')) == (pw, ph) if pw else None}
+        if at is not None and 'viewports' in log:
+            log['viewports'].append(rec)
+        return rec
 
     def login(self):
         auth = self.cfg.get('auth') or {}
@@ -769,6 +870,74 @@ def capture_session(url: str, out: Path, browser: str = 'chromium', wait_for: st
     return load_session(out)[2]
 
 
+def _cache_and_viewport_checks() -> list:
+    """No browser: the HTTP cache setting in metadata, the CDP Fetch guard that keeps the cache (fed fake
+    requestPaused events), and the effective viewport recorded with a capture (a fake page that went fullscreen)."""
+    checks = []
+
+    def meta(cfg):
+        try:
+            return Harness(cfg).metadata().get('http_cache') or {}
+        except Exception as e:   # noqa: BLE001
+            return {'error': repr(e)}
+    m = meta({})
+    checks.append(('metadata says routed runs have the HTTP cache disabled, and how to keep it',
+                   m.get('mode') == 'disabled' and 'route' in (m.get('reason') or '') and 'keep' in (m.get('reason') or ''), m))
+    m = meta({'http_cache': 'keep'})
+    checks.append(('http_cache keep (Chromium) records a kept cache and what is not intercepted',
+                   m.get('mode') == 'kept' and 'worker' in (m.get('note') or ''), m))
+    m = meta({'http_cache': 'keep', 'browser': 'firefox'})
+    checks.append(('http_cache keep on Firefox falls back to routing and says so',
+                   m.get('mode') == 'disabled' and 'Chromium only' in (m.get('note') or ''), m))
+
+    class FakeCDP:
+        def __init__(self):
+            self.sent = []
+
+        def send(self, method, params=None):
+            self.sent.append((method, (params or {}).get('requestId'), (params or {}).get('errorReason')))
+    try:
+        h = Harness({'http_cache': 'keep', 'targets': ['http://127.0.0.1:8000/']})
+        cdp = FakeCDP()
+        for i, (method, url) in enumerate((('GET', 'http://127.0.0.1:8000/app.js'), ('GET', 'https://ads.example.net/p.gif'),
+                                           ('POST', 'http://127.0.0.1:8000/api/save'))):
+            h._fetch_paused(cdp, {'requestId': f'r{i}', 'request': {'method': method, 'url': url}})
+        sent = cdp.sent
+        counts = h.requests
+    except Exception as e:   # noqa: BLE001
+        sent, counts = repr(e), {}
+    checks.append(('the CDP Fetch guard continues a loopback GET and fails a third-party GET and a write',
+                   sent == [('Fetch.continueRequest', 'r0', None), ('Fetch.failRequest', 'r1', 'BlockedByClient'),
+                            ('Fetch.failRequest', 'r2', 'BlockedByClient')]
+                   and counts.get('sent') == 1 and counts.get('blocked', {}).get('third_party') == 1
+                   and counts.get('blocked', {}).get('write') == 1, (sent, counts)))
+
+    class FakePage:
+        def evaluate(self, _js):
+            return {'w': 1366, 'h': 768, 'fs': True}
+
+        def screenshot(self, **_k):
+            return b''
+    try:
+        h = Harness({})
+        page = FakePage()
+        h._logs[id(page)] = {'applied': {'viewport': '1280x800'}, 'viewports': []}
+        h.screenshot(page, Path(tempfile_dir()) / 'home.png')
+        vp = h._logs[id(page)]['viewports']
+    except Exception as e:   # noqa: BLE001
+        vp = repr(e)
+    checks.append(('a capture records the effective viewport, and that fullscreen changed it from the planned one',
+                   isinstance(vp, list) and len(vp) == 1 and vp[0].get('effective') == '1366x768'
+                   and vp[0].get('planned') == '1280x800' and vp[0].get('fullscreen') is True
+                   and vp[0].get('matches_planned') is False, vp))
+    return checks
+
+
+def tempfile_dir() -> str:
+    import tempfile
+    return tempfile.mkdtemp(prefix='harness-')
+
+
 def self_test() -> int:
     """Launch options with third parties blocked (no browser is started): the DNS guard's resolver rules, the
     Firefox prefs, metadata, and a goto() to a host the guard would leave unresolvable."""
@@ -820,6 +989,7 @@ def self_test() -> int:
     checks.append(('goto() to a host the DNS guard would not resolve is refused with how to allow it',
                    res.get('ok') is False and 'targets' in (res.get('error') or '') and 'AssertionError' not in res.get('error', ''),
                    res))
+    checks += _cache_and_viewport_checks()
     failed = 0
     for name, ok, extra in checks:
         failed += not ok

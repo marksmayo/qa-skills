@@ -3,6 +3,7 @@
   "seed": 1611,
   "run_status": "complete",
   "environment_outage": false,
+  "vacuous_passes": [],
   "operations": [
     {
       "operation_id": "Query.clinicians",

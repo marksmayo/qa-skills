@@ -10,7 +10,10 @@ your server), and records what the user sees and loses:
   connections, offline, empty or truncated or wrong payloads, one dependency down, flapping endpoints,
   failed script chunks.
 - **Effects**: crashes and blank screens, endless spinners, failures with no message, failures shown as
-  empty data, lost form input, no way to recover without a reload, retry storms.
+  empty data or as success (a step's `done` showing after a failed read; mark background widgets with
+  `optional_endpoints`, and add `done_not` for error text), lost form input, no way to recover without a
+  reload, failures the app stored and replays after a reload (`persisted_failure`, checked by reloading
+  with the fault gone), retry storms.
 - **Evidence**: screenshots, request logs with timings, and a standalone repro script per finding.
 
 It is strict about what a run shows:

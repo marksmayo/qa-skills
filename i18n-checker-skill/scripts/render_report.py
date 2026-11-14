@@ -30,11 +30,14 @@ def main() -> int:
     d = json.loads(a.report.read_text(encoding='utf-8'))
     P = (lambda s, st: f'{st}{s}{RESET}') if supports_color(a.color) else (lambda s, st: s)
     sc, hl = d['scope'], d['headline']
-    verdict = P('ISSUES FOUND', RED + BOLD) if hl['verdict'] == 'issues_found' else P('NONE DETECTED', GREEN + BOLD) + ' (for the locales, files and pages checked)'
+    verdict = P('ISSUES FOUND', RED + BOLD) if hl['verdict'] == 'issues_found' else \
+        P('NOT ASSESSED', YELLOW + BOLD) + ' (no translation resources or code were analysed)' if hl['verdict'] == 'not_assessed' else \
+        P('NONE DETECTED', GREEN + BOLD) + ' (for the locales, files and pages checked)'
     locs = ', '.join(f'{l["code"]} ({l["status"]}{": " + l["reason"] if l["reason"] else ""})' for l in sc['locales'])
     out = [P('# Internationalisation check', BOLD), '', verdict, '', hl['summary'], '',
-           f'Locales: {locs}. Source {sc["source_locale"]}; RTL {", ".join(sc["rtl_locales"])}.',
-           f'Key coverage: ' + ', '.join(f'{k} {round(100 * v)}%' for k, v in hl['key_coverage'].items()) +
+           f'Locales: {locs}. Source {sc["source_locale"]}; RTL {", ".join(sc["rtl_locales"]) or "none"}.',
+           f'Key coverage: ' + (', '.join(f'{k} {round(100 * v)}%' for k, v in hl['key_coverage'].items())
+                                or 'not measured (no resource set with a second locale)') +
            f'. Translation quality: {hl["translation_quality"]}. Evidence {hl["evidence_completeness"]}, confidence {hl["overall_confidence"]}.']
     if sc['pseudo']:
         out.append(f'Pseudo-locale: {sc["pseudo"]["expansion"]} expansion, by {sc["pseudo"]["method"].replace("_", " ")}.')
@@ -54,6 +57,8 @@ def main() -> int:
             out.append(f'- Keys: {", ".join(f["keys"])}')
         if f['locations']:
             out.append('- Code: ' + ', '.join(f'{l["file"]}:{l["line"]}' for l in f['locations']))
+        if f.get('source') == 'agent':
+            out.append('- Found by review (agent), basis: ' + '; '.join(f'{b["file"]}:{b["line"]} `{b["excerpt"]}`' for b in f.get('basis') or []))
         for e in f['evidence'][:4]:
             out.append(f'- Seen: {e["page"]} in {e["locale"]} ({e["mode"]}), {e["element"]}: {json.dumps(e["measure"], ensure_ascii=False)[:120]} '
                        f'[{e["screenshot"]}]')

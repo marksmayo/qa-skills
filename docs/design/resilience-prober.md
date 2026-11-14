@@ -337,3 +337,26 @@ A read-only run against a Next.js App Router site on Vercel showed these gaps; v
 - **Not done** (from the same run): offline during a form-submit navigation still errors, `flapping` is
   not a failing group, a widget lost to a missing static asset raises nothing, redirect targets can't be
   faulted, a failed baseline can't be promoted, and recovery of a plain-navigation step is a reload.
+
+### v1.3.0: after a run on a static page served by a Python app, whose main step downloads a large binary
+
+- **A failure shown as success was invisible.** The app used an error body as its data and showed its
+  "ready" text, so every server error on the download was a console-only note. A failing fault on a read
+  whose step still completed, with no error shown, is now `misleading_state` (`shown_as_done`) unless the
+  step lists the endpoint in `optional_endpoints`; steps may add `done_not` selectors that must be absent.
+- **Stored failures were never checked.** After recovery the runner reloads the page with the fault gone
+  and runs the flow to the step again (reads only; `reload_after_recovery: false` turns it off), recording
+  each request's phase, the endpoint requests after the reload and the Cache Storage entries with their
+  statuses. No request after the reload and no good answer in the run is `persisted_failure` (Fatal).
+- **Blank and crash ignored the baseline.** A step whose baseline was already under 20 characters (a
+  canvas) gives a `baseline_blank` note; a visible video, canvas or large image is never blank; page errors
+  are compared with the baseline's, and an app root that was empty in the baseline says nothing.
+- **A static asset that killed the page's only feature was a note.** A static-asset fault that leaves the
+  step incomplete is `chunk_failure`.
+- **Repeating a navigation-only step is a reload.** Its recovery is `reload`, not tried, with a
+  `recovery_not_tried` note (older runs that recorded it as repeat_step are read the same way).
+- **Confidence could not be lowered.** `confidence_caps` (`{cap, reason}`) lowers the headline confidence
+  for documented reasons; the validator still recomputes it and never accepts a higher level.
+- The example's optional widgets (notices, recommendations) are listed under `optional_endpoints`.
+- **Not done:** a `block_media` option for media-heavy pages, and a recovery that "succeeds" only because
+  the faulted attempt's `done` is still on screen is still counted as recovered.

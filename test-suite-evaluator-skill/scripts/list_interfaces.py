@@ -42,7 +42,14 @@ Besides HTTP routes (kind `routes`), it lists the interfaces of a library, a CLI
     tools            MCP tools: registerTool('name') / tool('name') on an @modelcontextprotocol/sdk server
                      (transport noted: stdio or HTTP), and Python FastMCP @mcp.tool() functions
     routes           also a plain Node server (http.createServer) as one ANY / entry: its routing is in
-                     the handler, so read it by hand
+                     the handler, so read it by hand; app.mount(path, StaticFiles(...)) and Flask static
+                     folders (py_extras.py); PHP front controllers routing on REQUEST_URI (pattern only)
+    cli              also a flags-only argparse program (one entry with its options) and sys.argv[1]
+                     dispatch (`if command == "pack":`)
+
+Routes, includes and middleware under an `if` carry `condition`; `middleware` lists add_middleware and
+@app.middleware functions. dist/, build/ and out/ are skipped only when something produces them (skipped_dirs,
+--include DIR); a committed folder nothing produces is read as source (source_build_dirs).
 
 Go (go.mod and *.go, read with comment- and string-aware patterns, never compiled):
 
@@ -88,6 +95,7 @@ from pathlib import Path, PurePosixPath
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import lang_census, py_routes  # noqa: E402  (shared language census and route reader)
+import py_extras  # noqa: E402  (static mounts, conditions, middleware, flags-only CLIs, PHP, build-output folders)
 
 PRUNE = {'.git', '.hg', '.svn', 'node_modules', '.venv', 'venv', 'env', '__pycache__', '.mypy_cache', '.pytest_cache',
          '.tox', '.nox', 'dist', 'build', 'out', '.next', '.nuxt', 'coverage', 'site-packages', '.turbo', '.cache',
@@ -98,12 +106,38 @@ TEST_NAME = re.compile(r'(^test_.*\.py$|_test\.py$|^conftest\.py$|\.(test|spec)\
 TEST_DIRS = {'tests', 'test', '__tests__', 'spec', 'e2e', 'testing'}
 
 
-def walk(root: Path) -> list[str]:
-    """Repo-relative files, pruning dependency, build and cache directories before descending."""
+def walk(root: Path, include: tuple = (), skipped: list | None = None, kept: list | None = None) -> list[str]:
+    """Repo-relative files, pruning dependency, build and cache directories before descending. A build-output folder
+    (dist/, build/, out/) is read when nothing in the repository produces it (py_extras.build_producer: hand-written and
+    served as it is) or when named in include; otherwise it is pruned and recorded in skipped ({path, reason, files}).
+    kept collects the build-output folders read as source, with the reason."""
     out = []
     for dp, dns, fns in os.walk(root):
-        dns[:] = sorted(d for d in dns if d not in PRUNE and not d.endswith('.egg-info'))
         rel = Path(dp).relative_to(root).as_posix()
+        keep = []
+        for d in sorted(dns):
+            sub = d if rel == '.' else f'{rel}/{d}'
+            if d in py_extras.BUILD_DIRS and d in PRUNE:
+                if sub in include or d in include:
+                    keep.append(d)
+                    if kept is not None:
+                        kept.append({'path': sub, 'reason': 'read because --include names it'})
+                    continue
+                producer = py_extras.build_producer(root, sub)
+                if producer is None:
+                    keep.append(d)
+                    if kept is not None:
+                        kept.append({'path': sub, 'reason': 'no build step found (no package.json build script, bundler '
+                                                            'config or .gitignore entry produces it): read as hand-written '
+                                                            'source'})
+                    continue
+                if skipped is not None:
+                    skipped.append({'path': sub, 'reason': f'build output: {producer}',
+                                    'files': sum(len(f) for _, _, f in os.walk(Path(dp) / d))})
+                continue
+            if d not in PRUNE and not d.endswith('.egg-info'):
+                keep.append(d)
+        dns[:] = keep
         out += [f if rel == '.' else f'{rel}/{f}' for f in sorted(fns)]
     return out
 
@@ -197,6 +231,7 @@ def python_interfaces(root: Path, files: list[str]) -> tuple[list[dict], list[st
                          f'function shape), which is not a supported framework: not read as an interface; check by hand '
                          f'whether it is deployed or retired')
     name = lambda key: f'{dotted(key[0])}:{key[1]}'  # noqa: E731
+    conds = py_extras.Conditions(project)
     out = []
     for h in project.hits():
         m, fn, call, attr, key = h['module'], h['fn'], h['call'], h['attr'], h['key']
@@ -236,10 +271,14 @@ def python_interfaces(root: Path, files: list[str]) -> tuple[list[dict], list[st
                             'note': 'the object the route is declared on is not a recognised app or router'})
             continue
         for c in project.mount_chains(key):
+            cond = py_extras.join_conditions([conds.at(m.rel, call.lineno)] + conds.chain(c['chain']))
             for meth in methods:
                 out.append({'kind': 'routes', 'framework': router['framework'], 'method': meth, 'path': join(c['prefix'], path), 'file': m.rel,
                             'line': line, **func, 'router': ' > '.join(name(k) for k in c['chain']), 'included': c['reached'],
+                            **({'condition': cond} if cond else {}),
                             **({'note': 'a router prefix is computed, so the path is partial'} if c['status'] == 'dynamic' else {})})
+    for st in py_extras.static_mounts(project, root):
+        out.append({'kind': 'routes', **st})
     return out, notes, project
 
 
@@ -466,6 +505,11 @@ def py_commands_and_tools(root: Path, files: list[str], project) -> list[dict]:
     for c in clis:
         out.append({'kind': 'cli', 'framework': c['framework'], 'method': 'CLI', 'path': c['command'], 'file': c['file'],
                     'line': c['line'], 'included': True})
+    have = {c['command'] for c in clis}
+    for c in py_extras.command_lines(project):          # flags-only argparse programs, sys.argv[1] dispatch
+        if c['command'] not in have:
+            out.append({'kind': 'cli', 'framework': c['framework'], 'method': 'CLI', 'path': c['command'], 'file': c['file'],
+                        'line': c['line'], 'included': True, **({'options': c['options']} if c.get('options') else {})})
     for rel in files:
         if not rel.endswith('.py') or is_test(rel, root):
             continue
@@ -991,7 +1035,7 @@ def test_literals(root: Path, files: list[str], every_file: bool = False) -> lis
 def template_regex(path: str) -> re.Pattern:
     rx = ''
     for part in re.split(r'(\{[^}]*\}|<[^>]*>|:\w+)', path):     # FastAPI {id}, Flask <int:id>, Express :id
-        if (part.startswith('{') and part.endswith('*}')) or part.startswith('<path:'):
+        if (part.startswith('{') and part.endswith(('*}', ':path}'))) or part.startswith('<path:'):
             rx += '.+'
         elif part.startswith(('{', '<')) or (part.startswith(':') and len(part) > 1):
             rx += '[^/]+'
@@ -1127,6 +1171,8 @@ def main(argv=None) -> int:
     ap.add_argument('--tests', type=Path, action='append', default=[],
                     help='a directory (or file) of tests whose URL literals are matched against the interfaces; repeat')
     ap.add_argument('--out', type=Path)
+    ap.add_argument('--include', action='append', default=[], metavar='DIR',
+                    help='read a directory that is skipped by default (dist/, build/, out/...); repeat')
     ap.add_argument('--self-test', action='store_true', help='check the readers on a synthetic repository')
     args = ap.parse_args(argv)
     if args.self_test:
@@ -1134,15 +1180,27 @@ def main(argv=None) -> int:
     if args.repo is None:
         ap.error('the repository path is required')
     root = args.repo.resolve()
-    files = walk(root)
+    include = tuple(i.replace('\\', '/').strip('/') for i in args.include)
+    skipped, kept = [], []
+    files = walk(root, include, skipped, kept)
+    kept_paths = {k['path'] for k in kept}
     cen = lang_census.census(root)
     bundled = bundled_trees(root, files)
     for e in cen['excluded']:
+        if e['path'] in kept_paths or any(e['path'].startswith(k + '/') for k in kept_paths):
+            continue                    # a hand-written dist/ the census counts as build output is read as source here
         if e['source_files'] and not any(e['path'] == b or e['path'].startswith(b + '/') for b in bundled):
             bundled[e['path']] = e['reason']
     if bundled:
         files = [f for f in files if not any(f.startswith(b + '/') for b in bundled)]
     py, notes, project = python_interfaces(root, files)
+    for k in kept:
+        notes.append(f"{k['path']}/ read as product source: {k['reason']}")
+    for sk in skipped:
+        notes.append(f"{sk['path']}/ skipped ({sk['files']} files): {sk['reason']}; pass --include {sk['path']} if it is "
+                     f"hand-written source")
+    php, php_notes = py_extras.php_routes(root, files)
+    notes += php_notes
     for b, why in sorted(bundled.items()):
         notes.append(f'{b}/ skipped as third-party or generated: {why}; its interfaces are not the product\'s')
     coverage = lang_census.language_coverage(cen, READ_CENSUS, tool='list_interfaces.py',
@@ -1157,9 +1215,10 @@ def main(argv=None) -> int:
     gos = go_interfaces(root, files)
     others = manifests + js_commands_and_tools(root, files, progs) + py_commands_and_tools(root, files, project) + \
         [g for g in gos if g['kind'] != 'routes']
-    interfaces = sorted(py + js_interfaces(root, files) + [g for g in gos if g['kind'] == 'routes'] + others,
+    interfaces = sorted(py + [{'kind': 'routes', **r} for r in php] + js_interfaces(root, files) + [g for g in gos if g['kind'] == 'routes'] + others,
                         key=lambda x: (x['kind'], x['path'], x['method'], x['file']))
     res = {'repo': root.name, 'interfaces': interfaces, 'notes': notes, 'language_coverage': coverage,
+           'middleware': py_extras.middleware(project), 'skipped_dirs': skipped, 'source_build_dirs': kept,
            'summary': {'total': len(interfaces), 'by_kind': {}, 'by_framework': {}}}
     for i in interfaces:
         res['summary']['by_framework'][i['framework']] = res['summary']['by_framework'].get(i['framework'], 0) + 1
@@ -1170,9 +1229,17 @@ def main(argv=None) -> int:
                      'typer, pyproject scripts, Cargo binaries), package exports and MCP tools. An empty list is not '
                      '"no interfaces": map them by hand (SKILL.md Step 4) or record interface coverage as not assessed')
     if args.tests:
+        missing = [str(t) for t in args.tests if not t.exists()]
+        if missing:
+            print(f'error: --tests path does not exist: {", ".join(missing)}', file=sys.stderr)
+            return 2
         lits, strings, go_masked = [], [], {}
         for t in args.tests:
             t = t.resolve()
+            test_files = [n for n in (walk(t) if t.is_dir() else [t.name]) if n.endswith(('.py', '.go') + JS_EXT)]
+            if not test_files:
+                notes.append(f'no test files under --tests {t}: "0 reached" says nothing about tests there')
+                print(f'WARNING: no test files under --tests {t}', file=sys.stderr)
             base = t if t.is_dir() else t.parent
             names = walk(t) if t.is_dir() else [t.name]
             rel_base = base.relative_to(root).as_posix() if base.is_relative_to(root) else str(base)
@@ -1200,7 +1267,10 @@ def main(argv=None) -> int:
         args.out.write_text(text, encoding='utf-8')
     s = res['summary']
     if not interfaces:
-        print('WARNING: ' + notes[-1], file=sys.stderr)
+        print('WARNING: no supported interface found (see notes)', file=sys.stderr)
+    for sk in skipped:
+        print(f"note: {sk['path']}/ skipped as build output ({sk['reason']}); --include {sk['path']} reads it",
+              file=sys.stderr)
     if coverage.get('warning'):
         bar = '!' * 78
         print(f'{bar}\nWARNING: {coverage["warning"]}\n{bar}', file=sys.stderr)
@@ -1316,6 +1386,51 @@ FLASK_SELF_TEST_FILES = {
 }
 
 
+# A FastAPI app with no tests: a flags-only argparse command line selecting serving modes, a router included and a
+# middleware added only under a flag, a {path:path} catch-all, StaticFiles mounted on a committed, hand-written dist/
+# (no package.json, no bundler), a PHP front controller beside it, and a helper dispatching on sys.argv[1].
+KIOSK_SELF_TEST_FILES = {
+    'server.py': (
+        'import argparse\n'
+        'from fastapi import FastAPI\n'
+        'from fastapi.responses import HTMLResponse, Response\n'
+        'from fastapi.staticfiles import StaticFiles\n'
+        'from extras import uploads\n'
+        'from extras.guard import SimpleAuthMiddleware\n\n'
+        'parser = argparse.ArgumentParser(description="Serve the kiosk")\n'
+        'parser.add_argument("--port", type=int, default=8000)\n'
+        'parser.add_argument("--offline", action="store_true")\n'
+        'parser.add_argument("--uploads", action="store_true")\n'
+        'parser.add_argument("--user")\n'
+        'args = parser.parse_args()\n\n'
+        'app = FastAPI()\n'
+        'if args.user:\n'
+        '    app.add_middleware(SimpleAuthMiddleware, user=args.user)\n'
+        'if args.uploads:\n'
+        '    app.include_router(uploads.router)\n\n\n'
+        '@app.get("/")\n'
+        'async def index():\n'
+        '    return HTMLResponse(open("dist/index.html").read())\n\n\n'
+        '@app.api_route("/assets/{path:path}", methods=["GET", "HEAD"])\n'
+        'async def assets(path: str):\n'
+        '    return Response(b"")\n\n\n'
+        'app.mount("/", StaticFiles(directory="dist", html=True), name="dist")\n'),
+    'extras/__init__.py': '',
+    'extras/uploads.py': ('from fastapi import APIRouter\n\nrouter = APIRouter(prefix="/uploads")\n\n\n'
+                          '@router.post("/put")\nasync def put():\n    return {}\n'),
+    'extras/guard.py': 'class SimpleAuthMiddleware:\n    def __init__(self, app, user=None):\n        self.app = app\n',
+    'tools/packer.py': ('import sys\n\n\ndef main():\n    command = sys.argv[1]\n    if command == "pack":\n        return 1\n'
+                        '    elif command == "unpack":\n        return 2\n\n\nif __name__ == "__main__":\n    main()\n'),
+    'dist/index.html': '<!doctype html><button id="go">Go</button><script src="app.js"></script>\n',
+    'dist/app.js': 'document.getElementById("go").onclick = () => fetch("/uploads/put", {method: "POST"});\n',
+    'dist/menu.js': 'export const open = () => document.body.classList.add("menu");\n',
+    'index.php': ('<?php\n$BASE = \'\';\n$uri = parse_url($_SERVER["REQUEST_URI"], PHP_URL_PATH);\n'
+                  'if (preg_match(\'#^\' . $BASE . \'/assets/(.*)#\', $uri, $m)) {\n    echo "asset";\n}\n'
+                  'elseif (preg_match("#^/uploads/put$#", $uri)) {\n    echo "put";\n}\n'),
+    '.htaccess': 'RewriteEngine On\nRewriteRule ^.*$ index.php [L]\n',
+}
+
+
 def self_test() -> int:
     import shutil, tempfile
     tmp = Path(tempfile.mkdtemp(prefix='li-self-'))
@@ -1419,6 +1534,62 @@ def self_test() -> int:
         want(got.get(('routes', '/sailings/<code>'), {}).get('reached'), 'a converter route a test requests is reached')
         want(any('retired/handlers.py' in n and 'handler(request, response)' in n for n in res['notes']),
              'a module defining handler(request, response) outside a supported framework is named in notes, not dropped silently')
+
+        # ---- a FastAPI kiosk: StaticFiles mount, conditional router and middleware, flags-only argparse, sys.argv
+        # dispatch, a PHP front controller, a hand-written dist/ and --tests problems
+        ks = tmp / 'kiosk'
+        for rel, text in KIOSK_SELF_TEST_FILES.items():
+            (ks / rel).parent.mkdir(parents=True, exist_ok=True)
+            (ks / rel).write_text(text, encoding='utf-8')
+        (ks / 'tests').mkdir()
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code = main([str(ks), '--tests', str(ks / 'tests'), '--out', str(out)])
+        res = json.loads(out.read_text(encoding='utf-8'))
+        got = {(i['kind'], i['method'], i['path']): i for i in res['interfaces']}
+        mount = [i for i in res['interfaces'] if i['kind'] == 'routes' and i.get('framework') == 'starlette-static']
+        want(mount and mount[0]['path'] == '/{path:path}' and mount[0].get('directory') == 'dist',
+             'app.mount("/", StaticFiles(directory="dist")) is listed as a static route')
+        want(got.get(('routes', 'POST', '/uploads/put'), {}).get('condition') == 'args.uploads',
+             'a route whose include_router sits under an if records the condition')
+        want('condition' not in got.get(('routes', 'GET', '/'), {'condition': 1}),
+             'an unconditional route records no condition')
+        mws = res.get('middleware', [])
+        want(any(m.get('class') == 'SimpleAuthMiddleware' and m.get('condition') == 'args.user' for m in mws),
+             'app.add_middleware(...) under an if is listed in middleware with its condition')
+        srv = got.get(('cli', 'CLI', 'server'))
+        want(srv and {'--port', '--offline', '--uploads', '--user'} <= set(srv.get('options', [])),
+             'a flags-only argparse program is one cli entry with its options')
+        want(('cli', 'CLI', 'packer pack') in got and ('cli', 'CLI', 'packer unpack') in got,
+             'sys.argv[1] dispatch is read as sub-commands')
+        php = [i for i in res['interfaces'] if i.get('framework') == 'php']
+        want({i['path'] for i in php} >= {'/assets/{param:path}', '/uploads/put'},
+             'a PHP front controller routing on REQUEST_URI with preg_match is read')
+        want(any('PHP' in n and 'index.php' in n for n in res['notes']), 'PHP is named in notes (read by pattern only)')
+        want(not any(n.startswith('dist/ skipped') for n in res['notes'])
+             and any(n.startswith('dist/') and 'no build step' in n for n in res['notes']),
+             'a committed dist/ with no producer is read as source, and notes say why')
+        want(any('no test files' in n for n in res['notes']) and 'no test files' in err.getvalue(),
+             'an empty --tests directory warns that it held no test files')
+        e2 = io.StringIO()
+        with contextlib.redirect_stderr(e2):
+            try:
+                code = main([str(ks), '--tests', str(ks / 'missing'), '--out', str(out)])
+            except Exception as exc:  # noqa: BLE001
+                code = repr(exc)
+        want(code == 2 and 'does not exist' in e2.getvalue(), f'--tests on a missing path exits 2 with a message (got {code})')
+        # a dist/ that something builds stays skipped, and is said to be skipped
+        (ks / 'package.json').write_text('{"name": "kiosk", "scripts": {"build": "vite build"}}\n', encoding='utf-8')
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            main([str(ks), '--out', str(out)])
+        res = json.loads(out.read_text(encoding='utf-8'))
+        want(any(s['path'] == 'dist' for s in res.get('skipped_dirs', [])) and 'dist/' in err.getvalue(),
+             'a built dist/ is skipped, listed in skipped_dirs and named on stderr')
+        with contextlib.redirect_stderr(io.StringIO()):
+            main([str(ks), '--include', 'dist', '--out', str(out)])
+        res = json.loads(out.read_text(encoding='utf-8'))
+        want(not any(s['path'] == 'dist' for s in res.get('skipped_dirs', [])), '--include dist reads a skipped dist/')
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     if fails:

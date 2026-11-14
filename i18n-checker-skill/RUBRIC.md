@@ -45,7 +45,15 @@ Pseudo-localisation: accented look-alikes, 50% longer up to 10 letters, 40% up t
 
 ## Headline
 
-- **Verdict:** `issues_found` with at least one finding, otherwise `none_detected`.
+- **Verdict:** `issues_found` with at least one finding; `not_assessed` when no resource set was
+  parsed, the code scan read no file and nothing rendered; otherwise `none_detected`.
 - **Evidence completeness:** `partial` when a locale wasn't run or was excluded, something needs
-  review, unused keys couldn't be assessed for a set, or a resource file couldn't be parsed.
-- **Overall confidence:** medium when partial or any finding isn't high; otherwise high.
+  review, unused keys couldn't be assessed for a set, a resource file couldn't be parsed, no resource
+  set was found, the code scan read no file, or the pseudo-locale was a text walk (it can't tell
+  hard-coded text from translated text).
+- **Overall confidence:** low when nothing was analysed; medium when partial or any finding isn't
+  high; otherwise high.
+- A headline more cautious than the computed one (partial, a lower confidence, `not_assessed` for
+  `none_detected`) is accepted.
+- **Agent findings** (`source: "agent"`, with a `basis` re-read by `--repo`) are never high
+  confidence; rate their severity with the table above.

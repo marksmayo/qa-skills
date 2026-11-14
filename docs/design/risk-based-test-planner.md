@@ -1,6 +1,6 @@
 # Design: `risk-based-test-planner-skill`
 
-Status: Built (v1.5.0), see "As built" at the end. Build order: 13.
+Status: Built (v1.6.0), see "As built" at the end. Build order: 13.
 
 ## Mission
 
@@ -470,3 +470,26 @@ Where the build differs from the design above, and what the example showed.
     `base None` line with no release tag, and naming the real cause in the surface-only warning.
     The sample repository's scores are unchanged (no templates, styles or data, no root app), so
     both plans validate as they are.
+- **v1.6.0: a FastAPI server with a committed, hand-written front end in `dist/` and a PHP front
+  controller, no tests.** Red/green checks in `score_risk.py --self-test` (`static_front_end_checks`
+  and new surface idioms), `mine_history.py --self-test` (a synthetic repository) and
+  `render_report.py --self-test`.
+  - **Explicit areas under `dist/` vanished** (14 given, 7 scored): explicit areas now keep files
+    classified generated (with a warning), and an area with nothing to score is listed in
+    `unscored_areas` with its reason. The default layout no longer picks a main source directory
+    whose files are all generated.
+  - **Scope changes outside every area were silent**: `scope_outside_areas` lists them by directory
+    and reason with their changed lines, and a warning says the plan's confidence is lower.
+  - **History**: the default window follows HEAD's ancestry, so ancestors dated after HEAD (clock
+    skew) are kept and noted; an explicit `--as-of` counts what it cuts. Documentation-only fix
+    commits are not fixes.
+  - **Journeys**: imports are not followed out of hub modules (a root app module, or a module whose
+    imports span most areas); journey-mapper's P1-P3 scale scores P1 = 5.
+  - **Surfaces**: PHP entry points (`$_SERVER['REQUEST_URI']`, `$_GET`/`$_POST`/`$_FILES`), `curl_init`
+    and `file_get_contents('http...')` integrations, and a new `file_write` class (Python `open(...,
+    'w')`, `write_bytes`, Node `fs.writeFile`, PHP `file_put_contents`/`move_uploaded_file`).
+  - The renderer says "no release tag" instead of `base None`.
+  - Not done: whether `dist/` is source is decided by the shared `diff_scope`/`lang_census` rule
+    (another change); per-area confidence still counts only not-assessed factors (the scope warning
+    carries the rest). The sample repository's scores are unchanged; `risk.json` gained the two
+    empty lists.

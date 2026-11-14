@@ -53,6 +53,10 @@ A page marked `critical_path` raises the severity one level (Critical stays Crit
 | medium | stable and the median is over |
 | low | otherwise, or the measurement is unstable: `needs_review`, never a finding |
 
+An unstable measurement whose median is under its budget is a candidate too (`unstable:<metric>`),
+rated like any other (its ratio under 1 makes it Low) and always low confidence: it goes to
+`needs_review` with the triage saying whether the machine or the page varied.
+
 ## Reach, leverage and priority
 
 - **Reach:** pages in the candidate: 1, 2, or 3 for three or more. A specific cause (a resource

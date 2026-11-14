@@ -20,10 +20,48 @@ FERRY_OPS = ROOT / 'code-security-auditor-skill' / 'examples' / 'ferry-ops'
 SCREENSHOT = ROOT / 'bug-reproducer-skill' / 'examples' / 'run' / 'artifacts' / 'TASK-11' / 'A1-1' / 'screenshot.png'
 
 
+def _module(seed: int, functions: int) -> str:
+    """One generated Python module: imports, constants, classes with methods, decorated and nested functions,
+    docstrings, comments and string literals, the shapes the diff and function parsers meet in real code."""
+    out = [f'"""Generated module {seed} for the parser benchmarks."""', 'from __future__ import annotations', '',
+           'import functools', 'import json', 'import re', 'from pathlib import Path', '',
+           f'LIMIT_{seed} = {seed * 7 + 3}', "PATTERN = re.compile(r'^(?P<key>\\w+)=(?P<value>.*)$')", '']
+    indent = ''
+    for f in range(functions):
+        if f % 5 == 0:
+            out += ['', f'class Store{seed}_{f}:', f'    """Keeps records for area {f}."""', '',
+                    '    def __init__(self, root: Path):', '        self.root = root',
+                    '        self.items: dict[str, int] = {}', '']
+            indent = '    '
+        elif f % 5 == 4:
+            indent = ''
+            out.append('')
+        static = bool(indent) and f % 3 == 0
+        if static:
+            out.append(f'{indent}@staticmethod')
+        elif not indent and f % 3 == 0:
+            out.append('@functools.lru_cache(maxsize=None)')
+        args = 'self, ' if indent and not static else ''
+        out += [f'{indent}def handle_{seed}_{f}({args}name: str, count: int = {f}) -> dict:',
+                f'{indent}    """Return the summary for name after {f} steps."""',
+                f'{indent}    total = 0  # running total',
+                f'{indent}    for i in range(count):',
+                f'{indent}        if i % {f % 4 + 2} == 0:',
+                f'{indent}            total += i * {seed}',
+                f'{indent}        elif name.startswith("item-{f}"):',
+                f'{indent}            total -= len(name)',
+                f'{indent}    def inner(value):',
+                f'{indent}        return {{"name": name, "value": value, "limit": LIMIT_{seed}}}',
+                f'{indent}    data = json.loads(\'{{"area": {f}, "ok": true}}\')',
+                f'{indent}    return inner(total) | data', '']
+    return '\n'.join(out) + '\n'
+
+
 def _sources() -> dict[str, str]:
-    """A realistic mix of Python sources from the repository (the shared scripts themselves)."""
-    return {f'shared/scripts/{p.name}': p.read_text(encoding='utf-8') for p in sorted(
-        (ROOT / 'shared' / 'scripts').glob('*.py'))}
+    """Generated Python sources of a fixed size (about the size of shared/scripts when the benchmarks were added).
+    Generated rather than read from the repository, so the input stays the same as the repository grows and only
+    a change to the parsers moves these numbers."""
+    return {f'pkg/mod_{i:02d}.py': _module(i, 25) for i in range(24)}
 
 
 def _make_diff(sources: dict[str, str]) -> str:
@@ -61,7 +99,7 @@ def test_diff_scope_parse_diff(benchmark):
 
 
 def test_diff_scope_py_functions(benchmark):
-    text = SOURCES['shared/scripts/run_tests.py']
+    text = _module(99, 125)   # one large module, the size of shared/scripts/run_tests.py when the benchmarks were added
     funcs = benchmark(diff_scope.py_functions, text)
     assert funcs
 

@@ -73,6 +73,11 @@ python scripts/validate_report.py run/perf_report.json --measurements run/measur
 python scripts/render_report.py run/perf_report.json [--brief]
 ```
 
+On a machine you know is idle, run `measure.py` once with `--record-reference` to store its idle CPU
+calibration; later runs are flagged busy against it (a steady load looks calm without one). Warm runs
+check that the second load really used the HTTP cache (`warm_cache`), runs record compression and
+cache headers (`delivery`), and what an interaction downloads is the budgetable `transfer_interaction`.
+
 ## Example
 
 `examples/bakery/` is a small site with planted problems: a 1.8 MB hero image as the LCP element,
@@ -85,7 +90,7 @@ report; `examples/README.md` has the answer key.
 ```bash
 python scripts/validate_report.py examples/perf_report.example.json --measurements examples/run/measurements.json --candidates examples/run/candidates.json --budget examples/budget.json --regressions examples/run/regressions.json
 python scripts/render_report.py examples/perf_report.example.json
-python scripts/self_test.py   # calibration, INP and LCP cause checks on synthetic data
+python scripts/self_test.py   # calibration, warm cache, headers, interaction transfer, INP and LCP cause checks on synthetic data
 ```
 
 ## Files

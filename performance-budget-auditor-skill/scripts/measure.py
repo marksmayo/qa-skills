@@ -62,6 +62,17 @@ Each measured run records:
   * render-blocking resources, the LCP element's attributes, layout-shift sources, and the
     navigation's Server-Timing entries, read passively from the response.
 INP is measured only when the target has an interaction: the steps run after the page settles.
+  * in Chromium, what the interaction downloads, counted apart from the load until the network has been
+    quiet for 0.5 s (at most 10 s): metric transfer_interaction and interaction_resources (transfer_total
+    is the load's own requests only);
+  * each resource's response headers (`headers`: content-encoding, cache-control, validator, expires);
+  * for a warm run, `cache_check`: whether the second load used the HTTP cache (disk or memory cache, or a
+    304). A harness whose request routing disables the cache (metadata http_cache: disabled) makes it
+    ineffective.
+
+The first idle calibration reference is stored only with --record-reference (a steady load looks calm);
+later calm runs only lower it, and calibration.reference_update says what happened. An --append pass
+calibrates again and is kept under calibration.passes (busy when any pass was).
 
 Then one diagnostic run (not counted in any statistic, because tracing and coverage slow the page)
 records a DevTools trace with screenshots (gzipped), a filmstrip of frames 100 ms apart until the
@@ -198,15 +209,16 @@ def calibration_reference(mach: dict, cache: Path | None = None) -> dict | None:
         return None
 
 
-def update_calibration_reference(mach: dict, cache: Path | None, median_ms: float) -> None:
-    """Keep the fastest median: a run on a loaded machine never raises the reference."""
+def update_calibration_reference(mach: dict, cache: Path | None, median_ms: float, force: bool = False) -> None:
+    """Keep the fastest median: a run on a loaded machine never raises the reference (unless force: --record-reference,
+    which replaces it). Callers decide with should_store_reference whether a run may store one at all."""
     f = (cache or cache_root()) / CAL_REFERENCE_FILE
     try:
         refs = json.loads(f.read_text(encoding='utf-8'))
     except (OSError, ValueError):
         refs = {}
     key = calibration_key(mach)
-    if refs.get(key) and refs[key].get('median_ms') is not None and refs[key]['median_ms'] <= median_ms:
+    if not force and refs.get(key) and refs[key].get('median_ms') is not None and refs[key]['median_ms'] <= median_ms:
         return
     refs[key] = {'median_ms': median_ms, 'recorded_at': now(), 'workload': CAL_WORKLOAD}
     try:
@@ -214,6 +226,73 @@ def update_calibration_reference(mach: dict, cache: Path | None, median_ms: floa
         f.write_text(json.dumps(refs, indent=1) + '\n', encoding='utf-8')
     except OSError:
         pass
+
+
+CAL_STORE_CV = 0.03      # a calibration may lower the idle reference only when this steady...
+CAL_STORE_DRIFT = 1.1    # ...and start and end agree this closely
+
+
+def should_store_reference(cal: dict, existing_ms: float | None, forced: bool = False) -> tuple[bool, str]:
+    """Whether this run's calibration may become the machine's idle reference, and why (or why not). A steady load
+    (other processes sharing the CPU throughout) gives as low a CV as an idle machine, so the first reference is never
+    seeded from an ordinary run: only with --record-reference, run on a machine known to be idle. After that a calm
+    calibration (not busy, CV within CAL_STORE_CV, start and end within CAL_STORE_DRIFT) only ever lowers it."""
+    med = min(cal['median_ms'], cal.get('end_median_ms') or cal['median_ms'])
+    if forced:
+        return True, f'recorded as the idle reference ({med} ms) because --record-reference was given'
+    if existing_ms is None:
+        return False, ('no idle reference stored for this machine, and none was stored from this run: a steady load '
+                       'looks idle to the calibration; rerun with --record-reference on a machine you know is idle')
+    if cal.get('busy') or cal.get('cv', 1) > CAL_STORE_CV or (cal.get('drift') or 1) > CAL_STORE_DRIFT:
+        return False, f'not calm enough to lower the idle reference (CV {cal.get("cv")}, drift {cal.get("drift")})'
+    if med >= existing_ms:
+        return False, f'not faster than the stored idle reference of {existing_ms} ms'
+    return True, f'lowered the idle reference from {existing_ms} ms to {med} ms'
+
+
+def combine_passes(prev: dict, new: dict) -> dict:
+    """The calibration of a measurements file measured in several passes (--append): each pass keeps its own start and
+    end figures under `passes`, the top-level figures stay the first pass's, and the file is busy when any pass was."""
+    keys = ('runs_ms', 'median_ms', 'cv', 'end_runs_ms', 'end_median_ms', 'drift', 'slowdown', 'busy', 'busy_reasons', 'note')
+    passes = list(prev.get('passes') or [{k: prev.get(k) for k in keys if k in prev}])
+    passes.append({k: new.get(k) for k in keys if k in new})
+    out = {k: v for k, v in prev.items() if k != 'passes'}
+    out['passes'] = passes
+    reasons = [f'pass {i}: {r}' for i, p in enumerate(passes, 1) for r in p.get('busy_reasons') or []]
+    out['busy'] = any(p.get('busy') for p in passes)
+    out['busy_reasons'] = reasons
+    out['note'] = ('machine busy: ' + '; '.join(reasons)) if reasons else \
+        f'{len(passes)} passes, none busy: ' + '; '.join(f'pass {i}: {p.get("note")}' for i, p in enumerate(passes, 1))
+    return out
+
+
+def header_fields(headers: dict) -> dict:
+    """What a response's headers say about delivery: content-encoding (None when the body was sent as is), cache-control
+    (None when absent), whether a validator (ETag or Last-Modified) lets a cached copy be revalidated, and expires."""
+    h = {str(k).lower(): v for k, v in (headers or {}).items()}
+    enc = (h.get('content-encoding') or '').strip().lower() or None
+    return {'content-encoding': None if enc in (None, 'identity') else enc, 'cache-control': h.get('cache-control') or None,
+            'validator': bool(h.get('etag') or h.get('last-modified')), 'expires': h.get('expires') or None}
+
+
+def cache_check(resources: list[dict], cache: str, harness_meta: dict | None = None) -> dict | None:
+    """For a warm run: did the measured (second) load use the HTTP cache at all? Resources served from the disk or memory
+    cache, or revalidated with a 304, count. A harness that disabled the HTTP cache (request interception turns it off in
+    Playwright) makes the warm mode ineffective whatever the counts say."""
+    if cache != 'warm':
+        return None
+    hits = sum(1 for r in resources if r.get('from_cache'))
+    revalidated = sum(1 for r in resources if r.get('status') == 304)
+    out = {'resources': len(resources), 'from_cache': hits, 'revalidated': revalidated}
+    if str((harness_meta or {}).get('http_cache', '')).lower() == 'disabled':
+        out.update(effective=False, reason='the browser harness ran with the HTTP cache disabled (http_cache: disabled), '
+                                           'so the second load could not use it')
+    elif hits or revalidated:
+        out.update(effective=True, reason=None)
+    else:
+        out.update(effective=False, reason=f'none of the {len(resources)} resources of the second load came from the HTTP '
+                                           'cache or was revalidated (304): the warm run measured a cold load')
+    return out
 
 
 def assess_calibration(runs_ms: list[float], end_runs_ms: list[float] | None = None, reference_ms: float | None = None,
@@ -359,6 +438,11 @@ class Runner:
     def __init__(self, h: Harness, plan: dict, profiles: dict, wv_source: str, art: Path | None, browser: str):
         self.h, self.plan, self.profiles, self.art, self.browser = h, plan, profiles, art, browser
         self.init = wv_source + '\n' + COLLECTOR
+        # the harness's own record (a newer harness says whether its request routing disabled the HTTP cache)
+        try:
+            self.hmeta = h.metadata() if hasattr(h, 'metadata') else {}
+        except Exception:  # noqa: BLE001
+            self.hmeta = {}
 
     def page(self, profile: str, cache: str):
         p = self.profiles[profile]
@@ -411,7 +495,12 @@ class Runner:
                     method=e['request'].get('method', 'GET'), rsc=any(k.lower() == 'rsc' for k in (e['request'].get('headers') or {}))))
                 cdp.on('Network.responseReceived', lambda e: reqs.setdefault(e['requestId'], {}).update(
                     url=e['response']['url'], type=e.get('type', ''), mime=e['response'].get('mimeType', ''),
-                    from_cache=e['response'].get('fromDiskCache', False) or e['response'].get('fromServiceWorker', False)))
+                    status=e['response'].get('status'), headers=header_fields(e['response'].get('headers') or {}),
+                    from_cache=bool(reqs.get(e['requestId'], {}).get('from_cache')) or e['response'].get('fromDiskCache', False)
+                    or e['response'].get('fromServiceWorker', False) or e['response'].get('fromPrefetchCache', False)))
+                cdp.on('Network.requestServedFromCache', lambda e: reqs.setdefault(e['requestId'], {}).update(from_cache=True))
+                cdp.on('Network.dataReceived', lambda e: reqs.setdefault(e['requestId'], {}).update(
+                    partial=reqs.get(e['requestId'], {}).get('partial', 0) + int(e.get('encodedDataLength') or 0)))
                 cdp.on('Network.loadingFinished', lambda e: reqs.setdefault(e['requestId'], {}).update(bytes=e['encodedDataLength']))
                 if diag:
                     cdp.send('Profiler.enable')
@@ -443,6 +532,7 @@ class Runner:
             interaction = target.get('interaction')
             inp = None
             inp_source = None
+            load_ids = set(reqs)   # the page load's requests; what the interaction fetches is counted apart
             if interaction:
                 try:
                     self.h.act(page, interaction)
@@ -462,6 +552,26 @@ class Runner:
                         inp = {'value': worst['duration'], 'attribution': {'interactionTarget': worst['target'], 'interactionType': worst['name'],
                                                                            'inputDelay': worst['inputDelay'], 'processingDuration': worst['processing']}}
                         inp_source = 'Event Timing (web-vitals had not reported)'
+                if self.browser == 'chromium' and 'interaction_error' not in rec:
+                    # what the interaction downloads (a video, the modules a "play" button loads): bytes of requests it
+                    # started, until no new request has appeared and all have finished for 0.5 s (at most 10 s)
+                    quiet, last = 0, -1
+                    for _ in range(100):
+                        new = [v for k, v in reqs.items() if k not in load_ids]
+                        busy = any(v.get('bytes') is None for v in new if v.get('url'))
+                        quiet = quiet + 1 if (len(new) == last and not busy) else 0
+                        last = len(new)
+                        if quiet >= 5:
+                            break
+                        page.wait_for_timeout(100)
+                    new = [v for k, v in reqs.items() if k not in load_ids and v.get('url') and not v['url'].startswith('data:')]
+                    rec['interaction_resources'] = sorted(
+                        ({'url': v['url'], 'type': classify(v.get('type', ''), v.get('mime', ''), v['url']),
+                          'bytes': int(v.get('bytes') if v.get('bytes') is not None else v.get('partial', 0)),
+                          'finished': v.get('bytes') is not None} for v in new), key=lambda x: -x['bytes'])[:8]
+                    rec['interaction_transfer'] = {'requests': len(new), 'bytes': sum(
+                        int(v.get('bytes') if v.get('bytes') is not None else v.get('partial', 0)) for v in new),
+                        'unfinished': sum(1 for v in new if v.get('bytes') is None)}
             trace_bytes = self.h.stop_trace() if diag else None
             coverage = cdp.send('Profiler.takePreciseCoverage')['result'] if diag and cdp else None
             v = snap['vitals']
@@ -481,8 +591,16 @@ class Runner:
                        'TBT': tbt(snap['longtasks'], fcp, snap['now']) if chromium else None}
             if chromium:
                 resources = [{'url': r['url'], 'type': classify(r.get('type', ''), r.get('mime', ''), r['url']),
-                              'bytes': r.get('bytes', 0), 'from_cache': r.get('from_cache', False)}
-                             for r in reqs.values() if r.get('url') and not r['url'].startswith('data:')]
+                              'bytes': r.get('bytes', 0), 'from_cache': r.get('from_cache', False),
+                              **({'status': r['status']} if r.get('status') is not None else {}),
+                              **({'headers': r['headers']} if r.get('headers') else {})}
+                             for k, r in reqs.items() if k in load_ids and r.get('url') and not r['url'].startswith('data:')]
+                if 'interaction_transfer' in rec:
+                    metrics['transfer_interaction'] = rec['interaction_transfer']['bytes']
+                    sources['transfer_interaction'] = 'DevTools Network bytes of requests started by the interaction'
+                cc = cache_check(resources, cache, self.hmeta)
+                if cc:
+                    rec['cache_check'] = cc
             else:
                 resources = [{'url': r['url'], 'type': classify(r['initiator'] if r['initiator'] in ('script', 'img', 'css', 'link') else '', '',
                                                                 r['url']), 'bytes': r['transfer'], 'from_cache': r['transfer'] == 0}
@@ -688,6 +806,9 @@ def main() -> int:
     ap.add_argument('--no-diagnostic', action='store_true')
     ap.add_argument('--calibration-reference', type=float, metavar='MS',
                     help='idle calibration median for this machine (default: the fastest one stored in the asset cache)')
+    ap.add_argument('--record-reference', action='store_true',
+                    help='store this run\'s calibration as the machine\'s idle reference (run on a machine you know is idle); '
+                         'without it the first reference is never stored, and later calm runs only lower it')
     a = ap.parse_args()
     plan = json.loads(a.plan.read_text(encoding='utf-8'))
     all_profiles = json.loads((SKILL / 'data' / 'profiles.json').read_text(encoding='utf-8'))
@@ -727,14 +848,15 @@ def main() -> int:
            # script, which CSP doesn't block); "bypass_csp": true in the plan turns enforcement off
            'bypass_csp': bool(plan.get('bypass_csp', False)), 'stop_on_429': bool(plan.get('stop_on_429', False))}
     with Harness(cfg) as h:
+        cal_page = h.new_page()
+        cal = [round(cal_page.evaluate(CALIBRATE)[0], 1) for _ in range(3)]   # this pass's start calibration
+        h.close_page(cal_page)
+        mach = machine()
+        ref = {'median_ms': a.calibration_reference, 'source': 'given'} if a.calibration_reference else \
+            (dict(calibration_reference(mach) or {}, source='fastest calibration stored for this machine')
+             if calibration_reference(mach) else None)
+        appended = doc is not None
         if doc is None:
-            cal_page = h.new_page()
-            cal = [round(cal_page.evaluate(CALIBRATE)[0], 1) for _ in range(3)]
-            h.close_page(cal_page)
-            mach = machine()
-            ref = {'median_ms': a.calibration_reference, 'source': 'given'} if a.calibration_reference else \
-                (dict(calibration_reference(mach) or {}, source='fastest calibration stored for this machine')
-                 if calibration_reference(mach) else None)
             doc = {'schema': 1, 'generated_at': now(), 'machine': mach,
                    'calibration': assess_calibration(cal, reference_ms=(ref or {}).get('median_ms'),
                                                      reference_source=(ref or {}).get('source')),
@@ -818,13 +940,16 @@ def main() -> int:
         cal_page = h.new_page()
         end_cal = [round(cal_page.evaluate(CALIBRATE)[0], 1) for _ in range(3)]
         h.close_page(cal_page)
-        c0 = doc['calibration']
-        doc['calibration'] = assess_calibration(c0['runs_ms'], end_runs_ms=end_cal, reference_ms=c0.get('reference_ms'),
-                                                reference_source=c0.get('reference_source'))
-        print(f'{"warning: " if doc["calibration"]["busy"] else ""}calibration at the end: {doc["calibration"]["note"]}',
+        # this pass alone, start and end; an --append pass is kept beside the earlier ones, never written over them
+        this = assess_calibration(cal, end_runs_ms=end_cal, reference_ms=(ref or {}).get('median_ms'),
+                                  reference_source=(ref or {}).get('source'))
+        stored, why = should_store_reference(this, (calibration_reference(mach) or {}).get('median_ms'), a.record_reference)
+        if stored:
+            update_calibration_reference(mach, None, min(this['median_ms'], this['end_median_ms']), force=a.record_reference)
+        this['reference_update'] = why
+        doc['calibration'] = combine_passes(doc['calibration'], this) if appended else this
+        print(f'{"warning: " if doc["calibration"]["busy"] else ""}calibration at the end: {doc["calibration"]["note"]}; {why}',
               file=sys.stderr)
-        if not doc['calibration']['busy']:
-            update_calibration_reference(doc['machine'], None, min(doc['calibration']['median_ms'], doc['calibration']['end_median_ms']))
         doc['events'] += h.events
         doc['blocked_requests'] += h.blocked
         meta = h.metadata()

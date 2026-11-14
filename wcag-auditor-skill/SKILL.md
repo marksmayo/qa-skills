@@ -1,7 +1,7 @@
 ---
 name: wcag-auditor
 description: Audit live web pages against WCAG (2.2 AA by default) without needing the source code. Runs three open-source engines inside a real browser (axe-core, IBM Equal Access, HTML_CodeSniffer), adds keyboard, focus, reflow, text-spacing, zoom, target-size, hover, motion, language and media probes, merges and de-duplicates the results by component, maps every issue to a success criterion, rates severity with a published rubric, and gives every SC at the target level an EARL outcome. Untested criteria become a manual test plan. The report never says the site conforms.
-version: 1.4.0
+version: 1.5.0
 ---
 
 # WCAG Auditor
@@ -75,6 +75,7 @@ What sets this apart from running one checker:
 | `critical_paths` | optional | Named flows as steps (`url`, optional `state`, `label`), or journey files from journey-mapper |
 | `auth` | optional | `{"storage_state": file}`: a session a person captured by signing in by hand (`python scripts/browser_harness.py capture-session --url <app> --out <file outside the repo>`; its sessionStorage is restored too), or a login recipe whose fields read credentials from environment variables; `run.json` records only which kind was used |
 | `viewports` | `1280x800`, `320x640` | 320 px also covers 1.4.10 Reflow |
+| `mobile_viewports` | none | Viewports (also in `viewports`) audited as a touch phone: `is_mobile`, `has_touch`, coarse pointer |
 | `max_pages` | 25 | Sampling cap for crawled and sitemap pages; listed targets are always audited |
 | `crawl.max_loads` | 4 x `max_pages` | Most pages the crawl loads; it stops sooner once `max_pages` templates are found or `max_pages` loads in a row add no new template |
 | `crawl.per_pattern` | 2 | Pages of one URL shape (`/region/*`, numbers and query values as placeholders) the crawl loads while links of an unseen shape wait, so a menu of hundreds of links of one shape on every page doesn't take every load before the footer's pages; `run.json` `crawl.patterns` counts the loads per shape |
@@ -267,8 +268,13 @@ Follow `RUBRIC.md`:
 - **Confidence**: `high` needs two agreeing failing sources or a failing rule that implements an
   ACT rule; one heuristic engine or one probe is `medium`; agent judgment is `medium` at most. A
   failed SC's confidence is never above the most confident finding that fails it.
+- **Critical path, precisely:** a finding on a critical-path step that does not affect what the
+  step needs (an unnamed progress bar that doesn't stop anyone) keeps its `critical_path` with
+  `"affects_step": false` and a `reason`; it is then not raised a level and can't block the path.
 - **Priority** = severity weight x reach x leverage, with floors; see `RUBRIC.md`. Set
-  `blocks_critical_path` when a user group can't complete the step at all; that makes it P0.
+  `blocks_critical_path` when a user group can't complete the step at all; that makes it P0. An
+  agent-judgment finding is at most P1 unless it blocks a critical path and can be re-checked: a
+  `basis` (re-read with `--repo`) or a candidate it rests on (a tool's needs-review result).
 
 ### 9. Build the SC matrix and the manual test plan
 
@@ -279,7 +285,7 @@ the `manual_test_plan` with concrete steps and pages.
 
 ### 10. Report, validate and render
 
-Write `audit.json` (described by `schemas/audit.schema.json`; its `schema_version` is `"1.3"`; `"1.0"` to `"1.2"` reports still validate; 1.3 adds the check status `partial`). Copy
+Write `audit.json` (described by `schemas/audit.schema.json`; its `schema_version` is `"1.4"`; `"1.0"` to `"1.3"` reports still validate; 1.3 adds the check status `partial`; 1.4 adds check rows for named states (`state`), `critical_path.affects_step`, `metadata.untestable_surfaces` and `metadata.mobile_viewports`). Copy
 `metadata.blocked_requests` from `run.json` as it is recorded there (a list of URLs) or as its count;
 `--run` checks it either way next
 to the run directory, then:
@@ -330,3 +336,19 @@ reason, the P0 and P1 findings, blocked critical paths, what was untested and th
 - **WAF or rate limits:** the runner backs off; if it keeps failing, record it in `events` and limitations.
 - **Login:** use a captured session (`capture-session`) or a login recipe with `env` fields. Never put credentials in the config, and keep the session file outside the repository.
 - **PDFs:** out of scope; point to veraPDF.
+- **Canvas, WebGL or plugin surfaces** (a game, a map, a document viewer drawn on a `<canvas>`): the
+  engines see an empty element, so `canvas_content_described`-style rules, best-practice
+  `region` messages and contrast over the canvas are about the frame, not the content. Text over a
+  canvas that read blank when audited is estimated against the CSS background (the estimate's basis
+  says so); over a painted canvas it is an unknown background. When the main surface never loaded
+  or can't be inspected, record it in `metadata.untestable_surfaces` (`page`, `surface`, `reason`)
+  and in `limitations`: overall confidence is then never high, whatever the completeness.
+- **Touch and mobile:** narrow viewports are desktop Chromium unless listed in `mobile_viewports`
+  (touch events, a coarse pointer, mobile layout). Add a phone viewport there when the site has
+  touch-only controls or `(pointer: coarse)` styles.
+- **Named states count:** each state's engines and probes are rows of the check matrix (with
+  `state`), so a state probe that was cut short or errored lowers completeness and confidence and
+  must be named in `limitations`.
+- **Text in another script:** the language probe also counts letters per script, so a page of
+  Cyrillic, Arabic, Hebrew, CJK, Greek, Devanagari or Thai text under a Latin-script `lang` is a
+  3.1.1 mismatch; a page in a Latin-script language with too few stop words stays undetected.

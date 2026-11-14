@@ -1,6 +1,6 @@
 # Design: `test-data-auditor-skill`
 
-Status: Built (v1.5.0), see "As built" at the end. Build order: 11.
+Status: Built (v1.6.0), see "As built" at the end. Build order: 11.
 
 ## Mission
 
@@ -526,3 +526,22 @@ parametrised pytest suite globs:
   not read pytest's `testpaths`/`python_files` (a root `*_test.py` script still counts as a test).
   `residue.py` and `run_tests.py` still hash the whole tree per call (shared files).
 - **Example.** Unchanged: the rescan of `clinic-api` gives the same inventory and candidates.
+
+### v1.6.0: a repository with no tests
+
+- **Found on** a small web service with no tests at all (a FastAPI app serving a committed static
+  front end): the tools printed "0 data sources" and "0 candidates" with no word that there were no
+  tests, the validator computed evidence completeness 100% for the inventory share of an empty
+  inventory, and accepted a report that never said the repository had no tests.
+- **Changed:** `inventory.py` sets `no_tests` and a `warnings` entry (printed as a WARNING) when it
+  finds no test; `scan_data.py` records `tests_found` and repeats the warning in its notes; an empty
+  inventory gives evidence completeness 0 and the renderer says "no test data found"; the validator
+  requires the headline or a limitation to say there are no tests (from `tests_found`, or from the
+  inventory holding no test file). Every file under a `--data-dir` tree is now listed, an unknown
+  format as `not_assessed` ("unknown format"). `scan_data.py` notes on every run that product code
+  and configuration are read only for clock and locale calls, and that their secrets and personal
+  data belong to code-security-auditor and privacy-flow-auditor.
+- **Not changed:** `schema_drift.py` still reads product models when the inventory is empty, and the
+  walk still prunes build-output directories through the shared `detect_conventions.SKIP_DIRS`.
+- **Example.** The example's `candidates.json` gained `tests_found` and the scope note; the report
+  is unchanged and still validates.

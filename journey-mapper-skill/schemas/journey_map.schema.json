@@ -33,6 +33,9 @@
         "domain": {"type": "string"},
         "service": {"type": "string", "description": "The app or service the item belongs to, when the repository holds several (from the nearest project manifest). The proposed domain starts with it."},
         "index": {"type": "boolean", "description": "A client-side index route: it renders at its parent's path."},
+        "condition": {"type": "string", "description": "The if-test the item sits under: a route whose router is included, or a mount or middleware added, only in one serving mode."},
+        "options": {"type": "array", "items": {"type": "string"}, "description": "A flags-only command line's options."},
+        "directory": {"type": ["string", "null"], "description": "The directory a static mount serves."},
         "note": {"type": "string"}
       }
     }
@@ -122,7 +125,8 @@
           "flags": {"type": "array", "items": {"type": "string"}},
           "automation": {"enum": ["none", "partial", "automated"]},
           "tests": {"type": "array", "items": {"type": "string"}},
-          "covers": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+          "covers": {"type": "array", "items": {"type": "string"}, "description": "Surface items the journey reaches. Empty only with covers_reason."},
+          "covers_reason": {"type": "string", "description": "Why the journey covers no surface item: its subject is a cross-cutting guard (an authentication middleware in context.guards), not a route. Required when covers is empty."},
           "preconditions": {"type": "array", "items": {"type": "string"}},
           "steps": {
             "type": "array",
@@ -133,7 +137,12 @@
               "properties": {
                 "action": {"type": "string", "minLength": 1},
                 "expect": {"type": "string", "minLength": 1},
-                "evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}}
+                "evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}},
+                "observed": {"type": "object", "required": ["result", "run", "at"],
+                             "description": "What running the app showed for this step, kept apart from expect (what the code implies).",
+                             "properties": {"result": {"type": "string", "minLength": 1},
+                                            "run": {"type": "string", "minLength": 1, "description": "The evidence file of the run (probe output, browser capture)."},
+                                            "at": {"type": "string", "description": "When it ran (ISO date or time)."}}}
               }
             }
           },

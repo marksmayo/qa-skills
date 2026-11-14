@@ -47,6 +47,12 @@ EVIDENCE_POINTS = {'application_source': 15, 'test_source': 15, 'ci_configuratio
                    'historical_ci': 15, 'runtime_coverage': 10, 'mutation_report': 5, 'requirements': 10, 'defect_history': 5}
 BANDS = [(9.0, 'Exceptional'), (8.0, 'Excellent'), (6.5, 'Strong'), (5.0, 'Serviceable'), (3.0, 'Weak'), (0.0, 'Dysfunctional')]
 STATIC = ('static_only', 'not_executable')
+# execution no_tests: dimensions that describe the absence of tests (scored 1) and those that grade tests that exist
+NO_TESTS_ABSENT = ('effectiveness', 'trust', 'assertions', 'coverage')
+NO_TESTS_UNGRADED = ('reliability', 'isolation', 'maintainability', 'debuggability', 'performance', 'test_data',
+                     'portability')
+# a note saying implementation-linked claims rest on reading source (answers the white-box warning)
+SOURCE_NOTE = re.compile(r'\b(read(ing)?|inspect(ing|ion)?|static(ally)?)\b[^.]*\bsource\b|\binstrument', re.I)
 TOL = 0.05 + 1e-9
 
 # A code-coverage claim: a named implementation-coverage measure, a coverage percentage, or a share of the code,
@@ -351,7 +357,19 @@ def check(rep: dict) -> tuple[list[str], list[str]]:
     # thin suites: these dimensions grade the few tests that exist, so they can't be held with high confidence when the
     # suite reaches little of the product
     cov = dims['coverage']['score']
-    if cov is not None and cov < 4:
+    no_tests = meta['execution'] == 'no_tests'
+    if no_tests:
+        # verified absence: the dimensions that describe absence score 1 (directly verified, so no "small sample"
+        # limit on their confidence); those that grade existing tests have nothing to grade
+        for i in NO_TESTS_ABSENT:
+            if dims[i]['score'] != 1:
+                errs.append(f'{i}: execution no_tests (discovery found no tests), so {i} is 1 (absent), not '
+                            f'{dims[i]["score"]}')
+        for i in NO_TESTS_UNGRADED:
+            if dims[i]['score'] is not None:
+                errs.append(f'{i}: execution no_tests, so there are no tests whose {i} could be graded; it is not '
+                            f'assessed (score null)')
+    elif cov is not None and cov < 4:
         for i in ('reliability', 'assertions', 'isolation', 'performance'):
             if dims[i]['score'] is not None and dims[i]['confidence'] == 'high':
                 errs.append(f'{i}: coverage is {cov}, so the {i} score describes a small sample of the product; its '
@@ -393,7 +411,8 @@ def check(rep: dict) -> tuple[list[str], list[str]]:
     order = ['black_box', 'grey_box', 'white_box']
     if order.index(strongest) > order.index(mode):
         warns.append(f'the inventory supports {strongest} mode but the evaluation records {mode}')
-    if mode == 'white_box' and not (has('runtime_coverage') or has('mutation_report')):
+    if mode == 'white_box' and not (has('runtime_coverage') or has('mutation_report')) and \
+            not any(SOURCE_NOTE.search(n) for n in meta.get('notes', [])):
         warns.append('white_box mode from application source only: no runtime coverage or mutation report, so say in '
                      'metadata.notes that implementation-linked claims rest on reading source, not instrumentation')
     for i, d in dims.items():
@@ -422,6 +441,9 @@ def check(rep: dict) -> tuple[list[str], list[str]]:
                     f'provisional (metadata.provisional true)')
     if execution not in STATIC and meta.get('provisional'):
         errs.append(f'provisional is true only when nothing was executed (static_only or not_executable), not for {execution}')
+    if execution == 'no_tests' and not has('recent_execution'):
+        errs.append('execution no_tests needs the discovery run that found no tests as recent execution results in '
+                    'the evidence inventory')
     if execution in STATIC and head['overall_confidence'] == 'high':
         errs.append('overall confidence cannot be high without execution evidence')
     errs += execution_errors(meta)
@@ -577,6 +599,16 @@ def execution_errors(meta: dict) -> list[str]:
     if execution in ('full_run', 'partial_run') and not er:
         return [f'execution {execution} needs metadata.execution_result: the layers, each run\'s pass/fail/skip/error '
                 f'counts, and the failures classified']
+    if execution == 'no_tests':
+        runs = (er or {}).get('runs', [])
+        if not any(r['origin'] == 'assessor' for r in runs):
+            return ['execution no_tests needs metadata.execution_result with the assessor\'s discovery run (for example '
+                    '`pytest --collect-only`) that found no tests']
+        ran = [r['id'] for r in runs if r['passed'] + r['failed'] + r['skipped'] + r['errored']]
+        if ran:
+            errs.append(f'execution no_tests but run(s) {", ".join(ran)} recorded test results; tests exist, so '
+                        f'record what ran (full_run or partial_run)')
+        return errs
     if not er:
         return errs
     layers = {l['name']: l for l in er['layers']}
@@ -703,6 +735,43 @@ def self_test() -> int:
                         'shared fixture still cleans up, so the suite is reliable.', False)):
         if is_placeholder(text) != want:
             fails.append(f'is_placeholder({text[:40]!r}) should be {want}')
+
+    # a repository with no tests: discovery ran and collected nothing, so the absence is verified (execution no_tests,
+    # not provisional), the absence-describing dimensions score 1 with high confidence (no "small sample" rule: there is
+    # no sample), and the dimensions that grade existing tests are not assessed
+    schema = json.loads(SCHEMA.read_text(encoding='utf-8'))
+    none = json.loads((HERE.parent / 'examples' / 'evaluation.no-tests.example.json').read_text(encoding='utf-8'))
+
+    def full(rep):
+        e = schema_errors(rep, schema, schema)
+        if e:
+            return e, []
+        return check(rep)
+    e, w = full(none)
+    if e:
+        fails.append('the no-tests example as shipped: ' + '; '.join(e))
+    if any('reading source' in x for x in w):
+        fails.append('the white-box warning repeats although metadata.notes already says claims rest on reading source')
+    for label, mutate, want in (
+            ('no_tests marked provisional', lambda r: r['metadata'].update(provisional=True), 'provisional'),
+            ('no_tests with a run that ran tests',
+             lambda r: r['metadata']['execution_result']['runs'][0].update(passed=3), 'no_tests'),
+            ('no_tests without a discovery run', lambda r: r['metadata'].pop('execution_result'), 'no_tests'),
+            ('no_tests with reliability scored',
+             lambda r: next(d for d in r['dimensions'] if d['id'] == 'reliability').update(
+                 score=5, confidence='medium', evidence_level='verified', evidence=['x'], finding='Reliable.'),
+             'reliability'),
+            ('no_tests with coverage above 1',
+             lambda r: next(d for d in r['dimensions'] if d['id'] == 'coverage').update(score=3), 'coverage')):
+        rep = copy.deepcopy(none)
+        mutate(rep)
+        e, _ = full(rep)
+        if not any(want in x for x in e):
+            fails.append(f'{label} is an error (got: {"; ".join(e) or "no errors"})')
+    rep = copy.deepcopy(none)
+    rep['metadata']['notes'] = [n for n in rep['metadata']['notes'] if 'reading source' not in n]
+    if not any('reading source' in x for x in full(rep)[1]):
+        fails.append('white-box mode without a note on reading source must warn')
     if fails:
         print('validate_evaluation self-test FAILED:\n  - ' + '\n  - '.join(fails))
         return 1

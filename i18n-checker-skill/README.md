@@ -14,7 +14,11 @@ It finds internationalisation and localisation problems in resource files, code 
   against CLDR, and mirroring, with screenshots.
 
 Formats: JSON (i18next, FormatJS, vue-i18n), ARB, gettext PO, Android `strings.xml`, iOS `.strings`,
-`.stringsdict` and `.xcstrings`, all parsed with the Python standard library. CLDR plural rules and
+`.stringsdict` and `.xcstrings`, and literal JS/TS message objects (`const translations = {en: {...},
+ru: {...}}`, or a locale-named module's default export), all parsed with the Python standard library
+without running any code. Locale-named JS files with no message object, YAML and values that aren't
+string literals are listed as not parsed. A committed `dist/` front end is scanned unless the
+repository builds it; skipped directories are recorded, and `--include DIR` scans one anyway. CLDR plural rules and
 number and date patterns are pinned, hash-checked subsets.
 
 It is strict about what it can claim:
@@ -52,7 +56,7 @@ chromium`). `scripts/fetch_cldr.py --rebuild` refreshes the CLDR subsets when yo
 python scripts/discover.py --repo . --out run/resources.json
 python scripts/check_keys.py run/resources.json --repo . --out run/keys.json
 python scripts/scan_code.py --repo . --out run/code.json
-python scripts/render_locales.py targets.json --out run/runtime
+python scripts/render_locales.py targets.json --out run/runtime [--resources run/resources.json]
 python scripts/merge_findings.py --resources run/resources.json --keys run/keys.json --code run/code.json --runtime run/runtime/runtime.json --repo . --out run/candidates.json --patch run/missing_keys.patch
 python scripts/validate_report.py run/report.json --candidates run/candidates.json --keys run/keys.json --resources run/resources.json --repo . --runtime run/runtime/runtime.json
 python scripts/render_report.py run/report.json [--brief]
@@ -68,6 +72,7 @@ real run (listed in `examples/run/commands.sh`) with screenshots and the propose
 ```bash
 python scripts/validate_report.py examples/report.example.json --candidates examples/run/candidates.json --keys examples/run/keys.json --resources examples/run/resources.json --repo examples/bookclub --runtime examples/run/runtime/runtime.json
 python scripts/render_report.py examples/report.example.json
+python scripts/self_test.py      # synthetic repositories in a temporary directory; the Chromium checks skip without Playwright
 ```
 
 ## Files

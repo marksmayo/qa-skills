@@ -140,6 +140,207 @@ def flask_scan_checks() -> tuple[list[str], str]:
     return fails, 'ran'
 
 
+# a Python API server (FastAPI) mounting StaticFiles on a committed, hand-written dist/ folder: no package.json, no build
+# step; the front end uses fullscreen, pointer and keyboard lock, gamepads, the Cache API, IndexedDB, Web Audio and
+# WebAssembly, and an Emscripten-style loader guards a require("fs") behind ENVIRONMENT_IS_NODE
+SERVED_TREE = {
+    'requirements.txt': 'fastapi==0.110.0\nuvicorn==0.29.0\n',
+    'server.py': 'from fastapi import FastAPI\nfrom fastapi.staticfiles import StaticFiles\n\napp = FastAPI()\n\n\n'
+                 '@app.get("/health")\ndef health():\n    return {"ok": True}\n\n\n'
+                 'app.mount("/", StaticFiles(directory="dist", html=True), name="site")\n',
+    'proxy.py': 'def forward(path):\n    return path\n', 'config.py': 'PORT = 8000\n', 'cache_dir.py': 'ROOT = "cache"\n',
+    'tools/pack.py': 'print("pack")\n', 'tools/check.py': 'print("check")\n', 'tools/__init__.py': '',
+    'dist/index.html': '<!doctype html><html><head><link rel="stylesheet" href="style.css"></head>\n'
+                       '<body><canvas id="screen"></canvas><script src="app.js"></script></body></html>\n',
+    'dist/style.css': 'canvas { width: 100%; }\n',
+    'dist/app.js': ('const screen = document.getElementById("screen");\n'
+                    'screen.addEventListener("click", () => { screen.requestFullscreen(); });\n'
+                    'screen.requestPointerLock();\n'
+                    'navigator.keyboard.lock(["Escape"]);\n'
+                    'const pads = navigator.getGamepads();\n'
+                    'caches.open("assets-v1").then((c) => c.addAll(["/data.bin"]));\n'
+                    'const req = indexedDB.open("saves", 1);\n'
+                    'const ctx = new AudioContext();\n'),
+    'dist/modules/loader.js': ('var ENVIRONMENT_IS_WEB = typeof window == "object";\n'
+                               'var ENVIRONMENT_IS_NODE = typeof process == "object";\n'
+                               'if (ENVIRONMENT_IS_NODE) { var fs = require("fs"); var nodePath = require("path"); }\n'
+                               'function load(bytes) { return WebAssembly.instantiate(bytes, {}); }\n'
+                               'if (ENVIRONMENT_IS_WEB) { var s = document.createElement("script"); document.body.appendChild(s); }\n'),
+}
+SERVED_FEATURES = {'wasm', 'fullscreen', 'pointer-lock', 'keyboard-lock', 'gamepad', 'cache-storage', 'indexeddb', 'web-audio'}
+
+
+def served_dist_checks() -> tuple[list[str], str]:
+    try:
+        from fetch_data import asset_path
+        asset_path('web-features'); asset_path('caniuse-db')
+    except (FileNotFoundError, ImportError, KeyError):
+        return [], 'skipped (feature data not cached: fetch_data.py)'
+    fails = []
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp) / 'arcade'
+        for rel, text in SERVED_TREE.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(text, encoding='utf-8')
+        out = Path(tmp) / 'features.json'
+        def scan(*extra):
+            r = subprocess.run([sys.executable, '-B', str(HERE / 'feature_scan.py'), '--repo', str(root), '--out', str(out),
+                                '--query', 'defaults', *extra], capture_output=True, text=True, encoding='utf-8')
+            try:
+                return json.loads(out.read_text(encoding='utf-8')), r.stderr
+            except (OSError, ValueError):
+                return None, r.stderr
+        d, err = scan()
+        if d is None:
+            return [f'feature_scan.py failed: {err[-300:]}'], 'ran'
+        scanned = (d.get('scanned_files') or {}).get('files') or []
+        if 'skipped' not in d:
+            fails.append(f'features.json has no `skipped` record: keys {sorted(d)}')
+        if 'dist/app.js' not in scanned:
+            pruned = [p for p in (d.get('skipped') or {}).get('pruned') or [] if p.get('path') == 'dist']
+            if not pruned or not pruned[0].get('reason'):
+                fails.append(f'dist/ was left out without a skipped.pruned entry and reason: skipped {d.get("skipped")}')
+            if '--include dist' not in err + ' '.join(d.get('limitations') or []):
+                fails.append(f'dist/ (served by StaticFiles) was left out and nothing says "--include dist": {err.strip()[-300:]!r}')
+        d, err = scan('--include', 'dist')
+        if d is None:
+            return fails + [f'feature_scan.py --include dist failed: {err[-300:]}'], 'ran'
+        scanned = (d.get('scanned_files') or {}).get('files') or []
+        if not {'dist/app.js', 'dist/modules/loader.js', 'dist/index.html'} <= set(scanned):
+            fails.append(f'--include dist did not scan the served front end: scanned {scanned}')
+        if any('loader.js' in x for x in (d.get('skipped') or {}).get('node_only_files') or []):
+            fails.append('an Emscripten-style loader (require("fs") guarded by ENVIRONMENT_IS_NODE, uses document and '
+                         'WebAssembly) was skipped as Node-only')
+        if (d.get('language_coverage') or {}).get('status') == 'unsupported_dominant':
+            fails.append(f'with dist/ included the scan still says the browser code was not read: {d.get("language_coverage")}')
+        seen = {f['feature'] for f in d.get('features') or []} | {f['feature'] for f in d.get('supported_features') or []}
+        if not SERVED_FEATURES <= seen:
+            fails.append(f'APIs the front end uses are not recorded (as findings or supported_features): missing '
+                         f'{sorted(SERVED_FEATURES - seen)}')
+    return fails, 'ran'
+
+
+def fake_inks(doc, base, ref, jobs):
+    return {i: r.get('_inks') for i, r in enumerate(doc['runs'])}
+
+
+def round8_compare_checks() -> list[str]:
+    """Effective viewport (fullscreen), benign media aborts, failed requests across pages, a second ink pass when the
+    reference shows almost no ink, limitations inherited from a font-family difference, inline reflow, and steps that
+    fail in every engine."""
+    fails = []
+    def el(sig, box, tag='div', text='x', font='Verdana'):
+        return {'sig': sig, 'tag': tag, 'type': None, 'text': text, 'box': box, 'font': font}
+    def mk(page, eng, n, elements, **kw):
+        r = {'page': page, 'viewport': '1280x800', 'engine': eng, 'rerun': n, 'run_status': 'ran', 'elements': elements,
+             'images': [], 'page_errors': [], 'console_errors': [], 'failed_requests': [], 'steps': [], 'overflow_x': False,
+             'size': [1280, 800]}
+        r.update(kw)
+        return r
+    engines = ('chromium', 'firefox', 'webkit')
+    # 1. Firefox went fullscreen after "click to play": its effective viewport is 1366x768, the plan's is 1280x800
+    runs = []
+    for e in engines:
+        for n in (1, 2):
+            fs = e == 'firefox'
+            els = [el('#status', [100 + (43 if fs else 0), 400 - (34 if fs else 0), 300, 20])] + \
+                ([el('#progress', [0, 0, 1366, 4])] if fs else [])
+            runs.append(mk('home~play', e, n, els, inner=[1366, 768] if fs else [1280, 800], fullscreen=fs,
+                           size=[1366, 768] if fs else [1280, 800]))
+    doc = {'engines': [{'name': e} for e in engines], 'reruns': 2, 'platform': 'win32', 'runs': runs}
+    diffs, flaky, dismissed = ce.compare(doc, Path(tempfile.gettempdir()), 'chromium', 1)
+    bad = [d for d in diffs if d['engine'] == 'firefox' and d['kind'] == 'layout']
+    if bad or not any('viewport' in d.get('reason', '') for d in dismissed):
+        fails.append(f'boxes were compared across different effective viewports (Firefox fullscreen at 1366x768): '
+                     f'{[(d["subkind"], d.get("element")) for d in bad]}')
+    # 2. media requests cancelled after their metadata (ERR_ABORTED) and Firefox's NS_ERROR_PARSED_DATA_CACHED are not
+    #    failures; one real failure on three pages is one candidate
+    runs = []
+    for p in ('home', 'about', 'help'):
+        for e in engines:
+            for n in (1, 2):
+                fr = []
+                if e == 'chromium':
+                    fr.append('GET http://127.0.0.1:9/intro.mp4 (net::ERR_ABORTED)')
+                if e == 'firefox':
+                    fr.append('GET http://127.0.0.1:9/app.js (NS_ERROR_PARSED_DATA_CACHED)')
+                if e == 'webkit':
+                    fr.append('GET http://127.0.0.1:9/api/news (Could not connect to the server.)')
+                runs.append(mk(p, e, n, [el('main', [0, 0, 1280, 800], tag='main')], failed_requests=fr))
+    doc = {'engines': [{'name': e} for e in engines], 'reruns': 2, 'platform': 'win32', 'runs': runs}
+    diffs, flaky, dismissed = ce.compare(doc, Path(tempfile.gettempdir()), 'chromium', 1)
+    cands = ce.candidates(diffs, dismissed, doc, None, None, set())
+    rf = [c for c in cands if c['subkind'] == 'request_failed']
+    if any('intro.mp4' in c['key'] or 'app.js' in c['key'] for c in rf):
+        fails.append(f'a media request aborted after its metadata or a Firefox cache-parse notice is a failed request: '
+                     f'{[c["key"] for c in rf]}')
+    news = [c for c in rf if 'api/news' in c['key']]
+    if len(news) != 1 or sorted(news[0]['pages']) != ['about', 'help', 'home']:
+        fails.append(f'one failed request on three pages is not one candidate: {[(c["key"], c["pages"]) for c in news]}')
+    if not any('ERR_ABORTED' in str(x) for x in getattr(ce, 'benign_requests', lambda d: [])(doc)):
+        fails.append('the benign media aborts are not recorded anywhere (benign_requests)')
+    lim = ce.build_limitations({'engines': ['chromium'], 'subkind': 'request_failed', 'element': None, 'detail': '',
+                                'messages': {'chromium': ['GET http://127.0.0.1:9/intro.mp4 (net::ERR_ABORTED)']}}, 'win32')
+    if 'chromium-proprietary-codecs' in lim:
+        fails.append('a media request cancelled with ERR_ABORTED is blamed on missing codecs by its .mp4 URL alone')
+    # 3. a video black in WebKit only: Chromium's frame is near-uniform (under the ink floor), Firefox draws a logo
+    runs = []
+    for e, ink in (('chromium', 0.01), ('firefox', 0.2), ('webkit', 0.0)):
+        for n in (1, 2):
+            runs.append(mk('home~play', e, n, [el('video#intro', [0, 0, 640, 360], tag='video', text='')], _inks=[ink]))
+    doc = {'engines': [{'name': e} for e in engines], 'reruns': 2, 'platform': 'win32', 'runs': runs}
+    real = ce.all_inks
+    ce.all_inks = fake_inks
+    try:
+        diffs, flaky, dismissed = ce.compare(doc, Path(tempfile.gettempdir()), 'chromium', 1)
+    finally:
+        ce.all_inks = real
+    if not any(d['subkind'] == 'content_not_rendered' and d['engine'] == 'webkit' and d.get('ref') == 'firefox' for d in diffs):
+        fails.append('a video blank in WebKit only is not compared with Firefox when the reference shows almost no ink: '
+                     f'{[(d["subkind"], d["engine"], d.get("ref")) for d in diffs]}')
+    # 4. a key input drawn in the Windows WebKit default face is also narrower: the box difference inherits the limitation
+    runs = []
+    for e in ('chromium', 'webkit'):
+        for n in (1, 2):
+            wk = e == 'webkit'
+            runs.append(mk('home', e, n, [el('div.key-input', [10, 10, 157 if wk else 200, 30], text='Key',
+                                             font='MS Shell Dlg' if wk else 'Verdana')]))
+    doc = {'engines': [{'name': 'chromium'}, {'name': 'webkit'}], 'reruns': 2, 'platform': 'win32', 'runs': runs}
+    diffs, flaky, dismissed = ce.compare(doc, Path(tempfile.gettempdir()), 'chromium', 1)
+    cands = ce.candidates(diffs, dismissed, doc, None, None, set())
+    box = [c for c in cands if c['subkind'] == 'box_differs']
+    if not box or 'webkit-windows-serif-controls' not in box[0]['build_limitations']:
+        fails.append(f'a box narrower because its font fell back to the build default face does not inherit the '
+                     f'limitation: {[(c["subkind"], c["build_limitations"]) for c in cands]}')
+    # 5. an inline link moved along its line because the paragraph breaks at another word: inline reflow
+    runs = []
+    for e in ('chromium', 'firefox'):
+        for n in (1, 2):
+            ff = e == 'firefox'
+            runs.append(mk('home', e, n, [el('footer>p.repo', [0, 700, 400, 40], tag='p'),
+                                          el('footer>p.repo>a.mirror', [262 if ff else 300, 720, 60, 18], tag='a')]))
+    doc = {'engines': [{'name': 'chromium'}, {'name': 'firefox'}], 'reruns': 2, 'platform': 'win32', 'runs': runs}
+    diffs, flaky, dismissed = ce.compare(doc, Path(tempfile.gettempdir()), 'chromium', 1)
+    if any(d.get('element') == 'footer>p.repo>a.mirror' for d in diffs) or \
+            not any(d.get('element') == 'footer>p.repo>a.mirror' and 'inline' in d.get('reason', '') for d in dismissed):
+        fails.append('an inline link that moved along its line inside an unchanged paragraph (the line breaks at another '
+                     'word) is reported as a layout difference')
+    # 6. a step that fails in every run of every engine is listed, not silent
+    runs = []
+    for e in engines:
+        for n in (1, 2):
+            runs.append(mk('home~play', e, n, [el('main', [0, 0, 1280, 800], tag='main')],
+                           steps=[{'index': 0, 'action': {'click': '.intro'}, 'outcome': 'failed',
+                                   'error': 'TimeoutError: element is covered by #canvas'}],
+                           page_errors=['TypeError: data is not valid']))
+    doc = {'engines': [{'name': e} for e in engines], 'reruns': 2, 'platform': 'win32', 'runs': runs}
+    same = getattr(ce, 'same_everywhere', lambda d: [])(doc)
+    if not any(x.get('page') == 'home~play' and x.get('kind') == 'step_failed' for x in same) or \
+            not any(x.get('kind') == 'page_error' for x in same):
+        fails.append(f'a step and a page error that fail in every engine are not listed (same_everywhere): {same}')
+    return fails
+
+
 def grouping_checks() -> list[str]:
     """Repeated cards (nth-of-type siblings) across two viewports, an undecoded AVIF in each with the fallback the page
     shows instead, the same console error on two pages, and a 400 response logged by two engines only."""
@@ -240,6 +441,9 @@ def snapshot_checks() -> tuple[list[str], str]:
                      f"p {intro.get('font')}")
     if not intro.get('occluded'):
         fails.append(f'the snapshot does not mark an element under a fixed overlay as occluded: {intro}')
+    if snap.get('inner') != [800, 600] or snap.get('fullscreen') is not False:
+        fails.append(f'the snapshot does not record the effective viewport and fullscreen state: inner {snap.get("inner")}, '
+                     f'fullscreen {snap.get("fullscreen")}')
     sc = snap.get('scrollers') or []
     if not any(s.get('sig') == '#detail' and s.get('hidden_px', 0) > 100 for s in sc):
         fails.append(f'the snapshot does not record the inner scroll panel #detail: {sc}')
@@ -318,6 +522,31 @@ def validator_render_checks() -> list[str]:
         if r.returncode == 0 or 'Safari' not in r.stdout or 'recomputing the candidates' in r.stderr:
             fails.append('validate_report.py decoded the screenshots before reporting a summary naming Safari: '
                          f'exit {r.returncode}, stderr {r.stderr.strip()[-120:]!r}')
+        # a summary count that does not match the report (3 need review, with none in needs_review)
+        rep = json.loads((EXAMPLES / 'report.example.json').read_text(encoding='utf-8'))
+        rep['headline']['summary'] = rep['headline']['summary'] + ' 3 need review in a real browser.'
+        (t / 'count.json').write_text(json.dumps(rep), encoding='utf-8')
+        r = subprocess.run([sys.executable, '-B', str(HERE / 'validate_report.py'), str(t / 'count.json'),
+                            '--runs', str(EXAMPLES / 'run' / 'capture' / 'runs.json'),
+                            '--candidates', str(EXAMPLES / 'run' / 'candidates.json'), '--jobs', '1',
+                            '--features', str(EXAMPLES / 'run' / 'features.json')],
+                           capture_output=True, text=True, encoding='utf-8', cwd=SKILL)
+        if r.returncode == 0 or 'need review' not in r.stdout:
+            fails.append(f'validate_report.py accepted a summary saying "3 need review" with no needs_review entry: '
+                         f'{r.stdout.strip()[-160:]!r}')
+        # a state whose step fails in every engine must be named in the limitations (it is otherwise silent)
+        cands = json.loads((EXAMPLES / 'run' / 'candidates.json').read_text(encoding='utf-8'))
+        cands['same_everywhere'] = [{'page': 'home~search', 'viewports': ['1280x800'], 'kind': 'step_failed', 'step': 0,
+                                     'action': {'click': '#go'}, 'messages': ['TimeoutError: covered']}]
+        (t / 'cands.json').write_text(json.dumps(cands), encoding='utf-8')
+        r = subprocess.run([sys.executable, '-B', str(HERE / 'validate_report.py'), str(EXAMPLES / 'report.example.json'),
+                            '--runs', str(EXAMPLES / 'run' / 'capture' / 'runs.json'),
+                            '--candidates', str(t / 'cands.json'), '--jobs', '1',
+                            '--features', str(EXAMPLES / 'run' / 'features.json')],
+                           capture_output=True, text=True, encoding='utf-8', cwd=SKILL)
+        if r.returncode == 0 or 'home~search' not in r.stdout:
+            fails.append(f'validate_report.py accepted a report silent about a step that failed in every engine: '
+                         f'{r.stdout.strip()[-160:]!r}')
     return fails
 
 
@@ -325,12 +554,15 @@ def main() -> int:
     ok = True
     for name, fn in (('feature_scan.py: Go string constants, vendored trees, language guard', feature_scan_checks),
                      ('feature_scan.py: a Flask site with Jinja templates, a data directory, --exclude', flask_scan_checks),
+                     ('feature_scan.py: a served dist/ folder, --include, app APIs, an Emscripten loader', served_dist_checks),
                      ('capture.py snapshot: font family, occlusion, inner scroll panels', snapshot_checks)):
         fails, how = fn()
         ok &= not fails
         print(f"self-test {'passed' if not fails else 'FAILED'}: {name} ({how})" + ''.join(f'\n  - {f}' for f in fails))
     for name, fn in (('compare_engines.py: font family, occlusion, scroll offsets', compare_checks),
                      ('compare_engines.py: grouping repeats, inherited limitations, logged HTTP errors', grouping_checks),
+                     ('compare_engines.py: viewport, media aborts, second ink pass, font limits, inline reflow, '
+                      'same everywhere', round8_compare_checks),
                      ('validate_report.py --features and render_report.py --brief', validator_render_checks)):
         fails = fn()
         ok &= not fails

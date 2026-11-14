@@ -62,8 +62,10 @@ content rendered). Each run records what the scroll did.
 Per page (and state) x viewport x engine x rerun, in a fresh context: a full-page screenshot; console
 errors, page errors and failed requests; every visible element's signature, box and own text; images
 with their natural size; whether the page overflows horizontally; the scripts loaded (to spot
-user-agent sniffing); and for a state, the outcome of each step (ok, or the error). An engine that
-isn't installed is recorded as not_run.
+user-agent sniffing); the effective viewport after the steps (`inner`, innerWidth x innerHeight) and whether
+the page is fullscreen (`fullscreen`): a step that enters fullscreen resizes the viewport to the screen in some
+engines, and compare_engines.py then compares no boxes for that run; and for a state, the outcome of each step
+(ok, or the error). An engine that isn't installed is recorded as not_run.
 
 Output: <out>/runs.json and <out>/<engine>/<viewport>/<page>[~state].r<N>.png. Playwright's WebKit
 is not Safari; the scope says so, and nothing here calls it Safari.
@@ -166,8 +168,11 @@ SNAP = r"""
                     hidden_px: Math.max(0, hidden), box_height: el.clientHeight});
     if (scrollers.length >= 20) break;
   }
+  // the viewport the page really had after the steps: a step that entered fullscreen (click to play) resizes it to the
+  // screen in some engines, and boxes measured at another viewport are not comparable
   return {elements: els, images: imgs, scripts, scrollers, overflow_x: de.scrollWidth > de.clientWidth + 1,
-          size: [de.scrollWidth, de.scrollHeight]};
+          size: [de.scrollWidth, de.scrollHeight], inner: [innerWidth, innerHeight],
+          fullscreen: !!(document.fullscreenElement || document.webkitFullscreenElement)};
 }
 """
 

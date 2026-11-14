@@ -45,6 +45,8 @@
   },
   "area_basis": "subdirectories of the main source directory larder/",
   "unassigned": [],
+  "unscored_areas": [],
+  "scope_outside_areas": [],
   "warnings": [],
   "excluded": [],
   "flaky_tests_not_counted": [],

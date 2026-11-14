@@ -10,9 +10,13 @@ Without --contract the handlers are listed and nothing is compared. --skeleton w
 3.1 contract (JSON) from them, marked `x-contract-provenance: derived`: paths and methods, path
 parameters typed from Flask converters or FastAPI annotations, query parameters from
 request.args.get(name, default, type=int) / request.args[name] / getlist (or FastAPI parameters),
-JSON or HTML responses (jsonify or a dict/list literal against render_template; redirect is a 302,
-send_file a file) and statuses from `return ..., 201`. Response schemas are left open for the agent to
-fill in. --only PREFIX (repeatable) keeps handlers under that path, so a site's HTML pages, static
+a form or multipart body from Form()/File(), and each status with its media types: response classes
+and their media_type=/status_code=, the decorator's response_class=/status_code=, raise HTTPException(404),
+abort(404), `return ..., 201`, jsonify or a dict/list literal (JSON), render_template (HTML), redirect
+(302), send_file (a file); a return of a helper it can't follow is */*, not JSON. A {name:path} catch-all
+is marked x-path-allows-slash, a StaticFiles mount is one GET <mount>/{file} operation (x-mount), a
+router included under an `if` is x-conditional, and add_middleware classes are listed (x-middleware).
+Response schemas are left open for the agent to fill in. --only PREFIX (repeatable) keeps handlers under that path, so a site's HTML pages, static
 files and sitemaps are not reported as undocumented API handlers.
 
 Frameworks (heuristic, by reading source text):
@@ -48,8 +52,12 @@ Issues (handlers.json `issues`, the report's `handler_check.issues`):
                            (StreamingResponse, FileResponse, send_file, ...)
 
 Treat them as review leads, not findings: a handler can be registered in a way this reader can't see
-(a wrapper, a generated router, a mount prefix). Directory walks prune node_modules, .git, .next,
-dist, build and the like before descending.
+(a wrapper, a generated router, a mount prefix). A mount (`kind: mount`) and a catch-all route
+(`catch_all`) cover every documented path under their prefix. Directory walks prune node_modules, .git,
+.next, dist, build and the like before descending and list them in `pruned_dirs`. Files this reader
+does not read are named: `unread_languages` (PHP, Go, Ruby, Java, ... file counts) and
+`unread_handlers` (PHP front controllers routing on $_SERVER['REQUEST_URI'], .htaccess RewriteRule),
+with a warning on stderr.
 """
 from __future__ import annotations
 import argparse, hashlib, json, os, re, sys, tempfile
@@ -73,9 +81,15 @@ NON_JSON_RESPONSES = {'StreamingResponse', 'FileResponse', 'PlainTextResponse', 
 PY_FRAMEWORKS = ('flask', 'fastapi', 'azure-functions')
 
 
-def walk(root: Path, exclude: set[str]):
+def walk(root: Path, exclude: set[str], pruned: list | None = None):
+    """Files under root; directories in PRUNE or --exclude-dir are not entered, and each one left out is
+    appended to `pruned` (relative path) so the output can say what was skipped."""
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(d for d in dirnames if d not in PRUNE and d not in exclude and not d.startswith('.git'))
+        keep = sorted(d for d in dirnames if d not in PRUNE and d not in exclude and not d.startswith('.git'))
+        if pruned is not None:
+            base = Path(dirpath).relative_to(root)
+            pruned += [(base / d).as_posix() for d in sorted(set(dirnames) - set(keep)) if not d.startswith('.git')]
+        dirnames[:] = keep
         for f in sorted(filenames):
             yield Path(dirpath) / f
 
@@ -155,20 +169,52 @@ def flask_path(p: str) -> str:
 def python_handlers(py_files: dict[str, str], host_files: dict[str, str], wanted: list[str]) -> list[dict]:
     """Flask, FastAPI and Azure Functions handlers, read with ast, with router and blueprint prefixes applied."""
     out = []
-    for r in scan_python(py_files, host_files)['routes']:
+    scanned = scan_python(py_files, host_files)
+    extras = python_extras(py_files)
+    # py_routes may report these itself (a newer shared copy): prefer its fields when present
+    cond_by_file: dict[str, str] = {}
+    for c in extras['conditional_includes']:
+        for rel in py_files:
+            if c.get('file') == rel or (c.get('module') and _module_of(rel) == c['module']):
+                cond_by_file.setdefault(rel, c['condition'])
+    for r in scanned['routes']:
         fw = r['framework']
         if not ('auto' in wanted or fw in wanted):
             continue
         if fw == 'flask':
             path = flask_path(r['path'])
+            catch = re.findall(r'<path:(\w+)>', r['path'])
         else:
             path = re.sub(r'\{(\w+):[^}]*\}', r'{\1}', r['path']).rstrip('/') or '/'   # {file_path:path} -> {file_path}
+            catch = re.findall(r'\{(\w+):path\}', r['path'])
         h = {'method': '*' if r['method'] == 'ANY' else r['method'], 'path': path, 'file': r['file'], 'line': r['line'],
              'framework': fw, 'mount': r['mount'], '_raw_path': r['path'], '_function': r.get('function')}
+        if catch:
+            h['catch_all'] = catch[-1]          # a {name:path} parameter matches several segments
+        cond = r.get('condition') or r.get('conditional') or cond_by_file.get(r['file'])   # shared py_routes: condition
+        if cond:
+            h['conditional'] = cond if isinstance(cond, str) else 'under a condition'
         if r.get('response_classes'):
             h['response_classes'] = r['response_classes']
         out.append(h)
-    return out
+    mounts = scanned.get('mounts') if isinstance(scanned.get('mounts'), list) else extras['mounts']
+    if 'auto' in wanted or 'fastapi' in wanted:
+        for m in mounts:
+            base = '/' + m['path'].strip('/') if m['path'].strip('/') else ''
+            static = m.get('static', m.get('app') == 'StaticFiles')
+            h = {'method': 'GET' if static else '*', 'path': f'{base}/{{file}}' if static else (base or '/'), 'file': m['file'],
+                 'line': m['line'], 'framework': 'fastapi', 'mount': 'resolved', 'kind': 'mount', 'mount_app': m.get('app') or 'app',
+                 'catch_all': 'file' if static else None, '_function': None}
+            if not static:
+                h['path'] = f'{base}/{{path}}'
+                h['catch_all'] = 'path'
+            if m.get('directory'):
+                h['directory'] = m['directory']
+            if m.get('condition') or m.get('conditional'):
+                h['conditional'] = m.get('condition') or m['conditional']
+            out.append(h)
+    out_extras = {'middleware': extras['middleware']}
+    return out, out_extras
 
 
 CONVERTER_TYPE = {'int': {'type': 'integer'}, 'float': {'type': 'number'}, 'uuid': {'type': 'string', 'format': 'uuid'},
@@ -177,6 +223,11 @@ PY_TYPE = {'int': 'integer', 'float': 'number', 'bool': 'boolean', 'str': 'strin
 HTML_CALLS = {'render_template', 'render_template_string', 'render', 'TemplateResponse', 'HTMLResponse'}
 FILE_CALLS = {'send_file', 'send_from_directory', 'FileResponse', 'StreamingResponse'}
 REDIRECT_CALLS = {'redirect', 'RedirectResponse', 'HttpResponseRedirect'}
+# response classes and the media type each answers in (None: no body unless media_type= or content says so)
+RESPONSE_MEDIA = {'JSONResponse': 'application/json', 'ORJSONResponse': 'application/json', 'UJSONResponse': 'application/json',
+                  'HTMLResponse': 'text/html', 'PlainTextResponse': 'text/plain', 'TemplateResponse': 'text/html',
+                  'FileResponse': 'application/octet-stream', 'StreamingResponse': '*/*', 'EventSourceResponse': 'text/event-stream',
+                  'RedirectResponse': None, 'Response': None}
 
 
 def _call_name(node) -> str | None:
@@ -203,33 +254,107 @@ def _func_def(tree, name: str | None, line: int):
     return best
 
 
+def _status_value(node) -> int | None:
+    """404 from `404`, `status.HTTP_404_NOT_FOUND` or `HTTPStatus.NOT_FOUND`."""
+    import ast
+    import http
+    if isinstance(node, ast.Constant) and isinstance(node.value, int) and 100 <= node.value < 600:
+        return node.value
+    if isinstance(node, ast.Attribute):
+        m = re.match(r'HTTP_(\d{3})', node.attr)
+        if m:
+            return int(m.group(1))
+        try:
+            return int(http.HTTPStatus[node.attr])
+        except KeyError:
+            return None
+    return None
+
+
+def _kwarg(call, name: str):
+    return next((k.value for k in call.keywords if k.arg == name), None)
+
+
+def _str_const(node) -> str | None:
+    import ast
+    return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
+
+
+def _response_call(call, framework: str):
+    """(status, media type or None, handled) for a call that builds a response: a response class with its
+    media_type= and status_code=, or a Flask helper. handled is False for any other call."""
+    name = _call_name(call)
+    if name in RESPONSE_MEDIA:
+        media = _str_const(_kwarg(call, 'media_type')) or RESPONSE_MEDIA[name]
+        if name == 'Response' and media is None and (call.args or _kwarg(call, 'content') is not None):
+            media = '*/*'                       # Response(content) with no media_type: the type isn't known
+        st = _status_value(_kwarg(call, 'status_code'))
+        default = 307 if name == 'RedirectResponse' else 200
+        return st or default, media, True
+    if name in ('send_file', 'send_from_directory'):
+        return 200, _str_const(_kwarg(call, 'mimetype')) or 'application/octet-stream', True
+    if name in ('render_template', 'render_template_string', 'render'):
+        return 200, 'text/html', True
+    if name == 'jsonify':
+        return 200, 'application/json', True
+    if name in ('redirect', 'HttpResponseRedirect'):
+        return _status_value(call.args[1]) if len(call.args) > 1 and _status_value(call.args[1]) else 302, None, True
+    return None, None, False
+
+
 def derive_operation(h: dict, source: str | None) -> dict:
     """An OpenAPI operation for one handler, read from its source: path parameters (Flask converters, FastAPI
-    annotations), query parameters (request.args.get(name, default, type=int), request.args[name],
-    request.args.getlist(name); FastAPI parameters that are not path parameters), and the response kind
-    (jsonify or a dict/list literal is JSON; render_template is HTML; redirect is a 302; send_file a file),
-    with a status from `return ..., 201`. Response schemas are left open: the skeleton says what exists, not
-    what it returns."""
+    annotations; a {name:path} catch-all is marked x-path-allows-slash), query parameters
+    (request.args.get(name, default, type=int), request.args[name], request.args.getlist(name); FastAPI
+    parameters that are not path parameters), a form or multipart body from Form()/File() parameters, and the
+    responses: each status the handler can answer with the media types it answers it in. A response class's
+    media_type= and status_code=, the decorator's response_class= and status_code=, `raise HTTPException(404)`,
+    Flask's abort(404) and `return ..., 201` are read; jsonify or a dict/list literal is JSON, render_template
+    HTML, send_file a file, redirect a 302. A return of a call this reader doesn't know (a helper that may stream
+    or proxy) is */*, not JSON. Response schemas are left open: the skeleton says what exists, not what it returns."""
     import ast
     raw = h.get('_raw_path') or h['path']
     names = re.findall(r'\{([^}]+)\}', h['path'])
     conv = {m.group(2): m.group(1) for m in re.finditer(r'<(?:(\w+):)?(\w+)>', raw)}
+    conv.update({m.group(1): m.group(2) for m in re.finditer(r'\{(\w+):(\w+)\}', raw)})
     path_types = {n: dict(CONVERTER_TYPE.get(conv.get(n) or 'string', {'type': 'string'})) for n in names}
     query: dict[str, dict] = {}
-    media, statuses = None, set()
+    form: dict[str, dict] = {}
+    multipart = False
+    answers: dict[str, set] = {}          # status -> media types (None: no body)
+
+    def answer(st, media):
+        answers.setdefault(str(st), set()).add(media)
+
     fn = None
     if source:
         try:
             fn = _func_def(ast.parse(source), h.get('_function'), h['line'])
         except SyntaxError:
             fn = None
+    fastapi = h['framework'] == 'fastapi'
     if fn is not None:
-        if h['framework'] == 'fastapi':
+        dec = next((d for d in fn.decorator_list if isinstance(d, ast.Call) and d.lineno == h['line']), None) or \
+            next((d for d in fn.decorator_list if isinstance(d, ast.Call)), None)
+        declared_class = _call_name(ast.Call(func=_kwarg(dec, 'response_class'), args=[], keywords=[])) \
+            if dec is not None and _kwarg(dec, 'response_class') is not None else None
+        declared_status = _status_value(_kwarg(dec, 'status_code')) if dec is not None else None
+        typed_return = dec is not None and _kwarg(dec, 'response_model') is not None or fn.returns is not None
+        default_media = (RESPONSE_MEDIA.get(declared_class) or '*/*') if declared_class else \
+            ('application/json' if fastapi or h['framework'] == 'azure-functions' else None)
+        ok_status = str(declared_status or 200)
+        if fastapi:
             args = fn.args.args + fn.args.kwonlyargs
             defaults = [None] * (len(fn.args.args) - len(fn.args.defaults)) + list(fn.args.defaults) + list(fn.args.kw_defaults)
             for arg, default in zip(args, defaults):
                 ann = arg.annotation.id if isinstance(arg.annotation, ast.Name) else None
-                if isinstance(default, ast.Call) and _call_name(default) in ('Depends', 'Security', 'Body', 'File', 'Form', 'Header', 'Cookie'):
+                dname = _call_name(default) if isinstance(default, ast.Call) else None
+                if dname in ('File', 'Form') or ann == 'UploadFile':
+                    multipart = multipart or dname == 'File' or ann == 'UploadFile'
+                    form[arg.arg] = ({'type': 'string', 'format': 'binary'} if dname == 'File' or ann == 'UploadFile'
+                                     else {'type': PY_TYPE.get(ann, 'string')})
+                    continue
+                if dname in ('Depends', 'Security', 'Body', 'Header', 'Cookie'):
                     continue
                 if arg.arg in ('self', 'request', 'response', 'session', 'db') or (ann and ann not in PY_TYPE):
                     continue
@@ -238,7 +363,59 @@ def derive_operation(h: dict, source: str | None) -> dict:
                         path_types[arg.arg] = {'type': PY_TYPE[ann]}
                     continue
                 query[arg.arg] = {'schema': {'type': PY_TYPE.get(ann, 'string')}, 'required': default is None}
+        handled: set[int] = set()
+        bound: dict[str, ast.AST] = {}      # name -> the call it was bound to (`resp = f()`, `if resp := f():`)
         for node in ast.walk(fn):
+            if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                bound[node.targets[0].id] = node.value.value if isinstance(node.value, ast.Await) else node.value
+            elif isinstance(node, ast.NamedExpr) and isinstance(node.target, ast.Name):
+                bound[node.target.id] = node.value.value if isinstance(node.value, ast.Await) else node.value
+        for node in ast.walk(fn):
+            if isinstance(node, ast.Return) and isinstance(node.value, ast.Name) and isinstance(bound.get(node.value.id), ast.Call):
+                call = bound[node.value.id]
+                if _response_call(call, h['framework'])[2]:
+                    continue                 # a response object: the walk below reads it where it is built
+                if not (typed_return or (_call_name(call) or '')[:1].isupper()):
+                    answer(ok_status, '*/*')  # the result of a helper this reader can't follow
+                    continue
+            if isinstance(node, ast.Return) and node.value is not None:
+                v = node.value
+                st = None
+                if isinstance(v, ast.Tuple) and len(v.elts) >= 2 and _status_value(v.elts[1]):
+                    st = _status_value(v.elts[1])
+                    v = v.elts[0]
+                if isinstance(v, ast.Await):
+                    v = v.value
+                if isinstance(v, ast.Call):
+                    cst, cmedia, known = _response_call(v, h['framework'])
+                    handled.add(id(v))
+                    if known:
+                        answer(st or cst, cmedia)
+                    elif _call_name(v) in ('make_response',):
+                        answer(st or ok_status, '*/*')
+                    elif typed_return or (_call_name(v) or '')[:1].isupper():
+                        answer(st or ok_status, default_media or 'application/json')   # a model built and returned
+                    else:
+                        answer(st or ok_status, '*/*')   # a helper this reader can't follow: it may stream, proxy or send a file
+                elif isinstance(v, (ast.Dict, ast.List, ast.ListComp, ast.DictComp)):
+                    answer(st or ok_status, default_media if declared_class else 'application/json')
+                elif isinstance(v, (ast.Constant, ast.JoinedStr)) and not (isinstance(v, ast.Constant) and v.value is None):
+                    answer(st or ok_status, default_media if fastapi or declared_class else 'text/html')
+                else:
+                    answer(st or ok_status, default_media)
+            elif isinstance(node, ast.Raise) and isinstance(node.exc, ast.Call) and \
+                    (_call_name(node.exc) or '').endswith('HTTPException'):
+                st = _status_value(node.exc.args[0]) if node.exc.args else _status_value(_kwarg(node.exc, 'status_code'))
+                if st:
+                    answer(st, 'application/json' if fastapi else None)
+                handled.add(id(node.exc))
+            elif isinstance(node, ast.Call) and _call_name(node) == 'abort' and node.args and _status_value(node.args[0]):
+                answer(_status_value(node.args[0]), 'text/html')          # Flask's default error page
+                handled.add(id(node))
+        for node in ast.walk(fn):    # response objects built and returned through a variable
+            if isinstance(node, ast.Call) and id(node) not in handled                     and (_call_name(node) in RESPONSE_MEDIA or _call_name(node) in ('send_file', 'send_from_directory')):
+                cst, cmedia, _ = _response_call(node, h['framework'])
+                answer(cst, cmedia)
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Attribute) \
                     and node.func.value.attr == 'args' and node.args and isinstance(node.args[0], ast.Constant) \
                     and isinstance(node.args[0].value, str):
@@ -249,75 +426,213 @@ def derive_operation(h: dict, source: str | None) -> dict:
                     query.setdefault(qn, {'schema': {'type': 'array', 'items': {'type': typ}}, 'required': False})
                 elif node.func.attr == 'get':
                     query.setdefault(qn, {'schema': {'type': typ}, 'required': False})
-            elif isinstance(node, ast.Subscript) and isinstance(node.value, ast.Attribute) and node.value.attr == 'args' \
+            if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Attribute) and node.value.attr == 'args' \
                     and isinstance(node.slice, ast.Constant) and isinstance(node.slice.value, str):
                 query.setdefault(node.slice.value, {'schema': {'type': 'string'}, 'required': True})
-            elif isinstance(node, ast.Call):
-                name = _call_name(node)
-                if name in HTML_CALLS:
-                    media = media or 'text/html'
-                elif name in FILE_CALLS:
-                    media = media or 'application/octet-stream'
-                elif name in REDIRECT_CALLS:
-                    statuses.add('302')
-                elif name == 'jsonify':
-                    media = 'application/json'
-            elif isinstance(node, ast.Return) and node.value is not None:
-                v = node.value
-                if isinstance(v, ast.Tuple) and len(v.elts) >= 2 and isinstance(v.elts[1], ast.Constant) and isinstance(v.elts[1].value, int):
-                    statuses.add(str(v.elts[1].value))
-                    v = v.elts[0]
-                if isinstance(v, (ast.Dict, ast.List, ast.ListComp, ast.DictComp)):
-                    media = media or 'application/json'
-    if media is None and h['framework'] in ('fastapi', 'azure-functions'):
-        media = 'application/json'
-    ok = sorted(s for s in statuses if s.startswith('2')) or ([] if statuses and not media else ['200'])
+        if not any(s.startswith(('2', '3')) for s in answers):
+            answer(ok_status, default_media)
+    elif h['framework'] in ('fastapi', 'azure-functions'):
+        answer('200', 'application/json')
+    if not answers:
+        answer('200', None)
     responses = {}
-    for st in ok:
-        responses[st] = {'description': 'derived from the handler; replace with what it returns',
-                         **({'content': {media: {}}} if media else {})}
-    for st in sorted(s for s in statuses if not s.startswith('2')):
-        responses[st] = {'description': 'derived from the handler'}
-    params = [{'name': n, 'in': 'path', 'required': True, 'schema': path_types[n]} for n in names]
+    for st in sorted(answers):
+        media = sorted(m for m in answers[st] if m)
+        ok = st.startswith('2')
+        responses[st] = {'description': 'derived from the handler; replace with what it returns' if ok else 'derived from the handler',
+                         **({'content': {m: {} for m in media}} if media else {})}
+    params = []
+    for n in names:
+        p = {'name': n, 'in': 'path', 'required': True, 'schema': path_types[n]}
+        if conv.get(n) == 'path':
+            p['x-path-allows-slash'] = True      # a catch-all: the value may hold slashes (send them unencoded)
+        params.append(p)
     params += [{'name': n, 'in': 'query', 'required': q['required'], 'schema': q['schema']} for n, q in query.items()]
     op = {'operationId': h.get('_function') or f"{h['method'].lower()}_{re.sub(r'[^A-Za-z0-9]+', '_', h['path']).strip('_') or 'root'}",
-          'x-derived-from': f"{h['file']}:{h['line']}", 'responses': responses or {'200': {'description': 'derived'}}}
+          'x-derived-from': f"{h['file']}:{h['line']}", 'responses': responses}
     if params:
         op['parameters'] = params
+    if form:
+        mt = 'multipart/form-data' if multipart else 'application/x-www-form-urlencoded'
+        op['requestBody'] = {'required': True, 'content': {mt: {'schema': {'type': 'object', 'required': sorted(form),
+                                                                             'properties': form}}}}
     return op
 
 
-def skeleton(handlers: list[dict], root: Path, repo_name: str) -> dict:
-    """A derived OpenAPI 3.1 contract: every handler's path and method, its parameters and response kind, marked
+def _parents(tree) -> dict:
+    import ast
+    par = {}
+    for node in ast.walk(tree):
+        for ch in ast.iter_child_nodes(node):
+            par[ch] = node
+    return par
+
+
+def _condition(node, par: dict, rel: str) -> str | None:
+    """`if FLAG (file:line)` for the innermost `if` the call sits under, in its module or an app factory."""
+    import ast
+    cur = par.get(node)
+    while cur is not None and not isinstance(cur, ast.Module):
+        if isinstance(cur, ast.If):
+            try:
+                text = ast.unparse(cur.test)
+            except Exception:  # noqa: BLE001
+                text = '...'
+            return f'if {text[:80]} ({rel}:{cur.lineno})'
+        if isinstance(cur, ast.ClassDef):
+            return None
+        cur = par.get(cur)
+    return None
+
+
+def python_extras(py_files: dict[str, str]) -> dict:
+    """What py_routes does not list (yet): Starlette/FastAPI `app.mount(path, StaticFiles(...) | sub_app)`,
+    include_router/register_blueprint calls under an `if` (routes that exist only when a flag is set), and
+    `add_middleware(...)` classes. Read with ast; nothing is imported."""
+    import ast
+    mounts, conditional, middleware = [], [], []
+    for rel, text in py_files.items():
+        if not re.search(r'\b(fastapi|starlette|flask)\b', text):
+            continue
+        try:
+            tree = ast.parse(text)
+        except SyntaxError:
+            continue
+        par = _parents(tree)
+        imports = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                for al in node.names:
+                    imports[al.asname or al.name] = node.module
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+                continue
+            attr = node.func.attr
+            if attr == 'mount' and (node.args or _kwarg(node, 'path') is not None):
+                path = _str_const(node.args[0] if node.args else _kwarg(node, 'path'))
+                app = node.args[1] if len(node.args) > 1 else _kwarg(node, 'app')
+                if path is None or app is None:
+                    continue
+                app_name = _call_name(app) if isinstance(app, ast.Call) else (app.id if isinstance(app, ast.Name) else
+                                                                              app.attr if isinstance(app, ast.Attribute) else None)
+                directory = _str_const(_kwarg(app, 'directory')) if isinstance(app, ast.Call) else None
+                mounts.append({'path': path, 'file': rel, 'line': node.lineno, 'app': app_name or 'app',
+                               'static': app_name == 'StaticFiles', 'directory': directory,
+                               'conditional': _condition(node, par, rel)})
+            elif attr in ('include_router', 'register_blueprint') and node.args:
+                cond = _condition(node, par, rel)
+                if not cond:
+                    continue
+                arg = node.args[0]
+                if isinstance(arg, ast.Attribute) and isinstance(arg.value, ast.Name):
+                    target = {'module': arg.value.id}         # `saves.router`: the router of module saves
+                elif isinstance(arg, ast.Name):
+                    target = {'module': imports[arg.id].rsplit('.', 1)[-1]} if arg.id in imports else {'file': rel}
+                else:
+                    continue
+                conditional.append({**target, 'condition': cond, 'file_of_include': rel, 'line': node.lineno})
+            elif attr == 'add_middleware' and node.args:
+                name = node.args[0].id if isinstance(node.args[0], ast.Name) else \
+                    node.args[0].attr if isinstance(node.args[0], ast.Attribute) else None
+                if name:
+                    middleware.append({'name': name, 'file': rel, 'line': node.lineno})
+    return {'mounts': mounts, 'conditional_includes': conditional, 'middleware': middleware}
+
+
+def _module_of(rel: str) -> str:
+    p = Path(rel)
+    return p.parent.name if p.name == '__init__.py' else p.stem
+
+
+def project_name(root: Path) -> str:
+    """The project's own name (pyproject.toml, package.json), else the directory name."""
+    try:
+        m = re.search(r'(?ms)^\[(?:project|tool\.poetry)\]\s*$.*?^name\s*=\s*["\']([^"\']+)', (root / 'pyproject.toml').read_text(encoding='utf-8'))
+        if m:
+            return m.group(1)
+    except OSError:
+        pass
+    try:
+        name = json.loads((root / 'package.json').read_text(encoding='utf-8')).get('name')
+        if isinstance(name, str) and name:
+            return name
+    except (OSError, ValueError):
+        pass
+    return root.resolve().name
+
+
+def mount_operation(h: dict) -> dict:
+    """A mounted static folder or sub-application, as one GET operation on `<mount>/{file}` (several segments)."""
+    static = h.get('mount_app') == 'StaticFiles'
+    what = f"StaticFiles(directory={h.get('directory')!r})" if static else h.get('mount_app', 'app')
+    oid = re.sub(r'[^A-Za-z0-9]+', '_', f"mount_{h.get('directory') or h.get('mount_app') or 'app'}").strip('_')
+    return {'operationId': oid, 'x-derived-from': f"{h['file']}:{h['line']}", 'x-mount': what,
+            'description': f'Served by a mount ({what}): every file under it, not one route.',
+            'parameters': [{'name': h.get('catch_all') or 'file', 'in': 'path', 'required': True, 'schema': {'type': 'string'},
+                            'x-path-allows-slash': True}],
+            'responses': {'200': {'description': 'derived from the mount; a file of any type', 'content': {'*/*': {}}},
+                          '404': {'description': 'derived from the mount: no such file'}}}
+
+
+def skeleton(handlers: list[dict], root: Path, repo_name: str, middleware: list[dict] | None = None) -> dict:
+    """A derived OpenAPI 3.1 contract: every handler's path and method, its parameters and responses (error
+    statuses included), mounts as catch-all operations, and conditional routes marked x-conditional, marked
     x-contract-provenance: derived. The run against it checks the code against itself; say so."""
     sources: dict[str, str | None] = {}
     paths: dict[str, dict] = {}
     seen_ids: set[str] = set()
+    expanded = []
     for h in sorted(handlers, key=lambda x: (x['path'], x['method'])):
+        expanded += [(h, m) for m in (HTTP[:5] if h['method'] == '*' else (h['method'],))]
+    per_fn: dict[tuple, int] = {}
+    for h, m in expanded:
+        per_fn[(h['file'], h['line'], h.get('_function'))] = per_fn.get((h['file'], h['line'], h.get('_function')), 0) + 1
+    for h, m in expanded:
         if h['file'] not in sources:
             try:
                 sources[h['file']] = (root / h['file']).read_text(encoding='utf-8', errors='replace') if h['file'].endswith('.py') else None
             except OSError:
                 sources[h['file']] = None
-        methods = HTTP[:5] if h['method'] == '*' else (h['method'],)
-        for m in methods:
-            op = derive_operation(h, sources[h['file']])
-            oid = op['operationId']
-            if oid in seen_ids:
-                oid = f'{oid}_{m.lower()}'
-            seen_ids.add(oid)
-            op['operationId'] = oid
-            paths.setdefault(h['path'], {})[m.lower()] = op
-    return {'openapi': '3.1.0',
-            'info': {'title': f'{repo_name} (derived from the handlers)', 'version': '0.0.0-derived',
-                     'description': 'Derived by handler_map.py --skeleton from the route handlers, not published by the API. '
-                                    'Response schemas are left open; fill them in from the code or the documentation. A run '
-                                    'against a derived contract checks the code against itself.'},
-            'x-contract-provenance': 'derived',
-            'paths': paths}
+        op = mount_operation(h) if h.get('kind') == 'mount' else derive_operation(h, sources[h['file']])
+        oid = op['operationId']
+        if per_fn[(h['file'], h['line'], h.get('_function'))] > 1 or oid in seen_ids:
+            oid = f'{oid}_{m.lower()}'          # one function serving several methods: every method gets its suffix
+        while oid in seen_ids:
+            oid += '_'
+        seen_ids.add(oid)
+        op['operationId'] = oid
+        if h.get('conditional'):
+            op['x-conditional'] = h['conditional']
+        paths.setdefault(h['path'], {})[m.lower()] = op
+    out = {'openapi': '3.1.0',
+           'info': {'title': f'{repo_name} (derived from the handlers)', 'version': '0.0.0-derived',
+                    'description': 'Derived by handler_map.py --skeleton from the route handlers, not published by the API. '
+                                   'Statuses and media types come from the handlers (response classes, media_type=, '
+                                   'status_code=, raised HTTP errors); response schemas are left open, and error answers the '
+                                   'framework adds itself (validation 422, 405, 404 for unknown paths) are not listed: fill '
+                                   'them in from the code or the documentation. Operations marked x-conditional exist only '
+                                   'when their condition holds. A run against a derived contract checks the code against itself.'},
+           'x-contract-provenance': 'derived',
+           'paths': paths}
+    if middleware:
+        out['x-middleware'] = [f"{m['name']} ({m['file']}:{m['line']})" for m in middleware]
+        if any(re.search(r'basic', m['name'], re.I) for m in middleware):
+            # inferred from the middleware's name; check which paths it exempts (preflights, health checks)
+            out['components'] = {'securitySchemes': {'basicAuth': {'type': 'http', 'scheme': 'basic',
+                                                                   'description': 'inferred from the middleware name; '
+                                                                                  'check its exemptions'}}}
+            out['security'] = [{'basicAuth': []}]
+    return out
 
 
-def detect(root: Path, wanted: list[str], exclude: set[str]) -> tuple[list[str], list[dict], int]:
+UNREAD_EXT = {'.php': 'PHP', '.go': 'Go', '.rb': 'Ruby', '.java': 'Java', '.kt': 'Kotlin', '.cs': 'C#', '.rs': 'Rust'}
+PHP_ROUTING = re.compile(r"\$_SERVER\s*\[\s*['\"](?:REQUEST_URI|PATH_INFO)['\"]")
+
+
+def detect(root: Path, wanted: list[str], exclude: set[str], info: dict | None = None) -> tuple[list[str], list[dict], int]:
+    """Handlers in the languages read here. `info` (when given) receives what was not read: unread_languages
+    {language: files}, unread_handlers (PHP front controllers, .htaccess rewrites), pruned directories and the
+    middleware classes added to a Python app."""
     pkg = ''
     for f in ('package.json',):
         if (root / f).is_file():
@@ -325,10 +640,26 @@ def detect(root: Path, wanted: list[str], exclude: set[str]) -> tuple[list[str],
     has_express = '"express"' in pkg
     handlers, scanned, fws = [], 0, set()
     py_files, host_files = {}, {}
-    for p in walk(root, exclude):
+    info = info if info is not None else {}
+    info.update({'unread_languages': {}, 'unread_handlers': [], 'pruned': [], 'middleware': []})
+    for p in walk(root, exclude, info['pruned']):
         rel = p.relative_to(root).as_posix()
         name = p.name
         is_js, is_py = name.endswith(JS_EXT), name.endswith('.py')
+        lang = UNREAD_EXT.get(p.suffix.lower())
+        if lang:
+            info['unread_languages'][lang] = info['unread_languages'].get(lang, 0) + 1
+        if p.suffix.lower() == '.php' or name == '.htaccess':
+            try:
+                text = p.read_text(encoding='utf-8', errors='replace')
+            except OSError:
+                continue
+            m = PHP_ROUTING.search(text) if name != '.htaccess' else re.search(r'(?im)^\s*RewriteRule\b.*', text)
+            if m:
+                kind = 'htaccess_rewrite' if name == '.htaccess' else 'php_front_controller'
+                info['unread_handlers'].append({'kind': kind, 'file': rel, 'line': line_of(text, m.start()),
+                                                'reason': 'routes in PHP or Apache rewrites are not read by this tool'})
+            continue
         if name == 'host.json':
             try:
                 host_files[rel] = p.read_text(encoding='utf-8', errors='replace')
@@ -356,7 +687,8 @@ def detect(root: Path, wanted: list[str], exclude: set[str]) -> tuple[list[str],
             fws.add(h['framework'])
         handlers += found
     if any(w in wanted for w in ('auto',) + PY_FRAMEWORKS):
-        found = python_handlers(py_files, host_files, wanted)
+        found, extras = python_handlers(py_files, host_files, wanted)
+        info['middleware'] = extras['middleware']
         fws |= {h['framework'] for h in found}
         handlers += found
     uniq = {(h['method'], h['path'], h['file'], h['line']): h for h in handlers}
@@ -375,16 +707,30 @@ def default_prefix(contract: dict) -> str:
     return '' if p in ('', '/') or '{' in p else p.rstrip('/')
 
 
+def catch_prefix(h: dict) -> str | None:
+    """The literal part before a catch-all parameter ({name:path}, a mount's {file}): `/relay/` for /relay/{rest}."""
+    c = h.get('catch_all')
+    if not c or '{' + c + '}' not in h['path']:
+        return None
+    return h['path'][:h['path'].index('{' + c + '}')]
+
+
 def compare(contract: dict, handlers: list[dict], prefix: str) -> list[dict]:
     issues = []
     by_shape: dict[str, list[dict]] = {}
     for h in handlers:
         by_shape.setdefault(shape(h['path']), []).append(h)
+    catch_alls = [h for h in handlers if catch_prefix(h) is not None]
     documented = set()
+    documented_full: list[tuple[str, str]] = []
     for op in contract['operations']:
         full = prefix + op['path']
         hs = by_shape.get(shape(full), [])
         documented.add((op['method'], shape(full)))
+        documented_full.append((op['method'], full))
+        if not hs:
+            # a catch-all route or a mount (StaticFiles) answers every path under its prefix
+            hs = [h for h in catch_alls if full.startswith(catch_prefix(h)) and len(full) > len(catch_prefix(h).rstrip('/'))]
         if not hs:
             issues.append({'kind': 'missing_handler', 'method': op['method'], 'path': op['path'], 'operation_id': op['operation_id'],
                            'file': None, 'line': None,
@@ -411,6 +757,8 @@ def compare(contract: dict, handlers: list[dict], prefix: str) -> list[dict]:
                     break
         names = re.findall(r'\{([^}]+)\}', full)
         for h in hs:
+            if h.get('kind') == 'mount' or (h.get('catch_all') and shape(h['path']) != shape(full)):
+                continue          # matched by prefix: the catch-all's own parameter name says nothing about these segments
             hn = re.findall(r'\{([^}]+)\}', h['path'])
             if hn != names and (h['method'] == op['method'] or h['method'] == '*'):
                 issues.append({'kind': 'parameter_name_mismatch', 'method': op['method'], 'path': op['path'],
@@ -419,6 +767,10 @@ def compare(contract: dict, handlers: list[dict], prefix: str) -> list[dict]:
                 break
     for h in handlers:
         sh = shape(h['path'])
+        cp = catch_prefix(h)
+        if cp is not None and any(full.startswith(cp) and (h['method'] in (m, '*') or (m == 'HEAD' and h['method'] == 'GET'))
+                                  for m, full in documented_full):
+            continue              # something under the catch-all or mount is documented
         if h['method'] == '*':
             if not any(s == sh for _, s in documented):
                 issues.append({'kind': 'undocumented_handler', 'method': '*', 'path': h['path'], 'operation_id': None,
@@ -440,7 +792,8 @@ def build(repo: Path, contract: dict | None, frameworks: list[str], prefix: str 
     """Compare the contract with the handlers. With no contract, list the handlers and compare nothing; with
     skeleton_out, also write a derived OpenAPI contract from them. `only` keeps handlers under these path prefixes
     (the API surface of a site that also serves HTML pages)."""
-    fws, handlers, scanned = detect(repo, frameworks, exclude)
+    info: dict = {}
+    fws, handlers, scanned = detect(repo, frameworks, exclude, info)
     prefix = (default_prefix(contract) if contract else '') if prefix is None else ('/' + prefix.strip('/') if prefix.strip('/') else '')
     hp = '/' + handler_prefix.strip('/') if handler_prefix.strip('/') else ''
     if hp:
@@ -454,7 +807,8 @@ def build(repo: Path, contract: dict | None, frameworks: list[str], prefix: str 
         dropped, handlers = len(handlers) - len(keep), keep
     if skeleton_out is not None:
         skeleton_out.parent.mkdir(parents=True, exist_ok=True)
-        skeleton_out.write_text(json.dumps(skeleton(handlers, repo, repo.resolve().name), indent=2) + '\n', encoding='utf-8')
+        skeleton_out.write_text(json.dumps(skeleton(handlers, repo, project_name(repo), info['middleware']), indent=2) + '\n',
+                                encoding='utf-8')
     issues = compare(contract, handlers, prefix) if handlers and contract else []
     counts = {k: sum(i['kind'] == k for i in issues) for k in ('undocumented_handler', 'missing_handler', 'method_not_handled',
                                                                 'parameter_name_mismatch', 'response_class_mismatch')}
@@ -469,7 +823,17 @@ def build(repo: Path, contract: dict | None, frameworks: list[str], prefix: str 
     out = {'tool': 'handler_map.py', 'contract_sha256': contract['sha256'] if contract else None, 'repo': repo.as_posix(),
            'frameworks': fws, 'contract_prefix': prefix, 'handler_prefix': hp, 'files_scanned': scanned,
            'unresolved_mounts': unmounted, 'handlers': handlers,
-           'operations': len(contract['operations']) if contract else 0, 'counts': counts, 'issues': issues, 'note': note}
+           'operations': len(contract['operations']) if contract else 0, 'counts': counts, 'issues': issues, 'note': note,
+           'mounts': sum(h.get('kind') == 'mount' for h in handlers),
+           'conditional_handlers': sum(bool(h.get('conditional')) for h in handlers),
+           'middleware': [f"{m['name']} ({m['file']}:{m['line']})" for m in info['middleware']],
+           'unread_languages': info['unread_languages'], 'unread_handlers': info['unread_handlers'],
+           'pruned_dirs': info['pruned'][:200], 'pruned_dirs_total': len(info['pruned'])}
+    if info['unread_handlers'] or info['unread_languages']:
+        langs = ', '.join(f'{k} ({v} file(s))' for k, v in sorted(info['unread_languages'].items()))
+        out['language_coverage_note'] = (f'not read by this tool: {langs or "rewrite rules"}; '
+                                         f'{len(info["unread_handlers"])} unread handler file(s) may serve routes the comparison '
+                                         'cannot see (a missing_handler there may be served, an undocumented route there is not listed)')
     if only:
         out['only'] = only
         out['handlers_outside_only'] = dropped
@@ -567,6 +931,14 @@ def main() -> int:
     a.out.write_text(json.dumps(res, indent=2) + '\n', encoding='utf-8')
     print(f'{len(res["handlers"])} handler(s) in {", ".join(res["frameworks"]) or "no recognised framework"}; '
           f'{res["operations"]} operation(s); {res["counts"]} -> {a.out}', file=sys.stderr)
+    if res.get('language_coverage_note'):
+        print(f'warning: {res["language_coverage_note"]}', file=sys.stderr)
+        for u in res['unread_handlers'][:10]:
+            print(f'  unread {u["kind"]}: {u["file"]}:{u["line"]}', file=sys.stderr)
+    if res['pruned_dirs_total']:
+        print(f'note: {res["pruned_dirs_total"]} director(ies) not entered (build output, dependencies, caches or --exclude-dir): '
+              f'{", ".join(res["pruned_dirs"][:8])}{" ..." if res["pruned_dirs_total"] > 8 else ""}; listed in pruned_dirs',
+              file=sys.stderr)
     if a.skeleton:
         print(f'derived contract (x-contract-provenance: derived) -> {a.skeleton}; fill in the response schemas, and say in the '
               'report that the contract was derived from the code', file=sys.stderr)

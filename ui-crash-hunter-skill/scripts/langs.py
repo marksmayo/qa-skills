@@ -29,7 +29,7 @@ ANALYSED = {'JavaScript', 'TypeScript', 'Vue', 'Svelte', 'Kotlin', 'Java', 'Swif
 
 def vendored_roots(root: Path, files=None) -> list[str]:
     """Repo-relative directories lang_census leaves out (vendored, third-party, built or dependency trees)."""
-    return [e['path'] for e in lang_census.census(root)['excluded']]
+    return [e['path'] for e in with_build_dirs(root, lang_census.census(root))['excluded']]
 
 
 def under(rel: str, prefixes: list[str]) -> bool:
@@ -40,12 +40,57 @@ def language_census(root: Path, files=None, vendored=None, is_test=None, tool: s
     """lang_census's census and coverage for the crash hunter's languages, as one `language_coverage` record:
     status ok | partial | unsupported_dominant (with warning) | no_source, the counts per language and the
     excluded trees (paths in `excluded`, with reasons in `excluded_trees`)."""
-    c = lang_census.census(root)
+    c = with_build_dirs(root, lang_census.census(root))
     cov = lang_census.language_coverage(c, ANALYSED, tool=tool, what='crash analysis')
     cov['languages'] = c['languages']
     cov['excluded'] = [e['path'] for e in c['excluded']]
     cov['excluded_trees'] = c['excluded'][:30]
+    skipped, kept = build_dirs()
+    if kept:
+        cov['kept_build_dirs'] = kept
+    held = [s for s in skipped if any(l in ANALYSED for l in s.get('languages', {}))]
+    if cov.get('status') == 'unsupported_dominant' and held:
+        cov['warning'] += ' ' + ' '.join(
+            f"{s['path']}/ holds {', '.join(f'{n} {l}' for l, n in s['languages'].items() if l in ANALYSED)} file(s) and was "
+            f"skipped as {s['reason']}; if it is the UI's source (a committed front end the server serves), rerun with "
+            f"--include {s['path']} or on {s['path']}/ itself." for s in held)
     return cov
+
+
+def with_build_dirs(root: Path, c: dict) -> dict:
+    """The shared census with build-output trees that are in fact UI source (keep_build_dir) counted back in, and the
+    others recorded as skipped with their languages. lang_census itself always leaves dist/, build/ and out/ out."""
+    from collections import Counter
+    import os
+    langs = Counter(c.get('languages') or {})
+    excluded = []
+    for e in c.get('excluded') or []:
+        d = root / e['path']
+        if Path(e['path']).name not in BUILD_NAMES and e['path'] not in INCLUDE:
+            excluded.append(e)
+            continue
+        kept = keep_build_dir(root, d)
+        here = Counter()
+        for dp, dns, fns in os.walk(d):
+            dns[:] = [x for x in dns if x not in ('node_modules', '.git')]
+            for f in fns:
+                lang = lang_census.LANG_BY_EXT.get(Path(f).suffix)
+                if lang:
+                    here[lang] += 1
+        if kept:
+            langs.update(here)
+        else:
+            excluded.append(e)
+            if e['path'] in BUILD_SKIPPED:
+                BUILD_SKIPPED[e['path']]['languages'] = dict(here.most_common())
+    out = dict(c)
+    out['languages'] = dict(sorted(langs.items(), key=lambda kv: (-kv[1], kv[0])))
+    out['dominant'] = next(iter(out['languages']), None)
+    out['dominant_files'] = out['languages'].get(out['dominant'], 0) if out['dominant'] else 0
+    out['total_source_files'] = sum(langs.values())
+    out['excluded'] = excluded
+    out['excluded_source_files'] = sum(e.get('source_files', 0) for e in excluded)
+    return out
 
 
 def language_warning(lc: dict, tool: str = '') -> str | None:
@@ -179,6 +224,161 @@ def prune_dir(root: Path, d: Path) -> bool:
 
 def skipped_data_dirs() -> list[dict]:
     return sorted(SKIPPED_DATA.values(), key=lambda x: x['path'])
+
+
+# ---------------------------------------------------------------- build-output directories
+
+# Directory names the walkers treat as build output. Such a directory is the UI's SOURCE (walked like any other) when a
+# server in the repository serves it (FastAPI StaticFiles(directory=...), Flask static_folder, express.static, sirv,
+# serve-static, send_from_directory), when --include names it, or when it holds an index.html, nothing in the
+# repository builds it (no build script or bundler config beside it) and no .gitignore lists it: a committed,
+# hand-written front end. Otherwise it is skipped, and every skip is recorded (skipped_build_dirs) with its file count.
+BUILD_NAMES = {'dist', 'build', 'out'}
+INCLUDE: set[str] = set()                 # repo-relative directories from --include
+BUILD_SKIPPED: dict[str, dict] = {}
+BUILD_KEPT: dict[str, dict] = {}
+_SERVED: dict[str, dict[str, str]] = {}   # root -> {served dir: reason}
+SERVE_CALL = re.compile(r'\b(StaticFiles|static_folder|send_from_directory|express\.static|serveStatic|serve_static|sirv|'
+                        r'fastifyStatic|koaStatic|StaticFileHandler|web\.static|add_static|static_url_path)\b\s*[(=:]', re.I)
+STR_LIT = re.compile(r'''["']([\w./\\-]+)["']''')
+BUILD_TOOLS = re.compile(r'"(vite|webpack|rollup|parcel|esbuild|react-scripts|@angular/cli|next|nuxt|astro|gatsby|'
+                         r'@sveltejs/kit|vue-cli-service|@vue/cli-service|tsup|snowpack|gulp|grunt)"')
+BUNDLER_CONFIG = re.compile(r'^(vite|webpack|rollup|parcel|esbuild|svelte|astro|nuxt|next|angular|gulpfile|gruntfile|tsup)'
+                            r'([.-]config)?\.(js|cjs|mjs|ts|json)$|^angular\.json$|^\.parcelrc$', re.I)
+
+
+def served_dirs(root: Path) -> dict[str, str]:
+    """Repo-relative directories a server in the repository serves as static files, with the file:line that says so.
+    Reads Python, JavaScript/TypeScript and PHP files at the root and two levels down (dependency trees skipped)."""
+    import os
+    key = str(root)
+    if key in _SERVED:
+        return _SERVED[key]
+    out: dict[str, str] = {}
+    exts = ('.py', '.js', '.mjs', '.cjs', '.ts', '.php')
+    checked = 0
+    for dp, dns, fns in os.walk(root):
+        rel_dp = Path(dp).relative_to(root)
+        dns[:] = [d for d in dns if not d.startswith('.') and d not in ('node_modules', 'vendor', '__pycache__', 'venv', '.venv')
+                  and len(rel_dp.parts) < 2 and d not in BUILD_NAMES]
+        for f in fns:
+            if not f.endswith(exts) or checked > 400:
+                continue
+            p = Path(dp) / f
+            try:
+                if p.stat().st_size > 400_000:
+                    continue
+                text = p.read_text(encoding='utf-8', errors='replace')
+            except OSError:
+                continue
+            checked += 1
+            for m in SERVE_CALL.finditer(text):
+                seg = text[m.end():m.end() + 240]
+                seg = seg.split('\n', 1)[0] if m.group(1) in ('static_folder', 'static_url_path') else ')'.join(seg.split(')', 2)[:2])
+                for lit in STR_LIT.findall(seg)[:4]:     # only literals that name an existing directory count
+                    lit = lit.replace('\\', '/').strip('/')
+                    if lit.startswith('./'):
+                        lit = lit[2:]
+                    for base in (Path(dp), root):
+                        cand = (base / lit).resolve()
+                        try:
+                            rel = cand.relative_to(root.resolve()).as_posix()
+                        except ValueError:
+                            continue
+                        if rel and rel != '.' and cand.is_dir():
+                            line = text.count('\n', 0, m.start()) + 1
+                            src = p.relative_to(root).as_posix()
+                            out.setdefault(rel, f'served as static files by {src}:{line} ({m.group(1)})')
+                            break
+    _SERVED[key] = out
+    return out
+
+
+def _gitignored(root: Path, d: Path) -> str | None:
+    rel = d.relative_to(root).as_posix()
+    for gi in (root / '.gitignore', d.parent / '.gitignore'):
+        try:
+            lines = [l.strip() for l in gi.read_text(encoding='utf-8', errors='replace').splitlines()]
+        except OSError:
+            continue
+        for l in lines:
+            if l and not l.startswith('#') and l.strip('/') in (d.name, rel, f'**/{d.name}'):
+                return f'{gi.relative_to(root).as_posix()} lists it'
+    return None
+
+
+def _built_by(d: Path) -> str | None:
+    """What in the repository builds directory d: a build script or bundler beside it, or None."""
+    import json as _json
+    parent = d.parent
+    for f in sorted(parent.iterdir()) if parent.is_dir() else []:
+        if f.is_file() and BUNDLER_CONFIG.match(f.name):
+            return f'{f.name} beside it'
+    pkg = parent / 'package.json'
+    try:
+        data = _json.loads(pkg.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    if isinstance(data, dict):
+        if (data.get('scripts') or {}).get('build'):
+            return f'package.json build script ({str(data["scripts"]["build"])[:60]})'
+        if BUILD_TOOLS.search(_json.dumps({**(data.get('dependencies') or {}), **(data.get('devDependencies') or {})})):
+            return 'a bundler in package.json'
+    return None
+
+
+def count_source_files(d: Path) -> int:
+    import os
+    n = 0
+    for _, dns, fns in os.walk(d):
+        dns[:] = [x for x in dns if x not in ('node_modules', '.git')]
+        n += sum(1 for f in fns if Path(f).suffix in lang_census.LANG_BY_EXT)
+    return n
+
+
+def keep_build_dir(root: Path, d: Path) -> bool:
+    """For a directory a walker would skip as build output: True when it is the UI's source (see above). Every
+    decision is recorded once, in BUILD_KEPT or BUILD_SKIPPED. Names outside BUILD_NAMES return False."""
+    try:
+        rel = d.relative_to(root).as_posix()
+    except ValueError:
+        return False
+    if d.name not in BUILD_NAMES and rel not in INCLUDE:
+        return False
+    if rel in BUILD_KEPT:
+        return True
+    if rel in BUILD_SKIPPED:
+        return False
+    why = None
+    if rel in INCLUDE:
+        why = 'included by --include'
+    else:
+        served = served_dirs(root)
+        why = served.get(rel)
+        if why is None and (d / 'index.html').is_file():
+            ignored, built = _gitignored(root, d), _built_by(d)
+            if not ignored and not built:
+                why = 'holds index.html, nothing in the repository builds it and no .gitignore lists it (committed source)'
+    if why:
+        BUILD_KEPT[rel] = {'path': rel, 'reason': why}
+        return True
+    reason = _gitignored(root, d) or _built_by(d)
+    BUILD_SKIPPED[rel] = {'path': rel, 'source_files': count_source_files(d),
+                          'reason': f'build output ({reason})' if reason else 'build output (directory name)'}
+    return False
+
+
+def build_dirs() -> tuple[list[dict], list[dict]]:
+    """(skipped, kept) build-output decisions so far, for the output's skipped_build_dirs / kept_build_dirs."""
+    return (sorted(BUILD_SKIPPED.values(), key=lambda x: x['path']), sorted(BUILD_KEPT.values(), key=lambda x: x['path']))
+
+
+def report_build_skips(tool: str) -> None:
+    """One stderr line per skipped build-output directory that holds source files."""
+    for s in sorted(BUILD_SKIPPED.values(), key=lambda x: x['path']):
+        if s['source_files']:
+            print(f"{tool}: skipped {s['path']}/ ({s['source_files']} source file(s)): {s['reason']}; "
+                  f"rerun with --include {s['path']} if it is the UI's source", file=sys.stderr)
 
 
 # ---------------------------------------------------------------- HTML in string constants

@@ -428,6 +428,9 @@ def estimate(ctx) -> dict | None:
         shown.append(lum(s))
     lf, lo, hi = lum(fg), min(shown), max(shown)
     worst = 1.0 if lo <= lf <= hi else (lo + 0.05) / (lf + 0.05) if lf < lo else (lf + 0.05) / (hi + 0.05)
+    if ctx.get('blank_canvas_behind'):
+        basis += ('; a <canvas> behind the text read blank when audited (nothing painted, so the CSS background shows '
+                  'through); a canvas painted later, or WebGL that does not keep its buffer, can differ: check the screenshot')
     return {'min_ratio': round(worst, 2), 'required': need, 'below': worst < need, 'basis': basis}
 
 

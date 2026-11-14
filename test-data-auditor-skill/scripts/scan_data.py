@@ -492,6 +492,11 @@ def language_of(path: str) -> str | None:
     return detect_conventions.LANG_EXT.get(PurePosixPath(path).suffix.lower())
 
 
+SCOPE_NOTE = ('out of scope: product code and configuration (application modules, docker-compose and .env files, notebooks, '
+              'canned profiles in server code) are read here only for clock and locale calls; secrets and personal data in them '
+              'belong to code-security-auditor and privacy-flow-auditor, so say in the report that they were not assessed here')
+
+
 # ---------------------------------------------------------------- scanner
 class Scanner:
     def __init__(self, root: Path, inventory: dict, today: date):
@@ -517,6 +522,10 @@ class Scanner:
         for d, sm in sorted(inventory.get('sampled_dirs', {}).items()):
             self.notes.append(f"{d}/ sampled: {sm['scanned']} of {sm['files']} data files scanned; the rest are not_assessed, "
                               'so personal data in them is not ruled out')
+        if inventory.get('no_tests') or not inventory.get('tests'):
+            self.notes.append(inv.NO_TESTS)
+        # where this skill stops: product code is read for clock and locale calls only
+        self.notes.append(SCOPE_NOTE)
         self.progress = False
 
     def add(self, category: str, rule: str, file: str, line: int, why: str, field: str | None = None, data_type: str | None = None,
@@ -1529,7 +1538,7 @@ class Scanner:
         for i, c in enumerate(sorted(self.cands, key=lambda c: (c['file'], c['line'], c['category'], c['rule'])), 1):
             c.pop('_key')
             out.append({'id': f'C{i}', **c})
-        return {'repo': self.root.name, 'today': self.today.isoformat(), 'candidates': out,
+        return {'repo': self.root.name, 'today': self.today.isoformat(), 'tests_found': len(self.inv.get('tests') or []), 'candidates': out,
                 'inventory_status': {i['path']: {'status': i['status'], 'reason': i['reason']} for i in self.inv['inventory']},
                 'summary': {'candidates': len(out), 'auto_dismissed': len([c for c in out if c['auto_dismiss']]),
                             'by_category': {k: len([c for c in out if c['category'] == k]) for k in sorted({c['category'] for c in out})}},
@@ -1553,7 +1562,7 @@ def main(argv=None) -> int:
     print(f'{s["candidates"]} candidates ({s["auto_dismissed"]} dismissed by a reserved-value rule): '
           + ', '.join(f'{v} {k}' for k, v in s['by_category'].items()) + f' -> {args.out}')
     for note in res['notes']:
-        if 'text only' in note or note.startswith('schema drift:') or 'NOT scanned' in note or ' sampled: ' in note \
+        if 'text only' in note or note.startswith('schema drift:') or note.startswith('no test files') or 'NOT scanned' in note or ' sampled: ' in note \
                 or note.startswith('near-duplicate check not run'):
             print(f'WARNING: {note}', file=sys.stderr)
     return 0

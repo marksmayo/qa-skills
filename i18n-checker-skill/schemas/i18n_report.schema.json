@@ -38,7 +38,7 @@
       "type": "object", "additionalProperties": false,
       "required": ["verdict", "summary", "severity_counts", "key_coverage", "translation_quality", "evidence_completeness", "overall_confidence"],
       "properties": {
-        "verdict": {"enum": ["issues_found", "none_detected"]},
+        "verdict": {"enum": ["issues_found", "none_detected", "not_assessed"]},
         "summary": {"type": "string", "minLength": 20},
         "severity_counts": {"type": "object"},
         "key_coverage": {"type": "object"},
@@ -53,7 +53,11 @@
                    "locations", "keys", "evidence", "remediation", "verification_step"],
       "properties": {
         "id": {"type": "string", "pattern": "^F[0-9]+$"},
-        "candidate_id": {"type": "string"},
+        "candidate_id": {"type": ["string", "null"]},
+        "source": {"enum": ["candidate", "agent"]},
+        "basis": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["file", "line", "excerpt"],
+                  "properties": {"file": {"type": "string", "minLength": 1}, "line": {"type": "integer", "minimum": 1},
+                                 "excerpt": {"type": "string", "minLength": 3}}}},
         "title": {"type": "string", "minLength": 10},
         "kind": {"enum": ["missing_key", "untranslated", "empty_value", "placeholder_mismatch", "icu_syntax", "plural_categories", "duplicate_key",
                           "unused_key", "hardcoded_string", "concatenation", "format", "fixed_width", "rtl_physical", "truncation", "overlap",

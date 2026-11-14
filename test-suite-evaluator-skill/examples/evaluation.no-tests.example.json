@@ -1,0 +1,500 @@
+{
+  "metadata": {
+    "repository": "parcel-desk",
+    "assessment_mode": "white_box",
+    "execution": "no_tests",
+    "generated_at": "2026-11-15T00:00:00Z",
+    "skill_version": "1.7.0",
+    "provisional": false,
+    "notes": [
+      "A synthetic FastAPI service that mounts StaticFiles on a committed static/ folder and has no tests and no CI.",
+      "Discovery ran and collected nothing (run d1): the absence of tests is verified, so the evaluation is not provisional.",
+      "Implementation-linked claims rest on reading source, not instrumentation: no runtime coverage or mutation report exists.",
+      "Dimensions that grade existing tests (reliability, isolation, maintainability, debuggability, performance, test data, portability) are not assessed: there is nothing to grade."
+    ],
+    "execution_result": {
+      "layers": [
+        {
+          "name": "pytest discovery",
+          "framework": "pytest",
+          "status": "run"
+        }
+      ],
+      "runs": [
+        {
+          "id": "d1",
+          "origin": "assessor",
+          "command": "pytest --collect-only -q",
+          "layers": [
+            "pytest discovery"
+          ],
+          "passed": 0,
+          "failed": 0,
+          "skipped": 0,
+          "errored": 0,
+          "duration_seconds": 1.2,
+          "notes": "exit 5: no tests collected"
+        }
+      ],
+      "failures": []
+    }
+  },
+  "headline": {
+    "raw_weighted_score": 1.0,
+    "overall_score": 1.0,
+    "rating_band": "Dysfunctional",
+    "testing_effectiveness": 1.0,
+    "suite_trustworthiness": 1.0,
+    "engineering_quality": 1.0,
+    "operational_health": null,
+    "evidence_completeness": 30,
+    "overall_confidence": "high",
+    "applied_caps": [
+      {
+        "rule": "effectiveness_below_4",
+        "limit": 4,
+        "explanation": "Effectiveness is 1 (no tests); the cap of 4 does not bind because the overall is already 1."
+      },
+      {
+        "rule": "trust_below_4",
+        "limit": 4,
+        "explanation": "Trust is 1 (nothing runs); does not bind."
+      },
+      {
+        "rule": "assertions_below_3",
+        "limit": 3,
+        "explanation": "Assertions is 1 (no assertion exists); does not bind."
+      },
+      {
+        "rule": "coverage_below_4",
+        "limit": 4,
+        "explanation": "Coverage is 1 (no route is tested); does not bind."
+      }
+    ]
+  },
+  "dimensions": [
+    {
+      "id": "effectiveness",
+      "name": "Test effectiveness",
+      "weight": 16,
+      "score": 1,
+      "confidence": "high",
+      "evidence_level": "verified",
+      "finding": "No automated test exists, so no regression in any feature would be caught.",
+      "evidence": [
+        "pytest --collect-only -q: 0 items collected, exit 5 (no tests ran) [d1]",
+        "No file matches test_*.py, *_test.py, *.test.js or *.spec.js anywhere in the repository; no tests/ directory"
+      ],
+      "risks": [
+        "Every change to the upload, proxy and sign-in paths ships unchecked"
+      ],
+      "recommendations": [
+        "Start with API tests for the upload and sign-in routes"
+      ]
+    },
+    {
+      "id": "trust",
+      "name": "Suite trustworthiness",
+      "weight": 14,
+      "score": 1,
+      "confidence": "high",
+      "evidence_level": "verified",
+      "finding": "There is no green or red result to believe: nothing runs.",
+      "evidence": [
+        "pytest --collect-only -q: 0 items collected, exit 5 (no tests ran) [d1]",
+        "No file matches test_*.py, *_test.py, *.test.js or *.spec.js anywhere in the repository; no tests/ directory"
+      ],
+      "risks": [
+        "A passing build says nothing about behaviour"
+      ],
+      "recommendations": [
+        "Add a test run to every change"
+      ]
+    },
+    {
+      "id": "reliability",
+      "name": "Reliability and determinism",
+      "weight": 10,
+      "score": null,
+      "confidence": "low",
+      "evidence_level": "unknown",
+      "finding": "Not assessed: no tests exist, so there is nothing whose reliability and determinism could be graded.",
+      "evidence": [],
+      "risks": [],
+      "recommendations": []
+    },
+    {
+      "id": "design",
+      "name": "Test design and level selection",
+      "weight": 8,
+      "score": 1,
+      "confidence": "high",
+      "evidence_level": "verified",
+      "finding": "No test level exists: no unit, API or browser tests.",
+      "evidence": [
+        "pytest --collect-only -q: 0 items collected, exit 5 (no tests ran) [d1]",
+        "No file matches test_*.py, *_test.py, *.test.js or *.spec.js anywhere in the repository; no tests/ directory"
+      ],
+      "risks": [
+        "Behaviour of the 12 routes is unchecked at every level"
+      ],
+      "recommendations": [
+        "Add API tests through the app factory first, browser tests later"
+      ]
+    },
+    {
+      "id": "assertions",
+      "name": "Assertion and oracle quality",
+      "weight": 8,
+      "score": 1,
+      "confidence": "high",
+      "evidence_level": "verified",
+      "finding": "No assertion exists: there is no oracle for any behaviour.",
+      "evidence": [
+        "pytest --collect-only -q: 0 items collected, exit 5 (no tests ran) [d1]",
+        "No file matches test_*.py, *_test.py, *.test.js or *.spec.js anywhere in the repository; no tests/ directory"
+      ],
+      "risks": [
+        "Wrong responses pass unnoticed"
+      ],
+      "recommendations": [
+        "Assert status, body and side effects in the first tests"
+      ]
+    },
+    {
+      "id": "coverage",
+      "name": "Test scope and coverage",
+      "weight": 8,
+      "score": 1,
+      "confidence": "high",
+      "evidence_level": "verified",
+      "finding": "None of the 12 HTTP routes or the command-line modes is reached by a test.",
+      "evidence": [
+        "pytest --collect-only -q: 0 items collected, exit 5 (no tests ran) [d1]",
+        "list_interfaces.py: 12 routes (one a StaticFiles mount) and 1 command-line program, none reachable by a test since no test exists"
+      ],
+      "risks": [
+        "The file-upload route writes to disk unchecked"
+      ],
+      "recommendations": [
+        "Cover the upload, sign-in and proxy routes first"
+      ]
+    },
+    {
+      "id": "isolation",
+      "name": "Isolation and state management",
+      "weight": 7,
+      "score": null,
+      "confidence": "low",
+      "evidence_level": "unknown",
+      "finding": "Not assessed: no tests exist, so there is nothing whose isolation and state management could be graded.",
+      "evidence": [],
+      "risks": [],
+      "recommendations": []
+    },
+    {
+      "id": "maintainability",
+      "name": "Maintainability and appropriate reuse",
+      "weight": 7,
+      "score": null,
+      "confidence": "low",
+      "evidence_level": "unknown",
+      "finding": "Not assessed: no tests exist, so there is nothing whose maintainability and appropriate reuse could be graded.",
+      "evidence": [],
+      "risks": [],
+      "recommendations": []
+    },
+    {
+      "id": "ci",
+      "name": "CI/CD integration",
+      "weight": 6,
+      "score": 1,
+      "confidence": "high",
+      "evidence_level": "verified",
+      "finding": "No CI configuration exists, so nothing runs on a change.",
+      "evidence": [
+        "No .github/workflows, azure-pipelines.yml, .gitlab-ci.yml or Jenkinsfile in the repository",
+        "README.md describes manual start-up only"
+      ],
+      "risks": [
+        "Regressions reach users without any automated gate"
+      ],
+      "recommendations": [
+        "Add a workflow that runs the suite on pull requests"
+      ]
+    },
+    {
+      "id": "debuggability",
+      "name": "Debuggability and reporting",
+      "weight": 4,
+      "score": null,
+      "confidence": "low",
+      "evidence_level": "unknown",
+      "finding": "Not assessed: no tests exist, so there is nothing whose debuggability and reporting could be graded.",
+      "evidence": [],
+      "risks": [],
+      "recommendations": []
+    },
+    {
+      "id": "performance",
+      "name": "Performance and feedback speed",
+      "weight": 3,
+      "score": null,
+      "confidence": "low",
+      "evidence_level": "unknown",
+      "finding": "Not assessed: no tests exist, so there is nothing whose performance and feedback speed could be graded.",
+      "evidence": [],
+      "risks": [],
+      "recommendations": []
+    },
+    {
+      "id": "test_data",
+      "name": "Test data management",
+      "weight": 3,
+      "score": null,
+      "confidence": "low",
+      "evidence_level": "unknown",
+      "finding": "Not assessed: no tests exist, so there is nothing whose test data management could be graded.",
+      "evidence": [],
+      "risks": [],
+      "recommendations": []
+    },
+    {
+      "id": "portability",
+      "name": "Environment portability and realism",
+      "weight": 2,
+      "score": null,
+      "confidence": "low",
+      "evidence_level": "unknown",
+      "finding": "Not assessed: no tests exist, so there is nothing whose environment portability and realism could be graded.",
+      "evidence": [],
+      "risks": [],
+      "recommendations": []
+    },
+    {
+      "id": "security_a11y",
+      "name": "Security, privacy, accessibility, compatibility",
+      "weight": 2,
+      "score": 1,
+      "confidence": "high",
+      "evidence_level": "verified",
+      "finding": "No security, privacy or accessibility check exists.",
+      "evidence": [
+        "pytest --collect-only -q: 0 items collected, exit 5 (no tests ran) [d1]",
+        "No file matches test_*.py, *_test.py, *.test.js or *.spec.js anywhere in the repository; no tests/ directory"
+      ],
+      "risks": [
+        "The sign-in middleware and the upload path are unchecked"
+      ],
+      "recommendations": [
+        "Add a 401 test against the real sign-in middleware"
+      ]
+    },
+    {
+      "id": "ownership",
+      "name": "Ownership and operational discipline",
+      "weight": 2,
+      "score": 1,
+      "confidence": "high",
+      "evidence_level": "verified",
+      "finding": "No test ownership or process exists because there are no tests.",
+      "evidence": [
+        "No file matches test_*.py, *_test.py, *.test.js or *.spec.js anywhere in the repository; no tests/ directory",
+        "No CODEOWNERS file; CONTRIBUTING.md does not mention tests"
+      ],
+      "risks": [
+        "Nobody is accountable for test health once tests are added"
+      ],
+      "recommendations": [
+        "Name an owner for the first test layer"
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "title": "No automated tests exist",
+      "severity": "high",
+      "category": "other",
+      "evidence": [
+        "pytest --collect-only -q: 0 items collected, exit 5 (no tests ran) [d1]",
+        "No file matches test_*.py, *_test.py, *.test.js or *.spec.js anywhere in the repository; no tests/ directory"
+      ],
+      "impact": "Every change, including to the file-upload and sign-in paths, ships without any automated check.",
+      "dimensions": [
+        "effectiveness",
+        "trust",
+        "coverage",
+        "assertions"
+      ]
+    }
+  ],
+  "recommendations": [
+    {
+      "title": "Write the first API tests for the riskiest routes",
+      "priority": 1,
+      "category": "critical_risk",
+      "impact": "critical",
+      "effort": "medium",
+      "action": "Add pytest with httpx TestClient tests for the upload, sign-in and proxy routes, through the app factory, with the network guard on.",
+      "dimensions_affected": [
+        "effectiveness",
+        "trust",
+        "assertions",
+        "coverage"
+      ],
+      "acceptance_criteria": [
+        "pytest collects and passes tests for the upload, sign-in and proxy routes",
+        "An upload with a path in its name is rejected by a test"
+      ]
+    },
+    {
+      "title": "Run the tests on every pull request",
+      "priority": 2,
+      "category": "top_improvement",
+      "impact": "high",
+      "effort": "small",
+      "action": "Add a CI workflow that installs the service and runs pytest on pull requests.",
+      "dimensions_affected": [
+        "ci",
+        "trust"
+      ],
+      "acceptance_criteria": [
+        "A pull request shows a pytest check",
+        "A failing test blocks the merge"
+      ]
+    },
+    {
+      "title": "Test the sign-in middleware with the real check",
+      "priority": 3,
+      "category": "top_improvement",
+      "impact": "high",
+      "effort": "small",
+      "action": "Add tests that call a protected route without and with credentials, against the real middleware.",
+      "dimensions_affected": [
+        "security_a11y",
+        "coverage"
+      ],
+      "acceptance_criteria": [
+        "A request without credentials gets 401",
+        "A request with credentials gets 200"
+      ]
+    },
+    {
+      "title": "Add a smoke test of the static front end",
+      "priority": 4,
+      "category": "quick_win",
+      "impact": "medium",
+      "effort": "small",
+      "action": "Request / and one static asset through the StaticFiles mount and assert status and content type.",
+      "dimensions_affected": [
+        "coverage",
+        "effectiveness"
+      ],
+      "acceptance_criteria": [
+        "GET / returns 200 text/html in a test"
+      ]
+    },
+    {
+      "title": "Name an owner and a test layout",
+      "priority": 5,
+      "category": "structural",
+      "impact": "medium",
+      "effort": "small",
+      "action": "Add CODEOWNERS for tests/ and a short CONTRIBUTING section on where API and browser tests go.",
+      "dimensions_affected": [
+        "ownership",
+        "design"
+      ],
+      "acceptance_criteria": [
+        "CODEOWNERS names an owner for tests/"
+      ]
+    },
+    {
+      "title": "Reassess once tests and CI exist",
+      "priority": 6,
+      "category": "evidence_needed",
+      "impact": "medium",
+      "effort": "small",
+      "action": "After the first tests and CI runs exist, reassess with test source, run results and CI history.",
+      "evidence_kinds": [
+        "test_source",
+        "ci_configuration",
+        "historical_ci",
+        "runtime_coverage"
+      ],
+      "acceptance_criteria": [
+        "Reliability, isolation and performance can be scored from real tests"
+      ]
+    }
+  ],
+  "evidence_inventory": [
+    {
+      "name": "Application source",
+      "kind": "application_source",
+      "status": "available",
+      "details": "Repository inspected"
+    },
+    {
+      "name": "Test source",
+      "kind": "test_source",
+      "status": "missing",
+      "details": "Verified absent: discovery collected nothing and no test files exist"
+    },
+    {
+      "name": "CI configuration",
+      "kind": "ci_configuration",
+      "status": "missing",
+      "details": "No CI configuration in the repository"
+    },
+    {
+      "name": "Recent execution results",
+      "kind": "recent_execution",
+      "status": "available",
+      "details": "Discovery run d1: 0 collected"
+    },
+    {
+      "name": "Historical CI outcomes",
+      "kind": "historical_ci",
+      "status": "missing",
+      "details": "No CI"
+    },
+    {
+      "name": "Runtime coverage",
+      "kind": "runtime_coverage",
+      "status": "missing",
+      "details": "Nothing to instrument"
+    },
+    {
+      "name": "Mutation report",
+      "kind": "mutation_report",
+      "status": "missing",
+      "details": "Nothing to mutate against"
+    },
+    {
+      "name": "Requirements or specifications",
+      "kind": "requirements",
+      "status": "missing",
+      "details": "None in the repository"
+    },
+    {
+      "name": "Defect or incident history",
+      "kind": "defect_history",
+      "status": "missing",
+      "details": "No issue tracker supplied"
+    }
+  ],
+  "commands": [
+    {
+      "command": "pytest --collect-only -q",
+      "exit_code": 5,
+      "summary": "no tests collected",
+      "duration_seconds": 1.2,
+      "run": "d1"
+    },
+    {
+      "command": "python scripts/list_interfaces.py .",
+      "exit_code": 0,
+      "summary": "12 routes (one a StaticFiles mount), 1 command-line program; no --tests, since there are none"
+    }
+  ]
+}

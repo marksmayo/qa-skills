@@ -1,7 +1,7 @@
 ---
 name: i18n-checker
 description: Find internationalisation and localisation problems in resource files, code and the running UI. Statically - missing, untranslated, empty, duplicate and unused keys, placeholders that differ between locales, broken ICU syntax, plural categories CLDR requires but a message lacks, hard-coded text, concatenated translations, hand-formatted numbers and dates, fixed widths and physical CSS that won't mirror. At runtime - pages rendered in a pseudo-locale (longer, accented, bracketed text), every shipped locale and RTL locales, measuring truncation, overlap, untranslated text, raw placeholders and keys, formats against CLDR, and mirroring. Proposes missing keys as a patch, never applies it, never sends text to outside services, and never calls a product fully localised.
-version: 1.0.0
+version: 1.1.0
 ---
 
 # i18n checker
@@ -18,7 +18,8 @@ The WCAG auditor checks the page language and reflow; this skill checks every sh
 ## Non-negotiable rules
 
 1. **Never "fully localised".** The verdict is `issues_found` or `none_detected`, scoped to the
-   locales, files and pages checked. `translation_quality` is `untested` unless a named reviewer checked
+   locales, files and pages checked, or `not_assessed` when no resources were parsed, no code was read
+   and nothing rendered: stop and say so, never a scoped `none_detected` over an empty input. `translation_quality` is `untested` unless a named reviewer checked
    the translations ("Translations reviewed by ..." in limitations).
 2. **Missing is not untranslated.** A key absent from a locale is `missing_key`; a key present with the
    source text copied in is `untranslated`, a `possible` finding that is never high confidence (some
@@ -32,6 +33,10 @@ The WCAG auditor checks the page language and reflow; this skill checks every sh
    to a third party.
 7. **Safe targets** (runtime): loopback needs nothing; other hosts need `authorised_by`.
 8. **Record every tool** (`ran`, `not_run`, `errored`), including the project's own i18n linters.
+9. **Loud about what wasn't read.** `discover.py` lists files that look like resources but weren't parsed
+   (`not_parsed`, including locale-named `.js` files with no message object) and every skipped
+   directory (`skipped_dirs`, also on stderr); `scan_code.py` records `files_scanned`. Put them in
+   `limitations`. A format this skill can't read is reported as not parsed, never silently ignored.
 
 ## Inputs
 
@@ -64,24 +69,41 @@ python scripts/merge_findings.py --resources <run>/resources.json --keys <run>/k
 ```
 
 1. **Discover.** JSON (flat or nested; i18next plural suffixes), ARB, PO, Android `strings.xml`
-   (`plurals`, `string-array`), iOS `.strings`, `.stringsdict`, `.xcstrings`. YAML is listed as not
-   parsed. Each set (web, Android) is compared within itself.
+   (`plurals`, `string-array`), iOS `.strings`, `.stringsdict`, `.xcstrings`, and JS/TS message
+   objects: a literal object of strings assigned to a translations-like name
+   (`const translations = {en: {...}, ru: {...}}`, one set per object) or the default export of a
+   locale-named module (`locales/de.js`). Values that aren't string literals are counted in
+   `not_parsed`, never guessed; unused keys of a JS object are not assessed (its keys sit in the code).
+   YAML is listed as not parsed. Each set (web, Android) is compared within itself.
+   `dist/`, `build/` and `out/` are build output only when the repository builds them (a build script,
+   a bundler config, a tsconfig `outDir`, a `.gitignore` entry); a committed, hand-written front end in
+   `dist/` that a server mounts as static files is scanned. `--include DIR` scans a skipped one.
 2. **Keys and messages.** ICU syntax, placeholders of every style (ICU, `{{i18next}}`, printf `%1$s`),
    CLDR plural categories, missing, untranslated, empty, duplicate and unused keys. Dynamic key prefixes
    (`t('status.' + s)`) make unused keys under them `cantTell`; a set whose platform has no code here is
    not assessed for unused keys.
-3. **Code.** Hard-coded text (HTML without a translation attribute, JSX/Vue text, Android layouts,
-   SwiftUI), concatenated translations, hand-formatted numbers, currency and dates, fixed widths that
+3. **Code.** Hard-coded text in any script (HTML without a translation attribute, JSX/Vue text,
+   Android layouts, SwiftUI), concatenated translations, hand-formatted numbers, currency and dates, fixed widths that
    hide overflow, physical CSS that won't mirror. All `possible`.
 4. **Runtime.** Pseudo-localisation rewrites the source resource file as it is served (or walks text
-   nodes when there's no resource file, which misses attributes and later text; the method is
-   recorded). Each locale is loaded with the site's locale strategy (query, cookie, path prefix or
-   Accept-Language).
+   nodes when there's no resource file, which misses attributes and later text, and brackets
+   hard-coded text too, so it cannot find untranslated text: `pseudo.untranslated_check` is then
+   `not_assessed` and the evidence partial). Each locale is loaded with the site's locale strategy
+   (query, cookie, path prefix or Accept-Language). In each real locale run, `<html lang>` naming
+   another language and text left exactly as the source showed it are `untranslated` (never high
+   confidence); placeholders and button values wider than their input are `truncation`; overlap is
+   measured on line boxes, so wrapped inline links are not reported. Without a `resources` pattern
+   pass `--resources <run>/resources.json` so only shipped locales render; otherwise an RTL locale
+   listed only in `rtl_locales` is `not_run` rather than rendering the source text as RTL.
 5. **Merge and link.** Runtime findings confirm static causes; ratings follow `RUBRIC.md`.
 6. **Triage.** Promote, `needs_review` (an `untranslated` value that may be correct goes to a reviewer),
    or dismiss with a checkable reason (placeholder text a script replaces at runtime, shown translated in
    the pseudo run). For each finding write a title, a remediation naming the file and the fix (a key, a
    placeholder, `Intl.NumberFormat`, a logical CSS property), and a verification step.
+   Problems found by reading the code that no candidate covers (a language switch that never updates
+   `<html lang>`, a message built with markup) are findings with `"source": "agent"`,
+   `"candidate_id": null` and a `basis` `[{file, line, excerpt}]` that `--repo` re-reads; never high
+   confidence.
 7. **Validate and render.**
 
 ```bash
@@ -98,10 +120,11 @@ resources are checked statically, and mobile web at mobile viewports.
 - `scope`: repo, site, pages, viewports, source locale, every locale with status and reason, RTL
   locales, pseudo expansion and method.
 - `metadata`: library, tools, CLDR version and subset hashes.
-- `headline`: verdict, summary, severity counts, key coverage per set and locale,
+- `headline`: verdict (`issues_found`, `none_detected`, `not_assessed`), summary, severity counts, key coverage per set and locale,
   `translation_quality`, evidence completeness, overall confidence.
 - `findings[]`: kind, status, locales, severity, confidence, priority, score, reach, leverage,
-  locations, keys, runtime evidence, remediation, verification step.
+  locations, keys, runtime evidence, remediation, verification step; agent findings add `source` and
+  `basis`.
 - `proposed_patch` (`applied: false`), `needs_review[]`, `triage[]`, `limitations[]`.
 
 ## What the validator enforces
@@ -109,5 +132,9 @@ resources are checked statically, and mobile web at mobile viewports.
 Findings match their candidates; static findings point at real lines; runtime findings have a
 screenshot on disk and a measurement; every shipped locale has a status, and not_run ones a reason;
 no "fully localised" claims; translation quality untested without a named reviewer; untranslated
-findings never high confidence; the patch is unapplied and matches the missing JSON keys; the headline
-is recomputed.
+findings never high confidence; the patch is unapplied and matches the missing JSON keys; agent
+findings have a basis that is on its line; the headline is recomputed. Evidence is partial when a
+locale wasn't checked, something needs review, unused keys weren't assessed, a file wasn't parsed, no
+resource set was found, the code scan read nothing, or the pseudo run was a text walk; with nothing
+analysed at all the verdict is `not_assessed` and confidence low. A headline more cautious than the
+computed one is accepted.

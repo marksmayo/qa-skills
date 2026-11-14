@@ -379,11 +379,171 @@ def language_limitation() -> None:
         rep['limitations'].append('Rust code (40 files) was not analysed by the static scan; telemetry and logging in it were read by hand only.')
         out = run_validator(rep, cands=cands)
         check('rust' not in out.lower(), 'validator: a limitation naming the language satisfies it')
+    cands = json.loads(CANDS.read_text(encoding='utf-8'))
+    st = json.loads((ROOT / cands['static']).read_text(encoding='utf-8'))
+    st['language_coverage'] = dict(st.get('language_coverage') or {}, needs_limitation_dirs=['site/dist/'])
+    with tempfile.TemporaryDirectory() as d:
+        sp = Path(d) / 'static.json'
+        sp.write_text(json.dumps(st), encoding='utf-8')
+        cands['static'] = str(sp)
+        out = run_validator(base(), cands=cands)
+        check('site/dist/' in out and 'limitation' in out, 'validator: skipped build output holding most of the source needs a limitation naming it')
+        rep = base()
+        rep['limitations'].append('site/dist/ was skipped as build output and not scanned; its sends and logs were not read.')
+        out = run_validator(rep, cands=cands)
+        check('site/dist/' not in out, 'validator: a limitation naming the skipped directory satisfies it')
+
+
+# A FastAPI app mounting StaticFiles on a committed, hand-written dist/ folder (no bundler, not in .gitignore), with a
+# proxy that forwards the visitor's headers to an asset host through an httpx AsyncClient. The front end calls a sync
+# service with fetch(), puts the signed-in profile's email in a storage URL, logs the profile, asks for an access key in
+# an input with no name or id, and ships an Emscripten-style loader whose global FS object is not FullStory. A debug
+# panel takes a memory address (0x...), which is not a postal address.
+SYNC_HOST = 'api.example-sync.io'
+BLOB_HOST = 'store.example-blobs.io'
+CDN_HOST = 'cdn.example-assets.io'
+STATIC_SITE = {
+    '.gitignore': '__pycache__/\n*.pyc\n',
+    'requirements.txt': 'fastapi\nhttpx\n',
+    'server.py': ('import os\nimport httpx\nfrom fastapi import FastAPI, Request\nfrom fastapi.responses import Response\n'
+                  'from fastapi.staticfiles import StaticFiles\n\n'
+                  f'ASSET_BASE = os.environ.get("ASSET_BASE", "https://{CDN_HOST}/pack/")\napp = FastAPI()\n\n\n'
+                  '@app.get("/assets/{path:path}")\nasync def assets(path: str, request: Request):\n'
+                  '    async with httpx.AsyncClient() as client:\n'
+                  '        req = client.build_request("GET", ASSET_BASE + path, headers=dict(request.headers.items()))\n'
+                  '        resp = await client.send(req)\n'
+                  '    return Response(resp.content, status_code=resp.status_code)\n\n'
+                  'app.mount("/", StaticFiles(directory="dist", html=True), name="static")\n'),
+    'dist/index.html': ('<!doctype html>\n<html><body>\n<div class="login">\n'
+                        '  <input type="text" class="access-key-input" placeholder="Enter access key">\n'
+                        '  <button id="go">Go</button>\n</div>\n<script src="cloud.js"></script>\n<script src="modules/fs.js"></script>\n'
+                        '<script src="debug.js"></script>\n</body></html>\n'),
+    'dist/cloud.js': ('// sync client for the save service\n'
+                      f'const storageEndpoint = "https://{BLOB_HOST}/saves";\n\n'
+                      'async function resolveToken(key) {\n'
+                      f'  const res = await fetch("https://{SYNC_HOST}/token/get?id=" + key);\n'
+                      '  const profile = await res.json();\n'
+                      "  console.log('[Sync] resolveToken', profile);\n"
+                      '  return profile;\n}\n\n'
+                      'async function listSaves(profile) {\n'
+                      '  const r = await fetch(storageEndpoint + "/" + profile.email + "/index.json");\n'
+                      '  return r.json();\n}\n'),
+    'dist/modules/fs.js': ('var FS = {\n  initialized: false,\n  init: function () {\n    FS.initialized = true;\n  }\n};\n'
+                           'FS.initialized = true;\n'),
+    'dist/debug.js': ('function openPanel(panel) {\n'
+                      '  panel.innerHTML = \'<label>Address</label><input type="text" id="dbg-manual-addr" placeholder="0xAddress">\';\n}\n'),
+}
+
+
+def scan_args(files: dict[str, str], args: list[str]) -> tuple[dict, str]:
+    with tempfile.TemporaryDirectory() as d:
+        root, out = Path(d) / 'repo', Path(d) / 'static.json'
+        write(root, files)
+        r = subprocess.run([sys.executable, str(HERE / 'scan_privacy.py'), str(root), '--out', str(out)] + args, capture_output=True, text=True)
+        if r.returncode or not out.is_file():
+            raise AssertionError(f'scan_privacy.py failed: {r.stderr[-400:]}')
+        return json.loads(out.read_text(encoding='utf-8')), r.stdout + r.stderr
+
+
+def committed_dist() -> None:
+    st, out = scan(STATIC_SITE)
+    check(any(s['file'].startswith('dist/') for s in st['sinks']),
+          'scan: a committed, hand-written dist/ served by the app is scanned as source (not skipped as build output)')
+    dec = [x for x in st.get('build_output_dirs') or [] if x.get('dir') == 'dist/']
+    check(bool(dec) and dec[0].get('decision') == 'scanned' and dec[0].get('reason'),
+          'scan: the decision on dist/ is recorded with its reason (build_output_dirs)')
+    built = dict(STATIC_SITE)
+    built['.gitignore'] = 'dist/\n'
+    built['dist/cloud.js'] = STATIC_SITE['dist/cloud.js'] + '//# sourceMappingURL=cloud.js.map\n'
+    st, out = scan(built)
+    check(not any(s['file'].startswith('dist/') for s in st['sinks']), 'scan: a git-ignored dist/ with source maps is build output and skipped')
+    dec = [x for x in st.get('build_output_dirs') or [] if x.get('dir') == 'dist/']
+    check(bool(dec) and dec[0].get('decision') == 'skipped' and 'gitignore' in (dec[0].get('reason') or ''),
+          'scan: a skipped build-output directory says why (git-ignored, source maps)')
+    check('dist/' in ((st.get('language_coverage') or {}).get('needs_limitation_dirs') or []) and 'dist/' in out and 'WARNING' in out,
+          'scan: skipped build output holding more source than was scanned needs a limitation and a printed warning')
+    st, _ = scan_args(built, ['--include', 'dist'])
+    check(any(s['file'].startswith('dist/') for s in st['sinks']), 'scan: --include dist scans a skipped build-output directory')
+
+
+def static_front_end_flows() -> None:
+    st, _ = scan(STATIC_SITE)
+    hosts = {(h['host'], h.get('side')) for h in st.get('outbound_hosts') or []}
+    check((SYNC_HOST, 'client') in hosts, f'scan: a literal third-party URL in browser fetch() is an outbound host (got {sorted(hosts)})')
+    check((CDN_HOST, 'server') in hosts, 'scan: a literal third-party URL in server code with an outbound client is an outbound host')
+    em = [c for c in st['candidates'] if c['file'] == 'dist/cloud.js' and 'email' in (c.get('fields') or [])]
+    check(bool(em) and em[0]['type'] == 'personal_data_to_third_party',
+          'scan: an email read from an object (an API response) and put into a fetch URL is a candidate')
+    logs = [c for c in st['candidates'] if c['file'] == 'dist/cloud.js' and c['type'] == 'personal_data_in_logs']
+    check(bool(logs) and 'profile' in (logs[0].get('fields') or []), 'scan: logging a whole profile object is a personal-data-in-logs candidate')
+    key = [c for c in st['collection'] if c['file'] == 'dist/index.html' and c['kind'] == 'form_field']
+    check(bool(key) and key[0].get('field') and key[0].get('category') == 'online_identifier',
+          f'scan: an input with no name or id is classified from its class and placeholder (got {key[:1]})')
+    check(not any(s['file'] == 'dist/modules/fs.js' and s['sink'] == 'fullstory' for s in st['sinks']),
+          'scan: an Emscripten FS object (FS.initialized) is not a FullStory sink')
+    addr = [c for c in st['collection'] if c['file'] == 'dist/debug.js' and c.get('id') == 'dbg-manual-addr']
+    check(bool(addr) and addr[0].get('category') != 'contact', f'scan: a 0x memory-address field is not contact data (got {addr[:1]})')
+    py = [s for s in st['sinks'] if s['file'] == 'server.py' and s['kind'] == 'http']
+    check(len({s['line'] for s in py}) >= 2, 'scan: httpx AsyncClient build_request and send are outbound HTTP sinks')
+    hp = [c for c in st['candidates'] if c.get('subtype') == 'header_passthrough']
+    check(bool(hp) and hp[0]['file'] == 'server.py' and hp[0].get('side') == 'server',
+          'scan: forwarding the request headers to an outbound call is a header_passthrough candidate')
+
+
+def agent_undeclared_third_party() -> None:
+    f = telemetry_finding(type='personal_data_to_third_party', flow_basis='undeclared_third_party', default_on=None, recipient_kind='third_party',
+                          references={r: vpa.PROV['types']['personal_data_to_third_party'][r] for r in ('EU', 'AU')})
+    rep = base()
+    rep['findings'].append(f)
+    out = run_validator(rep)
+    check('F06: flow_basis undeclared_third_party' not in out,
+          'validator: a review finding may be undeclared_third_party when the declared processors (--declared) do not name its domain')
+    rep = base()
+    rep['findings'].append(dict(f, vendor='Replayr', domain='replayr.test'))
+    check('F06: flow_basis undeclared_third_party' in run_validator(rep),
+          'validator: a review finding whose recipient is declared is not undeclared_third_party')
+
+
+def console_and_key_canaries() -> None:
+    import match_canaries as mcan
+    cs = mcan.new_set('7f3a', key_length=5)
+    key = (cs['fields'].get('key') or {}).get('value', '')
+    check(len(key) == 5 and cs['fields']['key'].get('category') == 'online_identifier', 'canaries: a key canary of a given length exists')
+    m = mcan.Matcher(cs)
+    check(f'<canary:key:raw>' in (m.redact(f'https://{SYNC_HOST}/token/get?id={key}') or ''), 'canaries: a key canary is redacted from URLs')
+    import capture_flows as cf
+    cfg = {'flows': [{'id': 'f1', 'steps': [{'name': 's', 'actions': [{'fill': '#k', 'value': 'zq9x7'}]}]}]}
+    m2 = cf.matcher_for(cs, cfg)
+    check('zq9x7' not in (m2.redact('GET /token?id=zq9x7') or 'zq9x7'), 'capture: a literal value typed in a flow is redacted like a canary')
+
+    class Msg:
+        type = 'log'
+        text = f'[Sync] resolveToken {{"email": "{cs["fields"]["email"]["value"]}"}}'
+    rec = cf.Recorder(m)
+    rec.phase = 'f1/s'
+    rec.on_console(Msg())
+    hits = getattr(rec, 'console', [])
+    check(bool(hits) and hits[0]['matches'] and cs['fields']['email']['value'] not in json.dumps(hits),
+          'capture: a canary in the browser console is recorded (redacted)')
+    run = SKILL / 'examples' / 'run'
+    cap = json.loads((run / 'capture.json').read_text(encoding='utf-8'))
+    cap['states'][0]['console'] = [{'phase': 'signup/submit', 'type': 'log', 'text': '<canary:email:raw> signed in',
+                                    'matches': [{'field': 'email', 'category': 'contact', 'encoding': 'raw'}]}]
+    with tempfile.TemporaryDirectory() as d:
+        cp, out = Path(d) / 'capture.json', Path(d) / 'candidates.json'
+        cp.write_text(json.dumps(cap), encoding='utf-8')
+        subprocess.run([sys.executable, str(HERE / 'merge_candidates.py'), '--capture', str(cp), '--static', str(run / 'static.json'), '--flows',
+                        str(SKILL / 'examples' / 'flows.json'), '--lists', str(SKILL / 'examples' / 'lists.example.json'), '--out', str(out)],
+                       capture_output=True, text=True, cwd=ROOT)
+        c = json.loads(out.read_text(encoding='utf-8')) if out.is_file() else {'candidates': []}
+    check(any(x.get('sink') == 'browser_console' and x['type'] == 'personal_data_in_logs' for x in c['candidates']),
+          'merge: a canary in the browser console is a personal-data-in-logs candidate')
 
 
 def main() -> int:
     for t in (go_scan, unanalysed_language, template_loaders, fonts_not_tracker, undeclared_without_canary, telemetry_before_consent, declared_must_name, inventory_and_headline,
-              observed_with_runtime_evidence, url_credentials_message, language_limitation):
+              observed_with_runtime_evidence, url_credentials_message, language_limitation, committed_dist, static_front_end_flows,
+              agent_undeclared_third_party, console_and_key_canaries):
         try:
             t()
         except Exception as exc:  # a crash in one group is a failure, not the end of the run

@@ -106,7 +106,9 @@ def target_scs(scs: dict, version: str, level: str) -> list[str]:
 
 def expected_severity(f: dict) -> str:
     sev = f['base_severity']
-    if f.get('critical_path'):
+    # on a critical-path step, one level up when the finding affects what the step needs (RUBRIC: not the logo on
+    # that page); critical_path.affects_step false records the step without the raise
+    if f.get('critical_path') and f['critical_path'].get('affects_step', True) is not False:
         sev = SEVERITY[min(SEVERITY.index(sev) + 1, 3)]
     if f['non_interference']:
         sev = 'critical'
@@ -130,10 +132,12 @@ def band(f: dict, score: int) -> str:
         b = 'P1'
     if f['severity'] == 'serious' and b == 'P3':
         b = 'P2'
-    if f.get('blocks_critical_path'):
-        b = 'P0'
     if f['evidence_type'] == 'agent_judgment' and b == 'P0':
         b = 'P1'
+    # blocks_critical_path makes it P0 (RUBRIC). For agent judgment that holds only when the claim can be re-checked:
+    # a basis re-read with --repo, or a candidate (a tool's needs-review result) it rests on; otherwise the cap stays.
+    if f.get('blocks_critical_path') and (f['evidence_type'] != 'agent_judgment' or f.get('basis') or f.get('candidate_ids')):
+        b = 'P0'
     return b
 
 
@@ -152,7 +156,10 @@ def overall_confidence(d: dict, comp: float) -> str:
     all_engines = all(engines.get(e) == 'ran' for e in REQUIRED_ENGINES)
     # a probe cut short (partial: the keyboard probe stopped at its press limit) measured only part of the page
     partial = any(c['status'] == 'partial' for c in d['metadata']['checks'])
-    if comp >= 0.9 and all_engines and d['assisted_review']['scs_reviewed'] and not partial:
+    # a page whose main surface could not be tested (a canvas or WebGL app that never loaded, a plugin) was not
+    # audited where it matters, however many checks ran around it
+    untestable = bool(d['metadata'].get('untestable_surfaces'))
+    if comp >= 0.9 and all_engines and d['assisted_review']['scs_reviewed'] and not partial and not untestable:
         return 'high'
     return 'medium' if comp >= 0.6 else 'low'
 
@@ -254,7 +261,13 @@ def check(d: dict, run_dir: Path | None, cands: dict | None, repo: Path | None =
             rows = [c for c in meta['checks'] if c['name'] == name and c['status'] == 'partial']
             e.append(f'limitations: the {name} probe was partial on {len(rows)} check(s) ({rows[0]["page"]} {rows[0]["viewport"]}); '
                      'say it was partial and what it did not measure')
+    for u in meta.get('untestable_surfaces') or []:
+        if not any(u['page'] in l or u['surface'] in l for l in d['limitations']):
+            e.append(f'limitations: say that {u["surface"]} on {u["page"]} could not be tested (untestable_surfaces)')
     pages = {p['id']: p for p in meta['sample']}
+    for u in meta.get('untestable_surfaces') or []:
+        if u['page'] not in pages:
+            e.append(f'metadata.untestable_surfaces: unknown page {u["page"]}')
     if len(pages) != len(meta['sample']):
         e.append('metadata.sample: duplicate page ids')
     for c in meta['checks']:
@@ -379,6 +392,10 @@ def check(d: dict, run_dir: Path | None, cands: dict | None, repo: Path | None =
                     e.append(f'{w}.critical_path: step {step["label"]!r} is {step["url"]}, which is not one of the finding\'s pages')
         if f['blocks_critical_path'] and (not f.get('critical_path') or f['severity'] != 'critical'):
             e.append(f'{w}: blocks_critical_path needs a critical_path and Critical severity')
+        if f['blocks_critical_path'] and (f.get('critical_path') or {}).get('affects_step') is False:
+            e.append(f'{w}: blocks_critical_path contradicts critical_path.affects_step false')
+        if (f.get('critical_path') or {}).get('affects_step') is False and not f.get('severity_override_reason')                 and not (f['critical_path'].get('reason') or '').strip():
+            e.append(f'{w}.critical_path: affects_step false needs a reason saying why the step does not depend on it')
         sc_w = SEVERITY_W[f['severity']]
         rr, ll = reach(f, n_pages), leverage(f)
         score = sc_w * rr * ll

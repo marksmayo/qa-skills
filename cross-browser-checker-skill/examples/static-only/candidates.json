@@ -1189,7 +1189,20 @@
     "site/index.html",
     "site/style.css"
    ]
-  }
+  },
+  "supported_features": [
+   {
+    "feature": "webp",
+    "name": "WebP images",
+    "baseline_status": "high",
+    "uses": 1,
+    "first": {
+     "file": "site/deals.html",
+     "line": 8
+    }
+   }
+  ],
+  "skipped": {}
  },
  "comparisons": {
   "planned": 8,
