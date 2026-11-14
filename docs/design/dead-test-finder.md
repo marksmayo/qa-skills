@@ -495,3 +495,19 @@ Where the build differs from the design above, and what the example showed.
   - **Not fixed:** the JavaScript `unreached_assertion` false positive for `fail()` from `node:assert`
     inside a `try` (seen only in the vendored tree, which is now excluded); agent-supplied definitions
     for other unsupported languages (`--definitions`).
+- **Found on a Flask site (v1.5.0)** (a pytest suite with `addopts = -v` in `pytest.ini`, one module
+  importing a browser driver not installed, and parametrisation over a data directory of thousands
+  of JSON files):
+  - **`addopts = -v` emptied the listing**: verbosity netted to 0, pytest printed a node tree, and
+    every test was `not_assessed` with only "listed no tests" to show for it. `collect_check.py` now
+    recognises the tree (and the per-file counts `addopts = -q` gives), lists again with the
+    verbosity moved back, and records the command and a note.
+  - **One unimportable module errored the whole pytest list.** The `ERROR <file>` lines are read:
+    when each names a test file of the package, the package is `partial` with `errored_files`, as Go
+    already was; anything else (a `conftest.py`) still errors the list.
+  - **Tested** in `scripts/self_test.py` with a stand-in pytest whose output follows the verbosity,
+    and with the real pytest when it is installed.
+  - Not fixed here: tests CI runs outside `testpaths`, the false duplicate pairs from tests looping
+    over different module-level lists, helper methods named `test_*` read as tests, skips conditioned
+    on the product's own response, and hashing a large data tree before every neutralisation.
+

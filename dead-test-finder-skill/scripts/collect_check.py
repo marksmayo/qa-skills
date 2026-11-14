@@ -134,6 +134,24 @@ def parse_env(pairs: list, per_package: list[str]) -> tuple[dict, dict[str, dict
     return glob, per
 
 
+PYTEST_ERROR = re.compile(r'^ERROR\s+([^\s:]+\.py)(?:\s+-\s.*)?$', re.M)
+PYTEST_TREE = re.compile(r'^\s*<(?:Dir|Package|Module|Class|Function|Instance|UnitTestCase|TestCaseFunction|Doctest\w*)\b', re.M)
+PYTEST_ID = re.compile(r'^\S+\.py::\S', re.M)
+PYTEST_COUNT = re.compile(r'^\S+\.py: \d+\s*$', re.M)
+
+
+def pytest_shape(out: str) -> str:
+    """What `pytest --collect-only` printed: node ids (verbosity -1), a tree of nodes (0 or more), counts per file (-2
+    or less), or something else (no tests, an error before collection)."""
+    if PYTEST_ID.search(out):
+        return 'ids'
+    if PYTEST_TREE.search(out):
+        return 'tree'
+    if PYTEST_COUNT.search(out):
+        return 'counts'
+    return 'other'
+
+
 def map_pytest_path(path: str, cwd: Path, known: set[str]) -> str:
     """A file path from a pytest node id, made relative to the package directory cwd. pytest writes it relative to
     its rootdir, which may be an ancestor of cwd (an ini file higher up) or below it; known holds the package's test
@@ -286,6 +304,29 @@ def collect(pkg: str, fw: str, cwd: Path, run_dir: Path, files: list[str] | None
         listing.unlink(missing_ok=True)
     with (guard.around(shown) if guard else contextlib.nullcontext()):
         code, out = run(cmd, cwd, env)
+    verbosity_note = None
+    if fw == 'pytest':
+        # the repository's addopts (or PYTEST_ADDOPTS) count with -q: `addopts = -v` turns the id list into a tree of
+        # <Module>/<Function> nodes, `addopts = -q` into one count per file. List again with the verbosity moved back
+        # to -1, the setting that prints node ids, and record it
+        q, seen = 1, []
+        for _ in range(3):
+            shape = pytest_shape(out)
+            if shape not in ('tree', 'counts'):
+                break
+            seen.append(shape)
+            q += 1 if shape == 'tree' else -1
+            flags = ['-q'] * q if q > 0 else ['-v'] * -q
+            cmd = [sys.executable, '-m', 'pytest', '--collect-only', *flags, '-p', 'no:cacheprovider', *ign, *local]
+            shown = (f'python -m pytest --collect-only {" ".join(flags)} -p no:cacheprovider' + ''.join(f' {x}' for x in ign)
+                     + (f' <{len(local)} files>' if local else ''))
+            with (guard.around(shown) if guard else contextlib.nullcontext()):
+                code, out = run(cmd, cwd, env)
+        if seen:
+            verbosity_note = (f'pytest printed {"a collection tree" if seen[0] == "tree" else "one count per file"} instead '
+                              f'of test ids: the repository\'s addopts (or PYTEST_ADDOPTS) '
+                              f'{"raise" if seen[0] == "tree" else "lower"} the verbosity; listed again with '
+                              f'{" ".join(flags)}' + ('' if pytest_shape(out) == 'ids' else ', which did not give ids either'))
     if listing is not None:
         try:
             text = listing.read_text(encoding='utf-8', errors='replace')
@@ -306,6 +347,14 @@ def collect(pkg: str, fw: str, cwd: Path, run_dir: Path, files: list[str] | None
                 path, _, rest = re.sub(r'\[.*\]$', '', line).partition('::')
                 ids.append(prefix + map_pytest_path(path, cwd, known or set()) + '::' + rest)
         ok = code in (0, 5)
+        # modules that could not be imported: pytest lists every other file, then exits 1 or 2 with one ERROR line per
+        # file. When each names a test file of this package, only those files are not assessed; an error anywhere else
+        # (a conftest.py, a plugin, the ini file) may hide tests of other files, so the whole list stays errored
+        bad = sorted({m.group(1) for m in PYTEST_ERROR.finditer(out)})
+        if not ok and code in (1, 2) and ids and bad:
+            mapped = [map_pytest_path(b, cwd, known or set()) for b in bad]
+            if all(m in (known or set()) for m in mapped):
+                errored_files = [prefix + m for m in mapped]
     else:
         start = out.find('{' if fw == 'playwright' else '[')
         end = out.rfind('}' if fw == 'playwright' else ']') + 1
@@ -341,6 +390,14 @@ def collect(pkg: str, fw: str, cwd: Path, run_dir: Path, files: list[str] | None
                 **({'env': sorted(env)} if env else {}), 'collected': sorted(set(ids)), 'errored_files': errored_files,
                 'note': f'{len(errored_files)} test file(s) in packages that did not build here ([build failed]); '
                         'their tests are not assessed'}
+    if fw == 'pytest' and errored_files:
+        note = (f'{len(errored_files)} test file(s) could not be collected (ERROR lines in the summary: an import error, '
+                f'a missing dependency); their tests are not assessed, the other files were listed')
+        return {'package': pkg, 'framework': fw, 'command': shown, 'exit_code': code, 'status': 'partial',
+                'raw_output': raw.name, 'scope': 'all' if files is None else f'{len(local)} files', 'input_hash': input_hash,
+                **({'env': sorted(env)} if env else {}), 'collected': sorted(set(ids)), 'errored_files': errored_files,
+                'note': '; '.join(x for x in (verbosity_note, note) if x)}
+    note = '; '.join(x for x in (verbosity_note, note) if x) or None
     return {'package': pkg, 'framework': fw, 'command': shown, 'exit_code': code, 'status': 'ran' if ok else 'errored',
             'raw_output': raw.name, 'scope': 'all' if files is None else f'{len(local)} files', 'input_hash': input_hash,
             **({'env': sorted(env)} if env else {}), 'collected': sorted(set(ids)), **({'note': note} if note else {})}
@@ -475,7 +532,9 @@ def main(argv=None) -> int:
             reasons[d['id']] = f'{key[1]} list command did not run or errored'
         elif d['file'] in errored_files:
             not_assessed.append(d['id'])
-            reasons[d['id']] = f'{key[1]} could not list this file on its own (see the package\'s split list outputs)'
+            reasons[d['id']] = (f'{key[1]} could not collect this file (an ERROR line in the list output: an import error '
+                                f'or a missing dependency)' if key[1] == 'pytest' else
+                                f'{key[1]} could not list this file on its own (see the package\'s split list outputs)')
         elif is_collected(d):
             n_collected += 1
         elif d.get('skip_condition'):

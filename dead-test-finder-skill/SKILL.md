@@ -1,7 +1,7 @@
 ---
 name: dead-test-finder
 description: Find tests that give false assurance - tests the framework never collects, tests that pass whatever the code does, tests that only check their own mocks, un-awaited async assertions, swallowed failures, duplicates, and skips whose reason has gone - and prove the important ones with real runs. Never-runs is confirmed by the framework's own collect output; can't-fail by neutralising the code under test in a scratch copy and seeing the test still pass; duplicates by identical coverage and values. Each finding gets a patch, and every strengthening patch is proved to pass on the code and fail when it's neutralised. Never deletes or merges tests, never commits, and never claims a suite has "no dead tests".
-version: 1.4.0
+version: 1.5.0
 ---
 
 # Dead test finder
@@ -226,7 +226,15 @@ pattern).
   of options the config doesn't define) although a run collects it. `--split-on-error` lists such
   a package again in halves (at most 40 extra commands by default), so the other files are listed:
   the package is `partial` with `errored_files`, and only the tests in those files are
-  `not_assessed`.
+  `not_assessed`. pytest needs no split: when every `ERROR <file>` line in its summary names a
+  test file (an import error, a dependency missing here), the other files' ids are kept and the
+  package is `partial` with those files in `errored_files`; an error in a `conftest.py`, a plugin
+  or the ini file still errors the whole list.
+- **pytest verbosity.** The repository's `addopts` (or `PYTEST_ADDOPTS`) count with the list
+  command's `-q`: `addopts = -v` makes pytest print a tree of `<Module>`/`<Function>` nodes and
+  `addopts = -q` one count per file, neither of which names tests. The list is run again with the
+  verbosity moved back to the setting that prints ids (`-q -q`, or no `-q`), and the package's
+  `command` and `note` say so.
 - **Conditional skips.** A test skipped by `skipIf`/`runIf` that is missing from the list is
   `not_assessed`: a runner may leave it out on this machine only (a Windows-only skip on Windows).
 - **Environment.** Setup files often read configuration at import (`vitest.setup.ts` reading

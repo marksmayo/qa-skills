@@ -394,6 +394,99 @@ def report_checks(tmp: Path, failures: list[str]) -> None:
     check(any('F99' in e for e in nosrc), 'an agent stale skip needs the source of its age', failures)
 
 
+PYTEST_FILES = {
+    'pytest.ini': '[pytest]\naddopts = -v\ntestpaths = tests\n',
+    'tests/test_fares.py': ('import pytest\n\n\n@pytest.mark.parametrize("n", [1, 2])\ndef test_fare(n):\n    assert n\n\n\n'
+                            'class TestZones:\n    def test_zone(self):\n        assert 1\n'),
+    'tests/test_berths.py': 'def test_berth():\n    assert 2\n',
+    'tests/test_map.py': 'import not_installed_driver\n\n\ndef test_map():\n    assert 3\n',
+}
+PYTEST_IDS = ['tests/test_fares.py::test_fare[1]', 'tests/test_fares.py::test_fare[2]', 'tests/test_fares.py::TestZones::test_zone',
+              'tests/test_berths.py::test_berth']
+
+
+def fake_pytest(addopts: list[str], errors: list[str]):
+    """A stand-in for `pytest --collect-only` whose output depends on the verbosity, as pytest's does: the addopts of
+    the repository's ini file count with the command line (-v raises it, -q lowers it). Verbosity 0 or more prints a
+    tree of <Module>/<Function> nodes, -1 the node ids, -2 or less one count per file. errors are files that fail to
+    import (pytest lists the others, then exits 2 with an ERROR line per file)."""
+    def run(cmd, cwd, env):
+        if 'pytest' not in cmd:
+            return 1, ''
+        args = addopts + cmd
+        v = args.count('-v') - args.count('-q') - 2 * args.count('-qq')
+        files = sorted({i.split('::')[0] for i in PYTEST_IDS})
+        if v >= 0:
+            body = ['<Dir repo>', '  <Dir tests>']
+            for f in files:
+                body.append(f'    <Module {f.split("/")[-1]}>')
+                body += [f'      <Function {i.split("::")[-1]}>' for i in PYTEST_IDS if i.startswith(f + '::')]
+        elif v == -1:
+            body = list(PYTEST_IDS)
+        else:
+            body = [f'{f}: {sum(1 for i in PYTEST_IDS if i.startswith(f + "::"))}' for f in files]
+        if errors:
+            body += ['', '=' * 20 + ' short test summary info ' + '=' * 20] + [f'ERROR {e}' for e in errors] + \
+                ['!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!']
+            return 2, '\n'.join(body) + '\n'
+        return 0, '\n'.join(body) + '\n'
+    return run
+
+
+def pytest_checks(tmp: Path, failures: list[str]) -> None:
+    """pytest's listing whatever verbosity the repository's addopts set, and one file that cannot be imported."""
+    root = tmp / 'py'
+    for rel, text in PYTEST_FILES.items():
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text(text, encoding='utf-8')
+    res = scan_tests.scan(root)
+    cand = tmp / 'py-candidates.json'
+    cand.write_text(json.dumps(res), encoding='utf-8')
+    real_run = collect_check.run
+
+    def collect(addopts, errors, tag):
+        collect_check.run = fake_pytest(addopts, errors)
+        try:
+            code = quiet(collect_check.main, [str(root), '--candidates', str(cand), '--run-dir', str(tmp / tag)])
+        finally:
+            collect_check.run = real_run
+        col = json.loads((tmp / tag / 'collection.json').read_text(encoding='utf-8')) if code == 0 else {}
+        return code, col, next((p for p in col.get('packages', []) if p['framework'] == 'pytest'), {})
+
+    # test_map.py imports a missing module, but these runs list it like the others: only the verbosity is under test
+    PYTEST_IDS.append('tests/test_map.py::test_map')
+    for addopts, tag, what in ((['-v'], 'py-v', 'addopts = -v (a tree)'), (['-v', '-v'], 'py-vv', 'addopts = -vv'),
+                               (['-q'], 'py-q', 'addopts = -q (counts per file)')):
+        code, col, pk = collect(addopts, [], tag)
+        check(code == 0 and pk.get('status') == 'ran' and col.get('collected') == 4 and not col.get('not_collected')
+              and 'verbosity' in (pk.get('note') or ''),
+              f'{what}: the listing is read and the verbosity change recorded (exit {code}, status {pk.get("status")}, '
+              f'collected {col.get("collected")}, note {pk.get("note")!r})', failures)
+    PYTEST_IDS.pop()
+    code, col, pk = collect([], ['tests/test_map.py'], 'py-err')
+    check(code == 0 and pk.get('status') == 'partial' and pk.get('errored_files') == ['tests/test_map.py']
+          and col.get('collected') == 3 and col.get('not_assessed') == ['tests/test_map.py::test_map'],
+          f'one file that fails to import leaves the others listed and only its tests not assessed (status '
+          f'{pk.get("status")}, errored {pk.get("errored_files")}, collected {col.get("collected")}, '
+          f'not assessed {col.get("not_assessed")})', failures)
+    code, col, pk = collect([], ['tests/conftest.py'], 'py-conftest')
+    check(code == 0 and pk.get('status') == 'errored' and col.get('collected') == 0,
+          f'an error in a conftest.py (or anything but a listed test file) still errors the whole list (status '
+          f'{pk.get("status")}, collected {col.get("collected")})', failures)
+    # the real pytest, when it is installed here: addopts = -v and a module that cannot be imported
+    import importlib.util
+    if importlib.util.find_spec('pytest') is None:
+        return
+    code = quiet(collect_check.main, [str(root), '--candidates', str(cand), '--run-dir', str(tmp / 'py-real')])
+    col = json.loads((tmp / 'py-real' / 'collection.json').read_text(encoding='utf-8')) if code == 0 else {}
+    pk = next((p for p in col.get('packages', []) if p['framework'] == 'pytest'), {})
+    check(code == 0 and pk.get('status') == 'partial' and col.get('collected') == 3
+          and col.get('not_assessed') == ['tests/test_map.py::test_map'] and not col.get('not_collected'),
+          f'real pytest with addopts = -v and one unimportable module: three tests collected, its test not assessed '
+          f'(exit {code}, status {pk.get("status")}, collected {col.get("collected")}, not assessed {col.get("not_assessed")}, '
+          f'not collected {col.get("not_collected")})', failures)
+
+
 def quiet(fn, argv: list[str]) -> int:
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
         try:
@@ -529,6 +622,7 @@ def main() -> int:
               f'{pk.get("errored_files")})', failures)
         check(f'{bad}::tags a job' in sp['not_assessed'] and sp['collected'] >= 15,
               'tests in the failing file are not_assessed, the others collected', failures)
+        pytest_checks(tmp, failures)
         go_checks(tmp, failures)
         report_checks(tmp, failures)
     finally:
