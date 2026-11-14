@@ -179,6 +179,19 @@
         "\\bos\\.(Rename|Symlink|Link|Mkdir|MkdirAll|WriteFile|Create)\\s*\\("
       ]
     },
+    "file_write": {
+      "score": 3,
+      "label": "writes files from the application (uploads, saves, exports, logs)",
+      "patterns": [
+        "\\b(file_put_contents|move_uploaded_file|fwrite)\\s*\\(",
+        "\\.write_(bytes|text)\\s*\\(",
+        "\\bfs\\.(promises\\.)?(writeFile|appendFile|createWriteStream|copyFile|rename)(Sync)?\\s*\\(",
+        "\\bshutil\\.(copy\\w*|move)\\s*\\("
+      ],
+      "raw_patterns": [
+        "\\bopen\\s*\\([^)\\n]*,\\s*(mode\\s*=\\s*)?['\\\"][rbt]*[wax][bt+]*['\\\"]"
+      ]
+    },
     "raw_syscall": {
       "score": 3,
       "label": "raw syscall or unsafe block (systems-level)",
@@ -240,10 +253,12 @@
         "\\bexport\\s*\\{[^}]*\\bas\\s+(GET|POST|PUT|PATCH|DELETE)\\b",
         "^\\s*@\\w+\\.(get|post|put|patch|delete|route|api_route|websocket)\\s*\\(",
         "^\\s*@\\w+\\.(\\w+_trigger|function_name)\\s*\\(",
-        "^\\s*@api_view\\s*\\(|^\\s*class\\s+\\w+\\((\\w+\\.)?(APIView|ViewSet|ModelViewSet|GenericAPIView)\\)"
+        "^\\s*@api_view\\s*\\(|^\\s*class\\s+\\w+\\((\\w+\\.)?(APIView|ViewSet|ModelViewSet|GenericAPIView)\\)",
+        "\\$_(GET|POST|REQUEST|FILES|COOKIE)\\s*\\["
       ],
       "raw_patterns": [
-        "^\\s*['\"]use server['\"]"
+        "^\\s*['\"]use server['\"]",
+        "\\$_SERVER\\s*\\[\\s*['\\\"](REQUEST_URI|PATH_INFO|REQUEST_METHOD|QUERY_STRING)['\\\"]"
       ]
     },
     "ui_route": {
@@ -267,7 +282,11 @@
         "\\b\\w*(http|api|rest)_?client\\.(get|post|put|patch|delete|request|send|\\w+Json)\\s*\\(",
         "\\b(this\\.)?http\\.(get|post|put|patch|delete|request)\\s*(<[^>]*>)?\\s*\\(",
         "\\b(BlobServiceClient|ServiceBusClient|QueueClient|EventHubProducerClient|S3Client|SQSClient|SNSClient)\\s*[.(]|\\bboto3\\.(client|resource)\\s*\\(",
-        "\\bwebhooks?\\b"
+        "\\bwebhooks?\\b",
+        "\\bcurl_(init|exec|multi_exec)\\s*\\(|\\bfsockopen\\s*\\("
+      ],
+      "raw_patterns": [
+        "\\b(file_get_contents|fopen)\\s*\\(\\s*['\\\"]https?://"
       ]
     }
   },

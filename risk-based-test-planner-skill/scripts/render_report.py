@@ -53,7 +53,9 @@ def lines(d: dict, P, brief: bool, md: bool) -> list[str]:
     if rel:
         b = rel.get('base') or {}
         brk = [n for n, p in (rel.get('packages') or {}).items() if p.get('breaking')]
-        out.append(f'- Release: base `{b.get("tag")}` ({b.get("commits_since")} commits before HEAD); '
+        base = (f'base `{b["tag"]}` ({b.get("commits_since")} commits before HEAD)' if b.get('tag')
+                else 'no release tag (base given by hand or none: the scope says which)')
+        out.append(f'- Release: {base}; '
                    f'{rel.get("changesets", 0)} pending changeset(s) for {len(rel.get("packages") or {})} package(s); '
                    f'breaking: {", ".join(brk) or "none"}; {rel.get("breaking_commits", 0)} breaking commit(s)')
     out += [f'- Warning: {w}' for w in m.get('warnings', [])]
@@ -122,7 +124,31 @@ def lines(d: dict, P, brief: bool, md: bool) -> list[str]:
     return out
 
 
+def self_test() -> int:
+    """A plan with no release tag (release.base null) renders "no release tag", never Python's None."""
+    import copy
+    ex = json.loads((Path(__file__).resolve().parent.parent / 'examples' / 'test_plan.example.json').read_text(encoding='utf-8'))
+    fails = []
+    plan = copy.deepcopy(ex)
+    plan['metadata']['release'] = {'base': None, 'changesets': 0, 'packages': {}, 'breaking_commits': 0}
+    for brief in (False, True):
+        text = '\n'.join(lines(plan, lambda t, s: t, brief, True))
+        rel = [ln for ln in text.splitlines() if 'Release' in ln]
+        if any('None' in ln for ln in rel) or (rel and 'no release tag' not in rel[0]):
+            fails.append(f'a plan without a release tag says so (got {rel})')
+    text = '\n'.join(lines(ex, lambda t, s: t, False, True))
+    if '`v1.4`' not in text:
+        fails.append('a plan with a release tag names it')
+    if fails:
+        print('render_report self-test FAILED:\n  - ' + '\n  - '.join(fails))
+        return 1
+    print('render_report self-test: ok')
+    return 0
+
+
 def main() -> int:
+    if '--self-test' in sys.argv[1:]:
+        return self_test()
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('json_file', type=Path)
     ap.add_argument('--color', choices=['auto', 'always', 'never'], default='auto')

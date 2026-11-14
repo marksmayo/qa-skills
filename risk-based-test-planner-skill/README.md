@@ -67,6 +67,8 @@ python scripts/render_report.py run/test_plan.json --markdown run/test_plan.md
 python scripts/score_risk.py --self-test
 python scripts/release_scope.py --self-test
 python scripts/complexity.py --self-test
+python scripts/mine_history.py --self-test
+python scripts/render_report.py --self-test
 ```
 
 On Windows, `complexity.py` over a fresh clone can take a minute or more the first time; that is
@@ -108,7 +110,7 @@ python scripts/render_report.py examples/test_plan.example.json --brief
 - `scripts/mine_history.py`: churn, authors, fix commits and formatting-only commits from `git log --numstat`
 - `scripts/complexity.py`: lines of code and branches per file (Python by `ast`, Go and Rust by their own tokens, comments and strings removed in one scan; `--self-test`)
 - `scripts/release_scope.py`: the release base tag (the release before a tagged HEAD, withdrawn and retracted releases passed over), pending changesets and breaking commits (`--self-test` builds a synthetic workspace)
-- `scripts/score_risk.py`: areas (packages, Next.js App Router routes and modules, or source subdirectories; uncovered files as `unassigned`, everything else outside the areas listed in `excluded`), Go packages of a root or nested go.mod, the eight factors with evidence, risk, bands, floors; `--coverage` for a Go coverprofile; `language_coverage` from the shared language census; the input adapters; the effort allocation; `--self-test` for the surface idioms
+- `scripts/score_risk.py`: areas (packages, Next.js App Router routes and modules, or source subdirectories; uncovered files as `unassigned`, everything else outside the areas listed in `excluded`, explicit areas with nothing to score in `unscored_areas`, changed files no area counts in `scope_outside_areas`), Go packages of a root or nested go.mod, the eight factors with evidence, risk, bands, floors; `--coverage` for a Go coverprofile; `language_coverage` from the shared language census; the input adapters; the effort allocation; `--self-test` for the surface idioms
 - `scripts/validate_test_plan.py`: checks the plan against the scores, the inputs and the rules
 - `scripts/render_report.py`: terminal report, or the Markdown plan
 - `scripts/diff_scope.py`, `fetch_ticket.py`, `detect_conventions.py`: shared helpers

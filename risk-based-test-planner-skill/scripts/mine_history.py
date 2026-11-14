@@ -64,6 +64,7 @@ def fix_kind(subject: str, merge: bool) -> str | None:
     return None
 FORMAT = re.compile(r'^(style|format|chore\(format\)|lint)\b|\b(reformat|whitespace|prettier|black|isort|gofmt)\b', re.I)
 KEY = re.compile(r'\b([A-Z][A-Z0-9]+-\d+)\b')
+DOCS = re.compile(r'(\.(md|rst|txt|adoc)$|(^|/)(docs?|documentation)/|(^|/)(LICENSE|CHANGELOG|AUTHORS|NOTICE)[^/]*$)', re.I)
 SEP = '\x1e'
 
 
@@ -77,6 +78,7 @@ def git(repo: Path, *args: str) -> str:
 def mine(repo: Path, days: int, as_of: date | None) -> dict:
     shallow = git(repo, 'rev-parse', '--is-shallow-repository').strip() == 'true'
     head_date = datetime.fromisoformat(git(repo, 'log', '-1', '--format=%cI').strip()).date()
+    explicit = as_of is not None
     if as_of is None:
         as_of = head_date
     since = as_of - timedelta(days=days)
@@ -86,8 +88,16 @@ def mine(repo: Path, days: int, as_of: date | None) -> dict:
         notes.append(f'the window ends {gap} days after the HEAD commit ({head_date}); commits before {since} are left out, '
                      f'so a window ending at HEAD (omit --as-of) or a longer --days keeps more history')
     fmt = f'{SEP}%H%x1f%aI%x1f%an%x1f%P%x1f%s%x1f%b'
-    log_args = ['log', '--numstat', '--no-renames', f'--since={since.isoformat()}T00:00:00',
-                f'--until={as_of.isoformat()}T23:59:59', f'--format={fmt}']
+    # The default window ends at HEAD and is bounded by HEAD's ancestry, not by a date: an ancestor dated after HEAD
+    # (clock skew, a rewritten date) is history of this release and is kept. An explicit --as-of cuts by date, and the
+    # ancestors it leaves out for being dated after it are counted in a note.
+    until = [f'--until={as_of.isoformat()}T23:59:59'] if explicit else []
+    if explicit:
+        cut = git(repo, 'rev-list', '--count', f'--since={as_of.isoformat()}T23:59:59', 'HEAD').strip()
+        if cut not in ('', '0'):
+            notes.append(f'{cut} commit(s) of HEAD\'s ancestry are dated after --as-of {as_of} and are left out of the '
+                         'window; omit --as-of to keep every ancestor of HEAD')
+    log_args = ['log', '--numstat', '--no-renames', f'--since={since.isoformat()}T00:00:00', *until, f'--format={fmt}']
     out = git(repo, *log_args)
     first_touch: dict[str, str] = {}
     for line in git(repo, 'log', '--reverse', '--name-only', '--format=@%aI').splitlines():
@@ -118,6 +128,9 @@ def mine(repo: Path, days: int, as_of: date | None) -> dict:
             duplicate_of = seen_fixes.get(ident)
             seen_fixes.setdefault(ident, sha[:12])
         is_fix = bool(kind) and duplicate_of is None
+        docs_only = is_fix and bool(stats) and all(DOCS.search(pth) for pth, _, _ in stats)
+        if docs_only:                      # "fix typo in README": not a defect in any code area
+            is_fix = False
         formatting = bool(FORMAT.search(strip_merge_prefix(subject)[0])) and bool(stats) and all(abs(a - d) <= 2 for _, a, d in stats)
         c = {'sha': sha[:12], 'date': when[:10], 'author': author, 'subject': subject[:200], 'fix': is_fix,
              'keys': sorted(set(KEY.findall(subject + ' ' + msg))), 'formatting': formatting,
@@ -131,6 +144,8 @@ def mine(repo: Path, days: int, as_of: date | None) -> dict:
                 c['merge_prefix'] = prefix
         if duplicate_of:
             c['duplicate_fix_of'] = duplicate_of
+        if docs_only:
+            c['fix_ignored'] = 'touches only documentation'
         commits.append(c)
         for p, a, d in stats:
             f = files.setdefault(p, {'commits': 0, 'lines_added': 0, 'lines_deleted': 0, 'authors': set(), 'fix_commits': [],
@@ -146,6 +161,15 @@ def mine(repo: Path, days: int, as_of: date | None) -> dict:
                 f['fix_commits'].append(c['sha'])
     for p, f in files.items():
         f['authors'] = sorted(f['authors'])
+    later = [c for c in commits if c['date'] > head_date.isoformat()]
+    if later:
+        notes.append(f'{len(later)} commit(s) of HEAD\'s ancestry are dated after HEAD ({head_date}): '
+                     + ', '.join(f'{c["sha"][:7]} {c["date"]}' for c in later[:5])
+                     + '; clock skew or rewritten dates; they are kept in the window because HEAD contains them')
+    docs_fixes = [c for c in commits if c.get('fix_ignored')]
+    if docs_fixes:
+        notes.append(f'{len(docs_fixes)} fix commit(s) touch only documentation and are not counted as fixes: '
+                     + ', '.join(c['sha'][:7] for c in docs_fixes[:5]))
     tracked = git(repo, 'ls-files').splitlines()
     for p in tracked:
         files.setdefault(p, {'commits': 0, 'lines_added': 0, 'lines_deleted': 0, 'authors': [], 'fix_commits': [],
@@ -160,7 +184,49 @@ def mine(repo: Path, days: int, as_of: date | None) -> dict:
                         'formatting_commits': len([c for c in commits if c['formatting']]), 'files_tracked': len(tracked)}}
 
 
+def self_test() -> int:
+    """A synthetic repository whose ancestry holds a commit dated after HEAD (clock skew) and a docs-only fix: the window
+    ending at HEAD keeps the later-dated ancestor and says so, and the docs-only fix is not counted as a fix."""
+    import os, shutil, tempfile
+    tmp = Path(tempfile.mkdtemp(prefix='mh-self-'))
+    fails = []
+    try:
+        def commit(msg: str, when: str, files: dict) -> None:
+            for rel, text in files.items():
+                (tmp / rel).parent.mkdir(parents=True, exist_ok=True)
+                (tmp / rel).write_text(text, encoding='utf-8')
+            env = {**os.environ, 'GIT_AUTHOR_DATE': when, 'GIT_COMMITTER_DATE': when, 'GIT_AUTHOR_NAME': 'Sample',
+                   'GIT_AUTHOR_EMAIL': 'sample@example.test', 'GIT_COMMITTER_NAME': 'Sample',
+                   'GIT_COMMITTER_EMAIL': 'sample@example.test'}
+            subprocess.run(['git', '-C', str(tmp), 'add', '-A'], check=True, capture_output=True, env=env)
+            subprocess.run(['git', '-C', str(tmp), 'commit', '-q', '-m', msg], check=True, capture_output=True, env=env)
+        subprocess.run(['git', 'init', '-q', str(tmp)], check=True, capture_output=True)
+        commit('Add the timer', '2026-03-01T10:00:00Z', {'app/timer.js': 'let a = 1;\n'})
+        commit('fix the expiry date check', '2026-12-31T10:00:00Z', {'app/timer.js': 'let a = 2;\n'})
+        commit('fix typo in README', '2026-04-01T10:00:00Z', {'README.md': 'Timer\n'})
+        commit('Add the menu', '2026-05-29T10:00:00Z', {'app/menu.js': 'let m = 1;\n'})
+        res = mine(tmp, 180, None)
+        subjects = {c['subject']: c for c in res['commits']}
+        if 'fix the expiry date check' not in subjects:
+            fails.append(f'an ancestor of HEAD dated after it is in the window (got {sorted(subjects)})')
+        if not any('dated after' in n for n in res['notes']):
+            fails.append(f'a note says ancestors are dated after HEAD (got {res["notes"]})')
+        if subjects.get('fix typo in README', {}).get('fix'):
+            fails.append('a fix commit touching only documentation is not counted as a fix')
+        if res['files'].get('app/timer.js', {}).get('fix_commits') == []:
+            fails.append('the later-dated fix counts against the file it touched')
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    if fails:
+        print('mine_history self-test FAILED:\n  - ' + '\n  - '.join(fails))
+        return 1
+    print('mine_history self-test: ok')
+    return 0
+
+
 def main(argv=None) -> int:
+    if argv is None and '--self-test' in sys.argv[1:]:
+        return self_test()
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('--repo', type=Path, required=True)
     ap.add_argument('--days', type=int, default=180)
