@@ -34,7 +34,11 @@ consent_writes_blocked: the server-side record of the choice was never made.
 Request bodies are read as bytes and decompressed (gzip, deflate; brotli when the brotli module is installed) and
 Base64 bodies decoded before searching; each request records body_read (text, gzip, deflate, br, base64+...,
 binary_not_searched, br_not_searched). Content Security Policy violations in the console (the browser stops those
-requests before any request event) are recorded per state under csp_violations. Screenshots mask every field a
+requests before any request event) are recorded per state under csp_violations. Console
+messages that carry a canary (the page logging a profile or a key) are recorded per state under console, redacted;
+merge_candidates.py makes them a personal_data_in_logs candidate (sink browser_console). A literal value a flow types
+({"fill": sel, "value": "..."}) is redacted everywhere as <typed:literal>, never stored as typed; type a canary instead
+("canary": "key" for an access key). Screenshots mask every field a
 canary was typed into (Playwright mask); text the page echoes back elsewhere can still show a canary.
 
 Third parties are blocked by default (the browser harness's third_party: block): every request to a host that
@@ -83,9 +87,34 @@ def masked_screenshot(page, path: Path, selectors: list[str]) -> Path:
     return path
 
 
+class LiteralRedactor(Matcher):
+    """A Matcher that also redacts the literal values a flow types ({"fill": sel, "value": "..."}), as <typed:literal>.
+    They are not canaries (nothing is matched on them), but a literal key or name typed into a field must never reach
+    the evidence as typed: use a canary (the key canary for access keys) to trace a value."""
+
+    def __init__(self, canaries: dict, literals: list[str]):
+        super().__init__(canaries)
+        self.literals = sorted({x for x in literals if isinstance(x, str) and len(x.strip()) >= 4}, key=len, reverse=True)
+
+    def redact(self, text: str | None) -> str | None:
+        text = super().redact(text)
+        if text is None:
+            return None
+        for lit in self.literals:
+            text = re.sub(re.escape(lit), '<typed:literal>', text, flags=re.I)
+        return text
+
+
+def matcher_for(canaries: dict, cfg: dict) -> Matcher:
+    """The matcher a capture uses: the canaries, plus redaction of every literal value the flows type."""
+    lits = [act['value'] for f in cfg.get('flows', []) for s in f.get('steps', []) for act in s.get('actions', [])
+            if 'fill' in act and 'value' in act and 'canary' not in act]
+    return LiteralRedactor(canaries, lits) if lits else Matcher(canaries)
+
+
 class Recorder:
     def __init__(self, m: Matcher, h: Harness | None = None):
-        self.m, self.h, self.requests, self.phase, self.csp = m, h, [], None, []
+        self.m, self.h, self.requests, self.phase, self.csp, self.console = m, h, [], None, [], []
 
     def blocked(self, req) -> str | None:
         """Why the harness will abort this request (it routes after the request event), or None."""
@@ -133,6 +162,13 @@ class Recorder:
             text = msg.text
         except Exception:  # noqa: BLE001
             return
+        hits = self.m.find(text)
+        if hits:  # the page logged a canary (a profile, a key): a log sink in the browser, recorded redacted
+            try:
+                kind = msg.type
+            except Exception:  # noqa: BLE001
+                kind = None
+            self.console.append({'phase': self.phase, 'type': kind, 'text': (self.m.redact(text) or '')[:300], 'matches': hits})
         m = CSP_CONSOLE.search(text or '')
         if m:
             u = m.group('url')
@@ -170,7 +206,7 @@ def main() -> int:
     a = ap.parse_args()
     cfg = json.loads(a.flows.read_text(encoding='utf-8'))
     canaries = json.loads(a.canaries.read_text(encoding='utf-8'))
-    m = Matcher(canaries)
+    m = matcher_for(canaries, cfg)
     site = cfg['site']
     check_authorised([site], cfg.get('authorised_by'))
     log_start = a.server_log.read_text(encoding='utf-8').count('\n') if a.server_log and a.server_log.exists() else 0
@@ -202,6 +238,9 @@ def main() -> int:
         ap.error('third_party: allow sends the test\'s requests to real vendors; set third_party_authorised_by in flows.json')
     hcfg['rate_limit_seconds'] = cfg.get('rate_limit_seconds', 0.3)
     fills = sorted({act['fill'] for f in cfg['flows'] for s in f['steps'] for act in s['actions'] if 'canary' in act})
+    if isinstance(m, LiteralRedactor) and m.literals:
+        out['typed_literals'] = {'count': len(m.literals), 'note': 'literal values typed by the flows are redacted as <typed:literal> '
+                                 'and never matched; type a canary (the key canary for access keys) to trace a value'}
     if a.screenshots:
         out['screenshots'] = {'masked_fields': fills, 'note': 'fields a canary was typed into are masked; a canary the page '
                               'echoes elsewhere (a greeting, a summary) can still show in an image'}
@@ -277,6 +316,7 @@ def main() -> int:
                         masked_screenshot(page, a.screenshots / f'{state}-{flow["id"]}.png', fills)
             st['requests'] = rec.requests
             st['csp_violations'] = rec.csp
+            st['console'] = rec.console
             st['blocked_writes'] = sum(1 for b in h.blocked if b.get('reason', 'write') == 'write')
             st['blocked_third_party'] = sum(1 for b in h.blocked if b.get('reason') == 'third_party')
             st['blocked_hosts'] = sorted({urlparse(b['url']).hostname or '' for b in h.blocked if b.get('reason') == 'third_party'})

@@ -50,6 +50,11 @@ File inputs, dropzones, client-side parsing (SheetJS, Papa Parse, FileReader) an
 collection points with category null (what the files hold is unknown). collection_by_category counts the points.
 
 Files are read once and every pattern runs over the whole text. Directories in SKIP and --exclude are pruned.
+Directories named like build output (dist, build, out) are decided one by one: skipped when git ignores them, when
+most of their files are generated, or when a bundler configuration beside them builds them from source elsewhere;
+otherwise scanned as a committed front end. Each decision is listed under build_output_dirs; --include DIR scans one.
+Hosts sent to with a literal URL (browser or server) are listed under outbound_hosts; a proxy copying the visitor's
+request headers into an outbound call is a header_passthrough candidate.
 Files larger than --max-bytes (default 2 MB) are skipped; minified or generated files (*.min.js, bundles, or
 very long lines) are scanned for SDK hosts only. Both are listed in the output under "skipped".
 
@@ -75,8 +80,16 @@ LANG = {'.py': 'py', '.js': 'js', '.mjs': 'js', '.cjs': 'js', '.jsx': 'js', '.ts
 # the languages lang_census counts that this scan reads: sinks, collection points and sends (Java, Kotlin, Swift and
 # Objective-C get logging and storage sinks only, besides manifests and usage strings)
 ANALYSED = {'Python', 'JavaScript', 'TypeScript', 'Go', 'Ruby', 'Java', 'Kotlin', 'Swift', 'Objective-C', 'Vue', 'Svelte'}
-SKIP = {'node_modules', '.git', 'dist', 'build', 'out', 'venv', '.venv', '__pycache__', 'Pods', '.next', '.nuxt', 'coverage',
+SKIP = {'node_modules', '.git', 'venv', '.venv', '__pycache__', 'Pods', '.next', '.nuxt', 'coverage',
         'bower_components', '.svelte-kit', '.parcel-cache', '.turbo', '.cache', '.tox', '.mypy_cache', '.pytest_cache'}
+# Directories named like build output. A committed, hand-written front end served from dist/ (a FastAPI or Express app
+# mounting it as static files) is the app's source, so these are decided one by one (build_output_decision), never
+# dropped by name; every decision is recorded under build_output_dirs with its reason, and --include forces a scan.
+BUILD_NAMES = {'dist', 'build', 'out'}
+BUNDLER_CONFIG = re.compile(r'^(webpack|vite|rollup|parcel|esbuild|snowpack|rspack|turbopack|tsup|gulpfile|gruntfile)([.-][\w.-]*)?\.([cm]?[jt]s|json)$'
+                            r'|^(angular|\.parcelrc|svelte\.config|astro\.config|next\.config|nuxt\.config)', re.I)
+GENERATED_MARK = re.compile(r'//[#@] sourceMappingURL=|__webpack_require__|__vite__|\bparcelRequire\b|System\.register\(')
+FRONT_END_SOURCE = ('.js', '.mjs', '.cjs', '.jsx', '.ts', '.tsx', '.html', '.htm', '.vue', '.svelte')
 TEST_DIRS = {'__tests__', '__mocks__', '__snapshots__', 'test', 'tests', 'spec', 'specs', 'e2e', 'cypress', 'playwright'}
 # A directory named like tests is a product package when it holds a package manifest (a workspace package named
 # e2e), and one named after a test tool (playwright, cypress) is test code only when it holds tests: the rule the
@@ -117,6 +130,15 @@ SERVER_PATH = re.compile(r'(^|/)(api|server|servers|backend|functions|lambda|rou
 # keys that identify a person when sent to identify / error-tracker / people calls, even when no form collects them
 IDENTITY_KEYS = {'email': 'contact', 'phone': 'contact', 'name': 'identity', 'username': 'identity', 'first_name': 'identity',
                  'last_name': 'identity', 'firstName': 'identity', 'lastName': 'identity', 'ip_address': 'online_identifier'}
+# identity keys that count when read from any object into an outbound request or a log (profile.email in a URL)
+OBJECT_IDENTITY_KEYS = ('email', 'phone', 'ip_address')
+# a whole user or profile object handed to a log call (not one property of it)
+PROFILE_OBJECT = re.compile(r'(?<![\w$.])(profile|userProfile|user_profile|currentUser|current_user|userInfo|user_info|userData|'
+                            r'user_data|accountInfo|account_info)(?![\w$])(?!\s*(?:\??\.|\[))')
+# the visitor's request headers (cookies, Authorization, Referer) copied into an outbound call: a proxy forwarding them
+HEADER_PASS = re.compile(r'\b(?:request|req)\.headers\.(?:items|raw|entries)\(\)|\bdict\(\s*(?:request|req)\.headers\s*\)'
+                         r'|\bheaders\s*[=:]\s*(?:request|req)\.headers\b(?!\s*\.\s*get)|\{\s*(?:\*\*|\.\.\.)\s*(?:request|req)\.headers\b'
+                         r'|\bgetallheaders\(\)')
 SERVER_SEND_HINT = re.compile(r'\bfetch\(|\baxios\b|\brequests\.|\bhttpx\.|\burlopen\(|\bhttps?\.request\(|\bgot\(|\bundici\b|Net::HTTP|Faraday')
 WRAPPER_STOP = {'error', 'warn', 'info', 'debug', 'log', 'init', 'main', 'render', 'handler', 'default', 'track', 'send', 'report', 'run'}
 MANIFESTS = {'requirements.txt', 'Podfile', 'build.gradle', 'build.gradle.kts', 'pubspec.yaml', 'Gemfile'}
@@ -259,6 +281,43 @@ def classify(*names: str) -> str | None:
     return best
 
 
+# words in an input's class, placeholder or label that make it a credential the user types (an access key, an API
+# token): an online identifier, even with no name or id
+CREDENTIAL_WORDS = {'key', 'apikey', 'accesskey', 'passkey', 'token', 'apitoken'}
+# a value typed in hex (0x...) or a field about memory or offsets: a memory or device address, never a postal one
+HEX_FIELD = re.compile(r'^\s*0x', re.I)
+NOT_POSTAL_WORDS = {'hex', 'offset', 'pointer', 'memory', 'mem', 'register', 'cheat', 'debug', 'dbg'}
+
+
+def words_of(*texts) -> list[str]:
+    return [w for t in texts if t for w in re.findall(r'[a-z0-9]+', t.lower())]
+
+
+def field_category(names: tuple, label: str | None, cls: str | None, ph: str | None) -> str | None:
+    """The category of a form field from its name, id, autocomplete, type and label; when they give none, from its class
+    and placeholder (an input with no name or id), credential words making it an online identifier. A field typed in hex
+    (placeholder 0x...) or in a memory or debug panel is not contact data, whatever 'address' it mentions."""
+    lw = re.findall(r'\w+', (label or '').lower())
+    cat = classify(*names, *lw)
+    extra = words_of(cls, ph)
+    if cat is None and (cls or ph):
+        cat = classify(*(cls or '').split(), '_'.join(words_of(ph)))
+        if cat is None and set(extra + lw) & CREDENTIAL_WORDS:
+            cat = 'online_identifier'
+    if cat == 'contact' and (HEX_FIELD.search(ph or '') or set(extra + words_of(*[n for n in names if n])) & NOT_POSTAL_WORDS) \
+            and not set(extra + lw + words_of(*[n for n in names if n])) & {'email', 'mail', 'phone', 'tel', 'mobile', 'postcode', 'street'}:
+        cat = None
+    return cat
+
+
+def unnamed_field(cls: str | None, ph: str | None) -> str | None:
+    """A field name for an input with no name or id: its first class, or its placeholder's words."""
+    if cls and cls.split():
+        return cls.split()[0][:60]
+    w = words_of(ph)
+    return '_'.join(w[:4]) or None if w else None
+
+
 def redact_strings(v, key: str = ''):
     """v with REDACT applied to every string value except file paths."""
     if isinstance(v, str):
@@ -281,7 +340,7 @@ def holds_tests(d: Path, depth: int = 3) -> bool:
             return True
     if depth > 1:
         return any(holds_tests(Path(e.path), depth - 1) for e in entries
-                   if e.is_dir(follow_symlinks=False) and e.name not in SKIP and not e.name.startswith('.'))
+                   if e.is_dir(follow_symlinks=False) and e.name not in SKIP | BUILD_NAMES and not e.name.startswith('.'))
     return False
 
 
@@ -296,12 +355,109 @@ def test_dir(d: Path) -> bool:
     return True
 
 
-def files(repo: Path, pruned: list, skip: set, tests: set = frozenset(), kept: list | None = None):
+def gitignored(repo: Path, rel_dir: str) -> str | None:
+    """The .gitignore (repo-relative) that lists rel_dir by name (name, /name, name/, /name/, name/**), or None. A plain
+    reading of the common forms, not git's full matcher: enough to tell a build folder kept out of git."""
+    parts = rel_dir.strip('/').split('/')
+    name = parts[-1]
+    for i in range(len(parts)):
+        gi = repo.joinpath(*parts[:i], '.gitignore')
+        try:
+            lines = gi.read_text(encoding='utf-8', errors='replace').splitlines()
+        except OSError:
+            continue
+        here = '/'.join(parts[i:])
+        for ln in lines:
+            ln = ln.strip()
+            if not ln or ln.startswith(('#', '!')):
+                continue
+            pat = ln.rstrip('/').removesuffix('/**')
+            if pat in (name, '**/' + name) or pat.lstrip('/') == here:
+                return gi.relative_to(repo).as_posix()
+    return None
+
+
+def build_output_decision(repo: Path, rel_dir: str, include: set, exclude: set) -> dict:
+    """Whether a directory named like build output (dist/, build/, out/) is scanned, and why.
+
+    It is build output (skipped) when git ignores it, or when most of its front-end files are generated (source maps,
+    bundler runtimes, hashed or minified names), or when a bundler configuration sits beside it and front-end source
+    lives elsewhere. Otherwise it is committed, hand-written source (a static front end an app serves) and is scanned.
+    --include forces a scan, --exclude a skip.
+
+    The shared rule for this (lang_census, owned with the other shared files) is meant to replace the body below: call it
+    with (repo, rel_dir) and keep this function's result shape ({'dir', 'decision', 'reason', 'source_files'})."""
+    name = rel_dir.rsplit('/', 1)[-1]
+    out = {'dir': rel_dir + '/', 'decision': 'scanned', 'reason': '', 'source_files': 0}
+    if rel_dir in include or name in include:
+        out['reason'] = 'named with --include'
+    elif rel_dir in exclude or name in exclude:
+        out.update(decision='skipped', reason='named with --exclude')
+    srcs, generated = [], 0
+    for root, dirs, names in os.walk(repo / rel_dir):
+        dirs[:] = [d for d in dirs if d not in SKIP]
+        for n in names:
+            if n.lower().endswith(FRONT_END_SOURCE) or n.endswith('.py'):
+                srcs.append(Path(root) / n)
+            if n.endswith('.map'):
+                generated += 1
+        if len(srcs) > 3000:
+            break
+    out['source_files'] = len(srcs)
+    if out['reason']:
+        return out
+    ignored = gitignored(repo, rel_dir)
+    for p in srcs[:400]:
+        if GENERATED_NAME.search(p.name):
+            generated += 1
+            continue
+        try:
+            with open(p, 'rb') as fh:
+                fh.seek(max(0, p.stat().st_size - 4096))
+                tail = fh.read().decode('utf-8', 'replace')
+                fh.seek(0)
+                head = fh.read(65536).decode('utf-8', 'replace')
+        except OSError:
+            continue
+        if GENERATED_MARK.search(tail) or GENERATED_MARK.search(head):
+            generated += 1
+    parent = (repo / rel_dir).parent
+    bundler = sorted(n for n in (os.listdir(parent) if parent.is_dir() else []) if BUNDLER_CONFIG.match(n))
+    elsewhere = bundler and any((parent / s).is_dir() for s in ('src', 'app', 'pages', 'client', 'web', 'frontend'))
+    js_ = [p for p in srcs if p.suffix.lower() in ('.js', '.mjs', '.cjs')]
+    why = []
+    if ignored:
+        why.append(f'git-ignored ({ignored} lists it)')
+    if srcs and generated >= max(1, len(srcs[:400]) // 2):
+        why.append(f'generated files ({generated} with source maps, bundler runtimes or hashed names)')
+    if elsewhere:
+        why.append(f'a bundler configuration ({bundler[0]}) builds it from source kept elsewhere')
+    if not srcs:
+        why.append('holds no front-end or Python source')
+    if why:
+        out.update(decision='skipped', reason='build output: ' + '; '.join(why))
+    else:
+        out['reason'] = ('committed and hand-written: not git-ignored, no source maps or bundler output'
+                         + (f', no bundler configuration beside it' if not bundler else '') + f' ({len(js_)} script(s))')
+    return out
+
+
+def files(repo: Path, pruned: list, skip: set, tests: set = frozenset(), kept: list | None = None,
+          build_dirs: list | None = None, include: set = frozenset(), exclude: set = frozenset()):
     """Every file under repo, pruning skipped directories while walking (each pruned directory is added to pruned).
-    Directories named in tests are pruned only when test_dir() says they hold test code; the others go to kept."""
+    Directories named in tests are pruned only when test_dir() says they hold test code; the others go to kept.
+    Directories named like build output are decided by build_output_decision (each decision appended to build_dirs)."""
     for root, dirs, names in os.walk(repo):
         drop = set()
         for d in sorted(dirs):
+            rel_d = (Path(root) / d).relative_to(repo).as_posix()
+            if (d in BUILD_NAMES or rel_d in include) and d not in skip:
+                dec = build_output_decision(repo, rel_d, include, exclude)
+                if build_dirs is not None:
+                    build_dirs.append(dec)
+                if dec['decision'] == 'skipped':
+                    drop.add(d)
+                continue
             if d in skip:
                 drop.add(d)
             elif d in tests:
@@ -319,7 +475,7 @@ def node_packages(repo: Path) -> set[str]:
     """Package directories (relative, '' for the root) whose package.json declares a "bin": command-line tools."""
     out = set()
     for root, dirs, names in os.walk(repo):
-        dirs[:] = [d for d in dirs if d not in SKIP and not d.startswith('.')]
+        dirs[:] = [d for d in dirs if d not in SKIP | BUILD_NAMES and not d.startswith('.')]
         if 'package.json' in names:
             try:
                 pj = json.loads((Path(root) / 'package.json').read_text(encoding='utf-8'))
@@ -392,7 +548,7 @@ def sink_entry(rel: str, T, text: str, m, n: int, sid: str, kind: str, vendor: s
     line = T.line(n)
     span, end = call_span(text, m)
     e = {'file': rel, 'line': n, 'sink': sid, 'kind': kind, 'vendor': vendor, 'excerpt': REDACT.redact(line.strip())[:160],
-         '_view': code_view(line) + ' ' + code_view(span), '_consent': consent_nearby(T, n)}
+         '_view': code_view(line) + ' ' + code_view(span), '_consent': consent_nearby(T, n), '_raw': span or line}
     last = T.line_of(max(m.start(), end - 1))
     if span and last > n:
         e['end_line'] = last
@@ -531,12 +687,42 @@ def call_object(text: str, start: int) -> str:
     return text[i:]
 
 
+def build_coverage(repo: Path, cen: dict, build_dirs: list[dict]) -> dict:
+    """language_coverage with the build-output directories the scan read counted as source (the census leaves every
+    dist/ out), and needs_limitation_dirs naming skipped ones that hold more source than the scan read."""
+    c = dict(cen)
+    langs = dict(c.get('languages') or {})
+    excluded = list(c.get('excluded') or [])
+    for x in build_dirs:
+        if x['decision'] != 'scanned':
+            continue
+        sub = lang_census.census(repo / x['dir'].rstrip('/'))
+        for k, v in sub['languages'].items():
+            langs[k] = langs.get(k, 0) + v
+        excluded = [e for e in excluded if e['path'] + '/' != x['dir']]
+    c['languages'] = dict(sorted(langs.items(), key=lambda kv: (-kv[1], kv[0])))
+    c['dominant'] = next(iter(c['languages']), None)
+    c['excluded'], c['excluded_source_files'] = excluded, sum(e['source_files'] for e in excluded)
+    cov = lang_census.language_coverage(c, ANALYSED, tool='scan_privacy.py', what='privacy scan')
+    cov['needs_limitation'] = [cov['dominant_unsupported_language']] if cov['status'] == 'unsupported_dominant' else []
+    big = [x for x in build_dirs if x['decision'] == 'skipped' and x['source_files'] > cov.get('supported_files', 0)]
+    cov['needs_limitation_dirs'] = [x['dir'] for x in big]
+    if big:
+        cov['build_output_warning'] = (f'{", ".join(x["dir"] for x in big)} was skipped as build output but holds more source '
+                                       f'({sum(x["source_files"] for x in big)} files) than the scan read ({cov.get("supported_files", 0)}): if '
+                                       "it is the app's own front end"
+                                       ', rerun with --include; otherwise the report must say it was not scanned')
+    return cov
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('repo', type=Path)
     ap.add_argument('--out', type=Path, required=True)
     ap.add_argument('--semgrep', type=Path)
     ap.add_argument('--exclude', action='append', default=[], help='directory name to skip (third-party or generated code); repeatable')
+    ap.add_argument('--include', action='append', default=[], metavar='DIR',
+                    help='a directory named like build output (dist, build, out) to scan even when it looks generated; repeatable')
     ap.add_argument('--max-bytes', type=int, default=2_000_000, help='skip files larger than this (0: no limit); skipped files are listed')
     ap.add_argument('--include-tests', action='store_true', help='scan test directories and test files too (skipped by default)')
     ap.add_argument('--log-sinks', default='', help='comma-separated function names that write to logs (app logging wrappers)')
@@ -547,8 +733,6 @@ def main() -> int:
     # what the repository is written in (vendored and embedded third-party trees left out): a scan that reads only some
     # languages says so, loudly, when most of the code is in another
     cen = lang_census.census(repo, list(a.exclude))
-    coverage = lang_census.language_coverage(cen, ANALYSED, tool='scan_privacy.py', what='privacy scan')
-    coverage['needs_limitation'] = [coverage['dominant_unsupported_language']] if coverage['status'] == 'unsupported_dominant' else []
     collection, sinks, sdks, permissions, scripts, rum_inits, imports, skipped = [], [], [], [], [], [], [], []
     replay_inits, server_sends, wrappers, texts_meta = [], [], {}, {}
     get_forms, consent_defaults = [], []    # GET forms with a free-text input; consent-mode defaults (file:line)
@@ -572,7 +756,9 @@ def main() -> int:
     kept_dirs: list[str] = []
     cli_packages = node_packages(repo)
     go_pkgs: dict[str, dict] = {}   # package directory -> its sends, hosts, opt-out variables and identifiers
-    for p in files(repo, pruned, SKIP | set(a.exclude), test_names, kept_dirs):
+    build_dirs: list[dict] = []
+    include = {x.replace('\\', '/').strip('/') for x in a.include}
+    for p in files(repo, pruned, SKIP | set(a.exclude), test_names, kept_dirs, build_dirs, include, set(a.exclude)):
         rel = p.relative_to(repo).as_posix()
         lang = LANG.get(p.suffix.lower())
         if not (lang or p.name in MANIFESTS or p.name in PLATFORM or p.name == 'package.json'):
@@ -671,8 +857,9 @@ def main() -> int:
                          or jsx_attr(tag, 'placeholder') or '')
                 if not (nm or i or ac or label or state):
                     continue
-                cat = classify(nm, i, ac, state, ty, *re.findall(r'\w+', label.lower()))
-                collection.append({'file': rel, 'line': T.line_of(off), 'kind': 'form_field', 'field': nm or i or state or ac, 'id': i,
+                cat = field_category((nm, i, ac, state, ty), label, jsx_attr(tag, 'className') or jsx_attr(tag, 'class'),
+                                     jsx_attr(tag, 'placeholder'))
+                collection.append({'file': rel, 'line': T.line_of(off), 'kind': 'form_field', 'field': nm or i or state or ac or unnamed_field(jsx_attr(tag, 'className') or jsx_attr(tag, 'class'), jsx_attr(tag, 'placeholder')), 'id': i,
                                    'type': ty, 'autocomplete': ac, 'label': REDACT.redact(label)[:80], 'category': cat,
                                    **({'state': state} if state and not (nm or i) else {})})
         for m in (IMPORT.finditer(text) if ('from' in text or 'require(' in text or 'import' in text) else ()):
@@ -711,10 +898,15 @@ def main() -> int:
                     collection.append(file_point(rel, T.line_of(m.start()), attr(tag, 'name') or attr(tag, 'id'), attr(tag, 'accept'), 'file_upload'))
                     continue
                 nm, i, ty, ac = attr(tag, 'name'), attr(tag, 'id'), attr(tag, 'type'), attr(tag, 'autocomplete')
+                cls, ph = attr(tag, 'class'), attr(tag, 'placeholder')
                 label = labels.get(i or '', '')
-                cat = classify(nm, i, ac, ty, *re.findall(r'\w+', label.lower()))
-                collection.append({'file': rel, 'line': T.line_of(m.start()), 'kind': 'form_field', 'field': nm or i, 'id': i, 'type': ty,
-                                   'autocomplete': ac, 'label': REDACT.redact(label)[:80], 'category': cat})
+                cat = field_category((nm, i, ac, ty), label, cls, ph)
+                e = {'file': rel, 'line': T.line_of(m.start()), 'kind': 'form_field', 'field': nm or i or unnamed_field(cls, ph), 'id': i,
+                     'type': ty, 'autocomplete': ac, 'label': REDACT.redact(label)[:80], 'category': cat}
+                if not (nm or i):
+                    e.update({'class': (cls or '')[:80], 'placeholder': REDACT.redact(ph or '')[:80],
+                              'note': 'no name or id: field and category come from its class and placeholder'})
+                collection.append(e)
         # simple aliases: var x = document.getElementById('field'); var y = x.value...  -> x and y stand for field
         alias = {}
         for m in (ALIAS_ELEMENT.finditer(text) if 'getElementById(' in text or 'querySelector(' in text else ()):
@@ -902,6 +1094,18 @@ def main() -> int:
             ident = {}
             if s['kind'] in ('identify', 'error_tracker') or re.search(r'identify|setUser|set_user|people\.set|setUserProperties|register\(', view):
                 ident = {k: c for k, c in IDENTITY_KEYS.items() if names_field(view, k) or re.search(r'\$' + k + r'\b', view)}
+            from_object = []
+            if s['kind'] in ('http', 'log'):
+                # an email or phone read from an object (an API response, a stored profile) into a URL, a request or a log:
+                # the same flow as a collected field, though no form on the page asks for it
+                for k in OBJECT_IDENTITY_KEYS:
+                    if k not in names and re.search(r'(?:[\w$\])]\s*\??\.\s*|\[\s*)' + k + r'(?![\w$])', view):
+                        ident[k] = IDENTITY_KEYS[k]
+                        from_object.append(k)
+            if s['kind'] == 'log':
+                for mm in PROFILE_OBJECT.finditer(view):  # a whole user or profile object logged
+                    ident[mm.group(1)] = 'identity'
+                    from_object.append(mm.group(1))
             named = sorted(names | set(ident))
             if not named:
                 continue
@@ -924,6 +1128,10 @@ def main() -> int:
                     src_[f] = f'{pt["file"]}:{pt["line"]} ({pt["kind"]})'
             if src_:
                 extra['identity_source'] = src_
+            if from_object:
+                extra['read_from_object'] = sorted(set(from_object))
+                extra['note'] = ('not collected by a form: read from an object (an API response, a stored profile, a whole user '
+                                 'object); trace where it comes from')
             if s['kind'] in ('analytics', 'identify', 'replay', 'error_tracker', 'http'):
                 extra['consent_check_nearby'] = s['_consent']
             if s.get('side') == 'server' and typ in ('personal_data_to_third_party', 'session_replay_unmasked'):
@@ -1011,6 +1219,40 @@ def main() -> int:
                      note='a vendor endpoint called from Go code: a browser capture never sees it; trace what the payload carries')
             else:
                 outbound_hosts.append({'host': host, 'file': rel_, 'line': ln, 'package': d})
+    # hosts that browser and server code send to with a literal URL (fetch, XMLHttpRequest, an HTTP client): every one is a
+    # possible recipient for the inventory, vendor or not; a URL held in a variable assigned a literal in the same file counts
+    seen_out = {(h['host'], h['file']) for h in outbound_hosts}
+    for s in sinks:
+        if s['kind'] != 'http' or s['file'] not in texts:
+            continue
+        text = texts[s['file']]
+        hosts = [m.group(1) for m in URL_LIT.finditer(s['_raw'])]
+        for v in set(re.findall(r'[A-Za-z_$][\w$]*', s['_view'])) - {'fetch', 'await', 'const', 'let', 'var', 'new', 'return'}:
+            am = re.search(r'(?m)^[ \t]*(?:export\s+)?(?:const|let|var)?\s*' + re.escape(v) + r'\s*(?::[^=\n]+)?=[^=\n][^\n]*', text)
+            if am:
+                hosts += [m.group(1) for m in URL_LIT.finditer(am.group(0))]
+        for host in hosts:
+            host = (urlparse('//' + host).hostname or host).lower()
+            if NOT_RECIPIENT.search(host) or DOC_HOST.match(host) or (host, s['file']) in seen_out:
+                continue
+            seen_out.add((host, s['file']))
+            outbound_hosts.append({'host': host, 'file': s['file'], 'line': s['line'], 'side': s.get('side') or 'client',
+                                   'via': s['sink'], 'vendor': VENDOR_DOMAINS.get(registrable(host))})
+    # a proxy that copies the visitor's request headers (cookies, Authorization, Referer) into an outbound call
+    for rel, text in texts.items():
+        lang, T_, server_file = texts_meta[rel]
+        if lang not in ('py', 'js', 'ts') or not server_file or not any(s['file'] == rel and s['kind'] == 'http' for s in sinks):
+            continue
+        hm = HEADER_PASS.search(text)
+        if hm:
+            n = T_.line_of(hm.start())
+            to = sorted({h['host'] for h in outbound_hosts if h['file'] == rel})
+            cand(type='personal_data_to_third_party', subtype='header_passthrough', file=rel, line=n, excerpt=REDACT.redact(T_.line(n).strip())[:160],
+                 fields=['request_headers'], categories=['online_identifier'], confidence='pattern', side='server', host=to[0] if to else None,
+                 facts={'outbound_hosts': to[:5]},
+                 note='the visitor\'s request headers are copied into an outbound request: cookies, Authorization, Referer and '
+                      'User-Agent reach ' + (', '.join(to[:3]) if to else 'the upstream host') + ' unless the code drops them; '
+                      'a browser capture never sees this, so point the upstream at a loopback sink to observe it')
     for r in rum_inits:
         if r['replay'] and r['privacy_level'] in (None, 'allow'):
             how = 'set to allow' if r['privacy_level'] else 'not set, so the SDK version\'s default applies'
@@ -1058,10 +1300,14 @@ def main() -> int:
         x.pop('_consent', None)
     for x in sinks:
         x.pop('_view', None)
+        x.pop('_raw', None)
         x.pop('_consent', None)
         x.pop('_auth', None)
-    skipped += [{'file': d + '/', 'bytes': None, 'reason': 'test directory skipped (--include-tests scans it)'
-                 if d.rsplit('/', 1)[-1] in test_names else 'directory skipped (dependencies, build output or --exclude)'} for d in pruned]
+    decided = {x['dir']: x for x in build_dirs}
+    skipped += [{'file': d + '/', 'bytes': None, 'reason': decided[d + '/']['reason'] + ' (--include scans it)' if d + '/' in decided else
+                 'test directory skipped (--include-tests scans it)' if d.rsplit('/', 1)[-1] in test_names
+                 else 'directory skipped (dependencies, caches or --exclude)'} for d in pruned]
+    coverage = build_coverage(repo, cen, build_dirs)
     if tests_skipped:
         skipped.append({'file': '*.test.* / *.spec.* / test_*.py', 'bytes': None, 'reason': f'{tests_skipped} test file(s) skipped (--include-tests scans them)'})
     # in an internal business app most collection points are business parameters with no personal-data category
@@ -1074,7 +1320,7 @@ def main() -> int:
            'test_named_dirs_scanned': [{'dir': d + '/', 'reason': 'holds a package manifest (a product package)' if any(
                (repo / d / m).is_file() for m in PACKAGE_MANIFESTS) else 'named after a test tool but holds no test files'} for d in kept_dirs],
            'wrappers': sorted(wrappers.values(), key=lambda w: (w['file'] or '', w['line'] or 0, w['name'])), 'candidates': candidates,
-           'outbound_hosts': outbound_hosts, 'language_coverage': coverage}
+           'outbound_hosts': outbound_hosts, 'build_output_dirs': build_dirs, 'language_coverage': coverage}
     # the validator rejects any email, phone or card-like value in the evidence: redact every remaining string
     # (labels, placeholders, notes) the same way, whatever pattern put it there; paths are left alone
     for k in ('collection', 'sinks', 'sdks', 'permissions', 'wrappers', 'candidates'):
@@ -1082,6 +1328,10 @@ def main() -> int:
     a.out.parent.mkdir(parents=True, exist_ok=True)
     if coverage.get('warning'):
         print(f'WARNING: {coverage["warning"]}', file=sys.stderr)
+    for x in build_dirs:
+        print(f'  {x["dir"]} {x["decision"]}: {x["reason"]}', file=sys.stderr)
+    if coverage.get('build_output_warning'):
+        print(f'WARNING: {coverage["build_output_warning"]}', file=sys.stderr)
     a.out.write_text(json.dumps(out, indent=1) + '\n', encoding='utf-8', newline='\n')
     print(f'{n_files} file(s) in {out["seconds"]}s: {len(collection)} collection point(s), {len(sinks)} sink(s), {len(sdks)} SDK reference(s), '
           f'{len(candidates)} candidate(s) -> {a.out}')

@@ -486,8 +486,16 @@ def main() -> int:
             e(f'{fid}: flow_basis before_consent, but no candidate shows the before state')
         if f['flow_basis'] == 'after_reject' and not any(c['type'] == 'tracking_after_reject' or 'reject' in (c.get('states') or []) for c in live):
             e(f'{fid}: flow_basis after_reject, but no candidate shows the reject state')
-        if f['flow_basis'] == 'undeclared_third_party' and not any(c.get('recipient') == 'third_party' for c in live):
-            e(f'{fid}: flow_basis undeclared_third_party, but no candidate has an undeclared recipient')
+        # a review finding traced to a third-party domain the declared processors do not name is undeclared by the same test
+        # the merge applies (declared_covers): it needs a declaration to compare with, and a domain that is not first party
+        agent_undeclared = agent and f.get('domain') and f.get('recipient_kind') == 'third_party' and bool(
+            cfile.get('declared') or (cfile.get('inputs') or {}).get('declared')) and \
+            registrable(f['domain'].lower()) not in {registrable(x) for x in cfile.get('first_party') or []} and \
+            not declared_covers([x for x in (f.get('vendor'), f.get('domain')) if x], rep, cfile)
+        if f['flow_basis'] == 'undeclared_third_party' and not any(c.get('recipient') == 'third_party' for c in live) and not agent_undeclared:
+            e(f'{fid}: flow_basis undeclared_third_party, but no candidate has an undeclared recipient' +
+              (' (a finding found by review counts when it names a third-party domain that the declared processors, given to the '
+               'merge with --declared, do not name)' if agent else ''))
         want_refs = {r: PROV['types'][f['type']][r] for r in ('EU', 'UK', 'AU') if r in regions or (r == 'UK' and 'EU' in regions and 'UK' in regions)}
         if f['references'] != want_refs:
             e(f'{fid}: references differ from data/provisions.json for regions {regions}')
@@ -575,6 +583,12 @@ def main() -> int:
             if not re.search(rf'(?<![\w+#]){re.escape(lang)}(?![\w+#])', lims, re.I):
                 e(f'the static scan does not analyse {lang}, which holds most of the code ({(cov.get("unsupported") or {}).get(lang, "?")} '
                   f'files): a limitation must name {lang} and say its sends, logs and identifiers were not scanned')
+        # a directory skipped as build output that holds more source than the scan read (scan_privacy.py build_output_dirs):
+        # if it is the app's front end, nothing in it was scanned
+        for dir_ in cov.get('needs_limitation_dirs') or []:
+            if dir_.rstrip('/') not in lims:
+                e(f'the static scan skipped {dir_} as build output, but it holds more source than the scan read: rescan with '
+                  f'--include {dir_.rstrip("/")} if it is the app\'s own code, or add a limitation naming {dir_} as not scanned')
         ups = [c for c in st_.get('collection', []) if c.get('kind') in FILE_KINDS]
         said = json.dumps([rep['inventory'], rep['limitations'], rep['scope'].get('not_covered'), rep['scope'].get('covered')], ensure_ascii=False)
         # a bare "file" ("417 files scanned") does not count: the follow-up must speak of uploads (or attachments,

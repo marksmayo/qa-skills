@@ -1,6 +1,6 @@
 # Design: `privacy-flow-auditor-skill`
 
-Status: Built (v1.4.0), see the "As built" sections. Build order: 23.
+Status: Built (v1.6.0), see the "As built" sections. Build order: 23.
 
 ## Mission
 
@@ -505,3 +505,34 @@ embeds.
   directories in vendored code are still scanned for permissions (no candidates came of it).
 - **Examples.** Re-validated: their headlines gain `recipients_in_findings`, `schema_version` is 1.3.0,
   and `run/static.json` gains `language_coverage` and `outbound_hosts` (its candidates are unchanged).
+
+### v1.6.0: a static front end in a committed dist/
+
+- **Found on** a FastAPI app serving a committed, hand-written front end from `dist/` through StaticFiles,
+  with a proxy to an asset host: the scan pruned `dist/` by name, so the whole front end went unread and the
+  static scan raised no candidate; browser `fetch()` calls to third-party hosts were not listed as
+  recipients; an email read from an API response into a URL, a logged profile object, and an access-key
+  input with no name or id were not linked; an httpx `AsyncClient`'s `build_request`/`send` was not a sink;
+  `FS.initialized` in an Emscripten loader matched the FullStory pattern; a `0x` memory-address field was
+  classed as contact data; a review finding could not be `undeclared_third_party`; the browser console was
+  not searched for canaries; and there was no canary for keys, so a literal key typed in a flow was stored.
+- **Changed:** `dist/`, `build/` and `out/` are decided one by one (`build_output_decision`: git-ignored,
+  generated files, or a bundler configuration beside it make it build output; otherwise it is scanned) and
+  every decision is recorded under `build_output_dirs` and printed; `--include DIR` forces a scan; a skipped
+  one holding more source than the scan read goes into `language_coverage.needs_limitation_dirs` with a
+  warning, and the validator requires a limitation naming it. `outbound_hosts` now lists browser and server
+  sends with a literal URL (or a variable assigned one in the same file) with their `side`; a copy of the
+  request headers into an outbound call is a `header_passthrough` candidate; HTTP and log calls count an
+  email, phone or IP address read from an object, and log calls a whole profile object (`read_from_object`);
+  inputs with no name or id are classified from their class and placeholder (credential words: online
+  identifier), hex or debug-panel fields are never contact data; the `py-http` sink covers httpx clients
+  (`request`, `send`, `stream`, `build_request`) and sessions; the FullStory pattern needs a call. The
+  validator accepts `undeclared_third_party` on a review finding whose third-party domain the `--declared`
+  processors do not name. The capture records console messages carrying a canary (`console`), which the
+  merge makes a `browser_console` log candidate; `match_canaries.py new` adds a `key` canary
+  (`--key-length`); literal values typed by flows are redacted as `<typed:literal>`.
+- **Not changed:** the build-output rule is local until the shared language census offers one (then
+  `build_output_decision` should call it); a URL literal in another module than the send (a default base
+  URL in the app module, the send in a helper) is not linked; PHP is still only counted as unanalysed.
+- **Example.** The rescan of `clinic-signup` gives the same candidates; `run/static.json` gained the empty
+  `build_output_dirs` and `needs_limitation_dirs`.

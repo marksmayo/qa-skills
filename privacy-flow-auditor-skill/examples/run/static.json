@@ -6,7 +6,7 @@
   {
    "file": "stub-vendors/",
    "bytes": null,
-   "reason": "directory skipped (dependencies, build output or --exclude)"
+   "reason": "directory skipped (dependencies, caches or --exclude)"
   }
  ],
  "collection": [
@@ -401,6 +401,7 @@
   }
  ],
  "outbound_hosts": [],
+ "build_output_dirs": [],
  "language_coverage": {
   "tool": "scan_privacy.py",
   "supported_languages": [
@@ -427,6 +428,7 @@
   "excluded_source_files": 5,
   "status": "ok",
   "warning": null,
-  "needs_limitation": []
+  "needs_limitation": [],
+  "needs_limitation_dirs": []
  }
 }

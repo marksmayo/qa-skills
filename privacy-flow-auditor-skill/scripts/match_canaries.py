@@ -5,7 +5,8 @@
     python match_canaries.py scan capture.har --canaries run/canaries.json --out matches.json   # search a HAR (e.g. from the mobile app auditor)
 
 Canaries are synthetic and unique per run: an email under example.invalid, a reserved fictional phone
-number, a name, a date of birth and a health-like free-text reason, each carrying the set id. Every value
+number, a name, a date of birth, a health-like free-text reason and an access key (--key-length for a field that
+takes a key of a fixed length), each carrying the set id. Every value
 is searched for raw (case-insensitive), URL-encoded, Base64 and Base64url, and as lowercase hex SHA-256,
 SHA-1 and MD5 of the trimmed lowercased value (and of the E.164 form for phone numbers). That is how a
 "hashed email" sent to an ad platform shows up.
@@ -95,10 +96,22 @@ def decode_body(buf: bytes | None, content_encoding: str | None = None) -> tuple
         return (text, 'text_latin1') if printable > 0.95 else (None, 'binary_not_searched')
 
 
-def new_set(set_id: str | None = None) -> dict:
+def key_value(sid: str, length: int | None = None) -> str:
+    """A key or token canary: the set id with letters around it, cut to length (at least 5, so the id stays whole), for
+    fields that only accept a key of a fixed length."""
+    if length is None:
+        return f'qakey{sid}'
+    if length < len(sid) + 1:
+        raise ValueError(f'a key canary needs at least {len(sid) + 1} characters to carry the set id')
+    return ('k' + sid + 'qzxwvj' * 8)[:length]
+
+
+def new_set(set_id: str | None = None, key_length: int | None = None) -> dict:
     sid = set_id or secrets.token_hex(2)
-    return {'id': sid, 'synthetic': True, 'note': 'Synthetic canary values; none belongs to a real person.',
-            'fields': {k: {'category': cat, 'value': tpl.format(id=sid)} for k, (cat, tpl) in FIELDS.items()}}
+    fields = {k: {'category': cat, 'value': tpl.format(id=sid)} for k, (cat, tpl) in FIELDS.items()}
+    # an access key, API token or licence key the user types: an online identifier, searched and redacted like the rest
+    fields['key'] = {'category': 'online_identifier', 'value': key_value(sid, key_length)}
+    return {'id': sid, 'synthetic': True, 'note': 'Synthetic canary values; none belongs to a real person.', 'fields': fields}
 
 
 def encodings(field: str, value: str) -> dict[str, str]:
@@ -175,6 +188,7 @@ def main() -> int:
     n = sub.add_parser('new')
     n.add_argument('--out', type=Path, required=True)
     n.add_argument('--id')
+    n.add_argument('--key-length', type=int, help='length of the key canary, for a field that takes a key of a fixed length (min 5)')
     s = sub.add_parser('scan')
     s.add_argument('har', type=Path)
     s.add_argument('--canaries', type=Path, required=True)
@@ -182,7 +196,7 @@ def main() -> int:
     a = ap.parse_args()
     if a.cmd == 'new':
         a.out.parent.mkdir(parents=True, exist_ok=True)
-        a.out.write_text(json.dumps(new_set(a.id), indent=1) + '\n', encoding='utf-8', newline='\n')
+        a.out.write_text(json.dumps(new_set(a.id, a.key_length), indent=1) + '\n', encoding='utf-8', newline='\n')
         print(f'canary set -> {a.out}')
         return 0
     m = Matcher(json.loads(a.canaries.read_text(encoding='utf-8')))

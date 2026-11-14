@@ -379,9 +379,12 @@ def main() -> int:
                     e['requests'].append({'state': st_name, 'n': r['n'], 'phase': r['phase'], 'url': r['url'][:300]})
     fields_cat = {}
     for st in cap['states']:
-        for r in st['requests']:
+        for r in st['requests'] + (st.get('console') or []):
             for m in r['matches']:
                 fields_cat[m['field']] = m['category']
+    for h in (cap.get('server_log') or {}).get('hits') or []:
+        for m in h['matches']:
+            fields_cat.setdefault(m['field'], m['category'])
 
     def cats(fields):
         return sorted({fields_cat[f] for f in fields})
@@ -466,6 +469,16 @@ def main() -> int:
         typ = 'sensitive_category_flow' if any(c in CATS['special'] for c in cs) else 'personal_data_in_logs'
         cand(type=typ, sink='server_log', log_file=log['file'], lines=[h['line'] for h in log['hits']], fields=fields, categories=cs,
              example_line=log['hits'][0]['text'])
+    # ---- browser console: a canary the page's own code logged (console.log of a profile or a key)
+    con = [(s, h) for s in tested for h in states[s].get('console') or [] if h.get('matches')]
+    if con:
+        fields = sorted({m['field'] for _, h in con for m in h['matches']})
+        cs = cats(fields)
+        typ = 'sensitive_category_flow' if any(c in CATS['special'] for c in cs) else 'personal_data_in_logs'
+        cand(type=typ, sink='browser_console', states=sorted({s for s, _ in con}), phases=sorted({h['phase'] for _, h in con})[:10],
+             fields=fields, categories=cs, example_line=con[0][1]['text'][:300],
+             note='the page logged a canary to the browser console: any script, extension or error-reporting SDK that reads '
+                  'the console sees it, and support screenshots and shared logs carry it')
     static = json.loads(a.static.read_text(encoding='utf-8'))['candidates'] if a.static else []
     # ---- recipients and consent matrix
     recipients = {}

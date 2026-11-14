@@ -33,8 +33,9 @@ on by default with an opt-out as the only choice (a command-line tool's call hom
 no opt-out).
 
 The validator checks the basis against the candidates: `before_consent` needs the before state (or
-`default_on` as above), `after_reject` the reject state, `undeclared_third_party` an undeclared recipient,
-and `declared_unexpected` a declared processor that names the recipient: the finding's vendor (or its
+`default_on` as above), `after_reject` the reject state, `undeclared_third_party` an undeclared recipient
+(a live candidate's, or, for a finding found by review, its own third-party `domain` when the merge was
+given `--declared` and no declared processor names that domain or its vendor), and `declared_unexpected` a declared processor that names the recipient: the finding's vendor (or its
 alias or parent company) or domain must be in the `--declared` file or in the text of
 `metadata.declared_processors`; a finding that names no recipient is at most `pattern`.
 
