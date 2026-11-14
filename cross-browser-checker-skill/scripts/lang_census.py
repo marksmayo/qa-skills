@@ -22,6 +22,19 @@ What is left out, before any file is counted (directories are pruned before they
 
 Every exclusion is listed with its reason and file count, so a reader can check none of it is product code.
 
+Data files (JSON, CSV, YAML, XML, images ...) are never a language. A directory holding at least 50 of them, no
+source file and little else is a data tree: it is not walked and is listed under `data_trees` with its file count.
+`prune_data_dirs(dirpath, dirnames, skipped)` applies the same rule inside any os.walk loop, so walkers looking for
+code never open thousands of data records (`data_dir_reason(files)` is the test on one directory's file names).
+
+Markup is counted apart, under `markup` (HTML, CSS, Templates; an .html file under templates/, views/, layouts/ or
+partials/ is a template). `server_rendered` names a Python web app that renders templates (Flask, Django, Jinja2,
+Starlette/FastAPI templating, Bottle, Pyramid ...: an import or a render call) with its template count and
+directories. language_coverage(..., reads_templates=True), or 'HTML' among the supported languages, tells the guard
+the tool reads those templates: a Python-dominant server-rendered site is then 'partial' with a `note` (the Python is
+the server, outside the tool's scope), never 'unsupported_dominant'. A tool that does not read templates still gets
+the warning.
+
 Library use:
     import lang_census
     c = lang_census.census(repo)                     # {'languages': {'Go': 225, ...}, 'dominant': 'Go', ...}
@@ -67,6 +80,104 @@ MANIFESTS = ('package.json', 'go.mod', 'Cargo.toml', 'pyproject.toml', 'setup.py
 LICENSE_RX = re.compile(r'^(LICEN[CS]E|COPYING|COPYRIGHT)([.-].*)?$', re.I)
 HEADER_ONLY_MIN = 10
 
+# Data files: never a language, never counted towards the dominant one. A directory holding at least DATA_DIR_MIN of
+# them, no source file and little else is a data tree: walkers looking for code prune it (prune_data_dirs).
+DATA_EXT = {'.json', '.jsonl', '.ndjson', '.geojson', '.csv', '.tsv', '.yaml', '.yml', '.xml', '.parquet', '.avro',
+            '.txt', '.dat', '.xlsx', '.xls', '.ods', '.sqlite', '.db', '.gz', '.zip', '.npy', '.npz', '.pkl',
+            '.arrow', '.feather', '.toml', '.ini', '.kml', '.gpx', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.gif'}
+DATA_DIR_MIN = 50
+DATA_SHARE = 0.9
+# Markup is counted apart from the languages: browser-facing, but never the dominant language.
+MARKUP_BY_EXT = {'.html': 'HTML', '.htm': 'HTML', '.xhtml': 'HTML', '.css': 'CSS', '.scss': 'CSS', '.sass': 'CSS',
+                 '.less': 'CSS', '.styl': 'CSS',
+                 '.jinja': 'Templates', '.jinja2': 'Templates', '.j2': 'Templates', '.njk': 'Templates',
+                 '.hbs': 'Templates', '.handlebars': 'Templates', '.mustache': 'Templates', '.erb': 'Templates',
+                 '.ejs': 'Templates', '.twig': 'Templates', '.liquid': 'Templates', '.tmpl': 'Templates',
+                 '.gohtml': 'Templates', '.pug': 'Templates', '.jade': 'Templates', '.haml': 'Templates',
+                 '.slim': 'Templates', '.cshtml': 'Templates', '.razor': 'Templates', '.blade.php': 'Templates'}
+TEMPLATE_DIRS = {'templates', 'template', 'views', 'layouts', 'partials', 'includes', '_includes', '_layouts'}
+# a Python module that serves pages from templates: the web framework it imports, or a template render call
+PY_WEB = re.compile(r'^\s*(?:from|import)\s+(flask|django|jinja2|bottle|pyramid|quart|sanic|starlette\.templating|'
+                    r'fastapi\.templating|tornado\.web|aiohttp_jinja2|cherrypy|falcon)\b'
+                    r'|\b(render_template|render_to_response|TemplateResponse|Jinja2Templates|aiohttp_jinja2\.template)\s*\(',
+                    re.M)
+PY_WEB_FILES_MAX = 400
+
+
+def markup_kind(rel: str) -> str | None:
+    """'Templates', 'HTML' or 'CSS' for a markup file (an .html file under a templates/ or views/ directory is a
+    template), or None."""
+    low = rel.lower()
+    if low.endswith('.blade.php'):
+        return 'Templates'
+    kind = MARKUP_BY_EXT.get(PurePosixPath(low).suffix)
+    if kind == 'HTML' and any(p in TEMPLATE_DIRS for p in low.split('/')[:-1]):
+        return 'Templates'
+    return kind
+
+
+def data_dir_reason(files: list[str], min_files: int = DATA_DIR_MIN) -> str | None:
+    """Why a directory holding `files` (its file names) is a data tree, or None: at least min_files data files (JSON,
+    CSV, YAML, XML, images ...), no source file, and data files at least 90% of what it holds."""
+    if len(files) < min_files:
+        return None
+    n_data = 0
+    for f in files:
+        suf = PurePosixPath(f).suffix.lower()
+        if suf in LANG_BY_EXT or f.endswith('.R'):
+            return None
+        n_data += suf in DATA_EXT
+    if n_data >= min_files and n_data >= DATA_SHARE * len(files):
+        exts = Counter(PurePosixPath(f).suffix.lower() for f in files if PurePosixPath(f).suffix.lower() in DATA_EXT)
+        top = ', '.join(f'{n} {e}' for e, n in exts.most_common(3))
+        return f'a data tree ({n_data} data files: {top}; no source files)'
+    return None
+
+
+def prune_data_dirs(dirpath: str, dirnames: list[str], skipped: list | None = None, root: str | None = None,
+                    min_files: int = DATA_DIR_MIN) -> list[str]:
+    """For an os.walk loop: remove data-tree subdirectories of dirpath from dirnames (in place, so the walk never
+    descends into them) and append {'path', 'files', 'reason'} for each to skipped. Paths are relative to root (or
+    dirpath). Returns the names removed. Reuse it in any walker that looks for code, so thousands of data files are
+    not opened."""
+    removed = []
+    for d in list(dirnames):
+        full = os.path.join(dirpath, d)
+        try:
+            files = [e.name for e in os.scandir(full) if e.is_file()]
+        except OSError:
+            continue
+        why = data_dir_reason(files, min_files)
+        if why:
+            dirnames.remove(d)
+            removed.append(d)
+            if skipped is not None:
+                rel = os.path.relpath(full, root or dirpath).replace(os.sep, '/')
+                skipped.append({'path': rel, 'files': len(files), 'reason': why})
+    return removed
+
+
+def server_rendered(root: Path, py_files: list[str], template_files: list[str]) -> dict | None:
+    """{'framework', 'server_language', 'templates', 'template_dirs', 'evidence'} when Python modules import a web
+    framework or render templates and the repository holds template files; None otherwise."""
+    if not py_files or not template_files:
+        return None
+    for rel in py_files[:PY_WEB_FILES_MAX]:
+        try:
+            with open(root / rel, encoding='utf-8', errors='replace') as fh:
+                text = fh.read(65536)
+        except OSError:
+            continue
+        m = PY_WEB.search(text)
+        if m:
+            fw = (m.group(1) or '').split('.')[0] or ('jinja2' if 'Jinja2' in (m.group(2) or '') else 'templates')
+            dirs = sorted({next((('/'.join(t.split('/')[:i + 1])) for i, p in enumerate(t.split('/')[:-1])
+                                 if p.lower() in TEMPLATE_DIRS), PurePosixPath(t).parent.as_posix())
+                           for t in template_files})
+            return {'framework': fw, 'server_language': 'Python', 'templates': len(template_files),
+                    'template_dirs': dirs[:20], 'evidence': f'{rel}: {m.group(0).strip()[:80]}'}
+    return None
+
 
 def submodules(root: Path) -> set[str]:
     try:
@@ -107,8 +218,12 @@ def census(root: Path | str, extra_exclude: list[str] | None = None) -> dict:
     subs = submodules(root)
     extra = {e.strip('/') for e in (extra_exclude or [])}
     langs: Counter = Counter()
+    markup: Counter = Counter()
     by_lang_dirs: dict[str, Counter] = {}
     excluded: list[dict] = []
+    data_trees: list[dict] = []
+    py_files: list[str] = []
+    template_files: list[str] = []
     for dp, dns, fns in os.walk(root):
         rel = Path(dp).relative_to(root).as_posix()
         rel = '' if rel == '.' else rel
@@ -123,22 +238,40 @@ def census(root: Path | str, extra_exclude: list[str] | None = None) -> dict:
             if why:
                 if d not in ('.git', '.hg', '.svn', '__pycache__'):   # noise nobody needs listed
                     excluded.append({'path': sub, 'reason': why, 'source_files': count_sources(Path(dp) / d)})
-            else:
-                keep.append(d)
+                continue
+            data_why = data_dir_reason([f for f in files if os.path.isfile(os.path.join(dp, d, f))])
+            if data_why:   # never walked: data files are not a language, and a data tree holds no product code
+                data_trees.append({'path': sub, 'files': len(files), 'reason': data_why})
+                continue
+            keep.append(d)
         dns[:] = keep
         for f in fns:
+            frel = f'{rel}/{f}' if rel else f
             lang = LANG_BY_EXT.get(PurePosixPath(f).suffix)
             if lang:
                 langs[lang] += 1
                 top = rel.split('/')[0] if rel else '.'
                 by_lang_dirs.setdefault(lang, Counter())[top] += 1
+                if lang == 'Python':
+                    py_files.append(frel)
+                continue
+            mk = markup_kind(frel)
+            if mk:
+                markup[mk] += 1
+                if mk == 'Templates':
+                    template_files.append(frel)
     ordered = dict(sorted(langs.items(), key=lambda kv: (-kv[1], kv[0])))
     dominant = next(iter(ordered), None)
+    # app modules first (shallow paths, app/main/server names), so the framework import is found early
+    py_files.sort(key=lambda r: (r.count('/'), not re.search(r'(^|/)(app|main|server|wsgi|asgi|views|urls|routes)\.py$', r), r))
     return {'root': root.name, 'languages': ordered, 'total_source_files': sum(langs.values()),
             'dominant': dominant, 'dominant_files': ordered.get(dominant, 0) if dominant else 0,
             'top_dirs': {k: dict(v.most_common(5)) for k, v in by_lang_dirs.items()},
             'excluded': excluded,
-            'excluded_source_files': sum(e['source_files'] for e in excluded)}
+            'excluded_source_files': sum(e['source_files'] for e in excluded),
+            'markup': dict(sorted(markup.items())),
+            'data_trees': data_trees,
+            'server_rendered': server_rendered(root, py_files, template_files)}
 
 
 def count_sources(d: Path, cap: int = 200000) -> int:
@@ -161,13 +294,21 @@ def excluded_path(c: dict, rel: str) -> str | None:
 
 
 def language_coverage(c: dict, supported, tool: str = 'this script', what: str = 'full analysis',
-                      min_files: int = 3) -> dict:
+                      min_files: int = 3, reads_templates: bool = False) -> dict:
     """Supported against unsupported source-file counts for a tool that analyses only `supported` languages.
 
     status 'unsupported_dominant' (with a loud `warning`) when the largest unsupported language has more files than
     all supported languages together (and at least min_files); 'partial' when some unsupported languages are present
-    but do not dominate; 'ok' when everything counted is supported; 'no_source' when nothing was counted."""
+    but do not dominate; 'ok' when everything counted is supported; 'no_source' when nothing was counted.
+
+    A tool that reads server-side templates (reads_templates=True, or 'HTML' among `supported`) is not warned about a
+    server-rendered web app (census `server_rendered`: a Flask, Django or other Python framework rendering template
+    files): the templates are the browser-facing code it reads, and the server language is outside its scope rather
+    than unanalysed product UI. That case is status 'partial' with `server_rendered` and a `note` to carry into the
+    report instead of a warning."""
     supported = set(supported)
+    reads_templates = reads_templates or 'HTML' in supported
+    supported.discard('HTML')
     langs = c.get('languages', {})
     sup = {k: v for k, v in langs.items() if k in supported}
     uns = {k: v for k, v in langs.items() if k not in supported}
@@ -180,7 +321,15 @@ def language_coverage(c: dict, supported, tool: str = 'this script', what: str =
         return out
     if uns:
         lang, n = max(uns.items(), key=lambda kv: (kv[1], kv[0]))
-        if n > n_sup and n >= min_files:
+        sr = c.get('server_rendered') or {}
+        if n > n_sup and n >= min_files and reads_templates and sr.get('server_language') == lang:
+            out['status'] = 'partial'
+            out['server_rendered'] = sr
+            out['note'] = (f'This repository is a server-rendered {sr["framework"]} web app: its {sr["templates"]} '
+                           f'template file(s) ({", ".join(sr["template_dirs"][:3])}) are the browser-facing code, which '
+                           f'{tool} reads. Its {n} {lang} file(s) are the server that renders them, not browser code; '
+                           f'record that server code as outside this {what}, not as the UI left unread.')
+        elif n > n_sup and n >= min_files:
             out['status'] = 'unsupported_dominant'
             out['dominant_unsupported_language'], out['dominant_unsupported_files'] = lang, n
             out['warning'] = (f'This repository is predominantly {lang} ({n} source files, vendored and third-party '
@@ -255,6 +404,44 @@ def self_test() -> int:
     c3 = census(tree(sm))
     checks.append(('a git submodule is excluded', c3['dominant'] == 'Python' and 'libs/ext' in
                    {e['path'] for e in c3['excluded']}, (c3['languages'], c3['excluded'])))
+    # a server-rendered Python web app (a recipe site): a Flask module, Jinja templates, a stylesheet, one script, and
+    # a data directory of 300 JSON records the app loads at run time
+    web = {'app.py': 'from flask import Flask, render_template\napp = Flask(__name__)\n',
+           'api/__init__.py': '', 'static/site.css': 'body{}', 'static/menu.js': '',
+           'templates/base.html': '<html>{% block body %}{% endblock %}</html>'}
+    web.update({f'api/m{i}.py': 'def f():\n    return 1\n' for i in range(4)})
+    web.update({f'templates/pages/p{i}.html': '{% extends "base.html" %}' for i in range(9)})
+    web.update({f'recipes/r{i:03d}.json': '{"name": "soup"}' for i in range(300)})
+    root4 = tree(web)
+    c4 = census(root4)
+    checks.append(('JSON data files never decide the dominant language', c4['dominant'] == 'Python', c4['languages']))
+    checks.append(('a data directory of 300 JSON files is listed as a data tree and not walked',
+                   [d['path'] for d in c4.get('data_trees', [])] == ['recipes']
+                   and c4['data_trees'][0]['files'] == 300, c4.get('data_trees')))
+    checks.append(('templates and stylesheets are counted as markup, apart from the languages',
+                   c4.get('markup', {}).get('Templates') == 10 and c4.get('markup', {}).get('CSS') == 1
+                   and 'HTML' not in c4['languages'], c4.get('markup')))
+    sr = c4.get('server_rendered') or {}
+    checks.append(('a Flask app with Jinja templates is recognised as server-rendered',
+                   sr.get('framework') == 'flask' and sr.get('server_language') == 'Python' and sr.get('templates') == 10
+                   and sr.get('template_dirs') == ['templates'], sr))
+    browser = {'JavaScript', 'TypeScript'}
+    cov = language_coverage(c4, browser, tool='scan_ui.py', reads_templates=True)
+    checks.append(('a tool that reads templates is not told the Flask site is unsupported',
+                   cov['status'] == 'partial' and not cov['warning'] and cov.get('server_rendered', {}).get('templates') == 10
+                   and 'templates' in (cov.get('note') or ''), cov))
+    cov = language_coverage(c4, browser, tool='scan_ui.py')
+    checks.append(('a tool that does not read templates still gets the loud warning',
+                   cov['status'] == 'unsupported_dominant' and cov['warning'], cov['status']))
+    cov = language_coverage(c4, browser | {'HTML'}, tool='scan_ui.py')
+    checks.append(('"HTML" among the supported languages means the tool reads templates',
+                   cov['status'] == 'partial' and not cov['warning'], cov['status']))
+    pruned: list = []
+    dns = sorted(os.listdir(root4))
+    prune_data_dirs(str(root4), dns, pruned, root=str(root4))
+    checks.append(('prune_data_dirs drops the data directory from a walk and says why',
+                   'recipes' not in dns and 'templates' in dns and pruned and pruned[0]['path'] == 'recipes'
+                   and 'data' in pruned[0]['reason'], (dns, pruned)))
     failed = 0
     for name, ok, extra in checks:
         failed += not ok
