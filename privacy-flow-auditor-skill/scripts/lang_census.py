@@ -22,7 +22,7 @@ What is left out, before any file is counted (directories are pruned before they
 
 Every exclusion is listed with its reason and file count, so a reader can check none of it is product code.
 
-Data files (JSON, CSV, YAML, XML, images ...) are never a language. A directory holding at least 50 of them, no
+Data files (JSON, CSV, YAML, XML, images ...) are never a language. A directory holding at least 200 of them, no
 source file and little else is a data tree: it is not walked and is listed under `data_trees` with its file count.
 `prune_data_dirs(dirpath, dirnames, skipped)` applies the same rule inside any os.walk loop, so walkers looking for
 code never open thousands of data records (`data_dir_reason(files)` is the test on one directory's file names).
@@ -85,7 +85,7 @@ HEADER_ONLY_MIN = 10
 DATA_EXT = {'.json', '.jsonl', '.ndjson', '.geojson', '.csv', '.tsv', '.yaml', '.yml', '.xml', '.parquet', '.avro',
             '.txt', '.dat', '.xlsx', '.xls', '.ods', '.sqlite', '.db', '.gz', '.zip', '.npy', '.npz', '.pkl',
             '.arrow', '.feather', '.toml', '.ini', '.kml', '.gpx', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.gif'}
-DATA_DIR_MIN = 50
+DATA_DIR_MIN = 200
 DATA_SHARE = 0.9
 # Markup is counted apart from the languages: browser-facing, but never the dominant language.
 MARKUP_BY_EXT = {'.html': 'HTML', '.htm': 'HTML', '.xhtml': 'HTML', '.css': 'CSS', '.scss': 'CSS', '.sass': 'CSS',

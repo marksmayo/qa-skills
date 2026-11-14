@@ -14,6 +14,10 @@ untracked files included) with rename detection; --committed-only diffs <merge b
 in a squash-merge history, the last N first-parent commits): direct commits between or after them are
 left out, and line numbers are HEAD's. If a later commit edited the same lines, the files the merges
 changed are diffed whole instead, with a warning.
+Merges whose first-parent diff is empty (sync merges) are skipped and named in a warning.
+--path PATH (repeatable) keeps only changed files at or under those paths (source.paths records them).
+A changed .txt that tracked source code names in a string literal (open("fares.txt")) is kind data,
+not docs (git grep; the CLI does this, scope_from_diff alone does not).
 --repo may be a subdirectory of the git repository (one package of a monorepo): git mode uses
 `git diff --relative`, and a --diff whose paths start from the git top level is re-rooted at
 --repo, so paths resolve against it and changes outside it are left out (with a warning). A
@@ -27,7 +31,7 @@ deleted, and the functions those lines fall in. Web assets are never dropped as 
 `template` is a server-side template (a template extension such as .jinja or .erb, or HTML under
 templates/, views/, layouts/ or partials/), `markup` another HTML page, `style` a stylesheet, and
 `data` a data record the app loads (CSV and similar anywhere; JSON, YAML, XML or text under a data/
-directory or in a directory of 50+ data files with no source; known config names stay config). Test code is decided by `is_test_path(path, root)`, the shared
+directory or in a directory of 200+ data files with no source; known config names stay config). Test code is decided by `is_test_path(path, root)`, the shared
 rule other scripts should reuse: test file names count anywhere, and a directory named tests,
 test, e2e or __tests__ counts only when it is not a product package (a manifest such as
 package.json, pyproject.toml, Cargo.toml or go.mod together with shipped code such as src/), so a
@@ -60,7 +64,7 @@ TEMPLATE_DIRS = {'templates', 'template', 'views', 'layouts', 'partials', 'inclu
 DATA_ONLY_EXT = {'.csv', '.tsv', '.jsonl', '.ndjson', '.geojson', '.parquet', '.avro', '.xlsx', '.ods'}
 DATA_LIKE_EXT = {'.json', '.yaml', '.yml', '.xml', '.txt'}
 DATA_DIRS = {'data', 'datasets', 'dataset', 'seeds', 'seed-data', 'records', 'content', '_data'}
-DATA_TREE_MIN = 50   # files with a data extension in one directory, with no source file, make it a data tree
+DATA_TREE_MIN = 200   # files with a data extension in one directory, with no source file, make it a data tree
 CONFIG_NAMES = re.compile(r'^(package|package-lock|tsconfig.*|jsconfig|composer|deno|renovate|lerna|nx|turbo|vercel|'
                           r'netlify|firebase|app|manifest|\.?eslintrc.*|\.?prettierrc.*|\.?babelrc|biome|angular|'
                           r'project|workspace|launch|settings|extensions|tasks|cspell|\.?stylelintrc.*|pyrightconfig|'
@@ -384,7 +388,7 @@ def data_tree(root: Path | str | None, rel_dir: str) -> bool:
 def web_asset_kind(path: str, root: Path | str | None = None) -> tuple[str, str] | None:
     """(kind, reason) for a web asset or data file: 'template' (a server-side template: a template extension, or HTML
     under templates/, views/, layouts/ or partials/), 'markup' (another HTML page), 'style' (a stylesheet) or 'data'
-    (CSV and similar anywhere; JSON, YAML, XML or text under a data/ directory or in a directory of 50+ data files with
+    (CSV and similar anywhere; JSON, YAML, XML or text under a data/ directory or in a directory of 200+ data files with
     no source; known configuration file names stay config). None for anything else."""
     p = Path(path)
     ext, name = p.suffix.lower(), p.name
@@ -405,6 +409,24 @@ def web_asset_kind(path: str, root: Path | str | None = None) -> tuple[str, str]
         if data_tree(root, p.parent.as_posix()):
             return 'data', f'data file in a data tree ({p.parent.as_posix()}/ holds {DATA_TREE_MIN}+ data files, no source)'
     return None
+
+
+CODE_GLOBS = ('*.py', '*.js', '*.mjs', '*.cjs', '*.ts', '*.tsx', '*.jsx', '*.go', '*.rb', '*.php', '*.java', '*.kt',
+              '*.cs', '*.rs')
+
+
+def read_by_code(repo: Path, rel: str) -> str | None:
+    """The first source file (git grep, tracked files) that names this text file in a string literal, e.g.
+    open("fares.txt") or Path("data") / "fares.txt"; None when nothing does or git is unavailable."""
+    name = Path(rel).name
+    try:
+        res = subprocess.run(['git', '-C', str(repo), 'grep', '-l', '-I', '-F', '-e', f'"{name}"', '-e', f"'{name}'",
+                              '-e', f'"{rel}"', '-e', f"'{rel}'", '--', *CODE_GLOBS],
+                             capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    hits = [h for h in res.stdout.splitlines() if h.strip()] if res.returncode == 0 else []
+    return hits[0] if hits else None
 
 
 def classify(path: str, head: str, binary: bool, root: Path | str | None = None) -> tuple[str, str]:
@@ -805,7 +827,7 @@ def self_test() -> int:
         'site/exports/top.csv': 'a,b\n',
         'site/data/units.yaml': 'g: gram\n',
     }
-    files.update({f'site/recipes/r{i:03d}.json': '{"name": "soup"}' for i in range(60)})
+    files.update({f'site/recipes/r{i:03d}.json': '{"name": "soup"}' for i in range(210)})
     expect = {   # path -> (kind, reason fragment)
         'packages/e2e/src/runner.ts': ('source', 'packages/e2e/ is a product package (package.json and a src/'),
         'packages/e2e/schema/config.json': ('config', 'product package'),
@@ -908,6 +930,35 @@ def self_test() -> int:
         failed += not ok
         print(f"{'PASS' if ok else 'FAIL'} --last-merges 1 is the merge's own change, in HEAD's line numbers: {got}"
               + ('' if ok else "  [expected [('fares.txt', [[8, 8]])]]"))
+        # an empty sync merge (its first-parent diff changes nothing) is skipped, and the skip is said
+        run('checkout', '-q', '-b', 'sync')
+        (repo / 'notes.txt').write_text('changed on the sync branch\n', encoding='utf-8')
+        run('commit', '-q', '-am', 'sync side')
+        run('checkout', '-q', 'main')
+        run('merge', '-q', '--no-ff', '-s', 'ours', '-m', 'empty sync merge', 'sync')
+        try:
+            main(['--repo', d, '--last-merges', '1', '--out', str(out)])
+            res = json.loads(out.read_text(encoding='utf-8'))
+            got = ([(f['path'], f['ranges']) for f in res['files']], any('empty' in w for w in res.get('warnings', [])))
+        except (SystemExit, Exception) as e:   # noqa: BLE001
+            got = repr(e)
+        ok = got == ([('fares.txt', [[8, 8]])], True)
+        failed += not ok
+        print(f"{'PASS' if ok else 'FAIL'} --last-merges skips a merge whose first-parent diff is empty, with a warning: {got}")
+        # --path keeps only changes under the given paths; a .txt the code opens by name is data, not docs
+        (repo / 'app.py').write_text('def fares():\n    return open("fares.txt").read()\n', encoding='utf-8')
+        run('add', 'app.py'); run('commit', '-q', '-m', 'app reads fares')
+        first = run('rev-list', '--max-parents=0', 'HEAD').stdout.strip()
+        try:
+            main(['--repo', d, '--base', first, '--committed-only', '--path', 'fares.txt', '--path', 'app.py',
+                  '--out', str(out)])
+            res = json.loads(out.read_text(encoding='utf-8'))
+            got = sorted((f['path'], f['kind']) for f in res['files'])
+        except (SystemExit, Exception) as e:   # noqa: BLE001
+            got = repr(e)
+        ok = got == [('app.py', 'source'), ('fares.txt', 'data')]
+        failed += not ok
+        print(f"{'PASS' if ok else 'FAIL'} --path keeps only those paths, and a .txt the code opens is data: {got}")
     print(f'{failed} failed' if failed else 'ALL PASS')
     return 1 if failed else 0
 
@@ -932,6 +983,8 @@ def main(argv=None) -> int:
     ap.add_argument('--release-tag', metavar='GLOB',
                     help="with --since-release: only tags matching this glob, e.g. 'core@*' for one package of a "
                          'changesets monorepo')
+    ap.add_argument('--path', action='append', default=[], metavar='PATH',
+                    help='keep only changed files at or under this path (relative to --repo); repeatable')
     ap.add_argument('--out', type=Path)
     args = ap.parse_args(argv)
     repo = args.repo.resolve()
@@ -954,7 +1007,17 @@ def main(argv=None) -> int:
             ap.error('--last-merges is a git mode option; it cannot be combined with --diff')
         if args.last_merges < 1:
             ap.error('--last-merges takes a positive number')
-        merges = git(repo, 'rev-list', '--first-parent', '--merges', '-n', str(args.last_merges), 'HEAD').split()
+        merges, empty = [], []
+        for m in git(repo, 'rev-list', '--first-parent', '--merges', 'HEAD').split():   # newest first
+            if len(merges) == args.last_merges:
+                break
+            if git(repo, 'diff', '--name-only', f'{m}^1', m).strip():
+                merges.append(m)
+            else:
+                empty.append(m[:12])
+        if empty:
+            warnings.append(f'--last-merges {args.last_merges}: skipped {len(empty)} merge(s) whose first-parent diff is '
+                            f'empty (sync merges that change nothing): {", ".join(empty[:5])}')
         if len(merges) == args.last_merges:
             selected = merges
             args.base = merges[-1] + '^1'
@@ -1000,6 +1063,21 @@ def main(argv=None) -> int:
             source['since_release'] = release_tag
         untracked = [] if args.committed_only else git(repo, 'ls-files', '--others', '--exclude-standard').splitlines()
     files = scope_from_diff(text, repo)
+    if args.path:
+        keep = [p.replace('\\', '/').strip('/') for p in args.path]
+        inside = lambda rel: any(rel == k or rel.startswith(k + '/') for k in keep)  # noqa: E731
+        dropped = [f['path'] for f in files if not inside(f['path'])]
+        files = [f for f in files if inside(f['path'])]
+        untracked = [u for u in untracked if inside(u)]
+        if dropped:
+            warnings.append(f'--path: {len(dropped)} changed file(s) outside {", ".join(keep)} were left out')
+        source['paths'] = keep
+    for f in files:
+        if f['kind'] == 'docs' and f['path'].lower().endswith('.txt') and f['status'] != 'deleted':
+            reader = read_by_code(repo, f['path'])
+            if reader:
+                f['kind'], f['kind_reason'] = 'data', f'text data the code opens by name ({reader})'
+                f['functions'], f['function_method'] = [], 'none'
     for f in files:
         if f['status'] != 'deleted' and not f['present'] and f['kind'] != 'binary':
             warnings.append(f'{f["path"]}: changed in the diff but not found under --repo, so no lines or functions '
