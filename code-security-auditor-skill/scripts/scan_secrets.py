@@ -26,7 +26,9 @@ workspace package named e2e (with its own package.json) is product code, not a t
 private-key header with no key body after it (a fixture that joins '-----BEGIN PRIVATE KEY-----'
 with a constant) is not a key. URL paths under a *Path key (tokenPath: '/oauth/token') are routes,
 not credential files. HTTP header names under a *Header key or starting X- (const TokenHeader =
-"X-Beacon-Token") are names, not secrets. The output records elapsed_s.
+"X-Beacon-Token") are names, not secrets. The output records elapsed_s. Data directories (200+ data
+files and no code, see data_dirs.py) and --exclude-dir paths are not read; they are listed under
+skipped_data_dirs so the report can say what was not checked (--scan-data-dirs reads them).
 
 --history scans the lines added in each commit, but only file changes that touch a secret keyword
 or token prefix (git log -G), leaving out binary, lock, vendored and minified files and any
@@ -44,6 +46,7 @@ from pathlib import Path
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import data_dirs as data_dir_rule  # noqa: E402
 import test_paths  # noqa: E402
 
 SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'out', '.next', '.nuxt', '.svelte-kit', '.turbo', '.cache',
@@ -225,7 +228,8 @@ def find_in_line(line: str, path_name: str = '', refs: list | None = None) -> li
                     'column': start + 1, 'fallback': fallback})
     return out
 
-def files(root: Path):
+def files(root: Path, data=None):
+    """Files to read; data directories and --exclude-dir paths (`data`, a data_dirs.DataDirs) are pruned unread."""
     stack = [root]
     while stack:
         d = stack.pop()
@@ -235,7 +239,7 @@ def files(root: Path):
             continue
         for p in entries:
             if p.is_dir():
-                if p.name not in SKIP_DIRS:
+                if p.name not in SKIP_DIRS and not (data is not None and data.why(p)):
                     stack.append(p)
             elif p.suffix.lower() not in SKIP_EXT and p.name not in SKIP_FILES:
                 try:
@@ -251,11 +255,17 @@ def header_only(lines: list[str], i: int, column: int) -> bool:
     rest = lines[i][column:] + '\n' + '\n'.join(lines[i + 1:i + 3])
     return not KEY_BODY.search(rest)
 
-def scan_tree(root: Path) -> tuple[list[dict], list[dict]]:
-    """(secrets, credential files and references to them) in the working tree."""
+LAST_SKIPPED: list[dict] = []  # the directories the last scan_tree() left unread (data directories, --exclude-dir)
+
+def scan_tree(root: Path, exclude_dirs: list[str] | None = None, data_dirs: bool = True) -> tuple[list[dict], list[dict]]:
+    """(secrets, credential files and references to them) in the working tree. The directories left unread are in
+    LAST_SKIPPED (and the output's skipped_data_dirs): a secret in them would be missed, so a report says so."""
+    global LAST_SKIPPED
     found, creds = [], []
     tests = test_paths.Classifier(root)
-    for p in files(root):
+    data = data_dir_rule.DataDirs(root, exclude_dirs, auto=data_dirs)
+    LAST_SKIPPED = data.skipped
+    for p in files(root, data):
         rel = p.relative_to(root).as_posix()
         try:
             text = p.read_text(encoding='utf-8')
@@ -455,6 +465,7 @@ def main() -> int:
                     help="git pathspec glob to leave out of the history scan, e.g. '*.html' (repeatable)")
     ap.add_argument('--history-max-file-kb', type=int, default=256,
                     help='stop reading one file\'s added lines in one commit after this many KB (default 256)')
+    data_dir_rule.add_arguments(ap)
     ap.add_argument('--out', type=Path)
     args = ap.parse_args()
     if hasattr(sys.stdout, 'reconfigure'):
@@ -465,7 +476,8 @@ def main() -> int:
         return 2
     t0 = time.monotonic()
     tests = test_paths.Classifier(root)
-    found, creds = scan_tree(root)
+    found, creds = scan_tree(root, args.exclude_dir, not args.scan_data_dirs)
+    skipped = sorted(LAST_SKIPPED, key=lambda s: s['dir'])
     t_tree = time.monotonic()
     # Low-entropy literals in test files are fixtures: counted and listed apart, not triaged one by one.
     head = [s for s in found if not s['in_test_path'] or real_looking(s)]
@@ -533,6 +545,9 @@ def main() -> int:
                    "in_git_history 'no' with history_basis 'path' means never committed at that path; "
                    "with 'full' it means not found in any scanned commit. test_fixtures are low-entropy literals in "
                    'test files (no provider format); they are counted, not triaged.',
+           # directories not read at HEAD (data directories, --exclude-dir): a secret there would be missed;
+           # name them in the report's limitations, or rerun with --scan-data-dirs
+           'skipped_data_dirs': skipped,
            'secrets': head,
            'test_fixtures': {'count': len(fixtures),
                              'files': sorted({s['file'] for s in fixtures}),
@@ -548,6 +563,8 @@ def main() -> int:
               f"{out['elapsed_breakdown_s']['git_lookups']}s, history {out['elapsed_breakdown_s']['history']}s) -> {args.out}")
         if note:
             print(f'  history: {note}')
+        for s in skipped:
+            print(f"  not read: {s['dir']}/ ({s['reason']})")
     else:
         print(text)
     return 0

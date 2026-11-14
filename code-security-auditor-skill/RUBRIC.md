@@ -142,24 +142,26 @@ appears in the request is rejected.
 
 ## Weakness catalogue
 
-`data/pitfalls.json` has 129 patterns in 16 packs (Python, JavaScript/TypeScript, Java/Kotlin,
-Android manifests, iOS, Go, PHP, Ruby, C#, C/C++, Rust, GitHub Actions workflows and composite
-actions, Dockerfiles, Terraform, Azure Bicep/ARM, Azure Pipelines), each with a CWE, an OWASP 2025 category, a typical CVSS vector, a fix
+`data/pitfalls.json` has 143 patterns in 17 packs (Python, server-side templates (Jinja, Django,
+Nunjucks), JavaScript/TypeScript, Java/Kotlin, Android manifests, iOS, Go, PHP, Ruby, C#, C/C++,
+Rust, GitHub Actions workflows and composite actions, Dockerfiles, Terraform, Azure Bicep/ARM,
+Azure Pipelines), each with a CWE, an OWASP 2025 category, a typical CVSS vector, a fix
 and the matching rules of other tools.
 
 | Category | Weaknesses |
 |---|---|
 | Injection | SQL and NoSQL (including Prisma `$queryRawUnsafe`/`$executeRawUnsafe`, `Prisma.raw` and `$queryRaw` called with a string), OS command, template (SSTI), eval, LDAP/XPath, header and log injection, format strings, CSV formula injection |
-| Web | XSS sinks (including `dangerouslySetInnerHTML` with non-literal content and values in `<style>` blocks), CSRF, open redirect (`res.redirect`, `NextResponse.redirect`, `redirect()`, `router.push`, and `startsWith('/')`-only checks), CORS, cookie flags, postMessage origin checks, shared-cache headers on session responses |
+| Web | XSS sinks (including `dangerouslySetInnerHTML` with non-literal content and values in `<style>` blocks; in templates `\|safe`, `{% autoescape false %}`, values in inline `<script>` without `\|tojson`, unquoted attributes, and Jinja environments with `autoescape=False`), CSRF, open redirect (`res.redirect`, `NextResponse.redirect`, `redirect()`, `router.push`, and `startsWith('/')`-only checks), CORS, cookie flags, postMessage origin checks, shared-cache headers on session responses |
 | Server-side | SSRF, path traversal and zip slip, XXE, unsafe uploads (including the client's `file.type` stored as the content type, and uploads read whole into memory or handed to a parser with no size limit), unverified webhooks |
 | Access control | IDOR/BOLA, missing function-level checks (recon: handlers with no auth call), mass assignment (`data: body`, `data: { ...body }`), mostly agent review |
 | Authentication | Hard-coded session keys, JWT verification, reset tokens, rate limits, OAuth `state` not bound to the session, development bypass tokens or extra roles read from an environment variable with no environment guard |
+| Availability | Unbounded result sets and response amplification (every match serialised into one response, no page size or minimum query length), rate limits missing on expensive routes or keyed on a client-set header (`X-Forwarded-For`, `CF-Connecting-IP` with no trusted-proxy count); mostly agent review, with recon leads |
 | Cryptography | Weak hashes and ciphers, ECB, predictable randomness, disabled TLS verification |
 | Data exposure | Secrets in code or history, credentials in logs, verbose errors |
 | Language-specific | Deserialisation (pickle, YAML, Java, .NET, PHP, Ruby), prototype pollution, ReDoS, memory safety in C/C++ |
 | Mobile | Exported components and deep links, WebView bridges, cleartext traffic, ATS exceptions, insecure storage |
-| Supply chain and CI | `pull_request_target` checkouts, expression injection, unpinned actions, reachable vulnerable dependencies, `curl | sh`; Azure Pipelines every-branch triggers, literal secret variables, branch names and runtime parameters in scripts, service connections outside deployment jobs |
-| Configuration | Debug mode, public storage, open admin ports, unencrypted storage; Azure public network access on data services, `0.0.0.0` firewall rules ("allow Azure services" admits every tenant), administrator password login, secret parameters without `@secure()`, Key Vault access policies listing every secret, FTP, no `httpsOnly`, TLS below 1.2, account keys in app settings |
+| Supply chain and CI | `pull_request_target` checkouts, checkout credentials persisted in a workflow that uploads artifacts, expression injection, unpinned actions, reachable vulnerable dependencies, `curl | sh`; Azure Pipelines every-branch triggers, literal secret variables, branch names and runtime parameters in scripts, service connections outside deployment jobs |
+| Configuration | Debug mode (including debug on by default unless an environment variable is set), public storage, open admin ports, unencrypted storage; Azure public network access on data services, `0.0.0.0` firewall rules ("allow Azure services" admits every tenant), administrator password login, secret parameters without `@secure()`, Key Vault access policies listing every secret, FTP, no `httpsOnly`, TLS below 1.2, account keys in app settings |
 
 OWASP Top 10 (2025): A01 Broken Access Control, A02 Security Misconfiguration, A03 Software Supply
 Chain Failures, A04 Cryptographic Failures, A05 Injection, A06 Insecure Design, A07 Authentication

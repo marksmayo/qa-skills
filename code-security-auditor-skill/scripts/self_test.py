@@ -381,6 +381,9 @@ def node_and_ci_rules() -> None:
     check([t for t, _ in recon.gha_triggers(wf)] == ['push', 'issues'], 'triggers only from the on: block')
     check([t for t, _ in recon.gha_triggers('on: [push, pull_request]\njobs:\n  release: {}\n')] == ['push', 'pull_request'],
           'inline on: list')
+    art = merge_findings.map_pitfall(merge_findings.tool_index(), 'zizmor', 'artipacked')
+    check(art == 'GHA-PERSISTED-CREDENTIALS', f'zizmor artipacked (persisted checkout credentials) has its own pitfall, '
+                                              f'not pull_request_target ({art})')
     with tempfile.TemporaryDirectory() as tmp:
         t = Path(tmp)
         (t / 'packages' / 'e2e').mkdir(parents=True)
@@ -446,9 +449,146 @@ def poc_and_report_rules() -> None:
                               {'id': 'EP-3', 'handler': '.github/workflows/x.yml:9', 'kind': 'ci_workflow', 'method': 'issues'}]}
     errs = validator.recon_errors(report, recon)
     check(len(errs) == 1 and 'EP-2' in errs[0], 'a recon entry point dropped without a reason is an error; a removal with one is not')
+    # two client sources recon found on one template line: keep one, remove the duplicate by id
+    same = {'entry_points': [{'id': 'EP-35', 'handler': 'templates/partials/a.html:19', 'kind': 'client_source', 'method': 'location.search'},
+                             {'id': 'EP-36', 'handler': 'templates/partials/a.html:19', 'kind': 'client_source', 'method': 'location.href'}]}
+    rep = {'recon': {'entry_points': [{'id': 'EP-35', 'handler': 'templates/partials/a.html:19', 'kind': 'client_source'}],
+                     'removed_entry_points': [{'id': 'EP-36', 'handler': 'templates/partials/a.html:19',
+                                               'reason': 'the same line as EP-35; location.pathname, not location.href'}]}}
+    errs = validator.recon_errors(rep, same)
+    check(not errs, f'a same-line duplicate entry point can be removed by id ({errs})')
+    rep['recon']['entry_points'].append({'id': 'EP-36', 'handler': 'templates/partials/a.html:19', 'kind': 'client_source'})
+    errs = validator.recon_errors(rep, same)
+    check(any('EP-36 is still in' in e for e in errs), 'an entry point both kept and removed is still an error')
     check(bool(validator.ROTATION_REASON.search('public analytics key by design, never a credential'))
           and not validator.ROTATION_REASON.search('gone from HEAD, so nothing to do'),
           'a dismissed history-only secret must say it was rotated or why it needs no rotation')
+
+class CountReads:
+    """Count files opened under a directory (Path.read_text/read_bytes/open and builtins.open) while active."""
+
+    def __init__(self, under: Path):
+        import builtins, pathlib
+        self.under, self.count, self._b, self._p = str(under.resolve()), 0, builtins, pathlib
+        self._saved = {}
+
+    def _wrap(self, fn):
+        def inner(*a, **k):
+            target = a[0] if a else k.get('file')
+            try:
+                if isinstance(target, (str, Path)) and str(Path(target).resolve()).startswith(self.under):
+                    self.count += 1
+            except (OSError, ValueError):
+                pass
+            return fn(*a, **k)
+        return inner
+
+    def __enter__(self):
+        P = self._p.Path
+        for name in ('read_text', 'read_bytes', 'open'):
+            self._saved[name] = getattr(P, name)
+            setattr(P, name, self._wrap(self._saved[name]))
+        self._saved['builtins.open'] = self._b.open
+        self._b.open = self._wrap(self._b.open)
+        return self
+
+    def __exit__(self, *exc):
+        P = self._p.Path
+        for name in ('read_text', 'read_bytes', 'open'):
+            setattr(P, name, self._saved[name])
+        self._b.open = self._saved['builtins.open']
+
+def tide(root: Path) -> None:
+    """The Flask and Jinja fixture: templates are scanned, rate limiting and unbounded responses are modelled,
+    and a data directory of generated JSON files is pruned by every walker without a file in it being opened."""
+    import run_scanners  # noqa: E402
+    import time as _time
+    want = json.loads((root / 'expected.json').read_text(encoding='utf-8'))
+    print('scan_pitfalls (all packs) on tide-tables')
+    res = scan_pitfalls.scan(root, scan_pitfalls.load_catalogue())
+    got = {(c['file'], c['line'], c['pitfall_id']) for c in res['candidates']}
+    exp = {tuple(x) for x in want['patterns']}
+    for x in sorted(exp - got):
+        check(False, f'missed {x[2]} at {x[0]}:{x[1]}')
+    for x in sorted(got - exp):
+        check(False, f'unexpected {x[2]} at {x[0]}:{x[1]}')
+    check(got == exp, f'{len(exp)} planted patterns in app.py, mailer.py and the Jinja templates; nothing for |tojson in a '
+                      'script, a quoted attribute, <script src="{{ }}">, autoescape=True or a header read only to log it')
+    print('recon on tide-tables')
+    d = run_recon(root)
+    eps = d['entry_points']
+    for e in want['entry_points']:
+        hit = [x for x in eps if all(x.get(k) == v for k, v in e.items())]
+        check(bool(hit), f"{e['kind']} {e['method']} {e.get('path', '')} at {e['handler']}"
+                         + ''.join(f', {k} {e[k]}' for k in ('auth', 'bind') if k in e)
+                         + ('' if hit else f" (got {[(x['kind'], x['path'], x.get('auth')) for x in eps if x['handler'] == e['handler']]})"))
+    rl = d.get('rate_limiting') or {}
+    check(all(rl.get(k) == v for k, v in want['rate_limiting'].items()),
+          f"rate limiting: library, a key read from X-Forwarded-For and the limited routes ({rl})")
+    leads = ' '.join(l['why'] for l in d.get('review_leads') or [])
+    missing = [m for m in want['lead_mentions'] if m not in leads]
+    check(not missing, f'spoofable rate-limit key and an uncapped search route are review leads (missing {missing})')
+    check(sorted(d.get('templates') or []) == want['templates'], f"server-side templates listed ({d.get('templates')})")
+    check(d.get('skipped_data_dirs') == [], f"nothing pruned as data in the fixture itself ({d.get('skipped_data_dirs')})")
+    print('data directory of generated JSON files (copy of tide-tables)')
+    import shutil
+    with tempfile.TemporaryDirectory() as tmp:
+        t = Path(tmp) / 'tide'
+        shutil.copytree(root, t)
+        data = t / want['data_dir']['name']
+        n = want['data_dir']['generated_files']
+        for i in range(n):
+            (data / f'S{i:04d}.json').write_text(json.dumps({'code': f'S{i:04d}', 'name': f'Station {i}', 'notes': ''}),
+                                                encoding='utf-8')
+        (t / 'infra').mkdir()
+        (t / 'infra' / 'site.json').write_text('{"$schema": "https://schema.management.azure.com/schemas/2019-04-01/'
+                                               'deploymentTemplate.json#", "resources": []}\n', encoding='utf-8')
+        rel = want['data_dir']['name']
+        def pruned(rec: dict | None) -> bool:
+            return any(s.get('dir') == rel and s.get('files', 0) >= n for s in (rec or {}).get('skipped_data_dirs') or [])
+        with CountReads(data) as cr:
+            t0 = _time.monotonic()
+            r = scan_pitfalls.scan(t, scan_pitfalls.load_catalogue())
+            el = _time.monotonic() - t0
+        check(cr.count == 0 and pruned(r), f'scan_pitfalls opens no file in the data directory ({cr.count} opened, '
+                                           f"{el:.1f}s) and records it ({r.get('skipped_data_dirs')})")
+        check({(c['file'], c['line'], c['pitfall_id']) for c in r['candidates']} == exp,
+              'the same pattern hits with the data directory present')
+        check(r['files_scanned'].get('azure_iac') == 1, f"an ARM template outside the data directory is still read ({r['files_scanned']})")
+        with CountReads(data) as cr:
+            found, _ = scan_secrets.scan_tree(t)
+            skipped = scan_secrets.LAST_SKIPPED if hasattr(scan_secrets, 'LAST_SKIPPED') else None
+        check(cr.count == 0 and pruned({'skipped_data_dirs': skipped}),
+              f'scan_secrets opens no file in the data directory ({cr.count}) and says what it did not read ({skipped})')
+        with CountReads(data) as cr:
+            inv = run_scanners.inventory(t)
+        check(cr.count == 0 and pruned(inv) and not any(f.startswith(rel + '/') for f in inv['files']),
+              f"run_scanners inventory opens no data file ({cr.count}) and lists the pruned directory ({inv.get('skipped_data_dirs')})")
+        sg = next((x for x in run_scanners.plan(t, Path('out'), inv, ['p/default']) if x['name'] == 'semgrep'), {})
+        check(any(f'--exclude={rel}' in r['cmd'] for r in sg.get('runs') or []),
+              f"semgrep is told to leave the pruned directory out ({[r['cmd'] for r in sg.get('runs') or []]})")
+        rc = run_recon(t)
+        check(pruned(rc), f"recon records the pruned data directory ({rc.get('skipped_data_dirs')})")
+        import seed_report  # noqa: E402
+        seeded = seed_report.seed(rc, {}, None, None)
+        check(any(f'{rel}/' in l and 'not read' in l for l in seeded['limitations']),
+              f"seed_report names the unread data directory in limitations ({seeded['limitations']})")
+        r2 = scan_pitfalls.scan(t, scan_pitfalls.load_catalogue(), exclude_dirs=['templates'])
+        check(not any(c['file'].startswith('templates/') for c in r2['candidates'])
+              and any(s.get('dir') == 'templates' and 'exclude' in s.get('reason', '') for s in r2['skipped_data_dirs']),
+              f"--exclude-dir leaves a directory out and records why ({r2.get('skipped_data_dirs')})")
+        r3 = scan_pitfalls.scan(t, scan_pitfalls.load_catalogue(), data_dirs=False)
+        check(not r3['skipped_data_dirs'], '--scan-data-dirs turns the data-directory rule off')
+    print('rate-limit and template helpers')
+    js = scan_pitfalls.compile_pitfall(next(p for p in scan_pitfalls.load_catalogue()['pitfalls'] if p['id'] == 'JS-RATELIMIT-KEY-HEADER'))
+    hits = scan_pitfalls.scan_file
+    with tempfile.TemporaryDirectory() as tmp:
+        f = Path(tmp) / 'limits.js'
+        f.write_text("const limiter = rateLimit({\n  keyGenerator: (req) => req.headers['x-forwarded-for'] || req.ip,\n});\n", encoding='utf-8')
+        g = Path(tmp) / 'log.js'
+        g.write_text("console.log(req.headers['x-forwarded-for']);\n", encoding='utf-8')
+        check(len(hits(f, 'limits.js', [js])) == 1 and not hits(g, 'log.js', [js]),
+              'express-rate-limit keyGenerator on x-forwarded-for is a lead; logging the header is not')
 
 def python_rules() -> None:
     print('Python helpers')
@@ -478,6 +618,7 @@ def main() -> int:
     ap.add_argument('--azure-fixture', type=Path, default=HERE.parent / 'examples' / 'ferry-ops')
     ap.add_argument('--node-fixture', type=Path, default=HERE.parent / 'examples' / 'quill-cli')
     ap.add_argument('--go-fixture', type=Path, default=HERE.parent / 'examples' / 'beacon-cli')
+    ap.add_argument('--flask-fixture', type=Path, default=HERE.parent / 'examples' / 'tide-tables')
     args = ap.parse_args()
     root = args.fixture.resolve()
     want = json.loads((root / 'expected.json').read_text(encoding='utf-8'))
@@ -488,6 +629,10 @@ def main() -> int:
     quill(args.node_fixture.resolve())
     beacon(args.go_fixture.resolve())
     go_rules(args.go_fixture.resolve())
+    try:
+        tide(args.flask_fixture.resolve())
+    except Exception as exc:  # noqa: BLE001 - a missing helper is a failure, not a crash of the whole self-test
+        check(False, f'tide-tables: {type(exc).__name__}: {exc}')
     node_and_ci_rules()
     poc_and_report_rules()
     python_rules()

@@ -447,3 +447,42 @@ web framework and the language census thrown off by vendored code.
   pattern-shaped and stay agent work; no pattern for `http.Get` without a timeout or unbounded
   `io.ReadAll`; nothing models how release binaries are built (SKILL.md tells the agent to check
   GoReleaser provenance by hand).
+
+## As built (v1.5.0): fixes from a run on a Flask and Jinja site with a large JSON data tree
+
+- **Data directories.** `scripts/data_dirs.py` decides from a directory listing alone (no file
+  opened) whether a directory is data: 200 or more files of its own, at least 95% with a data
+  extension, no source code. recon, scan_pitfalls, scan_secrets and run_scanners' inventory prune
+  it, record it under `skipped_data_dirs` (directory, file count, reason), and take
+  `--exclude-dir` and `--scan-data-dirs`; Semgrep gets `--exclude` for each pruned directory, and
+  seed_report puts each one in `limitations` (a secret there was not checked). Pack
+  `require_content` tests and recon's ARM check read only the start of a file (64 KB and 2 KB),
+  so a large JSON file outside a data directory is no longer read whole. On the run's repository
+  (8,000+ JSON files) recon went from about 140 s to under 2 s and the secret tree scan from
+  several minutes to under 10 s.
+- **Templates.** A `templates` pack (HTML with `{{ }}` or `{% %}`, `.jinja`, `.j2`, `.njk`):
+  `|safe`, `{% autoescape false %}`, unquoted attributes, and values in an inline `<script>`
+  without `|tojson` (new `require_inside`/`suppress_tag` options: the opening tag decides, so
+  `<script src="{{ }}">` and JSON-LD blocks are left out). `PY-JINJA-AUTOESCAPE-OFF` covers
+  `Environment(autoescape=False)`. recon lists `templates`.
+- **Rate limits and unbounded responses.** recon records `rate_limiting` (library, routes with a
+  limit decorator, keys read from forwarding headers) and adds `availability` leads: a limiter key
+  from a client-set header, no limiter at all, and public routes returning collections.
+  `PY-RATELIMIT-KEY-HEADER` and `JS-RATELIMIT-KEY-HEADER` (CWE-348) flag the header read in a file
+  that sets up limits; `PY-UNBOUNDED-RESPONSE` (CWE-770) flags a comprehension or `.all()`
+  serialised whole with no limit nearby. SKILL.md's deep review has Availability and Templates
+  items and the rubric an Availability row.
+- **Smaller fixes.** `PY-DEBUG` also matches debug on by default (`os.environ.get("FLASK_ENV",
+  "development")`); Python `app.run`/`uvicorn.run` are `listener` entry points with their bind;
+  zizmor `artipacked` maps to a new `GHA-PERSISTED-CREDENTIALS` instead of the
+  `pull_request_target` pitfall; the validator matches `removed_entry_points` by id, so one of two
+  entry points on the same line can be removed.
+- **Fixture.** `examples/tide-tables/` (a synthetic Flask, Jinja and Flask-Limiter site) is checked
+  by `self_test.py`, which also adds 300 generated JSON files to a copy and checks no walker opens
+  one. The invoicer example's `run/` predates the new patterns (a rerun adds two
+  `PY-UNBOUNDED-RESPONSE` candidates on per-owner invoice lists); it still validates as committed.
+- **Not done:** `run_poc.py` still truncates bodies at 200 KB and has no size proof or chained
+  setup PoC; npm advisories are not grouped by direct dependency; unpinned requirement files do
+  not make advisories `partial`; credential references through `Path.home()` are not listed; the
+  renderer's `<file>` replacement in dismissal reasons and the `/<token>.txt` auth-flow lead are
+  unchanged.

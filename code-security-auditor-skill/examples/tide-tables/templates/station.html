@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ station.name }}</h1>
+<div class="notes">{{ station.notes|safe }}</div>
+{% autoescape false %}
+<p>Harbour office: {{ station.office }}</p>
+{% endautoescape %}
+<a href={{ station.website }}>Station website</a>
+<a href="{{ station.website }}">Station website (quoted)</a>
+<script>
+  const stationName = "{{ station.name }}";
+  const tides = {{ station.tides|tojson }};
+</script>
+<script src="{{ url_for('static', filename='chart.js') }}"></script>
+<script type="application/ld+json">
+  {"@context": "https://schema.org", "@type": "Place", "name": "{{ station.name }}"}
+</script>
+{% endblock %}

@@ -25,6 +25,7 @@ Exit code 0 when valid, 1 when invalid.
 """
 from __future__ import annotations
 import argparse, json, re, subprocess, sys, urllib.parse
+from collections import Counter
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -294,11 +295,20 @@ def recon_errors(d: dict, recon: dict) -> list[str]:
             continue
         errors.append(f"recon: {e['id']} ({e['kind']} {e['method']} at {e['handler']}) from recon.json is not in "
                       'recon.entry_points; add it, or list it in recon.removed_entry_points with the reason')
-    known = {e['id'] for e in recon.get('entry_points') or []}
+    known = {e['id']: e for e in recon.get('entry_points') or []}
+    # Two recon entry points can share a handler and kind (two client sources on one template line): removing one
+    # of them is legitimate. A removal contradicts the report only when the report keeps that id, or keeps as many
+    # entry points with that handler and kind as recon found (so none was really removed).
+    recon_n = Counter((e['handler'], e['kind']) for e in known.values())
+    report_n = Counter((e['handler'], e['kind']) for e in d['recon']['entry_points'])
+    report_ids = {(e['id'], e['handler'], e['kind']) for e in d['recon']['entry_points']}
     for r in removed:
-        if r['id'] not in known:
+        e = known.get(r['id'])
+        if e is None:
             errors.append(f"recon.removed_entry_points: {r['id']} is not an entry point in recon.json")
-        elif any(e['id'] == r['id'] and (e['handler'], e['kind']) in have for e in recon['entry_points']):
+            continue
+        key = (e['handler'], e['kind'])
+        if (r['id'], *key) in report_ids or report_n[key] >= recon_n[key]:
             errors.append(f"recon.removed_entry_points: {r['id']} is still in recon.entry_points")
     return errors
 

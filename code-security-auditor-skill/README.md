@@ -66,11 +66,14 @@ Priority = severity (CVSS v4.0 band) x confidence x exposure (public, authentica
 Scripts, in the order the skill runs them:
 
 ```bash
-python scripts/recon.py <repo> --out recon.json                   # attack surface: routes (per-handler auth for Next.js; FastAPI routers and dependencies), Azure Functions triggers, server actions, middleware, client-side sources, Node CLIs (bin, commander), MCP tools, listeners with their bind host, config inputs, GitHub Actions (on: block only) and composite actions, Azure DevOps triggers
+python scripts/recon.py <repo> --out recon.json                   # attack surface: routes (per-handler auth for Next.js; FastAPI routers and dependencies), Azure Functions triggers, server actions, middleware, client-side sources, Node CLIs (bin, commander), MCP tools, listeners with their bind host, config inputs, GitHub Actions (on: block only) and composite actions, Azure DevOps triggers,
+#   server-side templates, rate limiting (library, limited routes, keys read from X-Forwarded-For), Python app.run listeners
+#   every walker: data directories (200+ data files, no code) pruned unopened and listed in skipped_data_dirs;
+#   --exclude-dir DIR (repeatable) leaves out more, --scan-data-dirs reads them
 python scripts/run_scanners.py <repo> --out-dir <out> [--offline] [--osv-local-db <dir>]
 #   every applicable open-source scanner: status, time and results; lockfiles listed offline, each tool's covered lockfiles,
 #   advisories recorded as assessed, partial or not assessed; pnpm audit for pnpm workspaces; zizmor online audits with GH_TOKEN
-python scripts/scan_pitfalls.py <repo> --out patterns.json         # 129 CWE-mapped patterns in 16 packs (Express and Next.js sources, Node child processes, composite actions, Azure Bicep/ARM and Azure Pipelines)
+python scripts/scan_pitfalls.py <repo> --out patterns.json         # 143 CWE-mapped patterns in 17 packs (Jinja/Django templates, Express and Next.js sources, Node child processes, composite actions, Azure Bicep/ARM and Azure Pipelines)
 python scripts/scan_secrets.py <repo> --history --out secrets.json # secrets, never their values; git status and history per file
 #   large repositories: --history-budget 300 (seconds; coverage recorded as partial) --history-exclude '*.html'
 python scripts/merge_findings.py --root <repo> --patterns patterns.json --secrets secrets.json \
@@ -192,7 +195,7 @@ python scripts/render_report.py examples/security_audit.example.json --brief
 
 - `SKILL.md`: complete agent instructions
 - `RUBRIC.md`: confidence, CVSS v4.0 anchors, exposure, priority, triage, safe PoCs, secrets, catalogue
-- `data/pitfalls.json`: 134 weakness patterns by CWE, with OWASP 2025 categories, CVSS hints, fixes and tool rule mappings
+- `data/pitfalls.json`: 143 weakness patterns by CWE, with OWASP 2025 categories, CVSS hints, fixes and tool rule mappings
 - `schemas/security_audit.schema.json`: output contract
 - `scripts/recon.py`: attack-surface map
 - `scripts/nextjs_auth.py`: Next.js route handlers, server actions and middleware, with per-handler auth (used by recon)
@@ -200,18 +203,19 @@ python scripts/render_report.py examples/security_audit.example.json --brief
 - `scripts/run_scanners.py`: detects and runs the open-source scanners, recording each one's status and the lockfiles it covered
 - `scripts/go_entries.py`: Go entry points (router registrations, urfave/cli and cobra commands and flags, listeners with their bind, config files read from disk; used by recon)
 - `scripts/lang_census.py`: source files per language with vendored and embedded third-party trees left out (used by recon and the pattern scan's language guard; a shared file)
+- `scripts/data_dirs.py`: tells data directories (thousands of JSON or CSV records, no code) from code, so the walkers prune them unopened and record them
 - `scripts/test_paths.py`: tells test code from product code by path (a package named `e2e` with its own manifest is product code; used by recon and the scans)
 - `scripts/scan_pitfalls.py`: pattern scan
 - `scripts/scan_secrets.py`: secrets in the tree and git history, without values; whether each file is tracked, untracked or gitignored and was ever committed; credential files and paths to them listed separately
 - `scripts/merge_findings.py`: merges SARIF, Bandit, ESLint, dependency and built-in results into candidates; npm advisories get the installed version, range, dev flag and via chain from `package-lock.json` or `pnpm-lock.yaml`; gitleaks history hits keep their commits; govulncheck's JSON stream keeps each advisory's call-graph level (`reachability`: symbol, package or module)
 - `scripts/seed_report.py`: writes the report skeleton (entry points, tools, triage, dependencies) with TODO(seed) placeholders for the judgement
-- `scripts/self_test.py`: checks the built-in scanners against `examples/kite-notes/`, `examples/ferry-ops/`, `examples/quill-cli/` and `examples/beacon-cli/`
+- `scripts/self_test.py`: checks the built-in scanners against `examples/kite-notes/`, `examples/ferry-ops/`, `examples/quill-cli/`, `examples/beacon-cli/` and `examples/tide-tables/` (with a generated data directory)
 - `scripts/run_poc.py`: safety-linted PoC runner that records evidence: HTTP steps against a local or test target, or command steps in a copy outside the repository
 - `scripts/cvss4.py`: CVSS v4.0 calculator (port of the FIRST reference implementation, BSD-2-Clause)
 - `scripts/validate_security_audit.py`: structure and honesty checks
 - `scripts/render_report.py`: coloured terminal/Markdown report and SARIF export
 - `scripts/sarif.py`: SARIF reader and writer (shared with UI Crash Hunter)
-- `examples/`: sample app, scanner outputs, PoCs, evidence, regression tests, variant rules and report; `kite-notes/`, the Next.js fixture; `ferry-ops/`, the FastAPI, Azure Functions, Bicep/ARM and Azure Pipelines fixture; `quill-cli/`, the Node CLI, MCP server and GitHub Actions fixture; `beacon-cli/`, the Go CLI fixture
+- `examples/`: sample app, scanner outputs, PoCs, evidence, regression tests, variant rules and report; `kite-notes/`, the Next.js fixture; `ferry-ops/`, the FastAPI, Azure Functions, Bicep/ARM and Azure Pipelines fixture; `quill-cli/`, the Node CLI, MCP server and GitHub Actions fixture; `beacon-cli/`, the Go CLI fixture; `tide-tables/`, the Flask, Jinja and Flask-Limiter fixture
 
 ## Design principles
 

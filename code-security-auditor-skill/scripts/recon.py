@@ -41,6 +41,13 @@ its own (see test_paths.py): a pnpm workspace package named e2e is product code.
 examples/, samples/ or demos/ carry `example: true`, and frameworks seen only there, or used only as
 a client (a GraphQL client calling someone else's API), are labelled so in `frameworks`.
 
+Server-side templates (HTML with {{ }} or {% %}) are listed under `templates`; `rate_limiting` names
+the limiter library, the routes with a limit decorator and keys read from forwarding headers, and
+availability leads cover those keys, a web app with no limiter and public routes that return
+collections. Python servers started from code (app.run, uvicorn.run) are listeners with their bind.
+Data directories (200+ data files, no code; see data_dirs.py) and --exclude-dir paths are pruned
+unopened and listed under `skipped_data_dirs`.
+
 Everything here is a regex-level first pass. The agent confirms entry points and auth by reading
 the code; an 'unknown' auth value means the script could not tell, not that the route is public.
 """
@@ -52,6 +59,7 @@ from pathlib import Path
 
 sys.dont_write_bytecode = True  # importing a sibling must not write __pycache__ into the skill folder
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import data_dirs as data_dir_rule  # noqa: E402
 import go_entries  # noqa: E402
 import lang_census  # noqa: E402
 import nextjs_auth  # noqa: E402
@@ -167,7 +175,24 @@ CLIENT_SOURCES = [
     ('document.cookie', re.compile(r'\bdocument\.cookie\b(?!\s*=[^=])'), 'unknown', 'cookies read by script: sibling subdomains can set them'),
 ]
 CLIENT_EXT = {'.js', '.mjs', '.cjs', '.jsx', '.ts', '.tsx', '.vue', '.svelte'}
-HTML_EXT = {'.html', '.htm'}
+HTML_EXT = {'.html', '.htm', '.jinja', '.jinja2', '.j2', '.njk'}
+# Server-side templates (Jinja, Django, Nunjucks): HTML with {{ }} or {% %} is part of the web surface.
+TEMPLATE_SYNTAX = re.compile(r'\{\{|\{%')
+# Rate limiting: the library, the routes it decorates, and a key read from a header any client can set.
+RATE_LIMIT_LIBS = [('Flask-Limiter', r'\bflask_limiter\b'), ('slowapi', r'\bslowapi\b'),
+                   ('django-ratelimit', r'\bdjango_ratelimit\b'), ('express-rate-limit', r'["\']express-rate-limit["\']'),
+                   ('rate-limiter-flexible', r'["\']rate-limiter-flexible["\']'), ('@nestjs/throttler', r'@nestjs/throttler'),
+                   ('hono rate limiter', r'hono-rate-limiter')]
+LIMIT_CONTEXT = re.compile(r'(?i)\bLimiter\b|key_func|rate_?limit|ratelimit|keyGenerator|throttl')
+FORWARDED_READ = re.compile(r'(?i)(?:headers\.get|headers\[|environ\.get|environ\[|META\.get|META\[|\.header\(|\.get\()\s*\(?\s*'
+                            r'["\'](X-Forwarded-For|CF-Connecting-IP|X-Real-IP|True-Client-IP|X-Client-IP|HTTP_X_FORWARDED_FOR|'
+                            r'HTTP_CF_CONNECTING_IP|HTTP_X_REAL_IP|HTTP_TRUE_CLIENT_IP)["\']')
+LIMIT_DECORATOR = re.compile(r'@\w+\.(?:limit|shared_limit)\s*\(|@ratelimit\b|@Throttle\s*\(')
+# Python servers started from code: app.run (Flask's development server), uvicorn.run, waitress.serve, make_server
+PY_LISTENER = re.compile(r'\b(?:app|application|server|socketio)\.run\s*\(([^\n]*)|\buvicorn\.run\s*\(([^\n]*)|'
+                         r'\bwaitress\.serve\s*\(([^\n]*)|\bmake_server\s*\(([^\n]*)')
+# Routes that return collections: the result count and response size need a cap
+COLLECTION_ROUTE = re.compile(r'(?i)search|query|find|lookup|list|export|download|autocomplete|suggest|\ball\b|feed|dump|bulk')
 SCRIPT_BLOCK = re.compile(r'<script\b(?![^>]*\bsrc\s*=)[^>]*>(.*?)</script>', re.S | re.I)
 # CI triggers: who can start the workflow. pull_request_target, issue_comment and workflow_run run with
 # the base repository's secrets and token on input from anyone who can open a pull request or comment.
@@ -382,10 +407,11 @@ def composite_action_info(rel: str, text: str) -> dict | None:
 def is_action_file(rel: str) -> bool:
     return bool(re.search(r'(^|/)action\.ya?ml$', rel)) and ('/' not in rel or '.github/' in '/' + rel)
 
-def walk(root: Path, vendored: list[dict] | None = None, census: dict | None = None):
+def walk(root: Path, vendored: list[dict] | None = None, census: dict | None = None, data=None):
     """Files under root, pruning dependency, build and vendored trees (each vendored one is appended to `vendored`):
     the trees lang_census excludes (bundles, header trees, embedded third-party packages, submodules) and
-    test_paths.vendored_dir names."""
+    test_paths.vendored_dir names; and data directories and --exclude-dir paths (`data`, a data_dirs.DataDirs, which
+    records them)."""
     stack = [root]
     while stack:
         d = stack.pop()
@@ -401,7 +427,8 @@ def walk(root: Path, vendored: list[dict] | None = None, census: dict | None = N
                     if vendored is not None:
                         vendored.append({'dir': p.relative_to(root).as_posix(), 'reason': why})
                     continue
-                if p.name not in SKIP_DIRS and (not p.name.startswith('.') or p.name == '.github' or p.name in ADO_DIRS):
+                if p.name not in SKIP_DIRS and (not p.name.startswith('.') or p.name == '.github' or p.name in ADO_DIRS) \
+                        and not (data is not None and data.why(p)):
                     stack.append(p)
             elif p.is_file():
                 yield p
@@ -413,6 +440,57 @@ def read(p: Path) -> str:
         return p.read_text(encoding='utf-8', errors='replace')
     except OSError:
         return ''
+
+def head(p: Path, n: int = 4000) -> str:
+    """The start of a file (an ARM template declares its $schema at the top), without reading the rest."""
+    try:
+        with p.open('rb') as fh:
+            return fh.read(n).decode('utf-8', errors='replace')
+    except OSError:
+        return ''
+
+def python_listeners(rel: str, text: str) -> list[dict]:
+    """Servers a Python module starts itself (app.run, uvicorn.run, waitress.serve, make_server), with the bind host:
+    no host argument means the server's default (loopback for Flask's app.run and uvicorn)."""
+    out = []
+    for i, line in enumerate(text.splitlines(), 1):
+        m = PY_LISTENER.search(line)
+        if not m or line.lstrip().startswith('#'):
+            continue
+        args = next(g for g in m.groups() if g is not None)
+        if ANY_HOST.search(args):
+            bind, why = 'all', 'binds every interface (host 0.0.0.0)'
+        elif LOOPBACK_HOST.search(args):
+            bind, why = 'loopback', 'binds loopback only'
+        elif re.search(r'\bhost\s*=', args) or ('make_server' in line or 'waitress' in line):
+            bind, why = 'unknown', 'the bind host comes from a variable or the server default; read it'
+        else:
+            bind, why = 'loopback', "no host argument: the server's default (loopback)"
+        debug = ' with the debugger enabled (debug=...)' if re.search(r'\bdebug\s*=', args) else ''
+        out.append({'kind': 'listener', 'framework': 'python', 'method': 'LISTEN', 'path': f'{rel} ({bind})',
+                    'handler': f'{rel}:{i}', 'function': None, 'auth': 'unknown', 'auth_evidence': why + debug, 'bind': bind})
+    return out
+
+def limited_routes(entries: list[dict], py_files: dict[str, str]) -> list[str]:
+    """Python route handlers with a rate-limit decorator (@limiter.limit, @ratelimit) in their decorator block."""
+    out = []
+    for e in entries:
+        file, _, line = e['handler'].rpartition(':')
+        if e['kind'] not in ('http_route', 'webhook') or not file.endswith('.py') or not line.isdigit():
+            continue
+        lines = (py_files.get(file) or '').splitlines()
+        i = int(line) - 1
+        if not 0 <= i < len(lines):
+            continue
+        j = i
+        while j > 0 and lines[j - 1].lstrip().startswith('@'):
+            j -= 1
+        k = i
+        while k < len(lines) and not re.match(r'\s*(async\s+)?def\s', lines[k]):
+            k += 1
+        if any(LIMIT_DECORATOR.search(l) for l in lines[j:k]):
+            out.append(e['handler'])
+    return sorted(set(out))
 
 def guess_auth(lines: list[str], i: int, framework: str, file_text: str) -> tuple[str, str | None]:
     """Look at decorators/middleware on the route declaration itself."""
@@ -623,6 +701,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('repo', type=Path)
     ap.add_argument('--out', type=Path)
+    data_dir_rule.add_arguments(ap)
     args = ap.parse_args()
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(errors='replace')  # tool output can hold characters the console can't encode
@@ -648,7 +727,11 @@ def main() -> int:
     ado_files: dict[str, str] = {}
     vendored: list[dict] = []
     cli_flags: list[dict] = []
-    for p in walk(root, vendored, lang_census.census(root)):
+    templates: list[str] = []
+    limiter_libs: dict[str, list[str]] = {}
+    forwarded_keys: list[dict] = []
+    data = data_dir_rule.DataDirs(root, args.exclude_dir, auto=not args.scan_data_dirs)
+    for p in walk(root, vendored, lang_census.census(root), data):
         rel = p.relative_to(root).as_posix()
         if time.monotonic() - last_progress >= 30:
             last_progress = time.monotonic()
@@ -663,7 +746,7 @@ def main() -> int:
         if p.name in ('Dockerfile', 'Containerfile') or p.name.startswith('Dockerfile.') or \
                 re.match(r'(docker-)?compose([.-][\w-]+)?\.ya?ml$', p.name) or p.suffix in ('.tf', '.bicep', '.bicepparam') or \
                 re.search(r'(^|/)(k8s|kubernetes|helm|charts|deploy)/.*\.ya?ml$', rel) or \
-                (p.suffix == '.json' and re.search(r'deploymentTemplate\.json|deploymentParameters\.json', read(p)[:2000])):
+                (p.suffix == '.json' and re.search(r'deploymentTemplate\.json|deploymentParameters\.json', head(p, 2000))):
             iac.append(rel)
         if '.github/workflows/' in '/' + rel and p.suffix in ('.yml', '.yaml'):
             wtext = read(p)
@@ -681,7 +764,10 @@ def main() -> int:
                 ado_files[rel] = ytext
             continue
         if p.suffix.lower() in HTML_EXT and not tests.is_test(rel):
-            for e in html_client_sources(rel, read(p)):
+            htext = read(p)
+            if TEMPLATE_SYNTAX.search(htext):
+                templates.append(rel)
+            for e in html_client_sources(rel, htext):
                 key = (e['method'], e['snippet'])
                 if key in html_seen:  # the same inline script repeated across generated pages
                     html_seen[key]['also_in'] = html_seen[key].get('also_in', 0) + 1
@@ -729,8 +815,17 @@ def main() -> int:
             cli_flags += flags_go
         else:
             entries += routes_in(rel, text, python_parsed=p.suffix == '.py')
+        for name, rx in RATE_LIMIT_LIBS:
+            if re.search(rx, text):
+                limiter_libs.setdefault(name, []).append(rel)
+        if LIMIT_CONTEXT.search(text):  # a client address read from a forwarding header, in a file that sets up limits
+            for i, line in enumerate(text.splitlines(), 1):
+                m = FORWARDED_READ.search(line)
+                if m:
+                    forwarded_keys.append({'at': f'{rel}:{i}', 'header': m.group(1)})
         if p.suffix == '.py':
             py_files[rel] = text
+            entries += python_listeners(rel, text)
         if p.suffix.lower() in CLIENT_EXT:
             js_files[rel] = text
         if p.suffix.lower() in CLIENT_EXT and not p.name.endswith('.min.js') and not CONFIG_FILE.search(rel) \
@@ -855,6 +950,28 @@ def main() -> int:
                                  "home directory), whether it is executed (a .js/.ts config) and which fields reach commands, "
                                  "paths or URLs"})
     leads += node_leads
+    # Availability: rate limiting and routes that return collections (an uncapped search is a denial of service)
+    limited = limited_routes(entries, py_files)
+    for k in forwarded_keys:
+        leads.append({'area': 'availability', 'entry_point': None,
+                      'why': f"{k['at']} reads the client address from {k['header']} in a file that sets up rate limits: any "
+                             "client can send that header and get a fresh limit (or pass an allow-list); check the app sits "
+                             "behind a known number of trusted proxies (ProxyFix x_for=N, 'trust proxy' set to a count) or "
+                             "uses the platform's own header"})
+    web_routes = [e for e in entries if e['kind'] in ('http_route', 'graphql') and not e.get('example')]
+    if web_routes and not limiter_libs:
+        leads.append({'area': 'availability', 'entry_point': None,
+                      'why': f"no rate-limiting library found for {len(web_routes)} route(s): check for a limit at the proxy, "
+                             "CDN or platform, and on the expensive routes (search, export, sign-in)"})
+    for e in web_routes:
+        if e['method'] in ('GET', 'POST', 'ANY') and e['auth'] in ('public', 'unknown') and \
+                COLLECTION_ROUTE.search(re.sub(r'<[^>]*>|\{[^}]*\}|:\w+', '', e['path'] or '')):
+            default = any(re.search(r'default_limits|application_limits', py_files.get(f, '')) for fs in limiter_libs.values() for f in fs)
+            rl = '' if e['handler'] in limited else \
+                '; no route-level limit on it (only the app-wide default applies)' if default else '; no rate-limit decorator on it'
+            leads.append({'area': 'availability', 'entry_point': e['id'],
+                          'why': f"{e['method']} {e['path']} returns a collection: check the result count and response size are "
+                                 f"capped (a page size with a maximum, a minimum query length) and what one request costs{rl}"})
     cli_flags.sort(key=lambda f: (f['file'], f['line']))
     env_flags = [f for f in cli_flags if f['env']]
     if env_flags:
@@ -927,6 +1044,12 @@ def main() -> int:
         'cli_flags': cli_flags,
         # third-party and bundled trees left out of the walk and the language counts (not reviewed)
         'vendored': sorted(vendored, key=lambda v: v['dir']),
+        # data directories (hundreds of data files, no code) and --exclude-dir paths: not opened (see data_dirs.py)
+        'skipped_data_dirs': data.report(),
+        # server-side templates (HTML with {{ }} or {% %}): part of the web surface, pattern-scanned by the templates pack
+        'templates': sorted(templates),
+        'rate_limiting': {'libraries': sorted(limiter_libs), 'files': sorted({f for fs in limiter_libs.values() for f in fs}),
+                          'limited_routes': limited, 'forwarded_header_keys': [k['at'] for k in forwarded_keys]},
         'review_leads': leads,
         'note': "Regex-level first pass. Confirm entry points and auth by reading the code; 'unknown' auth is not 'public'.",
     }

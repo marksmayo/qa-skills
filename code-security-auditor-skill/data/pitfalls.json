@@ -1,5 +1,5 @@
 {
- "version": "1.4.0",
+ "version": "1.5.0",
  "about": "Security pitfall catalogue for scan_pitfalls.py, organised by CWE. Each entry is a pattern-level lead: a match is a candidate until a source-to-sink path is traced. cvss_hint is a typical CVSS v4.0 base vector for the weakness, to adjust per finding. tools maps rules from other scanners (tool:rule) to the entry. OWASP categories are the 2025 Top 10.",
  "owasp_2025": {
   "A01": "A01:2025 Broken Access Control",
@@ -18,6 +18,18 @@
    "extensions": [
     ".py"
    ]
+  },
+  "templates": {
+   "extensions": [
+    ".html",
+    ".htm",
+    ".jinja",
+    ".jinja2",
+    ".j2",
+    ".njk",
+    ".twig"
+   ],
+   "require_content": "\\{\\{|\\{%"
   },
   "javascript": {
    "extensions": [
@@ -328,8 +340,8 @@
    "cwe": "CWE-489",
    "owasp": "A02:2025 Security Misconfiguration",
    "category": "configuration",
-   "title": "Debug mode enabled",
-   "regex": "\\.run\\s*\\(.*debug\\s*=\\s*True|^\\s*DEBUG\\s*=\\s*True\\b|FLASK_DEBUG\\s*=\\s*[\"\\']?1",
+   "title": "Debug mode enabled (or on by default unless an environment variable turns it off)",
+   "regex": "\\.run\\s*\\(.*debug\\s*=\\s*True|^\\s*DEBUG\\s*=\\s*True\\b|FLASK_DEBUG\\s*=\\s*[\"\\']?1|(?:os\\.environ\\.get|os\\.getenv)\\(\\s*[\"\\'](?:FLASK_ENV|FLASK_DEBUG|DEBUG|APP_ENV|ENV|ENVIRONMENT)[\"\\']\\s*,\\s*[\"\\'](?:development|dev|1|true|True|on|yes)[\"\\']",
    "fix": "Read debug from the environment and default to off; never ship the Werkzeug debugger.",
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
    "tools": [
@@ -495,6 +507,106 @@
    "fix": "Read in bounded chunks and stop past a limit (or set the server/proxy body limit), and check the size before parsing; parsers such as openpyxl also expand compressed content, so cap that too.",
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:N/VI:N/VA:H/SC:N/SI:N/SA:N",
    "tools": []
+  },
+  {
+   "id": "PY-JINJA-AUTOESCAPE-OFF",
+   "pack": "python",
+   "cwe": "CWE-79",
+   "owasp": "A05:2025 Injection",
+   "category": "web",
+   "title": "Jinja environment with auto-escaping turned off",
+   "regex": "\\bautoescape\\s*=\\s*False\\b",
+   "fix": "Use autoescape=True (or select_autoescape) and mark only sanitised fragments safe.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
+   "tools": [
+    "bandit:B701",
+    "semgrep:direct-use-of-jinja2"
+   ]
+  },
+  {
+   "id": "PY-RATELIMIT-KEY-HEADER",
+   "pack": "python",
+   "cwe": "CWE-348",
+   "owasp": "A06:2025 Insecure Design",
+   "category": "availability",
+   "title": "Client address for a rate limit, allow-list or lockout read from a forwarding header any client can set",
+   "regex": "(?i)request\\.(headers\\.get|headers\\[|environ\\.get|environ\\[|META\\.get|META\\[)\\s*\\(?\\s*[\"\\'](X-Forwarded-For|CF-Connecting-IP|X-Real-IP|True-Client-IP|X-Client-IP|Forwarded|HTTP_X_FORWARDED_FOR|HTTP_CF_CONNECTING_IP|HTTP_X_REAL_IP|HTTP_TRUE_CLIENT_IP)[\"\\']",
+   "require_file": "(?i)\\bLimiter\\b|key_func|rate_?limit|ratelimit|throttl|allow_?list|whitelist|ip_allow|lockout|failed_attempts",
+   "fix": "Take the client address from the connection, or from a proxy-set header only behind a known number of trusted proxies (werkzeug ProxyFix with x_for=N, the platform's documented header); never key a limit on a header the client controls.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:N/VA:L/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "PY-UNBOUNDED-RESPONSE",
+   "pack": "python",
+   "cwe": "CWE-770",
+   "owasp": "A06:2025 Insecure Design",
+   "category": "availability",
+   "title": "Every matching record serialised into one response, with no page size or result cap",
+   "regex": "\\b(jsonify|JSONResponse|json\\.dumps|Response)\\s*\\(\\s*(\\[[^\\]]*\\bfor\\b[^\\]]*\\bin\\b|[\\w.]+\\.all\\(\\)\\s*\\))",
+   "suppress_near": "(?i)\\blimit\\b|per_page|page_size|paginat|max_results|\\[\\s*:\\s*\\w+\\s*\\]|\\[[^\\]\\n]*:[^\\]\\n]*\\]|islice|\\.limit\\(",
+   "window": 6,
+   "fix": "Cap the result count (a page size with a maximum, a minimum query length), stream or paginate large results, and rate-limit the route.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:N/VA:H/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "TPL-SAFE-FILTER",
+   "pack": "templates",
+   "cwe": "CWE-79",
+   "owasp": "A05:2025 Injection",
+   "category": "web",
+   "title": "Template value marked safe (|safe), bypassing auto-escaping",
+   "regex": "\\{\\{[^}]*\\|\\s*safe\\b",
+   "fix": "Drop |safe, or sanitise the value with an allow-list sanitiser (nh3/bleach) before marking it safe; check every filter before it escapes.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
+   "tools": [
+    "semgrep:template-unescaped-with-safe"
+   ]
+  },
+  {
+   "id": "TPL-AUTOESCAPE-OFF",
+   "pack": "templates",
+   "cwe": "CWE-79",
+   "owasp": "A05:2025 Injection",
+   "category": "web",
+   "title": "Auto-escaping turned off in a template block",
+   "regex": "\\{%-?\\s*autoescape\\s+(false|off)\\b",
+   "fix": "Keep auto-escaping on; mark only sanitised fragments safe.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
+   "tools": [
+    "semgrep:template-autoescape-off"
+   ]
+  },
+  {
+   "id": "TPL-SCRIPT-INTERP",
+   "pack": "templates",
+   "cwe": "CWE-79",
+   "owasp": "A05:2025 Injection",
+   "category": "web",
+   "title": "Template value pasted into an inline <script> without |tojson (HTML escaping does not make it safe in JavaScript)",
+   "regex": "\\{\\{(?![^}]*\\|\\s*(tojson|escapejs|json_script|json_encode)\\b)[^}]*\\}\\}",
+   "require_inside": "script",
+   "suppress_tag": "type=[\"']?application/(ld\\+)?json",
+   "fix": "Pass values to scripts with |tojson (Jinja) or json_script (Django), or a data- attribute read with dataset.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
+   "tools": [
+    "semgrep:var-in-script-tag"
+   ]
+  },
+  {
+   "id": "TPL-UNQUOTED-ATTR",
+   "pack": "templates",
+   "cwe": "CWE-79",
+   "owasp": "A05:2025 Injection",
+   "category": "web",
+   "title": "Template value in an unquoted HTML attribute (a space starts a new attribute even when escaped)",
+   "regex": "<[a-zA-Z][^>]*\\s[\\w:-]+=\\{\\{",
+   "fix": "Quote every attribute that holds a template value.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:P/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N",
+   "tools": [
+    "semgrep:unquoted-attribute-var"
+   ]
   },
   {
    "id": "JS-SQL-TEMPLATE",
@@ -907,6 +1019,19 @@
    "window": 6,
    "fix": "Remove the bypass from deployed code, or accept it only when an explicit local-development setting is on and fail closed everywhere else.",
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
+   "tools": []
+  },
+  {
+   "id": "JS-RATELIMIT-KEY-HEADER",
+   "pack": "javascript",
+   "cwe": "CWE-348",
+   "owasp": "A06:2025 Insecure Design",
+   "category": "availability",
+   "title": "Client address for a rate limit, allow-list or lockout read from a forwarding header any client can set",
+   "regex": "(?i)\\b(req|request|ctx|c)\\.(headers|header|get)\\s*(\\[|\\.get\\(|\\()\\s*[\"\\'](x-forwarded-for|cf-connecting-ip|x-real-ip|true-client-ip|x-client-ip)[\"\\']",
+   "require_file": "(?i)rateLimit|rate-limit|ratelimit|keyGenerator|throttl|slowDown|allowList|whitelist|lockout",
+   "fix": "Use the connection address, or configure the framework's trusted proxy count (Express 'trust proxy' to a number) and read req.ip.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:N/VA:L/SC:N/SI:N/SA:N",
    "tools": []
   },
   {
@@ -1769,7 +1894,23 @@
    "cvss_hint": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N",
    "tools": [
     "semgrep:pull-request-target-code-checkout",
-    "zizmor:dangerous-triggers",
+    "zizmor:dangerous-triggers"
+   ]
+  },
+  {
+   "id": "GHA-PERSISTED-CREDENTIALS",
+   "pack": "github_actions",
+   "cwe": "CWE-522",
+   "owasp": "A03:2025 Software Supply Chain Failures",
+   "category": "supply_chain_ci",
+   "title": "actions/checkout leaves the job token in .git/config (persist-credentials not false)",
+   "regex": "uses:\\s*actions/checkout@",
+   "require_file": "actions/upload-artifact",
+   "suppress_near": "persist-credentials:\\s*false",
+   "window": 6,
+   "fix": "Set persist-credentials: false on actions/checkout unless a later step pushes, and never upload the workspace as an artifact.",
+   "cvss_hint": "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N",
+   "tools": [
     "zizmor:artipacked"
    ]
   },

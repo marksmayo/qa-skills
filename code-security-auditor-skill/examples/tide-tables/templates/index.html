@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Tide stations</h1>
+<ul>
+  {% for s in stations %}
+  <li><a href="{{ url_for('station', code=s.code) }}">{{ s.name }}</a></li>
+  {% endfor %}
+</ul>
+<script>
+  const stationCount = {{ stations|length|tojson }};
+  const firstStation = {{ stations[0].name|tojson }};
+</script>
+{% endblock %}

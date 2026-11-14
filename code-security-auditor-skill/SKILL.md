@@ -1,7 +1,7 @@
 ---
 name: code-security-auditor
 description: Audit a codebase for security weaknesses with open-source scanners (Semgrep OSS, Bandit, gosec, Brakeman, gitleaks, osv-scanner, pip-audit, npm audit, zizmor, Trivy, Checkov and more) plus a deep manual review, trace each finding from attacker-controlled input to the dangerous operation, rate it with CVSS v4.0, and write safe reproduction steps, a fix and a regression test. Optionally confirms findings with canary-only proofs of concept against localhost or a test environment the user names. Every candidate is triaged, every tool's status is recorded, and the report never calls the code secure.
-version: 1.4.0
+version: 1.5.0
 ---
 
 # Code Security Auditor
@@ -87,7 +87,28 @@ boundaries and the auth model (authentication, sessions, authorisation). The map
 deep review goes; record it in `recon`. If you drop an entry point recon found (a duplicate, a
 string that only looks like a listener), list it in `recon.removed_entry_points` with the reason:
 the validator's `--recon` checks every recon entry point is either in the report or removed with a
-reason.
+reason. Removals are matched by id, so one of two entry points recon found on the same line (two
+client sources in one template line) can be removed while the other is kept.
+
+**Data directories.** A web app often ships a data tree next to its code (a directory of thousands
+of JSON records, CSV exports). recon, the pattern scan, the secret scan and `run_scanners.py`'s
+inventory prune a directory whose own files number 200 or more, are at least 95% data files
+(`.json`, `.csv`, `.xml`, `.txt`, ...) and include no source code, without opening any of them
+(`scripts/data_dirs.py`), and record it under `skipped_data_dirs` with the file count and reason;
+Semgrep is passed `--exclude` for it. Each script takes `--exclude-dir PATH` (repeatable) to leave
+out more, and `--scan-data-dirs` to read them after all. A pruned directory was not checked for
+secrets or code: `seed_report.py` adds it to `limitations`; keep it there, or rerun the secret scan
+with `--scan-data-dirs` when the data could hold credentials.
+
+**Server-rendered templates and rate limits.** recon lists server-side templates (`templates`:
+HTML with `{{ }}` or `{% %}`, `.jinja`, `.j2`, `.njk`), part of the web surface, which the pattern
+scan's `templates` pack reads. It records `rate_limiting`: the library (Flask-Limiter, slowapi,
+django-ratelimit, express-rate-limit, ...), the routes with a limit decorator, and where a limiter's
+key reads the client address from `X-Forwarded-For`, `CF-Connecting-IP` or a similar header any
+client can set; each such key, a web app with no limiter at all, and every public route that
+returns a collection (search, list, export, autocomplete) are `availability` review leads. Python
+servers started from code (`app.run`, `uvicorn.run`) are `listener` entry points with their bind
+host.
 
 A directory named `e2e`, `test(s)`, `spec`, `playwright` or `cypress` is test code only when it is
 not a package of its own: a workspace package `packages/e2e/` whose `package.json` has `bin`,
@@ -252,6 +273,7 @@ Then the built-in scans, which work with no tools installed:
 
 ```bash
 python scripts/scan_pitfalls.py <repo> --out <out>/patterns.json     # data/pitfalls.json, organised by CWE
+                                                                     # [--exclude-dir DIR] [--scan-data-dirs]
 python scripts/scan_secrets.py <repo> --history --out <out>/secrets.json
 python scripts/merge_findings.py --root <repo> --patterns <out>/patterns.json --secrets <out>/secrets.json \
     --sarif <out>/semgrep.sarif <out>/zizmor.sarif <out>/gitleaks.sarif ... --bandit <out>/bandit.json \
@@ -344,6 +366,17 @@ Go through the high-risk areas from recon, entry point by entry point:
   negative or huge quantities, client-trusted prices.
 - **Server-side:** SSRF (and what the response reveals), file paths, uploads and parsers,
   deserialisation.
+- **Availability:** unbounded result sets and response amplification (a search or export that
+  returns every match: is there a page size with a maximum, a minimum query length, a cap on the
+  response size, and what does one request cost in memory and time?), rate limits that are
+  missing on expensive routes or keyed on a header the client sets (`X-Forwarded-For`,
+  `CF-Connecting-IP` with no trusted-proxy count), and work done per request on large data. A
+  finding here has `area: availability` and a CWE such as CWE-770 (allocation without limits) or
+  CWE-348 (less trusted source); a proof of concept may show the size of one response or that a
+  new header value resets the limit, never a load test.
+- **Templates:** `|safe`, `{% autoescape false %}`, `Markup()`, values pasted into inline
+  `<script>` blocks without `|tojson` (inside an unquoted expression even escaped values inject),
+  unquoted attributes, and custom filters marked safe (check that the filter escapes first).
 - **CI and supply chain:** `pull_request_target` and `workflow_run` with untrusted checkouts,
   `${{ github.event.* }}` in `run:`, unpinned third-party actions with tokens, reachable vulnerable
   dependencies.

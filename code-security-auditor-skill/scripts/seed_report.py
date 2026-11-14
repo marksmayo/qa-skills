@@ -221,6 +221,9 @@ def seed(recon: dict, cands: dict, scanners: dict | None, repo: Path | None) -> 
     if adv['status'] != 'assessed' and TODO not in (adv.get('reason') or ''):
         d['limitations'].append(f"Dependency advisories were {adv['status'].replace('_', ' ')}: {adv['reason']}. "
                                 'This is not the same as no vulnerable dependencies.')
+    for s in recon.get('skipped_data_dirs') or []:  # data trees pruned by recon, the pattern scan and the secret scan
+        d['limitations'].append(f"{s['dir']}/ was not read by recon, the pattern scan or the secret scan ({s['reason']}); "
+                                'a secret or code placed there was not checked.')
     if recon.get('middleware'):
         d['recon']['middleware'] = [f"{m['file']}:{m['line']} matcher {', '.join(m['matcher']) or '(all paths)'}; "
                                     f"protects {', '.join(m['protected_prefixes']) or 'every matched path'}; "

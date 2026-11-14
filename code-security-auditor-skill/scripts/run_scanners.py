@@ -52,6 +52,7 @@ from pathlib import Path
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import data_dirs as data_dir_rule  # noqa: E402
 import test_paths  # noqa: E402
 
 SKIP_DIRS ={'node_modules', '.git', 'dist', 'build', 'out', '.next', '.nuxt', '.turbo', '.cache', 'coverage', '.venv', 'venv',
@@ -62,13 +63,15 @@ EXT = {'python': {'.py'}, 'javascript': {'.js', '.jsx', '.ts', '.tsx', '.mjs', '
        'go': {'.go'}, 'ruby': {'.rb'}, 'php': {'.php'}, 'java': {'.java', '.kt', '.kts'}, 'csharp': {'.cs'},
        'c': {'.c', '.h', '.cc', '.cpp'}, 'swift': {'.swift'}, 'terraform': {'.tf'}}
 
-def inventory(root: Path) -> dict:
+def inventory(root: Path, exclude_dirs: list[str] | None = None, data_dirs: bool = True) -> dict:
     langs: dict[str, int] = {}
     names: list[str] = []
+    data = data_dir_rule.DataDirs(root, exclude_dirs, auto=data_dirs)
     for dirpath, dirnames, filenames in os.walk(root):
-        # vendored and bundled trees (vendor/, Pods/, PrivateHeaders/, *.app, *.framework...) are not the repository's code
+        # vendored and bundled trees (vendor/, Pods/, PrivateHeaders/, *.app, *.framework...) are not the repository's code;
+        # data directories (thousands of JSON records) and --exclude-dir paths are not opened (see data_dirs.py)
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and (not d.startswith('.') or d in ALLOWED_DOT_DIRS)
-                       and not test_paths.vendored_dir(d)]
+                       and not test_paths.vendored_dir(d) and not data.why(Path(dirpath) / d)]
         rel = Path(dirpath).relative_to(root).as_posix()
         for f in filenames:
             names.append(f'{rel}/{f}' if rel != '.' else f)
@@ -102,6 +105,7 @@ def inventory(root: Path) -> dict:
         'psalm': (root / 'vendor' / 'bin' / 'psalm').exists(),
         'is_git': (root / '.git').exists(),
         'mobile_package': [n for n in names if n.endswith(('.apk', '.aab', '.ipa'))],
+        'skipped_data_dirs': data.report(),
     }
 
 def _head(p: Path, n: int = 4000) -> str:
@@ -112,7 +116,8 @@ def _head(p: Path, n: int = 4000) -> str:
         return ''
 
 def arm_template(p: Path) -> bool:
-    return 'deploymentTemplate.json' in _head(p) or 'deploymentParameters.json' in _head(p)
+    head = _head(p)
+    return 'deploymentTemplate.json' in head or 'deploymentParameters.json' in head
 
 def ado_pipeline(p: Path) -> bool:
     text = _head(p, 20000)
@@ -245,8 +250,10 @@ def plan(root: Path, out: Path, inv: dict, semgrep_configs: list[str], osv_local
         tools.append({'name': name, 'area': area, 'exe': exe, 'applies': applies, 'runs': runs, 'network': network,
                       'not_run': not_run, 'note': note, 'covers': covers, 'version_args': version_args, 'version_rx': version_rx})
     cfg = [a for c in semgrep_configs for a in ('--config', c)]
+    skip_data = [f"--exclude={s['dir']}" for s in inv.get('skipped_data_dirs') or []]  # data trees and --exclude-dir paths
     add('semgrep', 'sast', 'semgrep', True if src else 'no source files',
-        [{'cmd': ['semgrep', 'scan', *cfg, '--metrics=off', '--disable-version-check', '--sarif', '--output', str(out / 'semgrep.sarif'), '--quiet', str(root)],
+        [{'cmd': ['semgrep', 'scan', *cfg, *skip_data, '--metrics=off', '--disable-version-check', '--sarif', '--output',
+                  str(out / 'semgrep.sarif'), '--quiet', str(root)],
           'output': 'semgrep.sarif'}], network=any(c.startswith(('p/', 'r/')) for c in semgrep_configs))
     add('bandit', 'sast', 'bandit', True if L.get('python') else 'no Python files',
         [{'cmd': ['bandit', '-r', str(root), '-f', 'json', '-o', str(out / 'bandit.json'), '-q',
@@ -459,6 +466,7 @@ def main() -> int:
     ap.add_argument('--path-prepend', nargs='*', default=[], help='directories to search for tools first (e.g. a venv)')
     ap.add_argument('--osv-local-db', type=Path, help='an osv-scanner offline database directory (downloaded earlier with '
                     '--download-offline-databases): osv-scanner then runs without the network, also under --offline')
+    data_dir_rule.add_arguments(ap)
     args = ap.parse_args()
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(errors='replace')  # tool output can hold characters the console can't encode
@@ -472,7 +480,7 @@ def main() -> int:
         return 2
     if args.path_prepend:
         os.environ['PATH'] = os.pathsep.join([str(Path(p).resolve()) for p in args.path_prepend] + [os.environ.get('PATH', '')])
-    inv = inventory(root)
+    inv = inventory(root, args.exclude_dir, not args.scan_data_dirs)
     tools = plan(root, out, inv, args.semgrep_config, args.osv_local_db.resolve() if args.osv_local_db else None,
                  online_ci=not args.offline)
     only = set(args.only.split(',')) if args.only else None
@@ -509,6 +517,8 @@ def main() -> int:
     deps = dependency_inventory(root, inv)
     manifest = {'generated_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), 'repository': str(root),
                 'out_dir': str(out), 'languages': inv['langs'], 'tools': records,
+                # left out of the inventory (the scanners themselves walk the whole repository)
+                'skipped_data_dirs': inv['skipped_data_dirs'],
                 'dependency_inventory': {'lockfiles': deps['lockfiles'], 'packages': len(deps['packages']),
                                          'output': str(out / 'dependencies.json')},
                 'dependency_advisories': advisory_status(records, deps)}

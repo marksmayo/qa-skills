@@ -1,0 +1,28 @@
+{
+  "about": "What scripts/self_test.py expects the built-in scanners to report on this Flask and Jinja fixture (all packs). Pattern hits must match exactly; entry points must be present with these values. The self-test also copies the fixture, adds a data directory of generated JSON files and checks every walker prunes it without opening one of them.",
+  "patterns": [
+    ["app.py", 15, "PY-RATELIMIT-KEY-HEADER"],
+    ["app.py", 49, "PY-UNBOUNDED-RESPONSE"],
+    ["app.py", 54, "PY-DEBUG"],
+    ["mailer.py", 5, "PY-JINJA-AUTOESCAPE-OFF"],
+    ["templates/station.html", 4, "TPL-SAFE-FILTER"],
+    ["templates/station.html", 5, "TPL-AUTOESCAPE-OFF"],
+    ["templates/station.html", 8, "TPL-UNQUOTED-ATTR"],
+    ["templates/station.html", 11, "TPL-SCRIPT-INTERP"]
+  ],
+  "entry_points": [
+    {"kind": "http_route", "framework": "flask", "method": "GET", "path": "/", "handler": "app.py:26", "auth": "public"},
+    {"kind": "http_route", "framework": "flask", "method": "GET", "path": "/station/<code>", "handler": "app.py:31", "auth": "public"},
+    {"kind": "http_route", "framework": "flask", "method": "GET", "path": "/api/stations", "handler": "app.py:37", "auth": "public"},
+    {"kind": "http_route", "framework": "flask", "method": "GET", "path": "/api/search", "handler": "app.py:45", "auth": "public"},
+    {"kind": "listener", "framework": "python", "method": "LISTEN", "handler": "app.py:55", "bind": "all"}
+  ],
+  "rate_limiting": {
+    "libraries": ["Flask-Limiter"],
+    "forwarded_header_keys": ["app.py:15"],
+    "limited_routes": ["app.py:37"]
+  },
+  "lead_mentions": ["X-Forwarded-For", "/api/search", "result count and response size"],
+  "templates": ["templates/base.html", "templates/index.html", "templates/station.html"],
+  "data_dir": {"name": "stations", "generated_files": 300}
+}

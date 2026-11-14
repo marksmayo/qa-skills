@@ -21,6 +21,10 @@ A pitfall can narrow its matches with:
   constant_interpolation
                   skip a Python f-string whose every {name} is a module constant (UPPER_CASE, or a
                   literal assigned at module level) or a loop variable over one
+  require_inside  keep only when the match is in the body of an inline element of this tag (script: a
+                  template value pasted into an inline <script>, not <script src="{{ ... }}">)
+  suppress_tag    with require_inside: skip when the opening tag matches this (a JSON-LD block, which no
+                  browser runs, and which auto-escaping already keeps closed)
 A pack can also require_content / exclude_content: a file joins the pack only when its text
 matches (or doesn't match) the regex, so .json and .yml files are claimed by ARM templates and
 Azure DevOps pipelines only when they are ones.
@@ -33,7 +37,9 @@ test_paths.vendored_dir) are skipped, and vendored files never count toward the 
 language. When the main language has no pack, a loud warning says so (and names the languages that
 were scanned, which are a result for those languages only). A directory named e2e,
 test(s), spec, playwright or cypress is skipped only when it is not a package of its own (see
-test_paths.py): a workspace package named e2e is product code and is scanned.
+test_paths.py): a workspace package named e2e is product code and is scanned. Data directories
+(200+ data files and no code, see data_dirs.py) and --exclude-dir paths are pruned without opening
+a file and listed under skipped_data_dirs; --scan-data-dirs reads them.
 """
 from __future__ import annotations
 import argparse, json, re, sys
@@ -44,6 +50,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(HERE))
+import data_dirs as data_dir_rule  # noqa: E402
 import lang_census  # noqa: E402
 import test_paths  # noqa: E402
 
@@ -72,9 +79,10 @@ def pack_of(path: Path, rel: str, packs: dict) -> list[str]:
             out.append(name)
     return out
 
-def walk(root: Path, include_tests: bool = False, census: dict | None = None):
-    """Files to scan. Directories lang_census excludes (vendored, bundled, embedded third-party packages) and
-    test_paths.vendored_dir names are pruned before they are walked."""
+def walk(root: Path, include_tests: bool = False, census: dict | None = None, data=None):
+    """Files to scan. Directories lang_census excludes (vendored, bundled, embedded third-party packages),
+    test_paths.vendored_dir names, and data directories and --exclude-dir paths (`data`, a data_dirs.DataDirs)
+    are pruned before they are walked."""
     tests = test_paths.Classifier(root)
     stack = [root]
     while stack:
@@ -94,6 +102,8 @@ def walk(root: Path, include_tests: bool = False, census: dict | None = None):
                     continue
                 if test_paths.vendored_dir(p.name) or (census and lang_census.excluded_path(census, p.relative_to(root).as_posix())):
                     continue  # third-party or bundled code: neither scanned nor counted toward the main language
+                if data is not None and data.why(p):
+                    continue  # a data tree (thousands of JSON records) or an excluded directory: recorded, never opened
                 stack.append(p)
             elif p.is_file() and (include_tests or not TEST_FILE.search(p.name)):
                 yield p
@@ -131,6 +141,14 @@ def constant_fstring(line: str, text: str) -> bool:
         return bool(m)
     return all(constant(n) for n in names)
 
+def inside_tag(lines: list[str], i: int, col: int, tag: str) -> str | None:
+    """The opening tag when column `col` of line i is in the body of an inline <tag> element (a <script> with no
+    src=), not in the opening tag itself and not after its closing tag; otherwise None."""
+    before = ('\n'.join(lines[max(0, i - 400):i]) + '\n' + lines[i][:col]).lower()
+    close = before.rfind(f'</{tag}')
+    opened = [m for m in re.finditer(rf'<{tag}\b[^>]*>', before) if m.start() > close]
+    return opened[-1].group(0) if opened and 'src=' not in opened[-1].group(0) else None
+
 def scan_file(path: Path, rel: str, pitfalls: list[dict]) -> list[dict]:
     try:
         text = path.read_text(encoding='utf-8', errors='replace')
@@ -166,25 +184,38 @@ def scan_file(path: Path, rel: str, pitfalls: list[dict]) -> list[dict]:
                     continue
             if p.get('constant_interpolation') and constant_fstring(line, text):
                 continue
+            if p.get('require_inside'):
+                opening = inside_tag(lines, i, m.start(), p['require_inside'])
+                if not opening or (p.get('suppress_tag') and re.search(p['suppress_tag'], opening)):
+                    continue
             hits.append({'pitfall_id': p['id'], 'cwe': [p['cwe']], 'file': rel, 'line': i + 1, 'column': m.start() + 1,
                          'snippet': line.strip()[:200], 'message': p['title'],
                          'sources': [{'tool': 'scan_pitfalls', 'rule_id': p['id']}]})
     return hits
 
-def scan(root: Path, catalogue: dict, wanted: set[str] | None = None, include_tests: bool = False) -> dict:
+HEAD_BYTES = 65536  # require_content/exclude_content read the start of a file (an ARM template's $schema is at the top)
+
+def head_of(path: Path, n: int = HEAD_BYTES) -> str:
+    try:
+        with path.open('rb') as fh:
+            return fh.read(n).decode('utf-8', errors='replace')
+    except OSError:
+        return ''
+
+def scan(root: Path, catalogue: dict, wanted: set[str] | None = None, include_tests: bool = False,
+         exclude_dirs: list[str] | None = None, data_dirs: bool = True) -> dict:
+    """data_dirs=False turns off the data-directory rule (--scan-data-dirs); exclude_dirs are --exclude-dir paths."""
     packs = catalogue['packs']
     wanted = wanted or set(packs)
     active = [compile_pitfall(p) for p in catalogue['pitfalls'] if p.get('regex') and p['pack'] in wanted]
     cands, files_by_pack = [], {}
     census = lang_census.census(root)
-    for path in walk(root, include_tests, census):
+    data = data_dir_rule.DataDirs(root, exclude_dirs, auto=data_dirs)
+    for path in walk(root, include_tests, census, data):
         rel = path.relative_to(root).as_posix()
         names = [n for n in pack_of(path, rel, packs) if n in wanted]
         if any(packs[n].get('require_content') or packs[n].get('exclude_content') for n in names):
-            try:
-                head = path.read_text(encoding='utf-8', errors='replace') if path.stat().st_size < 2_000_000 else ''
-            except OSError:
-                head = ''
+            head = head_of(path)
             names = [n for n in names if (not packs[n].get('require_content') or re.search(packs[n]['require_content'], head, re.M))
                      and not (packs[n].get('exclude_content') and re.search(packs[n]['exclude_content'], head, re.M))]
         if not names:
@@ -206,7 +237,9 @@ def scan(root: Path, catalogue: dict, wanted: set[str] | None = None, include_te
             'generated_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
             'repository': root.name, 'files_scanned': files_by_pack, 'catalogue_version': catalogue.get('version'),
             'note': 'Candidates are pattern-level leads, not findings. Trace a source-to-sink path or dismiss each one.',
-            'warnings': warnings, 'language_coverage': cov, 'candidates': cands}
+            'warnings': warnings, 'language_coverage': cov,
+            # data directories and --exclude-dir paths left out of the walk: not read, so not scanned
+            'skipped_data_dirs': data.report(), 'candidates': cands}
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -214,6 +247,7 @@ def main() -> int:
     ap.add_argument('--packs', help='comma-separated packs (default: all)')
     ap.add_argument('--include-tests', action='store_true', help='also scan test files and directories')
     ap.add_argument('--catalogue', type=Path, default=CATALOGUE)
+    data_dir_rule.add_arguments(ap)
     ap.add_argument('--out', type=Path)
     args = ap.parse_args()
     if hasattr(sys.stdout, 'reconfigure'):
@@ -228,7 +262,9 @@ def main() -> int:
     if unknown:
         print(f"Unknown pack(s): {', '.join(sorted(unknown))}. Known: {', '.join(cat['packs'])}", file=sys.stderr)
         return 2
-    out = scan(root, cat, wanted, args.include_tests)
+    out = scan(root, cat, wanted, args.include_tests, args.exclude_dir, not args.scan_data_dirs)
+    for s in out['skipped_data_dirs']:
+        print(f"  skipped {s['dir']}/: {s['reason']}", file=sys.stderr)
     for w in out.get('warnings') or []:
         print('!' * 78, file=sys.stderr)
         print(f'WARNING: {w}', file=sys.stderr)
