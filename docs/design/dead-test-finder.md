@@ -510,4 +510,3 @@ Where the build differs from the design above, and what the example showed.
   - Not fixed here: tests CI runs outside `testpaths`, the false duplicate pairs from tests looping
     over different module-level lists, helper methods named `test_*` read as tests, skips conditioned
     on the product's own response, and hashing a large data tree before every neutralisation.
-

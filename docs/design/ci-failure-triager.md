@@ -303,4 +303,3 @@ and the validator stopped the agent from naming the test. Fixed:
     `run.json` and the example triage is unchanged (schema 1.2.0 kept: the new fields are optional).
   - **Not built**: Azure DevOps timeline `issues` are not yet read as annotations; later runs of the workflow
     (after the failing one) are still not fetched.
-
