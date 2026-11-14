@@ -16,11 +16,12 @@ module binds `datetime.datetime` as a C type at import and crashes the interpret
 violation or stack overflow, no traceback) when it finds a Python subclass there. The cost is
 that their own clocks are not moved: `pandas.Timestamp.now()`, `numpy.datetime64('now')` and
 other C code keep the real time. Code that imported the names before the plugin loaded, other
-processes and databases keep the real clock too. File times are not moved either (unlike
-clock_shift.mjs, which moves what fs.stat reports): `os.stat(f).st_mtime` stays real, so code that
-ages a file against `time.time()` (lock expiry, cache freshness) sees a file written a moment ago
-as hundreds of days old under +400d; read such a failure as skew between the two clocks, not as a
-time bomb, unless the code under test really compares the two. Prefer the repo's own freezegun, time-machine,
+processes and databases keep the real clock too. File times move with the clock, as clock_shift.mjs
+moves fs.stat: `os.stat` and `os.lstat` (so `os.path.getmtime` and `pathlib.Path.stat()` too) report
+atime, mtime, ctime and birth time shifted by the same offset, so a file written a moment ago is a
+moment old. `TDA_CLOCK_FILES=0` keeps them real. Not moved: `os.scandir` entries' stat(), `os.fstat`,
+and times written with `os.utime(time.time())` (they land shifted on disk and read back shifted twice).
+Prefer the repo's own freezegun, time-machine,
 Jest fake timers or injected clock when it has one, and libfaketime for whole processes.
 """
 from __future__ import annotations
@@ -137,12 +138,41 @@ class _ExtensionGuard:
         return None
 
 
+_real_stat, _real_lstat = os.stat, os.lstat
+_TIME_FIELDS = ('st_atime', 'st_mtime', 'st_ctime', 'st_birthtime')
+
+
+def _shift_stat(st):
+    """The stat result with its times moved by OFFSET, as clock_shift.mjs moves fs.stat."""
+    cls, (seq, extra) = st.__reduce__()
+    seq = list(seq)
+    for i in (7, 8, 9):   # the integer atime, mtime and ctime of the sequence part
+        seq[i] = int(seq[i] + OFFSET)
+    extra = dict(extra)
+    for k in _TIME_FIELDS:
+        if extra.get(k) is not None:
+            extra[k] = extra[k] + OFFSET
+        if extra.get(k + '_ns') is not None:
+            extra[k + '_ns'] = extra[k + '_ns'] + int(OFFSET * 1e9)
+    return cls(seq, extra)
+
+
+def _stat(path, *args, **kwargs):
+    return _shift_stat(_real_stat(path, *args, **kwargs))
+
+
+def _lstat(path, *args, **kwargs):
+    return _shift_stat(_real_lstat(path, *args, **kwargs))
+
+
 if OFFSET:
     sys.meta_path.insert(0, _ExtensionGuard())
     _dt.date = FakeDate
     _dt.datetime = FakeDatetime
     _time.time = lambda: _real_time() + OFFSET
     _time.time_ns = lambda: _real_time_ns() + int(OFFSET * 1e9)
+    if os.environ.get('TDA_CLOCK_FILES', '1') != '0':   # os.path.getmtime and pathlib's stat() go through os.stat
+        os.stat, os.lstat = _stat, _lstat
 
 
 def pytest_report_header(config):
@@ -171,6 +201,14 @@ try:
         out["numpy"] = {"ok": True, "dt64": str(np.datetime64(DT(2030, 1, 2, 3, 4, 5)))}
 except Exception as e:  # an exception is a failure, but not a crash
     out["extension_error"] = repr(e)
+import os, pathlib, tempfile
+with tempfile.NamedTemporaryFile(delete=False) as fh:
+    fh.write(b"x")
+age = time.time() - os.stat(fh.name).st_mtime
+out["file_age_s"] = {"stat": age, "getmtime": time.time() - os.path.getmtime(fh.name),
+                     "path": time.time() - pathlib.Path(fh.name).stat().st_mtime,
+                     "ns": time.time_ns() - os.stat(fh.name).st_mtime_ns}
+os.unlink(fh.name)
 print(json.dumps(out))
 '''
 
@@ -199,6 +237,10 @@ def _self_test() -> int:
         checks.append(('+400d moves utcnow()', out['utc_year'] == (real_now + _dt.timedelta(days=400)).year))
         checks.append(('isinstance(real datetime, datetime) holds', out['isinstance_real'] and out['isinstance_date']))
         checks.append(('compiled modules import and work', 'extension_error' not in out, out.get('extension_error', '')))
+        ages = out.get('file_age_s', {})
+        checks.append(('file times move with the clock: a file just written is seconds old, not 400 days',
+                       ages and all(abs(ages[k]) < 600 for k in ('stat', 'getmtime', 'path'))
+                       and abs(ages['ns']) < 600e9, ages))
         if 'pandas' in out:
             checks.append(('pandas accepts a shifted datetime', out['pandas']['ts_year'] == want.year and out['pandas']['isinstance']))
         if 'numpy' in out:
