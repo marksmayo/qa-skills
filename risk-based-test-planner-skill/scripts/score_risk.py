@@ -2100,6 +2100,7 @@ def static_front_end_checks() -> list[tuple[str, bool]]:
                       "if (preg_match('#^/assets/(.*)#', $uri, $m)) {\n    $ch = curl_init('https://assets.example.test/' . $m[1]);\n}\n"),
         '.htaccess': 'RewriteEngine On\nRewriteRule ^.*$ index.php [L]\n',
         'requirements.txt': 'fastapi\n',
+        'web/lib/chart.min.js': 'var c=function(a){return a+1};' * 40 + '\n',
     }
     changed = {'dist/app.js': 200, 'dist/index.html': 20, 'extras/cache.py': 3}
     journey_map = {'journeys': [
@@ -2137,7 +2138,7 @@ def static_front_end_checks() -> list[tuple[str, bool]]:
             {'id': 'server', 'paths': ['server.py']}, {'id': 'uploads', 'paths': ['extras/uploads.py']},
             {'id': 'cache', 'paths': ['extras/cache.py']}, {'id': 'packer', 'paths': ['tools']},
             {'id': 'front end', 'paths': ['dist']}, {'id': 'php', 'paths': ['index.php']},
-            {'id': 'docker', 'paths': ['deploy/docker']}]}), encoding='utf-8')
+            {'id': 'docker', 'paths': ['deploy/docker']}, {'id': 'vendor bundle', 'paths': ['web/lib']}]}), encoding='utf-8')
 
         def run(areas: bool) -> dict:
             ns = argparse.Namespace(repo=root, history=root / '_in' / 'history.json', complexity=root / '_in' / 'complexity.json',
@@ -2156,7 +2157,7 @@ def static_front_end_checks() -> list[tuple[str, bool]]:
                         f'{res.get("unscored_areas")})', 'docker' in unscored
                         and any('docker' in w and 'no file' in w for w in res['warnings'])))
             out.append((f'an explicit area whose files are classified generated says so in a warning (got {res["warnings"]})',
-                        any('front end' in w and 'generated' in w for w in res['warnings'])))
+                        any('vendor bundle' in w and 'generated' in w for w in res['warnings'])))
             srv = got.get('server', {}).get('factors', {}).get('journey_criticality', {})
             out.append((f'journey-mapper\'s P1 (critical, the top of its P1-P3 scale) scores 5 (got {srv})',
                         srv.get('score') == 5))
@@ -2171,9 +2172,13 @@ def static_front_end_checks() -> list[tuple[str, bool]]:
                         'file_write' in (up.get('surfaces') or [])))
             res = run(False)
             outside = res.get('scope_outside_areas') or []
-            lines_out = sum(x['lines'] for x in outside)
+            # the served dist/ is source under the shared build-output rule, so its changed lines are counted in an
+            # area; what is left outside (a stray module tree) must still be listed with its reason and warned about
             out.append((f'changed lines no area counts are listed with their reason and warned about (got {outside}, '
-                        f'{res["warnings"]})', lines_out >= 200 and any('dist/' in w and 'changed line' in w for w in res['warnings'])))
+                        f'{res["warnings"]})', bool(outside) and all(x.get('reason') and x.get('lines') for x in outside)
+                        and any('changed line' in w and outside[0]['path'] in w for w in res['warnings'])))
+            out.append((f'changed lines in a served dist/ are counted in an area, not left outside (got {outside})',
+                        not any(x['path'].startswith('dist') for x in outside)))
             basis = res['area_basis']
             counted = {f for a in res['areas'] for f in [a['id']]}
             out.append((f'the default areas never pick a main source directory whose files are all excluded (basis '
