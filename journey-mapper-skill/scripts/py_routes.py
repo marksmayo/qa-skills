@@ -182,24 +182,23 @@ def conditions(tree: ast.AST, rel: str = '') -> dict[int, str]:
     else branch; nested ones joined with ' and '), for every node inside an if or else branch. Nodes outside any
     `if` are absent."""
     out: dict[int, str] = {}
-    stack = [(tree, ())]
+    stack = [(tree, (), None)]          # (node, the if tests above it, those tests joined once per branch)
     while stack:
-        node, conds = stack.pop()
+        node, conds, joined = stack.pop()
+        if joined:
+            out[id(node)] = joined
         if isinstance(node, ast.If):
             test = _unparse(node.test) or '?'
             at = f' ({rel}:{node.lineno})' if rel else f' (line {node.lineno})'
-            branches = [(node.body, conds + (f'if {test}{at}',)), (node.orelse, conds + (f'if not ({test}){at}',))]
-            stack.append((node.test, conds))
-            for body, c in branches:
-                for child in body:
-                    stack.append((child, c))
-            if conds:
-                out[id(node)] = ' and '.join(conds)
+            stack.append((node.test, conds, joined))
+            for body, c in ((node.body, conds + (f'if {test}{at}',)), (node.orelse, conds + (f'if not ({test}){at}',))):
+                j = ' and '.join(c)
+                stack.extend((child, c, j) for child in body)
             continue
-        if conds:
-            out[id(node)] = ' and '.join(conds)
-        for child in ast.iter_child_nodes(node):
-            stack.append((child, conds))
+        if not conds:
+            stack.extend((child, conds, None) for child in ast.iter_child_nodes(node))
+        else:
+            stack.extend((child, conds, joined) for child in ast.iter_child_nodes(node))
     return out
 
 
@@ -227,6 +226,7 @@ class Module:
     def __init__(self, rel: str, tree: ast.AST):
         self.rel = rel
         self.tree = tree
+        self.nodes: list[ast.AST] = list(ast.walk(tree))        # walked once; every pass iterates this (same order)
         self.imports: dict[str, tuple[str, str | None]] = {}   # local name -> (dotted module, attribute or None)
         self.routers: dict[str, dict] = {}                      # var -> {framework, prefix, literal, line, ctor, app, deps}
         self.consts: dict[str, str] = {}
@@ -267,7 +267,7 @@ class Project:
         return list(PurePosixPath(rel).parts[:-1])
 
     def _index(self, m: Module):
-        for node in ast.walk(m.tree):
+        for node in m.nodes:
             if isinstance(node, ast.Import):
                 for a in node.names:
                     m.imports[a.asname or a.name.split('.')[0]] = (a.name if a.asname else a.name.split('.')[0], None)
@@ -333,7 +333,7 @@ class Project:
 
     def collect_routers(self):
         for m in self.modules.values():
-            for node in ast.walk(m.tree):
+            for node in m.nodes:
                 if isinstance(node, (ast.Assign, ast.AnnAssign)) and isinstance(node.value, ast.Call):
                     targets = node.targets if isinstance(node, ast.Assign) else [node.target]
                     fw = self.ctor_framework(node.value, m)
@@ -411,7 +411,7 @@ class Project:
         self.mounts: dict[tuple, list[dict]] = {}
         self.dynamic_includes: list[dict] = []
         for m in self.modules.values():
-            for node in ast.walk(m.tree):
+            for node in m.nodes:
                 if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
                         and node.func.attr in ('include_router', 'register_blueprint') and node.args):
                     continue
@@ -485,7 +485,7 @@ class Project:
         """Yield one dict per `@obj.attr(...)` decorator on a function and per `obj.add_api_route/add_url_rule(...)`:
         {module, fn, call, attr, key (router key or None), azure_name}."""
         for m in self.modules.values():
-            for node in ast.walk(m.tree):
+            for node in m.nodes:
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     azure_name = None
                     for dec in node.decorator_list:
@@ -584,7 +584,7 @@ class Project:
         middleware: add_middleware(Cls) / Middleware(Cls) classes and @X.middleware / before_request functions."""
         static, apps, mw = [], [], []
         for m in self.modules.values():
-            for node in ast.walk(m.tree):
+            for node in m.nodes:
                 cond = m.cond.get(id(node))
                 extra = {'condition': cond} if cond else {}
                 if isinstance(node, ast.Call):
@@ -644,19 +644,19 @@ class Project:
         out = []
         stem = PurePosixPath(m.rel).stem
         prog = PurePosixPath(m.rel).parent.name if stem in ('__main__', '__init__') else stem
-        for node in ast.walk(m.tree):
+        for node in m.nodes:
             if isinstance(node, ast.Call) and _name(node.func) == 'ArgumentParser':
                 v = _kw(node, 'prog')
                 s, _ = _str(v, m.consts) if v is not None else (None, False)
                 if s:
                     prog = s
-        for node in ast.walk(m.tree):
+        for node in m.nodes:
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == 'add_parser' and node.args:
                 name, lit = _str(node.args[0], m.consts)
                 if name:
                     out.append({'command': f'{prog} {name}', 'file': m.rel, 'line': node.lineno, 'framework': 'argparse'})
         if {'click', 'typer'} & m.text_imports:
-            for node in ast.walk(m.tree):
+            for node in m.nodes:
                 if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     continue
                 for dec in node.decorator_list:
@@ -812,7 +812,7 @@ def entries(files: dict[str, str], root: Path | None = None, classify_decorators
     classify_decorators(text) -> (auth, evidence) labels a Flask view's stacked decorators."""
     project = Project(files, _host_prefixes_on_disk(root, files))
     aliases = annotated_aliases(project)
-    mw_auth = [f"{m.rel}:{n.lineno}" for m in project.modules.values() for n in ast.walk(m.tree)
+    mw_auth = [f"{m.rel}:{n.lineno}" for m in project.modules.values() for n in m.nodes
                if (isinstance(n, ast.Call) and _name(n.func) == 'add_middleware' and n.args
                    and MIDDLEWARE_AUTH.search(_unparse(n.args[0])))
                or (isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and any(
