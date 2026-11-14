@@ -9,7 +9,10 @@ schema_drift.py, residue.py and the validator's computed fields say about them: 
 package-level variable a test reassigns, math/rand without a seed), credentials in a URL's
 user-info (a secret, never an email address), card numbers only in card-like digit groups,
 stock placeholder passwords, the language coverage note, residue outside the tree, and the
-severity of an agent finding that names a live endpoint. Every fixture value is invented; the
+severity of an agent finding that names a live endpoint, a product data tree of hundreds of templated
+JSON files (listed when not inventoried, inventoried and scanned in seconds, sampled with a cap, the
+pairwise duplicate check bounded), cwd-relative data paths in tests, and the leak check on an agent
+personal-data finding's basis line. Every fixture value is invented; the
 secret-looking strings are assembled at run time so none sits in this file whole.
 """
 from __future__ import annotations
@@ -305,8 +308,133 @@ def live_endpoint_severity() -> None:
         check(any('agent' in e for e in vtd.live_host_errors(tool, ev)), 'validator: live_endpoint is for agent findings with a basis')
 
 
+N_PLACES = 400
+PLACE_EMAIL_LINE = 4
+
+
+def place_mailbox() -> str:
+    # an invented mailbox at an invented domain, assembled at run time
+    return 'pat.lowmoor' + '@' + 'quaymail' + '.co'
+
+
+def places_repo(root: Path) -> None:
+    """A product data directory of N_PLACES small templated JSON files that a parametrised test suite globs, as a
+    timetable or catalogue site keeps one file per record. One record carries a contact address."""
+    files = {
+        'pytest.ini': '[pytest]\naddopts = -v\ntestpaths = tests\npython_files = test_*.py\n',
+        'app.py': ('import json\nfrom pathlib import Path\nPLACES_DIR = Path(__file__).parent / "places"\n\n\n'
+                   'def load_places():\n    return {p.stem: json.loads(p.read_text()) for p in PLACES_DIR.glob("*.json")}\n'),
+        'tests/conftest.py': ('import json\nimport pytest\nfrom pathlib import Path\n\n'
+                              'PLACES_DIR = Path(__file__).parent.parent / "places"\n\n\n@pytest.fixture\ndef places():\n'
+                              '    return {p.stem: json.loads(p.read_text()) for p in PLACES_DIR.glob("*.json")}\n'),
+        'tests/test_places.py': (
+            'import json\nimport pytest\nfrom pathlib import Path\n\n'
+            'PLACES_DIR = Path(__file__).parent.parent / "places"\nFILES = sorted(PLACES_DIR.glob("*.json"))\n\n\n'
+            '@pytest.mark.parametrize("path", FILES)\ndef test_has_code(path):\n    assert json.loads(path.read_text())["code"]\n\n\n'
+            '@pytest.mark.parametrize("path", FILES)\ndef test_has_name(path):\n    assert json.loads(path.read_text())["name"]\n'),
+    }
+    for k in range(40):        # page tests that import the app (which loads the tree) or request the fixture
+        files[f'tests/test_page{k:02d}.py'] = 'from app import load_places\n\n\n' + ''.join(
+            f'def test_page{k:02d}_{j}(places):\n    assert load_places()["p{j:03d}"] == places["p{j:03d}"]\n\n\n'
+            for j in range(15))
+    for i in range(N_PLACES):
+        contact = place_mailbox() if i == 123 else ''
+        files[f'places/p{i:03d}.json'] = (
+            '{\n  "code": "P%03d",\n  "name": "Place %d",\n  "contact": "%s",\n  "lat": %d.25,\n  "lon": %d.5,\n'
+            '  "pier": %d,\n  "notes": "Ferry stop on the harbour loop, timetable from the shared template."\n}\n'
+            % (i, i, contact, i % 80, i % 170, i % 9))
+    write(root, files)
+
+
+def big_data_tree() -> None:
+    import time
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / 'repo'
+        places_repo(root)
+
+        # without --data-dir the tree is not inventoried, but it is reported, never silently skipped
+        invd = inv.build(root, None, {})
+        un = {u['dir']: u for u in invd.get('unlisted_data_dirs', [])}
+        check('places' in un and un['places'].get('files') == N_PLACES and 'tests/test_places.py' in un['places'].get('named_in', []),
+              'inventory: a product data tree the tests glob, but not inventoried, is listed under unlisted_data_dirs '
+              f'(got {sorted(un)})')
+
+        # with --data-dir the whole tree is inventoried quickly, every file mapped to the tests that glob it (timed warm: the
+        # first read of freshly written files is slow on hosts with an on-access virus scanner, which is not the walker's cost)
+        for p in sorted((root / 'places').iterdir()):
+            p.read_bytes()
+        t0 = time.perf_counter()
+        invd = inv.build(root, None, {}, ['places'])
+        took = time.perf_counter() - t0
+        places = [i for i in invd['inventory'] if i['path'].startswith('places/')]
+        check(len(places) == N_PLACES, f'inventory: --data-dir lists all {N_PLACES} data files (got {len(places)})')
+        check(took < 2.0, f'inventory: {N_PLACES} templated data files inventory in under 2 s (took {took:.1f} s)')
+        check(bool(places) and all('tests/test_places.py::test_has_code' in i['loaded_by'] for i in places),
+              'inventory: each data file is loaded by the parametrised tests that glob its directory')
+
+        # the scan finds the address embedded in one record, and the pairwise duplicate check stays bounded
+        t0 = time.perf_counter()
+        res = scan_data.Scanner(root, invd, date(2026, 11, 11)).run()
+        took = time.perf_counter() - t0
+        emails = [c for c in res['candidates'] if c['rule'] == 'email' and not c['auto_dismiss']]
+        check(any(c['file'] == 'places/p123.json' and c['line'] == PLACE_EMAIL_LINE for c in emails),
+              'scan: an email address inside a record of a --data-dir JSON tree is a personal-data candidate')
+        check(took < 20.0, f'scan: {N_PLACES} templated data files scan in under 20 s (took {took:.1f} s)')
+        check(any('near-duplicate' in n and 'places' in n for n in res['notes']),
+              'scan: a directory too large for the pairwise near-duplicate check is named in the notes as not compared')
+
+        # a cap samples the tree: every file listed, the ones over the cap not_assessed with the reason
+        invd = inv.build(root, None, {}, ['places'], max_files_per_dir=50)
+        places = [i for i in invd['inventory'] if i['path'].startswith('places/')]
+        scanned = [i for i in places if i['status'] == 'scanned']
+        skipped = [i for i in places if i['status'] == 'not_assessed']
+        check(len(places) == N_PLACES and len(scanned) == 50 and len(skipped) == N_PLACES - 50
+              and all('not sampled' in (i['reason'] or '') for i in skipped),
+              f'inventory: --max-files-per-dir 50 scans 50 of {N_PLACES} files and records the rest as not sampled '
+              f'(got {len(scanned)} scanned, {len(skipped)} not assessed)')
+        check((invd.get('sampled_dirs') or {}).get('places', {}).get('files') == N_PLACES,
+              'inventory: sampled_dirs records the directory and its file count')
+
+
+def cwd_relative_paths() -> None:
+    res = scan({
+        'places/p001.json': '{"code": "P001"}\n',
+        'app.py': 'x = 1\n',
+        'tests/test_sitemap.py': ('import os\nfrom pathlib import Path\n\n\ndef test_every_place_listed():\n'
+                                  '    names = os.listdir("places")\n    assert names\n\n\n'
+                                  'def test_one_place():\n    with open("places/p001.json") as fh:\n        assert fh.read()\n\n\n'
+                                  'def test_anchored():\n    base = Path(__file__).parent.parent / "places"\n'
+                                  '    assert (base / "p001.json").exists()\n'),
+        'tests/test_chdir.py': ('import os\n\n\ndef test_in_root(monkeypatch, tmp_path):\n    monkeypatch.chdir(tmp_path)\n'
+                                '    assert not os.path.exists("places")\n'),
+    })
+    rel = [c for c in res['candidates'] if c['rule'] == 'cwd_relative_path']
+    lines = {(c['file'], c['line']) for c in rel}
+    check(('tests/test_sitemap.py', 6) in lines and ('tests/test_sitemap.py', 11) in lines,
+          f'scan: a test opening a repo directory by a cwd-relative path is environment coupling (got {sorted(lines)})')
+    check(not any(f == 'tests/test_chdir.py' for f, _ in lines) and ('tests/test_sitemap.py', 15) not in lines,
+          'scan: a path anchored on __file__, or a test that changes directory itself, is not flagged')
+
+
+def agent_personal_data_leak() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        repo = Path(d)
+        addr = place_mailbox()
+        write(repo, {'places/p123.json': '{\n  "code": "P123",\n  "contact": "%s"\n}\n' % addr})
+        f = {'id': 'F2', 'category': 'personal_data', 'source': 'agent', 'candidates': [],
+             'location': {'file': 'places/p123.json', 'line': 3},
+             'basis': [{'file': 'places/p123.json', 'line': 3, 'excerpt': '"contact": <a mailbox>'}],
+             'why_flagged': f'A real-looking address {addr} sits in a record every per-place test loads.'}
+        per = vtd.protected_values({}, repo, {'findings': [f], 'dismissed': []})
+        check(addr in per.get('F2', set()),
+              'validator: the values on an agent personal_data finding\'s basis line are protected like a candidate\'s')
+        check(bool(vtd.leaks(per.get('F2', set()), f['why_flagged'])),
+              'validator: an agent personal_data finding that pastes the address into why_flagged leaks it')
+
+
 def main() -> int:
-    for t in (go_rules, url_credentials_and_cards, placeholders, coverage_and_drift, residue_outside_tree, live_endpoint_severity):
+    for t in (go_rules, url_credentials_and_cards, placeholders, coverage_and_drift, residue_outside_tree, live_endpoint_severity,
+              big_data_tree, cwd_relative_paths, agent_personal_data_leak):
         try:
             t()
         except Exception as exc:  # a crash in one group is a failure, not the end of the run

@@ -26,8 +26,12 @@ It then confirms what it can with real runs: a moved clock, reversed order, anot
 It is strict about what it shows:
 
 - Personal data is never echoed. A finding gives file, line, field and type, and the validator
-  re-reads every flagged location to check that no value leaked into the report or the
-  evidence.
+  re-reads every flagged location (a review finding's basis lines too) to check that no value
+  leaked into the report or the evidence.
+- Large product data trees are never skipped silently: a tree of data files that test code
+  names but the inventory does not cover is listed as `unlisted_data_dirs` and warned about;
+  `--data-dir` inventories it quickly, and `--max-files-per-dir N` samples it, recording the rest
+  as not assessed.
 - Real-looking personal data is treated as real, and is always P0.
 - A time bomb is confirmed only by a failing run with a moved clock, or by exact date
   arithmetic.

@@ -45,5 +45,7 @@
   "duplicate_min_lines": 5,
   "$duplicate_max_chars": "pairs larger than this (both texts together) are compared by their sets of lines, not character by character: SequenceMatcher is quadratic on large extracts",
   "duplicate_max_chars": 100000,
+  "$duplicate_max_files": "a directory with more data files of one format than this is not compared pair by pair (the pairs grow with the square of the files, and a templated data tree is near-duplicate by design); its files are still checked for exact copies, and the notes name the directory",
+  "duplicate_max_files": 200,
   "large_file_mb": 50
 }

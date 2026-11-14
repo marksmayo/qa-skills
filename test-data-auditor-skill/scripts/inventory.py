@@ -2,6 +2,11 @@
 """Inventory the data tests depend on, and map each source to the tests that load it (stdlib only).
 
     python inventory.py <repo> --out inventory.json [--paths tests db ...] [--markers markers.json]
+                        [--data-dir DIR ...] [--max-files-per-dir N]
+
+A directory outside the test areas holding 50+ data files that test code names, but not inventoried, is listed under
+unlisted_data_dirs (and warned about); --max-files-per-dir samples a big directory evenly and records the rest as
+not_assessed ("not sampled") under sampled_dirs.
 
 Finds fixture files (JSON, YAML, CSV, SQL, XML, SVG), factories, seed scripts, snapshots, HTTP
 recordings (VCR/Polly cassettes, WireMock mappings, HAR files, MSW handlers), mobile fixture
@@ -239,6 +244,27 @@ class PyTests:
                 self.fixtures[p] = fx
 
     def test_id(self, path: str, fn: ast.FunctionDef) -> str:
+        cache = self.__dict__.setdefault('_cache_ids', {})
+        hit = cache.get(id(fn))
+        if hit is None or hit[0] is not fn:
+            hit = cache[id(fn)] = (fn, self._test_id(path, fn))
+        return hit[1]
+
+    def requesting(self, fixture_file: str, names: set[str]) -> set[str]:
+        """Every test that requests one of the named fixtures defined in fixture_file, directly or through other
+        fixtures (cached: every file of a data tree a fixture globs asks the same question)."""
+        cache = self.__dict__.setdefault('_cache_requesting', {})
+        key = (fixture_file, frozenset(names))
+        if key not in cache:
+            out = set()
+            for tp, fn in self.all_tests():
+                vis = self.visible_fixtures(tp)
+                if any(vis.get(f, (None,))[0] == fixture_file for f in self.requested(fn, vis) & names):
+                    out.add(self.test_id(tp, fn))
+            cache[key] = out
+        return cache[key]
+
+    def _test_id(self, path: str, fn: ast.FunctionDef) -> str:
         tree = self.modules[path]
         for cls in tree.body:
             if isinstance(cls, ast.ClassDef) and fn in cls.body:
@@ -246,6 +272,13 @@ class PyTests:
         return f'{path}::{fn.name}'
 
     def visible_fixtures(self, test_path: str) -> dict[str, tuple[str, ast.FunctionDef]]:
+        """The fixtures a test module sees (cached per module: asked once per test and data file)."""
+        cache = self.__dict__.setdefault('_cache_visible', {})
+        if test_path not in cache:
+            cache[test_path] = self._visible_fixtures(test_path)
+        return cache[test_path]
+
+    def _visible_fixtures(self, test_path: str) -> dict[str, tuple[str, ast.FunctionDef]]:
         out = {}
         d = PurePosixPath(test_path).parent
         chain = []
@@ -262,7 +295,15 @@ class PyTests:
         return out
 
     def requested(self, fn: ast.FunctionDef, visible: dict) -> set[str]:
-        """Fixture names a function requests, closed over fixtures requesting fixtures."""
+        """Fixture names a function requests, closed over fixtures requesting fixtures (cached per function and scope)."""
+        cache = self.__dict__.setdefault('_cache_requested', {})
+        key = (id(fn), id(visible))
+        hit = cache.get(key)
+        if hit is None or hit[0] is not fn or hit[1] is not visible:
+            hit = cache[key] = (fn, visible, self._requested(fn, visible))
+        return hit[2]
+
+    def _requested(self, fn: ast.FunctionDef, visible: dict) -> set[str]:
         seen, todo = set(), [a.arg for a in fn.args.args + fn.args.kwonlyargs]
         while todo:
             name = todo.pop()
@@ -276,17 +317,29 @@ class PyTests:
         return [(p, fn) for p, fns in self.tests.items() for fn in fns]
 
 
-_STRINGS: dict[int, tuple[ast.AST, list[str]]] = {}
+_STRINGS: dict[int, tuple[ast.AST, list[str], str, list[str]]] = {}
+
+
+def _node_strings(node: ast.AST) -> tuple[ast.AST, list[str], str, list[str]]:
+    hit = _STRINGS.get(id(node))
+    if hit and hit[0] is node:
+        return hit
+    out = [n.value.replace('\\', '/') for n in ast.walk(node) if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+    # the strings joined (one substring search per data file instead of one per string) and the glob patterns alone,
+    # each glob's last segment compiled once (fnmatch.fnmatch semantics: case folded as the OS does)
+    tails = sorted({s.rsplit('/', 1)[-1] for s in out if '*' in s or '?' in s})
+    hit = (node, out, '\n'.join(out), [re.compile(fnmatch.translate(os.path.normcase(t))) for t in tails])
+    _STRINGS[id(node)] = hit
+    return hit
 
 
 def strings_in(node: ast.AST) -> list[str]:
     """The string constants under a node, with backslashes as slashes (cached per node)."""
-    hit = _STRINGS.get(id(node))
-    if hit and hit[0] is node:
-        return hit[1]
-    out = [n.value.replace('\\', '/') for n in ast.walk(node) if isinstance(n, ast.Constant) and isinstance(n.value, str)]
-    _STRINGS[id(node)] = (node, out)
-    return out
+    return _node_strings(node)[1]
+
+
+_PARENT: dict[tuple[int, str], tuple[list[str], bool]] = {}
+_ROOT_OF: dict[str, str] = {}
 
 
 class FileRef:
@@ -304,6 +357,7 @@ class FileRef:
     def __init__(self, rel: str, roots: set[str], name_counts: dict[tuple[str, str], int], siblings: set[str] | None = None):
         p = PurePosixPath(rel)
         self.rel, self.name, self.stem, self.parent = rel, p.name, p.stem, p.parent.name
+        self.name_case = os.path.normcase(self.name)
         self.grand = p.parent.parent.name
         self.siblings = (siblings or set()) - {self.name}
         self.tail = f'{self.parent}/{self.name}' if self.parent else self.name
@@ -315,7 +369,9 @@ class FileRef:
     def relation(self, where: str) -> str | None:
         """'same' when the code is in this file's package root, 'enclosing' when the file sits in a root above the code's
         (a repo-level test-data/ tree read by a service's tests), else None (another service: never a match)."""
-        here = root_of(where, self.roots)
+        here = _ROOT_OF.get(where)
+        if here is None:
+            here = _ROOT_OF[where] = root_of(where, self.roots)
         if here == self.root:
             return 'same'
         if self.root == '.' or here.startswith(self.root + '/'):
@@ -325,7 +381,11 @@ class FileRef:
     def parent_named(self, strs: list[str]) -> bool:
         if not self.parent:
             return False
-        return any(self.parent in s.strip('/').split('/') for s in strs)
+        key = (id(strs), self.parent)
+        hit = _PARENT.get(key)
+        if hit is None or hit[0] is not strs:
+            hit = _PARENT[key] = (strs, any(self.parent in s.strip('/').split('/') for s in strs))
+        return hit[1]
 
     def dir_named(self, strs: list[str]) -> bool:
         """The code names this file's directory (`seeds/families`, or Path(...) / "seeds" / "families") and none of the
@@ -348,16 +408,20 @@ class FileRef:
         return (self.unique or parent_in_module) if rel == 'same' else parent_in_module
 
     def named_in(self, node: ast.AST, where: str, module: ast.AST) -> bool:
-        """True when the code under node (in module file `where`) names this file."""
-        strs = strings_in(node)
-        if any(self.rel in s or self.tail in s for s in strs):
+        """True when the code under node (in module file `where`) names this file. Each node's strings are searched
+        joined (cached per node), so a data tree of thousands of files costs a few C-level searches per file and node."""
+        _, strs, blob, globs = _node_strings(node)
+        if self.name not in blob and not globs and not (self.parent and self.parent in blob):
+            return False                   # every way of naming the file needs its name, a glob or its directory
+        if self.rel in blob or self.tail in blob:
             return True
         rel = self.relation(where)
         if not rel:
             return False
-        bare = any(self.name_rx.search(s) for s in strs)
-        globbed = any(('*' in s or '?' in s) and fnmatch.fnmatch(self.name, s.rsplit('/', 1)[-1]) for s in strs)
-        return self.decide(bare, globbed, self.dir_named(strs), self.parent_named(strings_in(module)), rel)
+        bare = self.name in blob and bool(self.name_rx.search(blob))
+        globbed = any(rx.match(self.name_case) for rx in globs)
+        dir_ref = self.dir_named(strs) if self.parent and self.parent in blob else False
+        return self.decide(bare, globbed, dir_ref, self.parent_named(strings_in(module)), rel)
 
     def named_in_text(self, view: tuple[str, list[str]], where: str) -> bool:
         """The same test for a JavaScript or TypeScript file, on its text (view: js_view()'s text and string literals)."""
@@ -409,7 +473,15 @@ def js_view(root: Path, rel: str) -> tuple[str, list[str]] | None:
 
 
 def importers(py: PyTests, module_path: str) -> set[str]:
-    """Every test in test modules that import the Python module at module_path."""
+    """Every test in test modules that import the Python module at module_path (cached per module: a loader module
+    that names a data tree is asked once per data file)."""
+    cache = py.__dict__.setdefault('_cache_importers', {})
+    if module_path not in cache:
+        cache[module_path] = _importers(py, module_path)
+    return cache[module_path]
+
+
+def _importers(py: PyTests, module_path: str) -> set[str]:
     mod = PurePosixPath(module_path).with_suffix('').as_posix().replace('/', '.')
     out = set()
     for tp, fns in py.tests.items():
@@ -442,10 +514,7 @@ def loaded_by(rel: str, py: PyTests, js_tests: list[str], root: Path, ref: FileR
             autouse_or_module[p] = fx
     for p, fx in autouse_or_module.items():
         if fx:
-            for tp, fn in py.all_tests():
-                vis = py.visible_fixtures(tp)
-                if any(vis.get(f, (None,))[0] == p for f in py.requested(fn, vis) & fx):
-                    out.add(py.test_id(tp, fn))
+            out |= py.requesting(p, fx)
         elif PurePosixPath(p).name != 'conftest.py':
             out |= importers(py, p)
     for t in js_tests:
@@ -455,7 +524,54 @@ def loaded_by(rel: str, py: PyTests, js_tests: list[str], root: Path, ref: FileR
     return sorted(out)
 
 
-def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[str] | None = None) -> dict:
+UNLISTED_MIN_FILES = 50     # a directory outside the test areas with this many data files, named by test code, is reported
+
+
+def unlisted_data_dirs(root: Path, all_files: list[str], py: 'PyTests', js_tests: list[str]) -> list[dict]:
+    """Product data trees the tests read but the inventory does not cover: directories outside every test area (and
+    every --data-dir) holding UNLISTED_MIN_FILES or more data files, whose name a test-area module mentions as a path
+    segment (`Path(...) / "places"`, `"places/*.json"`). Reported, so a scan never reads as covering data it skipped."""
+    per: dict[str, list[str]] = {}
+    for f in all_files:
+        pp = PurePosixPath(f)
+        if pp.suffix.lower() in DATA_EXT and not in_test_area(f) and not TOOLING.match(pp.name):
+            per.setdefault(pp.parent.as_posix(), []).append(f)
+    out = []
+    for d, fs in sorted(per.items()):
+        if d in ('.', '') or len(fs) < UNLISTED_MIN_FILES:
+            continue
+        seg = PurePosixPath(d).name
+        named = []
+        for tp, tree in py.modules.items():
+            if in_test_area(tp) and any(seg in x.strip('/').split('/') or d in x for x in strings_in(tree)):
+                named.append(tp)
+        for t in js_tests:
+            view = js_view(root, t)
+            if view is not None and any(seg in x.strip('/').split('/') or d in x for x in view[1]):
+                named.append(t)
+        if named:
+            size = 0
+            for f in fs:
+                try:
+                    size += (root / f).stat().st_size
+                except OSError:
+                    pass
+            out.append({'dir': d, 'files': len(fs), 'bytes': size, 'named_in': sorted(named)[:20],
+                        'hint': f'pass --data-dir {d} to inventory and scan it (add --max-files-per-dir N to sample it)'})
+    return out
+
+
+def sample_of(n: int, cap: int) -> set[int]:
+    """Indices of an evenly spaced sample of cap items out of n (the first and the spread, deterministic)."""
+    return {i * n // cap for i in range(cap)}
+
+
+def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[str] | None = None,
+          max_files_per_dir: int = 0, progress: bool = False) -> dict:
+    """max_files_per_dir: above this many data files in one directory, only an evenly spaced sample of that many is
+    scanned; the rest stay listed as not_assessed ('not sampled'), and sampled_dirs records the directory. 0 = all.
+    progress: print a line to stderr every few seconds, so a long run is never mistaken for a hung one."""
+    import time
     DATA_DIRS.clear()
     DATA_DIRS.update(d.replace('\\', '/').strip('/') for d in data_dirs or [] if d.strip('/'))
     _VIEWS.clear()
@@ -475,17 +591,40 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
     for f in all_files:
         by_dir.setdefault(PurePosixPath(f).parent.as_posix(), set()).add(PurePosixPath(f).name)
     anonymised = markers.get('anonymised_by', {})
+    kinds = {rel: kind_of(rel) for rel in files}
+    kinds = {rel: k for rel, k in kinds.items() if k}
+    skipped: dict[str, str] = {}
+    sampled: dict[str, dict] = {}
+    if max_files_per_dir and max_files_per_dir > 0:
+        per_dir: dict[str, list[str]] = {}
+        for rel, k in kinds.items():
+            if k in ('fixture', 'recording', 'seed', 'snapshot'):
+                per_dir.setdefault(PurePosixPath(rel).parent.as_posix(), []).append(rel)
+        for d, fs in sorted(per_dir.items()):
+            if len(fs) <= max_files_per_dir:
+                continue
+            keep = sample_of(len(fs), max_files_per_dir)
+            why = (f'not sampled: {d}/ holds {len(fs)} data files, over --max-files-per-dir {max_files_per_dir}; an evenly '
+                   f'spaced sample of {max_files_per_dir} was scanned')
+            for i, rel in enumerate(sorted(fs)):
+                if i not in keep:
+                    skipped[rel] = why
+            sampled[d] = {'files': len(fs), 'scanned': max_files_per_dir, 'how': 'evenly spaced in path order'}
     items = []
-    for rel in files:
-        k = kind_of(rel)
-        if not k:
-            continue
+    t_start = t_last = time.monotonic()
+    for n_done, rel in enumerate(kinds, 1):
+        k = kinds[rel]
+        if progress and time.monotonic() - t_last >= 5:
+            t_last = time.monotonic()
+            print(f'inventory: {n_done}/{len(kinds)} sources ({t_last - t_start:.0f} s)', file=sys.stderr, flush=True)
         p = root / rel
         ext = p.suffix.lower()
         size = p.stat().st_size
         entry = {'path': rel, 'kind': k, 'format': datafiles.fmt_of(p) if ext not in ('.snap', '.ambr', '.har') else ext[1:],
                  'bytes': size, 'loaded_by': [], 'status': 'scanned', 'reason': None}
-        if ext in ('.xlsx', '.xlsm'):
+        if rel in skipped:
+            entry.update(status='not_assessed', reason=skipped[rel])
+        elif ext in ('.xlsx', '.xlsm'):
             # read with stdlib zipfile: shared and inline strings, one text line per row
             try:
                 entry['lines'] = datafiles.xlsx_text(p).count('\n')
@@ -514,10 +653,7 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
         if rel in anonymised:
             entry['anonymised_by'] = anonymised[rel]
         if k == 'inline' and PurePosixPath(rel).name == 'conftest.py':
-            mine = set(py.fixtures.get(rel, {}))
-            entry['loaded_by'] = sorted(py.test_id(tp, fn) for tp, fn in py.all_tests()
-                                        if any(py.visible_fixtures(tp).get(f, (None,))[0] == rel
-                                               for f in py.requested(fn, py.visible_fixtures(tp)) & mine))
+            entry['loaded_by'] = sorted(py.requesting(rel, set(py.fixtures.get(rel, {}))))
         elif k == 'inline':
             entry['loaded_by'] = ([py.test_id(rel, fn) for fn in py.tests.get(rel, [])] if rel.endswith('.py') else [f'{rel}::*'])
         elif k == 'support' and GLOBAL_SETUP.match(PurePosixPath(rel).name):
@@ -552,8 +688,14 @@ def build(root: Path, paths: list[str] | None, markers: dict, data_dirs: list[st
             entry['loaded_by'] = loaded_by(rel, py, js_tests, root, FileRef(rel, roots, name_counts, by_dir.get(PurePosixPath(rel).parent.as_posix())))
         items.append(entry)
     tests = sorted({py.test_id(p, fn) for p, fn in py.all_tests()} | {f'{t}::*' for t in js_tests})
+    extra = {}
+    unlisted = unlisted_data_dirs(root, all_files, py, js_tests)
+    if unlisted:
+        extra['unlisted_data_dirs'] = unlisted
+    if sampled:
+        extra['sampled_dirs'] = sampled
     return {'repo': root.name, 'data_dirs': sorted(DATA_DIRS), 'product_dirs': dict(sorted(PRODUCT_DIRS.items())),
-            'inventory': items, 'tests': tests,
+            **extra, 'inventory': items, 'tests': tests,
             'summary': {'sources': len(items), 'by_kind': {k: len([i for i in items if i['kind'] == k])
                                                             for k in sorted({i['kind'] for i in items})},
                         'not_assessed': len([i for i in items if i['status'] == 'not_assessed']),
@@ -567,10 +709,20 @@ def main(argv=None) -> int:
     ap.add_argument('--markers', type=Path)
     ap.add_argument('--data-dir', action='append', default=[], metavar='DIR',
                     help='a repo-relative tree that holds test data under a name the inventory does not know (repeatable)')
+    ap.add_argument('--max-files-per-dir', type=int, default=0, metavar='N',
+                    help='scan only an evenly spaced sample of N data files in any directory holding more (the rest are '
+                         'listed as not_assessed, "not sampled"); 0, the default, scans every file')
     ap.add_argument('--out', type=Path)
     args = ap.parse_args(argv)
     markers = json.loads(args.markers.read_text(encoding='utf-8')) if args.markers else {}
-    res = build(args.repo.resolve(), args.paths, markers, args.data_dir)
+    res = build(args.repo.resolve(), args.paths, markers, args.data_dir, args.max_files_per_dir, progress=True)
+    for u in res.get('unlisted_data_dirs', []):
+        print(f"WARNING: {u['dir']}/ holds {u['files']} data files ({u['bytes'] / 1e6:.1f} MB) that test code names "
+              f"({', '.join(u['named_in'][:3])}{', ...' if len(u['named_in']) > 3 else ''}) but the inventory does not cover: "
+              f"its personal data, time bombs and duplicates were NOT scanned. {u['hint']}.", file=sys.stderr)
+    for d, sm in res.get('sampled_dirs', {}).items():
+        print(f"NOTE: {d}/ sampled: {sm['scanned']} of {sm['files']} data files scanned (the rest are not_assessed)",
+              file=sys.stderr)
     text = json.dumps(res, indent=2) + '\n'
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)

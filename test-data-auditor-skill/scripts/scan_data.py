@@ -56,6 +56,9 @@ PHONE_TEXT = re.compile(r'(?<![\w+])(\+?\d[\d ()-]{7,16}\d)(?!\w)')
 ISO_DATE = re.compile(r'^(\d{4})-(\d{2})-(\d{2})(?:[T ][\d:.]+(?:Z|[+-]\d{2}:?\d{2})?)?$')
 URL = re.compile(r'\b(?:https?|wss?|s3|gs)://([A-Za-z0-9.-]+)(?::\d+)?(/[^\s"\'<>]*)?')
 ARN = re.compile(r'\barn:aws:[a-z0-9-]+:[a-z0-9-]*:(\d{12}):')
+# a file or directory call whose first argument is a relative path literal: open("dir/x.json"), os.listdir("dir")
+CWD_PATH_CALL = re.compile(r'(?<![\w.])(?:open|Path|os\.listdir|listdir|os\.scandir|scandir|glob\.glob|glob\.iglob|os\.walk|'
+                           r'os\.path\.(?:exists|isdir|isfile|getmtime|getsize))\(\s*r?["\']([A-Za-z_][\w.-]*(?:/[^"\']*)?)["\']')
 LOCAL_PATH = re.compile(r'(?:/Users/[A-Za-z][\w.-]+/|/home/[a-z][\w.-]+/|[A-Za-z]:\\\\?Users\\\\?[A-Za-z][\w.-]+)')
 UUID = re.compile(r'\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b', re.I)
 SECRETS = {k: re.compile(v) for k, v in RULES['secret_patterns'].items()}
@@ -508,6 +511,13 @@ class Scanner:
         self._js: dict[str, tuple] = {}
         self._raw: dict[str, str | None] = {}
         self.notes: list[str] = [f'{why}: scanned as product code, not test data' for why in inv.PRODUCT_DIRS.values()]
+        for u in inventory.get('unlisted_data_dirs', []):
+            self.notes.append(f"{u['dir']}/ holds {u['files']} data files that test code names, but the inventory does not cover "
+                              f"it: NOT scanned for personal data, time bombs or duplicates (inventory it with --data-dir {u['dir']})")
+        for d, sm in sorted(inventory.get('sampled_dirs', {}).items()):
+            self.notes.append(f"{d}/ sampled: {sm['scanned']} of {sm['files']} data files scanned; the rest are not_assessed, "
+                              'so personal data in them is not ruled out')
+        self.progress = False
 
     def add(self, category: str, rule: str, file: str, line: int, why: str, field: str | None = None, data_type: str | None = None,
             value=None, auto_dismiss: str | None = None, details: dict | None = None, tests: list[str] | None = None):
@@ -961,6 +971,24 @@ class Scanner:
             self.add('environment_coupling', 'local_path', rel, line_no, 'an absolute path on someone\'s machine', None, 'path',
                      details={})
 
+    def cwd_relative(self, rel: str, text: str):
+        """A test in a subdirectory that opens a top-level directory of the repository by a relative path
+        (open("places/x.json"), os.listdir("places"), Path("places")): it passes only when pytest starts from the
+        repository root. A test that changes directory itself (monkeypatch.chdir, os.chdir) is left alone."""
+        if '/' not in rel or re.search(r'\b(?:monkeypatch\.chdir|os\.chdir|chdir)\(', text):
+            return
+        top = {f.split('/', 1)[0] for f in self.files if '/' in f}
+        for n, line in enumerate(text.split('\n'), 1):
+            if line.lstrip().startswith('#'):
+                continue
+            for m in CWD_PATH_CALL.finditer(line):
+                first = m.group(1).split('/', 1)[0]
+                if first in top and first not in ('.', '..'):
+                    self.add('environment_coupling', 'cwd_relative_path', rel, n,
+                             f'opens {first}/ relative to the working directory: the test passes only when run from the '
+                             'repository root', None, 'path', details={'directory': first})
+                    break
+
     def secrets(self, rel: str, line_no: int, text: str):
         spans: list[tuple[int, int]] = []
         for kind, rx in SECRETS.items():
@@ -1353,6 +1381,28 @@ class Scanner:
                 self.add('unused_or_duplicate', 'unused', i['path'], 1, 'no test loads this file (its name appears in no test, '
                          'fixture or loader)', None, None)
         data = [i for i in items if i['kind'] in ('fixture', 'recording', 'seed') and i.get('lines', 0) >= RULES['duplicate_min_lines']]
+        # a directory with more files of one format than duplicate_max_files is not compared pair by pair (the pairs grow
+        # with the square of the files); its files are checked for exact copies only, and the notes say so
+        cap = RULES.get('duplicate_max_files', 200)
+        groups: dict[tuple[str, str], list[dict]] = {}
+        for i in data:
+            groups.setdefault((PurePosixPath(i['path']).parent.as_posix(), i['format']), []).append(i)
+        big = {key for key, g in groups.items() if len(g) > cap}
+        if big:
+            seen: dict[str, str] = {}
+            for (d, fmt), g in sorted(groups.items()):
+                if (d, fmt) not in big:
+                    continue
+                for i in sorted(g, key=lambda x: x['path']):
+                    h = hashlib.sha256(re.sub(r'\s+', ' ', datafiles.text_of(self.root / i['path'])).encode()).hexdigest()
+                    if h in seen:
+                        self.add('unused_or_duplicate', 'near_duplicate', i['path'], 1, f'an exact copy of {seen[h]}', None, None,
+                                 details={'similar_to': seen[h], 'similarity': 1.0, 'method': 'exact'})
+                    else:
+                        seen[h] = i['path']
+                self.notes.append(f'near-duplicate check not run pair by pair in {d}/ ({len(g)} {fmt} files, over the '
+                                  f'{cap}-file limit): only exact copies were looked for there')
+            data = [i for i in data if (PurePosixPath(i['path']).parent.as_posix(), i['format']) not in big]
         texts = {i['path']: re.sub(r'\s+', ' ', datafiles.text_of(self.root / i['path'])) for i in data}
         for a in range(len(data)):
             for b in range(a + 1, len(data)):
@@ -1385,7 +1435,12 @@ class Scanner:
         self.js_now_comparisons(comparisons)
         seeds = self.seed_ids()
         py = inv.PyTests(self.root, self.files)
-        for item in self.inv['inventory']:
+        import time
+        t_start = t_last = time.monotonic()
+        for n_item, item in enumerate(self.inv['inventory'], 1):
+            if self.progress and time.monotonic() - t_last >= 5:
+                t_last = time.monotonic()
+                print(f'scan: {n_item}/{len(self.inv["inventory"])} sources ({t_last - t_start:.0f} s)', file=sys.stderr, flush=True)
             if item['status'] != 'scanned':
                 continue
             rel = item['path']
@@ -1444,6 +1499,7 @@ class Scanner:
                         self.code_time_bombs(rel, tree)
                     if item['kind'] in ('inline', 'support'):
                         self.module_reloads(rel, tree, py)
+                        self.cwd_relative(rel, text)
         self.shared_mutable(py)
         self.locale(py)
         self.js_locale()
@@ -1488,14 +1544,17 @@ def main(argv=None) -> int:
     ap.add_argument('--out', type=Path, required=True)
     args = ap.parse_args(argv)
     today = date.fromisoformat(args.today) if args.today else date.today()
-    res = Scanner(args.repo.resolve(), json.loads(args.inventory.read_text(encoding='utf-8')), today).run()
+    scanner = Scanner(args.repo.resolve(), json.loads(args.inventory.read_text(encoding='utf-8')), today)
+    scanner.progress = True
+    res = scanner.run()
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(res, indent=2) + '\n', encoding='utf-8')
     s = res['summary']
     print(f'{s["candidates"]} candidates ({s["auto_dismissed"]} dismissed by a reserved-value rule): '
           + ', '.join(f'{v} {k}' for k, v in s['by_category'].items()) + f' -> {args.out}')
     for note in res['notes']:
-        if 'text only' in note or note.startswith('schema drift:'):
+        if 'text only' in note or note.startswith('schema drift:') or 'NOT scanned' in note or ' sampled: ' in note \
+                or note.startswith('near-duplicate check not run'):
             print(f'WARNING: {note}', file=sys.stderr)
     return 0
 

@@ -299,7 +299,26 @@ def protected_values(cands: dict, repo: Path, rep: dict | None = None) -> dict[s
     exempt = {d['candidate_id'] for d in (rep or {}).get('dismissed', []) if d.get('not_personal_data') and d.get('by') == 'review'}
     per = {c['id']: flagged_values(c, repo) for c in cands.values()
            if c['category'] in ('personal_data', 'secret') and not c['auto_dismiss'] and c['id'] not in exempt}
+    # a personal-data or secret finding from review (source: agent) has no candidate: the values on its basis lines are
+    # protected the same way, so the address it found cannot be pasted into why_flagged either
+    for f in (rep or {}).get('findings', []):
+        if f.get('source') != 'agent' or f.get('category') not in ('personal_data', 'secret'):
+            continue
+        vals: set[str] = set()
+        for b in f.get('basis') or []:
+            if b.get('file') and isinstance(b.get('line'), int):
+                pseudo = {'category': f['category'], 'rule': 'agent', 'file': b['file'], 'line': b['line'],
+                          'fingerprint': None, 'details': {}}
+                vals |= {v for v in flagged_values(pseudo, repo) if not reserved_address(v)}
+        if vals:
+            per[f['id']] = vals
     return {k: v for k, v in per.items() if v}
+
+
+def reserved_address(v: str) -> bool:
+    """An address at a reserved domain (example.com, .test): never personal data, so naming it is no leak."""
+    m = scan_data.EMAIL.fullmatch(v.strip())
+    return bool(m) and scan_data.email_class(m.group(2))[0] == 'reserved'
 
 
 def leaks(values: set[str], text: str, flat: str | None = None) -> list[str]:
@@ -612,8 +631,8 @@ def check(rep: dict, cands: dict | None, runs: dict | None, repo: Path | None, e
     if fs and re.search(r'\bno findings\b', headline, re.I):
         errs.append(f'summary.headline: says no findings, but the report has {len(fs)}')
     # no personal data or secret value anywhere
-    if repo is not None and cands is not None:
-        per = protected_values(cands, repo, rep)
+    if repo is not None:
+        per = protected_values(cands or {}, repo, rep)
 
         def leak_errors(where: str, text: str) -> list[str]:
             # the candidate id is safe to name and saves hunting for the leak; the value never is

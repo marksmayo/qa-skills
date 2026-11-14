@@ -1,6 +1,6 @@
 # Design: `test-data-auditor-skill`
 
-Status: Built (v1.4.0), see "As built" at the end. Build order: 11.
+Status: Built (v1.5.0), see "As built" at the end. Build order: 11.
 
 ## Mission
 
@@ -492,3 +492,37 @@ Found on a Go module of about 340 `*_test.go` files, with vendored Swift and Typ
   passed to path parsers flagged as `local_path`, a device-identifier data type, Go struct models
   for schema drift, Go test-data conventions (`testdata/` golden files, `//go:embed`).
 - **Example.** Unchanged: the rescan of `clinic-api` gives the same candidates.
+
+## As built (v1.5.0): a server-rendered Python site with a large data tree
+
+Found on a Flask site with a data directory of thousands of JSON records (tens of MB) that a
+parametrised pytest suite globs:
+
+- **Inventory scale.** `inventory.py --data-dir` never finished: each data file re-searched every
+  module's strings one by one, re-walked every test module for importers of a loader module, and
+  re-resolved every test's fixtures. Each node's strings are now joined and searched once per file
+  (cached per node), and importers, visible fixtures, requested fixtures and fixture requesters are
+  cached, so a few hundred templated files inventory in well under a second (self-test).
+- **Never silently skipped.** A directory outside the test areas with 50+ data files that test code
+  names is listed under `unlisted_data_dirs`, warned about on stderr and repeated in the scan's
+  notes as NOT scanned. `--max-files-per-dir N` scans an evenly spaced sample and records the rest
+  as `not_assessed` ("not sampled") with `sampled_dirs`. Both scripts print progress.
+- **Duplicates bounded.** A directory with more than `duplicate_max_files` (200) files of one format
+  is checked for exact copies only (a templated tree is near-duplicate by design), and the notes
+  say so; the pairwise check was quadratic.
+- **Review findings leak-checked.** The values on an agent `personal_data` or `secret` finding's
+  basis lines are protected like a candidate's (reserved-domain addresses excepted), so the
+  address it found cannot be pasted into `why_flagged`; the leak check runs with `--repo` even
+  without `--candidates`.
+- **Guidance.** A clock experiment that fails because a moved `now()` is compared with a real file
+  modification time is skew, not a time bomb; `TEMP`/`TMP`/`TMPDIR` go to a scratch folder with
+  HOME.
+- **cwd-relative paths.** `environment_coupling` / `cwd_relative_path`: a test in a subdirectory
+  that opens a top-level repository directory by a relative path (`open("data/x.json")`,
+  `os.listdir("data")`) passes only when run from the root; a test that changes directory itself
+  is left alone.
+- **Not changed:** the `magic_id` rule still needs a database or seed in reach (a JSON data tree
+  is not treated as a seed), and the inventory does
+  not read pytest's `testpaths`/`python_files` (a root `*_test.py` script still counts as a test).
+  `residue.py` and `run_tests.py` still hash the whole tree per call (shared files).
+- **Example.** Unchanged: the rescan of `clinic-api` gives the same inventory and candidates.

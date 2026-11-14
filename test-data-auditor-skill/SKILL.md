@@ -1,7 +1,7 @@
 ---
 name: test-data-auditor
 description: Audit the data tests depend on (fixtures, factories, seeds, snapshots, HTTP recordings and inline literals, in Python, JavaScript/TypeScript and Go suites) for time bombs, real-looking personal data, magic ids, environment coupling, shared mutable fixtures, unseeded randomness, schema drift, snapshot rot, unused or duplicate files, locale assumptions and files tests leave behind. Every rule runs statically; time bombs, shared state and locale assumptions are then confirmed with real runs under a moved clock, reversed order or another locale. Personal data is never echoed (only file, line, field and data type), secrets are handed to code-security-auditor, and the report never calls test data "clean".
-version: 1.4.0
+version: 1.5.0
 ---
 
 # Test data auditor
@@ -84,8 +84,25 @@ Output:
 ## Step 1: Inventory
 
 ```bash
-python scripts/inventory.py <repo> --out <run>/inventory.json [--markers markers.json] [--data-dir <dir> ...]
+python scripts/inventory.py <repo> --out <run>/inventory.json [--markers markers.json] [--data-dir <dir> ...]     [--max-files-per-dir N]
 ```
+
+**Product data trees the tests read.** A site often keeps its records as thousands of data files
+(one JSON file per record) outside any test directory, and a parametrised suite globs them. The
+inventory does not walk such a tree unless told to, but it never skips one silently: a directory
+outside the test areas with 50 or more data files whose name test code mentions is listed under
+`unlisted_data_dirs` (with its file count, size and the test files that name it), a WARNING is
+printed, and `scan_data.py` repeats it in its notes as NOT scanned. Inventory it with
+`--data-dir <dir>`: the walk indexes each module's strings once, so thousands of files take
+seconds, and the scan reads every record (an address embedded in one record of thousands is
+found). When the tree is too big to scan in the time you have, add `--max-files-per-dir N`: an
+evenly spaced sample of N files per directory is scanned, the rest stay listed as `not_assessed`
+("not sampled"), `sampled_dirs` records it, and the report must say personal data in the rest is
+not ruled out (they lower `files_scanned` and the evidence completeness). Never leave such a tree
+out of the report: inventory it, sample it, or name it in `limitations` as not scanned. Both
+scripts print progress to stderr every few seconds. Templated data files are near-duplicates by
+design: a directory with more than 200 files of one format is checked for exact copies only, and
+the notes say the pairwise check did not run there.
 
 Every data source gets a kind (fixture, factory, seed, snapshot, recording, inline or support), a
 format, and `loaded_by`: the tests that load it. `support` is setup and helper code the tests
@@ -150,7 +167,7 @@ python scripts/schema_drift.py <repo> --inventory <run>/inventory.json --out <ru
 | `personal_data` | A tabular extract (CSV, TSV, HTML or `.xlsx` sheet, JSON list) with 20 or more rows whose column is named for a person or customer (`customer_name`, `client`, `Cust Name`) and holds mostly names: judged by the header and the row count, reported by file, header line and column only (`customer_extract`; extend `person_columns` in `data/rules.json` for a repo's own abbreviations); email at a public or non-reserved domain (a package spec such as `name@1.2.3`, a host given as an IP address, a file name such as `icon@2x.png` and a URL's user-info `scheme://user:key@host`, which is a `url_credentials` secret, are not addresses); phone outside the reserved ranges; Luhn-valid card not on a test list, written unbroken or in the groups card schemes print (4-4-4-4, 4-6-5, 4-6-4, 4-4-4-4-3; space-separated small numbers such as screen coordinates or process-listing columns are never cards) (dates, times, version strings and epoch timestamps are never phones or cards); Medicare, TFN or NHS number with a valid check digit; SSN or National Insurance number in valid format; IBAN with a valid checksum; full name with a street address; date of birth beside a name |
 | `time_bomb` | A fixed expiry date in the future that the code compares with now, giving the date it fails on; a future literal date in a test that also reads the clock |
 | `magic_id` | A lookup by a literal id where a database or seed is in reach (the test loads a seed, has a database or integration marker, requests a database fixture, or sits in an integration tree), checked against the seed rows; not a large id in a "not found" test, nor an all-nines sentinel; a literal UUID; an equality assertion on an auto-increment id (`x.id == 3`, not `x.id > 0`) |
-| `environment_coupling` | A production or staging host, a real bucket, an AWS account id, an absolute path on someone's machine (platform roots such as `/home/site/wwwroot` or a CI runner's home are the same everywhere, so they are not). Tests that reach a live endpoint through product code (an update check, telemetry) are not a literal in test data: report them as a review finding with `host` and `live_endpoint: true`, and a basis that names the host (the calling line, or the proxy log that recorded the tests reaching it) |
+| `environment_coupling` | A production or staging host, a real bucket, an AWS account id, an absolute path on someone's machine, a test in a subdirectory that opens a top-level repository directory by a cwd-relative path (`open("data/x.json")`, `os.listdir("data")`: it passes only when run from the root; `cwd_relative_path`, not flagged when the test changes directory itself) (platform roots such as `/home/site/wwwroot` or a CI runner's home are the same everywhere, so they are not). Tests that reach a live endpoint through product code (an update check, telemetry) are not a literal in test data: report them as a review finding with `host` and `live_endpoint: true`, and a basis that names the host (the calling line, or the proxy log that recorded the tests reaching it) |
 | `shared_mutable` | A session, module, package or class-scoped fixture that returns a mutable value a test mutates; `importlib.reload(module)` in test code, with the module's import-time environment reads (`module_reload`): later tests see the reloaded state, so a test can pass only after it; Go tests that change process state by hand (`go_os_setenv`, `go_os_chdir`) or reassign a package-level variable with nothing putting it back (`go_package_var_reassigned`) |
 | `nondeterministic` | `random` or Faker with no seed in the file; `uuid4()` in test data; Go `math/rand` with no seeded source in the file |
 | `schema_drift` | A fixture field the model no longer has; a missing required field; an enum value the model doesn't allow (dataclasses, pydantic, SQLAlchemy, TypedDict, JSON Schema, OpenAPI JSON). Only models from the fixture's own package root count, and a record matches a model only when half its keys are the model's fields. Models in other languages (Go structs, Java classes) are not read: when the repository is mostly another language (counted by the shared `lang_census.py`, vendored and embedded third-party trees left out), `drift.json` carries `language_coverage` with status `unsupported_dominant` and a `warning` (also printed, and added to the scan's notes), and the report must not read "no drift" from it |
@@ -339,6 +356,12 @@ python scripts/run_tests.py --preset pytest --cwd <copy> --out <run>/runs.json -
       test that installs fake timers replaces it while they are on. It also moves the times
       `fs.stat` reports, so lock and cache ages stay consistent; `clock_shift.py` does not move
       `os.stat` times, and databases or child processes without the preload keep the real clock.
+      A test that compares the wall clock with a file's modification time (a file it wrote a
+      moment ago) fails under any Python shift because the two clocks disagree, not because a
+      date passed: that failure is not `failed_as_predicted` for a time bomb. Before recording a
+      clock experiment as confirming one, read the failure: when it compares a moved `now()` with
+      a real file time (and the two differ by about the shift), record the experiment as not
+      confirming, and hand the wall-clock-versus-file-time race to the flaky test hunter.
   - Bracket the first failing day with dated runs, and report that date as `fails_on_date`.
   - Where the repo's test command sets flags or a time zone (a `package.json` script such as
     `TZ=... vitest --configLoader native`), run it with `--npm-script <name>` so the experiment
@@ -366,6 +389,9 @@ python scripts/run_tests.py --preset pytest --cwd <copy> --out <run>/runs.json -
   request (`net_guard: refused <host>:<port>`), which attributes outbound calls to the run; only
   clients that honour the proxy variables are guarded (its docstring lists the limits, which the
   report must state). The refused-host log is the evidence for a `live_endpoint` finding. Turn off the product's own update checks and telemetry with its documented variables.
+- **Temporary files:** a scratch HOME does not redirect `tempfile` (Python reads `TEMP`/`TMP` on
+  Windows and `TMPDIR` elsewhere) or `os.tmpdir()`. Set `TEMP`, `TMP` and `TMPDIR` to an empty
+  folder for the runs too, and pass it as `--also temp=<dir>` to `residue.py`.
 - **Go runs:** with the `gotestsum` preset pass the packages (`--tests ./...`; with none, `go test`
   runs only the root package), and select tests with `-run` through `--runner-args`. Set HOME and
   USERPROFILE to an empty folder and the proxy variables as above.
@@ -401,7 +427,10 @@ python scripts/render_report.py <run>/test_data_report.json [--brief]
 ```
 
 `--brief` prints the findings, and one line per handoff recipient with the files that hold the
-most handoffs. A leak error names the candidate whose value leaked, never the value.
+most handoffs. A leak error names the candidate whose value leaked, never the value. A personal-data
+or secret finding from review (`source: agent`) is protected the same way: the values on its basis
+lines (addresses at non-reserved domains, numbers) must not appear in the report or the evidence,
+so describe them by file, line, field and type there too.
 
 Write the headline yourself, naming the P0 findings. Fix every error rather than editing
 computed fields. The validator checks a finding count in the headline against the report. With
