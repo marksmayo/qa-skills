@@ -438,6 +438,33 @@ Where the build differs from the design above, and what the example showed.
   module is neither reported nor noted), and a dedicated class for dev-server traffic (long-poll writes from a
   local preview are still blocked first-party writes the report must explain).
 
+## As built (v1.5.0): fixes from a run on a server-rendered Flask and Jinja site
+
+Found on a Flask app rendering Jinja templates, with an analytics partial and ad tags included on every
+page, no consent banner and a privacy policy naming no vendor.
+
+- **No static tracking candidate for unconditional loaders.** Only Sentry Replay raised one, so a
+  static-only audit of the site had no tracking finding. An analytics, advertising, tag-manager or
+  replay loader (script tag, injected script, or `gtag('config')`) with no consent check nearby, no
+  consent-mode default in the code and no consent-manager gating is now a `tracking_before_consent`
+  candidate (`loader_before_consent`, one per vendor, other pages under `also_at`). Template files with
+  `.j2`, `.jinja`, `.njk` and `.twig` extensions are read like HTML.
+- **Search terms sent to analytics were missed.** An analytics or identify call that reads
+  `location.search`, `location.href` or `document.URL` is a `url_to_analytics` candidate, with the GET
+  forms that put free text in the query.
+- **A shared CDN domain was a tracker.** `fetch_lists.py` turned every `||host/path` and subdomain rule
+  into a flag on the registrable domain, so `fonts.googleapis.com` was a tracker. Only a rule for the
+  whole domain flags it now; host and path rules are kept as `tracker_hosts` and `tracker_host_paths`,
+  and a tracking candidate lists the flagged hosts it contacted (`list_tracker_hosts`).
+- **An undeclared processor without a canary could not be reported.** With `--declared`, every
+  third-party domain contacted that no declared processor names is an `undeclared_processor` candidate
+  (`no_canary` when it carried none).
+- **Testing:** `self_test.py` covers each with a synthetic ferry-timetable site, a synthetic list and
+  the example capture with an empty declaration.
+- **Not done** (same run): ratings when a blocked vendor set no cookie, masking echoed canaries in
+  screenshots, access-log formats in gunicorn or uwsgi config, saved page renders scanned as source,
+  template files in the shared language census, and `--write-summary` filling keys set to null.
+
 ## As built (v1.4.0): fixes from a run on a Go command-line tool
 
 Found on a Go module (about 570 Go files) with vendored Swift, Objective-C and TypeScript driver code,

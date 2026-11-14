@@ -31,7 +31,13 @@ setter, and their label from aria-label, a label prop or the <label> before them
 consent_check_nearby (a consent check in the 15 lines before: a heuristic) and side: server for server code
 (route handlers, middleware, *.server.*, Sentry server and edge configs, Python and Ruby); a vendor URL called
 from server code is a server_side_send candidate. Sentry Replay with no masking options, or with no consent check
-nearby, is a candidate. Test directories and files are skipped unless --include-tests. Social profile and
+nearby, is a candidate. An analytics, advertising, tag-manager or replay loader (a script tag, an injected
+script, or a gtag('config') call) with no consent check nearby, when no file sets a consent-mode default and the
+tag isn't held back by a consent manager (type="text/plain"), is a tracking_before_consent candidate
+(loader_before_consent, one per vendor, other files under also_at). An analytics or identify call that reads the
+page URL with its query (location.search, location.href, document.URL) is a url_to_analytics candidate, with the
+GET forms that put free text in the query. Server-side templates (.j2, .jinja, .njk, .twig, and .html) are read as
+HTML. Test directories and files are skipped unless --include-tests. Social profile and
 documentation links are not SDKs.
 
 Identity SDKs: where MSAL, oidc-client-ts or the Auth0 SPA SDK keep tokens (cacheLocation, storeAuthStateInCookie,
@@ -65,7 +71,7 @@ DATA = HERE.parent / 'data'
 CATS = json.loads((DATA / 'categories.json').read_text(encoding='utf-8'))
 SINKS = json.loads((DATA / 'sinks.json').read_text(encoding='utf-8'))
 LANG = {'.py': 'py', '.js': 'js', '.mjs': 'js', '.cjs': 'js', '.jsx': 'js', '.ts': 'ts', '.tsx': 'ts', '.mts': 'ts', '.cts': 'ts',
-        '.html': 'html', '.htm': 'html', '.java': 'java', '.kt': 'kt', '.swift': 'swift', '.m': 'm', '.rb': 'rb', '.go': 'go'}
+        '.html': 'html', '.htm': 'html', '.jinja': 'html', '.jinja2': 'html', '.j2': 'html', '.njk': 'html', '.twig': 'html', '.java': 'java', '.kt': 'kt', '.swift': 'swift', '.m': 'm', '.rb': 'rb', '.go': 'go'}
 # the languages lang_census counts that this scan reads: sinks, collection points and sends (Java, Kotlin, Swift and
 # Objective-C get logging and storage sinks only, besides manifests and usage strings)
 ANALYSED = {'Python', 'JavaScript', 'TypeScript', 'Go', 'Ruby', 'Java', 'Kotlin', 'Swift', 'Objective-C', 'Vue', 'Svelte'}
@@ -88,6 +94,16 @@ TEST_FILE = re.compile(r'[._-](test|spec|e2e)\.(js|jsx|ts|tsx|mjs|cjs|mts|cts|py
 REDACT = Matcher({'id': 'none', 'fields': {}})
 GENERIC = set(CATS.get('generic_property_names', {}).get('names', []))
 VENDOR_DOMAINS = {d: v['vendor'] for d, v in json.loads((DATA / 'vendors.json').read_text(encoding='utf-8'))['domains'].items()}
+VENDOR_CATEGORY = {d: v['category'] for d, v in json.loads((DATA / 'vendors.json').read_text(encoding='utf-8'))['domains'].items()}
+# vendors whose loader sets identifiers or sends hits as soon as it runs: loaded with no consent check, they track before any choice
+LOADER_CATEGORIES = {'analytics', 'advertising', 'tag_manager', 'marketing', 'session_replay'}
+# a script tag a consent manager holds back until the visitor agrees (type="text/plain" with a category attribute)
+GATED_TAG = re.compile(r'''type\s*=\s*["']text/plain["']|data-cookieconsent|data-cookiecategory|data-category\s*=|data-consent''', re.I)
+# Google consent mode (or another tag's default-denied call) set before the loader: tags wait for a grant
+CONSENT_DEFAULT = re.compile(r'''gtag\(\s*["']consent["']\s*,\s*["']default["']|_paq\.push\(\s*\[\s*["']requireConsent["']|fbq\(\s*["']consent["']\s*,\s*["']revoke["']''')
+# the page URL with its query (search terms, anything a GET form puts there) read into an analytics call
+URL_WITH_QUERY = re.compile(r'\blocation\.(?:search|href)\b|\bdocument\.(?:URL|documentURI)\b|\b(?:window|document)\.location\b(?!\s*\.\s*\w)')
+FORM_TAG = re.compile(r'<form\b([^>]*)>(.*?)</form>', re.I | re.S)
 QUIET = {'.git', '__pycache__', '.mypy_cache', '.pytest_cache', '.tox', '.parcel-cache', '.turbo', '.cache'}  # pruned without being listed
 # profile and share links on these hosts are not SDKs: only a script, pixel or collection path is
 SOCIAL = {'facebook.com', 'instagram.com', 'tiktok.com', 'twitter.com', 'x.com', 'linkedin.com', 'youtube.com', 'pinterest.com'}
@@ -535,6 +551,7 @@ def main() -> int:
     coverage['needs_limitation'] = [coverage['dominant_unsupported_language']] if coverage['status'] == 'unsupported_dominant' else []
     collection, sinks, sdks, permissions, scripts, rum_inits, imports, skipped = [], [], [], [], [], [], [], []
     replay_inits, server_sends, wrappers, texts_meta = [], [], {}, {}
+    get_forms, consent_defaults = [], []    # GET forms with a free-text input; consent-mode defaults (file:line)
     aliases: dict[str, dict] = {}
     sink_rx = [(s, re.compile(s['pattern'], re.M), s.get('hints') or []) for s in SINKS['sinks']]
     chint = SINKS.get('collection_hints', {})
@@ -612,7 +629,8 @@ def main() -> int:
             if host in found_hosts:  # each host once per file, at its first mention
                 return
             found_hosts.add(host)
-            scripts.append({'file': rel, 'line': n, 'host': host, 'source': source, 'vendor': VENDOR_DOMAINS.get(registrable(host))})
+            scripts.append({'file': rel, 'line': n, 'host': host, 'source': source, 'vendor': VENDOR_DOMAINS.get(registrable(host)),
+                            '_consent': consent_nearby(T, n) or bool(GATED_TAG.search(T.line(n)))})
         low = text.lower()
         server_file = lang in ('js', 'ts', 'py', 'rb') and is_server_file(rel, text, cli_packages)
         if lang == 'html' and '<script' in low:
@@ -673,6 +691,15 @@ def main() -> int:
                               'tracks_interactions': bool(re.search(r'trackUserInteractions\s*:\s*true', init)),
                               'before_send': 'beforeSend' in init, 'site': (re.search(r'''\bsite\s*:\s*["']([\w.-]+)["']''', init) or [None, None])[1],
                               'privacy_attributes': bool(re.search(r'data-dd-privacy', text))})
+        if lang == 'html' and '<form' in low:
+            for m in FORM_TAG.finditer(text):
+                method = (attr('<form' + m.group(1) + '>', 'method') or 'get').lower()
+                ins = [attr(x, 'type') for x in re.findall(r'<input\b[^>]*>|<textarea\b[^>]*>', m.group(2), re.I)]
+                if method == 'get' and any((t or 'text').lower() in ('text', 'search') for t in ins):
+                    get_forms.append(f'{rel}:{T.line_of(m.start())}')
+        cd = CONSENT_DEFAULT.search(text)
+        if cd:
+            consent_defaults.append(f'{rel}:{T.line_of(cd.start())}')
         if lang == 'html':
             labels = {m.group(1): re.sub(r'<[^>]+>', '', m.group(2)).strip()
                       for m in re.finditer(r'''<label[^>]*for=["']([^"']+)["'][^>]*>(.*?)</label>''', text, re.I | re.S)} if '<label' in text else {}
@@ -815,6 +842,7 @@ def main() -> int:
         candidates.append(kw)
         if 'sink' in kw:
             seen_sink[(kw['sink'], kw.get('excerpt'))] = kw
+        return kw
 
     seen_sink = {}
     for s in sinks:
@@ -823,6 +851,14 @@ def main() -> int:
             seen_sink[(s['sink'], line)].setdefault('also_at', []).append(f'{s["file"]}:{s["line"]}')
             continue
         view = s['_view']
+        if s['kind'] in ('analytics', 'identify') and URL_WITH_QUERY.search(view) and s.get('side') != 'server':
+            # the address bar's query goes to the vendor: a search box (any GET form) puts what the user typed there
+            cand(type='personal_data_to_third_party', subtype='url_to_analytics', file=s['file'], line=s['line'], sink=s['sink'], excerpt=line,
+                 vendor=s.get('vendor'), fields=[], categories=[], confidence='pattern', consent_check_nearby=s['_consent'],
+                 facts={'url_parts': sorted(set(URL_WITH_QUERY.findall(view))), 'free_text_get_forms': get_forms[:10]},
+                 note='the page URL with its query string is sent to the analytics vendor: search terms and anything else a GET form '
+                      'or a link puts in the query reach it' + (f' (GET forms with a free-text field: {", ".join(get_forms[:3])})' if get_forms else
+                      '; no GET form with a free-text field was found, so check what the app writes into its URLs'))
         names = {f for f in fields if names_field(view, f)}
         names |= {f for v, f in aliases.get(s['file'], {}).items() if f in fields and re.search(rf'(?<![\w$.]){re.escape(v)}(?![\w$])', view)}
         if s['sink'] in ('auth-token-storage', 'auth-sdk-init'):
@@ -910,6 +946,32 @@ def main() -> int:
                  vendor='Sentry', excerpt=r['excerpt'], fields=[], categories=[], confidence='pattern',
                  note='session replay is set up with no consent check nearby, so it may start recording before any choice; the live '
                       'capture decides', facts=facts)
+    # analytics, advertising and tag-manager loaders (and gtag config calls) with no consent check: before any choice
+    if not consent_defaults:
+        loaders: dict = {}
+        for x in scripts:
+            cat = VENDOR_CATEGORY.get(registrable(x['host']))
+            if cat in LOADER_CATEGORIES and x['source'] in ('script_tag', 'injected_script') and not x['_consent']:
+                loaders.setdefault(x['vendor'], []).append(x)
+        for s in sinks:
+            if (s['sink'] == 'gtag' and re.search(r'''gtag\(\s*["']config["']''', s['excerpt']) and not s['_consent'] and s.get('side') != 'server'
+                    and not any(x['file'] == s['file'] for xs in loaders.values() for x in xs)):
+                loaders.setdefault(s.get('vendor') or 'Google Analytics', []).append(
+                    {'file': s['file'], 'line': s['line'], 'host': None, 'source': 'gtag_config', 'vendor': s.get('vendor')})
+        cmp_present = any(VENDOR_CATEGORY.get(registrable(x['host'])) == 'consent_management' for x in scripts)
+        for vend, xs in sorted(loaders.items(), key=lambda kv: (kv[1][0]['file'], kv[1][0]['line'])):
+            x = xs[0]
+            T_ = texts_meta.get(x['file'], (None, None, None))[1]
+            excerpt = REDACT.redact(T_.line(x['line']).strip())[:160] if T_ else f'<script src="//{x["host"]}/...">'
+            c = cand(type='tracking_before_consent', subtype='loader_before_consent', file=x['file'], line=x['line'], vendor=vend, host=x['host'],
+                     excerpt=excerpt, fields=[], categories=[], confidence='pattern',
+                     facts={'source': x['source'], 'vendor_category': VENDOR_CATEGORY.get(registrable(x['host'] or '')) or 'analytics',
+                            'consent_check_nearby': False, 'consent_mode_default': False, 'consent_manager_script': cmp_present},
+                     note=f'the {vend} loader runs with no consent check nearby and no consent-mode default anywhere in the code, so it '
+                          'loads, sets its identifiers and sends hits before any choice' + (' unless the consent manager on the page blocks it '
+                          'automatically' if cmp_present else '') + '; the live capture decides')
+            if len(xs) > 1:
+                c['also_at'] = [f'{y["file"]}:{y["line"]}' for y in xs[1:10]]
     seen_sends = set()
     for x in server_sends:
         if (x['file'], x['vendor']) in seen_sends:
@@ -992,6 +1054,8 @@ def main() -> int:
         if x['package'] not in declared and (x['package'], x['file']) not in seen_imports:
             seen_imports.add((x['package'], x['file']))
             sdks.append(x)
+    for x in scripts:
+        x.pop('_consent', None)
     for x in sinks:
         x.pop('_view', None)
         x.pop('_consent', None)

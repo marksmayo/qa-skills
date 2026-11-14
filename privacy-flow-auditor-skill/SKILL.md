@@ -1,7 +1,7 @@
 ---
 name: privacy-flow-auditor
 description: Map where personal data goes in a web app - what it collects, where it stores it, what it logs, and which third parties receive it, and whether that happens before the user consents or after they reject. Combines a static scan of the code (collection points, logging, analytics, session replay, storage, SDKs, mobile permissions) with a live browser capture in three consent states (before a choice, after "Reject all", after "Accept all"), typing synthetic canary values and searching every request, cookie and storage entry for them raw, URL-encoded, Base64 and hashed. Produces a data inventory, recipients, a consent matrix and ranked findings with GDPR, UK GDPR and Australian Privacy Principles references for a privacy professional. Never types or stores real personal data, and never says an app is compliant.
-version: 1.4.0
+version: 1.5.0
 ---
 
 # Privacy flow auditor
@@ -116,6 +116,18 @@ vendor (a telemetry module's `https://<region>.i.posthog.com` names PostHog), ev
    holds every query result at rest: trace which personal data the queries return, and whether the cache
    is encrypted and cleared at sign-out. The scan finds no personal data by itself in an app whose screens
    show data from an API rather than forms: read what the queries return. The scan also:
+   - reads server-side templates (Jinja, Django, Twig and Nunjucks files: `.html`, `.j2`, `.jinja`, `.njk`,
+     `.twig`) like HTML, so an analytics partial or an ad tag included on every page is seen;
+   - raises a `tracking_before_consent` candidate (subtype `loader_before_consent`, one per vendor, other
+     pages under `also_at`) for an analytics, advertising, tag-manager or replay loader (a `<script src>`,
+     an injected script, or a `gtag('config')` call) with no consent check nearby, when the code sets no
+     consent-mode default (`gtag('consent', 'default', ...)`) and the tag isn't held back by a consent
+     manager (`type="text/plain"` with a category attribute); a static-only audit can rate before consent
+     from it, and the live capture decides;
+   - raises a `personal_data_to_third_party` candidate (subtype `url_to_analytics`) when an analytics or
+     identify call reads the page URL with its query (`location.search`, `location.href`, `document.URL`):
+     search terms and whatever a GET form puts in the address reach the vendor. Its facts list the GET
+     forms with a free-text field (`free_text_get_forms`);
    - reads a sink call's whole argument span, so an object spread over several lines (`Sentry.setUser({`,
      `mixpanel.people.set({` with `$email` on the next line) links its keys; identify, `setUser` and
      `people.set` calls count identity keys (email, name, username, phone) even when no form collects them;

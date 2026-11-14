@@ -97,7 +97,7 @@ python scripts/render_report.py examples/privacy_audit.example.json
 - `scripts/match_canaries.py`: canary sets, encodings, search and redaction
 - `scripts/scan_privacy.py`: static collection points, sinks, candidate flows and SDK hosts (including scripts injected from JavaScript), Go log and HTTP sinks, command-line flags and `telemetry` call-home candidates; records `language_coverage` and warns when most of the code is in a language it does not read; lists what it skipped
 - `scripts/lang_census.py`: shared copy (edit it in `shared/`); source files per language with vendored and embedded trees left out
-- `scripts/self_test.py`: synthetic checks of the Go scan, the language warning, and the validator's telemetry, declared-processor, inventory, headline and runtime-evidence rules
+- `scripts/self_test.py`: synthetic checks of the Go scan, the language warning, template loaders before consent, the page URL sent to analytics, list rules narrower than a domain, undeclared processors without a canary, and the validator's telemetry, declared-processor, inventory, headline and runtime-evidence rules
 - `scripts/capture_flows.py`: the browser capture in each consent state (before, reject, accept; optionally partial and dismiss)
 - `scripts/merge_candidates.py`: candidates, recipients and the consent matrix
 - `scripts/validate_privacy_audit.py`, `scripts/render_report.py`

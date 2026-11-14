@@ -4,7 +4,10 @@
     python self_test.py
 
 Builds small synthetic repositories in a temporary directory: a Go command-line tool with an
-opt-out telemetry call home, and a Rust tool the scan does not analyse. Then it copies the
+opt-out telemetry call home, a Rust tool the scan does not analyse, and a server-rendered ferry-timetable
+site whose templates load analytics and ad tags with no consent check and send the search query to
+analytics. It builds a domain list from synthetic EasyPrivacy rules (host and path rules must not flag a
+whole shared domain) and re-merges the example capture with a declaration naming no vendor. Then it copies the
 static-only example audit, changes one thing at a time, and checks what the validator and the
 renderer say: telemetry rated before consent from a review finding, declared processors that must
 name the recipient, inventory recipients from findings, recipients named by findings in the
@@ -12,7 +15,7 @@ headline and the brief, observed review findings with runtime evidence, credenti
 the limitation an unanalysed language needs. Every host and value is invented.
 """
 from __future__ import annotations
-import copy, json, subprocess, sys, tempfile
+import copy, json, re, subprocess, sys, tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -136,8 +139,96 @@ def unanalysed_language() -> None:
     check('WARNING' in out and 'rust' in out.lower(), 'scan: the unanalysed dominant language is a printed warning')
 
 
+# a server-rendered site (a Flask app rendering Jinja templates): an analytics partial and an ad loader included on
+# every page with no consent check, and a GET search form whose query the analytics config sends as the page path
+ANALYTICS_PARTIAL = '''<!-- analytics partial, included by the base layout -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-TEST0000"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-TEST0000', {
+    page_path: window.location.pathname + window.location.search
+  });
+</script>
+'''
+FERRY_SITE = {
+    'app.py': 'from flask import Flask, render_template, request\napp = Flask(__name__)\n\n\n@app.route("/")\ndef index():\n'
+              '    return render_template("index.html", q=request.args.get("q", ""))\n',
+    'templates/partials/analytics.html': ANALYTICS_PARTIAL,
+    'templates/index.html': '{% include "partials/analytics.html" %}\n<h1>Ferry timetable</h1>\n'
+                            '<form action="/" method="get">\n  <input type="search" name="q" placeholder="Search sailings">\n</form>\n',
+    'templates/ads.j2': '<div class="ad">\n<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-0000"></script>\n</div>\n',
+    'templates/port.html': '<h1>Port</h1>\n<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-0000"></script>\n',
+}
+
+
+def template_loaders() -> None:
+    st, _ = scan(FERRY_SITE)
+    loaders = [c for c in st['candidates'] if c['type'] == 'tracking_before_consent' and c.get('subtype') == 'loader_before_consent']
+    vendors = {c.get('vendor') for c in loaders}
+    check({'Google Tag Manager', 'Google AdSense'} <= vendors,
+          f'scan: analytics and ad loaders in templates with no consent check are tracking_before_consent candidates (got {sorted(map(str, vendors))})')
+    check(any(c['file'] == 'templates/ads.j2' for c in loaders), 'scan: a .j2 template is scanned like HTML')
+    ads = [c for c in loaders if c.get('vendor') == 'Google AdSense']
+    check(len(ads) == 1 and ads[0].get('also_at') == ['templates/port.html:2'], 'scan: one loader candidate per vendor, other pages under also_at')
+    url = [c for c in st['candidates'] if c.get('subtype') == 'url_to_analytics']
+    check(len(url) == 1 and url[0]['file'] == 'templates/partials/analytics.html' and url[0]['line'] == 7,
+          'scan: an analytics config sending location.search is a url_to_analytics candidate')
+    check(bool(url) and any('templates/index.html' in x for x in (url[0].get('facts') or {}).get('free_text_get_forms', [])),
+          'scan: the url_to_analytics candidate names the GET form that puts free text in the query')
+    gated = dict(FERRY_SITE)
+    gated['templates/partials/analytics.html'] = '{% if cookie_consent.analytics %}\n' + ANALYTICS_PARTIAL + '{% endif %}\n'
+    gated['templates/ads.j2'] = ('<script>gtag("consent", "default", {ad_storage: "denied", analytics_storage: "denied"});</script>\n'
+                                 + FERRY_SITE['templates/ads.j2'])
+    st, _ = scan(gated)
+    check(not [c for c in st['candidates'] if c.get('subtype') == 'loader_before_consent'],
+          'scan: a loader inside a consent check, or a site with a consent-mode default, is not a loader candidate')
+
+
+def fonts_not_tracker() -> None:
+    import fetch_lists
+    easy = (b'||googleapis.com/aam.js\n||googleapis.com^*/gen_204?\n||clouderrorreporting.googleapis.com^\n||metrics-example.com^$third-party\n'
+            b'||cdn-example.net/pixel.gif\n')
+    out = fetch_lists.build(easy, b'Platform,Category,Cookie / Data Key name,Domain,Wildcard match\n', {'lists': {}})
+    g = out['domains'].get('googleapis.com') or {}
+    check(not g.get('tracker') and g.get('category') != 'tracker',
+          'lists: a path rule or a subdomain rule does not flag the whole registrable domain (fonts.googleapis.com is no tracker)')
+    check((out['domains'].get('metrics-example.com') or {}).get('tracker') is True, 'lists: a rule for the whole domain still flags it')
+    check('clouderrorreporting.googleapis.com' in (out.get('tracker_hosts') or {}).get('googleapis.com', []),
+          'lists: a subdomain rule is kept per host (tracker_hosts)')
+    check('cdn-example.net/pixel.gif' in (out.get('tracker_host_paths') or {}).get('cdn-example.net', []),
+          'lists: a host path rule is kept as a path rule (tracker_host_paths)')
+    import merge_candidates as mc
+    paths = {'googleapis.com': (out.get('tracker_host_paths') or {}).get('googleapis.com', [])}
+
+    def hit(url):
+        return mc.list_rule_match(paths, 'googleapis.com', url)
+    check(hit('https://www.googleapis.com/x/gen_204?a=1') and hit('https://googleapis.com/aam.js')
+          and not hit('https://fonts.googleapis.com/css2?family=X'),
+          'lists: a ||domain^*/path rule matches that path on the domain and its subdomains, not every service on it')
+
+
+def undeclared_without_canary() -> None:
+    """A third party contacted on every page that is in no declared processor is an undeclared_processor candidate, canary or not."""
+    run = SKILL / 'examples' / 'run'
+    with tempfile.TemporaryDirectory() as d:
+        decl = Path(d) / 'declared.json'
+        decl.write_text(json.dumps({'source': 'synthetic privacy policy naming no vendor', 'processors': []}), encoding='utf-8')
+        out = Path(d) / 'candidates.json'
+        r = subprocess.run([sys.executable, str(HERE / 'merge_candidates.py'), '--capture', str(run / 'capture.json'), '--static',
+                            str(run / 'static.json'), '--flows', str(SKILL / 'examples' / 'flows.json'), '--lists',
+                            str(SKILL / 'examples' / 'lists.example.json'), '--declared', str(decl), '--out', str(out)],
+                           capture_output=True, text=True, cwd=ROOT)
+        c = json.loads(out.read_text(encoding='utf-8')) if out.is_file() else {'candidates': [], 'recipients': []}
+    und = {x['domain'] for x in c['candidates'] if x['type'] == 'undeclared_processor'}
+    third = {x['domain'] for x in c['recipients'] if x['kind'] == 'third_party'}
+    check(bool(third) and third <= und, f'merge: every undeclared third-party recipient is an undeclared_processor candidate '
+                                        f'(recipients {sorted(third)}, candidates {sorted(und)}){r.stderr[-200:]}')
+
+
 # ---------------------------------------------------------------- validator and renderer
-BASE = SKILL / 'examples' / 'privacy_audit.static-only.example.json'
+BASE =SKILL / 'examples' / 'privacy_audit.static-only.example.json'
 CANDS = SKILL / 'examples' / 'static-only' / 'candidates.json'
 REPO = SKILL / 'examples' / 'clinic-signup'
 LOG_LINE = "logger.info('new patient signup email=%s dob=%s reason=%s', patient['email'], patient['dob'], patient['reason'])"
@@ -291,7 +382,7 @@ def language_limitation() -> None:
 
 
 def main() -> int:
-    for t in (go_scan, unanalysed_language, telemetry_before_consent, declared_must_name, inventory_and_headline,
+    for t in (go_scan, unanalysed_language, template_loaders, fonts_not_tracker, undeclared_without_canary, telemetry_before_consent, declared_must_name, inventory_and_headline,
               observed_with_runtime_evidence, url_credentials_message, language_limitation):
         try:
             t()

@@ -17,7 +17,10 @@ sha256 and version; it writes data/lists.lock.json, or the file named by --write
 run doesn't edit the skill). Say in the report which commits were used.
 
 Lists (not committed to this repository; each has its own licence):
-  EasyPrivacy           GPL-3.0-or-later / CC BY-SA 3.0   tracker domains (||domain^ rules)
+  EasyPrivacy           GPL-3.0-or-later / CC BY-SA 3.0   tracker domains (||domain^ rules); a rule for one host
+                        (||stats.example.com^) or one path (||example.com/pixel.js) is kept per host or path
+                        (tracker_hosts, tracker_host_paths) and never flags the whole registrable domain, so a
+                        shared domain such as googleapis.com (Google Fonts) is not a tracker for one of its services
   Open Cookie Database  Apache-2.0                        cookie names and domains -> platform, purpose, retention
 The cache defaults to ~/.cache/qa-skills/privacy-lists. domains.json is what merge_candidates.py --lists reads:
 {"source", "domains": {registrable domain: {vendor, category, region, tracker}}, "cookies": {name: {...}}, "vendors",
@@ -82,11 +85,23 @@ def path_rule(line: str) -> str | None:
 def build(easy: bytes, ocd: bytes, lock: dict) -> dict:
     domains: dict = {}
     paths: list[str] = []
+    hosts: dict[str, set] = {}
+    host_paths: dict[str, set] = {}
     for line in easy.decode('utf-8', 'replace').splitlines():
-        m = re.match(r'^\|\|([a-z0-9.-]+\.[a-z]{2,})[\^/]', line.strip())
+        m = re.match(r'^\|\|([a-z0-9.-]+\.[a-z]{2,})([\^/][^$]*)', line.strip())
         if m:
+            host, rest = m.group(1), m.group(2)
             # registrable() knows shared-hosting suffixes: ||someone.vercel.app^ marks that app, not vercel.app
-            domains.setdefault(registrable(m.group(1)), {'vendor': None, 'category': 'tracker', 'region': None, 'tracker': True})['tracker'] = True
+            reg = registrable(host)
+            if rest.rstrip('|') != '^':
+                # ||googleapis.com/aam.js or ||googleapis.com^*/gen_204? covers one path, not every service on the
+                # domain (fonts, storage, maps): kept as the rule, matched by merge_candidates.list_rule_match
+                host_paths.setdefault(reg, set()).add(host + rest)
+            elif host != reg:
+                # ||clouderrorreporting.googleapis.com^ covers that host only
+                hosts.setdefault(reg, set()).add(host)
+            else:
+                domains.setdefault(reg, {'vendor': None, 'category': 'tracker', 'region': None, 'tracker': True})['tracker'] = True
             continue
         r = path_rule(line)
         if r:
@@ -108,7 +123,9 @@ def build(easy: bytes, ocd: bytes, lock: dict) -> dict:
     src = '; '.join(f'{k} {v["repo"]}@{v["ref"][:10]}{" version " + v["version"] if v.get("version") else ""} (sha256 {v["sha256"][:12]})'
                     for k, v in lock['lists'].items())
     return {'source': src, 'domains': dict(sorted(domains.items())), 'cookies': dict(sorted(cookies.items())),
-            'vendors': curated.get('vendors', {}), 'path_rules': sorted(set(paths))}
+            'vendors': curated.get('vendors', {}), 'path_rules': sorted(set(paths)),
+            'tracker_hosts': {d: sorted(v) for d, v in sorted(hosts.items())},
+            'tracker_host_paths': {d: sorted(v) for d, v in sorted(host_paths.items())}}
 
 
 def check_bundled(lock: dict) -> bool:

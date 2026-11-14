@@ -9,7 +9,9 @@
 Live candidates (L###):
   tracking_before_consent  each third-party domain contacted, and each first-party cookie not attributed to the
                            site, in the "before" state (and the "initial" phase of the other states); also each
-                           domain contacted after the banner was closed without a choice ("dismiss")
+                           domain contacted after the banner was closed without a choice ("dismiss"). A list rule
+                           for one host or path (tracker_hosts, tracker_host_paths) is listed as list_tracker_hosts,
+                           and makes the domain's category tracker only when every request matched one
   tracking_after_reject    each third-party domain contacted after "Reject all" (and, for "partial", after saving
                            preferences that refuse some purposes: only vendors in consent.partial_refuses when given)
                            Both also cover first-party tracking paths (an analytics proxy or error-tracker tunnel on
@@ -23,7 +25,8 @@ Live candidates (L###):
   personal_data_in_url     a canary in a first-party URL, per path
   insecure_storage         a canary in localStorage, sessionStorage or a cookie
   personal_data_in_logs / sensitive_category_flow   a canary in the server log (local runs)
-  undeclared_processor     a third party receiving a canary that isn't in the declared processors
+  undeclared_processor     a third party receiving a canary that isn't in the declared processors; with --declared,
+                           also each undeclared third party contacted without a canary (subtype no_canary)
   cross_border_transfer    a third party receiving a canary whose region (from the list) is outside --regions
   possible hashed identifier   32/40/64-hex values in third-party requests that match no canary, one candidate per
                            (domain, key): facts say how many distinct values there were, whether a value differs on
@@ -97,6 +100,13 @@ def easyprivacy_regex(rule: str) -> str:
     for ch in rule:
         out += '.*' if ch == '*' else r'(?:[^\w.%-]|$)' if ch == '^' else re.escape(ch)
     return out
+
+
+def list_rule_match(host_paths: dict, dom: str, url: str) -> bool:
+    """A request URL matches one of the domain's EasyPrivacy host-and-path rules (||host/path, ||host^*/path):
+    the rule's host is the request's host or a parent of it, then the rule's path pattern."""
+    u = re.sub(r'^[a-z][a-z0-9+.-]*://', '', url or '', flags=re.I)
+    return any(re.match(r'(?:[\w-]+\.)*' + easyprivacy_regex(r), u, re.I) for r in host_paths.get(dom, ()))
 
 
 class PathRules:
@@ -226,6 +236,15 @@ def main() -> int:
     def blocked(rs) -> int:
         return sum(1 for r in rs if r.get('blocked'))
 
+    tracker_hosts, tracker_paths = lists.get('tracker_hosts') or {}, lists.get('tracker_host_paths') or {}
+
+    def list_tracker(d: str, r: dict) -> bool:
+        """The list flags this request's host, or a path on it (a rule narrower than the whole registrable domain)."""
+        h = (r.get('host') or '').lower()
+        if h in tracker_hosts.get(d, ()) or any(h.endswith('.' + t) for t in tracker_hosts.get(d, ())):
+            return True
+        return list_rule_match(tracker_paths, d, r.get('url') or '')
+
     cands: list[dict] = []
 
     def cand(**kw):
@@ -266,6 +285,12 @@ def main() -> int:
             c = cand(type=typ, state=st_name, domain=d, vendor=v.get('vendor'), vendor_category=v.get('category'), recipient=kind(d),
                      requests=len(rs), paths=sorted({r['path'] for r in rs})[:10], phases=sorted({r['phase'] for r in rs}),
                      cookies=ck, example_requests=[{'state': st_name, 'n': r['n'], 'phase': r['phase'], 'method': r['method'], 'url': r['url'][:300]} for r in rs[:3]])
+            listed = sorted({r['host'] for r in rs if list_tracker(d, r)})
+            if listed:
+                # the list names these hosts (or paths on them), not the whole domain: tracker only when every request was one
+                c['list_tracker_hosts'] = listed
+                if not v.get('category') and all(list_tracker(d, r) for r in rs):
+                    c['vendor_category'] = 'tracker'
             if blocked(rs):
                 c['blocked_requests'] = blocked(rs)
             if csp_by_dom.get(d):
@@ -376,6 +401,31 @@ def main() -> int:
         if v.get('region') and v['region'] not in regions:
             cand(type='cross_border_transfer', domain=d, vendor=v.get('vendor'), recipient=kind(d), region=v['region'], regions=sorted(regions),
                  states=sorted(e['states']), fields=sorted(e['fields']), categories=cats(e['fields']), region_source=lists.get('source'))
+    if a.declared:
+        # a third party contacted with no canary is still a processor the declaration may have to name (an analytics or
+        # ad vendor on every page): one candidate per undeclared domain that no canary candidate above covers
+        contacted: dict = {}
+        for st_name in tested:
+            for r in states[st_name]['requests']:
+                d = dom_of(r['host'])
+                if d not in first and d not in to_third:
+                    contacted.setdefault(d, {'states': set(), 'requests': [], 'blocked': 0, 'hosts': set()})
+                    e = contacted[d]
+                    e['states'].add(st_name)
+                    e['hosts'].add(r['host'])
+                    e['blocked'] += 1 if r.get('blocked') else 0
+                    e['requests'].append({'state': st_name, 'n': r['n'], 'phase': r['phase'], 'method': r['method'], 'url': r['url'][:300]})
+        for d, e in sorted(contacted.items()):
+            if kind(d) != 'third_party':
+                continue
+            v = vendor(d)
+            c = cand(type='undeclared_processor', subtype='no_canary', domain=d, vendor=v.get('vendor'), vendor_category=v.get('category'),
+                     recipient='third_party', states=sorted(e['states']), fields=[], categories=[], hosts=sorted(e['hosts']),
+                     requests=len(e['requests']), declared_source=declared.get('source'), example_requests=e['requests'][:2],
+                     note='contacted, carrying no canary, and named by no declared processor: whether the declaration must name it depends '
+                          'on what it receives (an IP address and page URL at least)')
+            if e['blocked']:
+                c['blocked_requests'] = e['blocked']
     for path, e in sorted(in_url.items()):
         cand(type='personal_data_in_url', domain=sorted(first)[0], path=path, states=sorted(e['states']), fields=sorted(e['fields']),
              categories=cats(e['fields']), example_requests=e['requests'][:3], requests=len(e['requests']))

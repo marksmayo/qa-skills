@@ -82,6 +82,14 @@ AU: the APPs), listed for the regions in scope:
 | `first_party_beacon` | A first-party write fired without a form submission (telemetry, experiment exposure, autosave), usually before any choice |
 | `telemetry` | A call home from software on the user's machine (a command-line tool's usage events, a crash report, an update check carrying an identifier), usually on by default with an environment variable or setting as the opt-out |
 
+A domain is a tracker in the list sense only when EasyPrivacy blocks the whole registrable domain
+(`||example.com^`). A rule for one host (`||stats.example.com^`) or one path (`||example.com/pixel.js`)
+flags that host or path (`list_tracker_hosts` on the candidate), so a request to another service on a
+shared domain (a Google Fonts stylesheet on `fonts.googleapis.com`) is a third-party request that
+discloses the visitor's IP address and the page, not tracking. With `--declared`, every third party
+contacted that no declared processor names is an `undeclared_processor` candidate, with a canary (what it
+received) or without one (subtype `no_canary`: it received at least the IP address and page URL).
+
 Tracking findings also cover first-party tracking paths (an analytics proxy or error-tracker tunnel on
 the site's own host) and vendor calls the site's own CSP stopped in the browser (attempted, never sent),
 and the `partial` (some purposes refused) and `dismiss` (banner closed without a choice) states: tracking
@@ -91,7 +99,9 @@ after a dismissal is tracking before consent.
 
 With `run_status: not_run` (no capture), findings rest on the code: `traced` with a full code path, or
 `pattern`. Nothing is `observed`, no consent state is named, and `before_consent` needs a static
-`tracking_before_consent` candidate (pattern), or a `default_on` review finding. A finding found by
+`tracking_before_consent` candidate (pattern: a replay set up with no consent check, or an analytics, ad or
+tag-manager loader with no consent check and no consent-mode default, `loader_before_consent`), or a
+`default_on` review finding. A finding found by
 reading the code (`source: agent`) carries a `basis` of re-checkable file lines (or runtime evidence) and
 is at most `traced` without runtime evidence. With recorded runtime evidence (a `{"evidence": file}` basis:
 a loopback sink or proxy log a command-line tool sent to) it may be `observed`, in a `not_run` audit too:
