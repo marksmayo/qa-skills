@@ -24,7 +24,7 @@ shaped like an Azure DevOps pipeline or template (trigger/stages/jobs/steps with
 script or template entries).
 """
 from __future__ import annotations
-import argparse, json, os, re, sys
+import argparse, fnmatch, json, os, re, sys
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
@@ -271,6 +271,36 @@ def naming_of(name: str) -> str | None:
         if rx.match(name):
             return label
     return None
+
+def pytest_collection(root: Path, area: str) -> dict | None:
+    """pytest's testpaths and python_files from the area's own config (pytest.ini, pyproject.toml
+    [tool.pytest.ini_options], tox.ini or setup.cfg [tool:pytest]), else None. python_files defaults to pytest's
+    test_*.py and *_test.py."""
+    d = root if area == '.' else root / area
+    for name, section in (('pytest.ini', r'\[pytest\]'), ('pyproject.toml', r'\[tool\.pytest\.ini_options\]'),
+                          ('tox.ini', r'\[pytest\]'), ('setup.cfg', r'\[tool:pytest\]')):
+        p = d / name
+        if not p.is_file():
+            continue
+        text = read(p)
+        m = re.search(section + r'[ \t]*\n(.*?)(?=^\[|\Z)', text, re.S | re.M)
+        if not m:
+            continue
+        body = m.group(1)
+
+        def values(key):
+            mm = re.search(rf'^\s*{key}\s*=\s*(\[[^\]]*\]|.+(?:\n[ \t]+.+)*)', body, re.M)
+            if not mm:
+                return []
+            raw = mm.group(1)
+            if raw.lstrip().startswith('['):
+                return re.findall(r'["\']([^"\']+)["\']', raw)
+            return raw.split()
+        files = values('python_files') or ['test_*.py', '*_test.py']
+        return {'config': (PurePosixPath(area) / name).as_posix() if area != '.' else name, 'dir': area,
+                'testpaths': [t.strip('/') for t in values('testpaths')], 'python_files': files}
+    return None
+
 
 def is_test_file(path: str) -> bool:
     p = PurePosixPath(path)
@@ -597,6 +627,27 @@ class Detector:
             if is_test_file(f):
                 a['test_files'].append(f)
 
+        for r, a in areas.items():   # pytest's own collection rules decide which Python files are its tests
+            cfg = pytest_collection(self.root, r)
+            if not cfg:
+                continue
+            base = '' if cfg['dir'] == '.' else cfg['dir'] + '/'
+            def collected(f, cfg=cfg, base=base):
+                if not f.startswith(base) or not f.endswith('.py') or PurePosixPath(f).name == 'conftest.py':
+                    return False
+                rel = f[len(base):]
+                if cfg['testpaths'] and not any(rel == t or rel.startswith(t.rstrip('/') + '/') for t in cfg['testpaths']):
+                    return False
+                return any(fnmatch.fnmatch(PurePosixPath(f).name, p) for p in cfg['python_files'])
+            py_tests = [f for f in a['test_files'] if f.endswith('.py') and PurePosixPath(f).name != 'conftest.py']
+            outside = sorted(f for f in py_tests if not collected(f))
+            extra = sorted(f for f in self.files if self.owner(f, roots) == r and collected(f) and f not in a['test_files'])
+            a['test_files'] = [f for f in a['test_files'] if f not in outside] + extra
+            a['pytest'] = {'config': cfg['config'], 'testpaths': cfg['testpaths'], 'python_files': cfg['python_files'],
+                           'not_collected': outside[:50],
+                           **({'note': f'{len(outside)} Python test file(s) are outside pytest\'s testpaths or '
+                                       'python_files, so a bare `pytest` does not collect them; they run only when named '
+                                       'explicitly (check CI)'} if outside else {})}
         declared_at = {r: {n for cat in areas[r]['frameworks'].values() for n in cat} for r in areas}
         declared = lambda a: declared_at[a['root']] | declared_at.get('.', set())  # noqa: E731
         for a in areas.values():
@@ -672,6 +723,8 @@ class Detector:
                 'e2e': {**a['e2e_blocks'], 'base_url': area_base[0] if area_base else None,
                         'selectors': sel, 'selector_convention': convention},
             }
+            if a.get('pytest'):
+                fingerprint['pytest'] = a['pytest']
             if not a['test_files']:
                 fingerprint['proposal'] = self._proposal(fingerprint)
             result_areas.append(fingerprint)
@@ -841,6 +894,12 @@ def self_test() -> int:
         'apps/site/e2e/home.e2e.ts': "describe('home', () => { it('loads', async () => { await browser.url('/'); }); });\n",
         '.github/workflows/ci.yml': 'jobs:\n  t:\n    steps:\n      - run: pnpm --filter @shop/basket exec vitest run\n'
                                     '      - run: pnpm --filter e2e run test\n',
+        # a Python service whose pytest config narrows collection to tests/ and adds a check_*.py pattern
+        'svc/pyproject.toml': '[project]\nname = "timetable"\n\n[tool.pytest.ini_options]\ntestpaths = ["tests"]\n'
+                              'python_files = ["test_*.py", "check_*.py"]\naddopts = "-v"\n',
+        'svc/timetable/__init__.py': '', 'svc/tests/test_routes.py': 'def test_a():\n    assert 1\n',
+        'svc/tests/check_data.py': 'def test_b():\n    assert 1\n',
+        'svc/tools/tests/test_sync.py': 'def test_c():\n    assert 1\n',
     }
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
@@ -864,6 +923,11 @@ def self_test() -> int:
          and 'pnpm --filter @shop/basket exec vitest run' not in cmds('packages/e2e')
          and 'pnpm --filter e2e run test' in cmds('packages/e2e'), (cmds('packages/basket'), cmds('packages/e2e'))),
         ('package.json scripts use the package manager', 'pnpm run test:scripts' in cmds('.'), cmds('.')),
+        ('pytest testpaths and python_files decide the Python test files',
+         'svc' in areas and areas['svc']['test_files_count'] == 2
+         and (areas['svc'].get('pytest') or {}).get('not_collected') == ['svc/tools/tests/test_sync.py']
+         and (areas['svc'].get('pytest') or {}).get('python_files') == ['test_*.py', 'check_*.py'],
+         areas.get('svc', {}).get('pytest') if 'svc' in areas else sorted(areas)),
         ('tooling', res['tooling'].get('package_manager') == 'pnpm' and res['tooling'].get('changesets', {}).get('pending') == 1
          and 'oxlint' in res['tooling'].get('linters', {}) and res['tooling'].get('workspaces') == ['packages/*', 'apps/*']
          and 'note' in res['tooling'].get('typescript', {}), res['tooling']),
