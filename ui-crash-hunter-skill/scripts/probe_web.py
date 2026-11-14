@@ -499,7 +499,9 @@ def probe(scenario: dict, base_url: str, out_dir: Path, headed: bool = False, st
         timing['steps_s'] = round(t_end - t_steps, 2)
         state = observe(page, scenario.get('observe') or {})
         shot = out_dir / 'screenshot.png'
+        t_shot = time.monotonic()
         page.screenshot(path=str(shot), full_page=True)
+        timing['screenshot_s'] = round(time.monotonic() - t_shot, 2)
         own = own_errors()
         baseline = scenario.get('kind') == 'baseline'
         # a probe that ended off the app (the browser's error page, a sign-in redirect), or without the app's root
@@ -537,8 +539,19 @@ def probe(scenario: dict, base_url: str, out_dir: Path, headed: bool = False, st
         if baseline:
             evidence['baseline_ok'] = not away and not errors and not own and step_error is None and \
                 all(e['passed'] for e in expectations)
+        # shutting down can take longer than the probe itself (a page with aborted third-party requests, several
+        # browsers at once): close the context first, and record the time so total_s is accounted for
+        t_close = time.monotonic()
+        try:
+            page.unroute_all(behavior='ignoreErrors')
+        except (PwError, AttributeError, TypeError):
+            pass
+        context.close()
         browser.close()
+        timing['close_s'] = round(time.monotonic() - t_close, 2)
     timing['total_s'] = round(time.monotonic() - t0, 2)
+    timing['other_s'] = round(max(0.0, timing['total_s'] - sum(timing.get(k, 0) for k in
+                                                             ('launch_s', 'steps_s', 'screenshot_s', 'close_s'))), 2)
     evidence['timing'] = timing
     (out_dir / 'evidence.json').write_text(json.dumps(evidence, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
     return evidence
@@ -691,7 +704,8 @@ def main() -> int:
     if ev.get('expectations_skipped'):
         print('  the final expectations were not evaluated: a step failed first (see step error)')
     slow = sorted(ev['steps'], key=lambda st: -st.get('ms', 0))[:1]
-    print(f"  timing: launch {ev['timing'].get('launch_s')}s, steps {ev['timing'].get('steps_s')}s, total "
+    print(f"  timing: launch {ev['timing'].get('launch_s')}s, steps {ev['timing'].get('steps_s')}s, screenshot "
+          f"{ev['timing'].get('screenshot_s')}s, close {ev['timing'].get('close_s')}s, total "
           f"{ev['timing'].get('total_s')}s" + (f"; slowest step {slow[0]['step']} ({slow[0]['action']}) {slow[0]['ms']} ms"
                                                 if slow and 'ms' in slow[0] else ''))
     print(f"{verdict}: {len(ev['page_errors'])} page error(s), root empty: {ev['root_empty']}, "

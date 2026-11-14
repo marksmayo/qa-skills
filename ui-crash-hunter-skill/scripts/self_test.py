@@ -98,6 +98,9 @@ def live_probe_check() -> tuple[list[str], str]:
         if not ev.get('read_only') or not ev.get('baseline_ok') or ev.get('inconclusive'):
             fails.append(f"file:// probe: read_only {ev.get('read_only')}, baseline_ok {ev.get('baseline_ok')}, "
                          f"inconclusive {ev.get('inconclusive_reason')}")
+        tm = ev.get('timing') or {}
+        if not all(isinstance(tm.get(k), (int, float)) for k in ('launch_s', 'steps_s', 'screenshot_s', 'close_s', 'total_s')):
+            fails.append(f'file:// probe: timing does not account for the screenshot and browser shutdown: {tm}')
         if not any('telemetry.example.invalid/hit?id=1' in b for b in ev.get('blocked_requests', [])):
             fails.append(f"file:// probe: the third-party request was not blocked and recorded with its query: "
                          f"{ev.get('blocked_requests')}")
@@ -126,6 +129,35 @@ def validator_checks() -> list[str]:
     errors, _ = vcr.check(d, EXAMPLES, None, None)
     if any(f'route {rid} was not analysed' in e for e in errors):
         fails.append(f'validator: a not_analysed item that starts with the route id ("{rid} (...)") is rejected')
+    # --recon: the report must agree with recon.json's site model, or say why; a dominant language no pack reads
+    # must be named in the limitations; a report whose static tools found nothing on unread UI is all manual
+    go_recon = {'site': {'kind': 'unknown'}, 'blast_radius': {'model': 'unknown'},
+                'language_coverage': {'status': 'unsupported_dominant', 'dominant_unsupported_language': 'Go'}}
+    d = json.loads(json.dumps(base))
+    try:
+        errors, warnings = vcr.check(d, EXAMPLES, None, None, recon_json=go_recon)
+    except TypeError as exc:
+        return fails + [f'validator: no recon input ({exc})']
+    if not any('site_model' in w and 'recon' in w for w in warnings + errors):
+        fails.append('validator --recon: a site_model (spa) that differs from recon.json (unknown) passes silently')
+    if not any('Go' in e and 'limitation' in e for e in errors):
+        fails.append('validator --recon: a report on a Go-dominant repository has no limitation naming Go and passes')
+    d['limitations'].append('This repository is mostly Go, which no pack reads; the Go code was not assessed.')
+    d['limitations'].append('The site model differs from recon (a bundled fixture misled it); set by hand.')
+    d['triage'].update(total=0, promoted=[], dismissed=[])
+    errors, warnings = vcr.check(d, EXAMPLES, None, None, recon_json=go_recon)
+    if any('Go' in e and 'limitation' in e for e in errors) or any('site_model' in w and 'recon' in w for w in warnings):
+        fails.append(f'validator --recon: limitations naming Go and the site-model change are not accepted: {errors}')
+    if not any('manual' in w for w in warnings):
+        fails.append('validator --recon: 0 tool candidates on a repository whose UI the tools did not read is not flagged '
+                     'as entirely manual coverage')
+    flask = {'site': {'kind': 'multi_page'}, 'blast_radius': {'model': 'per_script'},
+             'language_coverage': {'status': 'server_rendered', 'dominant_unsupported_language': 'Python'}}
+    d = json.loads(json.dumps(base))
+    d['recon']['site_model'], d['recon']['blast_radius'] = 'multi_page', {'model': 'per_script', 'note': 'x'}
+    errors, _ = vcr.check(d, EXAMPLES, None, None, recon_json=flask)
+    if any('Python' in e for e in errors):
+        fails.append(f'validator --recon: a server-rendered Flask site is held to the unsupported-language rule: {errors}')
     return fails
 
 

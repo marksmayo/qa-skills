@@ -1,7 +1,7 @@
 ---
 name: ui-crash-hunter
 description: Hunt for code paths in web and mobile UI code that are likely to crash the app (B1, app-fatal) or a whole screen (B2, screen-fatal), rank them by real-world severity, and write reproduction steps for each. Uses static analysis, an API-contract diff and the error-boundary map, then confirms crashes in the running app where possible. Every finding has a file and line, a concrete trigger and a confidence level (reproduced, traced or pattern); degradations are listed separately and never ranked as crashes.
-version: 1.5.0
+version: 1.6.0
 ---
 
 # UI Crash Hunter
@@ -90,8 +90,21 @@ Read the output, then confirm and complete it by reading the code:
   B1 only on pages whose content is rendered by script (`content_rendered_by_js`) or when the script
   hides the content. For static sites recon lists the pages (one route per page, or one per set of
   scripts when there are many), the scripts each loads, scripts that inject others, pages with
-  inline scripts (read those yourself; the pattern scan skips HTML), and error pages such as
-  `404.html` whose relative asset URLs break when served at a nested path.
+  inline scripts (`scan_pitfalls.py` scans inline `<script>` blocks of HTML pages at their real
+  lines; read the rest yourself), and error pages such as `404.html` whose relative asset URLs break
+  when served at a nested path.
+  A **server-rendered Flask or Django site** (the web framework in `requirements*.txt`,
+  `pyproject.toml` or an import, and templates: `.html` under a `templates/` directory, `.jinja`,
+  `.j2`) is `multi_page` / `per_script` with `site.served_by: "flask"` (or `"django"`). Recon reads
+  the Flask views with `ast`: a view that calls `render_template(...)` is a page route with its
+  `template` and `methods`; JSON and file views are `site.server.api_endpoints`. `site.server.templates`
+  lists each template's inline scripts, the scripts it loads and the routes that render it. Django's
+  `urls.py` is not read: list its page routes by hand. HTML files outside the template directories
+  are listed in `site.other_html`: no view renders them, so check they are served before treating a
+  finding in one as live. The templates are the UI: `scan_pitfalls.py` scans their inline scripts at
+  the template's lines, and the static scripts they load. Read each template for script built from
+  template variables (`{{ ... }}` inside `<script>`), which no scanner sees. The Python views are
+  server code: a throw there is an HTTP 500 or an error page, not a UI crash.
   A site that a Node server renders itself (`node:http` `createServer`, Express, Fastify or Koa, with
   pages built from HTML template literals) is `multi_page` / `per_script` too, with
   `site.served_by: "node_server"`: recon follows the server's relative imports and lists the routes
@@ -110,7 +123,15 @@ Read the output, then confirm and complete it by reading the code:
   `unsupported_dominant`), recon and the scan say so in `warnings`, and recon sets `site.kind` and
   `blast_radius` to `unknown` rather than model the app from incidental files. Say in the report
   that the dominant language was not analysed (limitations, coverage); never present the empty static
-  result as evidence.
+  result as evidence. A server-rendered Flask or Django site is not that case: its Python renders the
+  templates that are its UI, so `language_coverage.status` is `server_rendered` (with a note and
+  `server_rendered.templates`), there is no warning, and the site is modelled. Still record the Python
+  server code as not assessed in the limitations.
+- **Data directories** (`skipped_data_dirs`). A directory holding 200 or more files, at least 90%
+  of them data files (JSON, CSV, XML, YAML, ...) and none code, is pruned before any walk descends
+  into it (recon, the scan, `ui_graph.py` and `contract_diff.py`), so thousands of data records
+  are never opened. Every script takes `--exclude <dir>` (repeatable) to prune another directory.
+  Check the list: a directory of generated code would be a mistake to skip.
 - **HTML held in string constants** (`site.embedded_templates`): a page a Go `html/template` constant,
   a Python or Java/Kotlin triple-quoted string, a Rust raw string or a template file (`.tmpl`,
   `.gohtml`, `.jinja`, `.erb`) holds. `scan_pitfalls.py` scans their inline scripts at the host file's
@@ -278,7 +299,9 @@ cross-browser skills use). `probe_web.py` validates every step and assertion bef
 and exits 2 naming the bad one; `--check` validates only. If a step still fails at run time, the
 evidence has `step_error` and `expectations_skipped: true`: the final assertions were never evaluated,
 which is neither a reproduction nor a clean baseline. The evidence also records each step's `ms` and a
-`timing` block (launch, steps, total), so a slow probe can be explained. `--emit-spec` writes nothing
+`timing` block (launch, steps, screenshot, close, other and total), so a slow probe can be explained:
+on a busy machine closing the browser after aborted third-party requests can take longer than the
+probe itself (`close_s`). `--emit-spec` writes nothing
 for a baseline probe (a baseline never reproduces). The evidence file records uncaught page errors with
 stacks, console errors (a boundary that catches an error usually logs it), every request with its
 status, failed requests, whether the root is empty (white screen) and which fallback texts are
@@ -348,11 +371,21 @@ sends analytics hits or ad requests. Console errors caused by that blocking go t
 `blocked_console_errors` and never count towards a reproduction or against a baseline.
 `third_party: "allow"` lifts the block (only with the user's agreement), and
 `service_workers: "block"` stops service workers for the run. Errors inside blocked scripts, and
-their effect on the page, are therefore untested: say so in the limitations.
+their effect on the page, are therefore untested: say so in the limitations. The block also
+changes what renders: map tiles from a tile server stay grey, web fonts fall back to system fonts
+and embedded widgets stay empty. Don't assert on them, don't report their absence as a defect, and
+name them in the limitations when the screenshots show them.
 
 **Effects, not only errors.** Many real failures throw nothing visible: a fetch failure swallowed by
 `.catch(() => {})` leaves search dead with no message, and a `404.html` with relative asset URLs
-loads unstyled at a nested path. Describe the defect's observable effect in `expect` (and in
+loads unstyled at a nested path. The pattern scan flags the usual causes on static and
+server-rendered sites: `WEB-FETCH-JSON-UNCHECKED` (`r.json()` with no `r.ok` check, so a 429 or an
+HTML error page becomes a rejected parse or wrong data), `WEB-SWALLOWED-ERROR` (an empty catch) and
+`WEB-FETCH-PER-KEYSTROKE` (a request per input event with no debounce, against a rate-limited
+endpoint). Record such a silent failure as a degradation with effect `component_broken` and
+`caught_by: null`, and say in its description that nothing throws; rank degradations by what the
+feature is for (a page whose only purpose is the empty feature matters more than a side panel) in
+the headline and summary. Describe the defect's observable effect in `expect` (and in
 `expect` steps, checked at that point):
 
 | Assertion | Holds when |
@@ -372,7 +405,12 @@ memoised failure; "no results" alone could be an empty index.
 Always run one **baseline** probe first (`"kind": "baseline"`, contract-valid data, assertions that
 describe healthy behaviour, such as results appearing and the stylesheet applying). It never counts
 as reproduced; `baseline_ok` is true when there were no errors of the app's own and every assertion
-held. If the baseline already errors or fails, fix the scenario before blaming the code; if the
+held. If the baseline already errors or fails, fix the scenario before blaming the code. When the
+scenario is right and the baseline fails the same way on the real server every time (a page whose
+main feature is empty at the default viewport), that failure is itself a finding: keep the evidence
+of the failed baseline, record the defect with that probe as its reproduction (an effect: write the
+expectation it broke as the defect's `expect`), and take a clean baseline elsewhere (another
+viewport or route) for the comparison. If the
 target itself is degraded (its own API returns 500s), mock the failing requests in the browser, or
 record the probe as `baseline_not_clean` with a note and set `run_status` to `partial`. A probe that
 couldn't run at all is `errored`, with a note. A probe whose page ended off the app (the browser's
@@ -455,11 +493,16 @@ it may be `reproduced` and the headline must not imply a runtime check. Then:
 
 ```bash
 python scripts/validate_crash_report.py <out_dir>/crash_report.json --write-summary \
-    --repo <repo> --candidates <out_dir>/candidates.json
+    --repo <repo> --candidates <out_dir>/candidates.json --recon <out_dir>/recon.json
 python scripts/render_report.py <out_dir>/crash_report.json [--brief] [--sarif <out_dir>/crashes.sarif]
 ```
 
-Fix every validation error; don't weaken the report to pass. The headline states counts and the
+Fix every validation error; don't weaken the report to pass. `--recon` warns when the report's
+`site_model` or blast-radius model differs from recon's without a limitation that names the site
+model, requires a limitation naming the dominant language when recon says it is not analysed, and
+warns when the static tools found nothing on such a repository (the coverage is entirely manual).
+Evidence files may hold any character: read them as UTF-8 (`encoding="utf-8"`), never with the
+platform's default encoding. The headline states counts and the
 worst finding plainly ("5 likely crashes, 4 reproduced; a P0 crash loop for users upgrading from
 0.2.0"). Then tell the user:
 

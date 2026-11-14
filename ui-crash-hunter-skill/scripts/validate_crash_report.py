@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
 """Validate a UI crash hunter report (structure and honesty rules).
 
-    python validate_crash_report.py crash_report.json [--repo <app>] [--candidates candidates.json] [--write-summary]
+    python validate_crash_report.py crash_report.json [--repo <app>] [--candidates candidates.json]
+                                    [--recon recon.json] [--write-summary]
 
 Evidence paths in the report (screenshots, evidence files, repro specs) are relative to the report's
 directory and must exist. --repo re-checks every finding location against the source (file exists,
 line exists, snippet is on that line) and that nothing the run wrote is inside the repository.
---candidates re-checks that every candidate was triaged. --write-summary recomputes the summary
+--candidates re-checks that every candidate was triaged. --recon ties the report to recon.json: a
+site_model or blast-radius model that differs from recon's draws a warning unless a limitation explains
+the site model; when recon's language_coverage says an unanalysed language dominates (a Go tool), a
+limitation must name that language (a server-rendered Flask or Django site, status server_rendered, is
+analysed through its templates and is exempt); and a report whose static tools found no candidate on
+such a repository is flagged as entirely manual coverage. --write-summary recomputes the summary
 counts in place (the headline is kept) before validating. Exit code 0 when valid, 1 when invalid.
 
 A reproduced finding needs a stack trace, or a probe that reproduced it by its effect (evidence
@@ -199,7 +205,34 @@ def evidence_texts(ev: dict) -> list[str]:
             out.append(str(c))
     return [norm(t) for t in out if t]
 
-def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tuple[list[str], list[str]]:
+def recon_checks(d: dict, recon: dict, E, W) -> None:
+    """The report against recon.json: the site and blast-radius models, the language guard, and coverage that is
+    entirely manual because the static tools could not read the UI."""
+    rr = d.get('recon') or {}
+    lims = ' '.join(str(x) for x in d.get('limitations') or [])
+    explained = re.search(r'site[ _]model', lims, re.I)
+    want_site = (recon.get('site') or {}).get('kind')
+    want_blast = (recon.get('blast_radius') or {}).get('model')
+    if want_site and rr.get('site_model') != want_site and not explained:
+        W(f"recon.site_model is {rr.get('site_model')!r} but recon.json says {want_site!r}: if you corrected it, say why "
+          'in a limitation (name the site model)')
+    if want_blast and (rr.get('blast_radius') or {}).get('model') != want_blast and not explained:
+        W(f"recon.blast_radius.model is {(rr.get('blast_radius') or {}).get('model')!r} but recon.json says "
+          f"{want_blast!r}: if you corrected it, say why in a limitation (name the site model)")
+    lc = recon.get('language_coverage') or {}
+    lang = lc.get('dominant_unsupported_language')
+    if lc.get('status') == 'unsupported_dominant' and lang:
+        if not re.search(r'\b' + re.escape(lang) + r'\b', lims):
+            E(f'recon.json says the repository is predominantly {lang}, which the crash hunter does not analyse: a '
+              f'limitation must name {lang} and say its code was not assessed')
+        tri = d.get('triage') or {}
+        if not tri.get('total'):
+            W(f'the static tools found no candidate, and recon.json says the dominant language ({lang}) is not read: '
+              'the coverage is entirely manual (agent reading and probes); say so in the headline or limitations')
+
+
+def check(d: dict, base: Path, repo: Path | None, candidates: dict | None,
+          recon_json: dict | None = None) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
     E, W = errors.append, warnings.append
@@ -598,6 +631,8 @@ def check(d: dict, base: Path, repo: Path | None, candidates: dict | None) -> tu
             E(f"coverage: route {r.get('id')} was not analysed and is not in coverage.not_analysed with a reason")
     if not d['limitations']:
         E('limitations must not be empty')
+    if recon_json is not None:
+        recon_checks(d, recon_json, E, W)
 
     # files written stay outside the repository
     if repo:
@@ -634,18 +669,21 @@ def main() -> int:
     ap.add_argument('report', type=Path)
     ap.add_argument('--repo', type=Path, help='the analysed app, to re-check locations and that nothing was written to it')
     ap.add_argument('--candidates', type=Path, help='candidates.json from scan_pitfalls.py')
+    ap.add_argument('--recon', type=Path, help='recon.json from recon.py: the site model and language coverage to agree with')
     ap.add_argument('--write-summary', action='store_true')
     args = ap.parse_args()
     try:
         d = json.loads(args.report.read_text(encoding='utf-8'))
         cands = json.loads(args.candidates.read_text(encoding='utf-8')) if args.candidates else None
+        recon = json.loads(args.recon.read_text(encoding='utf-8')) if args.recon else None
     except (OSError, ValueError) as exc:
         print(f'Unable to read input: {exc}', file=sys.stderr)
         return 2
     if args.write_summary and isinstance(d.get('summary'), dict):
         d['summary'] = {**compute_summary(d), 'headline': d['summary'].get('headline', '')}
         args.report.write_text(json.dumps(d, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
-    errors, warnings = check(d, args.report.resolve().parent, args.repo.resolve() if args.repo else None, cands)
+    errors, warnings = check(d, args.report.resolve().parent, args.repo.resolve() if args.repo else None, cands,
+                             recon_json=recon)
     for w in warnings:
         print(f'WARN: {w}')
     if errors:

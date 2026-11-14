@@ -177,6 +177,11 @@ diff or reading. Full entries, triggers and fixes are in `data/pitfalls.json`.
 - Type escapes and resources: TypeScript `!` and `as any`, deep recursion, huge unvirtualised lists,
   catastrophic regex backtracking.
 - Error handling: no boundary around the shell, routes or third-party widgets.
+- Silent failures (degradations, never crashes: nothing throws): `r.json()` without an `r.ok` check
+  (a 429 or an HTML error page), an empty catch that swallows the error (`.catch(() => {})`,
+  `catch {}`), and a request on every input event with no debounce against a rate-limited endpoint.
+  Reproduce them by their effect (`expect`), and record them as degradations with effect
+  `component_broken`.
 
 **Android:** `!!`, unsafe `as`, `lateinit` read before set, `toInt()`/`parseInt` on external input,
 `runBlocking`/blocking calls on the main thread (ANR), fragment commits after

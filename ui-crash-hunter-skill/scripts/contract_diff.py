@@ -33,7 +33,7 @@ from pathlib import Path
 sys.dont_write_bytecode = True  # importing a sibling must not write __pycache__ into the skill folder
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ui_graph import graph as ui_graph, is_tool_config, SRC_EXT  # noqa: E402
-from langs import vendored_roots, under  # noqa: E402
+from langs import vendored_roots, under, prune_dir, skipped_data_dirs, EXCLUDE  # noqa: E402
 
 SKIP_DIRS = {'node_modules', '.git', 'dist', 'build', 'out', '.next', '.nuxt', 'coverage', 'vendor', 'Pods',
              'DerivedData', '.gradle', '.dart_tool', '__pycache__', '.expo', 'storybook-static', 'target', '.turbo',
@@ -352,7 +352,7 @@ def walk(root: Path):
         for p in entries:
             if p.is_dir():
                 if p.name not in SKIP_DIRS and not p.name.startswith('.') and \
-                        not under(p.relative_to(root).as_posix(), VENDORED):
+                        not under(p.relative_to(root).as_posix(), VENDORED) and not prune_dir(root, p):
                     stack.append(p)
             else:
                 yield p
@@ -437,13 +437,17 @@ def main() -> int:
                          'for FastAPI-generated documents)')
     ap.add_argument('--scope', choices=['ui', 'all'], default='ui',
                     help='ui (default): access sites only in files the UI entry points reach; all: every source file')
+    ap.add_argument('--exclude', action='append', default=[], metavar='DIR',
+                    help='repository-relative directory not to walk (repeatable); directories of hundreds of data files '
+                         'with no code are skipped without it (skipped_data_dirs)')
     ap.add_argument('--out', type=Path)
     args = ap.parse_args()
     root = args.repo.resolve()
     if not root.is_dir():
         print(f'Not a directory: {root}', file=sys.stderr)
         return 2
-    VENDORED[:] = vendored_roots(root, list(walk(root)))
+    EXCLUDE.update(e.replace('\\', '/').strip('/') for e in args.exclude)
+    VENDORED[:] = vendored_roots(root)
     contracts = []
     for c in args.contract:
         p = c if c.is_absolute() else (Path.cwd() / c)
@@ -534,6 +538,7 @@ def main() -> int:
         'read_errors': read_errors,
         'warnings': warnings,
         'vendored_excluded': VENDORED,
+        'skipped_data_dirs': skipped_data_dirs(),
         'nullable_fields': [f for fs in nullable.values() for f in fs],
         'skipped': {'name_collision': sum(skipped['name_collision'].values()),
                     'name_collision_fields': dict(sorted(skipped['name_collision'].items(), key=lambda kv: -kv[1])[:30]),

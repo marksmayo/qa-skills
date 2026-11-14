@@ -393,6 +393,36 @@ Status: **built** (v1.2.0). The implementation differs from the original plan as
     id. `scripts/self_test.py` runs every check, including a live file:// probe when Playwright is installed.
   - Not done: settle does not yet ignore a page that polls at a fixed interval (a live report polling
     `report.json`), so such a probe can take longer than its steps.
+- 1.6.0, after a run on a Flask site whose UI is Jinja templates (`templates/*.html`) beside a data
+  directory of thousands of JSON files:
+  - The language guard called the site "predominantly Python, NOT a crash analysis" and recon discarded
+    its site model (`unknown`, 0 routes). A Flask or Django site with server templates is now
+    `multi_page` / `per_script` with `site.served_by: "flask"`: recon reads the Flask views with `ast`
+    (through the shared `py_routes.py` when the skill carries a copy, else a small reader of
+    `@app.route`/`@bp.route` with `Blueprint(url_prefix=...)`), views that call `render_template` are
+    page routes with their template, JSON and file views are `site.server.api_endpoints`, and HTML
+    outside the template directories is `site.other_html`. `language_coverage.status` is
+    `server_rendered` with a note, not the loud warning; a Go or Rust tool with a stray template keeps it.
+  - `.html` under a `templates/` directory is a template: its inline scripts are scanned at the
+    template's lines. Inline scripts in plain HTML pages are scanned too (candidates carry
+    `embedded: "html_page"`).
+  - The web pack found none of the real defects. New pitfalls: `WEB-FETCH-JSON-UNCHECKED` (`r.json()`
+    with no `r.ok` check), `WEB-SWALLOWED-ERROR` (an empty catch) and `WEB-FETCH-PER-KEYSTROKE` (a
+    request per input event with no debounce; the scanner gained `require_after`).
+    `WEB-NUMBER-FORMAT-ON-NULL` no longer fires on map-library getters (`bounds.getSouth().toFixed`,
+    `latlng.lat.toFixed`). SKILL.md says how to record a silent failure (a degradation with
+    `component_broken`, nothing thrown) and that a reproducible failed baseline on a correct scenario is
+    itself a finding.
+  - Recon (2 min) and `contract_diff.py` (almost 3 min) opened every file of the data directory. A
+    directory of 200+ files, at least 90% data and no code, is pruned before every walk (recon, the scan,
+    `ui_graph.py`, `contract_diff.py`) and listed in `skipped_data_dirs`; `--exclude DIR` prunes others.
+  - `probe_web.py` timing hid most of the wall clock (closing the browser after aborted third-party
+    requests). It closes the context first and records `screenshot_s`, `close_s` and `other_s`.
+  - `validate_crash_report.py --recon recon.json` warns when the report's site or blast-radius model
+    differs from recon's without a limitation naming the site model, requires a limitation naming an
+    unanalysed dominant language, and warns when the static tools found nothing on such a repository.
+  - Not done: Django's `urls.py` is not read (its page routes are listed by hand); no schema field for a
+    "silent failure" effect or a ranking of degradations (SKILL.md guidance only).
 
 ```text
 ui-crash-hunter-skill/

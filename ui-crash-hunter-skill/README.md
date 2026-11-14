@@ -65,18 +65,18 @@ Crashes are ranked by blast radius × reach × likelihood × recoverability into
 Scripts, in the order the skill runs them:
 
 ```bash
-python scripts/recon.py <repo> --out recon.json                          # site model, routes or pages, boundaries (incl. router errorElement), contracts (incl. FastAPI), stored state, module-scope env config; Next.js layouts, proxy, route handlers (also a project nested beside its next.config.*); pages a Node server renders from template literals
+python scripts/recon.py <repo> --out recon.json                          # site model, routes or pages, boundaries (incl. router errorElement), contracts (incl. FastAPI), stored state, module-scope env config; Next.js layouts, proxy, route handlers (also a project nested beside its next.config.*); pages a Node server renders from template literals; Flask/Django sites rendered from templates/ (served_by flask); --exclude DIR (data directories are skipped: skipped_data_dirs)
 python scripts/ui_graph.py <repo> --out graph.json                        # UI entry points and the files they import (tsconfig paths incl. referenced projects and nested app projects, Vite resolve.alias); warns on unresolved imports
 python scripts/strict_overlay.py tsc <repo> --scratch <tmp> --out tsc.json  # strict tsc in a scratch config (checkJs for plain JS; a solution tsconfig compiles its app project; always names the tsconfig it compiled and warns when it misses the UI); --scope ui|all
 python scripts/strict_overlay.py eslint <repo> --scratch <tmp> --out eslint.json
 python scripts/contract_diff.py <repo> --out contract.json               # nullable contract fields vs unguarded access (OpenAPI, GraphQL, Prisma, types); --contract f --discover, --scope all, --defaults-present
 python scripts/scan_pitfalls.py <repo> --sarif semgrep.sarif --extra tsc.json eslint.json contract.json --out candidates.json  # UI code only; --all-files
-python scripts/scan_pitfalls.py --self-test                               # the multi-line promise-chain test, and recon/scan scope on a synthetic workspace and a Go tool with an HTML page in a string constant
+python scripts/scan_pitfalls.py --self-test                               # the multi-line promise-chain test, and recon/scan scope on a synthetic workspace, a Go tool with an HTML page in a string constant, and a Flask site with Jinja templates and a data directory
 python scripts/self_test.py                                               # all of the above, plus probe_web (file:// targets, query strings, a live file:// probe) and validator checks
 python scripts/probe_web.py probes/C-1.json --check                        # validate a scenario's steps and assertions without a browser
 python scripts/probe_web.py probes/C-1.json --out-dir evidence/C-1 --emit-spec repro/repro_C-1.py  # --authorised-by for a non-loopback target; --storage-state for a signed-in test session
 python scripts/probe_web.py probes/D-1.json --out-dir evidence/D-1 --base-url out/report.html      # a generated local file, probed read-only as file://
-python scripts/validate_crash_report.py crash_report.json --repo <repo> --candidates candidates.json --write-summary
+python scripts/validate_crash_report.py crash_report.json --repo <repo> --candidates candidates.json --recon recon.json --write-summary
 python scripts/render_report.py crash_report.json --sarif crashes.sarif  # --brief, --color always|never
 python scripts/sarif.py read detekt.sarif swiftlint.sarif                 # normalise any SARIF file
 ```

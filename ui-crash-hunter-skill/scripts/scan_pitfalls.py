@@ -33,7 +33,8 @@ sys.dont_write_bytecode = True  # importing a sibling must not write __pycache__
 sys.path.insert(0, str(HERE))
 import sarif  # noqa: E402
 from langs import (vendored_roots, language_census, language_warning, embedded_documents, script_text,  # noqa: E402
-                   HOST_EXT, TEMPLATE_FILE, under)
+                   HOST_EXT, TEMPLATE_FILE, under, prune_dir, is_template_path, server_rendered,
+                   skipped_data_dirs, EXCLUDE, python_web_frameworks)
 from ui_graph import graph as ui_graph, classify, SRC_EXT, MANIFESTS, TEST_DIR_NAME, node_role, note_packages, walk as walk_repo  # noqa: E402
 
 CATALOGUE = HERE.parent / 'data' / 'pitfalls.json'
@@ -82,7 +83,7 @@ def source_files(root: Path, extensions: set[str], vendored: list[str] = ()):
         for p in entries:
             if p.is_dir():
                 # a test-named directory with a package manifest (packages/e2e/package.json) is a product package
-                if p in vendored:
+                if p in vendored or prune_dir(root, p):
                     continue
                 if ((p.name not in SKIP_DIRS and not TEST_DIR_NAME.match(p.name))
                         or (TEST_DIR_NAME.match(p.name) and any((p / m).is_file() for m in MANIFESTS)))                         and not p.name.startswith('.'):
@@ -270,7 +271,7 @@ def scan_embedded(path: Path, rel: str, pitfalls: list[dict]) -> tuple[list[dict
         text = path.read_text(encoding='utf-8', errors='replace')
     except OSError:
         return [], []
-    docs = embedded_documents(text, path.suffix, path.name)
+    docs = embedded_documents(text, path.suffix, rel)
     hits = []
     for d in docs:
         for s in d.pop('_scripts'):
@@ -309,6 +310,8 @@ def scan_text(text: str, rel: str, pitfalls: list[dict], suffix: str) -> list[di
             if p.get('_suppress_after') and p['_suppress_after'].search(after):
                 continue
             if p.get('_require_before') and not p['_require_before'].search(before):
+                continue
+            if p.get('_require_after') and not p['_require_after'].search(after):
                 continue
             hits.append({'pitfall_id': p['id'], 'file': rel, 'line': i + 1, 'column': m.start() + 1,
                          'snippet': line.strip()[:200], 'message': p['title'],
@@ -572,6 +575,111 @@ def self_test_go() -> list[str]:
     return fails
 
 
+# A server-rendered Flask site (a recipe site): Python views render Jinja templates named .html under templates/,
+# whose inline scripts are the browser code; a JSON API under /api/; a data directory of 250 JSON records; a map
+# page reading a map library's always-numeric bounds getters.
+SELF_TEST_FLASK_INDEX = ('{% extends "base.html" %}\n{% block content %}\n<input id="q">\n<ul id="hits"></ul>\n<script>\n'
+                         "const box = document.getElementById('q');\n"
+                         "box.addEventListener('input', () => {\n"
+                         "  fetch('/api/search?q=' + encodeURIComponent(box.value))\n"
+                         '    .then(r => r.json())\n'
+                         '    .then(show)\n'
+                         '    .catch(() => {});\n'
+                         '});\n'
+                         "const recent = JSON.parse(localStorage.getItem('recent'));\n"
+                         '</script>\n{% endblock %}\n')
+SELF_TEST_FLASK_MAP = ('{% extends "base.html" %}\n{% block content %}\n<div id="map"></div>\n<script>\n'
+                       'map.on("moveend", () => {\n  const b = map.getBounds();\n'
+                       '  const q = `s=${b.getSouth().toFixed(5)}&n=${b.getNorth().toFixed(5)}`;\n'
+                       '  load(q);\n});\n</script>\n{% endblock %}\n')
+SELF_TEST_FLASK_TREE = {
+    'requirements.txt': 'flask==3.1.0\n',
+    'app.py': ("from flask import Flask, jsonify, render_template\n\napp = Flask(__name__)\n\n\n"
+               "@app.route('/')\ndef index():\n    return render_template('index.html')\n\n\n"
+               "@app.route('/recipe/<slug>')\ndef recipe(slug):\n    return render_template('recipe.html', slug=slug)\n\n\n"
+               "@app.route('/map')\ndef map_page():\n    return render_template('map.html')\n\n\n"
+               "@app.route('/api/search')\ndef api_search():\n    return jsonify([])\n"),
+    'kitchen/__init__.py': '', 'kitchen/units.py': 'GRAMS = 1\n', 'kitchen/scale.py': 'def scale(x):\n    return x\n',
+    'kitchen/search.py': 'def search(q):\n    return []\n', 'kitchen/load.py': 'def load():\n    return {}\n',
+    'templates/base.html': '<!doctype html>\n<html><body>\n{% block content %}{% endblock %}\n'
+                           '<script src="/static/site.js"></script>\n</body></html>\n',
+    'templates/index.html': SELF_TEST_FLASK_INDEX,
+    'templates/recipe.html': '{% extends "base.html" %}\n{% block content %}<h1>{{ slug }}</h1>{% endblock %}\n',
+    'templates/map.html': SELF_TEST_FLASK_MAP,
+    'static/site.js': "document.documentElement.classList.add('js');\n",
+    # a plain HTML page (served as a static file): its inline script is browser code too
+    'static/offline.html': '<!doctype html>\n<html><body><p>Offline</p>\n<script>\n'
+                           "const last = JSON.parse(sessionStorage.getItem('last'));\n</script>\n</body></html>\n",
+}
+SELF_TEST_FLASK_TREE.update({f'recipes_data/r{n:03d}.json': '{"id": %d}\n' % n for n in range(250)})
+
+
+def self_test_flask() -> list[str]:
+    """A Flask + Jinja site is a supported multi-page site: routes from the views, templates as the UI, inline scripts
+    scanned at template lines, the data directory pruned; returns the failures."""
+    import subprocess, tempfile, time
+    fails = []
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp) / 'recipes'
+        for rel, text in SELF_TEST_FLASK_TREE.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(text, encoding='utf-8')
+        run = lambda script, *a: subprocess.run([sys.executable, '-B', str(HERE / script), str(root), *a],
+                                                capture_output=True, text=True, encoding='utf-8')
+        recon = run('recon.py')
+        try:
+            r = json.loads(recon.stdout)
+        except ValueError:
+            return [f'recon.py failed: {recon.stderr[-300:]}']
+        site = r['site']
+        if site.get('kind') != 'multi_page' or site.get('served_by') != 'flask' or r['blast_radius']['model'] != 'per_script':
+            fails.append(f"Flask site: site.kind {site.get('kind')}, served_by {site.get('served_by')}, blast radius "
+                         f"{r['blast_radius']['model']}; expected multi_page served by flask, per_script")
+        pages = {x['path']: x for x in r['routes_screens']}
+        if not {'/', '/recipe/<slug>', '/map'} <= set(pages) or '/api/search' in pages:
+            fails.append(f'Flask page routes: {sorted(pages)}; expected /, /recipe/<slug>, /map and not /api/search')
+        elif pages['/'].get('template') != 'templates/index.html':
+            fails.append(f"Flask route / should name its template templates/index.html: {pages['/']}")
+        if [x['path'] for x in (site.get('server') or {}).get('api_endpoints', [])] != ['/api/search']:
+            fails.append(f"Flask API endpoints: {(site.get('server') or {}).get('api_endpoints')}")
+        if any('NOT a crash analysis' in w for w in r.get('warnings') or []) or \
+                (r.get('language_coverage') or {}).get('status') != 'server_rendered':
+            fails.append(f"Flask site called unsupported: warnings {r.get('warnings')}, status "
+                         f"{(r.get('language_coverage') or {}).get('status')}")
+        skipped = [(x['path'], x['files']) for x in r.get('skipped_data_dirs') or []]
+        if skipped != [('recipes_data', 250)]:
+            fails.append(f'recon skipped data dirs: {skipped}, expected recipes_data (250 files)')
+        scan = run('scan_pitfalls.py')
+        try:
+            s = json.loads(scan.stdout)
+        except ValueError:
+            return fails + [f'scan_pitfalls.py failed: {scan.stderr[-300:]}']
+        got = {(c['file'], c['line'], c['pitfall_id']) for c in s['candidates']}
+        lines = SELF_TEST_FLASK_INDEX.splitlines()
+        at = lambda text: next(i for i, l in enumerate(lines, 1) if text in l)
+        want = {('templates/index.html', at('JSON.parse'), 'WEB-JSON-PARSE'),
+                ('templates/index.html', at('r.json()'), 'WEB-FETCH-JSON-UNCHECKED'),
+                ('templates/index.html', at('.catch(() => {})'), 'WEB-SWALLOWED-ERROR'),
+                ('templates/index.html', at("addEventListener('input'"), 'WEB-FETCH-PER-KEYSTROKE'),
+                ('static/offline.html', 4, 'WEB-JSON-PARSE')}
+        if not want <= got:
+            fails.append(f'inline scripts in Jinja .html templates: missing {sorted(want - got)}; got {sorted(got)}')
+        if any(c['file'] == 'templates/map.html' and c['pitfall_id'] == 'WEB-NUMBER-FORMAT-ON-NULL' for c in s['candidates']):
+            fails.append("toFixed on a map library's bounds getter (always a number) was flagged")
+        if any('NOT a crash analysis' in w for w in s['scope'].get('warnings') or []):
+            fails.append('scan_pitfalls calls the Flask site unsupported')
+        t0 = time.time()
+        cd = run('contract_diff.py')
+        took = time.time() - t0
+        try:
+            c = json.loads(cd.stdout)
+        except ValueError:
+            return fails + [f'contract_diff.py failed: {cd.stderr[-300:]}']
+        if [(x['path'], x['files']) for x in c.get('skipped_data_dirs') or []] != [('recipes_data', 250)]:
+            fails.append(f"contract_diff opened the data directory (skipped {c.get('skipped_data_dirs')}, {took:.1f} s)")
+    return fails
+
+
 def self_test() -> int:
     p = next(q for q in load_catalogue()['pitfalls'] if q.get('matcher') == 'promise_chain')
     got = [h['line'] for h in promise_chain_hits(SELF_TEST_JS, 'app.js', p)]
@@ -583,7 +691,10 @@ def self_test() -> int:
     go_fails = self_test_go()
     print(f"self-test {'passed' if not go_fails else 'FAILED'}: a Go tool with an HTML page in a string constant, a "
           'vendored driver tree and Xcode test targets' + ''.join(f'\n  - {f}' for f in go_fails))
-    return 0 if ok and not fails and not go_fails else 1
+    flask_fails = self_test_flask()
+    print(f"self-test {'passed' if not flask_fails else 'FAILED'}: a Flask site whose UI is Jinja templates, with a "
+          'JSON API and a data directory' + ''.join(f'\n  - {f}' for f in flask_fails))
+    return 0 if ok and not fails and not go_fails and not flask_fails else 1
 
 def main() -> int:
     if hasattr(sys.stdout, 'reconfigure'):  # JSON on stdout may hold any character; a cp1252 console can't print it
@@ -597,8 +708,12 @@ def main() -> int:
     ap.add_argument('--all-files', action='store_true',
                     help='scan route handlers and modules no UI entry point imports too (tests stay excluded)')
     ap.add_argument('--catalogue', type=Path, default=CATALOGUE)
+    ap.add_argument('--exclude', action='append', default=[], metavar='DIR',
+                    help='repository-relative directory not to walk (repeatable); directories of hundreds of data files '
+                         'with no code are skipped without it (scope.skipped_data_dirs)')
     ap.add_argument('--out', type=Path)
     args = ap.parse_args()
+    EXCLUDE.update(e.replace('\\', '/').strip('/') for e in args.exclude)
     if args.self_test:
         return self_test()
     if args.repo is None:
@@ -619,7 +734,7 @@ def main() -> int:
             continue
         q = dict(p)
         q['_rx'] = re.compile(p['regex'])
-        for k in ('suppress_before', 'suppress_after', 'require_before', 'suppress_line'):
+        for k in ('suppress_before', 'suppress_after', 'require_before', 'require_after', 'suppress_line'):
             if p.get(k):
                 q['_' + k] = re.compile(p[k])
         active.append(q)
@@ -636,7 +751,6 @@ def main() -> int:
     # repository is mostly in a language no pack reads (a Go tool), which must be said loudly
     lang = language_census(root, tool='scan_pitfalls.py')   # shared lang_census: counts and excluded trees
     vendored = lang['excluded']
-    lang_warning = language_warning(lang)
     roles: dict[str, str | None] = {}
     def role_of(rel: str) -> str | None:
         if rel not in roles:
@@ -687,7 +801,8 @@ def main() -> int:
                 embedded_docs.extend(docs)
                 files_by_pack['web (embedded HTML)'] = files_by_pack.get('web (embedded HTML)', 0) + 1
                 cands.extend(found)
-        for path in (f for f in repo_files if TEMPLATE_FILE.search(f.name)):
+        for path in (f for f in repo_files if is_template_path(f.relative_to(root).as_posix())
+                     or f.suffix.lower() in ('.html', '.htm')):
             rel = path.relative_to(root).as_posix()
             if why_excluded(rel):
                 continue
@@ -706,6 +821,11 @@ def main() -> int:
             if path.suffix in pk['extensions']:
                 files_by_pack[name] = files_by_pack.get(name, 0) + 1
         cands.extend(scan_file(path, rel, [p for p in active if path.suffix in packs[p['pack']]['extensions']]))
+    # a Flask or Django site whose templates were scanned is a server-rendered site, not "predominantly Python, not
+    # analysed": the templates are its UI
+    tpl_docs = sorted({d['file'] for d in embedded_docs if d['kind'] == 'template_file'})
+    lang = server_rendered(lang, python_web_frameworks(root), tpl_docs, sum(files_by_pack.get(k, 0) for k in packs))
+    lang_warning = language_warning(lang)
     tools = [{'tool': 'scan_pitfalls', 'status': 'ran', 'results': len(cands),
               'packs': sorted(n for n in files_by_pack if n in wanted)}]
     def in_scope(found: list[dict]) -> list[dict]:
@@ -749,6 +869,7 @@ def main() -> int:
              'unresolved_imports': g.get('unresolved', 0) if g else None,
              'warnings': ([lang_warning] if lang_warning else []) + ((g.get('warnings') or []) if g else []),
              'embedded_html': [{k: v for k, v in d.items() if k != 'script_spans'} for d in embedded_docs],
+             'skipped_data_dirs': skipped_data_dirs(),
              'excluded': excluded,
              'note': ('every source file scanned (--all-files); tests and tool configs are still skipped' if args.all_files else
                       'UI code only: tests, route handlers and modules no UI entry point imports are excluded and counted '

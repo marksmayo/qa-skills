@@ -60,7 +60,8 @@ from ui_graph import (projects, next_path_in_project, project_of, note_packages,
                       graph as ui_graph, resolve as resolve_import, IMPORT, NEXT_CONFIG)
 from scan_pitfalls import mask_code  # noqa: E402
 from langs import (vendored_roots, language_census, language_warning, incidental, embedded_documents,  # noqa: E402
-                   HOST_EXT, TEMPLATE_FILE, under)
+                   HOST_EXT, TEMPLATE_FILE, under, prune_dir, is_template_path, server_rendered,
+                   skipped_data_dirs, EXCLUDE)
 
 SKIP_DIRS = {'.git', 'node_modules', 'dist', 'build', 'out', '.next', '.nuxt', '.svelte-kit', '.output', 'coverage',
              'vendor', 'Pods', 'Carthage', 'DerivedData', '.gradle', '.dart_tool', '.idea', '.vscode', '__pycache__',
@@ -178,7 +179,8 @@ def walk(root: Path):
             continue
         for p in entries:
             if p.is_dir():
-                if p.name not in SKIP_DIRS and not (p.name.startswith('.') and p.name not in {'.github', '.maestro'}):
+                if p.name not in SKIP_DIRS and not (p.name.startswith('.') and p.name not in {'.github', '.maestro'}) \
+                        and not prune_dir(root, p):
                     stack.append(p)
             else:
                 yield p
@@ -398,6 +400,155 @@ def node_server_model(root: Path, code: list[Path]) -> dict | None:
             'templates': templates, 'inline_scripts': inline_total}
 
 
+# ---------------------------------------------------------------- server-rendered Python sites (Flask, Django)
+
+PY_ROUTE_ATTRS = {'route': None, 'get': 'GET', 'post': 'POST', 'put': 'PUT', 'patch': 'PATCH', 'delete': 'DELETE'}
+PAGE_CALLS = {'render_template', 'stream_template', 'render_template_string'}
+FILE_CALLS = {'send_from_directory', 'send_file', 'send_static_file'}
+
+
+def _py_routes(root: Path, py: list[Path]) -> list[dict]:
+    """Flask routes: through the shared ast reader (py_routes.py) when this skill carries a copy, else a small ast
+    reader of @app.route / @bp.route / @app.get(...) with Blueprint(url_prefix=...) prefixes. Each route is
+    {method, path, file, line, function}."""
+    texts = {f.relative_to(root).as_posix(): read(f) for f in py}
+    try:
+        from py_routes import scan_python  # noqa: E402  (shared; present when the skill carries a copy)
+        return [{k: r.get(k) for k in ('method', 'path', 'file', 'line', 'function')}
+                for r in scan_python(texts)['routes'] if r.get('framework') == 'flask']
+    except ImportError:
+        pass
+    import ast
+    out = []
+    for rel, text in texts.items():
+        if 'flask' not in text.lower():
+            continue
+        try:
+            tree = ast.parse(text)
+        except (SyntaxError, ValueError):
+            continue
+        prefixes = {}
+        for node in ast.walk(tree):   # bp = Blueprint('x', __name__, url_prefix='/y')
+            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call) and \
+                    getattr(node.value.func, 'id', getattr(node.value.func, 'attr', None)) == 'Blueprint':
+                kw = next((k.value for k in node.value.keywords if k.arg == 'url_prefix'), None)
+                for t in node.targets:
+                    if isinstance(t, ast.Name):
+                        prefixes[t.id] = kw.value if isinstance(kw, ast.Constant) and isinstance(kw.value, str) else ''
+        for fn in ast.walk(tree):
+            if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            for dec in fn.decorator_list:
+                if not (isinstance(dec, ast.Call) and isinstance(dec.func, ast.Attribute)
+                        and dec.func.attr in PY_ROUTE_ATTRS and isinstance(dec.func.value, ast.Name)):
+                    continue
+                arg = dec.args[0] if dec.args else None
+                if not (isinstance(arg, ast.Constant) and isinstance(arg.value, str) and arg.value.startswith('/')):
+                    continue
+                path = (prefixes.get(dec.func.value.id, '').rstrip('/') + arg.value) or '/'
+                methods = [PY_ROUTE_ATTRS[dec.func.attr]] if PY_ROUTE_ATTRS[dec.func.attr] else ['GET']
+                mk = next((k.value for k in dec.keywords if k.arg == 'methods'), None)
+                if isinstance(mk, (ast.List, ast.Tuple)):
+                    methods = [e.value.upper() for e in mk.elts if isinstance(e, ast.Constant)] or methods
+                for m in methods:
+                    out.append({'method': m, 'path': path, 'file': rel, 'line': dec.lineno, 'function': fn.name})
+    return out
+
+
+def _view_output(root: Path, r: dict, trees: dict) -> tuple[str, str | None]:
+    """('page', template) when the view renders a template, ('file', None) when it sends a file, else ('api', None)."""
+    import ast
+    if r['file'] not in trees:
+        try:
+            trees[r['file']] = ast.parse(read(root / r['file']))
+        except (SyntaxError, ValueError):
+            trees[r['file']] = None
+    tree = trees[r['file']]
+    fns = [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+           and n.name == r.get('function')] if tree else []
+    fn = next((n for n in fns if any(d.lineno == r['line'] for d in n.decorator_list)), fns[0] if len(fns) == 1 else None)
+    if fn is None:
+        return 'api', None
+    sends = False
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Call):
+            name = getattr(node.func, 'id', getattr(node.func, 'attr', None))
+            if name in PAGE_CALLS:
+                a = node.args[0] if node.args else None
+                return 'page', a.value if isinstance(a, ast.Constant) and isinstance(a.value, str) else None
+            sends |= name in FILE_CALLS
+    return ('file' if sends else 'api'), None
+
+
+def template_server_model(root: Path, files: list[Path], platforms: list[str]) -> dict | None:
+    """A Flask or Django site whose pages are server templates (.html under templates/, .jinja, .j2): the
+    templates are the UI (their inline scripts run per page, like a static multi-page site), the views that
+    render them are the routes (Flask; Django's urls.py is not read), and JSON views are API endpoints. None
+    when the repository is not such a site."""
+    fw = sorted(set(platforms) & {'flask', 'django'})
+    py = [f for f in files if f.suffix == '.py' and not in_test_dir(f.relative_to(root).as_posix())
+          and not re.search(r'(^|/)(test_\w+|\w+_test|conftest)\.py$', f.relative_to(root).as_posix())]
+    if not fw and any('from flask import' in read(f) or 'import flask' in read(f) for f in py[:400]):
+        fw = ['flask']
+    tpl_files = [f for f in files if is_template_path(f.relative_to(root).as_posix())
+                 and not in_test_dir(f.relative_to(root).as_posix())]
+    if not fw or not tpl_files:
+        return None
+    routes, api = [], []
+    rendered: dict[str, list[str]] = {}
+    trees: dict = {}
+    tpl_rel = {f.relative_to(root).as_posix() for f in tpl_files}
+
+    def tpl_path(name: str, view: str) -> str | None:
+        cands = [t for t in tpl_rel if t == f'templates/{name}' or t.endswith(f'/templates/{name}')]
+        parts = view.split('/')[:-1]
+        for i in range(len(parts), -1, -1):
+            want = '/'.join(parts[:i] + ['templates', name])
+            if want in cands:
+                return want
+        return sorted(cands, key=len)[0] if cands else None
+
+    pages: dict[tuple, dict] = {}
+    for r in _py_routes(root, py) if 'flask' in fw else []:
+        kind, tpl = _view_output(root, r, trees)
+        entry = {'kind': 'route', 'path': r['path'], 'file': r['file'], 'line': r['line'], 'detector': 'flask-view',
+                 'view': r['function']}
+        if kind == 'page':
+            key = (r['path'], r['file'], r['line'])
+            if key not in pages:
+                t = tpl_path(tpl, r['file']) if tpl else None
+                if t:
+                    entry['template'] = t
+                    rendered.setdefault(t, []).append(r['path'])
+                elif tpl:
+                    entry['template'] = tpl
+                    entry['note'] = f'renders {tpl}, which was not found under a templates/ directory'
+                else:
+                    entry['note'] = 'renders a computed template name: find it by reading the view'
+                entry['methods'] = []
+                pages[key] = entry
+                routes.append(entry)
+            pages[key]['methods'].append(r['method'])
+        else:
+            api.append({**entry, 'method': r['method'], 'detector': 'flask-route',
+                        **({'note': 'sends a file'} if kind == 'file' else {})})
+    templates = []
+    for f in sorted(tpl_files):
+        rel = f.relative_to(root).as_posix()
+        text = read(f)
+        templates.append({'file': rel, 'inline_scripts': sum(1 for m in SCRIPT_TAG.finditer(text)
+                                                             if not SRC.search(m.group(1)) and m.group(2).strip()
+                                                             and not DATA_TYPES.search(attr(TYPE, m.group(1)) or '')),
+                          'script_src': sorted({attr(SRC, m.group(1)) for m in SCRIPT_TAG.finditer(text)
+                                                if attr(SRC, m.group(1))})[:20],
+                          'rendered_by': sorted(set(rendered.get(rel, [])))})
+    return {'frameworks': fw, 'servers': sorted({r['file'] for r in routes + api}), 'routes': routes,
+            'api_endpoints': api, 'templates': templates,
+            'inline_scripts': sum(t['inline_scripts'] for t in templates),
+            **({'note': "Django views are routed in urls.py, which is not read: list the page routes by hand"}
+               if fw == ['django'] else {})}
+
+
 def site_model(root: Path, files: list[Path], platforms: list[str], code: list[Path] | None = None) -> dict:
     """Single-page app, server-rendered framework, or a static multi-page site where each page loads its own scripts."""
     html = [f for f in files if f.suffix.lower() in ('.html', '.htm') and not in_test_dir(f.relative_to(root).as_posix())]
@@ -412,6 +563,21 @@ def site_model(root: Path, files: list[Path], platforms: list[str], code: list[P
         return out
     if set(platforms) & {'android', 'ios', 'flutter'}:
         return {'kind': 'native', 'frameworks': [], 'html_pages': len(html)}
+    server = template_server_model(root, files, platforms)
+    if server:
+        # pages rendered from server templates: each response is a document whose inline and static scripts run on
+        # their own, like a static multi-page site. HTML files outside the template directories are listed apart:
+        # no view renders them, so they may be stale artefacts rather than served pages.
+        tpl = {t['file'] for t in server['templates']}
+        other = [f.relative_to(root).as_posix() for f in html if f.relative_to(root).as_posix() not in tpl]
+        return {'kind': 'multi_page', 'frameworks': [], 'served_by': server['frameworks'][0], 'server': server,
+                'html_pages': len(tpl), 'page_groups': [], 'scripts': [], 'pages': [], 'pages_listed': 0,
+                'content_rendered_by_js': [],
+                'inline_script_pages': sum(1 for t in server['templates'] if t['inline_scripts']),
+                'error_pages': [],
+                **({'other_html': other[:30],
+                    'other_html_note': 'HTML files outside the template directories: no view renders them. Check '
+                                       'whether they are served at all (stale artefacts are not pages).'} if other else {})}
     if 'fastapi' in platforms and len(html) <= 3:
         # an API service with an HTML file or two (a docs page, a template) is not a static site
         return {'kind': 'api', 'frameworks': ['fastapi'], 'html_pages': len(html),
@@ -535,12 +701,16 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('repo', type=Path)
     ap.add_argument('--journey-map', type=Path, help='journey_map.json from journey-mapper, for route priorities')
+    ap.add_argument('--exclude', action='append', default=[], metavar='DIR',
+                    help='repository-relative directory not to walk (repeatable); directories of hundreds of data files '
+                         'with no code are skipped without it (skipped_data_dirs)')
     ap.add_argument('--out', type=Path)
     args = ap.parse_args()
     root = args.repo.resolve()
     if not root.is_dir():
         print(f'Not a directory: {root}', file=sys.stderr)
         return 2
+    EXCLUDE.update(e.replace('\\', '/').strip('/') for e in args.exclude)
     files = list(walk(root))
     # vendored and bundled third-party trees (a driver with its own LICENSE and package.json inside a Go module)
     # are not the app: they never decide the platforms, the site model or the screens
@@ -548,7 +718,6 @@ def main() -> int:
     vendored = lang['excluded']
     files = [f for f in files if not under(f.relative_to(root).as_posix(), vendored)]
     note_packages(root, files)  # a test-named directory with its own package manifest is a package, not tests
-    lang_warning = language_warning(lang)
     platforms, targets = detect_platforms(root, [f for f in files if not in_test_dir(f.relative_to(root).as_posix())])
     code = [f for f in files if f.suffix in CODE_EXT and not TEST_NAME.search(f.name) and not is_bundle(f)
             and not in_test_dir(f.relative_to(root).as_posix())]
@@ -681,12 +850,18 @@ def main() -> int:
             seen.add(key)
             uniq_routes.append(r)
     site = site_model(root, files, platforms, code)
+    if site.get('served_by') in ('flask', 'django'):
+        # a server-rendered Python site: the Python is the server and the templates are the UI, so the census's
+        # "predominantly Python, not analysed" is not a reason to discard the site model
+        lang = server_rendered(lang, [site['served_by']], [t['file'] for t in site['server']['templates']],
+                               len(code))
+    lang_warning = language_warning(lang)
     embedded = []
     for f in files:
         rel = f.relative_to(root).as_posix()
-        if (f.suffix in HOST_EXT and f.suffix not in CODE_EXT or TEMPLATE_FILE.search(f.name)) and not in_test_dir(rel) \
+        if (f.suffix in HOST_EXT and f.suffix not in CODE_EXT or is_template_path(rel)) and not in_test_dir(rel) \
                 and not TEST_NAME.search(f.name) and not f.name.endswith('_test.go'):
-            for d in embedded_documents(read(f), f.suffix, f.name):
+            for d in embedded_documents(read(f), f.suffix, rel):
                 d.pop('_scripts', None)
                 embedded.append({'file': rel, **d})
     if incidental(lang):
@@ -769,6 +944,19 @@ def main() -> int:
                          'inside template strings, which scan_pitfalls.py, strict_overlay.py and ESLint do not read: '
                          'read those scripts yourself, or probe the pages. The server modules themselves are server '
                          'code (a throw there is an HTTP 500), not UI.')
+        elif site.get('served_by') in ('flask', 'django'):
+            sv = site['server']
+            notes.append(f"Pages are rendered by {site['served_by']} from {len(sv['templates'])} server template(s) "
+                         f"with {sv['inline_scripts']} inline <script> block(s): {len(sv['routes'])} page route(s) "
+                         f"(views that render a template, each with its template) and {len(sv['api_endpoints'])} API or "
+                         'file endpoint(s). scan_pitfalls.py scans the inline scripts at their template lines, and the '
+                         'static scripts the templates load; read each template for code built from template variables '
+                         "({{ ... }} inside a script), which no scanner sees. The Python views are server code: a throw "
+                         'there is an HTTP 500 or an error page, not a UI crash.')
+            if site.get('other_html'):
+                notes.append(f"{len(site['other_html'])} HTML file(s) outside the template directories "
+                             f"({', '.join(site['other_html'][:3])}) are rendered by no view: check whether they are "
+                             'served before treating a finding in them as live.')
         elif site['inline_script_pages']:
             notes.append(f"{site['inline_script_pages']} page(s) have inline scripts, which scan_pitfalls.py does not read.")
     else:
@@ -812,6 +1000,7 @@ def main() -> int:
         'repository': root.name,
         'warnings': [lang_warning] if lang_warning else [],
         'language_coverage': lang,
+        'skipped_data_dirs': skipped_data_dirs(),
         'platforms': platforms,
         'targets': targets,
         'routes_screens': uniq_routes,
@@ -829,8 +1018,13 @@ def main() -> int:
     text = json.dumps(out, indent=2, ensure_ascii=False)
     if args.out:
         args.out.write_text(text + '\n', encoding='utf-8')
-        served = (f", plus pages a Node server renders from {len(site['server']['templates'])} template module(s)"
+        served = (f", rendered by {site['served_by']} from {len(site['server']['templates'])} server template(s), "
+                  f"{len(site['server']['api_endpoints'])} API endpoint(s)"
+                  if site.get('served_by') in ('flask', 'django') else
+                  f", plus pages a Node server renders from {len(site['server']['templates'])} template module(s)"
                   if site.get('server') else '')
+        for s in out['skipped_data_dirs']:
+            print(f"  skipped {s['path']}/ ({s['files'] if s['files'] is not None else '?'} files): {s['reason']}")
         print(f"platforms: {', '.join(platforms) or 'unknown'} | site: {site['kind']} ({site['html_pages']} HTML page(s){served}) | "
               f"blast radius: {blast['model']} | routes/screens: {len(uniq_routes)} | boundaries: {len(boundaries)} | "
               f"contracts: {len(contracts)} | persisted-state uses: {len(persisted)} -> {args.out}")

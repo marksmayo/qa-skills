@@ -32,6 +32,9 @@ from __future__ import annotations
 import argparse, json, re, sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from langs import prune_dir  # noqa: E402  (data directories and --exclude)
+
 # directories never descended into (pruned before descending)
 PRUNE = {'node_modules', '.git', '.next', '.nuxt', 'dist', 'build', 'out', 'coverage', '.venv', 'venv', '__pycache__',
          '.turbo', '.cache', '.svelte-kit', '.output', 'vendor', 'Pods', 'DerivedData', '.gradle', '.dart_tool',
@@ -107,6 +110,8 @@ def walk(root: Path, extra_prune: set[str] = frozenset()):
         for p in entries:
             if p.is_dir():
                 if p.name in PRUNE or p.name in extra_prune or (p.name.startswith('.') and p.name not in {'.github', '.maestro'}):
+                    continue
+                if prune_dir(root, p):   # a data directory (hundreds of JSON records) or --exclude
                     continue
                 stack.append(p)
             else:
