@@ -21,9 +21,13 @@ changed file that can't be found under --repo is named in `warnings` rather than
 file with no functions.
 
 Every file gets a status (added, modified, deleted, renamed), a kind (source, test, generated,
-migration, vendored, types, config, docs, binary, other) with the reason, its added and
-modified lines as ranges of the new file, the points where lines were deleted, and the
-functions those lines fall in. Test code is decided by `is_test_path(path, root)`, the shared
+migration, vendored, types, template, markup, style, data, config, docs, binary, other) with the
+reason, its added and modified lines as ranges of the new file, the points where lines were
+deleted, and the functions those lines fall in. Web assets are never dropped as 'other':
+`template` is a server-side template (a template extension such as .jinja or .erb, or HTML under
+templates/, views/, layouts/ or partials/), `markup` another HTML page, `style` a stylesheet, and
+`data` a data record the app loads (CSV and similar anywhere; JSON, YAML, XML or text under a data/
+directory or in a directory of 50+ data files with no source; known config names stay config). Test code is decided by `is_test_path(path, root)`, the shared
 rule other scripts should reuse: test file names count anywhere, and a directory named tests,
 test, e2e or __tests__ counts only when it is not a product package (a manifest such as
 package.json, pyproject.toml, Cargo.toml or go.mod together with shipped code such as src/), so a
@@ -46,6 +50,24 @@ SOURCE_EXT = {'.py', '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.go', '.rs',
               '.svelte', '.sql'}
 CONFIG_EXT = {'.toml', '.cfg', '.ini', '.yaml', '.yml', '.json', '.lock', '.xml', '.gradle', '.properties', '.env'}
 DOCS_EXT = {'.md', '.rst', '.txt', '.adoc'}
+# Web assets: server-side templates, static HTML pages and stylesheets are product code a change can break, and data
+# records the app loads are product data; each gets its own kind rather than 'other' or 'config'.
+TEMPLATE_EXT = {'.jinja', '.jinja2', '.j2', '.njk', '.hbs', '.handlebars', '.mustache', '.erb', '.ejs', '.twig',
+                '.liquid', '.tmpl', '.gohtml', '.pug', '.jade', '.haml', '.slim', '.cshtml', '.razor'}
+HTML_EXT = {'.html', '.htm', '.xhtml'}
+STYLE_EXT = {'.css', '.scss', '.sass', '.less', '.styl'}
+TEMPLATE_DIRS = {'templates', 'template', 'views', 'layouts', 'partials', 'includes', '_includes', '_layouts'}
+DATA_ONLY_EXT = {'.csv', '.tsv', '.jsonl', '.ndjson', '.geojson', '.parquet', '.avro', '.xlsx', '.ods'}
+DATA_LIKE_EXT = {'.json', '.yaml', '.yml', '.xml', '.txt'}
+DATA_DIRS = {'data', 'datasets', 'dataset', 'seeds', 'seed-data', 'records', 'content', '_data'}
+DATA_TREE_MIN = 50   # files with a data extension in one directory, with no source file, make it a data tree
+CONFIG_NAMES = re.compile(r'^(package|package-lock|tsconfig.*|jsconfig|composer|deno|renovate|lerna|nx|turbo|vercel|'
+                          r'netlify|firebase|app|manifest|\.?eslintrc.*|\.?prettierrc.*|\.?babelrc|biome|angular|'
+                          r'project|workspace|launch|settings|extensions|tasks|cspell|\.?stylelintrc.*|pyrightconfig|'
+                          r'docker-compose.*|compose|mkdocs|\.?pre-commit-config|codecov|\.?travis|appveyor|'
+                          r'azure-pipelines|bitbucket-pipelines|\.?gitlab-ci|openapi|swagger|schema|.*\.schema)'
+                          r'\.(json|ya?ml|xml)$', re.I)
+_DATA_TREE_CACHE: dict[str, bool] = {}
 # Test files are recognised by name anywhere; test directories by name, unless the directory is a product package
 # (see is_test_path). TEST_PATH is the purely textual union of both, kept for callers that have no tree to look at.
 TEST_FILE = re.compile(r'(^|/)test_[^/]+\.py$|_test\.(py|go|rs)$|\.(test|spec|e2e)\.[cm]?[jt]sx?$|(^|/)conftest\.py$|'
@@ -343,6 +365,48 @@ def is_test_path(path: str, root: Path | str | None = None) -> tuple[bool, str]:
     return False, product or ''
 
 
+def data_tree(root: Path | str | None, rel_dir: str) -> bool:
+    """True when the directory rel_dir under root holds at least DATA_TREE_MIN data files and no source file."""
+    if root is None:
+        return False
+    key = f'{root}\0{rel_dir}'
+    if key not in _DATA_TREE_CACHE:
+        try:
+            names = [e.name for e in __import__('os').scandir(Path(root) / rel_dir) if e.is_file()]
+        except OSError:
+            names = []
+        sfx = [Path(n).suffix.lower() for n in names]
+        n_data = sum(s in DATA_ONLY_EXT or s in DATA_LIKE_EXT for s in sfx)
+        _DATA_TREE_CACHE[key] = n_data >= DATA_TREE_MIN and not any(s in SOURCE_EXT for s in sfx)
+    return _DATA_TREE_CACHE[key]
+
+
+def web_asset_kind(path: str, root: Path | str | None = None) -> tuple[str, str] | None:
+    """(kind, reason) for a web asset or data file: 'template' (a server-side template: a template extension, or HTML
+    under templates/, views/, layouts/ or partials/), 'markup' (another HTML page), 'style' (a stylesheet) or 'data'
+    (CSV and similar anywhere; JSON, YAML, XML or text under a data/ directory or in a directory of 50+ data files with
+    no source; known configuration file names stay config). None for anything else."""
+    p = Path(path)
+    ext, name = p.suffix.lower(), p.name
+    dirs = [d.lower() for d in path.split('/')[:-1]]
+    if ext in TEMPLATE_EXT or name.lower().endswith('.blade.php'):
+        return 'template', 'server-side template'
+    if ext in HTML_EXT:
+        if any(d in TEMPLATE_DIRS for d in dirs):
+            return 'template', 'server-side template (HTML under a template directory)'
+        return 'markup', 'HTML page'
+    if ext in STYLE_EXT:
+        return 'style', 'stylesheet'
+    if ext in DATA_ONLY_EXT:
+        return 'data', 'data file'
+    if ext in DATA_LIKE_EXT and not CONFIG_NAMES.match(name):
+        if any(d in DATA_DIRS for d in dirs):
+            return 'data', 'data file in a data directory'
+        if data_tree(root, p.parent.as_posix()):
+            return 'data', f'data file in a data tree ({p.parent.as_posix()}/ holds {DATA_TREE_MIN}+ data files, no source)'
+    return None
+
+
 def classify(path: str, head: str, binary: bool, root: Path | str | None = None) -> tuple[str, str]:
     """(kind, reason) for a changed file. Pass root (the directory paths are relative to) so a product package whose
     directory happens to be named e2e or tests is not taken for test code (see is_test_path)."""
@@ -364,6 +428,9 @@ def classify(path: str, head: str, binary: bool, root: Path | str | None = None)
     note = f' ({why})' if why else ''
     if ext == '.pyi' or path.endswith('.d.ts'):
         return 'types', 'type declarations only'
+    web = web_asset_kind(path, root)
+    if web:
+        return web[0], web[1] + note
     if ext in DOCS_EXT or path.startswith('docs/'):
         return 'docs', 'documentation'
     if ext in CONFIG_EXT or name in ('dockerfile', 'makefile', '.gitignore', '.gitattributes'):
@@ -612,7 +679,7 @@ def functions(path: str, text: str) -> tuple[list[dict], str]:
 
 def attach_functions(entry: dict, text: str | None) -> None:
     entry['functions'], entry['function_method'] = [], 'none'
-    if text is None or entry['status'] == 'deleted' or entry['kind'] in ('binary', 'docs', 'config'):
+    if text is None or entry['status'] == 'deleted' or entry['kind'] in ('binary', 'docs', 'config', 'data', 'style', 'markup', 'template'):
         return
     funcs, entry['function_method'] = functions(entry['path'], text)
     changed = [n for a, b in entry['ranges'] for n in range(a, b + 1)]
@@ -728,7 +795,17 @@ def self_test() -> int:
         'crates/tests/lib.rs': 'pub fn f() {}\n',
         'lib/test/java/AppTest.java': 'class AppTest {}\n',
         'lib/src/test/java/Helper.java': 'class Helper {}\n',
+        # a server-rendered recipe site: Jinja templates, a stylesheet, a static page and a tree of JSON records
+        'site/app.py': 'from flask import Flask\n',
+        'site/templates/recipe.html': '{% extends "base.html" %}\n',
+        'site/templates/partials/nav.jinja': '<nav></nav>\n',
+        'site/static/site.css': 'body {}\n',
+        'site/static/offline.html': '<html></html>\n',
+        'site/config.json': '{}',
+        'site/exports/top.csv': 'a,b\n',
+        'site/data/units.yaml': 'g: gram\n',
     }
+    files.update({f'site/recipes/r{i:03d}.json': '{"name": "soup"}' for i in range(60)})
     expect = {   # path -> (kind, reason fragment)
         'packages/e2e/src/runner.ts': ('source', 'packages/e2e/ is a product package (package.json and a src/'),
         'packages/e2e/schema/config.json': ('config', 'product package'),
@@ -748,6 +825,14 @@ def self_test() -> int:
         'crates/tests/lib.rs': ('source', 'Cargo.toml with a [lib]'),
         'lib/test/java/AppTest.java': ('test', ''),
         'lib/src/test/java/Helper.java': ('test', ''),
+        'site/templates/recipe.html': ('template', 'server-side template'),
+        'site/templates/partials/nav.jinja': ('template', 'server-side template'),
+        'site/static/site.css': ('style', 'stylesheet'),
+        'site/static/offline.html': ('markup', 'HTML page'),
+        'site/config.json': ('config', ''),
+        'site/exports/top.csv': ('data', 'data file'),
+        'site/data/units.yaml': ('data', 'data directory'),
+        'site/recipes/r007.json': ('data', 'data tree'),
     }
     failed = 0
     with tempfile.TemporaryDirectory() as d:
